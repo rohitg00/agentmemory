@@ -235,6 +235,10 @@ export function isDropStaleIndexEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
 }
 
+export function getAuditRetentionMonths(): number {
+  return safeParseInt(getMergedEnv()["AGENTMEMORY_AUDIT_RETENTION_MONTHS"], 0);
+}
+
 export function detectLlmProviderKind(): "llm" | "noop" {
   const env = getMergedEnv();
   if (

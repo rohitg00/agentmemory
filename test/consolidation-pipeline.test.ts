@@ -11,6 +11,7 @@ vi.mock("../src/config.js", () => ({
 
 import { registerConsolidationPipelineFunction } from "../src/functions/consolidation-pipeline.js";
 import { isConsolidationEnabled } from "../src/config.js";
+import { currentAuditScope } from "./helpers/mocks.js";
 import type { SessionSummary, Memory, SemanticMemory, ProceduralMemory } from "../src/types.js";
 
 function mockKV() {
@@ -206,7 +207,7 @@ describe("Consolidation Pipeline", () => {
 
     await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" });
 
-    const audits = await kv.list("mem:audit");
+    const audits = await kv.list(currentAuditScope());
     expect(audits.length).toBe(1);
   });
 

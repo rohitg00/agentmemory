@@ -13,9 +13,10 @@ import {
   deleteAccessLog,
   normalizeAccessLog,
 } from "./access-tracker.js";
-import { recordAudit } from "./audit.js";
+import { recordAudit, runAuditRetentionSweep } from "./audit.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
+import { getAuditRetentionMonths } from "../config.js";
 
 const DEFAULT_DECAY: DecayConfig = {
   lambda: 0.01,
@@ -407,6 +408,24 @@ export function registerRetentionFunctions(
       });
 
       return { success: true, evicted, evictedEpisodic, evictedSemantic };
+    },
+  );
+
+  sdk.registerFunction("mem::audit-retention-sweep",
+    async (data?: { retentionMonths?: number }) => {
+      const retentionMonths =
+        typeof data?.retentionMonths === "number" &&
+        Number.isFinite(data.retentionMonths)
+          ? data.retentionMonths
+          : getAuditRetentionMonths();
+
+      const result = await runAuditRetentionSweep(kv, retentionMonths);
+
+      if (result.droppedRows > 0) {
+        logger.info("Audit retention sweep dropped old month scopes", result);
+      }
+
+      return { success: true, ...result };
     },
   );
 }

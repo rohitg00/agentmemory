@@ -33,6 +33,7 @@ vi.mock("node:fs", () => ({
 }));
 
 import { registerSnapshotFunction } from "../src/functions/snapshot.js";
+import { currentAuditScope } from "./helpers/mocks.js";
 import type { Session, Memory, SnapshotMeta } from "../src/types.js";
 
 function mockKV() {
@@ -160,7 +161,7 @@ describe("Snapshot Functions", () => {
   it("snapshot-create records an audit entry", async () => {
     await sdk.trigger("mem::snapshot-create", { message: "Audit test" });
 
-    const audits = await kv.list("mem:audit");
+    const audits = await kv.list(currentAuditScope());
     expect(audits.length).toBe(1);
   });
 });

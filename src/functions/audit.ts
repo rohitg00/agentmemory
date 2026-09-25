@@ -31,6 +31,57 @@ import { logger } from "../logger.js";
 // When adding a new deletion path, add an explicit recordAudit call
 // BEFORE kv.delete(...) and match one of the two shapes above.
 
+const AUDIT_MIGRATE_FUNCTION_ID = "mem::audit-migrate";
+const AUDIT_MIGRATION_BATCH_SIZE = 200;
+const AUDIT_MIGRATION_TICK_MS = 50;
+
+interface AuditMonthIndex {
+  months: string[];
+}
+
+export function auditMonthOf(timestamp: string): string {
+  const parsed = new Date(timestamp);
+  const iso = Number.isNaN(parsed.getTime())
+    ? new Date().toISOString()
+    : parsed.toISOString();
+  return iso.slice(0, 7);
+}
+
+function monthStartMs(month: string): number {
+  const [year, mon] = month.split("-").map(Number);
+  return Date.UTC(year, mon - 1, 1);
+}
+
+function monthEndMs(month: string): number {
+  const [year, mon] = month.split("-").map(Number);
+  return Date.UTC(year, mon, 1) - 1;
+}
+
+function monthNMonthsAgo(count: number): string {
+  const now = new Date();
+  const cutoff = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - count, 1),
+  );
+  return cutoff.toISOString().slice(0, 7);
+}
+
+async function readAuditMonthIndex(kv: StateKV): Promise<string[]> {
+  const index = await kv.get<AuditMonthIndex>(KV.auditMonths, "index");
+  return index?.months ?? [];
+}
+
+async function markAuditMonth(kv: StateKV, month: string): Promise<void> {
+  const months = await readAuditMonthIndex(kv);
+  if (months.includes(month)) return;
+  const next = [...months, month].sort();
+  await kv.set(KV.auditMonths, "index", { months: next });
+}
+
+export async function listAuditMonthsDesc(kv: StateKV): Promise<string[]> {
+  const months = await readAuditMonthIndex(kv);
+  return [...months].sort().reverse();
+}
+
 export async function recordAudit(
   kv: StateKV,
   operation: AuditEntry["operation"],
@@ -50,7 +101,9 @@ export async function recordAudit(
     details,
     qualityScore,
   };
-  await kv.set(KV.audit, entry.id, entry);
+  const month = auditMonthOf(entry.timestamp);
+  await kv.set(KV.auditMonth(month), entry.id, entry);
+  await markAuditMonth(kv, month);
   return entry;
 }
 
@@ -86,28 +139,145 @@ export async function queryAudit(
     limit?: number;
   },
 ): Promise<AuditEntry[]> {
-  const all = await kv.list<AuditEntry>(KV.audit);
-  let entries = [...all].sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
-  );
+  const limit = filter?.limit || 100;
 
-  if (filter?.operation) {
-    entries = entries.filter((e) => e.operation === filter.operation);
-  }
+  let fromMs: number | undefined;
   if (filter?.dateFrom) {
-    const from = new Date(filter.dateFrom).getTime();
-    if (Number.isNaN(from)) {
+    fromMs = new Date(filter.dateFrom).getTime();
+    if (Number.isNaN(fromMs)) {
       throw new Error(`Invalid dateFrom: ${filter.dateFrom}`);
     }
-    entries = entries.filter((e) => new Date(e.timestamp).getTime() >= from);
-  }
-  if (filter?.dateTo) {
-    const to = new Date(filter.dateTo).getTime();
-    if (Number.isNaN(to)) {
-      throw new Error(`Invalid dateTo: ${filter.dateTo}`);
-    }
-    entries = entries.filter((e) => new Date(e.timestamp).getTime() <= to);
   }
 
-  return entries.slice(0, filter?.limit || 100);
+  let toMs: number | undefined;
+  if (filter?.dateTo) {
+    toMs = new Date(filter.dateTo).getTime();
+    if (Number.isNaN(toMs)) {
+      throw new Error(`Invalid dateTo: ${filter.dateTo}`);
+    }
+  }
+
+  const matches = (entry: AuditEntry): boolean => {
+    if (filter?.operation && entry.operation !== filter.operation) return false;
+    const t = new Date(entry.timestamp).getTime();
+    if (fromMs !== undefined && t < fromMs) return false;
+    if (toMs !== undefined && t > toMs) return false;
+    return true;
+  };
+
+  const collected: AuditEntry[] = [];
+  const months = await listAuditMonthsDesc(kv);
+  for (const month of months) {
+    if (collected.length >= limit) break;
+    if (toMs !== undefined && monthStartMs(month) > toMs) continue;
+    if (fromMs !== undefined && monthEndMs(month) < fromMs) break;
+    const rows = await kv.list<AuditEntry>(KV.auditMonth(month));
+    for (const row of rows) {
+      if (matches(row)) collected.push(row);
+    }
+  }
+
+  if (collected.length < limit) {
+    const legacyRows = await kv.list<AuditEntry>(KV.audit);
+    for (const row of legacyRows) {
+      if (matches(row)) collected.push(row);
+    }
+  }
+
+  collected.sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+  );
+  return collected.slice(0, limit);
+}
+
+async function migrateAuditEntry(
+  kv: StateKV,
+  entry: AuditEntry,
+): Promise<"migrated" | "purged"> {
+  if (entry.operation === "index_persist") {
+    await kv.delete(KV.audit, entry.id);
+    return "purged";
+  }
+  const month = auditMonthOf(entry.timestamp);
+  await kv.set(KV.auditMonth(month), entry.id, entry);
+  await markAuditMonth(kv, month);
+  await kv.delete(KV.audit, entry.id);
+  return "migrated";
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref();
+  });
+}
+
+export async function startAuditMigration(kv: StateKV): Promise<void> {
+  let totalMigrated = 0;
+  let totalPurged = 0;
+
+  try {
+    const queue = await kv.list<AuditEntry>(KV.audit);
+    let cursor = 0;
+
+    while (cursor < queue.length) {
+      const batch = queue.slice(cursor, cursor + AUDIT_MIGRATION_BATCH_SIZE);
+      cursor += batch.length;
+
+      for (const entry of batch) {
+        const outcome = await migrateAuditEntry(kv, entry);
+        if (outcome === "purged") totalPurged++;
+        else totalMigrated++;
+      }
+
+      if (cursor < queue.length) {
+        await delay(AUDIT_MIGRATION_TICK_MS);
+      }
+    }
+  } catch (err) {
+    logger.warn("audit migration failed", {
+      error: err instanceof Error ? err.message : String(err),
+      migrated: totalMigrated,
+      purged: totalPurged,
+    });
+    return;
+  }
+
+  if (totalPurged > 0) {
+    await safeAudit(kv, "audit_migrate", AUDIT_MIGRATE_FUNCTION_ID, [], {
+      reason: "index_persist rows predate opt-in auditing",
+      purged: totalPurged,
+      migrated: totalMigrated,
+    });
+  }
+}
+
+export async function runAuditRetentionSweep(
+  kv: StateKV,
+  retentionMonths: number,
+): Promise<{ droppedMonths: string[]; droppedRows: number }> {
+  if (!Number.isFinite(retentionMonths) || retentionMonths <= 0) {
+    return { droppedMonths: [], droppedRows: 0 };
+  }
+
+  const months = await readAuditMonthIndex(kv);
+  const cutoff = monthNMonthsAgo(retentionMonths);
+  const toDrop = months.filter((month) => month < cutoff).sort();
+  if (toDrop.length === 0) {
+    return { droppedMonths: [], droppedRows: 0 };
+  }
+
+  let droppedRows = 0;
+  for (const month of toDrop) {
+    const rows = await kv.list<AuditEntry>(KV.auditMonth(month));
+    for (const row of rows) {
+      await kv.delete(KV.auditMonth(month), row.id);
+      droppedRows++;
+    }
+  }
+
+  const remaining = months.filter((month) => !toDrop.includes(month)).sort();
+  await kv.set(KV.auditMonths, "index", { months: remaining });
+
+  return { droppedMonths: toDrop, droppedRows };
 }

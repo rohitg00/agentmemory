@@ -1,6 +1,11 @@
 import { vi } from "vitest";
+import { KV } from "../../src/state/schema.js";
 
 type Handler = (data: unknown) => Promise<unknown>;
+
+export function currentAuditScope(): string {
+  return KV.auditMonth(new Date().toISOString().slice(0, 7));
+}
 
 export function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
