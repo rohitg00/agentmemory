@@ -29,6 +29,8 @@ function ctx(overrides: Partial<RemoveContext> = {}): RemoveContext {
   };
 }
 
+const III_BIN = process.platform === "win32" ? "iii.exe" : "iii";
+
 function touch(relPath: string, content = ""): void {
   const full = join(sandbox, relPath);
   mkdirSync(join(full, ".."), { recursive: true });
@@ -112,7 +114,7 @@ describe("buildRemovePlan", () => {
   });
 
   it("local-bin/iii is alwaysAsk when version does not match", () => {
-    touch(".local/bin/iii", "fakebin");
+    touch(`.local/bin/${III_BIN}`, "fakebin");
     const plan = buildRemovePlan(
       ctx({ localBinIiiVersion: "9.9.9" }),
       { force: false, keepData: false },
@@ -123,7 +125,7 @@ describe("buildRemovePlan", () => {
   });
 
   it("local-bin/iii is auto-fixable when version matches pinned", () => {
-    touch(".local/bin/iii", "fakebin");
+    touch(`.local/bin/${III_BIN}`, "fakebin");
     const plan = buildRemovePlan(
       ctx({ localBinIiiVersion: "0.11.2" }),
       { force: false, keepData: false },
@@ -141,7 +143,7 @@ describe("buildRemovePlan", () => {
   });
 
   it("private ~/.agentmemory/bin/iii is removed without prompt", () => {
-    touch(".agentmemory/bin/iii", "fakebin");
+    touch(`.agentmemory/bin/${III_BIN}`, "fakebin");
     const plan = buildRemovePlan(ctx(), { force: false, keepData: false });
     const item = plan.find((p) => p.id === "private-bin-iii")!;
     expect(item).toBeDefined();
