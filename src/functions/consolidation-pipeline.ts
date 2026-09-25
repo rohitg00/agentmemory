@@ -43,6 +43,27 @@ function applyDecay(
   }
 }
 
+const DECAY_STRENGTH_EPSILON = 1e-9;
+
+function strengthChanged(before: number, after: number): boolean {
+  return Math.abs(after - before) > DECAY_STRENGTH_EPSILON;
+}
+
+async function decayAndWriteChanged<
+  T extends { id: string; strength: number; lastAccessedAt?: string; updatedAt: string },
+>(
+  kv: StateKV,
+  scope: string,
+  items: T[],
+  decayDays: number,
+): Promise<{ scanned: number; written: number }> {
+  const before = items.map((item) => item.strength);
+  applyDecay(items, decayDays);
+  const dirty = items.filter((item, i) => strengthChanged(before[i], item.strength));
+  await Promise.all(dirty.map((item) => kv.set(scope, item.id, item)));
+  return { scanned: items.length, written: dirty.length };
+}
+
 export function registerConsolidationPipelineFunction(
   sdk: IIIClient,
   kv: StateKV,
@@ -231,20 +252,24 @@ export function registerConsolidationPipelineFunction(
 
       if (tier === "all" || tier === "decay") {
         const semantic = await kv.list<SemanticMemory>(KV.semantic);
-        applyDecay(semantic, decayDays);
-        for (const s of semantic) {
-          await kv.set(KV.semantic, s.id, s);
-        }
-
         const procedural = await kv.list<ProceduralMemory>(KV.procedural);
-        applyDecay(procedural, decayDays);
-        for (const p of procedural) {
-          await kv.set(KV.procedural, p.id, p);
-        }
+
+        const semanticResult = await decayAndWriteChanged(
+          kv,
+          KV.semantic,
+          semantic,
+          decayDays,
+        );
+        const proceduralResult = await decayAndWriteChanged(
+          kv,
+          KV.procedural,
+          procedural,
+          decayDays,
+        );
 
         results.decay = {
-          semantic: semantic.length,
-          procedural: procedural.length,
+          semantic: semanticResult,
+          procedural: proceduralResult,
         };
       }
 
