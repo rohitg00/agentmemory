@@ -477,6 +477,13 @@ export function getIndexSaveIntervalMs(): number {
   return raw > 0 ? raw : INDEX_SAVE_INTERVAL_DEFAULT_MS;
 }
 
+export const VECTOR_BUCKETS_DEFAULT = 256;
+
+export function getVectorBucketCount(): number {
+  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_VECTOR_BUCKETS"], VECTOR_BUCKETS_DEFAULT);
+  return raw > 0 && raw <= 65_536 ? raw : VECTOR_BUCKETS_DEFAULT;
+}
+
 export function isStandaloneMcp(): boolean {
   return getMergedEnv()["STANDALONE_MCP"] === "true";
 }

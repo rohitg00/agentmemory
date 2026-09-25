@@ -1,30 +1,21 @@
-import { SearchIndex } from "./search-index.js";
-import { VectorIndex } from "./vector-index.js";
+import { VectorIndex, base64ToFloat32, float32ToBase64 } from "./vector-index.js";
 import type { StateKV } from "./kv.js";
-import { KV, generateId } from "./schema.js";
+import { KV } from "./schema.js";
 import { logger } from "../logger.js";
 import { safeAudit } from "../functions/audit.js";
-import { getIndexSaveIntervalMs } from "../config.js";
+import { getIndexSaveIntervalMs, getVectorBucketCount } from "../config.js";
 
-export const V8_MAX_STRING_CHARS = 536_870_888;
 const FAILURE_LOG_THROTTLE_MS = 60_000;
 const INDEX_PERSISTENCE_FUNCTION_ID = "mem::index-persistence";
-const BM25_KEY = "data";
-const BM25_MANIFEST_KEY = "data:manifest";
-const BM25_SHARD_SCOPE_PREFIX = `${KV.bm25Index}:bm25:`;
-const VECTOR_KEY = "vectors";
-const VECTOR_MANIFEST_KEY = "vectors:manifest";
-const VECTOR_SHARD_SCOPE_PREFIX = `${KV.bm25Index}:vectors:`;
-const INDEX_SHARD_KEY = "data";
-const DEFAULT_INDEX_SHARD_CHARS = 2_000_000;
+const LEGACY_BM25_KEY = "data";
+const LEGACY_BM25_MANIFEST_KEY = "data:manifest";
+const LEGACY_VECTOR_KEY = "vectors";
+const LEGACY_VECTOR_MANIFEST_KEY = "vectors:manifest";
+const VECTOR_META_KEY = "vectors:meta";
+const VECTOR_BUCKET_SCOPE_PREFIX = `${KV.bm25Index}:vec:`;
+const WRITE_CONCURRENCY = 32;
+const LOAD_CONCURRENCY = 8;
 
-// mem:audit exists to record structural deletions of user data — that is
-// the policy stated at the top of src/functions/audit.ts. Index shard
-// writes and manifest publishes remove no user rows, so they fall outside
-// it, yet a single save() emits three of them: on a real store they
-// reached 59876 of 84028 entries (71%), which is what makes the audit log
-// slow to query and bloats startup. Off by default; set
-// AGENTMEMORY_AUDIT_INDEX_PERSIST=1 when debugging index persistence.
 function auditIndexPersistEnabled(): boolean {
   const raw = process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
   if (!raw) return false;
@@ -39,45 +30,59 @@ type IndexShardManifest = {
   chars: number;
 };
 
-type IndexPersistenceOptions = {
-  shardChars?: number;
-  createGeneration?: () => string;
-  saveIntervalMs?: number;
-  now?: () => number;
+type VectorMeta = {
+  v: 2;
+  buckets: number;
+  savedAt: string;
+  count: number;
 };
 
-export type IndexLeg = "bm25" | "vector";
+type PersistedVector = {
+  id: string;
+  s: string;
+  e: string;
+};
+
+type IndexPersistenceOptions = {
+  saveIntervalMs?: number;
+  buckets?: number;
+  now?: () => number;
+};
 
 export interface IndexLegStatus {
   lastSavedAt: string | null;
   lastError: string | null;
   lastErrorAt: string | null;
   dirtySince: string | null;
-  serializedChars: number | null;
 }
 
 export interface IndexPersistenceStatus {
   saveIntervalMs: number;
   saving: boolean;
-  bm25: IndexLegStatus;
+  buckets: number;
+  pendingChanges: number;
   vector: IndexLegStatus | null;
 }
 
-function emptyLegStatus(): IndexLegStatus {
-  return { lastSavedAt: null, lastError: null, lastErrorAt: null, dirtySince: null, serializedChars: null };
+export type VectorLoadState = "buckets" | "migrated" | "none" | "unavailable";
+
+export interface VectorLoadResult {
+  vector: VectorIndex | null;
+  state: VectorLoadState;
+  savedAt: string | null;
 }
 
-function shardChars(options: IndexPersistenceOptions): number {
-  const configured = options.shardChars;
-  if (typeof configured !== "number" || !Number.isFinite(configured)) {
-    return DEFAULT_INDEX_SHARD_CHARS;
+export function vectorBucketOf(id: string, buckets: number): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    hash ^= id.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
   }
-  const wholeChars = Math.floor(configured);
-  return wholeChars >= 1 ? wholeChars : DEFAULT_INDEX_SHARD_CHARS;
+  return hash % buckets;
 }
 
-function createIndexGeneration(): string {
-  return generateId("idx");
+export function vectorBucketScope(bucket: number): string {
+  return `${VECTOR_BUCKET_SCOPE_PREFIX}${String(bucket).padStart(4, "0")}`;
 }
 
 function statePath(scope: string, key: string): string {
@@ -86,6 +91,13 @@ function statePath(scope: string, key: string): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function generationTime(generation: string | undefined): string | null {
+  const stamp = generation?.split("_")[1];
+  if (!stamp) return null;
+  const ms = parseInt(stamp, 36);
+  return Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString() : null;
 }
 
 function isValidShardDescriptor(
@@ -99,31 +111,50 @@ function isValidShardDescriptor(
     typeof candidate.key === "string" &&
     candidate.key.length > 0 &&
     Number.isInteger(candidate.chars) &&
-    candidate.chars >= 0
+    (candidate.chars as number) >= 0
   );
+}
+
+function isPersistedVector(row: unknown): row is PersistedVector {
+  if (!row || typeof row !== "object") return false;
+  const candidate = row as Partial<PersistedVector>;
+  return typeof candidate.id === "string" && typeof candidate.s === "string" && typeof candidate.e === "string";
+}
+
+async function inBatches<T>(items: T[], size: number, run: (item: T) => Promise<void>): Promise<unknown[]> {
+  const failures: unknown[] = [];
+  for (let offset = 0; offset < items.length; offset += size) {
+    const results = await Promise.allSettled(items.slice(offset, offset + size).map(run));
+    for (const result of results) {
+      if (result.status === "rejected") failures.push(result.reason);
+    }
+  }
+  return failures;
+}
+
+function emptyLegStatus(): IndexLegStatus {
+  return { lastSavedAt: null, lastError: null, lastErrorAt: null, dirtySince: null };
 }
 
 export class IndexPersistence {
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private lastFailureLogAt = new Map<IndexLeg, number>();
+  private lastFailureLogAt = 0;
   private running: Promise<void> | null = null;
   private queued: Promise<void> | null = null;
   private stopped = false;
   private lastSaveAt: number;
   private dirtyEpoch = 0;
   private markedDuringRunAt: number | null = null;
-  private legs: Record<IndexLeg, IndexLegStatus> = {
-    bm25: emptyLegStatus(),
-    vector: emptyLegStatus(),
-  };
+  private metaWritten = false;
+  private leg: IndexLegStatus = emptyLegStatus();
   private readonly saveIntervalMs: number;
+  private buckets: number;
   private readonly now: () => number;
 
   constructor(
     private kv: StateKV,
-    private bm25: SearchIndex,
     private vector: VectorIndex | null,
-    private options: IndexPersistenceOptions = {},
+    options: IndexPersistenceOptions = {},
   ) {
     this.now = options.now ?? Date.now;
     const interval = options.saveIntervalMs;
@@ -131,22 +162,25 @@ export class IndexPersistence {
       typeof interval === "number" && Number.isFinite(interval) && interval > 0
         ? interval
         : getIndexSaveIntervalMs();
+    const buckets = options.buckets;
+    this.buckets =
+      typeof buckets === "number" && Number.isInteger(buckets) && buckets > 0
+        ? buckets
+        : getVectorBucketCount();
     this.lastSaveAt = this.now();
   }
 
   scheduleSave(): void {
-    if (this.stopped) return;
+    if (this.stopped || !this.vector) return;
     const now = this.now();
     this.dirtyEpoch++;
     if (this.running && this.markedDuringRunAt === null) this.markedDuringRunAt = now;
-    for (const leg of this.activeLegs()) {
-      if (this.legs[leg].dirtySince === null) this.legs[leg].dirtySince = new Date(now).toISOString();
-    }
+    if (this.leg.dirtySince === null) this.leg.dirtySince = new Date(now).toISOString();
     if (this.timer) return;
     const delay = Math.max(0, this.lastSaveAt + this.saveIntervalMs - now);
     this.timer = setTimeout(() => {
       this.timer = null;
-      this.save().catch((err) => this.logFailure("bm25", err));
+      this.save().catch((err) => this.logFailure(err));
     }, delay);
   }
 
@@ -168,29 +202,10 @@ export class IndexPersistence {
     return {
       saveIntervalMs: this.saveIntervalMs,
       saving: this.running !== null,
-      bm25: { ...this.legs.bm25 },
-      vector: this.vector ? { ...this.legs.vector } : null,
+      buckets: this.buckets,
+      pendingChanges: this.vector?.pendingChanges ?? 0,
+      vector: this.vector ? { ...this.leg } : null,
     };
-  }
-
-  async load(): Promise<{
-    bm25: SearchIndex | null;
-    vector: VectorIndex | null;
-  }> {
-    let bm25: SearchIndex | null = null;
-    let vector: VectorIndex | null = null;
-
-    const bm25Data = await this.loadBm25Data();
-    if (bm25Data && typeof bm25Data === "string") {
-      bm25 = SearchIndex.deserialize(bm25Data);
-    }
-
-    const vecData = await this.loadVectorData();
-    if (vecData && typeof vecData === "string") {
-      vector = VectorIndex.deserialize(vecData);
-    }
-
-    return { bm25, vector };
   }
 
   stop(): void {
@@ -198,15 +213,38 @@ export class IndexPersistence {
     this.clearTimer();
   }
 
+  async load(): Promise<VectorLoadResult> {
+    if (!this.vector) {
+      await this.removeLegacyBm25Snapshot();
+      return { vector: null, state: "none", savedAt: null };
+    }
+
+    let meta: VectorMeta | null;
+    try {
+      meta = await this.kv.get<VectorMeta>(KV.bm25Index, VECTOR_META_KEY);
+    } catch (err) {
+      logger.warn("index persistence: vector metadata read failed", { message: errorMessage(err) });
+      return { vector: null, state: "unavailable", savedAt: null };
+    }
+
+    if (meta && meta.v === 2 && Number.isInteger(meta.buckets) && meta.buckets > 0) {
+      const loaded = await this.loadBuckets(meta.buckets);
+      if (!loaded) return { vector: null, state: "unavailable", savedAt: null };
+      this.metaWritten = true;
+      if (meta.buckets !== this.buckets) await this.moveBuckets(loaded, meta.buckets);
+      await this.removeLegacyVectorSnapshotIfPresent();
+      await this.removeLegacyBm25Snapshot();
+      return { vector: loaded, state: "buckets", savedAt: meta.savedAt ?? null };
+    }
+
+    return this.migrateLegacy();
+  }
+
   private clearTimer(): void {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
     }
-  }
-
-  private activeLegs(): IndexLeg[] {
-    return this.vector ? ["bm25", "vector"] : ["bm25"];
   }
 
   private startRun(): Promise<void> {
@@ -218,176 +256,215 @@ export class IndexPersistence {
   }
 
   private async runSave(): Promise<void> {
+    const vector = this.vector;
+    if (!vector) return;
     const epoch = this.dirtyEpoch;
     this.markedDuringRunAt = null;
     this.lastSaveAt = this.now();
-    await this.saveLeg("bm25", epoch, async () => {
-      const serialized = this.bm25.serialize();
-      this.legs.bm25.serializedChars = serialized.length;
-      await this.saveBm25Index(serialized);
-    });
-    const vector = this.vector;
-    if (vector) {
-      await this.saveLeg("vector", epoch, async () => {
-        const serialized = vector.serialize();
-        this.legs.vector.serializedChars = serialized.length;
-        await this.saveVectorIndex(serialized);
-      });
-    }
-  }
-
-  private async saveLeg(leg: IndexLeg, epoch: number, run: () => Promise<void>): Promise<void> {
-    const status = this.legs[leg];
     try {
-      await run();
-      status.lastSavedAt = new Date(this.now()).toISOString();
-      status.lastError = null;
-      status.lastErrorAt = null;
-      if (this.dirtyEpoch === epoch) {
-        status.dirtySince = null;
+      await this.writeChanges(vector);
+      this.leg.lastSavedAt = new Date(this.now()).toISOString();
+      this.leg.lastError = null;
+      this.leg.lastErrorAt = null;
+      if (this.dirtyEpoch === epoch || vector.pendingChanges === 0) {
+        this.leg.dirtySince = null;
       } else if (this.markedDuringRunAt !== null) {
-        status.dirtySince = new Date(this.markedDuringRunAt).toISOString();
+        this.leg.dirtySince = new Date(this.markedDuringRunAt).toISOString();
       }
     } catch (err) {
-      status.lastError = errorMessage(err);
-      status.lastErrorAt = new Date(this.now()).toISOString();
-      if (status.dirtySince === null) status.dirtySince = status.lastErrorAt;
-      this.logFailure(leg, err);
+      this.leg.lastError = errorMessage(err);
+      this.leg.lastErrorAt = new Date(this.now()).toISOString();
+      if (this.leg.dirtySince === null) this.leg.dirtySince = this.leg.lastErrorAt;
+      this.logFailure(err);
     }
   }
 
-  private logFailure(leg: IndexLeg, err: unknown): void {
+  private async writeChanges(vector: VectorIndex): Promise<void> {
+    const changes = vector.takeChanges();
+    if (changes.size === 0 && this.metaWritten) return;
+    const failed = new Map<string, boolean>();
+    const failures = await inBatches([...changes], WRITE_CONCURRENCY, async ([id, present]) => {
+      const scope = vectorBucketScope(vectorBucketOf(id, this.buckets));
+      const entry = present ? vector.get(id) : undefined;
+      try {
+        if (entry) {
+          await this.kv.set<PersistedVector>(scope, id, {
+            id,
+            s: entry.sessionId,
+            e: float32ToBase64(entry.embedding),
+          });
+        } else {
+          await this.kv.delete(scope, id);
+        }
+      } catch (err) {
+        failed.set(id, present);
+        throw err;
+      }
+    });
+    if (failures.length > 0) {
+      vector.returnChanges(failed);
+      throw new Error(
+        `${failures.length} of ${changes.size} vector writes failed: ${errorMessage(failures[0])}`,
+      );
+    }
+    await this.kv.set<VectorMeta>(KV.bm25Index, VECTOR_META_KEY, {
+      v: 2,
+      buckets: this.buckets,
+      savedAt: new Date(this.now()).toISOString(),
+      count: vector.size,
+    });
+    this.metaWritten = true;
+  }
+
+  private async loadBuckets(buckets: number): Promise<VectorIndex | null> {
+    const loaded = new VectorIndex();
+    const bucketIds = Array.from({ length: buckets }, (_, bucket) => bucket);
+    const failures = await inBatches(bucketIds, LOAD_CONCURRENCY, async (bucket) => {
+      const rows = await this.kv.list<unknown>(vectorBucketScope(bucket));
+      for (const row of rows) {
+        if (!isPersistedVector(row)) continue;
+        try {
+          loaded.loadPersisted(row.id, row.s, base64ToFloat32(row.e));
+        } catch {
+          continue;
+        }
+      }
+    });
+    if (failures.length > 0) {
+      logger.warn("index persistence: vector bucket read failed", {
+        failed: failures.length,
+        message: errorMessage(failures[0]),
+      });
+      return null;
+    }
+    return loaded;
+  }
+
+  private async moveBuckets(vector: VectorIndex, fromBuckets: number): Promise<void> {
+    const moves = [...vector.entries()].filter(
+      ([id]) => vectorBucketOf(id, fromBuckets) !== vectorBucketOf(id, this.buckets),
+    );
+    const failures = await inBatches(moves, WRITE_CONCURRENCY, async ([id, entry]) => {
+      await this.kv.set<PersistedVector>(vectorBucketScope(vectorBucketOf(id, this.buckets)), id, {
+        id,
+        s: entry.sessionId,
+        e: float32ToBase64(entry.embedding),
+      });
+      await this.kv.delete(vectorBucketScope(vectorBucketOf(id, fromBuckets)), id);
+    });
+    if (failures.length > 0) {
+      logger.warn("index persistence: moving vectors to the new bucket count failed; keeping the old count", {
+        failed: failures.length,
+        message: errorMessage(failures[0]),
+      });
+      this.buckets = fromBuckets;
+      return;
+    }
+    await this.kv.set<VectorMeta>(KV.bm25Index, VECTOR_META_KEY, {
+      v: 2,
+      buckets: this.buckets,
+      savedAt: new Date(this.now()).toISOString(),
+      count: vector.size,
+    });
+  }
+
+  private async migrateLegacy(): Promise<VectorLoadResult> {
+    const manifest = await this.readIndexValue<IndexShardManifest>(
+      KV.bm25Index,
+      LEGACY_VECTOR_MANIFEST_KEY,
+      "vector",
+      "manifest",
+    );
+    const legacyKey = await this.readIndexValue<string>(KV.bm25Index, LEGACY_VECTOR_KEY, "vector", "legacy");
+    if (!manifest.ok || !legacyKey.ok) return { vector: null, state: "unavailable", savedAt: null };
+    const legacyPresent = manifest.value != null || (typeof legacyKey.value === "string" && legacyKey.value.length > 0);
+    if (!legacyPresent) {
+      await this.removeLegacyBm25Snapshot();
+      return { vector: null, state: "none", savedAt: null };
+    }
+
+    const data = await this.loadShardedData(LEGACY_VECTOR_KEY, LEGACY_VECTOR_MANIFEST_KEY, "vector");
+    if (typeof data !== "string") {
+      logger.warn("index persistence: legacy vector snapshot is unreadable; keeping it and skipping migration");
+      return { vector: null, state: "unavailable", savedAt: null };
+    }
+    const legacy = VectorIndex.deserialize(data);
+    const savedAt =
+      (manifest.value && typeof manifest.value === "object" ? generationTime(manifest.value.generation) : null) ??
+      new Date(this.now()).toISOString();
+
+    const staging = new VectorIndex();
+    for (const [id, entry] of legacy.entries()) staging.add(id, entry.sessionId, entry.embedding);
+    try {
+      await this.writeChanges(staging);
+    } catch (err) {
+      logger.warn("index persistence: migrating the legacy vector snapshot failed; it stays in place and the next save retries", {
+        message: errorMessage(err),
+      });
+      legacy.markAllChanged();
+      return { vector: legacy, state: "unavailable", savedAt };
+    }
+
+    await this.removeLegacyVectorSnapshot(manifest.value);
+    await this.removeLegacyBm25Snapshot();
+    await this.auditIndexPersistence("migrate", [statePath(KV.bm25Index, VECTOR_META_KEY)], {
+      vectors: legacy.size,
+      buckets: this.buckets,
+    });
+    logger.info("index persistence: migrated the vector index to bucketed storage", {
+      vectors: legacy.size,
+      buckets: this.buckets,
+    });
+    const migrated = new VectorIndex();
+    for (const [id, entry] of legacy.entries()) migrated.loadPersisted(id, entry.sessionId, entry.embedding);
+    return { vector: migrated, state: "migrated", savedAt };
+  }
+
+  private async removeLegacyVectorSnapshot(manifest: IndexShardManifest | null): Promise<void> {
+    if (manifest && Array.isArray(manifest.shards)) {
+      await this.deleteShards(manifest.shards.filter(isValidShardDescriptor), "legacy_vector_cleanup");
+    }
+    await this.deleteKey(KV.bm25Index, LEGACY_VECTOR_MANIFEST_KEY, "legacy_vector_cleanup");
+    await this.deleteKey(KV.bm25Index, LEGACY_VECTOR_KEY, "legacy_vector_cleanup");
+  }
+
+  private async removeLegacyVectorSnapshotIfPresent(): Promise<void> {
+    const manifest = await this.kv
+      .get<IndexShardManifest>(KV.bm25Index, LEGACY_VECTOR_MANIFEST_KEY)
+      .catch(() => undefined);
+    const legacy = await this.kv.get<string>(KV.bm25Index, LEGACY_VECTOR_KEY).catch(() => undefined);
+    if (manifest === undefined || legacy === undefined) return;
+    if (manifest == null && legacy == null) return;
+    await this.removeLegacyVectorSnapshot(manifest);
+  }
+
+  private async removeLegacyBm25Snapshot(): Promise<void> {
+    const manifest = await this.kv
+      .get<IndexShardManifest>(KV.bm25Index, LEGACY_BM25_MANIFEST_KEY)
+      .catch(() => undefined);
+    const legacy = await this.kv.get<string>(KV.bm25Index, LEGACY_BM25_KEY).catch(() => undefined);
+    if (manifest === undefined || legacy === undefined) return;
+    if (manifest == null && legacy == null) return;
+    if (manifest && Array.isArray(manifest.shards)) {
+      await this.deleteShards(manifest.shards.filter(isValidShardDescriptor), "legacy_bm25_cleanup");
+    }
+    if (manifest != null) await this.deleteKey(KV.bm25Index, LEGACY_BM25_MANIFEST_KEY, "legacy_bm25_cleanup");
+    if (legacy != null) await this.deleteKey(KV.bm25Index, LEGACY_BM25_KEY, "legacy_bm25_cleanup");
+  }
+
+  private logFailure(err: unknown): void {
     const now = this.now();
-    if (now - (this.lastFailureLogAt.get(leg) ?? 0) < FAILURE_LOG_THROTTLE_MS) return;
-    this.lastFailureLogAt.set(leg, now);
+    if (now - this.lastFailureLogAt < FAILURE_LOG_THROTTLE_MS) return;
+    this.lastFailureLogAt = now;
     const code = (err as { code?: string })?.code;
-    const message = err instanceof Error ? err.message : String(err);
-    logger.warn(`index persistence: failed to save the ${leg === "bm25" ? "BM25" : "vector"} index`, {
+    logger.warn("index persistence: failed to save the vector index", {
       code,
-      message,
+      message: errorMessage(err),
       hint:
         code === "TIMEOUT"
-          ? "iii-engine state::set timed out; recent index updates remain in memory and will retry on the next save"
+          ? "iii-engine state::set timed out; unsaved vectors stay in memory and retry on the next save"
           : undefined,
     });
-  }
-
-  private async saveBm25Index(serialized: string): Promise<void> {
-    await this.saveShardedIndex(
-      serialized,
-      BM25_MANIFEST_KEY,
-      BM25_KEY,
-      BM25_SHARD_SCOPE_PREFIX,
-    );
-  }
-
-  private async saveVectorIndex(serialized: string): Promise<void> {
-    await this.saveShardedIndex(
-      serialized,
-      VECTOR_MANIFEST_KEY,
-      VECTOR_KEY,
-      VECTOR_SHARD_SCOPE_PREFIX,
-    );
-  }
-
-  private async saveShardedIndex(
-    serialized: string,
-    manifestKey: string,
-    legacyKey: string,
-    scopePrefix: string,
-  ): Promise<void> {
-    const previous = await this.kv
-      .get<IndexShardManifest>(KV.bm25Index, manifestKey)
-      .catch(() => null);
-    const generation =
-      this.options.createGeneration?.() ?? createIndexGeneration();
-    const chunkChars = shardChars(this.options);
-    const shards: IndexShardManifest["shards"] = [];
-    const chunks: string[] = [];
-
-    for (let offset = 0; offset < serialized.length; offset += chunkChars) {
-      const shardIndex = shards.length;
-      const scope = `${scopePrefix}${generation}:${String(shardIndex).padStart(
-        5,
-        "0",
-      )}`;
-      const chunk = serialized.slice(offset, offset + chunkChars);
-      shards.push({ scope, key: INDEX_SHARD_KEY, chars: chunk.length });
-      chunks.push(chunk);
-    }
-
-    const writeResults = await Promise.allSettled(
-      shards.map(async (shard, index) => {
-        const chunk = chunks[index] ?? "";
-        await this.kv.set(shard.scope, shard.key, chunk);
-        await this.auditIndexPersistence("shard_write", [
-          statePath(shard.scope, shard.key),
-        ], {
-          scope: shard.scope,
-          key: shard.key,
-          manifestKey,
-          generation,
-          chars: chunk.length,
-        });
-      }),
-    );
-    const failedWrite = writeResults.find(
-      (result): result is PromiseRejectedResult => result.status === "rejected",
-    );
-    if (failedWrite) {
-      await this.deleteShards(shards, "shard_write_rollback");
-      throw failedWrite.reason;
-    }
-
-    const nextManifest: IndexShardManifest = {
-      v: 1,
-      generation,
-      shards,
-      chars: serialized.length,
-    };
-    try {
-      await this.kv.set<IndexShardManifest>(
-        KV.bm25Index,
-        manifestKey,
-        nextManifest,
-      );
-      await this.auditIndexPersistence("manifest_publish", [
-        statePath(KV.bm25Index, manifestKey),
-      ], {
-        manifestKey,
-        generation,
-        chars: serialized.length,
-        shards: shards.length,
-        result: "committed",
-      });
-    } catch (err) {
-      if (await this.isManifestPublished(manifestKey, nextManifest)) {
-        await this.auditIndexPersistence("manifest_publish", [
-          statePath(KV.bm25Index, manifestKey),
-        ], {
-          manifestKey,
-          generation,
-          chars: serialized.length,
-          shards: shards.length,
-          result: "committed_after_error",
-          error: errorMessage(err),
-        });
-      } else {
-        await this.deleteShards(shards, "manifest_publish_rollback");
-      }
-      throw err;
-    }
-
-    await this.deleteKey(KV.bm25Index, legacyKey, "legacy_cleanup");
-    if (previous?.v === 1 && Array.isArray(previous.shards)) {
-      const currentShardIds = new Set(
-        shards.map((shard) => `${shard.scope}\0${shard.key}`),
-      );
-      for (const shard of previous.shards) {
-        if (currentShardIds.has(`${shard.scope}\0${shard.key}`)) continue;
-        await this.deleteShards([shard], "previous_generation_cleanup");
-      }
-    }
   }
 
   private async auditIndexPersistence(
@@ -396,20 +473,13 @@ export class IndexPersistence {
     details: Record<string, unknown>,
   ): Promise<void> {
     if (!auditIndexPersistEnabled()) return;
-    await safeAudit(
-      this.kv,
-      "index_persist",
-      INDEX_PERSISTENCE_FUNCTION_ID,
-      targetIds,
-      { action, ...details },
-    );
+    await safeAudit(this.kv, "index_persist", INDEX_PERSISTENCE_FUNCTION_ID, targetIds, {
+      action,
+      ...details,
+    });
   }
 
-  private async deleteKey(
-    scope: string,
-    key: string,
-    reason: string,
-  ): Promise<void> {
+  private async deleteKey(scope: string, key: string, reason: string): Promise<void> {
     let result = "deleted";
     let error: string | undefined;
     try {
@@ -427,81 +497,17 @@ export class IndexPersistence {
     });
   }
 
-  private async deleteShards(
-    shards: IndexShardManifest["shards"],
-    reason: string,
-  ): Promise<void> {
-    for (const shard of shards) {
-      await this.deleteKey(shard.scope, shard.key, reason);
-    }
+  private async deleteShards(shards: IndexShardManifest["shards"], reason: string): Promise<void> {
+    await inBatches(shards, WRITE_CONCURRENCY, (shard) => this.deleteKey(shard.scope, shard.key, reason));
   }
 
-  private async isManifestPublished(
-    manifestKey: string,
-    expected: IndexShardManifest,
-  ): Promise<boolean> {
-    const published = await this.kv
-      .get<IndexShardManifest>(KV.bm25Index, manifestKey)
-      .catch(() => null);
-    if (
-      published?.v !== 1 ||
-      published.generation !== expected.generation ||
-      published.chars !== expected.chars ||
-      !Array.isArray(published.shards) ||
-      published.shards.length !== expected.shards.length
-    ) {
-      return false;
-    }
-    return published.shards.every((shard, index) => {
-      const expectedShard = expected.shards[index];
-      if (!expectedShard) return false;
-      return (
-        shard.scope === expectedShard.scope &&
-        shard.key === expectedShard.key &&
-        shard.chars === expectedShard.chars
-      );
-    });
-  }
-
-  private async loadBm25Data(): Promise<string | null> {
-    return this.loadShardedData(BM25_KEY, BM25_MANIFEST_KEY, "BM25");
-  }
-
-  private async loadVectorData(): Promise<string | null> {
-    return this.loadShardedData(VECTOR_KEY, VECTOR_MANIFEST_KEY, "vector");
-  }
-
-  private async loadShardedData(
-    legacyKey: string,
-    manifestKey: string,
-    label: string,
-  ): Promise<string | null> {
-    const manifest = await this.readIndexValue<IndexShardManifest>(
-      KV.bm25Index,
-      manifestKey,
-      label,
-      "manifest",
-    );
+  private async loadShardedData(legacyKey: string, manifestKey: string, label: string): Promise<string | null> {
+    const manifest = await this.readIndexValue<IndexShardManifest>(KV.bm25Index, manifestKey, label, "manifest");
     if (!manifest.ok) return null;
-    // #797: some iii-state adapters return `undefined` (not `null`) for
-    // a missing key. The previous `value !== null` check passed
-    // undefined through to loadManifestData, which then crashed on
-    // `manifest.v` with TypeError. Treat both null and undefined as
-    // "no manifest" and fall through to the legacy path. The shape
-    // check stays so a malformed-but-present row still fails closed.
-    if (
-      manifest.value != null &&
-      typeof manifest.value === "object"
-    ) {
+    if (manifest.value != null && typeof manifest.value === "object") {
       return this.loadManifestData(manifest.value, label);
     }
-
-    const legacy = await this.readIndexValue<string>(
-      KV.bm25Index,
-      legacyKey,
-      label,
-      "legacy",
-    );
+    const legacy = await this.readIndexValue<string>(KV.bm25Index, legacyKey, label, "legacy");
     if (!legacy.ok) return null;
     if (legacy.value && typeof legacy.value === "string") return legacy.value;
     return null;
@@ -525,10 +531,7 @@ export class IndexPersistence {
     }
   }
 
-  private async loadManifestData(
-    manifest: IndexShardManifest,
-    label: string,
-  ): Promise<string | null> {
+  private async loadManifestData(manifest: IndexShardManifest, label: string): Promise<string | null> {
     if (
       manifest.v !== 1 ||
       !Array.isArray(manifest.shards) ||
@@ -555,10 +558,7 @@ export class IndexPersistence {
     let chars = 0;
     for (const { shard, chunk } of loadedShards) {
       if (typeof chunk !== "string") {
-        logger.warn(`index persistence: ${label} shard missing`, {
-          scope: shard.scope,
-          key: shard.key,
-        });
+        logger.warn(`index persistence: ${label} shard missing`, { scope: shard.scope, key: shard.key });
         return null;
       }
       if (chunk.length !== shard.chars) {
@@ -574,10 +574,7 @@ export class IndexPersistence {
       chars += chunk.length;
     }
     if (chars !== manifest.chars) {
-      logger.warn(`index persistence: ${label} total length mismatch`, {
-        expected: manifest.chars,
-        actual: chars,
-      });
+      logger.warn(`index persistence: ${label} total length mismatch`, { expected: manifest.chars, actual: chars });
       return null;
     }
     return chunks.join("");

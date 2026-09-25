@@ -5,13 +5,13 @@
 // pool. Same risk on the encode side if the input Float32Array is itself
 // a sliced view. Reported as a phantom "2048 dimensions on disk" crash
 // in #455 / #469 / #584 / #587.
-function float32ToBase64(arr: Float32Array): string {
+export function float32ToBase64(arr: Float32Array): string {
   return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).toString(
     "base64",
   );
 }
 
-function base64ToFloat32(b64: string): Float32Array {
+export function base64ToFloat32(b64: string): Float32Array {
   const buf = Buffer.from(b64, "base64");
   return new Float32Array(
     buf.buffer,
@@ -34,16 +34,59 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
   return denom === 0 ? 0 : dot / denom;
 }
 
+export type VectorEntry = { embedding: Float32Array; sessionId: string };
+
 export class VectorIndex {
-  private vectors: Map<string, { embedding: Float32Array; sessionId: string }> =
-    new Map();
+  private vectors: Map<string, VectorEntry> = new Map();
+  private changes: Map<string, boolean> = new Map();
 
   add(obsId: string, sessionId: string, embedding: Float32Array): void {
     this.vectors.set(obsId, { embedding, sessionId });
+    this.changes.set(obsId, true);
   }
 
   remove(obsId: string): void {
-    this.vectors.delete(obsId);
+    if (this.vectors.delete(obsId)) this.changes.set(obsId, false);
+  }
+
+  has(obsId: string): boolean {
+    return this.vectors.has(obsId);
+  }
+
+  get(obsId: string): VectorEntry | undefined {
+    return this.vectors.get(obsId);
+  }
+
+  entries(): IterableIterator<[string, VectorEntry]> {
+    return this.vectors.entries();
+  }
+
+  loadPersisted(obsId: string, sessionId: string, embedding: Float32Array): void {
+    this.vectors.set(obsId, { embedding, sessionId });
+  }
+
+  get pendingChanges(): number {
+    return this.changes.size;
+  }
+
+  takeChanges(): Map<string, boolean> {
+    const taken = this.changes;
+    this.changes = new Map();
+    return taken;
+  }
+
+  returnChanges(changes: Map<string, boolean>): void {
+    for (const [obsId, present] of changes) {
+      if (!this.changes.has(obsId)) this.changes.set(obsId, present);
+    }
+  }
+
+  markRemoved(obsId: string): void {
+    if (!this.vectors.has(obsId)) this.changes.set(obsId, false);
+  }
+
+  markAllChanged(): void {
+    for (const obsId of this.vectors.keys()) this.changes.set(obsId, true);
   }
 
   search(
@@ -104,6 +147,7 @@ export class VectorIndex {
   }
 
   clear(): void {
+    for (const obsId of this.vectors.keys()) this.changes.set(obsId, false);
     this.vectors.clear();
   }
 
@@ -119,6 +163,7 @@ export class VectorIndex {
         sessionId: entry.sessionId,
       });
     }
+    this.changes = new Map(other.changes);
   }
 
   serialize(): string {

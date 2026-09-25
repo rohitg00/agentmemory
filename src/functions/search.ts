@@ -399,6 +399,93 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   return indexed
 }
 
+export type VectorBackfillJob = {
+  id: string
+  sessionId: string
+  text: string
+  context: { kind: "memory" | "observation" | "synthetic"; logId: string }
+}
+
+export async function rebuildKeywordIndex(
+  kv: StateKV,
+  vectorBackfillSince?: string | null,
+): Promise<{ documents: number; vectorJobs: VectorBackfillJob[] }> {
+  const idx = getSearchIndex()
+  idx.clear()
+  memoryIndexReady = false
+  const vi = vectorIndex
+  const backfill = Boolean(vi && currentEmbeddingProvider) && vectorBackfillSince !== undefined
+  const cutoff = typeof vectorBackfillSince === 'string' ? Date.parse(vectorBackfillSince) : Number.NaN
+  const vectorJobs: VectorBackfillJob[] = []
+  const consider = (
+    id: string,
+    sessionId: string,
+    text: string,
+    timestamp: string | undefined,
+    kind: "memory" | "observation",
+  ): void => {
+    if (!backfill || vi?.has(id)) return
+    if (!Number.isNaN(cutoff) && !(Date.parse(timestamp ?? '') > cutoff)) return
+    vectorJobs.push({ id, sessionId, text, context: { kind, logId: id } })
+  }
+
+  let documents = 0
+  let memoriesLoaded = false
+  try {
+    const memories = await kv.list<Memory>(KV.memories)
+    memoriesLoaded = true
+    for (const memory of memories) {
+      if (memory.isLatest === false) continue
+      if (!memory.title || !memory.content) continue
+      idx.add(memoryToObservation(memory))
+      consider(memory.id, memory.sessionIds?.[0] ?? 'memory', memory.title + ' ' + memory.content, memory.createdAt, "memory")
+      documents++
+    }
+  } catch (err) {
+    logger.warn('rebuildKeywordIndex: failed to load memories', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  const sessions = await kv.list<Session>(KV.sessions)
+  const failedSessions: string[] = []
+  for (let batch = 0; batch < sessions.length; batch += 10) {
+    const chunk = sessions.slice(batch, batch + 10)
+    const results = await Promise.all(
+      chunk.map(async (s) => {
+        try {
+          return await kv.list<CompressedObservation>(KV.observations(s.id))
+        } catch {
+          failedSessions.push(s.id)
+          return [] as CompressedObservation[]
+        }
+      })
+    )
+    for (const obs of results.flat()) {
+      if (!obs.title || !obs.narrative) continue
+      idx.add(obs)
+      consider(obs.id, obs.sessionId, obs.title + ' ' + obs.narrative, obs.timestamp, "observation")
+      documents++
+    }
+  }
+  if (failedSessions.length > 0) {
+    logger.warn('rebuildKeywordIndex: failed to load observations for sessions', { failedSessions })
+  }
+  if (memoriesLoaded) memoryIndexReady = true
+  return { documents, vectorJobs }
+}
+
+export async function backfillVectors(jobs: VectorBackfillJob[]): Promise<number> {
+  const batchSize = getRebuildEmbedBatchSize()
+  let added = 0
+  for (let offset = 0; offset < jobs.length; offset += batchSize) {
+    const { ok } = await vectorIndexAddBatchGuarded(jobs.slice(offset, offset + batchSize))
+    added += ok
+  }
+  if (added > 0) scheduleIndexSave()
+  return added
+}
+
 export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     'mem::search',

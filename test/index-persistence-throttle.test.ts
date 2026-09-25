@@ -1,18 +1,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { IndexPersistence, V8_MAX_STRING_CHARS } from "../src/state/index-persistence.js";
-import { SearchIndex } from "../src/state/search-index.js";
+import { IndexPersistence } from "../src/state/index-persistence.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import { evaluateStatus, renderStatusHtml, type StatusInputs } from "../src/functions/status.js";
-import type { CompressedObservation } from "../src/types.js";
 
-const BM25_SCOPE = "mem:index:bm25";
+const META_KEY = "vectors:meta";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
   const sets: Array<{ scope: string; key: string }> = [];
   return {
     sets,
-    store,
     get: async <T>(scope: string, key: string): Promise<T | null> => (store.get(scope)?.get(key) as T) ?? null,
     set: async <T>(scope: string, key: string, data: T): Promise<T> => {
       sets.push({ scope, key });
@@ -27,23 +24,12 @@ function mockKV() {
   };
 }
 
-function obs(id: string, title: string): CompressedObservation {
-  return {
-    id,
-    sessionId: "ses_1",
-    timestamp: new Date().toISOString(),
-    type: "file_edit",
-    title,
-    facts: [],
-    narrative: `${title} narrative`,
-    concepts: [],
-    files: [],
-    importance: 5,
-  };
+function metaSaves(kv: ReturnType<typeof mockKV>): number {
+  return kv.sets.filter((s) => s.key === META_KEY).length;
 }
 
-function manifestSaves(kv: ReturnType<typeof mockKV>, key: string): number {
-  return kv.sets.filter((s) => s.scope === BM25_SCOPE && s.key === key).length;
+function touch(vector: VectorIndex, id: string): void {
+  vector.add(id, "ses_1", new Float32Array([Math.random(), 0.2, 0.3]));
 }
 
 describe("IndexPersistence save throttling", () => {
@@ -59,35 +45,40 @@ describe("IndexPersistence save throttling", () => {
   });
 
   it("saves at most once per interval however often changes are scheduled", async () => {
-    const bm25 = new SearchIndex();
-    bm25.add(obs("obs_1", "alpha"));
-    const persistence = new IndexPersistence(kv as never, bm25, null, { saveIntervalMs: 60_000 });
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 60_000, buckets: 16 });
 
-    for (let i = 0; i < 50; i++) persistence.scheduleSave();
+    for (let i = 0; i < 50; i++) {
+      touch(vector, `obs_${i}`);
+      persistence.scheduleSave();
+    }
     await vi.advanceTimersByTimeAsync(59_000);
-    expect(manifestSaves(kv, "data:manifest")).toBe(0);
+    expect(metaSaves(kv)).toBe(0);
 
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(manifestSaves(kv, "data:manifest")).toBe(1);
+    expect(metaSaves(kv)).toBe(1);
 
-    for (let i = 0; i < 50; i++) persistence.scheduleSave();
+    for (let i = 0; i < 50; i++) {
+      touch(vector, `obs_more_${i}`);
+      persistence.scheduleSave();
+    }
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(manifestSaves(kv, "data:manifest")).toBe(1);
+    expect(metaSaves(kv)).toBe(1);
     await vi.advanceTimersByTimeAsync(30_000);
-    expect(manifestSaves(kv, "data:manifest")).toBe(2);
+    expect(metaSaves(kv)).toBe(2);
   });
 
   it("an explicit save runs immediately and cancels the pending timer", async () => {
-    const bm25 = new SearchIndex();
-    bm25.add(obs("obs_1", "alpha"));
-    const persistence = new IndexPersistence(kv as never, bm25, null, { saveIntervalMs: 60_000 });
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 60_000, buckets: 16 });
 
+    touch(vector, "obs_1");
     persistence.scheduleSave();
     await persistence.save();
-    expect(manifestSaves(kv, "data:manifest")).toBe(1);
+    expect(metaSaves(kv)).toBe(1);
 
     await vi.advanceTimersByTimeAsync(120_000);
-    expect(manifestSaves(kv, "data:manifest")).toBe(1);
+    expect(metaSaves(kv)).toBe(1);
   });
 
   it("never runs two saves at once and coalesces requests made during a save into one", async () => {
@@ -108,11 +99,12 @@ describe("IndexPersistence save throttling", () => {
         return result;
       },
     };
-    const bm25 = new SearchIndex();
-    bm25.add(obs("obs_1", "alpha"));
-    const persistence = new IndexPersistence(slowKv as never, bm25, null, { saveIntervalMs: 60_000 });
+    const vector = new VectorIndex();
+    touch(vector, "obs_1");
+    const persistence = new IndexPersistence(slowKv as never, vector, { saveIntervalMs: 60_000, buckets: 16 });
 
     const first = persistence.save();
+    touch(vector, "obs_2");
     const second = persistence.save();
     const third = persistence.save();
     expect(second).toBe(third);
@@ -122,42 +114,12 @@ describe("IndexPersistence save throttling", () => {
     release();
     await Promise.all([first, second, third]);
 
-    expect(manifestSaves(kv, "data:manifest")).toBe(2);
+    expect(metaSaves(kv)).toBe(2);
     expect(maxInFlight).toBe(1);
     expect(persistence.status().saving).toBe(false);
   });
 
-  it("a failing BM25 leg does not stop the vector leg from saving", async () => {
-    const failingKv = {
-      ...kv,
-      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
-        if (scope === BM25_SCOPE && key === "data:manifest") throw new Error("bm25 manifest write failed");
-        return kv.set(scope, key, data);
-      },
-    };
-    const bm25 = new SearchIndex();
-    bm25.add(obs("obs_1", "alpha"));
-    const vector = new VectorIndex();
-    vector.add("obs_1", "ses_1", new Float32Array([0.1, 0.2, 0.3]));
-    const persistence = new IndexPersistence(failingKv as never, bm25, vector, { saveIntervalMs: 60_000 });
-
-    persistence.scheduleSave();
-    await persistence.save();
-
-    const status = persistence.status();
-    expect(status.bm25.lastError).toBe("bm25 manifest write failed");
-    expect(status.bm25.dirtySince).not.toBeNull();
-    expect(status.vector?.lastError).toBeNull();
-    expect(status.vector?.lastSavedAt).not.toBeNull();
-    expect(status.vector?.dirtySince).toBeNull();
-    expect(status.vector?.serializedChars).toBeGreaterThan(0);
-
-    const loaded = await new IndexPersistence(kv as never, new SearchIndex(), null).load();
-    expect(loaded.bm25).toBeNull();
-    expect(loaded.vector?.size).toBe(1);
-  });
-
-  it("keeps a leg dirty when a change arrives while it is being saved", async () => {
+  it("keeps the index dirty when a change arrives while it is being saved", async () => {
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => {
       release = resolve;
@@ -173,30 +135,31 @@ describe("IndexPersistence save throttling", () => {
         return kv.set(scope, key, data);
       },
     };
-    const bm25 = new SearchIndex();
-    bm25.add(obs("obs_1", "alpha"));
-    const persistence = new IndexPersistence(slowKv as never, bm25, null, { saveIntervalMs: 60_000 });
+    const vector = new VectorIndex();
+    touch(vector, "obs_1");
+    const persistence = new IndexPersistence(slowKv as never, vector, { saveIntervalMs: 60_000, buckets: 16 });
 
     const saving = persistence.save();
+    touch(vector, "obs_2");
     persistence.scheduleSave();
     release();
     await saving;
 
-    expect(persistence.status().bm25.lastSavedAt).not.toBeNull();
-    expect(persistence.status().bm25.dirtySince).not.toBeNull();
+    expect(persistence.status().vector?.lastSavedAt).not.toBeNull();
+    expect(persistence.status().vector?.dirtySince).not.toBeNull();
 
     await persistence.save();
-    expect(persistence.status().bm25.dirtySince).toBeNull();
+    expect(persistence.status().vector?.dirtySince).toBeNull();
   });
 
   it("stop prevents later scheduled saves", async () => {
-    const bm25 = new SearchIndex();
-    bm25.add(obs("obs_1", "alpha"));
-    const persistence = new IndexPersistence(kv as never, bm25, null, { saveIntervalMs: 1_000 });
+    const vector = new VectorIndex();
+    touch(vector, "obs_1");
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 1_000, buckets: 16 });
     persistence.stop();
     persistence.scheduleSave();
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(manifestSaves(kv, "data:manifest")).toBe(0);
+    expect(metaSaves(kv)).toBe(0);
   });
 });
 
@@ -225,78 +188,53 @@ const cleanLeg = {
   lastError: null,
   lastErrorAt: null,
   dirtySince: null,
-  serializedChars: 1000,
 };
 
+function persistenceStatus(vector: typeof cleanLeg | null, pendingChanges = 0) {
+  return { saveIntervalMs: 600_000, saving: false, buckets: 256, pendingChanges, vector };
+}
+
 describe("status reports index persistence", () => {
-  it("is quiet when both legs saved cleanly", () => {
-    const report = evaluateStatus(
-      statusInputs({ indexPersistence: { saveIntervalMs: 600_000, saving: false, bm25: cleanLeg, vector: cleanLeg } }),
-    );
+  it("is quiet when the vector index saved cleanly", () => {
+    const report = evaluateStatus(statusInputs({ indexPersistence: persistenceStatus(cleanLeg) }));
     expect(report.problems).toEqual([]);
-    expect(report.indexPersistence?.vector?.serializedChars).toBe(1000);
+    expect(report.indexPersistence?.buckets).toBe(256);
   });
 
-  it("reports a failing leg as an error", () => {
+  it("reports a failing vector save as an error", () => {
     const report = evaluateStatus(
       statusInputs({
-        indexPersistence: {
-          saveIntervalMs: 600_000,
-          saving: false,
-          bm25: cleanLeg,
-          vector: { ...cleanLeg, lastError: "Invalid string length", lastErrorAt: "2026-09-25T11:59:30.000Z" },
-        },
+        indexPersistence: persistenceStatus({
+          ...cleanLeg,
+          lastError: "3 of 10 vector writes failed: timed out",
+          lastErrorAt: "2026-09-25T11:59:30.000Z",
+        } as never),
       }),
     );
     expect(report.status).toBe("error");
     expect(report.problems.map((p) => p.code)).toEqual(["index-save-failing"]);
-    expect(report.problems[0].message).toContain("vector");
-  });
-
-  it("warns when the vector index passes 80% of the Node.js string limit", () => {
-    const report = evaluateStatus(
-      statusInputs({
-        indexPersistence: {
-          saveIntervalMs: 600_000,
-          saving: false,
-          bm25: cleanLeg,
-          vector: { ...cleanLeg, serializedChars: Math.ceil(V8_MAX_STRING_CHARS * 0.85) },
-        },
-      }),
-    );
-    expect(report.status).toBe("warn");
-    expect(report.problems.map((p) => p.code)).toEqual(["vector-index-near-string-limit"]);
-    expect(report.problems[0].message).toContain("85%");
+    expect(report.problems[0].message).toContain("3 of 10 vector writes failed");
   });
 
   it("warns when unsaved changes are older than twice the save interval", () => {
     const report = evaluateStatus(
-      statusInputs({
-        indexPersistence: {
-          saveIntervalMs: 600_000,
-          saving: false,
-          bm25: { ...cleanLeg, dirtySince: "2026-09-25T11:30:00.000Z" },
-          vector: { ...cleanLeg, dirtySince: "2026-09-25T11:55:00.000Z" },
-        },
-      }),
+      statusInputs({ indexPersistence: persistenceStatus({ ...cleanLeg, dirtySince: "2026-09-25T11:30:00.000Z" } as never, 4) }),
     );
     expect(report.problems.map((p) => p.code)).toEqual(["index-save-stale"]);
-    expect(report.problems[0].message).toContain("BM25");
   });
 
-  it("shows save state and vector size on the status page", () => {
+  it("does not report vector persistence when vector search is off", () => {
+    const report = evaluateStatus(statusInputs({ indexPersistence: persistenceStatus(null) }));
+    expect(report.problems).toEqual([]);
+  });
+
+  it("shows save state and bucket storage on the status page", () => {
     const report = evaluateStatus(
-      statusInputs({
-        indexPersistence: {
-          saveIntervalMs: 600_000,
-          saving: false,
-          bm25: { ...cleanLeg, dirtySince: "2026-09-25T11:59:50.000Z" },
-          vector: { ...cleanLeg, serializedChars: 53_687_089 },
-        },
-      }),
+      statusInputs({ indexPersistence: persistenceStatus({ ...cleanLeg, dirtySince: "2026-09-25T11:59:50.000Z" } as never, 3) }),
     );
     const html = renderStatusHtml(report, "n");
-    expect(html).toContain("<th>BM25 save</th><td>saved 1m ago, unsaved changes pending</td>");
-    expect(html).toContain("53,687,089 characters (10% of the Node.js string limit)");
+    expect(html).toContain("<th>BM25 index</th><td>rebuilt from stored content at boot</td>");
+    expect(html).toContain("<th>Vector save</th><td>saved 1m ago, unsaved changes pending</td>");
+    expect(html).toContain("<th>Vector storage</th><td>256 buckets, 3 unsaved changes</td>");
   });
 });
