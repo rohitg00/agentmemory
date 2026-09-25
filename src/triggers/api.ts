@@ -732,7 +732,9 @@ export function registerApiTriggers(
         ...(title ? { firstPrompt: title.slice(0, 200) } : {}),
         ...(agentId ? { agentId } : {}),
       };
-      await kv.set(KV.sessions, sessionId, session);
+      await withKeyedLock(`obs:${sessionId}`, () =>
+        kv.set(KV.sessions, sessionId, session),
+      );
       const contextResult = await sdk.trigger<
         { sessionId: string; project: string; agentId?: string },
         { context: string }
@@ -861,7 +863,7 @@ export function registerApiTriggers(
       });
 
       if (sessionId) {
-        await withKeyedLock(`session:${sessionId}`, async () => {
+        await withKeyedLock(`obs:${sessionId}`, async () => {
           const session = await kv.get<Session>(KV.sessions, sessionId);
           if (!session) return;
           const shaSet = new Set<string>(session.commitShas ?? []);

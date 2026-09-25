@@ -29,6 +29,7 @@ import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
 import { StateKV } from "../state/kv.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { indexRecords } from "./search.js";
@@ -407,17 +408,19 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
       const indexMems: Memory[] = [];
 
       await runChunked(importData.sessions, async (session) => {
-        if (strategy === "skip") {
-          const existing = await kv
-            .get<Session>(KV.sessions, session.id)
-            .catch(() => null);
-          if (existing) {
-            stats.skipped++;
-            return;
+        await withKeyedLock(`obs:${session.id}`, async () => {
+          if (strategy === "skip") {
+            const existing = await kv
+              .get<Session>(KV.sessions, session.id)
+              .catch(() => null);
+            if (existing) {
+              stats.skipped++;
+              return;
+            }
           }
-        }
-        await kv.set(KV.sessions, session.id, session);
-        stats.sessions++;
+          await kv.set(KV.sessions, session.id, session);
+          stats.sessions++;
+        });
       });
 
       for (const [sessionId, obs] of Object.entries(importData.observations)) {

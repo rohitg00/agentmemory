@@ -2,6 +2,7 @@ import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { CompressedObservation, HookPayload, Memory, Session } from "../types.js";
 import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isReflectEnabled } from "../functions/slots.js";
 import {
   detectLlmProviderKind,
@@ -65,7 +66,9 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
         observationCount: 0,
         ...(agentId ? { agentId } : {}),
       };
-      await kv.set(KV.sessions, data.sessionId, session);
+      await withKeyedLock(`obs:${data.sessionId}`, () =>
+        kv.set(KV.sessions, data.sessionId, session),
+      );
       const contextResult = await sdk.trigger<
         { sessionId: string; project: string; agentId?: string },
         { context: string }
