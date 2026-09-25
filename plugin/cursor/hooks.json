@@ -3,38 +3,53 @@
   "hooks": {
     "sessionStart": [
       {
-        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/session-start.mjs"
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-hook.mjs\" sessionStart"
       }
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/prompt-submit.mjs"
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-hook.mjs\" beforeSubmitPrompt"
       }
     ],
     "preToolUse": [
       {
-        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/pre-tool-use.mjs",
-        "matcher": "Shell|Read|Write|Grep"
+        "matcher": "Edit|Write|Read|Glob|Grep|Shell",
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-hook.mjs\" preToolUse"
       }
     ],
     "postToolUse": [
       {
-        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/post-tool-use.mjs"
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-hook.mjs\" postToolUse"
       }
     ],
     "postToolUseFailure": [
       {
-        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/post-tool-failure.mjs"
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-hook.mjs\" postToolUseFailure"
+      }
+    ],
+    "preCompact": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-hook.mjs\" preCompact"
+      }
+    ],
+    "subagentStart": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-hook.mjs\" subagentStart"
+      }
+    ],
+    "subagentStop": [
+      {
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-hook.mjs\" subagentStop"
       }
     ],
     "stop": [
       {
-        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/stop.mjs"
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-detached.mjs\" stop"
       }
     ],
     "sessionEnd": [
       {
-        "command": "node ${CURSOR_PLUGIN_ROOT}/plugin/scripts/session-end.mjs"
+        "command": "node \"${CURSOR_PLUGIN_ROOT}/plugin/scripts/cursor/run-detached.mjs\" sessionEnd"
       }
     ]
   }
