@@ -14,6 +14,11 @@ export interface Session {
   agentId?: string;
 }
 
+export interface ProjectSessionIndexEntry {
+  id: string;
+  startedAt: string;
+}
+
 export interface CommitLink {
   sha: string;
   shortSha: string;

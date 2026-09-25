@@ -1,8 +1,9 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
-import type { Memory } from "../types.js";
+import type { Memory, Session } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
@@ -312,8 +313,18 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           deletedObservationIds.push(obs.id);
           deleted++;
         }
+        const sessionToDelete = await kv
+          .get<Session>(KV.sessions, data.sessionId)
+          .catch(() => null);
         await kv.delete(KV.sessions, data.sessionId);
         await kv.delete(KV.summaries, data.sessionId);
+        if (sessionToDelete) {
+          await removeSessionFromProjectIndex(
+            kv,
+            sessionToDelete.project,
+            data.sessionId,
+          ).catch(() => {});
+        }
         deletedSession = true;
         deleted += 2;
       }

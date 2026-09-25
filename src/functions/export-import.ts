@@ -29,6 +29,10 @@ import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
 import { StateKV } from "../state/kv.js";
+import {
+  addSessionToProjectIndex,
+  removeSessionFromProjectIndex,
+} from "../state/session-index.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { indexRecords } from "./search.js";
@@ -311,6 +315,11 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
         const obsDeletes: Array<{ sessionId: string; obsId: string }> = [];
         await runChunked(existing, async (session) => {
           await kv.delete(KV.sessions, session.id);
+          await removeSessionFromProjectIndex(
+            kv,
+            session.project,
+            session.id,
+          ).catch(() => {});
           const obs = await kv
             .list<CompressedObservation>(KV.observations(session.id))
             .catch(() => []);
@@ -417,6 +426,10 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
           }
         }
         await kv.set(KV.sessions, session.id, session);
+        await addSessionToProjectIndex(kv, session.project, {
+          id: session.id,
+          startedAt: session.startedAt,
+        }).catch(() => {});
         stats.sessions++;
       });
 

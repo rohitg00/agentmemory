@@ -8,6 +8,7 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { isConsolidationEnabled } from "../config.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
@@ -180,6 +181,11 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
               });
               continue;
             }
+            await removeSessionFromProjectIndex(
+              kv,
+              session.project,
+              session.id,
+            ).catch(() => {});
             await recordAudit(kv, "delete", "mem::evict", [session.id], {
               resource: "session",
               reason: recovered
