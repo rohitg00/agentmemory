@@ -44,4 +44,19 @@ export class StateKV {
       payload: { scope },
     })
   }
+
+  async listGroups(): Promise<string[]> {
+    const result = await this.sdk.trigger<
+      Record<string, never>,
+      string[] | { groups: string[] }
+    >({
+      function_id: 'state::list_groups',
+      payload: {},
+    })
+    const groups = Array.isArray(result) ? result : result?.groups
+    if (!Array.isArray(groups) || !groups.every((group) => typeof group === 'string')) {
+      throw new Error('state::list_groups returned an invalid response')
+    }
+    return groups
+  }
 }

@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerMeshFunction } from "../src/functions/mesh.js";
+import { initializeGraphIndexes } from "../src/state/graph-indexes.js";
 import type {
   MeshPeer,
   Memory,
@@ -34,6 +35,10 @@ function mockKV() {
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
+    listGroups: async (): Promise<string[]> =>
+      [...store.entries()]
+        .filter(([, entries]) => entries.size > 0)
+        .map(([scope]) => scope),
   };
 }
 
@@ -59,10 +64,11 @@ describe("Mesh Functions", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sdk = mockSdk();
     kv = mockKV();
     vi.clearAllMocks();
+    await initializeGraphIndexes(kv as never);
     registerMeshFunction(sdk as never, kv as never);
   });
 

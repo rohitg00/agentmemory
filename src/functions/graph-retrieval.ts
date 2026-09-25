@@ -2,8 +2,8 @@ import type {
   GraphNode,
   GraphEdge,
 } from "../types.js";
-import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { GraphIndexReader } from "../state/graph-indexes.js";
 
 export interface GraphRetrievalResult {
   obsId: string;
@@ -12,6 +12,10 @@ export interface GraphRetrievalResult {
   graphContext: string;
   pathLength: number;
 }
+
+type NeighborProvider = (
+  nodeId: string,
+) => Promise<Array<{ node: GraphNode; edge: GraphEdge }>>;
 
 function buildGraphContext(
   path: Array<{ node: GraphNode; edge?: GraphEdge }>,
@@ -46,28 +50,51 @@ export class GraphRetrieval {
     maxDepth = 2,
     maxResults = 20,
   ): Promise<GraphRetrievalResult[]> {
-    const allNodes = (await this.kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
-    const allEdges = (await this.kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
-
-    const matchingNodes = allNodes.filter((n) => {
-      const nameLower = n.name.toLowerCase();
-      return entityNames.some(
-        (e) =>
-          nameLower.includes(e.toLowerCase()) ||
-          e.toLowerCase().includes(nameLower),
+    const reader = await GraphIndexReader.open(this.kv);
+    if (!reader) return [];
+    const catalog = await reader.getNameCatalog();
+    const lowered = entityNames.map((e) => e.toLowerCase());
+    const matchingNodes: GraphNode[] = [];
+    for (const entry of catalog) {
+      const nameLower = entry.name.toLowerCase();
+      const matched = lowered.some(
+        (e) => nameLower.includes(e) || e.includes(nameLower),
       );
-    });
+      if (!matched) continue;
+      const node = await reader.getNode(entry.id);
+      if (node) matchingNodes.push(node);
+    }
 
+    const results = await this.scoreEntityMatches(
+      matchingNodes,
+      (id) => reader.getNeighbors(id),
+      maxDepth,
+      maxResults,
+    );
+    return (await reader.isCurrent()) ? results : [];
+  }
+
+  private async scoreEntityMatches(
+    matchingNodes: GraphNode[],
+    getNeighbors: NeighborProvider,
+    maxDepth: number,
+    maxResults: number,
+  ): Promise<GraphRetrievalResult[]> {
     if (matchingNodes.length === 0) return [];
+
+    // Which start node first claims an observation decides its score,
+    // so iterate catalog matches in a deterministic order.
+    const orderedMatches = [...matchingNodes].sort((a, b) =>
+      a.id.localeCompare(b.id),
+    );
 
     const results: GraphRetrievalResult[] = [];
     const visitedObs = new Set<string>();
 
-    for (const startNode of matchingNodes) {
-      const paths = this.dijkstraTraversal(
+    for (const startNode of orderedMatches) {
+      const paths = await this.dijkstraTraversal(
         startNode,
-        allNodes,
-        allEdges,
+        getNeighbors,
         maxDepth,
       );
 
@@ -119,18 +146,46 @@ export class GraphRetrieval {
     maxDepth = 1,
     maxResults = 10,
   ): Promise<GraphRetrievalResult[]> {
-    const allNodes = (await this.kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
-    const allEdges = (await this.kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
+    const reader = await GraphIndexReader.open(this.kv);
+    if (!reader) return [];
+    const candidateIds = await reader.getNodeIdsForObservations(obsIds);
+    const linkedNodes: GraphNode[] = [];
+    for (const nodeId of candidateIds) {
+      const node = await reader.getNode(nodeId);
+      if (
+        node &&
+        (node.sourceObservationIds ?? []).some((id) => obsIds.includes(id))
+      ) {
+        linkedNodes.push(node);
+      }
+    }
 
-    const linkedNodes = allNodes.filter((n) =>
-      n.sourceObservationIds.some((id) => obsIds.includes(id)),
+    const results = await this.scoreExpansion(
+      linkedNodes,
+      (id) => reader.getNeighbors(id),
+      obsIds,
+      maxDepth,
+      maxResults,
+    );
+    return (await reader.isCurrent()) ? results : [];
+  }
+
+  private async scoreExpansion(
+    linkedNodes: GraphNode[],
+    getNeighbors: NeighborProvider,
+    obsIds: string[],
+    maxDepth: number,
+    maxResults: number,
+  ): Promise<GraphRetrievalResult[]> {
+    const orderedLinked = [...linkedNodes].sort((a, b) =>
+      a.id.localeCompare(b.id),
     );
 
     const results: GraphRetrievalResult[] = [];
     const visitedObs = new Set<string>(obsIds);
 
-    for (const node of linkedNodes) {
-      const paths = this.dijkstraTraversal(node, allNodes, allEdges, maxDepth);
+    for (const node of orderedLinked) {
+      const paths = await this.dijkstraTraversal(node, getNeighbors, maxDepth);
       for (const path of paths) {
         const lastNode = path[path.length - 1].node;
         for (const obsId of lastNode.sourceObservationIds) {
@@ -163,18 +218,38 @@ export class GraphRetrieval {
     currentState: GraphEdge[];
     history: GraphEdge[];
   }> {
-    const allNodes = (await this.kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
-    const allEdges = (await this.kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
-
-    const entity = allNodes.find(
-      (n) => n.name.toLowerCase() === entityName.toLowerCase(),
-    );
+    const reader = await GraphIndexReader.open(this.kv);
+    if (!reader) return { entity: null, currentState: [], history: [] };
+    const catalog = await reader.getNameCatalog();
+    const lower = entityName.toLowerCase();
+    let entity: GraphNode | null = null;
+    for (const entry of catalog) {
+      if (entry.name.toLowerCase() !== lower) continue;
+      const node = await reader.getNode(entry.id);
+      if (node) {
+        entity = node;
+        break;
+      }
+    }
     if (!entity) return { entity: null, currentState: [], history: [] };
 
-    const relatedEdges = allEdges.filter(
-      (e) => e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
-    );
+    const relatedEdges = await reader.getIncidentEdges(entity.id);
 
+    if (!(await reader.isCurrent())) {
+      return { entity: null, currentState: [], history: [] };
+    }
+    return this.partitionTemporalEdges(entity, relatedEdges, asOf);
+  }
+
+  private partitionTemporalEdges(
+    entity: GraphNode,
+    relatedEdges: GraphEdge[],
+    asOf?: string,
+  ): {
+    entity: GraphNode | null;
+    currentState: GraphEdge[];
+    history: GraphEdge[];
+  } {
     if (!asOf) {
       const latestEdges = this.getLatestEdges(relatedEdges);
       const historicalEdges = relatedEdges.filter(
@@ -231,32 +306,14 @@ export class GraphRetrieval {
   // which fell back to edge-count order and ignored the 0.1-1.0 weight
   // attached to every graph edge. Dijkstra over `cost = 1/weight`
   // (cheaper edges = stronger relationships) returns the
-  // highest-weighted path to each reachable node within maxDepth. Also
-  // tightens the perf profile:
-  //   - Adjacency built once in O(V+E) (previous BFS re-filtered
-  //     allEdges per visited node, O(V·E) overall).
-  //   - Min-heap dequeue is O(log V) per pop (previous queue.shift()
-  //     was O(n) — the dominant cost on graphs above ~200 nodes per
-  //     the contributor's benchmark in #328).
-  private dijkstraTraversal(
+  // highest-weighted path to each reachable node within maxDepth.
+  // Neighbor expansion is delegated to targeted adjacency reads bounded by
+  // degree x maxDepth.
+  private async dijkstraTraversal(
     startNode: GraphNode,
-    allNodes: GraphNode[],
-    allEdges: GraphEdge[],
+    getNeighbors: NeighborProvider,
     maxDepth: number,
-  ): Array<Array<{ node: GraphNode; edge?: GraphEdge }>> {
-    const nodeIndex = new Map<string, GraphNode>();
-    for (const n of allNodes) nodeIndex.set(n.id, n);
-
-    const adjacency = new Map<string, Array<{ neighborId: string; edge: GraphEdge }>>();
-    for (const edge of allEdges) {
-      const a = edge.sourceNodeId;
-      const b = edge.targetNodeId;
-      if (!adjacency.has(a)) adjacency.set(a, []);
-      if (!adjacency.has(b)) adjacency.set(b, []);
-      adjacency.get(a)!.push({ neighborId: b, edge });
-      adjacency.get(b)!.push({ neighborId: a, edge });
-    }
-
+  ): Promise<Array<Array<{ node: GraphNode; edge?: GraphEdge }>>> {
     const dist = new Map<string, number>();
     const pathTo = new Map<string, Array<{ node: GraphNode; edge?: GraphEdge }>>();
     dist.set(startNode.id, 0);
@@ -273,10 +330,9 @@ export class GraphRetrieval {
       if (cost > (dist.get(nodeId) ?? Infinity)) continue;
       if (depth >= maxDepth) continue;
 
-      const neighbors = adjacency.get(nodeId) ?? [];
-      for (const { neighborId, edge } of neighbors) {
-        const nextNode = nodeIndex.get(neighborId);
-        if (!nextNode) continue;
+      const neighbors = await getNeighbors(nodeId);
+      for (const { node: nextNode, edge } of neighbors) {
+        const neighborId = nextNode.id;
         // Clamp weight to avoid division-by-zero on malformed edges;
         // 0.01 is below the documented 0.1 floor.
         const edgeCost = 1 / Math.max(edge.weight, 0.01);

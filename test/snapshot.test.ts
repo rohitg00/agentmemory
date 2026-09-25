@@ -53,6 +53,10 @@ function mockKV() {
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
+    listGroups: async (): Promise<string[]> =>
+      [...store.entries()]
+        .filter(([, entries]) => entries.size > 0)
+        .map(([scope]) => scope),
   };
 }
 
@@ -178,7 +182,8 @@ describe("snapshot-create reentrancy guard", () => {
     let listCalls = 0;
     const store = new Map<string, Map<string, unknown>>();
     const gatedKv = {
-      get: async () => null,
+      get: async <T>(scope: string, key: string): Promise<T | null> =>
+        (store.get(scope)?.get(key) as T) ?? null,
       set: async <T>(scope: string, key: string, data: T): Promise<T> => {
         if (!store.has(scope)) store.set(scope, new Map());
         store.get(scope)!.set(key, data);
@@ -192,6 +197,10 @@ describe("snapshot-create reentrancy guard", () => {
         if (listCalls === 1) await firstListGate;
         return (Array.from(store.get(scope)?.values() ?? []) as T[]) ?? [];
       },
+      listGroups: async (): Promise<string[]> =>
+        [...store.entries()]
+          .filter(([, entries]) => entries.size > 0)
+          .map(([scope]) => scope),
     };
     const localSdk = mockSdk();
     registerSnapshotFunction(localSdk as never, gatedKv as never, "/tmp/reentrant");

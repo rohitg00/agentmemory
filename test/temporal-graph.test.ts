@@ -1,5 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import type { GraphNode, GraphEdge, MemoryProvider } from "../src/types.js";
+import {
+  backfillGraphIndexes,
+  initializeGraphIndexes,
+  resetGraphIndexes,
+} from "../src/state/graph-indexes.js";
+import { KV } from "../src/state/schema.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -36,7 +42,23 @@ function mockKV(
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
+    listGroups: async (): Promise<string[]> =>
+      [...store.entries()]
+        .filter(([, entries]) => entries.size > 0)
+        .map(([scope]) => scope),
   };
+}
+
+async function readyKV(
+  nodes: GraphNode[] = [],
+  edges: GraphEdge[] = [],
+) {
+  const kv = mockKV();
+  await initializeGraphIndexes(kv as never);
+  for (const node of nodes) await kv.set(KV.graphNodes, node.id, node);
+  for (const edge of edges) await kv.set(KV.graphEdges, edge.id, edge);
+  await backfillGraphIndexes(kv as never, nodes, edges);
+  return kv;
 }
 
 function mockSdk() {
@@ -67,7 +89,7 @@ describe("TemporalGraph", () => {
       "../src/functions/temporal-graph.js"
     );
     const sdk = mockSdk();
-    const kv = mockKV();
+    const kv = await readyKV();
     const provider: MemoryProvider = {
       name: "test",
       compress: vi.fn().mockResolvedValue(""),
@@ -109,7 +131,7 @@ describe("TemporalGraph", () => {
     };
 
     const sdk = mockSdk();
-    const kv = mockKV();
+    const kv = await readyKV();
     registerTemporalGraphFunctions(sdk as never, kv as never, provider);
 
     const result = (await sdk.trigger("mem::temporal-graph-extract", {
@@ -200,7 +222,7 @@ describe("TemporalGraph", () => {
     };
 
     const sdk = mockSdk();
-    const kv = mockKV([existingNode, existingNode2], [existingEdge]);
+    const kv = await readyKV([existingNode, existingNode2], [existingEdge]);
     registerTemporalGraphFunctions(sdk as never, kv as never, provider);
 
     const result = (await sdk.trigger("mem::temporal-graph-extract", {
@@ -274,7 +296,25 @@ describe("TemporalGraph", () => {
     };
 
     const sdk = mockSdk();
-    const kv = mockKV([node], [edge1, edge2]);
+    const destinations: GraphNode[] = [
+      {
+        id: "gn_2",
+        type: "location",
+        name: "Old city",
+        properties: {},
+        sourceObservationIds: [],
+        createdAt: "2023-01-01T00:00:00Z",
+      },
+      {
+        id: "gn_3",
+        type: "location",
+        name: "New city",
+        properties: {},
+        sourceObservationIds: [],
+        createdAt: "2024-06-01T00:00:00Z",
+      },
+    ];
+    const kv = await readyKV([node, ...destinations], [edge1, edge2]);
     const provider: MemoryProvider = {
       name: "test",
       compress: vi.fn(),
@@ -334,7 +374,25 @@ describe("TemporalGraph", () => {
     };
 
     const sdk = mockSdk();
-    const kv = mockKV([node], [edge1, edge2]);
+    const destinations: GraphNode[] = [
+      {
+        id: "gn_nyc",
+        type: "location",
+        name: "New York",
+        properties: {},
+        sourceObservationIds: [],
+        createdAt: "2023-01-01T00:00:00Z",
+      },
+      {
+        id: "gn_london",
+        type: "location",
+        name: "London",
+        properties: {},
+        sourceObservationIds: [],
+        createdAt: "2024-06-01T00:00:00Z",
+      },
+    ];
+    const kv = await readyKV([node, ...destinations], [edge1, edge2]);
     const provider: MemoryProvider = {
       name: "test",
       compress: vi.fn(),
@@ -350,6 +408,62 @@ describe("TemporalGraph", () => {
     expect(result.entity.name).toBe("Charlie");
     expect(result.currentEdges.length).toBe(1);
     expect(result.currentEdges[0].targetNodeId).toBe("gn_nyc");
+  });
+
+  it("does not leak pre-reset history through a re-imported same-id node", async () => {
+    const { registerTemporalGraphFunctions } = await import(
+      "../src/functions/temporal-graph.js"
+    );
+    const entity: GraphNode = {
+      id: "gn_same",
+      type: "person",
+      name: "Historical Alice",
+      properties: {},
+      sourceObservationIds: ["obs_old"],
+      createdAt: "2020-01-01T00:00:00Z",
+    };
+    const target: GraphNode = {
+      id: "gn_target",
+      type: "organization",
+      name: "Old Employer",
+      properties: {},
+      sourceObservationIds: ["obs_old"],
+      createdAt: "2020-01-01T00:00:00Z",
+    };
+    const kv = await readyKV([entity, target]);
+    await kv.set(KV.graphEdgeHistory, "ge_old_history", {
+      id: "ge_old_history",
+      type: "works_at",
+      sourceNodeId: entity.id,
+      targetNodeId: target.id,
+      weight: 0.9,
+      sourceObservationIds: ["obs_old"],
+      createdAt: "2020-01-01T00:00:00Z",
+      tcommit: "2020-01-01T00:00:00Z",
+      isLatest: false,
+    } satisfies GraphEdge);
+
+    await resetGraphIndexes(kv as never);
+    await backfillGraphIndexes(kv as never, [entity, target], []);
+
+    const sdk = mockSdk();
+    const provider: MemoryProvider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn(),
+    };
+    registerTemporalGraphFunctions(sdk as never, kv as never, provider);
+    const temporal = (await sdk.trigger("mem::temporal-query", {
+      entityName: entity.name,
+      includeHistory: true,
+    })) as any;
+    const differential = (await sdk.trigger("mem::differential-state", {
+      entityName: entity.name,
+    })) as any;
+
+    expect(temporal.historicalEdges).toEqual([]);
+    expect(temporal.timeline).toEqual([]);
+    expect(differential.totalChanges).toBe(0);
   });
 
   it("handles empty observations gracefully", async () => {

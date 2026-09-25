@@ -9,6 +9,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { parseGraphifyGraph, registerGraphImportFunction } from "../src/functions/graph-import.js";
+import { GraphIndexReader } from "../src/state/graph-indexes.js";
 import { KV } from "../src/state/schema.js";
 import type { GraphNode, GraphEdge } from "../src/types.js";
 
@@ -45,6 +46,10 @@ function mockKV() {
     },
     list: async <T>(scope: string): Promise<T[]> =>
       Array.from(store.get(scope)?.values() ?? []) as T[],
+    listGroups: async (): Promise<string[]> =>
+      [...store.entries()]
+        .filter(([, entries]) => entries.size > 0)
+        .map(([scope]) => scope),
     _store: store,
   };
 }
@@ -158,6 +163,10 @@ describe("mem::graph::import-graphify", () => {
     const edges = await kv.list<GraphEdge>(KV.graphEdges);
     expect(nodes).toHaveLength(4);
     expect(edges).toHaveLength(2);
+    const reader = await GraphIndexReader.open(kv as never);
+    expect(reader).not.toBeNull();
+    expect(await reader!.getNameCatalog()).toHaveLength(4);
+    expect(await reader!.getIncidentEdges(edges[0].sourceNodeId)).not.toHaveLength(0);
   });
 
   it("re-import is idempotent: second run merges instead of duplicating", async () => {

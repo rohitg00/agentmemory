@@ -7,14 +7,19 @@ vi.mock("../src/logger.js", () => ({
 import { registerCascadeFunction } from "../src/functions/cascade.js";
 import type { Memory, GraphNode, GraphEdge } from "../src/types.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
+import {
+  backfillGraphIndexes,
+  initializeGraphIndexes,
+} from "../src/state/graph-indexes.js";
 
 describe("Cascade Update Function", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sdk = mockSdk();
     kv = mockKV();
+    await initializeGraphIndexes(kv as never);
     vi.clearAllMocks();
     registerCascadeFunction(sdk as never, kv as never);
   });
@@ -73,6 +78,11 @@ describe("Cascade Update Function", () => {
       createdAt: "2026-03-01T00:00:00Z",
     };
     await kv.set("mem:graph:nodes", "node_2", unrelatedNode);
+    await backfillGraphIndexes(
+      kv as never,
+      [node, unrelatedNode],
+      [],
+    );
 
     const result = (await sdk.trigger("mem::cascade-update", {
       supersededMemoryId: "mem_old",
@@ -115,7 +125,29 @@ describe("Cascade Update Function", () => {
       sourceObservationIds: ["obs_x", "obs_y"],
       createdAt: "2026-03-01T00:00:00Z",
     };
+    const endpoints: GraphNode[] = [
+      {
+        id: "node_a",
+        type: "concept",
+        name: "Node A",
+        properties: {},
+        sourceObservationIds: ["obs_x"],
+        createdAt: "2026-03-01T00:00:00Z",
+      },
+      {
+        id: "node_b",
+        type: "concept",
+        name: "Node B",
+        properties: {},
+        sourceObservationIds: ["obs_y"],
+        createdAt: "2026-03-01T00:00:00Z",
+      },
+    ];
+    for (const node of endpoints) {
+      await kv.set("mem:graph:nodes", node.id, node);
+    }
     await kv.set("mem:graph:edges", "edge_1", edge);
+    await backfillGraphIndexes(kv as never, endpoints, [edge]);
 
     const result = (await sdk.trigger("mem::cascade-update", {
       supersededMemoryId: "mem_old2",
@@ -214,6 +246,7 @@ describe("Cascade Update Function", () => {
       stale: true,
     };
     await kv.set("mem:graph:nodes", "node_stale", node);
+    await backfillGraphIndexes(kv as never, [node], []);
 
     const result = (await sdk.trigger("mem::cascade-update", {
       supersededMemoryId: "mem_skip",

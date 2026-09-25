@@ -5,6 +5,11 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerGraphFunction } from "../src/functions/graph.js";
+import {
+  backfillGraphIndexes,
+  initializeGraphIndexes,
+} from "../src/state/graph-indexes.js";
+import { KV } from "../src/state/schema.js";
 import type {
   CompressedObservation,
   GraphNode,
@@ -14,6 +19,7 @@ import type {
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
+  const listCalls: string[] = [];
   return {
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
@@ -27,10 +33,32 @@ function mockKV() {
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
+      listCalls.push(scope);
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
+    listGroups: async (): Promise<string[]> => {
+      return [...store.entries()]
+        .filter(([, entries]) => entries.size > 0)
+        .map(([scope]) => scope);
+    },
+    clearListCalls: () => {
+      listCalls.length = 0;
+    },
+    graphListCallCount: () => {
+      return listCalls.filter(
+        (scope) => scope === KV.graphNodes || scope === KV.graphEdges,
+      ).length;
+    },
   };
+}
+
+async function seedGraphIndexes(kv: ReturnType<typeof mockKV>): Promise<void> {
+  const [nodes, edges] = await Promise.all([
+    kv.list<GraphNode>(KV.graphNodes),
+    kv.list<GraphEdge>(KV.graphEdges),
+  ]);
+  await backfillGraphIndexes(kv as never, nodes, edges);
 }
 
 function mockSdk() {
@@ -84,11 +112,12 @@ describe("Graph Functions", () => {
   let kv: ReturnType<typeof mockKV>;
   const ORIG_GRAPH_FLAG = process.env["GRAPH_EXTRACTION_ENABLED"];
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sdk = mockSdk();
     kv = mockKV();
     vi.clearAllMocks();
     process.env["GRAPH_EXTRACTION_ENABLED"] = "true";
+    await initializeGraphIndexes(kv as never);
     registerGraphFunction(sdk as never, kv as never, mockProvider as never);
   });
 
@@ -262,8 +291,7 @@ describe("Graph Functions", () => {
       await kv.set("mem:graph:edges", edge.id, edge);
     }
 
-    // Post-#814 the empty-body path reads the snapshot exclusively.
-    // Backfill the snapshot from the seeded data first.
+    await seedGraphIndexes(kv);
     await sdk.trigger("mem::graph-snapshot-rebuild", { force: true });
 
     const unbounded = (await sdk.trigger(
@@ -296,6 +324,7 @@ describe("Graph Functions", () => {
       await kv.set("mem:graph:nodes", node.id, node);
     }
 
+    await seedGraphIndexes(kv);
     await sdk.trigger("mem::graph-snapshot-rebuild", { force: true });
 
     const page1 = (await sdk.trigger("mem::graph-query", {
@@ -332,6 +361,7 @@ describe("Graph Functions", () => {
       });
     }
 
+    await seedGraphIndexes(kv);
     await sdk.trigger("mem::graph-snapshot-rebuild", { force: true });
 
     const huge = (await sdk.trigger("mem::graph-query", {
@@ -383,6 +413,7 @@ describe("Graph Functions", () => {
       lastSeen: "2026-01-01T00:00:00Z",
     });
 
+    await seedGraphIndexes(kv);
     await sdk.trigger("mem::graph-snapshot-rebuild", { force: true });
 
     const page = (await sdk.trigger("mem::graph-query", {
@@ -433,6 +464,7 @@ describe("Graph Functions", () => {
           stale: false,
         });
       }
+      await seedGraphIndexes(kv);
     }
 
     it("snapshot-rebuild persists top-degree subgraph + aggregate stats", async () => {
@@ -540,19 +572,35 @@ describe("Graph Functions", () => {
     });
 
     it("graph-stats returns empty envelope + warning when no snapshot exists", async () => {
-      // Seed nodes but never rebuild the snapshot — simulates a legacy
-      // corpus on a post-#814 upgrade.
-      await seed(5, 5);
+      const legacyKv = mockKV();
+      await legacyKv.set(KV.graphNodes, "legacy-node", {
+        id: "legacy-node",
+        type: "concept",
+        name: "legacy",
+        properties: {},
+        sourceObservationIds: [],
+        createdAt: "2026-01-01T00:00:00Z",
+      });
+      const readiness = await initializeGraphIndexes(legacyKv as never);
+      const localSdk = mockSdk();
+      registerGraphFunction(
+        localSdk as never,
+        legacyKv as never,
+        mockProvider as never,
+      );
+      legacyKv.clearListCalls();
 
-      const stats = (await sdk.trigger("mem::graph-stats", {})) as {
+      const stats = (await localSdk.trigger("mem::graph-stats", {})) as {
         totalNodes: number;
         totalEdges: number;
         fromSnapshot: boolean;
         warning?: string;
       };
+      expect(readiness.status).toBe("unavailable");
       expect(stats.fromSnapshot).toBe(false);
       expect(stats.totalNodes).toBe(0);
       expect(stats.warning).toMatch(/snapshot-rebuild|graph\/reset/);
+      expect(legacyKv.graphListCallCount()).toBe(0);
     });
 
     it("graph-reset clears state and writes empty snapshot", async () => {
@@ -593,112 +641,10 @@ describe("Graph Functions", () => {
     });
   });
 
-  // CodeRabbit feedback: cover the timeout-budget fallback path and
-  // the oversized-corpus rebuild refusal. The hot path never enumerates
-  // any more, but the rebuild endpoint AND the BFS / query branches
-  // still call kv.list — both need explicit failure-mode tests.
-  describe("budget + tooLarge guards (#814 v2)", () => {
-    function slowKV(delayMs: number) {
-      const base = mockKV();
-      return {
-        ...base,
-        list: async <T>(scope: string): Promise<T[]> => {
-          await new Promise((r) => setTimeout(r, delayMs));
-          return base.list<T>(scope);
-        },
-      };
-    }
-
-    it("graph-query startNodeId returns warning envelope when enumeration exceeds budget", async () => {
-      const slow = slowKV(7000); // > LIVE_ENUMERATION_BUDGET_MS (6000ms)
-      const localSdk = mockSdk();
-      registerGraphFunction(localSdk as never, slow as never, mockProvider as never);
-
-      const result = (await localSdk.trigger("mem::graph-query", {
-        startNodeId: "n_missing",
-      })) as GraphQueryResult;
-
-      expect(result.warning).toBeTruthy();
-      expect(result.warning).toMatch(/budget|enumeration/i);
-    }, 10000);
-
-    // CodeRabbit raised that slowKV(setTimeout) doesn't simulate a
-    // blocked event loop. The real production failure is iii rejecting
-    // the trigger with "Invocation stopped" after the worker dies
-    // (heartbeat starvation). A rejecting kv.list mock covers that
-    // catch-path directly without introducing a busy-wait that would
-    // also starve the budget timer and produce a flaky test.
-    function rejectingKV() {
-      const base = mockKV();
-      return {
-        ...base,
-        list: async <T>(_scope: string): Promise<T[]> => {
-          throw new Error("Invocation stopped");
-        },
-      };
-    }
-
-    it("graph-query rejects-from-engine path returns warning envelope (worker-death simulation)", async () => {
-      const rejector = rejectingKV();
-      const localSdk = mockSdk();
-      registerGraphFunction(
-        localSdk as never,
-        rejector as never,
-        mockProvider as never,
-      );
-
-      const result = (await localSdk.trigger("mem::graph-query", {
-        startNodeId: "n_missing",
-      })) as GraphQueryResult;
-
-      expect(result.warning).toBeTruthy();
-      expect(result.nodes).toEqual([]);
-    });
-
-    it("graph-snapshot-rebuild refuses corpora past REBUILD_SAFE_NODE_CEILING", async () => {
-      // Direct-poke the mock store with > 25K node values so kv.list
-      // returns them without paying the per-set cost. Each node only
-      // needs id/type/name/stale=false for the rebuild path.
+  describe("unavailable index guards", () => {
+    async function unavailableGraph() {
       const localKv = mockKV();
-      // Walk the implementation detail: mockKV stores entries in a
-      // Map under the scope key. Push directly to that map via the
-      // public `set` API in a tight loop.
-      const COUNT = 25001;
-      const sets: Array<Promise<unknown>> = [];
-      for (let i = 0; i < COUNT; i++) {
-        sets.push(
-          localKv.set("mem:graph:nodes", `bn_${i}`, {
-            id: `bn_${i}`,
-            type: "concept",
-            name: `bulk-${i}`,
-            properties: {},
-            sourceObservationIds: [],
-            createdAt: "2026-01-01T00:00:00Z",
-            stale: false,
-          }),
-        );
-      }
-      await Promise.all(sets);
-
-      const localSdk = mockSdk();
-      registerGraphFunction(localSdk as never, localKv as never, mockProvider as never);
-
-      const result = (await localSdk.trigger(
-        "mem::graph-snapshot-rebuild",
-        { force: true },
-      )) as { success: boolean; tooLarge?: boolean; totalNodes?: number };
-      expect(result.success).toBe(false);
-      expect(result.tooLarge).toBe(true);
-      expect(result.totalNodes).toBeGreaterThanOrEqual(25001);
-    });
-
-    // #825: new pre-flight refusal when no snapshot exists (signals
-    // legacy corpus that would crash on kv.list). force=true bypasses.
-    it("graph-snapshot-rebuild refuses on legacy corpus (no snapshot) without force", async () => {
-      const localKv = mockKV();
-      // Seed nodes but never persist a snapshot → simulates a corpus
-      // built on a pre-#814 agentmemory.
-      await localKv.set("mem:graph:nodes", "legacy_n", {
+      await localKv.set(KV.graphNodes, "legacy_n", {
         id: "legacy_n",
         type: "concept",
         name: "legacy",
@@ -707,36 +653,65 @@ describe("Graph Functions", () => {
         createdAt: "2026-01-01T00:00:00Z",
         stale: false,
       });
+      const readiness = await initializeGraphIndexes(localKv as never);
       const localSdk = mockSdk();
-      registerGraphFunction(localSdk as never, localKv as never, mockProvider as never);
+      registerGraphFunction(
+        localSdk as never,
+        localKv as never,
+        mockProvider as never,
+      );
+      localKv.clearListCalls();
+      return { localKv, localSdk, readiness };
+    }
+
+    it("graph-query fails closed without enumerating primary graph scopes", async () => {
+      const { localKv, localSdk, readiness } = await unavailableGraph();
+
+      const byName = (await localSdk.trigger("mem::graph-query", {
+        query: "legacy",
+      })) as GraphQueryResult;
+      const byStart = (await localSdk.trigger("mem::graph-query", {
+        startNodeId: "legacy_n",
+      })) as GraphQueryResult;
+
+      expect(readiness.status).toBe("unavailable");
+      expect(byName).toMatchObject({ nodes: [], indexStatus: "unavailable" });
+      expect(byStart).toMatchObject({ nodes: [], indexStatus: "unavailable" });
+      expect(byName.warning).toMatch(/unavailable/i);
+      expect(byStart.warning).toMatch(/unavailable/i);
+      expect(localKv.graphListCallCount()).toBe(0);
+    });
+
+    it("graph-snapshot-rebuild refuses unavailable indexes without graph enumeration", async () => {
+      const { localKv, localSdk } = await unavailableGraph();
 
       const result = (await localSdk.trigger(
         "mem::graph-snapshot-rebuild",
-        {},
-      )) as { success: boolean; legacyCorpus?: boolean; error?: string };
-      expect(result.success).toBe(false);
-      expect(result.legacyCorpus).toBe(true);
-      expect(result.error).toMatch(/graph\/reset|force/);
+        { force: true },
+      )) as {
+        success: boolean;
+        indexUnavailable?: boolean;
+        status?: string;
+        error?: string;
+      };
+
+      expect(result).toMatchObject({
+        success: false,
+        indexUnavailable: true,
+        status: "unavailable",
+      });
+      expect(result.error).toMatch(/paginated state scanning|graph reset/i);
+      expect(localKv.graphListCallCount()).toBe(0);
     });
 
     it("graph-reset is enumeration-free (does not call kv.list)", async () => {
-      // Wrap the mock kv.list with a counter; assert it stays at 0
-      // across a full reset cycle.
-      const localKv = mockKV();
-      let listCalls = 0;
-      const baseList = localKv.list;
-      localKv.list = async <T,>(scope: string): Promise<T[]> => {
-        listCalls += 1;
-        return baseList.call(localKv, scope) as Promise<T[]>;
-      };
-      const localSdk = mockSdk();
-      registerGraphFunction(localSdk as never, localKv as never, mockProvider as never);
+      const { localKv, localSdk } = await unavailableGraph();
 
       const result = (await localSdk.trigger("mem::graph-reset", {})) as {
         success: boolean;
       };
       expect(result.success).toBe(true);
-      expect(listCalls).toBe(0);
+      expect(localKv.graphListCallCount()).toBe(0);
     });
   });
 });

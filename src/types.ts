@@ -353,6 +353,7 @@ export interface ExportData {
   insights?: Insight[];
   accessLogs?: AccessLogExport[];
   pagination?: ExportPagination;
+  warnings?: string[];
 }
 
 export interface AccessLogExport {
@@ -481,6 +482,7 @@ export interface GraphQueryResult {
   // also failed, expose an explanatory note so the viewer can surface
   // an actionable banner instead of a blank graph.
   warning?: string;
+  indexStatus?: "ready" | "unavailable";
 }
 
 // #814: persisted top-degree subgraph + aggregate counts. Stored under
@@ -505,6 +507,7 @@ export interface GraphSnapshot {
   };
   updatedAt: string;
   dirty: boolean;
+  indexGeneration?: string;
   // #825 follow-up: ISO timestamp set by mem::graph-reset. After
   // reset, mem::graph-extract treats any pre-resetAt node as an
   // orphan (skip merge, write fresh) so future extracts don't
