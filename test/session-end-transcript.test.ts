@@ -103,6 +103,54 @@ describe("session-end transcript prompt backfill", () => {
     }
   });
 
+  it("posts prompts from a Claude Code transcript, skipping tool results", async () => {
+    posts.length = 0;
+    const transcript = join(dir, "t-cc.jsonl");
+    writeFileSync(
+      transcript,
+      [
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: "bare claude code prompt" },
+        }),
+        JSON.stringify({
+          type: "assistant",
+          message: { role: "assistant", content: [{ type: "text", text: "answer" }] },
+        }),
+        JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              { type: "tool_result", content: "exit 0" },
+              { type: "text", text: "follow-up after the tool" },
+            ],
+          },
+        }),
+        JSON.stringify({
+          type: "user",
+          isSidechain: true,
+          message: { role: "user", content: "subagent instruction" },
+        }),
+        "",
+      ].join("\n"),
+    );
+
+    const code = await runHook({
+      session_id: "ses_cc",
+      hook_event_name: "sessionEnd",
+      reason: "completed",
+      transcript_path: transcript,
+    });
+    expect(code).toBe(0);
+
+    const observes = posts.filter((p) => p.path.includes("/observe"));
+    expect(observes.map((p) => (p.body.data as { prompt: string }).prompt)).toEqual([
+      "bare claude code prompt",
+      "follow-up after the tool",
+    ]);
+  });
+
   it("caps backfill at 50 prompts even within a single transcript record", async () => {
     posts.length = 0;
     const transcript = join(dir, "t-cap.jsonl");

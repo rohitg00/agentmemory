@@ -45,6 +45,17 @@ function authHeaders() {
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
 	return h;
 }
+function isUserTurn(msg) {
+	if (msg.isSidechain) return false;
+	return msg.role === "user" || msg.type === "user" || msg.message?.role === "user";
+}
+function turnTexts(content) {
+	if (typeof content === "string") return [content];
+	if (!Array.isArray(content)) return [];
+	const texts = [];
+	for (const block of content) if (block?.type === "text" && typeof block.text === "string") texts.push(block.text);
+	return texts;
+}
 function extractTranscriptPrompts(data) {
 	const path = data.transcript_path;
 	if (typeof path !== "string" || !path.endsWith(".jsonl")) return [];
@@ -63,12 +74,11 @@ function extractTranscriptPrompts(data) {
 		} catch {
 			continue;
 		}
-		if (msg.role !== "user") continue;
-		for (const block of msg.message?.content ?? []) {
+		if (!isUserTurn(msg)) continue;
+		for (const raw of turnTexts(msg.message?.content)) {
 			if (prompts.length >= 50) return prompts;
-			if (block.type !== "text" || typeof block.text !== "string") continue;
-			const m = block.text.match(/<user_query>\n?([\s\S]*?)\n?<\/user_query>/);
-			const text = (m ? m[1] : block.text).trim();
+			const m = raw.match(/<user_query>\n?([\s\S]*?)\n?<\/user_query>/);
+			const text = (m ? m[1] : raw).trim();
 			if (text) prompts.push(text.slice(0, 8e3));
 		}
 	}
