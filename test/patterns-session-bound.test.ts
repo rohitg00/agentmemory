@@ -38,6 +38,7 @@ type PatternsResult = {
   patterns: Array<{ files: string[]; frequency: number }>;
   sessionsInScope: number;
   sessionsProcessed: number;
+  sessionsSkipped: string[];
   sessionLimit: number;
   observationsScanned: number;
 };
@@ -189,5 +190,48 @@ describe("mem::patterns session bound", () => {
 
     expect(result.sessionsProcessed).toBe(1);
     expect(result.observationsScanned).toBe(5_000);
+  });
+
+  it("skips a session whose observationCount exceeds the remaining budget instead of listing it", async () => {
+    const { sdk, kv } = await setup();
+
+    const huge = session(0);
+    huge.observationCount = 6_000;
+    await kv.set(KV.sessions, huge.id, huge);
+    await kv.set(
+      KV.observations(huge.id),
+      `obs_${huge.id}_0`,
+      observation(`obs_${huge.id}_0`, ["huge.ts"]),
+    );
+
+    const small = session(1);
+    small.observationCount = 1;
+    await kv.set(KV.sessions, small.id, small);
+    await kv.set(
+      KV.observations(small.id),
+      `obs_${small.id}_0`,
+      observation(`obs_${small.id}_0`, ["small.ts"]),
+    );
+
+    const listSpy = vi.spyOn(kv, "list");
+
+    const result = (await sdk.trigger("mem::patterns", {})) as PatternsResult;
+
+    expect(result.sessionsSkipped).toEqual([huge.id]);
+    expect(result.sessionsProcessed).toBe(1);
+    expect(
+      listSpy.mock.calls.some((c) => c[0] === KV.observations(huge.id)),
+    ).toBe(false);
+  });
+
+  it("does not throw when mem::patterns is invoked with no payload", async () => {
+    const { sdk, kv } = await setup();
+    await seedSessions(kv, 2, 1);
+
+    const result = (await sdk.trigger("mem::patterns", undefined)) as PatternsResult;
+
+    expect(result.sessionLimit).toBe(50);
+    expect(result.sessionsInScope).toBe(2);
+    expect(result.sessionsSkipped).toEqual([]);
   });
 });

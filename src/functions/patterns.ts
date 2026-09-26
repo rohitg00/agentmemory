@@ -24,13 +24,14 @@ function resolveSessionLimit(raw: unknown): number {
 
 export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::patterns",
-    async (data: { project?: string; limit?: number }) => {
+    async (data?: { project?: string; limit?: number }) => {
+      const { project, limit } = data ?? {};
       const patterns: Pattern[] = [];
-      const sessionLimit = resolveSessionLimit(data.limit);
+      const sessionLimit = resolveSessionLimit(limit);
 
       const sessions = await kv.list<Session>(KV.sessions);
-      const filtered = (data.project
-        ? sessions.filter((s) => s.project === data.project)
+      const filtered = (project
+        ? sessions.filter((s) => s.project === project)
         : sessions
       )
         .sort(
@@ -46,18 +47,24 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
         { count: number; sessions: Set<string> }
       >();
 
-      // Bounded fan-out: load observations for up to 10 sessions in
-      // parallel per batch (like consolidate), then fold each session's
-      // observations into the shared maps serially so the accumulation
-      // stays race-free. Parallelizing the kv.list I/O without exceeding
-      // the invocation pool cuts wall time versus the old serial loop.
       let observationsScanned = 0;
       let sessionsProcessed = 0;
+      const sessionsSkipped: string[] = [];
       for (let batch = 0; batch < filtered.length; batch += 10) {
         if (observationsScanned >= MAX_OBSERVATIONS_SCANNED) break;
+        const remainingBudget = MAX_OBSERVATIONS_SCANNED - observationsScanned;
         const chunk = filtered.slice(batch, batch + 10);
+        const eligible: Session[] = [];
+        for (const session of chunk) {
+          if ((session.observationCount || 0) > remainingBudget) {
+            sessionsSkipped.push(session.id);
+          } else {
+            eligible.push(session);
+          }
+        }
+
         const loaded = await Promise.all(
-          chunk.map(async (session) => ({
+          eligible.map(async (session) => ({
             session,
             observations: await kv.list<CompressedObservation>(
               KV.observations(session.id),
@@ -69,10 +76,10 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
           if (observationsScanned >= MAX_OBSERVATIONS_SCANNED) break;
           sessionsProcessed++;
           if (!observations.length) continue;
-          const remainingBudget = MAX_OBSERVATIONS_SCANNED - observationsScanned;
+          const remaining = MAX_OBSERVATIONS_SCANNED - observationsScanned;
           const bounded =
-            observations.length > remainingBudget
-              ? observations.slice(0, remainingBudget)
+            observations.length > remaining
+              ? observations.slice(0, remaining)
               : observations;
           observationsScanned += bounded.length;
 
@@ -145,6 +152,7 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
         patterns: patterns.length,
         sessionsInScope: filtered.length,
         sessionsProcessed,
+        sessionsSkipped: sessionsSkipped.length,
         sessionLimit,
         observationsScanned,
       });
@@ -153,6 +161,7 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
         patterns: patterns.slice(0, 20),
         sessionsInScope: filtered.length,
         sessionsProcessed,
+        sessionsSkipped,
         sessionLimit,
         observationsScanned,
       };
