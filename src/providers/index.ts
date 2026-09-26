@@ -8,6 +8,7 @@ import { AnthropicProvider } from "./anthropic.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
+import { OpencodeProvider } from "./opencode.js";
 import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
@@ -34,8 +35,17 @@ function requireEnvVar(key: string): string {
 // provider's default model is.
 function defaultModelFor(providerType: ProviderConfig["provider"]): string {
   switch (providerType) {
+    case "opencode":
+      return new OpencodeProvider(
+        requireEnvVar("OPENCODE_API_KEY"),
+        config.model,
+        config.maxTokens,
+        config.baseURL,
+      );
     case "openai":
       return getEnvVar("OPENAI_MODEL") || "gpt-5.6-luna";
+    case "opencode":
+      return getEnvVar("OPENCODE_MODEL") || "deepseek-v4.1-flash";
     case "anthropic":
       return getEnvVar("ANTHROPIC_MODEL") || "claude-sonnet-5";
     case "gemini":
@@ -126,6 +136,13 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",
+      );
+    case "opencode":
+      return new OpencodeProvider(
+        requireEnvVar("OPENCODE_API_KEY"),
+        config.model,
+        config.maxTokens,
+        config.baseURL,
       );
     case "openai": {
       const openaiKey = getEnvVar("OPENAI_API_KEY");

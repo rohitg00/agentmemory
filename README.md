@@ -1316,6 +1316,7 @@ agentmemory auto-detects providers from your environment. A provider makes LLM-b
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
+| OpenCode Go | `OPENCODE_API_KEY` | OpenAI-compatible relay at `opencode.ai/zen/go`; sends the mandatory `x-opencode-session` header (stable per process, `OPENCODE_SESSION_ID` overrides). Default model `deepseek-v4.1-flash`, override with `OPENCODE_MODEL`; base URL override `OPENCODE_BASE_URL` |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions; it used to cause unbounded Stop-hook recursion, so it is no longer the default. |

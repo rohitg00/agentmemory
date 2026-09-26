@@ -10,6 +10,8 @@ import type {
   ClaudeBridgeConfig,
   TeamConfig,
 } from "./types.js";
+// Shared with providers/opencode.ts without an import cycle.
+export const OPENCODE_DEFAULT_MODEL = "deepseek-v4.1-flash";
 
 function safeParseInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -85,6 +87,15 @@ export function hydrateProcessEnvFromFile(): void {
 
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
+
+  if (hasRealValue(env["OPENCODE_API_KEY"])) {
+    return {
+      provider: "opencode",
+      model: env["OPENCODE_MODEL"] || OPENCODE_DEFAULT_MODEL,
+      maxTokens,
+      baseURL: env["OPENCODE_BASE_URL"],
+    };
+  }
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
@@ -162,7 +173,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       pc.dim(
         "[agentmemory] No LLM provider key set — running zero-LLM with BM25 search. " +
           "Set EMBEDDING_PROVIDER=local for on-device semantic embeddings. " +
-          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
+          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENCODE/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
           "Agent-SDK fallback stays off by default to avoid a Stop-hook recursion loop; opt in with AGENTMEMORY_AUTO_COMPRESS=true + AGENTMEMORY_ALLOW_AGENT_SDK=true.\n",
       ),
     );
@@ -416,6 +427,7 @@ function hasLLMProviderConfigured(env: Record<string, string | undefined>): bool
   return Boolean(
     env["ANTHROPIC_API_KEY"] ||
       openaiKeyForLlm ||
+      env["OPENCODE_API_KEY"] ||
       env["OPENROUTER_API_KEY"] ||
       env["GEMINI_API_KEY"] ||
       env["GOOGLE_API_KEY"] ||
