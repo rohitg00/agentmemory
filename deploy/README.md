@@ -80,6 +80,19 @@ absent (no third-party calls), `AGENTMEMORY_AUTO_COMPRESS` is off,
 and `AGENTMEMORY_INJECT_CONTEXT` is off. Opt in only after you've
 confirmed your provider quota can absorb the workload.
 
+## Optional: Redis state backend
+
+Every entrypoint here overwrites the npm-bundled `iii-config.yaml` and
+execs `agentmemory` directly (no Docker Compose in the loop), so the
+same two variables the main README's "Storage backend" section
+documents work unchanged: set `AGENTMEMORY_STATE_BACKEND=redis` and
+`AGENTMEMORY_REDIS_URL=redis://host:6379` alongside your platform's
+other secrets to point `iii-state`/`iii-stream` at an external Redis
+instead of the `/data` volume. The pinned engine only supports plain
+`redis://` (no TLS), and a Redis reachable from these platforms is
+almost always run by you elsewhere — a managed TLS-only Redis will not
+work here without a plain-TCP tunnel in front of it.
+
 ## Cold-start budget
 
 Measured against fly.io's `iad` region with a 1 GB volume:

@@ -34,6 +34,7 @@ import {
   detectEmbeddingProvider,
   detectLlmProviderKind,
   getAgentId,
+  getStateBackend,
   isAgentScopeIsolated,
   loadConfig,
 } from "../config.js";
@@ -353,6 +354,7 @@ export function registerApiTriggers(
         version: VERSION,
         engineVersion: III_PINNED_VERSION,
         uptimeSeconds: Math.round(process.uptime()),
+        stateBackend: getStateBackend(),
         ports: {
           rest: loadConfig().restPort ?? null,
           streams: bootStreamsPort ?? null,
