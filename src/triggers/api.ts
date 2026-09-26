@@ -1203,7 +1203,10 @@ export function registerApiTriggers(
     async (req: HttpRequest<{ project?: string; limit?: number }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::patterns", payload: req.body });
+      const result = await sdk.trigger({
+        function_id: "mem::patterns",
+        payload: { project: req.body?.project, limit: req.body?.limit },
+      });
       return { status_code: 200, body: result };
     },
   );
