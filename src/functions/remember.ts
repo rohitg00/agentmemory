@@ -221,6 +221,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
               memory.sessionIds?.[0] ?? "memory",
               embedding,
             );
+            scheduleIndexSave();
             return true;
           }),
       );

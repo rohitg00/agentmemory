@@ -131,23 +131,9 @@ export async function vectorIndexAddGuarded(
   const vi = vectorIndex
   const ep = currentEmbeddingProvider
   if (!vi || !ep) return false
+  let embedding: Float32Array
   try {
-    const embedding = await ep.embed(clipEmbedInput(text))
-    if (embedding.length !== ep.dimensions) {
-      logger.warn("vector-index add: dimension mismatch — skipping", {
-        kind: context.kind,
-        id: context.logId,
-        provider: ep.name,
-        expected: ep.dimensions,
-        received: embedding.length,
-      })
-      return false
-    }
-    if (commit) {
-      return await commit(embedding)
-    }
-    vi.add(id, sessionId, embedding)
-    return true
+    embedding = await ep.embed(clipEmbedInput(text))
   } catch (err) {
     logger.warn("vector-index add: embed failed — skipping", {
       kind: context.kind,
@@ -157,6 +143,31 @@ export async function vectorIndexAddGuarded(
     })
     return false
   }
+  if (embedding.length !== ep.dimensions) {
+    logger.warn("vector-index add: dimension mismatch — skipping", {
+      kind: context.kind,
+      id: context.logId,
+      provider: ep.name,
+      expected: ep.dimensions,
+      received: embedding.length,
+    })
+    return false
+  }
+  if (commit) {
+    try {
+      return await commit(embedding)
+    } catch (err) {
+      logger.warn("vector-index add: commit failed — skipping", {
+        kind: context.kind,
+        id: context.logId,
+        provider: ep.name,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return false
+    }
+  }
+  vi.add(id, sessionId, embedding)
+  return true
 }
 
 // Batched variant: calls EmbeddingProvider.embedBatch ONCE for the whole

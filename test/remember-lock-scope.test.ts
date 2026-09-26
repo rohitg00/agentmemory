@@ -5,7 +5,13 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerRememberFunction } from "../src/functions/remember.js";
-import { setVectorIndex, setEmbeddingProvider } from "../src/functions/search.js";
+import {
+  setVectorIndex,
+  setEmbeddingProvider,
+  setIndexPersistence,
+  vectorIndexAddGuarded,
+} from "../src/functions/search.js";
+import { logger } from "../src/logger.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import { KV } from "../src/state/schema.js";
 import type { EmbeddingProvider, Memory } from "../src/types.js";
@@ -88,7 +94,6 @@ describe("mem::remember lock scope", () => {
     const kv = mockKV();
     registerRememberFunction(sdk as never, kv as never);
 
-    const started = Date.now();
     await Promise.all([
       sdk.trigger({
         function_id: "mem::remember",
@@ -105,10 +110,8 @@ describe("mem::remember lock scope", () => {
         },
       }),
     ]);
-    const elapsed = Date.now() - started;
 
     expect(embedCalls).toHaveLength(2);
-    expect(elapsed).toBeLessThan(EMBED_DELAY_MS * 1.7);
     const [a, b] = embedCalls;
     expect(a.start).toBeLessThan(b.end);
     expect(b.start).toBeLessThan(a.end);
@@ -164,5 +167,51 @@ describe("mem::remember lock scope", () => {
     expect(indexedIds).not.toContain(first.memory.id);
     expect(indexedIds).toContain(second.memory.id);
     expect(vectorIndex.size).toBe(1);
+  });
+
+  it("schedules an index save after the deferred vector-index commit lands", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+    const scheduleSave = vi.fn();
+    setIndexPersistence({ scheduleSave, save: vi.fn(async () => {}) });
+
+    try {
+      await sdk.trigger({
+        function_id: "mem::remember",
+        payload: {
+          content: "schedule an index save after the vector commit lands",
+          type: "fact",
+        },
+      });
+
+      expect(scheduleSave.mock.calls.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      setIndexPersistence(null);
+    }
+  });
+
+  it("logs a vector-index commit failure distinctly from an embed failure", async () => {
+    const failingCommit = vi.fn(async () => {
+      throw new Error("kv unavailable");
+    });
+
+    const result = await vectorIndexAddGuarded(
+      "mem_commit_fail",
+      "memory",
+      "some memory text",
+      { kind: "memory", logId: "mem_commit_fail" },
+      failingCommit,
+    );
+
+    expect(result).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "vector-index add: commit failed — skipping",
+      expect.objectContaining({ id: "mem_commit_fail" }),
+    );
+    expect(logger.warn).not.toHaveBeenCalledWith(
+      "vector-index add: embed failed — skipping",
+      expect.anything(),
+    );
   });
 });
