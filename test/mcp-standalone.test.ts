@@ -90,6 +90,14 @@ describe("Tools Registry", () => {
       expect(tool.inputSchema.properties).toBeDefined();
     }
   });
+
+  it("memory_vision_search advertises both topK and its limit alias", () => {
+    const tool = getAllTools().find((t) => t.name === "memory_vision_search");
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(props["topK"]).toBeDefined();
+    expect(props["limit"]).toBeDefined();
+  });
 });
 
 describe("InMemoryKV", () => {
