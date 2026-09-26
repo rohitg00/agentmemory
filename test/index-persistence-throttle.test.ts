@@ -189,6 +189,39 @@ describe("IndexPersistence save throttling", () => {
     expect(persistence.status().bm25.dirtySince).toBeNull();
   });
 
+  it("clears vector dirtySince when a change arrives during the bm25 leg's write", async () => {
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let heldBm25Manifest = false;
+    const slowKv = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope === BM25_SCOPE && key === "data:manifest" && !heldBm25Manifest) {
+          heldBm25Manifest = true;
+          await gate;
+        }
+        return kv.set(scope, key, data);
+      },
+    };
+    const bm25 = new SearchIndex();
+    bm25.add(obs("obs_1", "alpha"));
+    const vector = new VectorIndex();
+    vector.add("obs_1", "ses_1", new Float32Array([0.1, 0.2, 0.3]));
+    const persistence = new IndexPersistence(slowKv as never, bm25, vector, { saveIntervalMs: 60_000 });
+
+    const saving = persistence.save();
+    persistence.scheduleSave();
+    release();
+    await saving;
+
+    const status = persistence.status();
+    expect(status.bm25.dirtySince).not.toBeNull();
+    expect(status.vector?.dirtySince).toBeNull();
+    expect(status.vector?.lastSavedAt).not.toBeNull();
+  });
+
   it("stop prevents later scheduled saves", async () => {
     const bm25 = new SearchIndex();
     bm25.add(obs("obs_1", "alpha"));

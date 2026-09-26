@@ -218,17 +218,16 @@ export class IndexPersistence {
   }
 
   private async runSave(): Promise<void> {
-    const epoch = this.dirtyEpoch;
     this.markedDuringRunAt = null;
     this.lastSaveAt = this.now();
-    await this.saveLeg("bm25", epoch, async () => {
+    await this.saveLeg("bm25", async () => {
       const serialized = this.bm25.serialize();
       this.legs.bm25.serializedChars = serialized.length;
       await this.saveBm25Index(serialized);
     });
     const vector = this.vector;
     if (vector) {
-      await this.saveLeg("vector", epoch, async () => {
+      await this.saveLeg("vector", async () => {
         const serialized = vector.serialize();
         this.legs.vector.serializedChars = serialized.length;
         await this.saveVectorIndex(serialized);
@@ -236,8 +235,9 @@ export class IndexPersistence {
     }
   }
 
-  private async saveLeg(leg: IndexLeg, epoch: number, run: () => Promise<void>): Promise<void> {
+  private async saveLeg(leg: IndexLeg, run: () => Promise<void>): Promise<void> {
     const status = this.legs[leg];
+    const epoch = this.dirtyEpoch;
     try {
       await run();
       status.lastSavedAt = new Date(this.now()).toISOString();
