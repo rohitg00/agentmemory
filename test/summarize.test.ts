@@ -30,6 +30,7 @@ vi.mock("../src/functions/audit.js", () => ({
 }));
 
 import { registerSummarizeFunction } from "../src/functions/summarize.js";
+import { createProvider } from "../src/providers/index.js";
 import type {
   CompressedObservation,
   Session,
@@ -478,5 +479,27 @@ describe("mem::summarize chunking", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("parse_failed");
+  });
+});
+
+describe("mem::summarize noop gate", () => {
+  it("skips the LLM pipeline when the configured provider is noop", async () => {
+    const provider = createProvider({
+      provider: "noop",
+      model: "noop",
+      maxTokens: 4096,
+    });
+    const summarizeSpy = vi.spyOn(provider, "summarize");
+    const { handler } = await setupHandler({
+      sessionId: "ses_noop",
+      obsCount: 5,
+      provider,
+    });
+
+    const result: any = await handler({ sessionId: "ses_noop" });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe("no_provider");
+    expect(summarizeSpy).not.toHaveBeenCalled();
   });
 });
