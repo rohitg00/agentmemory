@@ -6,11 +6,13 @@ import {
   getProjectSessionIndex,
   buildProjectSessionIndex,
   ensureProjectSessionIndex,
+  rebuildAllProjectSessionIndexes,
+  rebuildSessionIndexIfStale,
 } from "../src/state/session-index.js";
 import { KV } from "../src/state/schema.js";
 import type { Session } from "../src/types.js";
 
-function mockKV() {
+function mockKV(listFailures: Set<string> = new Set()) {
   const store = new Map<string, Map<string, unknown>>();
   return {
     get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
@@ -25,6 +27,9 @@ function mockKV() {
       store.get(scope)?.delete(key);
     }),
     list: vi.fn(async <T>(scope: string): Promise<T[]> => {
+      if (listFailures.has(scope)) {
+        throw new Error(`list failed for ${scope}`);
+      }
       if (!store.has(scope)) return [];
       return Array.from(store.get(scope)!.values()) as T[];
     }),
@@ -218,7 +223,7 @@ describe("project session index — maintenance (kv-access finding 3)", () => {
     expect(quietIds?.sort()).toEqual(["quiet_0", "quiet_1", "quiet_2"]);
   });
 
-  it("replenishes the index from stored sessions when removal drops below the cap", async () => {
+  it("drops the entry at the cap boundary without rescanning stored sessions", async () => {
     for (let i = 0; i < 51; i++) {
       const id = `ses_${i}`;
       const startedAt = new Date(2026, 0, 1, 0, 0, i).toISOString();
@@ -231,11 +236,13 @@ describe("project session index — maintenance (kv-access finding 3)", () => {
     expect(before?.map((e) => e.id)).not.toContain("ses_0");
 
     const newest = before![0].id;
+    kv.list.mockClear();
     await removeSessionFromProjectIndex(kv as never, "proj-replenish", newest);
 
+    expect(kv.list.mock.calls.filter((c) => c[0] === KV.sessions)).toHaveLength(0);
     const after = await getProjectSessionIndex(kv as never, "proj-replenish");
-    expect(after?.length).toBe(50);
-    expect(after?.map((e) => e.id)).toContain("ses_0");
+    expect(after?.length).toBe(49);
+    expect(after?.map((e) => e.id)).not.toContain("ses_0");
     expect(after?.map((e) => e.id)).not.toContain(newest);
   });
 
@@ -251,6 +258,97 @@ describe("project session index — maintenance (kv-access finding 3)", () => {
     expect(kv.list.mock.calls.filter((c) => c[0] === KV.sessions)).toHaveLength(0);
     const after = await getProjectSessionIndex(kv as never, "proj-small");
     expect(after?.map((e) => e.id)).toEqual(["small_3", "small_2", "small_1", "small_0"]);
+  });
+
+  it("removing 100 sessions one at a time never lists the sessions scope", async () => {
+    const ids: string[] = [];
+    for (let i = 0; i < 100; i++) {
+      const id = `bulk_${i}`;
+      const startedAt = new Date(2026, 0, 1, 0, 0, i).toISOString();
+      ids.push(id);
+      await kv.set(KV.sessions, id, { id, project: "proj-bulk", startedAt });
+      await addSessionToProjectIndex(kv as never, "proj-bulk", { id, startedAt });
+    }
+    kv.list.mockClear();
+
+    for (const id of ids) {
+      await removeSessionFromProjectIndex(kv as never, "proj-bulk", id);
+    }
+
+    expect(kv.list.mock.calls.filter((c) => c[0] === KV.sessions)).toHaveLength(0);
+    const after = await getProjectSessionIndex(kv as never, "proj-bulk");
+    expect(after).toEqual([]);
+  });
+
+  it("does not persist an index when the cold-seed list fails", async () => {
+    const failingKv = mockKV(new Set([KV.sessions]));
+
+    await expect(
+      addSessionToProjectIndex(failingKv as never, "proj-fail", {
+        id: "ses_new",
+        startedAt: "2026-01-01T00:00:00Z",
+      }),
+    ).rejects.toThrow();
+
+    expect(await getProjectSessionIndex(failingKv as never, "proj-fail")).toBeNull();
+    expect(
+      failingKv.set.mock.calls.some(([scope]) => scope === KV.projectSessionsIndex),
+    ).toBe(false);
+  });
+});
+
+describe("rebuildAllProjectSessionIndexes / rebuildSessionIndexIfStale", () => {
+  let kv: ReturnType<typeof mockKV>;
+
+  beforeEach(() => {
+    kv = mockKV();
+  });
+
+  it("rebuilds every project's index from a single sessions listing", async () => {
+    await kv.set(KV.sessions, "a1", { id: "a1", project: "proj-a", startedAt: "2026-01-01T00:00:00Z" });
+    await kv.set(KV.sessions, "a2", { id: "a2", project: "proj-a", startedAt: "2026-01-02T00:00:00Z" });
+    await kv.set(KV.sessions, "b1", { id: "b1", project: "proj-b", startedAt: "2026-01-01T00:00:00Z" });
+    kv.list.mockClear();
+
+    const result = await rebuildAllProjectSessionIndexes(kv as never);
+
+    expect(result).toEqual({ projects: 2, sessions: 3 });
+    expect(kv.list.mock.calls.filter((c) => c[0] === KV.sessions)).toHaveLength(1);
+
+    const indexA = await getProjectSessionIndex(kv as never, "proj-a");
+    expect(indexA?.map((e) => e.id).sort()).toEqual(["a1", "a2"]);
+    const indexB = await getProjectSessionIndex(kv as never, "proj-b");
+    expect(indexB?.map((e) => e.id)).toEqual(["b1"]);
+  });
+
+  it("rejects and writes nothing when the sessions listing fails", async () => {
+    const failingKv = mockKV(new Set([KV.sessions]));
+
+    await expect(rebuildAllProjectSessionIndexes(failingKv as never)).rejects.toThrow();
+    expect(
+      failingKv.set.mock.calls.some(([scope]) => scope === KV.projectSessionsIndex),
+    ).toBe(false);
+  });
+
+  it("rebuilds once per generation and skips a matching marker", async () => {
+    await kv.set(KV.sessions, "a1", { id: "a1", project: "proj-a", startedAt: "2026-01-01T00:00:00Z" });
+
+    const first = await rebuildSessionIndexIfStale(kv as never);
+    expect(first).toEqual({ projects: 1, sessions: 1 });
+
+    kv.list.mockClear();
+    const second = await rebuildSessionIndexIfStale(kv as never);
+    expect(second).toBeNull();
+    expect(kv.list.mock.calls.filter((c) => c[0] === KV.sessions)).toHaveLength(0);
+  });
+
+  it("does not set the generation marker when the listing fails", async () => {
+    const failingKv = mockKV(new Set([KV.sessions]));
+
+    await expect(rebuildSessionIndexIfStale(failingKv as never)).rejects.toThrow();
+    expect(
+      failingKv.set.mock.calls.some(([scope]) => scope === KV.config),
+    ).toBe(false);
   });
 });
 

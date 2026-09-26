@@ -47,7 +47,7 @@ async function loadStoredProjectSessionEntries(
   kv: StateKV,
   project: string,
 ): Promise<ProjectSessionIndexEntry[]> {
-  const sessions = await kv.list<Session>(KV.sessions).catch(() => [] as Session[]);
+  const sessions = await kv.list<Session>(KV.sessions);
   return sessions
     .filter((s) => s.project === project)
     .map((s) => ({
@@ -90,20 +90,7 @@ export async function removeSessionFromProjectIndex(
     if (!existing) return;
     const next = existing.filter((e) => e.id !== sessionId);
     if (next.length === existing.length) return;
-    if (next.length >= PROJECT_SESSION_INDEX_CAP || existing.length < PROJECT_SESSION_INDEX_CAP) {
-      await kv.set(KV.projectSessionsIndex, project, next);
-      return;
-    }
-    const stored = await loadStoredProjectSessionEntries(kv, project);
-    const known = new Set(next.map((e) => e.id));
-    const replenishment = stored.filter(
-      (e) => e.id !== sessionId && !known.has(e.id),
-    );
-    await kv.set(
-      KV.projectSessionsIndex,
-      project,
-      capWithAgentFairness([...next, ...replenishment]),
-    );
+    await kv.set(KV.projectSessionsIndex, project, next);
   });
 }
 
@@ -125,4 +112,41 @@ export async function ensureProjectSessionIndex(
     await kv.set(KV.projectSessionsIndex, project, next).catch(() => {});
     return next;
   });
+}
+
+export async function rebuildAllProjectSessionIndexes(
+  kv: StateKV,
+): Promise<{ projects: number; sessions: number }> {
+  const sessions = await kv.list<Session>(KV.sessions);
+  const byProject = new Map<string, ProjectSessionIndexEntry[]>();
+  for (const session of sessions) {
+    if (!session.project) continue;
+    const entry: ProjectSessionIndexEntry = {
+      id: session.id,
+      startedAt: session.startedAt,
+      ...(session.agentId ? { agentId: session.agentId } : {}),
+    };
+    const bucket = byProject.get(session.project);
+    if (bucket) bucket.push(entry);
+    else byProject.set(session.project, [entry]);
+  }
+  for (const [project, entries] of byProject) {
+    await withKeyedLock(`project-session-index:${project}`, () =>
+      kv.set(KV.projectSessionsIndex, project, buildProjectSessionIndex(entries)),
+    );
+  }
+  return { projects: byProject.size, sessions: sessions.length };
+}
+
+const SESSION_INDEX_GENERATION_KEY = "session-index-generation";
+const SESSION_INDEX_GENERATION = 1;
+
+export async function rebuildSessionIndexIfStale(
+  kv: StateKV,
+): Promise<{ projects: number; sessions: number } | null> {
+  const marker = await kv.get<number>(KV.config, SESSION_INDEX_GENERATION_KEY);
+  if (marker === SESSION_INDEX_GENERATION) return null;
+  const result = await rebuildAllProjectSessionIndexes(kv);
+  await kv.set(KV.config, SESSION_INDEX_GENERATION_KEY, SESSION_INDEX_GENERATION);
+  return result;
 }

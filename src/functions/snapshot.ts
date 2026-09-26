@@ -12,6 +12,7 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { addSessionToProjectIndex } from "../state/session-index.js";
 import { recordAudit } from "./audit.js";
 import { VERSION } from "../version.js";
 import { logger } from "../logger.js";
@@ -196,6 +197,16 @@ export function registerSnapshotFunction(
         if (state.sessions) {
           for (const session of state.sessions) {
             await kv.set(KV.sessions, session.id, session);
+            const project = session.project;
+            const startedAt = session.startedAt;
+            if (typeof project === "string" && typeof startedAt === "string") {
+              const agentId = session.agentId;
+              await addSessionToProjectIndex(kv, project, {
+                id: session.id,
+                startedAt,
+                ...(typeof agentId === "string" ? { agentId } : {}),
+              }).catch(() => {});
+            }
           }
         }
         if (state.memories) {
