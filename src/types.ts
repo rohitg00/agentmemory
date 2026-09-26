@@ -530,6 +530,7 @@ export interface SemanticMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface ProceduralMemory {
@@ -546,6 +547,7 @@ export interface ProceduralMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface TeamConfig {

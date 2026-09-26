@@ -24,6 +24,7 @@ function applyDecay(
     strength: number;
     lastAccessedAt?: string;
     updatedAt: string;
+    lastDecayedAt?: string;
   }>,
   decayDays: number,
 ): void {
@@ -31,14 +32,19 @@ function applyDecay(
   const now = Date.now();
   for (const item of items) {
     const lastAccess = item.lastAccessedAt || item.updatedAt;
-    const daysSince =
-      (now - new Date(lastAccess).getTime()) / (1000 * 60 * 60 * 24);
+    const lastAccessTime = new Date(lastAccess).getTime();
+    const lastDecayedTime = item.lastDecayedAt
+      ? new Date(item.lastDecayedAt).getTime()
+      : -Infinity;
+    const anchor = Math.max(lastAccessTime, lastDecayedTime);
+    const daysSince = (now - anchor) / (1000 * 60 * 60 * 24);
     if (daysSince > decayDays) {
       const decayPeriods = Math.floor(daysSince / decayDays);
       item.strength = Math.max(
         0.1,
         item.strength * Math.pow(0.9, decayPeriods),
       );
+      item.lastDecayedAt = new Date(now).toISOString();
     }
   }
 }
@@ -50,7 +56,13 @@ function strengthChanged(before: number, after: number): boolean {
 }
 
 async function decayAndWriteChanged<
-  T extends { id: string; strength: number; lastAccessedAt?: string; updatedAt: string },
+  T extends {
+    id: string;
+    strength: number;
+    lastAccessedAt?: string;
+    updatedAt: string;
+    lastDecayedAt?: string;
+  },
 >(
   kv: StateKV,
   scope: string,

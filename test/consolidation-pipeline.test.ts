@@ -379,7 +379,7 @@ describe("Consolidation Pipeline decay tier", () => {
     expect(fresh?.strength).toBe(1);
   });
 
-  it("decay across simulated time lands at the same strengths as unconditional-write decay", async () => {
+  it("decays at most once per period, anchored to the previous decay", async () => {
     const provider = { name: "test", compress: vi.fn(), summarize: vi.fn() };
     registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
 
@@ -390,13 +390,6 @@ describe("Consolidation Pipeline decay tier", () => {
       makeSemanticMemory({ id: "sem_1", lastAccessedAt: createdAt, strength: 1 }),
     );
 
-    function referenceDecayStep(strength: number, decayDays: number): number {
-      const daysSince = (Date.now() - new Date(createdAt).getTime()) / 86400000;
-      if (daysSince <= decayDays) return strength;
-      const periods = Math.floor(daysSince / decayDays);
-      return Math.max(0.1, strength * Math.pow(0.9, periods));
-    }
-
     const setSpy = vi.spyOn(kv, "set");
     const semanticWrites = () =>
       setSpy.mock.calls.filter((c) => c[0] === "mem:semantic" && c[1] === "sem_1");
@@ -404,20 +397,31 @@ describe("Consolidation Pipeline decay tier", () => {
     await sdk.trigger("mem::consolidate-pipeline", { tier: "decay" });
     let stored = await kv.list<SemanticMemory>("mem:semantic");
     expect(stored[0].strength).toBe(1);
+    expect(stored[0].lastDecayedAt).toBeUndefined();
     expect(semanticWrites().length).toBe(0);
 
-    vi.setSystemTime(new Date(new Date(createdAt).getTime() + 45 * 86400000));
+    const day45 = new Date(new Date(createdAt).getTime() + 45 * 86400000);
+    vi.setSystemTime(day45);
     await sdk.trigger("mem::consolidate-pipeline", { tier: "decay" });
     stored = await kv.list<SemanticMemory>("mem:semantic");
-    let expected = referenceDecayStep(1, 30);
-    expect(stored[0].strength).toBeCloseTo(expected, 10);
+    expect(stored[0].strength).toBeCloseTo(0.9, 10);
+    expect(stored[0].lastDecayedAt).toBe(day45.toISOString());
     expect(semanticWrites().length).toBe(1);
 
-    vi.setSystemTime(new Date(new Date(createdAt).getTime() + 95 * 86400000));
+    const day50 = new Date(new Date(createdAt).getTime() + 50 * 86400000);
+    vi.setSystemTime(day50);
     await sdk.trigger("mem::consolidate-pipeline", { tier: "decay" });
     stored = await kv.list<SemanticMemory>("mem:semantic");
-    expected = referenceDecayStep(expected, 30);
-    expect(stored[0].strength).toBeCloseTo(expected, 10);
+    expect(stored[0].strength).toBeCloseTo(0.9, 10);
+    expect(stored[0].lastDecayedAt).toBe(day45.toISOString());
+    expect(semanticWrites().length).toBe(1);
+
+    const day95 = new Date(new Date(createdAt).getTime() + 95 * 86400000);
+    vi.setSystemTime(day95);
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "decay" });
+    stored = await kv.list<SemanticMemory>("mem:semantic");
+    expect(stored[0].strength).toBeCloseTo(0.81, 10);
+    expect(stored[0].lastDecayedAt).toBe(day95.toISOString());
     expect(semanticWrites().length).toBe(2);
   });
 });
