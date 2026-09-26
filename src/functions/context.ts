@@ -23,6 +23,15 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
 }
 
+const PINNED_TRUNCATION_MARKER =
+  "\n[agentmemory: pinned slots truncated to fit the context token budget]";
+
+function truncateToTokens(text: string, maxTokens: number): string | null {
+  const maxChars = maxTokens * 3 - PINNED_TRUNCATION_MARKER.length;
+  if (maxChars <= 0) return null;
+  return text.slice(0, maxChars).trimEnd() + PINNED_TRUNCATION_MARKER;
+}
+
 function escapeXmlAttr(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -81,13 +90,15 @@ export function registerContextFunction(
       ]);
 
       const slotContent = renderPinnedContext(pinnedSlots);
+      let pinnedBlock: ContextBlock | undefined;
       if (slotContent) {
-        blocks.push({
+        pinnedBlock = {
           type: "memory",
           content: slotContent,
           tokens: estimateTokens(slotContent),
           recency: Date.now(),
-        });
+        };
+        blocks.push(pinnedBlock);
       }
       if (profile) {
         const profileParts = [];
@@ -243,7 +254,27 @@ export function registerContextFunction(
       usedTokens += estimateTokens(header) + estimateTokens(footer);
 
       for (const block of blocks) {
-        if (usedTokens + block.tokens > budget) continue;
+        if (usedTokens + block.tokens > budget) {
+          // Pinned slots bypass ranking because they must always reach the
+          // model, so fit what we can instead of dropping the whole set.
+          if (block === pinnedBlock) {
+            const truncated = truncateToTokens(
+              block.content,
+              budget - usedTokens,
+            );
+            logger.warn("Pinned slots exceed context token budget", {
+              project: data.project,
+              pinnedTokens: block.tokens,
+              availableTokens: budget - usedTokens,
+              truncated: truncated !== null,
+            });
+            if (truncated) {
+              selected.push(truncated);
+              usedTokens += estimateTokens(truncated);
+            }
+          }
+          continue;
+        }
         selected.push(block.content);
         usedTokens += block.tokens;
         if (block.sourceIds && block.sourceIds.length > 0) {
