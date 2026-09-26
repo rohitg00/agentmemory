@@ -51,9 +51,6 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
       // observations into the shared maps serially so the accumulation
       // stays race-free. Parallelizing the kv.list I/O without exceeding
       // the invocation pool cuts wall time versus the old serial loop.
-      // Sessions are already capped to sessionLimit above; this loop also
-      // stops early once MAX_OBSERVATIONS_SCANNED is reached, so one huge
-      // session inside the limit can't still blow the invocation timeout.
       let observationsScanned = 0;
       let sessionsProcessed = 0;
       for (let batch = 0; batch < filtered.length; batch += 10) {
