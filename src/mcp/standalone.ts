@@ -271,6 +271,8 @@ async function handleLocal(
         content: v.content,
         concepts: v.concepts,
         files: v.files,
+        ...(v.project !== undefined && { project: v.project }),
+        ...(v.agentId !== undefined && { agentId: v.agentId }),
         createdAt: isoNow,
         updatedAt: isoNow,
         strength: 7,
