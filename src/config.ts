@@ -401,8 +401,16 @@ export function getFollowupWindowSeconds(): number {
 
 const VIEWER_STREAM_MAX_DEFAULT = 500;
 
+function parseExactInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) return fallback;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : fallback;
+}
+
 export function getViewerStreamMax(): number {
-  return safeParseInt(
+  return parseExactInt(
     getMergedEnv()["AGENTMEMORY_VIEWER_STREAM_MAX"],
     VIEWER_STREAM_MAX_DEFAULT,
   );
