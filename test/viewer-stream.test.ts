@@ -53,18 +53,18 @@ describe("viewer stream bounding", () => {
     expect(sdk.trigger).not.toHaveBeenCalled();
   });
 
-  it("deletes only the oldest items beyond the cap in one batch, in order", async () => {
-    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "10";
+  it("deletes only the oldest items beyond the cap, newest-of-the-overflow first", async () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
     const sdk = mockSdk();
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 250; i++) {
       trackViewerStreamItem(`obs_${i}`);
       await pruneViewerStreamIfDue(sdk as never);
     }
 
-    expect(sdk.trigger).toHaveBeenCalledTimes(40);
+    expect(sdk.trigger).toHaveBeenCalledTimes(50);
     const calls = sdk.trigger.mock.calls.map((c) => c[0] as DeleteCall);
     expect(calls.map((c) => c.payload.item_id)).toEqual(
-      Array.from({ length: 40 }, (_, i) => `obs_${i}`),
+      Array.from({ length: 50 }, (_, i) => `obs_${49 - i}`),
     );
     for (const call of calls) {
       expect(call.function_id).toBe("stream::delete");
@@ -74,25 +74,25 @@ describe("viewer stream bounding", () => {
   });
 
   it("only re-checks the cap every 50 writes, not on every write", async () => {
-    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "5";
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
     const sdk = mockSdk();
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 240; i++) {
       trackViewerStreamItem(`obs_${i}`);
       await pruneViewerStreamIfDue(sdk as never);
     }
     expect(sdk.trigger).not.toHaveBeenCalled();
 
-    for (let i = 10; i < 50; i++) {
+    for (let i = 240; i < 250; i++) {
       trackViewerStreamItem(`obs_${i}`);
       await pruneViewerStreamIfDue(sdk as never);
     }
-    expect(sdk.trigger).toHaveBeenCalledTimes(45);
+    expect(sdk.trigger).toHaveBeenCalledTimes(50);
 
-    for (let i = 50; i < 60; i++) {
+    for (let i = 250; i < 260; i++) {
       trackViewerStreamItem(`obs_${i}`);
       await pruneViewerStreamIfDue(sdk as never);
     }
-    expect(sdk.trigger).toHaveBeenCalledTimes(45);
+    expect(sdk.trigger).toHaveBeenCalledTimes(50);
   });
 
   it("defaults the cap to 500 when AGENTMEMORY_VIEWER_STREAM_MAX is unset", async () => {
@@ -107,36 +107,98 @@ describe("viewer stream bounding", () => {
   it("logs a warning but resolves cleanly when a delete call rejects", async () => {
     process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "0";
     const sdk = { trigger: vi.fn(async () => { throw new Error("boom"); }) };
-    for (let i = 0; i < 50; i++) {
+    for (let i = 0; i < 250; i++) {
       trackViewerStreamItem(`obs_${i}`);
     }
     await expect(pruneViewerStreamIfDue(sdk as never)).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalled();
   });
-  it("seeds the tracker from the stored backlog at boot and trims it oldest first", async () => {
-    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "2";
+
+  it("does not double-track the same id, avoiding an extra delete", async () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
+    const sdk = mockSdk();
+    trackViewerStreamItem("obs_dup");
+    trackViewerStreamItem("obs_dup");
+    for (let i = 0; i < 199; i++) trackViewerStreamItem(`obs_${i}`);
+    await pruneViewerStreamIfDue(sdk as never);
+    expect(sdk.trigger).not.toHaveBeenCalled();
+  });
+
+  it("seeds the tracker in the engine's listing order and prunes the overflow newest-first", async () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
+    const deleted: string[] = [];
+    const items = Array.from({ length: 205 }, (_, i) => ({
+      observation: { id: `obs_${i}`, timestamp: new Date(2026, 0, i + 1).toISOString() },
+    }));
+    const sdk = {
+      trigger: vi.fn(async (req: { function_id: string; payload: { item_id?: string } }) => {
+        if (req.function_id === "stream::list") return items;
+        if (req.payload.item_id) deleted.push(req.payload.item_id);
+        return {};
+      }),
+    };
+    await expect(seedViewerStreamTracker(sdk as never)).resolves.toBe(205);
+    expect(deleted).toEqual(["obs_4", "obs_3", "obs_2", "obs_1", "obs_0"]);
+  });
+
+  it("seeds using the engine's listing order, ignoring an unparseable client timestamp", async () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
+    const deleted: string[] = [];
+    const items: { observation: { id: string; timestamp: string } }[] = Array.from(
+      { length: 200 },
+      (_, i) => ({
+        observation: { id: `obs_${i}`, timestamp: new Date(2026, 0, i + 1).toISOString() },
+      }),
+    );
+    items.push({ observation: { id: "obs_bad_timestamp", timestamp: "not-a-date" } });
+    const sdk = {
+      trigger: vi.fn(async (req: { function_id: string; payload: { item_id?: string } }) => {
+        if (req.function_id === "stream::list") return items;
+        if (req.payload.item_id) deleted.push(req.payload.item_id);
+        return {};
+      }),
+    };
+    await expect(seedViewerStreamTracker(sdk as never)).resolves.toBe(201);
+    expect(deleted).toEqual(["obs_0"]);
+  });
+
+  it("does not re-track a seeded id the live path observes too", async () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
     const deleted: string[] = [];
     const sdk = {
       trigger: vi.fn(async (req: { function_id: string; payload: { item_id?: string } }) => {
         if (req.function_id === "stream::list") {
-          return [
-            { observation: { id: "obs_new", timestamp: "2026-09-25T10:00:00Z" } },
-            { observation: { id: "obs_old", timestamp: "2026-09-20T10:00:00Z" } },
-            { observation: { id: "obs_mid", timestamp: "2026-09-22T10:00:00Z" } },
-            { observation: { id: "obs_newest", timestamp: "2026-09-25T11:00:00Z" } },
-            { other: true },
-          ];
+          return [{ observation: { id: "obs_seeded", timestamp: "2026-01-01T00:00:00Z" } }];
         }
         if (req.payload.item_id) deleted.push(req.payload.item_id);
         return {};
       }),
     };
-    await expect(seedViewerStreamTracker(sdk as never)).resolves.toBe(4);
-    expect(deleted).toEqual(["obs_old", "obs_mid"]);
+    await seedViewerStreamTracker(sdk as never);
+    trackViewerStreamItem("obs_seeded");
+    for (let i = 0; i < 249; i++) trackViewerStreamItem(`obs_${i}`);
+    await pruneViewerStreamIfDue(sdk as never);
+
+    expect(deleted).toHaveLength(50);
+    expect(deleted.filter((id) => id === "obs_seeded")).toHaveLength(1);
+  });
+
+  it("passes a short timeout on the boot stream::list call", async () => {
+    const sdk = { trigger: vi.fn(async () => []) };
+    await seedViewerStreamTracker(sdk as never);
+    expect(sdk.trigger).toHaveBeenCalledWith(
+      expect.objectContaining({
+        function_id: "stream::list",
+        timeoutMs: expect.any(Number),
+      }),
+    );
+    const call = sdk.trigger.mock.calls[0][0] as { timeoutMs: number };
+    expect(call.timeoutMs).toBeGreaterThan(0);
+    expect(call.timeoutMs).toBeLessThan(30000);
   });
 
   it("deletes a large backlog in bounded batches", async () => {
-    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "0";
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
     let inFlight = 0;
     let peak = 0;
     const sdk = {
@@ -152,7 +214,7 @@ describe("viewer stream bounding", () => {
       }),
     };
     await seedViewerStreamTracker(sdk as never);
-    expect(sdk.trigger).toHaveBeenCalledTimes(451);
+    expect(sdk.trigger).toHaveBeenCalledTimes(251);
     expect(peak).toBeLessThanOrEqual(100);
   });
 
@@ -162,21 +224,21 @@ describe("viewer stream bounding", () => {
   });
 
   it("retries a failed delete on the next prune instead of losing the id", async () => {
-    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "0";
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
     const sdk = {
       trigger: vi.fn(async (req: DeleteCall) => {
         if (req.payload.item_id === "obs_1") throw new Error("boom");
         return {};
       }),
     };
-    for (let i = 0; i < 50; i++) trackViewerStreamItem(`obs_${i}`);
+    for (let i = 0; i < 250; i++) trackViewerStreamItem(`obs_${i}`);
     await pruneViewerStreamIfDue(sdk as never);
 
     const firstRoundIds = sdk.trigger.mock.calls.map((c) => (c[0] as DeleteCall).payload.item_id);
     expect(firstRoundIds).toContain("obs_1");
 
     sdk.trigger.mockClear();
-    for (let i = 50; i < 100; i++) trackViewerStreamItem(`obs_${i}`);
+    for (let i = 250; i < 300; i++) trackViewerStreamItem(`obs_${i}`);
     await pruneViewerStreamIfDue(sdk as never);
 
     const secondRoundIds = sdk.trigger.mock.calls.map((c) => (c[0] as DeleteCall).payload.item_id);
@@ -184,7 +246,7 @@ describe("viewer stream bounding", () => {
   });
 
   it("runs another overflow check once an in-progress prune completes", async () => {
-    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "0";
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
     let releaseFirstDelete: () => void = () => {};
     const firstDeleteGate = new Promise<void>((resolve) => {
       releaseFirstDelete = resolve;
@@ -199,11 +261,11 @@ describe("viewer stream bounding", () => {
       }),
     };
 
-    for (let i = 0; i < 50; i++) trackViewerStreamItem(`obs_${i}`);
+    for (let i = 0; i < 250; i++) trackViewerStreamItem(`obs_${i}`);
     const firstPrune = pruneViewerStreamIfDue(sdk as never);
 
     await Promise.resolve();
-    for (let i = 50; i < 100; i++) trackViewerStreamItem(`obs_${i}`);
+    for (let i = 250; i < 500; i++) trackViewerStreamItem(`obs_${i}`);
     await pruneViewerStreamIfDue(sdk as never);
 
     releaseFirstDelete();
@@ -212,7 +274,7 @@ describe("viewer stream bounding", () => {
     const deleteCalls = sdk.trigger.mock.calls.filter(
       (c) => (c[0] as { function_id: string }).function_id === "stream::delete",
     );
-    expect(deleteCalls).toHaveLength(100);
+    expect(deleteCalls).toHaveLength(300);
   });
 
   it("seeds a very large backlog without hitting the argument spread limit", async () => {
@@ -251,5 +313,20 @@ describe("getViewerStreamMax validation", () => {
   it("falls back to the default for an empty value", () => {
     process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "";
     expect(getViewerStreamMax()).toBe(500);
+  });
+
+  it("rejects a negative value and falls back to the default", () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "-5";
+    expect(getViewerStreamMax()).toBe(500);
+  });
+
+  it("clamps a positive value under the viewer's reload floor up to 200", () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "50";
+    expect(getViewerStreamMax()).toBe(200);
+  });
+
+  it("clamps zero up to the floor instead of pruning everything", () => {
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "0";
+    expect(getViewerStreamMax()).toBe(200);
   });
 });

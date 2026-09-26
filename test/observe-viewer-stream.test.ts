@@ -111,13 +111,13 @@ describe("observe no longer writes per-session mem-live groups", () => {
   });
 
   it("prunes the viewer group once enough observations accumulate past the configured cap", async () => {
-    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "10";
+    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
     const sdk = mockSdk();
     const kv = mockKV();
     registerObserveFunction(sdk as never, kv as never);
 
     const sessionId = "ses_prune_wiring";
-    for (let i = 0; i < 55; i++) {
+    for (let i = 0; i < 255; i++) {
       await sdk.trigger({ function_id: "mem::observe", payload: observePayload(sessionId, i) });
     }
 
