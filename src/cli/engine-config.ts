@@ -28,6 +28,11 @@ export function configuredPersistDir(renderedConfig: string): string | null {
   return null;
 }
 
+export function configuredSaveIntervalMs(renderedConfig: string): number | null {
+  const match = renderedConfig.match(/save_interval_ms:\s*(\d+)/);
+  return match ? parseInt(match[1]!, 10) : null;
+}
+
 export function persistedBuiltinConfigDirs(
   engineCwd: string,
   configPath: string,

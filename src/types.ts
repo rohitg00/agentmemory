@@ -640,6 +640,26 @@ export interface AuditEntry {
   qualityScore?: number;
 }
 
+export interface AuditMonthIndex {
+  months: string[];
+}
+
+export interface AuditMigrationState {
+  status: "too-large" | "unreadable" | "copied" | "done";
+  safeToListLegacy: boolean;
+  legacySizeBytes?: number;
+  migrated: number;
+  purged: number;
+  summaryWritten: boolean;
+  checkedAt: string;
+}
+
+export interface AuditQueryResult {
+  entries: AuditEntry[];
+  legacyFrozen: boolean;
+  legacyFrozenBytes?: number;
+}
+
 export interface GovernanceFilter {
   type?: string[];
   dateFrom?: string;

@@ -1,7 +1,8 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { HttpRequest } from "@iii-dev/helpers/http";
 import { randomBytes } from "node:crypto";
-import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary } from "../types.js";
+import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary, AuditQueryResult, AuditMigrationState } from "../types.js";
+import { AUDIT_MIGRATION_STATE_KEY } from "../functions/audit.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
@@ -327,7 +328,7 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const idx = getSearchIndex();
-      const [health, functionMetrics, graph, unindexed] = await Promise.all([
+      const [health, functionMetrics, graph, unindexed, auditMigrationState] = await Promise.all([
         valueWithin(getLatestHealth(kv), STATUS_CHECK_TIMEOUT_MS),
         metricsStore ? valueWithin(metricsStore.getAll(), STATUS_CHECK_TIMEOUT_MS) : Promise.resolve([]),
         valueWithin(
@@ -335,6 +336,10 @@ export function registerApiTriggers(
           STATUS_CHECK_TIMEOUT_MS,
         ),
         valueWithin(sharedUnindexedScan(), STATUS_CHECK_TIMEOUT_MS),
+        valueWithin(
+          kv.get<AuditMigrationState>(KV.auditMonths, AUDIT_MIGRATION_STATE_KEY),
+          STATUS_CHECK_TIMEOUT_MS,
+        ),
       ]);
       const observationsIndexed = [...idx.observationCountsBySession().values()].reduce((a, n) => a + n, 0);
       const circuit =
@@ -373,6 +378,9 @@ export function registerApiTriggers(
         },
         graph,
         graphExtractionEnabled: isGraphExtractionEnabled(),
+        auditLegacy: auditMigrationState
+          ? { status: auditMigrationState.status, sizeBytes: auditMigrationState.legacySizeBytes }
+          : null,
       });
       const accept = req.headers?.["accept"] ?? req.headers?.["Accept"];
       const format = req.query_params?.["format"];
@@ -1897,11 +1905,19 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const parsedLimit = parseOptionalInt(req.query_params?.["limit"]);
-      const entries = await sdk.trigger({ function_id: "mem::audit-query", payload: {
+      const result = await sdk.trigger<unknown, AuditQueryResult>({ function_id: "mem::audit-query", payload: {
         operation: req.query_params?.["operation"],
         limit: parsedLimit ?? 50,
       } });
-      return { status_code: 200, body: { entries, success: true } };
+      return {
+        status_code: 200,
+        body: {
+          entries: result.entries,
+          legacyFrozen: result.legacyFrozen,
+          legacyFrozenBytes: result.legacyFrozenBytes,
+          success: true,
+        },
+      };
     },
   );
   sdk.registerTrigger({
