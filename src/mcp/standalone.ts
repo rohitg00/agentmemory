@@ -6,6 +6,7 @@ import { getAllTools } from "./tools-registry.js";
 import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
+import { resolveProject } from "../hooks/_project.js";
 import {
   resolveHandle,
   invalidateHandle,
@@ -113,6 +114,7 @@ interface Validated {
   tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
+  project?: string;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -130,12 +132,19 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
-      // The tool schema exposes project (and now agentId); dropping them
-      // here silently broke project/agent scoping through the stdio
-      // package specifically.
-      if (typeof args["project"] === "string" && args["project"].trim()) {
-        v.project = args["project"].trim();
-      }
+      // The tool schema exposes project, scope and agentId; dropping them here
+      // silently broke project/agent scoping through the stdio package
+      // specifically. For project: explicit wins; scope:"global" stores
+      // unscoped; otherwise default to the current project so remembered facts
+      // unify with the session's project surfaces instead of landing unscoped.
+      const explicitProject =
+        typeof args["project"] === "string" && (args["project"] as string).trim()
+          ? (args["project"] as string).trim()
+          : undefined;
+      const isGlobal =
+        typeof args["scope"] === "string" &&
+        (args["scope"] as string).trim().toLowerCase() === "global";
+      v.project = explicitProject ?? (isGlobal ? undefined : resolveProject());
       if (typeof args["agentId"] === "string" && args["agentId"].trim()) {
         v.agentId = args["agentId"].trim();
       }
@@ -271,6 +280,7 @@ async function handleLocal(
         content: v.content,
         concepts: v.concepts,
         files: v.files,
+        ...(v.project !== undefined && { project: v.project }),
         createdAt: isoNow,
         updatedAt: isoNow,
         strength: 7,

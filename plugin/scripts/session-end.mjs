@@ -3,10 +3,7 @@ import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
 //#region src/hooks/_project.ts
-function resolveProject(cwd) {
-	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
-	if (explicit && explicit.trim()) return explicit.trim();
-	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+function gitToplevelBasename(dir) {
 	try {
 		const top = execSync("git rev-parse --show-toplevel", {
 			cwd: dir,
@@ -17,9 +14,60 @@ function resolveProject(cwd) {
 			],
 			timeout: 500
 		}).toString().trim();
-		if (top) return basename(top);
-	} catch {}
-	return basename(dir);
+		return top ? basename(top) : null;
+	} catch {
+		return null;
+	}
+}
+function normalizeGitRemote(url) {
+	const raw = (url ?? "").trim();
+	if (!raw) return null;
+	let host = "";
+	let path = "";
+	const scp = raw.match(/^[^@/]+@([^:/]+):(.+)$/);
+	if (scp) {
+		host = scp[1];
+		path = scp[2];
+	} else {
+		const noCreds = raw.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, "").replace(/^[^@/]*@/, "");
+		const slash = noCreds.indexOf("/");
+		if (slash === -1) return null;
+		host = noCreds.slice(0, slash);
+		path = noCreds.slice(slash + 1);
+	}
+	host = host.toLowerCase().replace(/:\d+$/, "");
+	path = path.replace(/^\/+/, "").replace(/\/+$/, "").replace(/\.git$/i, "").toLowerCase();
+	if (!host || !path) return null;
+	return `${host}/${path}`;
+}
+function gitRemoteIdentity(dir) {
+	try {
+		return normalizeGitRemote(execSync("git config --get remote.origin.url", {
+			cwd: dir,
+			stdio: [
+				"ignore",
+				"pipe",
+				"ignore"
+			],
+			timeout: 500
+		}).toString().trim());
+	} catch {
+		return null;
+	}
+}
+function remoteIdentityEnabled() {
+	const flag = process.env["AGENTMEMORY_PROJECT_FROM_REMOTE"];
+	return flag === "1" || flag === "true";
+}
+function resolveProject(cwd) {
+	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
+	if (explicit && explicit.trim()) return explicit.trim();
+	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	if (remoteIdentityEnabled()) {
+		const id = gitRemoteIdentity(dir);
+		if (id) return id;
+	}
+	return gitToplevelBasename(dir) ?? basename(dir);
 }
 function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;
