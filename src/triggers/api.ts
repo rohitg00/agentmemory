@@ -6,6 +6,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
 import { StateKV } from "../state/kv.js";
+import { addSessionToProjectIndex } from "../state/session-index.js";
 import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
@@ -733,6 +734,16 @@ export function registerApiTriggers(
         ...(agentId ? { agentId } : {}),
       };
       await kv.set(KV.sessions, sessionId, session);
+      await addSessionToProjectIndex(kv, project, {
+        id: sessionId,
+        startedAt: session.startedAt,
+        ...(session.agentId ? { agentId: session.agentId } : {}),
+      }).catch((err) => {
+        logger.warn("session index update failed", {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
       const contextResult = await sdk.trigger<
         { sessionId: string; project: string; agentId?: string },
         { context: string }

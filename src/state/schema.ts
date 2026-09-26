@@ -73,6 +73,8 @@ export const KV = {
   // #771: tracks the most recent smart-search call per session, used by
   // the followup-rate diagnostic. Key = sessionId. TTL-swept hourly.
   recentSearches: "mem:recent-searches",
+  projectSessionsIndex: "mem:idx:project-sessions",
+  obsSessionIndex: (shard: number) => `mem:idx:obs:${shard}`,
 } as const;
 
 export const STREAM = {
