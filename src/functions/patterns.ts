@@ -12,15 +12,33 @@ interface Pattern {
   sessions: string[];
 }
 
+const DEFAULT_SESSION_LIMIT = 50;
+const MAX_SESSION_LIMIT = 500;
+const MAX_OBSERVATIONS_SCANNED = 5_000;
+
+function resolveSessionLimit(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SESSION_LIMIT;
+  return Math.min(Math.max(Math.floor(n), 1), MAX_SESSION_LIMIT);
+}
+
 export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
-  sdk.registerFunction("mem::patterns", 
-    async (data: { project?: string }) => {
+  sdk.registerFunction("mem::patterns",
+    async (data?: { project?: string; limit?: number }) => {
+      const { project, limit } = data ?? {};
       const patterns: Pattern[] = [];
+      const sessionLimit = resolveSessionLimit(limit);
 
       const sessions = await kv.list<Session>(KV.sessions);
-      const filtered = data.project
-        ? sessions.filter((s) => s.project === data.project)
-        : sessions;
+      const filtered = (project
+        ? sessions.filter((s) => s.project === project)
+        : sessions
+      )
+        .sort(
+          (a, b) =>
+            new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+        )
+        .slice(0, sessionLimit);
 
       const fileCoOccurrences = new Map<string, number>();
       const fileSessionMap = new Map<string, Set<string>>();
@@ -29,15 +47,24 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
         { count: number; sessions: Set<string> }
       >();
 
-      // Bounded fan-out: load observations for up to 10 sessions in
-      // parallel per batch (like consolidate), then fold each session's
-      // observations into the shared maps serially so the accumulation
-      // stays race-free. Parallelizing the kv.list I/O without exceeding
-      // the invocation pool cuts wall time versus the old serial loop.
+      let observationsScanned = 0;
+      let sessionsProcessed = 0;
+      const sessionsSkipped: string[] = [];
       for (let batch = 0; batch < filtered.length; batch += 10) {
+        if (observationsScanned >= MAX_OBSERVATIONS_SCANNED) break;
+        const remainingBudget = MAX_OBSERVATIONS_SCANNED - observationsScanned;
         const chunk = filtered.slice(batch, batch + 10);
+        const eligible: Session[] = [];
+        for (const session of chunk) {
+          if ((session.observationCount || 0) > remainingBudget) {
+            sessionsSkipped.push(session.id);
+          } else {
+            eligible.push(session);
+          }
+        }
+
         const loaded = await Promise.all(
-          chunk.map(async (session) => ({
+          eligible.map(async (session) => ({
             session,
             observations: await kv.list<CompressedObservation>(
               KV.observations(session.id),
@@ -46,10 +73,18 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
         );
 
         for (const { session, observations } of loaded) {
+          if (observationsScanned >= MAX_OBSERVATIONS_SCANNED) break;
+          sessionsProcessed++;
           if (!observations.length) continue;
+          const remaining = MAX_OBSERVATIONS_SCANNED - observationsScanned;
+          const bounded =
+            observations.length > remaining
+              ? observations.slice(0, remaining)
+              : observations;
+          observationsScanned += bounded.length;
 
           const sessionFiles = new Set<string>();
-          for (const obs of observations) {
+          for (const obs of bounded) {
             if (!obs.files) continue;
             for (const f of obs.files) {
               sessionFiles.add(f);
@@ -115,10 +150,21 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
 
       logger.info("Pattern detection complete", {
         patterns: patterns.length,
-        sessions: filtered.length,
+        sessionsInScope: filtered.length,
+        sessionsProcessed,
+        sessionsSkipped: sessionsSkipped.length,
+        sessionLimit,
+        observationsScanned,
       });
 
-      return { patterns: patterns.slice(0, 20) };
+      return {
+        patterns: patterns.slice(0, 20),
+        sessionsInScope: filtered.length,
+        sessionsProcessed,
+        sessionsSkipped,
+        sessionLimit,
+        observationsScanned,
+      };
     },
   );
 
