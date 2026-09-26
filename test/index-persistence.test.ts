@@ -348,6 +348,26 @@ describe("IndexPersistence migration from the single-string format", () => {
     expectSameVectors(reloaded.vector, legacy);
   });
 
+  it("removes the old BM25 shards when missing keys read back as undefined, as the engine SDK returns them", async () => {
+    const baseGet = kv.get;
+    kv.get = (async <T>(scope: string, key: string) => {
+      const value = await baseGet<T>(scope, key);
+      return value === null ? undefined : value;
+    }) as typeof kv.get;
+    const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    await writeLegacyVectorSnapshot(kv, legacy, { generation: "idx_mfabcd12_bbbbbbbbbbbb" });
+    await writeLegacyBm25Snapshot(kv);
+
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+
+    expect(loaded.state).toBe("migrated");
+    expect(await kv.get(INDEX_SCOPE, "data:manifest")).toBeUndefined();
+    expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).toBeUndefined();
+    for (const [scope, entries] of kv.store) {
+      if (scope.includes(":vectors:") || scope.includes(":bm25:idx_")) expect(entries.size).toBe(0);
+    }
+  });
+
   it("migrates a monolithic vector snapshot", async () => {
     const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
     await writeLegacyVectorSnapshot(kv, legacy, { monolithic: true });

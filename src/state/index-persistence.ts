@@ -455,21 +455,19 @@ export class IndexPersistence {
   }
 
   private async removeLegacyVectorSnapshotIfPresent(): Promise<void> {
-    const manifest = await this.kv
-      .get<IndexShardManifest>(KV.bm25Index, LEGACY_VECTOR_MANIFEST_KEY)
-      .catch(() => undefined);
-    const legacy = await this.kv.get<string>(KV.bm25Index, LEGACY_VECTOR_KEY).catch(() => undefined);
-    if (manifest === undefined || legacy === undefined) return;
-    if (manifest == null && legacy == null) return;
-    await this.removeLegacyVectorSnapshot(manifest);
+    const manifest = await this.readIndexValue<IndexShardManifest>(KV.bm25Index, LEGACY_VECTOR_MANIFEST_KEY, "vector", "manifest");
+    const legacy = await this.readIndexValue<string>(KV.bm25Index, LEGACY_VECTOR_KEY, "vector", "legacy");
+    if (!manifest.ok || !legacy.ok) return;
+    if (manifest.value == null && legacy.value == null) return;
+    await this.removeLegacyVectorSnapshot(manifest.value ?? null);
   }
 
   private async removeLegacyBm25Snapshot(): Promise<void> {
-    const manifest = await this.kv
-      .get<IndexShardManifest>(KV.bm25Index, LEGACY_BM25_MANIFEST_KEY)
-      .catch(() => undefined);
-    const legacy = await this.kv.get<string>(KV.bm25Index, LEGACY_BM25_KEY).catch(() => undefined);
-    if (manifest === undefined || legacy === undefined) return;
+    const manifestRead = await this.readIndexValue<IndexShardManifest>(KV.bm25Index, LEGACY_BM25_MANIFEST_KEY, "bm25", "manifest");
+    const legacyRead = await this.readIndexValue<string>(KV.bm25Index, LEGACY_BM25_KEY, "bm25", "legacy");
+    if (!manifestRead.ok || !legacyRead.ok) return;
+    const manifest = manifestRead.value ?? null;
+    const legacy = legacyRead.value ?? null;
     if (manifest == null && legacy == null) return;
     if (manifest && Array.isArray(manifest.shards)) {
       await this.deleteShards(manifest.shards.filter(isValidShardDescriptor), "legacy_bm25_cleanup");
