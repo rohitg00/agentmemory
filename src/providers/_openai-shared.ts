@@ -164,3 +164,23 @@ export function buildAuthHeaders(
 export function normalizeBaseUrl(raw: string | undefined): string {
   return (raw || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, "");
 }
+
+function isDefaultOpenAIHost(baseUrl: string): boolean {
+  try {
+    const u = new URL(baseUrl);
+    if (u.protocol !== "https:") return false;
+    if (u.hostname !== "api.openai.com") return false;
+    if (u.port !== "") return false;
+    const path = u.pathname.replace(/\/+$/, "");
+    return path === "" || path === "/v1";
+  } catch {
+    return false;
+  }
+}
+
+export function requiresExplicitModel(baseUrl: string | undefined): boolean {
+  if (!baseUrl) return false;
+  const normalized = normalizeBaseUrl(baseUrl);
+  if (isDefaultOpenAIHost(normalized)) return false;
+  return !detectAzure(normalized);
+}

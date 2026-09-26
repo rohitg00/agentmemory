@@ -5,6 +5,7 @@ import {
   buildEmbeddingUrl,
   detectAzure,
   normalizeBaseUrl,
+  requiresExplicitModel,
 } from "../src/providers/_openai-shared.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
 
@@ -21,9 +22,10 @@ describe("_openai-shared — detectAzure", () => {
     expect(detectAzure("https://api.openai.com")).toBe(false);
   });
 
-  it("does not flag DeepSeek / SiliconFlow / Ollama / vLLM", () => {
+  it("does not flag DeepSeek / SiliconFlow / Novita / Ollama / vLLM", () => {
     expect(detectAzure("https://api.deepseek.com/v1")).toBe(false);
     expect(detectAzure("https://api.siliconflow.cn")).toBe(false);
+    expect(detectAzure("https://api.novita.ai/openai/v1")).toBe(false);
     expect(detectAzure("http://localhost:11434/v1")).toBe(false);
     expect(detectAzure("http://localhost:8000/v1")).toBe(false);
   });
@@ -160,6 +162,12 @@ describe("_openai-shared — non-OpenAI base URLs (#628, #646)", () => {
     ).toBe("https://api.deepseek.com/v1/embeddings");
   });
 
+  it("routes Novita AI's /openai/v1 base through the v1 anchor", () => {
+    expect(
+      buildChatUrl("https://api.novita.ai/openai/v1", false, "2024-08-01-preview"),
+    ).toBe("https://api.novita.ai/openai/v1/chat/completions");
+  });
+
   it("does not inject /v1 when provider uses non-OpenAI version segment (Zhipu /api/paas/v4, #646)", () => {
     expect(
       buildChatUrl(
@@ -190,6 +198,47 @@ describe("_openai-shared — non-OpenAI base URLs (#628, #646)", () => {
     expect(
       buildChatUrl("http://localhost:8000/v1", false, "2024-08-01-preview"),
     ).toBe("http://localhost:8000/v1/chat/completions");
+  });
+});
+
+describe("_openai-shared — requiresExplicitModel", () => {
+  it("does not require a model for the default OpenAI endpoint", () => {
+    expect(requiresExplicitModel(undefined)).toBe(false);
+    expect(requiresExplicitModel("https://api.openai.com")).toBe(false);
+  });
+
+  it("does not require a model for the default OpenAI endpoint with an explicit /v1 suffix (QA regression)", () => {
+    expect(requiresExplicitModel("https://api.openai.com/v1")).toBe(false);
+    expect(requiresExplicitModel("https://api.openai.com/v1/")).toBe(false);
+  });
+
+  it("still requires a model for a different host that happens to end in /v1", () => {
+    expect(requiresExplicitModel("https://api.openai.com.evil.example/v1")).toBe(
+      true,
+    );
+  });
+
+  it("still requires a model for api.openai.com over plain http or a non-default port", () => {
+    expect(requiresExplicitModel("http://api.openai.com/v1")).toBe(true);
+    expect(requiresExplicitModel("https://api.openai.com:8443/v1")).toBe(true);
+  });
+
+  it("does not require a model for Azure OpenAI", () => {
+    expect(
+      requiresExplicitModel(
+        "https://myresource.openai.azure.com/openai/deployments/mydeploy",
+      ),
+    ).toBe(false);
+  });
+
+  it("requires a model for Novita AI's OpenAI-compatible base URL", () => {
+    expect(requiresExplicitModel("https://api.novita.ai/openai/v1")).toBe(true);
+  });
+
+  it("requires a model for DeepSeek / SiliconFlow / local OpenAI-compatible servers", () => {
+    expect(requiresExplicitModel("https://api.deepseek.com/v1")).toBe(true);
+    expect(requiresExplicitModel("https://api.siliconflow.cn")).toBe(true);
+    expect(requiresExplicitModel("http://localhost:11434/v1")).toBe(true);
   });
 });
 

@@ -10,6 +10,7 @@ import type {
   ClaudeBridgeConfig,
   TeamConfig,
 } from "./types.js";
+import { requiresExplicitModel } from "./providers/_openai-shared.js";
 
 function safeParseInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
@@ -86,8 +87,13 @@ export function hydrateProcessEnvFromFile(): void {
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
 
-  // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
+    if (!hasRealValue(env["OPENAI_MODEL"]) && requiresExplicitModel(env["OPENAI_BASE_URL"])) {
+      throw new Error(
+        `OPENAI_MODEL is required when OPENAI_BASE_URL points at a non-default, non-Azure endpoint (got ${env["OPENAI_BASE_URL"]}). ` +
+          `The gpt-5.6-luna default only exists on api.openai.com; set OPENAI_MODEL to a model your provider actually serves.`,
+      );
+    }
     return {
       provider: "openai",
       model: env["OPENAI_MODEL"] || "gpt-5.6-luna",
