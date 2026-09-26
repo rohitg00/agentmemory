@@ -17,6 +17,7 @@ export interface Session {
 export interface ProjectSessionIndexEntry {
   id: string;
   startedAt: string;
+  agentId?: string;
 }
 
 export interface CommitLink {

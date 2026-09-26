@@ -11,7 +11,7 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import {
-  buildProjectSessionIndex,
+  ensureProjectSessionIndex,
   getProjectSessionIndex,
 } from "../state/session-index.js";
 import { recordAccessBatch } from "./access-tracker.js";
@@ -181,21 +181,28 @@ export function registerContextFunction(
         );
       } else {
         const allSessions = await kv.list<Session>(KV.sessions);
-        projectSessions = allSessions.filter(
-          (s) => s.project === data.project,
-        );
-        await kv
-          .set(
-            KV.projectSessionsIndex,
-            data.project,
-            buildProjectSessionIndex(
-              projectSessions.map((s) => ({
-                id: s.id,
-                startedAt: s.startedAt,
-              })),
+        const scanned = allSessions.filter((s) => s.project === data.project);
+        const ensuredIndex = await ensureProjectSessionIndex(
+          kv,
+          data.project,
+          scanned.map((s) => ({
+            id: s.id,
+            startedAt: s.startedAt,
+            ...(s.agentId ? { agentId: s.agentId } : {}),
+          })),
+        ).catch(() => null);
+        if (ensuredIndex) {
+          const fetched = await Promise.all(
+            ensuredIndex.map((entry) =>
+              kv.get<Session>(KV.sessions, entry.id).catch(() => null),
             ),
-          )
-          .catch(() => {});
+          );
+          projectSessions = fetched.filter(
+            (s): s is Session => s !== null,
+          );
+        } else {
+          projectSessions = scanned;
+        }
       }
 
       const sessions = projectSessions

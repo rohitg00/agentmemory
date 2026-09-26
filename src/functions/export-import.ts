@@ -434,6 +434,7 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
         await addSessionToProjectIndex(kv, session.project, {
           id: session.id,
           startedAt: session.startedAt,
+          ...(session.agentId ? { agentId: session.agentId } : {}),
         }).catch(() => {});
         stats.sessions++;
       });

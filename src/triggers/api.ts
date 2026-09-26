@@ -737,6 +737,7 @@ export function registerApiTriggers(
       await addSessionToProjectIndex(kv, project, {
         id: sessionId,
         startedAt: session.startedAt,
+        ...(session.agentId ? { agentId: session.agentId } : {}),
       }).catch((err) => {
         logger.warn("session index update failed", {
           sessionId,

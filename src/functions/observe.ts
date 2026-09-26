@@ -312,6 +312,7 @@ export function registerObserveFunction(
           await addSessionToProjectIndex(kv, payload.project, {
             id: payload.sessionId,
             startedAt,
+            ...(inheritedAgentId ? { agentId: inheritedAgentId } : {}),
           }).catch((err) => {
             logger.warn("session index update failed", {
               sessionId: payload.sessionId,

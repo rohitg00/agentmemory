@@ -5,6 +5,7 @@ import {
   removeSessionFromProjectIndex,
   getProjectSessionIndex,
   buildProjectSessionIndex,
+  ensureProjectSessionIndex,
 } from "../src/state/session-index.js";
 import { KV } from "../src/state/schema.js";
 import type { Session } from "../src/types.js";
@@ -148,6 +149,94 @@ describe("project session index — maintenance (kv-access finding 3)", () => {
       "ses_1",
       "ses_0",
     ]);
+  });
+
+  it("addSessionToProjectIndex builds the initial index from stored sessions, not just the new entry", async () => {
+    await kv.set(KV.sessions, "ses_old_1", {
+      id: "ses_old_1",
+      project: "proj-cold",
+      startedAt: "2026-01-01T00:00:00Z",
+    });
+    await kv.set(KV.sessions, "ses_old_2", {
+      id: "ses_old_2",
+      project: "proj-cold",
+      startedAt: "2026-01-02T00:00:00Z",
+    });
+    await kv.set(KV.sessions, "ses_other_project", {
+      id: "ses_other_project",
+      project: "proj-unrelated",
+      startedAt: "2026-01-03T00:00:00Z",
+    });
+
+    await addSessionToProjectIndex(kv as never, "proj-cold", {
+      id: "ses_new",
+      startedAt: "2026-01-04T00:00:00Z",
+    });
+
+    const index = await getProjectSessionIndex(kv as never, "proj-cold");
+    expect(index?.map((e) => e.id).sort()).toEqual([
+      "ses_new",
+      "ses_old_1",
+      "ses_old_2",
+    ]);
+  });
+
+  it("ensureProjectSessionIndex recheck-under-lock never discards a concurrently added session", async () => {
+    await addSessionToProjectIndex(kv as never, "proj-race", {
+      id: "ses_concurrent",
+      startedAt: "2026-01-02T00:00:00Z",
+    });
+
+    const stale = await ensureProjectSessionIndex(kv as never, "proj-race", [
+      { id: "ses_stale_scan", startedAt: "2026-01-01T00:00:00Z" },
+    ]);
+
+    expect(stale.map((e) => e.id)).toEqual(["ses_concurrent"]);
+    const index = await getProjectSessionIndex(kv as never, "proj-race");
+    expect(index?.map((e) => e.id)).toEqual(["ses_concurrent"]);
+  });
+
+  it("keeps a low-volume agent's sessions in the index alongside a high-volume agent", async () => {
+    for (let i = 0; i < 60; i++) {
+      await addSessionToProjectIndex(kv as never, "proj-fair", {
+        id: `busy_${i}`,
+        startedAt: new Date(2026, 0, 1, 0, 0, i).toISOString(),
+        agentId: "agent-busy",
+      });
+    }
+    for (let i = 0; i < 3; i++) {
+      await addSessionToProjectIndex(kv as never, "proj-fair", {
+        id: `quiet_${i}`,
+        startedAt: new Date(2025, 0, 1, 0, 0, i).toISOString(),
+        agentId: "agent-quiet",
+      });
+    }
+
+    const index = await getProjectSessionIndex(kv as never, "proj-fair");
+    expect(index?.length).toBe(50);
+    const quietIds = index?.filter((e) => e.agentId === "agent-quiet").map((e) => e.id);
+    expect(quietIds?.sort()).toEqual(["quiet_0", "quiet_1", "quiet_2"]);
+  });
+
+  it("replenishes the index from stored sessions when removal drops below the cap", async () => {
+    for (let i = 0; i < 51; i++) {
+      const id = `ses_${i}`;
+      const startedAt = new Date(2026, 0, 1, 0, 0, i).toISOString();
+      await kv.set(KV.sessions, id, { id, project: "proj-replenish", startedAt });
+      await addSessionToProjectIndex(kv as never, "proj-replenish", { id, startedAt });
+    }
+
+    const before = await getProjectSessionIndex(kv as never, "proj-replenish");
+    expect(before?.length).toBe(50);
+    expect(before?.map((e) => e.id)).not.toContain("ses_0");
+
+    const newest = before![0].id;
+    await removeSessionFromProjectIndex(kv as never, "proj-replenish", newest);
+
+    const after = await getProjectSessionIndex(kv as never, "proj-replenish");
+    expect(after?.length).toBe(50);
+    expect(after?.map((e) => e.id)).toContain("ses_0");
+    expect(after?.map((e) => e.id)).not.toContain(newest);
   });
 });
 
