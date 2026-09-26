@@ -13,6 +13,7 @@ import {
   isConsolidationEnabled,
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
+  getAuditRetentionMonths,
 } from "./config.js";
 import {
   createProvider,
@@ -91,6 +92,7 @@ import { registerSlidingWindowFunction } from "./functions/sliding-window.js";
 import { registerQueryExpansionFunction } from "./functions/query-expansion.js";
 import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
 import { registerRetentionFunctions } from "./functions/retention.js";
+import { startAuditMigration } from "./functions/audit.js";
 import { registerCompressFileFunction } from "./functions/compress-file.js";
 import { registerReplayFunctions } from "./functions/replay.js";
 import { registerApiTriggers } from "./triggers/api.js";
@@ -466,6 +468,8 @@ async function main() {
     }
   }
 
+  const auditMigration = startAuditMigration(kv).catch(() => {});
+
   const needsRebuild = bm25Index.size === 0;
 
   if (needsRebuild) {
@@ -574,6 +578,22 @@ async function main() {
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
     bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+  }
+
+  const auditRetentionMonths = getAuditRetentionMonths();
+  if (auditRetentionMonths > 0) {
+    const runAuditSweep = async () => {
+      try {
+        await auditMigration;
+        await sdk.trigger({ function_id: "mem::audit-retention-sweep", payload: {} });
+      } catch {}
+    };
+    void runAuditSweep();
+    const auditRetentionTimer = setInterval(runAuditSweep, 86400000);
+    auditRetentionTimer.unref();
+    bootLog(
+      `Audit retention sweep: enabled (drop month scopes older than ${auditRetentionMonths}mo, every 24h)`,
+    );
   }
 
   if (process.env.LESSON_DECAY_ENABLED !== "false") {

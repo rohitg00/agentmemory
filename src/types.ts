@@ -631,12 +631,33 @@ export interface AuditEntry {
     | "slot_replace"
     | "slot_create"
     | "slot_delete"
-    | "slot_reflect";
+    | "slot_reflect"
+    | "audit_migrate";
   userId?: string;
   functionId: string;
   targetIds: string[];
   details: Record<string, unknown>;
   qualityScore?: number;
+}
+
+export interface AuditMonthIndex {
+  months: string[];
+}
+
+export interface AuditMigrationState {
+  status: "too-large" | "unreadable" | "copied" | "done";
+  safeToListLegacy: boolean;
+  legacySizeBytes?: number;
+  migrated: number;
+  purged: number;
+  summaryWritten: boolean;
+  checkedAt: string;
+}
+
+export interface AuditQueryResult {
+  entries: AuditEntry[];
+  legacyFrozen: boolean;
+  legacyFrozenBytes?: number;
 }
 
 export interface GovernanceFilter {

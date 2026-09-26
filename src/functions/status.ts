@@ -58,6 +58,7 @@ export interface StatusInputs {
   };
   graph: GraphStatsInput | null;
   graphExtractionEnabled: boolean;
+  auditLegacy: { status: string; sizeBytes?: number } | null;
 }
 
 export interface StatusReport {
@@ -195,6 +196,17 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
         message: "The graph snapshot was read while a write was in flight; counts are eventually consistent.",
       });
     }
+  }
+
+  if (input.auditLegacy && input.auditLegacy.status !== "done") {
+    const size = input.auditLegacy.sizeBytes;
+    const sizeText = typeof size === "number" ? ` (${Math.round(size / (1024 * 1024))} MiB)` : "";
+    problems.push({
+      level: "info",
+      code: "audit-legacy-frozen",
+      message: `An older audit log${sizeText} was left in place instead of being migrated into monthly scopes, so it is no longer rewritten but its rows do not show up in audit queries.`,
+      fix: "Safe to ignore. To remove it, stop agentmemory, delete mem%3Aaudit.bin from the state store directory, then start it again.",
+    });
   }
 
   const status = problems.reduce<StatusLevel>(

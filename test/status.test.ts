@@ -35,6 +35,7 @@ function inputs(overrides: Partial<StatusInputs> = {}): StatusInputs {
       updatedAt: "2026-09-24T11:59:00.000Z",
     },
     graphExtractionEnabled: true,
+    auditLegacy: null,
     ...overrides,
   };
 }
@@ -217,8 +218,9 @@ describe("status wiring", () => {
 
   it("time-boxes every status probe so a slow store cannot hang the page", () => {
     const handler = api.slice(api.indexOf('registerFunction("api::status"'), api.indexOf('function_id: "api::status"'));
-    expect(handler.match(/valueWithin\(/g)?.length).toBe(4);
+    expect(handler.match(/valueWithin\(/g)?.length).toBe(5);
     expect(handler).toMatch(/valueWithin\(sharedUnindexedScan\(\), STATUS_CHECK_TIMEOUT_MS\)/);
+    expect(handler).toMatch(/valueWithin\(\s*kv\.get<AuditMigrationState>\(KV\.auditMonths, AUDIT_MIGRATION_STATE_KEY\),\s*STATUS_CHECK_TIMEOUT_MS,\s*\)/);
     expect(api).toMatch(/const sharedUnindexedScan = singleFlight\(\(\) => findUnindexedObservations\(kv\), UNINDEXED_SCAN_REUSE_MS\);/);
   });
 

@@ -4,6 +4,7 @@ import {
   setIndexPersistence,
 } from "../src/functions/search.js";
 import { memoryToObservation } from "../src/state/memory-utils.js";
+import { currentAuditScope } from "./helpers/mocks.js";
 import type { Memory, SemanticMemory } from "../src/types.js";
 
 vi.mock("../src/logger.js", () => ({
@@ -358,7 +359,7 @@ describe("RetentionScoring", () => {
       functionId: string;
       targetIds: string[];
       details: Record<string, unknown>;
-    }>("mem:audit");
+    }>(currentAuditScope());
     const evictEntries = allEntries.filter(
       (e) => e.functionId === "mem::retention-evict",
     );
@@ -391,7 +392,7 @@ describe("RetentionScoring", () => {
       payload: { threshold: 0.0001 },
     });
 
-    const allEntries = await kv.list<{ functionId: string }>("mem:audit");
+    const allEntries = await kv.list<{ functionId: string }>(currentAuditScope());
     const evictEntries = allEntries.filter(
       (e) => e.functionId === "mem::retention-evict",
     );
@@ -417,7 +418,7 @@ describe("RetentionScoring", () => {
       functionId: string;
       targetIds: string[];
       details: Record<string, unknown>;
-    }>("mem:audit");
+    }>(currentAuditScope());
     const scoreEntries = allEntries.filter(
       (e) => e.functionId === "mem::retention-score",
     );

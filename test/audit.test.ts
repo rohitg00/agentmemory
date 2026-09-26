@@ -60,7 +60,7 @@ describe("Audit Functions", () => {
     await new Promise((r) => setTimeout(r, 10));
     await recordAudit(kv as never, "delete", "fn2", ["b"], {});
 
-    const entries = await queryAudit(kv as never);
+    const { entries } = await queryAudit(kv as never);
     expect(entries.length).toBe(2);
     expect(
       new Date(entries[0].timestamp).getTime(),
@@ -72,7 +72,7 @@ describe("Audit Functions", () => {
     await recordAudit(kv as never, "delete", "fn2", [], {});
     await recordAudit(kv as never, "observe", "fn3", [], {});
 
-    const entries = await queryAudit(kv as never, { operation: "observe" });
+    const { entries } = await queryAudit(kv as never, { operation: "observe" });
     expect(entries.length).toBe(2);
     expect(entries.every((e) => e.operation === "observe")).toBe(true);
   });
@@ -82,13 +82,13 @@ describe("Audit Functions", () => {
     await new Promise((r) => setTimeout(r, 20));
     const late = await recordAudit(kv as never, "delete", "fn2", [], {});
 
-    const entries = await queryAudit(kv as never, {
+    const { entries } = await queryAudit(kv as never, {
       dateFrom: late.timestamp,
     });
     expect(entries.length).toBe(1);
     expect(entries[0].operation).toBe("delete");
 
-    const entriesBefore = await queryAudit(kv as never, {
+    const { entries: entriesBefore } = await queryAudit(kv as never, {
       dateTo: early.timestamp,
     });
     expect(entriesBefore.length).toBe(1);
@@ -100,7 +100,7 @@ describe("Audit Functions", () => {
       await recordAudit(kv as never, "observe", `fn${i}`, [], {});
     }
 
-    const entries = await queryAudit(kv as never, { limit: 3 });
+    const { entries } = await queryAudit(kv as never, { limit: 3 });
     expect(entries.length).toBe(3);
   });
 });

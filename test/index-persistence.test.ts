@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { IndexPersistence } from "../src/state/index-persistence.js";
 import { SearchIndex } from "../src/state/search-index.js";
 import { VectorIndex } from "../src/state/vector-index.js";
+import { currentAuditScope } from "./helpers/mocks.js";
 import type { CompressedObservation } from "../src/types.js";
 
 const BM25_SCOPE = "mem:index:bm25";
@@ -817,7 +818,7 @@ describe("index_persist audit gating", () => {
   });
 
   async function indexPersistEntries(): Promise<Array<{ operation: string }>> {
-    const entries = await kv.list<{ operation: string }>("mem:audit");
+    const entries = await kv.list<{ operation: string }>(currentAuditScope());
     return entries.filter((entry) => entry.operation === "index_persist");
   }
 
