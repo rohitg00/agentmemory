@@ -208,7 +208,9 @@ export function registerSnapshotFunction(
         }
         if (state.graphNodes) {
           for (const node of state.graphNodes) {
-            await kv.set(KV.graphNodes, node.id, node);
+            await withKeyedLock("graph:persist", () =>
+              kv.set(KV.graphNodes, node.id, node),
+            );
           }
         }
         if (state.observations) {

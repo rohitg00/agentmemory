@@ -375,11 +375,13 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
         );
         await runChunked(
           await kv.list<{ id: string }>(KV.graphNodes).catch(() => []),
-          (n) => kv.delete(KV.graphNodes, n.id),
+          (n) =>
+            withKeyedLock("graph:persist", () => kv.delete(KV.graphNodes, n.id)),
         );
         await runChunked(
           await kv.list<{ id: string }>(KV.graphEdges).catch(() => []),
-          (e) => kv.delete(KV.graphEdges, e.id),
+          (e) =>
+            withKeyedLock("graph:persist", () => kv.delete(KV.graphEdges, e.id)),
         );
         await runChunked(
           await kv.list<{ id: string }>(KV.semantic).catch(() => []),
@@ -476,22 +478,26 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
       });
 
       if (importData.graphNodes) {
-        await runChunked(importData.graphNodes, async (node) => {
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
-            if (existing) { stats.skipped++; return; }
-          }
-          await kv.set(KV.graphNodes, node.id, node);
-        });
+        await runChunked(importData.graphNodes, (node) =>
+          withKeyedLock("graph:persist", async () => {
+            if (strategy === "skip") {
+              const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
+              if (existing) { stats.skipped++; return; }
+            }
+            await kv.set(KV.graphNodes, node.id, node);
+          }),
+        );
       }
       if (importData.graphEdges) {
-        await runChunked(importData.graphEdges, async (edge) => {
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
-            if (existing) { stats.skipped++; return; }
-          }
-          await kv.set(KV.graphEdges, edge.id, edge);
-        });
+        await runChunked(importData.graphEdges, (edge) =>
+          withKeyedLock("graph:persist", async () => {
+            if (strategy === "skip") {
+              const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
+              if (existing) { stats.skipped++; return; }
+            }
+            await kv.set(KV.graphEdges, edge.id, edge);
+          }),
+        );
       }
       if (importData.semanticMemories) {
         await runChunked(importData.semanticMemories, async (sem) => {
