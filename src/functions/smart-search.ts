@@ -5,9 +5,11 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Memory,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { memoryToObservation } from "../state/memory-utils.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import {
@@ -382,5 +384,6 @@ async function findObservation(
     const found = results.find((r) => r !== null);
     if (found) return found;
   }
-  return null;
+  const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
+  return memory ? memoryToObservation(memory) : null;
 }

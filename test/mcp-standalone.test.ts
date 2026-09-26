@@ -285,18 +285,47 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("Use bcrypt for password hashing");
   });
 
-  it("memory_smart_search rejects empty query to prevent match-all in forget flow (#139)", async () => {
+  it("memory_smart_search rejects requests without a query or expandIds", async () => {
     const kv = new InMemoryKV();
     await handleToolCall("memory_save", { content: "anything" }, kv);
     await expect(
       handleToolCall("memory_smart_search", {}, kv),
-    ).rejects.toThrow("query is required");
+    ).rejects.toThrow("query or expandIds is required");
     await expect(
       handleToolCall("memory_smart_search", { query: "" }, kv),
-    ).rejects.toThrow("query is required");
+    ).rejects.toThrow("query or expandIds is required");
     await expect(
       handleToolCall("memory_smart_search", { query: "   " }, kv),
-    ).rejects.toThrow("query is required");
+    ).rejects.toThrow("query or expandIds is required");
+  });
+
+  it("memory_smart_search expands saved memory IDs without a query", async () => {
+    const kv = new InMemoryKV();
+    const saved = await handleToolCall(
+      "memory_save",
+      { content: "Use argon2id", concepts: ["auth"] },
+      kv,
+    );
+    const id = JSON.parse(saved.content[0].text).saved as string;
+
+    const result = await handleToolCall(
+      "memory_smart_search",
+      { expandIds: [id] },
+      kv,
+    );
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.mode).toBe("expanded");
+    expect(parsed.results).toHaveLength(1);
+    expect(parsed.results[0]).toMatchObject({
+      obsId: id,
+      sessionId: "memory",
+      observation: {
+        id,
+        narrative: "Use argon2id",
+        concepts: ["auth"],
+      },
+    });
   });
 
   it("memory_smart_search searches files and concepts, not just title/content (#139)", async () => {
