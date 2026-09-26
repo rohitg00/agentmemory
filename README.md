@@ -1290,7 +1290,7 @@ Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there co
 
 ### Storage backend: file (default) vs redis
 
-`iii-state` and `iii-stream` default to iii-engine's bundled file-based KV store: one JSON file per scope, held in the engine process's memory and rewritten to disk on a timer. That's the right default for a single-user local install, but a shared daemon with several concurrent writers benefits from real per-key writes instead.
+`iii-state` and `iii-stream` default to iii-engine's bundled file-based KV store: one JSON file per scope, held in the engine process's memory and rewritten to disk on a timer. That's the right default for a single-user local install; a shared daemon with several concurrent writers gets real per-key writes from Redis instead, at the cost of a network round trip per operation (every `state::*` call still serializes on one Redis connection, so this trades the file store's lock for a socket, not for parallelism).
 
 Set `AGENTMEMORY_STATE_BACKEND=redis` (plus `AGENTMEMORY_REDIS_URL`) to switch both workers to iii-engine's built-in `redis` adapter, which stores each key as a Redis hash field (`HSET`) instead of rewriting a whole scope on every write:
 
@@ -1300,16 +1300,27 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` defaults to `file`; leaving it unset keeps today's behavior unchanged. Only a native (non-Docker) start reads these two variables and renders them into the launched `iii-config`. A Docker Compose deployment mounts `iii-config.docker.yaml` read-only and never goes through this render step — switch it by hand, following the same `name: redis` / `config: redis_url: ...` shape shown in the [iii-state](https://workers.iii.dev/workers/iii-state) and [iii-stream](https://workers.iii.dev/workers/iii-stream) worker docs, and point `redis_url` at a Redis reachable from the container.
+`AGENTMEMORY_STATE_BACKEND` defaults to `file`; leaving it unset keeps today's behavior unchanged, and an unrecognized value (anything other than `file` or `redis`) is a startup error rather than a silent fallback. `/agentmemory/status` reports which backend is active (never the URL).
 
-**Migration is not automatic.** Switching `AGENTMEMORY_STATE_BACKEND` starts from an empty store on either side — nothing copies existing data from file to Redis or back. Export from the backend you're leaving and import into the one you're moving to:
+**Plain `redis://` only.** The pinned engine (0.22.1) builds its Redis client without TLS support, so a `rediss://` URL (most managed Redis offerings — Upstash, Redis Cloud, ElastiCache with in-transit encryption — default to TLS-only) fails to connect. Point at a local Redis, or a plain-TCP one reached through an SSH/stunnel tunnel.
+
+**One Redis DB per `--instance`.** The engine's Redis key prefixes (`state:<scope>`, `stream:<name>:<group>`) are fixed, so two agentmemory instances (`--instance 1`, `--instance 2`, ...) pointed at the same database collide and cross-feed each other's viewer stream. Give each instance its own database index, e.g. `redis://localhost:6379/1`.
+
+**Recommended Redis settings.** The default `save 3600 1 300 100 60 10000` snapshot policy can lose minutes of writes on a crash, worse than the file store's 5s flush window — set `appendonly yes` for anything you'd mind losing. Set `maxmemory-policy noeviction`; `allkeys-lru` or similar silently drops memories once Redis hits its memory limit.
+
+A native (non-Docker) start, and every one-click [deploy template](deploy/) (they overwrite the bundled `iii-config.yaml` and start natively), read `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` and render them into the launched `iii-config` — the URL itself is never written to that rendered file, only a `${AGENTMEMORY_REDIS_URL}` reference that the engine process expands from its own environment at boot. Only this repo's own Docker Compose path (`AGENTMEMORY_USE_DOCKER=1`, or resuming an engine already started that way) mounts `iii-config.docker.yaml` read-only and never renders — `agentmemory start` warns when it detects that combination. Switch that file by hand, following the same `name: redis` / `config: redis_url: ...` shape shown in the [iii-state](https://workers.iii.dev/workers/iii-state) and [iii-stream](https://workers.iii.dev/workers/iii-stream) worker docs, and point `redis_url` at a Redis reachable from the container.
+
+The rendered config keeps the URL out of `~/.agentmemory/data/iii-config.runtime.yaml`, but the engine's own configuration worker still persists the *expanded* value to `~/.agentmemory/config/iii-state.yaml` and `iii-stream.yaml` once it boots (iii-engine's `${VAR}` expansion happens before that worker stores its seed, and it stores the resolved value, not the reference). Treat that directory as holding a credential: `chmod 700 ~/.agentmemory` on any shared host, and prefer a Redis ACL user scoped to what agentmemory needs over the database's admin credentials.
+
+**Migration is not automatic.** Switching `AGENTMEMORY_STATE_BACKEND` starts from an empty store on either side — nothing copies existing data from file to Redis or back. Export from the backend you're leaving and import into the one you're moving to. This runs identically under bash and zsh (including `bash -u`) — an array like `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` does not: zsh keeps the header as one malformed word where bash splits it into two, so both requests 401 whenever `AGENTMEMORY_SECRET` is set:
 
 ```bash
-# 0. If AGENTMEMORY_SECRET is set, both requests need it:
-AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})
-
 # 1. On the old backend, while agentmemory is still running on it:
-curl -fsS "${AUTH[@]}" http://localhost:3111/agentmemory/export > backup.json
+if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
+  curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" http://localhost:3111/agentmemory/export > backup.json
+else
+  curl -fsS http://localhost:3111/agentmemory/export > backup.json
+fi
 
 # 2. Confirm backup.json is a usable export before switching backends:
 jq -e '.version and .exportedAt' backup.json > /dev/null || {
@@ -1319,9 +1330,15 @@ jq -e '.version and .exportedAt' backup.json > /dev/null || {
 
 # 3. Switch AGENTMEMORY_STATE_BACKEND (and AGENTMEMORY_REDIS_URL if needed),
 #    restart agentmemory against the new backend, then:
-jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
-  curl -fsS "${AUTH[@]}" -X POST http://localhost:3111/agentmemory/import \
-    -H 'Content-Type: application/json' -d @-
+if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
+  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
+    curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" -X POST http://localhost:3111/agentmemory/import \
+      -H 'Content-Type: application/json' -d @-
+else
+  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
+    curl -fsS -X POST http://localhost:3111/agentmemory/import \
+      -H 'Content-Type: application/json' -d @-
+fi
 ```
 
 `/agentmemory/export` also accepts `?maxSessions=` and `?offset=` for chunking a large corpus across several calls; `strategy` on import is `merge` (default-safe), `replace`, or `skip`.

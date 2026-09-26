@@ -37,6 +37,7 @@ export interface StatusInputs {
   version: string;
   engineVersion: string;
   uptimeSeconds: number;
+  stateBackend: "file" | "redis";
   ports: { rest: number | null; streams: number | null; viewer: number | null };
   health: {
     status?: string;
@@ -67,6 +68,7 @@ export interface StatusReport {
     version: string;
     engineVersion: string;
     uptimeSeconds: number;
+    stateBackend: StatusInputs["stateBackend"];
     ports: StatusInputs["ports"];
   };
   health: StatusInputs["health"];
@@ -209,6 +211,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       version: input.version,
       engineVersion: input.engineVersion,
       uptimeSeconds: input.uptimeSeconds,
+      stateBackend: input.stateBackend,
       ports: input.ports,
     },
     health: input.health,
@@ -313,6 +316,7 @@ a{color:inherit}
 <h2>Problems</h2><ul class="problems">${problems}</ul>
 <h2>Service</h2><table>
 ${row("Uptime", escapeHtml(formatDuration(report.service.uptimeSeconds)))}
+${row("State backend", escapeHtml(report.service.stateBackend))}
 ${row("REST port", escapeHtml(ports.rest ?? "unknown"))}
 ${row("Streams port", escapeHtml(ports.streams ?? "unknown"))}
 ${row("Viewer port", escapeHtml(ports.viewer ?? "not running"))}

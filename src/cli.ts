@@ -64,6 +64,8 @@ import {
   rewriteBundledConfig,
   runtimeConfigPath,
   engineChildEnv,
+  resolveLaunchRenderFailure,
+  redactCredentialUrls,
 } from "./cli/engine-launch.js";
 import { runtimeMetadataPath } from "./runtime-paths.js";
 import { createStartupStderrCapture } from "./cli/startup-stderr.js";
@@ -1352,7 +1354,7 @@ let startupFailure: StartupFailure | null = null;
 let activeStartupStderr = createStartupStderrCapture();
 
 function printCapturedStartupStderr(): void {
-  const stderr = activeStartupStderr.text().trim();
+  const stderr = redactCredentialUrls(activeStartupStderr.text().trim());
   if (IS_VERBOSE && stderr) {
     p.note(stderr, "engine stderr");
   }
@@ -1380,7 +1382,7 @@ function printDockerStartupLogs(): void {
       maxBuffer: 64 * 1024,
     },
   );
-  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+  const output = redactCredentialUrls(`${result.stdout ?? ""}${result.stderr ?? ""}`.trim());
   if (output) p.note(output.slice(-16 * 1024), "docker engine logs");
 }
 
@@ -1414,7 +1416,7 @@ function spawnEngineBackground(
     const abnormal =
       (code !== null && code !== 0) || (code === null && signal !== null);
     if (abnormal) {
-      const stderr = activeStartupStderr.text();
+      const stderr = redactCredentialUrls(activeStartupStderr.text());
       startupFailure = {
         kind: isDocker ? "docker-crashed" : "engine-crashed",
         stderr:
@@ -1455,6 +1457,7 @@ function prepareEngineLaunch(configPath: string): {
   } catch {
     return { configPath, cwd: process.cwd() };
   }
+  const stateBackendKind = getStateBackend();
   try {
     const rawConfig = readFileSync(configPath, "utf-8");
     const options = {
@@ -1465,7 +1468,7 @@ function prepareEngineLaunch(configPath: string): {
         viewerPort: getConfiguredViewerPort(),
         enginePort: getEnginePort(),
       },
-      stateBackend: { kind: getStateBackend(), redisUrl: getRedisUrl() },
+      stateBackend: { kind: stateBackendKind, redisUrl: getRedisUrl() },
     };
     const rewritten = bundledConfig
       ? rewriteBundledConfig(
@@ -1514,6 +1517,11 @@ function prepareEngineLaunch(configPath: string): {
       cwd,
     };
   } catch (err) {
+    const failure = resolveLaunchRenderFailure(stateBackendKind, err);
+    if (failure.fatal) {
+      p.log.error(failure.message);
+      process.exit(1);
+    }
     vlog(`runtime config generation failed, using bundled config verbatim: ${String(err)}`);
     return { configPath, cwd };
   }
@@ -1552,8 +1560,23 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
   return null;
 }
 
+function warnIfDockerIgnoresStateBackend(stateBackendKind: "file" | "redis"): void {
+  if (stateBackendKind !== "redis") return;
+  p.log.warn(
+    "AGENTMEMORY_STATE_BACKEND=redis is not applied on the Docker path: docker-compose.yml mounts iii-config.docker.yaml read-only, so this start will not render it. " +
+      "Edit iii-config.docker.yaml by hand to point iii-state/iii-stream at redis (see README \"Storage backend\"), or it keeps using the file store.",
+  );
+}
+
 async function startEngine(): Promise<boolean> {
-  if (getStateBackend() === "redis" && !getRedisUrl()) {
+  let stateBackendKind: "file" | "redis";
+  try {
+    stateBackendKind = getStateBackend();
+  } catch (err) {
+    p.log.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+  if (stateBackendKind === "redis" && !getRedisUrl()) {
     p.log.error(
       "AGENTMEMORY_STATE_BACKEND=redis requires AGENTMEMORY_REDIS_URL to be set (e.g. redis://localhost:6379). " +
         "Set both in ~/.agentmemory/.env, or unset AGENTMEMORY_STATE_BACKEND to keep the default file store.",
@@ -1563,6 +1586,7 @@ async function startEngine(): Promise<boolean> {
   await assertRuntimePortOwnership();
   const persistedState = readEngineState();
   if (persistedState?.kind === "docker") {
+    warnIfDockerIgnoresStateBackend(stateBackendKind);
     const inspection = inspectOwnedDockerEngine(persistedState);
     if (inspection.status === "unavailable" || inspection.status === "missing") {
       const detail = inspection.status === "unavailable"
@@ -1708,6 +1732,7 @@ async function startEngine(): Promise<boolean> {
   }
 
   if (choice === "docker" && dockerBin && composeFile) {
+    warnIfDockerIgnoresStateBackend(stateBackendKind);
     const s = p.spinner();
     s.start("Starting iii-engine via Docker...");
     configureDockerHostUser();

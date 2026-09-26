@@ -238,10 +238,16 @@ export function isDropStaleIndexEnabled(): boolean {
 const VALID_STATE_BACKENDS = new Set(["file", "redis"]);
 
 export function getStateBackend(): "file" | "redis" {
-  const raw = (getMergedEnv()["AGENTMEMORY_STATE_BACKEND"] || "file")
+  const raw = (getMergedEnv()["AGENTMEMORY_STATE_BACKEND"] || "")
     .trim()
     .toLowerCase();
-  return VALID_STATE_BACKENDS.has(raw) ? (raw as "file" | "redis") : "file";
+  if (!raw) return "file";
+  if (!VALID_STATE_BACKENDS.has(raw)) {
+    throw new Error(
+      `AGENTMEMORY_STATE_BACKEND="${raw}" is not a recognized state backend. Use "file" (the default) or "redis", or unset it to keep the default file store.`,
+    );
+  }
+  return raw as "file" | "redis";
 }
 
 export function getRedisUrl(): string | undefined {

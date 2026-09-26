@@ -47,8 +47,13 @@ describe("getStateBackend / getRedisUrl", () => {
     expect(config.getStateBackend()).toBe("file");
   });
 
-  it("returns file for an unrecognized value", () => {
+  it("throws a clear error for an unrecognized value instead of silently using file", () => {
     process.env["AGENTMEMORY_STATE_BACKEND"] = "sqlite";
+    expect(() => config.getStateBackend()).toThrow(/AGENTMEMORY_STATE_BACKEND="sqlite"/);
+  });
+
+  it("treats an empty string the same as unset", () => {
+    process.env["AGENTMEMORY_STATE_BACKEND"] = "";
     expect(config.getStateBackend()).toBe("file");
   });
 

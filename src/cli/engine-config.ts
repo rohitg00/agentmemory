@@ -160,10 +160,11 @@ function setWorkerPort(lines: string[], name: string, port: number): void {
   }
 }
 
+const REDIS_URL_ENV_REF = "${AGENTMEMORY_REDIS_URL}";
+
 function replaceKvAdapterWithRedis(
   lines: string[],
   workerName: string,
-  redisUrl: string,
 ): void {
   const block = workerBlock(lines, workerName);
   if (!block) {
@@ -198,7 +199,7 @@ function replaceKvAdapterWithRedis(
     end - (adapterIndex + 1),
     `${childIndent}name: redis`,
     `${childIndent}config:`,
-    `${grandchildIndent}redis_url: ${yamlSingleQuote(redisUrl)}`,
+    `${grandchildIndent}redis_url: ${yamlSingleQuote(REDIS_URL_ENV_REF)}`,
   );
 }
 
@@ -256,8 +257,8 @@ export function renderEngineConfig(
     setManagedCorsOrigins(lines, options.ports.restPort, options.ports.viewerPort);
   }
   if (usesRedis) {
-    replaceKvAdapterWithRedis(lines, "iii-state", options.stateBackend!.redisUrl!);
-    replaceKvAdapterWithRedis(lines, "iii-stream", options.stateBackend!.redisUrl!);
+    replaceKvAdapterWithRedis(lines, "iii-state");
+    replaceKvAdapterWithRedis(lines, "iii-stream");
   }
   return lines.join("\n");
 }

@@ -103,11 +103,12 @@ describe("renderEngineConfig", () => {
     });
 
     expect(rendered).toMatch(
-      /- name: iii-state\n {4}config:\n {6}adapter:\n {8}name: redis\n {8}config:\n {10}redis_url: 'redis:\/\/localhost:6390'/,
+      /- name: iii-state\n {4}config:\n {6}adapter:\n {8}name: redis\n {8}config:\n {10}redis_url: '\$\{AGENTMEMORY_REDIS_URL\}'/,
     );
     expect(rendered).toMatch(
-      /- name: iii-stream\n {4}config:\n {6}port: 3112\n {6}host: 127\.0\.0\.1\n {6}adapter:\n {8}name: redis\n {8}config:\n {10}redis_url: 'redis:\/\/localhost:6390'/,
+      /- name: iii-stream\n {4}config:\n {6}port: 3112\n {6}host: 127\.0\.0\.1\n {6}adapter:\n {8}name: redis\n {8}config:\n {10}redis_url: '\$\{AGENTMEMORY_REDIS_URL\}'/,
     );
+    expect(rendered).not.toContain("redis://localhost:6390");
     expect(rendered).not.toContain("store_method: file_based");
     expect(rendered).not.toContain("state_store.db");
     expect(rendered).not.toContain("stream_store");
