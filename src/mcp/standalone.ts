@@ -9,6 +9,7 @@ import { generateId } from "../state/schema.js";
 import {
   resolveHandle,
   invalidateHandle,
+  ProxyCallError,
   type Handle,
   type ProxyHandle,
 } from "./rest-proxy.js";
@@ -241,8 +242,20 @@ async function handleProxy(
       return textResponse(result);
     }
     case "memory_export": {
-      const result = await handle.call("/agentmemory/export", { method: "GET" });
-      return textResponse(result, true);
+      try {
+        const result = await handle.call("/agentmemory/export", { method: "GET" });
+        return textResponse(result, true);
+      } catch (err) {
+        if (
+          err instanceof ProxyCallError &&
+          err.body != null &&
+          typeof err.body === "object" &&
+          (err.body as { oversized?: boolean }).oversized === true
+        ) {
+          return textResponse(err.body, true);
+        }
+        throw err;
+      }
     }
     case "memory_audit": {
       const result = await handle.call(
