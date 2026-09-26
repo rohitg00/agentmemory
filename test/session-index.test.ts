@@ -238,6 +238,20 @@ describe("project session index — maintenance (kv-access finding 3)", () => {
     expect(after?.map((e) => e.id)).toContain("ses_0");
     expect(after?.map((e) => e.id)).not.toContain(newest);
   });
+
+  it("does not rescan stored sessions when the index was below the cap", async () => {
+    for (let i = 0; i < 5; i++) {
+      const id = `small_${i}`;
+      const startedAt = new Date(2026, 0, 1, 0, 0, i).toISOString();
+      await kv.set(KV.sessions, id, { id, project: "proj-small", startedAt });
+      await addSessionToProjectIndex(kv as never, "proj-small", { id, startedAt });
+    }
+    kv.list.mockClear();
+    await removeSessionFromProjectIndex(kv as never, "proj-small", "small_4");
+    expect(kv.list.mock.calls.filter((c) => c[0] === KV.sessions)).toHaveLength(0);
+    const after = await getProjectSessionIndex(kv as never, "proj-small");
+    expect(after?.map((e) => e.id)).toEqual(["small_3", "small_2", "small_1", "small_0"]);
+  });
 });
 
 describe("mem::context — uses the project session index (kv-access finding 3)", () => {

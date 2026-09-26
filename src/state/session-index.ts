@@ -90,7 +90,7 @@ export async function removeSessionFromProjectIndex(
     if (!existing) return;
     const next = existing.filter((e) => e.id !== sessionId);
     if (next.length === existing.length) return;
-    if (next.length >= PROJECT_SESSION_INDEX_CAP) {
+    if (next.length >= PROJECT_SESSION_INDEX_CAP || existing.length < PROJECT_SESSION_INDEX_CAP) {
       await kv.set(KV.projectSessionsIndex, project, next);
       return;
     }
