@@ -123,7 +123,7 @@ describe("graph:persist serializes cross-path graph mutations", () => {
     const sdk = mockSdk();
     registerCascadeFunction(sdk as never, kv as never);
 
-    const releaseNameIndexRead = kv.armGetGate(KV.graphNameIndex, "concept|react");
+    const releaseNodeRowRead = kv.armGetGate(KV.graphNodes, "node_1");
 
     const incomingNode: GraphNode = {
       id: "node_new",
@@ -147,7 +147,7 @@ describe("graph:persist serializes cross-path graph mutations", () => {
     }) as Promise<{ success: boolean; flagged: { nodes: number } }>;
 
     await flush();
-    releaseNameIndexRead();
+    releaseNodeRowRead();
 
     const [, cascadeResult] = await Promise.all([persistPromise, cascadePromise]);
 

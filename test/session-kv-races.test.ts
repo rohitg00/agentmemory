@@ -223,4 +223,73 @@ describe("KV.sessions concurrent mutation races (finding 3)", () => {
     expect(finalSession).toBeTruthy();
     expect(finalSession.observationCount).toBe(1);
   });
+
+  it("api::session::commit does not revert a concurrent api::session::end status update", async () => {
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never);
+
+    const session: Session = {
+      id: "ses_race5",
+      project: "/repo",
+      cwd: "/repo",
+      startedAt: new Date().toISOString(),
+      status: "active",
+      observationCount: 3,
+    };
+    await kv.set(KV.sessions, "ses_race5", session);
+
+    const releaseCommitRead = kv.armGetGate(KV.sessions, "ses_race5");
+
+    const commitPromise = sdk.trigger("api::session::commit", {
+      body: { sha: "deadbeef01", sessionId: "ses_race5" },
+    });
+
+    await flush();
+
+    const endPromise = sdk.trigger("api::session::end", {
+      body: { sessionId: "ses_race5" },
+    });
+
+    await flush();
+    releaseCommitRead();
+
+    await Promise.all([commitPromise, endPromise]);
+
+    const finalSession = kv.store.get(KV.sessions)?.get("ses_race5") as Session;
+    expect(finalSession.commitShas).toEqual(["deadbeef01"]);
+    expect(finalSession.status).toBe("completed");
+    expect(finalSession.endedAt).toBeTruthy();
+  });
+
+  it("api::session::start does not reset an observation count or firstPrompt already created by mem::observe", async () => {
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerObserveFunction(sdk as never, kv as never);
+    registerApiTriggers(sdk as never, kv as never);
+    sdk.fns.set("mem::context", async () => ({ context: "" }));
+
+    await sdk.trigger("mem::observe", {
+      sessionId: "ses_race4",
+      project: "/repo",
+      cwd: "/repo",
+      hookType: "prompt_submit",
+      timestamp: new Date().toISOString(),
+      data: { prompt: "do the thing" },
+    });
+
+    await sdk.trigger("api::session::start", {
+      body: {
+        sessionId: "ses_race4",
+        project: "/repo",
+        cwd: "/repo",
+        title: "fix the parser",
+      },
+    });
+
+    const finalSession = kv.store.get(KV.sessions)?.get("ses_race4") as Session;
+    expect(finalSession.observationCount).toBe(1);
+    expect(finalSession.firstPrompt).toBe("fix the parser");
+    expect(finalSession.status).toBe("active");
+  });
 });

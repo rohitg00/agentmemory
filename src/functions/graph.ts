@@ -1080,7 +1080,9 @@ export function registerGraphFunction(
       }
 
       const snap = buildSnapshotFromArrays(nodes, edges);
-      await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap);
+      await withKeyedLock("graph:persist", () =>
+        kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap),
+      );
       const tookMs = Date.now() - started;
       logger.info("Graph snapshot rebuilt", {
         totalNodes: snap.stats.totalNodes,
@@ -1137,7 +1139,9 @@ export function registerGraphFunction(
       ...emptySnapshot(),
       resetAt: new Date().toISOString(),
     };
-    await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, resetSnapshot);
+    await withKeyedLock("graph:persist", () =>
+      kv.set(KV.graphSnapshot, SNAPSHOT_KEY, resetSnapshot),
+    );
     const counts: Record<string, number> = {
       [KV.graphSnapshot]: 1,
     };
