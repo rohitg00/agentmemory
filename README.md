@@ -1305,13 +1305,22 @@ AGENTMEMORY_REDIS_URL=redis://localhost:6379
 **Migration is not automatic.** Switching `AGENTMEMORY_STATE_BACKEND` starts from an empty store on either side — nothing copies existing data from file to Redis or back. Export from the backend you're leaving and import into the one you're moving to:
 
 ```bash
-# 1. On the old backend, while agentmemory is still running on it:
-curl -s http://localhost:3111/agentmemory/export > backup.json
+# 0. If AGENTMEMORY_SECRET is set, both requests need it:
+AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})
 
-# 2. Switch AGENTMEMORY_STATE_BACKEND (and AGENTMEMORY_REDIS_URL if needed),
+# 1. On the old backend, while agentmemory is still running on it:
+curl -fsS "${AUTH[@]}" http://localhost:3111/agentmemory/export > backup.json
+
+# 2. Confirm backup.json is a usable export before switching backends:
+jq -e '.version and .exportedAt' backup.json > /dev/null || {
+  echo "backup.json is not a valid export; do not switch backends" >&2
+  exit 1
+}
+
+# 3. Switch AGENTMEMORY_STATE_BACKEND (and AGENTMEMORY_REDIS_URL if needed),
 #    restart agentmemory against the new backend, then:
 jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
-  curl -s -X POST http://localhost:3111/agentmemory/import \
+  curl -fsS "${AUTH[@]}" -X POST http://localhost:3111/agentmemory/import \
     -H 'Content-Type: application/json' -d @-
 ```
 

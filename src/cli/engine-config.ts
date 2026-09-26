@@ -166,12 +166,20 @@ function replaceKvAdapterWithRedis(
   redisUrl: string,
 ): void {
   const block = workerBlock(lines, workerName);
-  if (!block) return;
+  if (!block) {
+    throw new Error(
+      `AGENTMEMORY_STATE_BACKEND=redis requires a "${workerName}" worker in the engine config, but none was found.`,
+    );
+  }
   const adapterIndex = lines.findIndex(
     (line, index) =>
       index > block.start && index < block.end && line.trim() === "adapter:",
   );
-  if (adapterIndex === -1) return;
+  if (adapterIndex === -1) {
+    throw new Error(
+      `AGENTMEMORY_STATE_BACKEND=redis requires an "adapter:" block under the "${workerName}" worker in the engine config, but none was found.`,
+    );
+  }
   const adapterIndent = lines[adapterIndex]!.match(/^\s*/)?.[0] ?? "";
   let end = block.end;
   for (let i = adapterIndex + 1; i < block.end; i++) {

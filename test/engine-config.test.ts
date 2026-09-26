@@ -127,6 +127,39 @@ describe("renderEngineConfig", () => {
     ).toThrow(/AGENTMEMORY_REDIS_URL/);
   });
 
+  it("throws when redis is selected but the iii-state worker block is missing", () => {
+    const source = ["workers:", "  - name: iii-http", "    config:", "      port: 3111"].join(
+      "\n",
+    );
+
+    expect(() =>
+      renderEngineConfig(source, {
+        dataDir: "/tmp/agentmemory-fixture",
+        stateBackend: { kind: "redis", redisUrl: "redis://localhost:6390" },
+      }),
+    ).toThrow(/iii-state/);
+  });
+
+  it("throws when redis is selected but iii-state has no adapter block to replace", () => {
+    const source = [
+      "workers:",
+      "  - name: iii-state",
+      "    config: {}",
+      "  - name: iii-stream",
+      "    config:",
+      "      adapter:",
+      "        name: kv",
+      "        config: {}",
+    ].join("\n");
+
+    expect(() =>
+      renderEngineConfig(source, {
+        dataDir: "/tmp/agentmemory-fixture",
+        stateBackend: { kind: "redis", redisUrl: "redis://localhost:6390" },
+      }),
+    ).toThrow(/adapter/);
+  });
+
   it("keeps the iii- prefixed builtin names: on 0.22.1 the unprefixed names resolve to registry workers", () => {
     const source = readFileSync(
       join(import.meta.dirname, "..", "iii-config.yaml"),
