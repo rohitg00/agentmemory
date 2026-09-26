@@ -397,20 +397,27 @@ describe("Consolidation Pipeline decay tier", () => {
       return Math.max(0.1, strength * Math.pow(0.9, periods));
     }
 
+    const setSpy = vi.spyOn(kv, "set");
+    const semanticWrites = () =>
+      setSpy.mock.calls.filter((c) => c[0] === "mem:semantic" && c[1] === "sem_1");
+
     await sdk.trigger("mem::consolidate-pipeline", { tier: "decay" });
     let stored = await kv.list<SemanticMemory>("mem:semantic");
     expect(stored[0].strength).toBe(1);
+    expect(semanticWrites().length).toBe(0);
 
     vi.setSystemTime(new Date(new Date(createdAt).getTime() + 45 * 86400000));
     await sdk.trigger("mem::consolidate-pipeline", { tier: "decay" });
     stored = await kv.list<SemanticMemory>("mem:semantic");
     let expected = referenceDecayStep(1, 30);
     expect(stored[0].strength).toBeCloseTo(expected, 10);
+    expect(semanticWrites().length).toBe(1);
 
     vi.setSystemTime(new Date(new Date(createdAt).getTime() + 95 * 86400000));
     await sdk.trigger("mem::consolidate-pipeline", { tier: "decay" });
     stored = await kv.list<SemanticMemory>("mem:semantic");
     expected = referenceDecayStep(expected, 30);
     expect(stored[0].strength).toBeCloseTo(expected, 10);
+    expect(semanticWrites().length).toBe(2);
   });
 });
