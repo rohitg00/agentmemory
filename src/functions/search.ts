@@ -126,6 +126,7 @@ export async function vectorIndexAddGuarded(
   sessionId: string,
   text: string,
   context: { kind: "memory" | "observation" | "synthetic"; logId: string },
+  commit?: (embedding: Float32Array) => Promise<boolean> | boolean,
 ): Promise<boolean> {
   const vi = vectorIndex
   const ep = currentEmbeddingProvider
@@ -141,6 +142,9 @@ export async function vectorIndexAddGuarded(
         received: embedding.length,
       })
       return false
+    }
+    if (commit) {
+      return await commit(embedding)
     }
     vi.add(id, sessionId, embedding)
     return true

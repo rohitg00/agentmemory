@@ -6,7 +6,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
-import { getSearchIndex, isMemoryIndexReady, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { getSearchIndex, getVectorIndex, isMemoryIndexReady, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 
@@ -212,6 +212,17 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         memory.sessionIds?.[0] ?? "memory",
         memory.title + " " + memory.content,
         { kind: "memory", logId: memory.id },
+        (embedding) =>
+          withKeyedLock("mem:remember", async () => {
+            const current = await kv.get<Memory>(KV.memories, memory.id);
+            if (!current || current.isLatest === false) return false;
+            getVectorIndex()?.add(
+              memory.id,
+              memory.sessionIds?.[0] ?? "memory",
+              embedding,
+            );
+            return true;
+          }),
       );
 
       if (supersededId) {

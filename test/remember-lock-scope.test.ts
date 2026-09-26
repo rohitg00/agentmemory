@@ -140,4 +140,29 @@ describe("mem::remember lock scope", () => {
     const stored = await kv.get<Memory>(KV.memories, first.memory.id);
     expect(stored?.isLatest).toBe(false);
   });
+
+  it("keeps a superseded memory out of the vector index even when its embedding finishes after the second save removes it", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    const content =
+      "the deploy pipeline uses blue green rollout with health gates";
+    const [first, second] = (await Promise.all([
+      sdk.trigger({
+        function_id: "mem::remember",
+        payload: { content, type: "architecture" },
+      }),
+      sdk.trigger({
+        function_id: "mem::remember",
+        payload: { content, type: "architecture" },
+      }),
+    ])) as RememberResult[];
+
+    const results = vectorIndex.search(new Float32Array([0.1, 0.2, 0.3]), 10);
+    const indexedIds = results.map((r) => r.obsId);
+    expect(indexedIds).not.toContain(first.memory.id);
+    expect(indexedIds).toContain(second.memory.id);
+    expect(vectorIndex.size).toBe(1);
+  });
 });
