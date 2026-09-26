@@ -58,20 +58,85 @@ async function runChunked<T>(
   }
 }
 
+const EXPORT_COLLECTION_NAMES: ReadonlySet<string> = new Set([
+  "memories",
+  "summaries",
+  "graphNodes",
+  "graphEdges",
+  "semanticMemories",
+  "proceduralMemories",
+  "actions",
+  "actionEdges",
+  "sentinels",
+  "sketches",
+  "crystals",
+  "facets",
+  "lessons",
+  "insights",
+  "routines",
+  "signals",
+  "checkpoints",
+  "accessLogs",
+]);
+
+function parseCollections(raw: unknown): ReadonlySet<string> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const names = Array.isArray(raw) ? raw : String(raw).split(",");
+  return new Set(
+    names
+      .map((name) => String(name).trim())
+      .filter((name) => EXPORT_COLLECTION_NAMES.has(name)),
+  );
+}
+
 export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void {
-  sdk.registerFunction("mem::export", 
-    async (data?: { maxSessions?: number; offset?: number }) => {
+  sdk.registerFunction("mem::export",
+    async (data?: {
+      maxSessions?: number;
+      offset?: number;
+      collectionLimit?: number;
+      collectionOffset?: number;
+      collections?: string[] | string;
+    }) => {
       const rawMax = Number(data?.maxSessions);
       const maxSessions = Number.isFinite(rawMax) && rawMax > 0 ? Math.min(Math.floor(rawMax), 1000) : undefined;
       const rawOffset = Number(data?.offset);
       const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
+      const rawCollectionLimit = Number(data?.collectionLimit);
+      const collectionLimit =
+        Number.isFinite(rawCollectionLimit) && rawCollectionLimit > 0
+          ? Math.floor(rawCollectionLimit)
+          : undefined;
+      const rawCollectionOffset = Number(data?.collectionOffset);
+      const collectionOffset =
+        Number.isFinite(rawCollectionOffset) && rawCollectionOffset >= 0
+          ? Math.floor(rawCollectionOffset)
+          : 0;
+
+      const collections = parseCollections(data?.collections);
+      const isSelected = (name: string): boolean =>
+        collections === undefined || collections.has(name);
+
+      const collectionTotals: Record<string, number> = {};
+      const sliceCollection = <T>(name: string, rows: T[]): T[] => {
+        collectionTotals[name] = rows.length;
+        if (!isSelected(name)) return [];
+        if (collectionLimit === undefined) return rows;
+        return rows.slice(collectionOffset, collectionOffset + collectionLimit);
+      };
 
       const allSessions = await kv.list<Session>(KV.sessions);
       const paginatedSessions = maxSessions !== undefined
         ? allSessions.slice(offset, offset + maxSessions)
         : allSessions;
-      const memories = await kv.list<Memory>(KV.memories);
-      const summaries = await kv.list<SessionSummary>(KV.summaries);
+      const memories = sliceCollection(
+        "memories",
+        await kv.list<Memory>(KV.memories),
+      );
+      const summaries = sliceCollection(
+        "summaries",
+        await kv.list<SessionSummary>(KV.summaries),
+      );
 
       const observations: Record<string, CompressedObservation[]> = {};
       const obsResults = await Promise.all(
@@ -117,22 +182,22 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
         checkpoints,
         accessLogs,
       ] = await Promise.all([
-        kv.list<GraphNode>(KV.graphNodes).catch(() => []),
-        kv.list<GraphEdge>(KV.graphEdges).catch(() => []),
-        kv.list<SemanticMemory>(KV.semantic).catch(() => []),
-        kv.list<ProceduralMemory>(KV.procedural).catch(() => []),
-        kv.list<Action>(KV.actions).catch(() => []),
-        kv.list<ActionEdge>(KV.actionEdges).catch(() => []),
-        kv.list<Sentinel>(KV.sentinels).catch(() => []),
-        kv.list<Sketch>(KV.sketches).catch(() => []),
-        kv.list<Crystal>(KV.crystals).catch(() => []),
-        kv.list<Facet>(KV.facets).catch(() => []),
-        kv.list<Lesson>(KV.lessons).catch(() => []),
-        kv.list<Insight>(KV.insights).catch(() => []),
-        kv.list<Routine>(KV.routines).catch(() => []),
-        kv.list<Signal>(KV.signals).catch(() => []),
-        kv.list<Checkpoint>(KV.checkpoints).catch(() => []),
-        kv.list<AccessLogExport>(KV.accessLog).catch(() => []),
+        kv.list<GraphNode>(KV.graphNodes).catch(() => []).then((r) => sliceCollection("graphNodes", r)),
+        kv.list<GraphEdge>(KV.graphEdges).catch(() => []).then((r) => sliceCollection("graphEdges", r)),
+        kv.list<SemanticMemory>(KV.semantic).catch(() => []).then((r) => sliceCollection("semanticMemories", r)),
+        kv.list<ProceduralMemory>(KV.procedural).catch(() => []).then((r) => sliceCollection("proceduralMemories", r)),
+        kv.list<Action>(KV.actions).catch(() => []).then((r) => sliceCollection("actions", r)),
+        kv.list<ActionEdge>(KV.actionEdges).catch(() => []).then((r) => sliceCollection("actionEdges", r)),
+        kv.list<Sentinel>(KV.sentinels).catch(() => []).then((r) => sliceCollection("sentinels", r)),
+        kv.list<Sketch>(KV.sketches).catch(() => []).then((r) => sliceCollection("sketches", r)),
+        kv.list<Crystal>(KV.crystals).catch(() => []).then((r) => sliceCollection("crystals", r)),
+        kv.list<Facet>(KV.facets).catch(() => []).then((r) => sliceCollection("facets", r)),
+        kv.list<Lesson>(KV.lessons).catch(() => []).then((r) => sliceCollection("lessons", r)),
+        kv.list<Insight>(KV.insights).catch(() => []).then((r) => sliceCollection("insights", r)),
+        kv.list<Routine>(KV.routines).catch(() => []).then((r) => sliceCollection("routines", r)),
+        kv.list<Signal>(KV.signals).catch(() => []).then((r) => sliceCollection("signals", r)),
+        kv.list<Checkpoint>(KV.checkpoints).catch(() => []).then((r) => sliceCollection("checkpoints", r)),
+        kv.list<AccessLogExport>(KV.accessLog).catch(() => []).then((r) => sliceCollection("accessLogs", r)),
       ]);
 
       const exportData: ExportData = {
@@ -172,6 +237,18 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
         };
       }
 
+      if (collectionLimit !== undefined) {
+        exportData.collectionPagination = {
+          offset: collectionOffset,
+          limit: collectionLimit,
+          totals: collectionTotals,
+          hasMore: Object.entries(collectionTotals).some(
+            ([name, total]) =>
+              isSelected(name) && collectionOffset + collectionLimit < total,
+          ),
+        };
+      }
+
       const totalObs = Object.values(observations).reduce(
         (sum, arr) => sum + arr.length,
         0,
@@ -182,13 +259,12 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
         observations: totalObs,
         memories: memories.length,
         summaries: summaries.length,
+        collections: collections && [...collections],
       });
 
-      // Only session collections page on ?maxSessions/?offset, so a large
-      // store can exceed the transport cap even at ?maxSessions=1.
       const oversized = checkPayloadFrameSize(
         exportData,
-        "narrow the range with ?maxSessions / ?offset, or export fewer collections; the non-session collections (memories, graph, semantic, actions, lessons, ...) are not yet paginated",
+        "narrow the range with ?maxSessions / ?offset, page the rest with ?collectionLimit / ?collectionOffset, or ask for a subset with ?collections=",
       );
       if (oversized) {
         logger.warn("Export exceeds transport frame limit", {

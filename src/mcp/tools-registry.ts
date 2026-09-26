@@ -195,8 +195,32 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_export",
-    description: "Export all memory data as JSON.",
-    inputSchema: { type: "object", properties: {} },
+    description:
+      "Export memory data as JSON. Past the transport size limit the export is refused, so use the paging arguments on a large store.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maxSessions: {
+          type: "number",
+          description: "Sessions per page (with their observations)",
+        },
+        offset: { type: "number", description: "Session offset" },
+        collectionLimit: {
+          type: "number",
+          description:
+            "Rows per page for memories, graph, lessons and the other top-level collections",
+        },
+        collectionOffset: {
+          type: "number",
+          description: "Row offset for the top-level collections",
+        },
+        collections: {
+          type: "string",
+          description:
+            "Comma-separated allowlist of top-level collections to return, e.g. memories,summaries,lessons. Unknown names are ignored. Omit for all of them; totals still cover every collection either way.",
+        },
+      },
+    },
   },
   {
     name: "memory_relations",
