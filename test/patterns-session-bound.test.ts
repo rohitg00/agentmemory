@@ -130,6 +130,18 @@ describe("mem::patterns session bound", () => {
     expect(result.sessionsInScope).toBe(5);
   });
 
+  it("does not floor a positive fractional limit down to zero sessions", async () => {
+    const { sdk, kv } = await setup();
+    await seedSessions(kv, 5, 0);
+
+    const result = (await sdk.trigger("mem::patterns", {
+      limit: 0.5,
+    })) as PatternsResult;
+
+    expect(result.sessionLimit).toBeGreaterThanOrEqual(1);
+    expect(result.sessionsInScope).toBeGreaterThan(0);
+  });
+
   it("applies the project filter before the recency limit", async () => {
     const { sdk, kv } = await setup();
     for (let i = 0; i < 5; i++) {
@@ -165,5 +177,17 @@ describe("mem::patterns session bound", () => {
     expect(result.observationsScanned).toBeLessThan(
       totalSessions * obsPerSession,
     );
+  });
+
+  it("caps work at the budget when a single session holds more observations than the budget", async () => {
+    const { sdk, kv } = await setup();
+    await seedSessions(kv, 1, 6_000);
+
+    const result = (await sdk.trigger("mem::patterns", {
+      limit: 50,
+    })) as PatternsResult;
+
+    expect(result.sessionsProcessed).toBe(1);
+    expect(result.observationsScanned).toBe(5_000);
   });
 });

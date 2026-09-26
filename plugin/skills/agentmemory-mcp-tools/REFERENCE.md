@@ -34,7 +34,7 @@ agentmemory exposes 54 MCP tools. 8 are in the lean core set (`--tools core` or 
 | `memory_mesh_sync` |  | `peerId`: string, `direction`: string | Sync memories and actions with peer agentmemory instances for multi-agent collaboration. |
 | `memory_next` |  | `project`: string, `agentId`: string | Get the single most important next action to work on. Combines dependency resolution, priority, and recency into a score. |
 | `memory_obsidian_export` |  | `vaultDir`: string, `types`: string | Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view. |
-| `memory_patterns` |  | `project`: string, `limit`: number | Detect recurring patterns across sessions. |
+| `memory_patterns` |  | `project`: string, `limit`: integer | Detect recurring patterns across sessions. |
 | `memory_profile` |  | `project`*: string, `refresh`: string | User/project profile with top concepts and file patterns. |
 | `memory_recall` | yes | `query`*: string, `limit`: number, `format`: string, `token_budget`: number | Search past session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before. |
 | `memory_reflect` | yes | `project`: string, `maxClusters`: number | Traverse the knowledge graph, group related memories by concept clusters, and synthesize higher-order insights via LLM. Returns new and reinforced insights. |

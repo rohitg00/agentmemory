@@ -116,7 +116,7 @@ export const CORE_TOOLS: McpToolDef[] = [
       properties: {
         project: { type: "string", description: "Project path to analyze" },
         limit: {
-          type: "number",
+          type: "integer",
           description:
             "Most recent sessions to scan (default 50, max 500)",
         },

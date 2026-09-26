@@ -19,7 +19,7 @@ const MAX_OBSERVATIONS_SCANNED = 5_000;
 function resolveSessionLimit(raw: unknown): number {
   const n = Number(raw);
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_SESSION_LIMIT;
-  return Math.min(Math.floor(n), MAX_SESSION_LIMIT);
+  return Math.min(Math.max(Math.floor(n), 1), MAX_SESSION_LIMIT);
 }
 
 export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
@@ -66,12 +66,18 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
         );
 
         for (const { session, observations } of loaded) {
+          if (observationsScanned >= MAX_OBSERVATIONS_SCANNED) break;
           sessionsProcessed++;
           if (!observations.length) continue;
-          observationsScanned += observations.length;
+          const remainingBudget = MAX_OBSERVATIONS_SCANNED - observationsScanned;
+          const bounded =
+            observations.length > remainingBudget
+              ? observations.slice(0, remainingBudget)
+              : observations;
+          observationsScanned += bounded.length;
 
           const sessionFiles = new Set<string>();
-          for (const obs of observations) {
+          for (const obs of bounded) {
             if (!obs.files) continue;
             for (const f of obs.files) {
               sessionFiles.add(f);
