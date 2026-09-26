@@ -41,6 +41,7 @@ import {
   setEmbeddingProvider,
   setIndexPersistence,
   setHybridRanker,
+  setPendingVectorBackfillCount,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
@@ -456,10 +457,14 @@ async function main() {
     }
   }
 
+  const vectorCountShortfall =
+    Boolean(loaded?.vector) &&
+    loaded?.expectedCount !== undefined &&
+    loaded.vector!.size < loaded.expectedCount;
   const vectorBackfillSince =
     !loaded || loaded.state === "unavailable"
       ? undefined
-      : loaded.state === "none"
+      : loaded.state === "none" || vectorCountShortfall
         ? null
         : loaded.savedAt;
   const keywordStart = Date.now();
@@ -468,9 +473,18 @@ async function main() {
     bootLog(
       `Rebuilt BM25 index from stored content (${keyword.documents} docs in ${Date.now() - keywordStart} ms)`,
     );
+    setPendingVectorBackfillCount(keyword.vectorJobs.length + keyword.fullBackfillPending);
+    if (keyword.fullBackfillPending > 0) {
+      bootLog(
+        `Vector backfill needs ${keyword.fullBackfillPending} embeddings but a full backfill was not started ` +
+          `(set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`,
+      );
+    }
     if (keyword.vectorJobs.length > 0) {
+      bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors in the background`);
       void backfillVectors(keyword.vectorJobs)
         .then((count) => {
+          setPendingVectorBackfillCount(keyword.fullBackfillPending);
           if (count > 0) bootLog(`Vector index backfilled: ${count} entries`);
         })
         .catch((err) => {

@@ -3,7 +3,7 @@ import type { StateKV } from "./kv.js";
 import { KV } from "./schema.js";
 import { logger } from "../logger.js";
 import { safeAudit } from "../functions/audit.js";
-import { getIndexSaveIntervalMs, getVectorBucketCount } from "../config.js";
+import { getIndexSaveIntervalMs, getVectorBucketSize } from "../config.js";
 
 const FAILURE_LOG_THROTTLE_MS = 60_000;
 const INDEX_PERSISTENCE_FUNCTION_ID = "mem::index-persistence";
@@ -31,8 +31,8 @@ type IndexShardManifest = {
 };
 
 type VectorMeta = {
-  v: 2;
-  buckets: number;
+  v: 3;
+  bucketCount: number;
   savedAt: string;
   count: number;
 };
@@ -45,7 +45,7 @@ type PersistedVector = {
 
 type IndexPersistenceOptions = {
   saveIntervalMs?: number;
-  buckets?: number;
+  bucketSize?: number;
   now?: () => number;
 };
 
@@ -56,12 +56,18 @@ export interface IndexLegStatus {
   dirtySince: string | null;
 }
 
+export interface VectorCountShortfall {
+  expected: number;
+  loaded: number;
+}
+
 export interface IndexPersistenceStatus {
   saveIntervalMs: number;
   saving: boolean;
   buckets: number;
   pendingChanges: number;
   vector: IndexLegStatus | null;
+  vectorCountShortfall: VectorCountShortfall | null;
 }
 
 export type VectorLoadState = "buckets" | "migrated" | "none" | "unavailable";
@@ -70,15 +76,7 @@ export interface VectorLoadResult {
   vector: VectorIndex | null;
   state: VectorLoadState;
   savedAt: string | null;
-}
-
-export function vectorBucketOf(id: string, buckets: number): number {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < id.length; i++) {
-    hash ^= id.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash % buckets;
+  expectedCount?: number;
 }
 
 export function vectorBucketScope(bucket: number): string {
@@ -148,8 +146,13 @@ export class IndexPersistence {
   private metaWritten = false;
   private leg: IndexLegStatus = emptyLegStatus();
   private readonly saveIntervalMs: number;
-  private buckets: number;
+  private readonly bucketSize: number;
   private readonly now: () => number;
+  private bucketOfId: Map<string, number> = new Map();
+  private bucketCounts: Map<number, number> = new Map();
+  private highestBucket = 0;
+  private hasOpenBucket = false;
+  private vectorCountShortfall: VectorCountShortfall | null = null;
 
   constructor(
     private kv: StateKV,
@@ -162,11 +165,11 @@ export class IndexPersistence {
       typeof interval === "number" && Number.isFinite(interval) && interval > 0
         ? interval
         : getIndexSaveIntervalMs();
-    const buckets = options.buckets;
-    this.buckets =
-      typeof buckets === "number" && Number.isInteger(buckets) && buckets > 0
-        ? buckets
-        : getVectorBucketCount();
+    const bucketSize = options.bucketSize;
+    this.bucketSize =
+      typeof bucketSize === "number" && Number.isInteger(bucketSize) && bucketSize > 0
+        ? bucketSize
+        : getVectorBucketSize();
     this.lastSaveAt = this.now();
   }
 
@@ -202,9 +205,10 @@ export class IndexPersistence {
     return {
       saveIntervalMs: this.saveIntervalMs,
       saving: this.running !== null,
-      buckets: this.buckets,
+      buckets: this.bucketCountInUse(),
       pendingChanges: this.vector?.pendingChanges ?? 0,
       vector: this.vector ? { ...this.leg } : null,
+      vectorCountShortfall: this.vectorCountShortfall,
     };
   }
 
@@ -227,17 +231,53 @@ export class IndexPersistence {
       return { vector: null, state: "unavailable", savedAt: null };
     }
 
-    if (meta && meta.v === 2 && Number.isInteger(meta.buckets) && meta.buckets > 0) {
-      const loaded = await this.loadBuckets(meta.buckets);
+    if (meta && meta.v === 3 && Number.isInteger(meta.bucketCount) && meta.bucketCount >= 0) {
+      const loaded = await this.loadBuckets(meta.bucketCount);
       if (!loaded) return { vector: null, state: "unavailable", savedAt: null };
       this.metaWritten = true;
-      if (meta.buckets !== this.buckets) await this.moveBuckets(loaded, meta.buckets);
       await this.removeLegacyVectorSnapshotIfPresent();
       await this.removeLegacyBm25Snapshot();
-      return { vector: loaded, state: "buckets", savedAt: meta.savedAt ?? null };
+      const expectedCount = Number.isInteger(meta.count) ? meta.count : undefined;
+      this.vectorCountShortfall =
+        expectedCount !== undefined && loaded.size < expectedCount
+          ? { expected: expectedCount, loaded: loaded.size }
+          : null;
+      if (this.vectorCountShortfall) {
+        logger.warn("index persistence: loaded fewer vectors than the last save recorded", {
+          ...this.vectorCountShortfall,
+        });
+      }
+      return { vector: loaded, state: "buckets", savedAt: meta.savedAt ?? null, expectedCount };
     }
 
     return this.migrateLegacy();
+  }
+
+  private bucketCountInUse(): number {
+    return this.hasOpenBucket ? this.highestBucket + 1 : 0;
+  }
+
+  private assignBucket(id: string): number {
+    const existing = this.bucketOfId.get(id);
+    if (existing !== undefined) return existing;
+    if (!this.hasOpenBucket) {
+      this.hasOpenBucket = true;
+      this.highestBucket = 0;
+    } else if ((this.bucketCounts.get(this.highestBucket) ?? 0) >= this.bucketSize) {
+      this.highestBucket++;
+    }
+    this.bucketOfId.set(id, this.highestBucket);
+    this.bucketCounts.set(this.highestBucket, (this.bucketCounts.get(this.highestBucket) ?? 0) + 1);
+    return this.highestBucket;
+  }
+
+  private releaseBucket(id: string): void {
+    const bucket = this.bucketOfId.get(id);
+    if (bucket === undefined) return;
+    this.bucketOfId.delete(id);
+    const remaining = (this.bucketCounts.get(bucket) ?? 1) - 1;
+    if (remaining > 0) this.bucketCounts.set(bucket, remaining);
+    else this.bucketCounts.delete(bucket);
   }
 
   private clearTimer(): void {
@@ -284,17 +324,21 @@ export class IndexPersistence {
     if (changes.size === 0 && this.metaWritten) return;
     const failed = new Map<string, boolean>();
     const failures = await inBatches([...changes], WRITE_CONCURRENCY, async ([id, present]) => {
-      const scope = vectorBucketScope(vectorBucketOf(id, this.buckets));
       const entry = present ? vector.get(id) : undefined;
       try {
         if (entry) {
-          await this.kv.set<PersistedVector>(scope, id, {
+          const bucket = this.assignBucket(id);
+          await this.kv.set<PersistedVector>(vectorBucketScope(bucket), id, {
             id,
             s: entry.sessionId,
             e: float32ToBase64(entry.embedding),
           });
         } else {
-          await this.kv.delete(scope, id);
+          const bucket = this.bucketOfId.get(id);
+          if (bucket !== undefined) {
+            await this.kv.delete(vectorBucketScope(bucket), id);
+            this.releaseBucket(id);
+          }
         }
       } catch (err) {
         failed.set(id, present);
@@ -308,19 +352,22 @@ export class IndexPersistence {
       );
     }
     await this.kv.set<VectorMeta>(KV.bm25Index, VECTOR_META_KEY, {
-      v: 2,
-      buckets: this.buckets,
+      v: 3,
+      bucketCount: this.bucketCountInUse(),
       savedAt: new Date(this.now()).toISOString(),
       count: vector.size,
     });
     this.metaWritten = true;
   }
 
-  private async loadBuckets(buckets: number): Promise<VectorIndex | null> {
+  private async loadBuckets(bucketCount: number): Promise<VectorIndex | null> {
     const loaded = new VectorIndex();
-    const bucketIds = Array.from({ length: buckets }, (_, bucket) => bucket);
+    const bucketOfId = new Map<string, number>();
+    const bucketCounts = new Map<number, number>();
+    const bucketIds = Array.from({ length: bucketCount }, (_, bucket) => bucket);
     const failures = await inBatches(bucketIds, LOAD_CONCURRENCY, async (bucket) => {
       const rows = await this.kv.list<unknown>(vectorBucketScope(bucket));
+      let count = 0;
       for (const row of rows) {
         if (!isPersistedVector(row)) continue;
         try {
@@ -328,7 +375,10 @@ export class IndexPersistence {
         } catch {
           continue;
         }
+        bucketOfId.set(row.id, bucket);
+        count++;
       }
+      if (count > 0) bucketCounts.set(bucket, count);
     });
     if (failures.length > 0) {
       logger.warn("index persistence: vector bucket read failed", {
@@ -337,35 +387,11 @@ export class IndexPersistence {
       });
       return null;
     }
+    this.bucketOfId = bucketOfId;
+    this.bucketCounts = bucketCounts;
+    this.highestBucket = bucketCount > 0 ? bucketCount - 1 : 0;
+    this.hasOpenBucket = bucketCount > 0;
     return loaded;
-  }
-
-  private async moveBuckets(vector: VectorIndex, fromBuckets: number): Promise<void> {
-    const moves = [...vector.entries()].filter(
-      ([id]) => vectorBucketOf(id, fromBuckets) !== vectorBucketOf(id, this.buckets),
-    );
-    const failures = await inBatches(moves, WRITE_CONCURRENCY, async ([id, entry]) => {
-      await this.kv.set<PersistedVector>(vectorBucketScope(vectorBucketOf(id, this.buckets)), id, {
-        id,
-        s: entry.sessionId,
-        e: float32ToBase64(entry.embedding),
-      });
-      await this.kv.delete(vectorBucketScope(vectorBucketOf(id, fromBuckets)), id);
-    });
-    if (failures.length > 0) {
-      logger.warn("index persistence: moving vectors to the new bucket count failed; keeping the old count", {
-        failed: failures.length,
-        message: errorMessage(failures[0]),
-      });
-      this.buckets = fromBuckets;
-      return;
-    }
-    await this.kv.set<VectorMeta>(KV.bm25Index, VECTOR_META_KEY, {
-      v: 2,
-      buckets: this.buckets,
-      savedAt: new Date(this.now()).toISOString(),
-      count: vector.size,
-    });
   }
 
   private async migrateLegacy(): Promise<VectorLoadResult> {
@@ -409,11 +435,11 @@ export class IndexPersistence {
     await this.removeLegacyBm25Snapshot();
     await this.auditIndexPersistence("migrate", [statePath(KV.bm25Index, VECTOR_META_KEY)], {
       vectors: legacy.size,
-      buckets: this.buckets,
+      buckets: this.bucketCountInUse(),
     });
     logger.info("index persistence: migrated the vector index to bucketed storage", {
       vectors: legacy.size,
-      buckets: this.buckets,
+      buckets: this.bucketCountInUse(),
     });
     const migrated = new VectorIndex();
     for (const [id, entry] of legacy.entries()) migrated.loadPersisted(id, entry.sessionId, entry.embedding);

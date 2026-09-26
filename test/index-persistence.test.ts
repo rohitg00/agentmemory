@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { IndexPersistence, vectorBucketOf, vectorBucketScope } from "../src/state/index-persistence.js";
+import { IndexPersistence, vectorBucketScope } from "../src/state/index-persistence.js";
 import { SearchIndex } from "../src/state/search-index.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import type { CompressedObservation } from "../src/types.js";
@@ -115,21 +115,21 @@ describe("IndexPersistence bucketed vector storage", () => {
     kv = mockKV();
   });
 
-  it("round-trips vectors through fixed bucket scopes", async () => {
+  it("fills buckets in insertion order and rolls to a new one at the cap", async () => {
     const vector = vectorWith([
       ["obs_a", [0.1, 0.2, 0.3]],
       ["obs_b", [0.4, 0.5, 0.6]],
       ["obs_c", [0.7, 0.8, 0.9]],
     ]);
-    await new IndexPersistence(kv as never, vector, { buckets: 16 }).save();
+    await new IndexPersistence(kv as never, vector, { bucketSize: 2 }).save();
 
-    for (const [id] of vector.entries()) {
-      expect(kv.store.get(vectorBucketScope(vectorBucketOf(id, 16)))?.has(id)).toBe(true);
-    }
-    const meta = await kv.get<{ v: number; buckets: number; count: number }>(INDEX_SCOPE, META_KEY);
-    expect(meta).toMatchObject({ v: 2, buckets: 16, count: 3 });
+    expect(kv.store.get(vectorBucketScope(0))?.has("obs_a")).toBe(true);
+    expect(kv.store.get(vectorBucketScope(0))?.has("obs_b")).toBe(true);
+    expect(kv.store.get(vectorBucketScope(1))?.has("obs_c")).toBe(true);
+    const meta = await kv.get<{ v: number; bucketCount: number; count: number }>(INDEX_SCOPE, META_KEY);
+    expect(meta).toMatchObject({ v: 3, bucketCount: 2, count: 3 });
 
-    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 16 }).load();
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 2 }).load();
     expect(loaded.state).toBe("buckets");
     expectSameVectors(loaded.vector, vector);
     expect(loaded.vector!.pendingChanges).toBe(0);
@@ -140,7 +140,7 @@ describe("IndexPersistence bucketed vector storage", () => {
       ["obs_a", [0.1, 0.2, 0.3]],
       ["obs_b", [0.4, 0.5, 0.6]],
     ]);
-    const persistence = new IndexPersistence(kv as never, vector, { buckets: 16 });
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 16 });
     await persistence.save();
     kv.ops.length = 0;
 
@@ -148,12 +148,12 @@ describe("IndexPersistence bucketed vector storage", () => {
     await persistence.save();
 
     const writes = bucketSets(kv);
-    expect(writes).toEqual([{ op: "set", scope: vectorBucketScope(vectorBucketOf("obs_new", 16)), key: "obs_new" }]);
+    expect(writes).toEqual([{ op: "set", scope: vectorBucketScope(0), key: "obs_new" }]);
   });
 
   it("does not write when nothing changed", async () => {
     const vector = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
-    const persistence = new IndexPersistence(kv as never, vector, { buckets: 16 });
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 16 });
     await persistence.save();
     kv.ops.length = 0;
 
@@ -167,16 +167,32 @@ describe("IndexPersistence bucketed vector storage", () => {
       ["obs_a", [0.1, 0.2, 0.3]],
       ["obs_b", [0.4, 0.5, 0.6]],
     ]);
-    const persistence = new IndexPersistence(kv as never, vector, { buckets: 16 });
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 16 });
     await persistence.save();
 
     vector.remove("obs_a");
     await persistence.save();
 
-    expect(kv.ops).toContainEqual({ op: "delete", scope: vectorBucketScope(vectorBucketOf("obs_a", 16)), key: "obs_a" });
-    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 16 }).load();
+    expect(kv.ops).toContainEqual({ op: "delete", scope: vectorBucketScope(0), key: "obs_a" });
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
     expect(loaded.vector!.has("obs_a")).toBe(false);
     expect(loaded.vector!.has("obs_b")).toBe(true);
+  });
+
+  it("a delete touches only the bucket that owns the id, in a multi-bucket store", async () => {
+    const vector = vectorWith(
+      Array.from({ length: 5 }, (_, i) => [`obs_${i}`, [i, i + 1, i + 2]] as [string, number[]]),
+    );
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 2 });
+    await persistence.save();
+    kv.ops.length = 0;
+
+    vector.remove("obs_2");
+    await persistence.save();
+
+    const touched = new Set(kv.ops.filter((o) => o.scope.startsWith(`${INDEX_SCOPE}:vec:`)).map((o) => o.scope));
+    expect(touched).toEqual(new Set([vectorBucketScope(1)]));
+    expect(kv.ops).toContainEqual({ op: "delete", scope: vectorBucketScope(1), key: "obs_2" });
   });
 
   it("clearing the index deletes every persisted vector", async () => {
@@ -184,14 +200,14 @@ describe("IndexPersistence bucketed vector storage", () => {
       ["obs_a", [0.1, 0.2, 0.3]],
       ["obs_b", [0.4, 0.5, 0.6]],
     ]);
-    const persistence = new IndexPersistence(kv as never, vector, { buckets: 16 });
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 16 });
     await persistence.save();
 
     vector.clear();
     vector.add("obs_c", "ses_c", vec([0, 1, 0]));
     await persistence.save();
 
-    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 16 }).load();
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
     expect([...loaded.vector!.entries()].map(([id]) => id)).toEqual(["obs_c"]);
   });
 
@@ -205,7 +221,7 @@ describe("IndexPersistence bucketed vector storage", () => {
         return kv.set(scope, key, data);
       },
     };
-    const persistence = new IndexPersistence(flakyKv as never, vector, { buckets: 16 });
+    const persistence = new IndexPersistence(flakyKv as never, vector, { bucketSize: 16 });
 
     await expect(persistence.save()).resolves.toBeUndefined();
     const failed = persistence.status();
@@ -217,27 +233,68 @@ describe("IndexPersistence bucketed vector storage", () => {
     await persistence.save();
     expect(persistence.status().vector?.lastError).toBeNull();
     expect(persistence.status().pendingChanges).toBe(0);
-    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 16 }).load();
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
     expectSameVectors(loaded.vector, vector);
   });
 
-  it("moves vectors when the bucket count changes", async () => {
+  it("a save after many vectors added over several waves touches only the currently open bucket", async () => {
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 100 });
+
+    for (let i = 0; i < 950; i++) vector.add(`obs_${i}`, "ses_1", vec([i, 0, 0]));
+    await persistence.save();
+    expect(kv.store.get(vectorBucketScope(9))?.size).toBe(50);
+    for (let bucket = 0; bucket <= 8; bucket++) expect(kv.store.get(vectorBucketScope(bucket))?.size).toBe(100);
+    kv.ops.length = 0;
+
+    for (let i = 950; i < 1000; i++) vector.add(`obs_${i}`, "ses_1", vec([i, 0, 0]));
+    await persistence.save();
+    let touched = new Set(kv.ops.filter((o) => o.scope.startsWith(`${INDEX_SCOPE}:vec:`)).map((o) => o.scope));
+    expect(touched).toEqual(new Set([vectorBucketScope(9)]));
+    expect(kv.store.get(vectorBucketScope(9))?.size).toBe(100);
+    kv.ops.length = 0;
+
+    vector.add("obs_1000", "ses_1", vec([1000, 0, 0]));
+    await persistence.save();
+    touched = new Set(kv.ops.filter((o) => o.scope.startsWith(`${INDEX_SCOPE}:vec:`)).map((o) => o.scope));
+    expect(touched).toEqual(new Set([vectorBucketScope(10)]));
+  });
+
+  it("a smaller bucket size configured later opens a new bucket instead of moving existing data", async () => {
     const vector = vectorWith(
-      Array.from({ length: 40 }, (_, i) => [`obs_${i}`, [i, i + 1, i + 2]] as [string, number[]]),
+      Array.from({ length: 4 }, (_, i) => [`obs_${i}`, [i, i + 1, i + 2]] as [string, number[]]),
     );
-    await new IndexPersistence(kv as never, vector, { buckets: 4 }).save();
+    await new IndexPersistence(kv as never, vector, { bucketSize: 4 }).save();
+    for (let i = 0; i < 4; i++) expect(kv.store.get(vectorBucketScope(0))?.has(`obs_${i}`)).toBe(true);
 
-    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 8 }).load();
-    expectSameVectors(loaded.vector, vector);
-    for (const [id] of vector.entries()) {
-      const oldScope = vectorBucketScope(vectorBucketOf(id, 4));
-      const newScope = vectorBucketScope(vectorBucketOf(id, 8));
-      expect(kv.store.get(newScope)?.has(id)).toBe(true);
-      if (oldScope !== newScope) expect(kv.store.get(oldScope)?.has(id) ?? false).toBe(false);
-    }
+    const reloaded = new VectorIndex();
+    const persistence = new IndexPersistence(kv as never, reloaded, { bucketSize: 2 });
+    const loaded = await persistence.load();
+    reloaded.restoreFrom(loaded.vector!);
+    kv.ops.length = 0;
 
-    const again = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 8 }).load();
-    expect(again.vector!.size).toBe(40);
+    reloaded.add("obs_new", "ses_new", vec([9, 9, 9]));
+    await persistence.save();
+
+    const touched = new Set(kv.ops.filter((o) => o.scope.startsWith(`${INDEX_SCOPE}:vec:`)).map((o) => o.scope));
+    expect(touched).toEqual(new Set([vectorBucketScope(1)]));
+    for (let i = 0; i < 4; i++) expect(kv.store.get(vectorBucketScope(0))?.has(`obs_${i}`)).toBe(true);
+  });
+
+  it("detects a partial bucket set against the saved count and reports it in status", async () => {
+    const vector = vectorWith(
+      Array.from({ length: 4 }, (_, i) => [`obs_${i}`, [i, i + 1, i + 2]] as [string, number[]]),
+    );
+    await new IndexPersistence(kv as never, vector, { bucketSize: 2 }).save();
+    kv.store.get(vectorBucketScope(1))?.clear();
+
+    const persistence = new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 2 });
+    const loaded = await persistence.load();
+
+    expect(loaded.state).toBe("buckets");
+    expect(loaded.vector!.size).toBe(2);
+    expect(loaded.expectedCount).toBe(4);
+    expect(persistence.status().vectorCountShortfall).toEqual({ expected: 4, loaded: 2 });
   });
 
   it("reports storage as unavailable when the metadata read fails", async () => {
@@ -247,13 +304,13 @@ describe("IndexPersistence bucketed vector storage", () => {
         throw new Error("engine down");
       },
     };
-    const loaded = await new IndexPersistence(failingKv as never, new VectorIndex(), { buckets: 16 }).load();
+    const loaded = await new IndexPersistence(failingKv as never, new VectorIndex(), { bucketSize: 16 }).load();
     expect(loaded).toEqual({ vector: null, state: "unavailable", savedAt: null });
   });
 
   it("treats a missing store as empty, including adapters that return undefined", async () => {
     const undefinedKv = { ...kv, get: async () => undefined };
-    const loaded = await new IndexPersistence(undefinedKv as never, new VectorIndex(), { buckets: 16 }).load();
+    const loaded = await new IndexPersistence(undefinedKv as never, new VectorIndex(), { bucketSize: 16 }).load();
     expect(loaded).toEqual({ vector: null, state: "none", savedAt: null });
   });
 });
@@ -274,7 +331,7 @@ describe("IndexPersistence migration from the single-string format", () => {
     await writeLegacyVectorSnapshot(kv, legacy, { generation: "idx_mfabcd12_aaaaaaaaaaaa" });
     await writeLegacyBm25Snapshot(kv);
 
-    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 16 }).load();
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
 
     expect(loaded.state).toBe("migrated");
     expect(loaded.savedAt).toBe(new Date(parseInt("mfabcd12", 36)).toISOString());
@@ -286,7 +343,7 @@ describe("IndexPersistence migration from the single-string format", () => {
       if (scope.includes(":vectors:") || scope.includes(":bm25:idx_")) expect(entries.size).toBe(0);
     }
 
-    const reloaded = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 16 }).load();
+    const reloaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
     expect(reloaded.state).toBe("buckets");
     expectSameVectors(reloaded.vector, legacy);
   });
@@ -295,7 +352,7 @@ describe("IndexPersistence migration from the single-string format", () => {
     const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
     await writeLegacyVectorSnapshot(kv, legacy, { monolithic: true });
 
-    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 16 }).load();
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
 
     expect(loaded.state).toBe("migrated");
     expectSameVectors(loaded.vector, legacy);
@@ -309,7 +366,7 @@ describe("IndexPersistence migration from the single-string format", () => {
     await kv.delete(manifest!.shards[0].scope, manifest!.shards[0].key);
     kv.ops.length = 0;
 
-    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 16 }).load();
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
 
     expect(loaded.state).toBe("unavailable");
     expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).not.toBeNull();
@@ -332,7 +389,7 @@ describe("IndexPersistence migration from the single-string format", () => {
     };
 
     const live = new VectorIndex();
-    const persistence = new IndexPersistence(flakyKv as never, live, { buckets: 16 });
+    const persistence = new IndexPersistence(flakyKv as never, live, { bucketSize: 16 });
     const loaded = await persistence.load();
     expect(loaded.state).toBe("unavailable");
     expectSameVectors(loaded.vector, legacy);
@@ -343,7 +400,7 @@ describe("IndexPersistence migration from the single-string format", () => {
     fail = false;
     await persistence.save();
 
-    const next = await new IndexPersistence(kv as never, new VectorIndex(), { buckets: 16 }).load();
+    const next = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
     expect(next.state).toBe("buckets");
     expectSameVectors(next.vector, legacy);
     expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).toBeNull();
@@ -354,7 +411,7 @@ describe("IndexPersistence migration from the single-string format", () => {
     await writeLegacyVectorSnapshot(kv, legacy);
     await writeLegacyBm25Snapshot(kv);
 
-    const loaded = await new IndexPersistence(kv as never, null, { buckets: 16 }).load();
+    const loaded = await new IndexPersistence(kv as never, null, { bucketSize: 16 }).load();
 
     expect(loaded).toEqual({ vector: null, state: "none", savedAt: null });
     expect(await kv.get(INDEX_SCOPE, "data:manifest")).toBeNull();
@@ -384,7 +441,7 @@ describe("IndexPersistence scheduling", () => {
       }),
     };
     const vector = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
-    const persistence = new IndexPersistence(failingKv as never, vector, { saveIntervalMs: 5000, buckets: 16 });
+    const persistence = new IndexPersistence(failingKv as never, vector, { saveIntervalMs: 5000, bucketSize: 16 });
     let unhandled = false;
     const onUnhandled = () => {
       unhandled = true;
@@ -402,7 +459,7 @@ describe("IndexPersistence scheduling", () => {
 
   it("stop clears the pending timer", async () => {
     const vector = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
-    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 5000, buckets: 16 });
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 5000, bucketSize: 16 });
     persistence.scheduleSave();
     persistence.stop();
     await vi.advanceTimersByTimeAsync(10_000);

@@ -477,11 +477,22 @@ export function getIndexSaveIntervalMs(): number {
   return raw > 0 ? raw : INDEX_SAVE_INTERVAL_DEFAULT_MS;
 }
 
-export const VECTOR_BUCKETS_DEFAULT = 256;
+export const VECTOR_BUCKET_SIZE_DEFAULT = 500;
 
-export function getVectorBucketCount(): number {
-  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_VECTOR_BUCKETS"], VECTOR_BUCKETS_DEFAULT);
-  return raw > 0 && raw <= 65_536 ? raw : VECTOR_BUCKETS_DEFAULT;
+export function getVectorBucketSize(): number {
+  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_VECTOR_BUCKET_SIZE"], VECTOR_BUCKET_SIZE_DEFAULT);
+  return raw > 0 ? raw : VECTOR_BUCKET_SIZE_DEFAULT;
+}
+
+export const VECTOR_BACKFILL_MAX_DEFAULT = 500;
+
+export function getVectorBackfillMax(): number {
+  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_VECTOR_BACKFILL_MAX"], VECTOR_BACKFILL_MAX_DEFAULT);
+  return raw > 0 ? raw : VECTOR_BACKFILL_MAX_DEFAULT;
+}
+
+export function isVectorBackfillAllEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_VECTOR_BACKFILL"] === "all";
 }
 
 export function isStandaloneMcp(): boolean {

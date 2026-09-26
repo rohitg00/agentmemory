@@ -1,7 +1,9 @@
 import { describe, it, expect, afterEach } from "vitest";
 import {
   backfillVectors,
+  getPendingVectorBackfillCount,
   getSearchIndex,
+  isBm25RebuildIncomplete,
   isMemoryIndexReady,
   rebuildKeywordIndex,
   setEmbeddingProvider,
@@ -142,6 +144,29 @@ describe("rebuildKeywordIndex", () => {
     expect(elapsed).toBeLessThan(10_000);
   });
 
+  it("keeps the vector index untouched and reports an incomplete rebuild when the sessions listing fails", async () => {
+    const kv = mockKV();
+    seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+    const vector = new VectorIndex();
+    vector.add("obs_0", "ses_0", new Float32Array([0.1, 0.2, 0.3]));
+    setVectorIndex(vector);
+    setEmbeddingProvider(stubProvider());
+    const failingKv = {
+      ...kv,
+      list: async <T>(scope: string): Promise<T[]> => {
+        if (scope === "mem:sessions") throw new Error("engine unreachable");
+        return kv.list<T>(scope);
+      },
+    };
+
+    const result = await rebuildKeywordIndex(failingKv as never, null);
+
+    expect(result.vectorJobs).toEqual([]);
+    expect(vector.size).toBe(1);
+    expect(vector.has("obs_0")).toBe(true);
+    expect(isBm25RebuildIncomplete()).toBe(true);
+  }, 10_000);
+
   it("queues embeddings only for documents newer than the last vector save", async () => {
     const kv = mockKV();
     seed(kv, 2, 5, (i) => (i < 5 ? "2026-09-01T00:00:00.000Z" : "2026-09-20T00:00:00.000Z"));
@@ -155,33 +180,61 @@ describe("rebuildKeywordIndex", () => {
     expect(result.vectorJobs.map((j) => j.id).sort()).toEqual(["obs_5", "obs_7", "obs_8", "obs_9"]);
   });
 
-  it("queues every missing document when no vector state was persisted, and none when storage was unavailable", async () => {
+  it("withholds a whole-store backfill by default and reports it as pending, and queues none when storage was unavailable", async () => {
     const kv = mockKV();
     seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
     setVectorIndex(new VectorIndex());
     setEmbeddingProvider(stubProvider());
 
     const fresh = await rebuildKeywordIndex(kv as never, null);
-    expect(fresh.vectorJobs.map((j) => j.id).sort()).toEqual(["mem_1", "obs_0", "obs_1", "obs_2"]);
+    expect(fresh.vectorJobs).toEqual([]);
+    expect(fresh.fullBackfillPending).toBe(4);
 
     const unavailable = await rebuildKeywordIndex(kv as never, undefined);
     expect(unavailable.vectorJobs).toEqual([]);
+    expect(unavailable.fullBackfillPending).toBe(0);
   });
 
-  it("backfills queued vectors in batches and schedules a save", async () => {
+  it("runs the whole-store backfill, capped, once AGENTMEMORY_VECTOR_BACKFILL=all is set", async () => {
+    const kv = mockKV();
+    seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+    setVectorIndex(new VectorIndex());
+    setEmbeddingProvider(stubProvider());
+    process.env.AGENTMEMORY_VECTOR_BACKFILL = "all";
+    try {
+      const opted = await rebuildKeywordIndex(kv as never, null);
+      expect(opted.vectorJobs.map((j) => j.id).sort()).toEqual(["mem_1", "obs_0", "obs_1", "obs_2"]);
+      expect(opted.fullBackfillPending).toBe(0);
+
+      process.env.AGENTMEMORY_VECTOR_BACKFILL_MAX = "2";
+      const capped = await rebuildKeywordIndex(kv as never, null);
+      expect(capped.vectorJobs.length).toBe(2);
+    } finally {
+      delete process.env.AGENTMEMORY_VECTOR_BACKFILL;
+      delete process.env.AGENTMEMORY_VECTOR_BACKFILL_MAX;
+    }
+  });
+
+  it("backfills queued vectors in batches and saves progress", async () => {
     const kv = mockKV();
     seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
     const vector = new VectorIndex();
     setVectorIndex(vector);
     setEmbeddingProvider(stubProvider());
-    let scheduled = 0;
-    setIndexPersistence({ scheduleSave: () => void scheduled++, save: async () => {} });
+    let saved = 0;
+    setIndexPersistence({ scheduleSave: () => {}, save: async () => void saved++ });
+    process.env.AGENTMEMORY_VECTOR_BACKFILL = "all";
 
-    const { vectorJobs } = await rebuildKeywordIndex(kv as never, null);
-    const added = await backfillVectors(vectorJobs);
+    try {
+      const { vectorJobs } = await rebuildKeywordIndex(kv as never, null);
+      const added = await backfillVectors(vectorJobs);
 
-    expect(added).toBe(4);
-    expect(vector.size).toBe(4);
-    expect(scheduled).toBe(1);
+      expect(added).toBe(4);
+      expect(vector.size).toBe(4);
+      expect(saved).toBe(1);
+      expect(getPendingVectorBackfillCount()).toBe(0);
+    } finally {
+      delete process.env.AGENTMEMORY_VECTOR_BACKFILL;
+    }
   });
 });

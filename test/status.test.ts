@@ -27,6 +27,8 @@ function inputs(overrides: Partial<StatusInputs> = {}): StatusInputs {
       observationsIndexed: 110,
       missingObservations: 0,
       sessions: 95,
+      bm25Incomplete: false,
+      pendingVectorBackfill: 0,
     },
     graph: {
       totalNodes: 55,
@@ -91,6 +93,28 @@ describe("evaluateStatus", () => {
     const report = evaluateStatus(inputs({ index: { ...inputs().index, missingObservations: null, sessions: null } }));
     expect(codes(report)).toEqual(["index-check-unavailable"]);
     expect(report.status).toBe("info");
+  });
+
+  it("reports an incomplete BM25 rebuild as an error", () => {
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, bm25Incomplete: true } }));
+    expect(report.status).toBe("error");
+    expect(codes(report)).toContain("bm25-rebuild-incomplete");
+  });
+
+  it("notes a pending vector backfill without raising the overall status", () => {
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, pendingVectorBackfill: 42 } }));
+    expect(report.status).toBe("info");
+    const problem = report.problems.find((p) => p.code === "index-vector-backfill-pending");
+    expect(problem?.message).toBe("42 documents are waiting for a vector embedding.");
+  });
+
+  it("reports a vector count shortfall from the last save as a warning", () => {
+    const report = evaluateStatus(
+      inputs({ indexPersistence: { saveIntervalMs: 600_000, saving: false, buckets: 3, pendingChanges: 0, vector: null, vectorCountShortfall: { expected: 100, loaded: 40 } } }),
+    );
+    expect(report.status).toBe("warn");
+    const problem = report.problems.find((p) => p.code === "index-vector-count-shortfall");
+    expect(problem?.message).toContain("40 of 100 vectors");
   });
 
   it("checks snapshot presence when extraction is on, and snapshot age whenever a snapshot exists", () => {

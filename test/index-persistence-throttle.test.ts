@@ -46,7 +46,7 @@ describe("IndexPersistence save throttling", () => {
 
   it("saves at most once per interval however often changes are scheduled", async () => {
     const vector = new VectorIndex();
-    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 60_000, buckets: 16 });
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 60_000, bucketSize: 16 });
 
     for (let i = 0; i < 50; i++) {
       touch(vector, `obs_${i}`);
@@ -70,7 +70,7 @@ describe("IndexPersistence save throttling", () => {
 
   it("an explicit save runs immediately and cancels the pending timer", async () => {
     const vector = new VectorIndex();
-    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 60_000, buckets: 16 });
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 60_000, bucketSize: 16 });
 
     touch(vector, "obs_1");
     persistence.scheduleSave();
@@ -101,7 +101,7 @@ describe("IndexPersistence save throttling", () => {
     };
     const vector = new VectorIndex();
     touch(vector, "obs_1");
-    const persistence = new IndexPersistence(slowKv as never, vector, { saveIntervalMs: 60_000, buckets: 16 });
+    const persistence = new IndexPersistence(slowKv as never, vector, { saveIntervalMs: 60_000, bucketSize: 16 });
 
     const first = persistence.save();
     touch(vector, "obs_2");
@@ -137,7 +137,7 @@ describe("IndexPersistence save throttling", () => {
     };
     const vector = new VectorIndex();
     touch(vector, "obs_1");
-    const persistence = new IndexPersistence(slowKv as never, vector, { saveIntervalMs: 60_000, buckets: 16 });
+    const persistence = new IndexPersistence(slowKv as never, vector, { saveIntervalMs: 60_000, bucketSize: 16 });
 
     const saving = persistence.save();
     touch(vector, "obs_2");
@@ -155,7 +155,7 @@ describe("IndexPersistence save throttling", () => {
   it("stop prevents later scheduled saves", async () => {
     const vector = new VectorIndex();
     touch(vector, "obs_1");
-    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 1_000, buckets: 16 });
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 1_000, bucketSize: 16 });
     persistence.stop();
     persistence.scheduleSave();
     await vi.advanceTimersByTimeAsync(10_000);
@@ -176,7 +176,15 @@ function statusInputs(overrides: Partial<StatusInputs> = {}): StatusInputs {
     provider: "llm",
     embeddingProvider: "embeddings",
     flags: [],
-    index: { bm25Documents: 1, vectorDocuments: 1, observationsIndexed: 1, missingObservations: 0, sessions: 1 },
+    index: {
+      bm25Documents: 1,
+      vectorDocuments: 1,
+      observationsIndexed: 1,
+      missingObservations: 0,
+      sessions: 1,
+      bm25Incomplete: false,
+      pendingVectorBackfill: 0,
+    },
     graph: null,
     graphExtractionEnabled: false,
     ...overrides,
@@ -191,7 +199,7 @@ const cleanLeg = {
 };
 
 function persistenceStatus(vector: typeof cleanLeg | null, pendingChanges = 0) {
-  return { saveIntervalMs: 600_000, saving: false, buckets: 256, pendingChanges, vector };
+  return { saveIntervalMs: 600_000, saving: false, buckets: 256, pendingChanges, vector, vectorCountShortfall: null };
 }
 
 describe("status reports index persistence", () => {
