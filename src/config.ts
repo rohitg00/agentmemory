@@ -399,6 +399,26 @@ export function getFollowupWindowSeconds(): number {
   );
 }
 
+const VIEWER_STREAM_MAX_DEFAULT = 500;
+const VIEWER_STREAM_MAX_FLOOR = 200;
+
+function parseExactInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  if (!/^-?\d+$/.test(trimmed)) return fallback;
+  const parsed = Number(trimmed);
+  return Number.isSafeInteger(parsed) ? parsed : fallback;
+}
+
+export function getViewerStreamMax(): number {
+  const parsed = parseExactInt(
+    getMergedEnv()["AGENTMEMORY_VIEWER_STREAM_MAX"],
+    VIEWER_STREAM_MAX_DEFAULT,
+  );
+  if (parsed < 0) return VIEWER_STREAM_MAX_DEFAULT;
+  return Math.max(parsed, VIEWER_STREAM_MAX_FLOOR);
+}
+
 export function isConsolidationEnabled(): boolean {
   const env = getMergedEnv();
   const explicit = env["CONSOLIDATION_ENABLED"];

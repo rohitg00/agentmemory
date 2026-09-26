@@ -20,8 +20,8 @@ describe('STREAM', () => {
     expect(STREAM.name).toBe('mem-live')
   })
 
-  it('group returns session ID', () => {
-    expect(STREAM.group('ses_123')).toBe('ses_123')
+  it('has correct viewer group', () => {
+    expect(STREAM.viewerGroup).toBe('viewer')
   })
 })
 
