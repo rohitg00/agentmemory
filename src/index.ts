@@ -338,7 +338,7 @@ async function main() {
   registerRetentionFunctions(sdk, kv);
   registerCompressFileFunction(sdk, kv, provider);
   registerReplayFunctions(sdk, kv);
-  void startAuditMigration(kv);
+  const auditMigration = startAuditMigration(kv).catch(() => {});
   bootLog(
     `v0.6 advanced retrieval: sliding-window, query-expansion, temporal-graph, retention-scoring`,
   );
@@ -581,11 +581,14 @@ async function main() {
 
   const auditRetentionMonths = getAuditRetentionMonths();
   if (auditRetentionMonths > 0) {
-    const auditRetentionTimer = setInterval(async () => {
+    const runAuditSweep = async () => {
       try {
+        await auditMigration;
         await sdk.trigger({ function_id: "mem::audit-retention-sweep", payload: {} });
       } catch {}
-    }, 86400000);
+    };
+    void runAuditSweep();
+    const auditRetentionTimer = setInterval(runAuditSweep, 86400000);
     auditRetentionTimer.unref();
     bootLog(
       `Audit retention sweep: enabled (drop month scopes older than ${auditRetentionMonths}mo, every 24h)`,

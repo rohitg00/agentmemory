@@ -2,6 +2,7 @@ import type { AuditEntry } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 
 // Audit coverage policy (issue #125).
 //
@@ -33,6 +34,7 @@ import { logger } from "../logger.js";
 
 const AUDIT_MIGRATE_FUNCTION_ID = "mem::audit-migrate";
 const AUDIT_MIGRATION_CONCURRENCY = 32;
+const AUDIT_MONTHS_LOCK = KV.auditMonths;
 
 interface AuditMonthIndex {
   months: string[];
@@ -70,10 +72,12 @@ async function readAuditMonthIndex(kv: StateKV): Promise<string[]> {
 }
 
 async function markAuditMonth(kv: StateKV, month: string): Promise<void> {
-  const months = await readAuditMonthIndex(kv);
-  if (months.includes(month)) return;
-  const next = [...months, month].sort();
-  await kv.set(KV.auditMonths, "index", { months: next });
+  await withKeyedLock(AUDIT_MONTHS_LOCK, async () => {
+    const months = await readAuditMonthIndex(kv);
+    if (months.includes(month)) return;
+    const next = [...months, month].sort();
+    await kv.set(KV.auditMonths, "index", { months: next });
+  });
 }
 
 export async function listAuditMonthsDesc(kv: StateKV): Promise<string[]> {
@@ -271,8 +275,11 @@ export async function runAuditRetentionSweep(
     }
   }
 
-  const remaining = months.filter((month) => !toDrop.includes(month)).sort();
-  await kv.set(KV.auditMonths, "index", { months: remaining });
+  await withKeyedLock(AUDIT_MONTHS_LOCK, async () => {
+    const current = await readAuditMonthIndex(kv);
+    const remaining = current.filter((month) => !toDrop.includes(month)).sort();
+    await kv.set(KV.auditMonths, "index", { months: remaining });
+  });
 
   return { droppedMonths: toDrop, droppedRows };
 }

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -295,5 +295,53 @@ describe("audit retention sweep", () => {
 
     const recentRows = await kv.list<AuditEntry>(KV.auditMonth(recentMonth));
     expect(recentRows).toHaveLength(1);
+  });
+
+  it("does not drop a month added by another writer while the sweep is running", async () => {
+    const oldMonth = "2020-01";
+    const currentMonth = auditMonthOf(new Date().toISOString());
+    await seedMonthIndex(kv, [oldMonth]);
+    seedEntry(kv, KV.auditMonth(oldMonth), `${oldMonth}-05T00:00:00.000Z`, {
+      id: "old_1",
+    });
+
+    let injected = false;
+    const raceKv = {
+      ...kv,
+      list: async <T>(scope: string): Promise<T[]> => {
+        if (!injected && scope === KV.auditMonth(oldMonth)) {
+          injected = true;
+          await recordAudit(kv as never, "delete", "mem::test", ["concurrent"]);
+        }
+        return kv.list<T>(scope);
+      },
+    };
+
+    const result = await runAuditRetentionSweep(raceKv as never, 1);
+    expect(result.droppedMonths).toEqual([oldMonth]);
+
+    const months = await listAuditMonthsDesc(kv as never);
+    expect(months).toEqual([currentMonth]);
+  });
+});
+
+describe("markAuditMonth concurrency", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("keeps both months when two writers race different months onto the index", async () => {
+    const kv = mockKV();
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2020-01-15T00:00:00.000Z"));
+    const pA = recordAudit(kv as never, "delete", "mem::test", ["a"]);
+    vi.setSystemTime(new Date("2020-02-15T00:00:00.000Z"));
+    const pB = recordAudit(kv as never, "delete", "mem::test", ["b"]);
+    await Promise.all([pA, pB]);
+    vi.useRealTimers();
+
+    const months = await listAuditMonthsDesc(kv as never);
+    expect([...months].sort()).toEqual(["2020-01", "2020-02"]);
   });
 });
