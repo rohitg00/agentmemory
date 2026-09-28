@@ -275,7 +275,7 @@ export async function queryAudit(
     if (migrationState?.safeToListLegacy) {
       const legacyRows = await kv.list<AuditEntry>(KV.audit);
       for (const row of legacyRows) addIfNew(row);
-    } else if (migrationState && migrationState.status !== "done") {
+    } else if (migrationState?.status === "too-large" || migrationState?.status === "unreadable") {
       legacyFrozen = true;
       legacyFrozenBytes = migrationState.legacySizeBytes;
     }

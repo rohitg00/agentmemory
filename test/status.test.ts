@@ -139,6 +139,21 @@ describe("evaluateStatus", () => {
     expect(report.status).toBe("info");
     expect(report.problems[0].code).toBe("no-llm-provider");
   });
+
+  it("reports a frozen legacy audit log only when the migration left it in place", () => {
+    expect(codes(evaluateStatus(inputs({ auditLegacy: { status: "too-large", sizeBytes: 1 } })))).toContain(
+      "audit-legacy-frozen",
+    );
+    expect(codes(evaluateStatus(inputs({ auditLegacy: { status: "unreadable" } })))).toContain(
+      "audit-legacy-frozen",
+    );
+    expect(codes(evaluateStatus(inputs({ auditLegacy: { status: "copied", sizeBytes: 1 } })))).not.toContain(
+      "audit-legacy-frozen",
+    );
+    expect(codes(evaluateStatus(inputs({ auditLegacy: { status: "done" } })))).not.toContain(
+      "audit-legacy-frozen",
+    );
+  });
 });
 
 describe("missing health snapshot", () => {

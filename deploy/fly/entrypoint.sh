@@ -16,6 +16,7 @@
 set -eu
 
 DATA_DIR="${AGENTMEMORY_DATA_DIR:-/data}"
+export AGENTMEMORY_DATA_DIR="$DATA_DIR"
 HMAC_FILE="${AGENTMEMORY_HMAC_FILE:-/data/.hmac}"
 RUN_AS="node:node"
 III_CONFIG="/opt/agentmemory/node_modules/@agentmemory/agentmemory/dist/iii-config.yaml"

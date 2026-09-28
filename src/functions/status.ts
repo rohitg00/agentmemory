@@ -253,7 +253,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     }
   }
 
-  if (input.auditLegacy && input.auditLegacy.status !== "done") {
+  if (input.auditLegacy?.status === "too-large" || input.auditLegacy?.status === "unreadable") {
     const size = input.auditLegacy.sizeBytes;
     const sizeText = typeof size === "number" ? ` (${Math.round(size / (1024 * 1024))} MiB)` : "";
     problems.push({

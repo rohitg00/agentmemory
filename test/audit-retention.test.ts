@@ -166,7 +166,7 @@ describe("queryAudit across months", () => {
     expect(listedScopes).not.toContain(KV.audit);
   });
 
-  it("does not list the legacy scope, and reports it frozen, when no marker says it is safe", async () => {
+  it("does not list the legacy scope, and does not report it frozen, before any migration marker exists", async () => {
     await seedMonthIndex(kv, ["2026-08"]);
     seedEntry(kv, KV.auditMonth("2026-08"), "2026-08-01T00:00:00.000Z", {
       id: "aug_1",
@@ -209,6 +209,34 @@ describe("queryAudit across months", () => {
     expect(entries.map((e) => e.id)).toEqual(["aug_1"]);
     expect(legacyFrozen).toBe(true);
     expect(legacyFrozenBytes).toBe(99999999);
+    const listedScopes = listSpy.mock.calls.map((call) => call[0]);
+    expect(listedScopes).not.toContain(KV.audit);
+  });
+
+  it("does not report the legacy scope frozen once its rows are copied and only the delete pass remains", async () => {
+    await seedMonthIndex(kv, ["2026-05"]);
+    seedEntry(kv, KV.auditMonth("2026-05"), "2026-05-01T00:00:00.000Z", {
+      id: "legacy_1",
+    });
+    seedEntry(kv, KV.audit, "2026-05-01T00:00:00.000Z", { id: "legacy_1" });
+    await seedMigrationState(kv, {
+      status: "copied",
+      safeToListLegacy: false,
+      legacySizeBytes: 1024,
+      migrated: 1,
+      purged: 0,
+      summaryWritten: false,
+      checkedAt: new Date().toISOString(),
+    });
+
+    const listSpy = vi.spyOn(kv, "list");
+    const { entries, legacyFrozen, legacyFrozenBytes } = await queryAudit(kv as never, {
+      limit: 5,
+    });
+
+    expect(entries.map((e) => e.id)).toEqual(["legacy_1"]);
+    expect(legacyFrozen).toBe(false);
+    expect(legacyFrozenBytes).toBeUndefined();
     const listedScopes = listSpy.mock.calls.map((call) => call[0]);
     expect(listedScopes).not.toContain(KV.audit);
   });
