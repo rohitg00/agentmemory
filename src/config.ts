@@ -467,6 +467,34 @@ export function getConsolidationCooldownMs(): number {
   return raw >= 0 ? raw : CONSOLIDATION_COOLDOWN_DEFAULT_MS;
 }
 
+export const INDEX_SAVE_INTERVAL_DEFAULT_MS = 600_000;
+
+export function getIndexSaveIntervalMs(): number {
+  const raw = safeParseInt(
+    getMergedEnv()["AGENTMEMORY_INDEX_SAVE_INTERVAL_MS"],
+    INDEX_SAVE_INTERVAL_DEFAULT_MS,
+  );
+  return raw > 0 ? raw : INDEX_SAVE_INTERVAL_DEFAULT_MS;
+}
+
+export const VECTOR_BUCKET_SIZE_DEFAULT = 500;
+
+export function getVectorBucketSize(): number {
+  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_VECTOR_BUCKET_SIZE"], VECTOR_BUCKET_SIZE_DEFAULT);
+  return raw > 0 ? raw : VECTOR_BUCKET_SIZE_DEFAULT;
+}
+
+export const VECTOR_BACKFILL_MAX_DEFAULT = 500;
+
+export function getVectorBackfillMax(): number {
+  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_VECTOR_BACKFILL_MAX"], VECTOR_BACKFILL_MAX_DEFAULT);
+  return raw > 0 ? raw : VECTOR_BACKFILL_MAX_DEFAULT;
+}
+
+export function isVectorBackfillAllEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_VECTOR_BACKFILL"] === "all";
+}
+
 export function isStandaloneMcp(): boolean {
   return getMergedEnv()["STANDALONE_MCP"] === "true";
 }
