@@ -42,11 +42,17 @@ export class AnthropicProvider implements MemoryProvider {
   }
 
   private async call(systemPrompt: string, userPrompt: string): Promise<string> {
+    // Fold the system prompt into the user message rather than using the
+    // `system` field. Some Anthropic-compatible proxies (e.g. Claude Code
+    // subscription bridges) inject their own agent system prompt and override
+    // ours — so structured-output instructions placed in `system` are ignored
+    // and the model replies conversationally ("I'll look at the files…"),
+    // yielding no parseable output. Putting the instructions in the user
+    // message survives that and behaves identically against the real API.
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: this.maxTokens,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
+      messages: [{ role: 'user', content: systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt }],
     })
 
     const textBlock = response.content.find((b) => b.type === 'text')
