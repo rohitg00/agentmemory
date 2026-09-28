@@ -411,6 +411,7 @@ describe("prefersHtml", () => {
 describe("status wiring", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");
   const viewer = readFileSync("src/viewer/index.html", "utf-8");
+  const index = readFileSync("src/index.ts", "utf-8");
 
   it("registers GET /agentmemory/status behind the same auth check as the other endpoints", () => {
     expect(api).toMatch(/registerFunction\("api::status",\s*async \(req: HttpRequest\): Promise<Response> => \{\s*const authErr = checkAuth\(req, secret\);/);
@@ -446,7 +447,8 @@ describe("status wiring", () => {
   });
 
   it("reports the active state backend from config, not a hardcoded value", () => {
-    expect(api).toMatch(/stateBackend: getStateBackend\(\)/);
+    expect(api).toMatch(/stateBackend: kv.backend === "redis" \? "redis" : "file"/);
+    expect(index).toMatch(/new StateKV\(sdk, \{ backend: stateBackend \}\)/);
   });
 
   it("the viewer has a Health tab that reads the status report", () => {

@@ -99,6 +99,21 @@ export async function probeLegacyAuditFile(): Promise<LegacyAuditProbe> {
   return { safe: true, empty: false, sizeBytes: fileStat.size };
 }
 
+export async function probeLegacyAuditScope(kv: StateKV): Promise<LegacyAuditProbe> {
+  let rows: AuditEntry[];
+  try {
+    rows = await kv.list<AuditEntry>(KV.audit);
+  } catch {
+    return { safe: false, reason: "unreadable" };
+  }
+  if (!Array.isArray(rows) || rows.length === 0) return { safe: true, empty: true };
+  const sizeBytes = Buffer.byteLength(JSON.stringify(rows), "utf8");
+  if (sizeBytes > getAuditMigrateMaxBytes()) {
+    return { safe: false, reason: "too-large", sizeBytes };
+  }
+  return { safe: true, empty: false, sizeBytes };
+}
+
 async function auditMigrationDeleteDelayMs(): Promise<number> {
   const dataDir = getEnvVar("AGENTMEMORY_DATA_DIR");
   if (!dataDir) return DEFAULT_SAVE_INTERVAL_MS * AUDIT_MIGRATION_DELETE_WAIT_INTERVALS;
@@ -334,8 +349,11 @@ export async function startAuditMigration(
   kv: StateKV,
   deps: AuditMigrationDeps = {},
 ): Promise<void> {
-  const runProbe = deps.probe ?? probeLegacyAuditFile;
-  const runDeleteDelayMs = deps.deleteDelayMs ?? auditMigrationDeleteDelayMs;
+  const onRedis = kv.backend === "redis";
+  const runProbe =
+    deps.probe ?? (onRedis ? () => probeLegacyAuditScope(kv) : probeLegacyAuditFile);
+  const runDeleteDelayMs =
+    deps.deleteDelayMs ?? (onRedis ? async () => 0 : auditMigrationDeleteDelayMs);
 
   const marker = await readAuditMigrationState(kv);
   if (marker?.status === "done") return;

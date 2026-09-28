@@ -15,6 +15,7 @@ import {
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
   getAuditRetentionMonths,
+  getStateBackend,
 } from "./config.js";
 import {
   createProvider,
@@ -108,6 +109,7 @@ import { startViewerServer } from "./viewer/server.js";
 import { MetricsStore } from "./eval/metrics-store.js";
 import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
+import { createStreamRelayProbe } from "./health/stream-relay-probe.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
 import { bootLog } from "./logger.js";
@@ -226,7 +228,11 @@ async function main() {
 
   writeWorkerPidfile();
 
-  const kv = new StateKV(sdk);
+  let stateBackend: "file" | "redis" = "file";
+  try {
+    stateBackend = getStateBackend();
+  } catch {}
+  const kv = new StateKV(sdk, { backend: stateBackend });
   const secret = getEnvVar("AGENTMEMORY_SECRET");
   const metricsStore = new MetricsStore(kv);
   const dedupMap = new DedupMap();
@@ -413,7 +419,12 @@ async function main() {
   registerViewerStreamTriggers(sdk, kv, { secret, metricsStore, provider });
   registerMcpEndpoints(sdk, kv, secret);
 
-  const healthMonitor = registerHealthMonitor(sdk, kv);
+  const healthMonitor = registerHealthMonitor(sdk, kv, {
+    streamRelayProbe:
+      kv.backend === "redis"
+        ? createStreamRelayProbe(sdk, { url: `ws://localhost:${config.streamsPort}` })
+        : undefined,
+  });
 
   const indexPersistence = new IndexPersistence(kv, vectorIndex);
   setIndexPersistence(indexPersistence);
@@ -601,7 +612,7 @@ async function main() {
   }, 60 * 60 * 1000);
   recentSearchesSweepTimer.unref();
 
-  void seedViewerStreamTracker(sdk).catch(() => {});
+  void seedViewerStreamTracker(sdk, { unorderedListing: kv.backend === "redis" }).catch(() => {});
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {

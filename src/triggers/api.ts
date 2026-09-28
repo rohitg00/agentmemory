@@ -52,7 +52,6 @@ import {
   detectEmbeddingProvider,
   detectLlmProviderKind,
   getAgentId,
-  getStateBackend,
   isAgentScopeIsolated,
   loadConfig,
 } from "../config.js";
@@ -292,6 +291,16 @@ async function valueWithin<T>(work: Promise<T>, ms: number): Promise<T | null> {
   }
 }
 
+async function probeStateStore(kv: StateKV): Promise<{ ok: boolean; latencyMs?: number }> {
+  const started = performance.now();
+  const answered = await valueWithin(
+    kv.get(KV.health, "_probe").then(() => true),
+    STATUS_CHECK_TIMEOUT_MS,
+  );
+  if (!answered) return { ok: false };
+  return { ok: true, latencyMs: Math.round((performance.now() - started) * 100) / 100 };
+}
+
 type UnindexedScan = Awaited<ReturnType<typeof findUnindexedObservations>>;
 const unindexedScans = new WeakMap<StateKV, { run: () => Promise<UnindexedScan>; last: { at: number; value: UnindexedScan } | null }>();
 
@@ -324,7 +333,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
     const cached = scan.last && options.scanMaxAgeMs !== undefined && Date.now() - scan.last.at < options.scanMaxAgeMs
       ? scan.last.value
       : null;
-    const [health, functionMetrics, graph, unindexed, auditMigrationState] = await Promise.all([
+    const [health, functionMetrics, graph, unindexed, auditMigrationState, stateStore] = await Promise.all([
       options.health !== undefined ? Promise.resolve(options.health) : valueWithin(getLatestHealth(kv), STATUS_CHECK_TIMEOUT_MS),
       deps.metricsStore ? valueWithin(deps.metricsStore.getAll(), STATUS_CHECK_TIMEOUT_MS) : Promise.resolve([]),
       valueWithin(
@@ -336,6 +345,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
         kv.get<AuditMigrationState>(KV.auditMonths, AUDIT_MIGRATION_STATE_KEY),
         STATUS_CHECK_TIMEOUT_MS,
       ),
+      probeStateStore(kv),
     ]);
     const observationsIndexed = [...idx.observationCountsBySession().values()].reduce((a, n) => a + n, 0);
     const documentKinds = idx.documentKindCounts();
@@ -348,7 +358,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
       version: VERSION,
       engineVersion: III_PINNED_VERSION,
       uptimeSeconds: Math.round(process.uptime()),
-      stateBackend: getStateBackend(),
+      stateBackend: kv.backend === "redis" ? "redis" : "file",
       ports: {
         rest: loadConfig().restPort ?? null,
         streams: loadConfig().streamsPort ?? null,
@@ -387,6 +397,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
         ? { status: auditMigrationState.status, sizeBytes: auditMigrationState.legacySizeBytes }
         : null,
       indexPersistence: getIndexPersistenceStatus(),
+      stateStore,
     });
   };
 }

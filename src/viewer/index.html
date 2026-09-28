@@ -1660,6 +1660,7 @@
       eventLoop: { term: 'Event loop delay', text: 'How far behind the worker is in handling work. Under 20 ms is healthy; a large value means it is busy or blocked.' },
       uptime: { term: 'Uptime', text: 'How long the agentmemory worker has been running since it last started.' },
       health: { term: 'Health status', text: 'Healthy means everything is normal. Degraded means something needs attention but memory still works. Critical means a core part is failing.' },
+      stateBackend: { term: 'State store', text: 'Where the engine keeps every record: file (local files on this machine, the default) or redis (a Redis server set by AGENTMEMORY_STATE_BACKEND and AGENTMEMORY_REDIS_URL). ok means a test write and read just succeeded; the number is how long it took.' },
       engineConnection: { term: 'Engine connection', text: 'Whether the agentmemory worker is connected to the iii engine that stores its data and runs its functions.' },
       live: { term: 'Live updates', text: 'The viewer keeps one streaming connection open and updates every page the moment data changes. Nothing is refreshed on a timer.' },
       flags: { term: 'Feature flags', text: 'Optional features that are on or off in this install. Off features leave some pages empty; each one lists the setting that turns it on.' },
@@ -7084,8 +7085,8 @@
       }
       if (store.lastHealthAt && Date.now() - store.lastHealthAt > HEALTH_STALE_MS) {
         var secs = Math.round((Date.now() - store.lastHealthAt) / 1000);
-        return '<div class="hstale" id="health-live-state"><strong>Stale: no health report for ' + secs + 's.</strong> Reports normally arrive every 30 seconds. The stream is connected, so the worker is busy or the iii engine is paused. The numbers below are from ' + esc(last) + '.' +
-          '<div style="margin-top:6px;">Fix: wait a minute; if it stays stale, check the server log and restart agentmemory.</div></div>';
+        return '<div class="hstale" id="health-live-state"><strong>Stale: no health report for ' + secs + 's.</strong> Reports normally arrive every 30 seconds. The stream is connected, so the worker is busy or the iii engine is paused' + (r && r.service && r.service.stateBackend === 'redis' ? ', or Redis restarted: the engine stops relaying live events after a Redis restart until agentmemory restarts' : '') + '. The numbers below are from ' + esc(last) + '.' +
+          '<div style="margin-top:6px;">Fix: wait a minute; if it stays stale, press Re-check now for the full report, check the server log and restart agentmemory.</div></div>';
       }
       return '';
     }
@@ -7128,11 +7129,13 @@
     function engineCardHtml(r, snap) {
       var ports = (r && r.service && r.service.ports) || {};
       var kv = snap.kvConnectivity;
+      var backend = r && r.service ? r.service.stateBackend : null;
       var streamText = conn.state === 'live' ? 'live' : conn.state;
       return '<div class="card"><div class="card-title">Engine and connection ' + help('engineConnection') + '</div>' +
         hrow('Engine connection', esc(snap.connectionState || 'unknown'), 'engineConnection', 'The worker\'s link to the iii engine, which stores the data and runs the functions.') +
-        (kv ? hrow('State store', esc(kv.status + (kv.latencyMs !== undefined ? ' · ' + kv.latencyMs + ' ms' : '') + (kv.error ? ' · ' + kv.error : ''))) : '') +
+        ((kv || backend) ? hrow('State store', esc((backend ? backend + (kv ? ' · ' : '') : '') + (kv ? kv.status + (kv.latencyMs !== undefined ? ' · ' + kv.latencyMs + ' ms' : '') + (kv.error ? ' · ' + kv.error : '') : '')), 'stateBackend', backend === 'redis' ? 'Stored in Redis (AGENTMEMORY_STATE_BACKEND=redis). If Redis restarts, restart agentmemory so the live stream resumes.' : 'Stored in the engine\'s local files (the default). Set AGENTMEMORY_STATE_BACKEND=redis to use Redis.') : '') +
         hrow('Viewer stream', esc(streamText), 'live', 'This page\'s own connection. Offline means the numbers here stop changing.') +
+        (snap.streamRelay ? hrow('Redis event relay', esc(snap.streamRelay), 'live', snap.streamRelay === 'down' ? 'The engine stopped relaying live events through Redis, usually after Redis restarted. Data is still saved. Restart agentmemory to resume live updates.' : 'A test event sent through Redis every 30 seconds came back to the worker.') : '') +
         hrow('Uptime', esc(formatUptime(snap.uptimeSeconds)), 'uptime') +
         hrow('Version', esc('v' + (store.version || (r && r.service.version) || '?') + (r ? ' · engine ' + r.service.engineVersion : ''))) +
         hrow('Ports', esc('REST ' + (ports.rest || '?') + ' · streams ' + (ports.streams || '?') + ' · viewer ' + (ports.viewer || 'off'))) +

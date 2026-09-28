@@ -70,6 +70,7 @@ export interface StatusInputs {
   graphExtractionEnabled: boolean;
   auditLegacy: { status: string; sizeBytes?: number } | null;
   indexPersistence?: IndexPersistenceStatus | null;
+  stateStore?: { ok: boolean; latencyMs?: number } | null;
 }
 
 export interface IndexBreakdown {
@@ -87,6 +88,7 @@ export interface StatusReport {
     engineVersion: string;
     uptimeSeconds: number;
     stateBackend: StatusInputs["stateBackend"];
+    stateStore: { ok: boolean; latencyMs?: number } | null;
     ports: StatusInputs["ports"];
   };
   health: StatusInputs["health"];
@@ -153,6 +155,13 @@ export function describeHealthAlert(slug: string): { level: "warn" | "error"; me
       level: m[1] === "critical" ? "error" : "warn",
       message: `The worker is ${m[2]} ms behind on its work (event loop delay), so requests answer slowly.`,
       fix: "It usually clears after an import or index rebuild finishes. If it persists, restart agentmemory.",
+    };
+  }
+  if (slug === "stream_relay_down") {
+    return {
+      level: "warn",
+      message: "Live updates are not reaching the viewer: the engine stopped relaying stream events, which happens after Redis restarts or drops the connection. Data is still saved.",
+      fix: "Restart agentmemory (npx @agentmemory/agentmemory stop, then start) so the engine subscribes to Redis again, then reload the viewer.",
     };
   }
   if (slug === "connection_reconnecting") {
@@ -363,7 +372,25 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       level: "info",
       code: "audit-legacy-frozen",
       message: `An older audit log${sizeText} was left in place instead of being migrated into monthly scopes, so it is no longer rewritten but its rows do not show up in audit queries.`,
-      fix: "Safe to ignore. To remove it, stop agentmemory, delete mem%3Aaudit.bin from the state store directory, then start it again.",
+      fix:
+        input.stateBackend === "redis"
+          ? "Safe to ignore. To remove it, run redis-cli -u \"$AGENTMEMORY_REDIS_URL\" DEL state:mem:audit, then restart agentmemory."
+          : "Safe to ignore. To remove it, stop agentmemory, delete mem%3Aaudit.bin from the state store directory, then start it again.",
+    });
+  }
+
+  if (input.stateStore && !input.stateStore.ok) {
+    problems.push({
+      level: "error",
+      code: "state-store-unreachable",
+      message:
+        input.stateBackend === "redis"
+          ? "The state store is not answering: the engine cannot reach Redis, so nothing is being saved or read."
+          : "The state store is not answering: the engine did not complete a state read in time, so nothing is being saved or read.",
+      fix:
+        input.stateBackend === "redis"
+          ? "Check that Redis is running and reachable at AGENTMEMORY_REDIS_URL (redis-cli -u \"$AGENTMEMORY_REDIS_URL\" ping should answer PONG). Once Redis is back, restart agentmemory: the engine does not resume the live viewer stream after a Redis restart."
+          : "Check the server log for engine errors, then restart agentmemory.",
     });
   }
 
@@ -381,6 +408,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       engineVersion: input.engineVersion,
       uptimeSeconds: input.uptimeSeconds,
       stateBackend: input.stateBackend,
+      stateStore: input.stateStore ?? null,
       ports: input.ports,
     },
     health: input.health,

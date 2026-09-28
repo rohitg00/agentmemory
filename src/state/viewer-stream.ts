@@ -1,5 +1,6 @@
 import type { IIIClient } from "iii-sdk";
 import { STREAM } from "./schema.js";
+import { generatedIdTime } from "./kv.js";
 import { getViewerStreamMax } from "../config.js";
 import { logger } from "../logger.js";
 
@@ -92,10 +93,32 @@ export async function pruneViewerStreamIfDue(sdk: IIIClient): Promise<void> {
 }
 
 type StoredViewerItem = {
-  observation?: { id?: unknown };
+  observation?: { id?: unknown; timestamp?: unknown };
 };
 
-export async function seedViewerStreamTracker(sdk: IIIClient): Promise<number> {
+function itemTime(item: StoredViewerItem): number {
+  const fromId = generatedIdTime(item?.observation?.id);
+  if (fromId !== null) return fromId;
+  const raw = item?.observation?.timestamp;
+  const parsed = typeof raw === "string" ? Date.parse(raw) : typeof raw === "number" ? raw : NaN;
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+function oldestFirst(items: StoredViewerItem[]): StoredViewerItem[] {
+  return items
+    .map((item, index) => ({ item, index, at: itemTime(item) }))
+    .sort((a, b) => (a.at !== b.at ? (a.at < b.at ? -1 : 1) : a.index - b.index))
+    .map((entry) => entry.item);
+}
+
+export interface SeedViewerStreamOptions {
+  unorderedListing?: boolean;
+}
+
+export async function seedViewerStreamTracker(
+  sdk: IIIClient,
+  options: SeedViewerStreamOptions = {},
+): Promise<number> {
   let items: StoredViewerItem[];
   try {
     items = await sdk.trigger<unknown, StoredViewerItem[]>({
@@ -111,7 +134,7 @@ export async function seedViewerStreamTracker(sdk: IIIClient): Promise<number> {
   }
   if (!Array.isArray(items)) return 0;
   const stored: string[] = [];
-  for (const item of items) {
+  for (const item of options.unorderedListing ? oldestFirst(items) : items) {
     const id = item?.observation?.id;
     if (typeof id !== "string" || trackedItemIdSet.has(id)) continue;
     trackedItemIdSet.add(id);

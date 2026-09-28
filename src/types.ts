@@ -239,6 +239,7 @@ export interface HealthSnapshot {
   eventLoopLagMs: number;
   uptimeSeconds: number;
   kvConnectivity?: { status: string; latencyMs?: number; error?: string };
+  streamRelay?: "ok" | "down" | "unknown";
   status: "healthy" | "degraded" | "critical";
   alerts: string[];
   notes?: string[];
