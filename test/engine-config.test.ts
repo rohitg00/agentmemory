@@ -128,6 +128,37 @@ describe("renderEngineConfig", () => {
     ).toThrow(/AGENTMEMORY_REDIS_URL/);
   });
 
+  it.each(["redis://:pa'ss@localhost:6379", "redis://localhost:6379/0\n", "redis://:a\tb@localhost:6379"])(
+    "rejects a redis URL the engine could not load after expansion: %j",
+    (redisUrl) => {
+      const source = readFileSync(
+        join(import.meta.dirname, "..", "iii-config.yaml"),
+        "utf8",
+      );
+
+      expect(() =>
+        renderEngineConfig(source, {
+          dataDir: "/tmp/agentmemory-fixture",
+          stateBackend: { kind: "redis", redisUrl },
+        }),
+      ).toThrow(/percent-encode/i);
+    },
+  );
+
+  it("accepts a percent-encoded single quote in the redis password", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "iii-config.yaml"),
+      "utf8",
+    );
+
+    expect(() =>
+      renderEngineConfig(source, {
+        dataDir: "/tmp/agentmemory-fixture",
+        stateBackend: { kind: "redis", redisUrl: "redis://:pa%27ss@localhost:6379" },
+      }),
+    ).not.toThrow();
+  });
+
   it("throws when redis is selected but the iii-state worker block is missing", () => {
     const source = ["workers:", "  - name: iii-http", "    config:", "      port: 3111"].join(
       "\n",

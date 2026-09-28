@@ -161,6 +161,7 @@ function setWorkerPort(lines: string[], name: string, port: number): void {
 }
 
 const REDIS_URL_ENV_REF = "${AGENTMEMORY_REDIS_URL}";
+const UNSAFE_REDIS_URL_CHARS = /['\u0000-\u001f\u007f]/;
 
 function replaceKvAdapterWithRedis(
   lines: string[],
@@ -233,6 +234,14 @@ export function renderEngineConfig(
   if (options.stateBackend?.kind === "redis" && !options.stateBackend.redisUrl) {
     throw new Error(
       "AGENTMEMORY_STATE_BACKEND=redis requires AGENTMEMORY_REDIS_URL to be set (e.g. redis://localhost:6379).",
+    );
+  }
+  if (
+    options.stateBackend?.kind === "redis" &&
+    UNSAFE_REDIS_URL_CHARS.test(options.stateBackend.redisUrl ?? "")
+  ) {
+    throw new Error(
+      "AGENTMEMORY_REDIS_URL contains a single quote or a control character, which breaks the engine config once the engine expands it. Percent-encode those characters in the URL (for example a single quote as %27).",
     );
   }
 

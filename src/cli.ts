@@ -1452,12 +1452,17 @@ function prepareEngineLaunch(configPath: string): {
     home,
     bundledConfig,
   );
+  const stateBackendKind = getStateBackend();
   try {
     mkdirSync(cwd, { recursive: true });
-  } catch {
+  } catch (err) {
+    const failure = resolveLaunchRenderFailure(stateBackendKind, err);
+    if (failure.fatal) {
+      p.log.error(failure.message);
+      process.exit(1);
+    }
     return { configPath, cwd: process.cwd() };
   }
-  const stateBackendKind = getStateBackend();
   try {
     const rawConfig = readFileSync(configPath, "utf-8");
     const options = {
@@ -1564,7 +1569,8 @@ function warnIfDockerIgnoresStateBackend(stateBackendKind: "file" | "redis"): vo
   if (stateBackendKind !== "redis") return;
   p.log.warn(
     "AGENTMEMORY_STATE_BACKEND=redis is not applied on the Docker path: docker-compose.yml mounts iii-config.docker.yaml read-only, so this start will not render it. " +
-      "Edit iii-config.docker.yaml by hand to point iii-state/iii-stream at redis (see README \"Storage backend\"), or it keeps using the file store.",
+      "Edit iii-config.docker.yaml by hand to point iii-state/iii-stream at redis (see README \"Storage backend\"), or it keeps using the file store. " +
+      "docker-compose.yml passes AGENTMEMORY_REDIS_URL into the engine container, so redis_url: '${AGENTMEMORY_REDIS_URL}' works in that file.",
   );
 }
 

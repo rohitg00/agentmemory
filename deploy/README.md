@@ -89,9 +89,14 @@ documents work unchanged: set `AGENTMEMORY_STATE_BACKEND=redis` and
 `AGENTMEMORY_REDIS_URL=redis://host:6379` alongside your platform's
 other secrets to point `iii-state`/`iii-stream` at an external Redis
 instead of the `/data` volume. The pinned engine only supports plain
-`redis://` (no TLS), and a Redis reachable from these platforms is
-almost always run by you elsewhere — a managed TLS-only Redis will not
-work here without a plain-TCP tunnel in front of it.
+`redis://` (no TLS), so the connection, including the Redis password
+and every stored memory, travels unencrypted. Only use it over a
+private network you trust (the platform's private networking, or a
+Redis in the same machine or VPC). To reach any other Redis, including
+a managed TLS-only one, run an encrypted tunnel next to agentmemory
+(stunnel, an SSH tunnel, or a VPN such as WireGuard or Tailscale) so
+the plain `redis://` hop never leaves the host, and the tunnel's own
+upstream connection is encrypted and authenticated.
 
 ## Cold-start budget
 
