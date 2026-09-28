@@ -4,7 +4,7 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { persistGraphDelta } from "../src/functions/graph.js";
+import { persistGraphDelta, registerGraphFunction } from "../src/functions/graph.js";
 import { KV } from "../src/state/schema.js";
 import type { GraphNode, GraphEdge, GraphSnapshot } from "../src/types.js";
 
@@ -22,9 +22,18 @@ function mockKV() {
     release: () => void;
     promise: Promise<void>;
   } | null = null;
+  let listGate: { scope: string; release: () => void; promise: Promise<void> } | null = null;
 
   return {
     store,
+    armListGate: (scope: string) => {
+      let release!: () => void;
+      const promise = new Promise<void>((res) => {
+        release = res;
+      });
+      listGate = { scope, release, promise };
+      return release;
+    },
     armGetGate: (scope: string, key: string) => {
       let release!: () => void;
       const promise = new Promise<void>((res) => {
@@ -53,7 +62,13 @@ function mockKV() {
     },
     list: async <T>(scope: string): Promise<T[]> => {
       const m = store.get(scope);
-      return m ? clone(Array.from(m.values()) as T[]) : [];
+      const values = m ? clone(Array.from(m.values()) as T[]) : [];
+      if (listGate && listGate.scope === scope) {
+        const g = listGate;
+        listGate = null;
+        await g.promise;
+      }
+      return values;
     },
   };
 }
@@ -168,6 +183,43 @@ describe("persistGraphDelta concurrent merges (finding 7)", () => {
       "obs_seed",
       "obs_x",
       "obs_y",
+    ]);
+  });
+
+  it("snapshot rebuild does not overwrite a delta that commits while it enumerates", async () => {
+    const kv = mockKV();
+    const handlers = new Map<string, (data?: unknown) => Promise<unknown>>();
+    const sdk = {
+      registerFunction: (id: string, fn: (data?: unknown) => Promise<unknown>) => {
+        handlers.set(id, fn);
+      },
+    };
+    registerGraphFunction(sdk as never, kv as never, { name: "noop" } as never);
+
+    const seeded = node({ id: "node_seed", name: "src/seed.ts" });
+    await persistGraphDelta(kv as never, [seeded], [], ["obs_seed"]);
+
+    const releaseNodeList = kv.armListGate(KV.graphNodes);
+    const rebuild = handlers.get("mem::graph-snapshot-rebuild")!();
+    await flush();
+
+    const fresh = node({ id: "node_fresh", name: "src/fresh.ts" });
+    const delta = persistGraphDelta(kv as never, [fresh], [], ["obs_fresh"]);
+    await flush();
+    releaseNodeList();
+
+    const rebuilt = (await rebuild) as { success: boolean };
+    await delta;
+
+    expect(rebuilt.success).toBe(true);
+    const snapshot = (await kv.get<GraphSnapshot>(
+      KV.graphSnapshot,
+      "current",
+    )) as GraphSnapshot;
+    expect(snapshot.stats.totalNodes).toBe(2);
+    expect(snapshot.topNodes.map((n) => n.id).sort()).toEqual([
+      "node_fresh",
+      "node_seed",
     ]);
   });
 });

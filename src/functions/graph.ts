@@ -1017,72 +1017,74 @@ export function registerGraphFunction(
       }
 
       try {
-        const [nodes, edges] = await withTimeout(
-          Promise.all([
-            kv.list<GraphNode>(KV.graphNodes),
-            kv.list<GraphEdge>(KV.graphEdges),
-          ]),
-          LIVE_ENUMERATION_BUDGET_MS,
-          "graph-snapshot-rebuild enumeration",
-        );
+        const outcome = await withKeyedLock("graph:persist", async () => {
+          const [nodes, edges] = await withTimeout(
+            Promise.all([
+              kv.list<GraphNode>(KV.graphNodes),
+              kv.list<GraphEdge>(KV.graphEdges),
+            ]),
+            LIVE_ENUMERATION_BUDGET_MS,
+            "graph-snapshot-rebuild enumeration",
+          );
 
-      if (nodes.length > REBUILD_SAFE_NODE_CEILING) {
+          if (nodes.length > REBUILD_SAFE_NODE_CEILING) {
+            return { tooLargeNodeCount: nodes.length };
+          }
+
+          const liveNodes = nodes.filter((n) => !n.stale);
+          const liveEdges = edges.filter((e) => !e.stale);
+          const degree = new Map<string, number>();
+          for (const e of liveEdges) {
+            degree.set(e.sourceNodeId, (degree.get(e.sourceNodeId) ?? 0) + 1);
+            degree.set(e.targetNodeId, (degree.get(e.targetNodeId) ?? 0) + 1);
+          }
+          const BATCH_SIZE = 100;
+          for (let i = 0; i < liveNodes.length; i += BATCH_SIZE) {
+            const batch = liveNodes.slice(i, i + BATCH_SIZE);
+            await Promise.all(
+              batch.flatMap((n) => [
+                kv.set(KV.graphNameIndex, nameIndexKey(n.type, n.name), n.id),
+                kv.set(KV.graphNodeDegree, n.id, degree.get(n.id) ?? 0),
+              ]),
+            );
+          }
+          for (let i = 0; i < liveEdges.length; i += BATCH_SIZE) {
+            const batch = liveEdges.slice(i, i + BATCH_SIZE);
+            await Promise.all(
+              batch.map((e) =>
+                kv.set(
+                  KV.graphEdgeKey,
+                  edgeIndexKey(e.sourceNodeId, e.targetNodeId, e.type),
+                  e.id,
+                ),
+              ),
+            );
+          }
+
+          const rebuilt = buildSnapshotFromArrays(nodes, edges);
+          await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, rebuilt);
+          return { snap: rebuilt };
+        });
+
+      if ("tooLargeNodeCount" in outcome) {
+        const totalNodes = outcome.tooLargeNodeCount;
         logger.warn("Graph snapshot rebuild aborted: corpus too large", {
-          totalNodes: nodes.length,
+          totalNodes,
           ceiling: REBUILD_SAFE_NODE_CEILING,
         });
         return {
           success: false,
           tooLarge: true,
-          totalNodes: nodes.length,
+          totalNodes,
           ceiling: REBUILD_SAFE_NODE_CEILING,
           error:
-            `Corpus has ${nodes.length} graph nodes; safe-rebuild ceiling ` +
+            `Corpus has ${totalNodes} graph nodes; safe-rebuild ceiling ` +
             `is ${REBUILD_SAFE_NODE_CEILING}. Run POST /agentmemory/graph/reset ` +
             `to wipe and let future extracts rebuild incrementally.`,
         };
       }
 
-      // Backfill the targeted-lookup indexes so post-rebuild
-      // graph-extract calls hit the O(1) path instead of falling
-      // through to the (already-removed) full-scope scan. Batch
-      // writes via Promise.all to avoid N sequential round-trips —
-      // BATCH_SIZE bounds in-flight writes so we don't open thousands
-      // of concurrent state channels on huge corpora.
-      const liveNodes = nodes.filter((n) => !n.stale);
-      const liveEdges = edges.filter((e) => !e.stale);
-      const degree = new Map<string, number>();
-      for (const e of liveEdges) {
-        degree.set(e.sourceNodeId, (degree.get(e.sourceNodeId) ?? 0) + 1);
-        degree.set(e.targetNodeId, (degree.get(e.targetNodeId) ?? 0) + 1);
-      }
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < liveNodes.length; i += BATCH_SIZE) {
-        const batch = liveNodes.slice(i, i + BATCH_SIZE);
-        await Promise.all(
-          batch.flatMap((n) => [
-            kv.set(KV.graphNameIndex, nameIndexKey(n.type, n.name), n.id),
-            kv.set(KV.graphNodeDegree, n.id, degree.get(n.id) ?? 0),
-          ]),
-        );
-      }
-      for (let i = 0; i < liveEdges.length; i += BATCH_SIZE) {
-        const batch = liveEdges.slice(i, i + BATCH_SIZE);
-        await Promise.all(
-          batch.map((e) =>
-            kv.set(
-              KV.graphEdgeKey,
-              edgeIndexKey(e.sourceNodeId, e.targetNodeId, e.type),
-              e.id,
-            ),
-          ),
-        );
-      }
-
-      const snap = buildSnapshotFromArrays(nodes, edges);
-      await withKeyedLock("graph:persist", () =>
-        kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap),
-      );
+      const { snap } = outcome;
       const tookMs = Date.now() - started;
       logger.info("Graph snapshot rebuilt", {
         totalNodes: snap.stats.totalNodes,
