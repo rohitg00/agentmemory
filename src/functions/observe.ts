@@ -4,6 +4,7 @@ import type { RawObservation, HookPayload, Origin } from "../types.js";
 const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"]);
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { trackViewerStreamItem, pruneViewerStreamIfDue } from "../state/viewer-stream.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { indexObservationSession } from "../state/obs-index.js";
 import { stripPrivateData } from "./privacy.js";
@@ -234,16 +235,6 @@ export function registerObserveFunction(
         }
 
         await sdk.trigger({
-          function_id: "stream::set",
-          payload: {
-          stream_name: STREAM.name,
-          group_id: STREAM.group(payload.sessionId),
-          item_id: obsId,
-          data: { type: "raw", observation: raw },
-          },
-        });
-
-        await sdk.trigger({
           function_id: "stream::send",
           payload: {
             stream_name: STREAM.name,
@@ -354,15 +345,6 @@ export function registerObserveFunction(
             function_id: "stream::set",
             payload: {
               stream_name: STREAM.name,
-              group_id: STREAM.group(payload.sessionId),
-              item_id: obsId,
-              data: { type: "compressed", observation: synthetic },
-            },
-          });
-          await sdk.trigger({
-            function_id: "stream::set",
-            payload: {
-              stream_name: STREAM.name,
               group_id: STREAM.viewerGroup,
               item_id: obsId,
               data: {
@@ -372,6 +354,8 @@ export function registerObserveFunction(
               },
             },
           });
+          trackViewerStreamItem(obsId);
+          void pruneViewerStreamIfDue(sdk).catch(() => {});
         }
 
         logger.info("Observation captured", {
