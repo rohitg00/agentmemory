@@ -1,16 +1,19 @@
 import type {
   MemoryProvider,
   ProviderConfig,
+  ProviderType,
   FallbackConfig,
 } from "../types.js";
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { BedrockProvider } from "./bedrock.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
 import { OpenRouterProvider } from "./openrouter.js";
 import { ResilientProvider } from "./resilient.js";
 import { FallbackChainProvider } from "./fallback-chain.js";
+import { AuthRefresh } from "./auth-refresh.js";
 import { getEnvVar } from "../config.js";
 
 export { createEmbeddingProvider, createImageEmbeddingProvider } from "./embedding/index.js";
@@ -52,8 +55,29 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
   }
 }
 
+/**
+ * Build the optional credential-refresh hook. Only the bedrock provider uses it
+ * today, and only when AWS_AUTH_REFRESH is set; the mechanism itself is generic.
+ * Accepts every provider type that may be invoked (primary + fallback chain) so
+ * a bedrock provider reachable only via the fallback path still gets the hook.
+ */
+function createAuthRefresh(providerTypes: ProviderType[]): AuthRefresh | undefined {
+  if (!providerTypes.includes("bedrock")) return undefined;
+  const command = getEnvVar("AWS_AUTH_REFRESH");
+  if (!command || !command.trim()) return undefined;
+  const timeoutRaw = getEnvVar("AWS_AUTH_REFRESH_TIMEOUT_MS");
+  const timeoutMs = timeoutRaw ? parseInt(timeoutRaw, 10) : undefined;
+  return new AuthRefresh({
+    command,
+    timeoutMs: Number.isFinite(timeoutMs) ? timeoutMs : undefined,
+  });
+}
+
 export function createProvider(config: ProviderConfig): ResilientProvider {
-  return new ResilientProvider(createBaseProvider(config));
+  return new ResilientProvider(
+    createBaseProvider(config),
+    createAuthRefresh([config.provider]),
+  );
 }
 
 export function createFallbackProvider(
@@ -65,6 +89,7 @@ export function createFallbackProvider(
   }
 
   const providers: MemoryProvider[] = [createBaseProvider(config)];
+  const builtTypes: ProviderType[] = [config.provider];
   for (const providerType of fallbackConfig.providers) {
     if (providerType === config.provider) continue;
     try {
@@ -79,15 +104,23 @@ export function createFallbackProvider(
         maxTokens: config.maxTokens,
       };
       providers.push(createBaseProvider(fbConfig));
+      builtTypes.push(providerType);
     } catch {
       // skip unavailable fallback providers
     }
   }
 
+  // Derive the refresh hook from every provider actually built (primary +
+  // fallbacks), so a bedrock provider reachable only via the fallback chain
+  // still refreshes expired credentials.
+  const authRefresh = createAuthRefresh(builtTypes);
   if (providers.length > 1) {
-    return new ResilientProvider(new FallbackChainProvider(providers));
+    return new ResilientProvider(
+      new FallbackChainProvider(providers),
+      authRefresh,
+    );
   }
-  return new ResilientProvider(providers[0]);
+  return new ResilientProvider(providers[0], authRefresh);
 }
 
 function createBaseProvider(config: ProviderConfig): MemoryProvider {
@@ -104,6 +137,15 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         config.baseURL,
+      );
+    case "bedrock":
+      // No requireEnvVar for a key: creds may come from the AWS credential
+      // provider chain (SSO cache / IAM role) with no env var set. A region is
+      // mandatory for Bedrock, though.
+      return new BedrockProvider(
+        config.model,
+        config.maxTokens,
+        requireEnvVar("AWS_REGION"),
       );
     case "gemini": {
       const geminiKey =
