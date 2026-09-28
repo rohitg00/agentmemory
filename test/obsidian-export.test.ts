@@ -7,12 +7,18 @@ vi.mock("../src/logger.js", () => ({
 const writtenFiles = new Map<string, string>();
 const createdDirs = new Set<string>();
 
+// resolve()/join() produce drive-rooted Windows paths from the POSIX fixture
+// paths these tests use, so keys are normalised before they go in the maps.
+function key(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^[A-Za-z]:/, "");
+}
+
 vi.mock("node:fs/promises", () => ({
   mkdir: vi.fn(async (dir: string) => {
-    createdDirs.add(dir);
+    createdDirs.add(key(dir));
   }),
   writeFile: vi.fn(async (path: string, content: string) => {
-    writtenFiles.set(path, content);
+    writtenFiles.set(key(path), content);
   }),
 }));
 
@@ -238,7 +244,7 @@ describe("Obsidian Export", () => {
     })) as { success: boolean; error: string };
 
     expect(result.success).toBe(false);
-    expect(result.error).toContain(exportRoot);
+    expect(key(result.error)).toContain(exportRoot);
   });
 
   it("skips deleted lessons", async () => {
