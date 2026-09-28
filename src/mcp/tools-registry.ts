@@ -81,7 +81,17 @@ export const CORE_TOOLS: McpToolDef[] = [
             "Stable canonical project identifier this memory belongs to (e.g. a slug, " +
             "UUID, or registry key). Must match the value used when the session was " +
             "started. Do not use filesystem paths or ad-hoc display names — those " +
-            "change across machines and will silently break project scoping.",
+            "change across machines and will silently break project scoping. " +
+            "If omitted, defaults to the current project (resolved the same way as " +
+            "the session). Pass scope:'global' to store unscoped instead.",
+        },
+        scope: {
+          type: "string",
+          description:
+            "'project' (default) scopes the memory to the current project; " +
+            "'global' stores it unscoped (shared across all projects) for facts " +
+            "that aren't project-specific, like user preferences or conventions. " +
+            "Ignored when an explicit project is given.",
         },
         agentId: {
           type: "string",
