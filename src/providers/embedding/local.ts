@@ -8,7 +8,7 @@ type FeatureExtractor = (
 export class LocalEmbeddingProvider implements EmbeddingProvider {
   readonly name = "local";
   readonly dimensions = 384;
-  private extractor: FeatureExtractor | null = null;
+  private extractorPromise: Promise<FeatureExtractor> | null = null;
 
   async embed(text: string): Promise<Float32Array> {
     const [result] = await this.embedBatch([text]);
@@ -24,24 +24,43 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     return output.tolist().map((v) => new Float32Array(v));
   }
 
-  private async getExtractor() {
-    if (this.extractor) return this.extractor;
+  // Caches the in-flight promise, not just the resolved extractor:
+  // concurrent cold callers would otherwise each start their own model
+  // download. Evicted on rejection so an interrupted download is retried
+  // rather than cached until restart.
+  private getExtractor(): Promise<FeatureExtractor> {
+    if (!this.extractorPromise) {
+      const loading = this.loadExtractor();
+      this.extractorPromise = loading;
+      loading.catch(() => {
+        if (this.extractorPromise === loading) this.extractorPromise = null;
+      });
+    }
+    return this.extractorPromise;
+  }
+
+  private async loadExtractor(): Promise<FeatureExtractor> {
     let transformers: typeof import("@huggingface/transformers");
     try {
       transformers = await import("@huggingface/transformers");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") {
+        // #395: installs predating the package rename carry
+        // @xenova/transformers 2.x, whose pipeline options differ. Say so
+        // explicitly - the symptom is otherwise a silent 0% embed rate.
         throw new Error(
-          "Install @huggingface/transformers for local embeddings: npm install @huggingface/transformers",
+          "Local embeddings need @huggingface/transformers (>=4). " +
+            "Install it with: npm install @huggingface/transformers. " +
+            "The legacy @xenova/transformers 2.x package is NOT compatible " +
+            "with this provider and will not be used even if present.",
         );
       }
       throw err;
     }
-    this.extractor = (await transformers.pipeline(
+    return (await transformers.pipeline(
       "feature-extraction",
       "Xenova/all-MiniLM-L6-v2",
       { dtype: "q8" },
     )) as FeatureExtractor;
-    return this.extractor;
   }
 }
