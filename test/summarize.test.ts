@@ -125,6 +125,7 @@ async function setupHandler(opts: {
   sessionId: string;
   obsCount: number;
   provider: MemoryProvider;
+  metricsStore?: unknown;
 }) {
   const sdk = mockSdk();
   const kv = mockKV();
@@ -141,7 +142,7 @@ async function setupHandler(opts: {
     const o = makeObs(i, opts.sessionId);
     await kv.set(`obs:${opts.sessionId}`, o.id, o);
   }
-  registerSummarizeFunction(sdk as any, kv as any, opts.provider);
+  registerSummarizeFunction(sdk as any, kv as any, opts.provider, opts.metricsStore as any);
   const handler = sdk.functions.get("mem::summarize")!;
   return { handler, kv };
 }
@@ -478,5 +479,24 @@ describe("mem::summarize chunking", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("parse_failed");
+  });
+});
+
+describe("mem::summarize without an LLM provider", () => {
+  it("skips a wrapped noop provider without recording a failed call", async () => {
+    const { ResilientProvider } = await import("../src/providers/resilient.js");
+    const { NoopProvider } = await import("../src/providers/noop.js");
+    const record = vi.fn(async () => {});
+    const { handler } = await setupHandler({
+      sessionId: "ses_noop",
+      obsCount: 3,
+      provider: new ResilientProvider(new NoopProvider()),
+      metricsStore: { record },
+    });
+
+    const result = (await handler({ sessionId: "ses_noop" })) as { success: boolean; error?: string };
+
+    expect(result).toMatchObject({ success: false, error: "no_provider" });
+    expect(record).not.toHaveBeenCalled();
   });
 });

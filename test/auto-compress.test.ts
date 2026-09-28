@@ -207,9 +207,49 @@ describe("buildSyntheticCompression", () => {
       toolInput: { file_path: "/app/src/bar.ts", pattern: "foo" },
       raw: {},
     });
-    expect(synth.files).toContain("/app/src/bar.ts");
-    expect(synth.files).toContain("foo");
+    expect(synth.files).toEqual(["/app/src/bar.ts"]);
     expect(synth.type).toBe("file_edit");
+  });
+
+  it("does not record search paths or patterns as files", async () => {
+    const { buildSyntheticCompression } = await import(
+      "../src/functions/compress-synthetic.js"
+    );
+    const base = {
+      sessionId: "ses_1",
+      timestamp: new Date().toISOString(),
+      hookType: "post_tool_use" as const,
+      raw: {},
+    };
+    const grep = buildSyntheticCompression({
+      ...base,
+      id: "obs_grep",
+      toolName: "Grep",
+      toolInput: { path: "infra", pattern: "computeTotal" },
+    });
+    const glob = buildSyntheticCompression({
+      ...base,
+      id: "obs_glob",
+      toolName: "Glob",
+      toolInput: { path: "src", pattern: "**/*.ts" },
+    });
+    const read = buildSyntheticCompression({
+      ...base,
+      id: "obs_read",
+      toolName: "read_file",
+      toolInput: { path: "/app/src/foo.ts" },
+    });
+    const notebook = buildSyntheticCompression({
+      ...base,
+      id: "obs_nb",
+      toolName: "NotebookEdit",
+      toolInput: { notebook_path: "/app/analysis.ipynb" },
+    });
+
+    expect(grep.files).toEqual([]);
+    expect(glob.files).toEqual([]);
+    expect(read.files).toEqual(["/app/src/foo.ts"]);
+    expect(notebook.files).toEqual(["/app/analysis.ipynb"]);
   });
 
   it("truncates long narratives so it can't blow up the index", async () => {

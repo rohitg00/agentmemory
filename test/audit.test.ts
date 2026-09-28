@@ -95,6 +95,16 @@ describe("Audit Functions", () => {
     expect(entriesBefore[0].operation).toBe("observe");
   });
 
+  it("queryAudit filters by target id or function text", async () => {
+    await recordAudit(kv as never, "forget", "mem::forget", ["mem_abc", "ses_1"]);
+    await recordAudit(kv as never, "observe", "mem::observe", ["obs_9"]);
+    await recordAudit(kv as never, "lesson_save", "mem::lesson-save", ["lsn_1"]);
+
+    expect((await queryAudit(kv as never, { query: "MEM_AB" })).map((e) => e.targetIds[0])).toEqual(["mem_abc"]);
+    expect((await queryAudit(kv as never, { query: "lesson-save" })).map((e) => e.targetIds[0])).toEqual(["lsn_1"]);
+    expect(await queryAudit(kv as never, { query: "nothing" })).toEqual([]);
+  });
+
   it("queryAudit respects limit", async () => {
     for (let i = 0; i < 10; i++) {
       await recordAudit(kv as never, "observe", `fn${i}`, [], {});
