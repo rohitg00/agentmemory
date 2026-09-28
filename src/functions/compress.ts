@@ -196,15 +196,6 @@ export function registerCompressFunction(
 
         const streamResults = await Promise.allSettled([
           sdk.trigger({
-            function_id: "stream::set",
-            payload: {
-              stream_name: STREAM.name,
-              group_id: STREAM.group(data.sessionId),
-              item_id: data.observationId,
-              data: { type: "compressed", observation: compressed },
-            },
-          }),
-          sdk.trigger({
             function_id: "stream::send",
             payload: {
               stream_name: STREAM.name,

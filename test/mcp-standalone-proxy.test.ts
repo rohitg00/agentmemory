@@ -228,6 +228,47 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(probeCount).toBe(2);
   });
 
+  it("surfaces the export refusal body on a 413 instead of falling back to local KV", async () => {
+    let probeCount = 0;
+    const refusal = {
+      success: false,
+      error: "Response is 20.0 MiB, over the ~15 MiB engine transport frame limit; narrow the range",
+      oversized: true,
+      bytes: 20 * 1024 * 1024,
+      limitBytes: 15 * 1024 * 1024,
+    };
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) {
+        probeCount++;
+        return new Response("ok", { status: 200 });
+      }
+      if (url.endsWith("/agentmemory/export")) {
+        return new Response(JSON.stringify(refusal), {
+          status: 413,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.includes("/agentmemory/sessions")) {
+        return new Response(JSON.stringify({ sessions: [] }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const res = await handleToolCall("memory_export", {});
+    const body = JSON.parse(res.content[0].text);
+    expect(body.oversized).toBe(true);
+    expect(body.success).toBe(false);
+    expect(body.bytes).toBe(refusal.bytes);
+
+    expect(probeCount).toBe(1);
+    const sessionsRes = await handleToolCall("memory_sessions", { limit: 5 });
+    expect(JSON.parse(sessionsRes.content[0].text).sessions).toEqual([]);
+    expect(probeCount).toBe(1);
+  });
+
   it("forwards non-essential tools to /agentmemory/mcp/call (#234)", async () => {
     const calls: Array<{ url: string; body?: unknown }> = [];
     installFetch((url, init) => {

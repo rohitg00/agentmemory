@@ -29,6 +29,15 @@ import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
 import { StateKV } from "../state/kv.js";
+import {
+  addSessionToProjectIndex,
+  removeSessionFromProjectIndex,
+} from "../state/session-index.js";
+import {
+  indexObservationSession,
+  unindexObservationSession,
+} from "../state/obs-index.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { indexRecords } from "./search.js";
@@ -311,6 +320,11 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
         const obsDeletes: Array<{ sessionId: string; obsId: string }> = [];
         await runChunked(existing, async (session) => {
           await kv.delete(KV.sessions, session.id);
+          await removeSessionFromProjectIndex(
+            kv,
+            session.project,
+            session.id,
+          ).catch(() => {});
           const obs = await kv
             .list<CompressedObservation>(KV.observations(session.id))
             .catch(() => []);
@@ -318,9 +332,10 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
             obsDeletes.push({ sessionId: session.id, obsId: o.id });
           }
         });
-        await runChunked(obsDeletes, (d) =>
-          kv.delete(KV.observations(d.sessionId), d.obsId),
-        );
+        await runChunked(obsDeletes, async (d) => {
+          await kv.delete(KV.observations(d.sessionId), d.obsId);
+          await unindexObservationSession(kv, d.obsId).catch(() => {});
+        });
         await runChunked(await kv.list<Memory>(KV.memories), (m) =>
           kv.delete(KV.memories, m.id),
         );
@@ -372,13 +387,17 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
           await kv.list<Insight>(KV.insights).catch(() => []),
           (i) => kv.delete(KV.insights, i.id),
         );
-        await runChunked(
-          await kv.list<{ id: string }>(KV.graphNodes).catch(() => []),
-          (n) => kv.delete(KV.graphNodes, n.id),
+        await withKeyedLock("graph:persist", async () =>
+          runChunked(
+            await kv.list<{ id: string }>(KV.graphNodes).catch(() => []),
+            (n) => kv.delete(KV.graphNodes, n.id),
+          ),
         );
-        await runChunked(
-          await kv.list<{ id: string }>(KV.graphEdges).catch(() => []),
-          (e) => kv.delete(KV.graphEdges, e.id),
+        await withKeyedLock("graph:persist", async () =>
+          runChunked(
+            await kv.list<{ id: string }>(KV.graphEdges).catch(() => []),
+            (e) => kv.delete(KV.graphEdges, e.id),
+          ),
         );
         await runChunked(
           await kv.list<{ id: string }>(KV.semantic).catch(() => []),
@@ -407,17 +426,28 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
       const indexMems: Memory[] = [];
 
       await runChunked(importData.sessions, async (session) => {
-        if (strategy === "skip") {
-          const existing = await kv
-            .get<Session>(KV.sessions, session.id)
-            .catch(() => null);
-          if (existing) {
-            stats.skipped++;
-            return;
+        let wrote = false;
+        await withKeyedLock(`obs:${session.id}`, async () => {
+          if (strategy === "skip") {
+            const existing = await kv
+              .get<Session>(KV.sessions, session.id)
+              .catch(() => null);
+            if (existing) {
+              stats.skipped++;
+              return;
+            }
           }
+          await kv.set(KV.sessions, session.id, session);
+          stats.sessions++;
+          wrote = true;
+        });
+        if (wrote) {
+          await addSessionToProjectIndex(kv, session.project, {
+            id: session.id,
+            startedAt: session.startedAt,
+            ...(session.agentId ? { agentId: session.agentId } : {}),
+          }).catch(() => {});
         }
-        await kv.set(KV.sessions, session.id, session);
-        stats.sessions++;
       });
 
       for (const [sessionId, obs] of Object.entries(importData.observations)) {
@@ -433,6 +463,7 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
           }
           o.origin = importOrigin(o.origin, o.timestamp);
           await kv.set(KV.observations(sessionId), o.id, o);
+          await indexObservationSession(kv, o.id, sessionId).catch(() => {});
           stats.observations++;
           indexObs.push(o);
         });
@@ -473,22 +504,26 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
       });
 
       if (importData.graphNodes) {
-        await runChunked(importData.graphNodes, async (node) => {
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
-            if (existing) { stats.skipped++; return; }
-          }
-          await kv.set(KV.graphNodes, node.id, node);
-        });
+        await withKeyedLock("graph:persist", () =>
+          runChunked(importData.graphNodes!, async (node) => {
+            if (strategy === "skip") {
+              const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
+              if (existing) { stats.skipped++; return; }
+            }
+            await kv.set(KV.graphNodes, node.id, node);
+          }),
+        );
       }
       if (importData.graphEdges) {
-        await runChunked(importData.graphEdges, async (edge) => {
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
-            if (existing) { stats.skipped++; return; }
-          }
-          await kv.set(KV.graphEdges, edge.id, edge);
-        });
+        await withKeyedLock("graph:persist", () =>
+          runChunked(importData.graphEdges!, async (edge) => {
+            if (strategy === "skip") {
+              const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
+              if (existing) { stats.skipped++; return; }
+            }
+            await kv.set(KV.graphEdges, edge.id, edge);
+          }),
+        );
       }
       if (importData.semanticMemories) {
         await runChunked(importData.semanticMemories, async (sem) => {

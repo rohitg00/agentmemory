@@ -14,6 +14,12 @@ export interface Session {
   agentId?: string;
 }
 
+export interface ProjectSessionIndexEntry {
+  id: string;
+  startedAt: string;
+  agentId?: string;
+}
+
 export interface CommitLink {
   sha: string;
   shortSha: string;
@@ -530,6 +536,7 @@ export interface SemanticMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface ProceduralMemory {
@@ -546,6 +553,7 @@ export interface ProceduralMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface TeamConfig {

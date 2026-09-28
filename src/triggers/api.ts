@@ -7,6 +7,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
 import { StateKV } from "../state/kv.js";
+import { addSessionToProjectIndex } from "../state/session-index.js";
 import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
@@ -739,7 +740,7 @@ export function registerApiTriggers(
           ? body.agentId.trim().slice(0, 128)
           : undefined;
       const agentId = requestAgentId ?? getAgentId();
-      const session: Session = {
+      const freshSession: Session = {
         id: sessionId,
         project,
         cwd,
@@ -750,7 +751,28 @@ export function registerApiTriggers(
         ...(title ? { firstPrompt: title.slice(0, 200) } : {}),
         ...(agentId ? { agentId } : {}),
       };
-      await kv.set(KV.sessions, sessionId, session);
+      const session = await withKeyedLock(`obs:${sessionId}`, async () => {
+        const existing = await kv.get<Session>(KV.sessions, sessionId);
+        const merged: Session = {
+          ...freshSession,
+          observationCount: existing?.observationCount ?? freshSession.observationCount,
+          firstPrompt: freshSession.firstPrompt ?? existing?.firstPrompt,
+          summary: freshSession.summary ?? existing?.summary,
+          commitShas: existing?.commitShas ?? freshSession.commitShas,
+        };
+        await kv.set(KV.sessions, sessionId, merged);
+        return merged;
+      });
+      await addSessionToProjectIndex(kv, project, {
+        id: sessionId,
+        startedAt: session.startedAt,
+        ...(session.agentId ? { agentId: session.agentId } : {}),
+      }).catch((err) => {
+        logger.warn("session index update failed", {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
       const contextResult = await sdk.trigger<
         { sessionId: string; project: string; agentId?: string },
         { context: string }
@@ -783,10 +805,12 @@ export function registerApiTriggers(
           body: { error: "sessionId is required and must be a non-empty string" },
         };
       }
-      await kv.update(KV.sessions, sessionId, [
-        { type: "set", path: "endedAt", value: new Date().toISOString() },
-        { type: "set", path: "status", value: "completed" },
-      ]);
+      await withKeyedLock(`obs:${sessionId}`, () =>
+        kv.update(KV.sessions, sessionId, [
+          { type: "set", path: "endedAt", value: new Date().toISOString() },
+          { type: "set", path: "status", value: "completed" },
+        ]),
+      );
       // Fan out session-stopped lifecycle (non-blocking).
       try {
         sdk.trigger({
@@ -879,7 +903,7 @@ export function registerApiTriggers(
       });
 
       if (sessionId) {
-        await withKeyedLock(`session:${sessionId}`, async () => {
+        await withKeyedLock(`obs:${sessionId}`, async () => {
           const session = await kv.get<Session>(KV.sessions, sessionId);
           if (!session) return;
           const shaSet = new Set<string>(session.commitShas ?? []);
@@ -1217,11 +1241,14 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/consolidate", http_method: "POST" },
   });
 
-  sdk.registerFunction("api::patterns", 
-    async (req: HttpRequest<{ project?: string }>): Promise<Response> => {
+  sdk.registerFunction("api::patterns",
+    async (req: HttpRequest<{ project?: string; limit?: number }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::patterns", payload: req.body });
+      const result = await sdk.trigger({
+        function_id: "mem::patterns",
+        payload: { project: req.body?.project, limit: req.body?.limit },
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1449,6 +1476,10 @@ export function registerApiTriggers(
         function_id: "mem::export",
         payload,
       });
+      const resp = result as { success?: boolean; oversized?: boolean };
+      if (resp?.success === false && resp?.oversized === true) {
+        return { status_code: 413, body: result };
+      }
       return { status_code: 200, body: result };
     },
   );
