@@ -58,3 +58,10 @@ Configuration is read from the environment and from `~/.agentmemory/.env` (no `e
 - `AGENTMEMORY_VIEWER_STREAM_MAX`
 - `AGENTMEMORY_VIEWER_URL`
 <!-- AUTOGEN:env END -->
+
+## State backend
+
+- `AGENTMEMORY_STATE_BACKEND`: `file` (default) or `redis`. Anything else stops startup with an error.
+- `AGENTMEMORY_REDIS_URL`: required with `redis`, plain `redis://` only (the pinned engine has no TLS). The URL never appears in `/agentmemory/status` or the viewer.
+
+Switching backends starts from an empty store; move data with `/agentmemory/export` and `/agentmemory/import`. Run one Redis server per `--instance`: live viewer events travel over a Redis pub/sub channel that ignores the database index. After Redis restarts, restart agentmemory so live viewer updates resume; the Health page flags this. See the README section "Storage backend: file (default) vs redis".
