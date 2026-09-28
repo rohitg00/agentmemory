@@ -342,6 +342,58 @@ describe("rebuildAllProjectSessionIndexes / rebuildSessionIndexIfStale", () => {
     expect(kv.list.mock.calls.filter((c) => c[0] === KV.sessions)).toHaveLength(0);
   });
 
+  function gateNextSessionsListing(target: ReturnType<typeof mockKV>): () => void {
+    const listAll = target.list.getMockImplementation()!;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    target.list.mockImplementationOnce(async (scope: string) => {
+      const snapshot = await listAll(scope);
+      await gate;
+      return snapshot;
+    });
+    return release;
+  }
+
+  it("keeps a session added to the index while the rebuild was listing", async () => {
+    const a1 = { id: "a1", project: "proj-a", startedAt: "2026-01-01T00:00:00Z" };
+    await kv.set(KV.sessions, "a1", a1);
+    await kv.set(KV.projectSessionsIndex, "proj-a", [{ id: "a1", startedAt: a1.startedAt }]);
+    const release = gateNextSessionsListing(kv);
+
+    const rebuild = rebuildAllProjectSessionIndexes(kv as never);
+    const a2 = { id: "a2", project: "proj-a", startedAt: "2026-01-02T00:00:00Z" };
+    await kv.set(KV.sessions, "a2", a2);
+    await addSessionToProjectIndex(kv as never, "proj-a", { id: "a2", startedAt: a2.startedAt });
+    release();
+    await rebuild;
+
+    const index = await getProjectSessionIndex(kv as never, "proj-a");
+    expect(index?.map((e) => e.id).sort()).toEqual(["a1", "a2"]);
+  });
+
+  it("does not restore a session removed from the index while the rebuild was listing", async () => {
+    const a1 = { id: "a1", project: "proj-a", startedAt: "2026-01-01T00:00:00Z" };
+    const a2 = { id: "a2", project: "proj-a", startedAt: "2026-01-02T00:00:00Z" };
+    await kv.set(KV.sessions, "a1", a1);
+    await kv.set(KV.sessions, "a2", a2);
+    await kv.set(KV.projectSessionsIndex, "proj-a", [
+      { id: "a2", startedAt: a2.startedAt },
+      { id: "a1", startedAt: a1.startedAt },
+    ]);
+    const release = gateNextSessionsListing(kv);
+
+    const rebuild = rebuildAllProjectSessionIndexes(kv as never);
+    await kv.delete(KV.sessions, "a2");
+    await removeSessionFromProjectIndex(kv as never, "proj-a", "a2");
+    release();
+    await rebuild;
+
+    const index = await getProjectSessionIndex(kv as never, "proj-a");
+    expect(index?.map((e) => e.id)).toEqual(["a1"]);
+  });
+
   it("does not set the generation marker when the listing fails", async () => {
     const failingKv = mockKV(new Set([KV.sessions]));
 

@@ -182,6 +182,9 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
               });
               continue;
             }
+            for (const o of observations) {
+              await unindexObservationSession(kv, o.id).catch(() => {});
+            }
             await removeSessionFromProjectIndex(
               kv,
               session.project,

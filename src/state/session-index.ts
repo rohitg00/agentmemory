@@ -6,6 +6,27 @@ import { withKeyedLock } from "./keyed-mutex.js";
 const PROJECT_SESSION_INDEX_CAP = 50;
 const MIN_ENTRIES_PER_AGENT = 10;
 
+type RebuildChanges = {
+  added: Map<string, ProjectSessionIndexEntry>;
+  removed: Set<string>;
+};
+
+const activeRebuilds = new Set<Map<string, RebuildChanges>>();
+
+function recordRebuildChange(
+  project: string,
+  apply: (changes: RebuildChanges) => void,
+): void {
+  for (const rebuild of activeRebuilds) {
+    let changes = rebuild.get(project);
+    if (!changes) {
+      changes = { added: new Map(), removed: new Set() };
+      rebuild.set(project, changes);
+    }
+    apply(changes);
+  }
+}
+
 function sortByStartedAtDesc(
   entries: ProjectSessionIndexEntry[],
 ): ProjectSessionIndexEntry[] {
@@ -77,6 +98,10 @@ export async function addSessionToProjectIndex(
     const merged = base.filter((e) => e.id !== entry.id);
     merged.push(entry);
     await kv.set(KV.projectSessionsIndex, project, capWithAgentFairness(merged));
+    recordRebuildChange(project, (changes) => {
+      changes.removed.delete(entry.id);
+      changes.added.set(entry.id, entry);
+    });
   });
 }
 
@@ -86,6 +111,10 @@ export async function removeSessionFromProjectIndex(
   sessionId: string,
 ): Promise<void> {
   await withKeyedLock(`project-session-index:${project}`, async () => {
+    recordRebuildChange(project, (changes) => {
+      changes.added.delete(sessionId);
+      changes.removed.add(sessionId);
+    });
     const existing = await getProjectSessionIndex(kv, project);
     if (!existing) return;
     const next = existing.filter((e) => e.id !== sessionId);
@@ -117,25 +146,44 @@ export async function ensureProjectSessionIndex(
 export async function rebuildAllProjectSessionIndexes(
   kv: StateKV,
 ): Promise<{ projects: number; sessions: number }> {
-  const sessions = await kv.list<Session>(KV.sessions);
-  const byProject = new Map<string, ProjectSessionIndexEntry[]>();
-  for (const session of sessions) {
-    if (!session.project) continue;
-    const entry: ProjectSessionIndexEntry = {
-      id: session.id,
-      startedAt: session.startedAt,
-      ...(session.agentId ? { agentId: session.agentId } : {}),
-    };
-    const bucket = byProject.get(session.project);
-    if (bucket) bucket.push(entry);
-    else byProject.set(session.project, [entry]);
+  const changesSinceListing = new Map<string, RebuildChanges>();
+  activeRebuilds.add(changesSinceListing);
+  try {
+    const sessions = await kv.list<Session>(KV.sessions);
+    const byProject = new Map<string, ProjectSessionIndexEntry[]>();
+    for (const session of sessions) {
+      if (!session.project) continue;
+      const entry: ProjectSessionIndexEntry = {
+        id: session.id,
+        startedAt: session.startedAt,
+        ...(session.agentId ? { agentId: session.agentId } : {}),
+      };
+      const bucket = byProject.get(session.project);
+      if (bucket) bucket.push(entry);
+      else byProject.set(session.project, [entry]);
+    }
+    for (const [project, entries] of byProject) {
+      await withKeyedLock(`project-session-index:${project}`, () => {
+        const changes = changesSinceListing.get(project);
+        const next = changes
+          ? [
+              ...entries.filter(
+                (e) => !changes.removed.has(e.id) && !changes.added.has(e.id),
+              ),
+              ...changes.added.values(),
+            ]
+          : entries;
+        return kv.set(
+          KV.projectSessionsIndex,
+          project,
+          buildProjectSessionIndex(next),
+        );
+      });
+    }
+    return { projects: byProject.size, sessions: sessions.length };
+  } finally {
+    activeRebuilds.delete(changesSinceListing);
   }
-  for (const [project, entries] of byProject) {
-    await withKeyedLock(`project-session-index:${project}`, () =>
-      kv.set(KV.projectSessionsIndex, project, buildProjectSessionIndex(entries)),
-    );
-  }
-  return { projects: byProject.size, sessions: sessions.length };
 }
 
 const SESSION_INDEX_GENERATION_KEY = "session-index-generation";
