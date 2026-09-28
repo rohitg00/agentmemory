@@ -52,6 +52,19 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
   }
 }
 
+function defaultBaseURLFor(
+  providerType: ProviderConfig["provider"],
+): string | undefined {
+  switch (providerType) {
+    case "openai":
+      return getEnvVar("OPENAI_BASE_URL") || undefined;
+    case "anthropic":
+      return getEnvVar("ANTHROPIC_BASE_URL") || undefined;
+    default:
+      return undefined;
+  }
+}
+
 export function createProvider(config: ProviderConfig): ResilientProvider {
   return new ResilientProvider(createBaseProvider(config));
 }
@@ -77,6 +90,7 @@ export function createFallbackProvider(
         provider: providerType,
         model: defaultModelFor(providerType),
         maxTokens: config.maxTokens,
+        baseURL: defaultBaseURLFor(providerType),
       };
       providers.push(createBaseProvider(fbConfig));
     } catch {
