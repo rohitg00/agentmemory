@@ -13,6 +13,7 @@ import {
   isConsolidationEnabled,
 } from "../config.js";
 import { logger } from "../logger.js";
+import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 
 // Global marker recording when corpus consolidation last ran, used to debounce
 // the per-turn session-stop fan-out.
@@ -207,6 +208,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       old_value?: Session;
       new_value?: Session;
     }) => {
+      noteSessionChange(payload.old_value, isStateDelete(payload) ? null : payload.new_value);
       if (isOutOfAgentScope(payload.new_value ?? payload.old_value)) {
         return { emitted: false };
       }
@@ -249,23 +251,29 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       old_value?: Memory;
       new_value?: Memory;
     }) => {
+      const deleted = isStateDelete(payload);
+      noteMemoryChange(payload.old_value, deleted ? null : payload.new_value);
       if (isOutOfAgentScope(payload.new_value ?? payload.old_value)) {
         return { emitted: false };
       }
-      const deleted = isStateDelete(payload);
       const memory = payload.new_value;
+      const created = !deleted && !payload.old_value;
+      let type = "memory.updated";
+      if (deleted) type = "memory.deleted";
+      else if (created) type = "memory.created";
       await sendViewerEvent(
         sdk,
-        `memory-${deleted ? "deleted" : "updated"}-${payload.key}-${Date.now()}`,
-        deleted ? "memory.deleted" : "memory.updated",
+        `${type.replace(".", "-")}-${payload.key}-${Date.now()}`,
+        type,
         deleted
-          ? { memoryId: payload.key }
+          ? { memoryId: payload.key, isLatest: payload.old_value?.isLatest }
           : {
               memoryId: payload.key,
               type: memory?.type,
               title: memory?.title,
               isLatest: memory?.isLatest,
               updatedAt: memory?.updatedAt,
+              memory,
             },
       );
       return { emitted: true };
@@ -278,15 +286,15 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
   });
 }
 
-function isStateDelete(payload: { event_type: string; new_value?: unknown }): boolean {
+export function isStateDelete(payload: { event_type: string; new_value?: unknown }): boolean {
   return payload.event_type === "state:deleted" || !payload.new_value;
 }
 
-function isOutOfAgentScope(record: { agentId?: string } | undefined): boolean {
+export function isOutOfAgentScope(record: { agentId?: string } | undefined): boolean {
   return isAgentScopeIsolated() && record?.agentId !== getAgentId();
 }
 
-async function sendViewerEvent(
+export async function sendViewerEvent(
   sdk: IIIClient,
   id: string,
   type: string,

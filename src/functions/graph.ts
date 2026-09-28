@@ -159,6 +159,11 @@ function paginateFromSnapshot(
   const pageEdges = snap.topEdges.filter(
     (e) => pageIds.has(e.sourceNodeId) && pageIds.has(e.targetNodeId),
   );
+  const degrees: Record<string, number> = {};
+  for (const n of pageNodes) {
+    const d = snap.topDegrees?.[n.id];
+    if (typeof d === "number") degrees[n.id] = d;
+  }
   return {
     nodes: pageNodes,
     edges: pageEdges,
@@ -169,6 +174,7 @@ function paginateFromSnapshot(
     limit,
     offset,
     fromSnapshot: true,
+    degrees,
   };
 }
 

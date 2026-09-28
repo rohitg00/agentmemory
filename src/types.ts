@@ -483,6 +483,7 @@ export interface GraphQueryResult {
   // empty-body / nodeType-only branch on large corpora where the
   // unbounded enumeration would exceed the iii invocation timeout.
   fromSnapshot?: boolean;
+  degrees?: Record<string, number>;
   // #814: when the snapshot is stale or absent and the live fallback
   // also failed, expose an explanatory note so the viewer can surface
   // an actionable banner instead of a blank graph.

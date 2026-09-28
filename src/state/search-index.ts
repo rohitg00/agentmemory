@@ -52,6 +52,10 @@ export class SearchIndex {
     return this.entries.has(id);
   }
 
+  sessionOf(id: string): string | undefined {
+    return this.entries.get(id)?.sessionId;
+  }
+
   observationCountsBySession(): Map<string, number> {
     const counts = new Map<string, number>();
     for (const entry of this.entries.values()) {
@@ -59,6 +63,16 @@ export class SearchIndex {
       counts.set(entry.sessionId, (counts.get(entry.sessionId) ?? 0) + 1);
     }
     return counts;
+  }
+
+  documentKindCounts(): { memories: number; lessons: number } {
+    let memories = 0;
+    let lessons = 0;
+    for (const entry of this.entries.values()) {
+      if (entry.obsId.startsWith("mem_")) memories++;
+      else if (entry.sessionId === "lesson") lessons++;
+    }
+    return { memories, lessons };
   }
 
   remove(id: string): void {

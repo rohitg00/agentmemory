@@ -1,7 +1,7 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { HttpRequest } from "@iii-dev/helpers/http";
 import { randomBytes } from "node:crypto";
-import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary } from "../types.js";
+import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary, HealthSnapshot } from "../types.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
@@ -11,25 +11,41 @@ import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
 import { III_PINNED_VERSION, VERSION } from "../version.js";
-import { CONSOLIDATION_COUNTS_REUSE_MS, CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, describeConsolidation, type ConsolidationRunRecord } from "../functions/consolidation-status.js";
-import { UNINDEXED_SCAN_REUSE_MS, evaluateStatus, prefersHtml, renderStatusHtml, singleFlight, type GraphStatsInput } from "../functions/status.js";
+import { CONSOLIDATION_COUNTS_REUSE_MS, CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, describeConsolidation, type ConsolidationRunRecord, type ConsolidationStatus } from "../functions/consolidation-status.js";
+import { UNINDEXED_SCAN_REUSE_MS, evaluateStatus, prefersHtml, renderStatusHtml, singleFlight, type GraphStatsInput, type StatusReport } from "../functions/status.js";
 import {
   findUnindexedObservations,
   getIndexPersistenceStatus,
+  getEmbeddingProvider,
   getPendingVectorBackfillCount,
   getSearchIndex,
   getVectorIndex,
   isBm25RebuildIncomplete,
+  rankMemoryIds,
 } from "../functions/search.js";
+import {
+  LIST_PAGE_MAX,
+  encodeCursor,
+  matchesText,
+  pageAfterCursor,
+  pageByOffset,
+  parseListQuery,
+  sortByKeyDesc,
+} from "../state/list-query.js";
 import { timingSafeCompare } from "../auth.js";
 import { isSlotsEnabled, isReflectEnabled } from "../functions/slots.js";
 import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
+import { describeGraphNode } from "../functions/graph-node.js";
+import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { logger } from "../logger.js";
 import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
+  getConsolidationIntervalMs,
+  getConsolidationCooldownMs,
+  getConsolidationDecayDays,
   isAutoCompressEnabled,
   isContextInjectionEnabled,
   detectEmbeddingProvider,
@@ -51,7 +67,7 @@ function parseOptionalInt(raw: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-function checkAuth(
+export function checkAuth(
   req: HttpRequest,
   secret: string | undefined,
 ): Response | null {
@@ -150,7 +166,7 @@ function parseOptionalPositiveInt(value: unknown): number | undefined | null {
   return parsed;
 }
 
-function buildConfigFlags() {
+export function buildConfigFlags() {
   return [
     {
       key: "GRAPH_EXTRACTION_ENABLED",
@@ -197,6 +213,223 @@ function buildConfigFlags() {
       docsHref: "https://github.com/rohitg00/agentmemory/issues/143",
     },
   ];
+}
+
+function sessionSortKey(s: Session): string {
+  return s.startedAt || "";
+}
+
+function observationSortKey(o: CompressedObservation): string {
+  return o.timestamp || "";
+}
+
+function memorySortKey(m: { updatedAt?: string; createdAt?: string }): string {
+  return m.updatedAt || m.createdAt || "";
+}
+
+type FacetCount = { value: string; count: number };
+
+function memoryFacets(
+  memories: Array<{ isLatest?: boolean; project?: string; agentId?: string; type?: string }>,
+): { projects: FacetCount[]; agents: FacetCount[]; types: FacetCount[] } {
+  const tally = (pick: (m: (typeof memories)[number]) => string | undefined) => {
+    const counts = new Map<string, number>();
+    for (const m of memories) {
+      if (m.isLatest === false) continue;
+      const value = pick(m);
+      if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  };
+  return {
+    projects: tally((m) => m.project),
+    agents: tally((m) => m.agentId),
+    types: tally((m) => m.type),
+  };
+}
+
+function sessionFacets(
+  sessions: Array<{ project?: string; agentId?: string; status?: string }>,
+): { projects: FacetCount[]; agents: FacetCount[]; statuses: FacetCount[] } {
+  const tally = (pick: (s: (typeof sessions)[number]) => string | undefined) => {
+    const counts = new Map<string, number>();
+    for (const s of sessions) {
+      const value = pick(s);
+      if (value) counts.set(value, (counts.get(value) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  };
+  return {
+    projects: tally((s) => s.project),
+    agents: tally((s) => s.agentId),
+    statuses: tally((s) => s.status),
+  };
+}
+
+function describeEmbeddingProvider(): string {
+  const active = getEmbeddingProvider();
+  if (active) return `${active.name} (${active.dimensions} dims)`;
+  return detectEmbeddingProvider() ?? "none";
+}
+
+const STATUS_CHECK_TIMEOUT_MS = 5000;
+
+async function valueWithin<T>(work: Promise<T>, ms: number): Promise<T | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<null>((resolve) => {
+    timer = setTimeout(() => resolve(null), ms);
+  });
+  try {
+    return await Promise.race([work.catch(() => null), expiry]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+type UnindexedScan = Awaited<ReturnType<typeof findUnindexedObservations>>;
+const unindexedScans = new WeakMap<StateKV, { run: () => Promise<UnindexedScan>; last: { at: number; value: UnindexedScan } | null }>();
+
+function unindexedScanFor(kv: StateKV) {
+  let entry = unindexedScans.get(kv);
+  if (!entry) {
+    const created: { run: () => Promise<UnindexedScan>; last: { at: number; value: UnindexedScan } | null } = {
+      run: singleFlight(async () => {
+        const value = await findUnindexedObservations(kv);
+        created.last = { at: Date.now(), value };
+        return value;
+      }, UNINDEXED_SCAN_REUSE_MS),
+      last: null,
+    };
+    unindexedScans.set(kv, created);
+    entry = created;
+  }
+  return entry;
+}
+
+export interface StatusReporterDeps {
+  metricsStore?: MetricsStore;
+  provider?: ResilientProvider | { circuitState?: unknown };
+}
+
+export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusReporterDeps) {
+  const scan = unindexedScanFor(kv);
+  return async function statusReport(options: { health?: HealthSnapshot | null; scanMaxAgeMs?: number } = {}): Promise<StatusReport> {
+    const idx = getSearchIndex();
+    const cached = scan.last && options.scanMaxAgeMs !== undefined && Date.now() - scan.last.at < options.scanMaxAgeMs
+      ? scan.last.value
+      : null;
+    const [health, functionMetrics, graph, unindexed] = await Promise.all([
+      options.health !== undefined ? Promise.resolve(options.health) : valueWithin(getLatestHealth(kv), STATUS_CHECK_TIMEOUT_MS),
+      deps.metricsStore ? valueWithin(deps.metricsStore.getAll(), STATUS_CHECK_TIMEOUT_MS) : Promise.resolve([]),
+      valueWithin(
+        sdk.trigger({ function_id: "mem::graph-stats", payload: {} }) as Promise<GraphStatsInput>,
+        STATUS_CHECK_TIMEOUT_MS,
+      ),
+      cached ? Promise.resolve(cached) : valueWithin(scan.run(), STATUS_CHECK_TIMEOUT_MS),
+    ]);
+    const observationsIndexed = [...idx.observationCountsBySession().values()].reduce((a, n) => a + n, 0);
+    const documentKinds = idx.documentKindCounts();
+    const circuit =
+      deps.provider && "circuitState" in deps.provider
+        ? (deps.provider.circuitState as { state?: string; failures?: number } | null)
+        : null;
+    return evaluateStatus({
+      now: new Date(),
+      version: VERSION,
+      engineVersion: III_PINNED_VERSION,
+      uptimeSeconds: Math.round(process.uptime()),
+      ports: {
+        rest: loadConfig().restPort ?? null,
+        streams: loadConfig().streamsPort ?? null,
+        viewer: getViewerSkipped() ? null : (getBoundViewerPort() ?? null),
+      },
+      health: health
+        ? {
+            status: health.status,
+            alerts: health.alerts,
+            notes: health.notes,
+            connectionState: health.connectionState,
+            memory: health.memory,
+            eventLoopLagMs: health.eventLoopLagMs,
+            cpuPercent: health.cpu?.percent,
+          }
+        : null,
+      circuitBreaker: circuit,
+      functionMetrics: functionMetrics ?? [],
+      provider: detectLlmProviderKind(),
+      embeddingProvider: describeEmbeddingProvider(),
+      flags: buildConfigFlags(),
+      index: {
+        bm25Documents: idx.size,
+        vectorDocuments: getVectorIndex()?.size ?? null,
+        observationsIndexed,
+        memoriesIndexed: documentKinds.memories,
+        lessonsIndexed: documentKinds.lessons,
+        missingObservations: unindexed ? unindexed.missing.length : null,
+        sessions: unindexed ? unindexed.sessions : null,
+        bm25Incomplete: isBm25RebuildIncomplete(),
+        pendingVectorBackfill: getPendingVectorBackfillCount(),
+      },
+      graph,
+      graphExtractionEnabled: isGraphExtractionEnabled(),
+      indexPersistence: getIndexPersistenceStatus(),
+    });
+  };
+}
+
+export function createConsolidationStatusReader(kv: StateKV) {
+  const counts = singleFlight(async () => {
+    const [summaries, memories, semantic, procedural, relations] = await Promise.all([
+      kv.list(KV.summaries).catch(() => []),
+      kv.list<import("../types.js").Memory>(KV.memories).catch(() => []),
+      kv.list(KV.semantic).catch(() => []),
+      kv.list(KV.procedural).catch(() => []),
+      kv.list(KV.relations).catch(() => []),
+    ]);
+    return {
+      summaries: summaries.length,
+      recurringPatterns: memories.filter(
+        (m) =>
+          m.isLatest &&
+          m.type === "pattern" &&
+          (m.sessionIds?.length ?? 0) >= PROCEDURAL_MIN_SESSIONS_PER_PATTERN,
+      ).length,
+      semanticFacts: semantic.length,
+      procedures: procedural.length,
+      relations: relations.length,
+    };
+  }, CONSOLIDATION_COUNTS_REUSE_MS);
+  return async function consolidationStatus(known: { lastRun?: ConsolidationRunRecord | null } = {}): Promise<ConsolidationStatus> {
+    const [current, lastRun] = await Promise.all([
+      counts(),
+      known.lastRun !== undefined
+        ? Promise.resolve(known.lastRun)
+        : kv.get<ConsolidationRunRecord>(KV.config, CONSOLIDATION_LAST_RUN_KEY).catch(() => null),
+    ]);
+    return describeConsolidation({
+      now: new Date(),
+      enabled: isConsolidationEnabled(),
+      llmConfigured: detectLlmProviderKind() === "llm",
+      ...current,
+      lastRun: lastRun ?? null,
+      schedule: {
+        intervalMs: getConsolidationIntervalMs(),
+        cooldownMs: getConsolidationCooldownMs(),
+        decayDays: getConsolidationDecayDays(),
+      },
+    });
+  };
+}
+
+function statusViewerUrl(req: HttpRequest, viewerPort: number | null): string {
+  const hostHeader = req.headers?.["host"] ?? req.headers?.["Host"];
+  const host = typeof hostHeader === "string" ? hostHeader.replace(/:\d+$/, "") : "";
+  if (viewerPort && host && /^[A-Za-z0-9.\-[\]:]+$/.test(host)) return `http://${host}:${viewerPort}/#health`;
+  return "/agentmemory/viewer#health";
 }
 
 export function registerApiTriggers(
@@ -257,7 +490,7 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const providerKind = detectLlmProviderKind();
-      const embeddingProvider = detectEmbeddingProvider() ? "embeddings" : "none";
+      const embeddingProvider = describeEmbeddingProvider();
       const flags = buildConfigFlags();
       return {
         status_code: 200,
@@ -314,77 +547,13 @@ export function registerApiTriggers(
     },
   });
 
-  const STATUS_CHECK_TIMEOUT_MS = 5000;
-
-  async function valueWithin<T>(work: Promise<T>, ms: number): Promise<T | null> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const expiry = new Promise<null>((resolve) => {
-      timer = setTimeout(() => resolve(null), ms);
-    });
-    try {
-      return await Promise.race([work.catch(() => null), expiry]);
-    } finally {
-      clearTimeout(timer);
-    }
-  }
-
-  const sharedUnindexedScan = singleFlight(() => findUnindexedObservations(kv), UNINDEXED_SCAN_REUSE_MS);
+  const statusReport = createStatusReporter(sdk, kv, { metricsStore, provider });
 
   sdk.registerFunction("api::status",
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const idx = getSearchIndex();
-      const [health, functionMetrics, graph, unindexed] = await Promise.all([
-        valueWithin(getLatestHealth(kv), STATUS_CHECK_TIMEOUT_MS),
-        metricsStore ? valueWithin(metricsStore.getAll(), STATUS_CHECK_TIMEOUT_MS) : Promise.resolve([]),
-        valueWithin(
-          sdk.trigger({ function_id: "mem::graph-stats", payload: {} }) as Promise<GraphStatsInput>,
-          STATUS_CHECK_TIMEOUT_MS,
-        ),
-        valueWithin(sharedUnindexedScan(), STATUS_CHECK_TIMEOUT_MS),
-      ]);
-      const observationsIndexed = [...idx.observationCountsBySession().values()].reduce((a, n) => a + n, 0);
-      const circuit =
-        provider && "circuitState" in provider
-          ? (provider.circuitState as { state?: string; failures?: number } | null)
-          : null;
-      const report = evaluateStatus({
-        now: new Date(),
-        version: VERSION,
-        engineVersion: III_PINNED_VERSION,
-        uptimeSeconds: Math.round(process.uptime()),
-        ports: {
-          rest: loadConfig().restPort ?? null,
-          streams: bootStreamsPort ?? null,
-          viewer: getViewerSkipped() ? null : (getBoundViewerPort() ?? null),
-        },
-        health: health
-          ? {
-              status: health.status,
-              alerts: health.alerts,
-              notes: health.notes,
-              connectionState: health.connectionState,
-            }
-          : null,
-        circuitBreaker: circuit,
-        functionMetrics: functionMetrics ?? [],
-        provider: detectLlmProviderKind(),
-        embeddingProvider: detectEmbeddingProvider() ? "embeddings" : "none",
-        flags: buildConfigFlags(),
-        index: {
-          bm25Documents: idx.size,
-          vectorDocuments: getVectorIndex()?.size ?? null,
-          observationsIndexed,
-          missingObservations: unindexed ? unindexed.missing.length : null,
-          sessions: unindexed ? unindexed.sessions : null,
-          bm25Incomplete: isBm25RebuildIncomplete(),
-          pendingVectorBackfill: getPendingVectorBackfillCount(),
-        },
-        graph,
-        graphExtractionEnabled: isGraphExtractionEnabled(),
-        indexPersistence: getIndexPersistenceStatus(),
-      });
+      const report = await statusReport();
       const accept = req.headers?.["accept"] ?? req.headers?.["Accept"];
       const format = req.query_params?.["format"];
       if (prefersHtml(typeof accept === "string" ? accept : undefined, typeof format === "string" ? format : undefined)) {
@@ -396,7 +565,7 @@ export function registerApiTriggers(
             "Content-Security-Policy": `default-src 'none'; style-src 'nonce-${nonce}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
             "Cache-Control": "no-store",
           },
-          body: renderStatusHtml(report, nonce),
+          body: renderStatusHtml(report, nonce, { viewerUrl: statusViewerUrl(req, report.service.ports.viewer) }),
         };
       }
       return { status_code: 200, headers: { "Cache-Control": "no-store" }, body: report };
@@ -996,9 +1165,37 @@ export function registerApiTriggers(
         ? undefined
         : explicitAgentId ??
           (isAgentScopeIsolated() ? getAgentId() : undefined);
-      const filtered = filterAgentId
+      const listQuery = parseListQuery(req.query_params);
+      let filtered = filterAgentId
         ? sessions.filter((s) => s.agentId === filterAgentId)
         : sessions;
+      const facets =
+        req.query_params?.["facets"] === "true"
+          ? sessionFacets(
+              !wildcardAgent && isAgentScopeIsolated()
+                ? sessions.filter((s) => s.agentId === getAgentId())
+                : sessions,
+            )
+          : undefined;
+      if (listQuery.project) filtered = filtered.filter((s) => s.project === listQuery.project);
+      if (listQuery.status) filtered = filtered.filter((s) => s.status === listQuery.status);
+      if (listQuery.q) {
+        filtered = filtered.filter((s) =>
+          matchesText(listQuery.q, s.id, s.project, s.cwd, s.firstPrompt, s.agentId),
+        );
+      }
+      let nextCursor: string | null = null;
+      if (listQuery.limit !== undefined || listQuery.cursor) {
+        const paged = pageAfterCursor(
+          sortByKeyDesc(filtered, sessionSortKey, (s) => s.id),
+          sessionSortKey,
+          (s) => s.id,
+          listQuery.cursor,
+          listQuery.limit ?? LIST_PAGE_MAX,
+        );
+        filtered = paged.page;
+        nextCursor = paged.nextCursor;
+      }
       // Bounded fan-out: each kv.get is a full engine invocation, so
       // Promise.all over hundreds of sessions saturates the invocation
       // pool. Batch in chunks of 10 (parallel within a chunk, sequential
@@ -1017,7 +1214,10 @@ export function registerApiTriggers(
       const withSummary = filtered.map((s, i) =>
         summaries[i] ? { ...s, summary: summaries[i] } : s,
       );
-      return { status_code: 200, body: { sessions: withSummary } };
+      return {
+        status_code: 200,
+        body: { sessions: withSummary, nextCursor, ...(facets ? { facets } : {}) },
+      };
     },
   );
   sdk.registerTrigger({
@@ -1047,16 +1247,67 @@ export function registerApiTriggers(
         ? undefined
         : explicitAgentId ??
           (isAgentScopeIsolated() ? getAgentId() : undefined);
-      const filtered = filterAgentId
+      const listQuery = parseListQuery(req.query_params);
+      let filtered = filterAgentId
         ? observations.filter((o) => o.agentId === filterAgentId)
         : observations;
-      return { status_code: 200, body: { observations: filtered } };
+      if (listQuery.type) filtered = filtered.filter((o) => o.type === listQuery.type);
+      if (listQuery.q) {
+        filtered = filtered.filter((o) =>
+          matchesText(listQuery.q, o.title, o.subtitle, o.narrative, ...(o.facts ?? []), ...(o.files ?? [])),
+        );
+      }
+      const minImportance = Number(req.query_params?.["minImportance"]);
+      if (Number.isFinite(minImportance)) {
+        filtered = filtered.filter((o) => (o.importance ?? 0) >= minImportance);
+      }
+      if (listQuery.limit === undefined && !listQuery.cursor) {
+        return { status_code: 200, body: { observations: filtered, total: filtered.length, nextCursor: null } };
+      }
+      const total = filtered.length;
+      const paged = pageAfterCursor(
+        sortByKeyDesc(filtered, observationSortKey, (o) => o.id),
+        observationSortKey,
+        (o) => o.id,
+        listQuery.cursor,
+        listQuery.limit ?? LIST_PAGE_MAX,
+      );
+      return {
+        status_code: 200,
+        body: { observations: paged.page, total, nextCursor: paged.nextCursor },
+      };
     },
   );
   sdk.registerTrigger({
     type: "http",
     function_id: "api::observations",
     config: { api_path: "/agentmemory/observations", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::observations-locate",
+    async (req: HttpRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const raw = req.query_params?.["ids"];
+      const ids = (Array.isArray(raw) ? raw.join(",") : String(raw ?? ""))
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean)
+        .slice(0, 200);
+      if (ids.length === 0) return { status_code: 400, body: { error: "ids required" } };
+      const index = getSearchIndex();
+      const sessions: Record<string, string> = {};
+      for (const id of ids) {
+        const sessionId = index.sessionOf(id);
+        if (sessionId && !id.startsWith("mem_") && sessionId !== "lesson") sessions[id] = sessionId;
+      }
+      return { status_code: 200, body: { sessions } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::observations-locate",
+    config: { api_path: "/agentmemory/observations/locate", http_method: "GET" },
   });
 
   sdk.registerFunction("api::file-context", 
@@ -1434,7 +1685,8 @@ export function registerApiTriggers(
           body: { error: "project query param is required" },
         };
       }
-      const result = await sdk.trigger({ function_id: "mem::profile", payload: { project } });
+      const refresh = req.query_params["refresh"] === "true";
+      const result = await sdk.trigger({ function_id: "mem::profile", payload: { project, refresh } });
       return { status_code: 200, body: result };
     },
   );
@@ -1531,6 +1783,7 @@ export function registerApiTriggers(
         memoryId: string;
         newContent: string;
         newTitle?: string;
+        newType?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1541,7 +1794,15 @@ export function registerApiTriggers(
           body: { error: "memoryId and newContent are required" },
         };
       }
-      const result = await sdk.trigger({ function_id: "mem::evolve", payload: req.body });
+      const result = await sdk.trigger<unknown, { success?: boolean; code?: string }>({
+        function_id: "mem::evolve",
+        payload: req.body,
+      });
+      if (result && result.success === false) {
+        const status =
+          result.code === "not_found" ? 404 : result.code === "not_latest" ? 409 : 400;
+        return { status_code: status, body: result };
+      }
       return { status_code: 200, body: result };
     },
   );
@@ -1665,6 +1926,23 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::graph-stats",
     config: { api_path: "/agentmemory/graph/stats", http_method: "GET" },
+  });
+
+  sdk.registerFunction("api::graph-node",
+    async (req: HttpRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const id = asNonEmptyString(req.query_params?.["id"]);
+      if (!id) return { status_code: 400, body: { error: "id required" } };
+      const detail = await describeGraphNode(kv, id);
+      if (!detail) return { status_code: 404, body: { error: "graph node not found", id } };
+      return { status_code: 200, body: detail };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-node",
+    config: { api_path: "/agentmemory/graph/node", http_method: "GET" },
   });
 
   // #814: explicit snapshot rebuild endpoint. Pays the full graph
@@ -1937,10 +2215,21 @@ export function registerApiTriggers(
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const parsedLimit = parseOptionalInt(req.query_params?.["limit"]);
+      const params = req.query_params || {};
+      const parsedLimit = parseOptionalInt(params["limit"]);
+      const dateFrom = asNonEmptyString(params["dateFrom"]);
+      const dateTo = asNonEmptyString(params["dateTo"]);
+      for (const [name, value] of [["dateFrom", dateFrom], ["dateTo", dateTo]] as const) {
+        if (value && Number.isNaN(new Date(value).getTime())) {
+          return { status_code: 400, body: { error: `invalid date: ${name}` } };
+        }
+      }
       const entries = await sdk.trigger({ function_id: "mem::audit-query", payload: {
-        operation: req.query_params?.["operation"],
-        limit: parsedLimit ?? 50,
+        operation: asNonEmptyString(params["operation"]),
+        dateFrom,
+        dateTo,
+        query: asNonEmptyString(params["q"]),
+        limit: Math.min(Math.max(parsedLimit ?? 50, 1), 1000),
       } });
       return { status_code: 200, body: { entries, success: true } };
     },
@@ -2090,6 +2379,37 @@ export function registerApiTriggers(
             (includeOrphans && m.agentId === undefined),
         );
       }
+      const facets =
+        req.query_params?.["facets"] === "true" ? memoryFacets(filtered) : undefined;
+      const listQuery = parseListQuery(req.query_params);
+      if (listQuery.project) filtered = filtered.filter((m) => m.project === listQuery.project);
+      if (listQuery.type) filtered = filtered.filter((m) => m.type === listQuery.type);
+      const fromSession = asNonEmptyString(req.query_params?.["sessionId"]);
+      if (fromSession) {
+        const needsObservations = filtered.some(
+          (m) => !(m.sessionIds ?? []).includes(fromSession) && (m.sourceObservationIds?.length ?? 0) > 0,
+        );
+        const sessionObsIds = needsObservations
+          ? new Set(
+              (await kv.list<CompressedObservation>(KV.observations(fromSession)).catch(() => []))
+                .map((o) => o.id),
+            )
+          : new Set<string>();
+        filtered = filtered.filter(
+          (m) =>
+            (m.sessionIds ?? []).includes(fromSession) ||
+            (m.sourceObservationIds ?? []).some((id) => sessionObsIds.has(id)),
+        );
+      }
+      let searchMode: "hybrid" | "keyword" | undefined;
+      if (listQuery.q) {
+        const ranked = await rankMemoryIds(listQuery.q, LIST_PAGE_MAX);
+        searchMode = ranked.mode;
+        const byId = new Map(filtered.map((m) => [m.id, m]));
+        filtered = ranked.ids
+          .map((id) => byId.get(id))
+          .filter((m): m is import("../types.js").Memory => m !== undefined);
+      }
 
       // viewer + `agentmemory status` were hitting this endpoint to
       // count memories. On a real corpus (8K+ memories) the unbounded
@@ -2123,13 +2443,39 @@ export function registerApiTriggers(
           : undefined;
       const offset =
         Number.isInteger(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
-      filtered.sort((a, b) =>
-        (b.updatedAt || b.createdAt || "").localeCompare(
-          a.updatedAt || a.createdAt || "",
-        ),
-      );
-      const sliced =
-        limit !== undefined ? filtered.slice(offset, offset + limit) : filtered;
+      let sliced = filtered;
+      let nextCursor: string | null = null;
+      if (listQuery.q) {
+        if (limit !== undefined || listQuery.cursor) {
+          const paged = pageByOffset(
+            filtered,
+            listQuery.cursor ?? (offset > 0 ? encodeCursor({ offset }) : undefined),
+            limit ?? LIST_PAGE_MAX,
+          );
+          sliced = paged.page;
+          nextCursor = paged.nextCursor;
+        }
+      } else {
+        sortByKeyDesc(filtered, memorySortKey, (m) => m.id);
+        if (listQuery.cursor) {
+          const paged = pageAfterCursor(
+            filtered,
+            memorySortKey,
+            (m) => m.id,
+            listQuery.cursor,
+            limit ?? LIST_PAGE_MAX,
+          );
+          sliced = paged.page;
+          nextCursor = paged.nextCursor;
+        } else if (limit !== undefined) {
+          sliced = filtered.slice(offset, offset + limit);
+          const last = sliced[sliced.length - 1];
+          nextCursor =
+            last && offset + limit < filtered.length
+              ? encodeCursor({ key: memorySortKey(last), id: last.id })
+              : null;
+        }
+      }
 
       return {
         status_code: 200,
@@ -2138,6 +2484,9 @@ export function registerApiTriggers(
           total: filtered.length,
           offset,
           limit: limit ?? null,
+          nextCursor,
+          ...(searchMode ? { search: { query: listQuery.q, mode: searchMode } } : {}),
+          ...(facets ? { facets } : {}),
         },
       };
     },
@@ -2197,46 +2546,13 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/procedural", http_method: "GET" },
   });
 
-  const sharedConsolidationCounts = singleFlight(async () => {
-    const [summaries, memories, semantic, procedural, relations] = await Promise.all([
-      kv.list(KV.summaries).catch(() => []),
-      kv.list<import("../types.js").Memory>(KV.memories).catch(() => []),
-      kv.list(KV.semantic).catch(() => []),
-      kv.list(KV.procedural).catch(() => []),
-      kv.list(KV.relations).catch(() => []),
-    ]);
-    return {
-      summaries: summaries.length,
-      recurringPatterns: memories.filter(
-        (m) =>
-          m.isLatest &&
-          m.type === "pattern" &&
-          (m.sessionIds?.length ?? 0) >= PROCEDURAL_MIN_SESSIONS_PER_PATTERN,
-      ).length,
-      semanticFacts: semantic.length,
-      procedures: procedural.length,
-      relations: relations.length,
-    };
-  }, CONSOLIDATION_COUNTS_REUSE_MS);
+  const consolidationStatus = createConsolidationStatusReader(kv);
 
   sdk.registerFunction("api::consolidation-status",
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const [counts, lastRun] = await Promise.all([
-        sharedConsolidationCounts(),
-        kv.get<ConsolidationRunRecord>(KV.config, CONSOLIDATION_LAST_RUN_KEY).catch(() => null),
-      ]);
-      return {
-        status_code: 200,
-        body: describeConsolidation({
-          now: new Date(),
-          enabled: isConsolidationEnabled(),
-          llmConfigured: detectLlmProviderKind() === "llm",
-          ...counts,
-          lastRun,
-        }),
-      };
+      return { status_code: 200, body: await consolidationStatus() };
     },
   );
   sdk.registerTrigger({
@@ -3354,6 +3670,10 @@ export function registerApiTriggers(
     const body = req.body as Record<string, unknown>;
     if (!body?.content || typeof body.content !== "string") return { status_code: 400, body: { error: "content is required" } };
     const tags = typeof body.tags === "string" ? (body.tags as string).split(",").map((t: string) => t.trim()).filter(Boolean) : Array.isArray(body.tags) ? body.tags : [];
+    const sourceIds = normalizeLessonSourceIds(body.sourceIds);
+    if (!sourceIds) {
+      return { status_code: 400, body: { error: `sourceIds must be an array of at most ${LESSON_SOURCE_IDS_MAX} ids (session, memory, observation or crystal ids) without spaces` } };
+    }
     const result = (await sdk.trigger({
       function_id: "mem::lesson-save",
       payload: {
@@ -3363,6 +3683,7 @@ export function registerApiTriggers(
         project: typeof body.project === "string" ? body.project : undefined,
         tags,
         source: "manual",
+        sourceIds,
       },
     })) as { action?: string };
     const statusCode = result?.action === "created" ? 201 : 200;

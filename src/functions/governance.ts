@@ -169,6 +169,7 @@ export function registerGovernanceFunction(sdk: IIIClient, kv: StateKV): void {
       operation?: AuditEntry["operation"];
       dateFrom?: string;
       dateTo?: string;
+      query?: string;
       limit?: number;
     }) => {
       return queryAudit(kv, data);

@@ -83,6 +83,7 @@ export async function queryAudit(
     operation?: AuditEntry["operation"];
     dateFrom?: string;
     dateTo?: string;
+    query?: string;
     limit?: number;
   },
 ): Promise<AuditEntry[]> {
@@ -107,6 +108,14 @@ export async function queryAudit(
       throw new Error(`Invalid dateTo: ${filter.dateTo}`);
     }
     entries = entries.filter((e) => new Date(e.timestamp).getTime() <= to);
+  }
+  const query = filter?.query?.trim().toLowerCase();
+  if (query) {
+    entries = entries.filter((e) =>
+      [e.functionId, ...(e.targetIds || [])].some((v) =>
+        String(v || "").toLowerCase().includes(query),
+      ),
+    );
   }
 
   return entries.slice(0, filter?.limit || 100);
