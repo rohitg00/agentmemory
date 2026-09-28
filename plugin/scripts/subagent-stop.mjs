@@ -30,6 +30,22 @@ function hookCwd(data) {
 	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
 	if (projectDir && projectDir.trim()) return projectDir;
 }
+async function postWithRetry(url, headers, body, attemptMs = 400) {
+	for (let attempt = 0; attempt < 2; attempt++) {
+		if (attempt) await new Promise((r) => setTimeout(r, 100));
+		try {
+			if ((await fetch(url, {
+				method: "POST",
+				headers,
+				body,
+				signal: AbortSignal.timeout(attemptMs)
+			})).ok) return;
+		} catch (err) {
+			const name = err?.name;
+			if (name === "TimeoutError" || name === "AbortError") return;
+		}
+	}
+}
 //#endregion
 //#region src/hooks/subagent-stop.ts
 function isSdkChildContext(payload) {
@@ -60,24 +76,19 @@ async function main() {
 	const agentType = data.agent_type || data.agentDisplayName || data.agentName;
 	const lastMsg = typeof data.last_assistant_message === "string" ? data.last_assistant_message.slice(0, 4e3) : "";
 	const cwd = hookCwd(data) || process.cwd();
-	fetch(`${REST_URL}/agentmemory/observe`, {
-		method: "POST",
-		headers: authHeaders(),
-		body: JSON.stringify({
-			hookType: "subagent_stop",
-			sessionId,
-			project: resolveProject(cwd),
-			cwd,
-			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-			data: {
-				agent_id: agentId,
-				agent_type: agentType,
-				last_message: lastMsg
-			}
-		}),
-		signal: AbortSignal.timeout(2e3)
-	}).catch(() => {});
-	setTimeout(() => process.exit(0), 500).unref();
+	postWithRetry(`${REST_URL}/agentmemory/observe`, authHeaders(), JSON.stringify({
+		hookType: "subagent_stop",
+		sessionId,
+		project: resolveProject(cwd),
+		cwd,
+		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+		data: {
+			agent_id: agentId,
+			agent_type: agentType,
+			last_message: lastMsg
+		}
+	}));
+	setTimeout(() => process.exit(0), 1e3).unref();
 }
 main().catch(() => process.exit(0));
 //#endregion
