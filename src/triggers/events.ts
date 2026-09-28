@@ -2,6 +2,8 @@ import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { CompressedObservation, HookPayload, Memory, Session } from "../types.js";
 import { KV, STREAM } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { addSessionToProjectIndex } from "../state/session-index.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isReflectEnabled } from "../functions/slots.js";
 import {
   detectLlmProviderKind,
@@ -56,7 +58,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
           ? data.agentId.trim().slice(0, 128)
           : undefined;
       const agentId = requestAgentId ?? getAgentId();
-      const session: Session = {
+      const freshSession: Session = {
         id: data.sessionId,
         project: data.project,
         cwd: data.cwd,
@@ -65,7 +67,28 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
         observationCount: 0,
         ...(agentId ? { agentId } : {}),
       };
-      await kv.set(KV.sessions, data.sessionId, session);
+      const session = await withKeyedLock(`obs:${data.sessionId}`, async () => {
+        const existing = await kv.get<Session>(KV.sessions, data.sessionId);
+        const merged: Session = {
+          ...freshSession,
+          observationCount: existing?.observationCount ?? freshSession.observationCount,
+          firstPrompt: existing?.firstPrompt,
+          summary: existing?.summary,
+          commitShas: existing?.commitShas,
+        };
+        await kv.set(KV.sessions, data.sessionId, merged);
+        return merged;
+      });
+      await addSessionToProjectIndex(kv, session.project, {
+        id: session.id,
+        startedAt: session.startedAt,
+        ...(session.agentId ? { agentId: session.agentId } : {}),
+      }).catch((err) => {
+        logger.warn("session index update failed", {
+          sessionId: session.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
       const contextResult = await sdk.trigger<
         { sessionId: string; project: string; agentId?: string },
         { context: string }
@@ -160,10 +183,12 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     "event::session::ended",
     async (data: { sessionId: string }) => {
-      await kv.update(KV.sessions, data.sessionId, [
-        { type: "set", path: "endedAt", value: new Date().toISOString() },
-        { type: "set", path: "status", value: "completed" },
-      ]);
+      await withKeyedLock(`obs:${data.sessionId}`, () =>
+        kv.update(KV.sessions, data.sessionId, [
+          { type: "set", path: "endedAt", value: new Date().toISOString() },
+          { type: "set", path: "status", value: "completed" },
+        ]),
+      );
       return { success: true };
     },
   );

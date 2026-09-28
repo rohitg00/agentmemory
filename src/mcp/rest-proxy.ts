@@ -21,6 +21,18 @@ export interface ProxyHandle {
   call: (path: string, init?: RequestInit) => Promise<unknown>;
 }
 
+export class ProxyCallError extends Error {
+  status: number;
+  body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ProxyCallError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 export interface LocalHandle {
   mode: "local";
 }
@@ -147,8 +159,19 @@ export async function resolveHandle(): Promise<Handle> {
             signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
           });
           if (!res.ok) {
-            throw new Error(
+            const errText = await res.text().catch(() => "");
+            let errBody: unknown = undefined;
+            if (errText) {
+              try {
+                errBody = JSON.parse(errText);
+              } catch {
+                errBody = undefined;
+              }
+            }
+            throw new ProxyCallError(
               `${init?.method || "GET"} ${path} -> ${res.status} ${res.statusText}`,
+              res.status,
+              errBody,
             );
           }
           const text = await res.text();

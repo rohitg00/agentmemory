@@ -9,6 +9,10 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import {
+  indexObservationSession,
+  lookupObservationSession,
+} from "../state/obs-index.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import {
   getAgentId,
@@ -371,6 +375,14 @@ async function findObservation(
     if (obs) return obs;
   }
 
+  const indexedSessionId = await lookupObservationSession(kv, obsId);
+  if (indexedSessionId) {
+    const obs = await kv
+      .get<CompressedObservation>(KV.observations(indexedSessionId), obsId)
+      .catch(() => null);
+    if (obs) return obs;
+  }
+
   const sessions = await kv.list<{ id: string }>(KV.sessions);
   for (let i = 0; i < sessions.length; i += 5) {
     const batch = sessions.slice(i, i + 5);
@@ -379,8 +391,14 @@ async function findObservation(
         kv.get<CompressedObservation>(KV.observations(s.id), obsId).catch(() => null),
       ),
     );
-    const found = results.find((r) => r !== null);
-    if (found) return found;
+    const foundIndex = results.findIndex((r) => r !== null);
+    if (foundIndex !== -1) {
+      const found = results[foundIndex] as CompressedObservation;
+      await indexObservationSession(kv, obsId, batch[foundIndex].id).catch(
+        () => {},
+      );
+      return found;
+    }
   }
   return null;
 }
