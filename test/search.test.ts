@@ -209,4 +209,21 @@ describe("mem::search", () => {
     setVectorIndex(null);
     setEmbeddingProvider(null);
   });
+
+  it("a cold-start search rebuilds BM25 without touching the persisted vector index", async () => {
+    const vector = new VectorIndex();
+    vector.add("obs_persisted", "ses_1", new Float32Array([0.1, 0.2, 0.3]));
+    setVectorIndex(vector);
+    getSearchIndex().clear();
+
+    const result = (await sdk.trigger("mem::search", {
+      query: "auth middleware",
+    })) as { results: Array<{ observation: CompressedObservation }> };
+
+    expect(result.results[0]?.observation.id).toBe("obs_a");
+    expect(getVectorIndex()?.has("obs_persisted")).toBe(true);
+    expect(getVectorIndex()?.size).toBe(1);
+
+    setVectorIndex(null);
+  });
 });
