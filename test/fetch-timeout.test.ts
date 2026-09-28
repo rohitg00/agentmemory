@@ -2,12 +2,14 @@ import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { fetchWithTimeout } from "../src/providers/_fetch.js";
 import { MinimaxProvider } from "../src/providers/minimax.js";
 import { OpenRouterProvider } from "../src/providers/openrouter.js";
+import { RequestyProvider } from "../src/providers/requesty.js";
 import { OpenAIProvider } from "../src/providers/openai.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
 import { CohereEmbeddingProvider } from "../src/providers/embedding/cohere.js";
 import { VoyageEmbeddingProvider } from "../src/providers/embedding/voyage.js";
 import { OpenRouterEmbeddingProvider } from "../src/providers/embedding/openrouter.js";
+import { RequestyEmbeddingProvider } from "../src/providers/embedding/requesty.js";
 
 // A fetch mock that never resolves — simulates a hung upstream.
 function hangingFetch(_url: string, _init?: RequestInit): Promise<Response> {
@@ -352,6 +354,54 @@ describe("Provider hang regression — OpenRouterProvider (covers Gemini LLM pat
   });
 });
 
+describe("Provider hang regression — RequestyProvider", () => {
+  beforeEach(() => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(hangingFetch as typeof fetch);
+    process.env["AGENTMEMORY_LLM_TIMEOUT_MS"] = "50";
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
+  });
+
+  it("compress() aborts after timeout when upstream hangs", async () => {
+    const provider = new RequestyProvider("test-key", "openai/gpt-4o-mini", 1024);
+    await expect(provider.compress("system", "user")).rejects.toThrow();
+  });
+});
+
+describe("RequestyProvider base URL validation", () => {
+  it("rejects a plain http base URL before any request is made", () => {
+    expect(
+      () =>
+        new RequestyProvider(
+          "test-key",
+          "openai/gpt-4o-mini",
+          1024,
+          "http://router.requesty.ai/v1/chat/completions",
+        ),
+    ).toThrow(/must use https/);
+  });
+
+  it("rejects a malformed base URL", () => {
+    expect(
+      () => new RequestyProvider("test-key", "openai/gpt-4o-mini", 1024, "not a url"),
+    ).toThrow(/not a valid URL/);
+  });
+
+  it("accepts an https base URL", () => {
+    expect(
+      () =>
+        new RequestyProvider(
+          "test-key",
+          "openai/gpt-4o-mini",
+          1024,
+          "https://example.com/v1/chat/completions",
+        ),
+    ).not.toThrow();
+  });
+});
+
 describe("Provider hang regression — GeminiEmbeddingProvider", () => {
   beforeEach(() => {
     vi.spyOn(globalThis, "fetch").mockImplementation(hangingFetch as typeof fetch);
@@ -428,6 +478,22 @@ describe("Provider hang regression — OpenRouterEmbeddingProvider", () => {
 
   it("embedBatch() aborts after timeout when upstream hangs", async () => {
     const provider = new OpenRouterEmbeddingProvider("test-key");
+    await expect(provider.embedBatch(["hello"])).rejects.toThrow();
+  });
+});
+
+describe("Provider hang regression — RequestyEmbeddingProvider", () => {
+  beforeEach(() => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(hangingFetch as typeof fetch);
+    process.env["AGENTMEMORY_LLM_TIMEOUT_MS"] = "50";
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
+  });
+
+  it("embedBatch() aborts after timeout when upstream hangs", async () => {
+    const provider = new RequestyEmbeddingProvider("test-key");
     await expect(provider.embedBatch(["hello"])).rejects.toThrow();
   });
 });

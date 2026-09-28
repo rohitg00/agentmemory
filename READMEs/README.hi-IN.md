@@ -943,6 +943,7 @@ npm install @huggingface/transformers
 | Voyage AI | `voyage-code-3` | Paid | Code के लिए optimized |
 | Cohere | `embed-english-v3.0` | Free trial | General purpose |
 | OpenRouter | कोई भी model | भिन्न | Multi-model proxy |
+| Requesty | कोई भी model | भिन्न | Multi-model proxy |
 
 ---
 
@@ -1226,6 +1227,7 @@ agentmemory आपके environment से auto-detect करता है। D
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | Embeddings भी enable करता है |
 | OpenRouter | `OPENROUTER_API_KEY` | कोई भी model |
+| Requesty | `REQUESTY_API_KEY` | कोई भी model |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, `OPENAI_MODEL` से override करें |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) या `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | कुछ भी OpenAI-API-compatible। Zero cost, आपके hardware पर चलता है। नीचे [Local models](#local-models-ollama--lm-studio--vllm) देखें। |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | केवल opt-in। `@anthropic-ai/claude-agent-sdk` sessions spawn करता है; यह पहले unbounded Stop-hook recursion का कारण बनता था, इसलिए यह अब default नहीं है। |
@@ -1387,6 +1389,7 @@ CONSOLIDATION_ENABLED=true
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# REQUESTY_API_KEY=...
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI

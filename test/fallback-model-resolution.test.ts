@@ -39,6 +39,21 @@ vi.mock("../src/providers/openrouter.js", () => ({
   },
 }));
 
+vi.mock("../src/providers/requesty.js", () => ({
+  RequestyProvider: class {
+    name = "requesty";
+    constructor(_key: string, model: string) {
+      captured.push({ provider: "requesty", model });
+    }
+    async compress() {
+      return "";
+    }
+    async summarize() {
+      return "";
+    }
+  },
+}));
+
 vi.mock("../src/providers/anthropic.js", () => ({
   AnthropicProvider: class {
     name = "anthropic";
@@ -84,6 +99,8 @@ describe("Fallback provider model resolution (#778)", () => {
     "ANTHROPIC_MODEL",
     "OPENROUTER_API_KEY",
     "OPENROUTER_MODEL",
+    "REQUESTY_API_KEY",
+    "REQUESTY_MODEL",
     "MINIMAX_API_KEY",
     "MINIMAX_MODEL",
   ];
@@ -186,5 +203,28 @@ describe("Fallback provider model resolution (#778)", () => {
 
     const openaiCalls = captured.filter((c) => c.provider === "openai");
     expect(openaiCalls.length).toBe(1);
+  });
+
+  it("Requesty fallback uses REQUESTY_MODEL or its documented default, NOT the primary's model", () => {
+    process.env.OPENAI_API_KEY = "sk";
+    process.env.REQUESTY_API_KEY = "rq-key";
+
+    createFallbackProvider(
+      { provider: "openai", model: "gpt-5.6-luna", maxTokens: 4096 },
+      { providers: ["requesty"] },
+    );
+    expect(captured.find((c) => c.provider === "requesty")?.model).toBe(
+      "openai/gpt-4o-mini",
+    );
+
+    captured.length = 0;
+    process.env.REQUESTY_MODEL = "anthropic/claude-sonnet-4-20250514";
+    createFallbackProvider(
+      { provider: "openai", model: "gpt-5.6-luna", maxTokens: 4096 },
+      { providers: ["requesty"] },
+    );
+    expect(captured.find((c) => c.provider === "requesty")?.model).toBe(
+      "anthropic/claude-sonnet-4-20250514",
+    );
   });
 });

@@ -92,6 +92,7 @@ const PROVIDER_KEY_NAMES = [
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
   "OPENROUTER_API_KEY",
+  "REQUESTY_API_KEY",
   "MINIMAX_API_KEY",
 ] as const;
 
@@ -198,7 +199,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
       fixPreview: "Open ~/.agentmemory/.env in $EDITOR and paste your key, then re-check.",
       moreInfo:
         "Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, " +
-        "OPENROUTER_API_KEY, MINIMAX_API_KEY. The daemon picks the first that resolves " +
+        "OPENROUTER_API_KEY, REQUESTY_API_KEY, MINIMAX_API_KEY. The daemon picks the first that resolves " +
         "to a real (non-placeholder) value at startup.",
       check: async () => {
         if (!effects.envFileExists()) {

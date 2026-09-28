@@ -961,6 +961,7 @@ npm install @huggingface/transformers
 | Voyage AI | `voyage-code-3` | Платно | Оптимизирован под код |
 | Cohere | `embed-english-v3.0` | Бесплатная пробная версия | Общего назначения |
 | OpenRouter | Любая модель | Зависит | Мульти-модельный прокси |
+| Requesty | Любая модель | Зависит | Мульти-модельный прокси |
 
 ---
 
@@ -1244,6 +1245,7 @@ agentmemory автоопределяет провайдера по окруже�
 | MiniMax | `MINIMAX_API_KEY` | Совместим с Anthropic |
 | Gemini | `GEMINI_API_KEY` | Дополнительно включает эмбеддинги |
 | OpenRouter | `OPENROUTER_API_KEY` | Любая модель |
+| Requesty | `REQUESTY_API_KEY` | Любая модель |
 | OpenAI API | `OPENAI_API_KEY` | По умолчанию `gpt-5.6-luna`, переопределяется через `OPENAI_MODEL` |
 | **Локально (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) или `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Всё, что совместимо с OpenAI API. Нулевая стоимость, работает на вашем железе. См. [Локальные модели](#local-models-ollama--lm-studio--vllm) ниже. |
 | Fallback на подписку Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Только по согласию. Запускает сессии `@anthropic-ai/claude-agent-sdk`; раньше он приводил к неограниченной рекурсии Stop-хука, потому больше не по умолчанию. |
@@ -1405,6 +1407,7 @@ CONSOLIDATION_ENABLED=true
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# REQUESTY_API_KEY=...
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI

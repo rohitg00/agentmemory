@@ -70,6 +70,7 @@ following to your platform's environment variables (Fly:
 | `ANTHROPIC_API_KEY`       | LLM-backed compression + summarization                   |
 | `GEMINI_API_KEY`          | LLM provider alternative                                 |
 | `OPENROUTER_API_KEY`      | LLM provider alternative                                 |
+| `REQUESTY_API_KEY`        | LLM provider alternative                                 |
 | `OPENAI_API_KEY`          | Embedding provider (text-embedding-3-small by default)   |
 | `VOYAGE_API_KEY`          | Embedding provider alternative                           |
 | `AGENTMEMORY_AUTO_COMPRESS=true` | Run LLM compression on every observation batch    |

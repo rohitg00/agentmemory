@@ -963,6 +963,7 @@ npm install @huggingface/transformers
 | Voyage AI | `voyage-code-3` | Ücretli | Kod için optimize edilmiş |
 | Cohere | `embed-english-v3.0` | Ücretsiz deneme | Genel amaçlı |
 | OpenRouter | Herhangi bir model | Değişken | Çok-modelli proxy |
+| Requesty | Herhangi bir model | Değişken | Çok-modelli proxy |
 
 ---
 
@@ -1246,6 +1247,7 @@ agentmemory ortamınızdan otomatik algılar. Varsayılan olarak, bir sağlayıc
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-uyumlu |
 | Gemini | `GEMINI_API_KEY` | Embedding'leri de etkinleştirir |
 | OpenRouter | `OPENROUTER_API_KEY` | Herhangi bir model |
+| Requesty | `REQUESTY_API_KEY` | Herhangi bir model |
 | OpenAI API | `OPENAI_API_KEY` | Varsayılan `gpt-5.6-luna`, `OPENAI_MODEL` ile override edin |
 | **Yerel (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) veya `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | OpenAI-API-uyumlu her şey. Sıfır maliyet, kendi donanımınızda çalışır. Aşağıdaki [Yerel modeller](#yerel-modeller-ollama--lm-studio--vllm) bölümüne bakın. |
 | Claude abonelik fallback'i | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Yalnızca opt-in. `@anthropic-ai/claude-agent-sdk` oturumları doğurur; eskiden sınırsız Stop-hook recursion'ına neden oluyordu, bu yüzden artık varsayılan değil. |
@@ -1407,6 +1409,7 @@ CONSOLIDATION_ENABLED=true
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# REQUESTY_API_KEY=...
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI

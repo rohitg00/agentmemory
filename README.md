@@ -1039,6 +1039,7 @@ The normal npm install includes the optional `@huggingface/transformers` runtime
 | Voyage AI | `voyage-code-3` | Paid | Optimized for code |
 | Cohere | `embed-english-v3.0` | Free trial | General purpose |
 | OpenRouter | Any model | Varies | Multi-model proxy |
+| Requesty | Any model | Varies | Multi-model router (`openai/text-embedding-3-small` by default) |
 
 ---
 
@@ -1316,6 +1317,7 @@ agentmemory auto-detects providers from your environment. A provider makes LLM-b
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
+| Requesty | `REQUESTY_API_KEY` | Any model via [Requesty router](https://app.requesty.ai/router); default `openai/gpt-4o-mini`, override with `REQUESTY_MODEL` |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions; it used to cause unbounded Stop-hook recursion, so it is no longer the default. |
@@ -1483,6 +1485,7 @@ Create `~/.agentmemory/.env`:
 # ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
 # GEMINI_API_KEY=...
 # OPENROUTER_API_KEY=...
+# REQUESTY_API_KEY=...
 # MINIMAX_API_KEY=...
 # OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
 #                                          # OpenAI LLM provider (here) AND the OpenAI
@@ -1522,9 +1525,9 @@ Create `~/.agentmemory/.env`:
 
 # Outbound LLM / embedding timeout
 # AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every
-                                          # raw-fetch provider (Gemini, OpenRouter, MiniMax,
-                                          # OpenAI LLM, OpenAI/Cohere/Voyage/OpenRouter
-                                          # embedding). For the OpenAI LLM path, the
+                                          # raw-fetch provider (Gemini, OpenRouter, Requesty,
+                                          # MiniMax, OpenAI LLM, OpenAI/Cohere/Voyage/
+                                          # OpenRouter/Requesty embedding). For the OpenAI LLM path, the
                                           # OpenAI-scoped OPENAI_TIMEOUT_MS alias (above)
                                           # takes precedence when set, for back-compat
                                           # with v0.9.17.

@@ -77,9 +77,9 @@ export function Install() {
         </h2>
         <p className="section-lede">
           Runs on your machine. Data stays local. Capture and recall need no
-          LLM key; add one for Anthropic, OpenAI, Gemini, MiniMax, or
-          OpenRouter to activate consolidation, graph extraction, and LLM
-          compression.
+          LLM key; add one for Anthropic, OpenAI, Gemini, MiniMax,
+          OpenRouter, or Requesty, then opt in to consolidation, graph
+          extraction, and LLM compression.
         </p>
       </header>
       <div className={styles.cards}>

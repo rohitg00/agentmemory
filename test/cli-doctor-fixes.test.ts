@@ -224,10 +224,12 @@ describe("realProviderKeys / placeholderProviderKeys", () => {
       OPENAI_API_KEY: "sk-...",
       GEMINI_API_KEY: "",
       OPENROUTER_API_KEY: "your-key-here",
+      REQUESTY_API_KEY: "xxx",
     };
     expect(realProviderKeys(env)).toEqual(["ANTHROPIC_API_KEY"]);
     expect(placeholderProviderKeys(env)).toContain("OPENAI_API_KEY");
     expect(placeholderProviderKeys(env)).toContain("OPENROUTER_API_KEY");
+    expect(placeholderProviderKeys(env)).toContain("REQUESTY_API_KEY");
     expect(placeholderProviderKeys(env)).not.toContain("GEMINI_API_KEY");
   });
 
