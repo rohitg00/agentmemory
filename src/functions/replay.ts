@@ -50,16 +50,35 @@ async function isSymlink(path: string): Promise<boolean> {
   }
 }
 
-function rawFromCompressed(obs: CompressedObservation): RawObservation {
+function splitSyntheticNarrative(narrative: string): { input: unknown; output: string } | null {
+  if (!narrative.startsWith("{")) return null;
+  let at = narrative.indexOf("} | ");
+  while (at >= 0) {
+    try {
+      return { input: JSON.parse(narrative.slice(0, at + 1)), output: narrative.slice(at + 4) };
+    } catch {}
+    at = narrative.indexOf("} | ", at + 1);
+  }
+  try {
+    return { input: JSON.parse(narrative), output: "" };
+  } catch {
+    return null;
+  }
+}
+
+export function rawFromCompressed(obs: CompressedObservation): RawObservation {
+  const isPrompt = obs.type === "conversation";
+  const narrative = obs.narrative || "";
+  const split = isPrompt ? null : splitSyntheticNarrative(narrative);
   return {
     id: obs.id,
     sessionId: obs.sessionId,
     timestamp: obs.timestamp,
-    hookType: "post_tool_use",
-    toolName: undefined,
-    toolInput: undefined,
-    toolOutput: undefined,
-    userPrompt: obs.type === "conversation" ? obs.narrative : undefined,
+    hookType: isPrompt ? "prompt_submit" : obs.type === "error" ? "post_tool_failure" : "post_tool_use",
+    toolName: isPrompt ? undefined : obs.title || undefined,
+    toolInput: isPrompt ? undefined : split ? split.input : obs.subtitle || undefined,
+    toolOutput: isPrompt ? undefined : (split ? split.output : narrative) || undefined,
+    userPrompt: isPrompt ? narrative : undefined,
     assistantResponse: undefined,
     raw: { title: obs.title, narrative: obs.narrative, facts: obs.facts },
   };

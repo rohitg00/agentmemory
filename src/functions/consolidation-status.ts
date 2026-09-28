@@ -22,6 +22,13 @@ export interface ConsolidationStatusInput {
   procedures: number;
   relations: number;
   lastRun: ConsolidationRunRecord | null;
+  schedule?: ConsolidationSchedule;
+}
+
+export interface ConsolidationSchedule {
+  intervalMs: number;
+  cooldownMs: number;
+  decayDays: number;
 }
 
 export interface ConsolidationTier {
@@ -37,6 +44,11 @@ export interface ConsolidationStatus {
   enabled: boolean;
   llmConfigured: boolean;
   lastRunAt: string | null;
+  lastRun: ConsolidationRunRecord | null;
+  summaries: number;
+  recurringPatterns: number;
+  schedule: ConsolidationSchedule | null;
+  thresholds: { semanticMinSummaries: number; proceduralMinPatterns: number; proceduralMinSessionsPerPattern: number };
   tiers: ConsolidationTier[];
 }
 
@@ -85,7 +97,7 @@ export function describeConsolidation(input: ConsolidationStatusInput): Consolid
         (semanticWaiting
           ? {
               state: "waiting",
-              detail: `Waiting: ${input.summaries} of ${SEMANTIC_MIN_SUMMARIES} session summaries needed.`,
+              detail: `Waiting: ${input.summaries} of ${SEMANTIC_MIN_SUMMARIES} session summaries needed. A summary is written when a session ends.`,
             }
           : { state: "ready", detail: "Ready: runs when the next session ends." }))
   };
@@ -126,6 +138,15 @@ export function describeConsolidation(input: ConsolidationStatusInput): Consolid
     enabled: input.enabled,
     llmConfigured: input.llmConfigured,
     lastRunAt: input.lastRun?.at ?? null,
+    lastRun: input.lastRun,
+    summaries: input.summaries,
+    recurringPatterns: input.recurringPatterns,
+    schedule: input.schedule ?? null,
+    thresholds: {
+      semanticMinSummaries: SEMANTIC_MIN_SUMMARIES,
+      proceduralMinPatterns: PROCEDURAL_MIN_PATTERNS,
+      proceduralMinSessionsPerPattern: PROCEDURAL_MIN_SESSIONS_PER_PATTERN,
+    },
     tiers: [semantic, procedural, relations],
   };
 }

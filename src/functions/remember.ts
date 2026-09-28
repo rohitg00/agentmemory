@@ -21,6 +21,10 @@ function safeSlice(text: string, length: number): string {
   return /[\uD800-\uDBFF]$/.test(sliced) ? sliced.slice(0, -1) : sliced;
 }
 
+export function memoryTitleFromContent(content: string): string {
+  return safeSlice(content, 80);
+}
+
 export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
@@ -156,7 +160,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           createdAt: now,
           updatedAt: now,
           type: memType,
-          title: safeSlice(data.content, 80),
+          title: memoryTitleFromContent(data.content),
           content: data.content,
           concepts: data.concepts || [],
           files: data.files || [],

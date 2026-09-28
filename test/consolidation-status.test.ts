@@ -43,12 +43,23 @@ describe("describeConsolidation", () => {
     const status = describeConsolidation(input({ summaries: 3, recurringPatterns: 1 }));
     expect(tier(status, "semantic")).toMatchObject({
       state: "waiting",
-      detail: "Waiting: 3 of 5 session summaries needed.",
+      detail: "Waiting: 3 of 5 session summaries needed. A summary is written when a session ends.",
     });
     const procedural = tier(status, "procedural");
     expect(procedural.state).toBe("waiting");
     expect(procedural.detail).toMatch(/each finished session with a summary and 3\+ observations/);
     expect(procedural.detail).toMatch(/you have 1/);
+  });
+
+  it("exposes the thresholds, schedule and inputs behind each state", () => {
+    const status = describeConsolidation(
+      input({ summaries: 3, recurringPatterns: 1, schedule: { intervalMs: 7200000, cooldownMs: 300000, decayDays: 30 } }),
+    );
+    expect(status.thresholds).toEqual({ semanticMinSummaries: 5, proceduralMinPatterns: 2, proceduralMinSessionsPerPattern: 2 });
+    expect(status.schedule).toEqual({ intervalMs: 7200000, cooldownMs: 300000, decayDays: 30 });
+    expect(status.summaries).toBe(3);
+    expect(status.recurringPatterns).toBe(1);
+    expect(status.lastRun).toBeNull();
   });
 
   it("reports ready once the inputs are there and nothing has run yet", () => {
@@ -179,19 +190,26 @@ describe("consolidation status wiring", () => {
   });
 
   it("status requests share one set of store scans instead of listing every scope per request", () => {
-    expect(api).toMatch(/const sharedConsolidationCounts = singleFlight\(async \(\) => \{/);
-    expect(api).toMatch(/\}, CONSOLIDATION_COUNTS_REUSE_MS\);/);
+    const reader = api.slice(api.indexOf("export function createConsolidationStatusReader"), api.indexOf("function statusViewerUrl"));
+    expect(reader).toMatch(/const counts = singleFlight\(async \(\) => \{/);
+    expect(reader).toMatch(/\}, CONSOLIDATION_COUNTS_REUSE_MS\);/);
     const handler = api.slice(
       api.indexOf('registerFunction("api::consolidation-status"'),
       api.indexOf('function_id: "api::consolidation-status"'),
     );
-    expect(handler).toMatch(/sharedConsolidationCounts\(\)/);
+    expect(handler).toMatch(/await consolidationStatus\(\)/);
     expect(handler).not.toMatch(/kv\.list\(/);
+  });
+
+  it("the snapshot and every consolidation.run event carry the full status", () => {
+    const streams = readFileSync("src/triggers/viewer-streams.ts", "utf-8");
+    expect(streams).toContain("status: await consolidationStatus({ lastRun }).catch(() => null),");
+    expect(streams).toContain("status: await consolidationStatus({ lastRun: lastRun ?? null }).catch(() => null),");
   });
 
   it("the dashboard shows one Memory layers panel instead of the three separate cards", () => {
     expect(viewer).toMatch(/apiGet\('consolidation\/status'\)/);
-    expect(viewer).toMatch(/html \+= renderMemoryLayers\(d\.consolidation, semFacts, procItems\);/);
+    expect(viewer).toMatch(/html \+= renderMemoryLayers\(store\.consolidationStatus, entityList\('semantic'\), entityList\('procedural'\)\);/);
     expect(viewer).not.toMatch(/card-title">Semantic Memory|card-title">Procedural Memory|card-title">Consolidation Status/);
     expect(viewer).not.toMatch(/consolidation-row/);
   });

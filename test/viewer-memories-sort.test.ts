@@ -1,32 +1,38 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
-// Viewer Memories tab used to render in KV-insertion order, hiding new
-// entries at the bottom of long lists (#674). loadMemories() now sorts
-// the response newest-first on `createdAt` (fallback `updatedAt`) before
-// renderMemories sees it. Matches the pattern already used by Sessions
-// and Metrics tabs which sort on `startedAt` desc via localeCompare.
-describe("viewer Memories tab sorts newest first (#674)", () => {
+describe("viewer lists sort newest first (#674)", () => {
   const viewer = readFileSync("src/viewer/index.html", "utf-8");
 
-  it("loadMemories sorts items by createdAt desc before storing in state", () => {
-    expect(viewer).toMatch(
-      /loadMemories[\s\S]*?items\.sort\(function\(a,\s*b\)\s*\{[\s\S]*?bc\.localeCompare\(ac\)/,
-    );
+  function extractFunction(name: string): string {
+    const start = viewer.indexOf(`function ${name}(`);
+    let depth = 0;
+    for (let i = viewer.indexOf("{", start); i < viewer.length; i++) {
+      if (viewer[i] === "{") depth++;
+      if (viewer[i] === "}") {
+        depth--;
+        if (depth === 0) return viewer.slice(start, i + 1);
+      }
+    }
+    throw new Error(`function ${name} is not balanced`);
+  }
+
+  const sortByTimeDesc = new Function(`${extractFunction("sortByTimeDesc")}\nreturn sortByTimeDesc;`)() as (
+    list: Array<Record<string, string>>,
+    keys: string[],
+  ) => Array<Record<string, string>>;
+
+  it("sorts on the first present key, newest first", () => {
+    const rows = [
+      { id: "a", createdAt: "2026-01-01" },
+      { id: "b", updatedAt: "2026-03-01", createdAt: "2025-01-01" },
+      { id: "c", createdAt: "2026-02-01" },
+    ];
+    expect(sortByTimeDesc(rows, ["updatedAt", "createdAt"]).map((r) => r.id)).toEqual(["b", "c", "a"]);
   });
 
-  it("sort falls back to updatedAt when createdAt is missing", () => {
-    expect(viewer).toMatch(
-      /\(a && a\.createdAt\) \|\| \(a && a\.updatedAt\)/,
-    );
-    expect(viewer).toMatch(
-      /\(b && b\.createdAt\) \|\| \(b && b\.updatedAt\)/,
-    );
-  });
-
-  it("Memories sort mirrors the Sessions/Metrics localeCompare descending pattern", () => {
-    expect(viewer).toMatch(
-      /sessions\.sort\(function\(a, b\) \{ return \(b\.startedAt \|\| ''\)\.localeCompare\(a\.startedAt \|\| ''\); \}\)/,
-    );
+  it("memories fall back from updatedAt to createdAt and sessions sort on startedAt", () => {
+    expect(extractFunction("memoryRows")).toMatch(/sortByTimeDesc\([\s\S]*?\['updatedAt', 'createdAt'\]\)/);
+    expect(extractFunction("sessionRows")).toMatch(/sortByTimeDesc\(entityList\('session'\)[\s\S]*?\['startedAt'\]\)/);
   });
 });

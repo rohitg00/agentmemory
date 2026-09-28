@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseJsonlText } from "../src/replay/jsonl-parser.js";
 import { projectTimeline } from "../src/replay/timeline.js";
+import { rawFromCompressed } from "../src/functions/replay.js";
 
 const fx = (name: string) =>
   readFileSync(join(__dirname, "fixtures/jsonl", name), "utf-8");
@@ -140,6 +141,29 @@ describe("projectTimeline", () => {
     });
     const out = parseJsonlText(text);
     expect(out.startedAt).toBe(out.endedAt);
+  });
+});
+
+describe("rawFromCompressed", () => {
+  const base = { sessionId: "ses_1", facts: [], concepts: [], files: [], importance: 5 };
+
+  it("replays hook-captured sessions with prompts, tool names, inputs and outputs", () => {
+    const timeline = projectTimeline([
+      rawFromCompressed({ ...base, id: "o1", timestamp: "2026-09-01T00:00:00Z", type: "conversation", title: "prompt_submit", narrative: "Fix the checkout total" } as never),
+      rawFromCompressed({ ...base, id: "o2", timestamp: "2026-09-01T00:00:05Z", type: "file_read", title: "Read", narrative: '{"file_path":"src/a.ts"} | export const a = 1' } as never),
+      rawFromCompressed({ ...base, id: "o3", timestamp: "2026-09-01T00:00:09Z", type: "error", title: "Bash", narrative: '{"command":"npm test"} | exit 1' } as never),
+      rawFromCompressed({ ...base, id: "o4", timestamp: "2026-09-01T00:00:12Z", type: "decision", title: "Chose jose", narrative: "The API validates JWTs with jose." } as never),
+    ]);
+    expect(timeline.events.map((e) => [e.kind, e.label])).toEqual([
+      ["prompt", "Fix the checkout total"],
+      ["tool_result", "Read ▸ result"],
+      ["tool_error", "Bash ▸ error"],
+      ["tool_result", "Chose jose ▸ result"],
+    ]);
+    expect(timeline.events[0].body).toBe("Fix the checkout total");
+    expect(timeline.events[1].toolInput).toEqual({ file_path: "src/a.ts" });
+    expect(timeline.events[1].toolOutput).toBe("export const a = 1");
+    expect(timeline.events[3].toolOutput).toBe("The API validates JWTs with jose.");
   });
 });
 

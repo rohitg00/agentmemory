@@ -167,6 +167,12 @@ export async function listAuditMonthsDesc(kv: StateKV): Promise<string[]> {
   return [...months].sort().reverse();
 }
 
+let auditRecordedListener: ((entry: AuditEntry) => void) | null = null;
+
+export function setAuditRecordedListener(listener: ((entry: AuditEntry) => void) | null): void {
+  auditRecordedListener = listener;
+}
+
 export async function recordAudit(
   kv: StateKV,
   operation: AuditEntry["operation"],
@@ -189,6 +195,9 @@ export async function recordAudit(
   const month = auditMonthOf(entry.timestamp);
   await kv.set(KV.auditMonth(month), entry.id, entry);
   await markAuditMonth(kv, month);
+  try {
+    auditRecordedListener?.(entry);
+  } catch {}
   return entry;
 }
 
@@ -221,6 +230,7 @@ export async function queryAudit(
     operation?: AuditEntry["operation"];
     dateFrom?: string;
     dateTo?: string;
+    query?: string;
     limit?: number;
   },
 ): Promise<AuditQueryResult> {
@@ -233,6 +243,7 @@ export async function queryAudit(
       throw new Error(`Invalid dateFrom: ${filter.dateFrom}`);
     }
   }
+  const query = filter?.query?.trim().toLowerCase();
 
   let toMs: number | undefined;
   if (filter?.dateTo) {
@@ -247,6 +258,14 @@ export async function queryAudit(
     const t = new Date(entry.timestamp).getTime();
     if (fromMs !== undefined && t < fromMs) return false;
     if (toMs !== undefined && t > toMs) return false;
+    if (
+      query &&
+      ![entry.functionId, ...(entry.targetIds || [])].some((v) =>
+        String(v || "").toLowerCase().includes(query),
+      )
+    ) {
+      return false;
+    }
     return true;
   };
 

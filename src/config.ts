@@ -246,8 +246,9 @@ export function getAuditMigrateMaxBytes(): number {
   );
 }
 
-export function detectLlmProviderKind(): "llm" | "noop" {
-  const env = getMergedEnv();
+export function detectLlmProviderKind(
+  env: Record<string, string | undefined> = getMergedEnv(),
+): "llm" | "noop" {
   if (
     hasRealValue(env["ANTHROPIC_API_KEY"]) ||
     hasRealValue(env["GEMINI_API_KEY"]) ||
@@ -255,7 +256,8 @@ export function detectLlmProviderKind(): "llm" | "noop" {
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
     hasRealValue(env["MINIMAX_API_KEY"]) ||
     (hasRealValue(env["OPENAI_API_KEY"]) &&
-      env["OPENAI_API_KEY_FOR_LLM"] !== "false")
+      env["OPENAI_API_KEY_FOR_LLM"] !== "false") ||
+    env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true"
   ) {
     return "llm";
   }
@@ -435,25 +437,8 @@ export function isConsolidationEnabled(): boolean {
   const explicit = env["CONSOLIDATION_ENABLED"];
   if (explicit === "false" || explicit === "0") return false;
   if (explicit === "true" || explicit === "1") return true;
-  return hasLLMProviderConfigured(env);
-}
-
-function hasLLMProviderConfigured(env: Record<string, string | undefined>): boolean {
-  const provider = (env["AGENTMEMORY_PROVIDER"] || "").toLowerCase();
-  if (provider === "noop") return false;
-  const openaiKeyForLlm =
-    env["OPENAI_API_KEY"] &&
-    (env["OPENAI_API_KEY_FOR_LLM"] || "").toLowerCase() !== "false";
-  return Boolean(
-    env["ANTHROPIC_API_KEY"] ||
-      openaiKeyForLlm ||
-      env["OPENROUTER_API_KEY"] ||
-      env["GEMINI_API_KEY"] ||
-      env["GOOGLE_API_KEY"] ||
-      env["MINIMAX_API_KEY"] ||
-      env["OPENAI_BASE_URL"] ||
-      provider === "agent-sdk",
-  );
+  if ((env["AGENTMEMORY_PROVIDER"] || "").toLowerCase() === "noop") return false;
+  return detectLlmProviderKind(env) === "llm";
 }
 
 // Per-observation LLM compression is OFF by default as of 0.8.8.
@@ -477,6 +462,13 @@ export function isAutoCompressEnabled(): boolean {
 // with AGENTMEMORY_INJECT_CONTEXT=true and get a loud startup warning.
 export function isContextInjectionEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_INJECT_CONTEXT"] === "true";
+}
+
+export const CONSOLIDATION_INTERVAL_DEFAULT_MS = 7200000;
+
+export function getConsolidationIntervalMs(): number {
+  const raw = parseInt(process.env.CONSOLIDATION_INTERVAL_MS || String(CONSOLIDATION_INTERVAL_DEFAULT_MS), 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : CONSOLIDATION_INTERVAL_DEFAULT_MS;
 }
 
 export function getConsolidationDecayDays(): number {
