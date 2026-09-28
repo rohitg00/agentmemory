@@ -1,6 +1,19 @@
 import type { MemoryProvider, CircuitBreakerState } from "../types.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
 
+// Azure Prompt Shields rejects ordinary material — a SECURITY.md describing
+// prompt injection is enough — so these arrive often enough to trip the
+// breaker and take unrelated compressions down with them. See #1276.
+const FILTER_CODE = /content_filter|ResponsibleAIPolicyViolation/;
+// The status the provider itself recorded, before any echoed upstream body:
+// a gateway that quotes a filter rejection is still a gateway failure.
+const REJECTED_STATUS = /^[^{]*\(400\)/;
+
+export function isPayloadRejection(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return REJECTED_STATUS.test(message) && FILTER_CODE.test(message);
+}
+
 export class ResilientProvider implements MemoryProvider {
   private breaker = new CircuitBreaker();
   name: string;
@@ -18,7 +31,9 @@ export class ResilientProvider implements MemoryProvider {
       this.breaker.recordSuccess();
       return result;
     } catch (err) {
-      this.breaker.recordFailure();
+      if (!isPayloadRejection(err)) {
+        this.breaker.recordFailure();
+      }
       throw err;
     }
   }
