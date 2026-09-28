@@ -50,17 +50,26 @@ export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
       let observationsScanned = 0;
       let sessionsProcessed = 0;
       const sessionsSkipped: string[] = [];
-      for (let batch = 0; batch < filtered.length; batch += 10) {
-        if (observationsScanned >= MAX_OBSERVATIONS_SCANNED) break;
+      let cursor = 0;
+      while (
+        cursor < filtered.length &&
+        observationsScanned < MAX_OBSERVATIONS_SCANNED
+      ) {
         const remainingBudget = MAX_OBSERVATIONS_SCANNED - observationsScanned;
-        const chunk = filtered.slice(batch, batch + 10);
         const eligible: Session[] = [];
-        for (const session of chunk) {
-          if ((session.observationCount || 0) > remainingBudget) {
+        let plannedObservations = 0;
+        while (cursor < filtered.length && eligible.length < 10) {
+          const session = filtered[cursor];
+          const count = session.observationCount || 0;
+          if (count > remainingBudget) {
             sessionsSkipped.push(session.id);
-          } else {
-            eligible.push(session);
+            cursor++;
+            continue;
           }
+          if (plannedObservations + count > remainingBudget) break;
+          plannedObservations += count;
+          eligible.push(session);
+          cursor++;
         }
 
         const loaded = await Promise.all(

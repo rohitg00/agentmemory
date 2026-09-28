@@ -224,6 +224,38 @@ describe("mem::patterns session bound", () => {
     ).toBe(false);
   });
 
+  it("fills a batch only while the sessions' combined observationCount fits the remaining budget", async () => {
+    const { sdk, kv } = await setup();
+    const perSession = 3_000;
+    const seeded: Session[] = [];
+    for (let i = 0; i < 3; i++) {
+      const s = session(i);
+      s.observationCount = perSession;
+      await kv.set(KV.sessions, s.id, s);
+      for (let j = 0; j < perSession; j++) {
+        await kv.set(
+          KV.observations(s.id),
+          `obs_${s.id}_${j}`,
+          observation(`obs_${s.id}_${j}`, [`only_${s.id}.ts`]),
+        );
+      }
+      seeded.push(s);
+    }
+    const newest = seeded[2];
+
+    const listSpy = vi.spyOn(kv, "list");
+
+    const result = (await sdk.trigger("mem::patterns", {})) as PatternsResult;
+
+    const observationScopesListed = listSpy.mock.calls
+      .map((c) => c[0])
+      .filter((scope) => scope !== KV.sessions);
+    expect(observationScopesListed).toEqual([KV.observations(newest.id)]);
+    expect(result.observationsScanned).toBe(perSession);
+    expect(result.sessionsProcessed).toBe(1);
+    expect(result.sessionsSkipped).toEqual([seeded[1].id, seeded[0].id]);
+  });
+
   it("does not throw when mem::patterns is invoked with no payload", async () => {
     const { sdk, kv } = await setup();
     await seedSessions(kv, 2, 1);
