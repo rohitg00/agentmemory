@@ -108,12 +108,10 @@ function resolveProjectName(dir: string): string {
 const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
-const contextInjectedSessions = new Set<string>();
 // cache the context returned by POST /session/start so the chat
 // system-transform hook can inject it without a second /context fetch.
-// Auto-injection now happens at session.created (immediately) AND at
-// the first prompt_submit (fallback for older OpenCode builds that
-// don't implement experimental.chat.system.transform).
+// Auto-injection happens at session.created (immediately) and cached
+// startContext is injected on every chat turn to preserve LLM prefix caching (#720).
 const startContextCache = new Map<string, string>();
 
 function stashFor(sid: string): Set<string> {
@@ -187,6 +185,18 @@ memory_consolidate — Run the 4-tier memory consolidation pipeline.
 All memory tools start with \`agentmemory_memory_\`. Use the exact names as they appear in your tool list. Tool results are JSON. Always check what was returned before presenting to the user.
 </agentmemory-instructions>`;
 
+// Upstream @opencode-ai/plugin types omit runtime agent and model parameters (#1184)
+interface OpenCodeChatTransformInput {
+  sessionID?: string;
+  model?: unknown;
+  agent?: string;
+  small?: boolean;
+}
+
+interface OpenCodeContextResponse {
+  context?: string;
+}
+
 function extractFilePaths(args: Record<string, unknown>): string[] {
   const files: string[] = [];
   for (const key of FILE_KEYS) {
@@ -230,7 +240,6 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         stashedFiles.set(activeSessionId, new Set());
         seenSubtaskIds.delete(activeSessionId);
         seenToolCallIds.delete(activeSessionId);
-        contextInjectedSessions.delete(activeSessionId);
         // Snapshot the session id locally — `activeSessionId` is mutable
         // and another `session.created` event during the await could
         // rebind it, causing context to be cached against the wrong key.
@@ -336,7 +345,6 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (sid === activeSessionId) activeSessionId = null;
         pruneSessionMaps(sid);
         startContextCache.delete(sid);
-        contextInjectedSessions.delete(sid);
       }
 
       // ── session.error ──
@@ -660,46 +668,49 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     // ── experimental.chat.system.transform ──
     "experimental.chat.system.transform": async (input, output) => {
       const sid = input.sessionID || activeSessionId;
-      if (!sid) return;
+      if (!sid || !Array.isArray(output.system)) return;
 
-      if (!contextInjectedSessions.has(sid)) {
-        if (!Array.isArray(output.system)) return;
-        output.system.push(AGENTMEMORY_INSTRUCTIONS);
-        // prefer the context already fetched at session.created;
-        // fall back to a fresh /context call if the cache missed (e.g.
-        // session resumed across plugin reloads).
-        let ctx = startContextCache.get(sid);
-        if (typeof ctx !== "string" || ctx.length === 0) {
-          const result = await postJson("/context", {
-            sessionId: sid,
-            project: projectFor(sid).name,
-          });
-          ctx = (result as any)?.context;
-        } else {
-          startContextCache.delete(sid);
-        }
-        if (typeof ctx === "string" && ctx.length > 0) {
-          output.system.push(ctx);
-        }
-        contextInjectedSessions.add(sid);
+      // Type assertion: upstream @opencode-ai/plugin types omit runtime agent and small model flags (#1184)
+      const chatInput = input as OpenCodeChatTransformInput;
+
+      // Skip internal utility requests (e.g. background auto-title generation #1184 or compaction)
+      // which share the session ID but do not participate in the interactive chat stream.
+      if (
+        chatInput.agent === "title" ||
+        chatInput.agent === "compaction" ||
+        chatInput.small === true
+      ) {
+        return;
       }
 
-      const stash = stashFor(sid);
-      if (stash.size === 0) return;
-      const files = [...stash].slice(0, 10);
+      // Fallback for OpenCode runtimes where chatInput.agent is not populated on internal prompts.
+      const isInternalTitle = output.system.some(
+        (s: string) =>
+          typeof s === "string" &&
+          /title generator|generate a (short|concise|brief) title|title for this conversation|thread title/i.test(s),
+      );
+      if (isInternalTitle) return;
 
-      const enrichResult = await postJson("/enrich", {
-        sessionId: sid,
-        files,
-        toolName: "enrich_inject",
-      });
+      // Inject instructions and frozen start context on EVERY regular chat step of the session.
+      // Because startContext and AGENTMEMORY_INSTRUCTIONS are identical across all turns of this session,
+      // LLM prefix caching is 100% preserved (#720), while ensuring the model maintains memory context
+      // throughout multi-turn conversations and across tool execution steps.
+      output.system.push(AGENTMEMORY_INSTRUCTIONS);
 
-      const enrichCtx = (enrichResult as any)?.context;
-      if (typeof enrichCtx === "string" && enrichCtx.length > 0) {
-        if (Array.isArray(output.system)) {
-          output.system.push(enrichCtx);
+      let ctx = startContextCache.get(sid);
+      if (typeof ctx !== "string" || ctx.length === 0) {
+        const result = await postJson("/context", {
+          sessionId: sid,
+          project: projectFor(sid).name,
+        });
+        ctx = (result as OpenCodeContextResponse)?.context;
+        if (typeof ctx === "string" && ctx.length > 0) {
+          startContextCache.set(sid, ctx);
         }
-        for (const f of files) stash.delete(f);
+      }
+
+      if (typeof ctx === "string" && ctx.length > 0) {
+        output.system.push(ctx);
       }
     },
 
