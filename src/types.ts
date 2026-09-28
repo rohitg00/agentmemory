@@ -14,6 +14,12 @@ export interface Session {
   agentId?: string;
 }
 
+export interface ProjectSessionIndexEntry {
+  id: string;
+  startedAt: string;
+  agentId?: string;
+}
+
 export interface CommitLink {
   sha: string;
   shortSha: string;
@@ -477,6 +483,7 @@ export interface GraphQueryResult {
   // empty-body / nodeType-only branch on large corpora where the
   // unbounded enumeration would exceed the iii invocation timeout.
   fromSnapshot?: boolean;
+  degrees?: Record<string, number>;
   // #814: when the snapshot is stale or absent and the live fallback
   // also failed, expose an explanatory note so the viewer can surface
   // an actionable banner instead of a blank graph.
@@ -530,6 +537,7 @@ export interface SemanticMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface ProceduralMemory {
@@ -546,6 +554,7 @@ export interface ProceduralMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface TeamConfig {
@@ -631,12 +640,33 @@ export interface AuditEntry {
     | "slot_replace"
     | "slot_create"
     | "slot_delete"
-    | "slot_reflect";
+    | "slot_reflect"
+    | "audit_migrate";
   userId?: string;
   functionId: string;
   targetIds: string[];
   details: Record<string, unknown>;
   qualityScore?: number;
+}
+
+export interface AuditMonthIndex {
+  months: string[];
+}
+
+export interface AuditMigrationState {
+  status: "too-large" | "unreadable" | "copied" | "done";
+  safeToListLegacy: boolean;
+  legacySizeBytes?: number;
+  migrated: number;
+  purged: number;
+  summaryWritten: boolean;
+  checkedAt: string;
+}
+
+export interface AuditQueryResult {
+  entries: AuditEntry[];
+  legacyFrozen: boolean;
+  legacyFrozenBytes?: number;
 }
 
 export interface GovernanceFilter {

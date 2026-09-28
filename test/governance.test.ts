@@ -247,7 +247,9 @@ describe("Governance Functions", () => {
       reason: "cleanup",
     });
 
-    const entries = (await sdk.trigger("mem::audit-query", {})) as AuditEntry[];
+    const { entries } = (await sdk.trigger("mem::audit-query", {})) as {
+      entries: AuditEntry[];
+    };
 
     expect(entries.length).toBe(1);
     expect(entries[0].operation).toBe("delete");

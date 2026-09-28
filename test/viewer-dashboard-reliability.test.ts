@@ -21,48 +21,206 @@ function load<T>(name: string): T {
   return new Function(`${extractFunction(name)}\nreturn ${name};`)() as T;
 }
 
-describe("viewer dashboard reliability", () => {
-  it("observations never reload the dashboard; pushed session and memory events update it in place", () => {
-    const router = extractFunction("routeWsMessage");
-    expect(router).not.toMatch(/loadDashboard\(\)|scheduleDashboardReload\(\)/);
-    const live = extractFunction("handleLiveEvent");
-    expect(live).not.toMatch(/loadDashboard\(\)/);
-    expect(live).toMatch(/type === 'session\.updated'/);
-    expect(live).toMatch(/type === 'session\.activity'/);
-    expect(live).toMatch(/type === 'session\.deleted'/);
-    expect(live).toMatch(/type === 'memory\.updated' \|\| type === 'memory\.deleted'/);
-    expect(live).toMatch(/scheduleLiveRender\(\);\s*\}$/);
-    expect(viewer).toMatch(/var LIVE_RENDER_THROTTLE_MS = 250;/);
-    expect(extractFunction("handleStreamEvent")).toMatch(
-      /evt\.type === 'event' && evt\.event && evt\.event\.type\) \{\s*handleLiveEvent\(evt\.event\.type, evt\.event\.data \|\| \{\}\);/,
-    );
+function callbackBodies(marker: string): string[] {
+  const bodies: string[] = [];
+  let from = 0;
+  for (;;) {
+    const at = viewer.indexOf(marker, from);
+    if (at < 0) return bodies;
+    const open = viewer.indexOf("{", at);
+    let depth = 0;
+    for (let i = open; i < viewer.length; i++) {
+      if (viewer[i] === "{") depth++;
+      if (viewer[i] === "}") {
+        depth--;
+        if (depth === 0) {
+          bodies.push(viewer.slice(at, i + 1));
+          break;
+        }
+      }
+    }
+    from = at + marker.length;
+  }
+}
+
+type Store = {
+  entities: Record<string, Record<string, Record<string, unknown>>>;
+  counts?: unknown;
+  status?: string;
+  health?: unknown;
+  circuitBreaker?: unknown;
+  functionMetrics?: unknown[];
+  indexes?: unknown;
+  lastHealthAt?: number;
+  graph?: unknown;
+  consolidation?: unknown;
+};
+
+function reducer() {
+  const deps = ["sessionKey", "applyEntityEvent", "reduceLiveEvent"].map(extractFunction).join("\n");
+  return new Function(
+    `var ROW_EVENT_KINDS = ['lesson', 'action', 'crystal', 'semantic', 'procedural', 'audit'];\n${deps}\nreturn reduceLiveEvent;`,
+  )() as (s: Store, type: string, data: Record<string, unknown>) => Record<string, unknown> | null;
+}
+
+function emptyStore(): Store {
+  return {
+    entities: { memory: {}, session: {}, lesson: {}, action: {}, crystal: {}, semantic: {}, procedural: {}, audit: {} },
+  };
+}
+
+describe("viewer streams instead of polling", () => {
+  it("has no polling or refetch loops left", () => {
+    for (const name of [
+      "startPolling",
+      "POLL_INTERVAL_MS",
+      "scheduleStaleRetry",
+      "STALE_RETRY_MS",
+      "scheduleDashboardReload",
+      "refreshMemoryCount",
+      "scheduleMemoriesReload",
+      "TAB_FRESH_MS",
+      "tabFetchedAt",
+    ]) {
+      expect(viewer, name).not.toContain(name);
+    }
   });
 
-  it("no timer re-fetches the dashboard and no refresh path blanks a loaded view", () => {
-    expect(viewer).not.toMatch(/startDashboardAutoRefresh|dashboardTimer|Auto-refresh 30s/);
-    expect(extractFunction("refreshDashboard")).not.toMatch(/loaded = false/);
-    expect(extractFunction("startPolling")).not.toMatch(/loaded = false/);
-    expect(extractFunction("endSession")).not.toMatch(/loaded = false/);
-    expect(extractFunction("confirmDeleteMemory")).not.toMatch(/loaded = false/);
+  it("no interval timer touches the network", () => {
+    const intervals = callbackBodies("setInterval(function");
+    expect(intervals.length).toBeGreaterThan(0);
+    for (const body of intervals) {
+      expect(body).not.toMatch(/\bapi(Get|Post|Delete)?\(|\bfetch\(|\bload[A-Z]\w*\(|ensure\w+\(/);
+    }
   });
 
-  it("session events upsert, patch and remove sessions by id", () => {
-    const deps = ["sessionKey", "upsertSessionIn", "removeSessionFrom", "patchSessionCount"]
-      .map(extractFunction)
-      .join("\n");
-    const api = new Function(`${deps}\nreturn { upsertSessionIn, removeSessionFrom, patchSessionCount };`)() as {
-      upsertSessionIn: (l: Array<Record<string, unknown>>, s: Record<string, unknown>) => Array<Record<string, unknown>>;
-      removeSessionFrom: (l: Array<Record<string, unknown>>, k: string) => Array<Record<string, unknown>>;
-      patchSessionCount: (l: Array<Record<string, unknown>>, k: string, c: number) => void;
-    };
-    const list: Array<Record<string, unknown>> = [{ id: "a", status: "active", observationCount: 1 }];
-    api.upsertSessionIn(list, { id: "a", status: "completed" });
-    expect(list).toEqual([{ id: "a", status: "completed", observationCount: 1 }]);
-    api.upsertSessionIn(list, { id: "b", status: "active" });
-    expect(list.map((s) => s.id)).toEqual(["b", "a"]);
-    api.patchSessionCount(list, "a", 7);
-    expect(list[1].observationCount).toBe(7);
-    expect(api.removeSessionFrom(list, "b").map((s) => s.id)).toEqual(["a"]);
+  it("the ambient background renders on animation frames and pauses while the tab is hidden", () => {
+    const dither = viewer.slice(viewer.indexOf("(function ditherField()"));
+    expect(dither).toMatch(/requestAnimationFrame\(frame\)/);
+    expect(dither).toMatch(/if \(document\.hidden\) return;/);
+    expect(dither).not.toMatch(/setInterval/);
+  });
+
+  it("fetches the snapshot once per connection and replays events that arrived during a list load", () => {
+    const resync = extractFunction("resyncAfterConnect");
+    expect(resync).toMatch(/await loadSnapshot\(\);/);
+    expect(resync).toMatch(/reloadKinds\.forEach\(function\(k\) \{ store\.loaded\[k\] = false; \}\);/);
+    expect(extractFunction("loadSnapshot")).toMatch(/apiGet\('viewer\/snapshot'\)/);
+    const ensure = extractFunction("ensureLoaded");
+    expect(ensure).toMatch(/var seqAtStart = eventSeq;/);
+    expect(ensure).toMatch(/replayEventsSince\(seqAtStart, kind\);/);
+    expect(viewer).toMatch(/ws\.onopen = function\(\) \{[\s\S]{0,700}resyncAfterConnect\(firstConnect\);/);
+  });
+
+  it("reconnects with capped exponential backoff and never falls back to polling", () => {
+    const delay = load<(n: number) => number>("reconnectDelay");
+    expect([1, 2, 3, 4, 5, 6, 7, 10].map(delay)).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
+    expect(extractFunction("scheduleReconnect")).toMatch(/wsReconnectTimer = setTimeout\(connectWs, delay\);/);
+    expect(viewer).toMatch(/var directFailed = true;/);
+    expect(viewer).toMatch(/if \(directFailures >= DIRECT_FAILURE_THRESHOLD\) \{\s*directFailed = ws\.__direct;/);
+    expect(viewer).toMatch(/addEventListener\('visibilitychange'[\s\S]{0,300}reconnectNow\(\);/);
+  });
+
+  it("shows an explicit reconnecting and offline state and marks data stale", () => {
+    const render = extractFunction("renderConnection");
+    expect(render).toMatch(/'reconnecting'/);
+    expect(render).toMatch(/'offline'/);
+    expect(render).toMatch(/Showing data as of/);
+    expect(extractFunction("setConnection")).toMatch(/classList\.toggle\('is-stale'/);
+  });
+});
+
+describe("viewer live event reducer", () => {
+  it("upserts, updates and removes memories from the full row in the event", () => {
+    const reduce = reducer();
+    const s = emptyStore();
+    reduce(s, "memory.created", { memoryId: "mem_1", memory: { id: "mem_1", title: "a", isLatest: true } });
+    expect(s.entities.memory.mem_1).toEqual({ id: "mem_1", title: "a", isLatest: true });
+    reduce(s, "memory.updated", { memoryId: "mem_1", memory: { id: "mem_1", isLatest: false } });
+    expect(s.entities.memory.mem_1.isLatest).toBe(false);
+    expect(s.entities.memory.mem_1.title).toBe("a");
+    const change = reduce(s, "memory.deleted", { memoryId: "mem_1" });
+    expect(s.entities.memory.mem_1).toBeUndefined();
+    expect(change).toMatchObject({ kind: "memory", action: "deleted", id: "mem_1" });
+  });
+
+  it("treats a soft-deleted lesson as removed and patches other row kinds by id", () => {
+    const reduce = reducer();
+    const s = emptyStore();
+    reduce(s, "lesson.created", { id: "lsn_1", lesson: { id: "lsn_1", content: "x" } });
+    reduce(s, "lesson.updated", { id: "lsn_1", lesson: { id: "lsn_1", content: "x", deleted: true } });
+    expect(s.entities.lesson.lsn_1).toBeUndefined();
+    reduce(s, "action.created", { id: "act_1", action: { id: "act_1", status: "pending" } });
+    reduce(s, "action.updated", { id: "act_1", action: { id: "act_1", status: "done" } });
+    expect(s.entities.action.act_1.status).toBe("done");
+    reduce(s, "audit.created", { id: "aud_1", audit: { id: "aud_1", operation: "remember" } });
+    expect(Object.keys(s.entities.audit)).toEqual(["aud_1"]);
+  });
+
+  it("applies session updates, activity counts and deletes", () => {
+    const reduce = reducer();
+    const s = emptyStore();
+    reduce(s, "session.updated", { session: { id: "a", status: "active", observationCount: 1 } });
+    reduce(s, "session.activity", { sessionId: "a", observationCount: 9 });
+    expect(s.entities.session.a.observationCount).toBe(9);
+    reduce(s, "session.activity", { sessionId: "missing", observationCount: 3 });
+    expect(s.entities.session.missing).toBeUndefined();
+    reduce(s, "session.deleted", { sessionId: "a" });
+    expect(s.entities.session.a).toBeUndefined();
+  });
+
+  it("takes counts, health and graph stats straight from the events", () => {
+    const reduce = reducer();
+    const s = emptyStore();
+    reduce(s, "counts.changed", { counts: { memories: 4 } });
+    expect(s.counts).toEqual({ memories: 4 });
+    reduce(s, "health", { status: "degraded", health: { status: "degraded" }, circuitBreaker: { state: "open" }, functionMetrics: [{ functionId: "f" }], counts: { memories: 5 }, indexes: { bm25Documents: 2 } });
+    expect(s.status).toBe("degraded");
+    expect(s.counts).toEqual({ memories: 5 });
+    expect(s.lastHealthAt).toBeGreaterThan(0);
+    const g = reduce(s, "graph.changed", { source: "snapshot", stats: { totalNodes: 3 }, updatedAt: "t" });
+    expect(g).toMatchObject({ kind: "graph", source: "snapshot" });
+    expect(s.graph).toEqual({ stats: { totalNodes: 3 }, updatedAt: "t", resetAt: null });
+    expect(reduce(s, "unknown.thing", {})).toBeNull();
+  });
+});
+
+describe("viewer navigation and shared components", () => {
+  it("parses deep links into a tab and an entity id", () => {
+    const deps = ["normalizeTab", "decodePart", "parseRoute"].map(extractFunction).join("\n");
+    const parse = new Function(
+      `var TAB_IDS = ${viewer.match(/var TAB_IDS = (\[[^\]]*\]);/)?.[1]};\nvar TAB_ALIASES = ${viewer.match(/var TAB_ALIASES = (\{[^}]*\});/)?.[1]};\n${deps}\nreturn parseRoute;`,
+    )() as (h: string) => { tab: string; id: string; obs: string; redirect: boolean };
+    expect(parse("#memories/mem_abc")).toMatchObject({ tab: "memories", id: "mem_abc", obs: "", redirect: false });
+    expect(parse("#sessions/ses%2Fone")).toMatchObject({ tab: "sessions", id: "ses/one" });
+    expect(parse("#health")).toMatchObject({ tab: "health", id: "" });
+    expect(parse("#nope/x")).toMatchObject({ tab: "dashboard", id: "x" });
+    expect(parse("#sessions/ses_1?obs=obs%3A9")).toMatchObject({ tab: "sessions", id: "ses_1", obs: "obs:9" });
+    expect(parse("#timeline/ses_1")).toMatchObject({ tab: "sessions", id: "ses_1", redirect: true });
+  });
+
+  it("every help tooltip used on a page has a glossary entry", () => {
+    const glossaryBlock = viewer.slice(viewer.indexOf("var GLOSSARY = {"), viewer.indexOf("var state = {"));
+    const keys = new Set([...glossaryBlock.matchAll(/^\s{6}(\w+): \{ term:/gm)].map((m) => m[1]));
+    expect(keys.size).toBeGreaterThan(40);
+    const used = new Set([...viewer.matchAll(/help\('(\w+)'\)/g)].map((m) => m[1]));
+    for (const key of used) expect(keys.has(key), key).toBe(true);
+  });
+
+  it("empty states explain what, why and how, with commands aimed at the live origin", () => {
+    const empty = extractFunction("emptyState");
+    expect(empty).toMatch(/What this is/);
+    expect(empty).toMatch(/Why it is empty/);
+    expect(empty).toMatch(/How to fill it/);
+    expect(extractFunction("apiBase")).toMatch(/return REST \+ '\/agentmemory';/);
+    expect(viewer).not.toMatch(/localhost:3111/);
+  });
+
+  it("offers keyboard shortcuts for search, help and jumping between pages", () => {
+    expect(viewer).toMatch(/if \(e\.key === '\/'\) \{\s*if \(focusPageSearch\(\)\) e\.preventDefault\(\);/);
+    expect(viewer).toMatch(/if \(e\.key === '\?'\) \{\s*e\.preventDefault\(\);\s*openHelpOverlay\(\);/);
+    expect(viewer).toMatch(/var jump = TAB_SHORTCUTS\[e\.key\.toLowerCase\(\)\];/);
+    expect(viewer).toMatch(/role="tablist"/);
   });
 
   it("re-rendering identical HTML leaves the DOM alone, but a placeholder in between forces a render", () => {
@@ -83,28 +241,6 @@ describe("viewer dashboard reliability", () => {
     el.firstElementChild = {};
     setViewHtml(el, "<div>b</div>");
     expect(writes).toBe(3);
-  });
-
-  it("connects with the join mode first and flips mode after two failures of either", () => {
-    expect(viewer).toMatch(/var directFailed = true;/);
-    expect(viewer).toMatch(/if \(directFailures >= DIRECT_FAILURE_THRESHOLD\) \{\s*directFailed = ws\.__direct;/);
-  });
-
-  it("loadDashboard never runs twice at once and replays a request that arrived mid-flight", () => {
-    const loader = extractFunction("loadDashboard");
-    expect(loader).toMatch(/if \(dashboardLoading\) \{\s*dashboardReloadPending = true;\s*return;/);
-    expect(loader).toMatch(/finally \{\s*dashboardLoading = false;/);
-  });
-
-  it("a failed refresh keeps the last data instead of showing the new-install hero", () => {
-    const loader = extractFunction("loadDashboard");
-    expect(loader).toMatch(/if \(sessionsOk\) d\.sessions = replaySessionEvents\(results\[1\]\.sessions, seqAtStart\);/);
-    expect(loader).toMatch(/if \(!sessionsOk && !d\.loaded\)/);
-    const listOr = load<(p: unknown[], r: unknown, k: string, f?: string) => unknown[]>("listOr");
-    expect(listOr([1, 2], null, "items")).toEqual([1, 2]);
-    expect(listOr([1, 2], { items: [3] }, "items")).toEqual([3]);
-    expect(listOr([1], { other: [4] }, "items", "other")).toEqual([4]);
-    expect(listOr([1], {}, "items")).toEqual([]);
   });
 
   it("token savings only counts sessions that produced observations", () => {
@@ -149,89 +285,22 @@ describe("viewer dashboard reliability", () => {
     expect(rebuild).toMatch(/window\.confirm\(/);
     expect(rebuild).toMatch(/result && result\.success/);
     expect(rebuild).toMatch(/finally \{\s*graphRebuilding = false;/);
+    expect(rebuild).toMatch(/New ones arrive on the live stream\./);
+    expect(rebuild).not.toMatch(/loadGraph\(/);
   });
 
-  it("a session list fetched while live events arrive replays them so deletes and updates stick", () => {
-    const deps = ["sessionKey", "upsertSessionIn", "removeSessionFrom", "patchSessionCount", "applySessionEvent", "replaySessionEvents"]
-      .map(extractFunction)
-      .join("\n");
-    const replay = new Function(
-      "liveSessionLog",
-      `${deps}\nreturn replaySessionEvents;`,
-    )([
-      { seq: 1, type: "session.deleted", data: { sessionId: "old" } },
-      { seq: 2, type: "session.deleted", data: { sessionId: "a" } },
-      { seq: 3, type: "session.updated", data: { session: { id: "c", status: "active" } } },
-      { seq: 4, type: "session.activity", data: { sessionId: "b", observationCount: 9 } },
-    ]) as (l: Array<Record<string, unknown>>, since: number) => Array<Record<string, unknown>>;
-    const fetched = [
-      { id: "a", observationCount: 1 },
-      { id: "b", observationCount: 2 },
-      { id: "old", observationCount: 0 },
-    ];
-    expect(replay(fetched, 1)).toEqual([
-      { id: "c", status: "active" },
-      { id: "b", observationCount: 9 },
-      { id: "old", observationCount: 0 },
-    ]);
-    expect(extractFunction("loadSessions")).toMatch(/replaySessionEvents\(result\.sessions, seqAtStart\)/);
+  it("the graph never builds itself: loading only reads, a rebuild is always a user click", () => {
+    const loader = extractFunction("loadGraph");
+    expect(loader).not.toMatch(/graph\/build/);
+    expect(loader).toMatch(/apiPost\('graph\/query', \{ limit: GRAPH_LIMIT \}\)/);
   });
 
-  it("count updates rerender the session list without refetching or blanking the open detail", () => {
-    const render = extractFunction("renderSessions");
-    expect(render).toMatch(/cached\.id === state\.sessions\.selectedId && !state\.sessions\.detailStale/);
-    const detail = extractFunction("renderSessionDetail");
-    expect(detail).toMatch(/if \(!cached \|\| cached\.id !== id\) \{\s*panel\.innerHTML = '<div class="detail-panel"><h3>Loading/);
-    expect(detail).toMatch(/if \(request !== sessionDetailRequest \|\| state\.sessions\.selectedId !== id\) return;/);
-    expect(extractFunction("handleLiveEvent")).toMatch(
-      /if \(type !== 'session\.activity' && touched === state\.sessions\.selectedId\) \{\s*state\.sessions\.detailStale = true;/,
-    );
-  });
-
-  it("memory events coalesce list reloads and only the newest count response wins", () => {
-    const reload = extractFunction("scheduleMemoriesReload");
-    expect(reload).toMatch(/if \(memoriesReloading\) \{\s*memoriesReloadPending = true;\s*return;/);
-    expect(reload).toMatch(/finally \{\s*memoriesReloading = false;/);
-    expect(extractFunction("handleLiveEvent")).not.toMatch(/loadMemories\(\)/);
-    expect(extractFunction("refreshMemoryCount")).toMatch(
-      /var request = \+\+memoryCountRequest;[\s\S]*if \(request !== memoryCountRequest\) return;/,
-    );
-  });
-
-  it("a reconnect resyncs loaded views, and only a delivered message clears the failure count", () => {
-    expect(viewer).toMatch(/if \(wsHasConnected\) resyncLiveViews\(\);\s*wsHasConnected = true;/);
-    const resync = extractFunction("resyncLiveViews");
-    expect(resync).toMatch(/if \(state\.dashboard\.loaded\) loadDashboard\(\);/);
-    expect(resync).toMatch(/if \(state\.sessions\.loaded\) loadSessions\(\);/);
-    expect(viewer).toMatch(/if \(!ws\.__usable\) \{\s*ws\.__usable = true;\s*directFailures = 0;/);
-    const onopen = viewer.slice(viewer.indexOf("ws.onopen = function"), viewer.indexOf("ws.onmessage = function"));
-    expect(onopen).toMatch(/wsRetries = 0;/);
-    expect(onopen).not.toMatch(/directFailures = 0;/);
-  });
-
-  it("a stale dashboard retries on its own slower timer, once at a time", () => {
-    expect(viewer).toMatch(/var STALE_RETRY_MS = 15000;/);
-    const retry = extractFunction("scheduleStaleRetry");
-    expect(retry).toMatch(/if \(staleRetryTimer\) return;/);
-    expect(retry).toMatch(/state\.dashboard\.stale\) loadDashboard\(\);/);
-    expect(extractFunction("loadDashboard")).toMatch(/if \(d\.stale\) scheduleStaleRetry\(\);/);
-  });
-
-  it("the dashboard applies its memory total only when no newer count request started", () => {
-    const loader = extractFunction("loadDashboard");
-    expect(loader).toMatch(/var countToken = \+\+memoryCountRequest;/);
-    expect(loader).toMatch(/if \(countToken === memoryCountRequest && results\[2\]/);
-  });
-
-  it("a rebuild whose graph refresh fails says so instead of reporting success", () => {
-    expect(extractFunction("rebuildGraph")).toMatch(
-      /await loadGraph\(\);\s*if \(state\.graph\.queryError && state\.graph\.rebuildResult\) \{\s*state\.graph\.rebuildResult = 'The rebuild finished, but the graph could not be refreshed/,
-    );
-    expect(viewer).toMatch(/consolidated ' \+ esc\(formatTime\(status\.lastRunAt\)\)/);
-  });
-
-  it("returning to the tab reconnects a dropped live stream (#1370)", () => {
-    expect(viewer).toMatch(/addEventListener\('visibilitychange'/);
-    expect(viewer).toMatch(/visibilityState !== 'visible'[\s\S]{0,400}connectWs\(\);/);
+  it("graph.changed patches the loaded graph from the event payload and refetches only when it must", () => {
+    const handler = extractFunction("handleGraphChange");
+    expect(handler).toMatch(/if \(data\.delta && applyGraphDelta\(data\.delta\)\)/);
+    expect(handler).toMatch(/if \(data\.source === 'items' && !data\.coveredBySnapshot\) scheduleGraphReload\(\);/);
+    const reload = extractFunction("scheduleGraphReload");
+    expect(reload).toMatch(/clearTimeout\(graphReloadTimer\)/);
+    expect(reload).toMatch(/loadGraph\(\{ quiet: true \}\)/);
   });
 });

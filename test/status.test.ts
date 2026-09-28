@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   evaluateStatus,
+  markLlmFunctions,
+  describeHealthAlert,
   prefersHtml,
   renderStatusHtml,
   singleFlight,
@@ -38,6 +40,7 @@ function inputs(overrides: Partial<StatusInputs> = {}): StatusInputs {
       updatedAt: "2026-09-24T11:59:00.000Z",
     },
     graphExtractionEnabled: true,
+    auditLegacy: null,
     ...overrides,
   };
 }
@@ -85,7 +88,9 @@ describe("evaluateStatus", () => {
     );
     const critical = evaluateStatus(inputs({ health: { status: "critical", alerts: ["kv unreachable"] } }));
     expect(critical.status).toBe("error");
-    expect(codes(critical)).toEqual(["health-critical", "health-alert"]);
+    expect(codes(critical)).toEqual(["health-alert"]);
+    const bare = evaluateStatus(inputs({ health: { status: "critical", alerts: [] } }));
+    expect(codes(bare)).toEqual(["health-critical"]);
   });
 
   it("warns about observations missing from the search index and says how to fix it", () => {
@@ -144,6 +149,104 @@ describe("evaluateStatus", () => {
     const report = evaluateStatus(inputs({ provider: "noop" }));
     expect(report.status).toBe("info");
     expect(report.problems[0].code).toBe("no-llm-provider");
+  });
+
+  it("reports a frozen legacy audit log only when the migration left it in place", () => {
+    expect(codes(evaluateStatus(inputs({ auditLegacy: { status: "too-large", sizeBytes: 1 } })))).toContain(
+      "audit-legacy-frozen",
+    );
+    expect(codes(evaluateStatus(inputs({ auditLegacy: { status: "unreadable" } })))).toContain(
+      "audit-legacy-frozen",
+    );
+    expect(codes(evaluateStatus(inputs({ auditLegacy: { status: "copied", sizeBytes: 1 } })))).not.toContain(
+      "audit-legacy-frozen",
+    );
+    expect(codes(evaluateStatus(inputs({ auditLegacy: { status: "done" } })))).not.toContain(
+      "audit-legacy-frozen",
+    );
+  });
+});
+
+describe("status without an LLM provider", () => {
+  const llmFlag = {
+    key: "CONSOLIDATION_ENABLED",
+    label: "Memory consolidation",
+    enabled: true,
+    needsLlm: true,
+    enableHow: "Set CONSOLIDATION_ENABLED=true",
+  };
+  const plainFlag = {
+    key: "AGENTMEMORY_REFLECT",
+    label: "Reflect",
+    enabled: true,
+    needsLlm: false,
+    enableHow: "Set AGENTMEMORY_REFLECT=true",
+  };
+
+  it("shows LLM functions as off instead of failing and raises no failure warning", () => {
+    const report = evaluateStatus(
+      inputs({
+        provider: "noop",
+        functionMetrics: [
+          { functionId: "mem::summarize", totalCalls: 12, successCount: 0, failureCount: 12, avgLatencyMs: 3 },
+          { functionId: "mem::search", totalCalls: 10, successCount: 2, failureCount: 8, avgLatencyMs: 3 },
+        ],
+      }),
+    );
+    const summarize = report.functions.find((f) => f.functionId === "mem::summarize");
+    expect(summarize?.offWithoutLlm).toBe(true);
+    const failing = report.problems.filter((p) => p.code === "function-failing");
+    expect(failing.map((p) => p.message)).toEqual(["mem::search failed 8 of 10 calls (80%)."]);
+    const html = renderStatusHtml(report, "n");
+    expect(html).toContain("off, no LLM provider");
+  });
+
+  it("marks an enabled feature that needs an LLM as inactive, not simply on", () => {
+    const report = evaluateStatus(inputs({ provider: "noop", flags: [llmFlag, plainFlag] }));
+    expect(report.flags[0].inactiveReason).toBe("needs an LLM provider, none is configured");
+    expect(report.flags[1].inactiveReason).toBeUndefined();
+    const html = renderStatusHtml(report, "n");
+    expect(html).toContain("on, inactive: needs an LLM provider, none is configured");
+    expect(html).not.toMatch(/<td>Memory consolidation<\/td><td>on<\/td>/);
+  });
+
+  it("keeps enabled LLM features plainly on when a provider exists", () => {
+    const report = evaluateStatus(inputs({ flags: [llmFlag] }));
+    expect(report.flags[0].inactiveReason).toBeUndefined();
+    expect(renderStatusHtml(report, "n")).toMatch(/<td>Memory consolidation<\/td><td><code>CONSOLIDATION_ENABLED<\/code><\/td><td>on<\/td><td>Set CONSOLIDATION_ENABLED=false and restart to turn it off.<\/td>/);
+  });
+});
+
+describe("status page wording", () => {
+  it("explains why the BM25 count differs from observations", () => {
+    const report = evaluateStatus(
+      inputs({ index: { ...inputs().index, bm25Documents: 211, observationsIndexed: 185, memoriesIndexed: 26, lessonsIndexed: 2 } }),
+    );
+    expect(renderStatusHtml(report, "n")).toContain("211 (183 observations, 26 memories, 2 lessons)");
+  });
+
+  it("pluralizes counts and drops the manual refresh link", () => {
+    const report = evaluateStatus(
+      inputs({
+        indexPersistence: {
+          saveIntervalMs: 600000,
+          saving: false,
+          buckets: 1,
+          pendingChanges: 1,
+          vector: { lastSavedAt: "2026-09-24T11:59:00.000Z", dirtySince: null, lastError: null, lastErrorAt: null },
+          vectorCountShortfall: null,
+        },
+      }),
+    );
+    const html = renderStatusHtml(report, "n");
+    expect(html).toContain("1 bucket, 1 unsaved change");
+    expect(html).not.toContain(">refresh</a>");
+  });
+
+  it("does not show a bare healthy process next to a warning badge", () => {
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, missingObservations: 3 } }));
+    const html = renderStatusHtml(report, "n");
+    expect(html).toContain("<th>Process health</th><td>healthy (memory, CPU and engine checks only;");
   });
 });
 
@@ -219,9 +322,78 @@ describe("renderStatusHtml", () => {
     );
     expect(html).toContain("3 stored observations are not in the search index");
     expect(html).toContain("boot reconcile re-indexes");
-    for (const heading of ["Problems", "Service", "Providers", "Search index", "Knowledge graph", "Functions", "Features"]) {
+    for (const heading of ["Problems", "Engine and connection", "LLM and embeddings", "Search index", "Knowledge graph", "Features", "Process", "Functions"]) {
       expect(html).toContain(`<h2>${heading}</h2>`);
     }
+  });
+});
+
+describe("status for beginners", () => {
+  it("turns health alert slugs into sentences with a fix", () => {
+    const report = evaluateStatus(
+      inputs({ health: { status: "degraded", alerts: ["event_loop_lag_warn_240ms"], connectionState: "connected" } }),
+    );
+    expect(report.problems).toHaveLength(1);
+    expect(report.problems[0]).toMatchObject({ level: "warn", code: "health-alert" });
+    expect(report.problems[0].message).toMatch(/240 ms behind/);
+    expect(report.problems[0].fix).toMatch(/restart agentmemory/);
+    expect(describeHealthAlert("memory_critical_97%_rss900mb").level).toBe("error");
+    expect(describeHealthAlert("connection_disconnected").message).toMatch(/iii engine is disconnected/);
+  });
+
+  it("gives every problem a fix", () => {
+    const report = evaluateStatus(
+      inputs({
+        health: null,
+        provider: "noop",
+        circuitBreaker: { state: "open", failures: 3 },
+        index: { ...inputs().index, missingObservations: null, bm25Incomplete: true, pendingVectorBackfill: 4 },
+        graph: { totalNodes: 1, totalEdges: 0, fromSnapshot: true, updatedAt: "2026-09-20T00:00:00.000Z", dirty: true },
+      }),
+    );
+    expect(report.problems.length).toBeGreaterThan(5);
+    for (const p of report.problems) expect(p.fix, p.code).toBeTruthy();
+  });
+
+  it("states the verdict in one plain sentence", () => {
+    expect(evaluateStatus(inputs()).headline).toMatch(/^Every check passed/);
+    expect(evaluateStatus(inputs({ provider: "noop" })).headline).toBe("Working normally. 1 note below about features that are off or checks that did not run.");
+    const report = evaluateStatus(inputs({ provider: "noop", index: { ...inputs().index, missingObservations: 2 } }));
+    expect(report.status).toBe("warn");
+    expect(report.headline).toMatch(/^Working, but needs attention: 2 stored observations are not in the search index/);
+    expect(report.headline).toMatch(/1 more item below/);
+  });
+
+  it("breaks the keyword index down and lists what is off without an LLM", () => {
+    const report = evaluateStatus(
+      inputs({
+        provider: "noop",
+        index: { ...inputs().index, bm25Documents: 211, observationsIndexed: 185, memoriesIndexed: 26, lessonsIndexed: 2 },
+      }),
+    );
+    expect(report.index.breakdown).toEqual({ observations: 183, memories: 26, lessons: 2 });
+    expect(report.provider.offWithoutLlm).toContain("session summaries");
+    expect(evaluateStatus(inputs()).provider.offWithoutLlm).toEqual([]);
+  });
+
+  it("links to the live viewer page, shows the curl call and explains the process numbers", () => {
+    const report = evaluateStatus(
+      inputs({
+        health: {
+          status: "healthy",
+          alerts: [],
+          connectionState: "connected",
+          memory: { heapUsed: 50 * 1048576, heapTotal: 80 * 1048576, heapLimit: 4096 * 1048576, rss: 140 * 1048576 },
+          eventLoopLagMs: 1.25,
+        },
+      }),
+    );
+    const html = renderStatusHtml(report, "n", { viewerUrl: "http://127.0.0.1:3113/#health" });
+    expect(html).toContain('<a href="http://127.0.0.1:3113/#health">Open the live version in the viewer');
+    expect(html).toContain("curl -s http://localhost:3111/agentmemory/status");
+    expect(html).toContain("50 MB of 4096 MB (1%)");
+    expect(html).toContain("1.3 ms");
+    expect(renderStatusHtml(report, "n")).toContain('href="/agentmemory/viewer#health"');
   });
 });
 
@@ -247,10 +419,25 @@ describe("status wiring", () => {
   });
 
   it("time-boxes every status probe so a slow store cannot hang the page", () => {
+    const reporter = api.slice(api.indexOf("export function createStatusReporter"), api.indexOf("export function createConsolidationStatusReader"));
+    expect(reporter.match(/valueWithin\(/g)?.length).toBe(5);
+    expect(reporter).toMatch(/valueWithin\(scan\.run\(\), STATUS_CHECK_TIMEOUT_MS\)/);
+    expect(api).toMatch(/run: singleFlight\(async \(\) => \{\s*const value = await findUnindexedObservations\(kv\);/);
     const handler = api.slice(api.indexOf('registerFunction("api::status"'), api.indexOf('function_id: "api::status"'));
-    expect(handler.match(/valueWithin\(/g)?.length).toBe(4);
-    expect(handler).toMatch(/valueWithin\(sharedUnindexedScan\(\), STATUS_CHECK_TIMEOUT_MS\)/);
-    expect(api).toMatch(/const sharedUnindexedScan = singleFlight\(\(\) => findUnindexedObservations\(kv\), UNINDEXED_SCAN_REUSE_MS\);/);
+    expect(reporter).toMatch(/valueWithin\(\s*kv\.get<AuditMigrationState>\(KV\.auditMonths, AUDIT_MIGRATION_STATE_KEY\),\s*STATUS_CHECK_TIMEOUT_MS,\s*\)/);
+    expect(handler).toContain("const report = await statusReport();");
+  });
+
+  it("streams the same report to the viewer on every health tick and in the snapshot", () => {
+    const streams = readFileSync("src/triggers/viewer-streams.ts", "utf-8");
+    expect(streams).toMatch(/statusReport\(\{ health: snapshot, scanMaxAgeMs \}\)/);
+    expect(streams).toContain("healthPayload(payload.new_value ?? null, HEALTH_TICK_SCAN_MAX_AGE_MS)");
+    expect(streams).toContain("healthPayload(health ?? null, UNINDEXED_SCAN_REUSE_MS)");
+  });
+
+  it("names the embedding provider instead of a generic label", () => {
+    expect(api).not.toContain('? "embeddings" : "none"');
+    expect(api.match(/describeEmbeddingProvider\(\)/g)?.length).toBe(3);
   });
 
   it("config flags and status share one flag list", () => {
@@ -263,10 +450,29 @@ describe("status wiring", () => {
   });
 
   it("the viewer has a Health tab that reads the status report", () => {
-    expect(viewer).toContain('<button data-tab="health">Health</button>');
-    expect(viewer).toContain('<div id="view-health" class="view"></div>');
-    expect(viewer).toMatch(/'replay', 'health'\];/);
-    expect(viewer).toMatch(/case 'health': await loadHealth\(\); break;/);
+    expect(viewer).toMatch(/<button type="button" role="tab" data-tab="health"[^>]*>Health<\/button>/);
+    expect(viewer).toContain('<div id="view-health" class="view" role="tabpanel" aria-label="Health"></div>');
+    expect(viewer).toMatch(/'activity', 'profile', 'health', 'audit'\];/);
+    expect(viewer).toMatch(/case 'health': renderHealth\(\); break;/);
+    expect(viewer).toContain("s.report = data.report;");
+    expect(viewer).not.toMatch(/if \(tab === 'health'\) ensureStatusReport\(\);/);
     expect(viewer).toMatch(/api\('status', \{ headers: \{ Accept: 'application\/json' \} \}\)/);
+  });
+});
+
+describe("markLlmFunctions", () => {
+  const metrics = [
+    { functionId: "mem::summarize", totalCalls: 12, successCount: 0, failureCount: 12, avgLatencyMs: 1 },
+    { functionId: "mem::observe", totalCalls: 40, successCount: 40, failureCount: 0, avgLatencyMs: 2 },
+  ];
+
+  it("marks LLM functions off when no provider is configured", () => {
+    const marked = markLlmFunctions(metrics, "noop");
+    expect(marked.map((m) => m.offWithoutLlm)).toEqual([true, false]);
+    expect(marked[0].failureCount).toBe(12);
+  });
+
+  it("leaves every function on when an LLM provider is configured", () => {
+    expect(markLlmFunctions(metrics, "llm").some((m) => m.offWithoutLlm)).toBe(false);
   });
 });

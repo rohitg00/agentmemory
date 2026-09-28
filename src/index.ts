@@ -11,8 +11,10 @@ import {
   isGraphExtractionEnabled,
   isAutoCompressEnabled,
   isConsolidationEnabled,
+  getConsolidationIntervalMs,
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
+  getAuditRetentionMonths,
 } from "./config.js";
 import {
   createProvider,
@@ -27,6 +29,7 @@ import { IndexPersistence } from "./state/index-persistence.js";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, settleWithin } from "./shutdown.js";
 import { registerPrivacyFunction } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
+import { seedViewerStreamTracker } from "./state/viewer-stream.js";
 import { registerImageQuotaCleanup } from "./functions/image-quota-cleanup.js";
 import { registerVisionSearchFunctions } from "./functions/vision-search.js";
 import { registerSlotsFunctions, isSlotsEnabled, isReflectEnabled } from "./functions/slots.js";
@@ -44,6 +47,8 @@ import {
   setPendingVectorBackfillCount,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
+import { registerSessionIndexMaintenanceFunction } from "./functions/session-index-maintenance.js";
+import { rebuildSessionIndexIfStale } from "./state/session-index.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
 import { registerMigrateFunction } from "./functions/migrate.js";
 import { registerFileIndexFunction } from "./functions/file-index.js";
@@ -91,10 +96,12 @@ import { registerSlidingWindowFunction } from "./functions/sliding-window.js";
 import { registerQueryExpansionFunction } from "./functions/query-expansion.js";
 import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
 import { registerRetentionFunctions } from "./functions/retention.js";
+import { startAuditMigration } from "./functions/audit.js";
 import { registerCompressFileFunction } from "./functions/compress-file.js";
 import { registerReplayFunctions } from "./functions/replay.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
+import { registerViewerStreamTriggers } from "./triggers/viewer-streams.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
 import { getAllTools } from "./mcp/tools-registry.js";
 import { startViewerServer } from "./viewer/server.js";
@@ -246,6 +253,18 @@ async function main() {
   registerCompressFunction(sdk, kv, provider, metricsStore);
   registerSearchFunction(sdk, kv);
   registerContextFunction(sdk, kv, config.tokenBudget);
+  registerSessionIndexMaintenanceFunction(sdk, kv);
+  void rebuildSessionIndexIfStale(kv)
+    .then((result) => {
+      if (result) {
+        bootLog(
+          `Session index rebuilt: ${result.projects} projects, ${result.sessions} sessions`,
+        );
+      }
+    })
+    .catch((err) => {
+      console.warn(`[agentmemory] Failed to rebuild session index at boot:`, err);
+    });
   registerSummarizeFunction(sdk, kv, provider, metricsStore);
   registerMigrateFunction(sdk, kv);
   registerFileIndexFunction(sdk, kv);
@@ -391,6 +410,7 @@ async function main() {
 
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);
   registerEventTriggers(sdk, kv);
+  registerViewerStreamTriggers(sdk, kv, { secret, metricsStore, provider });
   registerMcpEndpoints(sdk, kv, secret);
 
   const healthMonitor = registerHealthMonitor(sdk, kv);
@@ -457,6 +477,8 @@ async function main() {
     }
   }
 
+  const auditMigration = startAuditMigration(kv).catch(() => {});
+
   const vectorCountShortfall =
     Boolean(loaded?.vector) &&
     loaded?.expectedCount !== undefined &&
@@ -503,7 +525,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 132 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 134 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -518,7 +540,7 @@ async function main() {
   );
 
   const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
-  const consolidationIntervalMs = parseInt(process.env.CONSOLIDATION_INTERVAL_MS || "7200000", 10);
+  const consolidationIntervalMs = getConsolidationIntervalMs();
 
   if (process.env.AUTO_FORGET_ENABLED !== "false") {
     const autoForgetTimer = setInterval(async () => {
@@ -528,6 +550,22 @@ async function main() {
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
     bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+  }
+
+  const auditRetentionMonths = getAuditRetentionMonths();
+  if (auditRetentionMonths > 0) {
+    const runAuditSweep = async () => {
+      try {
+        await auditMigration;
+        await sdk.trigger({ function_id: "mem::audit-retention-sweep", payload: {} });
+      } catch {}
+    };
+    void runAuditSweep();
+    const auditRetentionTimer = setInterval(runAuditSweep, 86400000);
+    auditRetentionTimer.unref();
+    bootLog(
+      `Audit retention sweep: enabled (drop month scopes older than ${auditRetentionMonths}mo, every 24h)`,
+    );
   }
 
   if (process.env.LESSON_DECAY_ENABLED !== "false") {
@@ -562,6 +600,8 @@ async function main() {
     } catch {}
   }, 60 * 60 * 1000);
   recentSearchesSweepTimer.unref();
+
+  void seedViewerStreamTracker(sdk).catch(() => {});
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {

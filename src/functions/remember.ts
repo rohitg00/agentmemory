@@ -1,12 +1,14 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
-import type { Memory } from "../types.js";
+import type { Memory, Session } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { removeSessionFromProjectIndex } from "../state/session-index.js";
+import { unindexObservationSession } from "../state/obs-index.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
-import { getSearchIndex, isMemoryIndexReady, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { getSearchIndex, getVectorIndex, isMemoryIndexReady, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 
@@ -17,6 +19,10 @@ import { logger } from "../logger.js";
 function safeSlice(text: string, length: number): string {
   const sliced = text.slice(0, length);
   return /[\uD800-\uDBFF]$/.test(sliced) ? sliced.slice(0, -1) : sliced;
+}
+
+export function memoryTitleFromContent(content: string): string {
+  return safeSlice(content, 80);
 }
 
 export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
@@ -68,7 +74,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           ? data.project.trim()
           : undefined;
 
-      return withKeyedLock("mem:remember", async () => {
+      const { memory, supersededId, nearMatch } = await withKeyedLock("mem:remember", async () => {
         // Candidate generation: query the BM25 index with the new content
         // and Jaccard-compare only the top hits, instead of walking the
         // full memory corpus on every save. The index receives every
@@ -154,7 +160,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           createdAt: now,
           updatedAt: now,
           type: memType,
-          title: safeSlice(data.content, 80),
+          title: memoryTitleFromContent(data.content),
           content: data.content,
           concepts: data.concepts || [],
           files: data.files || [],
@@ -204,43 +210,57 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
             error: err instanceof Error ? err.message : String(err),
           });
         }
-        await vectorIndexAddGuarded(
-          memory.id,
-          memory.sessionIds?.[0] ?? "memory",
-          memory.title + " " + memory.content,
-          { kind: "memory", logId: memory.id },
-        );
-
-        if (supersededId) {
-          await sdk.trigger({
-            function_id: "mem::cascade-update",
-            payload: {
-              supersededMemoryId: supersededId,
-            },
-            action: TriggerAction.Void(),
-          });
-        }
-
-        logger.info("Memory saved", {
-          memId: memory.id,
-          type: memory.type,
-          project: memory.project,
-        });
-        // similarTo is advisory only: a close-but-not-superseding match
-        // the caller may want to consolidate via memory_update/forget.
-        return {
-          success: true,
-          memory,
-          ...(nearMatch && !supersededId
-            ? {
-                similarTo: {
-                  ...nearMatch,
-                  similarity: Math.round(nearMatch.similarity * 100) / 100,
-                },
-              }
-            : {}),
-        };
+        return { memory, supersededId, nearMatch };
       });
+
+      await vectorIndexAddGuarded(
+        memory.id,
+        memory.sessionIds?.[0] ?? "memory",
+        memory.title + " " + memory.content,
+        { kind: "memory", logId: memory.id },
+        (embedding) =>
+          withKeyedLock("mem:remember", async () => {
+            const current = await kv.get<Memory>(KV.memories, memory.id);
+            if (!current || current.isLatest === false) return false;
+            getVectorIndex()?.add(
+              memory.id,
+              memory.sessionIds?.[0] ?? "memory",
+              embedding,
+            );
+            scheduleIndexSave();
+            return true;
+          }),
+      );
+
+      if (supersededId) {
+        await sdk.trigger({
+          function_id: "mem::cascade-update",
+          payload: {
+            supersededMemoryId: supersededId,
+          },
+          action: TriggerAction.Void(),
+        });
+      }
+
+      logger.info("Memory saved", {
+        memId: memory.id,
+        type: memory.type,
+        project: memory.project,
+      });
+      // similarTo is advisory only: a close-but-not-superseding match
+      // the caller may want to consolidate via memory_update/forget.
+      return {
+        success: true,
+        memory,
+        ...(nearMatch && !supersededId
+          ? {
+              similarTo: {
+                ...nearMatch,
+                similarity: Math.round(nearMatch.similarity * 100) / 100,
+              },
+            }
+          : {}),
+      };
     },
   );
 
@@ -282,6 +302,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
             obsId,
           );
           await kv.delete(KV.observations(data.sessionId), obsId);
+          await unindexObservationSession(kv, obsId).catch(() => {});
           if (obs?.imageData) await decrementImageRef(kv, sdk, obs.imageData);
           if (obs?.imageRef && obs.imageRef !== obs.imageData) {
             await decrementImageRef(kv, sdk, obs.imageRef);
@@ -303,6 +324,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         );
         for (const obs of observations) {
           await kv.delete(KV.observations(data.sessionId), obs.id);
+          await unindexObservationSession(kv, obs.id).catch(() => {});
           if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
           if (obs.imageRef && obs.imageRef !== obs.imageData) {
             await decrementImageRef(kv, sdk, obs.imageRef);
@@ -312,8 +334,18 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           deletedObservationIds.push(obs.id);
           deleted++;
         }
+        const sessionToDelete = await kv
+          .get<Session>(KV.sessions, data.sessionId)
+          .catch(() => null);
         await kv.delete(KV.sessions, data.sessionId);
         await kv.delete(KV.summaries, data.sessionId);
+        if (sessionToDelete) {
+          await removeSessionFromProjectIndex(
+            kv,
+            sessionToDelete.project,
+            data.sessionId,
+          ).catch(() => {});
+        }
         deletedSession = true;
         deleted += 2;
       }

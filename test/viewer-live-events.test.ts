@@ -80,26 +80,26 @@ describe("viewer live events", () => {
     }
   });
 
-  it("pushes a slim memory.updated or memory.deleted on memory writes", async () => {
+  it("pushes memory.created, memory.updated and memory.deleted with the full row", async () => {
     const { handlers, triggers, sent } = setup();
     expect(triggers).toContainEqual(
       expect.objectContaining({ type: "state", function_id: "event::memory::changed", config: { scope: "mem:memories" } }),
     );
     const handler = handlers.get("event::memory::changed")!;
-    await handler({
-      key: "m1",
-      event_type: "state:created",
-      new_value: { id: "m1", type: "fact", title: "t", content: "long body", isLatest: true, updatedAt: "2026-09-24T00:00:00Z" },
-    });
-    await handler({ key: "m1", event_type: "state:deleted", new_value: null });
-    expect(sent.map((e) => e.type)).toEqual(["memory.updated", "memory.deleted"]);
+    const row = { id: "m1", type: "fact", title: "t", content: "long body", isLatest: true, updatedAt: "2026-09-24T00:00:00Z" };
+    await handler({ key: "m1", event_type: "state:created", new_value: row });
+    await handler({ key: "m1", event_type: "state:updated", old_value: row, new_value: { ...row, isLatest: false } });
+    await handler({ key: "m1", event_type: "state:deleted", old_value: { ...row, isLatest: false }, new_value: null });
+    expect(sent.map((e) => e.type)).toEqual(["memory.created", "memory.updated", "memory.deleted"]);
     expect(sent[0].data).toEqual({
       memoryId: "m1",
       type: "fact",
       title: "t",
       isLatest: true,
       updatedAt: "2026-09-24T00:00:00Z",
+      memory: row,
     });
-    expect(sent[1].data).toEqual({ memoryId: "m1" });
+    expect(sent[1].data.memory).toMatchObject({ id: "m1", isLatest: false, content: "long body" });
+    expect(sent[2].data).toEqual({ memoryId: "m1", isLatest: false });
   });
 });

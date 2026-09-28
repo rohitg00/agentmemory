@@ -1,6 +1,7 @@
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Memory, GraphNode, GraphEdge } from "../types.js";
 import { recordAudit } from "./audit.js";
 
@@ -28,10 +29,14 @@ export function registerCascadeFunction(sdk: IIIClient, kv: StateKV): void {
         for (const node of nodes) {
           if (node.stale) continue;
           const overlap = (node.sourceObservationIds ?? []).some((id) => obsIds.has(id));
-          if (overlap) {
-            node.stale = true;
-            node.updatedAt = now;
-            await kv.set(KV.graphNodes, node.id, node);
+          if (!overlap) continue;
+          const flagged = await withKeyedLock("graph:persist", async () => {
+            const latest = (await kv.get<GraphNode>(KV.graphNodes, node.id)) ?? node;
+            if (latest.stale) return false;
+            await kv.set(KV.graphNodes, node.id, { ...latest, stale: true, updatedAt: now });
+            return true;
+          });
+          if (flagged) {
             await recordAudit(kv, "consolidate", "mem::cascade-update", [node.id], {
               resourceType: "GraphNode",
               change: "marked stale from superseded memory",
@@ -45,9 +50,14 @@ export function registerCascadeFunction(sdk: IIIClient, kv: StateKV): void {
         for (const edge of edges) {
           if (edge.stale) continue;
           const overlap = (edge.sourceObservationIds ?? []).some((id) => obsIds.has(id));
-          if (overlap) {
-            edge.stale = true;
-            await kv.set(KV.graphEdges, edge.id, edge);
+          if (!overlap) continue;
+          const flagged = await withKeyedLock("graph:persist", async () => {
+            const latest = (await kv.get<GraphEdge>(KV.graphEdges, edge.id)) ?? edge;
+            if (latest.stale) return false;
+            await kv.set(KV.graphEdges, edge.id, { ...latest, stale: true });
+            return true;
+          });
+          if (flagged) {
             await recordAudit(kv, "consolidate", "mem::cascade-update", [edge.id], {
               resourceType: "GraphEdge",
               change: "marked stale from superseded memory",

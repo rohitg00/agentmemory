@@ -84,6 +84,45 @@ export function getEmbeddingProvider(): EmbeddingProvider | null {
   return currentEmbeddingProvider
 }
 
+const MEMORY_ID_PREFIX = "mem_"
+const RANK_FUSION_K = 60
+
+export async function rankMemoryIds(
+  query: string,
+  limit: number,
+): Promise<{ ids: string[]; mode: "hybrid" | "keyword" }> {
+  const fetchLimit = Math.max(limit * 4, 50)
+  const keyword = getSearchIndex()
+    .search(query, fetchLimit)
+    .filter((hit) => hit.obsId.startsWith(MEMORY_ID_PREFIX))
+  let semantic: Array<{ obsId: string }> = []
+  if (vectorIndex && vectorIndex.size > 0 && currentEmbeddingProvider) {
+    try {
+      const embedding = await currentEmbeddingProvider.embed(query)
+      semantic = vectorIndex
+        .search(embedding, fetchLimit)
+        .filter((hit) => hit.obsId.startsWith(MEMORY_ID_PREFIX))
+    } catch (err) {
+      logger.warn("memory vector ranking failed, using keyword ranking", {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+  const scores = new Map<string, number>()
+  const addRanks = (hits: Array<{ obsId: string }>) => {
+    hits.forEach((hit, rank) => {
+      scores.set(hit.obsId, (scores.get(hit.obsId) ?? 0) + 1 / (RANK_FUSION_K + rank + 1))
+    })
+  }
+  addRanks(keyword)
+  addRanks(semantic)
+  const ids = Array.from(scores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([id]) => id)
+  return { ids, mode: semantic.length > 0 ? "hybrid" : "keyword" }
+}
+
 export function vectorIndexRemove(id: string): void {
   vectorIndex?.remove(id);
 }
@@ -150,24 +189,14 @@ export async function vectorIndexAddGuarded(
   sessionId: string,
   text: string,
   context: { kind: "memory" | "observation" | "synthetic"; logId: string },
+  commit?: (embedding: Float32Array) => Promise<boolean> | boolean,
 ): Promise<boolean> {
   const vi = vectorIndex
   const ep = currentEmbeddingProvider
   if (!vi || !ep) return false
+  let embedding: Float32Array
   try {
-    const embedding = await ep.embed(clipEmbedInput(text))
-    if (embedding.length !== ep.dimensions) {
-      logger.warn("vector-index add: dimension mismatch — skipping", {
-        kind: context.kind,
-        id: context.logId,
-        provider: ep.name,
-        expected: ep.dimensions,
-        received: embedding.length,
-      })
-      return false
-    }
-    vi.add(id, sessionId, embedding)
-    return true
+    embedding = await ep.embed(clipEmbedInput(text))
   } catch (err) {
     logger.warn("vector-index add: embed failed — skipping", {
       kind: context.kind,
@@ -177,6 +206,31 @@ export async function vectorIndexAddGuarded(
     })
     return false
   }
+  if (embedding.length !== ep.dimensions) {
+    logger.warn("vector-index add: dimension mismatch — skipping", {
+      kind: context.kind,
+      id: context.logId,
+      provider: ep.name,
+      expected: ep.dimensions,
+      received: embedding.length,
+    })
+    return false
+  }
+  if (commit) {
+    try {
+      return await commit(embedding)
+    } catch (err) {
+      logger.warn("vector-index add: commit failed — skipping", {
+        kind: context.kind,
+        id: context.logId,
+        provider: ep.name,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return false
+    }
+  }
+  vi.add(id, sessionId, embedding)
+  return true
 }
 
 // Batched variant: calls EmbeddingProvider.embedBatch ONCE for the whole

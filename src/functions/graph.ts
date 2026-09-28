@@ -9,6 +9,7 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import {
   GRAPH_EXTRACTION_SYSTEM,
   buildGraphExtractionPrompt,
@@ -158,6 +159,11 @@ function paginateFromSnapshot(
   const pageEdges = snap.topEdges.filter(
     (e) => pageIds.has(e.sourceNodeId) && pageIds.has(e.targetNodeId),
   );
+  const degrees: Record<string, number> = {};
+  for (const n of pageNodes) {
+    const d = snap.topDegrees?.[n.id];
+    if (typeof d === "number") degrees[n.id] = d;
+  }
   return {
     nodes: pageNodes,
     edges: pageEdges,
@@ -168,6 +174,7 @@ function paginateFromSnapshot(
     limit,
     offset,
     fromSnapshot: true,
+    degrees,
   };
 }
 
@@ -554,129 +561,131 @@ export async function persistGraphDelta(
   edges: GraphEdge[],
   obsIds: string[],
 ): Promise<{ newNodeCount: number; newEdgeCount: number }> {
-  const snap = (await readSnapshot(kv)) ?? emptySnapshot();
-  const capturedAt = new Date().toISOString();
-  let newNodeCount = 0;
-  let newEdgeCount = 0;
-  // Merge-only batches mutate cached topNodes/topEdges entries without
-  // changing the counts; track that separately so the snapshot still persists.
-  let snapMutated = false;
-  const newEdgesForTopCheck: GraphEdge[] = [];
-  // When a freshly-minted node merges into an existing row via the name
-  // index, edges in the same batch still reference the fresh id. Remap edge
-  // endpoints to the persisted ids so edges never dangle and re-runs hit the
-  // same edge-index key instead of duplicating.
-  const idRemap = new Map<string, string>();
+  return withKeyedLock("graph:persist", async () => {
+    const snap = (await readSnapshot(kv)) ?? emptySnapshot();
+    const capturedAt = new Date().toISOString();
+    let newNodeCount = 0;
+    let newEdgeCount = 0;
+    // Merge-only batches mutate cached topNodes/topEdges entries without
+    // changing the counts; track that separately so the snapshot still persists.
+    let snapMutated = false;
+    const newEdgesForTopCheck: GraphEdge[] = [];
+    // When a freshly-minted node merges into an existing row via the name
+    // index, edges in the same batch still reference the fresh id. Remap edge
+    // endpoints to the persisted ids so edges never dangle and re-runs hit the
+    // same edge-index key instead of duplicating.
+    const idRemap = new Map<string, string>();
 
-  for (const node of nodes) {
-    const indexKey = nameIndexKey(node.type, node.name);
-    const existingId = await kv.get<string>(KV.graphNameIndex, indexKey);
+    for (const node of nodes) {
+      const indexKey = nameIndexKey(node.type, node.name);
+      const existingId = await kv.get<string>(KV.graphNameIndex, indexKey);
 
-    let existing: GraphNode | null = null;
-    if (existingId) {
-      existing = await kv.get<GraphNode>(KV.graphNodes, existingId);
-      // #825 follow-up: name-index lookups can resolve into
-      // pre-reset rows. Drop them so extract writes a fresh
-      // node + index entry instead of silently reconnecting
-      // to a legacy orphan (which would keep the snapshot at
-      // 0 forever after a reset).
-      if (
-        existing &&
-        snap.resetAt &&
-        typeof existing.createdAt === "string" &&
-        existing.createdAt < snap.resetAt
-      ) {
-        existing = null;
+      let existing: GraphNode | null = null;
+      if (existingId) {
+        existing = await kv.get<GraphNode>(KV.graphNodes, existingId);
+        // #825 follow-up: name-index lookups can resolve into
+        // pre-reset rows. Drop them so extract writes a fresh
+        // node + index entry instead of silently reconnecting
+        // to a legacy orphan (which would keep the snapshot at
+        // 0 forever after a reset).
+        if (
+          existing &&
+          snap.resetAt &&
+          typeof existing.createdAt === "string" &&
+          existing.createdAt < snap.resetAt
+        ) {
+          existing = null;
+        }
+      }
+
+      if (existing) {
+        idRemap.set(node.id, existing.id);
+        const merged = mergeNode(existing, node, obsIds, capturedAt);
+        await kv.set(KV.graphNodes, existing.id, merged);
+        // Update topNodes entry if present so a stale clone isn't
+        // returned from the snapshot fast path.
+        const topIdx = snap.topNodes.findIndex((n) => n.id === existing!.id);
+        if (topIdx !== -1) {
+          snap.topNodes[topIdx] = merged;
+          snapMutated = true;
+        }
+      } else {
+        await kv.set(KV.graphNodes, node.id, node);
+        await kv.set(KV.graphNameIndex, indexKey, node.id);
+        await kv.set(KV.graphNodeDegree, node.id, 0);
+        snap.stats.totalNodes += 1;
+        snap.stats.nodesByType[node.type] =
+          (snap.stats.nodesByType[node.type] ?? 0) + 1;
+        newNodeCount += 1;
+        if (snap.topNodes.length < SNAPSHOT_TOP_NODES) {
+          // Degree 0 still beats an empty slot — sit at the tail
+          // until edges arrive and promote.
+          snap.topNodes.push(node);
+          snap.topDegrees[node.id] = 0;
+        }
       }
     }
 
-    if (existing) {
-      idRemap.set(node.id, existing.id);
-      const merged = mergeNode(existing, node, obsIds, capturedAt);
-      await kv.set(KV.graphNodes, existing.id, merged);
-      // Update topNodes entry if present so a stale clone isn't
-      // returned from the snapshot fast path.
-      const topIdx = snap.topNodes.findIndex((n) => n.id === existing!.id);
-      if (topIdx !== -1) {
-        snap.topNodes[topIdx] = merged;
-        snapMutated = true;
-      }
-    } else {
-      await kv.set(KV.graphNodes, node.id, node);
-      await kv.set(KV.graphNameIndex, indexKey, node.id);
-      await kv.set(KV.graphNodeDegree, node.id, 0);
-      snap.stats.totalNodes += 1;
-      snap.stats.nodesByType[node.type] =
-        (snap.stats.nodesByType[node.type] ?? 0) + 1;
-      newNodeCount += 1;
-      if (snap.topNodes.length < SNAPSHOT_TOP_NODES) {
-        // Degree 0 still beats an empty slot — sit at the tail
-        // until edges arrive and promote.
-        snap.topNodes.push(node);
-        snap.topDegrees[node.id] = 0;
-      }
-    }
-  }
+    for (const rawEdge of edges) {
+      const edge: GraphEdge = {
+        ...rawEdge,
+        sourceNodeId: idRemap.get(rawEdge.sourceNodeId) ?? rawEdge.sourceNodeId,
+        targetNodeId: idRemap.get(rawEdge.targetNodeId) ?? rawEdge.targetNodeId,
+      };
+      const eKey = edgeIndexKey(edge.sourceNodeId, edge.targetNodeId, edge.type);
+      const existingId = await kv.get<string>(KV.graphEdgeKey, eKey);
 
-  for (const rawEdge of edges) {
-    const edge: GraphEdge = {
-      ...rawEdge,
-      sourceNodeId: idRemap.get(rawEdge.sourceNodeId) ?? rawEdge.sourceNodeId,
-      targetNodeId: idRemap.get(rawEdge.targetNodeId) ?? rawEdge.targetNodeId,
-    };
-    const eKey = edgeIndexKey(edge.sourceNodeId, edge.targetNodeId, edge.type);
-    const existingId = await kv.get<string>(KV.graphEdgeKey, eKey);
+      let existing: GraphEdge | null = null;
+      if (existingId) {
+        existing = await kv.get<GraphEdge>(KV.graphEdges, existingId);
+        // Same #825 orphan check as the node path above.
+        if (
+          existing &&
+          snap.resetAt &&
+          typeof existing.createdAt === "string" &&
+          existing.createdAt < snap.resetAt
+        ) {
+          existing = null;
+        }
+      }
 
-    let existing: GraphEdge | null = null;
-    if (existingId) {
-      existing = await kv.get<GraphEdge>(KV.graphEdges, existingId);
-      // Same #825 orphan check as the node path above.
-      if (
-        existing &&
-        snap.resetAt &&
-        typeof existing.createdAt === "string" &&
-        existing.createdAt < snap.resetAt
-      ) {
-        existing = null;
+      if (existing) {
+        const merged = mergeEdge(existing, obsIds);
+        await kv.set(KV.graphEdges, existing.id, merged);
+        // Replace cached topEdges entry too if present.
+        const topIdx = snap.topEdges.findIndex((e) => e.id === existing!.id);
+        if (topIdx !== -1) {
+          snap.topEdges[topIdx] = merged;
+          snapMutated = true;
+        }
+      } else {
+        await kv.set(KV.graphEdges, edge.id, edge);
+        await kv.set(KV.graphEdgeKey, eKey, edge.id);
+        snap.stats.totalEdges += 1;
+        snap.stats.edgesByType[edge.type] =
+          (snap.stats.edgesByType[edge.type] ?? 0) + 1;
+        newEdgeCount += 1;
+        await applyDegreeDelta(kv, snap, edge.sourceNodeId, +1);
+        await applyDegreeDelta(kv, snap, edge.targetNodeId, +1);
+        newEdgesForTopCheck.push(edge);
       }
     }
 
-    if (existing) {
-      const merged = mergeEdge(existing, obsIds);
-      await kv.set(KV.graphEdges, existing.id, merged);
-      // Replace cached topEdges entry too if present.
-      const topIdx = snap.topEdges.findIndex((e) => e.id === existing!.id);
-      if (topIdx !== -1) {
-        snap.topEdges[topIdx] = merged;
-        snapMutated = true;
-      }
-    } else {
-      await kv.set(KV.graphEdges, edge.id, edge);
-      await kv.set(KV.graphEdgeKey, eKey, edge.id);
-      snap.stats.totalEdges += 1;
-      snap.stats.edgesByType[edge.type] =
-        (snap.stats.edgesByType[edge.type] ?? 0) + 1;
-      newEdgeCount += 1;
-      await applyDegreeDelta(kv, snap, edge.sourceNodeId, +1);
-      await applyDegreeDelta(kv, snap, edge.targetNodeId, +1);
-      newEdgesForTopCheck.push(edge);
+    // Push newly-added edges into snapshot.topEdges if both
+    // endpoints are in the top-N (post-degree-delta). Done after
+    // all degree updates so the topIds set is stable.
+    for (const edge of newEdgesForTopCheck) {
+      snapshotPushEdgeIfBothInTop(snap, edge);
     }
-  }
 
-  // Push newly-added edges into snapshot.topEdges if both
-  // endpoints are in the top-N (post-degree-delta). Done after
-  // all degree updates so the topIds set is stable.
-  for (const edge of newEdgesForTopCheck) {
-    snapshotPushEdgeIfBothInTop(snap, edge);
-  }
+    if (newNodeCount > 0 || newEdgeCount > 0 || snapMutated) {
+      snap.updatedAt = capturedAt;
+      snap.dirty = false;
+      await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap);
+    }
 
-  if (newNodeCount > 0 || newEdgeCount > 0 || snapMutated) {
-    snap.updatedAt = capturedAt;
-    snap.dirty = false;
-    await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap);
-  }
-
-  return { newNodeCount, newEdgeCount };
+    return { newNodeCount, newEdgeCount };
+  });
 }
 
 export function registerGraphFunction(
@@ -1014,70 +1023,74 @@ export function registerGraphFunction(
       }
 
       try {
-        const [nodes, edges] = await withTimeout(
-          Promise.all([
-            kv.list<GraphNode>(KV.graphNodes),
-            kv.list<GraphEdge>(KV.graphEdges),
-          ]),
-          LIVE_ENUMERATION_BUDGET_MS,
-          "graph-snapshot-rebuild enumeration",
-        );
+        const outcome = await withKeyedLock("graph:persist", async () => {
+          const [nodes, edges] = await withTimeout(
+            Promise.all([
+              kv.list<GraphNode>(KV.graphNodes),
+              kv.list<GraphEdge>(KV.graphEdges),
+            ]),
+            LIVE_ENUMERATION_BUDGET_MS,
+            "graph-snapshot-rebuild enumeration",
+          );
 
-      if (nodes.length > REBUILD_SAFE_NODE_CEILING) {
+          if (nodes.length > REBUILD_SAFE_NODE_CEILING) {
+            return { tooLargeNodeCount: nodes.length };
+          }
+
+          const liveNodes = nodes.filter((n) => !n.stale);
+          const liveEdges = edges.filter((e) => !e.stale);
+          const degree = new Map<string, number>();
+          for (const e of liveEdges) {
+            degree.set(e.sourceNodeId, (degree.get(e.sourceNodeId) ?? 0) + 1);
+            degree.set(e.targetNodeId, (degree.get(e.targetNodeId) ?? 0) + 1);
+          }
+          const BATCH_SIZE = 100;
+          for (let i = 0; i < liveNodes.length; i += BATCH_SIZE) {
+            const batch = liveNodes.slice(i, i + BATCH_SIZE);
+            await Promise.all(
+              batch.flatMap((n) => [
+                kv.set(KV.graphNameIndex, nameIndexKey(n.type, n.name), n.id),
+                kv.set(KV.graphNodeDegree, n.id, degree.get(n.id) ?? 0),
+              ]),
+            );
+          }
+          for (let i = 0; i < liveEdges.length; i += BATCH_SIZE) {
+            const batch = liveEdges.slice(i, i + BATCH_SIZE);
+            await Promise.all(
+              batch.map((e) =>
+                kv.set(
+                  KV.graphEdgeKey,
+                  edgeIndexKey(e.sourceNodeId, e.targetNodeId, e.type),
+                  e.id,
+                ),
+              ),
+            );
+          }
+
+          const rebuilt = buildSnapshotFromArrays(nodes, edges);
+          await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, rebuilt);
+          return { snap: rebuilt };
+        });
+
+      if ("tooLargeNodeCount" in outcome) {
+        const totalNodes = outcome.tooLargeNodeCount;
         logger.warn("Graph snapshot rebuild aborted: corpus too large", {
-          totalNodes: nodes.length,
+          totalNodes,
           ceiling: REBUILD_SAFE_NODE_CEILING,
         });
         return {
           success: false,
           tooLarge: true,
-          totalNodes: nodes.length,
+          totalNodes,
           ceiling: REBUILD_SAFE_NODE_CEILING,
           error:
-            `Corpus has ${nodes.length} graph nodes; safe-rebuild ceiling ` +
+            `Corpus has ${totalNodes} graph nodes; safe-rebuild ceiling ` +
             `is ${REBUILD_SAFE_NODE_CEILING}. Run POST /agentmemory/graph/reset ` +
             `to wipe and let future extracts rebuild incrementally.`,
         };
       }
 
-      // Backfill the targeted-lookup indexes so post-rebuild
-      // graph-extract calls hit the O(1) path instead of falling
-      // through to the (already-removed) full-scope scan. Batch
-      // writes via Promise.all to avoid N sequential round-trips —
-      // BATCH_SIZE bounds in-flight writes so we don't open thousands
-      // of concurrent state channels on huge corpora.
-      const liveNodes = nodes.filter((n) => !n.stale);
-      const liveEdges = edges.filter((e) => !e.stale);
-      const degree = new Map<string, number>();
-      for (const e of liveEdges) {
-        degree.set(e.sourceNodeId, (degree.get(e.sourceNodeId) ?? 0) + 1);
-        degree.set(e.targetNodeId, (degree.get(e.targetNodeId) ?? 0) + 1);
-      }
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < liveNodes.length; i += BATCH_SIZE) {
-        const batch = liveNodes.slice(i, i + BATCH_SIZE);
-        await Promise.all(
-          batch.flatMap((n) => [
-            kv.set(KV.graphNameIndex, nameIndexKey(n.type, n.name), n.id),
-            kv.set(KV.graphNodeDegree, n.id, degree.get(n.id) ?? 0),
-          ]),
-        );
-      }
-      for (let i = 0; i < liveEdges.length; i += BATCH_SIZE) {
-        const batch = liveEdges.slice(i, i + BATCH_SIZE);
-        await Promise.all(
-          batch.map((e) =>
-            kv.set(
-              KV.graphEdgeKey,
-              edgeIndexKey(e.sourceNodeId, e.targetNodeId, e.type),
-              e.id,
-            ),
-          ),
-        );
-      }
-
-      const snap = buildSnapshotFromArrays(nodes, edges);
-      await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, snap);
+      const { snap } = outcome;
       const tookMs = Date.now() - started;
       logger.info("Graph snapshot rebuilt", {
         totalNodes: snap.stats.totalNodes,
@@ -1134,7 +1147,9 @@ export function registerGraphFunction(
       ...emptySnapshot(),
       resetAt: new Date().toISOString(),
     };
-    await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, resetSnapshot);
+    await withKeyedLock("graph:persist", () =>
+      kv.set(KV.graphSnapshot, SNAPSHOT_KEY, resetSnapshot),
+    );
     const counts: Record<string, number> = {
       [KV.graphSnapshot]: 1,
     };
