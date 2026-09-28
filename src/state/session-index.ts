@@ -97,11 +97,16 @@ export async function addSessionToProjectIndex(
     const base = existing ?? (await loadStoredProjectSessionEntries(kv, project));
     const merged = base.filter((e) => e.id !== entry.id);
     merged.push(entry);
-    await kv.set(KV.projectSessionsIndex, project, capWithAgentFairness(merged));
     recordRebuildChange(project, (changes) => {
       changes.removed.delete(entry.id);
       changes.added.set(entry.id, entry);
     });
+    try {
+      await kv.set(KV.projectSessionsIndex, project, capWithAgentFairness(merged));
+    } catch (err) {
+      await kv.delete(KV.projectSessionsIndex, project).catch(() => {});
+      throw err;
+    }
   });
 }
 

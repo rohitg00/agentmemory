@@ -83,6 +83,23 @@ describe("project session index — maintenance (kv-access finding 3)", () => {
     expect(index).toEqual([{ id: "ses_1", startedAt: "2026-01-01T00:00:00Z" }]);
   });
 
+  it("drops the project index when an add cannot be written, so the next read rebuilds it", async () => {
+    await addSessionToProjectIndex(kv as never, "proj-a", {
+      id: "ses_1",
+      startedAt: "2026-01-01T00:00:00Z",
+    });
+    kv.set.mockRejectedValueOnce(new Error("write failed"));
+
+    await expect(
+      addSessionToProjectIndex(kv as never, "proj-a", {
+        id: "ses_2",
+        startedAt: "2026-01-02T00:00:00Z",
+      }),
+    ).rejects.toThrow("write failed");
+
+    expect(await getProjectSessionIndex(kv as never, "proj-a")).toBeNull();
+  });
+
   it("keeps entries sorted most-recent-first and dedups by id", async () => {
     await addSessionToProjectIndex(kv as never, "proj-a", {
       id: "ses_1",
