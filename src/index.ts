@@ -40,6 +40,7 @@ import {
   registerSearchFunction,
   backfillVectors,
   rebuildKeywordIndex,
+  markKeywordRebuildPending,
   getSearchIndex,
   setVectorIndex,
   setEmbeddingProvider,
@@ -415,6 +416,7 @@ async function main() {
   setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);
 
+  markKeywordRebuildPending();
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);
   registerEventTriggers(sdk, kv);
   registerViewerStreamTriggers(sdk, kv, { secret, metricsStore, provider });

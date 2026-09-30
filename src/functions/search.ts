@@ -56,6 +56,19 @@ export function isBm25RebuildIncomplete(): boolean {
   return bm25RebuildIncomplete
 }
 
+let keywordRebuildPending = false
+let keywordRebuildsRunning = 0
+let keywordRebuildEpoch = 0
+export function getKeywordRebuildEpoch(): number {
+  return keywordRebuildEpoch
+}
+export function markKeywordRebuildPending(): void {
+  keywordRebuildPending = true
+}
+export function isKeywordRebuildInProgress(): boolean {
+  return keywordRebuildPending || keywordRebuildsRunning > 0
+}
+
 let pendingVectorBackfill = 0
 export type VectorBackfillState = "idle" | "running" | "waiting-for-opt-in"
 let vectorBackfillState: VectorBackfillState = "idle"
@@ -516,10 +529,26 @@ async function listSessionsWithRetry(kv: StateKV): Promise<Session[] | null> {
   return null
 }
 
+type KeywordRebuildResult = { documents: number; vectorJobs: VectorBackfillJob[]; fullBackfillPending: number }
+
 export async function rebuildKeywordIndex(
   kv: StateKV,
   vectorBackfillSince?: string | null,
-): Promise<{ documents: number; vectorJobs: VectorBackfillJob[]; fullBackfillPending: number }> {
+): Promise<KeywordRebuildResult> {
+  keywordRebuildsRunning++
+  try {
+    return await runKeywordRebuild(kv, vectorBackfillSince)
+  } finally {
+    keywordRebuildsRunning--
+    keywordRebuildPending = false
+    keywordRebuildEpoch++
+  }
+}
+
+async function runKeywordRebuild(
+  kv: StateKV,
+  vectorBackfillSince?: string | null,
+): Promise<KeywordRebuildResult> {
   const idx = getSearchIndex()
   idx.clear()
   memoryIndexReady = false

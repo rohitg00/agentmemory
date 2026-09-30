@@ -65,6 +65,7 @@ export interface StatusInputs {
     missingObservations: number | null;
     sessions: number | null;
     bm25Incomplete: boolean;
+    keywordRebuildRunning?: boolean;
     pendingVectorBackfill: number;
     vectorBackfillState?: VectorBackfillState;
   };
@@ -289,7 +290,14 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       fix: "Restart agentmemory: the boot reconcile re-indexes observations missing from the snapshot.",
     });
   }
-  if (missingObservations === null) {
+  if (input.index.keywordRebuildRunning) {
+    problems.push({
+      level: "info",
+      code: "keyword-index-rebuilding",
+      message: "The keyword index is still rebuilding from stored data, so the check for observations missing from search waits until it finishes.",
+      fix: "No action needed. The check runs on the next health update after the rebuild.",
+    });
+  } else if (missingObservations === null) {
     problems.push({
       level: "info",
       code: "index-check-unavailable",
