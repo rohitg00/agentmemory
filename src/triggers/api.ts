@@ -19,6 +19,7 @@ import {
   getIndexPersistenceStatus,
   getEmbeddingProvider,
   getPendingVectorBackfillCount,
+  getVectorBackfillState,
   getSearchIndex,
   getVectorIndex,
   isBm25RebuildIncomplete,
@@ -41,6 +42,7 @@ import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { describeGraphNode } from "../functions/graph-node.js";
 import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { logger } from "../logger.js";
+import { withoutObservationSource } from "../functions/observation-source.js";
 import {
   isGraphExtractionEnabled,
   isConsolidationEnabled,
@@ -390,6 +392,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
         sessions: unindexed ? unindexed.sessions : null,
         bm25Incomplete: isBm25RebuildIncomplete(),
         pendingVectorBackfill: getPendingVectorBackfillCount(),
+        vectorBackfillState: getVectorBackfillState(),
       },
       graph,
       graphExtractionEnabled: isGraphExtractionEnabled(),
@@ -1283,7 +1286,7 @@ export function registerApiTriggers(
         filtered = filtered.filter((o) => (o.importance ?? 0) >= minImportance);
       }
       if (listQuery.limit === undefined && !listQuery.cursor) {
-        return { status_code: 200, body: { observations: filtered, total: filtered.length, nextCursor: null } };
+        return { status_code: 200, body: { observations: filtered.map(withoutObservationSource), total: filtered.length, nextCursor: null } };
       }
       const total = filtered.length;
       const paged = pageAfterCursor(
@@ -1295,7 +1298,7 @@ export function registerApiTriggers(
       );
       return {
         status_code: 200,
-        body: { observations: paged.page, total, nextCursor: paged.nextCursor },
+        body: { observations: paged.page.map(withoutObservationSource), total, nextCursor: paged.nextCursor },
       };
     },
   );

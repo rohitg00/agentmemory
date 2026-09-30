@@ -22,6 +22,7 @@ import { scoreCompression } from "../eval/quality.js";
 import { compressWithRetry } from "../eval/self-correct.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { logger } from "../logger.js";
+import { createObservationSource, withoutObservationSource } from "./observation-source.js";
 
 const VALID_TYPES = new Set<string>([
   "file_read",
@@ -77,6 +78,9 @@ export function registerCompressFunction(
       raw: RawObservation;
     }) => {
       const startMs = Date.now();
+      if (!data?.raw || typeof data.raw.hookType !== "string" || !data.raw.hookType) {
+        return { success: false, error: "invalid_raw_observation" };
+      }
 
       let imageDescription: string | undefined;
       const hasImage = data.raw.modality === "image" || data.raw.modality === "mixed";
@@ -162,6 +166,7 @@ export function registerCompressFunction(
           timestamp: data.raw.timestamp,
           ...parsed,
           confidence: qualityScore / 100,
+          source: createObservationSource(data.raw),
           ...(hasImage ? { modality: data.raw.modality } : {}),
           ...(imageDescription ? { imageDescription } : {}),
           ...(data.raw.imageData ? { imageRef: data.raw.imageData } : {}),
@@ -204,7 +209,7 @@ export function registerCompressFunction(
               type: "compressed_observation",
               data: {
                 type: "compressed",
-                observation: compressed,
+                observation: withoutObservationSource(compressed),
                 sessionId: data.sessionId,
               },
             },
@@ -242,7 +247,7 @@ export function registerCompressFunction(
           retried,
         });
 
-        return { success: true, compressed, qualityScore };
+        return { success: true, compressed: withoutObservationSource(compressed), qualityScore };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const latencyMs = Date.now() - startMs;

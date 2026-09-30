@@ -15,6 +15,7 @@ const VECTOR_META_KEY = "vectors:meta";
 const VECTOR_BUCKET_SCOPE_PREFIX = `${KV.bm25Index}:vec:`;
 const WRITE_CONCURRENCY = 32;
 const LOAD_CONCURRENCY = 8;
+const FIRST_CHECKPOINT_DELAY_MS = 5_000;
 
 function auditIndexPersistEnabled(): boolean {
   const raw = process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
@@ -63,6 +64,8 @@ export interface VectorCountShortfall {
 
 export interface IndexPersistenceStatus {
   saveIntervalMs: number;
+  firstCheckpointPending?: boolean;
+  nextSaveAt?: string | null;
   saving: boolean;
   buckets: number;
   pendingChanges: number;
@@ -144,6 +147,8 @@ export class IndexPersistence {
   private dirtyEpoch = 0;
   private markedDuringRunAt: number | null = null;
   private metaWritten = false;
+  private firstSaveAttempted = false;
+  private nextSaveAt: number | null = null;
   private leg: IndexLegStatus = emptyLegStatus();
   private readonly saveIntervalMs: number;
   private readonly bucketSize: number;
@@ -174,17 +179,12 @@ export class IndexPersistence {
   }
 
   scheduleSave(): void {
-    if (this.stopped || !this.vector) return;
+    if (this.stopped || !this.vector?.pendingChanges) return;
     const now = this.now();
     this.dirtyEpoch++;
     if (this.running && this.markedDuringRunAt === null) this.markedDuringRunAt = now;
     if (this.leg.dirtySince === null) this.leg.dirtySince = new Date(now).toISOString();
-    if (this.timer) return;
-    const delay = Math.max(0, this.lastSaveAt + this.saveIntervalMs - now);
-    this.timer = setTimeout(() => {
-      this.timer = null;
-      this.save().catch((err) => this.logFailure(err));
-    }, delay);
+    this.queueSave();
   }
 
   save(): Promise<void> {
@@ -204,6 +204,8 @@ export class IndexPersistence {
   status(): IndexPersistenceStatus {
     return {
       saveIntervalMs: this.saveIntervalMs,
+      firstCheckpointPending: Boolean(this.vector && !this.metaWritten && (this.vector.pendingChanges > 0 || this.running)),
+      nextSaveAt: this.nextSaveAt === null ? null : new Date(this.nextSaveAt).toISOString(),
       saving: this.running !== null,
       buckets: this.bucketCountInUse(),
       pendingChanges: this.vector?.pendingChanges ?? 0,
@@ -285,11 +287,28 @@ export class IndexPersistence {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    this.nextSaveAt = null;
+  }
+
+  private queueSave(): void {
+    if (this.stopped || this.timer || !this.vector?.pendingChanges) return;
+    const now = this.now();
+    const remaining = Math.max(0, this.lastSaveAt + this.saveIntervalMs - now);
+    const delay = !this.metaWritten && !this.firstSaveAttempted
+      ? Math.min(FIRST_CHECKPOINT_DELAY_MS, remaining)
+      : remaining;
+    this.nextSaveAt = now + delay;
+    this.timer = setTimeout(() => {
+      this.timer = null;
+      this.nextSaveAt = null;
+      this.save().catch((err) => this.logFailure(err));
+    }, delay);
   }
 
   private startRun(): Promise<void> {
     const run = this.runSave().finally(() => {
       if (this.running === run) this.running = null;
+      if (!this.queued) this.queueSave();
     });
     this.running = run;
     return run;
@@ -297,10 +316,11 @@ export class IndexPersistence {
 
   private async runSave(): Promise<void> {
     const vector = this.vector;
-    if (!vector) return;
+    if (!vector?.pendingChanges) return;
     const epoch = this.dirtyEpoch;
     this.markedDuringRunAt = null;
     this.lastSaveAt = this.now();
+    this.firstSaveAttempted = true;
     try {
       await this.writeChanges(vector);
       this.leg.lastSavedAt = new Date(this.now()).toISOString();
@@ -315,13 +335,15 @@ export class IndexPersistence {
       this.leg.lastError = errorMessage(err);
       this.leg.lastErrorAt = new Date(this.now()).toISOString();
       if (this.leg.dirtySince === null) this.leg.dirtySince = this.leg.lastErrorAt;
+      this.lastSaveAt = this.now();
+      this.clearTimer();
       this.logFailure(err);
     }
   }
 
   private async writeChanges(vector: VectorIndex): Promise<void> {
     const changes = vector.takeChanges();
-    if (changes.size === 0 && this.metaWritten) return;
+    if (changes.size === 0) return;
     const failed = new Map<string, boolean>();
     const failures = await inBatches([...changes], WRITE_CONCURRENCY, async ([id, present]) => {
       const entry = present ? vector.get(id) : undefined;
@@ -351,12 +373,17 @@ export class IndexPersistence {
         `${failures.length} of ${changes.size} vector writes failed: ${errorMessage(failures[0])}`,
       );
     }
-    await this.kv.set<VectorMeta>(KV.bm25Index, VECTOR_META_KEY, {
-      v: 3,
-      bucketCount: this.bucketCountInUse(),
-      savedAt: new Date(this.now()).toISOString(),
-      count: vector.size,
-    });
+    try {
+      await this.kv.set<VectorMeta>(KV.bm25Index, VECTOR_META_KEY, {
+        v: 3,
+        bucketCount: this.bucketCountInUse(),
+        savedAt: new Date(this.now()).toISOString(),
+        count: vector.size,
+      });
+    } catch (err) {
+      vector.returnChanges(changes);
+      throw err;
+    }
     this.metaWritten = true;
   }
 

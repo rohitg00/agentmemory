@@ -129,6 +129,28 @@ describe("evaluateStatus", () => {
     expect(problem?.message).toContain("40 of 100 vectors");
   });
 
+  it("reports absent and partial vector recovery as paused until explicitly opted in", () => {
+    const report = evaluateStatus(inputs({
+      index: { ...inputs().index, pendingVectorBackfill: 60, vectorBackfillState: "waiting-for-opt-in" },
+      indexPersistence: { saveIntervalMs: 600_000, saving: false, buckets: 3, pendingChanges: 0, vector: null, vectorCountShortfall: { expected: 100, loaded: 40 } },
+    }));
+    for (const problem of report.problems) {
+      expect(problem.fix).toContain("Backfill is paused.");
+      expect(problem.fix).toContain("AGENTMEMORY_VECTOR_BACKFILL=all");
+      expect(problem.fix).not.toContain("running in the background");
+      expect(problem.message).not.toContain("re-embeds the rest");
+    }
+    expect(report.index.vectorBackfillState).toBe("waiting-for-opt-in");
+    expect(renderStatusHtml(report, "n")).toContain("paused, waiting for opt-in");
+  });
+
+  it("only describes vector recovery as running when the worker reports an active backfill", () => {
+    const active = evaluateStatus(inputs({ index: { ...inputs().index, pendingVectorBackfill: 42, vectorBackfillState: "running" } }));
+    expect(active.problems[0].fix).toContain("Backfill is running in the background");
+    const idle = evaluateStatus(inputs({ index: { ...inputs().index, pendingVectorBackfill: 42, vectorBackfillState: "idle" } }));
+    expect(idle.problems[0].fix).toContain("Backfill is not running");
+  });
+
   it("checks snapshot presence when extraction is on, and snapshot age whenever a snapshot exists", () => {
     const noSnapshot = { totalNodes: 0, totalEdges: 0, fromSnapshot: false };
     expect(codes(evaluateStatus(inputs({ graph: noSnapshot })))).toEqual(["graph-no-snapshot"]);

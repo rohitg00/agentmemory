@@ -46,6 +46,7 @@ import {
   setIndexPersistence,
   setHybridRanker,
   setPendingVectorBackfillCount,
+  setVectorBackfillState,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSessionIndexMaintenanceFunction } from "./functions/session-index-maintenance.js";
@@ -507,6 +508,7 @@ async function main() {
       `Rebuilt BM25 index from stored content (${keyword.documents} docs in ${Date.now() - keywordStart} ms)`,
     );
     setPendingVectorBackfillCount(keyword.vectorJobs.length + keyword.fullBackfillPending);
+    setVectorBackfillState(keyword.fullBackfillPending > 0 ? "waiting-for-opt-in" : "idle");
     if (keyword.fullBackfillPending > 0) {
       bootLog(
         `Vector backfill needs ${keyword.fullBackfillPending} embeddings but a full backfill was not started ` +
@@ -514,13 +516,16 @@ async function main() {
       );
     }
     if (keyword.vectorJobs.length > 0) {
+      setVectorBackfillState("running");
       bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors in the background`);
       void backfillVectors(keyword.vectorJobs)
         .then((count) => {
           setPendingVectorBackfillCount(keyword.fullBackfillPending);
+          setVectorBackfillState(keyword.fullBackfillPending > 0 ? "waiting-for-opt-in" : "idle");
           if (count > 0) bootLog(`Vector index backfilled: ${count} entries`);
         })
         .catch((err) => {
+          setVectorBackfillState("idle");
           console.warn(`[agentmemory] Failed to backfill vectors:`, err);
         });
     }

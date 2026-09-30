@@ -16,6 +16,7 @@ import { getSearchIndex, scheduleIndexSave, vectorIndexAddGuarded } from "./sear
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
+import { withoutObservationSource } from "./observation-source.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -120,17 +121,18 @@ export function registerObserveFunction(
 
       if (typeof sanitizedRaw === "object" && sanitizedRaw !== null) {
         const d = sanitizedRaw as Record<string, unknown>;
-        if (
-          payload.hookType === "post_tool_use" ||
-          payload.hookType === "post_tool_failure"
-        ) {
+        if (TOOL_HOOKS.has(payload.hookType)) {
           raw.toolName = d["tool_name"] as string | undefined;
           raw.toolInput = d["tool_input"];
-          raw.toolOutput = d["tool_output"] || d["error"];
+          raw.toolOutput = d["tool_output"] ?? d["error"];
           if (raw.origin && raw.toolName) raw.origin.detail = raw.toolName;
         }
         if (payload.hookType === "prompt_submit") {
           raw.userPrompt = d["prompt"] as string | undefined;
+        }
+        if (payload.hookType === "stop") {
+          const response = d["assistant_response"] ?? d["last_assistant_message"] ?? d["response"];
+          if (typeof response === "string") raw.assistantResponse = response;
         }
 
         extractedImage = extractImage(sanitizedRaw);
@@ -349,7 +351,7 @@ export function registerObserveFunction(
               item_id: obsId,
               data: {
                 type: "compressed",
-                observation: synthetic,
+                observation: withoutObservationSource(synthetic),
                 sessionId: payload.sessionId,
               },
             },

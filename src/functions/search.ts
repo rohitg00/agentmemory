@@ -9,6 +9,7 @@ import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
+import { withoutObservationSource } from "./observation-source.js";
 import {
   getAgentId,
   getVectorBackfillMax,
@@ -56,6 +57,14 @@ export function isBm25RebuildIncomplete(): boolean {
 }
 
 let pendingVectorBackfill = 0
+export type VectorBackfillState = "idle" | "running" | "waiting-for-opt-in"
+let vectorBackfillState: VectorBackfillState = "idle"
+export function getVectorBackfillState(): VectorBackfillState {
+  return vectorBackfillState
+}
+export function setVectorBackfillState(state: VectorBackfillState): void {
+  vectorBackfillState = state
+}
 export function getPendingVectorBackfillCount(): number {
   return pendingVectorBackfill
 }
@@ -218,7 +227,9 @@ export async function vectorIndexAddGuarded(
   }
   if (commit) {
     try {
-      return await commit(embedding)
+      const committed = await commit(embedding)
+      if (committed) scheduleIndexSave()
+      return committed
     } catch (err) {
       logger.warn("vector-index add: commit failed — skipping", {
         kind: context.kind,
@@ -230,6 +241,7 @@ export async function vectorIndexAddGuarded(
     }
   }
   vi.add(id, sessionId, embedding)
+  scheduleIndexSave()
   return true
 }
 
@@ -841,7 +853,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
         if (enriched.length >= effectiveLimit) break
         enriched.push({
-          observation: obs,
+          observation: withoutObservationSource(obs),
           score: candidates[i].score,
           sessionId: candidates[i].sessionId,
         })

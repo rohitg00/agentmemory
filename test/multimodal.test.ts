@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterAll, beforeEach } from "vitest";
+import { describe, it, expect, vi, afterAll, afterEach, beforeEach } from "vitest";
 import { existsSync, rmSync } from "node:fs";
 
 vi.mock("iii-sdk", async (importOriginal) => {
@@ -71,7 +71,10 @@ describe("End-to-End Multimodal Flow", () => {
 
   beforeEach(() => {
     mockTrigger.mockClear();
+    vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
   });
+
+  afterEach(() => vi.unstubAllEnvs());
 
   it("Step 1: Agent image should be successfully saved to hard drive", async () => {
     let observeCallback: any = null;

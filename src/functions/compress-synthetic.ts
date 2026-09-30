@@ -3,6 +3,7 @@ import type {
   CompressedObservation,
   ObservationType,
 } from "../types.js";
+import { createObservationSource } from "./observation-source.js";
 
 // Zero-LLM compression path. Converts a RawObservation into a
 // CompressedObservation using only heuristics — no Claude call, no token
@@ -100,6 +101,7 @@ export function buildSyntheticCompression(
     files: extractFiles(raw.toolName, raw.toolInput),
     importance: 5,
     confidence: 0.3,
+    source: createObservationSource(raw),
   };
   if (raw.modality) result.modality = raw.modality;
   if (raw.imageData) result.imageData = raw.imageData;

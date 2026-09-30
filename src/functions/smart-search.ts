@@ -20,6 +20,7 @@ import {
   getFollowupWindowSeconds,
 } from "../config.js";
 import { logger } from "../logger.js";
+import { withoutObservationSource } from "./observation-source.js";
 import { getCounters } from "../telemetry/setup.js";
 
 // #771: smart-search followup-rate diagnostic. Stored per session as
@@ -152,7 +153,7 @@ export function registerSmartSearchFunction(
         const results = await Promise.all(
           items.map(({ obsId, sessionId }) =>
             findObservation(kv, obsId, sessionId).then((obs) =>
-              obs ? { obsId, sessionId: obs.sessionId, observation: obs } : null,
+              obs ? { obsId, sessionId: obs.sessionId, observation: withoutObservationSource(obs) } : null,
             ),
           ),
         );

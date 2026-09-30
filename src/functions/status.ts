@@ -1,4 +1,5 @@
 import type { IndexLegStatus, IndexPersistenceStatus } from "../state/index-persistence.js";
+import type { VectorBackfillState } from "./search.js";
 
 export type StatusLevel = "ok" | "info" | "warn" | "error";
 
@@ -65,6 +66,7 @@ export interface StatusInputs {
     sessions: number | null;
     bm25Incomplete: boolean;
     pendingVectorBackfill: number;
+    vectorBackfillState?: VectorBackfillState;
   };
   graph: GraphStatsInput | null;
   graphExtractionEnabled: boolean;
@@ -199,6 +201,16 @@ function secondsBetween(later: Date, earlierIso: string | undefined): number | n
   return Math.max(0, Math.round((later.getTime() - earlier) / 1000));
 }
 
+function vectorBackfillFix(state: VectorBackfillState | undefined): string {
+  if (state === "waiting-for-opt-in") {
+    return "Backfill is paused. Set AGENTMEMORY_VECTOR_BACKFILL=all and restart to opt in. This calls the embedding provider and is capped per boot by AGENTMEMORY_VECTOR_BACKFILL_MAX.";
+  }
+  if (state === "running") {
+    return "Backfill is running in the background, capped per boot by AGENTMEMORY_VECTOR_BACKFILL_MAX. Check the server log for embedding provider errors if progress stops.";
+  }
+  return "Backfill is not running. Check the server log and embedding provider configuration. A full backfill requires AGENTMEMORY_VECTOR_BACKFILL=all and a restart, and can consume embedding provider tokens.";
+}
+
 export function evaluateStatus(input: StatusInputs): StatusReport {
   const problems: StatusProblem[] = [];
 
@@ -300,7 +312,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       level: "info",
       code: "index-vector-backfill-pending",
       message: `${input.index.pendingVectorBackfill} documents are waiting for a vector embedding.`,
-      fix: "This runs in the background and is capped per boot by AGENTMEMORY_VECTOR_BACKFILL_MAX. If it is stuck at a nonzero count with no embedding provider errors, set AGENTMEMORY_VECTOR_BACKFILL=all to run a full backfill.",
+      fix: vectorBackfillFix(input.index.vectorBackfillState),
     });
   }
 
@@ -321,7 +333,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
         level: "warn",
         code: "index-save-stale",
         message: `The vector index has unsaved changes from ${formatDuration(dirtyAge)} ago.`,
-        fix: "Saves run at most once per AGENTMEMORY_INDEX_SAVE_INTERVAL_MS. Check the server log for save errors or a save that never finishes.",
+        fix: "After the first checkpoint, saves are batched by AGENTMEMORY_INDEX_SAVE_INTERVAL_MS. Check the server log for save errors or a save that never finishes.",
       });
     }
   }
@@ -330,8 +342,8 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     problems.push({
       level: "warn",
       code: "index-vector-count-shortfall",
-      message: `Only ${loaded} of ${expected} vectors loaded from the last save; a bounded backfill re-embeds the rest.`,
-      fix: "No action needed — missing vectors are queued for backfill up to the per-boot cap.",
+      message: `Only ${loaded} of ${expected} vectors loaded from the last save.`,
+      fix: vectorBackfillFix(input.index.vectorBackfillState),
     });
   }
 
@@ -657,6 +669,7 @@ ${row("Missing from index", escapeHtml(idx.missingObservations ?? "not checked")
 ${row("Sessions", escapeHtml(idx.sessions ?? "unknown"))}
 ${row("Keyword index rebuild", idx.bm25Incomplete ? '<span class="warn">incomplete</span>' : "complete")}
 ${row("Pending vector backfill", escapeHtml(idx.pendingVectorBackfill))}
+${idx.vectorBackfillState ? row("Vector backfill", escapeHtml(idx.vectorBackfillState === "waiting-for-opt-in" ? "paused, waiting for opt-in" : idx.vectorBackfillState)) : ""}
 ${indexPersistenceRows(report)}
 </table>
 <h2>Knowledge graph</h2><table>

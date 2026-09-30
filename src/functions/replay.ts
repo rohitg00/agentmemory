@@ -15,12 +15,15 @@ import { KV, generateId, fingerprintId } from "../state/schema.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { parseJsonlText } from "../replay/jsonl-parser.js";
+import { checkPayloadFrameSize } from "../state/frame-guard.js";
 import { resetLessonIndex } from "./lessons.js";
 import { projectTimeline, type Timeline } from "../replay/timeline.js";
 import { safeAudit } from "./audit.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { indexRecords } from "./search.js";
 import { logger } from "../logger.js";
+import { rawFromObservationSource } from "./observation-source.js";
+import { budgetImportedObservationSources } from "./observation-source-budget.js";
 
 export const MAX_FILES_DEFAULT = 200;
 export const MAX_FILES_UPPER_BOUND = 1000;
@@ -67,6 +70,8 @@ function splitSyntheticNarrative(narrative: string): { input: unknown; output: s
 }
 
 export function rawFromCompressed(obs: CompressedObservation): RawObservation {
+  const retained = rawFromObservationSource(obs);
+  if (retained) return retained;
   const isPrompt = obs.type === "conversation";
   const narrative = obs.narrative || "";
   const split = isPrompt ? null : splitSyntheticNarrative(narrative);
@@ -220,11 +225,28 @@ function isRawShape(o: unknown): o is RawObservation {
 async function loadObservations(
   kv: StateKV,
   sessionId: string,
-): Promise<RawObservation[]> {
+): Promise<{ observations: RawObservation[]; sourceRetention: SourceRetention[] }> {
   const rows = await kv.list<RawObservation | CompressedObservation>(
     KV.observations(sessionId),
   );
-  return rows.map((r) => (isRawShape(r) ? r : rawFromCompressed(r as CompressedObservation)));
+  return {
+    observations: rows.map((r) => (isRawShape(r) ? r : rawFromCompressed(r as CompressedObservation))),
+    sourceRetention: rows.map((row) => {
+      const source = !isRawShape(row) ? row.source : undefined;
+      return {
+        observationId: row.id,
+        retained: isRawShape(row) || source !== undefined,
+        ...(source ? { truncated: source.truncated, originalBytes: source.originalBytes } : {}),
+      };
+    }),
+  };
+}
+
+interface SourceRetention {
+  observationId: string;
+  retained: boolean;
+  truncated?: boolean;
+  originalBytes?: number;
 }
 
 async function findJsonlFiles(
@@ -286,16 +308,17 @@ export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     "mem::replay::load",
     async (data: { sessionId: string }): Promise<
-      | { success: true; timeline: Timeline; session: Session | null }
+      | { success: true; timeline: Timeline; session: Session | null; sourceRetention: SourceRetention[] }
       | { success: false; error: string }
     > => {
       if (!data?.sessionId || typeof data.sessionId !== "string") {
         return { success: false, error: "sessionId is required" };
       }
       const session = await kv.get<Session>(KV.sessions, data.sessionId);
-      const observations = await loadObservations(kv, data.sessionId);
+      const { observations, sourceRetention } = await loadObservations(kv, data.sessionId);
       const timeline = projectTimeline(observations);
-      return { success: true, timeline, session };
+      const result = { success: true as const, timeline, session, sourceRetention };
+      return checkPayloadFrameSize(result, "this session is too large to replay in one response") ?? result;
     },
   );
 
@@ -323,8 +346,10 @@ export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
           traversalCapped: boolean;
           maxFiles: number;
           maxFilesUpperBound: number;
+          sourceTruncated: number;
+          sourceOmitted: number;
         }
-      | { success: false; error: string }
+      | { success: false; error: string; imported?: number; sessionIds?: string[]; observations?: number }
     > => {
       const defaultRoot = join(homedir(), ".claude", "projects");
       const rawPath = data.path || defaultRoot;
@@ -385,11 +410,15 @@ export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
           traversalCapped,
           maxFiles,
           maxFilesUpperBound: MAX_FILES_UPPER_BOUND,
+          sourceTruncated: 0,
+          sourceOmitted: 0,
         };
       }
 
       const sessionIds: string[] = [];
       let observationCount = 0;
+      let sourceTruncated = 0;
+      let sourceOmitted = 0;
 
       for (const file of files) {
         if (isSensitive(file)) continue;
@@ -415,70 +444,47 @@ export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
           ? firstPromptObs.userPrompt.replace(/\s+/g, " ").trim().slice(0, 200)
           : undefined;
 
-        const sessionRow = await withKeyedLock(`obs:${parsed.sessionId}`, async (): Promise<Session> => {
-          const existing = await kv.get<Session>(KV.sessions, parsed.sessionId);
-          if (existing) {
-            existing.observationCount =
-              (existing.observationCount || 0) + parsed.observations.length;
-            if (parsed.endedAt > (existing.endedAt || "")) {
-              existing.endedAt = parsed.endedAt;
-            }
-            if (existing.status === "active") existing.status = "completed";
-            const existingTags = existing.tags || [];
-            if (!existingTags.includes("jsonl-import")) {
-              existing.tags = [...existingTags, "jsonl-import"];
-            }
-            if (!existing.firstPrompt && firstPrompt) {
-              existing.firstPrompt = firstPrompt;
-            }
-            // #775: re-key on parsed.sessionId, not existing.id. Older
-            // session rows may be missing the `id` field; existing.id
-            // would then be undefined, JSON.stringify would drop the
-            // `key` from the state::set payload, and the engine would
-            // reject the call with `missing field \`key\``. Because the
-            // rejection aborts the whole import handler, a single
-            // legacy row killed the entire batch. parsed.sessionId is
-            // always populated (parseJsonlText has a three-level
-            // fallback) and is what we just used to read the row.
-            if (!existing.id) existing.id = parsed.sessionId;
-            await kv.set(KV.sessions, parsed.sessionId, existing);
-            return existing;
-          } else {
-            const session: Session = {
-              id: parsed.sessionId,
-              project: parsed.project,
-              cwd: parsed.cwd,
-              startedAt: parsed.startedAt,
-              endedAt: parsed.endedAt,
-              status: "completed",
-              observationCount: parsed.observations.length,
-              tags: ["jsonl-import"],
-              firstPrompt,
-            };
-            await kv.set(KV.sessions, session.id, session);
-            return session;
-          }
+        const incoming = parsed.observations.map((obs) => {
+          const synthetic = buildSyntheticCompression(obs);
+          synthetic.origin = importOrigin(synthetic.origin, synthetic.timestamp, "jsonl");
+          return synthetic;
         });
-
+        const committed = await withKeyedLock(`obs:${parsed.sessionId}`, async () => {
+          const existingRows = await kv.list<CompressedObservation>(KV.observations(parsed.sessionId));
+          const planned = budgetImportedObservationSources(incoming, existingRows);
+          if (!planned.success) return planned;
+          const existing = await kv.get<Session>(KV.sessions, parsed.sessionId);
+          const sessionRow: Session = existing ?? {
+            id: parsed.sessionId,
+            project: parsed.project,
+            cwd: parsed.cwd,
+            startedAt: parsed.startedAt,
+            endedAt: parsed.endedAt,
+            status: "completed",
+            observationCount: 0,
+            tags: ["jsonl-import"],
+            firstPrompt,
+          };
+          sessionRow.id ||= parsed.sessionId;
+          sessionRow.observationCount = (sessionRow.observationCount || 0) + parsed.observations.length;
+          if (parsed.endedAt > (sessionRow.endedAt || "")) sessionRow.endedAt = parsed.endedAt;
+          if (sessionRow.status === "active") sessionRow.status = "completed";
+          if (!sessionRow.tags?.includes("jsonl-import")) sessionRow.tags = [...(sessionRow.tags || []), "jsonl-import"];
+          if (!sessionRow.firstPrompt && firstPrompt) sessionRow.firstPrompt = firstPrompt;
+          await kv.set(KV.sessions, parsed.sessionId, sessionRow);
+          await Promise.all(planned.observations.map((obs) => kv.set(KV.observations(parsed.sessionId), obs.id, obs)));
+          return { ...planned, sessionRow };
+        });
+        if (!committed.success) return { ...committed, imported: sessionIds.length, sessionIds, observations: observationCount };
+        const { sessionRow, observations: compressed } = committed;
+        sourceTruncated += committed.sourceTruncated;
+        sourceOmitted += committed.sourceOmitted;
         await addSessionToProjectIndex(kv, sessionRow.project, {
           id: sessionRow.id,
           startedAt: sessionRow.startedAt,
           ...(sessionRow.agentId ? { agentId: sessionRow.agentId } : {}),
         }).catch(() => {});
 
-        const compressed: CompressedObservation[] = [];
-        await Promise.all(
-          parsed.observations.map(async (obs) => {
-            const synthetic = buildSyntheticCompression(obs);
-            synthetic.origin = importOrigin(
-              synthetic.origin,
-              synthetic.timestamp,
-              "jsonl",
-            );
-            compressed.push(synthetic);
-            await kv.set(KV.observations(parsed.sessionId), obs.id, synthetic);
-          }),
-        );
         // BM25 + vector in one path so jsonl-imported observations are
         // reachable by semantic search, not just keyword.
         try {
@@ -518,6 +524,8 @@ export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
         traversalCapped,
         maxFiles,
         maxFilesUpperBound: MAX_FILES_UPPER_BOUND,
+        sourceTruncated,
+        sourceOmitted,
       };
     },
   );
