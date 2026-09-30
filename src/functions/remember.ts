@@ -278,6 +278,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       const failures: Array<{ id: string; error: string }> = [];
       let deletedSession = false;
       let deletedSummary = false;
+      let indexCleaned = false;
       const { decrementImageRef } = await import("./image-refs.js");
 
       const recordFailure = (id: string, err: unknown) => {
@@ -308,12 +309,16 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         if (!obs) return false;
         await kv.delete(KV.observations(sessionId), obsId);
         await unindexObservationSession(kv, obsId).catch(() => {});
-        if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
-        if (obs.imageRef && obs.imageRef !== obs.imageData) {
-          await decrementImageRef(kv, sdk, obs.imageRef);
+        try {
+          if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
+          if (obs.imageRef && obs.imageRef !== obs.imageData) {
+            await decrementImageRef(kv, sdk, obs.imageRef);
+          }
+        } finally {
+          getSearchIndex().remove(obsId);
+          vectorIndexRemove(obsId);
+          indexCleaned = true;
         }
-        getSearchIndex().remove(obsId);
-        vectorIndexRemove(obsId);
         deletedObservationIds.push(obsId);
         return true;
       };
@@ -324,12 +329,16 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           const mem = await kv.get<Memory>(KV.memories, memoryId);
           if (!mem) return false;
           await kv.delete(KV.memories, memoryId);
-          if (mem.imageRef) {
-            await decrementImageRef(kv, sdk, mem.imageRef);
+          try {
+            if (mem.imageRef) {
+              await decrementImageRef(kv, sdk, mem.imageRef);
+            }
+          } finally {
+            getSearchIndex().remove(memoryId);
+            vectorIndexRemove(memoryId);
+            indexCleaned = true;
           }
           await deleteAccessLog(kv, memoryId);
-          getSearchIndex().remove(memoryId);
-          vectorIndexRemove(memoryId);
           deletedMemoryIds.push(memoryId);
           return true;
         });
@@ -382,7 +391,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         }
       }
 
-      if (deleted > 0) await flushIndexSave();
+      if (deleted > 0 || indexCleaned) await flushIndexSave();
 
       if (deleted > 0 || failures.length > 0) {
         await recordAudit(

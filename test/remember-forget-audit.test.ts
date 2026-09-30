@@ -8,6 +8,9 @@ vi.mock("../src/state/keyed-mutex.js", () => ({
   withKeyedLock: <T>(_key: string, fn: () => Promise<T>) => fn(),
 }));
 
+const decrementImageRef = vi.fn(async () => {});
+vi.mock("../src/functions/image-refs.js", () => ({ decrementImageRef }));
+
 import { registerRememberFunction } from "../src/functions/remember.js";
 import {
   getSearchIndex,
@@ -230,6 +233,27 @@ describe("mem::forget search-index cleanup", () => {
 
     expect(getSearchIndex().has("obs_a")).toBe(false);
     expect(getSearchIndex().has("obs_b")).toBe(true);
+  });
+
+  it("still unindexes and flushes an observation whose image cleanup fails", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+    const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+    setIndexPersistence(persistence);
+    decrementImageRef.mockRejectedValueOnce(new Error("image store down"));
+
+    await kv.set("mem:obs:ses_1", "obs_img", { id: "obs_img", imageRef: "img_1" });
+    getSearchIndex().add(memoryToObservation(makeMemory("obs_img")));
+
+    await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { sessionId: "ses_1", observationIds: ["obs_img"] },
+    });
+
+    expect(await kv.get("mem:obs:ses_1", "obs_img")).toBeNull();
+    expect(getSearchIndex().has("obs_img")).toBe(false);
+    expect(persistence.save).toHaveBeenCalled();
   });
 
   it("flushes persistence immediately when a memory is forgotten", async () => {

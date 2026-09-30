@@ -90,5 +90,8 @@ describe("iii engine auto-installer", () => {
     const manual = iiiManualInstallCommand("https://x/iii.tar.gz", "/b", "/b/iii");
     expect(manual).toContain('curl -fL --connect-timeout');
     expect(manual).toContain('chmod +x "/b/iii"');
+    expect(manual).toContain('mktemp "/b/.iii-download.XXXXXX"');
+    expect(manual).not.toContain("/tmp/");
+    expect(manual).toContain('rm -f "$archive"; (exit $code)');
   });
 });

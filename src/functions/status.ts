@@ -282,7 +282,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
   }
 
   const missingObservations = input.index.missingObservations;
-  if (missingObservations !== null && missingObservations > 0) {
+  if (!input.index.keywordRebuildRunning && missingObservations !== null && missingObservations > 0) {
     problems.push({
       level: "warn",
       code: "index-missing-observations",

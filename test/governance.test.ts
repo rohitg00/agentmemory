@@ -345,6 +345,22 @@ describe("governance deletes count only what was really deleted (#1427, #1428)",
     expect(await kv.list("mem:memories")).toHaveLength(2);
   });
 
+  it("governance-bulk rejects an empty or non-string project in dry run and live alike", async () => {
+    for (const body of [
+      { project: "", type: ["pattern"], dryRun: true },
+      { project: "  ", type: ["pattern"] },
+      { project: 42, type: ["pattern"] },
+    ]) {
+      const result = (await sdk.trigger("mem::governance-bulk", body)) as {
+        success: boolean;
+        error: string;
+      };
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("project must be a non-empty string");
+    }
+    expect(await kv.list("mem:memories")).toHaveLength(2);
+  });
+
   it("governance-bulk rejects unsupported filter keys in dry run and live alike", async () => {
     for (const body of [
       { ids: ["mem_1"], dryRun: true },

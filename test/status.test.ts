@@ -50,6 +50,14 @@ function codes(report: ReturnType<typeof evaluateStatus>): string[] {
 }
 
 describe("evaluateStatus", () => {
+  it("holds the missing-observations warning while the keyword index rebuilds", () => {
+    const report = evaluateStatus(
+      inputs({ index: { ...inputs().index, missingObservations: 7, keywordRebuildRunning: true } }),
+    );
+    expect(codes(report)).not.toContain("index-missing-observations");
+    expect(codes(report)).toContain("keyword-index-rebuilding");
+  });
+
   it("reports ok with no problems on a healthy install", () => {
     const report = evaluateStatus(inputs());
     expect(report.status).toBe("ok");

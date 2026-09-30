@@ -108,6 +108,12 @@ export function registerGovernanceFunction(sdk: IIIClient, kv: StateKV): void {
           error: `Unsupported bulk delete filter: ${unsupported.join(", ")}. Supported filters: ${BULK_FILTER_KEYS.join(", ")}`,
         };
       }
+      if (
+        data.project !== undefined &&
+        (typeof data.project !== "string" || data.project.trim().length === 0)
+      ) {
+        return { success: false, error: "project must be a non-empty string" };
+      }
 
       const hasFilter =
         (data.type && data.type.length > 0) ||

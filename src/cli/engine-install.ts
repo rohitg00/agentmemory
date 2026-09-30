@@ -26,7 +26,7 @@ export function iiiManualInstallCommand(
   binDir: string,
   binPath: string,
 ): string {
-  return `mkdir -p "${binDir}" && curl -fL --connect-timeout ${III_INSTALL_CONNECT_TIMEOUT_S} -o /tmp/iii.tar.gz "${releaseUrl}" && tar -xzf /tmp/iii.tar.gz -C "${binDir}" && chmod +x "${binPath}"`;
+  return `mkdir -p "${binDir}" && archive="$(mktemp "${binDir}/.iii-download.XXXXXX")" && { curl -fL --connect-timeout ${III_INSTALL_CONNECT_TIMEOUT_S} -o "$archive" "${releaseUrl}" && tar -xzf "$archive" -C "${binDir}"; code=$?; rm -f "$archive"; (exit $code); } && chmod +x "${binPath}"`;
 }
 
 export function describeInstallFailure(result: {
