@@ -55,6 +55,7 @@ import {
   type ConnectManifest,
   type RemoveOptions,
 } from "./cli/remove-plan.js";
+import { describeInstallFailure, iiiInstallShellCommand, iiiManualInstallCommand, III_INSTALL_SPAWN_TIMEOUT_MS } from "./cli/engine-install.js";
 import {
   dockerComposeArgs,
   dockerProjectName,
@@ -1326,21 +1327,25 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
 
   const binDir = agentmemoryBinDir();
   const binPath = privateIiiPath();
-  const installCmd = [
-    `mkdir -p "${binDir}"`,
-    `curl -fsSL "${releaseUrl}" | tar -xz -C "${binDir}"`,
-    `chmod +x "${binPath}"`,
-  ].join(" && ");
-  const installerOk = runCommand(shBin, ["-c", installCmd], {
-    label: `Installing iii-engine v${IIPINNED_VERSION} (pinned)`,
-    optional: true,
-  });
-  if (!installerOk) {
+  const label = `Installing iii-engine v${IIPINNED_VERSION} (pinned)`;
+  const spinner = p.spinner();
+  spinner.start(label);
+  const result = spawnSync(
+    shBin,
+    ["-c", iiiInstallShellCommand(releaseUrl, binDir, binPath)],
+    { stdio: "pipe", encoding: "utf-8", timeout: III_INSTALL_SPAWN_TIMEOUT_MS },
+  );
+  if (result.status !== 0) {
+    spinner.stop(`${label} ${pc.red("✗")}`);
     p.log.warn(
-      `iii-engine installer failed. Fallbacks: Docker (\`docker pull iiidev/iii:${IIPINNED_VERSION}\`) or download manually from https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}.`,
+      `iii-engine download failed: ${describeInstallFailure(result).slice(0, 300)}\n` +
+        `Install it manually, then re-run agentmemory:\n` +
+        `  ${iiiManualInstallCommand(releaseUrl, binDir, binPath)}\n` +
+        `Or use Docker: docker pull iiidev/iii:${IIPINNED_VERSION}`,
     );
     return { ok: false, binPath: null };
   }
+  spinner.stop(`${label} ${pc.green("✓")}`);
   return { ok: true, binPath };
 }
 
