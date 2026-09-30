@@ -9,6 +9,7 @@ import {
   normalizeBaseUrl,
 } from "../_openai-shared.js";
 import { resolveDimensions } from "./_dimensions.js";
+import { logger } from "../../logger.js";
 
 const DEFAULT_MODEL = "text-embedding-3-small";
 
@@ -46,7 +47,11 @@ const DEFAULT_MODEL = "text-embedding-3-small";
  *   OPENAI_EMBEDDING_MODEL       — model name (default: text-embedding-3-small)
  *   OPENAI_EMBEDDING_DIMENSIONS  — override reported dimensions (required for
  *                                  custom / self-hosted models not in the
- *                                  shared MODEL_DIMENSIONS table)
+ *                                  shared MODEL_DIMENSIONS table). When set it
+ *                                  is also sent as the `dimensions` request
+ *                                  field, so matryoshka models (text-embedding-3,
+ *                                  nomic-embed-text-v1.5, Qwen3-Embedding) return
+ *                                  vectors of that size.
  */
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   readonly name = "openai";
@@ -56,6 +61,8 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
   private model: string;
   private isAzure: boolean;
   private azureApiVersion: string;
+  private requestDimensions: boolean;
+  private warnedTruncation = false;
 
   constructor(apiKey?: string) {
     // Separate API key path: caller-passed wins, then OPENAI_EMBEDDING_API_KEY,
@@ -79,11 +86,16 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       getEnvVar("OPENAI_EMBEDDING_BASE_URL") || getEnvVar("OPENAI_BASE_URL"),
     );
     this.model = getEnvVar("OPENAI_EMBEDDING_MODEL") || DEFAULT_MODEL;
+    const dimensionsOverride = getEnvVar("OPENAI_EMBEDDING_DIMENSIONS");
     this.dimensions = resolveDimensions(
       this.model,
-      getEnvVar("OPENAI_EMBEDDING_DIMENSIONS"),
+      dimensionsOverride,
       "OPENAI_EMBEDDING_DIMENSIONS",
     );
+    // Only an operator-set size is requested; a table-derived default is the
+    // model's native size, and sending it would trip servers that reject the
+    // field for models without matryoshka support.
+    this.requestDimensions = Boolean(dimensionsOverride?.trim());
     this.isAzure = detectAzure(this.baseUrl);
     this.azureApiVersion =
       getEnvVar("OPENAI_API_VERSION") || DEFAULT_AZURE_API_VERSION;
@@ -100,24 +112,83 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
       this.isAzure,
       this.azureApiVersion,
     );
-    const response = await fetchWithTimeout(url, {
-      method: "POST",
-      headers: buildAuthHeaders(this.apiKey, this.isAzure),
-      body: JSON.stringify({
-        model: this.model,
-        input: texts,
-      }),
-    });
+    const withDimensions = this.requestDimensions;
+    let response = await this.post(url, texts, withDimensions);
 
     if (!response.ok) {
       const err = await response.text();
-      throw new Error(`OpenAI embedding failed (${response.status}): ${err}`);
+      // vLLM and OpenAI's ada-002 reject `dimensions` outright for models
+      // without matryoshka support. Those models only have one size, so
+      // retrying without the field keeps configs that set
+      // OPENAI_EMBEDDING_DIMENSIONS to the native size working.
+      if (
+        withDimensions &&
+        (response.status === 400 || response.status === 422) &&
+        /dimension/i.test(err)
+      ) {
+        this.requestDimensions = false;
+        logger.warn(
+          "openai embedding: server rejected the dimensions field, retrying without it",
+          { model: this.model, dimensions: this.dimensions, status: response.status },
+        );
+        response = await this.post(url, texts, false);
+        if (!response.ok) {
+          const retryErr = await response.text();
+          throw new Error(
+            `OpenAI embedding failed (${response.status}): ${retryErr}`,
+          );
+        }
+      } else {
+        throw new Error(`OpenAI embedding failed (${response.status}): ${err}`);
+      }
     }
 
     const data = (await response.json()) as {
       data: Array<{ embedding: number[] }>;
     };
 
-    return data.data.map((d) => new Float32Array(d.embedding));
+    return data.data.map((d) => this.fitToDimensions(d.embedding));
+  }
+
+  private post(
+    url: string,
+    texts: string[],
+    withDimensions: boolean,
+  ): Promise<Response> {
+    const body: Record<string, unknown> = { model: this.model, input: texts };
+    if (withDimensions) body.dimensions = this.dimensions;
+    return fetchWithTimeout(url, {
+      method: "POST",
+      headers: buildAuthHeaders(this.apiKey, this.isAzure),
+      body: JSON.stringify(body),
+    });
+  }
+
+  // Some OpenAI-compatible servers (LM Studio, older Ollama) accept but
+  // ignore `dimensions` and return the native size. For matryoshka models
+  // the leading N components are the N-dim embedding, but they need
+  // re-normalizing because cosine search assumes unit vectors. Only applies
+  // while the server has not rejected the field: a rejection means the
+  // model is not matryoshka, so truncating would silently produce garbage
+  // and the dimension guard should surface the misconfiguration instead.
+  private fitToDimensions(embedding: number[]): Float32Array {
+    if (!this.requestDimensions || embedding.length <= this.dimensions) {
+      return new Float32Array(embedding);
+    }
+    if (!this.warnedTruncation) {
+      this.warnedTruncation = true;
+      logger.warn(
+        "openai embedding: server ignored the dimensions field, truncating client-side",
+        { model: this.model, returned: embedding.length, dimensions: this.dimensions },
+      );
+    }
+    const out = new Float32Array(embedding.slice(0, this.dimensions));
+    let sumSq = 0;
+    for (let i = 0; i < out.length; i++) sumSq += out[i]! * out[i]!;
+    const norm = Math.sqrt(sumSq);
+    if (norm > 0) {
+      for (let i = 0; i < out.length; i++) out[i] = out[i]! / norm;
+    }
+    return out;
   }
 }
