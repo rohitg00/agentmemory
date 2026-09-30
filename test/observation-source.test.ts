@@ -26,6 +26,7 @@ type Handler = (data: any) => Promise<any>;
 function rig() {
   const store = new Map<string, Map<string, any>>();
   const handlers = new Map<string, Handler>();
+  const pendingCompression: Promise<unknown>[] = [];
   const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
   const kv = {
     get: async (scope: string, key: string) => clone(store.get(scope)?.get(key) ?? null),
@@ -46,7 +47,14 @@ function rig() {
     registerFunction: (id: string, handler: Handler) => handlers.set(id, handler),
     registerTrigger: () => {},
     on: () => {},
-    trigger: vi.fn(async (input: { function_id: string; payload: unknown }) => handlers.get(input.function_id)?.(input.payload)),
+    trigger: vi.fn(async (input: { function_id: string; payload: unknown }) => {
+      const result = handlers.get(input.function_id)?.(input.payload);
+      if (input.function_id === "mem::compress") {
+        if (result) pendingCompression.push(result);
+        return;
+      }
+      return result;
+    }),
   };
   registerObserveFunction(sdk as never, kv as never);
   registerReplayFunctions(sdk as never, kv as never);
@@ -62,6 +70,7 @@ function rig() {
       sessionId: "source-session", project: "source-test", cwd: "/test/project",
       timestamp: "2026-09-30T00:00:00Z", hookType, data,
     });
+    await Promise.all(pendingCompression.splice(0));
     return kv.get(KV.observations("source-session"), result.observationId) as Promise<CompressedObservation>;
   };
   return { kv, sdk, call, observe };

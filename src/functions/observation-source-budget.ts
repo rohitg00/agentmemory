@@ -4,6 +4,14 @@ import { normalizeObservationSource, OBSERVATION_SOURCE_MAX_BYTES, withoutObserv
 
 export const SESSION_SOURCE_MAX_BYTES = 8 * 1024 * 1024;
 
+export function budgetLiveObservationSource(
+  observation: CompressedObservation,
+  existing: CompressedObservation[],
+): CompressedObservation {
+  const planned = budgetImportedObservationSources([observation], existing);
+  return planned.success ? planned.observations[0]! : withoutObservationSource(observation);
+}
+
 export function budgetImportedObservationSources(
   incoming: CompressedObservation[],
   existing: CompressedObservation[] = [],

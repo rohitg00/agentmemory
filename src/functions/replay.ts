@@ -472,7 +472,12 @@ export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
           if (!sessionRow.tags?.includes("jsonl-import")) sessionRow.tags = [...(sessionRow.tags || []), "jsonl-import"];
           if (!sessionRow.firstPrompt && firstPrompt) sessionRow.firstPrompt = firstPrompt;
           await kv.set(KV.sessions, parsed.sessionId, sessionRow);
-          await Promise.all(planned.observations.map((obs) => kv.set(KV.observations(parsed.sessionId), obs.id, obs)));
+          for (let i = 0; i < planned.observations.length; i += 20) {
+            const batch = planned.observations.slice(i, i + 20);
+            const results = await Promise.allSettled(batch.map((obs) => kv.set(KV.observations(parsed.sessionId), obs.id, obs)));
+            const failure = results.find((result) => result.status === "rejected");
+            if (failure) throw failure.reason;
+          }
           return { ...planned, sessionRow };
         });
         if (!committed.success) return { ...committed, imported: sessionIds.length, sessionIds, observations: observationCount };

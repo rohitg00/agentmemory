@@ -23,6 +23,8 @@ import { compressWithRetry } from "../eval/self-correct.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { logger } from "../logger.js";
 import { createObservationSource, withoutObservationSource } from "./observation-source.js";
+import { budgetLiveObservationSource } from "./observation-source-budget.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 
 const VALID_TYPES = new Set<string>([
   "file_read",
@@ -160,7 +162,7 @@ export function registerCompressFunction(
 
         const qualityScore = scoreCompression(parsed);
 
-        const compressed: CompressedObservation = {
+        const candidate: CompressedObservation = {
           id: data.observationId,
           sessionId: data.sessionId,
           timestamp: data.raw.timestamp,
@@ -174,11 +176,12 @@ export function registerCompressFunction(
           ...(data.raw.origin ? { origin: data.raw.origin } : {}),
         };
 
-        await kv.set(
-          KV.observations(data.sessionId),
-          data.observationId,
-          compressed,
-        );
+        const compressed = await withKeyedLock(`obs:${data.sessionId}`, async () => {
+          const existing = await kv.list<CompressedObservation>(KV.observations(data.sessionId));
+          const bounded = budgetLiveObservationSource(candidate, existing);
+          await kv.set(KV.observations(data.sessionId), data.observationId, bounded);
+          return bounded;
+        });
 
         try {
           getSearchIndex().add(compressed);

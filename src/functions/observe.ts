@@ -1,5 +1,5 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
-import type { RawObservation, HookPayload, Origin } from "../types.js";
+import type { RawObservation, CompressedObservation, HookPayload, Origin } from "../types.js";
 
 const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"]);
 import { KV, STREAM, generateId } from "../state/schema.js";
@@ -17,6 +17,7 @@ import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
 import { withoutObservationSource } from "./observation-source.js";
+import { budgetLiveObservationSource } from "./observation-source-budget.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -149,8 +150,8 @@ export function registerObserveFunction(
       const pendingImageData = extractedImage;
 
       return withKeyedLock(`obs:${payload.sessionId}`, async () => {
+        const existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
         if (maxObservationsPerSession && maxObservationsPerSession > 0) {
-          const existing = await kv.list(KV.observations(payload.sessionId));
           if (existing.length >= maxObservationsPerSession) {
             return {
               success: false,
@@ -329,7 +330,7 @@ export function registerObserveFunction(
             action: TriggerAction.Void(),
           });
         } else {
-          const synthetic = buildSyntheticCompression(raw);
+          const synthetic = budgetLiveObservationSource(buildSyntheticCompression(raw), existing);
           await kv.set(
             KV.observations(payload.sessionId),
             obsId,
