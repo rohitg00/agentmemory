@@ -21,6 +21,13 @@ const DATA_DIR = join(homedir(), ".agentmemory");
 const ENV_FILE = join(DATA_DIR, ".env");
 
 let warnPremiumModelShown = false;
+let providerNoticeShown = false;
+
+function writeProviderNoticeOnce(text: string): void {
+  if (providerNoticeShown) return;
+  providerNoticeShown = true;
+  process.stderr.write(text);
+}
 
 // Parsed ~/.agentmemory/.env, memoized for the process lifetime. getMergedEnv()
 // runs on every config getter (~20 of them), so without this cache a single
@@ -158,10 +165,10 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
 
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
-    process.stderr.write(
+    writeProviderNoticeOnce(
       pc.dim(
-        "[agentmemory] No LLM provider key set — running zero-LLM with BM25 search. " +
-          "Set EMBEDDING_PROVIDER=local for on-device semantic embeddings. " +
+        "[agentmemory] No LLM provider key set — running zero-LLM: no LLM compression or summaries; search uses BM25 plus any configured embedding provider. " +
+          "Set EMBEDDING_PROVIDER=local for on-device semantic embeddings if none is configured. " +
           "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
           "Agent-SDK fallback stays off by default to avoid a Stop-hook recursion loop; opt in with AGENTMEMORY_AUTO_COMPRESS=true + AGENTMEMORY_ALLOW_AGENT_SDK=true.\n",
       ),
@@ -173,7 +180,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
 
-  process.stderr.write(
+  writeProviderNoticeOnce(
     "[agentmemory] WARNING: agent-sdk fallback enabled via AGENTMEMORY_ALLOW_AGENT_SDK=true. " +
       "This spawns @anthropic-ai/claude-agent-sdk child sessions that can trigger the Stop-hook " +
       "recursion loop. A SDK-child env marker is set to block re-entry, " +

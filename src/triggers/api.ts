@@ -355,6 +355,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
       deps.provider && "circuitState" in deps.provider
         ? (deps.provider.circuitState as { state?: string; failures?: number } | null)
         : null;
+    const config = loadConfig();
     return evaluateStatus({
       now: new Date(),
       version: VERSION,
@@ -362,8 +363,8 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
       uptimeSeconds: Math.round(process.uptime()),
       stateBackend: kv.backend === "redis" ? "redis" : "file",
       ports: {
-        rest: loadConfig().restPort ?? null,
-        streams: loadConfig().streamsPort ?? null,
+        rest: config.restPort ?? null,
+        streams: config.streamsPort ?? null,
         viewer: getViewerSkipped() ? null : (getBoundViewerPort() ?? null),
       },
       health: health
