@@ -270,25 +270,69 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       observationIds?: string[];
       memoryId?: string;
     }) => {
+      type ObservationRef = { id?: string; imageData?: string; imageRef?: string };
       let deleted = 0;
       const deletedMemoryIds: string[] = [];
       const deletedObservationIds: string[] = [];
+      const notFound: string[] = [];
+      const failures: Array<{ id: string; error: string }> = [];
       let deletedSession = false;
+      let deletedSummary = false;
       const { decrementImageRef } = await import("./image-refs.js");
 
+      const recordFailure = (id: string, err: unknown) => {
+        logger.warn("Forget failed", {
+          id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        failures.push({ id, error: "delete_failed" });
+      };
+
+      const attempt = async (id: string, remove: () => Promise<boolean>) => {
+        try {
+          if (await remove()) deleted++;
+          else notFound.push(id);
+        } catch (err) {
+          recordFailure(id, err);
+        }
+      };
+
+      const forgetObservation = async (
+        sessionId: string,
+        obsId: string,
+        known?: ObservationRef,
+      ): Promise<boolean> => {
+        const obs =
+          known ??
+          (await kv.get<ObservationRef>(KV.observations(sessionId), obsId));
+        if (!obs) return false;
+        await kv.delete(KV.observations(sessionId), obsId);
+        await unindexObservationSession(kv, obsId).catch(() => {});
+        if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
+        if (obs.imageRef && obs.imageRef !== obs.imageData) {
+          await decrementImageRef(kv, sdk, obs.imageRef);
+        }
+        getSearchIndex().remove(obsId);
+        vectorIndexRemove(obsId);
+        deletedObservationIds.push(obsId);
+        return true;
+      };
+
       if (data.memoryId) {
-        const mem = await kv.get<Memory>(KV.memories, data.memoryId);
-        if (mem) {
-          await kv.delete(KV.memories, data.memoryId);
+        const memoryId = data.memoryId;
+        await attempt(memoryId, async () => {
+          const mem = await kv.get<Memory>(KV.memories, memoryId);
+          if (!mem) return false;
+          await kv.delete(KV.memories, memoryId);
           if (mem.imageRef) {
             await decrementImageRef(kv, sdk, mem.imageRef);
           }
-          await deleteAccessLog(kv, data.memoryId);
-          getSearchIndex().remove(data.memoryId);
-          vectorIndexRemove(data.memoryId);
-          deletedMemoryIds.push(data.memoryId);
-          deleted++;
-        }
+          await deleteAccessLog(kv, memoryId);
+          getSearchIndex().remove(memoryId);
+          vectorIndexRemove(memoryId);
+          deletedMemoryIds.push(memoryId);
+          return true;
+        });
       }
 
       if (
@@ -296,21 +340,9 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         data.observationIds &&
         data.observationIds.length > 0
       ) {
+        const sessionId = data.sessionId;
         for (const obsId of data.observationIds) {
-          const obs = await kv.get<{ imageData?: string; imageRef?: string }>(
-            KV.observations(data.sessionId),
-            obsId,
-          );
-          await kv.delete(KV.observations(data.sessionId), obsId);
-          await unindexObservationSession(kv, obsId).catch(() => {});
-          if (obs?.imageData) await decrementImageRef(kv, sdk, obs.imageData);
-          if (obs?.imageRef && obs.imageRef !== obs.imageData) {
-            await decrementImageRef(kv, sdk, obs.imageRef);
-          }
-          getSearchIndex().remove(obsId);
-          vectorIndexRemove(obsId);
-          deletedObservationIds.push(obsId);
-          deleted++;
+          await attempt(obsId, () => forgetObservation(sessionId, obsId));
         }
       }
 
@@ -319,39 +351,40 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         (!data.observationIds || data.observationIds.length === 0) &&
         !data.memoryId
       ) {
-        const observations = await kv.list<{ id: string; imageData?: string; imageRef?: string }>(
-          KV.observations(data.sessionId),
+        const sessionId = data.sessionId;
+        const observations = await kv.list<ObservationRef & { id: string }>(
+          KV.observations(sessionId),
         );
         for (const obs of observations) {
-          await kv.delete(KV.observations(data.sessionId), obs.id);
-          await unindexObservationSession(kv, obs.id).catch(() => {});
-          if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
-          if (obs.imageRef && obs.imageRef !== obs.imageData) {
-            await decrementImageRef(kv, sdk, obs.imageRef);
-          }
-          getSearchIndex().remove(obs.id);
-          vectorIndexRemove(obs.id);
-          deletedObservationIds.push(obs.id);
-          deleted++;
+          await attempt(obs.id, () => forgetObservation(sessionId, obs.id, obs));
         }
-        const sessionToDelete = await kv
-          .get<Session>(KV.sessions, data.sessionId)
-          .catch(() => null);
-        await kv.delete(KV.sessions, data.sessionId);
-        await kv.delete(KV.summaries, data.sessionId);
-        if (sessionToDelete) {
+        await attempt(sessionId, async () => {
+          const session = await kv.get<Session>(KV.sessions, sessionId);
+          if (!session) return false;
+          await kv.delete(KV.sessions, sessionId);
           await removeSessionFromProjectIndex(
             kv,
-            sessionToDelete.project,
-            data.sessionId,
+            session.project,
+            sessionId,
           ).catch(() => {});
+          deletedSession = true;
+          return true;
+        });
+        try {
+          const summary = await kv.get(KV.summaries, sessionId);
+          if (summary) {
+            await kv.delete(KV.summaries, sessionId);
+            deletedSummary = true;
+            deleted++;
+          }
+        } catch (err) {
+          recordFailure(`summary:${sessionId}`, err);
         }
-        deletedSession = true;
-        deleted += 2;
       }
 
-      if (deleted > 0) {
-        await flushIndexSave();
+      if (deleted > 0) await flushIndexSave();
+
+      if (deleted > 0 || failures.length > 0) {
         await recordAudit(
           kv,
           "forget",
@@ -363,13 +396,27 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
             memoriesDeleted: deletedMemoryIds.length,
             observationsDeleted: deletedObservationIds.length,
             sessionDeleted: deletedSession,
+            summaryDeleted: deletedSummary,
+            notFound: notFound.length,
+            failed: failures.length,
+            failures: failures.length > 0 ? failures : undefined,
             reason: "user-initiated forget",
           },
         );
       }
 
-      logger.info("Memory forgotten", { deleted });
-      return { success: true, deleted };
+      logger.info("Memory forgotten", {
+        deleted,
+        notFound: notFound.length,
+        failed: failures.length,
+      });
+      return {
+        success: failures.length === 0,
+        deleted,
+        notFound,
+        failed: failures.length,
+        failures: failures.length > 0 ? failures : undefined,
+      };
     },
   );
 }

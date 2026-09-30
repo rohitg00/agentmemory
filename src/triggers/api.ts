@@ -2303,6 +2303,7 @@ export function registerApiTriggers(
         type?: string[];
         dateFrom?: string;
         dateTo?: string;
+        project?: string;
         qualityBelow?: number;
         dryRun?: boolean;
       }>,
