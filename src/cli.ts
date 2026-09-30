@@ -55,6 +55,7 @@ import {
   type ConnectManifest,
   type RemoveOptions,
 } from "./cli/remove-plan.js";
+import { portFlagSuffix } from "./cli/ready-hint.js";
 import { describeInstallFailure, iiiInstallShellCommand, iiiManualInstallCommand, III_INSTALL_SPAWN_TIMEOUT_MS } from "./cli/engine-install.js";
 import {
   dockerComposeArgs,
@@ -1911,8 +1912,9 @@ function printReadyHint(): void {
   const engineUrl = `ws://${engineHost}:${getEnginePort()}`;
   const invocation = isInvokedViaNpx() ? "npx @agentmemory/agentmemory" : "agentmemory";
   const consolePort = defaultConsolePort(getConfiguredViewerPort());
+  const portFlags = portFlagSuffix(getRestPort(), selectedInstance);
 
-  const consoleLine = `${c.label("iii console")}  ${c.cmd(`${invocation} console`)}  ${c.dim(`(serves on :${consolePort}; first run downloads the console next to the pinned iii)`)}`;
+  const consoleLine = `${c.label("iii console")}  ${c.cmd(`${invocation} console${portFlags}`)}  ${c.dim(`(serves on :${consolePort}; first run downloads the console next to the pinned iii)`)}`;
 
   const lines = [
     `${c.label("REST API")}     ${c.url(restUrl)}`,
@@ -1931,7 +1933,7 @@ function printReadyHint(): void {
   // (unless they accepted the global-install prompt and the npm bin
   // dir was already on PATH in this shell), so we suggest the npx
   // form for them; everyone else gets the global form.
-  const demoCommand = `${invocation} demo`;
+  const demoCommand = `${invocation} demo${portFlags}`;
   process.stdout.write(`\n${c.dim("Try:")} ${c.cmd(demoCommand)}\n`);
 }
 
