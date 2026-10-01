@@ -36,12 +36,14 @@ gets mistaken for this one. Never invent observations for an empty session.
 2. Call `memory_sessions`. Pick the most recent session whose normalized `cwd`
    matches by directory boundary: equality, OR `cwd.startsWith(projectPath + sep)`,
    OR `projectPath.startsWith(cwd + sep)`. Prefer `completed` over `abandoned`.
-   No match: fall back to the single most recent session overall.
+   No match: report that this project has no matching session and stop. Do not
+   substitute a different project's session.
 3. If the session ended on an unanswered user-facing question, surface it FIRST.
    Look in `summary` or recent `conversation` observations whose `narrative`
    ends in `?`.
 4. Summarize: title/summary, key files, key decisions or errors, using
-   `memory_recall` on the top concepts, limit 10.
+   `memory_recall` on the top concepts, limit 10. Check each result's session or
+   project provenance before including it; a query alone does not enforce scope.
 5. End with one concrete "next step?" pointer.
 
 ## Anti-patterns

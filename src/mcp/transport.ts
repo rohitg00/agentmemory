@@ -17,6 +17,13 @@ export type RequestHandler = (
   params: Record<string, unknown>,
 ) => Promise<unknown>;
 
+export class JsonRpcError extends Error {
+  constructor(public readonly code: number, message: string) {
+    super(message);
+    this.name = "JsonRpcError";
+  }
+}
+
 export interface StdioMessageParser {
   push: (chunk: Buffer | string) => void;
   isFramed: () => boolean;
@@ -126,7 +133,7 @@ export async function processLine(
       jsonrpc: "2.0",
       id: request.id as string | number,
       error: {
-        code: -32603,
+        code: err instanceof JsonRpcError ? err.code : -32603,
         message: err instanceof Error ? err.message : String(err),
       },
     });

@@ -1,7 +1,7 @@
 {
   "name": "agentmemory",
   "version": "0.9.29",
-  "description": "Persistent memory for AI coding agents -- captures tool usage, compresses via LLM, injects context into future sessions. 6 hooks, 54 MCP tools, 8 skills, real-time viewer.",
+  "description": "Local persistent memory for coding agents. Recall decisions, resume sessions, learn from corrections, and manage memory through 54 MCP tools and 17 skills. Optional capture through 6 Codex hooks.",
   "author": {
     "name": "Rohit Ghumare",
     "url": "https://github.com/rohitg00"
@@ -10,6 +10,28 @@
   "homepage": "https://github.com/rohitg00/agentmemory",
   "repository": "https://github.com/rohitg00/agentmemory",
   "skills": "./skills/",
-  "mcpServers": "./.mcp.json",
-  "hooks": "./hooks/hooks.codex.json"
+  "mcpServers": "./.mcp.codex.json",
+  "hooks": "./hooks/hooks.codex.json",
+  "interface": {
+    "displayName": "Agent Memory",
+    "shortDescription": "Memory across coding sessions",
+    "longDescription": "Recall past decisions, resume work, save useful context, and learn from corrections across Codex and Claude Code using one local Agent Memory daemon. Includes search, session history, lessons, graph queries, memory maintenance, export, and deletion workflows. Requires Node.js 20+ and a running Agent Memory daemon. Basic keyword recall needs no model key. Embeddings and model-based features require configuration; external providers may receive selected data when enabled. Automatic capture requires trusted, supported hooks. Designed for local Codex sessions.",
+    "developerName": "Rohit Ghumare",
+    "websiteURL": "https://github.com/rohitg00/agentmemory",
+    "supportURL": "https://github.com/rohitg00/agentmemory/issues",
+    "category": "Developer Tools",
+    "capabilities": ["Local persistent memory", "Session handoff", "Lessons and recall", "Memory management"],
+    "defaultPrompt": [
+      "Check my local Agent Memory connection and explain which features are enabled.",
+      "Recall decisions relevant to this repository, with the evidence for each.",
+      "Resume the latest session for this repository and show the recorded next step."
+    ],
+    "logo": "./assets/icon.svg",
+    "composerIcon": "./assets/icon.svg"
+  },
+  "extensions": {
+    "com.openai": {
+      "onboardingSkill": "./skills/agentmemory-config/SKILL.md"
+    }
+  }
 }
