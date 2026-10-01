@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 
 const PRIVATE_TAG_RE = /<private>[\s\S]*?<\/private>/gi;
 
@@ -28,7 +28,7 @@ export function stripPrivateData(input: string): string {
   return result;
 }
 
-export function registerPrivacyFunction(sdk: ISdk): void {
+export function registerPrivacyFunction(sdk: IIIClient): void {
   sdk.registerFunction("mem::privacy", 
     async (data: { input?: unknown } | undefined) => {
       if (!data || typeof data.input !== "string") {

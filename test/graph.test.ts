@@ -597,6 +597,161 @@ describe("Graph Functions", () => {
   // the oversized-corpus rebuild refusal. The hot path never enumerates
   // any more, but the rebuild endpoint AND the BFS / query branches
   // still call kv.list — both need explicit failure-mode tests.
+  describe("snapshot write must not fail open (#1381)", () => {
+    async function seedSnapshot(totalNodes: number) {
+      await kv.set("mem:graph:snapshot", "current", {
+        version: 1,
+        topNodes: [],
+        topEdges: [],
+        topDegrees: {},
+        stats: { totalNodes, totalEdges: 0, nodesByType: {}, edgesByType: {} },
+        updatedAt: "2026-01-01T00:00:00Z",
+        dirty: false,
+      });
+    }
+
+    async function extractWithFlakySnapshot(kvImpl: ReturnType<typeof mockKV>) {
+      registerGraphFunction(sdk as never, kvImpl as never, mockProvider as never);
+      return (await sdk.trigger("mem::graph-extract", {
+        observations: [testObs],
+      })) as { success: boolean; error?: string; nodesAdded?: number };
+    }
+
+    function flakyKV(failures: number) {
+      let reads = 0;
+      const realGet = kv.get.bind(kv);
+      return {
+        ...kv,
+        get: async <T>(scope: string, key: string): Promise<T | null> => {
+          if (scope === "mem:graph:snapshot" && reads++ < failures) {
+            throw new Error("Invocation timeout after 180000ms: state::get");
+          }
+          return realGet<T>(scope, key);
+        },
+      };
+    }
+
+    it("a persistent read failure aborts the delta instead of zeroing the snapshot", async () => {
+      await seedSnapshot(40000);
+
+      const result = await extractWithFlakySnapshot(flakyKV(Number.POSITIVE_INFINITY));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Invocation timeout");
+
+      const snap = await kv.get<{ stats: { totalNodes: number } }>(
+        "mem:graph:snapshot",
+        "current",
+      );
+      expect(snap!.stats.totalNodes).toBe(40000);
+    });
+
+    it("retries a transient read failure once and then merges onto the real snapshot", async () => {
+      await seedSnapshot(40000);
+
+      const result = await extractWithFlakySnapshot(flakyKV(1));
+
+      expect(result.success).toBe(true);
+      const snap = await kv.get<{ stats: { totalNodes: number } }>(
+        "mem:graph:snapshot",
+        "current",
+      );
+      expect(snap!.stats.totalNodes).toBeGreaterThan(39999);
+    });
+
+    it("a snapshot under an unknown schema version aborts instead of reading as empty", async () => {
+      await kv.set("mem:graph:snapshot", "current", {
+        version: 2,
+        stats: { totalNodes: 40000, totalEdges: 0, nodesByType: {}, edgesByType: {} },
+      });
+
+      const result = await extractWithFlakySnapshot(kv);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("unknown schema version");
+
+      const snap = await kv.get<{ version: number }>("mem:graph:snapshot", "current");
+      expect(snap!.version).toBe(2);
+    });
+
+    it("an absent snapshot is still a clean first run", async () => {
+      const result = await extractWithFlakySnapshot(kv);
+
+      expect(result.success).toBe(true);
+      const snap = await kv.get<{ version: number; stats: { totalNodes: number } }>(
+        "mem:graph:snapshot",
+        "current",
+      );
+      expect(snap).not.toBeNull();
+      expect(snap!.stats.totalNodes).toBe(2);
+    });
+  });
+
+  describe("snapshot-reported total floor (#1382)", () => {
+    function seedSnapshot(
+      stats: { totalNodes: number; nodesByType: Record<string, number> },
+      topNodeCount: number,
+    ) {
+      const topNodes = Array.from({ length: topNodeCount }, (_, i) => ({
+        id: `n_${i}`,
+        type: "file",
+        name: `node-${i}`,
+        properties: {},
+        sourceObservationIds: [`obs_${i}`],
+        firstSeen: "2026-01-01T00:00:00Z",
+        lastSeen: "2026-01-01T00:00:00Z",
+        observationCount: 1,
+        stale: false,
+      }));
+      return kv.set("mem:graph:snapshot", "current", {
+        version: 1,
+        topNodes,
+        topEdges: [],
+        topDegrees: {},
+        stats: {
+          totalNodes: stats.totalNodes,
+          totalEdges: 0,
+          nodesByType: stats.nodesByType,
+          edgesByType: {},
+        },
+        updatedAt: "2026-01-01T00:00:00Z",
+        dirty: false,
+      });
+    }
+
+    it("does not report fewer nodes than it returns when the counter is low", async () => {
+      await seedSnapshot({ totalNodes: 101, nodesByType: { file: 101 } }, 343);
+
+      const result = (await sdk.trigger("mem::graph-query", {})) as GraphQueryResult;
+
+      expect(result.nodes.length).toBe(343);
+      expect(result.totalNodes).toBe(343);
+      expect(result.truncated).toBe(false);
+    });
+
+    it("leaves a healthy counter above the top-N cap alone and raises the banner", async () => {
+      await seedSnapshot({ totalNodes: 40000, nodesByType: { file: 40000 } }, 343);
+
+      const result = (await sdk.trigger("mem::graph-query", {})) as GraphQueryResult;
+
+      expect(result.nodes.length).toBe(343);
+      expect(result.totalNodes).toBe(40000);
+      expect(result.truncated).toBe(true);
+    });
+
+    it("applies the same floor to the type-filtered total", async () => {
+      await seedSnapshot({ totalNodes: 101, nodesByType: { file: 101 } }, 343);
+
+      const result = (await sdk.trigger("mem::graph-query", {
+        nodeType: "file",
+      })) as GraphQueryResult;
+
+      expect(result.nodes.length).toBe(343);
+      expect(result.totalNodes).toBe(343);
+      expect(result.truncated).toBe(false);
+    });
+  });
+
   describe("budget + tooLarge guards (#814 v2)", () => {
     function slowKV(delayMs: number) {
       const base = mockKV();

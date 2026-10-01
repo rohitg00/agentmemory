@@ -1,19 +1,21 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   TeamConfig,
   TeamSharedItem,
   TeamProfile,
   Memory,
+  CompressedObservation,
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { withoutObservationSource } from "./observation-source.js";
 
 const VALID_ITEM_TYPES = new Set(["memory", "pattern", "observation"]);
 
 export function registerTeamFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   config: TeamConfig,
 ): void {
@@ -42,7 +44,8 @@ export function registerTeamFunction(
             error: "sessionId is required for observations",
           };
         }
-        content = await kv.get(KV.observations(data.sessionId), data.itemId);
+        const observation = await kv.get<CompressedObservation>(KV.observations(data.sessionId), data.itemId);
+        content = observation ? withoutObservationSource(observation) : null;
       } else {
         content = await kv.get<Memory>(KV.memories, data.itemId);
       }
@@ -89,7 +92,12 @@ export function registerTeamFunction(
         )
         .slice(0, limit);
 
-      return { items: sorted, total: filtered.length };
+      return {
+        items: sorted.map((item) => item.type === "observation" && item.content && typeof item.content === "object"
+          ? { ...item, content: withoutObservationSource(item.content as CompressedObservation) }
+          : item),
+        total: filtered.length,
+      };
     },
   );
 

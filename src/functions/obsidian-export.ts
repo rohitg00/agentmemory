@@ -1,7 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { homedir } from "node:os";
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import type {
@@ -242,7 +242,7 @@ interface ExportError {
 }
 
 export function registerObsidianExportFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
 ): void {
   sdk.registerFunction("mem::obsidian-export",

@@ -5,6 +5,7 @@ const PORT_ENVS = [
   "III_REST_PORT",
   "III_STREAM_PORT",
   "III_STREAMS_PORT",
+  "III_VIEWER_PORT",
   "III_ENGINE_PORT",
   "III_ENGINE_URL",
 ] as const;
@@ -33,6 +34,7 @@ describe("multi-instance port auto-derive (#750)", () => {
     const cfg = loadConfig();
     expect(cfg.restPort).toBe(3111);
     expect(cfg.streamsPort).toBe(3112);
+    expect(cfg.viewerPort).toBe(3113);
     expect(cfg.engineUrl).toBe("ws://localhost:49134");
   });
 
@@ -41,6 +43,7 @@ describe("multi-instance port auto-derive (#750)", () => {
     const cfg = loadConfig();
     expect(cfg.restPort).toBe(3211);
     expect(cfg.streamsPort).toBe(3212);
+    expect(cfg.viewerPort).toBe(3213);
     expect(cfg.engineUrl).toBe("ws://localhost:49234");
   });
 
@@ -74,6 +77,13 @@ describe("multi-instance port auto-derive (#750)", () => {
     expect(cfg.restPort).toBe(3211);
     expect(cfg.streamsPort).toBe(3212);
     expect(cfg.engineUrl).toBe("ws://localhost:55555");
+  });
+
+  it("explicit III_VIEWER_PORT pins the viewer", () => {
+    process.env["III_REST_PORT"] = "3211";
+    process.env["III_VIEWER_PORT"] = "7777";
+    const cfg = loadConfig();
+    expect(cfg.viewerPort).toBe(7777);
   });
 
   it("legacy III_ENGINE_URL overrides derivation entirely", () => {

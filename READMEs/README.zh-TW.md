@@ -124,7 +124,7 @@ npx 會依版本快取。用 `npx -y @agentmemory/agentmemory@latest` 強制使�
 <details>
 <summary><strong>已在執行你自己的 iii 引擎</strong></summary>
 
-agentmemory 把 iii-engine 釘在 v0.11.2,不會附掛到其他版本(worker 無法使用另一個引擎的協定)。停止另一個引擎,然後執行 `npx -y @agentmemory/agentmemory@latest`。它會在 `~/.agentmemory/bin` 安裝並執行釘住的 v0.11.2,不動你自己的 `iii`。
+agentmemory 把 iii-engine 釘在 v0.22.1,不會附掛到其他版本(worker 無法使用另一個引擎的協定)。停止另一個引擎,然後執行 `npx -y @agentmemory/agentmemory@latest`。它會在 `~/.agentmemory/bin` 安裝並執行釘住的 v0.22.1,不動你自己的 `iii`。
 
 </details>
 
@@ -463,7 +463,7 @@ npx @agentmemory/agentmemory
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Quick Start" height="32" /></picture></h2>
 
-相容性:此版本面向穩定的 `iii-sdk` `^0.11.0` 和 iii-engine v0.11.x。
+相容性:此版本面向 `iii-sdk` 0.22.1,並將 iii-engine 釘在 v0.22.1。
 
 ### 30 秒體驗
 
@@ -515,7 +515,7 @@ npx @agentmemory/agentmemory import-jsonl ~/.claude/projects/-my-project/abc123.
 npx @agentmemory/agentmemory upgrade
 ```
 
-警告:此指令會變更目前工作區/執行階段。它可能更新 JavaScript 相依,並拉取固定版本的 Docker 鏡像 `iiidev/iii:0.11.2`。它絕不會安裝未固定版本或更新的 iii 引擎。
+警告:此指令會變更目前工作區/執行階段。它可能更新 JavaScript 相依,並拉取固定版本的 Docker 鏡像 `iiidev/iii:0.22.1`。它絕不會安裝未固定版本或更新的 iii 引擎。
 
 實作細節見 `src/cli.ts`(參考 `src/cli.ts:544-595` 附近的 `runUpgrade`)。
 
@@ -720,15 +720,15 @@ npm install && npm run build && npm start
 
 若 `iii` 已安裝,這會以本地 `iii-engine` 啟動 agentmemory;若 Docker 可用,則回退到 Docker Compose。REST、串流和檢視器預設繫結到 `127.0.0.1`。
 
-手動安裝 `iii-engine`。**agentmemory 目前把 `iii-engine` 釘在 `v0.11.2`**。`v0.11.6` 引入了新的「透過 `iii worker add` 沙盒化一切」模型,agentmemory 尚未為此重構。重構落地後即解除釘版。若你已手動遷移到沙盒模型,可用 `AGENTMEMORY_III_VERSION=<version>` 覆寫。
+手動安裝 `iii-engine`。**agentmemory 目前把 `iii-engine` 釘在 `v0.22.1`**,與其 `iii-sdk` 相依是同一個版本;worker 使用該引擎的 wire 協定,而 0.20.0 重組了 SDK 介面,因此兩者在 agentmemory 的每個版本中一起升級。若你執行自己的引擎並確定版本相符,可用 `AGENTMEMORY_III_VERSION=<version>` 覆寫。
 
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.11.2/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
 - **macOS x64:** 把 `aarch64-apple-darwin` 換成 `x86_64-apple-darwin`
 - **Linux x64:** 換成 `x86_64-unknown-linux-gnu`
 - **Linux arm64:** 換成 `aarch64-unknown-linux-gnu`
-- **Windows:** 從 [iii-hq/iii releases v0.11.2](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2) 下載 `iii-x86_64-pc-windows-msvc.zip`,擷取 `iii.exe`,加入 PATH
+- **Windows:** 從 [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) 下載 `iii-x86_64-pc-windows-msvc.zip`,擷取 `iii.exe`,加入 PATH
 
-或使用 Docker(捆綁的 `docker-compose.yml` 會拉取 `iiidev/iii:0.11.2`)。完整文件:[iii.dev/docs](https://iii.dev/docs)。
+或使用 Docker(捆綁的 `docker-compose.yml` 會拉取 `iiidev/iii:0.22.1`)。完整文件:[iii.dev/docs](https://iii.dev/docs)。
 
 ### Windows
 
@@ -737,9 +737,9 @@ agentmemory 可在 Windows 10/11 執行,但僅 Node.js 套件不夠;你還需要
 **選項 A:預建 Windows 二進位(推薦)**
 
 ```powershell
-# 1. 在瀏覽器打開 https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.11.2
-#    (我們釘在 v0.11.2,直到 agentmemory 為 v0.11.6+ 引擎需求的
-#     新沙盒模型完成重構)
+# 1. 在瀏覽器打開 https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1
+#    (agentmemory 將引擎釘在與其 iii-sdk 相同的版本;
+#     目前配對為 v0.22.1)
 # 2. 下載 iii-x86_64-pc-windows-msvc.zip
 #    (若是 ARM 機器則下載 iii-aarch64-pc-windows-msvc.zip)
 # 3. 把 iii.exe 解壓到 PATH 上的某處,或放在:
@@ -747,7 +747,7 @@ agentmemory 可在 Windows 10/11 執行,但僅 Node.js 套件不夠;你還需要
 #    (agentmemory 會自動檢查該位置)
 # 4. 驗證:
 iii --version
-# 應輸出:0.11.2
+# 應輸出:0.22.1
 
 # 5. 然後照常執行 agentmemory:
 npx -y @agentmemory/agentmemory
@@ -779,7 +779,7 @@ npx -y @agentmemory/mcp
 | 連接埠衝突 | `netstat -ano \| findstr :3111` 查看佔用,然後 kill 或用 `--port <N>` |
 | Docker 已安裝但仍跳過回退 | 確保 Docker Desktop 確實在執行(系統匣圖示) |
 
-> 注意:iii **引擎** 是預建的二進位檔,而非 cargo crate,請勿嘗試以 `cargo install` 安裝它。(iii 的 **SDK** 確實已發布到 crates.io、npm 和 PyPI,但 agentmemory 並不需要它們。)受支援的引擎安裝方式皆固定為 v0.11.2:上述預建的 v0.11.2 二進位、**帶版本固定** 的上游 `sh` 安裝指令稿 `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.11.2 sh`(macOS/Linux),以及 Docker 鏡像 `iiidev/iii:0.11.2`。直接執行 `install.sh | sh` 會安裝 **最新** 引擎,而 agentmemory 並不支援該版本;請務必傳入 `VERSION=0.11.2`。最簡單的方式:直接執行 `npx @agentmemory/agentmemory`,它會為你把固定版本的引擎取得到 `~/.agentmemory/bin`。
+> 注意:iii **引擎** 是預建的二進位檔,而非 cargo crate,請勿嘗試以 `cargo install` 安裝它。(iii 的 **SDK** 確實已發布到 crates.io、npm 和 PyPI,但 agentmemory 並不需要它們。)受支援的引擎安裝方式皆固定為 v0.22.1:上述預建的 v0.22.1 二進位、**帶版本固定** 的上游 `sh` 安裝指令稿 `curl -fsSL https://install.iii.dev/iii/main/install.sh | VERSION=0.22.1 sh`(macOS/Linux),以及 Docker 鏡像 `iiidev/iii:0.22.1`。直接執行 `install.sh | sh` 會安裝 **最新** 引擎,而 agentmemory 並不支援該版本;請務必傳入 `VERSION=0.22.1`。最簡單的方式:直接執行 `npx @agentmemory/agentmemory`,它會為你把固定版本的引擎取得到 `~/.agentmemory/bin`。
 
 ---
 
@@ -1175,7 +1175,7 @@ iii console --port 3114 \
 
 **Traces 已開啟:**
 
-`iii-config.yaml` 出廠啟用 `iii-observability` worker(`exporter: memory`、`sampling_ratio: 1.0`、指標 + 日誌)。無需額外設定;agentmemory 啟動那一刻,每個記憶操作都會發出一個 trace span 和一個主控台可讀的結構化日誌。
+`iii-config.yaml` 出廠啟用 `iii-observability` worker(`exporter: memory`、`sampling_ratio: 0.1`、指標 + 日誌)。無需額外設定;agentmemory 啟動那一刻,每個記憶操作都會發出一個主控台可讀的結構化日誌,其中十分之一(`sampling_ratio: 0.1`)還會發出一個 trace span。
 
 若你想改為匯出到 Jaeger/Honeycomb/Grafana Tempo,把 `exporter: memory` 改為 `exporter: otlp` 並依 iii 的可觀測性文件設定收集器端點。
 
@@ -1197,7 +1197,7 @@ iii worker add iii-cron            # 排程整合、衰減掃描、快照輪替
 iii worker add iii-queue           # 嵌入 + 壓縮工作的持久重試
 iii worker add iii-observability   # 每個記憶操作的 OTEL traces(預設開啟)
 iii worker add iii-sandbox         # 在隔離 microVM 內執行召回到的程式碼
-iii worker add iii-database        # 切換 SQL 後端的狀態適配器
+iii worker add database        # 切換 SQL 後端的狀態適配器
 iii worker add mcp                 # 在 agentmemory 的 MCP 旁開設通用 MCP 宿主
 ```
 
@@ -1210,7 +1210,7 @@ iii worker add mcp                 # 在 agentmemory 的 MCP 旁開設通用 MCP
 | [`iii-queue`](https://workers.iii.dev/workers/iii-queue) | 持久重試:失敗的嵌入 + 壓縮工作在重啟後存活,無觀測遺失 |
 | [`iii-observability`](https://workers.iii.dev/workers/iii-observability) | 每個函式的 OTEL traces、指標、日誌,從第一天起就接入 `iii-config.yaml` |
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall` 出來的程式碼在一次性 VM 中執行,不在你的 shell 中 |
-| [`iii-database`](https://workers.iii.dev/workers/iii-database) | 當預設的記憶體 KV 不夠用時,SQL 後端狀態適配器 |
+| [`database`](https://workers.iii.dev/workers/database) | 當預設的記憶體 KV 不夠用時,SQL 後端狀態適配器 |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | 在 agentmemory 的旁邊架設額外 MCP 伺服器,共享同一引擎 |
 
 完整登錄表:[workers.iii.dev](https://workers.iii.dev)。那裡的每個 worker 都透過 agentmemory 所用的同樣原語組合,而你已經擁有的 agentmemory 本身就是其中之一。

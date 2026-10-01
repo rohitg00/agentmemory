@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { logger } from "../logger.js";
@@ -12,7 +12,7 @@ import { getFollowupWindowSeconds } from "../config.js";
 const RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export function registerRecentSearchesSweepFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
 ): void {
   sdk.registerFunction(

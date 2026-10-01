@@ -1,15 +1,15 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   CompressedObservation,
+  Memory,
   Session,
   ProjectProfile,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
-import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
 
-export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
+export function registerProfileFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::profile", 
     async (data: { project: string; refresh?: boolean } | undefined) => {
       if (!data || typeof data.project !== "string" || !data.project.trim()) {
@@ -24,7 +24,14 @@ export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
         if (cached) {
           const age = Date.now() - new Date(cached.updatedAt).getTime();
           if (age < 3600_000) {
-            return { profile: cached, cached: true };
+            const topFiles = cleanTopFiles(cached.topFiles || [], []);
+            if (topFiles.length === (cached.topFiles || []).length) {
+              return { profile: cached, cached: true };
+            }
+            return {
+              profile: { ...cached, topFiles, conventions: extractConventions(cached.topConcepts || [], topFiles) },
+              cached: true,
+            };
           }
         }
       }
@@ -85,15 +92,27 @@ export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
         }
       }
 
+      const memories = await kv
+        .list<Memory>(KV.memories)
+        .catch(() => [] as Memory[]);
+      for (const memory of memories) {
+        if (memory.project !== project || memory.isLatest === false) continue;
+        for (const concept of memory.concepts || []) {
+          conceptFreq.set(concept, (conceptFreq.get(concept) || 0) + 1);
+        }
+      }
+
       const topConcepts = Array.from(conceptFreq.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 15)
         .map(([concept, frequency]) => ({ concept, frequency }));
 
-      const topFiles = Array.from(fileFreq.entries())
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 15)
-        .map(([file, frequency]) => ({ file, frequency }));
+      const topFiles = cleanTopFiles(
+        Array.from(fileFreq.entries())
+          .sort((a, b) => b[1] - a[1])
+          .map(([file, frequency]) => ({ file, frequency })),
+        projectSessions.map((s) => s.cwd),
+      ).slice(0, 15);
 
       const uniqueErrors = [...new Set(errors)].slice(0, 10);
 
@@ -110,10 +129,6 @@ export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
       };
 
       await kv.set(KV.profiles, project, profile);
-      await recordAudit(kv, "share", "mem::profile", [project], {
-        sessionCount: projectSessions.length,
-        totalObservations: totalObs,
-      });
 
       logger.info("Profile generated", {
         project,
@@ -123,6 +138,38 @@ export function registerProfileFunction(sdk: ISdk, kv: StateKV): void {
       return { profile, cached: false };
     },
   );
+}
+
+const EXTENSIONLESS_FILES = new Set([
+  "Makefile",
+  "Dockerfile",
+  "Containerfile",
+  "Procfile",
+  "Gemfile",
+  "Rakefile",
+  "Jenkinsfile",
+  "Vagrantfile",
+  "Justfile",
+  "LICENSE",
+  "README",
+]);
+
+export function isLikelyFilePath(value: string, cwds: Array<string | undefined>): boolean {
+  const file = String(value || "").trim();
+  if (!file || /[*?{}[\]]/.test(file) || /\s{2,}/.test(file)) return false;
+  const bare = file.replace(/[/\\]+$/, "");
+  if (cwds.some((cwd) => cwd && cwd.replace(/[/\\]+$/, "") === bare)) return false;
+  const base = bare.split(/[/\\]/).pop() || "";
+  if (!base || base === "." || base === "..") return false;
+  if (EXTENSIONLESS_FILES.has(base)) return true;
+  return /\.[A-Za-z0-9_-]{1,12}$/.test(base);
+}
+
+export function cleanTopFiles(
+  files: Array<{ file: string; frequency: number }>,
+  cwds: Array<string | undefined>,
+): Array<{ file: string; frequency: number }> {
+  return files.filter((f) => isLikelyFilePath(f.file, cwds));
 }
 
 function extractConventions(

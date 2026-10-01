@@ -3,6 +3,7 @@ import type {
   CompressedObservation,
   ObservationType,
 } from "../types.js";
+import { createObservationSource } from "./observation-source.js";
 
 // Zero-LLM compression path. Converts a RawObservation into a
 // CompressedObservation using only heuristics — no Claude call, no token
@@ -41,18 +42,20 @@ function inferType(
   return "other";
 }
 
-function extractFiles(input: unknown): string[] {
+const SEARCH_TOOL_PATTERN = /grep|glob|search|find|^ls$|list/i;
+
+function extractFiles(toolName: string | undefined, input: unknown): string[] {
   if (!input || typeof input !== "object") return [];
   const o = input as Record<string, unknown>;
+  const isSearch =
+    (toolName !== undefined && SEARCH_TOOL_PATTERN.test(toolName)) ||
+    typeof o["pattern"] === "string" ||
+    typeof o["query"] === "string";
+  const keys = isSearch
+    ? ["file_path", "filepath", "filePath", "notebook_path"]
+    : ["file_path", "filepath", "path", "filePath", "file", "notebook_path"];
   const out = new Set<string>();
-  for (const key of [
-    "file_path",
-    "filepath",
-    "path",
-    "filePath",
-    "file",
-    "pattern",
-  ]) {
+  for (const key of keys) {
     const v = o[key];
     if (typeof v === "string" && v.length > 0 && v.length < 512) out.add(v);
   }
@@ -95,9 +98,10 @@ export function buildSyntheticCompression(
     facts: [],
     narrative: truncate(narrativeParts.join(" | "), 400),
     concepts: [],
-    files: extractFiles(raw.toolInput),
+    files: extractFiles(raw.toolName, raw.toolInput),
     importance: 5,
     confidence: 0.3,
+    source: createObservationSource(raw),
   };
   if (raw.modality) result.modality = raw.modality;
   if (raw.imageData) result.imageData = raw.imageData;

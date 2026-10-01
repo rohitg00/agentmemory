@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { GraphEdge, GraphEdgeType, GraphNode, GraphNodeType } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
@@ -192,7 +192,7 @@ export function parseGraphifyGraph(raw: string): {
   };
 }
 
-export function registerGraphImportFunction(sdk: ISdk, kv: StateKV): void {
+export function registerGraphImportFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     "mem::graph::import-graphify",
     async (data?: { path?: string; cwd?: string }): Promise<GraphifyImportResult> => {

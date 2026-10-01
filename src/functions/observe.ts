@@ -1,18 +1,23 @@
-import { TriggerAction, type ISdk } from "iii-sdk";
-import type { RawObservation, HookPayload, Origin } from "../types.js";
+import { TriggerAction, type IIIClient } from "iii-sdk";
+import type { RawObservation, CompressedObservation, HookPayload, Origin } from "../types.js";
 
 const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"]);
 import { KV, STREAM, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { trackViewerStreamItem, pruneViewerStreamIfDue } from "../state/viewer-stream.js";
+import { addSessionToProjectIndex } from "../state/session-index.js";
+import { indexObservationSession } from "../state/obs-index.js";
 import { stripPrivateData } from "./privacy.js";
 import { DedupMap } from "./dedup.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
-import { getSearchIndex, vectorIndexAddGuarded } from "./search.js";
+import { getSearchIndex, scheduleIndexSave, vectorIndexAddGuarded } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
+import { withoutObservationSource } from "./observation-source.js";
+import { budgetLiveObservationSource } from "./observation-source-budget.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -38,7 +43,7 @@ export function extractImage(d: unknown): string | undefined {
 }
 
 export function registerObserveFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   dedupMap?: DedupMap,
   maxObservationsPerSession?: number,
@@ -117,17 +122,18 @@ export function registerObserveFunction(
 
       if (typeof sanitizedRaw === "object" && sanitizedRaw !== null) {
         const d = sanitizedRaw as Record<string, unknown>;
-        if (
-          payload.hookType === "post_tool_use" ||
-          payload.hookType === "post_tool_failure"
-        ) {
+        if (TOOL_HOOKS.has(payload.hookType)) {
           raw.toolName = d["tool_name"] as string | undefined;
           raw.toolInput = d["tool_input"];
-          raw.toolOutput = d["tool_output"] || d["error"];
+          raw.toolOutput = d["tool_output"] ?? d["error"];
           if (raw.origin && raw.toolName) raw.origin.detail = raw.toolName;
         }
         if (payload.hookType === "prompt_submit") {
           raw.userPrompt = d["prompt"] as string | undefined;
+        }
+        if (payload.hookType === "stop") {
+          const response = d["assistant_response"] ?? d["last_assistant_message"] ?? d["response"];
+          if (typeof response === "string") raw.assistantResponse = response;
         }
 
         extractedImage = extractImage(sanitizedRaw);
@@ -144,8 +150,8 @@ export function registerObserveFunction(
       const pendingImageData = extractedImage;
 
       return withKeyedLock(`obs:${payload.sessionId}`, async () => {
+        const existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
         if (maxObservationsPerSession && maxObservationsPerSession > 0) {
-          const existing = await kv.list(KV.observations(payload.sessionId));
           if (existing.length >= maxObservationsPerSession) {
             return {
               success: false,
@@ -196,6 +202,15 @@ export function registerObserveFunction(
         try {
 
           await kv.set(KV.observations(payload.sessionId), obsId, raw);
+          await indexObservationSession(kv, obsId, payload.sessionId).catch(
+            (err) => {
+              logger.warn("observation index update failed", {
+                obsId,
+                sessionId: payload.sessionId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            },
+          );
 
         } catch (error) {
           if (raw.imageData) {
@@ -221,16 +236,6 @@ export function registerObserveFunction(
         if (dedupMap && dedupHash) {
           dedupMap.record(dedupHash);
         }
-
-        await sdk.trigger({
-          function_id: "stream::set",
-          payload: {
-          stream_name: STREAM.name,
-          group_id: STREAM.group(payload.sessionId),
-          item_id: obsId,
-          data: { type: "raw", observation: raw },
-          },
-        });
 
         await sdk.trigger({
           function_id: "stream::send",
@@ -284,11 +289,12 @@ export function registerObserveFunction(
               ? raw.userPrompt.replace(/\s+/g, " ").trim().slice(0, 200)
               : undefined;
           const ts = new Date().toISOString();
+          const startedAt = payload.timestamp ?? ts;
           await kv.set(KV.sessions, payload.sessionId, {
             id: payload.sessionId,
             project: payload.project,
             cwd: payload.cwd,
-            startedAt: payload.timestamp ?? ts,
+            startedAt,
             updatedAt: ts,
             status: "active",
             observationCount: 1,
@@ -296,6 +302,16 @@ export function registerObserveFunction(
             ...(trimmedPrompt && trimmedPrompt.length > 0
               ? { firstPrompt: trimmedPrompt }
               : {}),
+          });
+          await addSessionToProjectIndex(kv, payload.project, {
+            id: payload.sessionId,
+            startedAt,
+            ...(inheritedAgentId ? { agentId: inheritedAgentId } : {}),
+          }).catch((err) => {
+            logger.warn("session index update failed", {
+              sessionId: payload.sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            });
           });
         }
 
@@ -314,13 +330,14 @@ export function registerObserveFunction(
             action: TriggerAction.Void(),
           });
         } else {
-          const synthetic = buildSyntheticCompression(raw);
+          const synthetic = budgetLiveObservationSource(buildSyntheticCompression(raw), existing);
           await kv.set(
             KV.observations(payload.sessionId),
             obsId,
             synthetic,
           );
           getSearchIndex().add(synthetic);
+          scheduleIndexSave();
           await vectorIndexAddGuarded(
             synthetic.id,
             synthetic.sessionId,
@@ -331,24 +348,17 @@ export function registerObserveFunction(
             function_id: "stream::set",
             payload: {
               stream_name: STREAM.name,
-              group_id: STREAM.group(payload.sessionId),
-              item_id: obsId,
-              data: { type: "compressed", observation: synthetic },
-            },
-          });
-          await sdk.trigger({
-            function_id: "stream::set",
-            payload: {
-              stream_name: STREAM.name,
               group_id: STREAM.viewerGroup,
               item_id: obsId,
               data: {
                 type: "compressed",
-                observation: synthetic,
+                observation: withoutObservationSource(synthetic),
                 sessionId: payload.sessionId,
               },
             },
           });
+          trackViewerStreamItem(obsId);
+          void pruneViewerStreamIfDue(sdk).catch(() => {});
         }
 
         logger.info("Observation captured", {

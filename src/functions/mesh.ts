@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
@@ -119,7 +119,7 @@ async function lwwMergeGraphNodes(
     if (!item.id || typeof item.id !== "string") continue;
     const ts = graphNodeTs(item);
     if (!ts || Number.isNaN(new Date(ts).getTime())) continue;
-    const wrote = await withKeyedLock(`mem:gnode:${item.id}`, async () => {
+    const wrote = await withKeyedLock("graph:persist", async () => {
       const existing = await kv.get<GraphNode>(KV.graphNodes, item.id);
       if (!existing) {
         await kv.set(KV.graphNodes, item.id, item);
@@ -136,8 +136,35 @@ async function lwwMergeGraphNodes(
   return count;
 }
 
+async function lwwMergeGraphEdges(
+  kv: StateKV,
+  items: GraphEdge[] | undefined,
+): Promise<number> {
+  if (!items || !Array.isArray(items)) return 0;
+  let count = 0;
+  for (const item of items) {
+    if (!item.id || typeof item.id !== "string") continue;
+    const ts = item.createdAt;
+    if (!ts || Number.isNaN(new Date(ts).getTime())) continue;
+    const wrote = await withKeyedLock("graph:persist", async () => {
+      const existing = await kv.get<GraphEdge>(KV.graphEdges, item.id);
+      if (!existing) {
+        await kv.set(KV.graphEdges, item.id, item);
+        return true;
+      }
+      if (new Date(ts) > new Date(existing.createdAt)) {
+        await kv.set(KV.graphEdges, item.id, item);
+        return true;
+      }
+      return false;
+    });
+    if (wrote) count++;
+  }
+  return count;
+}
+
 export function registerMeshFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   meshAuthToken?: string,
 ): void {
@@ -361,7 +388,7 @@ export function registerMeshFunction(
         }
       }
       accepted += await lwwMergeGraphNodes(kv, data.graphNodes);
-      accepted += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
+      accepted += await lwwMergeGraphEdges(kv, data.graphEdges);
       await recordAudit(kv, "mesh_sync", "mem::mesh-receive", [], {
         action: "mesh.receive",
         accepted,
@@ -488,7 +515,7 @@ async function applySyncData(
     applied += await lwwMergeGraphNodes(kv, data.graphNodes);
   }
   if (scopes.includes("graph:edges")) {
-    applied += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
+    applied += await lwwMergeGraphEdges(kv, data.graphEdges);
   }
 
   return applied;

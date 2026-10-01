@@ -1,7 +1,8 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { unindexObservationSession } from "../state/obs-index.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
@@ -21,7 +22,7 @@ interface AutoForgetResult {
   dryRun: boolean;
 }
 
-export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
+export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::auto-forget", 
     async (data: { dryRun?: boolean }): Promise<AutoForgetResult> => {
       const dryRun = data?.dryRun ?? false;
@@ -172,6 +173,7 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
                 deletedOk = false;
               }
               if (deletedOk) {
+                await unindexObservationSession(kv, obs.id).catch(() => {});
                 if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
                 if (obs.imageRef && obs.imageRef !== obs.imageData) {
                   await decrementImageRef(kv, sdk, obs.imageRef);

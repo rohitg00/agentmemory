@@ -7,6 +7,10 @@ import type { MemoryProvider } from "../types.js";
  * detect the empty result and short-circuit instead of spawning a
  * provider session (#149 / Stop-hook recursion loop fix).
  */
+export function isNoopProvider(provider: { name: string }): boolean {
+  return provider.name === "noop" || provider.name === "resilient(noop)";
+}
+
 export class NoopProvider implements MemoryProvider {
   name = "noop";
 

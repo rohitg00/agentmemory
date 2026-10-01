@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
 // A second full instance next to a live daemon registers a duplicate worker
-// on the running engine, and on iii 0.11.2 its shutdown tears down the
+// on the running engine, and before iii 0.19.2 its shutdown tore down the
 // daemon's HTTP trigger routing (every /agentmemory/* route 404s until a full
 // engine restart). Two guards prevent that: unknown subcommands error instead
 // of falling through to the server boot, and the boot path probes livez and

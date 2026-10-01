@@ -16,6 +16,7 @@
 set -eu
 
 DATA_DIR="${AGENTMEMORY_DATA_DIR:-/data}"
+export AGENTMEMORY_DATA_DIR="$DATA_DIR"
 HMAC_FILE="${AGENTMEMORY_HMAC_FILE:-/data/.hmac}"
 RUN_AS="node:node"
 III_CONFIG="/opt/agentmemory/node_modules/@agentmemory/agentmemory/dist/iii-config.yaml"
@@ -70,10 +71,10 @@ workers:
       enabled: true
       service_name: agentmemory
       exporter: memory
-      sampling_ratio: 1.0
+      sampling_ratio: 0.1
       metrics_enabled: true
       logs_enabled: true
-      logs_console_output: true
+      logs_console_output: false
 EOF
 chown "$RUN_AS" "$III_CONFIG"
 

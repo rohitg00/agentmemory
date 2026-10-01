@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
 import type { Lesson } from "../types.js";
@@ -63,7 +63,31 @@ function reinforceLesson(lesson: Lesson): void {
   lesson.updatedAt = now;
 }
 
-export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
+export const LESSON_SOURCE_IDS_MAX = 50;
+const LESSON_SOURCE_ID_MAX_LENGTH = 200;
+
+export function normalizeLessonSourceIds(value: unknown): string[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > LESSON_SOURCE_IDS_MAX) return null;
+  const ids: string[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "string") return null;
+    const id = raw.trim();
+    if (!id || id.length > LESSON_SOURCE_ID_MAX_LENGTH || /\s/.test(id)) return null;
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+function mergeSourceIds(existing: string[] | undefined, incoming: string[] | undefined): string[] {
+  const merged = [...(existing || [])];
+  for (const id of incoming || []) {
+    if (!merged.includes(id)) merged.push(id);
+  }
+  return merged.slice(-LESSON_SOURCE_IDS_MAX);
+}
+
+export function registerLessonsFunctions(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::lesson-save", 
     async (data: {
       content: string;
@@ -87,6 +111,9 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         if (data.context && !existing.context) {
           existing.context = data.context;
           indexedTextChanged = true;
+        }
+        if (data.sourceIds && data.sourceIds.length) {
+          existing.sourceIds = mergeSourceIds(existing.sourceIds, data.sourceIds);
         }
         await kv.set(KV.lessons, existing.id, existing);
         lessonRecords.set(existing.id, existing);

@@ -1,7 +1,7 @@
 """Minimal agentmemory usage via iii-sdk.
 
 Prerequisites:
-    pip install iii-sdk
+    pip install iii-sdk==0.22.1
     npx -y @agentmemory/agentmemory  # daemon at ws://localhost:49134
 
 Run:
