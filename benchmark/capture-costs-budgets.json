@@ -1,0 +1,104 @@
+{
+  "derivedFrom": "b3d6cf50026655233f11c2273b898af0ca82cf03",
+  "budgets": {
+    "keyless": {
+      "100": {
+        "diskGrowthPerObservationBytes": 4766,
+        "diskAfterCaptureBytes": 484011,
+        "diskIndexBytes": 16384,
+        "diskDiagnosticBytes": 16384,
+        "capturePeakRssKiB": 261220,
+        "idleRssKiB": 233460,
+        "recoveryIdleRssKiB": 243780,
+        "hookP95Ms": 250,
+        "recoveryReadyMs": 3000,
+        "recoveryIndexReadyMs": 3000,
+        "searchFullBytesP50": 10475,
+        "searchCompactTokensP50": 676,
+        "sessionStartInjectOnStdoutBytes": 4096
+      },
+      "1000": {
+        "diskGrowthPerObservationBytes": 4467,
+        "diskAfterCaptureBytes": 4473896,
+        "diskIndexBytes": 62960,
+        "diskDiagnosticBytes": 16384,
+        "capturePeakRssKiB": 310880,
+        "idleRssKiB": 310880,
+        "recoveryIdleRssKiB": 288340,
+        "hookP95Ms": 250,
+        "observeP95Ms": 150,
+        "recoveryReadyMs": 3000,
+        "recoveryIndexReadyMs": 3000,
+        "searchFullBytesP50": 10480,
+        "searchCompactTokensP50": 681,
+        "sessionStartInjectOnStdoutBytes": 5266
+      }
+    },
+    "embed": {
+      "100": {
+        "diskGrowthPerObservationBytes": 9329,
+        "diskAfterCaptureBytes": 940443,
+        "diskIndexBytes": 483090,
+        "diskDiagnosticBytes": 16384,
+        "capturePeakRssKiB": 268820,
+        "idleRssKiB": 214880,
+        "recoveryIdleRssKiB": 244840,
+        "hookP95Ms": 250,
+        "recoveryReadyMs": 3000,
+        "recoveryIndexReadyMs": 3000,
+        "searchFullBytesP50": 10385,
+        "searchCompactTokensP50": 664,
+        "sessionStartInjectOnStdoutBytes": 4096
+      },
+      "1000": {
+        "diskGrowthPerObservationBytes": 4917,
+        "diskAfterCaptureBytes": 4924208,
+        "diskIndexBytes": 537095,
+        "diskDiagnosticBytes": 16384,
+        "capturePeakRssKiB": 314720,
+        "idleRssKiB": 308560,
+        "recoveryIdleRssKiB": 327340,
+        "hookP95Ms": 250,
+        "observeP95Ms": 151,
+        "recoveryReadyMs": 3000,
+        "recoveryIndexReadyMs": 3000,
+        "searchFullBytesP50": 10458,
+        "searchCompactTokensP50": 663,
+        "sessionStartInjectOnStdoutBytes": 5266
+      }
+    },
+    "embed-llm": {
+      "100": {
+        "diskGrowthPerObservationBytes": 8112,
+        "diskAfterCaptureBytes": 818403,
+        "diskIndexBytes": 494460,
+        "diskDiagnosticBytes": 16384,
+        "capturePeakRssKiB": 270140,
+        "idleRssKiB": 241420,
+        "recoveryIdleRssKiB": 245760,
+        "hookP95Ms": 250,
+        "recoveryReadyMs": 3000,
+        "recoveryIndexReadyMs": 3000,
+        "searchFullBytesP50": 7793,
+        "searchCompactTokensP50": 832,
+        "sessionStartInjectOnStdoutBytes": 4096
+      },
+      "1000": {
+        "diskGrowthPerObservationBytes": 4144,
+        "diskAfterCaptureBytes": 4151168,
+        "diskIndexBytes": 563535,
+        "diskDiagnosticBytes": 16384,
+        "capturePeakRssKiB": 358620,
+        "idleRssKiB": 354800,
+        "recoveryIdleRssKiB": 313540,
+        "hookP95Ms": 250,
+        "observeP95Ms": 150,
+        "recoveryReadyMs": 3000,
+        "recoveryIndexReadyMs": 3000,
+        "searchFullBytesP50": 7851,
+        "searchCompactTokensP50": 834,
+        "sessionStartInjectOnStdoutBytes": 6968
+      }
+    }
+  }
+}

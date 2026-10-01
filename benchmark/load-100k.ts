@@ -30,44 +30,7 @@ import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { pXX } from "./lib/percentiles.js";
-
-/** Seedable PRNG. Mulberry32 — 32-bit state, uniform output in [0, 1). */
-function mulberry32(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const NOUNS = [
-  "cache", "queue", "router", "stream", "shard", "lock", "buffer", "worker",
-  "engine", "trigger", "function", "memory", "index", "graph", "vector",
-  "session", "observation", "summary", "embedding", "tokenizer", "scheduler",
-  "consumer", "producer", "channel", "actor", "pipeline", "watcher", "pool",
-];
-const VERBS = [
-  "flushes", "rotates", "compacts", "rebalances", "drains", "warms",
-  "expires", "deduplicates", "snapshots", "replays", "promotes", "demotes",
-  "merges", "splits", "indexes", "scans", "compresses", "uploads",
-];
-const CONCEPTS = [
-  "throughput", "latency", "backpressure", "consistency", "isolation",
-  "durability", "idempotency", "fan-out", "cardinality", "skew",
-  "hot-path", "cold-start", "tail-latency", "saturation", "quiescence",
-];
-
-function buildContent(rng: () => number, i: number): string {
-  const n = NOUNS[Math.floor(rng() * NOUNS.length)]!;
-  const v = VERBS[Math.floor(rng() * VERBS.length)]!;
-  const c1 = CONCEPTS[Math.floor(rng() * CONCEPTS.length)]!;
-  const c2 = CONCEPTS[Math.floor(rng() * CONCEPTS.length)]!;
-  const k = Math.floor(rng() * 9999);
-  return `seed-${i} the ${n} ${v} ${c1} under ${c2} pressure (k=${k})`;
-}
+import { buildContent, mulberry32 } from "./lib/corpus.js";
 
 interface RunConfig {
   baseUrl: string;
