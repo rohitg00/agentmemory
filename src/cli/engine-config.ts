@@ -34,6 +34,7 @@ export function configuredSaveIntervalMs(renderedConfig: string): number | null 
 }
 
 export const ENGINE_DEFAULT_SAVE_INTERVAL_MS = 5000;
+export const AGENTMEMORY_STATE_SAVE_INTERVAL_MS = 2000;
 export const ENGINE_FLUSH_MARGIN_MS = 1500;
 export const ENGINE_FLUSH_WAIT_CAP_MS = 15_000;
 
@@ -42,10 +43,21 @@ export function engineFlushWaitMs(
   configTexts: readonly string[],
 ): number {
   if (stateBackend === "redis") return 0;
-  const interval =
+  return Math.min(engineSaveIntervalMs(configTexts) + ENGINE_FLUSH_MARGIN_MS, ENGINE_FLUSH_WAIT_CAP_MS);
+}
+
+export function engineSaveIntervalMs(configTexts: readonly string[]): number {
+  return (
     configTexts.map(configuredSaveIntervalMs).find((ms) => ms !== null) ??
-    ENGINE_DEFAULT_SAVE_INTERVAL_MS;
-  return Math.min(interval + ENGINE_FLUSH_MARGIN_MS, ENGINE_FLUSH_WAIT_CAP_MS);
+    ENGINE_DEFAULT_SAVE_INTERVAL_MS
+  );
+}
+
+export function engineStateConfigPaths(engineCwd: string, runtimePath: string): string[] {
+  return [
+    ...persistedBuiltinConfigDirs(engineCwd, runtimePath).map((dir) => join(dir, "iii-state.yaml")),
+    runtimePath,
+  ];
 }
 
 export function persistedBuiltinConfigDirs(
@@ -104,6 +116,7 @@ export interface EngineConfigOptions {
   dataDir: string;
   ports?: EngineRuntimePorts;
   stateBackend?: StateBackendOptions;
+  saveIntervalMs?: number;
 }
 
 export interface EngineRuntimePorts {
@@ -178,6 +191,40 @@ function setWorkerPort(lines: string[], name: string, port: number): void {
     const configIndent = lines[configIndex]!.match(/^\s*/)?.[0] ?? `${block.indent}  `;
     lines.splice(configIndex + 1, 0, `${configIndent}  port: ${port}`);
   }
+}
+
+function setFileStoreSaveInterval(
+  lines: string[],
+  workerName: string,
+  override: number | undefined,
+): void {
+  const block = workerBlock(lines, workerName);
+  if (!block) return;
+  const methodIndex = lines.findIndex(
+    (line, index) =>
+      index > block.start &&
+      index < block.end &&
+      line.trim() === "store_method: file_based",
+  );
+  if (methodIndex === -1) return;
+  const indent = lines[methodIndex]!.match(/^\s*/)?.[0] ?? "";
+  const intervalIndex = lines.findIndex(
+    (line, index) =>
+      index > block.start &&
+      index < block.end &&
+      line.trim().startsWith("save_interval_ms:"),
+  );
+  if (intervalIndex !== -1) {
+    if (override === undefined) return;
+    const existingIndent = lines[intervalIndex]!.match(/^\s*/)?.[0] ?? indent;
+    lines[intervalIndex] = `${existingIndent}save_interval_ms: ${override}`;
+    return;
+  }
+  lines.splice(
+    methodIndex + 1,
+    0,
+    `${indent}save_interval_ms: ${override ?? AGENTMEMORY_STATE_SAVE_INTERVAL_MS}`,
+  );
 }
 
 const REDIS_URL_ENV_REF = "${AGENTMEMORY_REDIS_URL}";
@@ -276,9 +323,9 @@ export function renderEngineConfig(
     );
 
   const usesRedis = options.stateBackend?.kind === "redis";
-  if (!options.ports && !usesRedis) return rendered;
-
   const lines = rendered.split("\n");
+  setFileStoreSaveInterval(lines, "iii-state", options.saveIntervalMs);
+  setFileStoreSaveInterval(lines, "iii-stream", options.saveIntervalMs);
   if (options.ports) {
     setWorkerPort(lines, "iii-http", options.ports.restPort);
     setWorkerPort(lines, "iii-stream", options.ports.streamPort);
