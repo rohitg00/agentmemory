@@ -52,7 +52,7 @@ Ranges are min to max across repeats.
 | embed-llm | 10,000 | 29.9 MiB | 29.02 MiB | 0.86 to 0.89 MiB | 0 | 4 KiB | 3,135 B |
 
 - Fixed overhead of an empty instance is 5.8 to 6.1 KiB.
-- Source (`mem:obs:*` plus sessions) is 89 to 97 percent of the store at every size. Index bytes are the BM25 session shards plus whatever vector buckets were checkpointed.
+- Source (`mem:obs:*` plus sessions) is the largest category in every run: 76 to 87 percent at 100 and 1,000 for keyless and 97 percent at 10,000 for every profile. The first vector checkpoint lowers the share at small N (39 percent for `embed` at 100). Index bytes are the BM25 session shards plus whatever vector buckets were checkpointed.
 - With embeddings on, the on-disk index after capture is not the steady state. The first vector checkpoint writes about 90 vectors; the next one is due after `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (600 s by default), which no run reached. Checkpoints written later measure about 4.1 KiB per 768-dimension vector (2.4 MiB for 589 vectors at 1k, 2.8 MiB for 591 at 10k).
 - Queue and failed-delivery bytes are 0 on the file store: the builtin queue adapter keeps nothing on disk. The viewer stream file holds about 0.43 MiB at 1k and 10k; the `embed-llm` runs wrote no stream file.
 
