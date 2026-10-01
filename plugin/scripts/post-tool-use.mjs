@@ -142,7 +142,7 @@ async function main() {
 		}),
 		signal: AbortSignal.timeout(3e3)
 	}).catch(() => {});
-	setTimeout(() => process.exit(0), 500).unref();
+	setTimeout(() => process.exit(0), 3e3).unref();
 }
 function toolOutput(data) {
 	if (data.tool_response !== void 0) return data.tool_response;
