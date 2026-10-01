@@ -258,3 +258,38 @@ describe("snapshot-create reentrancy guard", () => {
     expect(r3.snapshot).toBeDefined();
   });
 });
+
+const bloatedIds = (prefix: string, n: number) =>
+  Array.from({ length: n }, (_, i) => `${prefix}_${String(i).padStart(3, "0")}`);
+
+describe("snapshot-restore bounds graph provenance", () => {
+  it("caps sourceObservationIds on restored graph nodes", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSnapshotFunction(sdk as never, kv as never, "/tmp/agentmemory-snapshots");
+    vi.mocked(readFileSync).mockReturnValueOnce(
+      JSON.stringify({
+        version: "0.4.0",
+        sessions: [],
+        memories: [],
+        graphNodes: [
+          {
+            id: "gn_bloat",
+            type: "file",
+            name: "src/hot.ts",
+            properties: {},
+            sourceObservationIds: bloatedIds("obs", 250),
+            createdAt: "2026-03-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+    expect(result.success).toBe(true);
+    const n = await kv.get<{ name: string; sourceObservationIds: string[] }>("mem:graph:nodes", "gn_bloat");
+    expect(n!.name).toBe("src/hot.ts");
+    expect(n!.sourceObservationIds).toEqual(bloatedIds("obs", 250).slice(-32));
+  });
+});

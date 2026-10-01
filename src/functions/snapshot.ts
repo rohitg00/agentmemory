@@ -15,6 +15,7 @@ import type { StateKV } from "../state/kv.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
+import { boundRecordSources } from "./graph.js";
 import { VERSION } from "../version.js";
 import { logger } from "../logger.js";
 
@@ -220,7 +221,7 @@ export function registerSnapshotFunction(
         if (state.graphNodes) {
           for (const node of state.graphNodes) {
             await withKeyedLock("graph:persist", () =>
-              kv.set(KV.graphNodes, node.id, node),
+              kv.set(KV.graphNodes, node.id, boundRecordSources(node)),
             );
           }
         }

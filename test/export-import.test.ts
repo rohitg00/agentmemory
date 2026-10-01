@@ -309,3 +309,62 @@ describe("Export/Import Functions", () => {
     expect(result.error).toContain("Unsupported export version");
   });
 });
+
+const bloatedIds = (prefix: string, n: number) =>
+  Array.from({ length: n }, (_, i) => `${prefix}_${String(i).padStart(3, "0")}`);
+
+describe("import bounds graph provenance", () => {
+  it("caps sourceObservationIds on imported graph nodes and edges", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const exportData = {
+      version: "0.9.28",
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      graphNodes: [
+        {
+          id: "gn_bloat",
+          type: "file",
+          name: "src/hot.ts",
+          properties: {},
+          sourceObservationIds: bloatedIds("obs", 400),
+          createdAt: "2026-03-01T00:00:00Z",
+        },
+        {
+          id: "gn_small",
+          type: "file",
+          name: "src/cold.ts",
+          properties: {},
+          sourceObservationIds: ["obs_x"],
+          createdAt: "2026-03-01T00:00:00Z",
+        },
+      ],
+      graphEdges: [
+        {
+          id: "ge_bloat",
+          type: "related_to",
+          sourceNodeId: "gn_bloat",
+          targetNodeId: "gn_small",
+          weight: 0.5,
+          sourceObservationIds: bloatedIds("eobs", 100),
+          createdAt: "2026-03-01T00:00:00Z",
+        },
+      ],
+    } as unknown as ExportData;
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "merge",
+    })) as { success: boolean };
+    expect(result.success).toBe(true);
+    const n = await kv.get<{ sourceObservationIds: string[] }>("mem:graph:nodes", "gn_bloat");
+    const s = await kv.get<{ sourceObservationIds: string[] }>("mem:graph:nodes", "gn_small");
+    const e = await kv.get<{ sourceObservationIds: string[] }>("mem:graph:edges", "ge_bloat");
+    expect(n!.sourceObservationIds).toEqual(bloatedIds("obs", 400).slice(-32));
+    expect(s!.sourceObservationIds).toEqual(["obs_x"]);
+    expect(e!.sourceObservationIds).toEqual(bloatedIds("eobs", 100).slice(-32));
+  });
+});

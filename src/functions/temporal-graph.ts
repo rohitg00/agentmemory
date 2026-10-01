@@ -8,6 +8,7 @@ import type {
   MemoryProvider,
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
+import { boundSources } from "./graph.js";
 import type { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { logger } from "../logger.js";
@@ -201,12 +202,10 @@ export function registerTemporalGraphFunctions(
               const oldId = node.id;
               const merged = {
                 ...existing,
-                sourceObservationIds: [
-                  ...new Set([
-                    ...existing.sourceObservationIds,
-                    ...obsIds,
-                  ]),
-                ],
+                sourceObservationIds: boundSources(
+                  existing.sourceObservationIds ?? [],
+                  node.sourceObservationIds ?? [],
+                ),
                 properties: { ...existing.properties, ...node.properties },
                 updatedAt: new Date().toISOString(),
                 aliases: [
@@ -221,6 +220,7 @@ export function registerTemporalGraphFunctions(
               node.id = existing.id;
               idRemap.set(oldId, existing.id);
             } else {
+              node.sourceObservationIds = boundSources([], node.sourceObservationIds ?? []);
               await kv.set(KV.graphNodes, node.id, node);
               existingNodes.push(node);
             }
@@ -255,6 +255,7 @@ export function registerTemporalGraphFunctions(
               edge.version = (existingEdge.version || 1) + 1;
             }
 
+            edge.sourceObservationIds = boundSources([], edge.sourceObservationIds ?? []);
             await kv.set(KV.graphEdges, edge.id, edge);
             existingEdges.push(edge);
           }

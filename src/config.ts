@@ -249,6 +249,10 @@ export function getSessionSweepStaleHours(): number {
   return parsed > 0 ? parsed : 24;
 }
 
+export function isGraphCompactOnBootEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_GRAPH_COMPACT_ON_BOOT"] !== "false";
+}
+
 export function isDropStaleIndexEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_DROP_STALE_INDEX"] === "true";
 }

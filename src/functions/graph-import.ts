@@ -224,7 +224,6 @@ export function registerGraphImportFunction(sdk: IIIClient, kv: StateKV): void {
           kv,
           parsed.nodes,
           parsed.edges,
-          [],
         );
 
         await recordAudit(kv, "import", "mem::graph::import-graphify", [], {

@@ -3,6 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
+import { boundRecordSources } from "./graph.js";
 import type {
   MeshPeer,
   Memory,
@@ -122,11 +123,11 @@ async function lwwMergeGraphNodes(
     const wrote = await withKeyedLock("graph:persist", async () => {
       const existing = await kv.get<GraphNode>(KV.graphNodes, item.id);
       if (!existing) {
-        await kv.set(KV.graphNodes, item.id, item);
+        await kv.set(KV.graphNodes, item.id, boundRecordSources(item));
         return true;
       }
       if (new Date(ts) > new Date(graphNodeTs(existing))) {
-        await kv.set(KV.graphNodes, item.id, item);
+        await kv.set(KV.graphNodes, item.id, boundRecordSources(item));
         return true;
       }
       return false;
@@ -149,11 +150,11 @@ async function lwwMergeGraphEdges(
     const wrote = await withKeyedLock("graph:persist", async () => {
       const existing = await kv.get<GraphEdge>(KV.graphEdges, item.id);
       if (!existing) {
-        await kv.set(KV.graphEdges, item.id, item);
+        await kv.set(KV.graphEdges, item.id, boundRecordSources(item));
         return true;
       }
       if (new Date(ts) > new Date(existing.createdAt)) {
-        await kv.set(KV.graphEdges, item.id, item);
+        await kv.set(KV.graphEdges, item.id, boundRecordSources(item));
         return true;
       }
       return false;
