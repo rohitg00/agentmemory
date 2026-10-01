@@ -74,7 +74,7 @@ import { createStartupStderrCapture } from "./cli/startup-stderr.js";
 import {
   clearPersistedBuiltinConfig,
   engineFlushWaitMs,
-  persistedBuiltinConfigDirs,
+  engineStateConfigPaths,
   renderEngineConfig,
 } from "./cli/engine-config.js";
 import { SHUTDOWN_HARD_EXIT_MS } from "./shutdown.js";
@@ -84,7 +84,7 @@ import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
 import { setBootVerbose } from "./logger.js";
-import { getRedisUrl, getStateBackend, hydrateProcessEnvFromFile } from "./config.js";
+import { getRedisUrl, getStateBackend, getStateSaveIntervalMs, hydrateProcessEnvFromFile } from "./config.js";
 import { III_PINNED_VERSION, VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
 import { knownAgents } from "./cli/connect/index.js";
@@ -1482,6 +1482,7 @@ function prepareEngineLaunch(configPath: string): {
         enginePort: getEnginePort(),
       },
       stateBackend: { kind: stateBackendKind, redisUrl: getRedisUrl() },
+      saveIntervalMs: getStateSaveIntervalMs(),
     };
     const rewritten = bundledConfig
       ? rewriteBundledConfig(
@@ -3285,10 +3286,7 @@ async function waitForEngineFlush(): Promise<void> {
   } catch {}
   const runtimePath = runtimeConfigPath(dataDirResolution.dataDir);
   const configTexts: string[] = [];
-  for (const path of [
-    ...persistedBuiltinConfigDirs(join(homedir(), ".agentmemory"), runtimePath).map((dir) => join(dir, "iii-state.yaml")),
-    runtimePath,
-  ]) {
+  for (const path of engineStateConfigPaths(join(homedir(), ".agentmemory"), runtimePath)) {
     try {
       configTexts.push(readFileSync(path, "utf-8"));
     } catch {}

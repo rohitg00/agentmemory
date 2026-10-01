@@ -163,6 +163,7 @@ export function rewriteBundledConfig(
     dataDir: options?.dataDir ?? join(agentmemoryHome(home), "data"),
     ...(options?.ports ? { ports: options.ports } : {}),
     ...(options?.stateBackend ? { stateBackend: options.stateBackend } : {}),
+    ...(options?.saveIntervalMs !== undefined ? { saveIntervalMs: options.saveIntervalMs } : {}),
   });
   return removeAgentmemoryExecCommand(rendered, nodeBin, workerEntry);
 }
@@ -189,8 +190,17 @@ export function legacyDataMigrations(
   ];
 }
 
-export function engineChildEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return { ...base, III_TELEMETRY_ENABLED: base["III_TELEMETRY_ENABLED"] ?? "false" };
+export const ENGINE_MALLOC_ARENA_MAX = "2";
+
+export function engineChildEnv(
+  base: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...base, III_TELEMETRY_ENABLED: base["III_TELEMETRY_ENABLED"] ?? "false" };
+  if (platform === "linux" && !base.MALLOC_ARENA_MAX) {
+    env.MALLOC_ARENA_MAX = ENGINE_MALLOC_ARENA_MAX;
+  }
+  return env;
 }
 
 export type LaunchRenderFailure =

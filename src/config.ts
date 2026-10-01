@@ -542,6 +542,11 @@ export function getIndexSaveIntervalMs(): number {
   return raw > 0 ? raw : INDEX_SAVE_INTERVAL_DEFAULT_MS;
 }
 
+export function getStateSaveIntervalMs(): number | undefined {
+  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_STATE_SAVE_INTERVAL_MS"], 0);
+  return raw > 0 ? raw : undefined;
+}
+
 export const VECTOR_BUCKET_SIZE_DEFAULT = 500;
 
 export function getVectorBucketSize(): number {

@@ -1,4 +1,5 @@
 import { stat, readFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AuditEntry, AuditMigrationState, AuditQueryResult } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
@@ -7,7 +8,7 @@ import { logger } from "../logger.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { getEnvVar, getAuditMigrateMaxBytes } from "../config.js";
 import { runtimeConfigPath } from "../cli/engine-launch.js";
-import { configuredSaveIntervalMs } from "../cli/engine-config.js";
+import { ENGINE_DEFAULT_SAVE_INTERVAL_MS, engineSaveIntervalMs, engineStateConfigPaths } from "../cli/engine-config.js";
 
 // Audit coverage policy (issue #125).
 //
@@ -43,7 +44,6 @@ const AUDIT_MIGRATION_DELETE_CONCURRENCY = 8;
 const AUDIT_MONTHS_LOCK = KV.auditMonths;
 const AUDIT_MIGRATION_LOCK = "mem:audit:migration-lock";
 export const AUDIT_MIGRATION_STATE_KEY = "migration";
-const DEFAULT_SAVE_INTERVAL_MS = 5000;
 const AUDIT_MIGRATION_DELETE_WAIT_INTERVALS = 2;
 const STATE_STORE_DIR_NAME = "state_store.db";
 
@@ -116,14 +116,14 @@ export async function probeLegacyAuditScope(kv: StateKV): Promise<LegacyAuditPro
 
 async function auditMigrationDeleteDelayMs(): Promise<number> {
   const dataDir = getEnvVar("AGENTMEMORY_DATA_DIR");
-  if (!dataDir) return DEFAULT_SAVE_INTERVAL_MS * AUDIT_MIGRATION_DELETE_WAIT_INTERVALS;
-  try {
-    const rendered = await readFile(runtimeConfigPath(dataDir), "utf-8");
-    const interval = configuredSaveIntervalMs(rendered) ?? DEFAULT_SAVE_INTERVAL_MS;
-    return interval * AUDIT_MIGRATION_DELETE_WAIT_INTERVALS;
-  } catch {
-    return DEFAULT_SAVE_INTERVAL_MS * AUDIT_MIGRATION_DELETE_WAIT_INTERVALS;
+  if (!dataDir) return ENGINE_DEFAULT_SAVE_INTERVAL_MS * AUDIT_MIGRATION_DELETE_WAIT_INTERVALS;
+  const configTexts: string[] = [];
+  for (const path of engineStateConfigPaths(join(homedir(), ".agentmemory"), runtimeConfigPath(dataDir))) {
+    try {
+      configTexts.push(await readFile(path, "utf-8"));
+    } catch {}
   }
+  return engineSaveIntervalMs(configTexts) * AUDIT_MIGRATION_DELETE_WAIT_INTERVALS;
 }
 
 async function readAuditMigrationState(kv: StateKV): Promise<AuditMigrationState | null> {
