@@ -25,11 +25,12 @@ const EDGES = "mem:graph:edges";
 const HISTORY = "mem:graph:edge-history";
 const CONFIG = "mem:config";
 
-function mockKV(opts: { shuffle?: boolean } = {}) {
-  const store = new Map<string, Map<string, unknown>>();
+function mockKV(opts: { shuffle?: boolean; store?: Map<string, Map<string, unknown>> } = {}) {
+  const store = opts.store ?? new Map<string, Map<string, unknown>>();
   const calls = { list: [] as string[], get: [] as string[], set: [] as string[] };
   const kv = {
     calls,
+    store,
     failGet: null as ((scope: string, key: string) => boolean) | null,
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       calls.get.push(`${scope}/${key}`);
@@ -178,17 +179,50 @@ describe("graph compaction on boot", () => {
     const saved = (await marker(kv))!;
     expect(saved).toMatchObject({ status: "running", phase: "nodes", offset: 6 });
     const nodeReadsBefore = kv.calls.get.filter((c) => c.startsWith(`${NODES}/`)).length;
-    expect(nodeReadsBefore).toBe(6);
+    expect(nodeReadsBefore).toBe(12);
 
     resetGraphCompactBootStatus();
     kv.calls.get.length = 0;
     const log = vi.fn();
     const s = await runGraphCompactOnBoot(kv as never, { ...fast, log });
     expect(log.mock.calls[0]![0]).toMatch(/resuming in the background at nodes 6/);
-    expect(kv.calls.get.filter((c) => c.startsWith(`${NODES}/`))).toHaveLength(6);
+    expect(kv.calls.get.filter((c) => c.startsWith(`${NODES}/`))).toHaveLength(12);
     expect(s.state).toBe("done");
     expect(s.trimmed).toBe(6 + 6 + 1);
     expect(await maxIds(kv)).toBe(MAX_GRAPH_SOURCE_OBSERVATIONS);
+  });
+
+  it("reports the same totals as a clean run when the last progress write is lost at any point", async () => {
+    const clean = mockKV();
+    await seed(clean, 10, 7, 5);
+    const want = await runGraphCompactOnBoot(clean as never, fast);
+    const totals = (s: { scanned?: number; trimmed?: number; idsRemoved?: number }) => ({
+      scanned: s.scanned,
+      trimmed: s.trimmed,
+      idsRemoved: s.idsRemoved,
+    });
+    expect(totals(want)).toEqual({ scanned: 22, trimmed: 18, idsRemoved: 17 * (100 - MAX_GRAPH_SOURCE_OBSERVATIONS) });
+
+    const probe = mockKV();
+    await seed(probe, 10, 7, 5);
+    const cuts: Map<string, Map<string, unknown>>[] = [];
+    const set = probe.set;
+    probe.set = async <T>(scope: string, key: string, data: T): Promise<T> => {
+      if (scope === CONFIG && key === GRAPH_COMPACT_BOOT_KEY) cuts.push(structuredClone(probe.store));
+      return set(scope, key, data);
+    };
+    resetGraphCompactBootStatus();
+    await runGraphCompactOnBoot(probe as never, fast);
+    expect(cuts.length).toBeGreaterThan(20);
+
+    for (const store of cuts) {
+      const kv = mockKV({ store });
+      resetGraphCompactBootStatus();
+      const s = await runGraphCompactOnBoot(kv as never, fast);
+      expect(s.state).toBe("done");
+      expect(totals(s)).toEqual(totals(want));
+      expect(await maxIds(kv)).toBe(MAX_GRAPH_SOURCE_OBSERVATIONS);
+    }
   });
 
   it("is idempotent: a second full pass trims nothing", async () => {

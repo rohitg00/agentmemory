@@ -740,6 +740,7 @@ export interface GraphCompactOptions {
   scope?: GraphCompactScope;
   offset?: number;
   limit?: number;
+  dryRun?: boolean;
 }
 
 export const COMPACT_SCOPES: readonly GraphCompactScope[] = ["nodes", "edges", "history", "snapshot"];
@@ -753,6 +754,7 @@ export async function compactGraphProvenance(
     throw new Error(`unknown compact scope: ${String(scope)}`);
   }
   const offset = opts.offset ?? 0;
+  const dryRun = opts.dryRun === true;
   const limit = opts.limit ?? Number.POSITIVE_INFINITY;
   if (!Number.isInteger(offset) || offset < 0) {
     throw new Error(`compact offset must be a non-negative integer: ${String(opts.offset)}`);
@@ -794,7 +796,7 @@ export async function compactGraphProvenance(
         if (sources.length <= MAX_GRAPH_SOURCE_OBSERVATIONS) return;
         const bounded = boundSources([], sources);
         result.idsRemoved += sources.length - bounded.length;
-        await kv.set(recordScope, id, { ...record, sourceObservationIds: bounded });
+        if (!dryRun) await kv.set(recordScope, id, { ...record, sourceObservationIds: bounded });
         trimmed += 1;
       });
     }
@@ -814,7 +816,7 @@ export async function compactGraphProvenance(
         });
       const topNodes = trimList(snap.topNodes);
       const topEdges = trimList(snap.topEdges);
-      if (result.snapshotTrimmed) {
+      if (result.snapshotTrimmed && !dryRun) {
         await kv.set(KV.graphSnapshot, SNAPSHOT_KEY, { ...snap, topNodes, topEdges });
       }
     });

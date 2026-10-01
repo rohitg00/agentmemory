@@ -27,10 +27,21 @@ export interface GraphCompactBootProgress {
   scanned: number;
   trimmed: number;
   idsRemoved: number;
+  pending?: GraphCompactBootSlicePlan;
   startedAt: string;
   updatedAt: string;
   completedAt?: string;
   error?: string;
+}
+
+export interface GraphCompactBootSlicePlan {
+  phase: BootPhase;
+  offset: number;
+  scanned: number;
+  trimmed: number;
+  idsRemoved: number;
+  nextOffset: number | null;
+  total: number | null;
 }
 
 export type GraphCompactBootState = "off" | "pending" | "running" | "done" | "failed";
@@ -104,6 +115,13 @@ function isResumable(p: GraphCompactBootProgress | null): p is GraphCompactBootP
     Number.isInteger(p.offset) &&
     p.offset >= 0
   );
+}
+
+function storedPlan(p: GraphCompactBootProgress, phase: BootPhase): GraphCompactBootSlicePlan | null {
+  const plan = p.pending;
+  if (!plan || plan.phase !== phase || plan.offset !== p.offset) return null;
+  const counts = [plan.scanned, plan.trimmed, plan.idsRemoved];
+  return counts.every((n) => Number.isInteger(n) && n >= 0) ? plan : null;
 }
 
 function scannedOf(scope: SlicedScope, r: GraphCompactResult): [number, number] {
@@ -202,23 +220,36 @@ async function runOnce(kv: StateKV, opts: GraphCompactBootOptions): Promise<Grap
       let phaseTrimmed = 0;
       let phaseScanned = 0;
       for (;;) {
-        const r = await attempt(() =>
-          compactGraphProvenance(kv, { scope: scope as GraphCompactScope, offset: p.offset, limit: sliceSize }),
-        );
-        const [scanned, trimmed] = scannedOf(scope, r);
-        phaseScanned += scanned;
-        phaseTrimmed += trimmed;
-        p.scanned += scanned;
-        p.trimmed += trimmed;
-        p.idsRemoved += r.idsRemoved;
-        p.phaseTotal = r.total ?? null;
-        if (r.nextOffset === null) {
-          p.offset = p.phaseTotal ?? p.offset;
-          await save();
-          break;
+        const slice = { scope: scope as GraphCompactScope, offset: p.offset, limit: sliceSize };
+        let plan = storedPlan(p, scope);
+        if (!plan) {
+          const r = await attempt(() => compactGraphProvenance(kv, { ...slice, dryRun: true }));
+          const [scanned, trimmed] = scannedOf(scope, r);
+          plan = {
+            phase: scope,
+            offset: p.offset,
+            scanned,
+            trimmed,
+            idsRemoved: r.idsRemoved,
+            nextOffset: r.nextOffset,
+            total: r.total ?? null,
+          };
+          if (plan.trimmed > 0) {
+            p.pending = plan;
+            await save();
+          }
         }
-        p.offset = r.nextOffset;
+        if (plan.trimmed > 0) await attempt(() => compactGraphProvenance(kv, slice));
+        phaseScanned += plan.scanned;
+        phaseTrimmed += plan.trimmed;
+        p.scanned += plan.scanned;
+        p.trimmed += plan.trimmed;
+        p.idsRemoved += plan.idsRemoved;
+        p.pending = undefined;
+        p.phaseTotal = plan.total;
+        p.offset = plan.nextOffset ?? p.phaseTotal ?? p.offset;
         await save();
+        if (plan.nextOffset === null) break;
         if (pauseMs > 0) await sleep(pauseMs);
       }
       log(`Graph provenance compaction: ${scope} done (${phaseScanned} checked, ${phaseTrimmed} trimmed)`);
@@ -229,8 +260,27 @@ async function runOnce(kv: StateKV, opts: GraphCompactBootOptions): Promise<Grap
       await save();
     }
 
-    const snap = await attempt(() => compactGraphProvenance(kv, { scope: "snapshot" }));
-    if (snap.snapshotTrimmed) p.trimmed += 1;
+    let snapPlan = storedPlan(p, "snapshot");
+    if (!snapPlan) {
+      const dry = await attempt(() => compactGraphProvenance(kv, { scope: "snapshot", dryRun: true }));
+      snapPlan = {
+        phase: "snapshot",
+        offset: p.offset,
+        scanned: 0,
+        trimmed: dry.snapshotTrimmed ? 1 : 0,
+        idsRemoved: 0,
+        nextOffset: null,
+        total: null,
+      };
+      if (snapPlan.trimmed > 0) {
+        p.pending = snapPlan;
+        await save();
+      }
+    }
+    if (snapPlan.trimmed > 0) await attempt(() => compactGraphProvenance(kv, { scope: "snapshot" }));
+    const snapshotTrimmed = snapPlan.trimmed > 0;
+    p.trimmed += snapPlan.trimmed;
+    p.pending = undefined;
     p.status = "done";
     p.completedAt = now().toISOString();
     await save();
@@ -239,7 +289,7 @@ async function runOnce(kv: StateKV, opts: GraphCompactBootOptions): Promise<Grap
         trigger: "boot",
         recordsTrimmed: p.trimmed,
         idsRemoved: p.idsRemoved,
-        snapshotTrimmed: snap.snapshotTrimmed,
+        snapshotTrimmed,
       });
     }
     log(
