@@ -6714,7 +6714,9 @@
       skill_extract: 'Extracted a skill', core_add: 'Added core memory', core_remove: 'Removed core memory',
       auto_page: 'Paged memory out', vision_embed: 'Embedded an image',
       slot_append: 'Appended to a slot', slot_replace: 'Replaced a slot', slot_create: 'Created a slot',
-      slot_delete: 'Deleted a slot', slot_reflect: 'Reflected into a slot'
+      slot_delete: 'Deleted a slot', slot_reflect: 'Reflected into a slot',
+      graph_compact: 'Compacted graph provenance',
+      session_sweep: 'Marked stale sessions abandoned'
     };
 
     function auditVerb(op) {
@@ -7166,7 +7168,20 @@
         html += hrow('Vector save', esc(legText(p.vector)), null, 'Saved at most every ' + esc(durationText(p.saveIntervalMs || 600000)) + ' (AGENTMEMORY_INDEX_SAVE_INTERVAL_MS). ' + esc(fmtNum(p.buckets) + ' bucket' + (p.buckets === 1 ? '' : 's') + ', ' + fmtNum(p.pendingChanges) + ' unsaved change' + (p.pendingChanges === 1 ? '' : 's') + (p.saving ? ', saving now' : '') + '.'));
       }
       html += hrow('Graph', esc(fmtNum(c.graphNodes) + ' nodes · ' + fmtNum(c.graphEdges) + ' edges'), 'graph', store.graph && store.graph.updatedAt ? 'Snapshot rebuilt ' + esc(timeAgo(store.graph.updatedAt)) + '.' : '');
+      if (r && r.graphCompaction) html += graphCompactionRowHtml(r.graphCompaction);
       return html + '</div>';
+    }
+
+    function graphCompactionRowHtml(g) {
+      var where = g.phase === 'snapshot' || g.total === null || g.total === undefined ? (g.phase || 'nodes') : g.phase + ' ' + fmtNum(g.processed || 0) + ' of ' + fmtNum(g.total);
+      var text = g.state === 'off' ? 'off' : g.state === 'pending' ? 'pending' : g.state === 'running' ? 'running, ' + where : g.state === 'failed' ? 'failed at ' + where : 'done';
+      var note = 'A one-time pass that trims each graph node and edge to its newest 32 source observations, so stores from older versions stop slowing graph search.';
+      if (g.state === 'done') note = fmtNum(g.trimmed || 0) + ' records trimmed, ' + fmtNum(g.idsRemoved || 0) + ' ids removed' + (g.completedAt ? ', finished ' + timeAgo(g.completedAt) : '') + '. It does not run again.';
+      else if (g.state === 'running') note += ' It runs in the background, resumes after a restart and stops by itself.';
+      else if (g.state === 'off') note = 'Turned off with AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false. Run it by hand if graph search is slow:';
+      else if (g.state === 'failed') note = esc(g.error || 'unknown error') + '. It resumes on the next start. To run it now:';
+      var cmd = g.state === 'off' || g.state === 'failed' ? cmdBlock(curlPost('graph/compact', {})) : '';
+      return hrow('Provenance compaction', esc(text), null, (g.state === 'failed' ? note : esc(note)) + cmd);
     }
 
     function llmCardHtml(r) {

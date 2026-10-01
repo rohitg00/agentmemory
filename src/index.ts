@@ -16,6 +16,9 @@ import {
   isDropStaleIndexEnabled,
   getAuditRetentionMonths,
   getStateBackend,
+  isSessionSweepEnabled,
+  isGraphCompactOnBootEnabled,
+  getSessionSweepStaleHours,
 } from "./config.js";
 import {
   createProvider,
@@ -63,12 +66,14 @@ import { registerRelationsFunction } from "./functions/relations.js";
 import { registerTimelineFunction } from "./functions/timeline.js";
 import { registerSmartSearchFunction } from "./functions/smart-search.js";
 import { registerRecentSearchesSweepFunction } from "./functions/recent-searches-sweep.js";
+import { registerSessionSweepFunction } from "./functions/session-sweep.js";
 import { registerProfileFunction } from "./functions/profile.js";
 import { registerAutoForgetFunction } from "./functions/auto-forget.js";
 import { registerExportImportFunction } from "./functions/export-import.js";
 import { registerEnrichFunction } from "./functions/enrich.js";
 import { registerClaudeBridgeFunction } from "./functions/claude-bridge.js";
 import { registerGraphFunction } from "./functions/graph.js";
+import { GRAPH_COMPACT_BOOT_DELAY_MS, runGraphCompactOnBoot, setGraphCompactBootDisabled } from "./functions/graph-compact-boot.js";
 import { registerGraphImportFunction } from "./functions/graph-import.js";
 import { registerConsolidationPipelineFunction } from "./functions/consolidation-pipeline.js";
 import { registerTeamFunction } from "./functions/team.js";
@@ -114,7 +119,7 @@ import { registerHealthMonitor } from "./health/monitor.js";
 import { createStreamRelayProbe } from "./health/stream-relay-probe.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
-import { bootLog } from "./logger.js";
+import { bootLog, bootWarn } from "./logger.js";
 import { runtimeMetadataPath } from "./runtime-paths.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
@@ -280,6 +285,7 @@ async function main() {
   registerPatternsFunction(sdk, kv);
   registerRememberFunction(sdk, kv);
   registerEvictFunction(sdk, kv);
+  registerSessionSweepFunction(sdk, kv);
 
   registerRelationsFunction(sdk, kv);
   registerTimelineFunction(sdk, kv);
@@ -543,7 +549,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 134 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 135 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -556,6 +562,15 @@ async function main() {
     secret,
     config.restPort,
   );
+
+  if (isGraphCompactOnBootEnabled()) {
+    const graphCompactTimer = setTimeout(() => {
+      void runGraphCompactOnBoot(kv, { log: bootLog, warn: bootWarn }).catch(() => {});
+    }, GRAPH_COMPACT_BOOT_DELAY_MS);
+    graphCompactTimer.unref();
+  } else {
+    setGraphCompactBootDisabled();
+  }
 
   const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
   const consolidationIntervalMs = getConsolidationIntervalMs();
@@ -620,6 +635,18 @@ async function main() {
   recentSearchesSweepTimer.unref();
 
   void seedViewerStreamTracker(sdk, { unorderedListing: kv.backend === "redis" }).catch(() => {});
+
+  if (isSessionSweepEnabled()) {
+    const sessionSweepTimer = setInterval(async () => {
+      try {
+        await sdk.trigger({ function_id: "mem::session-sweep", payload: {} });
+      } catch (err) {
+        bootLog(`Session sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }, 60 * 60 * 1000);
+    sessionSweepTimer.unref();
+    bootLog(`Session sweep: enabled (hourly, stale after ${getSessionSweepStaleHours()}h)`);
+  }
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {

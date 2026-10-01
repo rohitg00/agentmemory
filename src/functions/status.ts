@@ -1,5 +1,6 @@
 import type { IndexLegStatus, IndexPersistenceStatus } from "../state/index-persistence.js";
 import type { VectorBackfillState } from "./search.js";
+import { describeGraphCompactBoot, type GraphCompactBootStatus } from "./graph-compact-boot.js";
 
 export type StatusLevel = "ok" | "info" | "warn" | "error";
 
@@ -71,6 +72,7 @@ export interface StatusInputs {
   };
   graph: GraphStatsInput | null;
   graphExtractionEnabled: boolean;
+  graphCompaction?: GraphCompactBootStatus | null;
   auditLegacy: { status: string; sizeBytes?: number } | null;
   indexPersistence?: IndexPersistenceStatus | null;
   stateStore?: { ok: boolean; latencyMs?: number } | null;
@@ -104,6 +106,7 @@ export interface StatusReport {
   index: StatusInputs["index"] & { breakdown: IndexBreakdown | null };
   indexPersistence: IndexPersistenceStatus | null;
   graph: (GraphStatsInput & { ageSeconds: number | null; extractionEnabled: boolean }) | null;
+  graphCompaction: GraphCompactBootStatus | null;
   functions: Array<FunctionMetricInput & { failureRate: number; offWithoutLlm: boolean }>;
   flags: Array<StatusFlag & { inactiveReason?: string }>;
   problems: StatusProblem[];
@@ -385,6 +388,23 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     }
   }
 
+  const compaction = input.graphCompaction ?? null;
+  if (compaction?.state === "running") {
+    problems.push({
+      level: "info",
+      code: "graph-compaction-running",
+      message: `Oversized graph provenance is being trimmed in the background (${describeGraphCompactBoot(compaction)}). Search and capture keep working.`,
+      fix: "No action needed. It runs once, resumes after a restart and stops by itself. AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false turns it off.",
+    });
+  } else if (compaction?.state === "failed") {
+    problems.push({
+      level: "warn",
+      code: "graph-compaction-failed",
+      message: `The one-time graph provenance compaction stopped: ${compaction.error ?? "unknown error"}. Graph search can stay slow until it finishes.`,
+      fix: `It resumes on the next start. To run it now: ${graphCompactCommand(input.ports.rest)}`,
+    });
+  }
+
   if (input.auditLegacy?.status === "too-large" || input.auditLegacy?.status === "unreadable") {
     const size = input.auditLegacy.sizeBytes;
     const sizeText = typeof size === "number" ? ` (${Math.round(size / (1024 * 1024))} MiB)` : "";
@@ -441,6 +461,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     index: { ...input.index, breakdown: indexBreakdown(input.index) },
     indexPersistence: persistence,
     graph,
+    graphCompaction: compaction,
     functions,
     flags: input.flags.map((flag) =>
       flag.enabled && flag.needsLlm && noLlm
@@ -686,6 +707,7 @@ ${graph
     row("Nodes / edges", escapeHtml(`${graph.totalNodes ?? 0} / ${graph.totalEdges ?? 0}`)) +
     row("Snapshot age", escapeHtml(graph.fromSnapshot ? formatDuration(graph.ageSeconds) : "no snapshot"))
   : row("Graph", "unavailable")}
+${report.graphCompaction ? row("Provenance compaction", escapeHtml(describeGraphCompactBoot(report.graphCompaction))) : ""}
 </table>
 <h2>Features</h2><table class="list"><tr><th>Feature</th><th>Setting</th><th>State</th><th>How to change</th></tr>${flags}</table>
 <h2>Process</h2><table>
@@ -694,6 +716,10 @@ ${processRows(report)}
 <h2>Functions</h2><table class="list"><tr><th>Function</th><th>Calls</th><th>Failed</th><th>Failure rate</th><th>Avg latency</th></tr>${functions}</table>
 <h2>More</h2><p>Environment checks (keys, engine binary, stale pid files) run on your machine with <code>npx @agentmemory/agentmemory doctor</code>. JSON: <code>GET /agentmemory/status</code> with <code>Accept: application/json</code>, or add <code>?format=json</code>.</p>
 </main></body></html>`;
+}
+
+export function graphCompactCommand(restPort: number | null): string {
+  return `curl -X POST http://localhost:${restPort ?? 3111}/agentmemory/graph/compact -H "Content-Type: application/json" -d '{}'`;
 }
 
 export const UNINDEXED_SCAN_REUSE_MS = 30_000;

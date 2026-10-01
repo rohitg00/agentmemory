@@ -40,6 +40,7 @@ import { indexRecords } from "./search.js";
 import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
 import { budgetImportedObservationSources } from "./observation-source-budget.js";
+import { boundRecordSources } from "./graph.js";
 
 // Bounded-concurrency chunk size for the import delete/write loops. A
 // "replace" or "merge" of a large export (up to MAX_TOTAL_OBSERVATIONS,
@@ -516,7 +517,7 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
               const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
               if (existing) { stats.skipped++; return; }
             }
-            await kv.set(KV.graphNodes, node.id, node);
+            await kv.set(KV.graphNodes, node.id, boundRecordSources(node));
           }),
         );
       }
@@ -527,7 +528,7 @@ export function registerExportImportFunction(sdk: IIIClient, kv: StateKV): void 
               const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
               if (existing) { stats.skipped++; return; }
             }
-            await kv.set(KV.graphEdges, edge.id, edge);
+            await kv.set(KV.graphEdges, edge.id, boundRecordSources(edge));
           }),
         );
       }

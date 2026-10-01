@@ -1,4 +1,4 @@
-import { TriggerAction, type IIIClient } from "iii-sdk";
+import { InvocationError, TriggerAction, type IIIClient } from "iii-sdk";
 import type { HttpRequest } from "@iii-dev/helpers/http";
 import { randomBytes } from "node:crypto";
 import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary, HealthSnapshot, AuditQueryResult, AuditMigrationState } from "../types.js";
@@ -42,6 +42,8 @@ import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { describeGraphNode } from "../functions/graph-node.js";
+import { COMPACT_SCOPES, type GraphCompactScope } from "../functions/graph.js";
+import { getGraphCompactBootStatus } from "../functions/graph-compact-boot.js";
 import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { logger } from "../logger.js";
 import { withoutObservationSource } from "../functions/observation-source.js";
@@ -402,6 +404,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
         vectorBackfillState: getVectorBackfillState(),
       },
       graph,
+      graphCompaction: getGraphCompactBootStatus(),
       graphExtractionEnabled: isGraphExtractionEnabled(),
       auditLegacy: auditMigrationState
         ? { status: auditMigrationState.status, sizeBytes: auditMigrationState.legacySizeBytes }
@@ -997,12 +1000,23 @@ export function registerApiTriggers(
           body: { error: "sessionId is required and must be a non-empty string" },
         };
       }
-      await withKeyedLock(`obs:${sessionId}`, () =>
-        kv.update(KV.sessions, sessionId, [
+      const endResult = await withKeyedLock(`obs:${sessionId}`, async () => {
+        const session = await kv.get<Session>(KV.sessions, sessionId);
+        if (!session || session.id !== sessionId) return "not_found" as const;
+        if (session.status === "completed") return "already_completed" as const;
+
+        await kv.update(KV.sessions, sessionId, [
           { type: "set", path: "endedAt", value: new Date().toISOString() },
           { type: "set", path: "status", value: "completed" },
-        ]),
-      );
+        ]);
+        return "ended" as const;
+      });
+      if (endResult !== "ended") {
+        return {
+          status_code: 200,
+          body: { success: true, ended: false, reason: endResult },
+        };
+      }
       // Fan out session-stopped lifecycle (non-blocking).
       try {
         sdk.trigger({
@@ -1016,7 +1030,7 @@ export function registerApiTriggers(
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      return { status_code: 200, body: { success: true } };
+      return { status_code: 200, body: { success: true, ended: true } };
     },
   );
   sdk.registerTrigger({
@@ -1185,6 +1199,13 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const sessions = await kv.list<Session>(KV.sessions);
+      const validSessions = sessions.filter(
+        (session): session is Session =>
+          !!session &&
+          typeof session === "object" &&
+          typeof session.id === "string" &&
+          session.id.length > 0,
+      );
       const normalizedAgentId =
         typeof req.query_params?.["agentId"] === "string"
           ? req.query_params["agentId"].trim()
@@ -1198,14 +1219,14 @@ export function registerApiTriggers(
           (isAgentScopeIsolated() ? getAgentId() : undefined);
       const listQuery = parseListQuery(req.query_params);
       let filtered = filterAgentId
-        ? sessions.filter((s) => s.agentId === filterAgentId)
-        : sessions;
+        ? validSessions.filter((s) => s.agentId === filterAgentId)
+        : validSessions;
       const facets =
         req.query_params?.["facets"] === "true"
           ? sessionFacets(
               !wildcardAgent && isAgentScopeIsolated()
-                ? sessions.filter((s) => s.agentId === getAgentId())
-                : sessions,
+                ? validSessions.filter((s) => s.agentId === getAgentId())
+                : validSessions,
             )
           : undefined;
       if (listQuery.project) filtered = filtered.filter((s) => s.project === listQuery.project);
@@ -2025,6 +2046,47 @@ export function registerApiTriggers(
     type: "http",
     function_id: "api::graph-reset",
     config: { api_path: "/agentmemory/graph/reset", http_method: "POST" },
+  });
+
+  sdk.registerFunction("api::graph-compact",
+    async (req: HttpRequest): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const { scope, offset, limit } = body;
+      if (scope !== undefined && !COMPACT_SCOPES.includes(scope as GraphCompactScope)) {
+        return { status_code: 400, body: { error: "scope must be nodes, edges, history or snapshot" } };
+      }
+      if (offset !== undefined && !(Number.isInteger(offset) && (offset as number) >= 0)) {
+        return { status_code: 400, body: { error: "offset must be a non-negative integer" } };
+      }
+      if (limit !== undefined && !(Number.isInteger(limit) && (limit as number) >= 1)) {
+        return { status_code: 400, body: { error: "limit must be a positive integer" } };
+      }
+      try {
+        const result = await sdk.trigger({
+          function_id: "mem::graph-compact",
+          payload: { scope, offset, limit },
+        });
+        if ((result as { success?: boolean } | null)?.success === false) {
+          return { status_code: 500, body: { error: "Graph compaction failed" } };
+        }
+        return { status_code: 200, body: result };
+      } catch (err) {
+        if (err instanceof InvocationError && err.code === "TIMEOUT") {
+          return {
+            status_code: 504,
+            body: { error: "Graph compaction timed out; pass scope, offset and limit to run it in slices" },
+          };
+        }
+        return { status_code: 500, body: { error: "Graph compaction failed" } };
+      }
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::graph-compact",
+    config: { api_path: "/agentmemory/graph/compact", http_method: "POST" },
   });
 
   sdk.registerFunction("api::graph-extract",

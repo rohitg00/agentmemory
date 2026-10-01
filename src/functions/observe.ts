@@ -1,5 +1,5 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
-import type { RawObservation, CompressedObservation, HookPayload, Origin } from "../types.js";
+import type { RawObservation, CompressedObservation, HookPayload, Origin, Session } from "../types.js";
 
 const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"]);
 import { KV, STREAM, generateId } from "../state/schema.js";
@@ -168,6 +168,7 @@ export function registerObserveFunction(
           agentId?: string;
           observationCount?: number;
           firstPrompt?: string;
+          status?: Session["status"];
         }>(KV.sessions, payload.sessionId);
         const inheritedAgentId = existingSession
           ? existingSession.agentId
@@ -251,7 +252,7 @@ export function registerObserveFunction(
 
         const session = existingSession;
         if (session) {
-          const updates: Array<{ type: "set"; path: string; value: unknown }> = [
+          const updates: Array<{ type: "set" | "remove"; path: string; value?: unknown }> = [
             { type: "set", path: "updatedAt", value: new Date().toISOString() },
             {
               type: "set",
@@ -259,6 +260,10 @@ export function registerObserveFunction(
               value: (session.observationCount || 0) + 1,
             },
           ];
+          if (session.status === "abandoned") {
+            updates.push({ type: "set", path: "status", value: "active" });
+            updates.push({ type: "remove", path: "endedAt" });
+          }
           if (!session.firstPrompt && typeof raw.userPrompt === "string") {
             const trimmed = raw.userPrompt.replace(/\s+/g, " ").trim();
             if (trimmed.length > 0) {

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { preCompactBudget } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
@@ -48,11 +49,14 @@ async function main() {
     }
   }
 
+  const budget = preCompactBudget();
+  if (budget === 0) return;
+
   try {
     const res = await fetch(`${REST_URL}/agentmemory/context`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ sessionId, project, budget: 1500 }),
+      body: JSON.stringify({ sessionId, project, budget }),
       signal: AbortSignal.timeout(5000),
     });
 

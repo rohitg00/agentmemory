@@ -184,13 +184,24 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     "event::session::ended",
     async (data: { sessionId: string }) => {
-      await withKeyedLock(`obs:${data.sessionId}`, () =>
-        kv.update(KV.sessions, data.sessionId, [
+      const sessionId = data?.sessionId;
+      if (typeof sessionId !== "string" || sessionId.length === 0) {
+        return { success: true, ended: false, reason: "not_found" as const };
+      }
+      const endResult = await withKeyedLock(`obs:${sessionId}`, async () => {
+        const session = await kv.get<Session>(KV.sessions, sessionId);
+        if (!session || session.id !== sessionId) return "not_found" as const;
+        if (session.status === "completed") return "already_completed" as const;
+        await kv.update(KV.sessions, sessionId, [
           { type: "set", path: "endedAt", value: new Date().toISOString() },
           { type: "set", path: "status", value: "completed" },
-        ]),
-      );
-      return { success: true };
+        ]);
+        return "ended" as const;
+      });
+      if (endResult !== "ended") {
+        return { success: true, ended: false, reason: endResult };
+      }
+      return { success: true, ended: true };
     },
   );
   sdk.registerTrigger({
