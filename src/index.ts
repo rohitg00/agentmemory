@@ -16,6 +16,8 @@ import {
   isDropStaleIndexEnabled,
   getAuditRetentionMonths,
   getStateBackend,
+  isSessionSweepEnabled,
+  getSessionSweepStaleHours,
 } from "./config.js";
 import {
   createProvider,
@@ -63,6 +65,7 @@ import { registerRelationsFunction } from "./functions/relations.js";
 import { registerTimelineFunction } from "./functions/timeline.js";
 import { registerSmartSearchFunction } from "./functions/smart-search.js";
 import { registerRecentSearchesSweepFunction } from "./functions/recent-searches-sweep.js";
+import { registerSessionSweepFunction } from "./functions/session-sweep.js";
 import { registerProfileFunction } from "./functions/profile.js";
 import { registerAutoForgetFunction } from "./functions/auto-forget.js";
 import { registerExportImportFunction } from "./functions/export-import.js";
@@ -280,6 +283,7 @@ async function main() {
   registerPatternsFunction(sdk, kv);
   registerRememberFunction(sdk, kv);
   registerEvictFunction(sdk, kv);
+  registerSessionSweepFunction(sdk, kv);
 
   registerRelationsFunction(sdk, kv);
   registerTimelineFunction(sdk, kv);
@@ -620,6 +624,18 @@ async function main() {
   recentSearchesSweepTimer.unref();
 
   void seedViewerStreamTracker(sdk, { unorderedListing: kv.backend === "redis" }).catch(() => {});
+
+  if (isSessionSweepEnabled()) {
+    const sessionSweepTimer = setInterval(async () => {
+      try {
+        await sdk.trigger({ function_id: "mem::session-sweep", payload: {} });
+      } catch (err) {
+        bootLog(`Session sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }, 60 * 60 * 1000);
+    sessionSweepTimer.unref();
+    bootLog(`Session sweep: enabled (hourly, stale after ${getSessionSweepStaleHours()}h)`);
+  }
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {
