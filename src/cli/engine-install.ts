@@ -42,18 +42,12 @@ export function iiiArchivePath(binDir: string): string {
   return join(binDir, ".iii-download.tar.gz");
 }
 
-export function iiiDownloadShellCommand(releaseUrl: string, binDir: string): string {
-  const archive = iiiArchivePath(binDir);
-  return [
-    `mkdir -p "${binDir}"`,
-    `rm -f "${archive}"`,
-    `if curl -fsSL ${curlTimeoutFlags()} -o "${archive}" "${releaseUrl}"; then :; else code=$?; rm -f "${archive}"; exit $code; fi`,
-  ].join(" && ");
+export function iiiDownloadShellCommand(): string {
+  return `mkdir -p "$2" && rm -f "$3" && if curl -fsSL ${curlTimeoutFlags()} -o "$3" "$1"; then :; else code=$?; rm -f "$3"; exit $code; fi`;
 }
 
-export function iiiExtractShellCommand(binDir: string, binPath: string): string {
-  const archive = iiiArchivePath(binDir);
-  return `if tar -xzf "${archive}" -C "${binDir}"; then rm -f "${archive}"; else code=$?; rm -f "${archive}"; exit $code; fi && chmod +x "${binPath}"`;
+export function iiiExtractShellCommand(): string {
+  return 'if tar -xzf "$1" -C "$2"; then rm -f "$1"; else code=$?; rm -f "$1"; exit $code; fi && chmod +x "$3"';
 }
 
 export function iiiManualInstallCommand(
@@ -110,20 +104,20 @@ export function installIiiArchive(opts: {
       detail: `no pinned SHA-256 for ${opts.asset} in iii v${opts.version}, so the download cannot be verified`,
     };
   }
-  const run = (command: string) =>
-    spawnSync(opts.sh, ["-c", command], {
+  const run = (script: string, args: string[]) =>
+    spawnSync(opts.sh, ["-c", script, "sh", ...args], {
       stdio: "pipe",
       encoding: "utf-8",
       timeout: III_INSTALL_SPAWN_TIMEOUT_MS,
       env: opts.env ?? process.env,
     });
 
-  const download = run(iiiDownloadShellCommand(opts.releaseUrl, opts.binDir));
+  const archive = iiiArchivePath(opts.binDir);
+  const download = run(iiiDownloadShellCommand(), [opts.releaseUrl, opts.binDir, archive]);
   if (download.status !== 0) {
     return { ok: false, reason: "download", detail: describeInstallFailure(download) };
   }
 
-  const archive = iiiArchivePath(opts.binDir);
   let actual: string;
   try {
     actual = sha256File(archive);
@@ -140,7 +134,7 @@ export function installIiiArchive(opts: {
     };
   }
 
-  const extract = run(iiiExtractShellCommand(opts.binDir, opts.binPath));
+  const extract = run(iiiExtractShellCommand(), [archive, opts.binDir, opts.binPath]);
   if (extract.status !== 0) {
     return { ok: false, reason: "extract", detail: describeInstallFailure(extract) };
   }

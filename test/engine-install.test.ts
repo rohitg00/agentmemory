@@ -73,7 +73,7 @@ function runInstall(dir: string, bin: string, sha256: string | null, asset = ASS
 
 describe("iii engine auto-installer", () => {
   it("passes connect and overall timeouts to curl", () => {
-    const cmd = iiiDownloadShellCommand("https://x/iii.tar.gz", "/b");
+    const cmd = iiiDownloadShellCommand();
     expect(cmd).toContain(`--connect-timeout ${III_INSTALL_CONNECT_TIMEOUT_S}`);
     expect(cmd).toContain(`--max-time ${III_INSTALL_MAX_TIME_S}`);
   });
@@ -135,6 +135,28 @@ describe("iii engine auto-installer", () => {
     }
     expect(existsSync(binPath)).toBe(false);
     expect(readdirSync(binDir)).toEqual([]);
+  });
+
+  it("passes paths to the shell as arguments, never as script text", () => {
+    const dir = sandbox();
+    const tarball = buildTarball(dir);
+    const tricky = join(dir, 'odd $(touch pwned) "dir"');
+    const binPath = join(tricky, "iii");
+    const outcome = installIiiArchive({
+      sh: "sh",
+      releaseUrl: "https://example.invalid/iii.tar.gz",
+      version: "9.9.9",
+      asset: ASSET,
+      binDir: tricky,
+      binPath,
+      env: { ...process.env, PATH: `${curlServing(dir, tarball)}:${process.env.PATH}` },
+      checksums: { "9.9.9": { [ASSET]: sha256File(tarball) } },
+    });
+
+    expect(outcome).toEqual({ ok: true });
+    expect(existsSync(binPath)).toBe(true);
+    expect(existsSync(join(process.cwd(), "pwned"))).toBe(false);
+    expect(iiiDownloadShellCommand()).not.toContain(dir);
   });
 
   it("does not download anything for a platform or version without a pinned SHA-256", () => {
