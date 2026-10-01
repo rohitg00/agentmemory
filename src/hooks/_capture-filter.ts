@@ -59,7 +59,6 @@ export function captureOutputMax(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 8000;
 }
 
-/** Truncate so the result length is at most `max` (marker included). */
 export function truncateCaptureOutput(value: unknown, max: number): unknown {
   if (typeof value === "string" && value.length > max) {
     const suffix = "\n[...truncated]";

@@ -46,7 +46,6 @@ function captureOutputMax() {
 	const parsed = Number.parseInt(raw, 10);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : 8e3;
 }
-/** Truncate so the result length is at most `max` (marker included). */
 function truncateCaptureOutput(value, max) {
 	if (typeof value === "string" && value.length > max) {
 		const suffix = "\n[...truncated]";
@@ -183,3 +182,5 @@ function extractImageData(output) {
 main().catch(() => process.exit(0));
 //#endregion
 export {};
+
+//# sourceMappingURL=post-tool-use.mjs.map
