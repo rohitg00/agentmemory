@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { shouldCaptureTool } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
@@ -35,6 +36,8 @@ async function main() {
 
   const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
   const toolName = data.tool_name ?? data.toolName;
+  if (!shouldCaptureTool(toolName)) return;
+
   const toolInput = data.tool_input ?? data.toolArgs;
   const error = data.error ?? data.errorMessage;
 

@@ -3,6 +3,7 @@ export interface Session {
   project: string;
   cwd: string;
   startedAt: string;
+  updatedAt?: string;
   endedAt?: string;
   status: "active" | "completed" | "abandoned";
   observationCount: number;
@@ -656,7 +657,8 @@ export interface AuditEntry {
     | "slot_delete"
     | "slot_reflect"
     | "graph_compact"
-    | "audit_migrate";
+    | "audit_migrate"
+    | "session_sweep";
   userId?: string;
   functionId: string;
   targetIds: string[];
