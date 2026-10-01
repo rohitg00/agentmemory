@@ -6,7 +6,7 @@ services:
   # restart — the exact symptom v0.9.7's working-directory fix set out
   # to solve. Runs once at compose-up and exits.
   iii-init:
-    image: busybox:1.36
+    image: busybox:1.36@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662
     user: "0:0"
     environment:
       AGENTMEMORY_DOCKER_UID: "${AGENTMEMORY_DOCKER_UID:-65532}"
