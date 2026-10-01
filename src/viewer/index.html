@@ -1722,8 +1722,8 @@
       lesson: { path: 'lessons', key: 'lessons' },
       action: { path: 'actions', key: 'actions' },
       crystal: { path: 'crystals', key: 'crystals' },
-      semantic: { path: 'semantic', key: 'facts', fallbackKey: 'semantic' },
-      procedural: { path: 'procedural', key: 'procedures', fallbackKey: 'procedural' },
+      semantic: { path: 'semantic?limit=100', key: 'facts', fallbackKey: 'semantic', allPages: true },
+      procedural: { path: 'procedural?limit=100', key: 'procedures', fallbackKey: 'procedural', allPages: true },
       audit: { path: 'audit?limit=100', key: 'entries' }
     };
     var bootGateOpen = null;
@@ -1733,6 +1733,7 @@
     }
     var FEED_MAX = 40;
     var EVENT_LOG_MAX = 500;
+    var ALL_PAGES_ATTEMPTS = 3;
     var eventLog = [];
     var eventSeq = 0;
 
@@ -2298,6 +2299,24 @@
       return result[key] || (fallbackKey && result[fallbackKey]) || [];
     }
 
+    // Walks nextCursor so a scope larger than one page still loads in full.
+    // A failed page or a repeated cursor fails the whole load: a partial list
+    // would look complete.
+    async function fetchAllPages(spec) {
+      var result = await apiGet(spec.path);
+      if (result === null) return null;
+      var rows = listOr([], result, spec.key, spec.fallbackKey).slice();
+      var seen = {};
+      while (result.nextCursor) {
+        if (seen[result.nextCursor]) return null;
+        seen[result.nextCursor] = true;
+        result = await apiGet(spec.path + '&cursor=' + encodeURIComponent(result.nextCursor));
+        if (result === null) return null;
+        rows = rows.concat(listOr([], result, spec.key, spec.fallbackKey));
+      }
+      return rows;
+    }
+
     function entityList(kind) {
       var bucket = store.entities[kind] || {};
       return Object.keys(bucket).map(function(k) { return bucket[k]; });
@@ -2322,6 +2341,11 @@
       store.entities[kind] = bucket;
     }
 
+    // True when the event log still holds every event after seq.
+    function replayRangeIntact(seq) {
+      return eventLog.length === 0 || eventLog[0].seq <= seq + 1;
+    }
+
     async function ensureLoaded(kind) {
       if (store.loaded[kind]) return;
       if (store.loading[kind]) return store.loading[kind];
@@ -2331,6 +2355,21 @@
         try {
           await bootGate;
           var seqAtStart = eventSeq;
+          if (spec.allPages) {
+            // A long load can outlast the event log. Committing then would drop
+            // the evicted events, so retry, and stay unloaded if every try loses them.
+            for (var attempt = 0; attempt < ALL_PAGES_ATTEMPTS; attempt++) {
+              seqAtStart = eventSeq;
+              var all = await fetchAllPages(spec);
+              if (all === null) return;
+              if (!replayRangeIntact(seqAtStart)) continue;
+              replaceBucket(kind, all);
+              replayEventsSince(seqAtStart, kind);
+              store.loaded[kind] = true;
+              return;
+            }
+            return;
+          }
           var result = await apiGet(spec.path);
           if (result === null) return;
           replaceBucket(kind, listOr([], result, spec.key, spec.fallbackKey));
