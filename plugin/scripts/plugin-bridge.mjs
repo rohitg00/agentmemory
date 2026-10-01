@@ -201,6 +201,12 @@ function createPluginBridge() {
 	const base = new URL(resolveEnvOrEmpty("AGENTMEMORY_URL") || "http://localhost:3111");
 	if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw new Error("AGENTMEMORY_URL must be an HTTP(S) base URL without credentials, query, or fragment.");
 	const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
+	const loopback = [
+		"localhost",
+		"localhost.",
+		"[::1]"
+	].includes(base.hostname) || /^127(?:\.\d{1,3}){3}$/.test(base.hostname);
+	if (secret && base.protocol !== "https:" && !loopback) throw new Error("AGENTMEMORY_URL requires HTTPS when AGENTMEMORY_SECRET is set, except for loopback URLs.");
 	async function call(path, body) {
 		let response;
 		try {
@@ -262,12 +268,15 @@ function createPluginBridge() {
 						}]
 					};
 				}
-			case "resources/list": {
-				const { resources } = await call("resources");
-				return { resources: resources.filter((r) => !r.uri.includes("{")) };
-			}
+			case "resources/list":
 			case "resources/templates/list": {
-				const { resources } = await call("resources");
+				const resources = (await call("resources"))?.resources;
+				if (!Array.isArray(resources) || !resources.every((resource) => resource && typeof resource === "object" && !Array.isArray(resource) && typeof resource.uri === "string" && resource.uri.length > 0 && typeof resource.name === "string" && resource.name.length > 0 && [
+					"description",
+					"mimeType",
+					"title"
+				].every((key) => resource[key] === void 0 || typeof resource[key] === "string"))) throw new Error("Agent Memory daemon returned invalid resources. Check the daemon version and URL. No fallback store was used.");
+				if (method === "resources/list") return { resources: resources.filter((r) => !r.uri.includes("{")) };
 				return { resourceTemplates: resources.filter((r) => r.uri.includes("{")).map(({ uri, ...rest }) => ({
 					...rest,
 					uriTemplate: uri
@@ -287,10 +296,8 @@ function createPluginBridge() {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) try {
 	createStdioTransport(createPluginBridge()).start();
 } catch {
-	process.stderr.write("[agentmemory] Invalid MCP configuration. Check AGENTMEMORY_URL.\n");
+	process.stderr.write("[agentmemory] Invalid MCP configuration. Check AGENTMEMORY_URL; authenticated non-loopback URLs require HTTPS.\n");
 	process.exitCode = 1;
 }
 //#endregion
 export { createPluginBridge };
-
-//# sourceMappingURL=plugin-bridge.mjs.map

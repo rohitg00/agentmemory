@@ -73,6 +73,7 @@ export default defineConfig([
     entry: ["src/mcp/plugin-bridge.ts"],
     outDir: "plugin/scripts",
     ...shared,
+    dts: false,
     clean: false,
     sourcemap: false,
   },

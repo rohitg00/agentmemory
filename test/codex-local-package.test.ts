@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { spawn, execFileSync, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createInterface } from "node:readline";
 import { getAllTools } from "../src/mcp/tools-registry.js";
+import { createPluginBridge } from "../src/mcp/plugin-bridge.js";
 
 const root = resolve(__dirname, "..");
 const secret = "synthetic-review-secret";
@@ -16,6 +17,11 @@ let extracted: string;
 let mode: "ok" | "unauthorized" | "invalid-json" | "redirect" = "ok";
 let child: ChildProcessWithoutNullStreams;
 let request: (method: string, params?: Record<string, unknown>) => Promise<any>;
+const validResources = { resources: [
+  { uri: "agentmemory://status", name: "Status", mimeType: "application/json" },
+  { uri: "agentmemory://project/{name}/profile", name: "Profile", mimeType: "application/json" },
+] };
+let resourcesResponse: unknown = validResources;
 
 function startBridge() {
   const config = JSON.parse(readFileSync(join(extracted, ".mcp.json"), "utf8")).mcpServers.agentmemory;
@@ -54,6 +60,13 @@ function startBridge() {
 }
 
 beforeAll(async () => {
+  execFileSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
+    import { build } from "tsdown";
+    import configs from "./tsdown.config.ts";
+    const config = configs.find((config) => config.entry.includes("src/mcp/plugin-bridge.ts"));
+    if (!config) throw new Error("Missing plugin bridge build configuration");
+    await build({ ...config, config: false });
+  `], { cwd: root });
   execFileSync(process.execPath, ["scripts/plugins/package-codex.mjs"], { cwd: root });
   const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
   extracted = mkdtempSync(join(tmpdir(), "agentmemory plugin with spaces "));
@@ -75,10 +88,7 @@ beforeAll(async () => {
       case "/agentmemory/mcp/call":
         res.end(JSON.stringify({ content: [{ type: "text", text: "result" }], structuredContent: body, isError: body.name === "fail" })); break;
       case "/agentmemory/mcp/resources":
-        res.end(JSON.stringify({ resources: [
-          { uri: "agentmemory://status", name: "Status", mimeType: "application/json" },
-          { uri: "agentmemory://project/{name}/profile", name: "Profile", mimeType: "application/json" },
-        ] })); break;
+        res.end(JSON.stringify(resourcesResponse)); break;
       case "/agentmemory/mcp/resources/read":
         res.end(JSON.stringify({ contents: [{ uri: body.uri, mimeType: "application/json", text: "{}" }] })); break;
       case "/agentmemory/mcp/prompts": res.end(JSON.stringify({ prompts: [{ name: "recall_context" }] })); break;
@@ -134,6 +144,34 @@ describe("packaged local Codex MCP over real stdio and HTTP", () => {
     expect(requests.at(-1)?.method).toBe("POST");
   });
 
+  it.each([
+    null, {}, { resources: null }, { resources: "invalid" }, { resources: {} },
+    ...[null, "invalid", [], {}, { uri: 1, name: "Invalid" },
+      { uri: "", name: "Invalid" }, { uri: "agentmemory://status" },
+      { uri: "agentmemory://status", name: 1 }, { uri: "agentmemory://status", name: "" },
+      { uri: "agentmemory://status", name: "Status", mimeType: 1 },
+      { uri: "agentmemory://status", name: "Status", description: null },
+    ].map((resource) => ({ resources: [...validResources.resources, resource] })),
+  ])("rejects malformed resource listings with an actionable error: %j", async (response) => {
+    resourcesResponse = response;
+    try {
+      for (const method of ["resources/list", "resources/templates/list"]) {
+        const result = await request(method);
+        expect(result.error).toEqual({ code: -32603, message:
+          "Agent Memory daemon returned invalid resources. Check the daemon version and URL. No fallback store was used." });
+        expect(result.result).toBeUndefined();
+      }
+    } finally { resourcesResponse = validResources; }
+  });
+
+  it("accepts an empty resource list for both resource methods", async () => {
+    resourcesResponse = { resources: [] };
+    try {
+      expect((await request("resources/list")).result).toEqual({ resources: [] });
+      expect((await request("resources/templates/list")).result).toEqual({ resourceTemplates: [] });
+    } finally { resourcesResponse = validResources; }
+  });
+
   it("lists and retrieves prompts without losing their arguments", async () => {
     expect((await request("prompts/list")).result.prompts[0].name).toBe("recall_context");
     const result = await request("prompts/get", { name: "recall_context", arguments: { task_description: "resume alpha" } });
@@ -185,6 +223,12 @@ describe("packaged local Codex MCP over real stdio and HTTP", () => {
 });
 
 describe("Codex release packaging", () => {
+  it("ships the rebuilt bridge without references to an unshipped source map", () => {
+    const bundled = readFileSync(join(extracted, "scripts/plugin-bridge.mjs"), "utf8");
+    expect(bundled).toBe(readFileSync(join(root, "plugin/scripts/plugin-bridge.mjs"), "utf8"));
+    expect(bundled).not.toContain("sourceMappingURL");
+  });
+
   it("includes the listing, icon, onboarding, and only Codex hook dependencies", () => {
     const manifest = JSON.parse(readFileSync(join(extracted, ".codex-plugin/plugin.json"), "utf8"));
     expect(manifest.mcpServers).toBe("./.mcp.json");
@@ -207,5 +251,43 @@ describe("Codex release packaging", () => {
     const manifest = JSON.parse(execFileSync("unzip", ["-p", archive, ".codex-plugin/plugin.json"], { encoding: "utf8" }));
     expect(manifest.hooks).toBeUndefined();
     expect(manifest.mcpServers).toBe("./.mcp.json");
+  });
+});
+
+describe("authenticated bridge URL policy", () => {
+  beforeEach(() => {
+    vi.stubEnv("AGENTMEMORY_SECRET", secret);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ tools: [] }))));
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+  });
+
+  it.each([
+    "http://memory.example", "http://192.168.1.2:3111", "http://[::2]:3111",
+    "http://localhost.example", "http://127.0.0.1.example",
+  ])("rejects credentials over non-loopback HTTP before any request: %s", (base) => {
+    vi.stubEnv("AGENTMEMORY_URL", base);
+    expect(() => createPluginBridge()).toThrow("requires HTTPS");
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "http://localhost:3111", "http://localhost.:3111", "http://127.0.0.1:3111",
+    "http://127.2.3.4:3111", "http://127.1:3111", "http://[::1]:3111", "https://memory.example",
+  ])("allows authenticated loopback HTTP and remote HTTPS: %s", async (base) => {
+    vi.stubEnv("AGENTMEMORY_URL", base);
+    await createPluginBridge()("tools/list", {});
+    expect(fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+      headers: expect.objectContaining({ authorization: `Bearer ${secret}` }), redirect: "error",
+    }));
+  });
+
+  it("preserves unauthenticated remote HTTP without sending an authorization header", async () => {
+    vi.stubEnv("AGENTMEMORY_URL", "http://memory.example");
+    vi.stubEnv("AGENTMEMORY_SECRET", "");
+    await createPluginBridge()("tools/list", {});
+    expect(vi.mocked(fetch).mock.calls[0][1]?.headers).not.toHaveProperty("authorization");
   });
 });

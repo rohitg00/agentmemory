@@ -29,7 +29,9 @@ API directly:
 
 1. Set `AGENTMEMORY_URL` to the daemon base URL (default `http://localhost:3111`).
 2. Add `Authorization: Bearer $AGENTMEMORY_SECRET` ONLY when `AGENTMEMORY_SECRET`
-   is set. Do not print or save the secret.
+   is set. Authenticated REST fallback requests require HTTPS for non-loopback
+   URLs; HTTP is allowed for loopback URLs (`localhost`, `127.0.0.0/8`, or `[::1]`).
+   Do not print or save the secret.
 
 Endpoint map by skill:
 

@@ -19,6 +19,8 @@ agentmemory reads configuration from the environment and from `~/.agentmemory/.e
    duplicate and let the user choose which connection to retain.
 4. For a custom port or authentication, pass `AGENTMEMORY_URL` and
    `AGENTMEMORY_SECRET` through the host environment and restart the MCP server.
+   Authenticated bridge requests require HTTPS for non-loopback URLs; HTTP is
+   allowed for loopback URLs (`localhost`, `127.0.0.0/8`, or `[::1]`).
    The daemon's `.env` is not automatically inherited by the MCP host.
 5. Describe the observed mode. Codex's bundled bridge requires the daemon and
    never silently saves into a fallback store. Other hosts using the standalone
