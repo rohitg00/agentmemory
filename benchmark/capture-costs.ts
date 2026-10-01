@@ -13,7 +13,7 @@ import {
   writeFileSync,
   chmodSync,
 } from "node:fs";
-import { createServer, type Server } from "node:http";
+import { createServer, type Server, type ServerResponse } from "node:http";
 import { createConnection } from "node:net";
 import { cpus, homedir, platform, release, tmpdir, totalmem, arch } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -61,9 +61,22 @@ const PROFILES: Record<ProfileName, Profile> = {
   },
 };
 
+type ProviderMode = "fake" | "ollama";
+type StateBackend = "file" | "redis";
+type Scenario = "standard" | "crash-offline";
+
 interface Config {
   sizes: number[];
   profiles: Profile[];
+  provider: ProviderMode;
+  upstreamUrl: string | null;
+  embedModel: string;
+  chatModel: string;
+  stateBackend: StateBackend;
+  redisUrl: string | null;
+  scenario: Scenario;
+  killAfterMs: number;
+  killSettleMs: number;
   perSession: number;
   hookSample: number;
   concurrency: number;
@@ -146,9 +159,26 @@ function loadConfig(): Config {
   });
   const [outputMin, outputMax] = intList(process.env["BENCH_OUTPUT_BYTES"], [400, 4000]);
   const restPort = intEnv("BENCH_PORT", 4900);
+  const provider = (process.env["BENCH_PROVIDER"] || "fake") as ProviderMode;
+  if (provider !== "fake" && provider !== "ollama") throw new Error(`unknown BENCH_PROVIDER ${provider}; valid: fake, ollama`);
+  const stateBackend = (process.env["BENCH_STATE_BACKEND"] || "file") as StateBackend;
+  if (stateBackend !== "file" && stateBackend !== "redis") throw new Error(`unknown BENCH_STATE_BACKEND ${stateBackend}; valid: file, redis`);
+  const redisUrl = process.env["BENCH_REDIS_URL"] || null;
+  if (stateBackend === "redis" && !redisUrl) throw new Error("BENCH_STATE_BACKEND=redis needs BENCH_REDIS_URL, a Redis the bench may flush");
+  const scenario = (process.env["BENCH_SCENARIO"] || "standard") as Scenario;
+  if (scenario !== "standard" && scenario !== "crash-offline") throw new Error(`unknown BENCH_SCENARIO ${scenario}; valid: standard, crash-offline`);
   return {
     sizes: intList(process.env["BENCH_N"], [100, 1000]),
     profiles,
+    provider,
+    upstreamUrl: provider === "ollama" ? (process.env["BENCH_OLLAMA_URL"] || "http://127.0.0.1:11434").replace(/\/+$/, "") : null,
+    embedModel: process.env["BENCH_EMBED_MODEL"] || (provider === "ollama" ? "nomic-embed-text" : "bench-fake-embedding"),
+    chatModel: process.env["BENCH_CHAT_MODEL"] || (provider === "ollama" ? "qwen3:4b-instruct-2507-q4_K_M" : "bench-fake-chat"),
+    stateBackend,
+    redisUrl,
+    scenario,
+    killAfterMs: intEnv("BENCH_KILL_AFTER_MS", 3000) || 3000,
+    killSettleMs: intEnv("BENCH_KILL_SETTLE_MS", 0),
     perSession: intEnv("BENCH_OBS_PER_SESSION", 100) || 100,
     hookSample: intEnv("BENCH_HOOK_SAMPLE", 100),
     concurrency: intEnv("BENCH_CONCURRENCY", 8) || 8,
@@ -211,7 +241,21 @@ const BUDGET_METRICS: Record<string, BudgetMetric> = {
   searchFullBytesP50: { path: "agentVisibleContext.endpoints.search_full.bytes.p50", headroom: 1.2, floor: 4096, kind: "context" },
   searchCompactTokensP50: { path: "agentVisibleContext.endpoints.search_compact.serverTokenEstimate.p50", headroom: 1.2, floor: 512, kind: "context" },
   sessionStartInjectOnStdoutBytes: { path: "agentVisibleContext.hookStdout.session_start_inject_on.stdoutBytes", headroom: 1.2, floor: 4096, kind: "context" },
+  redisUsedMemoryBytes: { path: "redisAfterCapture.usedMemoryBytes", headroom: 1.2, floor: 4194304, kind: "storage" },
+  redisKeys: { path: "redisAfterCapture.keys", headroom: 1.2, floor: 64, kind: "storage" },
 };
+
+function variantOf(r: Record<string, unknown>): string {
+  return String(r["variant"] ?? r["profile"]);
+}
+
+function variantName(profile: Profile, cfg: Config): string {
+  let name = profile.name;
+  if (cfg.provider !== "fake" && profile.embeddings) name += `+${cfg.provider}`;
+  if (cfg.stateBackend !== "file") name += `@${cfg.stateBackend}`;
+  if (cfg.scenario !== "standard") name += `:${cfg.scenario}`;
+  return name;
+}
 
 interface BudgetFile {
   derivedFrom?: string;
@@ -227,8 +271,24 @@ function checkInvariants(runs: Record<string, unknown>[]): Check[] {
   const out: Check[] = [];
   for (const r of runs) {
     const n = r["observations"] as number;
-    const base = { profile: String(r["profile"]), observations: n, repeat: (r["repeat"] as number) ?? 1 };
+    const base = { profile: variantOf(r), observations: n, repeat: (r["repeat"] as number) ?? 1 };
     const eq = (name: string, value: number | null, limit: number) => out.push({ ...base, name, value, limit, pass: value === limit });
+    const atMost = (name: string, value: number | null, limit: number) => out.push({ ...base, name, value, limit, pass: value !== null && value <= limit });
+    if (r["scenario"] === "crash-offline") {
+      const embeds = r["embeddings"] === true;
+      out.push({ ...base, name: "hooksSpooledWhileDown", value: numberAt(r, "crash.spoolRecordsWhileDown"), limit: 1, pass: (numberAt(r, "crash.spoolRecordsWhileDown") ?? 0) >= 1 });
+      eq("spoolDroppedRecords", numberAt(r, "crash.spoolStats.dropped"), 0);
+      eq("hookNonZeroExits", numberAt(r, "crash.hookNonZeroExits"), 0);
+      eq("logicalObservationsAfterRecovery", numberAt(r, "evidenceAfterRecovery.logicalObservations"), n);
+      eq("sourceTailRetainedAfterRecovery", numberAt(r, "evidenceAfterRecovery.sourceTailRetained"), numberAt(r, "evidenceAfterRecovery.sampled") ?? -1);
+      eq("spoolRecordsAfterRecovery", numberAt(r, "recovery.spoolRecordsAfter"), 0);
+      if (embeds) {
+        eq("killBeforeFirstVectorCheckpoint", numberAt(r, "crash.vectorCheckpointBeforeKill"), 0);
+        eq("vectorDocumentsAfterRecovery", numberAt(r, "evidenceAfterRecovery.vectorDocuments"), n);
+        atMost("recoveryRepeatEmbedInputs", numberAt(r, "recovery.provider.embedRepeatInputs"), Math.max(10, Math.ceil(n / 100)));
+      }
+      continue;
+    }
     eq("logicalObservationsBeforeKill", numberAt(r, "evidenceBeforeKill.logicalObservations"), n);
     eq("logicalObservationsAfterRecovery", numberAt(r, "evidenceAfterRecovery.logicalObservations"), n);
     const sampled = numberAt(r, "evidenceBeforeKill.sampled") ?? -1;
@@ -250,13 +310,13 @@ function checkInvariants(runs: Record<string, unknown>[]): Check[] {
 function checkBudgets(runs: Record<string, unknown>[], file: BudgetFile): Check[] {
   const out: Check[] = [];
   for (const r of runs) {
-    const limits = file.budgets?.[String(r["profile"])]?.[String(r["observations"])];
+    const limits = file.budgets?.[variantOf(r)]?.[String(r["observations"])];
     if (!limits) continue;
     for (const [name, limit] of Object.entries(limits)) {
       const metric = BUDGET_METRICS[name];
       if (!metric) continue;
       const value = numberAt(r, metric.path);
-      out.push({ profile: String(r["profile"]), observations: r["observations"] as number, repeat: (r["repeat"] as number) ?? 1, name, value, limit, pass: value !== null && value <= limit });
+      out.push({ profile: variantOf(r), observations: r["observations"] as number, repeat: (r["repeat"] as number) ?? 1, name, value, limit, pass: value !== null && value <= limit });
     }
   }
   return out;
@@ -265,8 +325,8 @@ function checkBudgets(runs: Record<string, unknown>[], file: BudgetFile): Check[
 function deriveBudgets(runs: Record<string, unknown>[], commit: string): BudgetFile {
   const budgets: BudgetFile["budgets"] = {};
   for (const r of runs) {
-    if (r["error"]) continue;
-    const p = String(r["profile"]);
+    if (r["error"] || (r["provider"] ?? "fake") !== "fake" || (r["scenario"] ?? "standard") !== "standard") continue;
+    const p = variantOf(r);
     const n = String(r["observations"]);
     const slot = ((budgets[p] ??= {})[n] ??= {});
     for (const [name, metric] of Object.entries(BUDGET_METRICS)) {
@@ -287,6 +347,8 @@ interface ProviderCounters {
   chatRepeatPrompts: number;
   chatPromptTokens: number;
   chatCompletionTokens: number;
+  embedUpstreamMs: number;
+  chatUpstreamMs: number;
   errors: number;
 }
 
@@ -299,6 +361,8 @@ function zeroCounters(): ProviderCounters {
     chatRepeatPrompts: 0,
     chatPromptTokens: 0,
     chatCompletionTokens: 0,
+    embedUpstreamMs: 0,
+    chatUpstreamMs: 0,
     errors: 0,
   };
 }
@@ -311,11 +375,12 @@ function diffCounters(a: ProviderCounters, b: ProviderCounters): ProviderCounter
 
 class FakeProvider {
   counters = zeroCounters();
+  inFlight = 0;
   private seenInputs = new Set<string>();
   private seenPrompts = new Set<string>();
   private server: Server | null = null;
 
-  constructor(private port: number, private dims: number) {}
+  constructor(private port: number, private dims: number, private upstream: string | null = null) {}
 
   reset(): void {
     this.counters = zeroCounters();
@@ -357,25 +422,80 @@ class FakeProvider {
     ].join("\n");
   }
 
+  private count(url: string, payload: Record<string, unknown>): { prompt: string } | null {
+    if (url.endsWith("/embeddings")) {
+      const inputs = (Array.isArray(payload["input"]) ? payload["input"] : [payload["input"]]).map(String);
+      this.counters.embedRequests++;
+      this.counters.embedInputs += inputs.length;
+      for (const t of inputs) {
+        if (this.seenInputs.has(t)) this.counters.embedRepeatInputs++;
+        else this.seenInputs.add(t);
+      }
+      return null;
+    }
+    const messages = Array.isArray(payload["messages"]) ? (payload["messages"] as { content?: unknown }[]) : [];
+    const prompt = messages.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))).join("\n");
+    this.counters.chatRequests++;
+    if (this.seenPrompts.has(prompt)) this.counters.chatRepeatPrompts++;
+    else this.seenPrompts.add(prompt);
+    return { prompt };
+  }
+
+  private async forward(url: string, raw: Buffer, payload: Record<string, unknown>, res: ServerResponse): Promise<void> {
+    const isEmbed = url.endsWith("/embeddings");
+    if (!isEmbed && !url.endsWith("/chat/completions")) {
+      this.counters.errors++;
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { message: `bench proxy: unsupported ${url}` } }));
+      return;
+    }
+    this.count(url, payload);
+    const t0 = performance.now();
+    this.inFlight++;
+    try {
+      const up = await fetch(`${this.upstream}${url}`, { method: "POST", headers: { "content-type": "application/json" }, body: raw.toString("utf8"), signal: AbortSignal.timeout(300000) });
+      const text = await up.text();
+      const ms = performance.now() - t0;
+      if (isEmbed) this.counters.embedUpstreamMs += ms;
+      else this.counters.chatUpstreamMs += ms;
+      if (!up.ok) this.counters.errors++;
+      if (!isEmbed && up.ok) {
+        try {
+          const usage = (JSON.parse(text) as { usage?: { prompt_tokens?: number; completion_tokens?: number } }).usage;
+          this.counters.chatPromptTokens += usage?.prompt_tokens ?? 0;
+          this.counters.chatCompletionTokens += usage?.completion_tokens ?? 0;
+        } catch {}
+      }
+      res.writeHead(up.status, { "content-type": up.headers.get("content-type") ?? "application/json" });
+      res.end(text);
+    } catch (err) {
+      this.counters.errors++;
+      res.writeHead(502, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { message: `bench proxy: ${err instanceof Error ? err.message : String(err)}` } }));
+    } finally {
+      this.inFlight--;
+    }
+  }
+
   start(): Promise<void> {
     this.server = createServer((req, res) => {
       const chunks: Buffer[] = [];
       req.on("data", (c: Buffer) => chunks.push(c));
       req.on("end", () => {
         let payload: Record<string, unknown> = {};
+        const raw = Buffer.concat(chunks);
         try {
-          payload = JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
+          payload = JSON.parse(raw.toString("utf8") || "{}");
         } catch {}
         const url = req.url ?? "";
+        if (this.upstream) {
+          void this.forward(url, raw, payload, res);
+          return;
+        }
         if (url.endsWith("/embeddings")) {
           const inputs = (Array.isArray(payload["input"]) ? payload["input"] : [payload["input"]]).map(String);
           const dims = typeof payload["dimensions"] === "number" ? (payload["dimensions"] as number) : this.dims;
-          this.counters.embedRequests++;
-          this.counters.embedInputs += inputs.length;
-          for (const t of inputs) {
-            if (this.seenInputs.has(t)) this.counters.embedRepeatInputs++;
-            else this.seenInputs.add(t);
-          }
+          this.count(url, payload);
           const total = inputs.reduce((s, t) => s + Math.ceil(t.length / 4), 0);
           res.writeHead(200, { "content-type": "application/json" });
           res.end(
@@ -389,11 +509,7 @@ class FakeProvider {
           return;
         }
         if (url.endsWith("/chat/completions")) {
-          const messages = Array.isArray(payload["messages"]) ? (payload["messages"] as { content?: unknown }[]) : [];
-          const prompt = messages.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))).join("\n");
-          this.counters.chatRequests++;
-          if (this.seenPrompts.has(prompt)) this.counters.chatRepeatPrompts++;
-          else this.seenPrompts.add(prompt);
+          const { prompt } = this.count(url, payload)!;
           const content = this.chatReply(prompt);
           const promptTokens = Math.ceil(prompt.length / 4);
           const completionTokens = Math.ceil(content.length / 4);
@@ -558,6 +674,12 @@ class RssSampler {
     }
   }
 
+  stop(): void {
+    if (this.timer) clearInterval(this.timer);
+    this.timer = null;
+    this.window = null;
+  }
+
   async end(): Promise<RssWindow & { cpuSec: number }> {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
@@ -663,7 +785,11 @@ function walk(dir: string, visit: (path: string, size: number) => void): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const p = join(dir, entry.name);
     if (entry.isDirectory()) walk(p, visit);
-    else if (entry.isFile()) visit(p, statSync(p).size);
+    else if (entry.isFile()) {
+      try {
+        visit(p, statSync(p).size);
+      } catch {}
+    }
   }
 }
 
@@ -731,19 +857,30 @@ interface BootLog {
   vectorsLoaded: number | null;
   vectorBackfillQueued: number | null;
   vectorBackfillAwaitingOptIn: number | null;
+  pendingLogRecoveredVectors: number;
+  spoolRecovered: number;
+  spoolAlreadyStored: number;
+  inboxRecovered: number;
 }
 
 function parseBootLog(text: string): BootLog {
   const bm = [...text.matchAll(/Rebuilt BM25 index from stored content \((\d+) docs in (\d+) ms\)/g)].pop();
   const vec = [...text.matchAll(/Loaded persisted vector index \((\d+) vectors\)/g)].pop();
-  const back = [...text.matchAll(/Backfilling (\d+) missing vectors/g)].pop();
+  const back = [...text.matchAll(/(?:Backfilling|Re-embedding) (\d+) (?:missing )?vectors/g)].pop();
   const optIn = [...text.matchAll(/Vector backfill needs (\d+) embeddings/g)].pop();
+  const replay = [...text.matchAll(/Recovered (\d+) vectors and \d+ removals written after the last index save/g)].pop();
+  const spool = [...text.matchAll(/Capture spool: (\d+) recovered, (\d+) already stored/g)].pop();
+  const inbox = [...text.matchAll(/Capture inbox: (\d+) of \d+ unfinished observations stored/g)].pop();
   return {
     bm25Docs: bm ? +bm[1]! : null,
     bm25RebuildMs: bm ? +bm[2]! : null,
     vectorsLoaded: vec ? +vec[1]! : 0,
     vectorBackfillQueued: back ? +back[1]! : 0,
     vectorBackfillAwaitingOptIn: optIn ? +optIn[1]! : 0,
+    pendingLogRecoveredVectors: replay ? +replay[1]! : 0,
+    spoolRecovered: spool ? +spool[1]! : 0,
+    spoolAlreadyStored: spool ? +spool[2]! : 0,
+    inboxRecovered: inbox ? +inbox[1]! : 0,
   };
 }
 
@@ -757,6 +894,7 @@ interface Instance {
 class Harness {
   private instance: Instance | null = null;
   private knownPids = new Set<number>();
+  private lastLogPath: string | null = null;
   readonly sampler: RssSampler;
   readonly home: string;
   readonly dataDir: string;
@@ -804,10 +942,14 @@ class Harness {
         OPENAI_API_KEY: "bench-fake-key",
         OPENAI_BASE_URL: `http://127.0.0.1:${this.cfg.fakePort}`,
         OPENAI_EMBEDDING_DIMENSIONS: String(this.cfg.dims),
-        OPENAI_EMBEDDING_MODEL: "bench-fake-embedding",
+        OPENAI_EMBEDDING_MODEL: this.cfg.embedModel,
         OPENAI_API_KEY_FOR_LLM: this.profile.llm ? "true" : "false",
       });
-      if (this.profile.llm) env["OPENAI_MODEL"] = "bench-fake-chat";
+      if (this.profile.llm) env["OPENAI_MODEL"] = this.cfg.chatModel;
+    }
+    if (this.cfg.stateBackend === "redis") {
+      env["AGENTMEMORY_STATE_BACKEND"] = "redis";
+      env["AGENTMEMORY_REDIS_URL"] = this.cfg.redisUrl!;
     }
     return env;
   }
@@ -827,6 +969,7 @@ class Harness {
       if (await portOpen(port)) throw new Error(`port ${port} is in use before ${label}; refusing to share it`);
     }
     const logPath = join(this.runDir, `cli-${label}.log`);
+    this.lastLogPath = logPath;
     const fd = openSync(logPath, "a");
     const t0 = performance.now();
     const child = spawn(
@@ -860,6 +1003,42 @@ class Harness {
     }
     await this.adoptTree();
     return { readyMs: Math.round(readyMs), indexReadyMs: indexReadyMs === null ? null : Math.round(indexReadyMs), boot: parseBootLog(readFileSync(logPath, "utf8")) };
+  }
+
+  bootLog(): BootLog | null {
+    return this.lastLogPath && existsSync(this.lastLogPath) ? parseBootLog(readFileSync(this.lastLogPath, "utf8")) : null;
+  }
+
+  private spoolFiles(): string[] {
+    const files: string[] = [];
+    const visit = (dir: string, inSpool: boolean) => {
+      if (!existsSync(dir)) return;
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name);
+        if (entry.isDirectory()) visit(p, inSpool || entry.name === "capture-spool");
+        else if (inSpool) files.push(p);
+      }
+    };
+    visit(this.home, false);
+    return files;
+  }
+
+  spoolRecords(): number {
+    return this.spoolFiles()
+      .filter((p) => p.endsWith(".jsonl"))
+      .reduce((n, p) => n + readFileSync(p, "utf8").split("\n").filter((l) => l.trim()).length, 0);
+  }
+
+  spoolStats(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const p of this.spoolFiles().filter((f) => f.endsWith(".stats.json"))) {
+      try {
+        for (const [k, v] of Object.entries(JSON.parse(readFileSync(p, "utf8")) as Record<string, unknown>)) {
+          if (typeof v === "number") out[k] = (out[k] ?? 0) + v;
+        }
+      } catch {}
+    }
+    return out;
   }
 
   async adoptTree(): Promise<void> {
@@ -939,10 +1118,10 @@ interface HookRun {
   exitCode: number | null;
 }
 
-function runHook(script: string, payload: unknown, env: NodeJS.ProcessEnv, timeoutMs = 15000): Promise<HookRun> {
+function runHook(script: string, payload: unknown, env: NodeJS.ProcessEnv, timeoutMs = 15000, cwd?: string): Promise<HookRun> {
   return new Promise((ok) => {
     const t0 = performance.now();
-    const child = spawn(process.execPath, [script], { env, stdio: ["pipe", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [script], { env, cwd, stdio: ["pipe", "pipe", "pipe"] });
     let out = 0;
     let err = 0;
     const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
@@ -1053,7 +1232,7 @@ async function quiesce(h: Harness, fake: FakeProvider, timeoutMs: number): Promi
   while (performance.now() - t0 < timeoutMs) {
     await sleep(1000);
     const now = JSON.stringify(fake.snapshot());
-    if (now !== last) {
+    if (now !== last || fake.inFlight > 0) {
       last = now;
       stableSince = Date.now();
     } else if (Date.now() - stableSince >= 3000) break;
@@ -1126,19 +1305,178 @@ async function measureContext(h: Harness, profile: Profile, n: number, caps: Map
   };
 }
 
+async function redisCli(url: string, args: string[]): Promise<string> {
+  const { stdout } = await execFileAsync("redis-cli", ["-u", url, ...args], { timeout: 60000, maxBuffer: 16 * 1024 * 1024 });
+  return stdout;
+}
+
+async function redisStats(url: string): Promise<{ usedMemoryBytes: number | null; keys: number | null; serverRssKiB: number | null }> {
+  const info = await redisCli(url, ["INFO"]);
+  const field = (k: string) => {
+    const m = info.match(new RegExp(`^${k}:(\\d+)`, "m"));
+    return m ? +m[1]! : null;
+  };
+  const keys = parseInt((await redisCli(url, ["DBSIZE"])).trim(), 10);
+  const pid = field("process_id");
+  const rows = pid === null ? [] : await psRows();
+  return { usedMemoryBytes: field("used_memory"), keys: Number.isFinite(keys) ? keys : null, serverRssKiB: rows.find((r) => r.pid === pid)?.rssKiB ?? null };
+}
+
+async function providerProcessRssKiB(): Promise<number> {
+  return (await psRows()).filter((r) => basename(r.comm).startsWith("ollama")).reduce((s, r) => s + r.rssKiB, 0);
+}
+
+async function prepareRun(cfg: Config, profile: Profile, n: number): Promise<{ runDir: string; variant: string; out: Record<string, unknown> }> {
+  const variant = variantName(profile, cfg);
+  const runDir = join(cfg.root, `${variant.replace(/[^a-z0-9-]+/gi, "_")}-${n}`);
+  rmSync(runDir, { recursive: true, force: true });
+  mkdirSync(runDir, { recursive: true });
+  if (cfg.stateBackend === "redis") await redisCli(cfg.redisUrl!, ["FLUSHALL"]);
+  const out: Record<string, unknown> = {
+    profile: profile.name,
+    variant,
+    profileDescription: profile.description,
+    observations: n,
+    provider: cfg.provider,
+    stateBackend: cfg.stateBackend,
+    scenario: cfg.scenario,
+    embeddings: profile.embeddings,
+  };
+  return { runDir, variant, out };
+}
+
+async function waitDrained(h: Harness, fake: FakeProvider, embeddings: boolean, n: number, timeoutMs: number): Promise<void> {
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    const status = await http(h.base, "GET", "/status", undefined, 120000).catch(() => null);
+    const index = (status?.body as { index?: Record<string, unknown> } | undefined)?.index ?? {};
+    const vectors = typeof index["vectorDocuments"] === "number" ? (index["vectorDocuments"] as number) : 0;
+    if (h.spoolRecords() === 0 && (!embeddings || vectors >= n)) break;
+    await sleep(1000);
+  }
+  await quiesce(h, fake, Math.max(10000, timeoutMs - (Date.now() - t0)));
+}
+
+async function runCrashOffline(cfg: Config, profile: Profile, n: number, fake: FakeProvider) {
+  const { runDir, variant, out } = await prepareRun(cfg, profile, n);
+  const h = new Harness(cfg, profile, runDir);
+  h.prepare();
+  fake.reset();
+  const log = (msg: string) => process.stderr.write(`[capture-costs] ${variant} n=${n} ${msg}\n`);
+  try {
+    log("cold start");
+    out["coldStart"] = await h.start("cold");
+    const rng = mulberry32(cfg.seed);
+    const caps = new Map<number, ToolCapture>();
+    for (let i = 0; i < n; i++) {
+      const size = cfg.outputMin + Math.floor(rng() * Math.max(1, cfg.outputMax - cfg.outputMin));
+      caps.set(i, buildToolCapture(rng, i, size));
+    }
+    const sessions = Math.ceil(n / cfg.perSession);
+    for (let j = 0; j < sessions; j++) {
+      await http(h.base, "POST", "/session/start", { sessionId: sessionIdFor(profile, n, j), project: PROJECT, cwd: h.cwd });
+    }
+    const hookScript = join(cfg.distDir, "hooks", "post-tool-use.mjs");
+    const killCount = Math.max(1, Math.floor(n / 2));
+    let done = 0;
+    let inFlight = 0;
+    let killedAtMs: number | null = null;
+    let gate: Promise<void> | null = null;
+    let openGate = () => {};
+    const online: number[] = [];
+    const offline: number[] = [];
+    let nonZero = 0;
+    const t0 = performance.now();
+    log(`capture through hooks, kill after ${killCount} hooks or ${cfg.killAfterMs} ms, settle ${cfg.killSettleMs} ms`);
+    const killer = (async () => {
+      while (done < killCount && performance.now() - t0 < cfg.killAfterMs) await sleep(10);
+      if (cfg.killSettleMs > 0) {
+        gate = new Promise<void>((ok) => (openGate = ok));
+        while (inFlight > 0) await sleep(10);
+        await sleep(cfg.killSettleMs);
+      }
+      const status = await http(h.base, "GET", "/status", undefined, 5000).catch(() => null);
+      const persistence = (status?.body as { indexPersistence?: { vector?: { lastSavedAt?: string | null } | null } } | undefined)?.indexPersistence ?? null;
+      const embedded = fake.snapshot();
+      const completed = done;
+      killedAtMs = performance.now() - t0;
+      await h.forceKill();
+      openGate();
+      const accepted = (readFileSync(join(runDir, "cli-cold.log"), "utf8").match(/Observation captured/g) ?? []).length;
+      out["crash"] = {
+        killAfterMs: Math.round(killedAtMs),
+        settleMs: cfg.killSettleMs,
+        hooksCompletedBeforeKill: completed,
+        observationsAcceptedBeforeKill: accepted,
+        embeddedInputsBeforeKill: embedded.embedInputs,
+        chatRequestsBeforeKill: embedded.chatRequests,
+        vectorCheckpointBeforeKill: persistence?.vector?.lastSavedAt ? 1 : 0,
+        indexPersistenceBeforeKill: persistence,
+      };
+    })();
+    await drive(cfg.concurrency, n, async (i) => {
+      if (gate) await gate;
+      inFlight++;
+      const start = performance.now() - t0;
+      const r = await runHook(hookScript, hookBody(sessionIdFor(profile, n, Math.floor(i / cfg.perSession)), h.cwd, caps.get(i)!), h.hookEnv(false), 15000, h.cwd);
+      (killedAtMs === null || start < killedAtMs ? online : offline).push(r.ms);
+      if (r.exitCode !== 0) nonZero++;
+      done++;
+      inFlight--;
+    });
+    await killer;
+    const spooled = h.spoolRecords();
+    Object.assign(out["crash"] as Record<string, unknown>, {
+      captureWallMs: Math.round(performance.now() - t0),
+      hookLatencyOnlineMs: dist(online),
+      hookLatencyOfflineMs: dist(offline),
+      hookNonZeroExits: nonZero,
+      spoolRecordsWhileDown: spooled,
+      spoolStats: h.spoolStats(),
+    });
+    log(`${spooled} observations spooled while down; restart`);
+    const recBefore = fake.snapshot();
+    const recT0 = performance.now();
+    const rec = await h.start("recovery");
+    await h.sampler.begin();
+    await waitDrained(h, fake, profile.embeddings, n, cfg.quiesceTimeoutMs);
+    const recRss = await h.sampler.end();
+    const recProvider = diffCounters(recBefore, fake.snapshot());
+    out["recovery"] = {
+      ...rec,
+      boot: h.bootLog() ?? rec.boot,
+      settledMs: Math.round(performance.now() - recT0),
+      spoolRecordsAfter: h.spoolRecords(),
+      spoolStatsAfter: h.spoolStats(),
+      provider: recProvider,
+      rss: { peakTotalKiB: recRss.peakTotalKiB },
+      cpuSec: recRss.cpuSec,
+    };
+    const sampleIdx = Array.from({ length: Math.min(cfg.evidenceSample, n) }, (_, k) => Math.floor((k * n) / Math.min(cfg.evidenceSample, n)));
+    log("evidence after recovery");
+    out["evidenceAfterRecovery"] = await collectEvidence(h, profile, n, cfg.perSession, caps, sampleIdx);
+    await h.stop();
+  } catch (err) {
+    out["error"] = err instanceof Error ? err.message : String(err);
+    log(`error: ${out["error"]}`);
+  } finally {
+    h.sampler.stop();
+    await h.stop().catch(() => {});
+    if (!cfg.keep) rmSync(runDir, { recursive: true, force: true });
+  }
+  return out;
+}
+
 function kib(n: number): number {
   return Math.round(n);
 }
 
 async function runOne(cfg: Config, profile: Profile, n: number, fake: FakeProvider) {
-  const runDir = join(cfg.root, `${profile.name}-${n}`);
-  rmSync(runDir, { recursive: true, force: true });
-  mkdirSync(runDir, { recursive: true });
+  const { runDir, variant, out } = await prepareRun(cfg, profile, n);
   const h = new Harness(cfg, profile, runDir);
   h.prepare();
   fake.reset();
-  const out: Record<string, unknown> = { profile: profile.name, profileDescription: profile.description, observations: n };
-  const log = (msg: string) => process.stderr.write(`[capture-costs] ${profile.name} n=${n} ${msg}\n`);
+  const log = (msg: string) => process.stderr.write(`[capture-costs] ${variant} n=${n} ${msg}\n`);
   try {
     log("cold start");
     const cold = await h.start("cold");
@@ -1224,6 +1562,8 @@ async function runOne(cfg: Config, profile: Profile, n: number, fake: FakeProvid
     out["diskAfterCapture"] = q.disk;
     out["diskGrowth"] = diskDelta(baseline, q.disk);
     out["diskGrowthPerObservationBytes"] = n > 0 ? Math.round(diskDelta(baseline, q.disk).totalBytes / n) : null;
+    if (cfg.stateBackend === "redis") out["redisAfterCapture"] = await redisStats(cfg.redisUrl!);
+    if (cfg.provider !== "fake") out["providerProcessRssKiB"] = await providerProcessRssKiB();
 
     const sampleIdx = Array.from({ length: Math.min(cfg.evidenceSample, n) }, (_, k) => Math.floor((k * n) / Math.min(cfg.evidenceSample, n)));
     log("evidence before kill");
@@ -1246,6 +1586,7 @@ async function runOne(cfg: Config, profile: Profile, n: number, fake: FakeProvid
     const recIdle = await h.sampler.sampleOnce();
     out["recovery"] = {
       ...rec,
+      bootAfterSettle: h.bootLog(),
       settledMs: Math.round(performance.now() - recT0),
       reEmbedRequests: recProvider.embedRequests,
       reEmbeddedInputs: recProvider.embedInputs,
@@ -1270,6 +1611,7 @@ async function runOne(cfg: Config, profile: Profile, n: number, fake: FakeProvid
     out["error"] = err instanceof Error ? err.message : String(err);
     log(`error: ${out["error"]}`);
   } finally {
+    h.sampler.stop();
     await h.stop().catch(() => {});
     if (!cfg.keep) rmSync(runDir, { recursive: true, force: true });
   }
@@ -1301,9 +1643,11 @@ function get(o: unknown, path: string): unknown {
 
 function markdown(report: Record<string, unknown>): string {
   const repeated = ((report["config"] as { repeats?: number })?.repeats ?? 1) > 1;
-  const runs = (report["runs"] as Record<string, unknown>[]).map(
-    (r): Record<string, unknown> => (repeated ? { ...r, profile: `${r["profile"]} #${r["repeat"]}` } : r),
+  const all = (report["runs"] as Record<string, unknown>[]).map(
+    (r): Record<string, unknown> => ({ ...r, profile: repeated ? `${variantOf(r)} #${r["repeat"]}` : variantOf(r) }),
   );
+  const runs = all.filter((r) => (r["scenario"] ?? "standard") === "standard");
+  const crashes = all.filter((r) => r["scenario"] === "crash-offline");
   const lines: string[] = [];
   const env = report["environment"] as Record<string, unknown>;
   lines.push(`Commit \`${report["commit"]}\`, ${env["platform"]}, ${env["cpu"]}, ${fmtBytes(env["memoryBytes"])} RAM, Node ${env["node"]}, iii ${env["iii"]}.`, "");
@@ -1332,12 +1676,27 @@ function markdown(report: Record<string, unknown>): string {
   for (const r of runs) {
     lines.push(`| ${r["profile"]} | ${r["observations"]} | ${get(r, "coldStart.readyMs")} | ${get(r, "warmStart.readyMs")} | ${get(r, "recovery.readyMs")} | ${get(r, "recovery.boot.bm25RebuildMs")} (${get(r, "recovery.boot.bm25Docs")}) | ${get(r, "recovery.boot.vectorsLoaded")} | ${get(r, "evidenceBeforeKill.vectorDocuments")} / ${get(r, "evidenceAfterRecovery.vectorDocuments")} | ${get(r, "recovery.boot.vectorBackfillQueued")} / ${get(r, "recovery.boot.vectorBackfillAwaitingOptIn")} | ${get(r, "recovery.reEmbedRequests")} (${get(r, "recovery.reEmbeddedInputs")}) | ${get(r, "evidenceBeforeKill.logicalObservations")} / ${get(r, "evidenceAfterRecovery.logicalObservations")} | ${get(r, "evidenceBeforeKill.markerSearchHits")}/${get(r, "evidenceBeforeKill.sampled")} / ${get(r, "evidenceAfterRecovery.markerSearchHits")}/${get(r, "evidenceAfterRecovery.sampled")} | ${get(r, "evidenceBeforeKill.sourceTailRetained")} / ${get(r, "evidenceAfterRecovery.sourceTailRetained")} |`);
   }
-  lines.push("", "### Provider calls (fake OpenAI-compatible server)", "");
-  lines.push("| profile | N | capture embed req (inputs, repeats) | capture chat req (repeats) | chat prompt tok | chat completion tok | context-phase embed req | recovery embed req | warm-start embed req |");
-  lines.push("|---|---|---|---|---|---|---|---|---|");
+  lines.push("", "### Provider calls (OpenAI-compatible endpoint seen by the bench)", "");
+  lines.push("| profile | N | capture embed req (inputs, repeats) | capture chat req (repeats) | chat prompt tok | chat completion tok | upstream embed s | upstream chat s | provider errors | context-phase embed req | recovery embed req | warm-start embed req |");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const r of runs) {
     const p = (k: string) => get(r, `capture.provider.${k}`);
-    lines.push(`| ${r["profile"]} | ${r["observations"]} | ${p("embedRequests")} (${p("embedInputs")}, ${p("embedRepeatInputs")}) | ${p("chatRequests")} (${p("chatRepeatPrompts")}) | ${p("chatPromptTokens")} | ${p("chatCompletionTokens")} | ${get(r, "agentVisibleContextProvider.embedRequests")} | ${get(r, "recovery.provider.embedRequests")} | ${get(r, "warmStart.provider.embedRequests")} |`);
+    const secs = (k: string) => (typeof p(k) === "number" ? ((p(k) as number) / 1000).toFixed(1) : "n/a");
+    lines.push(`| ${r["profile"]} | ${r["observations"]} | ${p("embedRequests")} (${p("embedInputs")}, ${p("embedRepeatInputs")}) | ${p("chatRequests")} (${p("chatRepeatPrompts")}) | ${p("chatPromptTokens")} | ${p("chatCompletionTokens")} | ${secs("embedUpstreamMs")} | ${secs("chatUpstreamMs")} | ${p("errors")} | ${get(r, "agentVisibleContextProvider.embedRequests")} | ${get(r, "recovery.provider.embedRequests")} | ${get(r, "warmStart.provider.embedRequests")} |`);
+  }
+  const redisRuns = runs.filter((r) => r["redisAfterCapture"]);
+  if (redisRuns.length > 0) {
+    lines.push("", "### Redis state store after capture", "");
+    lines.push("| profile | N | used memory | keys | redis-server RSS |", "|---|---|---|---|---|");
+    for (const r of redisRuns) lines.push(`| ${r["profile"]} | ${r["observations"]} | ${fmtBytes(get(r, "redisAfterCapture.usedMemoryBytes"))} | ${get(r, "redisAfterCapture.keys")} | ${fmtKiB(get(r, "redisAfterCapture.serverRssKiB"))} |`);
+  }
+  if (crashes.length > 0) {
+    lines.push("", "### Force-kill during capture with the service down", "");
+    lines.push("| profile | N | killed at ms | hooks before kill | embedded before kill | checkpoint before kill | spooled while down | offline hook p95 ms | spool recovered (dup) | pending-log vectors | recovery embed inputs (repeats) | logical obs after | vectors after | spool left |");
+    lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
+    for (const r of crashes) {
+      lines.push(`| ${r["profile"]} | ${r["observations"]} | ${get(r, "crash.killAfterMs")} | ${get(r, "crash.hooksCompletedBeforeKill")} | ${get(r, "crash.embeddedInputsBeforeKill")} | ${get(r, "crash.vectorCheckpointBeforeKill") ? "yes" : "no"} | ${get(r, "crash.spoolRecordsWhileDown")} | ${get(r, "crash.hookLatencyOfflineMs.p95")} | ${get(r, "recovery.boot.spoolRecovered")} (${get(r, "recovery.boot.spoolAlreadyStored")}) | ${get(r, "recovery.boot.pendingLogRecoveredVectors")} | ${get(r, "recovery.provider.embedInputs")} (${get(r, "recovery.provider.embedRepeatInputs")}) | ${get(r, "evidenceAfterRecovery.logicalObservations")} | ${get(r, "evidenceAfterRecovery.vectorDocuments")} | ${get(r, "recovery.spoolRecordsAfter")} |`);
+    }
   }
   lines.push("", "### Agent-visible context (server token estimate, not provider billing)", "");
   lines.push("| profile | N | search full B p50 (tok) | compact B p50 (tok) | narrative B p50 (tok) | smart-search B p50 | context B (tok) | SessionStart stdout off / on | PreToolUse stdout off / on |");
@@ -1361,7 +1720,7 @@ function markdown(report: Record<string, unknown>): string {
       for (const c of failed) lines.push(`| ${c.profile} | ${c.observations} | ${c.repeat} | ${c.name} | ${c.value} | ${c.limit} |`);
     }
   }
-  const errors = runs.filter((r) => r["error"]);
+  const errors = all.filter((r) => r["error"]);
   if (errors.length > 0) {
     lines.push("", "### Errors", "");
     for (const r of errors) lines.push(`- ${r["profile"]} N=${r["observations"]}: ${r["error"]}`);
@@ -1408,7 +1767,7 @@ async function main(): Promise<void> {
   }
   mkdirSync(cfg.root, { recursive: true });
   mkdirSync(cfg.outDir, { recursive: true });
-  const fake = new FakeProvider(cfg.fakePort, cfg.dims);
+  const fake = new FakeProvider(cfg.fakePort, cfg.dims, cfg.upstreamUrl);
   await fake.start();
   const commit = gitSha();
   const started = new Date().toISOString();
@@ -1418,7 +1777,7 @@ async function main(): Promise<void> {
       for (let rep = 1; rep <= cfg.repeats; rep++) {
         for (const profile of cfg.profiles) {
           const t0 = performance.now();
-          const r = await runOne(cfg, profile, n, fake);
+          const r = cfg.scenario === "crash-offline" ? await runCrashOffline(cfg, profile, n, fake) : await runOne(cfg, profile, n, fake);
           r["repeat"] = rep;
           r["runWallMs"] = Math.round(performance.now() - t0);
           runs.push(r);
@@ -1440,7 +1799,8 @@ async function main(): Promise<void> {
       memoryBytes: totalmem(),
       node: process.version,
       iii: iiiVersion(cfg.iiiBin),
-      stateBackend: "file",
+      stateBackend: cfg.stateBackend,
+      ...(cfg.stateBackend === "redis" ? { redis: (await redisCli(cfg.redisUrl!, ["INFO", "server"])).match(/^redis_version:(\S+)/m)?.[1] ?? null } : {}),
     },
     config: {
       sizes: cfg.sizes,
@@ -1455,6 +1815,9 @@ async function main(): Promise<void> {
       searchLimit: cfg.searchLimit,
       evidenceSample: cfg.evidenceSample,
       repeats: cfg.repeats,
+      scenario: cfg.scenario,
+      provider: cfg.provider === "fake" ? { mode: "fake" } : { mode: cfg.provider, url: cfg.upstreamUrl, embeddingModel: cfg.embedModel, chatModel: cfg.chatModel },
+      ...(cfg.scenario === "crash-offline" ? { killAfterMs: cfg.killAfterMs, killSettleMs: cfg.killSettleMs } : {}),
       ports: { rest: cfg.restPort, streams: cfg.restPort + 1, viewer: cfg.restPort + 2, metrics: cfg.restPort + 3, engine: cfg.enginePort, fakeProvider: cfg.fakePort },
     },
     runs,
