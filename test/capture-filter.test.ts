@@ -64,6 +64,14 @@ describe("shouldCaptureTool (#993)", () => {
     expect(shouldCaptureTool("Bash")).toBe(true);
   });
 
+  it("matches an exact pattern against the full MCP tool name", () => {
+    process.env.AGENTMEMORY_CAPTURE_DENY = "mcp__github__create_issue";
+    expect(shouldCaptureTool("mcp__github__create_issue")).toBe(false);
+    expect(shouldCaptureTool("mcp__gitlab__create_issue")).toBe(true);
+    process.env.AGENTMEMORY_CAPTURE_DENY = "create_issue";
+    expect(shouldCaptureTool("mcp__gitlab__create_issue")).toBe(false);
+  });
+
   it("honors AGENTMEMORY_CAPTURE_ALLOW over defaults", () => {
     process.env.AGENTMEMORY_CAPTURE_ALLOW = "memory_recall, Bash";
     expect(shouldCaptureTool("memory_recall")).toBe(true);

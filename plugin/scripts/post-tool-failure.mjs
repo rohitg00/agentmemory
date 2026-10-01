@@ -25,11 +25,12 @@ function normalizePattern(pattern) {
 }
 function matchesPattern(toolName, pattern) {
 	const bare = bareToolName(toolName).toLowerCase();
+	const full = toolName.trim().toLowerCase();
 	const pat = normalizePattern(pattern);
-	if (!pat.includes("*")) return bare === pat;
+	if (!pat.includes("*")) return bare === pat || full === pat;
 	const escaped = pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
 	const re = new RegExp(`^${escaped.replace(/\*/g, ".*")}$`);
-	return re.test(bare) || re.test(toolName.toLowerCase());
+	return re.test(bare) || re.test(full);
 }
 function matchesAny(toolName, patterns) {
 	return patterns.some((pattern) => matchesPattern(toolName, pattern));
