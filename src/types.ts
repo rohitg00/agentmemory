@@ -18,6 +18,12 @@ export interface Session {
   agentId?: string;
 }
 
+export interface ProjectSessionIndexEntry {
+  id: string;
+  startedAt: string;
+  agentId?: string;
+}
+
 export interface CommitLink {
   sha: string;
   shortSha: string;
@@ -65,6 +71,18 @@ export interface RawObservation {
   origin?: Origin;
 }
 
+export interface ObservationSource {
+  hookType: HookType;
+  originalBytes: number;
+  truncated: boolean;
+  toolName?: string;
+  toolInput?: unknown;
+  toolOutput?: unknown;
+  userPrompt?: string;
+  assistantResponse?: string;
+  payload?: unknown;
+}
+
 export interface CompressedObservation {
   id: string;
   sessionId: string;
@@ -78,6 +96,7 @@ export interface CompressedObservation {
   files: string[];
   importance: number;
   confidence?: number;
+  source?: ObservationSource;
   imageRef?: string;
   imageData?: string;
   imageDescription?: string;
@@ -237,6 +256,7 @@ export interface HealthSnapshot {
   eventLoopLagMs: number;
   uptimeSeconds: number;
   kvConnectivity?: { status: string; latencyMs?: number; error?: string };
+  streamRelay?: "ok" | "down" | "unknown";
   status: "healthy" | "degraded" | "critical";
   alerts: string[];
   notes?: string[];
@@ -481,6 +501,7 @@ export interface GraphQueryResult {
   // empty-body / nodeType-only branch on large corpora where the
   // unbounded enumeration would exceed the iii invocation timeout.
   fromSnapshot?: boolean;
+  degrees?: Record<string, number>;
   // #814: when the snapshot is stale or absent and the live fallback
   // also failed, expose an explanatory note so the viewer can surface
   // an actionable banner instead of a blank graph.
@@ -534,6 +555,7 @@ export interface SemanticMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface ProceduralMemory {
@@ -550,6 +572,7 @@ export interface ProceduralMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface TeamConfig {
@@ -635,12 +658,33 @@ export interface AuditEntry {
     | "slot_replace"
     | "slot_create"
     | "slot_delete"
-    | "slot_reflect";
+    | "slot_reflect"
+    | "audit_migrate";
   userId?: string;
   functionId: string;
   targetIds: string[];
   details: Record<string, unknown>;
   qualityScore?: number;
+}
+
+export interface AuditMonthIndex {
+  months: string[];
+}
+
+export interface AuditMigrationState {
+  status: "too-large" | "unreadable" | "copied" | "done";
+  safeToListLegacy: boolean;
+  legacySizeBytes?: number;
+  migrated: number;
+  purged: number;
+  summaryWritten: boolean;
+  checkedAt: string;
+}
+
+export interface AuditQueryResult {
+  entries: AuditEntry[];
+  legacyFrozen: boolean;
+  legacyFrozenBytes?: number;
 }
 
 export interface GovernanceFilter {

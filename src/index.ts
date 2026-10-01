@@ -11,8 +11,11 @@ import {
   isGraphExtractionEnabled,
   isAutoCompressEnabled,
   isConsolidationEnabled,
+  getConsolidationIntervalMs,
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
+  getAuditRetentionMonths,
+  getStateBackend,
   isSessionSweepEnabled,
   getSessionSweepStaleHours,
 } from "./config.js";
@@ -23,13 +26,13 @@ import {
   createImageEmbeddingProvider,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
-import { KV } from "./state/schema.js";
 import { VectorIndex } from "./state/vector-index.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, settleWithin } from "./shutdown.js";
 import { registerPrivacyFunction } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
+import { seedViewerStreamTracker } from "./state/viewer-stream.js";
 import { registerImageQuotaCleanup } from "./functions/image-quota-cleanup.js";
 import { registerVisionSearchFunctions } from "./functions/vision-search.js";
 import { registerSlotsFunctions, isSlotsEnabled, isReflectEnabled } from "./functions/slots.js";
@@ -37,15 +40,20 @@ import { registerDiskSizeManager } from "./functions/disk-size-manager.js";
 import { registerCompressFunction } from "./functions/compress.js";
 import {
   registerSearchFunction,
-  rebuildIndex,
-  reconcileIndex,
+  backfillVectors,
+  rebuildKeywordIndex,
+  markKeywordRebuildPending,
   getSearchIndex,
   setVectorIndex,
   setEmbeddingProvider,
   setIndexPersistence,
   setHybridRanker,
+  setPendingVectorBackfillCount,
+  setVectorBackfillState,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
+import { registerSessionIndexMaintenanceFunction } from "./functions/session-index-maintenance.js";
+import { rebuildSessionIndexIfStale } from "./state/session-index.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
 import { registerMigrateFunction } from "./functions/migrate.js";
 import { registerFileIndexFunction } from "./functions/file-index.js";
@@ -94,16 +102,19 @@ import { registerSlidingWindowFunction } from "./functions/sliding-window.js";
 import { registerQueryExpansionFunction } from "./functions/query-expansion.js";
 import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
 import { registerRetentionFunctions } from "./functions/retention.js";
+import { startAuditMigration } from "./functions/audit.js";
 import { registerCompressFileFunction } from "./functions/compress-file.js";
 import { registerReplayFunctions } from "./functions/replay.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
+import { registerViewerStreamTriggers } from "./triggers/viewer-streams.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
 import { getAllTools } from "./mcp/tools-registry.js";
 import { startViewerServer } from "./viewer/server.js";
 import { MetricsStore } from "./eval/metrics-store.js";
 import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
+import { createStreamRelayProbe } from "./health/stream-relay-probe.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
 import { bootLog } from "./logger.js";
@@ -222,7 +233,11 @@ async function main() {
 
   writeWorkerPidfile();
 
-  const kv = new StateKV(sdk);
+  let stateBackend: "file" | "redis" = "file";
+  try {
+    stateBackend = getStateBackend();
+  } catch {}
+  const kv = new StateKV(sdk, { backend: stateBackend });
   const secret = getEnvVar("AGENTMEMORY_SECRET");
   const metricsStore = new MetricsStore(kv);
   const dedupMap = new DedupMap();
@@ -249,6 +264,18 @@ async function main() {
   registerCompressFunction(sdk, kv, provider, metricsStore);
   registerSearchFunction(sdk, kv);
   registerContextFunction(sdk, kv, config.tokenBudget);
+  registerSessionIndexMaintenanceFunction(sdk, kv);
+  void rebuildSessionIndexIfStale(kv)
+    .then((result) => {
+      if (result) {
+        bootLog(
+          `Session index rebuilt: ${result.projects} projects, ${result.sessions} sessions`,
+        );
+      }
+    })
+    .catch((err) => {
+      console.warn(`[agentmemory] Failed to rebuild session index at boot:`, err);
+    });
   registerSummarizeFunction(sdk, kv, provider, metricsStore);
   registerMigrateFunction(sdk, kv);
   registerFileIndexFunction(sdk, kv);
@@ -393,29 +420,26 @@ async function main() {
   setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);
 
+  markKeywordRebuildPending();
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);
   registerEventTriggers(sdk, kv);
+  registerViewerStreamTriggers(sdk, kv, { secret, metricsStore, provider });
   registerMcpEndpoints(sdk, kv, secret);
 
-  const healthMonitor = registerHealthMonitor(sdk, kv);
+  const healthMonitor = registerHealthMonitor(sdk, kv, {
+    streamRelayProbe:
+      kv.backend === "redis"
+        ? createStreamRelayProbe(sdk, { url: `ws://localhost:${config.streamsPort}` })
+        : undefined,
+  });
 
-  const indexPersistence = new IndexPersistence(kv, bm25Index, vectorIndex);
-  // Wire the persistence hook so delete paths can flush BM25/vector
-  // index mutations to disk. Without this, an in-memory remove can be
-  // lost across a hard process exit and the persisted snapshot
-  // restores the deleted entry at next boot.
+  const indexPersistence = new IndexPersistence(kv, vectorIndex);
   setIndexPersistence(indexPersistence);
 
   const loaded = await indexPersistence.load().catch((err) => {
-    console.warn(`[agentmemory] Failed to load persisted index:`, err);
+    console.warn(`[agentmemory] Failed to load persisted vector index:`, err);
     return null;
   });
-  if (loaded?.bm25 && loaded.bm25.size > 0) {
-    bm25Index.restoreFrom(loaded.bm25);
-    bootLog(
-      `Loaded persisted BM25 index (${bm25Index.size} docs)`,
-    );
-  }
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
     // Persisted vectors carry whatever dimension the provider had when
     // they were written. If the active provider declares a different
@@ -440,6 +464,7 @@ async function main() {
       const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
       const dropStale = isDropStaleIndexEnabled();
       if (dropStale) {
+        for (const [obsId] of loaded.vector.entries()) vectorIndex.markRemoved(obsId);
         console.warn(
           `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
             `${loaded.vector.size} vectors with the wrong dimension. Active ` +
@@ -470,79 +495,48 @@ async function main() {
     }
   }
 
-  const needsRebuild = bm25Index.size === 0;
+  const auditMigration = startAuditMigration(kv).catch(() => {});
 
-  if (needsRebuild) {
-    // Fire-and-forget. rebuildIndex iterates every observation across
-    // every session and AWAITS an embedding-provider call per record.
-    // On a large corpus + rate-limited embedding endpoint that can
-    // take HOURS; awaiting it here blocks every subsequent boot step
-    // (including startViewerServer below, leaving the viewer port
-    // unbound for the duration). The index lazily fills in over time
-    // and search degrades gracefully — partial coverage > no viewer
-    // for hours. Errors still surface via the inner .catch.
-    void rebuildIndex(kv)
-      .then((indexCount) => {
-        if (indexCount > 0) {
-          bootLog(`Search index rebuilt: ${indexCount} entries`);
-          indexPersistence.scheduleSave();
-        }
-      })
-      .catch((err) => {
-        console.warn(`[agentmemory] Failed to rebuild search index:`, err);
-      });
-  } else {
-    // Backfill memories into BM25 for users upgrading from <0.9.5: prior
-    // versions of mem::remember never indexed memories, so the persisted
-    // BM25 covers observations only and `memory_smart_search` returns
-    // empty for everything saved via memory_save (#257). Walk KV.memories
-    // and add the ones missing from the restored index. Idempotent on
-    // re-runs because SearchIndex.has() short-circuits already-indexed
-    // ids.
-    try {
-      const memories = await kv.list<import("./types.js").Memory>(KV.memories);
-      let backfilled = 0;
-      for (const memory of memories) {
-        if (memory.isLatest === false) continue;
-        if (!memory.title || !memory.content) continue;
-        if (bm25Index.has(memory.id)) continue;
-        bm25Index.add({
-          id: memory.id,
-          sessionId: memory.sessionIds?.[0] ?? "memory",
-          timestamp: memory.createdAt,
-          type: "decision",
-          title: memory.title,
-          facts: [memory.content],
-          narrative: memory.content,
-          concepts: memory.concepts,
-          files: memory.files,
-          importance: memory.strength,
-        });
-        backfilled++;
-      }
-      if (backfilled > 0) {
-        bootLog(
-          `Backfilled ${backfilled} memories into BM25 (legacy index gap)`,
-        );
-        indexPersistence.scheduleSave();
-      }
-    } catch (err) {
-      console.warn(
-        `[agentmemory] Failed to backfill memories into BM25:`,
-        err,
+  const vectorCountShortfall =
+    Boolean(loaded?.vector) &&
+    loaded?.expectedCount !== undefined &&
+    loaded.vector!.size < loaded.expectedCount;
+  const vectorBackfillSince =
+    !loaded || loaded.state === "unavailable"
+      ? undefined
+      : loaded.state === "none" || vectorCountShortfall
+        ? null
+        : loaded.savedAt;
+  const keywordStart = Date.now();
+  try {
+    const keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
+    bootLog(
+      `Rebuilt BM25 index from stored content (${keyword.documents} docs in ${Date.now() - keywordStart} ms)`,
+    );
+    setPendingVectorBackfillCount(keyword.vectorJobs.length + keyword.fullBackfillPending);
+    setVectorBackfillState(keyword.fullBackfillPending > 0 ? "waiting-for-opt-in" : "idle");
+    if (keyword.fullBackfillPending > 0) {
+      bootLog(
+        `Vector backfill needs ${keyword.fullBackfillPending} embeddings but a full backfill was not started ` +
+          `(set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`,
       );
     }
-    void reconcileIndex(kv)
-      .then((count) => {
-        if (count > 0) {
-          bootLog(
-            `Search index reconciled: ${count} observations missing from the persisted snapshot were re-indexed`,
-          );
-        }
-      })
-      .catch((err) => {
-        console.warn(`[agentmemory] Failed to reconcile search index:`, err);
-      });
+    if (keyword.vectorJobs.length > 0) {
+      setVectorBackfillState("running");
+      bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors in the background`);
+      void backfillVectors(keyword.vectorJobs)
+        .then((count) => {
+          setPendingVectorBackfillCount(keyword.fullBackfillPending);
+          setVectorBackfillState(keyword.fullBackfillPending > 0 ? "waiting-for-opt-in" : "idle");
+          if (count > 0) bootLog(`Vector index backfilled: ${count} entries`);
+        })
+        .catch((err) => {
+          setVectorBackfillState("idle");
+          console.warn(`[agentmemory] Failed to backfill vectors:`, err);
+        });
+    }
+  } catch (err) {
+    console.warn(`[agentmemory] Failed to rebuild the BM25 index:`, err);
   }
 
   // Ready / Endpoints lines are emitted via `bootLog` so they're
@@ -553,7 +547,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 132 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 134 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -568,7 +562,7 @@ async function main() {
   );
 
   const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
-  const consolidationIntervalMs = parseInt(process.env.CONSOLIDATION_INTERVAL_MS || "7200000", 10);
+  const consolidationIntervalMs = getConsolidationIntervalMs();
 
   if (process.env.AUTO_FORGET_ENABLED !== "false") {
     const autoForgetTimer = setInterval(async () => {
@@ -578,6 +572,22 @@ async function main() {
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
     bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+  }
+
+  const auditRetentionMonths = getAuditRetentionMonths();
+  if (auditRetentionMonths > 0) {
+    const runAuditSweep = async () => {
+      try {
+        await auditMigration;
+        await sdk.trigger({ function_id: "mem::audit-retention-sweep", payload: {} });
+      } catch {}
+    };
+    void runAuditSweep();
+    const auditRetentionTimer = setInterval(runAuditSweep, 86400000);
+    auditRetentionTimer.unref();
+    bootLog(
+      `Audit retention sweep: enabled (drop month scopes older than ${auditRetentionMonths}mo, every 24h)`,
+    );
   }
 
   if (process.env.LESSON_DECAY_ENABLED !== "false") {
@@ -613,15 +623,15 @@ async function main() {
   }, 60 * 60 * 1000);
   recentSearchesSweepTimer.unref();
 
-  // #1410: hourly backstop for sessions whose host never delivered
-  // session/end (reused gateway/cron runtimes). Marks stale active
-  // sessions abandoned so dashboards and recall stop treating them
-  // as live. Retention stays with the manual eviction pass.
+  void seedViewerStreamTracker(sdk, { unorderedListing: kv.backend === "redis" }).catch(() => {});
+
   if (isSessionSweepEnabled()) {
     const sessionSweepTimer = setInterval(async () => {
       try {
         await sdk.trigger({ function_id: "mem::session-sweep", payload: {} });
-      } catch {}
+      } catch (err) {
+        bootLog(`Session sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }, 60 * 60 * 1000);
     sessionSweepTimer.unref();
     bootLog(`Session sweep: enabled (hourly, stale after ${getSessionSweepStaleHours()}h)`);

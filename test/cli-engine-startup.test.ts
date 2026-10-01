@@ -146,4 +146,39 @@ describe("fresh native engine startup", () => {
     expect(spawnBody).toContain("clearEngineState()");
     expect(spawnBody).not.toContain("if (!isDocker) clearEnginePidfile();\n      clearEngineState();");
   });
+
+  it("stops the launch instead of silently falling back to file when the redis rewrite fails", () => {
+    const prepareStart = source.indexOf("function prepareEngineLaunch");
+    const prepareEnd = source.indexOf("function startIiiBin", prepareStart);
+    const prepareBody = source.slice(prepareStart, prepareEnd);
+    expect(prepareBody).toContain("const stateBackendKind = getStateBackend();");
+    expect(prepareBody).toMatch(
+      /catch \(err\) \{\s*const failure = resolveLaunchRenderFailure\(stateBackendKind, err\);\s*if \(failure\.fatal\) \{\s*p\.log\.error\(failure\.message\);\s*process\.exit\(1\);\s*\}/,
+    );
+    expect(prepareBody).toContain(
+      'vlog(`runtime config generation failed, using bundled config verbatim: ${String(err)}`);',
+    );
+  });
+
+  it("rejects an unrecognized AGENTMEMORY_STATE_BACKEND before touching the engine", () => {
+    const engineStart = source.indexOf("async function startEngine");
+    const engineEnd = source.indexOf("async function waitForEngine", engineStart);
+    const engineBody = source.slice(engineStart, engineEnd);
+    expect(engineBody).toMatch(
+      /try \{\s*stateBackendKind = getStateBackend\(\);\s*\} catch \(err\) \{\s*p\.log\.error\(err instanceof Error \? err\.message : String\(err\)\);\s*process\.exit\(1\);\s*\}/,
+    );
+    expect(engineBody.match(/warnIfDockerIgnoresStateBackend\(stateBackendKind\)/g)).toHaveLength(2);
+  });
+
+  it("redacts credentials out of every engine stderr surface the CLI prints", () => {
+    expect(source).toContain(
+      "const stderr = redactCredentialUrls(activeStartupStderr.text().trim());",
+    );
+    expect(source).toContain(
+      "const stderr = redactCredentialUrls(activeStartupStderr.text());",
+    );
+    expect(source).toContain(
+      'const output = redactCredentialUrls(`${result.stdout ?? ""}${result.stderr ?? ""}`.trim());',
+    );
+  });
 });

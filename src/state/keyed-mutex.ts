@@ -16,3 +16,11 @@ export function withKeyedLock<T>(
   });
   return next;
 }
+
+export function withKeyedLocks<T>(keys: string[], fn: () => Promise<T>): Promise<T> {
+  const ordered = [...new Set(keys)].sort();
+  const acquire = (index: number): Promise<T> => index === ordered.length
+    ? fn()
+    : withKeyedLock(ordered[index], () => acquire(index + 1));
+  return acquire(0);
+}

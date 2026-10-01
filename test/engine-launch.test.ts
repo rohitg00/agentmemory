@@ -7,7 +7,9 @@ import {
   dockerProjectName,
   isBundledConfig,
   legacyDataMigrations,
+  redactCredentialUrls,
   resolveEngineCwd,
+  resolveLaunchRenderFailure,
   rewriteBundledConfig,
   runtimeConfigPath,
 } from "../src/cli/engine-launch.js";
@@ -174,5 +176,55 @@ describe("rewriteBundledConfig", () => {
     expect(out).toContain("port: 3211");
     expect(out).toContain("port: 3212");
     expect(out).toContain("port: 49234");
+  });
+
+  it("forwards the redis state backend through to renderEngineConfig", () => {
+    const raw = readFileSync(join(import.meta.dirname, "..", "iii-config.yaml"), "utf-8");
+    const out = rewriteBundledConfig(
+      raw,
+      HOME,
+      process.execPath,
+      "/opt/pkg/dist/index.mjs",
+      {
+        dataDir: "/var/lib/agentmemory",
+        stateBackend: { kind: "redis", redisUrl: "redis://localhost:6379" },
+      },
+    );
+
+    expect(out).toMatch(/- name: iii-state\n {4}config:\n {6}adapter:\n {8}name: redis/);
+    expect(out).toMatch(/- name: iii-stream\n {4}config:\n {6}port: 3112\n {6}host: 127\.0\.0\.1\n {6}adapter:\n {8}name: redis/);
+    expect(out).not.toContain("store_method: file_based");
+  });
+});
+
+describe("resolveLaunchRenderFailure", () => {
+  it("is fatal when the redis backend fails to render, so the launch never silently falls back", () => {
+    const result = resolveLaunchRenderFailure("redis", new Error("no adapter block"));
+    expect(result.fatal).toBe(true);
+    expect(result.fatal && result.message).toMatch(/no adapter block/);
+  });
+
+  it("stays non-fatal for the file backend, keeping the bundled-config fallback", () => {
+    const result = resolveLaunchRenderFailure("file", new Error("disk full"));
+    expect(result).toEqual({ fatal: false });
+  });
+
+  it("stringifies a non-Error throw", () => {
+    const result = resolveLaunchRenderFailure("redis", "permission denied");
+    expect(result.fatal && result.message).toMatch(/permission denied/);
+  });
+});
+
+describe("redactCredentialUrls", () => {
+  it("masks userinfo in a redis URL without touching the rest of the message", () => {
+    const out = redactCredentialUrls(
+      "Failed to connect to redis://user:s3cr3t@localhost:6379: connection refused",
+    );
+    expect(out).toBe("Failed to connect to redis://***@localhost:6379: connection refused");
+    expect(out).not.toContain("s3cr3t");
+  });
+
+  it("leaves text with no credentials untouched", () => {
+    expect(redactCredentialUrls("engine exited with code 1")).toBe("engine exited with code 1");
   });
 });

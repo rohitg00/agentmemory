@@ -1,87 +1,446 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { IndexPersistence } from "../src/state/index-persistence.js";
+import { IndexPersistence, vectorBucketScope } from "../src/state/index-persistence.js";
 import { SearchIndex } from "../src/state/search-index.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import type { CompressedObservation } from "../src/types.js";
 
-const BM25_SCOPE = "mem:index:bm25";
-const BM25_LEGACY_KEY = "data";
-const BM25_MANIFEST_KEY = "data:manifest";
-const VECTOR_LEGACY_KEY = "vectors";
-const VECTOR_MANIFEST_KEY = "vectors:manifest";
-
-type TestIndexShardManifest = {
-  v: 1;
-  generation?: string;
-  shards: Array<{ scope: string; key: string; chars: number }>;
-  chars: number;
-};
+const INDEX_SCOPE = "mem:index:bm25";
+const META_KEY = "vectors:meta";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
+  const ops: Array<{ op: "set" | "delete" | "list"; scope: string; key?: string }> = [];
   return {
-    get: async <T>(scope: string, key: string): Promise<T | null> => {
-      return (store.get(scope)?.get(key) as T) ?? null;
-    },
+    store,
+    ops,
+    get: async <T>(scope: string, key: string): Promise<T | null> => (store.get(scope)?.get(key) as T) ?? null,
     set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+      ops.push({ op: "set", scope, key });
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
       return data;
     },
     delete: async (scope: string, key: string): Promise<void> => {
+      ops.push({ op: "delete", scope, key });
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
-      const entries = store.get(scope);
-      return entries ? (Array.from(entries.values()) as T[]) : [];
+      ops.push({ op: "list", scope });
+      return Array.from(store.get(scope)?.values() ?? []) as T[];
     },
   };
 }
 
 type MockKV = ReturnType<typeof mockKV>;
 
-function makeObs(
-  overrides: Partial<CompressedObservation> = {},
-): CompressedObservation {
+function vec(values: number[]): Float32Array {
+  return new Float32Array(values);
+}
+
+function vectorWith(entries: Array<[string, number[]]>): VectorIndex {
+  const index = new VectorIndex();
+  for (const [id, values] of entries) index.add(id, `ses_${id}`, vec(values));
+  return index;
+}
+
+function bucketSets(kv: MockKV): Array<{ scope: string; key?: string }> {
+  return kv.ops.filter((o) => o.op === "set" && o.scope.startsWith(`${INDEX_SCOPE}:vec:`));
+}
+
+function obs(id: string): CompressedObservation {
   return {
-    id: "obs_1",
+    id,
     sessionId: "ses_1",
     timestamp: new Date().toISOString(),
     type: "file_edit",
-    title: "Edit auth middleware",
-    subtitle: "JWT validation",
-    facts: ["Added token check"],
-    narrative: "Modified the auth middleware to validate JWT tokens",
-    concepts: ["authentication", "jwt"],
-    files: ["src/middleware/auth.ts"],
-    importance: 7,
-    ...overrides,
+    title: `title ${id}`,
+    facts: [],
+    narrative: `narrative ${id}`,
+    concepts: [],
+    files: [],
+    importance: 5,
   };
 }
 
-function makeBm25(id: string, title: string): SearchIndex {
+async function writeLegacyVectorSnapshot(
+  kv: MockKV,
+  vector: VectorIndex,
+  options: { generation?: string; monolithic?: boolean; shardChars?: number } = {},
+): Promise<void> {
+  const serialized = vector.serialize();
+  if (options.monolithic) {
+    await kv.set(INDEX_SCOPE, "vectors", serialized);
+    return;
+  }
+  const generation = options.generation ?? "idx_mfabcd12_aaaaaaaaaaaa";
+  const size = options.shardChars ?? 40;
+  const shards: Array<{ scope: string; key: string; chars: number }> = [];
+  for (let offset = 0, i = 0; offset < serialized.length; offset += size, i++) {
+    const scope = `${INDEX_SCOPE}:vectors:${generation}:${String(i).padStart(5, "0")}`;
+    const chunk = serialized.slice(offset, offset + size);
+    await kv.set(scope, "data", chunk);
+    shards.push({ scope, key: "data", chars: chunk.length });
+  }
+  await kv.set(INDEX_SCOPE, "vectors:manifest", { v: 1, generation, shards, chars: serialized.length });
+}
+
+async function writeLegacyBm25Snapshot(kv: MockKV): Promise<void> {
   const bm25 = new SearchIndex();
-  bm25.add(makeObs({ id, title, narrative: `${title} narrative` }));
-  return bm25;
+  bm25.add(obs("obs_legacy"));
+  const serialized = bm25.serialize();
+  const scope = `${INDEX_SCOPE}:bm25:idx_mfabcd12_bbbbbbbbbbbb:00000`;
+  await kv.set(scope, "data", serialized);
+  await kv.set(INDEX_SCOPE, "data:manifest", {
+    v: 1,
+    generation: "idx_mfabcd12_bbbbbbbbbbbb",
+    shards: [{ scope, key: "data", chars: serialized.length }],
+    chars: serialized.length,
+  });
 }
 
-function makeVector(id = "obs_1"): VectorIndex {
-  const vector = new VectorIndex();
-  vector.add(id, "ses_1", new Float32Array([0.1, 0.2, 0.3]));
-  return vector;
+function expectSameVectors(actual: VectorIndex | null, expected: VectorIndex): void {
+  expect(actual).not.toBeNull();
+  expect(actual!.size).toBe(expected.size);
+  for (const [id, entry] of expected.entries()) {
+    const loaded = actual!.get(id);
+    expect(loaded?.sessionId).toBe(entry.sessionId);
+    expect(Array.from(loaded!.embedding)).toEqual(Array.from(entry.embedding));
+  }
 }
 
-async function getBm25Manifest(kv: MockKV): Promise<TestIndexShardManifest> {
-  const manifest = await kv.get<TestIndexShardManifest>(
-    BM25_SCOPE,
-    BM25_MANIFEST_KEY,
-  );
-  expect(manifest).not.toBeNull();
-  return manifest!;
-}
+describe("IndexPersistence bucketed vector storage", () => {
+  let kv: MockKV;
 
-describe("IndexPersistence", () => {
-  let kv: ReturnType<typeof mockKV>;
+  beforeEach(() => {
+    kv = mockKV();
+  });
+
+  it("fills buckets in insertion order and rolls to a new one at the cap", async () => {
+    const vector = vectorWith([
+      ["obs_a", [0.1, 0.2, 0.3]],
+      ["obs_b", [0.4, 0.5, 0.6]],
+      ["obs_c", [0.7, 0.8, 0.9]],
+    ]);
+    await new IndexPersistence(kv as never, vector, { bucketSize: 2 }).save();
+
+    expect(kv.store.get(vectorBucketScope(0))?.has("obs_a")).toBe(true);
+    expect(kv.store.get(vectorBucketScope(0))?.has("obs_b")).toBe(true);
+    expect(kv.store.get(vectorBucketScope(1))?.has("obs_c")).toBe(true);
+    const meta = await kv.get<{ v: number; bucketCount: number; count: number }>(INDEX_SCOPE, META_KEY);
+    expect(meta).toMatchObject({ v: 3, bucketCount: 2, count: 3 });
+
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 2 }).load();
+    expect(loaded.state).toBe("buckets");
+    expectSameVectors(loaded.vector, vector);
+    expect(loaded.vector!.pendingChanges).toBe(0);
+  });
+
+  it("writes only the bucket entry of a single added vector", async () => {
+    const vector = vectorWith([
+      ["obs_a", [0.1, 0.2, 0.3]],
+      ["obs_b", [0.4, 0.5, 0.6]],
+    ]);
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 16 });
+    await persistence.save();
+    kv.ops.length = 0;
+
+    vector.add("obs_new", "ses_new", vec([1, 0, 0]));
+    await persistence.save();
+
+    const writes = bucketSets(kv);
+    expect(writes).toEqual([{ op: "set", scope: vectorBucketScope(0), key: "obs_new" }]);
+  });
+
+  it("does not write when nothing changed", async () => {
+    const vector = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 16 });
+    await persistence.save();
+    kv.ops.length = 0;
+
+    await persistence.save();
+
+    expect(kv.ops.filter((o) => o.op !== "list")).toEqual([]);
+  });
+
+  it("removes deleted vectors from their bucket", async () => {
+    const vector = vectorWith([
+      ["obs_a", [0.1, 0.2, 0.3]],
+      ["obs_b", [0.4, 0.5, 0.6]],
+    ]);
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 16 });
+    await persistence.save();
+
+    vector.remove("obs_a");
+    await persistence.save();
+
+    expect(kv.ops).toContainEqual({ op: "delete", scope: vectorBucketScope(0), key: "obs_a" });
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+    expect(loaded.vector!.has("obs_a")).toBe(false);
+    expect(loaded.vector!.has("obs_b")).toBe(true);
+  });
+
+  it("a delete touches only the bucket that owns the id, in a multi-bucket store", async () => {
+    const vector = vectorWith(
+      Array.from({ length: 5 }, (_, i) => [`obs_${i}`, [i, i + 1, i + 2]] as [string, number[]]),
+    );
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 2 });
+    await persistence.save();
+    kv.ops.length = 0;
+
+    vector.remove("obs_2");
+    await persistence.save();
+
+    const touched = new Set(kv.ops.filter((o) => o.scope.startsWith(`${INDEX_SCOPE}:vec:`)).map((o) => o.scope));
+    expect(touched).toEqual(new Set([vectorBucketScope(1)]));
+    expect(kv.ops).toContainEqual({ op: "delete", scope: vectorBucketScope(1), key: "obs_2" });
+  });
+
+  it("clearing the index deletes every persisted vector", async () => {
+    const vector = vectorWith([
+      ["obs_a", [0.1, 0.2, 0.3]],
+      ["obs_b", [0.4, 0.5, 0.6]],
+    ]);
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 16 });
+    await persistence.save();
+
+    vector.clear();
+    vector.add("obs_c", "ses_c", vec([0, 1, 0]));
+    await persistence.save();
+
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+    expect([...loaded.vector!.entries()].map(([id]) => id)).toEqual(["obs_c"]);
+  });
+
+  it("keeps failed writes pending and retries them on the next save", async () => {
+    const vector = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    let fail = true;
+    const flakyKv = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (fail && scope.startsWith(`${INDEX_SCOPE}:vec:`)) throw new Error("state::set timed out");
+        return kv.set(scope, key, data);
+      },
+    };
+    const persistence = new IndexPersistence(flakyKv as never, vector, { bucketSize: 16 });
+
+    await expect(persistence.save()).resolves.toBeUndefined();
+    const failed = persistence.status();
+    expect(failed.vector?.lastError).toBe("1 of 1 vector writes failed: state::set timed out");
+    expect(failed.pendingChanges).toBe(1);
+    expect(await kv.get(INDEX_SCOPE, META_KEY)).toBeNull();
+
+    fail = false;
+    await persistence.save();
+    expect(persistence.status().vector?.lastError).toBeNull();
+    expect(persistence.status().pendingChanges).toBe(0);
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+    expectSameVectors(loaded.vector, vector);
+  });
+
+  it("a save after many vectors added over several waves touches only the currently open bucket", async () => {
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(kv as never, vector, { bucketSize: 100 });
+
+    for (let i = 0; i < 950; i++) vector.add(`obs_${i}`, "ses_1", vec([i, 0, 0]));
+    await persistence.save();
+    expect(kv.store.get(vectorBucketScope(9))?.size).toBe(50);
+    for (let bucket = 0; bucket <= 8; bucket++) expect(kv.store.get(vectorBucketScope(bucket))?.size).toBe(100);
+    kv.ops.length = 0;
+
+    for (let i = 950; i < 1000; i++) vector.add(`obs_${i}`, "ses_1", vec([i, 0, 0]));
+    await persistence.save();
+    let touched = new Set(kv.ops.filter((o) => o.scope.startsWith(`${INDEX_SCOPE}:vec:`)).map((o) => o.scope));
+    expect(touched).toEqual(new Set([vectorBucketScope(9)]));
+    expect(kv.store.get(vectorBucketScope(9))?.size).toBe(100);
+    kv.ops.length = 0;
+
+    vector.add("obs_1000", "ses_1", vec([1000, 0, 0]));
+    await persistence.save();
+    touched = new Set(kv.ops.filter((o) => o.scope.startsWith(`${INDEX_SCOPE}:vec:`)).map((o) => o.scope));
+    expect(touched).toEqual(new Set([vectorBucketScope(10)]));
+  });
+
+  it("a smaller bucket size configured later opens a new bucket instead of moving existing data", async () => {
+    const vector = vectorWith(
+      Array.from({ length: 4 }, (_, i) => [`obs_${i}`, [i, i + 1, i + 2]] as [string, number[]]),
+    );
+    await new IndexPersistence(kv as never, vector, { bucketSize: 4 }).save();
+    for (let i = 0; i < 4; i++) expect(kv.store.get(vectorBucketScope(0))?.has(`obs_${i}`)).toBe(true);
+
+    const reloaded = new VectorIndex();
+    const persistence = new IndexPersistence(kv as never, reloaded, { bucketSize: 2 });
+    const loaded = await persistence.load();
+    reloaded.restoreFrom(loaded.vector!);
+    kv.ops.length = 0;
+
+    reloaded.add("obs_new", "ses_new", vec([9, 9, 9]));
+    await persistence.save();
+
+    const touched = new Set(kv.ops.filter((o) => o.scope.startsWith(`${INDEX_SCOPE}:vec:`)).map((o) => o.scope));
+    expect(touched).toEqual(new Set([vectorBucketScope(1)]));
+    for (let i = 0; i < 4; i++) expect(kv.store.get(vectorBucketScope(0))?.has(`obs_${i}`)).toBe(true);
+  });
+
+  it("detects a partial bucket set against the saved count and reports it in status", async () => {
+    const vector = vectorWith(
+      Array.from({ length: 4 }, (_, i) => [`obs_${i}`, [i, i + 1, i + 2]] as [string, number[]]),
+    );
+    await new IndexPersistence(kv as never, vector, { bucketSize: 2 }).save();
+    kv.store.get(vectorBucketScope(1))?.clear();
+
+    const persistence = new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 2 });
+    const loaded = await persistence.load();
+
+    expect(loaded.state).toBe("buckets");
+    expect(loaded.vector!.size).toBe(2);
+    expect(loaded.expectedCount).toBe(4);
+    expect(persistence.status().vectorCountShortfall).toEqual({ expected: 4, loaded: 2 });
+  });
+
+  it("reports storage as unavailable when the metadata read fails", async () => {
+    const failingKv = {
+      ...kv,
+      get: async () => {
+        throw new Error("engine down");
+      },
+    };
+    const loaded = await new IndexPersistence(failingKv as never, new VectorIndex(), { bucketSize: 16 }).load();
+    expect(loaded).toEqual({ vector: null, state: "unavailable", savedAt: null });
+  });
+
+  it("treats a missing store as empty, including adapters that return undefined", async () => {
+    const undefinedKv = { ...kv, get: async () => undefined };
+    const loaded = await new IndexPersistence(undefinedKv as never, new VectorIndex(), { bucketSize: 16 }).load();
+    expect(loaded).toEqual({ vector: null, state: "none", savedAt: null });
+  });
+});
+
+describe("IndexPersistence migration from the single-string format", () => {
+  let kv: MockKV;
+
+  beforeEach(() => {
+    kv = mockKV();
+  });
+
+  it("migrates a sharded vector snapshot into buckets and removes the old shards", async () => {
+    const legacy = vectorWith([
+      ["obs_a", [0.1, 0.2, 0.3]],
+      ["obs_b", [0.4, 0.5, 0.6]],
+      ["obs_c", [0.7, 0.8, 0.9]],
+    ]);
+    await writeLegacyVectorSnapshot(kv, legacy, { generation: "idx_mfabcd12_aaaaaaaaaaaa" });
+    await writeLegacyBm25Snapshot(kv);
+
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+
+    expect(loaded.state).toBe("migrated");
+    expect(loaded.savedAt).toBe(new Date(parseInt("mfabcd12", 36)).toISOString());
+    expectSameVectors(loaded.vector, legacy);
+    expect(loaded.vector!.pendingChanges).toBe(0);
+    expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).toBeNull();
+    expect(await kv.get(INDEX_SCOPE, "data:manifest")).toBeNull();
+    for (const [scope, entries] of kv.store) {
+      if (scope.includes(":vectors:") || scope.includes(":bm25:idx_")) expect(entries.size).toBe(0);
+    }
+
+    const reloaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+    expect(reloaded.state).toBe("buckets");
+    expectSameVectors(reloaded.vector, legacy);
+  });
+
+  it("removes the old BM25 shards when missing keys read back as undefined, as the engine SDK returns them", async () => {
+    const baseGet = kv.get;
+    kv.get = (async <T>(scope: string, key: string) => {
+      const value = await baseGet<T>(scope, key);
+      return value === null ? undefined : value;
+    }) as typeof kv.get;
+    const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    await writeLegacyVectorSnapshot(kv, legacy, { generation: "idx_mfabcd12_bbbbbbbbbbbb" });
+    await writeLegacyBm25Snapshot(kv);
+
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+
+    expect(loaded.state).toBe("migrated");
+    expect(await kv.get(INDEX_SCOPE, "data:manifest")).toBeUndefined();
+    expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).toBeUndefined();
+    for (const [scope, entries] of kv.store) {
+      if (scope.includes(":vectors:") || scope.includes(":bm25:idx_")) expect(entries.size).toBe(0);
+    }
+  });
+
+  it("migrates a monolithic vector snapshot", async () => {
+    const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    await writeLegacyVectorSnapshot(kv, legacy, { monolithic: true });
+
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+
+    expect(loaded.state).toBe("migrated");
+    expectSameVectors(loaded.vector, legacy);
+    expect(await kv.get(INDEX_SCOPE, "vectors")).toBeNull();
+  });
+
+  it("leaves an unreadable legacy snapshot in place and writes nothing", async () => {
+    const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    await writeLegacyVectorSnapshot(kv, legacy);
+    const manifest = await kv.get<{ shards: Array<{ scope: string; key: string }> }>(INDEX_SCOPE, "vectors:manifest");
+    await kv.delete(manifest!.shards[0].scope, manifest!.shards[0].key);
+    kv.ops.length = 0;
+
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+
+    expect(loaded.state).toBe("unavailable");
+    expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).not.toBeNull();
+    expect(kv.ops.filter((o) => o.op === "set" || o.op === "delete")).toEqual([]);
+  });
+
+  it("keeps the legacy snapshot when migration writes fail and finishes on a later save", async () => {
+    const legacy = vectorWith([
+      ["obs_a", [0.1, 0.2, 0.3]],
+      ["obs_b", [0.4, 0.5, 0.6]],
+    ]);
+    await writeLegacyVectorSnapshot(kv, legacy);
+    let fail = true;
+    const flakyKv = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (fail && scope.startsWith(`${INDEX_SCOPE}:vec:`)) throw new Error("write failed");
+        return kv.set(scope, key, data);
+      },
+    };
+
+    const live = new VectorIndex();
+    const persistence = new IndexPersistence(flakyKv as never, live, { bucketSize: 16 });
+    const loaded = await persistence.load();
+    expect(loaded.state).toBe("unavailable");
+    expectSameVectors(loaded.vector, legacy);
+    expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).not.toBeNull();
+    expect(await kv.get(INDEX_SCOPE, META_KEY)).toBeNull();
+
+    live.restoreFrom(loaded.vector!);
+    fail = false;
+    await persistence.save();
+
+    const next = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+    expect(next.state).toBe("buckets");
+    expectSameVectors(next.vector, legacy);
+    expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).toBeNull();
+  });
+
+  it("without vector search, removes only the old BM25 snapshot", async () => {
+    const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    await writeLegacyVectorSnapshot(kv, legacy);
+    await writeLegacyBm25Snapshot(kv);
+
+    const loaded = await new IndexPersistence(kv as never, null, { bucketSize: 16 }).load();
+
+    expect(loaded).toEqual({ vector: null, state: "none", savedAt: null });
+    expect(await kv.get(INDEX_SCOPE, "data:manifest")).toBeNull();
+    expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).not.toBeNull();
+  });
+});
+
+describe("IndexPersistence scheduling", () => {
+  let kv: MockKV;
 
   beforeEach(() => {
     vi.useFakeTimers();
@@ -92,649 +451,25 @@ describe("IndexPersistence", () => {
     vi.useRealTimers();
   });
 
-  it("saves and loads BM25 index round-trip", async () => {
-    const bm25 = new SearchIndex();
-    bm25.add(makeObs({ id: "obs_1", title: "auth handler" }));
-
-    const persistence = new IndexPersistence(kv as never, bm25, null);
-    await persistence.save();
-
-    const loaded = await persistence.load();
-    expect(loaded.bm25).not.toBeNull();
-    expect(loaded.bm25!.size).toBe(1);
-    const results = loaded.bm25!.search("auth");
-    expect(results.length).toBe(1);
-  });
-
-  it("saves BM25 index shards outside the BM25 metadata scope", async () => {
-    const bm25 = new SearchIndex();
-    bm25.add(
-      makeObs({
-        id: "obs_1",
-        title: "auth handler ".repeat(40),
-        narrative: "JWT middleware validation ".repeat(40),
-      }),
-    );
-
-    const persistence = new IndexPersistence(kv as never, bm25, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_bm25",
-    });
-    await persistence.save();
-
-    const manifest = await getBm25Manifest(kv);
-    expect(manifest.generation).toBe("gen_bm25");
-    expect(manifest.shards.length).toBeGreaterThan(1);
-    expect(manifest.shards[0].scope).toContain(":gen_bm25:");
-    await expect(kv.get(BM25_SCOPE, BM25_LEGACY_KEY)).resolves.toBeNull();
-    await expect(
-      kv.get(manifest.shards[0].scope, manifest.shards[0].key),
-    ).resolves.toEqual(expect.any(String));
-
-    const loaded = await persistence.load();
-    expect(loaded.bm25).not.toBeNull();
-    expect(loaded.bm25!.search("auth").length).toBe(1);
-  });
-
-  it("loads legacy monolithic BM25 and vector snapshots", async () => {
-    const bm25 = makeBm25("obs_1", "legacy auth handler");
-    const vector = makeVector("obs_1");
-    await kv.set(BM25_SCOPE, BM25_LEGACY_KEY, bm25.serialize());
-    await kv.set(BM25_SCOPE, VECTOR_LEGACY_KEY, vector.serialize());
-
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-
-    expect(loaded.bm25).not.toBeNull();
-    expect(loaded.bm25!.search("legacy").length).toBe(1);
-    expect(loaded.vector).not.toBeNull();
-    expect(loaded.vector!.size).toBe(1);
-  });
-
-  it("fails closed instead of falling back when manifest reads fail", async () => {
-    const legacy = makeBm25("obs_legacy", "legacy stale snapshot");
-    await kv.set(BM25_SCOPE, BM25_LEGACY_KEY, legacy.serialize());
+  it("scheduled saves never raise unhandled rejections", async () => {
     const failingKv = {
       ...kv,
-      get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
-        if (scope === BM25_SCOPE && key === BM25_MANIFEST_KEY) {
-          throw new Error("manifest backend unavailable");
-        }
-        return kv.get(scope, key);
-      }),
-    };
-
-    const loaded = await new IndexPersistence(
-      failingKv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-
-    expect(loaded.bm25).toBeNull();
-  });
-
-  it("fails closed when legacy snapshot reads fail", async () => {
-    const failingKv = {
-      ...kv,
-      get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
-        if (scope === BM25_SCOPE && key === BM25_LEGACY_KEY) {
-          throw new Error("legacy backend unavailable");
-        }
-        return kv.get(scope, key);
-      }),
-    };
-
-    const loaded = await new IndexPersistence(
-      failingKv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-
-    expect(loaded.bm25).toBeNull();
-  });
-
-  it("loads sharded manifests that omit optional generation metadata", async () => {
-    const bm25 = makeBm25("obs_1", "deterministic shard auth");
-    const serialized = bm25.serialize();
-    const chunks = [serialized.slice(0, 50), serialized.slice(50)];
-    await kv.set("mem:index:bm25:bm25:00000", "data", chunks[0]);
-    await kv.set("mem:index:bm25:bm25:00001", "data", chunks[1]);
-    await kv.set<TestIndexShardManifest>(BM25_SCOPE, BM25_MANIFEST_KEY, {
-      v: 1,
-      chars: serialized.length,
-      shards: [
-        {
-          scope: "mem:index:bm25:bm25:00000",
-          key: "data",
-          chars: chunks[0].length,
-        },
-        {
-          scope: "mem:index:bm25:bm25:00001",
-          key: "data",
-          chars: chunks[1].length,
-        },
-      ],
-    });
-
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-
-    expect(loaded.bm25).not.toBeNull();
-    expect(loaded.bm25!.search("deterministic").length).toBe(1);
-  });
-
-  it("saves and loads vector index round-trip", async () => {
-    const bm25 = new SearchIndex();
-    const vector = makeVector();
-
-    const persistence = new IndexPersistence(kv as never, bm25, vector);
-    await persistence.save();
-
-    const loaded = await persistence.load();
-    expect(loaded.vector).not.toBeNull();
-    expect(loaded.vector!.size).toBe(1);
-  });
-
-  it("saves vector index shards outside the BM25 scope", async () => {
-    const bm25 = new SearchIndex();
-    const vector = new VectorIndex();
-    vector.add(
-      "obs_1",
-      "ses_1",
-      new Float32Array(Array.from({ length: 32 }, (_, i) => i)),
-    );
-
-    const persistence = new IndexPersistence(kv as never, bm25, vector, {
-      shardChars: 40,
-      createGeneration: () => "gen_vector",
-    });
-    await persistence.save();
-
-    const manifest = await kv.get<TestIndexShardManifest>(
-      BM25_SCOPE,
-      VECTOR_MANIFEST_KEY,
-    );
-    expect(manifest).not.toBeNull();
-    expect(manifest!.generation).toBe("gen_vector");
-    expect(manifest!.shards.length).toBeGreaterThan(1);
-    expect(manifest!.shards[0].scope).toContain(":gen_vector:");
-    await expect(kv.get(BM25_SCOPE, VECTOR_LEGACY_KEY)).resolves.toBeNull();
-    await expect(
-      kv.get(manifest!.shards[0].scope, manifest!.shards[0].key),
-    ).resolves.toEqual(expect.any(String));
-
-    const loaded = await persistence.load();
-    expect(loaded.vector).not.toBeNull();
-    expect(loaded.vector!.size).toBe(1);
-  });
-
-  it("persists empty vector snapshots so cleared vectors do not reload", async () => {
-    const previousBm25 = makeBm25("obs_old", "alpha previous snapshot");
-    const previousVector = makeVector("obs_old");
-    await new IndexPersistence(kv as never, previousBm25, previousVector, {
-      shardChars: 80,
-      createGeneration: () => "gen_old",
-    }).save();
-
-    const nextBm25 = makeBm25("obs_new", "bravo new snapshot");
-    const emptyVector = new VectorIndex();
-    await new IndexPersistence(kv as never, nextBm25, emptyVector, {
-      shardChars: 80,
-      createGeneration: () => "gen_empty",
-    }).save();
-
-    const vectorManifest = await kv.get<TestIndexShardManifest>(
-      BM25_SCOPE,
-      VECTOR_MANIFEST_KEY,
-    );
-    expect(vectorManifest).not.toBeNull();
-    expect(vectorManifest!.generation).toBe("gen_empty");
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-    expect(loaded.bm25!.search("bravo").length).toBe(1);
-    expect(loaded.vector).not.toBeNull();
-    expect(loaded.vector!.size).toBe(0);
-  });
-
-  it("avoids one oversized state::set string payload for persisted indexes", async () => {
-    const maxStringPayloadChars = 80;
-    const bm25 = new SearchIndex();
-    bm25.add(
-      makeObs({
-        id: "obs_1",
-        title: "large persisted snapshot ".repeat(40),
-        narrative: "oversized state set reproduction ".repeat(40),
-      }),
-    );
-    const vector = new VectorIndex();
-    vector.add(
-      "obs_1",
-      "ses_1",
-      new Float32Array(Array.from({ length: 64 }, (_, i) => i / 10)),
-    );
-    const guardedKv = {
-      ...kv,
-      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
-        if (
-          typeof data === "string" &&
-          data.length > maxStringPayloadChars
-        ) {
-          throw new Error(`oversized state::set payload: ${scope}/${key}`);
-        }
-        return kv.set(scope, key, data);
-      }),
-    };
-
-    await new IndexPersistence(guardedKv as never, bm25, vector, {
-      shardChars: maxStringPayloadChars,
-      createGeneration: () => "gen_payload_limit",
-    }).save();
-
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-    expect(loaded.bm25!.search("oversized").length).toBe(1);
-    expect(loaded.vector!.size).toBe(1);
-  });
-
-  it("falls back to the default shard size for fractional values below one", async () => {
-    const bm25 = makeBm25("obs_fraction", "fractional shard config");
-    let newShardWrites = 0;
-    const guardedKv = {
-      ...kv,
-      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
-        if (scope.includes(":gen_fraction:")) {
-          newShardWrites += 1;
-          if (newShardWrites > 3) {
-            throw new Error("fractional shard size caused zero-width shards");
-          }
-        }
-        return kv.set(scope, key, data);
-      }),
-    };
-
-    await new IndexPersistence(guardedKv as never, bm25, null, {
-      shardChars: 0.5,
-      createGeneration: () => "gen_fraction",
-    }).save();
-
-    const manifest = await getBm25Manifest(kv);
-    expect(manifest.generation).toBe("gen_fraction");
-    expect(manifest.shards.length).toBe(1);
-    expect(newShardWrites).toBe(1);
-  });
-
-  it("keeps the previous generation when a shard write fails before manifest commit", async () => {
-    const previous = makeBm25("obs_old", "alpha previous snapshot");
-    await new IndexPersistence(kv as never, previous, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_old",
-    }).save();
-    const previousManifest = await getBm25Manifest(kv);
-
-    let newShardWrites = 0;
-    const failingKv = {
-      ...kv,
-      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
-        if (scope.includes(":gen_new:")) {
-          newShardWrites += 1;
-          if (newShardWrites === 2) throw new Error("shard write failed");
-        }
-        return kv.set(scope, key, data);
-      }),
-    };
-
-    const next = makeBm25("obs_new", "bravo new snapshot");
-    await new IndexPersistence(failingKv as never, next, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_new",
-    }).save();
-
-    await expect(kv.get(BM25_SCOPE, BM25_MANIFEST_KEY)).resolves.toEqual(
-      previousManifest,
-    );
-    await expect(
-      kv.get("mem:index:bm25:bm25:gen_new:00000", "data"),
-    ).resolves.toBeNull();
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-    expect(loaded.bm25!.search("alpha").length).toBe(1);
-    expect(loaded.bm25!.search("bravo").length).toBe(0);
-  });
-
-  it("keeps the previous generation when manifest set rejects before commit", async () => {
-    const previous = makeBm25("obs_old", "alpha previous snapshot");
-    await new IndexPersistence(kv as never, previous, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_old",
-    }).save();
-    const previousManifest = await getBm25Manifest(kv);
-
-    const failingKv = {
-      ...kv,
-      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
-        if (scope === BM25_SCOPE && key === BM25_MANIFEST_KEY) {
-          throw new Error("manifest write failed");
-        }
-        return kv.set(scope, key, data);
-      }),
-    };
-
-    const next = makeBm25("obs_new", "bravo new snapshot");
-    await new IndexPersistence(failingKv as never, next, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_new",
-    }).save();
-
-    await expect(kv.get(BM25_SCOPE, BM25_MANIFEST_KEY)).resolves.toEqual(
-      previousManifest,
-    );
-    await expect(
-      kv.get("mem:index:bm25:bm25:gen_new:00000", "data"),
-    ).resolves.toBeNull();
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-    expect(loaded.bm25!.search("alpha").length).toBe(1);
-    expect(loaded.bm25!.search("bravo").length).toBe(0);
-  });
-
-  it("keeps a generation loadable when manifest set commits before rejecting", async () => {
-    const previous = makeBm25("obs_old", "alpha previous snapshot");
-    await new IndexPersistence(kv as never, previous, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_old",
-    }).save();
-
-    const failingKv = {
-      ...kv,
-      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
-        if (scope === BM25_SCOPE && key === BM25_MANIFEST_KEY) {
-          await kv.set(scope, key, data);
-          throw new Error("manifest write timed out after commit");
-        }
-        return kv.set(scope, key, data);
-      }),
-    };
-
-    const next = makeBm25("obs_new", "bravo new snapshot");
-    await new IndexPersistence(failingKv as never, next, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_new",
-    }).save();
-
-    const manifest = await getBm25Manifest(kv);
-    expect(manifest.generation).toBe("gen_new");
-    await expect(
-      kv.get("mem:index:bm25:bm25:gen_new:00000", "data"),
-    ).resolves.toEqual(expect.any(String));
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-    expect(loaded.bm25!.search("bravo").length).toBe(1);
-  });
-
-  it("deletes a shard that committed before set rejected", async () => {
-    const previous = makeBm25("obs_old", "alpha previous snapshot");
-    await new IndexPersistence(kv as never, previous, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_old",
-    }).save();
-    const previousManifest = await getBm25Manifest(kv);
-
-    const failingKv = {
-      ...kv,
-      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
-        if (scope === "mem:index:bm25:bm25:gen_new:00000") {
-          await kv.set(scope, key, data);
-          throw new Error("state::set timed out after commit");
-        }
-        return kv.set(scope, key, data);
-      }),
-    };
-
-    const next = makeBm25("obs_new", "bravo new snapshot");
-    await new IndexPersistence(failingKv as never, next, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_new",
-    }).save();
-
-    await expect(kv.get(BM25_SCOPE, BM25_MANIFEST_KEY)).resolves.toEqual(
-      previousManifest,
-    );
-    await expect(
-      kv.get("mem:index:bm25:bm25:gen_new:00000", "data"),
-    ).resolves.toBeNull();
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-    expect(loaded.bm25!.search("alpha").length).toBe(1);
-    expect(loaded.bm25!.search("bravo").length).toBe(0);
-  });
-
-  it("loads the new generation even when old generation cleanup fails", async () => {
-    const previous = makeBm25("obs_old", "alpha previous snapshot");
-    await new IndexPersistence(kv as never, previous, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_old",
-    }).save();
-
-    const cleanupKv = {
-      ...kv,
-      delete: vi.fn(async () => {
-        throw new Error("cleanup failed");
-      }),
-    };
-    const next = makeBm25("obs_new", "bravo new snapshot");
-    await new IndexPersistence(cleanupKv as never, next, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_new",
-    }).save();
-
-    const manifest = await getBm25Manifest(kv);
-    expect(manifest.generation).toBe("gen_new");
-    expect(cleanupKv.delete).toHaveBeenCalled();
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-    expect(loaded.bm25!.search("bravo").length).toBe(1);
-    expect(loaded.bm25!.search("alpha").length).toBe(0);
-  });
-
-  it("keeps the previous vector generation when vector save fails after BM25 publish", async () => {
-    const previousBm25 = makeBm25("obs_old", "alpha previous snapshot");
-    const previousVector = makeVector("obs_old");
-    await new IndexPersistence(kv as never, previousBm25, previousVector, {
-      shardChars: 80,
-      createGeneration: () => "gen_old",
-    }).save();
-
-    const failingKv = {
-      ...kv,
-      set: vi.fn(async <T>(scope: string, key: string, data: T): Promise<T> => {
-        if (scope === BM25_SCOPE && key === VECTOR_MANIFEST_KEY) {
-          throw new Error("vector manifest write failed");
-        }
-        return kv.set(scope, key, data);
-      }),
-    };
-    const nextBm25 = makeBm25("obs_new", "bravo new snapshot");
-    const nextVector = new VectorIndex();
-    nextVector.add("obs_new", "ses_1", new Float32Array([0.4, 0.5, 0.6]));
-
-    await new IndexPersistence(failingKv as never, nextBm25, nextVector, {
-      shardChars: 80,
-      createGeneration: () => "gen_new",
-    }).save();
-
-    await expect(
-      kv.get("mem:index:bm25:vectors:gen_new:00000", "data"),
-    ).resolves.toBeNull();
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-    expect(loaded.bm25!.search("bravo").length).toBe(1);
-    expect(loaded.vector!.size).toBe(1);
-    expect(
-      loaded.vector!.search(new Float32Array([0.1, 0.2, 0.3]))[0]?.obsId,
-    ).toBe("obs_old");
-  });
-
-  it("fails closed when a manifest shard is missing", async () => {
-    const bm25 = makeBm25("obs_1", "alpha sharded snapshot");
-    await new IndexPersistence(kv as never, bm25, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_missing",
-    }).save();
-    const manifest = await getBm25Manifest(kv);
-    await kv.delete(manifest.shards[0].scope, manifest.shards[0].key);
-
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-
-    expect(loaded.bm25).toBeNull();
-  });
-
-  it("fails closed when a manifest shard length mismatches", async () => {
-    const bm25 = makeBm25("obs_1", "alpha sharded snapshot");
-    await new IndexPersistence(kv as never, bm25, null, {
-      shardChars: 80,
-      createGeneration: () => "gen_mismatch",
-    }).save();
-    const manifest = await getBm25Manifest(kv);
-    const firstShard = manifest.shards[0];
-    const chunk = await kv.get<string>(firstShard.scope, firstShard.key);
-    await kv.set(firstShard.scope, firstShard.key, `${chunk}x`);
-
-    const loaded = await new IndexPersistence(
-      kv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-
-    expect(loaded.bm25).toBeNull();
-  });
-
-  it("fails closed before reading invalid shard descriptors", async () => {
-    await kv.set<TestIndexShardManifest>(BM25_SCOPE, BM25_MANIFEST_KEY, {
-      v: 1,
-      chars: 10,
-      shards: [{ scope: "", key: "data", chars: 10 }],
-    });
-    const guardedKv = {
-      ...kv,
-      get: vi.fn(async <T>(scope: string, key: string): Promise<T | null> => {
-        if (scope === "") {
-          throw new Error("invalid shard descriptor was read");
-        }
-        return kv.get(scope, key);
-      }),
-    };
-
-    const loaded = await new IndexPersistence(
-      guardedKv as never,
-      new SearchIndex(),
-      null,
-    ).load();
-
-    expect(loaded.bm25).toBeNull();
-    expect(guardedKv.get).not.toHaveBeenCalledWith("", "data");
-  });
-
-  it("scheduleSave debounces multiple calls", async () => {
-    const bm25 = new SearchIndex();
-    const persistence = new IndexPersistence(kv as never, bm25, null);
-
-    persistence.scheduleSave();
-    persistence.scheduleSave();
-    persistence.scheduleSave();
-
-    await expect(kv.get(BM25_SCOPE, BM25_MANIFEST_KEY)).resolves.toBeNull();
-
-    vi.advanceTimersByTime(5000);
-    await vi.runAllTimersAsync();
-
-    const saved = await kv.get<string>(BM25_SCOPE, BM25_MANIFEST_KEY);
-    expect(saved).not.toBeNull();
-  });
-
-  it("stop clears the pending timer", async () => {
-    const bm25 = new SearchIndex();
-    bm25.add(makeObs({ id: "obs_1", title: "auth handler" }));
-    const persistence = new IndexPersistence(kv as never, bm25, null);
-
-    persistence.scheduleSave();
-    persistence.stop();
-
-    vi.advanceTimersByTime(10000);
-    const saved = await kv.get<string>(BM25_SCOPE, BM25_MANIFEST_KEY);
-    expect(saved).toBeNull();
-  });
-
-  it("returns null indexes when nothing has been saved", async () => {
-    const bm25 = new SearchIndex();
-    const persistence = new IndexPersistence(kv as never, bm25, null);
-
-    const loaded = await persistence.load();
-    expect(loaded.bm25).toBeNull();
-    expect(loaded.vector).toBeNull();
-  });
-
-  it("scheduled save swallows kv.set rejection without unhandledRejection (#204)", async () => {
-    const failingKv = {
-      ...mockKV(),
       set: vi.fn(async () => {
-        const err = new Error(
-          "TIMEOUT: invocation timed out after 30000ms",
-        ) as Error & { code?: string; function_id?: string };
+        const err = new Error("TIMEOUT: invocation timed out after 30000ms") as Error & { code?: string };
         err.code = "TIMEOUT";
-        err.function_id = "state::set";
         throw err;
       }),
     };
-    const bm25 = new SearchIndex();
-    bm25.add(makeObs({ id: "obs_1", title: "auth handler" }));
-    const persistence = new IndexPersistence(failingKv as never, bm25, null);
-
+    const vector = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    const persistence = new IndexPersistence(failingKv as never, vector, { saveIntervalMs: 5000, bucketSize: 16 });
     let unhandled = false;
     const onUnhandled = () => {
       unhandled = true;
     };
     process.on("unhandledRejection", onUnhandled);
-
     try {
       persistence.scheduleSave();
-      vi.advanceTimersByTime(5000);
-      await vi.runAllTimersAsync();
-      // give microtasks a chance to flush
-      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(5000);
       expect(failingKv.set).toHaveBeenCalled();
       expect(unhandled).toBe(false);
     } finally {
@@ -742,143 +477,12 @@ describe("IndexPersistence", () => {
     }
   });
 
-  it("save() does not throw when kv.set rejects (#204)", async () => {
-    const failingKv = {
-      ...mockKV(),
-      set: vi.fn(async () => {
-        throw new Error("TIMEOUT");
-      }),
-    };
-    const bm25 = new SearchIndex();
-    bm25.add(makeObs({ id: "obs_1", title: "auth handler" }));
-    const persistence = new IndexPersistence(failingKv as never, bm25, null);
-
-    await expect(persistence.save()).resolves.toBeUndefined();
-  });
-
-  // #797: first run after upgrading to 0.9.25 crashed with
-  // 'TypeError: Cannot read properties of undefined (reading "v")'
-  // because some iii-state adapters return `undefined` (not `null`)
-  // for a missing key. The load path's `value !== null` check passed
-  // undefined to loadManifestData, which then read `undefined.v`.
-  it("load() returns null instead of crashing when kv.get returns undefined for the manifest (#797)", async () => {
-    const undefinedKv = {
-      ...mockKV(),
-      get: vi.fn(async () => undefined),
-    };
-    const persistence = new IndexPersistence(
-      undefinedKv as never,
-      new SearchIndex(),
-      null,
-    );
-
-    const loaded = await persistence.load();
-    expect(loaded.bm25).toBeNull();
-    expect(loaded.vector).toBeNull();
-  });
-
-  it("load() does not crash when a manifest row value is the wrong shape (#797)", async () => {
-    const wrongShapeKv = {
-      ...mockKV(),
-      get: vi.fn(async () => "not-a-manifest"),
-    };
-    const persistence = new IndexPersistence(
-      wrongShapeKv as never,
-      new SearchIndex(),
-      null,
-    );
-
-    await expect(persistence.load()).resolves.toBeDefined();
-  });
-});
-
-describe("index_persist audit gating", () => {
-  let kv: ReturnType<typeof mockKV>;
-  let previousFlag: string | undefined;
-
-  beforeEach(() => {
-    // AGENTMEMORY_* variables are documented as living in
-    // ~/.agentmemory/.env, so a developer running the suite on a
-    // configured machine can inherit this one. Clear it going in and put
-    // whatever was there back on the way out.
-    previousFlag = process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
-    delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
-    vi.useFakeTimers();
-    kv = mockKV();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
-    if (previousFlag === undefined) {
-      delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
-    } else {
-      process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = previousFlag;
-    }
-  });
-
-  async function indexPersistEntries(): Promise<Array<{ operation: string }>> {
-    const entries = await kv.list<{ operation: string }>("mem:audit");
-    return entries.filter((entry) => entry.operation === "index_persist");
-  }
-
-  it("writes no index_persist audit entries by default", async () => {
-    const persistence = new IndexPersistence(
-      kv as never,
-      makeBm25("obs_1", "auth handler"),
-      null,
-    );
-
-    await persistence.save();
-
-    expect(await indexPersistEntries()).toEqual([]);
-  });
-
-  it.each(["1", " 1 ", "true", "TRUE", "  true  "])(
-    "writes index_persist audit entries when set to %j",
-    async (value) => {
-      process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = value;
-      const persistence = new IndexPersistence(
-        kv as never,
-        makeBm25("obs_1", "auth handler"),
-        null,
-      );
-
-      await persistence.save();
-
-      expect((await indexPersistEntries()).length).toBeGreaterThan(0);
-    },
-  );
-
-  // Anything that is not an affirmative stays off. "0" and "false" are the
-  // ones an operator is likely to reach for to disable it, and they must
-  // not read as "present, therefore enabled".
-  it.each(["0", "false", "yes", "", " "])(
-    "keeps auditing off when set to %j",
-    async (value) => {
-      process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = value;
-      const persistence = new IndexPersistence(
-        kv as never,
-        makeBm25("obs_1", "auth handler"),
-        null,
-      );
-
-      await persistence.save();
-
-      expect(await indexPersistEntries()).toEqual([]);
-    },
-  );
-
-  it("still persists the index when auditing is off", async () => {
-    const persistence = new IndexPersistence(
-      kv as never,
-      makeBm25("obs_1", "auth handler"),
-      null,
-    );
-
-    await persistence.save();
-
-    const loaded = await persistence.load();
-    expect(loaded.bm25).not.toBeNull();
-    expect(loaded.bm25!.size).toBe(1);
+  it("stop clears the pending timer", async () => {
+    const vector = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 5000, bucketSize: 16 });
+    persistence.scheduleSave();
+    persistence.stop();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(await kv.get(INDEX_SCOPE, META_KEY)).toBeNull();
   });
 });

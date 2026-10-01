@@ -1288,6 +1288,69 @@ On engine 0.22.x keep the `iii-` prefixed names for the builtins above; the unpr
 
 Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there composes through the same primitives agentmemory uses, and the agentmemory you already have is one of them.
 
+### Storage backend: file (default) vs redis
+
+`iii-state` and `iii-stream` default to iii-engine's bundled file-based KV store: one JSON file per scope, held in the engine process's memory and rewritten to disk on a timer. That's the right default for a single-user local install; a shared daemon with several concurrent writers gets real per-key writes from Redis instead, at the cost of a network round trip per operation (every `state::*` call still serializes on one Redis connection, so this trades the file store's lock for a socket, not for parallelism).
+
+Set `AGENTMEMORY_STATE_BACKEND=redis` (plus `AGENTMEMORY_REDIS_URL`) to switch both workers to iii-engine's built-in `redis` adapter, which stores each key as a Redis hash field (`HSET`) instead of rewriting a whole scope on every write:
+
+```env
+# ~/.agentmemory/.env
+AGENTMEMORY_STATE_BACKEND=redis
+AGENTMEMORY_REDIS_URL=redis://localhost:6379
+```
+
+`AGENTMEMORY_STATE_BACKEND` defaults to `file`; leaving it unset keeps today's behavior unchanged, and an unrecognized value (anything other than `file` or `redis`) is a startup error rather than a silent fallback. `/agentmemory/status` and the viewer's Health page (the State store row) report which backend is active and whether it answers, never the URL.
+
+**Plain `redis://` only.** The pinned engine (0.22.1) builds its Redis client without TLS support, so a `rediss://` URL (most managed Redis offerings, such as Upstash, Redis Cloud, and ElastiCache with in-transit encryption, default to TLS-only) fails to connect. The connection is unencrypted, so the Redis password and every stored memory cross the wire in clear text: point at a local Redis or one on a private network you trust. For any other Redis, run an encrypted tunnel (stunnel, SSH, or a VPN) on the agentmemory host, so the plain `redis://` hop stays on that host and the tunnel's upstream connection is encrypted and authenticated. If a Redis password contains a single quote, percent-encode it (`%27`); the engine expands the URL into its YAML config before parsing it.
+
+**One Redis server per `--instance`.** The engine's Redis key prefixes (`state:<scope>`, `stream:<name>:<group>`) are fixed, so two agentmemory instances (`--instance 1`, `--instance 2`, ...) pointed at the same database overwrite each other's data. A separate database index (`redis://localhost:6379/1`) keeps the stored data apart, but the engine relays live viewer events over one Redis pub/sub channel (`stream::events`), and Redis pub/sub ignores the database index, so each instance's viewer would still show the other's live events. Give each instance its own Redis server (or port) when you run more than one.
+
+**What stays the same, and what differs.** Every agentmemory feature works on Redis: sessions, observations, memories (remember, supersede, evolve, forget), search and the index buckets, lessons, the graph, the audit log and its monthly scopes, export and import, governance deletes, consolidation status, the viewer snapshot and its live stream, and the health monitor. The engine stores each scope as one Redis hash (`HSET`/`HGET`/`HGETALL`) and fires the same state triggers as the file store. Three engine differences are handled inside agentmemory:
+
+- Redis returns a scope's records in no fixed order. agentmemory sorts them oldest first (by the creation time in the record id, then its timestamp) so lists, paging and export chunks come back in the same order as on the file store.
+- The engine applies partial updates on Redis in a Lua script that turns empty arrays into empty objects. agentmemory applies those updates itself (read, change, write under a per-key lock) on Redis, so fields like `tags: []` stay arrays.
+- The legacy audit log check reads the old scope from Redis instead of looking for the file store's file on disk.
+
+One difference needs you: **after Redis restarts, the engine stops relaying live events** to the viewer until agentmemory restarts. Data is still saved and read normally. The health monitor sends a test event through Redis every 30 seconds; when it does not come back, `/agentmemory/status` and the viewer's Health page show "Live updates are not reaching the viewer" with the fix: restart agentmemory. If Redis is down, the status report shows "The state store is not answering" and how to check it (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Listing a very large scope reads the whole hash in one `HGETALL`, the same cost as the file store holding it in memory.
+
+**Recommended Redis settings.** The default `save 3600 1 300 100 60 10000` snapshot policy can lose minutes of writes on a crash, worse than the file store's 5s flush window. Set `appendonly yes` for anything you'd mind losing. Set `maxmemory-policy noeviction`; `allkeys-lru` or similar silently drops memories once Redis hits its memory limit.
+
+A native (non-Docker) start, and every one-click [deploy template](deploy/) (they overwrite the bundled `iii-config.yaml` and start natively), read `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` and render them into the launched `iii-config`. The URL itself is never written to that rendered file, only a `${AGENTMEMORY_REDIS_URL}` reference that the engine process expands from its own environment at boot. Only this repo's own Docker Compose path (`AGENTMEMORY_USE_DOCKER=1`, or resuming an engine already started that way) mounts `iii-config.docker.yaml` read-only and never renders; `agentmemory start` warns when it detects that combination. Switch that file by hand, following the same `name: redis` / `config: redis_url: ...` shape shown in the [iii-state](https://workers.iii.dev/workers/iii-state) and [iii-stream](https://workers.iii.dev/workers/iii-stream) worker docs, and point `redis_url` at a Redis reachable from the container. `docker-compose.yml` passes `AGENTMEMORY_REDIS_URL` into the engine container, so `redis_url: '${AGENTMEMORY_REDIS_URL}'` works there and keeps the URL out of the mounted file.
+
+The rendered config keeps the URL out of `~/.agentmemory/data/iii-config.runtime.yaml`, but the engine's own configuration worker still persists the *expanded* value to `~/.agentmemory/config/iii-state.yaml` and `iii-stream.yaml` once it boots (iii-engine's `${VAR}` expansion happens before that worker stores its seed, and it stores the resolved value, not the reference). Treat that directory as holding a credential: `chmod 700 ~/.agentmemory` on any shared host, and prefer a Redis ACL user scoped to what agentmemory needs over the database's admin credentials.
+
+**Migration is not automatic.** Switching `AGENTMEMORY_STATE_BACKEND` starts from an empty store on either side; nothing copies existing data from file to Redis or back. Export from the backend you're leaving and import into the one you're moving to. This runs identically under bash and zsh (including `bash -u`). An array like `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` does not: zsh keeps the header as one malformed word where bash splits it into two, so both requests 401 whenever `AGENTMEMORY_SECRET` is set:
+
+```bash
+# 1. On the old backend, while agentmemory is still running on it:
+if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
+  curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" http://localhost:3111/agentmemory/export > backup.json
+else
+  curl -fsS http://localhost:3111/agentmemory/export > backup.json
+fi
+
+# 2. Confirm backup.json is a usable export before switching backends:
+jq -e '.version and .exportedAt' backup.json > /dev/null || {
+  echo "backup.json is not a valid export; do not switch backends" >&2
+  exit 1
+}
+
+# 3. Switch AGENTMEMORY_STATE_BACKEND (and AGENTMEMORY_REDIS_URL if needed),
+#    restart agentmemory against the new backend, then:
+if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
+  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
+    curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" -X POST http://localhost:3111/agentmemory/import \
+      -H 'Content-Type: application/json' -d @-
+else
+  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
+    curl -fsS -X POST http://localhost:3111/agentmemory/import \
+      -H 'Content-Type: application/json' -d @-
+fi
+```
+
+`/agentmemory/export` also accepts `?maxSessions=` and `?offset=` for chunking a large corpus across several calls; `strategy` on import is `merge` (default-safe), `replace`, or `skip`.
+
 ### What iii replaces
 
 | Traditional stack | agentmemory uses |
@@ -1608,7 +1671,7 @@ Create `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-132 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
+134 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
 
 <details>
 <summary>Key endpoints</summary>
