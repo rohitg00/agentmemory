@@ -726,13 +726,15 @@ export interface GraphCompactResult {
   nodesTrimmed: number;
   edgesScanned: number;
   edgesTrimmed: number;
+  historyScanned: number;
+  historyTrimmed: number;
   idsRemoved: number;
   snapshotTrimmed: boolean;
   total?: number;
   nextOffset: number | null;
 }
 
-export type GraphCompactScope = "nodes" | "edges" | "snapshot";
+export type GraphCompactScope = "nodes" | "edges" | "history" | "snapshot";
 
 export interface GraphCompactOptions {
   scope?: GraphCompactScope;
@@ -740,7 +742,7 @@ export interface GraphCompactOptions {
   limit?: number;
 }
 
-const COMPACT_SCOPES: readonly GraphCompactScope[] = ["nodes", "edges", "snapshot"];
+export const COMPACT_SCOPES: readonly GraphCompactScope[] = ["nodes", "edges", "history", "snapshot"];
 
 export async function compactGraphProvenance(
   kv: StateKV,
@@ -764,16 +766,18 @@ export async function compactGraphProvenance(
     nodesTrimmed: 0,
     edgesScanned: 0,
     edgesTrimmed: 0,
+    historyScanned: 0,
+    historyTrimmed: 0,
     idsRemoved: 0,
     snapshotTrimmed: false,
     nextOffset: null,
   };
 
   const trimScope = async <R extends { sourceObservationIds: string[] }>(
-    indexScope: string,
+    listIds: () => Promise<unknown[]>,
     recordScope: string,
   ): Promise<{ scanned: number; trimmed: number }> => {
-    const allIds = [...new Set(await kv.list<string>(indexScope))]
+    const allIds = [...new Set(await listIds())]
       .filter((id): id is string => typeof id === "string")
       .sort();
     const end = Math.min(allIds.length, offset + limit);
@@ -816,14 +820,22 @@ export async function compactGraphProvenance(
     });
 
   if (scope === undefined || scope === "nodes") {
-    const n = await trimScope<GraphNode>(KV.graphNameIndex, KV.graphNodes);
+    const n = await trimScope<GraphNode>(() => kv.list<string>(KV.graphNameIndex), KV.graphNodes);
     result.nodesScanned = n.scanned;
     result.nodesTrimmed = n.trimmed;
   }
   if (scope === undefined || scope === "edges") {
-    const e = await trimScope<GraphEdge>(KV.graphEdgeKey, KV.graphEdges);
+    const e = await trimScope<GraphEdge>(() => kv.list<string>(KV.graphEdgeKey), KV.graphEdges);
     result.edgesScanned = e.scanned;
     result.edgesTrimmed = e.trimmed;
+  }
+  if (scope === undefined || scope === "history") {
+    const h = await trimScope<GraphEdge>(
+      async () => (await kv.list<GraphEdge>(KV.graphEdgeHistory)).map((r) => r?.id),
+      KV.graphEdgeHistory,
+    );
+    result.historyScanned = h.scanned;
+    result.historyTrimmed = h.trimmed;
   }
   if (scope === undefined || scope === "snapshot") {
     await trimSnapshot();
@@ -1273,6 +1285,7 @@ export function registerGraphFunction(
           limit: data?.limit,
           nodesTrimmed: result.nodesTrimmed,
           edgesTrimmed: result.edgesTrimmed,
+          historyTrimmed: result.historyTrimmed,
           idsRemoved: result.idsRemoved,
           snapshotTrimmed: result.snapshotTrimmed,
         });

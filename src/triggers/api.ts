@@ -42,6 +42,8 @@ import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { describeGraphNode } from "../functions/graph-node.js";
+import { COMPACT_SCOPES, type GraphCompactScope } from "../functions/graph.js";
+import { getGraphCompactBootStatus } from "../functions/graph-compact-boot.js";
 import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { logger } from "../logger.js";
 import { withoutObservationSource } from "../functions/observation-source.js";
@@ -402,6 +404,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
         vectorBackfillState: getVectorBackfillState(),
       },
       graph,
+      graphCompaction: getGraphCompactBootStatus(),
       graphExtractionEnabled: isGraphExtractionEnabled(),
       auditLegacy: auditMigrationState
         ? { status: auditMigrationState.status, sizeBytes: auditMigrationState.legacySizeBytes }
@@ -2033,8 +2036,8 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       const body = (req.body ?? {}) as Record<string, unknown>;
       const { scope, offset, limit } = body;
-      if (scope !== undefined && scope !== "nodes" && scope !== "edges" && scope !== "snapshot") {
-        return { status_code: 400, body: { error: "scope must be nodes, edges or snapshot" } };
+      if (scope !== undefined && !COMPACT_SCOPES.includes(scope as GraphCompactScope)) {
+        return { status_code: 400, body: { error: "scope must be nodes, edges, history or snapshot" } };
       }
       if (offset !== undefined && !(Number.isInteger(offset) && (offset as number) >= 0)) {
         return { status_code: 400, body: { error: "offset must be a non-negative integer" } };
