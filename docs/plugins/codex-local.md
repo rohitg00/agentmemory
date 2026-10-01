@@ -79,6 +79,34 @@ fails. It does not save into the standalone fallback store. It does not retry
 mutations automatically; a timeout can happen after a write committed, so inspect
 state before retrying. Reconnect after changing the daemon's enabled tool surface.
 
+## Verify before distributing
+
+After packaging, run the live smoke test with an already installed binary matching
+`III_PINNED_VERSION` in `src/version.ts`:
+
+```sh
+AGENTMEMORY_TEST_III=/absolute/path/to/iii npm run test:plugin:live
+```
+
+It starts a real engine and worker on temporary loopback ports, with a temporary
+store and no model credentials. It checks packaged hook capture, both MCP entry
+points sharing memories, resources, prompts, lessons, deletion, outage failures,
+and persistence across an engine restart. It launches hook scripts directly;
+desktop hook dispatch and host trust UI still require a manual host test. The
+normal test suite skips this check unless the engine path is explicitly set.
+
+After publishing the selected runtime and shim versions, run:
+
+```sh
+npm run plugin:verify:published
+```
+
+This read-only registry check rejects mismatched runtime, shim, and engine SDK
+versions, including a reused version whose published engine dependencies differ
+from source. It requires an exact shim-to-runtime dependency. Building a ZIP does
+not publish the matching daemon; do not distribute it as a release until this
+check passes. The check does not establish OpenAI directory eligibility.
+
 ## Data and costs
 
 Basic keyword recall requires no model key. Storage remains in the configured

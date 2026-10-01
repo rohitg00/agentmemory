@@ -28,6 +28,8 @@
     "skills:gen": "tsx scripts/skills/generate.ts",
     "skills:check": "tsx scripts/skills/generate.ts --check && tsx scripts/skills/check.ts",
     "plugin:pack:codex": "npm run build && node scripts/plugins/package-codex.mjs",
+    "plugin:verify:published": "node scripts/plugins/verify-published.mjs",
+    "test:plugin:live": "node scripts/plugins/test-live.mjs",
     "bench:load": "node --import tsx benchmark/load-100k.ts",
     "eval:longmemeval": "tsx eval/runner/longmemeval.ts",
     "eval:coding-life": "tsx eval/runner/coding-life.ts"

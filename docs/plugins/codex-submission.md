@@ -51,7 +51,12 @@ access to the local daemon cannot read other projects in that same store.
   and prompts, Codex hook refresh, and shim version pinning. Preserve those PRs.
 - Validate the packaged bridge over stdio and HTTP, then install it in a clean
   Codex CLI and desktop profile. Verify one real captured event and a restart.
+- Run `npm run plugin:verify:published` after publishing matched versions; a
+  successful source build does not establish npm compatibility.
 - Test Claude Code and Codex against the same isolated daemon for handoff.
+  `AGENTMEMORY_TEST_III=/absolute/path/to/iii npm run test:plugin:live` exercises
+  their MCP entry points and packaged hook scripts. It does not replace a host UI
+  test or the recorded walkthrough.
 - Record all eight reviewer scenarios, including tool errors and provenance.
 - Fill in accessible privacy and terms URLs, support details, and the demo URL.
   Use synthetic data; provide review access separately if requested.
