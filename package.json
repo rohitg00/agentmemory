@@ -26,6 +26,7 @@
     "test:integration": "vitest run test/integration.test.ts",
     "test:all": "vitest run",
     "skills:gen": "tsx scripts/skills/generate.ts",
+    "engine:hashes": "node scripts/engine-hashes.mjs",
     "skills:check": "tsx scripts/skills/generate.ts --check && tsx scripts/skills/check.ts",
     "bench:load": "node --import tsx benchmark/load-100k.ts",
     "eval:longmemeval": "tsx eval/runner/longmemeval.ts",
