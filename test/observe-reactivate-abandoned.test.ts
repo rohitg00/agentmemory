@@ -18,12 +18,15 @@ function mockKV() {
     update: async (
       scope: string,
       key: string,
-      updates: Array<{ path: string; value: unknown }>,
+      updates: Array<{ type: string; path: string; value?: unknown }>,
     ): Promise<void> => {
       const m = store.get(scope);
       if (!m) return;
       const v = (m.get(key) as Record<string, unknown>) ?? {};
-      for (const u of updates) v[u.path] = u.value;
+      for (const u of updates) {
+        if (u.type === "remove") delete v[u.path];
+        else v[u.path] = u.value;
+      }
       m.set(key, v);
     },
     delete: async (scope: string, key: string): Promise<void> => {
@@ -67,10 +70,11 @@ function seedSession(store: Map<string, Map<string, unknown>>, id: string, statu
     startedAt: new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString(),
     status,
     observationCount: 3,
+    ...(status === "abandoned" ? { endedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString() } : {}),
   });
 }
 
-describe("observe reactivates abandoned sessions (#1410)", () => {
+describe("observe reactivates abandoned sessions", () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -93,7 +97,7 @@ describe("observe reactivates abandoned sessions (#1410)", () => {
 
     const session = kv.store.get("mem:sessions")!.get("ses_reactivated") as Record<string, unknown>;
     expect(session.status).toBe("active");
-    expect(session.endedAt).toBeNull();
+    expect("endedAt" in session).toBe(false);
     expect(session.observationCount).toBe(4);
   });
 

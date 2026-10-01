@@ -252,7 +252,7 @@ export function registerObserveFunction(
 
         const session = existingSession;
         if (session) {
-          const updates: Array<{ type: "set"; path: string; value: unknown }> = [
+          const updates: Array<{ type: "set" | "remove"; path: string; value?: unknown }> = [
             { type: "set", path: "updatedAt", value: new Date().toISOString() },
             {
               type: "set",
@@ -262,7 +262,7 @@ export function registerObserveFunction(
           ];
           if (session.status === "abandoned") {
             updates.push({ type: "set", path: "status", value: "active" });
-            updates.push({ type: "set", path: "endedAt", value: null });
+            updates.push({ type: "remove", path: "endedAt" });
           }
           if (!session.firstPrompt && typeof raw.userPrompt === "string") {
             const trimmed = raw.userPrompt.replace(/\s+/g, " ").trim();
