@@ -79,6 +79,20 @@ describe("Cursor plugin hooks config", () => {
       }
     }
   });
+
+  it("routes every event through the Cursor adapter instead of the canonical hook", () => {
+    for (const [event, entries] of Object.entries(hooks.hooks) as Array<
+      [string, Array<{ command: string }>]
+    >) {
+      for (const entry of entries) {
+        if (event === "stop" || event === "sessionEnd") {
+          expect(entry.command).toContain("plugin/scripts/cursor/run-detached.mjs");
+        } else {
+          expect(entry.command).toContain("plugin/scripts/cursor/run-hook.mjs");
+        }
+      }
+    }
+  });
 });
 
 describe("Cursor plugin MCP config", () => {
