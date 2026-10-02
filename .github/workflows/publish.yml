@@ -23,7 +23,7 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # Don't persist the GITHUB_TOKEN to .git/config — the
           # publish steps don't push back to the repo, so the token
