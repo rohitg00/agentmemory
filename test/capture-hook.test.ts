@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -183,5 +183,92 @@ describe("hooks capture when the server is unavailable", () => {
     expect(await waitFor(() => received.some((r) => r.eventId === spooled[0]!.eventId), 8000)).toBe(true);
     expect(await waitFor(() => spoolLines(dir, port).length === 0, 3000)).toBe(true);
     expect(received.filter((r) => r.eventId === spooled[0]!.eventId)).toHaveLength(1);
+  });
+});
+
+describe("hooks keep accepted observations until the server saved them", () => {
+  let server: Server | undefined;
+
+  afterEach(async () => {
+    if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
+    server = undefined;
+  });
+
+  async function markServer(received: Array<Record<string, unknown>>, mark: () => Record<string, unknown>): Promise<number> {
+    server = createServer((req, res) => {
+      let body = "";
+      req.on("data", (c) => (body += c));
+      req.on("end", () => {
+        try {
+          received.push(JSON.parse(body));
+        } catch {}
+        res.writeHead(201, { "content-type": "application/json" });
+        res.end(JSON.stringify({ status: "accepted", state: "completed", ...mark() }));
+      });
+    });
+    await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", () => resolve()));
+    const addr = server.address();
+    return typeof addr === "object" && addr ? addr.port : 0;
+  }
+
+  function sentRecords(dir: string): Array<{ eventId: string; bootId?: string }> {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir)
+      .filter((f) => f.includes(".sent-"))
+      .flatMap((f) => readFileSync(join(dir, f), "utf-8").split("\n").filter(Boolean).map((l) => JSON.parse(l)));
+  }
+
+  it("releases a kept observation on a later call once the window passed, without sending it again", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "am-hook-keep-"));
+    const received: Array<Record<string, unknown>> = [];
+    const port = await markServer(received, () => ({ bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 0 }));
+    const env = { AGENTMEMORY_URL: `http://127.0.0.1:${port}`, AGENTMEMORY_CAPTURE_SPOOL_DIR: dir };
+    expect((await runHook("post-tool-use.mjs", toolPayload("kept-one", { tool_use_id: "toolu_k1" }), env)).exitCode).toBe(0);
+    const first = sentRecords(dir);
+    expect(first).toHaveLength(1);
+    expect(first[0]!.eventId).toBe(received[0]!.eventId);
+    expect(spoolLines(dir, port)).toHaveLength(0);
+    await new Promise((r) => setTimeout(r, 1100));
+    expect((await runHook("post-tool-use.mjs", toolPayload("kept-two", { tool_use_id: "toolu_k2" }), env)).exitCode).toBe(0);
+    const second = sentRecords(dir);
+    expect(second.map((r) => r.eventId)).toEqual([received[1]!.eventId]);
+    await new Promise((r) => setTimeout(r, 500));
+    expect(received).toHaveLength(2);
+  });
+
+  it("re-sends a kept observation with the same event id after the server restarted", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "am-hook-keep-"));
+    const received: Array<Record<string, unknown>> = [];
+    let bootId = "aaaaaaaaaaaaaaaaaaaaaaaa";
+    const port = await markServer(received, () => ({ bootId, durableAfterMs: 60_000 }));
+    const env = { AGENTMEMORY_URL: `http://127.0.0.1:${port}`, AGENTMEMORY_CAPTURE_SPOOL_DIR: dir };
+    await runHook("post-tool-use.mjs", toolPayload("before-restart", { tool_use_id: "toolu_r1" }), env);
+    const lost = received[0]!.eventId;
+    bootId = "bbbbbbbbbbbbbbbbbbbbbbbb";
+    expect((await runHook("post-tool-use.mjs", toolPayload("after-restart", { tool_use_id: "toolu_r2" }), env)).exitCode).toBe(0);
+    expect(await waitFor(() => received.filter((r) => r.eventId === lost).length === 2, 8000)).toBe(true);
+    expect(await waitFor(() => sentRecords(dir).every((r) => r.bootId === bootId) && sentRecords(dir).length === 2, 3000)).toBe(true);
+    expect(spoolLines(dir, port)).toHaveLength(0);
+  });
+
+  it("keeps nothing when the server sends no boot id", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "am-hook-keep-"));
+    const received: Array<Record<string, unknown>> = [];
+    const port = await markServer(received, () => ({}));
+    const env = { AGENTMEMORY_URL: `http://127.0.0.1:${port}`, AGENTMEMORY_CAPTURE_SPOOL_DIR: dir };
+    expect((await runHook("post-tool-use.mjs", toolPayload("old-server"), env)).exitCode).toBe(0);
+    expect(received).toHaveLength(1);
+    expect(sentRecords(dir)).toHaveLength(0);
+    expect(spoolLines(dir, port)).toHaveLength(0);
+  });
+
+  it("keeps nothing when the spool is turned off", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "am-hook-keep-"));
+    const received: Array<Record<string, unknown>> = [];
+    const port = await markServer(received, () => ({ bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }));
+    const env = { AGENTMEMORY_URL: `http://127.0.0.1:${port}`, AGENTMEMORY_CAPTURE_SPOOL_DIR: dir, AGENTMEMORY_CAPTURE_SPOOL: "false" };
+    expect((await runHook("post-tool-use.mjs", toolPayload("spool-off"), env)).exitCode).toBe(0);
+    expect(received).toHaveLength(1);
+    expect(existsSync(dir) ? readdirSync(dir) : []).toHaveLength(0);
   });
 });

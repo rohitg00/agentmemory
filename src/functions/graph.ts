@@ -17,6 +17,7 @@ import {
 import { isGraphExtractionEnabled } from "../config.js";
 import { recordAudit, safeAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { scrubRecord } from "./privacy.js";
 
 // #753: keep the response payload below the iii state channel ceiling.
 // 500 nodes + their incident edges hold well under the limit on the
@@ -589,9 +590,11 @@ export function extractGraphHeuristics(
 // complete. Each name-index entry is a single small kv.get/set pair.
 export async function persistGraphDelta(
   kv: StateKV,
-  nodes: GraphNode[],
-  edges: GraphEdge[],
+  rawNodes: GraphNode[],
+  rawEdges: GraphEdge[],
 ): Promise<{ newNodeCount: number; newEdgeCount: number }> {
+  const nodes = rawNodes.map((node) => scrubRecord(node));
+  const edges = rawEdges.map((edge) => scrubRecord(edge));
   return withKeyedLock("graph:persist", async () => {
     const snap = (await readSnapshotStrict(kv)) ?? emptySnapshot();
     const capturedAt = new Date().toISOString();

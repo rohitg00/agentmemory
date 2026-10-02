@@ -174,12 +174,58 @@ def _reset_plaintext_bearer_guard_for_tests() -> None:
     _plaintext_bearer_warned = False
 
 
+def _usable_secret(value: str | None) -> str:
+    trimmed = (value or "").strip()
+    if not trimmed or (trimmed.startswith("${") and trimmed.endswith("}")):
+        return ""
+    return trimmed
+
+
+def _read_agentmemory_file(name: str) -> str:
+    try:
+        return (Path.home() / ".agentmemory" / name).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _env_file_secret() -> str:
+    found = ""
+    for raw in _read_agentmemory_file(".env").splitlines():
+        line = raw.strip()
+        if line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        if key != "AGENTMEMORY_SECRET":
+            continue
+        value = value.strip()
+        close = value.find(value[0], 1) if value[:1] in ("'", '"') else -1
+        if close > 0:
+            value = value[1:close]
+        elif " #" in value:
+            value = value[: value.index(" #")]
+        found = _usable_secret(value)
+    return found
+
+
+def _stored_secret(base: str) -> str:
+    try:
+        host = (urlparse(base).hostname or "").lower()
+    except ValueError:
+        return ""
+    if host not in ("localhost", "::1") and not host.startswith("127."):
+        return ""
+    return _env_file_secret() or _usable_secret(_read_agentmemory_file("secret"))
+
+
 def _api(base: str, path: str, body: dict | None = None, method: str = "POST", secret: str = "") -> dict | None:
     if not _validate_url(base):
         return None
     url = f"{base}/agentmemory/{path}"
     headers = {"Content-Type": "application/json"}
-    auth = secret or os.environ.get("AGENTMEMORY_SECRET", "")
+    auth = _usable_secret(secret) or _usable_secret(os.environ.get("AGENTMEMORY_SECRET")) or _stored_secret(base)
     _check_plaintext_bearer_guard(base, auth)
     if auth:
         headers["Authorization"] = f"Bearer {auth}"

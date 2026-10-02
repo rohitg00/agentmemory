@@ -795,11 +795,13 @@ This starts agentmemory with a local `iii-engine` if the pinned binary is alread
 
 Install `iii-engine` manually. **agentmemory currently pins `iii-engine` to `v0.22.1`**, the same release as its `iii-sdk` dependency; the worker speaks that engine's wire protocol, and 0.20.0 reorganized the SDK surface, so the two move together in agentmemory releases. Override with `AGENTMEMORY_III_VERSION=<version>` if you run your own engine and know it matches.
 
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSL https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz | tar -xz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
+- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
 - **macOS x64:** swap `aarch64-apple-darwin` for `x86_64-apple-darwin`
 - **Linux x64:** swap for `x86_64-unknown-linux-gnu`
 - **Linux arm64:** swap for `aarch64-unknown-linux-gnu`
 - **Windows:** download `iii-x86_64-pc-windows-msvc.zip` from [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) and extract `iii.exe` to `%USERPROFILE%\.agentmemory\bin\iii.exe`
+
+Every archive has a matching `.sha256` file on the release page; when you swap the platform, use that file's hash in the check above (on Windows: `Get-FileHash`). The automatic installer in `npx @agentmemory/agentmemory` pins these hashes and refuses an archive that does not match.
 
 Or use Docker (the bundled `docker-compose.yml` pulls `iiidev/iii:0.22.1`). Full docs: [iii.dev/docs](https://iii.dev/docs).
 
@@ -1192,7 +1194,7 @@ Auto-starts on port `3113`. Live observation stream with a stream status indicat
 open http://localhost:3113
 ```
 
-The viewer server binds to `127.0.0.1` by default. The REST-served `/agentmemory/viewer` endpoint follows the normal `AGENTMEMORY_SECRET` bearer-token rules. CSP headers use a per-response script nonce and disable inline handler attributes (`script-src-attr 'none'`).
+The viewer server binds to `127.0.0.1` by default and attaches the server secret when it forwards requests to the REST API, so it needs no setup. The REST-served `/agentmemory/viewer` endpoint follows the normal bearer-token rules and redirects browsers without a token to the viewer port. CSP headers use a per-response script nonce and disable inline handler attributes (`script-src-attr 'none'`).
 
 ---
 
@@ -1323,6 +1325,9 @@ The rendered config keeps the URL out of `~/.agentmemory/data/iii-config.runtime
 **Migration is not automatic.** Switching `AGENTMEMORY_STATE_BACKEND` starts from an empty store on either side; nothing copies existing data from file to Redis or back. Export from the backend you're leaving and import into the one you're moving to. This runs identically under bash and zsh (including `bash -u`). An array like `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` does not: zsh keeps the header as one malformed word where bash splits it into two, so both requests 401 whenever `AGENTMEMORY_SECRET` is set:
 
 ```bash
+# 0. Use the generated secret when none is exported:
+AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
   curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" http://localhost:3111/agentmemory/export > backup.json
@@ -1599,8 +1604,10 @@ Create `~/.agentmemory/.env`:
 # VECTOR_WEIGHT=0.6
 # TOKEN_BUDGET=2000
 
-# Auth
+# Auth (generated into ~/.agentmemory/secret on first start when unset)
 # AGENTMEMORY_SECRET=your-secret
+# VIEWER_ALLOWED_ORIGINS=https://memory.example.com
+# AGENTMEMORY_IMPORT_ROOT=~/projects
 
 # Ports (defaults: 3111 API, 3113 viewer)
 # III_REST_PORT=3111
@@ -1671,7 +1678,19 @@ Create `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-138 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>` when `AGENTMEMORY_SECRET` is set, and mesh sync endpoints require `AGENTMEMORY_SECRET` on both peers.
+138 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>`, and mesh sync endpoints require an explicitly set `AGENTMEMORY_SECRET` on both peers.
+
+**Authentication is on by default.** When `AGENTMEMORY_SECRET` is not set (in the shell or in `~/.agentmemory/.env`), the server generates a random secret on first start and stores it in `~/.agentmemory/secret` with mode `0600`. Every bundled client reads it from there when it talks to a local server: the CLI, the viewer, the hooks under `plugin/scripts`, the MCP server and the `@agentmemory/mcp` shim, the configs written by `agentmemory connect`, and the bundled OpenCode, Pi, OpenClaw, Hermes and filesystem-watcher integrations. The stored secret is only sent to loopback URLs (`localhost`, `127.0.0.0/8`, `::1`). An explicit `AGENTMEMORY_SECRET` always wins, and remote clients still need it set. Docker and the `deploy/` entrypoints already generate and export their own secret. To call the API by hand:
+
+```bash
+curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+```
+
+**Request rules for writes.** `POST`, `PUT`, `PATCH` and `DELETE` requests to the REST API and the viewer must send `Content-Type: application/json` (a `charset` parameter is fine) whenever they carry a body, and an `Origin` header, when present, must be a loopback origin for the configured REST or viewer port or be listed in `VIEWER_ALLOWED_ORIGINS` (comma-separated, e.g. `https://memory.example.com`). Clients that send no `Origin` header (CLI, hooks, MCP, curl, server-to-server) are unaffected. The viewer also accepts its own origin.
+
+**File paths.** Endpoints that read or write files (`/compress-file`, `/replay/import-jsonl`, `/graph/import-graphify`) only accept paths under `~/.agentmemory`, the instance data directory, or a directory listed in `AGENTMEMORY_IMPORT_ROOT` (separate several with `:`, or `;` on Windows). `/replay/import-jsonl` also accepts its default `~/.claude/projects`. `/obsidian/export` stays inside `AGENTMEMORY_EXPORT_ROOT` and `/migrate` inside `~/.agentmemory`. Symlinks are resolved before every check.
+
+**Secret scrubbing.** API keys, bearer tokens, PEM private key blocks and credentials embedded in URLs (`scheme://user:password@host`) are redacted before text is stored, on every write path: observations, remember, evolve, slots, lessons, actions, sketches, signals, checkpoints, imports, jsonl replay, mesh sync, team shares, compression and summary output, crystals and graph nodes.
 
 <details>
 <summary>Key endpoints</summary>
@@ -1712,7 +1731,7 @@ Full endpoint list: [`src/triggers/api.ts`](src/triggers/api.ts)
 | `400` / `422` | `rejected` | Invalid payload, or storing failed for good (the event is kept as a dead letter). |
 | `503` | `rejected` (`retryable: true`) | The inbox is full (`AGENTMEMORY_CAPTURE_INBOX_MAX`). Hooks spool the event and send it later. |
 
-Failed events are retried every `AGENTMEMORY_CAPTURE_RETRY_INTERVAL_MS` (10 s) with doubling backoff, up to `AGENTMEMORY_CAPTURE_MAX_ATTEMPTS` (5). Events that still fail stay in the inbox as dead letters, are listed on `/agentmemory/status` and the viewer Health page, and can be retried with `POST /agentmemory/capture/retry` (`{"eventId": "..."}` or `{"all": true}`). Accepted event ids are remembered for `AGENTMEMORY_CAPTURE_DEDUP_HOURS` (168 hours, at most `AGENTMEMORY_CAPTURE_EVENTS_MAX` ids), so a hook replayed after a timeout or a restart is stored once, while two separate tool calls with their own host ids are stored twice even when their content is identical. The state store writes to disk every 2 seconds, so a hard kill or power loss inside that window can lose events the server already answered.
+Failed events are retried every `AGENTMEMORY_CAPTURE_RETRY_INTERVAL_MS` (10 s) with doubling backoff, up to `AGENTMEMORY_CAPTURE_MAX_ATTEMPTS` (5). Events that still fail stay in the inbox as dead letters, are listed on `/agentmemory/status` and the viewer Health page, and can be retried with `POST /agentmemory/capture/retry` (`{"eventId": "..."}` or `{"all": true}`). Accepted event ids are remembered for `AGENTMEMORY_CAPTURE_DEDUP_HOURS` (168 hours, at most `AGENTMEMORY_CAPTURE_EVENTS_MAX` ids), so a hook replayed after a timeout or a restart is stored once, while two separate tool calls with their own host ids are stored twice even when their content is identical. When an observation is deleted (forget, session delete, eviction, auto-forget or an import that replaces the store), its event is marked as deleted before the observation is removed, so a replay of that event inside the same window is answered as a duplicate and stores nothing. The state store writes to disk every 2 seconds, so an answered event can still be only in memory for a moment. To cover that, every `2xx` answer also carries the server's `bootId` (new at every start), `acceptedAt` and `durableAfterMs` (the save interval plus 1.5 s on the file store, 1.5 s on redis, where persistence is the operator's setting). Hooks keep the event in the local spool until that window has passed and delete it on a later call without another request. If the `bootId` has changed by then, the server restarted, so the hook sends the event again with the same `eventId`; an event that did reach the disk is not stored twice. The server also sends such events itself at start and every retry interval, so a restart loses nothing even when no hook runs afterwards. Older hooks ignore the extra fields, and new hooks against an older server discard the event on `2xx` as before.
 
 When the server is down, does not answer in time or returns a 5xx, the hook appends the observation to a local spool file, `<data dir>/capture-spool/<host>-<port>.jsonl` (override the folder with `AGENTMEMORY_CAPTURE_SPOOL_DIR`). The file is private to your user (mode 600), secrets are redacted the same way the server redacts them, it holds at most `AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES` (5 MiB) and drops entries older than `AGENTMEMORY_CAPTURE_SPOOL_MAX_AGE_HOURS` (168). When it is full, new entries are dropped and counted, and `/agentmemory/status` reports it. The hook still exits 0 within its time limit and adds no request when the server is healthy. The spool is sent at the next start and by the first hook that reaches the server again, in a background process so the agent does not wait. Event ids make this safe: an observation that did arrive before a timeout is not stored twice. `npx @agentmemory/agentmemory capture` shows the spool and the server inbox, `--drain` sends the spool now, and `GET /agentmemory/capture` returns the same as JSON. Set `AGENTMEMORY_CAPTURE_SPOOL=false` to turn the spool off.
 

@@ -1,4 +1,4 @@
-import { drainSpool, spoolSummary, type SendOutcome, type SpoolRecord } from "../capture/spool.js";
+import { drainSpool, parseSentMark, retainSent, spoolSummary, type SendOutcome, type SpoolRecord } from "../capture/spool.js";
 
 interface CaptureCommandOptions {
   base: string;
@@ -47,8 +47,16 @@ export async function runCaptureCommand(options: CaptureCommandOptions): Promise
         body: JSON.stringify({ ...record.body, eventId: record.eventId }),
         signal: AbortSignal.timeout(10_000),
       });
-      await res.arrayBuffer().catch(() => undefined);
-      return classify(res.status);
+      const text = await res.text().catch(() => "");
+      const outcome = classify(res.status);
+      if (outcome === "delivered" || outcome === "duplicate") {
+        let mark = null;
+        try {
+          mark = parseSentMark(JSON.parse(text));
+        } catch {}
+        if (mark) retainSent(options.base, record.eventId, record.body, mark);
+      }
+      return outcome;
     });
   }
   output["spool"] = spoolSummary(options.base);

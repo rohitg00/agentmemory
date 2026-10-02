@@ -15,7 +15,15 @@ const hookEntries = [
   "src/hooks/session-end.ts",
   "src/hooks/post-commit.ts",
   "src/hooks/antigravity-bridge.ts",
+  "src/hooks/_capture.ts",
 ];
+
+const sharedCaptureModule = {
+  name: "agentmemory-shared-capture",
+  resolveId(source: string) {
+    return source === "./_capture.js" ? { id: "./_capture.mjs", external: true } : null;
+  },
+};
 
 const shared = {
   format: ["esm"] as const,
@@ -73,6 +81,7 @@ export default defineConfig([
     entry: [entry],
     outDir: "dist/hooks",
     ...shared,
+    plugins: [sharedCaptureModule],
     clean: false,
     sourcemap: false,
   })),
@@ -80,6 +89,7 @@ export default defineConfig([
     entry: [entry],
     outDir: "plugin/scripts",
     ...shared,
+    plugins: [sharedCaptureModule],
     clean: false,
     sourcemap: false,
   })),

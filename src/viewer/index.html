@@ -1740,9 +1740,12 @@
 
     function esc(s) {
       if (!s) return '';
-      var d = document.createElement('div');
-      d.textContent = String(s);
-      return d.innerHTML;
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
     function formatTime(ts) {
       if (!ts) return '';
@@ -7254,6 +7257,10 @@
         'Empty means every accepted observation is stored.');
       html += hrow('Since start', esc(fmtNum(since.accepted || 0) + ' accepted · ' + fmtNum(since.completed || 0) + ' stored · ' + fmtNum(since.duplicates || 0) + ' duplicates skipped · ' + fmtNum(since.recovered || 0) + ' recovered by retry · ' + fmtNum(since.deadLettered || 0) + ' dead'), null,
         'Duplicates are the same event delivered twice, for example a replay after a timeout. They are kept once.');
+      if (r.observeDedup) {
+        html += hrow('Repeats skipped', esc(fmtNum(r.observeDedup.skippedSinceStart || 0) + ' since start'), null,
+          esc('A tool call with the same input and the same output as one stored in the last ' + durationText((r.observeDedup.windowSeconds || 300) * 1000) + ' is skipped when the hook sends no event id.'));
+      }
       html += hrow('Offline spool', !spoolOn ? 'off' : waiting ? esc(fmtNum(waiting) + ' waiting · ' + Math.ceil(bytes / 1024) + ' KiB') : 'empty', 'captureSpool',
         !spoolOn ? 'Turned off with AGENTMEMORY_CAPTURE_SPOOL=false, so hooks drop observations while the server is down.' :
         (waiting ? 'Sent on the next hook call or at the next start. To send now:' + cmdBlock(curlPost('capture/drain', {})) : esc('Hooks write here only while the server is unreachable.' + (drainedAt ? ' Last drained ' + timeAgo(drainedAt) + '.' : ''))) +

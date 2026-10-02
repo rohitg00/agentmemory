@@ -45,6 +45,14 @@ export function engineFlushWaitMs(
   return engineSaveIntervalMs(configTexts) + ENGINE_FLUSH_MARGIN_MS;
 }
 
+export function captureDurableAfterMs(
+  stateBackend: "file" | "redis",
+  configTexts: readonly string[],
+): number {
+  if (stateBackend === "redis") return ENGINE_FLUSH_MARGIN_MS;
+  return engineSaveIntervalMs(configTexts) + ENGINE_FLUSH_MARGIN_MS;
+}
+
 export function engineSaveIntervalMs(configTexts: readonly string[]): number {
   const intervals: number[] = [];
   for (const text of configTexts) {

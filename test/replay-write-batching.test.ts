@@ -14,6 +14,7 @@ vi.mock("../src/functions/search.js", () => ({ indexRecords: vi.fn() }));
 describe("JSONL observation write batching", () => {
   it("limits writes to 20 and waits for the entire batch before starting the next", async () => {
     const folder = mkdtempSync(join(__dirname, "replay-write-batching-"));
+    process.env.AGENTMEMORY_IMPORT_ROOT = folder;
     const path = join(folder, "session.jsonl");
     const sessionId = "write-batching-session";
     const scope = KV.observations(sessionId);
@@ -88,6 +89,7 @@ describe("JSONL observation write batching", () => {
 
   it("drains a failed batch before a competing import acquires the session lock", async () => {
     const folder = mkdtempSync(join(__dirname, "replay-write-batching-"));
+    process.env.AGENTMEMORY_IMPORT_ROOT = folder;
     const sessionId = "failed-batch-session";
     const scope = KV.observations(sessionId);
     const fixture = (name: string, count: number) => {

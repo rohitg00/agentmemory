@@ -13,6 +13,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=iii-image /app/iii /usr/local/bin/iii
+RUN iii --version 2>&1 | grep -qF "${III_VERSION}" \
+ || { echo "the iiidev/iii:${III_VERSION} image does not contain iii ${III_VERSION}" >&2; exit 1; }
 
 WORKDIR /opt/agentmemory
 RUN [ "${III_VERSION}" = "${III_SDK_VERSION}" ] \

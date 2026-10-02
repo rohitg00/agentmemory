@@ -10,6 +10,7 @@ import {
   renameSync,
   statSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
   writeSync,
 } from "node:fs";
@@ -24,6 +25,17 @@ export interface SpoolRecord {
   reason: string;
   attempts: number;
   body: Record<string, unknown>;
+  bootId?: string;
+}
+
+export interface SentMark {
+  bootId: string;
+  durableAfterMs: number;
+}
+
+export interface SentReconcile {
+  released: number;
+  requeued: number;
 }
 
 export interface SpoolPolicy {
@@ -68,6 +80,8 @@ export interface SpoolSummary {
   records: number;
   bytes: number;
   oldestAt: string | null;
+  retained: number;
+  retainedBytes: number;
   maxBytes: number;
   maxAgeHours: number;
   stats: SpoolStats;
@@ -95,6 +109,10 @@ const DRAIN_LOCK_STALE_MS = 120_000;
 const ORPHAN_CLAIM_MS = 120_000;
 const LOCK_WAIT_MS = 500;
 const IMAGE_PLACEHOLDER = "[image dropped from capture spool]";
+const BOOT_ID_RE = /^[A-Za-z0-9]{8,64}$/;
+const SENT_FILE_RE = /^([A-Za-z0-9]{8,64})-(\d+)\.jsonl$/;
+const SENT_BUCKET_MS = 1000;
+const MAX_DURABLE_AFTER_MS = 10 * 60_000;
 
 function emptyStats(): SpoolStats {
   return { spooled: 0, dropped: 0, droppedBytes: 0, expired: 0, delivered: 0, duplicates: 0, rejected: 0 };
@@ -328,7 +346,9 @@ export function appendSpool(
     return withLock(paths.lock, () => {
       let expired = 0;
       if (fileSize(paths.file) + bytes > policy.maxBytes) expired = pruneExpiredLocked(paths, policy);
-      if (fileSize(paths.file) + bytes > policy.maxBytes) {
+      const over = fileSize(paths.file) + sentBytes(paths) + bytes - policy.maxBytes;
+      if (over > 0) evictSent(paths, over);
+      if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) {
         if (expired) writeStats(paths, (s) => void (s.expired += expired));
         return note("full", bytes);
       }
@@ -350,6 +370,135 @@ export function appendSpool(
   } catch {
     return { spooled: false, dropped: "error" };
   }
+}
+
+interface SentSegment {
+  file: string;
+  bootId: string;
+  dueAt: number;
+  bytes: number;
+}
+
+function listSent(paths: SpoolPaths): SentSegment[] {
+  const segments: SentSegment[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(paths.dir);
+  } catch {
+    return segments;
+  }
+  const prefix = `${paths.name}.sent-`;
+  for (const entry of entries) {
+    if (!entry.startsWith(prefix)) continue;
+    const match = entry.slice(prefix.length).match(SENT_FILE_RE);
+    if (!match) continue;
+    const file = join(paths.dir, entry);
+    segments.push({ file, bootId: match[1]!, dueAt: Number(match[2]), bytes: fileSize(file) });
+  }
+  return segments;
+}
+
+function sentBytes(paths: SpoolPaths): number {
+  return listSent(paths).reduce((n, s) => n + s.bytes, 0);
+}
+
+function evictSent(paths: SpoolPaths, need: number): void {
+  let freed = 0;
+  for (const seg of listSent(paths).sort((a, b) => a.dueAt - b.dueAt)) {
+    if (freed >= need) return;
+    try {
+      unlinkSync(seg.file);
+      freed += seg.bytes;
+    } catch {}
+  }
+}
+
+export function parseSentMark(body: unknown): SentMark | null {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return null;
+  const bootId = (body as Record<string, unknown>)["bootId"];
+  const after = (body as Record<string, unknown>)["durableAfterMs"];
+  if (typeof bootId !== "string" || !BOOT_ID_RE.test(bootId)) return null;
+  if (typeof after !== "number" || !Number.isFinite(after) || after < 0) return null;
+  return { bootId, durableAfterMs: Math.min(Math.ceil(after), MAX_DURABLE_AFTER_MS) };
+}
+
+export function retainSent(
+  url: string,
+  eventId: string,
+  body: Record<string, unknown>,
+  mark: SentMark,
+  options: { policy?: SpoolPolicy; dir?: string; now?: number } = {},
+): boolean {
+  const policy = options.policy ?? spoolPolicy();
+  if (!policy.enabled || !BOOT_ID_RE.test(mark.bootId)) return false;
+  const paths = spoolPaths(url, options.dir);
+  const now = options.now ?? Date.now();
+  try {
+    ensureDir(paths.dir);
+    const record: SpoolRecord = {
+      v: 1,
+      eventId,
+      spooledAt: new Date(now).toISOString(),
+      reason: "sent",
+      attempts: 0,
+      body: sanitizeBody(body),
+      bootId: mark.bootId,
+    };
+    let line = JSON.stringify(record) + "\n";
+    if (Buffer.byteLength(line) > policy.maxRecordBytes) {
+      record.body = withoutImage(record.body);
+      line = JSON.stringify(record) + "\n";
+    }
+    const bytes = Buffer.byteLength(line);
+    if (bytes > policy.maxRecordBytes) return false;
+    const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
+    const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
+    return withLock(paths.lock, () => {
+      if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) return false;
+      const fd = openSync(file, "a", 0o600);
+      try {
+        writeSync(fd, line);
+      } finally {
+        closeSync(fd);
+      }
+      return true;
+    });
+  } catch {
+    return false;
+  }
+}
+
+export function reconcileSent(
+  url: string,
+  bootId: string,
+  options: { policy?: SpoolPolicy; dir?: string; now?: number } = {},
+): SentReconcile {
+  const result: SentReconcile = { released: 0, requeued: 0 };
+  const policy = options.policy ?? spoolPolicy();
+  if (!policy.enabled) return result;
+  const paths = spoolPaths(url, options.dir);
+  const now = options.now ?? Date.now();
+  for (const seg of listSent(paths)) {
+    if (seg.bootId === bootId) {
+      if (seg.dueAt > now) continue;
+      try {
+        unlinkSync(seg.file);
+        result.released++;
+      } catch {}
+      continue;
+    }
+    const target = join(paths.dir, `${paths.name}.draining-${process.pid}-${now}-${result.requeued}.jsonl`);
+    try {
+      renameSync(seg.file, target);
+    } catch {
+      continue;
+    }
+    try {
+      utimesSync(target, 0, 0);
+    } catch {}
+    result.requeued++;
+  }
+  return result;
 }
 
 function claimFiles(paths: SpoolPaths): string[] {
@@ -506,12 +655,23 @@ export function spoolSummary(url: string, options: { policy?: SpoolPolicy; dir?:
       }
     } catch {}
   }
+  let retained = 0;
+  let retainedBytes = 0;
+  for (const seg of listSent(paths)) {
+    try {
+      const text = readFileSync(seg.file, "utf-8");
+      retainedBytes += Buffer.byteLength(text);
+      retained += parseLines(text).records.length;
+    } catch {}
+  }
   return {
     enabled: policy.enabled,
     path: paths.file,
     records,
     bytes,
     oldestAt,
+    retained,
+    retainedBytes,
     maxBytes: policy.maxBytes,
     maxAgeHours: Math.round(policy.maxAgeMs / 3600_000),
     stats: readSpoolStats(paths),

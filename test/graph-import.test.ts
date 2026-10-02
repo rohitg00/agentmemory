@@ -132,6 +132,7 @@ describe("mem::graph::import-graphify", () => {
 
   beforeEach(() => {
     tmp = mkdtempSync(join(tmpdir(), "am-graphify-"));
+    process.env.AGENTMEMORY_IMPORT_ROOT = tmp;
     mkdirSync(join(tmp, "graphify-out"), { recursive: true });
     writeFileSync(join(tmp, "graphify-out", "graph.json"), JSON.stringify(FIXTURE));
     kv = mockKV();

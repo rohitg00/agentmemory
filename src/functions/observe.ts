@@ -8,11 +8,12 @@ import { trackViewerStreamItem, pruneViewerStreamIfDue } from "../state/viewer-s
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { indexObservationSession } from "../state/obs-index.js";
 import { stripPrivateData } from "./privacy.js";
-import { DedupMap } from "./dedup.js";
+import { DedupMap, recordDedupSkip } from "./dedup.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
-import { getSearchIndex, scheduleIndexSave, vectorIndexAddGuarded } from "./search.js";
+import { isCaptureKey } from "../capture/event-record.js";
+import { getSearchIndex, getVectorIndex, scheduleIndexSave, vectorIndexAddGuarded } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
@@ -40,6 +41,22 @@ export function extractImage(d: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+export async function restoreIndexEntries(obs: CompressedObservation): Promise<void> {
+  if (typeof obs.title !== "string" || !obs.sessionId) return;
+  const search = getSearchIndex();
+  if (!search.has(obs.id)) {
+    search.add(obs);
+    scheduleIndexSave();
+  }
+  const vectors = getVectorIndex();
+  if (vectors && !vectors.has(obs.id)) {
+    await vectorIndexAddGuarded(obs.id, obs.sessionId, obs.title + " " + (obs.narrative || ""), {
+      kind: "synthetic",
+      logId: obs.id,
+    });
+  }
 }
 
 export function registerObserveFunction(
@@ -86,12 +103,18 @@ export function registerObserveFunction(
             : dataIsObject
               ? d
               : payload.data;
+        const dedupOutput =
+          d["tool_input"] !== undefined
+            ? d["tool_response"] ?? d["tool_output"] ?? d["output"] ?? d["error"]
+            : undefined;
         dedupHash = dedupMap.computeHash(
           payload.sessionId,
           toolName,
           dedupInput,
+          dedupOutput,
         );
         if (dedupMap.isDuplicate(dedupHash)) {
+          recordDedupSkip();
           return { deduplicated: true, sessionId: payload.sessionId };
         }
       }
@@ -119,6 +142,7 @@ export function registerObserveFunction(
           capturedAt: payload.timestamp,
         },
         ...(typeof payload.eventId === "string" ? { eventId: payload.eventId } : {}),
+        ...(isCaptureKey(payload.captureKey) ? { captureKey: payload.captureKey } : {}),
       };
 
       let extractedImage: string | undefined;
@@ -154,7 +178,9 @@ export function registerObserveFunction(
 
       return withKeyedLock(`obs:${payload.sessionId}`, async () => {
         const existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
-        if (durable && existing.some((o) => o?.id === obsId)) {
+        const stored = durable ? existing.find((o) => o?.id === obsId) : undefined;
+        if (stored) {
+          await restoreIndexEntries(stored);
           return { observationId: obsId, deduplicated: true, existing: true };
         }
         if (maxObservationsPerSession && maxObservationsPerSession > 0) {

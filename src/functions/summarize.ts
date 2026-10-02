@@ -21,6 +21,7 @@ import { isNoopProvider } from "../providers/noop.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { safeAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { scrubRecord } from "./privacy.js";
 
 // Per-chunk observation budget when a session is too large to fit in one
 // LLM call. Default ≈ 50k input tokens per chunk at ~110 tok/obs — fits
@@ -329,6 +330,7 @@ export function registerSummarizeFunction(
           }
           return { success: false, error: "parse_failed" };
         }
+        summary = scrubRecord(summary);
 
         const summaryForValidation = {
           title: summary.title,

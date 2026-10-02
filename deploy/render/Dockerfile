@@ -13,6 +13,8 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=iii-image /app/iii /usr/local/bin/iii
+RUN iii --version 2>&1 | grep -qF "${III_VERSION}" \
+ || { echo "the iiidev/iii:${III_VERSION} image does not contain iii ${III_VERSION}" >&2; exit 1; }
 
 # Install agentmemory into a dedicated prefix so the local package.json's
 # `overrides` field pins iii-sdk to the exact engine release in this image

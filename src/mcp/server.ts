@@ -10,7 +10,7 @@ import type {
   GraphEdge,
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
-import { timingSafeCompare } from "../auth.js";
+import { checkAuth } from "../triggers/api.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
 type McpResponse = {
@@ -46,19 +46,6 @@ export function registerMcpEndpoints(
   kv: StateKV,
   secret?: string,
 ): void {
-  function checkAuth(
-    req: HttpRequest,
-    sec: string | undefined,
-  ): McpResponse | null {
-    if (!sec) return null;
-    const auth =
-      req.headers?.["authorization"] || req.headers?.["Authorization"];
-    if (typeof auth !== "string" || !timingSafeCompare(auth, `Bearer ${sec}`)) {
-      return { status_code: 401, body: { error: "unauthorized" } };
-    }
-    return null;
-  }
-
   sdk.registerFunction("mcp::tools::list", 
     async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);

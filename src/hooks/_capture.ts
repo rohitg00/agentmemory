@@ -1,16 +1,21 @@
 import { spawn } from "node:child_process";
+import { resolveClientSecret } from "../secret-store.js";
 import { deriveEventId } from "../capture/event-id.js";
 import {
   appendSpool,
   drainInProgress,
   drainSpool,
+  parseSentMark,
+  reconcileSent,
+  retainSent,
   spoolHasRecords,
   type SendOutcome,
+  type SentMark,
   type SpoolRecord,
 } from "../capture/spool.js";
 
 export const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = resolveClientSecret(REST_URL);
 const DRAIN_CHILD_ENV = "AGENTMEMORY_CAPTURE_DRAIN_CHILD";
 const DRAIN_MAX_RECORDS = 500;
 const DRAIN_DEADLINE_MS = 20_000;
@@ -47,15 +52,27 @@ function classify(status: number): SendOutcome {
   return "rejected";
 }
 
-async function post(body: Record<string, unknown>, timeoutMs: number): Promise<SendOutcome> {
+async function post(body: Record<string, unknown>, timeoutMs: number): Promise<{ outcome: SendOutcome; mark: SentMark | null }> {
   const res = await fetch(`${REST_URL}/agentmemory/observe`, {
     method: "POST",
     headers: authHeaders(),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
-  await res.arrayBuffer().catch(() => undefined);
-  return classify(res.status);
+  const text = await res.text().catch(() => "");
+  const outcome = classify(res.status);
+  if (outcome !== "delivered" && outcome !== "duplicate") return { outcome, mark: null };
+  try {
+    return { outcome, mark: parseSentMark(JSON.parse(text)) };
+  } catch {
+    return { outcome, mark: null };
+  }
+}
+
+function keepUntilDurable(eventId: string, body: Record<string, unknown>, mark: SentMark): number {
+  const { requeued } = reconcileSent(REST_URL, mark.bootId);
+  retainSent(REST_URL, eventId, body, mark);
+  return requeued;
 }
 
 function startDrainChild(): void {
@@ -78,9 +95,10 @@ export async function captureObservation(body: ObserveBody, timeoutMs: number): 
   const payload = { ...body, eventId } as unknown as Record<string, unknown>;
   let reason: string;
   try {
-    const outcome = await post(payload, timeoutMs);
+    const { outcome, mark } = await post(payload, timeoutMs);
     if (outcome !== "retry") {
-      if (spoolHasRecords(REST_URL)) startDrainChild();
+      const requeued = mark ? keepUntilDurable(eventId, payload, mark) : 0;
+      if (requeued > 0 || spoolHasRecords(REST_URL)) startDrainChild();
       return outcome;
     }
     reason = "server-error";
@@ -98,7 +116,11 @@ export function isDrainChild(): boolean {
 export async function runDrainChild(): Promise<void> {
   await drainSpool(
     REST_URL,
-    (record: SpoolRecord) => post({ ...record.body, eventId: record.eventId }, DRAIN_REQUEST_TIMEOUT_MS),
+    async (record: SpoolRecord) => {
+      const { outcome, mark } = await post({ ...record.body, eventId: record.eventId }, DRAIN_REQUEST_TIMEOUT_MS);
+      if (mark) retainSent(REST_URL, record.eventId, record.body, mark);
+      return outcome;
+    },
     { maxRecords: DRAIN_MAX_RECORDS, deadlineMs: DRAIN_DEADLINE_MS },
   ).catch(() => undefined);
 }

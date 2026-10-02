@@ -1,10 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdtempSync, readFileSync, statSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   appendSpool,
   drainSpool,
+  parseSentMark,
+  reconcileSent,
+  retainSent,
   spoolPaths,
   spoolPolicy,
   spoolSummary,
@@ -187,5 +190,79 @@ describe("capture spool", () => {
     await drainSpool(URL, async (rec) => (seen.push(rec.eventId), "delivered"), { dir, policy });
     expect(seen).toEqual(["evc_jjjjjjjjjjjj"]);
     expect(existsSync(orphan)).toBe(false);
+  });
+});
+
+describe("capture spool retention until durable", () => {
+  let dir: string;
+  const policy: SpoolPolicy = { enabled: true, maxBytes: 64 * 1024, maxAgeMs: 3600_000, maxRecordBytes: 16 * 1024 };
+  const BOOT_A = "aaaaaaaaaaaaaaaaaaaaaaaa";
+  const BOOT_B = "bbbbbbbbbbbbbbbbbbbbbbbb";
+
+  beforeEach(() => {
+    dir = join(mkdtempSync(join(tmpdir(), "am-spool-")), "capture-spool");
+  });
+
+  function sentFiles(): string[] {
+    if (!existsSync(dir)) return [];
+    return readdirSync(dir).filter((f) => f.includes(".sent-"));
+  }
+
+  it("reads the durability mark from a response and ignores responses without one", () => {
+    expect(parseSentMark({ status: "accepted", bootId: BOOT_A, durableAfterMs: 3500 })).toEqual({ bootId: BOOT_A, durableAfterMs: 3500 });
+    expect(parseSentMark({ status: "accepted" })).toBeNull();
+    expect(parseSentMark({ bootId: "../etc", durableAfterMs: 1 })).toBeNull();
+    expect(parseSentMark({ bootId: BOOT_A, durableAfterMs: -1 })).toBeNull();
+    expect(parseSentMark({ bootId: BOOT_A, durableAfterMs: 1e12 })!.durableAfterMs).toBe(600_000);
+    expect(parseSentMark(null)).toBeNull();
+  });
+
+  it("keeps a sent record until the window passes, then releases it without sending", async () => {
+    const now = 1_700_000_000_000;
+    expect(retainSent(URL, "evc_keep00000001", body("kept"), { bootId: BOOT_A, durableAfterMs: 3500 }, { dir, policy, now })).toBe(true);
+    expect(sentFiles()).toHaveLength(1);
+    expect(spoolSummary(URL, { dir, policy })).toMatchObject({ records: 0, retained: 1 });
+    expect(reconcileSent(URL, BOOT_A, { dir, policy, now: now + 1000 })).toEqual({ released: 0, requeued: 0 });
+    expect(sentFiles()).toHaveLength(1);
+    expect(reconcileSent(URL, BOOT_A, { dir, policy, now: now + 5000 })).toEqual({ released: 1, requeued: 0 });
+    expect(sentFiles()).toHaveLength(0);
+    let calls = 0;
+    await drainSpool(URL, async () => (calls++, "delivered"), { dir, policy });
+    expect(calls).toBe(0);
+  });
+
+  it("re-sends a kept record with the same event id once the server restarted", async () => {
+    const now = Date.now();
+    retainSent(URL, "evc_restart00001", body("before-restart"), { bootId: BOOT_A, durableAfterMs: 60_000 }, { dir, policy, now });
+    expect(reconcileSent(URL, BOOT_B, { dir, policy, now })).toEqual({ released: 0, requeued: 1 });
+    expect(sentFiles()).toHaveLength(0);
+    const sent: SpoolRecord[] = [];
+    const result = await drainSpool(URL, async (rec) => (sent.push(rec), "duplicate"), { dir, policy });
+    expect(result).toMatchObject({ claimed: 1, duplicates: 1, remaining: 0 });
+    expect(sent.map((r) => r.eventId)).toEqual(["evc_restart00001"]);
+    expect((sent[0]!.body.data as Record<string, unknown>).tool_output).toBe("before-restart");
+  });
+
+  it("does nothing when the spool is disabled", () => {
+    const off = { ...policy, enabled: false };
+    expect(retainSent(URL, "evc_off000000001", body("off"), { bootId: BOOT_A, durableAfterMs: 0 }, { dir, policy: off })).toBe(false);
+    expect(reconcileSent(URL, BOOT_B, { dir, policy: off })).toEqual({ released: 0, requeued: 0 });
+    expect(existsSync(dir)).toBe(false);
+  });
+
+  it("keeps kept records inside the spool byte limit and gives way to unsent records", () => {
+    let retained = 0;
+    for (let i = 0; i < 400; i++) {
+      if (retainSent(URL, `evc_r${String(i).padStart(11, "0")}`, body(`r${i}`), { bootId: BOOT_A, durableAfterMs: 60_000 }, { dir, policy })) retained++;
+    }
+    expect(retained).toBeGreaterThan(0);
+    expect(retained).toBeLessThan(400);
+    const before = spoolSummary(URL, { dir, policy });
+    expect(before.retainedBytes).toBeLessThanOrEqual(policy.maxBytes);
+    expect(appendSpool(URL, "evc_unsent000001", body("unsent"), "unreachable", { dir, policy }).spooled).toBe(true);
+    const after = spoolSummary(URL, { dir, policy });
+    expect(after.records).toBe(1);
+    expect(after.retained).toBeLessThan(before.retained);
+    expect(after.bytes + after.retainedBytes).toBeLessThanOrEqual(policy.maxBytes);
   });
 });

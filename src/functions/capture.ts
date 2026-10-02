@@ -1,19 +1,35 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { IIIClient } from "iii-sdk";
-import type { HookPayload } from "../types.js";
+import type { CompressedObservation, HookPayload } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
-import { getEnvVar } from "../config.js";
+import { getEnvVar, getStateBackend } from "../config.js";
 import { logger } from "../logger.js";
 import { isValidEventId } from "../capture/event-id.js";
 import {
+  EVENT_SHARD_CHARS,
+  EVENT_SHARDS,
+  captureEventScope as eventScope,
+  type CompletedEvent,
+} from "../capture/event-record.js";
+import { restoreIndexEntries } from "./observe.js";
+import { scrubRecord } from "./privacy.js";
+import { runtimeConfigPath } from "../cli/engine-launch.js";
+import { captureDurableAfterMs, engineStateConfigPaths } from "../cli/engine-config.js";
+import {
   drainSpool,
+  reconcileSent,
+  retainSent,
   spoolDir,
   spoolPolicy,
   spoolSummary,
   type DrainResult,
   type SendOutcome,
+  type SentMark,
   type SpoolRecord,
   type SpoolSummary,
 } from "../capture/spool.js";
@@ -38,16 +54,8 @@ export interface InboxRecord {
   payload: HookPayload;
 }
 
-export interface CompletedEvent {
-  key: string;
-  eventId: string;
-  sessionId: string;
-  project: string;
-  observationId: string;
-  acceptedAt: string;
-  completedAt: string;
-  attempts: number;
-}
+export type { CompletedEvent } from "../capture/event-record.js";
+export { captureEventShard } from "../capture/event-record.js";
 
 export type CaptureResult =
   | { status: "accepted"; state: "completed"; eventId: string; observationId: string; attempts: number }
@@ -90,8 +98,6 @@ export interface CaptureStatus {
   spool: SpoolSummary[];
 }
 
-const EVENT_SHARD_CHARS = 2;
-const EVENT_SHARDS = 16 ** EVENT_SHARD_CHARS;
 const MAX_BACKOFF_MS = 15 * 60_000;
 const ERROR_MAX_CHARS = 500;
 
@@ -118,16 +124,13 @@ export function captureKey(project: string, sessionId: string, eventId: string):
   return `cap_${hash.slice(0, 40)}`;
 }
 
-export function captureEventShard(key: string): string {
-  return key.slice(4, 4 + EVENT_SHARD_CHARS);
-}
+const MIN_ID_TIME = Date.UTC(2020, 0, 1);
+const MAX_ID_TIME = Date.UTC(2100, 0, 1);
 
-function eventScope(key: string): string {
-  return KV.captureEvents(captureEventShard(key));
-}
-
-function observationIdFor(key: string, acceptedAt: number): string {
-  return `obs_${acceptedAt.toString(36)}_${key.slice(4, 16)}`;
+export function observationIdFor(key: string, timestamp: string | undefined, acceptedAt: number): string {
+  const at = typeof timestamp === "string" ? Date.parse(timestamp) : NaN;
+  const stamp = Number.isFinite(at) && at >= MIN_ID_TIME && at < MAX_ID_TIME ? at : acceptedAt;
+  return `obs_${stamp.toString(36)}_${key.slice(4, 16)}`;
 }
 
 function backoffMs(attempts: number, policy: CapturePolicy): number {
@@ -153,6 +156,23 @@ function splitTarget(target: string): { url: string; dir: string } {
   return { url: target.slice(0, at), dir: target.slice(at + 1) };
 }
 
+export function serverDurableAfterMs(): number {
+  let backend: "file" | "redis" = "file";
+  try {
+    backend = getStateBackend();
+  } catch {}
+  const configTexts: string[] = [];
+  const dataDir = getEnvVar("AGENTMEMORY_DATA_DIR");
+  if (dataDir) {
+    for (const path of engineStateConfigPaths(join(homedir(), ".agentmemory"), runtimeConfigPath(dataDir))) {
+      try {
+        configTexts.push(readFileSync(path, "utf-8"));
+      } catch {}
+    }
+  }
+  return captureDurableAfterMs(backend, configTexts);
+}
+
 let activeController: CaptureController | null = null;
 
 export function getCaptureController(): CaptureController | null {
@@ -164,6 +184,7 @@ export interface CaptureController {
   prune(): Promise<number>;
   drainLocalSpool(): Promise<DrainResult[]>;
   status(): Promise<CaptureStatus>;
+  durability(): SentMark;
   start(): void;
   stop(): void;
 }
@@ -171,9 +192,13 @@ export interface CaptureController {
 export function registerCaptureFunctions(
   sdk: IIIClient,
   kv: StateKV,
-  options: { restPort?: number } = {},
+  options: { restPort?: number; durableAfterMs?: number } = {},
 ): CaptureController {
   const policy = capturePolicy();
+  const mark: SentMark = {
+    bootId: randomBytes(12).toString("hex"),
+    durableAfterMs: options.durableAfterMs ?? serverDurableAfterMs(),
+  };
   const counters: CaptureStatus["sinceStart"] = {
     accepted: 0,
     completed: 0,
@@ -214,6 +239,15 @@ export function registerCaptureFunctions(
     counters.completed++;
   }
 
+  async function storedObservation(done: CompletedEvent): Promise<CompressedObservation | null | undefined> {
+    if (!done.observationId) return undefined;
+    try {
+      return (await kv.get<CompressedObservation>(KV.observations(done.sessionId), done.observationId)) ?? null;
+    } catch {
+      return undefined;
+    }
+  }
+
   async function attempt(rec: InboxRecord): Promise<CaptureResult> {
     rec.attempts++;
     type ObserveResult = { observationId?: string; deduplicated?: boolean; success?: boolean; error?: string };
@@ -224,7 +258,7 @@ export function registerCaptureFunctions(
         function_id: "mem::observe",
         payload: {
           ...rec.payload,
-          ...(rec.eventSource === "client" ? { eventId: rec.eventId } : {}),
+          ...(rec.eventSource === "client" ? { eventId: rec.eventId, captureKey: rec.key } : {}),
           observationId: rec.observationId,
         },
       })) as ObserveResult | null;
@@ -266,11 +300,25 @@ export function registerCaptureFunctions(
     const eventId = clientEventId ?? generateId("evs");
     const key = captureKey(payload.project, payload.sessionId, eventId);
     return withKeyedLock(`capture:${key}`, async () => {
+      let storedObservationId: string | undefined;
       if (clientEventId) {
         const done = await kv.get<CompletedEvent>(eventScope(key), key);
-        if (done) {
+        if (done?.state === "deleted") {
           counters.duplicates++;
           return { status: "duplicate", state: "completed", eventId, observationId: done.observationId, deduplicated: true };
+        }
+        if (done) {
+          const stored = await storedObservation(done);
+          if (stored !== null) {
+            if (stored) await restoreIndexEntries(stored).catch(() => {});
+            counters.duplicates++;
+            return { status: "duplicate", state: "completed", eventId, observationId: done.observationId, deduplicated: true };
+          }
+          storedObservationId = done.observationId;
+          logger.warn("capture event was marked stored but its observation is missing, storing it again", {
+            eventId,
+            observationId: done.observationId,
+          });
         }
       }
       const queued = await kv.get<InboxRecord>(KV.captureInbox, key);
@@ -283,7 +331,7 @@ export function registerCaptureFunctions(
         return { status: "rejected", eventId, error: `capture inbox is full (${policy.inboxMax} unprocessed events)`, retryable: true };
       }
       const acceptedAt = Date.now();
-      const { eventId: _ignoredEventId, observationId: _ignoredObservationId, ...cleanPayload } = payload;
+      const { eventId: _ignoredEventId, observationId: _ignoredObservationId, captureKey: _ignoredCaptureKey, ...cleanPayload } = payload;
       const rec: InboxRecord = {
         key,
         eventId,
@@ -291,12 +339,12 @@ export function registerCaptureFunctions(
         sessionId: payload.sessionId,
         project: payload.project,
         hookType: payload.hookType,
-        observationId: observationIdFor(key, acceptedAt),
+        observationId: storedObservationId ?? observationIdFor(key, payload.timestamp, acceptedAt),
         status: "pending",
         attempts: 0,
         acceptedAt: new Date(acceptedAt).toISOString(),
         updatedAt: new Date(acceptedAt).toISOString(),
-        payload: cleanPayload,
+        payload: { ...cleanPayload, data: scrubRecord(cleanPayload.data) },
       };
       await kv.set(KV.captureInbox, key, rec);
       if (inboxSize !== null) inboxSize++;
@@ -311,6 +359,12 @@ export function registerCaptureFunctions(
       if (!rec) return "gone";
       if (rec.status === "dead" && !force) return "waiting";
       if (!force && rec.status === "retrying" && rec.nextAttemptAt && Date.parse(rec.nextAttemptAt) > Date.now()) return "waiting";
+      if (rec.eventSource === "client" && (await kv.get<CompletedEvent>(eventScope(key), key))?.state === "deleted") {
+        await kv.delete(KV.captureInbox, key);
+        if (inboxSize !== null) inboxSize = Math.max(0, inboxSize - 1);
+        counters.duplicates++;
+        return "gone";
+      }
       if (force) rec.attempts = 0;
       const outcome = await attempt({ ...rec });
       if (outcome.status === "accepted" && outcome.state === "completed") return "recovered";
@@ -361,7 +415,7 @@ export function registerCaptureFunctions(
       const sorted = events.filter(Boolean).sort((a, b) => b.completedAt.localeCompare(a.completedAt));
       for (let j = 0; j < sorted.length; j++) {
         const ev = sorted[j]!;
-        if (j >= perShard || Date.parse(ev.completedAt) < cutoff) {
+        if (j >= perShard || Date.parse(ev.deletedAt ?? ev.completedAt) < cutoff) {
           await kv.delete(scope, ev.key).catch(() => {});
           removed++;
         }
@@ -382,20 +436,37 @@ export function registerCaptureFunctions(
     return removed;
   }
 
-  async function drainLocalSpool(): Promise<DrainResult[]> {
-    const results: DrainResult[] = [];
-    const send = async (record: SpoolRecord): Promise<SendOutcome> => {
+  function spoolSender(url: string, dir: string) {
+    return async (record: SpoolRecord): Promise<SendOutcome> => {
       const body = record.body as Record<string, unknown>;
       const payload = spoolPayload(body);
       if (!payload) return "rejected";
       const outcome = await capture({ payload, eventId: record.eventId });
-      if (outcome.status === "duplicate") return "duplicate";
-      if (outcome.status === "accepted") return "delivered";
-      return outcome.retryable ? "retry" : "rejected";
+      if (outcome.status === "rejected") return outcome.retryable ? "retry" : "rejected";
+      retainSent(url, record.eventId, body, mark, { dir });
+      return outcome.status === "duplicate" ? "duplicate" : "delivered";
     };
+  }
+
+  async function settleRetained(): Promise<number> {
+    let requeued = 0;
     for (const target of spoolTargets) {
       const { url, dir } = splitTarget(target);
-      results.push(await drainSpool(url, send, { dir, policy: spoolPolicy() }));
+      const settled = reconcileSent(url, mark.bootId, { dir });
+      if (settled.requeued > 0) {
+        await drainSpool(url, spoolSender(url, dir), { dir, policy: spoolPolicy() });
+        requeued += settled.requeued;
+      }
+    }
+    return requeued;
+  }
+
+  async function drainLocalSpool(): Promise<DrainResult[]> {
+    const results: DrainResult[] = [];
+    for (const target of spoolTargets) {
+      const { url, dir } = splitTarget(target);
+      reconcileSent(url, mark.bootId, { dir });
+      results.push(await drainSpool(url, spoolSender(url, dir), { dir, policy: spoolPolicy() }));
     }
     const total = results.reduce<DrainResult>(
       (acc, r) => ({
@@ -491,10 +562,12 @@ export function registerCaptureFunctions(
     prune,
     drainLocalSpool,
     status,
+    durability: () => ({ ...mark }),
     start() {
       if (timers.length) return;
       const sweepTimer = setInterval(() => {
         void sweep().catch(() => {});
+        void settleRetained().catch(() => {});
       }, policy.retryIntervalMs);
       sweepTimer.unref();
       const pruneTimer = setInterval(() => {

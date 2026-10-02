@@ -107,5 +107,6 @@ export function buildSyntheticCompression(
   if (raw.imageData) result.imageData = raw.imageData;
   if (raw.agentId) result.agentId = raw.agentId;
   if (raw.origin) result.origin = raw.origin;
+  if (raw.captureKey) result.captureKey = raw.captureKey;
   return result;
 }

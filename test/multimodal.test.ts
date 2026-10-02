@@ -383,3 +383,46 @@ describe("Image Store", () => {
     expect(result.bytesWritten).toBe(0);
   });
 });
+
+describe("mem::compress image descriptions", () => {
+  const leakyUrl = `postgres://${["deploy", "hunter2pass"].join(":")}@db.internal:5432/app`;
+
+  async function compressImage(provider: MemoryProvider): Promise<CompressedObservation> {
+    let handler: any = null;
+    const sdk = { ...mockSdk, registerFunction: vi.fn((id, cb) => { if (id === "mem::compress") handler = cb; }) };
+    const store = mockKV() as any;
+    registerCompressFunction(sdk, store, provider);
+    const raw = {
+      id: "obs_img_scrub",
+      sessionId: "ses_img_scrub",
+      timestamp: new Date().toISOString(),
+      hookType: "post_tool_use",
+      toolName: "screenshot",
+      modality: "image",
+      imageData: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+    } as unknown as RawObservation;
+    const result = await handler({ observationId: raw.id, sessionId: raw.sessionId, raw });
+    expect(result.success).toBe(true);
+    return (await store.get("mem:obs:ses_img_scrub", "obs_img_scrub")) as CompressedObservation;
+  }
+
+  it("scrubs credentials from the vision description before storing it", async () => {
+    const stored = await compressImage({
+      name: "mock-vision",
+      compress: async () => VALID_COMPRESS_XML,
+      summarize: async () => "",
+      describeImage: async () => `terminal shows ${leakyUrl}`,
+    });
+    expect(stored.imageDescription).toBe("terminal shows postgres://[REDACTED_SECRET]@db.internal:5432/app");
+    expect(JSON.stringify(stored)).not.toContain("hunter2pass");
+  });
+
+  it("omits imageDescription when no description was produced", async () => {
+    const stored = await compressImage({
+      name: "mock-text",
+      compress: async () => VALID_COMPRESS_XML,
+      summarize: async () => "",
+    });
+    expect(stored).not.toHaveProperty("imageDescription");
+  });
+});
