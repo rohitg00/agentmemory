@@ -645,7 +645,7 @@ const results = [];
 
 async function scenario(name, fn) {
   const meta = SCENARIOS.find((s) => s[0] === name);
-  if (opts.only && !opts.only.has(name)) {
+  if (opts.only && name !== "install" && !opts.only.has(name)) {
     results.push({ name, title: meta[1], issue: meta[2], status: "skipped" });
     return;
   }
