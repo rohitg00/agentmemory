@@ -912,7 +912,8 @@ async function main() {
     const st = await poll("the first vector checkpoint", async () => {
       const s = await instB.status();
       const p = s.indexPersistence;
-      return (s.index?.vectorDocuments ?? 0) >= count && p?.vector?.lastSavedAt && !p.firstCheckpointPending && p.pendingChanges === 0 ? s : null;
+      const durable = p && !p.saving && (p.pendingChanges === 0 || (p.pendingLog ?? 0) >= p.pendingChanges);
+      return (s.index?.vectorDocuments ?? 0) >= count && p?.vector?.lastSavedAt && !p.firstCheckpointPending && durable ? s : null;
     }, { timeoutMs: 60_000, intervalMs: 500 });
     d.firstCheckpointWaitMs = Date.now() - t0;
     d.saveIntervalMs = st.indexPersistence.saveIntervalMs;
