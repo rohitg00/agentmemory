@@ -29,3 +29,12 @@ integrations/hermes/__pycache__/
 eval/reports/
 # LongMemEval download is 278MB; fetched on demand
 eval/data/longmemeval/
+
+# USB portable kit runtime (scripts/config are tracked)
+agentmemory-portable/portable/
+agentmemory-portable/downloads/
+agentmemory-portable/home/
+agentmemory-portable/data/*
+!agentmemory-portable/data/README.txt
+agentmemory-portable/repo/
+agentmemory-portable/out/

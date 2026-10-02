@@ -1,0 +1,12 @@
+# Runtime (do not push)
+out/
+portable/node/
+portable/npm-cache/
+portable/iii.exe
+downloads/
+data/*
+!data/README.txt
+home/
+repo/
+
+*.log
