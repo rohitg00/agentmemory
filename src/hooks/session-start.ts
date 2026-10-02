@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveClientSecret } from "../secret-store.js";
 import { resolveProject, hookCwd } from "./_project.js";
 
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
@@ -19,7 +20,7 @@ function isSdkChildContext(payload: unknown): boolean {
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = resolveClientSecret(REST_URL);
 
 // When the server is unreachable a 5s timeout multiplies hard under
 // concurrent fan-out (Slack bots, multi-agent harnesses) and becomes a

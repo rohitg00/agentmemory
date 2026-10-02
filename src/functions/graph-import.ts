@@ -1,5 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
+import { confinePath } from "./path-guard.js";
 import type { IIIClient } from "iii-sdk";
 import type { GraphEdge, GraphEdgeType, GraphNode, GraphNodeType } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
@@ -198,7 +199,15 @@ export function registerGraphImportFunction(sdk: IIIClient, kv: StateKV): void {
     async (data?: { path?: string; cwd?: string }): Promise<GraphifyImportResult> => {
       const explicitPath = typeof data?.path === "string" ? data.path : undefined;
       const cwd = typeof data?.cwd === "string" ? data.cwd : process.cwd();
-      const path = explicitPath ?? join(cwd, "graphify-out", "graph.json");
+      const requested = explicitPath ?? join(cwd, "graphify-out", "graph.json");
+      if (!requested.toLowerCase().endsWith(".json")) {
+        return { success: false, error: "path must point to a .json file", path: requested };
+      }
+      const confined = await confinePath(requested);
+      if (!confined.ok) {
+        return { success: false, error: confined.error, path: requested };
+      }
+      const path = confined.path;
 
       try {
         let size: number;

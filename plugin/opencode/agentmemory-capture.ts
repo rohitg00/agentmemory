@@ -1,6 +1,8 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { execFileSync } from "node:child_process";
-import { basename } from "node:path";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 
 const API = process.env.AGENTMEMORY_URL || "http://localhost:3111";
 // OpenCode reports tool names in lowercase ("read", "edit", ...); matching is
@@ -11,7 +13,55 @@ const FILE_KEYS = ["filePath", "file_path", "path", "file", "pattern"];
 const MAX_STASHED_FILES = 20;
 
 const DEBUG = process.env.OPENCODE_AGENTMEMORY_DEBUG === "1";
-const SECRET = process.env.AGENTMEMORY_SECRET || "";
+function usableSecret(value: unknown): string {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed || (trimmed.startsWith("${") && trimmed.endsWith("}"))) return "";
+  return trimmed;
+}
+
+function readAgentmemoryFile(name: string): string {
+  try {
+    return readFileSync(join(homedir(), ".agentmemory", name), "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function envFileSecret(): string {
+  let found = "";
+  for (const line of readAgentmemoryFile(".env").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== "AGENTMEMORY_SECRET") continue;
+    let value = trimmed.slice(eq + 1).trim();
+    const quote = value[0];
+    const close = quote === '"' || quote === "'" ? value.indexOf(quote, 1) : -1;
+    if (close > 0) value = value.slice(1, close);
+    else if (value.includes(" #")) value = value.slice(0, value.indexOf(" #"));
+    found = usableSecret(value);
+  }
+  return found;
+}
+
+function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
+  } catch {
+    return false;
+  }
+}
+
+function resolveSecret(url: string, explicit: string | undefined): string {
+  const configured = usableSecret(explicit);
+  if (configured) return configured;
+  if (!isLoopbackUrl(url)) return "";
+  return envFileSecret() || usableSecret(readAgentmemoryFile("secret"));
+}
+
+const SECRET = resolveSecret(API, process.env.AGENTMEMORY_SECRET);
 
 function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };

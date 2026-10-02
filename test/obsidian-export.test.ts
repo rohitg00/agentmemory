@@ -8,11 +8,33 @@ const writtenFiles = new Map<string, string>();
 const createdDirs = new Set<string>();
 
 vi.mock("node:fs/promises", () => ({
+  realpath: vi.fn(async (path: string) => path),
   mkdir: vi.fn(async (dir: string) => {
     createdDirs.add(dir);
   }),
   writeFile: vi.fn(async (path: string, content: string) => {
     writtenFiles.set(path, content);
+  }),
+  lstat: vi.fn(async (path: string) => {
+    if (!writtenFiles.has(path)) {
+      throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    }
+    return { isSymbolicLink: () => false, mode: 0o644 };
+  }),
+  open: vi.fn(async (path: string) => ({
+    writeFile: vi.fn(async (content: string) => {
+      writtenFiles.set(path, content);
+    }),
+    close: vi.fn(async () => {}),
+  })),
+  rename: vi.fn(async (from: string, to: string) => {
+    const value = writtenFiles.get(from);
+    if (value === undefined) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    writtenFiles.set(to, value);
+    writtenFiles.delete(from);
+  }),
+  rm: vi.fn(async (path: string) => {
+    writtenFiles.delete(path);
   }),
 }));
 

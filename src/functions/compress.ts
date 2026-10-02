@@ -25,6 +25,7 @@ import { logger } from "../logger.js";
 import { createObservationSource, withoutObservationSource } from "./observation-source.js";
 import { budgetLiveObservationSource } from "./observation-source-budget.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { scrubRecord, stripPrivateData } from "./privacy.js";
 
 const VALID_TYPES = new Set<string>([
   "file_read",
@@ -166,11 +167,11 @@ export function registerCompressFunction(
           id: data.observationId,
           sessionId: data.sessionId,
           timestamp: data.raw.timestamp,
-          ...parsed,
+          ...scrubRecord(parsed),
           confidence: qualityScore / 100,
           source: createObservationSource(data.raw),
           ...(hasImage ? { modality: data.raw.modality } : {}),
-          ...(imageDescription ? { imageDescription } : {}),
+          ...(imageDescription ? { imageDescription: stripPrivateData(imageDescription) } : {}),
           ...(data.raw.imageData ? { imageRef: data.raw.imageData } : {}),
           ...(data.raw.agentId ? { agentId: data.raw.agentId } : {}),
           ...(data.raw.origin ? { origin: data.raw.origin } : {}),

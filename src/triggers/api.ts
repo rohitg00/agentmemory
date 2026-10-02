@@ -36,7 +36,8 @@ import {
   parseListQuery,
   sortByKeyDesc,
 } from "../state/list-query.js";
-import { timingSafeCompare } from "../auth.js";
+import { checkRequestGuard, configuredAllowedOrigins, timingSafeCompare } from "../auth.js";
+import { stripPrivateData } from "../functions/privacy.js";
 import { isSlotsEnabled, isReflectEnabled } from "../functions/slots.js";
 import { renderViewerDocument } from "../viewer/document.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
@@ -74,10 +75,29 @@ function parseOptionalInt(raw: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
+let restOriginPorts: () => Array<number | null | undefined> = () => [];
+
+export function setRestOriginPorts(resolve: () => Array<number | null | undefined>): void {
+  restOriginPorts = resolve;
+}
+
+export function checkRestRequest(
+  method: string | undefined,
+  headers: Record<string, string | string[] | undefined> | undefined,
+): Response | null {
+  return checkRequestGuard({
+    method,
+    headers,
+    allowedOrigins: configuredAllowedOrigins(restOriginPorts()),
+  });
+}
+
 export function checkAuth(
   req: HttpRequest,
   secret: string | undefined,
 ): Response | null {
+  const rejected = checkRestRequest(req.method, req.headers);
+  if (rejected) return rejected;
   if (!secret) return null;
   const auth = req.headers?.["authorization"] || req.headers?.["Authorization"];
   if (
@@ -476,10 +496,12 @@ export function registerApiTriggers(
   sdk.registerFunction(
     "middleware::api-auth",
     async (input: {
-      request?: { headers?: Record<string, string | undefined> };
+      request?: { method?: string; headers?: Record<string, string | undefined> };
     }) => {
-      if (!secret) return { action: "continue" };
       const headers = input?.request?.headers || {};
+      const rejected = checkRestRequest(input?.request?.method, headers);
+      if (rejected) return { action: "respond", response: rejected };
+      if (!secret) return { action: "continue" };
       const auth = headers["authorization"] || headers["Authorization"];
       if (
         typeof auth !== "string" ||
@@ -499,7 +521,9 @@ export function registerApiTriggers(
   // target from the server instead of port arithmetic, which broke
   // whenever the viewer bound a fallback port. Config is boot-static,
   // so read it once instead of rebuilding the merged env per request.
-  const bootStreamsPort = loadConfig().streamsPort;
+  const bootConfig = loadConfig();
+  const bootStreamsPort = bootConfig.streamsPort;
+  setRestOriginPorts(() => [bootConfig.restPort, bootConfig.viewerPort, getBoundViewerPort()]);
   const instanceInfo = () => ({
     service: "agentmemory",
     viewerPort: getBoundViewerPort(),
@@ -926,7 +950,7 @@ export function registerApiTriggers(
           },
         };
       }
-      const title = typeof body.title === "string" ? body.title.trim() : undefined;
+      const title = typeof body.title === "string" ? stripPrivateData(body.title.trim()) : undefined;
       // allow session/start to override AGENT_ID from request body
       // (multi-agent runtimes that route many roles through one server
       // process). Falls back to the AGENT_ID env on the server.
@@ -1079,7 +1103,8 @@ export function registerApiTriggers(
       const sessionId = asNonEmptyString(body.sessionId) ?? undefined;
       const branch = asNonEmptyString(body.branch) ?? undefined;
       const repo = asNonEmptyString(body.repo) ?? undefined;
-      const message = asNonEmptyString(body.message) ?? undefined;
+      const rawMessage = asNonEmptyString(body.message);
+      const message = rawMessage ? stripPrivateData(rawMessage) : undefined;
       const author = asNonEmptyString(body.author) ?? undefined;
       const authoredAt = asNonEmptyString(body.authoredAt) ?? undefined;
       const files = Array.isArray(body.files)
@@ -3512,7 +3537,13 @@ export function registerApiTriggers(
   sdk.registerFunction("api::viewer", 
     async (req: HttpRequest): Promise<Response> => {
       const denied = checkAuth(req, secret);
-      if (denied) return denied;
+      if (denied) {
+        const viewerUrl = statusViewerUrl(req, getBoundViewerPort());
+        if (denied.status_code === 401 && viewerUrl.startsWith("http")) {
+          return { status_code: 302, headers: { Location: viewerUrl.replace(/#health$/, "") }, body: "" };
+        }
+        return denied;
+      }
       const rendered = renderViewerDocument();
       if (rendered.found) {
         return {

@@ -1,3 +1,4 @@
+import { resolveClientSecret } from "../secret-store.js";
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 const CALL_TIMEOUT_MS = 15_000;
@@ -62,7 +63,7 @@ function baseUrl(): string {
 }
 
 function authHeader(): Record<string, string> {
-  const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
+  const secret = resolveClientSecret(baseUrl());
   return secret ? { authorization: `Bearer ${secret}` } : {};
 }
 

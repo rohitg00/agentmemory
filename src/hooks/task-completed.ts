@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveClientSecret } from "../secret-store.js";
 import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
@@ -8,7 +9,7 @@ function isSdkChildContext(payload: unknown): boolean {
 }
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = resolveClientSecret(REST_URL);
 
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };

@@ -197,6 +197,7 @@ describe("mem::replay::import-jsonl self-heals the project session index", () =>
 
   beforeEach(() => {
     tmpRoot = mkdtempSync(join(tmpdir(), "replay-session-index-"));
+    process.env.AGENTMEMORY_IMPORT_ROOT = tmpRoot;
   });
 
   it("adds a newly imported session to its project's index", async () => {

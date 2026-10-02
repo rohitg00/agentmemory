@@ -220,7 +220,7 @@ describe("mem::context — lessons auto-injection (#457)", () => {
     });
 
     expect(result.context).toContain(
-      "use TaskCreate for >5-file work — when working on multi-file refactors",
+      "use TaskCreate for &gt;5-file work — when working on multi-file refactors",
     );
   });
 

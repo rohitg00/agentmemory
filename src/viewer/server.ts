@@ -8,7 +8,12 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderViewerDocument } from "./document.js";
-import { timingSafeCompare } from "../auth.js";
+import {
+  checkRequestGuard,
+  configuredAllowedOrigins,
+  parseOriginList,
+  timingSafeCompare,
+} from "../auth.js";
 
 // Self-host the viewer favicon at /favicon.svg instead of an inline
 // data: URI so the viewer CSP can stay tight at `img-src 'self'`.
@@ -102,6 +107,12 @@ export function buildAllowedHosts(
   }
   for (const h of readAllowedHostsOverride()) hosts.add(h);
   return hosts;
+}
+
+export function buildAllowedOrigins(listenPort: number, restPort: number): Set<string> {
+  const origins = configuredAllowedOrigins([listenPort, restPort]);
+  for (const origin of parseOriginList(ALLOWED_ORIGINS.join(","))) origins.add(origin);
+  return origins;
 }
 
 export function isHostAllowed(
@@ -232,19 +243,32 @@ export function startViewerServer(
   // or the EADDRINUSE retry loop below may bump us to a different port,
   // so we read the actual bound port from server.address() on first hit.
   let allowedHosts: Set<string> | null = null;
+  let allowedOrigins: Set<string> | null = null;
 
   const server = createServer(async (req, res) => {
-    if (!allowedHosts) {
+    if (!allowedHosts || !allowedOrigins) {
       const addr = server.address();
       const actualPort =
         addr && typeof addr === "object" && "port" in addr
           ? (addr.port as number)
           : port;
       allowedHosts = buildAllowedHosts(ALLOWED_ORIGINS, actualPort, host);
+      allowedOrigins = buildAllowedOrigins(actualPort, resolvedRestPort);
     }
     if (!isHostAllowed(req.headers.host, allowedHosts)) {
       res.writeHead(403, { "Content-Type": "text/plain" });
       res.end("forbidden host");
+      return;
+    }
+
+    const rejected = checkRequestGuard({
+      method: req.method,
+      headers: req.headers,
+      allowedOrigins,
+      sameOriginHost: req.headers.host,
+    });
+    if (rejected) {
+      json(res, rejected.status_code, rejected.body, req);
       return;
     }
 

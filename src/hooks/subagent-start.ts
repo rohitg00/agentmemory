@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveClientSecret } from "../secret-store.js";
 import { resolveProject, hookCwd } from "./_project.js";
 
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
@@ -10,7 +11,7 @@ function isSdkChildContext(payload: unknown): boolean {
 }
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = resolveClientSecret(REST_URL);
 
 // Passive telemetry only — nothing reads the response, so the previous
 // `await` was pure latency. Tightened from 2000ms to a defensive cap so a
