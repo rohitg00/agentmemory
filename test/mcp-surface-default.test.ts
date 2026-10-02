@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import {
   getAllTools,
   getVisibleTools,
+  SLOT_TOOL_NAMES,
 } from "../src/mcp/tools-registry.js";
 
 // plugin manifests and README advertise 54 MCP tools. The old
@@ -12,12 +13,16 @@ import {
 // AGENTMEMORY_TOOLS=core.
 describe("MCP tool surface default (#553)", () => {
   const ORIG = process.env["AGENTMEMORY_TOOLS"];
+  const ORIG_SLOTS = process.env["AGENTMEMORY_SLOTS"];
   beforeEach(() => {
     delete process.env["AGENTMEMORY_TOOLS"];
+    process.env["AGENTMEMORY_SLOTS"] = "true";
   });
   afterEach(() => {
     if (ORIG === undefined) delete process.env["AGENTMEMORY_TOOLS"];
     else process.env["AGENTMEMORY_TOOLS"] = ORIG;
+    if (ORIG_SLOTS === undefined) delete process.env["AGENTMEMORY_SLOTS"];
+    else process.env["AGENTMEMORY_SLOTS"] = ORIG_SLOTS;
   });
 
   it("default returns the full 54-tool surface, matching plugin advertising", () => {
@@ -30,6 +35,16 @@ describe("MCP tool surface default (#553)", () => {
   it("AGENTMEMORY_TOOLS=all returns the same full set", () => {
     process.env["AGENTMEMORY_TOOLS"] = "all";
     expect(getVisibleTools().length).toBe(getAllTools().length);
+  });
+
+  it("slot tools are hidden when AGENTMEMORY_SLOTS is disabled", () => {
+    process.env["AGENTMEMORY_SLOTS"] = "false";
+    const names = new Set(getVisibleTools().map((t) => t.name));
+    expect(SLOT_TOOL_NAMES.size).toBe(6);
+    for (const slotTool of SLOT_TOOL_NAMES) {
+      expect(names.has(slotTool)).toBe(false);
+    }
+    expect(getVisibleTools().length).toBe(getAllTools().length - SLOT_TOOL_NAMES.size);
   });
 
   it("AGENTMEMORY_TOOLS=core returns the 8 essential tools", () => {
