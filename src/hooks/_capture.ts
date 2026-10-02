@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { resolveClientSecret } from "../secret-store.js";
-import { deriveEventId } from "../capture/event-id.js";
+import { deriveEventId, hasHostIdentity } from "../capture/event-id.js";
 import {
   appendSpool,
   drainInProgress,
@@ -39,10 +39,16 @@ export function authHeaders(): Record<string, string> {
   return h;
 }
 
-export function withEventId(body: ObserveBody, host: Record<string, unknown>, content?: unknown): ObserveBody {
+export function withEventId(
+  body: ObserveBody,
+  host: Record<string, unknown>,
+  content?: unknown,
+  options: { stable?: boolean } = {},
+): ObserveBody {
+  const source = options.stable || hasHostIdentity(host) ? host : { ...host, timestamp: body.timestamp };
   return {
     ...body,
-    eventId: deriveEventId(body.hookType, body.sessionId, host, content ?? body.data),
+    eventId: deriveEventId(body.hookType, body.sessionId, source, content ?? body.data),
   };
 }
 

@@ -73,6 +73,7 @@ async function main() {
             { hookType: "prompt_submit", sessionId, project, cwd, timestamp, data: { prompt } },
             {},
             { source: "transcript", transcript: data.transcript_path, index, prompt },
+            { stable: true },
           ),
           3000,
         ),

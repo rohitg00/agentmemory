@@ -446,6 +446,14 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
 
+  if (input.capture === null) {
+    problems.push({
+      level: "info",
+      code: "capture-check-unavailable",
+      message: "The capture inbox did not answer in time, so capture was not checked.",
+      fix: "The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.",
+    });
+  }
   problems.push(...captureProblems(input.capture ?? null, input.now, input.ports.rest));
 
   if (input.stateStore && !input.stateStore.ok) {
@@ -505,6 +513,8 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
 
 const RECENT_DROP_MS = 24 * 60 * 60 * 1000;
 
+export const CURL_AUTH_HEADER = '-H "Authorization: Bearer ${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret)}"';
+
 export function captureRestBase(restPort: number | null): string {
   return `http://localhost:${restPort ?? 3111}/agentmemory`;
 }
@@ -519,7 +529,7 @@ function captureProblems(capture: CaptureStatus | null, now: Date, restPort: num
       level: "warn",
       code: "capture-dead-letters",
       message: `${plural(inbox.dead, "captured observation")} could not be stored after ${plural(capture.policy.maxAttempts, "attempt")} and ${inbox.dead === 1 ? "is parked as a dead letter" : "are parked as dead letters"}${inbox.lastError ? `: ${inbox.lastError}` : "."}`,
-      fix: `List them with curl -s '${base}/capture?status=dead'. After fixing the cause, retry them with curl -X POST ${base}/capture/retry -H "Content-Type: application/json" -d '{"all":true}'.`,
+      fix: `List them with curl -s ${CURL_AUTH_HEADER} '${base}/capture?status=dead'. After fixing the cause, retry them with curl -X POST ${base}/capture/retry ${CURL_AUTH_HEADER} -H "Content-Type: application/json" -d '{"all":true}'.`,
     });
   }
   if (inbox && inbox.retrying + inbox.pending > 0) {
@@ -536,20 +546,25 @@ function captureProblems(capture: CaptureStatus | null, now: Date, restPort: num
       level: "info",
       code: "capture-spool-waiting",
       message: `${plural(waiting, "observation")} captured while the server was unreachable ${waiting === 1 ? "is" : "are"} waiting in the local capture spool.`,
-      fix: `They are sent on the next hook call and at every start. To send them now: npx @agentmemory/agentmemory capture --drain, or curl -X POST ${base}/capture/drain.`,
+      fix: `They are sent on the next hook call and at every start. To send them now: npx @agentmemory/agentmemory capture --drain, or curl -X POST ${base}/capture/drain ${CURL_AUTH_HEADER}.`,
     });
   }
+  let dropped = 0;
+  let latest: { at: number; reason: string; maxBytes: number; maxAgeHours: number } | null = null;
   for (const spool of capture.spool) {
+    dropped += spool.stats.dropped;
     const lastDrop = spool.stats.lastDropAt ? Date.parse(spool.stats.lastDropAt) : NaN;
-    if (Number.isFinite(lastDrop) && now.getTime() - lastDrop < RECENT_DROP_MS) {
-      problems.push({
-        level: "warn",
-        code: "capture-spool-dropped",
-        message: `The local capture spool dropped ${plural(spool.stats.dropped, "observation")} in total (latest reason: ${spool.stats.lastDropReason ?? "unknown"}), so those tool calls are not in memory.`,
-        fix: `The spool holds at most ${Math.round(spool.maxBytes / 1024)} KiB for ${spool.maxAgeHours} hours. Raise AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES, keep agentmemory running while agents work, or check that AGENTMEMORY_CAPTURE_SPOOL is not false.`,
-      });
-      break;
+    if (Number.isFinite(lastDrop) && (!latest || lastDrop > latest.at)) {
+      latest = { at: lastDrop, reason: spool.stats.lastDropReason ?? "unknown", maxBytes: spool.maxBytes, maxAgeHours: spool.maxAgeHours };
     }
+  }
+  if (latest && now.getTime() - latest.at < RECENT_DROP_MS) {
+    problems.push({
+      level: "warn",
+      code: "capture-spool-dropped",
+      message: `The local capture spool dropped ${plural(dropped, "observation")} in total (latest reason: ${latest.reason}), so those tool calls are not in memory.`,
+      fix: `The spool holds at most ${Math.round(latest.maxBytes / 1024)} KiB for ${latest.maxAgeHours} hours. Raise AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES, keep agentmemory running while agents work, or check that AGENTMEMORY_CAPTURE_SPOOL is not false.`,
+    });
   }
   return problems;
 }
@@ -803,7 +818,7 @@ a{color:inherit}
 <header><h1>agentmemory</h1><span class="badge ${report.status}">${report.status}</span>
 <span class="meta">v${escapeHtml(report.service.version)} · engine ${escapeHtml(report.service.engineVersion)} · checked ${escapeHtml(report.checkedAt)} · <a href="?format=json">json</a></span></header>
 <p class="lead ${report.status}">${escapeHtml(report.headline)}</p>
-<p class="live">A snapshot from when this page loaded. <a href="${escapeHtml(viewerUrl)}">Open the live version in the viewer &rarr;</a> From a terminal: <code>curl -s ${ports.rest ? `http://localhost:${escapeHtml(ports.rest)}` : ""}/agentmemory/status</code> returns this report as JSON.</p>
+<p class="live">A snapshot from when this page loaded. <a href="${escapeHtml(viewerUrl)}">Open the live version in the viewer &rarr;</a> From a terminal: <code>curl -s ${escapeHtml(CURL_AUTH_HEADER)} ${ports.rest ? `http://localhost:${escapeHtml(ports.rest)}` : ""}/agentmemory/status</code> returns this report as JSON.</p>
 <h2>Problems</h2><ul class="problems">${problems}</ul>
 <h2>Engine and connection</h2><table>
 ${row("Engine connection", escapeHtml(report.health?.connectionState ?? "unknown"))}
@@ -852,7 +867,7 @@ ${processRows(report)}
 }
 
 export function graphCompactCommand(restPort: number | null): string {
-  return `curl -X POST http://localhost:${restPort ?? 3111}/agentmemory/graph/compact -H "Content-Type: application/json" -d '{}'`;
+  return `curl -X POST http://localhost:${restPort ?? 3111}/agentmemory/graph/compact ${CURL_AUTH_HEADER} -H "Content-Type: application/json" -d '{}'`;
 }
 
 export const UNINDEXED_SCAN_REUSE_MS = 30_000;

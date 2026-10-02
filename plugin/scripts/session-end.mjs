@@ -98,7 +98,7 @@ async function main() {
 			transcript: data.transcript_path,
 			index,
 			prompt
-		}), 3e3)));
+		}, { stable: true }), 3e3)));
 	}
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",

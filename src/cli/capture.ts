@@ -1,4 +1,5 @@
 import { drainSpool, parseSentMark, retainSent, spoolSummary, type SendOutcome, type SpoolRecord } from "../capture/spool.js";
+import { CURL_AUTH_HEADER } from "../functions/status.js";
 
 interface CaptureCommandOptions {
   base: string;
@@ -99,7 +100,7 @@ export async function runCaptureCommand(options: CaptureCommandOptions): Promise
     log(`  ${item.status.padEnd(8)} ${item.eventId} attempts=${item.attempts} ${item.preview ?? ""}`);
   }
   if (inbox && inbox.dead > 0) {
-    log(`Retry dead letters: curl -X POST ${options.base}/agentmemory/capture/retry -H "Content-Type: application/json" -d '{"all":true}'`);
+    log(`Retry dead letters: curl -X POST ${options.base}/agentmemory/capture/retry ${CURL_AUTH_HEADER} -H "Content-Type: application/json" -d '{"all":true}'`);
   }
   return 0;
 }

@@ -420,7 +420,7 @@ describe("status for beginners", () => {
     );
     const html = renderStatusHtml(report, "n", { viewerUrl: "http://127.0.0.1:3113/#health" });
     expect(html).toContain('<a href="http://127.0.0.1:3113/#health">Open the live version in the viewer');
-    expect(html).toContain("curl -s http://localhost:3111/agentmemory/status");
+    expect(html).toContain("curl -s -H &quot;Authorization: Bearer ${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret)}&quot; http://localhost:3111/agentmemory/status");
     expect(html).toContain("50 MB of 4096 MB (1%)");
     expect(html).toContain("1.3 ms");
     expect(renderStatusHtml(report, "n")).toContain('href="/agentmemory/viewer#health"');

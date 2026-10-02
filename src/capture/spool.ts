@@ -343,11 +343,11 @@ export function appendSpool(
     }
     const bytes = Buffer.byteLength(line);
     if (bytes > policy.maxRecordBytes) return note("too-large", bytes);
-    return withLock(paths.lock, () => {
+    return withLock(paths.lock, (locked) => {
       let expired = 0;
-      if (fileSize(paths.file) + bytes > policy.maxBytes) expired = pruneExpiredLocked(paths, policy);
+      if (locked && fileSize(paths.file) + bytes > policy.maxBytes) expired = pruneExpiredLocked(paths, policy);
       const over = fileSize(paths.file) + sentBytes(paths) + bytes - policy.maxBytes;
-      if (over > 0) evictSent(paths, over);
+      if (locked && over > 0) evictSent(paths, over);
       if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) {
         if (expired) writeStats(paths, (s) => void (s.expired += expired));
         return note("full", bytes);
@@ -515,7 +515,8 @@ function claimFiles(paths: SpoolPaths): string[] {
   } catch {}
   if (fileSize(paths.file) > 0) {
     const target = join(paths.dir, `${paths.name}.draining-${process.pid}-${Date.now()}.jsonl`);
-    withLock(paths.lock, () => {
+    withLock(paths.lock, (locked) => {
+      if (!locked) return;
       try {
         renameSync(paths.file, target);
         claimed.push(target);
@@ -529,6 +530,21 @@ function requeueLocked(paths: SpoolPaths, leftover: SpoolRecord[]): void {
   if (leftover.length === 0) return;
   const existing = existsSync(paths.file) ? parseLines(readFileSync(paths.file, "utf-8")).records : [];
   rewriteLocked(paths, [...leftover, ...existing]);
+}
+
+function requeueUnlocked(paths: SpoolPaths, leftover: SpoolRecord[]): void {
+  if (leftover.length === 0) return;
+  const target = join(paths.dir, `${paths.name}.draining-${process.pid}-${Date.now()}-requeue.jsonl`);
+  const fd = openSync(target, "wx", 0o600);
+  try {
+    writeSync(fd, serialize(leftover));
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    utimesSync(target, 0, 0);
+  } catch {}
 }
 
 export function spoolHasRecords(url: string, dir?: string): boolean {
@@ -607,7 +623,7 @@ export async function drainSpool(
       }
     }
     result.remaining = leftover.length;
-    withLock(paths.lock, () => requeueLocked(paths, leftover), 2000);
+    withLock(paths.lock, (locked) => (locked ? requeueLocked(paths, leftover) : requeueUnlocked(paths, leftover)), 2000);
     for (const file of files) {
       try {
         unlinkSync(file);

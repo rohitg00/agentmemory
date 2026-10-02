@@ -50,6 +50,11 @@ function digest(parts: string[]): string {
   return createHash("sha256").update(parts.join("\u0000")).digest("hex").slice(0, 32);
 }
 
+export function hasHostIdentity(host: Record<string, unknown> | null | undefined): boolean {
+  const source = host && typeof host === "object" ? host : {};
+  return hostScalar(source, HOST_ID_FIELDS) !== undefined || hostScalar(source, HOST_TIME_FIELDS) !== undefined;
+}
+
 export function deriveEventId(
   hookType: string,
   sessionId: string,
