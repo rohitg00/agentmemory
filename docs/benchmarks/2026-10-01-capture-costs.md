@@ -1,5 +1,7 @@
 # 2026-10-01: capture and recovery costs
 
+Superseded by [2026-10-02](2026-10-02-capture-costs.md), measured after vectors survive a force-kill. The numbers below describe the build before that fix.
+
 **Commit:** `b3d6cf50026655233f11c2273b898af0ca82cf03` (main after #1457). The durable capture work for #1436, #1437 and #1438 lands in a separate PR and is not in this build.
 **Bench:** `npm run bench:capture-costs` (`benchmark/capture-costs.ts`), built `dist/` artifact, file state store
 **N:** 100, 1,000 (two repeats each) and 10,000 (one run; two for `embed-llm`)

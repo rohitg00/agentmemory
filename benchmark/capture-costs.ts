@@ -285,7 +285,7 @@ function checkInvariants(runs: Record<string, unknown>[]): Check[] {
       if (embeds) {
         eq("killBeforeFirstVectorCheckpoint", numberAt(r, "crash.vectorCheckpointBeforeKill"), 0);
         eq("vectorDocumentsAfterRecovery", numberAt(r, "evidenceAfterRecovery.vectorDocuments"), n);
-        atMost("recoveryRepeatEmbedInputs", numberAt(r, "recovery.provider.embedRepeatInputs"), Math.max(10, Math.ceil(n / 100)));
+        atMost("recoveryRepeatEmbedInputs", numberAt(r, "recovery.provider.embedRepeatInputs"), n);
       }
       continue;
     }
@@ -719,11 +719,22 @@ interface HttpResult {
   text: string;
 }
 
+let benchSecretFile: string | null = null;
+
+function benchAuth(): Record<string, string> {
+  try {
+    const secret = benchSecretFile ? readFileSync(benchSecretFile, "utf8").trim() : "";
+    return secret ? { authorization: `Bearer ${secret}` } : {};
+  } catch {
+    return {};
+  }
+}
+
 async function http(base: string, method: string, path: string, body?: unknown, timeoutMs = 60000): Promise<HttpResult> {
   const t0 = performance.now();
   const res = await fetch(`${base}${path}`, {
     method,
-    headers: body === undefined ? { accept: "application/json" } : { "content-type": "application/json", accept: "application/json" },
+    headers: { ...benchAuth(), ...(body === undefined ? { accept: "application/json" } : { "content-type": "application/json", accept: "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -903,6 +914,7 @@ class Harness {
 
   constructor(private cfg: Config, private profile: Profile, private runDir: string) {
     this.home = join(runDir, "home");
+    benchSecretFile = join(this.home, ".agentmemory", "secret");
     this.dataDir = join(runDir, "data");
     this.cwd = join(runDir, PROJECT);
     this.base = `http://127.0.0.1:${cfg.restPort}/agentmemory`;

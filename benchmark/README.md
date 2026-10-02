@@ -14,7 +14,7 @@ Three kinds of numbers live in this directory:
 3. **Resource cost**: `capture-costs.ts`. Disk, resident memory, CPU,
    hook cost, provider calls, agent-visible context and recovery cost of
    the built capture path, each reported separately. Published envelope:
-   `docs/benchmarks/2026-10-01-capture-costs.md`.
+   `docs/benchmarks/2026-10-02-capture-costs.md`.
 
 ## capture-costs.ts
 
