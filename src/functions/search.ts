@@ -70,7 +70,7 @@ export function isKeywordRebuildInProgress(): boolean {
 }
 
 let pendingVectorBackfill = 0
-export type VectorBackfillState = "idle" | "running" | "waiting-for-opt-in"
+export type VectorBackfillState = "idle" | "running" | "paused" | "waiting-for-opt-in"
 let vectorBackfillState: VectorBackfillState = "idle"
 export function getVectorBackfillState(): VectorBackfillState {
   return vectorBackfillState
@@ -575,7 +575,7 @@ async function runKeywordRebuild(
       fullBackfillPending++
       return
     }
-    if (!backfillActive || vectorJobs.length >= backfillCap) return
+    if (!backfillActive || (wholeStoreBackfill && vectorJobs.length >= backfillCap)) return
     vectorJobs.push({ id, sessionId, text, context: { kind, logId: id } })
   }
 
@@ -632,24 +632,64 @@ async function runKeywordRebuild(
 }
 
 const BACKFILL_SAVE_EVERY_BATCHES = 10
+const VECTOR_BACKLOG_PAUSE_MS = 1000
 
-export async function backfillVectors(jobs: VectorBackfillJob[]): Promise<number> {
+async function embedBackfillJobs(
+  jobs: VectorBackfillJob[],
+  remainingAfter: number,
+): Promise<{ ok: number; fail: number }> {
   const batchSize = getRebuildEmbedBatchSize()
-  let added = 0
+  let ok = 0
+  let fail = 0
   let batchesSinceSave = 0
-  setPendingVectorBackfillCount(jobs.length)
+  setPendingVectorBackfillCount(remainingAfter + jobs.length)
   for (let offset = 0; offset < jobs.length; offset += batchSize) {
-    const { ok } = await vectorIndexAddBatchGuarded(jobs.slice(offset, offset + batchSize))
-    added += ok
-    setPendingVectorBackfillCount(jobs.length - Math.min(jobs.length, offset + batchSize))
+    const result = await vectorIndexAddBatchGuarded(jobs.slice(offset, offset + batchSize))
+    ok += result.ok
+    fail += result.fail
+    setPendingVectorBackfillCount(remainingAfter + jobs.length - Math.min(jobs.length, offset + batchSize))
     batchesSinceSave++
     if (batchesSinceSave >= BACKFILL_SAVE_EVERY_BATCHES) {
       await flushIndexSave()
       batchesSinceSave = 0
     }
   }
-  if (added > 0) await flushIndexSave()
-  return added
+  if (ok > 0) await flushIndexSave()
+  return { ok, fail }
+}
+
+export async function backfillVectors(jobs: VectorBackfillJob[]): Promise<number> {
+  return (await embedBackfillJobs(jobs, 0)).ok
+}
+
+export type VectorBacklogResult = { added: number; failed: number; remaining: number; complete: boolean }
+
+export async function backfillVectorBacklog(
+  jobs: VectorBackfillJob[],
+  options: { batchSize?: number; pauseMs?: number } = {},
+): Promise<VectorBacklogResult> {
+  const batchSize = options.batchSize && options.batchSize > 0 ? options.batchSize : getVectorBackfillMax()
+  const pauseMs = options.pauseMs ?? VECTOR_BACKLOG_PAUSE_MS
+  let added = 0
+  let failed = 0
+  for (let offset = 0; offset < jobs.length; offset += batchSize) {
+    if (offset > 0 && pauseMs > 0) await delay(pauseMs)
+    const after = Math.max(0, jobs.length - offset - batchSize)
+    const batch = jobs.slice(offset, offset + batchSize).filter((job) => !vectorIndex?.has(job.id))
+    if (batch.length === 0) {
+      setPendingVectorBackfillCount(after)
+      continue
+    }
+    const result = await embedBackfillJobs(batch, after)
+    added += result.ok
+    failed += result.fail
+    if (result.ok === 0) {
+      setPendingVectorBackfillCount(jobs.length - offset)
+      return { added, failed, remaining: jobs.length - offset, complete: false }
+    }
+  }
+  setPendingVectorBackfillCount(failed)
+  return { added, failed, remaining: failed, complete: failed === 0 }
 }
 
 export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {

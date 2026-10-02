@@ -36,17 +36,29 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 
 export type VectorEntry = { embedding: Float32Array; sessionId: string };
 
+export type VectorChangeListener = (obsId: string | null, entry: VectorEntry | null) => void;
+
 export class VectorIndex {
   private vectors: Map<string, VectorEntry> = new Map();
   private changes: Map<string, boolean> = new Map();
+  private listener: VectorChangeListener | null = null;
+
+  setChangeListener(listener: VectorChangeListener | null): void {
+    this.listener = listener;
+  }
 
   add(obsId: string, sessionId: string, embedding: Float32Array): void {
-    this.vectors.set(obsId, { embedding, sessionId });
+    const entry = { embedding, sessionId };
+    this.vectors.set(obsId, entry);
     this.changes.set(obsId, true);
+    this.listener?.(obsId, entry);
   }
 
   remove(obsId: string): void {
-    if (this.vectors.delete(obsId)) this.changes.set(obsId, false);
+    if (this.vectors.delete(obsId)) {
+      this.changes.set(obsId, false);
+      this.listener?.(obsId, null);
+    }
   }
 
   has(obsId: string): boolean {
@@ -147,8 +159,10 @@ export class VectorIndex {
   }
 
   clear(): void {
+    const hadVectors = this.vectors.size > 0;
     for (const obsId of this.vectors.keys()) this.changes.set(obsId, false);
     this.vectors.clear();
+    if (hadVectors) this.listener?.(null, null);
   }
 
   restoreFrom(other: VectorIndex): void {

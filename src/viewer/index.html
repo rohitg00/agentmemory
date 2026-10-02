@@ -7166,11 +7166,20 @@
         (b ? esc(fmtNum(b.observations) + ' observations + ' + fmtNum(b.memories) + ' memories + ' + fmtNum(b.lessons) + ' lessons. ') : '') + esc(BM25_EXPLAINER));
       html += hrow('Vector index', hasVectors ? esc(fmtNum(idx.vectorDocuments) + ' vectors') : 'off', 'vector',
         hasVectors ? 'Meaning-based search. Each vector is one embedded record.' : 'No embedding provider, so search is keyword only. Set an embedding provider key (for example OPENAI_API_KEY) and restart.');
-      html += hrow('Waiting for embeddings', esc(fmtNum(idx.pendingVectorBackfill || 0)), 'pendingBackfill', idx.pendingVectorBackfill ? 'Embedded in the background, capped per start by AGENTMEMORY_VECTOR_BACKFILL_MAX.' : '');
+      var bfState = ri.vectorBackfillState;
+      var bfNote = bfState === 'paused' ? 'Paused because the embedding provider did not return vectors. Retried on the next start.' :
+        bfState === 'waiting-for-opt-in' ? 'Waiting for AGENTMEMORY_VECTOR_BACKFILL=all and a restart.' :
+        'Embedded in the background in batches of AGENTMEMORY_VECTOR_BACKFILL_MAX. If agentmemory stops first, it continues on the next start.';
+      html += hrow('Waiting for embeddings', esc(fmtNum(idx.pendingVectorBackfill || 0) + (bfState && bfState !== 'idle' && idx.pendingVectorBackfill ? ' · ' + (bfState === 'waiting-for-opt-in' ? 'waiting for opt-in' : bfState) : '')), 'pendingBackfill', idx.pendingVectorBackfill ? esc(bfNote) : '');
       html += hrow('Missing from index', ri.missingObservations === null || ri.missingObservations === undefined ? 'not checked yet' : esc(fmtNum(ri.missingObservations)), 'missingFromIndex');
       html += hrow('Keyword rebuild', ri.bm25Incomplete ? '<span style="color:var(--accent);">incomplete</span>' : 'complete', null, 'Rebuilt from stored data at every start, so it is never saved to disk.');
       if (p) {
         html += hrow('Vector save', esc(legText(p.vector)), null, 'Saved at most every ' + esc(durationText(p.saveIntervalMs || 600000)) + ' (AGENTMEMORY_INDEX_SAVE_INTERVAL_MS). ' + esc(fmtNum(p.buckets) + ' bucket' + (p.buckets === 1 ? '' : 's') + ', ' + fmtNum(p.pendingChanges) + ' unsaved change' + (p.pendingChanges === 1 ? '' : 's') + (p.saving ? ', saving now' : '') + '.'));
+        if (typeof p.pendingLog === 'number') {
+          html += hrow('Pending vector log', esc(fmtNum(p.pendingLog) + ' vector change' + (p.pendingLog === 1 ? '' : 's')), null,
+            p.pendingLogError ? '<span style="color:var(--accent);overflow-wrap:anywhere;">' + esc('Log writes failing: ' + p.pendingLogError) + '</span>' :
+            'New and removed vectors are written here right away and replayed after a crash, so nothing is embedded twice. Each save empties it.');
+        }
       }
       html += hrow('Graph', esc(fmtNum(c.graphNodes) + ' nodes · ' + fmtNum(c.graphEdges) + ' edges'), 'graph', store.graph && store.graph.updatedAt ? 'Snapshot rebuilt ' + esc(timeAgo(store.graph.updatedAt)) + '.' : '');
       if (r && r.graphCompaction) html += graphCompactionRowHtml(r.graphCompaction);

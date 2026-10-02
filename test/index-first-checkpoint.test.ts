@@ -14,7 +14,7 @@ function mockKV() {
     writes,
     get: async <T>(scope: string, key: string): Promise<T | null> => (store.get(scope)?.get(key) as T) ?? null,
     set: async <T>(scope: string, key: string, data: T): Promise<T> => {
-      writes.push({ scope, key });
+      if (scope !== "mem:index:vec-pending") writes.push({ scope, key });
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
       return data;

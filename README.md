@@ -1021,6 +1021,8 @@ Fused with Reciprocal Rank Fusion (RRF, k=60) and session-diversified (max 3 res
 
 When a vector index is populated, `mem::search` (behind `memory_recall`) uses the hybrid BM25 + vector ranker. Without embeddings it uses BM25. `smart-search` can additionally fuse structural graph matches when graph data exists, including in keyless mode. Lesson recall runs on a dedicated in-memory BM25 index instead of scanning the whole corpus per query. Superseded memory versions are excluded from every recall path; the version chain keeps their history.
 
+Vectors survive a crash or force-kill. The vector index is saved in buckets at most every `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 minutes). Every vector added or removed in between is also written right away to a small pending log in the state store, and the next start replays it without calling the embedding provider. Each successful save empties the log. Documents that still have no vector after the replay are re-embedded in the background in batches of `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) until none are left, and a backfill that is stopped continues at the next start. `/agentmemory/status` and the viewer show the pending log size and the backfill state. Keyless installs write nothing.
+
 BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the box. For Chinese / Japanese / Korean memories, install the optional segmenters (`npm install @node-rs/jieba tiny-segmenter`) to split CJK runs into word-level tokens; without them, agentmemory soft-falls to whole-run tokenization and prints a one-time hint on stderr.
 
 ### Embedding providers
