@@ -164,10 +164,27 @@ async function mustRun(label, cmd, args, options) {
   return r;
 }
 
+const instanceHomes = new Map();
+
+function secretFor(url) {
+  for (const [base, home] of instanceHomes) {
+    if (!url.startsWith(base)) continue;
+    try {
+      return readFileSync(join(home, ".agentmemory", "secret"), "utf8").trim();
+    } catch {
+      return "";
+    }
+  }
+  return "";
+}
+
 async function request(method, url, body, timeoutMs = 30_000) {
+  const headers = body === undefined ? { accept: "application/json" } : { "content-type": "application/json", accept: "application/json" };
+  const secret = secretFor(url);
+  if (secret) headers.authorization = `Bearer ${secret}`;
   const res = await fetch(url, {
     method,
-    headers: body === undefined ? { accept: "application/json" } : { "content-type": "application/json", accept: "application/json" },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -408,6 +425,7 @@ class Instance {
 
   async start(extraEnv = {}) {
     if (!this.port) this.port = await pickBasePort();
+    instanceHomes.set(`http://127.0.0.1:${this.port}/`, this.home);
     this.extraEnv = extraEnv;
     this.seedEngine();
     for (const p of instancePorts(this.port)) {
@@ -714,7 +732,7 @@ async function install(details) {
   assert(cliPath === gate.bin("agentmemory"), `agentmemory on PATH resolves to ${cliPath}, not the installed prefix`);
   const v = await mustRun("agentmemory --version", gate.bin("agentmemory"), ["--version"], { env: gate.baseEnv(installHome), cwd: installHome });
   assert(v.stdout.trim() === installed.version, `agentmemory --version printed ${v.stdout.trim()}, expected ${installed.version}`);
-  for (const f of ["dist/cli.mjs", "dist/standalone.mjs", "dist/index.mjs", "dist/viewer/index.html", "plugin/hooks/hooks.json", "plugin/scripts/post-tool-use.mjs", "iii-config.yaml"]) {
+  for (const f of ["dist/cli.mjs", "dist/standalone.mjs", "dist/index.mjs", "dist/viewer/index.html", "plugin/hooks/hooks.json", "plugin/scripts/post-tool-use.mjs", "plugin/scripts/_capture.mjs", "iii-config.yaml"]) {
     assert(existsSync(join(gate.pkgDir, f)), `packed artifact is missing ${f}`);
   }
   assert(existsSync(gate.bin("agentmemory-mcp")), "agentmemory-mcp bin is missing from the MCP shim package");
