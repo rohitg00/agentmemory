@@ -1,89 +1,101 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 660" width="960" height="660" role="img" aria-labelledby="t d">
-<title id="t">agentmemory capture costs and crash recovery</title>
-<desc id="d">After a force-kill, 10,000 of 10,000 vectors come back with zero embedding calls, up from 582 before the fix. A crash while the service is down keeps 1,000 of 1,000 captures, up from 40 of 100. Each observation costs 3.7 KiB of disk without embeddings and 7.8 KiB with them. Peak memory of engine plus worker is 266 to 365 MiB at 1,000 observations and 504 to 788 MiB at 10,000.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 580" width="960" height="580" role="img" aria-labelledby="t d">
+<title id="t">What agentmemory costs you and what survives a crash</title>
+<desc id="d">After a hard kill, 10,000 of 10,000 memories and vectors come back with zero re-embedding calls, ready in about 1 second. While the service is down, 1,000 of 1,000 tool calls are kept and sent on restart. Disk is 3.7 KiB per memory, 7.8 KiB with vectors. Engine and worker use 266 to 365 MiB at 1,000 memories and up to 788 MiB at 10,000. Context added per session is 1,455 tokens of a 2,000-token budget. Hooks take a median of 59 to 139 ms per tool call, p95 under 235 ms. Measured on an Apple M1 Max with iii 0.22.1 and a stub 768-dimension embedder, worst of two runs.</desc>
 <style>
-:root{--bg:#F9F9F7;--panel:#FFFFFF;--ink:#111111;--muted:#5C5C5C;--line:#D4D4CF;--good:#2D6A4F;--bad:#B42318;--vec:#1D4E89;--soft:#9BB8D3}
-@media (prefers-color-scheme:dark){:root{--bg:#121316;--panel:#1A1C20;--ink:#EEF0F3;--muted:#A3A6AC;--line:#2E3136;--good:#4ADE80;--bad:#F2555A;--vec:#93C5FD;--soft:#3B5B7E}}
+:root{--bg:#F9F9F7;--card:#FFFFFF;--ink:#111111;--muted:#5C5C5C;--line:#D4D4CF;--track:#ECECE8;--good:#2D6A4F;--vec:#1D4E89;--soft:#9BB8D3;--rec:#7A7A75;--accent:#B8860B}
+@media (prefers-color-scheme:dark){:root{--bg:#121316;--card:#1A1C20;--ink:#EEF0F3;--muted:#A3A6AC;--line:#2E3136;--track:#26292E;--good:#4ADE80;--vec:#93C5FD;--soft:#3B5B7E;--rec:#8A8D93;--accent:#FBBF24}}
 text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;fill:var(--ink)}
-.bg{fill:var(--bg)}.panel{fill:var(--panel);stroke:var(--line);stroke-width:1}
-.h1{font-size:20px;font-weight:700}.h2{font-size:15px;font-weight:650}.sub{font-size:12px;fill:var(--muted)}
-.lbl{font-size:13px;fill:var(--muted)}.val{font-size:13px;font-weight:650}.note{font-size:12px;fill:var(--muted)}
-.good{fill:var(--good)}.bad{fill:var(--bad)}.vec{fill:var(--vec)}.soft{fill:var(--soft)}.rec{fill:var(--muted)}
-.bar{transform-box:fill-box;transform-origin:left center;animation:grow 1.1s cubic-bezier(.2,.7,.2,1) both}
-.fade{animation:fade .6s ease-out both}
-.d1{animation-delay:.15s}.d2{animation-delay:.45s}.d3{animation-delay:.75s}.d4{animation-delay:1.05s}.d5{animation-delay:1.35s}.d6{animation-delay:1.65s}
+.bg{fill:var(--bg)}.card{fill:var(--card);stroke:var(--line);stroke-width:1}.track{fill:var(--track)}
+.h1{font-size:21px;font-weight:700}.sub{font-size:12px;fill:var(--muted)}
+.sec{font-size:11px;font-weight:700;letter-spacing:.12em;fill:var(--muted)}
+.big{font-size:30px;font-weight:750}.mid{font-size:24px;font-weight:750}
+.lbl{font-size:13px;font-weight:600}.txt{font-size:12.5px;fill:var(--muted)}.tiny{font-size:11px;fill:var(--muted)}
+.good{fill:var(--good)}.vec{fill:var(--vec)}.soft{fill:var(--soft)}.rec{fill:var(--rec)}.accent{fill:var(--accent)}
+.bar{transform-box:fill-box;transform-origin:left center;animation:grow 1.2s cubic-bezier(.2,.7,.2,1) both}
+.in{animation:rise .7s ease-out both}
+.d0{animation-delay:0s}.d1{animation-delay:.2s}.d2{animation-delay:.45s}.d3{animation-delay:.7s}.d4{animation-delay:.95s}.d5{animation-delay:1.2s}.d6{animation-delay:1.45s}
 @keyframes grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
-@keyframes fade{from{opacity:0}to{opacity:1}}
-@media (prefers-reduced-motion:reduce){.bar,.fade{animation:none}}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.bar,.in{animation:none}}
 </style>
-<rect class="bg" width="960" height="660"/>
-<text class="h1" x="20" y="38">agentmemory capture costs and crash recovery</text>
-<text class="sub" x="20" y="60">npm run bench:capture-costs · Apple M1 Max · iii 0.22.1 · fake embedding provider (768 dims) · worst of two runs</text>
+<rect class="bg" width="960" height="580"/>
+<text class="h1" x="20" y="38">What agentmemory costs you, and what survives a crash</text>
+<text class="sub" x="20" y="60">Measured with npm run bench:capture-costs on the packaged build. No API keys needed for capture and keyword search; embeddings are optional.</text>
 
-<rect class="panel" x="20" y="80" width="450" height="240" rx="10"/>
-<text class="h2" x="36" y="110">Vectors after a force-kill</text>
-<text class="sub" x="36" y="128">10,000 observations captured, then SIGKILL and restart</text>
-<text class="lbl" x="36" y="172">before the fix</text>
-<rect class="bad bar d1" x="170" y="160" width="13" height="16" rx="3"/>
-<text class="val fade d2" x="191" y="173">582</text>
-<text class="lbl" x="36" y="212">now</text>
-<rect class="good bar d2" x="170" y="200" width="220" height="16" rx="3"/>
-<text class="val fade d3" x="398" y="213">10,000</text>
-<text class="note fade d3" x="36" y="262">0 embedding calls during recovery: vectors written</text>
-<text class="note fade d3" x="36" y="280">since the last snapshot replay from the pending log.</text>
+<text class="sec" x="20" y="96">SURVIVES A CRASH</text>
 
-<rect class="panel" x="490" y="80" width="450" height="240" rx="10"/>
-<text class="h2" x="506" y="110">Captures after a crash while offline</text>
-<text class="sub" x="506" y="128">service killed before its first vector snapshot</text>
-<text class="lbl" x="506" y="172">before the fix</text>
-<rect class="bad bar d1" x="640" y="160" width="76" height="16" rx="3"/>
-<text class="val fade d2" x="724" y="173">40 / 100</text>
-<text class="lbl" x="506" y="212">now</text>
-<rect class="good bar d2" x="640" y="200" width="190" height="16" rx="3"/>
-<text class="val fade d3" x="838" y="213">1,000 / 1,000</text>
-<text class="note fade d3" x="506" y="262">Hooks spool while the service is down and keep each</text>
-<text class="note fade d3" x="506" y="280">sent capture until the engine has saved it.</text>
+<g class="in d0">
+<rect class="card" x="20" y="106" width="450" height="146" rx="10"/>
+<text class="big" x="38" y="150">10,000 / 10,000</text>
+<text class="lbl" x="38" y="176">memories and vectors back after a hard kill</text>
+<text class="txt" x="38" y="196">0 re-embedding calls, ready again in about 1 s</text>
+<rect class="track" x="38" y="216" width="414" height="10" rx="5"/>
+</g>
+<rect class="good bar d1" x="38" y="216" width="414" height="10" rx="5"/>
 
-<rect class="panel" x="20" y="340" width="450" height="240" rx="10"/>
-<text class="h2" x="36" y="370">Disk per observation</text>
-<text class="sub" x="36" y="388">file state store, 1,000 observations</text>
-<text class="lbl" x="36" y="432">no embeddings</text>
-<rect class="rec bar d3" x="170" y="420" width="102" height="16" rx="3"/>
-<text class="val fade d4" x="280" y="433">3.7 KiB</text>
-<text class="lbl" x="36" y="472">with embeddings</text>
-<rect class="rec bar d3" x="170" y="460" width="102" height="16" rx="3"/>
-<rect class="vec bar d4" x="272" y="460" width="113" height="16" rx="3"/>
-<text class="val fade d5" x="393" y="473">7.8 KiB</text>
-<rect class="rec fade d5" x="36" y="502" width="10" height="10" rx="2"/>
-<text class="note fade d5" x="52" y="511">record and source text</text>
-<rect class="vec fade d5" x="200" y="502" width="10" height="10" rx="2"/>
-<text class="note fade d5" x="216" y="511">vector, about 4.1 KB</text>
-<text class="note fade d5" x="36" y="548">10,000 observations: 32 MiB without embeddings,</text>
-<text class="note fade d5" x="36" y="566">72 MiB with them.</text>
+<g class="in d1">
+<rect class="card" x="490" y="106" width="450" height="146" rx="10"/>
+<text class="big" x="508" y="150">1,000 / 1,000</text>
+<text class="lbl" x="508" y="176">tool calls kept while the service was down</text>
+<text class="txt" x="508" y="196">hooks keep a local copy and resend it on restart</text>
+<rect class="track" x="508" y="216" width="414" height="10" rx="5"/>
+</g>
+<rect class="good bar d2" x="508" y="216" width="414" height="10" rx="5"/>
 
-<rect class="panel" x="490" y="340" width="450" height="240" rx="10"/>
-<text class="h2" x="506" y="370">Peak memory, engine and worker</text>
-<text class="sub" x="506" y="388">during capture</text>
-<text class="lbl" x="506" y="425">no embeddings</text>
-<rect class="soft bar d4" x="640" y="412" width="73" height="11" rx="2"/>
-<text class="val fade d5" x="721" y="422" font-size="12">266 MiB</text>
-<rect class="vec bar d4" x="640" y="426" width="139" height="11" rx="2"/>
-<text class="val fade d5" x="787" y="436" font-size="12">504 MiB</text>
-<text class="lbl" x="506" y="468">embeddings</text>
-<rect class="soft bar d5" x="640" y="455" width="82" height="11" rx="2"/>
-<text class="val fade d6" x="730" y="465" font-size="12">298 MiB</text>
-<rect class="vec bar d5" x="640" y="469" width="186" height="11" rx="2"/>
-<text class="val fade d6" x="834" y="479" font-size="12">675 MiB</text>
-<text class="lbl" x="506" y="511">+ compression</text>
-<rect class="soft bar d6" x="640" y="498" width="100" height="11" rx="2"/>
-<text class="val fade d6" x="748" y="508" font-size="12">365 MiB</text>
-<rect class="vec bar d6" x="640" y="512" width="217" height="11" rx="2"/>
-<text class="val fade d6" x="865" y="522" font-size="12">788 MiB</text>
-<rect class="soft fade d6" x="506" y="548" width="10" height="10" rx="2"/>
-<text class="note fade d6" x="522" y="557">1,000 observations</text>
-<rect class="vec fade d6" x="660" y="548" width="10" height="10" rx="2"/>
-<text class="note fade d6" x="676" y="557">10,000 observations</text>
+<text class="sec" x="20" y="290">WHAT IT COSTS YOU</text>
 
-<text class="note" x="20" y="612">Hooks: p95 66 to 95 ms per call, nothing printed when context injection is off.</text>
-<text class="note" x="20" y="632">Restart after a crash: ready in about 1 s at 10,000 observations. Limits live in benchmark/capture-costs-budgets.json.</text>
+<g class="in d2">
+<rect class="card" x="20" y="300" width="217" height="190" rx="10"/>
+<text class="lbl" x="36" y="326">Disk per memory</text>
+<text class="mid" x="36" y="360">3.7 KiB</text>
+<text class="txt" x="36" y="382">7.8 KiB with vectors</text>
+<rect class="track" x="36" y="400" width="185" height="10" rx="5"/>
+<text class="tiny" x="50" y="440">text and record</text>
+<text class="tiny" x="50" y="456">vector (768 dims)</text>
+<text class="txt" x="36" y="478">72 MiB at 10,000</text>
+</g>
+<rect class="rec bar d3" x="36" y="400" width="87" height="10" rx="5"/>
+<rect class="vec bar d4" x="123" y="400" width="96" height="10" rx="5"/>
+<rect class="rec in d4" x="36" y="432" width="9" height="9" rx="2"/>
+<rect class="vec in d4" x="36" y="448" width="9" height="9" rx="2"/>
+
+<g class="in d3">
+<rect class="card" x="257" y="300" width="217" height="190" rx="10"/>
+<text class="lbl" x="273" y="326">Memory (RAM)</text>
+<text class="mid" x="273" y="360">266–365 MiB</text>
+<text class="txt" x="273" y="382">at 1,000 memories</text>
+<rect class="track" x="273" y="400" width="185" height="10" rx="5"/>
+<rect class="track" x="273" y="418" width="185" height="10" rx="5"/>
+<text class="tiny" x="287" y="448">1,000 memories: up to 365 MiB</text>
+<text class="tiny" x="287" y="464">10,000 memories: up to 788 MiB</text>
+</g>
+<rect class="soft bar d4" x="273" y="400" width="84" height="10" rx="5"/>
+<rect class="vec bar d5" x="273" y="418" width="182" height="10" rx="5"/>
+<rect class="soft in d5" x="273" y="440" width="9" height="9" rx="2"/>
+<rect class="vec in d5" x="273" y="456" width="9" height="9" rx="2"/>
+
+<g class="in d4">
+<rect class="card" x="494" y="300" width="217" height="190" rx="10"/>
+<text class="lbl" x="510" y="326">Context per session</text>
+<text class="mid" x="510" y="360">1,455 tokens</text>
+<text class="txt" x="510" y="382">of a 2,000-token budget</text>
+<rect class="track" x="510" y="400" width="185" height="10" rx="5"/>
+<text class="tiny" x="510" y="440">compact search result:</text>
+<text class="tiny" x="510" y="456">about 565 tokens</text>
+<text class="txt" x="510" y="478">injection is off by default</text>
+</g>
+<rect class="accent bar d5" x="510" y="400" width="135" height="10" rx="5"/>
+
+<g class="in d5">
+<rect class="card" x="731" y="300" width="209" height="190" rx="10"/>
+<text class="lbl" x="747" y="326">Hook overhead</text>
+<text class="mid" x="747" y="360">59–139 ms</text>
+<text class="txt" x="747" y="382">median per tool call</text>
+<text class="tiny" x="747" y="440">0 bytes printed to the agent</text>
+<text class="tiny" x="747" y="456">when injection is off</text>
+<text class="txt" x="747" y="478">p95 under 235 ms</text>
+</g>
+
+<text class="tiny" x="20" y="526">Apple M1 Max · iii 0.22.1 · stub 768-dimension embedder (no model calls) · file state store · worst of two runs · 2026-10-02</text>
+<text class="tiny" x="20" y="546">Ranges cover three setups: no embeddings, embeddings, and embeddings with compression. Limits the bench enforces: benchmark/capture-costs-budgets.json</text>
 </svg>
