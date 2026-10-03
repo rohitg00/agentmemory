@@ -629,6 +629,25 @@ agentmemory connect codex --with-hooks
 
 This adds an idempotent block to `~/.codex/hooks.json` referencing absolute paths to the bundled scripts (no `${CLAUDE_PLUGIN_ROOT}` expansion needed at user-scope). Re-run the same command after upgrading agentmemory to refresh paths. User entries in the same file are preserved; only previous agentmemory entries are replaced.
 
+### Kimi Code CLI
+
+```bash
+# 1. start the memory server in a separate terminal
+npx -y @agentmemory/agentmemory@latest
+
+# 2. install the plugin from a local checkout, then reload
+/plugins install ./plugin
+/reload
+```
+
+The Kimi Code plugin ships from the same `plugin/` directory via `plugin/kimi.plugin.json`. It registers:
+
+- `@agentmemory/mcp` as an MCP server (proxies all 54 tools when `AGENTMEMORY_URL` points at a running agentmemory server; falls back to a reduced local tool set when no server is reachable)
+- 10 lifecycle hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `PreCompact`, `SubagentStart`, `SubagentStop`, `Stop`, `SessionEnd` — the same host-agnostic scripts as the Claude Code plugin; Kimi Code runs plugin hooks with the plugin root as the working directory, so commands use `./scripts/...` paths and no `${CLAUDE_PLUGIN_ROOT}` placeholder
+- 17 invocable + reference skills
+
+`Notification` and `TaskCompleted` are not registered for Kimi Code: both scripts gate on Claude-Code-specific payload fields and would be no-ops. Session-end transcript replay is skipped automatically because Kimi Code does not pass a `transcript_path`; the session is still closed out via `/session/end`. Manage the plugin's MCP server with `/plugins mcp enable|disable agentmemory agentmemory`.
+
 ### GitHub Copilot CLI
 
 ```bash
@@ -740,6 +759,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block. Deeper: `openclaw plugins install ./integrations/openclaw` claims OpenClaw's memory slot (auto-switches from `memory-core`); set `plugins.entries.agentmemory.hooks.allowConversationAccess=true` or turn capture is silently blocked. See [`integrations/openclaw`](integrations/openclaw/). |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
 | **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin add agentmemory@agentmemory`. Registers MCP + 6 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills. On Codex Desktop, also run `agentmemory connect codex --with-hooks` until [openai/codex#16430](https://github.com/openai/codex/issues/16430) lands; plugin hooks are currently silent there. |
+| **Kimi Code CLI (full plugin)** | `plugin/kimi.plugin.json` | `/plugins install ./plugin` from a checkout, then `/reload`. Registers MCP + 10 lifecycle hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PreCompact, SubagentStart, SubagentStop, Stop, SessionEnd) + 17 skills. Plugins install per-user and apply to all projects. |
 | **OpenCode (MCP only)** | `opencode.json` | Different shape: top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 22 auto-capture hooks covering session lifecycle, messages, tools, errors. Project attribution is per-session, so one OpenCode process spanning several repositories files each session under its own project. Two slash commands (`/recall`, `/remember`). Copy `plugin/opencode/` into your OpenCode workspace and add the plugin entry to `opencode.json`. See [`plugin/opencode/README.md`](plugin/opencode/README.md) for the full hook table + gap analysis. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` installs the bundled extension into pi's auto-discovery directory (recall on agent start, capture on agent end, `memory_search` / `memory_save` / `memory_health` tools, `/agentmemory-status`). `/reload` in a running pi picks it up. [`integrations/pi`](integrations/pi/) is also a pi package (`pi install ./integrations/pi` from a checkout). |
