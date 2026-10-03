@@ -18,6 +18,9 @@ export async function Nav() {
   const stats = await fetchRepoStats();
   return (
     <header className={styles.nav}>
+      <a href="#top" className={styles.skip}>
+        Skip to content
+      </a>
       <a href="#top" className={styles.brand} aria-label="agentmemory home">
         <Image
           src="/icon.svg"

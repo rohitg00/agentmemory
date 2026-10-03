@@ -12,6 +12,24 @@
   border-bottom: 1px solid var(--hairline);
 }
 
+/* Visually hidden until keyboard focus. */
+.skip {
+  position: absolute;
+  left: 12px;
+  top: -48px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--canvas-card);
+  border: 1px solid var(--border-ghost);
+  border-radius: 8px;
+  transition: top 150ms ease;
+  z-index: 101;
+}
+.skip:focus-visible {
+  top: 8px;
+}
+
 .brand {
   display: inline-flex;
   align-items: center;

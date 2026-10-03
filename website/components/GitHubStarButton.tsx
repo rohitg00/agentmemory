@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { formatCompact } from "@/lib/format";
 import styles from "./GitHubStarButton.module.css";
 
 interface Props {
@@ -13,13 +14,9 @@ interface Props {
   initialStars?: number;
 }
 
-function formatStars(n: number): string {
-  if (n >= 1000) {
-    const k = n / 1000;
-    return k >= 10 ? `${Math.round(k)}k` : `${k.toFixed(1).replace(/\.0$/, "")}k`;
-  }
-  return String(n);
-}
+// Single source of truth for compact counts — same formatter as the nav
+// badge, so both read e.g. "28.7k" for the same star total.
+const formatStars = formatCompact;
 
 export function GitHubStarButton({ repo, initialStars }: Props) {
   const [stars, setStars] = useState<number | null>(

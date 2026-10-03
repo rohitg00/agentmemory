@@ -2,12 +2,12 @@ import styles from "./Compare.module.css";
 import meta from "../lib/generated-meta.json";
 
 const ROWS = [
-  ["RETRIEVAL", "95.2% (LongMemEval-S)", "68.5% (LoCoMo)", "83.2% (LoCoMo)", "63.8% (LongMemEval)"],
+  ["RETRIEVAL*", "95.2% (LongMemEval-S)", "68.5% (LoCoMo)", "83.2% (LoCoMo)", "63.8% (LongMemEval)"],
   ["EXTERNAL DEPS", "0", "Qdrant / pgvector", "Postgres + vector", "Neo4j"],
-  ["REST ENDPOINTS", String(meta.restEndpoints), "—", "—", "—"],
-  ["MCP TOOLS", String(meta.mcpTools), "—", "—", "—"],
-  ["AUTO-CAPTURE HOOKS", String(meta.hooks), "Manual add()", "Agent self-edits", "—"],
-  ["NATIVE AGENT PLUGINS", "6", "—", "—", "—"],
+  ["REST ENDPOINTS", String(meta.restEndpoints), "n/d†", "n/d†", "n/d†"],
+  ["MCP TOOLS", String(meta.mcpTools), "n/d†", "n/d†", "n/d†"],
+  ["AUTO-CAPTURE HOOKS", String(meta.hooks), "Manual add()", "Agent self-edits", "n/d†"],
+  ["NATIVE AGENT PLUGINS", "8", "n/d†", "n/d†", "n/d†"],
   ["OPEN SOURCE", "Yes (Apache-2.0)", "Yes", "Yes", "Yes"],
 ];
 
@@ -46,6 +46,12 @@ export function Compare() {
           </div>
         ))}
       </div>
+      <p className={styles.footnotes}>
+        * Retrieval figures come from different benchmarks and are not directly
+        comparable — our 95.2% is on LongMemEval-S, reproducible from{" "}
+        <code>eval/</code> in the repo. † n/d = not disclosed by the vendor as
+        of September 2026.
+      </p>
     </section>
   );
 }

@@ -63,7 +63,7 @@ export function FeaturedIn({ compact = false }: FeaturedInProps = {}) {
     >
       <div className={styles.inner}>
         <div id="featured-in-title" className={styles.eyebrow}>
-          AS FEATURED IN
+          FEATURED IN · BACKED BY · RANKED
         </div>
         <div className={styles.row}>
           {ITEMS.map((it) =>
