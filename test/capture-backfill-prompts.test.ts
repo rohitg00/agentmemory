@@ -170,3 +170,66 @@ describe("prompts with a host prompt id", () => {
     expect(prompts(kv)).toHaveLength(1);
   });
 });
+
+describe("prompt ledger durability", () => {
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  it("fails instead of treating an unreadable ledger as empty", async () => {
+    const { recordLivePrompt } = await import("../src/capture/prompt-ledger.js");
+    const kv = mockKV();
+    await recordLivePrompt(kv as never, SESSION, "continue", "obs_ref_one_aaaa");
+    const before = JSON.stringify([...kv.store.get(KV.capturePrompts)!.values()]);
+    const failing = { ...kv, get: async () => { throw new Error("state read timed out"); } };
+    await expect(recordLivePrompt(failing as never, SESSION, "continue", "obs_ref_two_bbbb")).rejects.toThrow("state read timed out");
+    expect(JSON.stringify([...kv.store.get(KV.capturePrompts)!.values()])).toBe(before);
+  });
+
+  it("answers a retried back-fill claim with the same identity without using another live slot", async () => {
+    const { recordLivePrompt, claimBackfillPrompt } = await import("../src/capture/prompt-ledger.js");
+    const kv = mockKV();
+    await recordLivePrompt(kv as never, SESSION, "continue", "obs_live_one_aaaa");
+    expect(await claimBackfillPrompt(kv as never, SESSION, "continue", "obs_fill_one_aaaa")).toBe(true);
+    expect(await claimBackfillPrompt(kv as never, SESSION, "continue", "obs_fill_one_aaaa")).toBe(true);
+    expect(await claimBackfillPrompt(kv as never, SESSION, "continue", "obs_fill_two_bbbb")).toBe(false);
+    await recordLivePrompt(kv as never, SESSION, "continue", "obs_live_one_aaaa");
+    expect(await claimBackfillPrompt(kv as never, SESSION, "continue", "obs_fill_two_bbbb")).toBe(false);
+  });
+
+  it("records the live prompt on a retry that finds the observation already stored", async () => {
+    const kv = mockKV();
+    const { registerObserveFunction } = await import("../src/functions/observe.js");
+    const sdk = mockSdk({ looseTrigger: true });
+    registerObserveFunction(sdk as never, kv as never);
+    const realSet = kv.set;
+    let failLedger = true;
+    kv.set = (async (scope: string, key: string, data: unknown) => {
+      if (scope === KV.capturePrompts && failLedger) {
+        failLedger = false;
+        throw new Error("ledger write failed");
+      }
+      return realSet(scope, key, data);
+    }) as typeof kv.set;
+    const live = {
+      hookType: "prompt_submit",
+      sessionId: SESSION,
+      project: "proj",
+      cwd: "/work/proj",
+      timestamp: "2026-10-03T10:00:00.000Z",
+      data: { prompt: "ship it" },
+      eventId: "evc_live_ship_it",
+      observationId: "obs_live_ship_it_0001",
+    };
+    await expect(sdk.trigger("mem::observe", live)).rejects.toThrow("ledger write failed");
+    expect(await sdk.trigger("mem::observe", live)).toMatchObject({ existing: true });
+    const fill = {
+      ...live,
+      data: { prompt: "ship it", backfill: true },
+      eventId: "evc_fill_ship_it",
+      observationId: "obs_fill_ship_it_0001",
+    };
+    expect(await sdk.trigger("mem::observe", fill)).toMatchObject({ deduplicated: true });
+    expect(prompts(kv)).toHaveLength(1);
+  });
+});

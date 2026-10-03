@@ -4,15 +4,17 @@ import type { StateKV } from "../state/kv.js";
 
 export const PROMPT_LEDGER_MAX_KEYS = 1000;
 
-interface PromptCount {
-  live: number;
-  matched: number;
+export const PROMPT_LEDGER_MAX_REFS = 200;
+
+interface PromptRefs {
+  live: string[];
+  claimed: string[];
 }
 
 export interface PromptLedger {
   sessionId: string;
   updatedAt: string;
-  prompts: Record<string, PromptCount>;
+  prompts: Record<string, PromptRefs>;
 }
 
 export function isBackfillPrompt(data: unknown): boolean {
@@ -29,10 +31,26 @@ function ledgerKey(sessionId: string): string {
   return `pl_${createHash("sha256").update(sessionId).digest("hex").slice(0, 40)}`;
 }
 
+function refs(value: unknown): PromptRefs | null {
+  if (!value || typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  if (!Array.isArray(v["live"]) || !Array.isArray(v["claimed"])) return null;
+  return {
+    live: v["live"].filter((x): x is string => typeof x === "string"),
+    claimed: v["claimed"].filter((x): x is string => typeof x === "string"),
+  };
+}
+
 async function load(kv: StateKV, sessionId: string): Promise<PromptLedger> {
-  const stored = await kv.get<PromptLedger>(KV.capturePrompts, ledgerKey(sessionId)).catch(() => null);
-  if (stored && typeof stored.prompts === "object" && stored.prompts !== null) return stored;
-  return { sessionId, updatedAt: new Date().toISOString(), prompts: {} };
+  const stored = await kv.get<PromptLedger>(KV.capturePrompts, ledgerKey(sessionId));
+  const prompts: Record<string, PromptRefs> = {};
+  if (stored && typeof stored.prompts === "object" && stored.prompts !== null) {
+    for (const [key, value] of Object.entries(stored.prompts)) {
+      const entry = refs(value);
+      if (entry) prompts[key] = entry;
+    }
+  }
+  return { sessionId, updatedAt: stored?.updatedAt ?? new Date().toISOString(), prompts };
 }
 
 async function save(kv: StateKV, ledger: PromptLedger): Promise<void> {
@@ -44,23 +62,30 @@ async function save(kv: StateKV, ledger: PromptLedger): Promise<void> {
   await kv.set(KV.capturePrompts, ledgerKey(ledger.sessionId), ledger);
 }
 
-export async function recordLivePrompt(kv: StateKV, sessionId: string, prompt: string): Promise<void> {
+function bounded(list: string[]): string[] {
+  return list.length > PROMPT_LEDGER_MAX_REFS ? list.slice(list.length - PROMPT_LEDGER_MAX_REFS) : list;
+}
+
+export async function recordLivePrompt(kv: StateKV, sessionId: string, prompt: string, ref: string): Promise<void> {
   const key = promptContentKey(prompt);
   if (!key) return;
   const ledger = await load(kv, sessionId);
-  const current = ledger.prompts[key] ?? { live: 0, matched: 0 };
+  const current = ledger.prompts[key] ?? { live: [], claimed: [] };
+  if (current.live.includes(ref)) return;
   delete ledger.prompts[key];
-  ledger.prompts[key] = { live: current.live + 1, matched: current.matched };
+  ledger.prompts[key] = { live: bounded([...current.live, ref]), claimed: current.claimed };
   await save(kv, ledger);
 }
 
-export async function claimBackfillPrompt(kv: StateKV, sessionId: string, prompt: string): Promise<boolean> {
+export async function claimBackfillPrompt(kv: StateKV, sessionId: string, prompt: string, ref: string): Promise<boolean> {
   const key = promptContentKey(prompt);
   if (!key) return false;
   const ledger = await load(kv, sessionId);
   const current = ledger.prompts[key];
-  if (!current || current.matched >= current.live) return false;
-  current.matched++;
+  if (!current) return false;
+  if (current.claimed.includes(ref)) return true;
+  if (current.claimed.length >= current.live.length) return false;
+  current.claimed = bounded([...current.claimed, ref]);
   await save(kv, ledger);
   return true;
 }

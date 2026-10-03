@@ -179,15 +179,18 @@ export function registerObserveFunction(
       const submittedPrompt =
         payload.hookType === "prompt_submit" && typeof raw.userPrompt === "string" ? raw.userPrompt : undefined;
       const backfillPrompt = submittedPrompt && isBackfillPrompt(payload.data) ? submittedPrompt : undefined;
+      const livePrompt = submittedPrompt && !backfillPrompt ? submittedPrompt : undefined;
+      const promptRef = durable || typeof payload.eventId !== "string" ? obsId : payload.eventId;
 
       return withKeyedLock(`obs:${payload.sessionId}`, async () => {
         const existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
         const stored = durable ? existing.find((o) => o?.id === obsId) : undefined;
         if (stored) {
+          if (livePrompt) await recordLivePrompt(kv, payload.sessionId, livePrompt, promptRef);
           await restoreIndexEntries(stored);
           return { observationId: obsId, deduplicated: true, existing: true };
         }
-        if (backfillPrompt && (await claimBackfillPrompt(kv, payload.sessionId, backfillPrompt))) {
+        if (backfillPrompt && (await claimBackfillPrompt(kv, payload.sessionId, backfillPrompt, promptRef))) {
           recordDedupSkip();
           return { deduplicated: true, sessionId: payload.sessionId };
         }
@@ -277,14 +280,7 @@ export function registerObserveFunction(
         if (dedupMap && dedupHash) {
           dedupMap.record(dedupHash);
         }
-        if (submittedPrompt && !backfillPrompt) {
-          await recordLivePrompt(kv, payload.sessionId, submittedPrompt).catch((err) => {
-            logger.warn("prompt ledger update failed", {
-              sessionId: payload.sessionId,
-              error: err instanceof Error ? err.message : String(err),
-            });
-          });
-        }
+        if (livePrompt) await recordLivePrompt(kv, payload.sessionId, livePrompt, promptRef);
 
         await sdk.trigger({
           function_id: "stream::send",
