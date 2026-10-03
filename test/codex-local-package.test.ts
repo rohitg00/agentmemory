@@ -235,7 +235,13 @@ describe("Codex release packaging", () => {
     for (const path of [manifest.hooks, manifest.interface.logo, manifest.interface.composerIcon,
       manifest.extensions["com.openai"].onboardingSkill]) expect(existsSync(join(extracted, path))).toBe(true);
     expect(manifest.interface.shortDescription.length).toBeLessThanOrEqual(30);
-    expect(readdirSync(join(extracted, "scripts"))).toHaveLength(7);
+    expect(readdirSync(join(extracted, "scripts"))).toHaveLength(8);
+    for (const script of readdirSync(join(extracted, "scripts"))) {
+      const source = readFileSync(join(extracted, "scripts", script), "utf8");
+      for (const match of source.matchAll(/from ["'](\.\/[^"']+)["']/g)) {
+        expect(existsSync(join(extracted, "scripts", match[1])), `${script} imports ${match[1]}`).toBe(true);
+      }
+    }
     expect(existsSync(join(extracted, ".claude-plugin"))).toBe(false);
     expect(existsSync(join(extracted, "plugin.json"))).toBe(false);
   });
@@ -246,6 +252,7 @@ describe("Codex release packaging", () => {
     const listing = execFileSync("unzip", ["-Z1", archive], { encoding: "utf8" });
     expect(listing).not.toMatch(/^hooks\//m);
     expect(listing).not.toContain("scripts/session-start.mjs");
+    expect(listing).not.toContain("scripts/_capture.mjs");
     expect(listing).toContain(".mcp.json");
     expect(listing).toContain("skills/agentmemory-config/SKILL.md");
     const manifest = JSON.parse(execFileSync("unzip", ["-p", archive, ".codex-plugin/plugin.json"], { encoding: "utf8" }));

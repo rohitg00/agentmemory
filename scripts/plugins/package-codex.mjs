@@ -39,6 +39,7 @@ for (const flavor of ["local", "review"]) {
     mkdirSync(join(destination, "hooks"));
     cpSync(join(plugin, "hooks/hooks.codex.json"), join(destination, "hooks/hooks.codex.json"));
     const hooks = readFileSync(join(plugin, "hooks/hooks.codex.json"), "utf8");
+    cpSync(join(plugin, "scripts/_capture.mjs"), join(destination, "scripts/_capture.mjs"));
     for (const script of new Set([...hooks.matchAll(/scripts\/([\w-]+\.mjs)/g)].map((m) => m[1]))) {
       cpSync(join(plugin, "scripts", script), join(destination, "scripts", script));
     }

@@ -28,8 +28,11 @@ When the MCP tools stay unavailable but the daemon is running, call the REST
 API directly:
 
 1. Set `AGENTMEMORY_URL` to the daemon base URL (default `http://localhost:3111`).
-2. Add `Authorization: Bearer $AGENTMEMORY_SECRET` ONLY when `AGENTMEMORY_SECRET`
-   is set. Authenticated REST fallback requests require HTTPS for non-loopback
+2. The REST API requires a bearer credential by default. Use the host's explicit
+   `AGENTMEMORY_SECRET`; for loopback URLs only, fall back to the secret in
+   `~/.agentmemory/.env` and then `~/.agentmemory/secret`. Load the value locally
+   without displaying it. Never send a local-file secret to a remote URL.
+   Authenticated REST fallback requests require HTTPS for non-loopback
    URLs; HTTP is allowed for loopback URLs (`localhost`, `127.0.0.0/8`, or `[::1]`).
    Do not print or save the secret.
 
@@ -47,4 +50,5 @@ Endpoint map by skill:
 
 The MCP host reads the plugin MCP configuration. Restart the daemon after
 changing its configuration, then restart or reconnect the host MCP process after
-changing its URL or secret. Do not assume the daemon's `.env` configures the host.
+changing its URL or explicit secret. The local bridge reads the credential files
+for each request; it does not inherit other daemon `.env` settings.

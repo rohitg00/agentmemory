@@ -78,16 +78,16 @@ function mcp(script: string, cwd: string, env: NodeJS.ProcessEnv) {
 }
 
 describe.skipIf(!engineBin)("local plugin against the pinned iii daemon", () => {
-  it("captures hooks, shares memory with the Claude MCP entry point, persists across restart, and fails visibly on outage", async () => {
+  it("authenticates locally, captures and recovers hooks, shares memory, and persists across restart", async () => {
     // vitest.config.ts isolates user configuration for the entire test process.
     expect(homedir()).toContain("agentmemory-test-home-");
     expect(execFileSync(engineBin!, ["--version"], { encoding: "utf8" }).trim()).toBe(III_PINNED_VERSION);
     sandbox = mkdtempSync(join(tmpdir(), "agentmemory-live-plugin-"));
     const [restPort, streamPort, viewerPort, enginePort] = await unusedPorts();
     const base = `http://127.0.0.1:${restPort}`;
-    const secret = "isolated-smoke-secret";
+    const secretPath = join(homedir(), ".agentmemory", "secret");
     const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "TMPDIR", "TEMP", "LANG"].includes(key)));
-    const env = { ...inherited, AGENTMEMORY_URL: base, AGENTMEMORY_SECRET: secret,
+    const env = { ...inherited, AGENTMEMORY_URL: base, AGENTMEMORY_DATA_DIR: join(sandbox, "state"),
       III_ENGINE_URL: `ws://127.0.0.1:${enginePort}`, III_REST_PORT: String(restPort), III_STREAM_PORT: String(streamPort),
       III_VIEWER_PORT: String(viewerPort), III_TELEMETRY_ENABLED: "false", AGENTMEMORY_RUNTIME_DIR: join(sandbox, "runtime"),
       AGENTMEMORY_AUTO_COMPRESS: "false", AGENTMEMORY_INJECT_CONTEXT: "false", AGENTMEMORY_TOOLS: "all" };
@@ -103,6 +103,7 @@ describe.skipIf(!engineBin)("local plugin against the pinned iii daemon", () => 
       const deadline = Date.now() + 30_000;
       while (Date.now() < deadline) {
         try {
+          const secret = readFileSync(secretPath, "utf8").trim();
           const res = await fetch(`${base}/agentmemory/mcp/tools`, { headers: { authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(1000) });
           if (res.ok) return { engine: engine.child, worker: worker.child };
         } catch {}
@@ -111,11 +112,16 @@ describe.skipIf(!engineBin)("local plugin against the pinned iii daemon", () => 
       }
       throw new Error(`Daemon failed to become ready:\n${engine.diagnostic()}\n${worker.diagnostic()}`);
     };
-    let running = await daemon();
     const packaged = join(root, "dist/plugins/agentmemory-codex-local");
     const codex = mcp(join(packaged, "scripts/plugin-bridge.mjs"), packaged, env);
+    await codex.request("initialize", { protocolVersion: "2025-11-25" });
+    expect((await codex.request("tools/list")).error).toBeDefined();
+    let running = await daemon();
+    const anonymous = await fetch(`${base}/agentmemory/mcp/tools`);
+    expect(anonymous.status).toBe(401);
+    await anonymous.body?.cancel();
     const claude = mcp(join(root, "dist/standalone.mjs"), sandbox, env);
-    for (const client of [codex, claude]) await client.request("initialize", { protocolVersion: "2025-11-25" });
+    await claude.request("initialize", { protocolVersion: "2025-11-25" });
     expect((await codex.request("tools/list")).result.tools).toHaveLength(54);
     expect((await codex.request("resources/list")).result.resources).toHaveLength(3);
     expect((await codex.request("resources/templates/list")).result.resourceTemplates).toHaveLength(3);
@@ -129,11 +135,12 @@ describe.skipIf(!engineBin)("local plugin against the pinned iii daemon", () => 
     mkdirSync(cwd);
     const sessionId = `ses_${token}`;
     const hook = async (name: string, input: Record<string, unknown>) => {
-      const { child } = launch(process.execPath, [join(packaged, `scripts/${name}.mjs`)], cwd, env);
+      const { child, diagnostic } = launch(process.execPath, [join(packaged, `scripts/${name}.mjs`)], cwd, env);
       child.stdout.resume();
       const exit = new Promise<number | null>((done) => child.once("exit", done));
       child.stdin.end(JSON.stringify({ session_id: sessionId, cwd, ...input }));
-      expect(await exit).toBe(0);
+      const code = await exit;
+      expect(code, diagnostic()).toBe(0);
     };
     await hook("session-start", {});
     await hook("post-tool-use", { tool_name: "exec_command", tool_input: { cmd: "cat sample.txt" }, tool_response: "synthetic captured output" });
@@ -153,7 +160,23 @@ describe.skipIf(!engineBin)("local plugin against the pinned iii daemon", () => 
     await stop(running.engine);
     const failed = await codex.request("tools/call", { name: "memory_save", arguments: { content: "must not fallback" } });
     expect(failed.result.isError).toBe(true);
+    const offlineMarker = `offlinecapture${Date.now()}`;
+    await hook("post-tool-use", { tool_use_id: offlineMarker, tool_name: "exec_command",
+      tool_input: { cmd: `echo ${offlineMarker}` }, tool_response: offlineMarker });
+    const capture = (drain = false) => JSON.parse(execFileSync(process.execPath,
+      [join(root, "dist/cli.mjs"), "capture", "--port", String(restPort), "--json", ...(drain ? ["--drain"] : [])],
+      { cwd: sandbox, env, encoding: "utf8", timeout: 20_000 }));
+    expect(capture().spool.records).toBe(1);
     running = await daemon();
+    await expect.poll(() => capture(true).spool.records, { timeout: 15_000 }).toBe(0);
+    const recovered = capture();
+    expect(recovered.spool.stats.delivered).toBe(1);
+    expect(recovered.spool.records).toBe(0);
+    await expect.poll(async () => (await codex.tool("memory_smart_search", { query: offlineMarker })).results.length,
+      { timeout: 15_000 }).toBe(1);
+    const found = await codex.tool("memory_smart_search", { query: offlineMarker });
+    const expanded = await codex.tool("memory_smart_search", { query: offlineMarker, expandIds: found.results[0].obsId });
+    expect(JSON.stringify(expanded)).toContain(offlineMarker);
     expect(JSON.stringify(await codex.tool("memory_smart_search", { query: token }))).toContain(token);
     const ids = [saved.id ?? saved.memory?.id, savedByClaude.id ?? savedByClaude.memory?.id];
     expect(ids.every((id) => typeof id === "string")).toBe(true);

@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { VERSION } from "../version.js";
+import { resolveClientSecret } from "../secret-store.js";
 import { resolveEnvOrEmpty } from "./rest-proxy.js";
 import { createStdioTransport, JsonRpcError, type RequestHandler } from "./transport.js";
 
@@ -12,14 +13,19 @@ export function createPluginBridge(): RequestHandler {
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
     throw new Error("AGENTMEMORY_URL must be an HTTP(S) base URL without credentials, query, or fragment.");
   }
-  const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
   const loopback = ["localhost", "localhost.", "[::1]"].includes(base.hostname)
     || /^127(?:\.\d{1,3}){3}$/.test(base.hostname);
-  if (secret && base.protocol !== "https:" && !loopback) {
-    throw new Error("AGENTMEMORY_URL requires HTTPS when AGENTMEMORY_SECRET is set, except for loopback URLs.");
+  function resolveSecret(): string {
+    const secret = resolveClientSecret(base.href);
+    if (secret && base.protocol !== "https:" && !loopback) {
+      throw new Error("AGENTMEMORY_URL requires HTTPS when AGENTMEMORY_SECRET is set, except for loopback URLs.");
+    }
+    return secret;
   }
+  resolveSecret();
 
   async function call(path: string, body?: Record<string, unknown>): Promise<any> {
+    const secret = resolveSecret();
     let response: Response;
     try {
       response = await fetch(`${base.href.replace(/\/$/, "")}/agentmemory/mcp/${path}`, {

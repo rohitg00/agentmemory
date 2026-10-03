@@ -32,6 +32,9 @@ uncommitted changes are included in the build, so it is not a release attestatio
 
 Install the built folder through its generated local marketplace:
 
+`agentmemory-local-preview` names this local test marketplace. It is not an npm
+package or a public directory listing.
+
 ```sh
 codex plugin marketplace add ./dist/plugins
 codex plugin add agentmemory@agentmemory-local-preview
@@ -58,9 +61,15 @@ The bridge runs with `node scripts/plugin-bridge.mjs` from the installed plugin
 directory. Codex resolves its relative `cwd` to that directory, including paths
 with spaces. No npm download occurs when the bridge starts.
 
-Default daemon URL: `http://localhost:3111`. To use a different port or shared
-secret, supply `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` to the MCP host's
-environment, then reconnect MCP. The daemon's `.env` is separate. Never put
+Default daemon URL: `http://localhost:3111`. Local authentication works without
+copying a secret into Codex: the bridge uses `AGENTMEMORY_SECRET` from the host
+environment, then the secret in `~/.agentmemory/.env`, then the daemon-generated
+`~/.agentmemory/secret`. It rereads credentials for each request so a daemon
+started after the bridge can connect without reinstalling the plugin.
+
+For a custom port, supply `AGENTMEMORY_URL` to the MCP host and reconnect MCP.
+Local credential files are read only for loopback URLs. A remote daemon requires
+an explicit host `AGENTMEMORY_SECRET` and HTTPS when authenticated. Never put
 credential values in a plugin manifest or archive.
 
 `agentmemory connect codex` remains the alternative for MCP-only setup. If that
@@ -79,6 +88,13 @@ fails. It does not save into the standalone fallback store. It does not retry
 mutations automatically; a timeout can happen after a write committed, so inspect
 state before retrying. Reconnect after changing the daemon's enabled tool surface.
 
+Capture hooks ship with their shared `_capture.mjs` dependency. During an outage,
+supported hooks retain observations in the runtime's bounded local spool. Inspect
+it with `agentmemory capture --json`. The daemon recovers its spool at startup;
+use `agentmemory capture --drain` to request recovery while it is running. Use the same port
+and data-directory settings as the hooks. This recovery applies to captured
+observations; failed MCP tool writes are not queued automatically.
+
 ## Verify before distributing
 
 After packaging, run the live smoke test with an already installed binary matching
@@ -89,9 +105,10 @@ AGENTMEMORY_TEST_III=/absolute/path/to/iii npm run test:plugin:live
 ```
 
 It starts a real engine and worker on temporary loopback ports, with a temporary
-store and no model credentials. It checks packaged hook capture, both MCP entry
-points sharing memories, resources, prompts, lessons, deletion, outage failures,
-and persistence across an engine restart. It launches hook scripts directly;
+store and no model credentials. It checks daemon-generated authentication,
+packaged hook capture and offline recovery, both MCP entry points sharing
+memories, resources, prompts, lessons, deletion, outage failures, and persistence
+across an engine restart. It launches hook scripts directly;
 desktop hook dispatch and host trust UI still require a manual host test. The
 normal test suite skips this check unless the engine path is explicitly set.
 

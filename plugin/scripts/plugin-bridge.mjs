@@ -1,6 +1,76 @@
 import { pathToFileURL } from "node:url";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 //#region src/version.ts
 const VERSION = "0.9.29";
+//#endregion
+//#region src/secret-store.ts
+const SECRET_KEY = "AGENTMEMORY_SECRET";
+function agentmemoryHomeDir() {
+	return join(homedir(), ".agentmemory");
+}
+function secretFilePath() {
+	return join(agentmemoryHomeDir(), "secret");
+}
+function usable(value) {
+	if (typeof value !== "string") return "";
+	const trimmed = value.trim();
+	if (!trimmed) return "";
+	if (trimmed.startsWith("${") && trimmed.endsWith("}")) return "";
+	return trimmed;
+}
+function unquote(value) {
+	const quote = value[0];
+	if ((quote === "\"" || quote === "'") && value.length > 1) {
+		const close = value.indexOf(quote, 1);
+		if (close !== -1) return value.slice(1, close);
+	}
+	const hash = value.indexOf(" #");
+	return hash === -1 ? value : value.slice(0, hash).trim();
+}
+function readEnvFileSecret() {
+	let content;
+	try {
+		content = readFileSync(join(agentmemoryHomeDir(), ".env"), "utf-8");
+	} catch {
+		return "";
+	}
+	if (typeof content !== "string") return "";
+	let found = "";
+	for (const line of content.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed.startsWith("#")) continue;
+		const eq = trimmed.indexOf("=");
+		if (eq === -1) continue;
+		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== SECRET_KEY) continue;
+		found = usable(unquote(trimmed.slice(eq + 1).trim()));
+	}
+	return found;
+}
+function readStoredSecret() {
+	try {
+		return usable(readFileSync(secretFilePath(), "utf-8"));
+	} catch {
+		return "";
+	}
+}
+function isLoopbackUrl(url) {
+	let hostname;
+	try {
+		hostname = new URL(url).hostname.toLowerCase();
+	} catch {
+		return false;
+	}
+	const bare = hostname.replace(/^\[|\]$/g, "");
+	return bare === "localhost" || bare === "::1" || /^127(?:\.\d{1,3}){3}$/.test(bare);
+}
+function resolveClientSecret(baseUrl, env = process.env) {
+	const fromEnv = usable(env[SECRET_KEY]);
+	if (fromEnv) return fromEnv;
+	if (!isLoopbackUrl(baseUrl)) return "";
+	return readEnvFileSecret() || readStoredSecret();
+}
 //#endregion
 //#region src/mcp/rest-proxy.ts
 function resolveEnvOrEmpty(name) {
@@ -200,14 +270,19 @@ const SETUP = "Start Agent Memory, check `agentmemory status`, and verify AGENTM
 function createPluginBridge() {
 	const base = new URL(resolveEnvOrEmpty("AGENTMEMORY_URL") || "http://localhost:3111");
 	if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw new Error("AGENTMEMORY_URL must be an HTTP(S) base URL without credentials, query, or fragment.");
-	const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
 	const loopback = [
 		"localhost",
 		"localhost.",
 		"[::1]"
 	].includes(base.hostname) || /^127(?:\.\d{1,3}){3}$/.test(base.hostname);
-	if (secret && base.protocol !== "https:" && !loopback) throw new Error("AGENTMEMORY_URL requires HTTPS when AGENTMEMORY_SECRET is set, except for loopback URLs.");
+	function resolveSecret() {
+		const secret = resolveClientSecret(base.href);
+		if (secret && base.protocol !== "https:" && !loopback) throw new Error("AGENTMEMORY_URL requires HTTPS when AGENTMEMORY_SECRET is set, except for loopback URLs.");
+		return secret;
+	}
+	resolveSecret();
 	async function call(path, body) {
+		const secret = resolveSecret();
 		let response;
 		try {
 			response = await fetch(`${base.href.replace(/\/$/, "")}/agentmemory/mcp/${path}`, {

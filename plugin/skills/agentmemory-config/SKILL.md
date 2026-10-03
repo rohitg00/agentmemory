@@ -17,11 +17,15 @@ agentmemory reads configuration from the environment and from `~/.agentmemory/.e
 3. The Codex plugin already supplies MCP. `agentmemory connect codex` is the
    alternative for MCP-only installation. If both are configured, explain the
    duplicate and let the user choose which connection to retain.
-4. For a custom port or authentication, pass `AGENTMEMORY_URL` and
-   `AGENTMEMORY_SECRET` through the host environment and restart the MCP server.
+4. Local authentication is automatic: the bridge first uses a host
+   `AGENTMEMORY_SECRET`, then the secret in `~/.agentmemory/.env`, then the
+   daemon-generated `~/.agentmemory/secret`. For a custom port, pass
+   `AGENTMEMORY_URL` through the host environment and restart the MCP server.
+   Remote URLs require an explicit host secret; local files are never forwarded.
    Authenticated bridge requests require HTTPS for non-loopback URLs; HTTP is
    allowed for loopback URLs (`localhost`, `127.0.0.0/8`, or `[::1]`).
-   The daemon's `.env` is not automatically inherited by the MCP host.
+   Only the local secret is read from the daemon's `.env`; other settings are not
+   automatically inherited by the MCP host.
 5. Describe the observed mode. Codex's bundled bridge requires the daemon and
    never silently saves into a fallback store. Other hosts using the standalone
    shim may expose only seven basic tools when the daemon is unavailable.
@@ -53,7 +57,8 @@ AGENTMEMORY_INJECT_CONTEXT=true
   then restart it and reconnect MCP so the host refreshes its tool list.
 - Data stays in the configured local daemon store. Enabled external model
   providers can receive selected content. Explain that boundary before enabling.
-- Auth: set `AGENTMEMORY_SECRET` to require `Authorization: Bearer` on the REST API.
+- Auth: the REST API requires `Authorization: Bearer` by default and generates a
+  local secret when none is configured. Set `AGENTMEMORY_SECRET` to override it.
 
 ## Ports
 
