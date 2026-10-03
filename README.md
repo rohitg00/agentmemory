@@ -1356,7 +1356,7 @@ else
 fi
 ```
 
-`/agentmemory/export` also accepts `?maxSessions=` and `?offset=` for chunking a large corpus across several calls; `strategy` on import is `merge` (default-safe), `replace`, or `skip`.
+`/agentmemory/export` also accepts `?maxSessions=` and `?offset=` for chunking a large corpus across several calls, `?collectionLimit=` and `?collectionOffset=` to page memories, the graph and the other collections, and `?collections=` to return only the named ones; `strategy` on import is `merge` (default-safe), `replace`, or `skip`, and `replace` refuses a paged or selected export.
 
 ### What iii replaces
 

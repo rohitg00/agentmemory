@@ -115,6 +115,7 @@ interface Validated {
   tokenBudget?: number;
   memoryIds?: string[];
   reason?: string;
+  exportQuery?: string;
 }
 
 function validate(toolName: string, args: Record<string, unknown>): Validated {
@@ -175,8 +176,17 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.reason = (args["reason"] as string) || "plugin skill request";
       return v;
     }
-    case "memory_export":
+    case "memory_export": {
+      const query = new URLSearchParams();
+      for (const key of ["maxSessions", "offset", "collectionLimit", "collectionOffset"]) {
+        const n = Number(args[key]);
+        const min = key === "maxSessions" || key === "collectionLimit" ? 1 : 0;
+        if (args[key] !== undefined && Number.isInteger(n) && n >= min) query.set(key, String(n));
+      }
+      if (typeof args["collections"] === "string") query.set("collections", args["collections"]);
+      v.exportQuery = query.toString();
       return v;
+    }
     case "memory_audit": {
       v.limit = parseLimit(args["limit"], 50);
       return v;
@@ -244,7 +254,10 @@ async function handleProxy(
     }
     case "memory_export": {
       try {
-        const result = await handle.call("/agentmemory/export", { method: "GET" });
+        const result = await handle.call(
+          `/agentmemory/export${v.exportQuery ? `?${v.exportQuery}` : ""}`,
+          { method: "GET" },
+        );
         return textResponse(result, true);
       } catch (err) {
         if (
