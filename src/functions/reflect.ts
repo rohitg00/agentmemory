@@ -13,6 +13,11 @@ import type {
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
 
+export const MAX_CONCEPTS_PER_CLUSTER = 15;
+export const MAX_CLUSTER_FACTS = 10;
+export const MAX_CLUSTER_LESSONS = 10;
+export const MAX_CLUSTER_CRYSTALS = 5;
+
 interface ConceptCluster {
   concepts: string[];
   facts: Array<{ fact: string; confidence: number }>;
@@ -34,7 +39,7 @@ function reinforceInsight(insight: Insight): void {
   insight.updatedAt = now;
 }
 
-function buildGraphClusters(
+export function buildGraphClusters(
   nodes: GraphNode[],
   edges: GraphEdge[],
   maxClusters: number,
@@ -66,10 +71,11 @@ function buildGraphClusters(
 
   const visited = new Set<string>();
   const clusters: string[][] = [];
-  const conceptNodeIds = new Set(conceptNodes.map((n) => n.id));
+  const nodeById = new Map(conceptNodes.map((n) => [n.id, n]));
 
   for (const seed of sorted) {
-    if (visited.has(seed.id) || clusters.length >= maxClusters) break;
+    if (clusters.length >= maxClusters) break;
+    if (visited.has(seed.id)) continue;
 
     const cluster: string[] = [];
     const queue = [seed.id];
@@ -77,15 +83,17 @@ function buildGraphClusters(
     let depth = 0;
 
     while (queue.length > 0 && depth <= 2) {
+      if (cluster.length >= MAX_CONCEPTS_PER_CLUSTER) break;
       const levelCount = queue.length;
       for (let i = 0; i < levelCount; i++) {
+        if (cluster.length >= MAX_CONCEPTS_PER_CLUSTER) break;
         const current = queue.shift()!;
         if (seen.has(current)) continue;
         seen.add(current);
 
-        if (conceptNodeIds.has(current)) {
-          const node = conceptNodes.find((n) => n.id === current);
-          if (node) cluster.push(node.name);
+        const node = nodeById.get(current);
+        if (node) {
+          cluster.push(node.name);
           visited.add(current);
         }
 
@@ -103,7 +111,7 @@ function buildGraphClusters(
   return clusters;
 }
 
-function buildJaccardClusters(
+export function buildJaccardClusters(
   semanticMemories: SemanticMemory[],
   lessons: Lesson[],
   maxClusters: number,
@@ -133,14 +141,16 @@ function buildJaccardClusters(
   const clusters: string[][] = [];
 
   for (const concept of conceptList) {
-    if (visited.has(concept) || clusters.length >= maxClusters) break;
+    if (clusters.length >= maxClusters) break;
+    if (visited.has(concept)) continue;
 
     const cluster = [concept];
     visited.add(concept);
 
     const docsA = allConcepts.get(concept) || new Set();
     for (const other of conceptList) {
-      if (visited.has(other)) continue;
+      if (cluster.length >= MAX_CONCEPTS_PER_CLUSTER) break;
+      if (visited.has(other) || concept === other) continue;
       const docsB = allConcepts.get(other) || new Set();
       let intersection = 0;
       for (const d of docsA) {
@@ -210,25 +220,35 @@ export function registerReflectFunctions(
 
         const conceptSet = new Set(conceptNames.map((c) => c.toLowerCase()));
 
-        const clusterFacts = semanticMemories.filter((s) => {
-          const factTerms = s.fact.toLowerCase().split(/\s+/);
-          return factTerms.some((t) => conceptSet.has(t));
-        });
+        const clusterFacts = semanticMemories
+          .filter((s) => {
+            const factTerms = s.fact.toLowerCase().split(/\s+/);
+            return factTerms.some((t) => conceptSet.has(t));
+          })
+          .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+          .slice(0, MAX_CLUSTER_FACTS);
 
-        const clusterLessons = activeLessons.filter((l) =>
-          l.tags.some((t) => conceptSet.has(t.toLowerCase())) ||
-          conceptNames.some((c) =>
-            l.content.toLowerCase().includes(c.toLowerCase()),
-          ),
-        );
+        const clusterLessons = activeLessons
+          .filter(
+            (l) =>
+              l.tags.some((t) => conceptSet.has(t.toLowerCase())) ||
+              conceptNames.some((c) =>
+                l.content.toLowerCase().includes(c.toLowerCase()),
+              ),
+          )
+          .sort((a, b) => (b.confidence ?? 0) - (a.confidence ?? 0))
+          .slice(0, MAX_CLUSTER_LESSONS);
 
-        const clusterCrystals = crystals.filter((c) =>
-          (c.lessons || []).some((l) =>
-            conceptNames.some((cn) =>
-              l.toLowerCase().includes(cn.toLowerCase()),
+        const clusterCrystals = crystals
+          .filter((c) =>
+            (c.lessons || []).some((l) =>
+              conceptNames.some((cn) =>
+                l.toLowerCase().includes(cn.toLowerCase()),
+              ),
             ),
-          ),
-        );
+          )
+          .sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""))
+          .slice(0, MAX_CLUSTER_CRYSTALS);
 
         const totalItems =
           clusterFacts.length + clusterLessons.length + clusterCrystals.length;

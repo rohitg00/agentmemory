@@ -16,6 +16,8 @@ Rules:
 - Skip insights that merely restate a single source item
 - Always emit confidence attribute before title attribute`;
 
+export const MAX_REFLECT_PROMPT_CHARS = 12000;
+
 export function buildReflectPrompt(cluster: {
   concepts: string[];
   facts: Array<{ fact: string; confidence: number }>;
@@ -51,5 +53,12 @@ export function buildReflectPrompt(cluster: {
     );
   }
 
-  return `Synthesize higher-order insights from this cluster of related memories:\n\n${sections.join("\n")}`;
+  const prompt = `Synthesize higher-order insights from this cluster of related memories:\n\n${sections.join("\n")}`;
+
+  if (prompt.length > MAX_REFLECT_PROMPT_CHARS) {
+    const note = "\n\n[... truncated due to size limit]";
+    return prompt.slice(0, MAX_REFLECT_PROMPT_CHARS - note.length) + note;
+  }
+
+  return prompt;
 }
