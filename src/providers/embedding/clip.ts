@@ -3,18 +3,29 @@ import type { RawImage } from "@huggingface/transformers";
 import type { EmbeddingProvider } from "../../types.js";
 
 type TransformersModule = typeof import("@huggingface/transformers");
-type ClipPipeline = (
-  input: string[] | RawImage | RawImage[],
+type ClipImagePipeline = (
+  input: RawImage | RawImage[],
   options?: { pooling?: string; normalize?: boolean },
 ) => Promise<{ tolist: () => number[][]; data: Float32Array }>;
+type ClipTextModel = {
+  (inputs: { input_ids: unknown; attention_mask?: unknown; token_type_ids?: unknown }): Promise<{
+    text_embeds: { tolist: () => number[][] };
+  }>;
+  from_pretrained: (modelId: string, options?: { dtype?: string }) => Promise<ClipTextModel>;
+};
+type ClipTokenizer = {
+  (texts: string[]): Promise<{ input_ids: unknown; attention_mask?: unknown; token_type_ids?: unknown }>;
+  from_pretrained: (modelId: string) => Promise<ClipTokenizer>;
+};
 
 const DEFAULT_MODEL = "Xenova/clip-vit-base-patch32";
 
 export class ClipEmbeddingProvider implements EmbeddingProvider {
   readonly name = "clip";
   readonly dimensions = 512;
-  private textExtractor: ClipPipeline | null = null;
-  private imageExtractor: ClipPipeline | null = null;
+  private textModel: ClipTextModel | null = null;
+  private tokenizer: ClipTokenizer | null = null;
+  private imageExtractor: ClipImagePipeline | null = null;
   private readonly modelId: string;
 
   constructor(modelId: string = DEFAULT_MODEL) {
@@ -27,31 +38,48 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedBatch(texts: string[]): Promise<Float32Array[]> {
-    const extractor = await this.getTextExtractor();
-    const output = await extractor(texts, { pooling: "mean", normalize: true });
-    return output.tolist().map((v) => new Float32Array(v));
+    // Text and image embeddings must live in the same projection space so
+    // vision-search can compare a text query against stored image vectors.
+    // `pipeline("feature-extraction", clipModel)` routes to the *image*
+    // encoder in transformers.js and fails with "Missing the following
+    // inputs: pixel_values" for text input, so encode text with the CLIP
+    // text tower directly and L2-normalize to match embedImage().
+    const t = await loadTransformers();
+    const model = await this.getTextModel(t);
+    const tokenizer = await this.getTokenizer(t);
+    const inputs = await tokenizer(texts);
+    const out = await model(inputs);
+    return out.text_embeds.tolist().map((v) => normalize(new Float32Array(v)));
   }
 
   async embedImage(src: string): Promise<Float32Array> {
     const t = await loadTransformers();
     const image = await loadImage(t, src);
-    const extractor = await this.getImageExtractor();
+    const extractor = await this.getImageExtractor(t);
     const output = await extractor(image);
     const vec = output.data ?? new Float32Array(output.tolist()[0] || []);
     return normalize(vec);
   }
 
-  private async getTextExtractor(): Promise<ClipPipeline> {
-    if (this.textExtractor) return this.textExtractor;
-    const t = await loadTransformers();
-    this.textExtractor = (await t.pipeline("feature-extraction", this.modelId, { dtype: "q8" })) as ClipPipeline;
-    return this.textExtractor;
+  private async getTextModel(t: TransformersModule): Promise<ClipTextModel> {
+    if (this.textModel) return this.textModel;
+    this.textModel = (await t.CLIPTextModelWithProjection.from_pretrained(this.modelId, {
+      dtype: "q8",
+    })) as unknown as ClipTextModel;
+    return this.textModel;
   }
 
-  private async getImageExtractor(): Promise<ClipPipeline> {
+  private async getTokenizer(t: TransformersModule): Promise<ClipTokenizer> {
+    if (this.tokenizer) return this.tokenizer;
+    this.tokenizer = (await t.AutoTokenizer.from_pretrained(this.modelId)) as unknown as ClipTokenizer;
+    return this.tokenizer;
+  }
+
+  private async getImageExtractor(t: TransformersModule): Promise<ClipImagePipeline> {
     if (this.imageExtractor) return this.imageExtractor;
-    const t = await loadTransformers();
-    this.imageExtractor = (await t.pipeline("image-feature-extraction", this.modelId, { dtype: "q8" })) as ClipPipeline;
+    this.imageExtractor = (await t.pipeline("image-feature-extraction", this.modelId, {
+      dtype: "q8",
+    })) as ClipImagePipeline;
     return this.imageExtractor;
   }
 }
