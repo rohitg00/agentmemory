@@ -254,7 +254,7 @@ describe("viewer navigation and shared components", () => {
     expect(estimate([], 2000)).toEqual({ percent: 0, saved: 0 });
   });
 
-  it("session summaries stored as objects render as text (#1229)", () => {
+  it("session summaries stored as objects render as text", () => {
     const summaryText = load<(v: unknown) => string>("summaryText");
     expect(summaryText({ title: "Fix auth", narrative: "long" })).toBe("Fix auth");
     expect(summaryText({ narrative: "Only narrative" })).toBe("Only narrative");
@@ -264,7 +264,7 @@ describe("viewer navigation and shared components", () => {
     expect(viewer).not.toMatch(/s\.firstPrompt \|\| s\.summary \|\|/);
   });
 
-  it("tags stored as a CSV string no longer break a tab (#906)", () => {
+  it("tags stored as a CSV string no longer break a tab", () => {
     const asTags = load<(v: unknown) => string[]>("asTags");
     expect(asTags("analysis, run,streamed")).toEqual(["analysis", "run", "streamed"]);
     expect(asTags(["feat", "prompts"])).toEqual(["feat", "prompts"]);
@@ -273,13 +273,13 @@ describe("viewer navigation and shared components", () => {
     expect(viewer).not.toMatch(/\(l\.tags \|\| \[\]\)/);
   });
 
-  it("live buffers are capped so a large sync backlog cannot freeze the tab (#609)", () => {
+  it("live buffers are capped so a large sync backlog cannot freeze the tab", () => {
     expect(viewer).toMatch(/var LIVE_BUFFER_MAX = 200;/);
     expect(extractFunction("handleStreamEvent")).toMatch(/evt\.data\.slice\(-LIVE_BUFFER_MAX\)/);
     expect(extractFunction("routeWsMessage")).toMatch(/observations\.length > LIVE_BUFFER_MAX/);
   });
 
-  it("Rebuild Graph asks first, ignores repeat clicks, and reports the result (#1383)", () => {
+  it("Rebuild Graph asks first, ignores repeat clicks, and reports the result", () => {
     const rebuild = extractFunction("rebuildGraph");
     expect(rebuild).toMatch(/if \(graphRebuilding\) return;/);
     expect(rebuild).toMatch(/window\.confirm\(/);

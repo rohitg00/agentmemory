@@ -1,4 +1,5 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
+import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, Session } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -196,11 +197,6 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         }
         await kv.set(KV.memories, memory.id, memory);
 
-        // Without this, mem::remember persists the row but the BM25
-        // index never sees it, so memory_smart_search and memory_recall
-        // return empty even seconds after save (#257). Use try/catch so
-        // an indexing failure doesn't block the save itself — the
-        // restart-time rebuild will pick the memory up either way.
         try {
           getSearchIndex().add(memoryToObservation(memory));
           scheduleIndexSave();
@@ -270,7 +266,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       observationIds?: string[];
       memoryId?: string;
     }) => {
-      type ObservationRef = { id?: string; imageData?: string; imageRef?: string };
+      type ObservationRef = { id?: string; imageData?: string; imageRef?: string; captureKey?: string };
       let deleted = 0;
       const deletedMemoryIds: string[] = [];
       const deletedObservationIds: string[] = [];
@@ -320,6 +316,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           known ??
           (await kv.get<ObservationRef>(KV.observations(sessionId), obsId));
         if (!obs) return false;
+        await markCaptureEventDeleted(kv, { ...obs, id: obsId, sessionId });
         await kv.delete(KV.observations(sessionId), obsId);
         deletedObservationIds.push(obsId);
         getSearchIndex().remove(obsId);

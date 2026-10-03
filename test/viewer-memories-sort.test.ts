@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
-describe("viewer lists sort newest first (#674)", () => {
+describe("viewer lists sort newest first", () => {
   const viewer = readFileSync("src/viewer/index.html", "utf-8");
 
   function extractFunction(name: string): string {

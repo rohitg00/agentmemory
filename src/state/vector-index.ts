@@ -1,10 +1,3 @@
-// Pass byteOffset + byteLength explicitly so the round-trip survives
-// Node's Buffer pool. Buffer.from(b64, "base64") returns a slice of a
-// shared 8KB pool (poolSize), and `new Float32Array(buf.buffer)` ignores
-// the slice metadata — it would mint a 2048-element view over the whole
-// pool. Same risk on the encode side if the input Float32Array is itself
-// a sliced view. Reported as a phantom "2048 dimensions on disk" crash
-// in #455 / #469 / #584 / #587.
 export function float32ToBase64(arr: Float32Array): string {
   return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).toString(
     "base64",
@@ -36,17 +29,29 @@ function cosineSimilarity(a: Float32Array, b: Float32Array): number {
 
 export type VectorEntry = { embedding: Float32Array; sessionId: string };
 
+export type VectorChangeListener = (obsId: string | null, entry: VectorEntry | null) => void;
+
 export class VectorIndex {
   private vectors: Map<string, VectorEntry> = new Map();
   private changes: Map<string, boolean> = new Map();
+  private listener: VectorChangeListener | null = null;
+
+  setChangeListener(listener: VectorChangeListener | null): void {
+    this.listener = listener;
+  }
 
   add(obsId: string, sessionId: string, embedding: Float32Array): void {
-    this.vectors.set(obsId, { embedding, sessionId });
+    const entry = { embedding, sessionId };
+    this.vectors.set(obsId, entry);
     this.changes.set(obsId, true);
+    this.listener?.(obsId, entry);
   }
 
   remove(obsId: string): void {
-    if (this.vectors.delete(obsId)) this.changes.set(obsId, false);
+    if (this.vectors.delete(obsId)) {
+      this.changes.set(obsId, false);
+      this.listener?.(obsId, null);
+    }
   }
 
   has(obsId: string): boolean {
@@ -147,8 +152,10 @@ export class VectorIndex {
   }
 
   clear(): void {
+    const hadVectors = this.vectors.size > 0;
     for (const obsId of this.vectors.keys()) this.changes.set(obsId, false);
     this.vectors.clear();
+    if (hadVectors) this.listener?.(null, null);
   }
 
   restoreFrom(other: VectorIndex): void {

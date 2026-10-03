@@ -10,7 +10,7 @@ const PORT_ENVS = [
   "III_ENGINE_URL",
 ] as const;
 
-describe("multi-instance port auto-derive (#750)", () => {
+describe("multi-instance port auto-derive", () => {
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {

@@ -6,6 +6,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
 import { getEnvVar } from "../config.js";
 import { logger } from "../logger.js";
+import { escapeXmlText } from "../prompts/xml.js";
 
 type SlotScope = "project" | "global";
 
@@ -96,8 +97,6 @@ export const DEFAULT_SLOTS: ReadonlyArray<
   },
 ];
 
-// Read merged env so values loaded from ~/.agentmemory/.env are
-// honoured. process.env alone misses .env-only exports (#678).
 export function isSlotsEnabled(): boolean {
   return getEnvVar("AGENTMEMORY_SLOTS") === "true";
 }
@@ -186,8 +185,8 @@ export function renderPinnedContext(slots: MemorySlot[]): string {
   if (slots.length === 0) return "";
   const lines: string[] = ["# agentmemory pinned slots", ""];
   for (const slot of slots) {
-    lines.push(`## ${slot.label}`);
-    lines.push(slot.content.trim());
+    lines.push(`## ${escapeXmlText(slot.label)}`);
+    lines.push(escapeXmlText(slot.content.trim()));
     lines.push("");
   }
   return lines.join("\n");

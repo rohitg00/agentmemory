@@ -56,7 +56,7 @@ import {
   type RemoveOptions,
 } from "./cli/remove-plan.js";
 import { portFlagSuffix } from "./cli/ready-hint.js";
-import { describeInstallFailure, iiiInstallShellCommand, iiiManualInstallCommand, III_INSTALL_SPAWN_TIMEOUT_MS } from "./cli/engine-install.js";
+import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive } from "./cli/engine-install.js";
 import {
   dockerComposeArgs,
   dockerProjectName,
@@ -92,6 +92,8 @@ import { knownAgents } from "./cli/connect/index.js";
 const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
 import { resolveDataDir } from "./cli-data-dir.js";
+import { runCaptureCommand } from "./cli/capture.js";
+import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -222,6 +224,9 @@ Commands:
                      the engine was started natively but state file is missing).
   mcp                Start standalone MCP shim — opt-in surface for MCP-only clients
                      (Cursor, Gemini CLI, etc). REST always available at :3111.
+  capture [--drain]  Show capture health: the local offline spool and the server
+                     inbox (pending, retrying, dead letters). --drain sends
+                     spooled observations now. --json for machine output.
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
                      --max-files <N> | --max-files=<N>: override scan cap (default 200, max 1000;
                      out-of-range is rejected; for trees >1000 files, batch by subdirectory)
@@ -274,7 +279,7 @@ if (toolsIdx !== -1 && args[toolsIdx + 1]) {
   process.env["AGENTMEMORY_TOOLS"] = toolsMode;
 }
 
-const URL_CLIENT_COMMANDS = new Set(["status", "doctor", "mcp"]);
+const URL_CLIENT_COMMANDS = new Set(["status", "doctor", "mcp", "capture"]);
 let hasExplicitLocalPortOverride = false;
 let selectedInstance = 0;
 
@@ -1311,6 +1316,7 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
     p.log.info(
       `Auto-install unavailable on ${platform()} — ${asset} isn't tar-compatible. Install manually:\n` +
         `  1. Download ${releaseUrl}\n` +
+        `     Its SHA-256 must be ${expectedIiiSha256(IIPINNED_VERSION, asset ?? "") ?? `the value in ${releaseUrl.replace(/\.zip$/, ".sha256")}`}\n` +
         `  2. Extract iii.exe and place it on PATH (e.g. %USERPROFILE%\\.local\\bin)\n` +
         `Or use Docker: docker pull iiidev/iii:${IIPINNED_VERSION}`,
     );
@@ -1333,17 +1339,31 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
   const label = `Installing iii-engine v${IIPINNED_VERSION} (pinned)`;
   const spinner = p.spinner();
   spinner.start(label);
-  const result = spawnSync(
-    shBin,
-    ["-c", iiiInstallShellCommand(releaseUrl, binDir, binPath)],
-    { stdio: "pipe", encoding: "utf-8", timeout: III_INSTALL_SPAWN_TIMEOUT_MS },
-  );
-  if (result.status !== 0) {
+  const outcome = installIiiArchive({
+    sh: shBin,
+    releaseUrl,
+    version: IIPINNED_VERSION,
+    asset: asset ?? "",
+    binDir,
+    binPath,
+  });
+  if (!outcome.ok) {
     spinner.stop(`${label} ${pc.red("✗")}`);
+    const sha256 = expectedIiiSha256(IIPINNED_VERSION, asset ?? "");
+    const heading =
+      outcome.reason === "checksum"
+        ? "iii-engine download failed verification"
+        : outcome.reason === "no-checksum"
+          ? "iii-engine auto-install skipped"
+          : "iii-engine download failed";
+    const checksumHint = sha256
+      ? ""
+      : `Compare the archive against ${releaseUrl.replace(/\.(tar\.gz|zip)$/, ".sha256")} before extracting.\n`;
     p.log.warn(
-      `iii-engine download failed: ${describeInstallFailure(result).slice(0, 300)}\n` +
+      `${heading}: ${outcome.detail.slice(0, 300)}\n` +
         `Install it manually, then re-run agentmemory:\n` +
-        `  ${iiiManualInstallCommand(releaseUrl, binDir, binPath)}\n` +
+        `  ${iiiManualInstallCommand(releaseUrl, binDir, binPath, sha256)}\n` +
+        checksumHint +
         `Or use Docker: docker pull iiidev/iii:${IIPINNED_VERSION}`,
     );
     return { ok: false, binPath: null };
@@ -1837,12 +1857,18 @@ async function reconcilePersistedDockerEngine(): Promise<boolean> {
 function installInstructions(): string[] {
   const releaseUrl = iiiReleaseUrl();
   if (IS_WINDOWS) {
+    const asset = iiiReleaseAsset() ?? "";
+    const sha256 = expectedIiiSha256(IIPINNED_VERSION, asset);
+    const verify = sha256
+      ? `     Verify before extracting: (Get-FileHash .\\${asset}).Hash must be ${sha256.toUpperCase()}`
+      : `     Verify before extracting against the matching .sha256 file on the release page`;
     return [
       `agentmemory needs iii-engine v${IIPINNED_VERSION}. Pick one:`,
       "",
       "  A) Download the prebuilt Windows binary:",
       `     1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`,
       `     2. Download iii-x86_64-pc-windows-msvc.zip (or iii-aarch64-pc-windows-msvc.zip on ARM)`,
+      verify,
       "     3. Extract iii.exe to %USERPROFILE%\\.local\\bin\\iii.exe (or add to PATH)",
       "     4. Re-run: npx @agentmemory/agentmemory",
       "",
@@ -1855,7 +1881,7 @@ function installInstructions(): string[] {
     ];
   }
   const linuxInstall = releaseUrl
-    ? `  A) mkdir -p ~/.agentmemory/bin && curl -fsSL "${releaseUrl}" | tar -xz -C ~/.agentmemory/bin && chmod +x ~/.agentmemory/bin/iii`
+    ? `  A) ${iiiManualInstallCommand(releaseUrl, agentmemoryBinDir(), privateIiiPath(), expectedIiiSha256(IIPINNED_VERSION, iiiReleaseAsset() ?? ""))}`
     : `  A) Manual download: https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`;
   return [
     `agentmemory needs iii-engine v${IIPINNED_VERSION}. Pick one:`,
@@ -2145,9 +2171,7 @@ async function main() {
 
 async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 5000): Promise<T | null> {
   try {
-    const headers: Record<string, string> = {};
-    const secret = process.env["AGENTMEMORY_SECRET"];
-    if (secret) headers["Authorization"] = `Bearer ${secret}`;
+    const headers: Record<string, string> = bearerHeaders(base);
     const res = await fetch(`${base}/agentmemory/${path}`, {
       signal: AbortSignal.timeout(timeoutMs),
       headers,
@@ -2788,7 +2812,7 @@ async function postJson<T = unknown>(
   try {
     const res = await fetch(url, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...bearerHeaders(url) },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(timeoutMs),
     });
@@ -2806,7 +2830,7 @@ async function postJsonStrict<T = unknown>(
 ): Promise<T | null> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...bearerHeaders(url) },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -2848,7 +2872,7 @@ async function seedDemoSession(
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...bearerHeaders(url) },
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(5000),
       });
@@ -3734,12 +3758,10 @@ async function runImportJsonl(): Promise<void> {
   }
 
   const body: Record<string, unknown> = {};
-  if (pathArg) body["path"] = pathArg;
+  if (pathArg) body["path"] = resolve(pathArg.startsWith("~") ? join(homedir(), pathArg.slice(1)) : pathArg);
   if (maxFiles !== undefined) body["maxFiles"] = maxFiles;
 
-  const headers: Record<string, string> = { "content-type": "application/json" };
-  const secret = process.env["AGENTMEMORY_SECRET"];
-  if (secret) headers["authorization"] = `Bearer ${secret}`;
+  const headers: Record<string, string> = { "content-type": "application/json", ...bearerHeaders(base) };
 
   p.log.info(`Importing JSONL from ${pathArg || "~/.claude/projects"}…`);
   const spinner = p.spinner();
@@ -4075,6 +4097,15 @@ async function runConsole(): Promise<void> {
   process.exit(code);
 }
 
+async function runCapture(): Promise<void> {
+  const code = await runCaptureCommand({
+    base: getBaseUrl(),
+    args: args.slice(1),
+    secret: resolveClientSecret(getBaseUrl()),
+  });
+  process.exit(code);
+}
+
 const commands: Record<string, () => Promise<void>> = {
   init: runInit,
   connect: runConnectCmd,
@@ -4087,6 +4118,7 @@ const commands: Record<string, () => Promise<void>> = {
   remove: runRemove,
   mcp: runMcp,
   "import-jsonl": runImportJsonl,
+  capture: runCapture,
 };
 
 const first = args[0] ?? "";

@@ -22,18 +22,12 @@ import {
   renderPinnedContext,
 } from "./slots.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import { escapeXml, escapeXmlText } from "../prompts/xml.js";
 
 function estimateTokens(text: string): number {
   return Math.ceil(text.length / 3);
 }
 
-function escapeXmlAttr(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/"/g, "&quot;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-}
 
 export function registerContextFunction(
   sdk: IIIClient,
@@ -99,7 +93,7 @@ export function registerContextFunction(
           profileParts.push(
             `Concepts: ${profile.topConcepts
               .slice(0, 8)
-              .map((c) => c.concept)
+              .map((c) => escapeXmlText(c.concept))
               .join(", ")}`,
           );
         }
@@ -107,16 +101,16 @@ export function registerContextFunction(
           profileParts.push(
             `Key files: ${profile.topFiles
               .slice(0, 5)
-              .map((f) => f.file)
+              .map((f) => escapeXmlText(f.file))
               .join(", ")}`,
           );
         }
         if (profile.conventions.length > 0) {
-          profileParts.push(`Conventions: ${profile.conventions.join("; ")}`);
+          profileParts.push(`Conventions: ${profile.conventions.map(escapeXmlText).join("; ")}`);
         }
         if (profile.commonErrors.length > 0) {
           profileParts.push(
-            `Common errors: ${profile.commonErrors.slice(0, 3).join("; ")}`,
+            `Common errors: ${profile.commonErrors.slice(0, 3).map(escapeXmlText).join("; ")}`,
           );
         }
         if (profileParts.length > 0) {
@@ -130,12 +124,6 @@ export function registerContextFunction(
         }
       }
 
-      // Lessons — closes the loop opened by mem::lesson-save / mem::reflect.
-      // Without this block, lessons sit in KV and only surface when the agent
-      // thinks to call memory_lesson_recall. Ranking puts project-scoped
-      // lessons ahead of global ones, then weights by confidence; we cap at
-      // 10 to keep the block bounded since the outer token-budget loop
-      // below will drop the whole block if it doesn't fit. #457.
       const relevantLessons = lessons
         .filter((l) => !l.deleted && (!l.project || l.project === data.project))
         .sort((a, b) => {
@@ -147,7 +135,7 @@ export function registerContextFunction(
 
       if (relevantLessons.length > 0) {
         const oneLine = (s: string): string =>
-          s.replace(/\s*\n+\s*/g, " ").trim();
+          escapeXmlText(s.replace(/\s*\n+\s*/g, " ").trim());
         const items = relevantLessons
           .map(
             (l) =>
@@ -228,7 +216,7 @@ export function registerContextFunction(
       for (let i = 0; i < sessions.length; i++) {
         const summary = summariesPerSession[i];
         if (summary) {
-          const content = `## ${summary.title}\n${summary.narrative}\nDecisions: ${summary.keyDecisions.join("; ")}\nFiles: ${summary.filesModified.join(", ")}`;
+          const content = `## ${escapeXmlText(summary.title)}\n${escapeXmlText(summary.narrative)}\nDecisions: ${summary.keyDecisions.map(escapeXmlText).join("; ")}\nFiles: ${summary.filesModified.map(escapeXmlText).join(", ")}`;
           blocks.push({
             type: "summary",
             content,
@@ -260,9 +248,9 @@ export function registerContextFunction(
             .sort((a, b) => b.importance - a.importance)
             .slice(0, 5);
           const items = top
-            .map((o) => `- [${o.type}] ${o.title}: ${o.narrative}`)
+            .map((o) => `- [${escapeXmlText(o.type)}] ${escapeXmlText(o.title)}: ${escapeXmlText(o.narrative ?? "")}`)
             .join("\n");
-          const content = `## Session ${sessions[i].id.slice(0, 8)} (${sessions[i].startedAt})\n${items}`;
+          const content = `## Session ${escapeXmlText(sessions[i].id.slice(0, 8))} (${escapeXmlText(String(sessions[i].startedAt))})\n${items}`;
           blocks.push({
             type: "observation",
             content,
@@ -278,7 +266,7 @@ export function registerContextFunction(
       let usedTokens = 0;
       const selected: string[] = [];
       const accessedIds: string[] = [];
-      const header = `<agentmemory-context project="${escapeXmlAttr(data.project)}">`;
+      const header = `<agentmemory-context project="${escapeXml(String(data.project ?? ""))}">`;
       const footer = `</agentmemory-context>`;
       usedTokens += estimateTokens(header) + estimateTokens(footer);
 

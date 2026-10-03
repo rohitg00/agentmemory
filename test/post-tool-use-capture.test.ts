@@ -25,7 +25,7 @@ function runHook(
   });
 }
 
-describe("post-tool-use hook — capture filter (#993)", () => {
+describe("post-tool-use hook — capture filter", () => {
   let server: Server;
   let observeCalls = 0;
   let port = 0;

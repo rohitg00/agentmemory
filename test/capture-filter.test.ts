@@ -20,7 +20,7 @@ describe("bareToolName", () => {
   });
 });
 
-describe("shouldCaptureTool (#993)", () => {
+describe("shouldCaptureTool", () => {
   const envKeys = [
     "AGENTMEMORY_CAPTURE_ALLOW",
     "AGENTMEMORY_CAPTURE_DENY",

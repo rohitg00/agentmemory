@@ -10,7 +10,7 @@ import {
 // at 8 essentials with no indication the other 46 existed. Default
 // flipped to "all"; the lean set is still accessible via
 // AGENTMEMORY_TOOLS=core.
-describe("MCP tool surface default (#553)", () => {
+describe("MCP tool surface default", () => {
   const ORIG = process.env["AGENTMEMORY_TOOLS"];
   beforeEach(() => {
     delete process.env["AGENTMEMORY_TOOLS"];
@@ -50,7 +50,7 @@ describe("MCP tool surface default (#553)", () => {
     }
   });
 
-  it("plugin .mcp.json provides default env interpolation so CC parse never fails (#510)", () => {
+  it("plugin .mcp.json provides default env interpolation so CC parse never fails", () => {
     const raw = readFileSync("plugin/.mcp.json", "utf-8");
     const cfg = JSON.parse(raw) as {
       mcpServers: { agentmemory: { env: Record<string, string> } };

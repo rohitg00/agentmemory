@@ -420,7 +420,7 @@ describe("status for beginners", () => {
     );
     const html = renderStatusHtml(report, "n", { viewerUrl: "http://127.0.0.1:3113/#health" });
     expect(html).toContain('<a href="http://127.0.0.1:3113/#health">Open the live version in the viewer');
-    expect(html).toContain("curl -s http://localhost:3111/agentmemory/status");
+    expect(html).toContain("curl -s -H &quot;Authorization: Bearer ${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret)}&quot; http://localhost:3111/agentmemory/status");
     expect(html).toContain("50 MB of 4096 MB (1%)");
     expect(html).toContain("1.3 ms");
     expect(renderStatusHtml(report, "n")).toContain('href="/agentmemory/viewer#health"');
@@ -451,7 +451,7 @@ describe("status wiring", () => {
 
   it("time-boxes every status probe so a slow store cannot hang the page", () => {
     const reporter = api.slice(api.indexOf("export function createStatusReporter"), api.indexOf("export function createConsolidationStatusReader"));
-    expect(reporter.match(/valueWithin\(/g)?.length).toBe(5);
+    expect(reporter.match(/valueWithin\(/g)?.length).toBe(6);
     expect(reporter).toMatch(/valueWithin\(scan\.run\(\), STATUS_CHECK_TIMEOUT_MS\)/);
     expect(api).toMatch(/run: singleFlight\(async \(\) => \{\s*const value = await findUnindexedObservations\(kv\);/);
     const handler = api.slice(api.indexOf('registerFunction("api::status"'), api.indexOf('function_id: "api::status"'));
@@ -506,5 +506,31 @@ describe("markLlmFunctions", () => {
 
   it("leaves every function on when an LLM provider is configured", () => {
     expect(markLlmFunctions(metrics, "llm").some((m) => m.offWithoutLlm)).toBe(false);
+  });
+});
+
+describe("vector durability rows", () => {
+  it("shows the pending vector log and a paused backlog in plain language", () => {
+    const report = evaluateStatus(
+      inputs({
+        index: { ...inputs().index, pendingVectorBackfill: 7, vectorBackfillState: "paused" },
+        indexPersistence: {
+          saveIntervalMs: 600000,
+          saving: false,
+          buckets: 2,
+          pendingChanges: 3,
+          vector: { lastSavedAt: "2026-09-24T11:59:00.000Z", dirtySince: null, lastError: null, lastErrorAt: null },
+          vectorCountShortfall: null,
+          pendingLog: 3,
+          pendingLogError: "state write timed out",
+        },
+      }),
+    );
+    expect(codes(report)).toContain("index-pending-log-failing");
+    const backlog = report.problems.find((p) => p.code === "index-vector-backfill-pending");
+    expect(backlog?.fix).toContain("retried on the next start");
+    const html = renderStatusHtml(report, "n");
+    expect(html).toContain("3 vector changes");
+    expect(html).toContain("paused, retried on the next start");
   });
 });

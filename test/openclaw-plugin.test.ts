@@ -25,7 +25,7 @@ function makeApi(overrides: Partial<FakeApi> = {}): FakeApi {
   };
 }
 
-describe("openclaw plugin — memory capability registration (closes #286 follow-up)", () => {
+describe("openclaw plugin — memory capability registration", () => {
   it("calls api.registerMemoryCapability with a promptBuilder when the host supports it", async () => {
     const mod = await import("../integrations/openclaw/plugin.mjs");
     const plugin = (mod as unknown as { default: { register(api: FakeApi): void } }).default;

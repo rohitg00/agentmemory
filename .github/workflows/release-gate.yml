@@ -1,0 +1,53 @@
+name: Release gate
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "website/**"
+      - "docs/**"
+      - "assets/**"
+      - "**/*.md"
+      - "**/*.mdx"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "website/**"
+      - "docs/**"
+      - "assets/**"
+      - "**/*.md"
+      - "**/*.mdx"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  packed-artifact:
+    name: packed artifact (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
+      - run: npm run release:gate -- --out "${{ runner.temp }}/release-gate"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-${{ matrix.os }}
+          path: ${{ runner.temp }}/release-gate
+          if-no-files-found: ignore
+          retention-days: 14

@@ -353,6 +353,7 @@ describe("retained observation source", () => {
 
   it("retains imported prompt and response evidence once and sanitizes it", async () => {
     const folder = mkdtempSync(join(tmpdir(), "source-retention-"));
+    vi.stubEnv("AGENTMEMORY_IMPORT_ROOT", folder);
     try {
       const text = `${"message ".repeat(150)}import-tail <private>hidden-import</private>`;
       const path = join(folder, "session.jsonl");

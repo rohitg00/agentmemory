@@ -1,4 +1,5 @@
 import type { IIIClient } from "iii-sdk";
+import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -167,6 +168,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
             if (!dryRun) {
               let deletedOk = false;
               try {
+                await markCaptureEventDeleted(kv, obs);
                 await kv.delete(KV.observations(sessions[i].id), obs.id);
                 deletedOk = true;
               } catch {

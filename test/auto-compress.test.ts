@@ -72,7 +72,7 @@ function validPayload(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-describe("mem::observe auto-compress gate (#138)", () => {
+describe("mem::observe auto-compress gate", () => {
   beforeEach(() => {
     // Reset module cache so observe.js re-imports config.js with the
     // fresh AGENTMEMORY_AUTO_COMPRESS env state. Without this, a later

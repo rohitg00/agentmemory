@@ -1,20 +1,12 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { resolveProject, hookCwd } from "./_project.js";
+import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
   if (!payload || typeof payload !== "object") return false;
   return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
-}
-
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
 }
 
 function extractTranscriptPrompts(data: Record<string, unknown>): string[] {
@@ -51,6 +43,7 @@ function extractTranscriptPrompts(data: Record<string, unknown>): string[] {
 }
 
 async function main() {
+  if (isDrainChild()) return runDrainChild();
   let input = "";
   for await (const chunk of process.stdin) {
     input += chunk;
@@ -74,20 +67,16 @@ async function main() {
     const project = resolveProject(cwd);
     const timestamp = new Date().toISOString();
     await Promise.allSettled(
-      transcriptPrompts.map((prompt) =>
-        fetch(`${REST_URL}/agentmemory/observe`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            hookType: "prompt_submit",
-            sessionId,
-            project,
-            cwd,
-            timestamp,
-            data: { prompt },
-          }),
-          signal: AbortSignal.timeout(3000),
-        }),
+      transcriptPrompts.map((prompt, index) =>
+        captureObservation(
+          withEventId(
+            { hookType: "prompt_submit", sessionId, project, cwd, timestamp, data: { prompt, backfill: true } },
+            {},
+            { source: "transcript", transcript: data.transcript_path, index, prompt },
+            { stable: true },
+          ),
+          3000,
+        ),
       ),
     );
   }

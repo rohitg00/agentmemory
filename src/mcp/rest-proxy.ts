@@ -1,3 +1,4 @@
+import { resolveClientSecret } from "../secret-store.js";
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 const CALL_TIMEOUT_MS = 15_000;
@@ -62,18 +63,10 @@ function baseUrl(): string {
 }
 
 function authHeader(): Record<string, string> {
-  const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
+  const secret = resolveClientSecret(baseUrl());
   return secret ? { authorization: `Bearer ${secret}` } : {};
 }
 
-/**
- * Probes the agentmemory server's livez endpoint. Returns a Response-shaped
- * object whose `ok` flag drives the proxy/local-fallback decision.
- *
- * Tests can swap this via {@link setLivezProbe} to avoid the real 2s
- * AbortController race that destabilises mcp-standalone test runs (#449).
- * Production callers should leave it on the default.
- */
 export type LivezProbe = (
   url: string,
   timeoutMs: number,

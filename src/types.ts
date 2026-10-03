@@ -66,6 +66,8 @@ export interface RawObservation {
   imageData?: string;
   agentId?: string;
   origin?: Origin;
+  eventId?: string;
+  captureKey?: string;
 }
 
 export interface ObservationSource {
@@ -100,6 +102,7 @@ export interface CompressedObservation {
   modality?: "text" | "image" | "mixed";
   agentId?: string;
   origin?: Origin;
+  captureKey?: string;
 }
 
 export type ObservationType =
@@ -177,6 +180,9 @@ export interface HookPayload {
   cwd: string;
   timestamp: string;
   data: unknown;
+  eventId?: string;
+  observationId?: string;
+  captureKey?: string;
 }
 
 export interface ProviderConfig {
@@ -481,11 +487,6 @@ export interface GraphQueryResult {
   nodes: GraphNode[];
   edges: GraphEdge[];
   depth: number;
-  // #753: pagination + truncation signals for large graphs. `total*`
-  // counts reflect the full unbounded result for the given filter so
-  // the viewer can show "showing N of M" without re-querying. `truncated`
-  // is true when the default cap kicked in (operator may have wanted
-  // the full set but didn't ask for one).
   totalNodes?: number;
   totalEdges?: number;
   truncated?: boolean;
@@ -493,22 +494,11 @@ export interface GraphQueryResult {
   // detect when the default was applied vs an explicit `limit`.
   limit?: number;
   offset?: number;
-  // #814: indicates the response came from the precomputed top-degree
-  // snapshot rather than a live kv.list enumeration. Set only on the
-  // empty-body / nodeType-only branch on large corpora where the
-  // unbounded enumeration would exceed the iii invocation timeout.
   fromSnapshot?: boolean;
   degrees?: Record<string, number>;
-  // #814: when the snapshot is stale or absent and the live fallback
-  // also failed, expose an explanatory note so the viewer can surface
-  // an actionable banner instead of a blank graph.
   warning?: string;
 }
 
-// #814: persisted top-degree subgraph + aggregate counts. Stored under
-// KV.graphSnapshot with a single key "current". `dirty` is set true by
-// mem::graph-extract after writes and flipped false when the snapshot
-// rebuild completes.
 export interface GraphSnapshot {
   version: 1;
   topNodes: GraphNode[];
@@ -527,11 +517,6 @@ export interface GraphSnapshot {
   };
   updatedAt: string;
   dirty: boolean;
-  // #825 follow-up: ISO timestamp set by mem::graph-reset. After
-  // reset, mem::graph-extract treats any pre-resetAt node as an
-  // orphan (skip merge, write fresh) so future extracts don't
-  // silently reconnect to legacy rows via stale name-index entries.
-  // Absent / 1970 epoch = no reset has run.
   resetAt?: string;
 }
 
@@ -984,10 +969,6 @@ export interface TemporalState {
 
 export interface RetentionScore {
   memoryId: string;
-  // Which KV scope this row came from. Needed by mem::retention-evict
-  // so the delete loop routes to KV.memories or KV.semantic correctly.
-  // Missing on pre-0.8.10 rows — callers must treat `undefined` as
-  // "unknown" and probe both scopes for backwards-compat. See #124.
   source?: "episodic" | "semantic";
   score: number;
   salience: number;

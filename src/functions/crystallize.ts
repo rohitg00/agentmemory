@@ -2,6 +2,7 @@ import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import type { Action, ActionEdge, Crystal, MemoryProvider } from "../types.js";
+import { scrubRecord } from "./privacy.js";
 
 interface CrystalDigest {
   narrative: string;
@@ -55,9 +56,9 @@ export function registerCrystallizeFunction(
 
       try {
         const response = await provider.summarize(CRYSTALLIZE_SYSTEM, prompt);
-        const digest = parseDigest(response);
+        const digest = scrubRecord(parseDigest(response));
 
-        const crystal: Crystal = {
+        const crystal: Crystal = scrubRecord({
           id: generateId("crys"),
           narrative: digest.narrative,
           keyOutcomes: digest.keyOutcomes,
@@ -67,7 +68,7 @@ export function registerCrystallizeFunction(
           sessionId: data.sessionId,
           project: data.project,
           createdAt: new Date().toISOString(),
-        };
+        });
 
         await kv.set(KV.crystals, crystal.id, crystal);
 
@@ -80,7 +81,7 @@ export function registerCrystallizeFunction(
                   content: lesson,
                   context: crystal.narrative,
                   confidence: 0.6,
-                  project: data.project,
+                  project: crystal.project,
                   tags: [],
                   source: "crystal",
                   sourceIds: [crystal.id],

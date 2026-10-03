@@ -257,7 +257,7 @@ describe("Governance Functions", () => {
   });
 });
 
-describe("governance deletes count only what was really deleted (#1427, #1428)", () => {
+describe("governance deletes count only what was really deleted", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
 

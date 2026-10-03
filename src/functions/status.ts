@@ -1,6 +1,7 @@
 import type { IndexLegStatus, IndexPersistenceStatus } from "../state/index-persistence.js";
 import type { VectorBackfillState } from "./search.js";
 import { describeGraphCompactBoot, type GraphCompactBootStatus } from "./graph-compact-boot.js";
+import type { CaptureStatus } from "./capture.js";
 
 export type StatusLevel = "ok" | "info" | "warn" | "error";
 
@@ -76,6 +77,13 @@ export interface StatusInputs {
   auditLegacy: { status: string; sizeBytes?: number } | null;
   indexPersistence?: IndexPersistenceStatus | null;
   stateStore?: { ok: boolean; latencyMs?: number } | null;
+  capture?: CaptureStatus | null;
+  observeDedup?: ObserveDedupStatus | null;
+}
+
+export interface ObserveDedupStatus {
+  skippedSinceStart: number;
+  windowSeconds: number;
 }
 
 export interface IndexBreakdown {
@@ -107,6 +115,8 @@ export interface StatusReport {
   indexPersistence: IndexPersistenceStatus | null;
   graph: (GraphStatsInput & { ageSeconds: number | null; extractionEnabled: boolean }) | null;
   graphCompaction: GraphCompactBootStatus | null;
+  capture: CaptureStatus | null;
+  observeDedup: ObserveDedupStatus | null;
   functions: Array<FunctionMetricInput & { failureRate: number; offWithoutLlm: boolean }>;
   flags: Array<StatusFlag & { inactiveReason?: string }>;
   problems: StatusProblem[];
@@ -205,12 +215,21 @@ function secondsBetween(later: Date, earlierIso: string | undefined): number | n
   return Math.max(0, Math.round((later.getTime() - earlier) / 1000));
 }
 
+function describeBackfillState(state: VectorBackfillState): string {
+  if (state === "waiting-for-opt-in") return "paused, waiting for opt-in";
+  if (state === "paused") return "paused, retried on the next start";
+  return state;
+}
+
 function vectorBackfillFix(state: VectorBackfillState | undefined): string {
   if (state === "waiting-for-opt-in") {
     return "Backfill is paused. Set AGENTMEMORY_VECTOR_BACKFILL=all and restart to opt in. This calls the embedding provider and is capped per boot by AGENTMEMORY_VECTOR_BACKFILL_MAX.";
   }
   if (state === "running") {
-    return "Backfill is running in the background, capped per boot by AGENTMEMORY_VECTOR_BACKFILL_MAX. Check the server log for embedding provider errors if progress stops.";
+    return "Backfill is running in the background in batches of AGENTMEMORY_VECTOR_BACKFILL_MAX with a short pause between batches. If agentmemory stops first, it continues on the next start. Check the server log for embedding provider errors if progress stops.";
+  }
+  if (state === "paused") {
+    return "Backfill stopped because the embedding provider did not return vectors. Search still works by keyword. Check the embedding provider key and the server log; the remaining documents are retried on the next start.";
   }
   return "Backfill is not running. Check the server log and embedding provider configuration. A full backfill requires AGENTMEMORY_VECTOR_BACKFILL=all and a restart, and can consume embedding provider tokens.";
 }
@@ -348,6 +367,14 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       });
     }
   }
+  if (persistence?.pendingLogError) {
+    problems.push({
+      level: "warn",
+      code: "index-pending-log-failing",
+      message: `New vectors could not be written to the pending vector log: ${persistence.pendingLogError}. They are still kept by the next index save, but a crash before then means they are embedded again at the next start.`,
+      fix: "Check the server log for the failing state write. Each new vector retries the log write.",
+    });
+  }
   if (persistence?.vectorCountShortfall) {
     const { expected, loaded } = persistence.vectorCountShortfall;
     problems.push({
@@ -419,6 +446,16 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
 
+  if (input.capture === null) {
+    problems.push({
+      level: "info",
+      code: "capture-check-unavailable",
+      message: "The capture inbox did not answer in time, so capture was not checked.",
+      fix: "The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.",
+    });
+  }
+  problems.push(...captureProblems(input.capture ?? null, input.now, input.ports.rest));
+
   if (input.stateStore && !input.stateStore.ok) {
     problems.push({
       level: "error",
@@ -462,6 +499,8 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     indexPersistence: persistence,
     graph,
     graphCompaction: compaction,
+    capture: input.capture ?? null,
+    observeDedup: input.observeDedup ?? null,
     functions,
     flags: input.flags.map((flag) =>
       flag.enabled && flag.needsLlm && noLlm
@@ -470,6 +509,64 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     ),
     problems,
   };
+}
+
+const RECENT_DROP_MS = 24 * 60 * 60 * 1000;
+
+export const CURL_AUTH_HEADER = '-H "Authorization: Bearer ${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret)}"';
+
+export function captureRestBase(restPort: number | null): string {
+  return `http://localhost:${restPort ?? 3111}/agentmemory`;
+}
+
+function captureProblems(capture: CaptureStatus | null, now: Date, restPort: number | null): StatusProblem[] {
+  if (!capture) return [];
+  const problems: StatusProblem[] = [];
+  const base = captureRestBase(restPort);
+  const inbox = capture.inbox;
+  if (inbox && inbox.dead > 0) {
+    problems.push({
+      level: "warn",
+      code: "capture-dead-letters",
+      message: `${plural(inbox.dead, "captured observation")} could not be stored after ${plural(capture.policy.maxAttempts, "attempt")} and ${inbox.dead === 1 ? "is parked as a dead letter" : "are parked as dead letters"}${inbox.lastError ? `: ${inbox.lastError}` : "."}`,
+      fix: `List them with curl -s ${CURL_AUTH_HEADER} '${base}/capture?status=dead'. After fixing the cause, retry them with curl -X POST ${base}/capture/retry ${CURL_AUTH_HEADER} -H "Content-Type: application/json" -d '{"all":true}'.`,
+    });
+  }
+  if (inbox && inbox.retrying + inbox.pending > 0) {
+    problems.push({
+      level: "info",
+      code: "capture-retrying",
+      message: `${plural(inbox.retrying + inbox.pending, "accepted observation")} ${inbox.retrying + inbox.pending === 1 ? "is" : "are"} waiting to be stored${inbox.lastError ? ` after a failure: ${inbox.lastError}` : ""}.`,
+      fix: `No action needed: the server retries every ${Math.round(capture.policy.retryIntervalMs / 1000)} s with backoff, up to ${capture.policy.maxAttempts} attempts, and again after a restart.`,
+    });
+  }
+  const waiting = capture.spool.reduce((n, s) => n + s.records, 0);
+  if (waiting > 0) {
+    problems.push({
+      level: "info",
+      code: "capture-spool-waiting",
+      message: `${plural(waiting, "observation")} captured while the server was unreachable ${waiting === 1 ? "is" : "are"} waiting in the local capture spool.`,
+      fix: `They are sent on the next hook call and at every start. To send them now: npx @agentmemory/agentmemory capture --drain, or curl -X POST ${base}/capture/drain ${CURL_AUTH_HEADER}.`,
+    });
+  }
+  let dropped = 0;
+  let latest: { at: number; reason: string; maxBytes: number; maxAgeHours: number } | null = null;
+  for (const spool of capture.spool) {
+    dropped += spool.stats.dropped;
+    const lastDrop = spool.stats.lastDropAt ? Date.parse(spool.stats.lastDropAt) : NaN;
+    if (Number.isFinite(lastDrop) && (!latest || lastDrop > latest.at)) {
+      latest = { at: lastDrop, reason: spool.stats.lastDropReason ?? "unknown", maxBytes: spool.maxBytes, maxAgeHours: spool.maxAgeHours };
+    }
+  }
+  if (latest && now.getTime() - latest.at < RECENT_DROP_MS) {
+    problems.push({
+      level: "warn",
+      code: "capture-spool-dropped",
+      message: `The local capture spool dropped ${plural(dropped, "observation")} in total (latest reason: ${latest.reason}), so those tool calls are not in memory.`,
+      fix: `The spool holds at most ${Math.round(latest.maxBytes / 1024)} KiB for ${latest.maxAgeHours} hours. Raise AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES, keep agentmemory running while agents work, or check that AGENTMEMORY_CAPTURE_SPOOL is not false.`,
+    });
+  }
+  return problems;
 }
 
 function statusHeadline(status: StatusLevel, problems: StatusProblem[]): string {
@@ -558,6 +655,9 @@ function legSummary(report: StatusReport, leg: IndexLegStatus): string {
   return leg.dirtySince ? `${saved}, unsaved changes pending` : saved;
 }
 
+const PENDING_LOG_EXPLAINER =
+  "Every new or removed vector is also written right away to this small log. After a crash or force-kill it is replayed at start, so vectors are not lost and nothing is embedded twice. Each index save empties it.";
+
 function indexPersistenceRows(report: StatusReport): string {
   const persistence = report.indexPersistence;
   if (!persistence) return "";
@@ -568,7 +668,51 @@ function indexPersistenceRows(report: StatusReport): string {
       "Vector storage",
       escapeHtml(`${plural(persistence.buckets, "bucket")}, ${plural(persistence.pendingChanges, "unsaved change")}`),
     );
+    if (persistence.pendingLog !== undefined) {
+      rows += row(
+        "Pending vector log",
+        escapeHtml(plural(persistence.pendingLog, "vector change")) +
+          `<p class="note">${escapeHtml(PENDING_LOG_EXPLAINER)}</p>`,
+      );
+    }
   }
+  return rows;
+}
+
+export function describeCaptureSpool(capture: CaptureStatus): string {
+  const records = capture.spool.reduce((n, s) => n + s.records, 0);
+  const bytes = capture.spool.reduce((n, s) => n + s.bytes, 0);
+  if (!capture.spool.some((s) => s.enabled)) return "off (AGENTMEMORY_CAPTURE_SPOOL=false)";
+  const retained = capture.spool.reduce((n, s) => n + (s.retained ?? 0), 0);
+  const held = retained > 0 ? `, ${retained} sent and kept until saved` : "";
+  return records === 0 ? `empty${held}` : `${plural(records, "observation")} waiting, ${Math.ceil(bytes / 1024)} KiB${held}`;
+}
+
+function captureRows(report: StatusReport): string {
+  const capture = report.capture;
+  if (!capture) return row("Capture", "not reported");
+  const inbox = capture.inbox;
+  const since = capture.sinceStart;
+  let rows = row(
+    "Inbox",
+    escapeHtml(inbox ? `${inbox.pending} pending · ${inbox.retrying} retrying · ${inbox.dead} dead letters` : "not checked") +
+      '<p class="note">Every accepted observation is written here first and removed once it is stored, so a failure or restart retries it instead of losing it.</p>',
+  );
+  rows += row(
+    "Since start",
+    escapeHtml(`${since.accepted} accepted · ${since.completed} stored · ${since.duplicates} duplicates skipped · ${since.recovered} recovered by retry · ${since.deadLettered} dead`),
+  );
+  rows += row(
+    "Local spool",
+    escapeHtml(describeCaptureSpool(capture)) +
+      `<p class="note">Hooks write here when the server is unreachable, and keep each accepted observation here until the server has saved it to disk. ${escapeHtml(capture.spool.map((s) => s.path).join(", "))}</p>`,
+  );
+  const drained = capture.spool.map((s) => s.stats.lastDrainAt).filter(Boolean).sort().pop();
+  if (drained) rows += row("Last spool drain", escapeHtml(`${formatDuration(secondsBetween(new Date(report.checkedAt), drained))} ago`));
+  rows += row(
+    "Duplicate protection",
+    escapeHtml(`event ids kept ${capture.policy.dedupRetentionHours} h, retries up to ${plural(capture.policy.maxAttempts, "attempt")}`),
+  );
   return rows;
 }
 
@@ -674,7 +818,7 @@ a{color:inherit}
 <header><h1>agentmemory</h1><span class="badge ${report.status}">${report.status}</span>
 <span class="meta">v${escapeHtml(report.service.version)} · engine ${escapeHtml(report.service.engineVersion)} · checked ${escapeHtml(report.checkedAt)} · <a href="?format=json">json</a></span></header>
 <p class="lead ${report.status}">${escapeHtml(report.headline)}</p>
-<p class="live">A snapshot from when this page loaded. <a href="${escapeHtml(viewerUrl)}">Open the live version in the viewer &rarr;</a> From a terminal: <code>curl -s ${ports.rest ? `http://localhost:${escapeHtml(ports.rest)}` : ""}/agentmemory/status</code> returns this report as JSON.</p>
+<p class="live">A snapshot from when this page loaded. <a href="${escapeHtml(viewerUrl)}">Open the live version in the viewer &rarr;</a> From a terminal: <code>curl -s ${escapeHtml(CURL_AUTH_HEADER)} ${ports.rest ? `http://localhost:${escapeHtml(ports.rest)}` : ""}/agentmemory/status</code> returns this report as JSON.</p>
 <h2>Problems</h2><ul class="problems">${problems}</ul>
 <h2>Engine and connection</h2><table>
 ${row("Engine connection", escapeHtml(report.health?.connectionState ?? "unknown"))}
@@ -698,8 +842,12 @@ ${row("Missing from index", escapeHtml(idx.missingObservations ?? "not checked")
 ${row("Sessions", escapeHtml(idx.sessions ?? "unknown"))}
 ${row("Keyword index rebuild", idx.bm25Incomplete ? '<span class="warn">incomplete</span>' : "complete")}
 ${row("Pending vector backfill", escapeHtml(idx.pendingVectorBackfill))}
-${idx.vectorBackfillState ? row("Vector backfill", escapeHtml(idx.vectorBackfillState === "waiting-for-opt-in" ? "paused, waiting for opt-in" : idx.vectorBackfillState)) : ""}
+${idx.vectorBackfillState ? row("Vector backfill", escapeHtml(describeBackfillState(idx.vectorBackfillState))) : ""}
 ${indexPersistenceRows(report)}
+</table>
+<h2>Capture</h2><table>
+${captureRows(report)}
+${report.observeDedup ? row("Repeats skipped", escapeHtml(`${report.observeDedup.skippedSinceStart} since start`) + `<p class="note">${escapeHtml(`A tool call with the same input and the same output as one stored in the last ${formatDuration(report.observeDedup.windowSeconds)} is skipped when the hook sends no event id.`)}</p>`) : ""}
 </table>
 <h2>Knowledge graph</h2><table>
 ${graph
@@ -719,7 +867,7 @@ ${processRows(report)}
 }
 
 export function graphCompactCommand(restPort: number | null): string {
-  return `curl -X POST http://localhost:${restPort ?? 3111}/agentmemory/graph/compact -H "Content-Type: application/json" -d '{}'`;
+  return `curl -X POST http://localhost:${restPort ?? 3111}/agentmemory/graph/compact ${CURL_AUTH_HEADER} -H "Content-Type: application/json" -d '{}'`;
 }
 
 export const UNINDEXED_SCAN_REUSE_MS = 30_000;

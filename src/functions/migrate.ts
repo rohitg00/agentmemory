@@ -12,13 +12,9 @@ import type {
   SessionSummary,
 } from "../types.js";
 import { logger } from "../logger.js";
+import { confinePath } from "./path-guard.js";
 
 const ALLOWED_DIRS = [resolve(homedir(), ".agentmemory")];
-
-function isAllowedPath(dbPath: string): boolean {
-  const resolved = resolve(dbPath);
-  return ALLOWED_DIRS.some((dir) => resolved.startsWith(dir + "/"));
-}
 
 // Infer memory project from the majority project of its associated sessions.
 // Returns { updated, skipped } — safe to run repeatedly (idempotent).
@@ -107,12 +103,14 @@ export function registerMigrateFunction(sdk: IIIClient, kv: StateKV): void {
 
       logger.info("Migration started", { dbPath: data.dbPath });
 
-      if (!isAllowedPath(data.dbPath)) {
+      const confined = await confinePath(data.dbPath, ALLOWED_DIRS);
+      if (!confined.ok) {
         return {
           success: false,
           error: `Path not allowed. Must be under: ${ALLOWED_DIRS.join(", ")}`,
         };
       }
+      const dbPath = confined.path;
 
       let Database: any;
       try {
@@ -127,13 +125,13 @@ export function registerMigrateFunction(sdk: IIIClient, kv: StateKV): void {
       }
 
       const fs = await import("node:fs");
-      if (!fs.existsSync(data.dbPath)) {
+      if (!fs.existsSync(dbPath)) {
         return { success: false, error: `Database not found: ${data.dbPath}` };
       }
 
       let db: any;
       try {
-        db = Database(data.dbPath, { readonly: true });
+        db = Database(dbPath, { readonly: true });
         let sessionCount = 0;
         let obsCount = 0;
         let summaryCount = 0;

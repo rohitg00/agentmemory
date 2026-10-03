@@ -5,14 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>agentmemory viewer</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <!-- Removed Google Fonts <link> in #323: the viewer CSP is strict
-       (default-src 'none', style-src 'unsafe-inline', font-src 'self')
-       and external stylesheets from fonts.googleapis.com were blocked,
-       producing console CSP violations that some browsers (Windows
-       Edge in particular) escalate into broader script-execution
-       issues. System-font fallbacks are already declared on every
-       --font-* CSS variable below, so the viewer renders fine with
-       Georgia / system serif / system sans / system mono. -->
   <style>
     :root {
       --bg: #F9F9F7;
@@ -1645,6 +1637,8 @@
       vector: { term: 'Vector index', text: 'Embeddings used for meaning-based search. It needs an embedding provider; without one, search is keyword only.' },
       observationsIndexed: { term: 'Observations indexed', text: 'Observations that are searchable. The keyword index also contains memories and lessons, which is why its total is larger.' },
       missingFromIndex: { term: 'Missing from index', text: 'Stored observations that are not searchable yet. They are added in the background; a large number that does not shrink means indexing is stuck.' },
+      captureInbox: { term: 'Capture inbox', text: 'Every observation a hook sends is written here first and removed once it is stored. If storing fails or the server restarts, it is retried instead of lost. Dead letters are the ones that still failed after every retry.' },
+      captureSpool: { term: 'Local capture spool', text: 'A small file on this machine where hooks keep observations when the server is down or does not answer. It is sent automatically on the next hook call and at every start, and each observation carries an event id so nothing is stored twice.' },
       pendingBackfill: { term: 'Pending vector backfill', text: 'Records waiting for an embedding so they can be found by meaning, not only by keywords.' },
       graph: { term: 'Knowledge graph', text: 'Entities (files, functions, concepts, errors, decisions) and the relations between them. When a session ends, the files and concepts in its observations become nodes, and ones that appear in the same observation get a "related to" relation; no LLM is needed for that. With GRAPH_EXTRACTION_ENABLED=true and an LLM provider, an LLM also adds typed entities and relations such as "uses" or "fixes". A structural code graph can be imported with POST /graph/import-graphify.' },
       graphDegree: { term: 'Relations (degree)', text: 'How many relations touch this node. Nodes with more relations are drawn larger and get their labels first.' },
@@ -1738,9 +1732,12 @@
 
     function esc(s) {
       if (!s) return '';
-      var d = document.createElement('div');
-      d.textContent = String(s);
-      return d.innerHTML;
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
     function formatTime(ts) {
       if (!ts) return '';
@@ -2073,11 +2070,6 @@
         if (!res.ok) {
           if (res.status === 401) showViewerAuthPrompt();
           console.warn('[viewer] API ' + (fetchOpts.method || 'GET') + ' ' + path + ' returned ' + res.status);
-          // Non-2xx responses resolve to null so callers can keep treating
-          // null as "request failed" (e.g. loadGraph's disabled/error state).
-          // The health endpoint opts out via readErrorBody: it intentionally
-          // responds 503 with a valid JSON body when status is "critical"
-          // (see #1019), and the dashboard badge needs that body.
           if (!readErrorBody) return null;
           try {
             return await res.json();
@@ -7161,11 +7153,20 @@
         (b ? esc(fmtNum(b.observations) + ' observations + ' + fmtNum(b.memories) + ' memories + ' + fmtNum(b.lessons) + ' lessons. ') : '') + esc(BM25_EXPLAINER));
       html += hrow('Vector index', hasVectors ? esc(fmtNum(idx.vectorDocuments) + ' vectors') : 'off', 'vector',
         hasVectors ? 'Meaning-based search. Each vector is one embedded record.' : 'No embedding provider, so search is keyword only. Set an embedding provider key (for example OPENAI_API_KEY) and restart.');
-      html += hrow('Waiting for embeddings', esc(fmtNum(idx.pendingVectorBackfill || 0)), 'pendingBackfill', idx.pendingVectorBackfill ? 'Embedded in the background, capped per start by AGENTMEMORY_VECTOR_BACKFILL_MAX.' : '');
+      var bfState = ri.vectorBackfillState;
+      var bfNote = bfState === 'paused' ? 'Paused because the embedding provider did not return vectors. Retried on the next start.' :
+        bfState === 'waiting-for-opt-in' ? 'Waiting for AGENTMEMORY_VECTOR_BACKFILL=all and a restart.' :
+        'Embedded in the background in batches of AGENTMEMORY_VECTOR_BACKFILL_MAX. If agentmemory stops first, it continues on the next start.';
+      html += hrow('Waiting for embeddings', esc(fmtNum(idx.pendingVectorBackfill || 0) + (bfState && bfState !== 'idle' && idx.pendingVectorBackfill ? ' · ' + (bfState === 'waiting-for-opt-in' ? 'waiting for opt-in' : bfState) : '')), 'pendingBackfill', idx.pendingVectorBackfill ? esc(bfNote) : '');
       html += hrow('Missing from index', ri.missingObservations === null || ri.missingObservations === undefined ? 'not checked yet' : esc(fmtNum(ri.missingObservations)), 'missingFromIndex');
       html += hrow('Keyword rebuild', ri.bm25Incomplete ? '<span style="color:var(--accent);">incomplete</span>' : 'complete', null, 'Rebuilt from stored data at every start, so it is never saved to disk.');
       if (p) {
         html += hrow('Vector save', esc(legText(p.vector)), null, 'Saved at most every ' + esc(durationText(p.saveIntervalMs || 600000)) + ' (AGENTMEMORY_INDEX_SAVE_INTERVAL_MS). ' + esc(fmtNum(p.buckets) + ' bucket' + (p.buckets === 1 ? '' : 's') + ', ' + fmtNum(p.pendingChanges) + ' unsaved change' + (p.pendingChanges === 1 ? '' : 's') + (p.saving ? ', saving now' : '') + '.'));
+        if (typeof p.pendingLog === 'number') {
+          html += hrow('Pending vector log', esc(fmtNum(p.pendingLog) + ' vector change' + (p.pendingLog === 1 ? '' : 's')), null,
+            p.pendingLogError ? '<span style="color:var(--accent);overflow-wrap:anywhere;">' + esc('Log writes failing: ' + p.pendingLogError) + '</span>' :
+            'New and removed vectors are written here right away and replayed after a crash, so nothing is embedded twice. Each save empties it.');
+        }
       }
       html += hrow('Graph', esc(fmtNum(c.graphNodes) + ' nodes · ' + fmtNum(c.graphEdges) + ' edges'), 'graph', store.graph && store.graph.updatedAt ? 'Snapshot rebuilt ' + esc(timeAgo(store.graph.updatedAt)) + '.' : '');
       if (r && r.graphCompaction) html += graphCompactionRowHtml(r.graphCompaction);
@@ -7232,6 +7233,35 @@
       html += hrow('Event loop delay', lag !== undefined ? esc(Number(lag).toFixed(1) + ' ms') : '-', 'eventLoop', 'How far behind the worker is. Under 100 ms is fine; above that requests answer slowly.');
       if (snap.cpu) html += hrow('CPU', esc(Math.round(snap.cpu.percent || 0) + '%'), null, 'Share of one core used since the last report. Short bursts during imports are normal.');
       (snap.notes || []).forEach(function(n) { html += '<div class="hnote" style="margin-top:6px;">' + esc(humanizeHealthFlag(n)) + '</div>'; });
+      return html + '</div>';
+    }
+
+    function captureCardHtml(r) {
+      var cap = r && r.capture;
+      var html = '<div class="card"><div class="card-title">Capture ' + help('captureInbox') + '</div>';
+      if (!cap) return html + hrow('Capture', 'waiting for the first report', null, 'Shows whether observations from hooks are stored, retried or waiting offline.') + '</div>';
+      var inbox = cap.inbox;
+      var since = cap.sinceStart || {};
+      var waiting = (cap.spool || []).reduce(function(n, s) { return n + (s.records || 0); }, 0);
+      var bytes = (cap.spool || []).reduce(function(n, s) { return n + (s.bytes || 0); }, 0);
+      var spoolOn = (cap.spool || []).some(function(s) { return s.enabled; });
+      var drainedAt = (cap.spool || []).map(function(s) { return s.stats && s.stats.lastDrainAt; }).filter(Boolean).sort().pop();
+      var dropped = (cap.spool || []).reduce(function(n, s) { return n + ((s.stats && s.stats.dropped) || 0); }, 0);
+      html += hrow('Inbox', inbox ? esc(fmtNum(inbox.pending) + ' pending · ' + fmtNum(inbox.retrying) + ' retrying · ' + fmtNum(inbox.dead) + ' dead') : 'not checked', 'captureInbox',
+        inbox && inbox.dead ? '<span style="overflow-wrap:anywhere;">' + esc(inbox.lastError || 'Could not be stored.') + '</span> Fix the cause, then retry them:' + cmdBlock(curlPost('capture/retry', { all: true })) :
+        inbox && inbox.retrying ? '<span style="overflow-wrap:anywhere;">' + esc('Retried every ' + durationText(cap.policy.retryIntervalMs) + ' with backoff, up to ' + cap.policy.maxAttempts + ' attempts' + (inbox.lastError ? '. Last error: ' + inbox.lastError : '.')) + '</span>' :
+        'Empty means every accepted observation is stored.');
+      html += hrow('Since start', esc(fmtNum(since.accepted || 0) + ' accepted · ' + fmtNum(since.completed || 0) + ' stored · ' + fmtNum(since.duplicates || 0) + ' duplicates skipped · ' + fmtNum(since.recovered || 0) + ' recovered by retry · ' + fmtNum(since.deadLettered || 0) + ' dead'), null,
+        'Duplicates are the same event delivered twice, for example a replay after a timeout. They are kept once.');
+      if (r.observeDedup) {
+        html += hrow('Repeats skipped', esc(fmtNum(r.observeDedup.skippedSinceStart || 0) + ' since start'), null,
+          esc('A tool call with the same input and the same output as one stored in the last ' + durationText((r.observeDedup.windowSeconds || 300) * 1000) + ' is skipped when the hook sends no event id.'));
+      }
+      html += hrow('Offline spool', !spoolOn ? 'off' : waiting ? esc(fmtNum(waiting) + ' waiting · ' + Math.ceil(bytes / 1024) + ' KiB') : 'empty', 'captureSpool',
+        !spoolOn ? 'Turned off with AGENTMEMORY_CAPTURE_SPOOL=false, so hooks drop observations while the server is down.' :
+        (waiting ? 'Sent on the next hook call or at the next start. To send now:' + cmdBlock(curlPost('capture/drain', {})) : esc('Hooks write here only while the server is unreachable.' + (drainedAt ? ' Last drained ' + timeAgo(drainedAt) + '.' : ''))) +
+        (dropped ? '<div class="hnote" style="color:var(--accent);">' + esc(fmtNum(dropped) + ' dropped because the spool was full or too old. Raise AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES.') + '</div>' : ''));
+      html += hrow('Inspect', esc('from a terminal'), null, 'Spool and inbox, with --drain to send the spool now:' + cmdBlock((customPort() ? 'AGENTMEMORY_URL=' + agentUrl() + ' ' : '') + 'npx @agentmemory/agentmemory capture') + 'Waiting and dead events as JSON:' + cmdBlock(curlGet('capture?status=dead')));
       return html + '</div>';
     }
 
@@ -7373,7 +7403,7 @@
       var c = store.counts || {};
       var html = '<div class="inline-note"><strong>Health</strong> ' + help('health') + ' is the live version of the <a class="empty-link" href="' + esc(REST) + '/agentmemory/status" target="_blank" rel="noopener">/agentmemory/status</a> page: the same checks and verdict, pushed over the stream every 30 seconds. Every problem says what to do. Scroll down for how consolidation works.</div>';
       html += healthVerdictHtml(r);
-      html += '<div class="hgrid">' + engineCardHtml(r, snap) + indexCardHtml(r, idx, c) + llmCardHtml(r) + flagsCardHtml(r) + processCardHtml(snap) + recordsCardHtml(c) + '</div>';
+      html += '<div class="hgrid">' + engineCardHtml(r, snap) + indexCardHtml(r, idx, c) + captureCardHtml(r) + llmCardHtml(r) + flagsCardHtml(r) + processCardHtml(snap) + recordsCardHtml(c) + '</div>';
       html += consolidationPanelHtml(store.consolidationStatus, c);
       html += functionsCardHtml(r);
       setViewHtml(el, html);

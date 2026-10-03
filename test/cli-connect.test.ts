@@ -78,7 +78,7 @@ describe("agentmemory connect — dispatcher", () => {
     }
   });
 
-  it("every adapter declares a category so onboarding never needs a separate list (#872)", () => {
+  it("every adapter declares a category so onboarding never needs a separate list", () => {
     for (const a of ADAPTERS) {
       expect(
         ["native", "mcp"].includes(a.category as string),
@@ -145,7 +145,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
     expect(second.kind).toBe("already-wired");
   });
 
-  it("install() writes env passthrough block for AGENTMEMORY_URL + AGENTMEMORY_SECRET (#375)", async () => {
+  it("install() writes env passthrough block for AGENTMEMORY_URL + AGENTMEMORY_SECRET", async () => {
     // Remote deployments (k8s, reverse proxy) set AGENTMEMORY_URL +
     // AGENTMEMORY_SECRET in the shell. The wired MCP entry must honour
     // those via ${VAR} expansion so a single entry covers both local
@@ -220,7 +220,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
   });
 });
 
-describe("agentmemory connect — opencode adapter (#872)", () => {
+describe("agentmemory connect — opencode adapter", () => {
   let tmpHome: string;
   let originalHome: string | undefined;
   let originalUserprofile: string | undefined;

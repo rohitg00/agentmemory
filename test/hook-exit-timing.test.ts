@@ -39,10 +39,10 @@ describe("hook exit timing", () => {
     "subagent-start.ts",
     "subagent-stop.ts",
     "task-completed.ts",
-  ])("%s does not exit before its observe request can finish", (name) => {
+  ])("%s does not exit before its observe request and spool write can finish", (name) => {
     const hook = hooks.find((h) => h.name === name)!;
     const exitCap = hook.source.match(/setTimeout\(\(\) => process\.exit\(0\), (\w+)\)\.unref\(\)/)![1];
-    const abort = hook.source.match(/AbortSignal\.timeout\((\w+)\)/)![1];
-    expect(numericValue(hook.source, exitCap)).toBeGreaterThanOrEqual(numericValue(hook.source, abort));
+    expect(hook.source).toMatch(/captureObservation\(/);
+    expect(numericValue(hook.source, exitCap)).toBeGreaterThan(numericValue(hook.source, "OBSERVE_TIMEOUT_MS"));
   });
 });

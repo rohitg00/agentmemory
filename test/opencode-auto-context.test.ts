@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 // the /session/start context through a cache so injection happens
 // without a second /context fetch and is documented as the
 // SessionStart-equivalent behaviour.
-describe("OpenCode plugin auto-context injection (#431)", () => {
+describe("OpenCode plugin auto-context injection", () => {
   const plugin = readFileSync(
     "plugin/opencode/agentmemory-capture.ts",
     "utf-8",

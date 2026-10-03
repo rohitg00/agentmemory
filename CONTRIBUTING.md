@@ -106,6 +106,14 @@ Maintainers cut releases. Every bump touches these files in lockstep (the consis
 
 No lockfiles are committed. `test/export-import.test.ts` asserts against the `VERSION` constant, so it needs no per-release edit. Run `npm run skills:gen` if the endpoint or env surface changed.
 
+Before publishing, run the release gate on the release commit:
+
+```bash
+npm run release:gate
+```
+
+It builds, packs `@agentmemory/agentmemory` and `@agentmemory/mcp`, installs both tarballs into a fresh prefix with a clean `HOME`, starts the installed CLI on random free ports with a deterministic local embedding server (no API keys), and checks capture through the bundled hooks, offline capture and spool recovery, replay dedup after a force kill, dead letters across a restart, vector survival before the first checkpoint, `agentmemory stop` then start, export and import into a fresh home, the MCP entrypoints, and the viewer plus `/agentmemory/status`. It prints a pass or fail line per scenario and a JSON summary, writes logs and `summary.json` to the output directory it prints, and stops only the processes it started. To gate the exact file you will publish, pass it in: `npm pack` then `npm run release:gate -- --tarball agentmemory-agentmemory-<version>.tgz`, and publish that tarball. Do not publish when a scenario fails. The `Release gate` workflow runs the same script on Ubuntu and macOS for pull requests and pushes to main.
+
 Then: CHANGELOG section, PR, merge, tag, GitHub release. The `Publish to npm` workflow picks up the release trigger and publishes `@agentmemory/agentmemory`, `@agentmemory/mcp`, and `@agentmemory/fs-watcher` to npm with provenance (`@agentmemory/fs-watcher` versions independently from `integrations/filesystem-watcher/package.json`).
 
 ## Security issues

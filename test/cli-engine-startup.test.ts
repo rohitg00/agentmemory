@@ -105,7 +105,7 @@ describe("fresh native engine startup", () => {
   });
 
   it("keeps AGENTMEMORY_URL client-only and lets local port flags win", () => {
-    expect(source).toContain('const URL_CLIENT_COMMANDS = new Set(["status", "doctor", "mcp"])');
+    expect(source).toContain('const URL_CLIENT_COMMANDS = new Set(["status", "doctor", "mcp", "capture"])');
     expect(source).toContain("hasExplicitLocalPortOverride");
     expect(source).toContain("shouldUseAgentmemoryUrl()");
     expect(source).toContain('process.env["III_REST_PORT"] = String(base)');

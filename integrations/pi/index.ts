@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { createPlaintextBearerAuthGuard } from "./security.js";
+import { createPlaintextBearerAuthGuard, resolveSecret } from "./security.js";
 
 type TextBlock = { type?: string; text?: string };
 type AssistantMessage = { role?: string; content?: unknown };
@@ -96,7 +96,7 @@ async function callAgentMemory<T>(
   const method = options?.method || "POST";
   const url = `${baseUrl}/agentmemory/${pathname.replace(/^\/+/, "")}`;
   const headers: Record<string, string> = {};
-  const secret = process.env.AGENTMEMORY_SECRET;
+  const secret = resolveSecret(baseUrl, process.env.AGENTMEMORY_SECRET);
   guardPlaintextBearerAuth(baseUrl, secret);
   if (options?.body !== undefined) headers["Content-Type"] = "application/json";
   if (secret) headers.Authorization = `Bearer ${secret}`;
@@ -393,7 +393,6 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     // /new, /resume, /fork and reloads fire this too; only quit ends the session.
     if (event.reason !== "quit") return;
     if (!lastHealthOk || !sessionId) return;
-    // session/end already fans out the summary server-side (#1203).
     await callAgentMemory("session/end", {
       body: { sessionId },
       timeoutMs: 5_000,

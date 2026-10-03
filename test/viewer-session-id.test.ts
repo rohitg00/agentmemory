@@ -53,9 +53,6 @@ function loadViewerSandbox() {
       setAttribute: (name: string, value: unknown) => {
         attributes.set(name, String(value));
       },
-      // Added in #313 — switchTab toggles aria-selected via removeAttribute
-      // on the non-active tab buttons. The mock previously only had
-      // get/setAttribute, so the new hash-routing path threw TypeError.
       removeAttribute: (name: string) => {
         attributes.delete(name);
       },
@@ -128,10 +125,6 @@ function loadViewerSandbox() {
       matchMedia: () => ({ matches: false }),
       addEventListener: () => {},
     },
-    // Stubbed in #313 — the viewer now calls history.replaceState
-    // inside updateTabRoute → switchTab to drive the hash-route surface.
-    // The vm sandbox is otherwise zero-globals so the call would
-    // throw ReferenceError. No-op is fine for the rendering tests.
     history: { replaceState: () => {}, pushState: () => {} },
     location: {
       hash: "",

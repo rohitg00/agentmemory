@@ -70,7 +70,7 @@ export function isKeywordRebuildInProgress(): boolean {
 }
 
 let pendingVectorBackfill = 0
-export type VectorBackfillState = "idle" | "running" | "waiting-for-opt-in"
+export type VectorBackfillState = "idle" | "running" | "paused" | "waiting-for-opt-in"
 let vectorBackfillState: VectorBackfillState = "idle"
 export function getVectorBackfillState(): VectorBackfillState {
   return vectorBackfillState
@@ -199,13 +199,6 @@ export function clipEmbedInput(text: string): string {
   return text.slice(0, EMBED_MAX_CHARS)
 }
 
-// Single guarded vector-index write. Returns true on success. Logs and
-// no-ops on:
-//   - dimension mismatch (mis-configured provider would silently corrupt
-//     the index per #248 otherwise — guarded at persistence load there;
-//     this is the symmetric guard at the write site)
-//   - embed throwing (network, rate limit, provider down)
-// Always soft-fails so a downed embedder doesn't break the upstream save.
 export async function vectorIndexAddGuarded(
   id: string,
   sessionId: string,
@@ -575,7 +568,7 @@ async function runKeywordRebuild(
       fullBackfillPending++
       return
     }
-    if (!backfillActive || vectorJobs.length >= backfillCap) return
+    if (!backfillActive || (wholeStoreBackfill && vectorJobs.length >= backfillCap)) return
     vectorJobs.push({ id, sessionId, text, context: { kind, logId: id } })
   }
 
@@ -632,24 +625,64 @@ async function runKeywordRebuild(
 }
 
 const BACKFILL_SAVE_EVERY_BATCHES = 10
+const VECTOR_BACKLOG_PAUSE_MS = 1000
 
-export async function backfillVectors(jobs: VectorBackfillJob[]): Promise<number> {
+async function embedBackfillJobs(
+  jobs: VectorBackfillJob[],
+  remainingAfter: number,
+): Promise<{ ok: number; fail: number }> {
   const batchSize = getRebuildEmbedBatchSize()
-  let added = 0
+  let ok = 0
+  let fail = 0
   let batchesSinceSave = 0
-  setPendingVectorBackfillCount(jobs.length)
+  setPendingVectorBackfillCount(remainingAfter + jobs.length)
   for (let offset = 0; offset < jobs.length; offset += batchSize) {
-    const { ok } = await vectorIndexAddBatchGuarded(jobs.slice(offset, offset + batchSize))
-    added += ok
-    setPendingVectorBackfillCount(jobs.length - Math.min(jobs.length, offset + batchSize))
+    const result = await vectorIndexAddBatchGuarded(jobs.slice(offset, offset + batchSize))
+    ok += result.ok
+    fail += result.fail
+    setPendingVectorBackfillCount(remainingAfter + jobs.length - Math.min(jobs.length, offset + batchSize))
     batchesSinceSave++
     if (batchesSinceSave >= BACKFILL_SAVE_EVERY_BATCHES) {
       await flushIndexSave()
       batchesSinceSave = 0
     }
   }
-  if (added > 0) await flushIndexSave()
-  return added
+  if (ok > 0) await flushIndexSave()
+  return { ok, fail }
+}
+
+export async function backfillVectors(jobs: VectorBackfillJob[]): Promise<number> {
+  return (await embedBackfillJobs(jobs, 0)).ok
+}
+
+export type VectorBacklogResult = { added: number; failed: number; remaining: number; complete: boolean }
+
+export async function backfillVectorBacklog(
+  jobs: VectorBackfillJob[],
+  options: { batchSize?: number; pauseMs?: number } = {},
+): Promise<VectorBacklogResult> {
+  const batchSize = options.batchSize && options.batchSize > 0 ? options.batchSize : getVectorBackfillMax()
+  const pauseMs = options.pauseMs ?? VECTOR_BACKLOG_PAUSE_MS
+  let added = 0
+  let failed = 0
+  for (let offset = 0; offset < jobs.length; offset += batchSize) {
+    if (offset > 0 && pauseMs > 0) await delay(pauseMs)
+    const after = Math.max(0, jobs.length - offset - batchSize)
+    const batch = jobs.slice(offset, offset + batchSize).filter((job) => !vectorIndex?.has(job.id))
+    if (batch.length === 0) {
+      setPendingVectorBackfillCount(after)
+      continue
+    }
+    const result = await embedBackfillJobs(batch, after)
+    added += result.ok
+    failed += result.fail
+    if (result.ok === 0) {
+      setPendingVectorBackfillCount(jobs.length - offset)
+      return { added, failed, remaining: jobs.length - offset, complete: false }
+    }
+  }
+  setPendingVectorBackfillCount(failed)
+  return { added, failed, remaining: failed, complete: failed === 0 }
 }
 
 export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
@@ -681,19 +714,6 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       }
       const projectFilter = typeof data.project === 'string' && data.project.trim().length > 0 ? data.project.trim() : undefined
       const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
-      // #817: agent-scope isolation. mem::search backs REST /search,
-      // memory_recall and recall_context. Without filtering here a
-      // worker booted with AGENT_ID=B + AGENTMEMORY_AGENT_SCOPE=isolated
-      // could read A's memories — the cross-agent leak the issue
-      // documented. Mirrors the smart-search pattern: wildcard "*"
-      // bypasses, explicit agentId pins, isolated mode falls back to
-      // the worker's own AGENT_ID.
-      //
-      // Fail-closed: if isolated mode is on AND no explicit agentId
-      // is given AND env AGENT_ID is unset, refuse the call rather
-      // than silently dropping the filter. Allowing the call through
-      // with filterAgentId=undefined is the same leak this fix is
-      // supposed to close.
       const isolated = isAgentScopeIsolated();
       const explicitAgentId =
         typeof data.agentId === "string" && data.agentId.trim().length > 0
@@ -854,10 +874,6 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         candidates.push(r)
       }
 
-      // Second pass: load observations in parallel. Fall back to
-      // KV.memories when the observation lookup misses — entries indexed
-      // via mem::remember live in the memories scope under a synthetic
-      // sessionId, so the observation key never exists (#265).
       const obsResults = await Promise.all(
         candidates.map(async (r) => {
           if (r.observation) return r.observation
@@ -875,10 +891,6 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       for (let i = 0; i < candidates.length; i++) {
         const obs = obsResults[i]
         if (!obs) continue
-        // #817: enforce agent-scope after the observation/memory is
-        // loaded. The BM25 index doesn't carry agentId so the filter
-        // happens post-lookup. Wildcard ("*") and no-isolation paths
-        // resolved filterAgentId=undefined upstream and pass through.
         if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
         if (enriched.length >= effectiveLimit) break
         enriched.push({

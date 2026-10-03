@@ -91,6 +91,7 @@ describe("IndexPersistence save throttling", () => {
     const slowKv = {
       ...kv,
       set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope === "mem:index:vec-pending") return kv.set(scope, key, data);
         inFlight++;
         maxInFlight = Math.max(maxInFlight, inFlight);
         if (gate) await gate;

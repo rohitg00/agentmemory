@@ -10,6 +10,10 @@
  * Start it with: npx @agentmemory/agentmemory
  */
 
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+
 const DEFAULT_BASE_URL = "http://localhost:3111";
 const DEFAULT_TIMEOUT_MS = 5000;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -105,11 +109,59 @@ export function createPlaintextBearerAuthGuard(warn, env) {
   };
 }
 
+function usableSecret(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed || (trimmed.startsWith("${") && trimmed.endsWith("}"))) return "";
+  return trimmed;
+}
+
+function readAgentmemoryFile(name) {
+  try {
+    return readFileSync(join(homedir(), ".agentmemory", name), "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function envFileSecret() {
+  let found = "";
+  for (const line of readAgentmemoryFile(".env").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== "AGENTMEMORY_SECRET") continue;
+    let value = trimmed.slice(eq + 1).trim();
+    const quote = value[0];
+    const close = quote === '"' || quote === "'" ? value.indexOf(quote, 1) : -1;
+    if (close > 0) value = value.slice(1, close);
+    else if (value.includes(" #")) value = value.slice(0, value.indexOf(" #"));
+    found = usableSecret(value);
+  }
+  return found;
+}
+
+function isLoopbackUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
+  } catch {
+    return false;
+  }
+}
+
+export function resolveSecret(url, explicit) {
+  const configured = usableSecret(explicit);
+  if (configured) return configured;
+  if (!isLoopbackUrl(url)) return "";
+  return envFileSecret() || usableSecret(readAgentmemoryFile("secret"));
+}
+
 function createClient(cfg, api) {
   const baseUrl = String(cfg.base_url || DEFAULT_BASE_URL).replace(/\/+$/, "");
   const timeoutMs = Number(cfg.timeout_ms || DEFAULT_TIMEOUT_MS);
   const fallbackOnError = cfg.fallback_on_error !== false;
-  const secret = process.env.AGENTMEMORY_SECRET;
+  const secret = resolveSecret(baseUrl, process.env.AGENTMEMORY_SECRET);
   const guardPlaintextBearerAuth = createPlaintextBearerAuthGuard(
     (message) => api.logger.warn?.(message),
   );

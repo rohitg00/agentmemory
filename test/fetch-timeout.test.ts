@@ -432,15 +432,7 @@ describe("Provider hang regression — OpenRouterEmbeddingProvider", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────
-// #446 — OpenAI LLM provider env-var precedence
-//
-// v0.9.17 shipped OPENAI_TIMEOUT_MS (OpenAI-scoped). PR #379 then
-// shipped AGENTMEMORY_LLM_TIMEOUT_MS (shared). The provider now
-// honours both: OPENAI_TIMEOUT_MS wins for back-compat, with
-// AGENTMEMORY_LLM_TIMEOUT_MS as the global fall-back.
-// ─────────────────────────────────────────────────────────────
-describe("OpenAIProvider timeout env precedence (#446)", () => {
+describe("OpenAIProvider timeout env precedence", () => {
   beforeEach(() => {
     delete process.env["OPENAI_TIMEOUT_MS"];
     delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
@@ -511,13 +503,7 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────
-// #627 — OpenAI provider must read message.reasoning_content
-// DeepSeek V4 / Qwen3 / GLM / Kimi return reasoning_content (with
-// underscore); only checking `reasoning` left thinking-model output
-// dropped on the floor and tripped the compress circuit breaker.
-// ─────────────────────────────────────────────────────────────
-describe("OpenAIProvider thinking-model fallback (#627)", () => {
+describe("OpenAIProvider thinking-model fallback", () => {
   beforeEach(() => {
     delete process.env["OPENAI_TIMEOUT_MS"];
     delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];

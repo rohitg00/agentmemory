@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
+import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -38,13 +39,6 @@ function isSdkChildContext(payload) {
 	if (!payload || typeof payload !== "object") return false;
 	return payload.entrypoint === "sdk-ts";
 }
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-function authHeaders() {
-	const h = { "Content-Type": "application/json" };
-	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-	return h;
-}
 function extractTranscriptPrompts(data) {
 	const path = data.transcript_path;
 	if (typeof path !== "string" || !path.endsWith(".jsonl")) return [];
@@ -75,6 +69,7 @@ function extractTranscriptPrompts(data) {
 	return prompts;
 }
 async function main() {
+	if (isDrainChild()) return runDrainChild();
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
 	let data;
@@ -91,19 +86,22 @@ async function main() {
 		const cwd = hookCwd(data) || process.cwd();
 		const project = resolveProject(cwd);
 		const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-		await Promise.allSettled(transcriptPrompts.map((prompt) => fetch(`${REST_URL}/agentmemory/observe`, {
-			method: "POST",
-			headers: authHeaders(),
-			body: JSON.stringify({
-				hookType: "prompt_submit",
-				sessionId,
-				project,
-				cwd,
-				timestamp,
-				data: { prompt }
-			}),
-			signal: AbortSignal.timeout(3e3)
-		})));
+		await Promise.allSettled(transcriptPrompts.map((prompt, index) => captureObservation(withEventId({
+			hookType: "prompt_submit",
+			sessionId,
+			project,
+			cwd,
+			timestamp,
+			data: {
+				prompt,
+				backfill: true
+			}
+		}, {}, {
+			source: "transcript",
+			transcript: data.transcript_path,
+			index,
+			prompt
+		}, { stable: true }), 3e3)));
 	}
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",
