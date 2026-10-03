@@ -50,7 +50,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="1,674+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="2,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1226,7 +1226,7 @@ iii worker add mcp                 # 在 agentmemory 的 MCP 旁開設通用 MCP
 | Prometheus / Grafana | iii OTEL + 健康監控 |
 | 自訂外掛系統 | `iii worker add <name>` |
 
-**182 個原始檔 · ~41,600 行程式碼 · 1,619 測試 · 264 個函式 · 50 個 KV 範圍**,全部基於三種原語。沒有 `agentmemory plugin install`。外掛系統就是 iii 本身。
+**219 個原始檔 · ~52,000 行程式碼 · 2,500+ 測試 · 311 個函式 · 60 個 KV 範圍**,全部基於三種原語。沒有 `agentmemory plugin install`。外掛系統就是 iii 本身。
 
 ---
 
@@ -1525,7 +1525,7 @@ CONSOLIDATION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-連接埠 `3111` 上的 124 個端點。REST API 預設繫結 `127.0.0.1`。當 `AGENTMEMORY_SECRET` 已設定時,受保護端點需要 `Authorization: Bearer <secret>`,網狀同步端點要求兩端都設定 `AGENTMEMORY_SECRET`。
+連接埠 `3111` 上的 138 個端點。REST API 預設繫結 `127.0.0.1`。當 `AGENTMEMORY_SECRET` 已設定時,受保護端點需要 `Authorization: Bearer <secret>`,網狀同步端點要求兩端都設定 `AGENTMEMORY_SECRET`。
 
 <details>
 <summary>關鍵端點</summary>
@@ -1559,7 +1559,7 @@ CONSOLIDATION_ENABLED=true
 ```bash
 npm run dev               # 熱重新載入
 npm run build             # 生產建置
-npm test                  # 1,619 測試
+npm test                  # 2,500+ 測試
 npm run test:integration  # API 測試(需要服務執行中)
 ```
 

@@ -50,7 +50,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="1,674+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="2,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1190,7 +1190,14 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-viewer.svg"><img src="assets/tags/section-viewer.svg" alt="Real-Time Viewer" height="32" /></picture></h2>
 
-Auto-starts on port `3113`. Live observation stream with a stream status indicator, a two-pane session explorer (list beside a sticky detail panel on wide screens), memory and lesson rows that expand to the full stored record including raw JSON and origin provenance, a knowledge graph that clusters nodes by type while relations are sparse, session replay, and a health dashboard.
+Auto-starts on port `3113`. The viewer loads one snapshot when it connects (`GET /agentmemory/viewer/snapshot`) and then applies live stream events: new memories, lessons, observations, audit entries, graph changes and health updates appear without polling or page reloads. The only other requests are the actions you click, "load more" pages and searches. When the stream drops, the viewer shows how old its numbers are, reconnects with backoff and resyncs from one snapshot.
+
+- **12 tabs in four groups** with live counts, deep links (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), keyboard shortcuts and a mobile menu.
+- **Memories:** server-side search, filters by project, agent and type, a detail panel with the version chain and a word diff, provenance links, copy buttons for the id, the MCP call and a curl command, edit (a new version), forget with confirmation, bulk forget and JSON export.
+- **Sessions:** an inline observation timeline with readable tool input and output, filters and paging, and the memories and lessons each session produced.
+- **Graph:** search, node detail with relations and sources, a legend that does not rely on colour alone, and zoom controls.
+- **Health:** the live version of `GET /agentmemory/status`. Every problem comes with its fix, plus the state backend, index save state, graph provenance compaction progress and a consolidation explainer with the real thresholds.
+- **Audit, Activity, Profile, Replay, Lessons, Actions and Crystals** pages, each with an empty state that says what the section is, why it is empty and the command that fills it, and a `?` glossary tooltip on every term and number.
 
 ```bash
 open http://localhost:3113
@@ -1369,7 +1376,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**184 source files · ~42,200 LOC · 1,674 tests · 264 functions · 50 KV scopes**, all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
+**219 source files · ~52,000 LOC · 2,500+ tests · 311 functions · 60 KV scopes**, all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -1667,6 +1674,36 @@ Create `~/.agentmemory/.env`:
 # CLAUDE_MEMORY_BRIDGE=false
 # SNAPSHOT_ENABLED=false
 
+# Storage and durability
+# AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
+# AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
+                                           # A hard kill loses at most this window.
+# AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
+                                             # shutdown and deletes still save at once.
+# AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
+                                           # provenance; false skips it
+
+# Sessions
+# AGENTMEMORY_SESSION_SWEEP_ENABLED=true   # Hourly sweep marks sessions left active past
+                                           # the threshold as abandoned. Deletes nothing;
+                                           # new activity makes the session active again.
+# AGENTMEMORY_SESSION_SWEEP_STALE_HOURS=24
+
+# Capture filters (hooks)
+# AGENTMEMORY_CAPTURE_ALLOW=               # Comma or space list of tool names or globs;
+                                           # when set, only these tools are captured
+# AGENTMEMORY_CAPTURE_DENY=                # Extra names or globs to skip, added to the
+                                           # defaults: memory_*, toolsearch,
+                                           # listmcpresources, fetchmcpresource
+# AGENTMEMORY_CAPTURE_OUTPUT_MAX=8000      # Max characters of tool output per observation
+# AGENTMEMORY_PRE_COMPACT_BUDGET=1500      # Token budget for PreCompact context; 0 disables
+
+# Audit log
+# AGENTMEMORY_AUDIT_RETENTION_MONTHS=0     # Drop month scopes older than N months; 0 keeps all
+# AGENTMEMORY_AUDIT_INDEX_PERSIST=false    # 1 or true records index migration and cleanup
+                                           # rows (debugging only)
+
 # Team
 # TEAM_ID=
 # USER_ID=
@@ -1700,6 +1737,8 @@ curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:31
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/agentmemory/health` | Health check (always public) |
+| `GET` | `/agentmemory/status` | What is wrong and how to fix it (HTML for browsers, JSON otherwise) |
+| `GET` | `/agentmemory/viewer/snapshot` | Everything the viewer shows, in one response |
 | `POST` | `/agentmemory/session/start` | Start session + get context |
 | `POST` | `/agentmemory/session/end` | End session |
 | `POST` | `/agentmemory/observe` | Capture observation (see capture delivery below) |
@@ -1759,7 +1798,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 1,674 tests
+npm test                  # 2,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

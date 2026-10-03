@@ -50,7 +50,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="1,674+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="2,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1227,7 +1227,7 @@ iii worker add mcp                 # generic MCP host alongside the agentmemory 
 | Prometheus / Grafana | iii OTEL + монитор состояния |
 | Самописные плагинные системы | `iii worker add <name>` |
 
-**182 исходных файла · ~41 600 LOC · 1 619 тестов · 264 функции · 50 KV-scope'ов** — всё на трёх примитивах. Никакого `agentmemory plugin install`. Плагинная система — это сам iii.
+**219 исходных файла · ~52 000 LOC · 2 500+ тестов · 311 функции · 60 KV-scope'ов** — всё на трёх примитивах. Никакого `agentmemory plugin install`. Плагинная система — это сам iii.
 
 ---
 
@@ -1526,7 +1526,7 @@ CONSOLIDATION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-124 эндпоинта на порту `3111`. REST API по умолчанию слушает на `127.0.0.1`. Защищённые эндпоинты требуют `Authorization: Bearer <secret>`, когда установлен `AGENTMEMORY_SECRET`, а эндпоинты mesh-синхронизации требуют `AGENTMEMORY_SECRET` на обоих узлах.
+138 эндпоинта на порту `3111`. REST API по умолчанию слушает на `127.0.0.1`. Защищённые эндпоинты требуют `Authorization: Bearer <secret>`, когда установлен `AGENTMEMORY_SECRET`, а эндпоинты mesh-синхронизации требуют `AGENTMEMORY_SECRET` на обоих узлах.
 
 <details>
 <summary>Ключевые эндпоинты</summary>
@@ -1560,7 +1560,7 @@ CONSOLIDATION_ENABLED=true
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 1,674 tests
+npm test                  # 2,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

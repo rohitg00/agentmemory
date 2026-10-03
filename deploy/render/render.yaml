@@ -15,8 +15,8 @@ services:
       - key: PORT
         value: "3111"
       - key: AGENTMEMORY_VERSION
-        value: "0.9.29"
+        value: "0.10.0"
       - key: III_VERSION
-        value: "0.11.2"
+        value: "0.22.1"
       - key: III_SDK_VERSION
-        value: "0.11.2"
+        value: "0.22.1"

@@ -4,9 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        AGENTMEMORY_VERSION: "0.9.29"
-        III_VERSION: "0.11.2"
-        III_SDK_VERSION: "0.11.2"
+        AGENTMEMORY_VERSION: "0.10.0"
+        III_VERSION: "0.22.1"
+        III_SDK_VERSION: "0.22.1"
     restart: unless-stopped
     environment:
       SERVICE_FQDN_AGENTMEMORY_3111: ${SERVICE_FQDN_AGENTMEMORY_3111}

@@ -6,35 +6,123 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Changed
+## [0.10.0] - 2026-10-03
 
-- **iii engine and `iii-sdk` move from 0.11.2 to 0.22.1, with `@iii-dev/helpers` 0.22.1 alongside.** Same release on both sides, as before; the CLI downloads the pinned engine into `~/.agentmemory/bin`, the bundled `docker-compose.yml` pulls `iiidev/iii:0.22.1`, and `agentmemory upgrade` pins both packages to the version this package was built against. The deploy templates under `deploy/` install the published npm package, so their engine pair moves together with `AGENTMEMORY_VERSION` at release time. 0.22.x is the last engine line before 0.23 removes the `config.yaml` worker lifecycle the CLI relies on; it carries the upstream fix that keeps HTTP routes owned by the reconnecting worker, so `/agentmemory/*` no longer answers 404 after the engine reconnects (#1013), and its Node SDK bounds WebSocket connect attempts and detects half-open sockets. The bundled configs keep the `iii-` prefixed builtin workers (`iii-http`, `iii-state`, `iii-queue`, `iii-pubsub`, `iii-cron`): on 0.22.1 the unprefixed names resolve to the standalone registry workers, which is the 0.23 migration. Existing state stores load unchanged.
-- **Runtime config is re-seeded on every start.** Engines from 0.19.4 on persist each builtin worker's `config:` block on first boot (0.22 writes `config/<worker>.yaml` next to the config file; earlier engines wrote `data/configuration/` under the working directory) and treat that copy as the source of truth afterwards, which would have made `--port`, `--instance` and data-dir changes silently ineffective after the first run. The CLI now clears those persisted entries in both locations right before it spawns the engine, so the runtime config it renders from your environment is the seed every time. If one of them cannot be removed, `agentmemory start` stops with the path instead of launching an engine that would ignore the requested ports. The bundled `docker-compose.yml` keeps the same directory on a tmpfs so container starts behave the same way.
-- Dependabot no longer proposes `iii-sdk` bumps; the engine pin and the SDK version are updated together by hand.
-- The deploy Dockerfiles (`deploy/fly`, `railway`, `render`, `coolify`) refuse to build when `III_VERSION` and `III_SDK_VERSION` differ, so overriding the engine tag alone can no longer produce a worker that speaks the wrong wire protocol.
-- **The pinned engine starts quiet.** The CLI spawns it with `--no-update-check` (no update or security-advisory lookups against GitHub at boot) and with iii's anonymous usage telemetry off (`III_TELEMETRY_ENABLED=false` unless you export the variable yourself); the bundled compose file passes the same flag and variable.
-- The deploy entrypoints (`deploy/*/entrypoint.sh`) generate the same observability settings as the bundled `iii-config.yaml` (`sampling_ratio: 0.1`, console log output off) instead of full sampling with console logs, the combination behind the log feedback loop fixed in 0.9.22.
-- The README section on extending agentmemory with registry workers no longer lists builtins that already ship in `iii-config.yaml`, uses the current registry names (`database` replaced `iii-database`), and says where a custom config lives (`~/.agentmemory/iii-config.yaml`).
+Scale, durability and safety release. The iii engine moves from 0.11.2 to 0.22.1. The stores that grew without bound on shared daemons (graph provenance, the audit log, the vector index, the viewer stream backlog) are bounded and heal themselves at boot. Capture is durable end to end: the server accepts each observation into a persistent inbox with a restart-safe event id, and hooks keep an offline spool while the server is down. Vectors survive a force-kill through a pending log. The REST API requires auth by default. Redis becomes an opt-in state backend, and the viewer is rebuilt around one snapshot plus live stream events with a Health page backed by `GET /agentmemory/status`. Every publish now goes through a release gate that installs the packed tarballs and runs capture and recovery against them. Contributions from david-waltermire, a652, cbsincool and dmazhukov, with earlier work by DaveCole, Srinath279, joyjit and cristianbdev carried into merged PRs.
+
+### Breaking changes
+
+- **Auth is on by default** (#1462). When `AGENTMEMORY_SECRET` is not set, the server generates a secret into `~/.agentmemory/secret` (mode 0600) on first start. The CLI, viewer, hooks, MCP server and shim, `agentmemory connect` configs and the bundled integrations read it for loopback URLs, so they keep working with no change. Hand-written requests to `:3111` now need `Authorization: Bearer $(cat ~/.agentmemory/secret)`. An explicit `AGENTMEMORY_SECRET` still wins, and mesh sync still requires an explicit one.
+- **File import and export paths are confined** (#1462). `/compress-file`, `/replay/import-jsonl`, `/graph/import-graphify`, the Obsidian export and `/migrate` resolve symlinks and only accept paths inside the data dir, `~/.agentmemory` or a directory listed in `AGENTMEMORY_IMPORT_ROOT`. `/replay/import-jsonl` also keeps its default `~/.claude/projects`.
+- **Browser writes need JSON and an allowed origin** (#1462). `POST`, `PUT`, `PATCH` and `DELETE` requests with a body must send `Content-Type: application/json`, and a present `Origin` header must be a loopback origin for the configured ports, the viewer's own origin, or listed in `VIEWER_ALLOWED_ORIGINS`. Clients that send no `Origin` (CLI, hooks, MCP, curl) are unaffected.
+- **`AGENTMEMORY_VECTOR_BACKFILL_MAX` is now a batch size** (#1467). Recovery re-embeds missing vectors in batches of this size until the backlog is empty, across restarts, instead of stopping at the cap once per boot.
+- **iii engine 0.22.1** (#1396, #1397). Keep the `iii-` prefixed builtin worker names (`iii-http`, `iii-state`, `iii-queue`, `iii-pubsub`, `iii-cron`) in any custom config: on 0.22.1 the bare names resolve to standalone registry workers.
+- **Hooks skip agentmemory's own tools** (#1452). PostToolUse no longer captures `memory_*` MCP calls or `toolsearch`, `listmcpresources` and `fetchmcpresource`.
+- **Changed response shapes.**
+  - `mem::forget`, `mem::governance-delete` and `mem::governance-bulk` count only records that were really deleted. Absent ids come back in `notFound` and failed deletes in `failed` and `failures`, with `success: false` when anything failed. `governance-bulk` refuses an empty filter and unsupported keys on both the dry run and the live call (#1449).
+  - `GET /agentmemory/audit` and the `memory_audit` MCP tool return `{ entries, legacyFrozen, legacyFrozenBytes }`; the MCP tool used to return a bare list (#1419).
+  - `GET /agentmemory/memories` returns newest first and adds `nextCursor` (plus `search` and `facets` when requested) (#1433).
+  - `GET /agentmemory/export` returns 413 with the refusal body (`oversized`, `bytes`, `limitBytes`, `stoppedAt`) instead of 200 when the export is too large (#1422, #1449).
+  - `POST /agentmemory/session/end` for an unknown, malformed or already completed session returns 200 with `ended: false` and writes nothing (#1252).
+  - `memory_patterns` / `mem::patterns` reads the 50 most recent sessions by default (`limit`, max 500) and stops after 5,000 observations (#1424).
+  - Consolidation decay applies at most once per decay period, and `results.decay` reports `{ scanned, written }` per tier (#1417).
+
+### Upgrade notes
+
+- Scripts or tools that call the REST API by hand on `:3111`: add `Authorization: Bearer $(cat ~/.agentmemory/secret)`, or set your own `AGENTMEMORY_SECRET` and send that.
+- Imports or exports from folders outside `~/.agentmemory` and the data dir: list those folders in `AGENTMEMORY_IMPORT_ROOT` (separate several with `:`, or `;` on Windows).
+- A web page on another origin that writes through the viewer: add its origin to `VIEWER_ALLOWED_ORIGINS`.
+- Nothing else is required. Stores load unchanged, and the one-time migrations below run by themselves.
+
+### What happens on the first start
+
+- **Graph provenance is compacted once in the background.** Every node, edge, superseded edge and the cached snapshot is trimmed to 32 observation ids in slices, without blocking boot, search or the viewer. Progress is saved and resumes after a restart. `AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false` skips it; `POST /agentmemory/graph/compact` runs it by hand (#1455).
+- **The audit log moves to monthly scopes** (`mem:audit:YYYY-MM`) with a one-time background migration. A legacy scope larger than `AGENTMEMORY_AUDIT_MIGRATE_MAX_BYTES` (default 32 MiB) or unreadable is left frozen and reported as `legacyFrozen` (#1419).
+- **The vector index migrates to buckets** (`AGENTMEMORY_VECTOR_BUCKET_SIZE`, default 500) by copying vectors, with no embedding calls. BM25 is no longer persisted and is rebuilt at every boot (#1416).
+- **State is saved every 2 s** instead of 5 s, and `agentmemory stop` waits for the engine flush, so it takes a few seconds longer (#1457, #1449).
+- **Stale sessions are marked abandoned** after `AGENTMEMORY_SESSION_SWEEP_STALE_HOURS` (default 24) by an hourly sweep that deletes nothing (#1453).
+- **Viewer stream groups.** Observations stop writing to per-session `mem-live` groups and the shared `viewer` group is capped at `AGENTMEMORY_VIEWER_STREAM_MAX` (default 500). Existing per-session groups are left in place (#1420).
 
 ### Added
 
-- **`GET /agentmemory/status` and a Health tab in the viewer.** One report of what is wrong and how to fix it: the health monitor state and alerts, the LLM and embedding providers and the circuit breaker, functions failing on at least 20% of their calls (with a provider-specific fix for summarize, compress and graph extraction), observations missing from the search index (the same exact check the boot reconcile runs), graph snapshot age, ports, uptime, the pinned engine version and every feature flag with how to enable it. Browsers get an HTML page with no scripts and a strict CSP; everything else gets JSON (`?format=json` or `?format=html` force either). Every probe is time-boxed at 5 s so a slow store cannot hang the page. Uses the same bearer auth as the rest of the API.
-- **`agentmemory console`** launches the iii web console (workers, functions, triggers, queues, traces) through the pinned engine, against the ports agentmemory resolved, one port above the viewer by default (`--console-port` overrides). Engine 0.22 ships the console as part of `iii` and downloads it on first use, so the "install iii console?" prompt on start and the `skipConsoleInstall` preference are gone; the ready panel now points at the command instead.
+- **Durable capture** (#1460). Hooks send a stable event id with every observation (the host tool use id when present, otherwise a hash of the event). The server writes each event to a capture inbox before storing it, keeps completed ids for `AGENTMEMORY_CAPTURE_DEDUP_HOURS`, and answers a replay with the existing observation. Failed writes retry with backoff, also after a restart, and end as dead letters shown on `/status`, the viewer Health page and `GET /agentmemory/capture`, with `POST /agentmemory/capture/retry` to retry them.
+- **Offline hook spool** (#1460, #1468). When the server is down, times out or returns a 5xx, hooks keep a copy of the observation in a bounded private spool under the data dir until the engine has saved it. The spool drains at boot and from the next hook that reaches the server. New: `agentmemory capture [--drain]` and `POST /agentmemory/capture/drain`.
+- **Vector pending log** (#1467). Every vector added to or removed from the live index is also written to a small pending log. Boot replays it after the snapshot with 0 embedding calls, and whatever is still missing is re-embedded as a durable backlog that resumes after a restart instead of stopping at a 500 cap. `/status` and the viewer show the log size and a paused backfill.
+- **Release gate** (#1463). `npm run release:gate` packs `@agentmemory/agentmemory` and `@agentmemory/mcp`, installs both tarballs into a clean home and runs named scenarios against the installed CLI: capture through the bundled hooks, offline capture recovered from the spool, replay dedup after a force kill, dead letters that survive a restart, vectors surviving a crash, stop and start, export and import, the MCP shim, the viewer and `/status`. A Release gate workflow runs it on Ubuntu and macOS.
+- **Capture cost bench** (#1464). `npm run bench:capture-costs` measures disk bytes per state scope, engine and worker memory and CPU, hook latency, provider requests, agent-visible context bytes and force-kill recovery, with separate capture and recovery budgets in `benchmark/capture-costs-budgets.json` and a figure in `docs/benchmarks/capture-costs.svg`. Optional Ollama, Redis and crash-offline variants.
+- **Codex plugin package** (#1459). The Codex plugin bundles a small stdio bridge that forwards tools, resources and prompts to the configured agentmemory daemon and reports connection errors instead of falling back to a separate store. Authenticated non-loopback connections require HTTPS. `npm run plugin:pack:codex` builds a local package with the six Codex hooks and a review package without lifecycle hooks, and `npm run plugin:verify:published` refuses a release whose runtime, MCP shim and iii versions do not match.
+- **Rebuilt viewer that streams every page** (#1433, #1407). One snapshot on connect (`GET /agentmemory/viewer/snapshot`, `GET /agentmemory/counts`), then live `<entity>.created/updated/deleted` events with no polling. 12 tabs in four groups with live counts, deep links, keyboard shortcuts and a mobile menu, a memories detail panel with version chain, diff and provenance, sessions with an inline timeline, and a searchable graph. Cursor pagination and facets on memories, sessions and observations, `GET /graph/node` and `GET /observations/locate` back it.
+- **`GET /agentmemory/status` and a Health tab in the viewer** (#1408). One report of what is wrong and how to fix it: providers and circuit breaker, failing functions, observations missing from the search index, index save state per leg (#1415), the state backend, graph compaction progress, capture inbox and spool, ports, the pinned engine version and every feature flag. HTML for browsers, JSON otherwise.
+- **`GET /agentmemory/consolidation/status`** and a "Memory layers" panel (#1407).
+- **Opt-in Redis backend for state and streams**: `AGENTMEMORY_STATE_BACKEND=file|redis` and `AGENTMEMORY_REDIS_URL` (#1425). Use one Redis server per instance, and move data with `agentmemory export` and `import` when switching.
+- **`POST /agentmemory/graph/compact`** trims oversized node, edge, edge history and snapshot provenance in slices (#1454, carries #1445 by david-waltermire), and **`AGENTMEMORY_GRAPH_COMPACT_ON_BOOT`** runs it once after upgrade (#1455).
+- **Stale session sweep**: `AGENTMEMORY_SESSION_SWEEP_ENABLED` and `AGENTMEMORY_SESSION_SWEEP_STALE_HOURS` (#1453, carries #1411 by cristianbdev).
+- **Capture filters for hooks**: `AGENTMEMORY_CAPTURE_ALLOW`, `AGENTMEMORY_CAPTURE_DENY`, `AGENTMEMORY_CAPTURE_OUTPUT_MAX` (default 8000) and `AGENTMEMORY_PRE_COMPACT_BUDGET` (default 1500, 0 disables) (#1452, carries #994 by joyjit).
+- **`AGENTMEMORY_AUDIT_INDEX_PERSIST`** (off by default) re-enables index persistence audit rows for debugging (#1182 by dmazhukov).
+- **`AGENTMEMORY_AUDIT_RETENTION_MONTHS`** and **`AGENTMEMORY_AUDIT_MIGRATE_MAX_BYTES`** for the monthly audit log (#1419).
+- **`AGENTMEMORY_STATE_SAVE_INTERVAL_MS`**, **`AGENTMEMORY_INDEX_SAVE_INTERVAL_MS`**, **`AGENTMEMORY_VECTOR_BUCKET_SIZE`**, **`AGENTMEMORY_VECTOR_BACKFILL`** and **`AGENTMEMORY_VIEWER_STREAM_MAX`** (#1457, #1415, #1416, #1420).
+- **`agentmemory console`** launches the iii web console through the pinned engine; the "install iii console?" prompt and the `skipConsoleInstall` preference are gone (#1397).
+- **Multi-instance installs**: `--instance N` gets its own port quartet, data directory and lifecycle state, and `--port` derives the other ports (#892).
+- Procedures are extracted from finished sessions when consolidation is on and an LLM provider is configured (#1407).
+- `memory_patterns` takes an optional `limit` (#1424). `POST /lessons` accepts `sourceIds`, and `mem::evolve` returns 409, 400 and 404 errors (#1433).
 
 ### Fixed
 
-- **The "Memory elevated" alert no longer fires on a healthy process (#1406).** The health check divided the heap in use by the heap Node had allocated so far, which Node keeps just above what is in use, so a normal process read 90% or more and raised the alert once its memory passed 512 MB. The check now divides by the V8 heap limit, which is about 4 GB on 64-bit Node by default, and the viewer's Heap gauge shows used against that limit. The reported 589 of 629 MB is 14% of the limit and no longer alerts.
-- **The viewer updates from the live stream instead of re-fetching, and stops blinking.** The dashboard used to wipe itself to "Loading dashboard..." and re-fetch everything on a 30 s timer and on every stream event; on an idle store that was 73 rebuilds and 20 requests a minute, and 21 live events cost 200 requests. The worker now pushes `session.updated`, `session.deleted`, `memory.updated` and `memory.deleted` on the `mem-live` viewer group next to the existing observation and `session.activity` events (which the viewer used to drop because it read the wrong field), and the viewer applies them to what is on screen: sessions, observation counts, session status and the memory total update with zero requests, redraws are batched to at most one every 250 ms and skipped when nothing changed. The 30 s timer is gone, no refresh path blanks a loaded view, and polling remains only as the fallback when the stream cannot connect (#921, #1340). The viewer now connects with the stream mode engine 0.22 serves first instead of failing twice on the other one. Live buffers on the Timeline and Activity tabs are capped at a few hundred entries so a large stream backlog cannot freeze the tab (#609). When the stream reconnects, the loaded views re-fetch once so changes made while it was down show up, and a list that was loading when live events arrived replays them, so a deleted session does not come back. Session counts no longer reload or blank the open session detail, bursts of memory events coalesce into one list reload, and with an isolated agent scope (`AGENT_ID` plus `AGENTMEMORY_AGENT_SCOPE=isolated`) the worker only pushes that agent's sessions and memories.
-- **A failed dashboard refresh keeps the last data.** Panels that fail to refresh keep their previous values behind a "could not refresh" note instead of flipping to the new-install screen; a first load that cannot reach the API shows a retry button (#1340).
-- **Dashboard numbers match the API.** The Memories card uses the server total instead of counting a capped list (#1279, #951), token savings only counts sessions that produced observations (#944), and the Graph Nodes card shows when its snapshot was taken.
-- **Session summaries stored as objects render as text instead of `[object Object]`** (#1229), and tags stored as a comma-separated string no longer break the Actions, Lessons or Sessions views (#906).
-- **`GET /agentmemory/memories` returns newest first**, so a `limit` page shows the latest memories rather than the oldest (#990).
-- **Rebuild Graph asks before replaying the corpus**, ignores repeat clicks while it runs, and reports how many sessions, nodes and edges it produced (#1383).
-- **The dashboard explains consolidation instead of showing three bare counters.** Semantic Memory, Procedural Memory and Consolidation Status are one "Memory layers" panel: each layer says what it is built from, how many items it holds, and whether it is off (with the exact setting to change), waiting (for example "3 of 5 session summaries needed"), ready, active with the last run's output, or failed with the error. The consolidation pipeline now stores each run's per-tier results, served at `GET /agentmemory/consolidation/status`.
-- **Procedures are extracted from finished sessions.** Procedural memory only came from a cross-session pass that needs two pattern memories each seen in two or more sessions, so it stayed empty on almost every install, and `mem::skill-extract` (which turns one session with a summary and three or more observations into a procedure) had no caller. It now runs for the stopping session inside the existing consolidation cooldown, only when consolidation is on and an LLM provider is configured, so it adds at most one LLM call per cooldown window and none on keyless installs.
-- **The viewer reconnects its live stream when the tab becomes visible again** after a sleep or network drop, instead of staying disconnected until a manual reload (#1370).
-- **The search index snapshot is written continuously, not only on clean shutdown.** Every observation, compression result and memory save now schedules the debounced snapshot write, and bulk indexing (import, replay, rebuild) does the same. Before, the BM25/vector snapshot was written only by a graceful shutdown; after a crash, `kill -9` or power loss the worker booted the stale snapshot, skipped the rebuild because the snapshot was not empty, and every observation captured since the last clean stop stayed invisible to search for good. On boot the worker now also compares the loaded snapshot against each session's observation count and re-indexes whatever is missing. Re-adding an observation under an id that is already indexed (compression replacing the synthetic entry) now replaces the index document instead of stacking postings on top of the old ones.
-- **Worker shutdown no longer hangs when the engine is already gone.** The SIGTERM handler waited on a state write that can never land while the SDK is reconnecting, so `agentmemory stop` had to SIGKILL an orphaned worker after its grace period. The final index flush and the SDK shutdown are now time-boxed at 4 s each, with a hard exit at 8 s, and open viewer connections are closed instead of awaited. `agentmemory stop` gives an orphaned worker that full budget before escalating to SIGKILL.
+- **Repeated identical prompts are kept** (#1468). Hooks whose host sends no event id or time now include the hook timestamp in the id, so typing the same prompt twice stores it twice; retries still reuse the stored id.
+- **Cursor prompts are stored once** (#1470). A per-session prompt ledger matches the session-end transcript back-fill against live captures, so a back-filled prompt is answered as a duplicate instead of stored a second time. Live prompts are never deduped by content.
+- **Concurrent spool writers cannot overwrite each other** (#1468), and printed recovery commands (dead letter retry, spool drain, graph compact, the status page example) send the bearer token.
+- **Graph provenance is bounded.** Each node and edge records only its own observation ids, capped at 32, which stops huge graph rows from crash-looping the worker during search (#1454, carries #1445 by david-waltermire).
+- **Search skips graph retrieval when `AGENTMEMORY_GRAPH_WEIGHT=0`** (#1446 by david-waltermire).
+- **A failed graph snapshot read no longer zeroes the snapshot**; the delta is aborted instead (#1384 by cbsincool).
+- **The graph snapshot total can no longer be lower than the nodes it returns** (#1385 by cbsincool).
+- **Ending an unknown session no longer creates a partial row** that hung the sessions listing (#1252 by a652).
+- **Memories and vectors written just before `agentmemory stop` survive the restart** (#1449).
+- **Forget and governance deletes count and audit only real deletions** (#1449).
+- **Export refuses an oversized payload before assembling it** and the REST endpoint returns 413; the MCP shim surfaces the refusal (#1449, #1422).
+- **Session and graph read-modify-write paths take locks**, closing lost updates when several agents share one daemon (#1421).
+- **Hooks no longer exit before their observe request is sent** on a slow start (#1456).
+- **A fresh vector index is checkpointed within 5 s** and observations keep a bounded, sanitized copy of their source for replay and export (#1448).
+- **Runtime config is re-seeded on every start**, so `--port`, `--instance` and data-dir changes take effect after the first run (#1396, #1397).
+- **The "Memory elevated" alert no longer fires on a healthy process** (#1409).
+- **The viewer stops blinking and keeps data on a failed refresh**, and dashboard numbers match the API (#1407).
+- Consolidation and provider detection use the same check, and functions that need an LLM show as off instead of failed (#1433).
+- Worker shutdown no longer hangs when the engine is already gone (#1396).
+- Fresh installs are portable and persistent, and native and Docker removal stops the worker before the engine (#892).
+
+### Security
+
+- **Request hardening** (#1462, supersedes #878 by DaveCole and #922 by Srinath279). Auth on by default, origin and content type checks on writes, and confined file paths, as described under Breaking changes. Confined files are replaced only after the new content is fully written, and a destination that is a symlink is refused.
+- **Scrubbing on every write** (#1462). Write functions run the secret scrubber on their input, and compression, summary, crystal, graph, replay, team share, session title, commit message and image description text is scrubbed before storage. New patterns cover PEM private key blocks and credentials in URLs. Stored text is escaped before it goes into the injected context block.
+- **Clients resolve the API secret the same way as the server** (#1462): environment first, then `~/.agentmemory/.env`, then the generated secret file, and the stored secret is only sent to loopback URLs.
+- **Supply chain** (#1461). The automatic engine installer verifies the downloaded archive against a SHA-256 pinned in the CLI for each platform before extracting it, and refuses an unpinned version or platform. `npm run engine:hashes` refreshes the pins. Installer paths reach the shell as arguments, so a home directory containing shell syntax is never evaluated. The CI workflow runs with read-only permissions, and the deploy Dockerfiles check that the copied iii binary matches `III_VERSION`.
+- `GET /agentmemory/status` serves HTML with no scripts under a strict CSP and the same bearer auth as the rest of the API (#1408).
+- The Redis URL stays out of files and output (#1425).
+- `mem::governance-bulk` cannot widen a dry run to the whole store (#1449).
+- The pinned engine starts with `--no-update-check` and iii's anonymous usage telemetry off (#1396).
+- A profile read no longer writes a `share` audit entry (#1433).
+
+### Performance
+
+- **Vectors are stored per key in fill-and-roll buckets**, so a save rewrites a few buckets instead of the whole index and the store no longer hits V8's string limit at about 49,000 vectors (#1416).
+- **Index saves are throttled and each leg reports its own state**; a failing BM25 save no longer skips the vector save (#1415).
+- **The audit log lives in monthly scopes** read newest first (#1419).
+- **Session start context and observation lookups use small secondary indexes** instead of listing every session (#1418).
+- **`mem::remember` calls the embedding provider outside the global save lock** (#1423).
+- **`mem::patterns` is bounded** to recent sessions and an observation budget (#1424).
+- **Consolidation decay writes only rows that changed** (#1417).
+- **The viewer stream backlog is bounded** (#1420).
+- **Faster state saves**, `MALLOC_ARENA_MAX=2` for the engine on Linux, and a higher open-file limit in Docker and deploy entrypoints (#1457).
+
+### Docs and internal
+
+- `npm run docs:sync` and `npm run docs:check` keep the documented counts and versions in README, the translated READMEs and AGENTS.md in step with the code.
+- The README documents auth by default, request rules, file path roots, the capture inbox and spool, and the pending vector log (#1460, #1462, #1467).
+- Code and tests no longer cite issue or PR numbers (#1469).
+- The `index_persist` audit gating suite is restored against bucketed persistence and monthly audit scopes, originally written by dmazhukov in #1182.
+- Unit tests grew from about 1,700 to more than 2,400.
+- Dependabot no longer proposes `iii-sdk` bumps; the engine pin and the SDK move together by hand (#1396). `dotenv` 18.0.3 (#1430) and `@types/node` 26.6.2 (#1401, #1400).
+- The deploy Dockerfiles refuse to build when `III_VERSION` and `III_SDK_VERSION` differ (#1396).
+- Thanks to MarvinFS (discussion #1358), inix-x, sbynode-ux, ErikBPF and cmondragon023, whose measurements and earlier PRs shaped the scaling work.
 
 ## [0.9.29] — 2026-08-16
 
@@ -168,6 +256,7 @@ Wave release closing several breaking regressions reported against v0.9.26, plus
 - `/agentmemory:forget` skill still calls `memory_governance_delete` which only touches `KV.memories` and never observations ([#833](https://github.com/rohitg00/agentmemory/issues/833)). Skill rewrite + new `memory_forget` MCP tool tracked separately.
 - `crypto.randomUUID()` global-only on Node <19 ([#715](https://github.com/rohitg00/agentmemory/issues/715)). Drop-in import fix tracked.
 
+[0.10.0]: https://github.com/rohitg00/agentmemory/compare/v0.9.29...v0.10.0
 [0.9.29]: https://github.com/rohitg00/agentmemory/compare/v0.9.28...v0.9.29
 [0.9.28]: https://github.com/rohitg00/agentmemory/compare/v0.9.27...v0.9.28
 [0.9.27]: https://github.com/rohitg00/agentmemory/compare/v0.9.26...v0.9.27

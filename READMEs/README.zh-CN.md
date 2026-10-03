@@ -50,7 +50,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="1,674+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="2,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1226,7 +1226,7 @@ iii worker add mcp                 # 在 agentmemory 的 MCP 旁开通用 MCP �
 | Prometheus / Grafana | iii OTEL + 健康监控 |
 | 自定义插件系统 | `iii worker add <name>` |
 
-**182 个源文件 · ~41,600 行代码 · 1,619 个测试 · 264 个函数 · 50 个 KV 作用域**,全部基于三种原语。没有 `agentmemory plugin install`。插件系统就是 iii 本身。
+**219 个源文件 · ~52,000 行代码 · 2,500+ 个测试 · 311 个函数 · 60 个 KV 作用域**,全部基于三种原语。没有 `agentmemory plugin install`。插件系统就是 iii 本身。
 
 ---
 
@@ -1525,7 +1525,7 @@ CONSOLIDATION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-端口 `3111` 上的 124 个端点。REST API 默认绑定 `127.0.0.1`。当 `AGENTMEMORY_SECRET` 已设置时,受保护端点需要 `Authorization: Bearer <secret>`,网状同步端点要求两端都设置 `AGENTMEMORY_SECRET`。
+端口 `3111` 上的 138 个端点。REST API 默认绑定 `127.0.0.1`。当 `AGENTMEMORY_SECRET` 已设置时,受保护端点需要 `Authorization: Bearer <secret>`,网状同步端点要求两端都设置 `AGENTMEMORY_SECRET`。
 
 <details>
 <summary>关键端点</summary>
@@ -1559,7 +1559,7 @@ CONSOLIDATION_ENABLED=true
 ```bash
 npm run dev               # 热重载
 npm run build             # 生产构建
-npm test                  # 1,619 测试
+npm test                  # 2,500+ 测试
 npm run test:integration  # API 测试(需要服务运行中)
 ```
 

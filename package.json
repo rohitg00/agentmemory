@@ -1,6 +1,6 @@
 {
   "name": "@agentmemory/agentmemory",
-  "version": "0.9.29",
+  "version": "0.10.0",
   "description": "Persistent memory for AI coding agents, powered by iii-engine's three primitives",
   "type": "module",
   "main": "dist/index.mjs",
@@ -29,6 +29,8 @@
     "skills:gen": "tsx scripts/skills/generate.ts",
     "engine:hashes": "node scripts/engine-hashes.mjs",
     "skills:check": "tsx scripts/skills/generate.ts --check && tsx scripts/skills/check.ts",
+    "docs:sync": "tsx scripts/docs-sync.ts",
+    "docs:check": "tsx scripts/docs-sync.ts --check",
     "plugin:pack:codex": "npm run build && node scripts/plugins/package-codex.mjs",
     "plugin:verify:published": "node scripts/plugins/verify-published.mjs",
     "test:plugin:live": "node scripts/plugins/test-live.mjs",

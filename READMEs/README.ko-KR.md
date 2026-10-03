@@ -50,7 +50,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="1,674+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="2,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1209,7 +1209,7 @@ iii worker add mcp                 # generic MCP host alongside the agentmemory 
 | Prometheus / Grafana | iii OTEL + 헬스 모니터 |
 | 사용자 정의 플러그인 시스템 | `iii worker add <name>` |
 
-**182개 소스 파일 · ~41,600 LOC · 1,674 tests · 264개 함수 · 50개 KV 스코프**, 모두 세 가지 프리미티브 위에. `agentmemory plugin install`이 없습니다. 플러그인 시스템은 iii 자체입니다.
+**219개 소스 파일 · ~52,000 LOC · 2,500+ tests · 311개 함수 · 60개 KV 스코프**, 모두 세 가지 프리미티브 위에. `agentmemory plugin install`이 없습니다. 플러그인 시스템은 iii 자체입니다.
 
 ---
 
@@ -1508,7 +1508,7 @@ CONSOLIDATION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-`3111` 포트의 124개 엔드포인트. REST API는 기본적으로 `127.0.0.1`에 바인딩됩니다. 보호된 엔드포인트는 `AGENTMEMORY_SECRET`이 설정되었을 때 `Authorization: Bearer <secret>`를 요구하며, mesh sync 엔드포인트는 양쪽 피어 모두에서 `AGENTMEMORY_SECRET`을 요구합니다.
+`3111` 포트의 138개 엔드포인트. REST API는 기본적으로 `127.0.0.1`에 바인딩됩니다. 보호된 엔드포인트는 `AGENTMEMORY_SECRET`이 설정되었을 때 `Authorization: Bearer <secret>`를 요구하며, mesh sync 엔드포인트는 양쪽 피어 모두에서 `AGENTMEMORY_SECRET`을 요구합니다.
 
 <details>
 <summary>주요 엔드포인트</summary>
@@ -1542,7 +1542,7 @@ CONSOLIDATION_ENABLED=true
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 1,674 tests
+npm test                  # 2,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

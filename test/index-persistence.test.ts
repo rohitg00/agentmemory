@@ -3,6 +3,7 @@ import { IndexPersistence, vectorBucketScope } from "../src/state/index-persiste
 import { SearchIndex } from "../src/state/search-index.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import type { CompressedObservation } from "../src/types.js";
+import { currentAuditScope } from "./helpers/mocks.js";
 
 const INDEX_SCOPE = "mem:index:bm25";
 const META_KEY = "vectors:meta";
@@ -484,5 +485,84 @@ describe("IndexPersistence scheduling", () => {
     persistence.stop();
     await vi.advanceTimersByTimeAsync(10_000);
     expect(await kv.get(INDEX_SCOPE, META_KEY)).toBeNull();
+  });
+});
+
+describe("index_persist audit gating", () => {
+  let kv: MockKV;
+  let previousFlag: string | undefined;
+
+  beforeEach(() => {
+    previousFlag = process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
+    delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
+    kv = mockKV();
+  });
+
+  afterEach(() => {
+    if (previousFlag === undefined) {
+      delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
+    } else {
+      process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = previousFlag;
+    }
+  });
+
+  async function migrateLegacySnapshot(): Promise<VectorIndex> {
+    const legacy = vectorWith([
+      ["obs_a", [0.1, 0.2, 0.3]],
+      ["obs_b", [0.4, 0.5, 0.6]],
+    ]);
+    await writeLegacyVectorSnapshot(kv, legacy);
+    await writeLegacyBm25Snapshot(kv);
+    const loaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+    expect(loaded.state).toBe("migrated");
+    return legacy;
+  }
+
+  async function indexPersistEntries(): Promise<Array<{ operation: string; details: { action?: string } }>> {
+    const entries = await kv.list<{ operation: string; details: { action?: string } }>(currentAuditScope());
+    return entries.filter((entry) => entry.operation === "index_persist");
+  }
+
+  it("writes no index_persist audit entries by default", async () => {
+    await migrateLegacySnapshot();
+
+    expect(await indexPersistEntries()).toEqual([]);
+  });
+
+  it.each(["1", " 1 ", "true", "TRUE", "  true  "])(
+    "writes index_persist audit entries to the current month scope when set to %j",
+    async (value) => {
+      process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = value;
+
+      await migrateLegacySnapshot();
+
+      const entries = await indexPersistEntries();
+      expect(entries.length).toBeGreaterThan(0);
+      const actions = new Set(entries.map((entry) => entry.details.action));
+      expect(actions.has("migrate")).toBe(true);
+      expect(actions.has("delete")).toBe(true);
+    },
+  );
+
+  it.each(["0", "false", "yes", "", " "])(
+    "keeps auditing off when set to %j",
+    async (value) => {
+      process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = value;
+
+      await migrateLegacySnapshot();
+
+      expect(await indexPersistEntries()).toEqual([]);
+    },
+  );
+
+  it("still persists the index when auditing is off", async () => {
+    const legacy = await migrateLegacySnapshot();
+
+    const reloaded = await new IndexPersistence(kv as never, new VectorIndex(), { bucketSize: 16 }).load();
+
+    expect(reloaded.state).toBe("buckets");
+    expectSameVectors(reloaded.vector, legacy);
+    expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).toBeNull();
+    expect(await indexPersistEntries()).toEqual([]);
   });
 });

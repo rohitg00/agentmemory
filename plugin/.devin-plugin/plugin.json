@@ -1,6 +1,6 @@
 {
   "name": "agentmemory",
-  "version": "0.9.29",
+  "version": "0.10.0",
   "description": "Persistent memory for AI coding agents. Captures sessions, recalls with hybrid BM25 + vector + graph search, and exposes 54 memory tools over MCP. Keyless by default, runs on your machine.",
   "author": {
     "name": "Rohit Ghumare",

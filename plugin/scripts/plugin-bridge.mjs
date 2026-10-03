@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 //#region src/version.ts
-const VERSION = "0.9.29";
+const VERSION = "0.10.0";
 //#endregion
 //#region src/secret-store.ts
 const SECRET_KEY = "AGENTMEMORY_SECRET";

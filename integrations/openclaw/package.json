@@ -1,6 +1,6 @@
 {
   "name": "agentmemory",
-  "version": "0.9.29",
+  "version": "0.10.0",
   "type": "module",
   "openclaw": {
     "extensions": [
