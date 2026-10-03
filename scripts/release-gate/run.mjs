@@ -26,16 +26,16 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FORBIDDEN_PORTS = new Set([3111, 3112, 3113, 4098, 4131, 4132, 4133, 49134]);
 const STATE_FLUSH_WAIT_MS = 5000;
 const SCENARIOS = [
-  ["install", "packed artifact installs and reports its identity", "#1440"],
-  ["capture", "bundled hooks capture and search finds every marker", "#1440"],
-  ["mcp", "installed MCP entrypoints list tools and save/search through the server", "#1440"],
-  ["offline", "hooks run while the service is down and the spool is recovered on restart", "#1436"],
-  ["dedup", "a replayed host event after a force kill stays one observation", "#1438"],
-  ["deadletter", "an accepted capture that fails processing survives a restart and is visible as a dead letter", "#1437"],
-  ["vectors", "vectors made before the first checkpoint survive a crash", "#1439"],
-  ["stopflush", "agentmemory stop then start loses nothing", "#1440"],
-  ["status", "viewer serves and /agentmemory/status explains every problem", "#1440"],
-  ["roundtrip", "export then import into a fresh home round-trips", "#1440"],
+  ["install", "packed artifact installs and reports its identity"],
+  ["capture", "bundled hooks capture and search finds every marker"],
+  ["mcp", "installed MCP entrypoints list tools and save/search through the server"],
+  ["offline", "hooks run while the service is down and the spool is recovered on restart"],
+  ["dedup", "a replayed host event after a force kill stays one observation"],
+  ["deadletter", "an accepted capture that fails processing survives a restart and is visible as a dead letter"],
+  ["vectors", "vectors made before the first checkpoint survive a crash"],
+  ["stopflush", "agentmemory stop then start loses nothing"],
+  ["status", "viewer serves and /agentmemory/status explains every problem"],
+  ["roundtrip", "export then import into a fresh home round-trips"],
 ];
 
 function parseArgs(argv) {
@@ -646,7 +646,7 @@ const results = [];
 async function scenario(name, fn) {
   const meta = SCENARIOS.find((s) => s[0] === name);
   if (opts.only && name !== "install" && !opts.only.has(name)) {
-    results.push({ name, title: meta[1], issue: meta[2], status: "skipped" });
+    results.push({ name, title: meta[1], status: "skipped" });
     return;
   }
   log(`---- ${name}: ${meta[1]}`);
@@ -655,12 +655,12 @@ async function scenario(name, fn) {
   try {
     await fn(details);
     const ms = Date.now() - t0;
-    results.push({ name, title: meta[1], issue: meta[2], status: "pass", ms, details });
+    results.push({ name, title: meta[1], status: "pass", ms, details });
     log(`PASS ${name} (${ms} ms)`);
   } catch (err) {
     const ms = Date.now() - t0;
     const message = err instanceof Error ? err.message : String(err);
-    results.push({ name, title: meta[1], issue: meta[2], status: "fail", ms, error: message, details });
+    results.push({ name, title: meta[1], status: "fail", ms, error: message, details });
     log(`FAIL ${name} (${ms} ms): ${message}`);
   }
 }
@@ -761,7 +761,7 @@ async function main() {
 
   await scenario("install", install);
   if (!results[0] || results[0].status !== "pass") {
-    for (const [name, title, issue] of SCENARIOS.slice(1)) results.push({ name, title, issue, status: "fail", error: "install failed" });
+    for (const [name, title] of SCENARIOS.slice(1)) results.push({ name, title, status: "fail", error: "install failed" });
     return;
   }
 
