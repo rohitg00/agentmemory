@@ -258,7 +258,6 @@ function variantName(profile: Profile, cfg: Config): string {
 }
 
 interface BudgetFile {
-  derivedFrom?: string;
   budgets: Record<string, Record<string, Record<string, number>>>;
 }
 
@@ -322,7 +321,7 @@ function checkBudgets(runs: Record<string, unknown>[], file: BudgetFile): Check[
   return out;
 }
 
-function deriveBudgets(runs: Record<string, unknown>[], commit: string): BudgetFile {
+function deriveBudgets(runs: Record<string, unknown>[]): BudgetFile {
   const budgets: BudgetFile["budgets"] = {};
   for (const r of runs) {
     if (r["error"] || (r["provider"] ?? "fake") !== "fake" || (r["scenario"] ?? "standard") !== "standard") continue;
@@ -336,7 +335,7 @@ function deriveBudgets(runs: Record<string, unknown>[], commit: string): BudgetF
       slot[name] = Math.max(slot[name] ?? 0, limit);
     }
   }
-  return { derivedFrom: commit, budgets };
+  return { budgets };
 }
 
 interface ProviderCounters {
@@ -1757,7 +1756,7 @@ function mergeReports(paths: string[], outDir: string, budgetsPath: string | nul
   if (budgetsPath && existsSync(budgetsPath)) {
     merged["budgets"] = { file: basename(budgetsPath), checks: checkBudgets(runs, JSON.parse(readFileSync(budgetsPath, "utf8")) as BudgetFile) };
   }
-  if (writeBudgetsPath) writeFileSync(writeBudgetsPath, JSON.stringify(deriveBudgets(runs, String(first["commit"])), null, 2) + "\n");
+  if (writeBudgetsPath) writeFileSync(writeBudgetsPath, JSON.stringify(deriveBudgets(runs), null, 2) + "\n");
   const short = String(first["commit"]).slice(0, 7);
   writeFileSync(join(outDir, `capture-costs-${short}.json`), JSON.stringify(merged, null, 2) + "\n");
   writeFileSync(join(outDir, `capture-costs-${short}.md`), markdown(merged));
@@ -1839,7 +1838,7 @@ async function main(): Promise<void> {
     report["budgets"] = { file: cfg.budgetsPath, checks: checkBudgets(runs, JSON.parse(readFileSync(cfg.budgetsPath, "utf8")) as BudgetFile) };
   }
   if (cfg.writeBudgetsPath) {
-    writeFileSync(cfg.writeBudgetsPath, JSON.stringify(deriveBudgets(runs, commit), null, 2) + "\n");
+    writeFileSync(cfg.writeBudgetsPath, JSON.stringify(deriveBudgets(runs), null, 2) + "\n");
     process.stderr.write(`[capture-costs] wrote budgets to ${cfg.writeBudgetsPath}\n`);
   }
   const short = commit === "unknown" ? `nogit-${Date.now().toString(36)}` : commit.slice(0, 7);
