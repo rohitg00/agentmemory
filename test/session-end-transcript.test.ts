@@ -95,6 +95,7 @@ describe("session-end transcript prompt backfill", () => {
     for (const p of observes) {
       expect(p.body.hookType).toBe("prompt_submit");
       expect(p.body.sessionId).toBe("ses_t1");
+      expect((p.body.data as { backfill?: unknown }).backfill).toBe(true);
     }
     const endIndex = posts.findIndex((p) => p.path.includes("/session/end"));
     expect(endIndex).toBeGreaterThanOrEqual(0);

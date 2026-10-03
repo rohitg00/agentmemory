@@ -92,7 +92,10 @@ async function main() {
 			project,
 			cwd,
 			timestamp,
-			data: { prompt }
+			data: {
+				prompt,
+				backfill: true
+			}
 		}, {}, {
 			source: "transcript",
 			transcript: data.transcript_path,

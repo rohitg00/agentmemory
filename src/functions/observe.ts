@@ -13,6 +13,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { isCaptureKey } from "../capture/event-record.js";
+import { claimBackfillPrompt, isBackfillPrompt, recordLivePrompt } from "../capture/prompt-ledger.js";
 import { getSearchIndex, getVectorIndex, scheduleIndexSave, vectorIndexAddGuarded } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
@@ -175,6 +176,9 @@ export function registerObserveFunction(
       }
 
       const pendingImageData = extractedImage;
+      const submittedPrompt =
+        payload.hookType === "prompt_submit" && typeof raw.userPrompt === "string" ? raw.userPrompt : undefined;
+      const backfillPrompt = submittedPrompt && isBackfillPrompt(payload.data) ? submittedPrompt : undefined;
 
       return withKeyedLock(`obs:${payload.sessionId}`, async () => {
         const existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
@@ -182,6 +186,10 @@ export function registerObserveFunction(
         if (stored) {
           await restoreIndexEntries(stored);
           return { observationId: obsId, deduplicated: true, existing: true };
+        }
+        if (backfillPrompt && (await claimBackfillPrompt(kv, payload.sessionId, backfillPrompt))) {
+          recordDedupSkip();
+          return { deduplicated: true, sessionId: payload.sessionId };
         }
         if (maxObservationsPerSession && maxObservationsPerSession > 0) {
           if (existing.length >= maxObservationsPerSession) {
@@ -268,6 +276,14 @@ export function registerObserveFunction(
 
         if (dedupMap && dedupHash) {
           dedupMap.record(dedupHash);
+        }
+        if (submittedPrompt && !backfillPrompt) {
+          await recordLivePrompt(kv, payload.sessionId, submittedPrompt).catch((err) => {
+            logger.warn("prompt ledger update failed", {
+              sessionId: payload.sessionId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
         }
 
         await sdk.trigger({

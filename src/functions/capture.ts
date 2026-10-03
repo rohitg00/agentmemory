@@ -17,6 +17,7 @@ import {
   type CompletedEvent,
 } from "../capture/event-record.js";
 import { restoreIndexEntries } from "./observe.js";
+import { prunePromptLedgers } from "../capture/prompt-ledger.js";
 import { scrubRecord } from "./privacy.js";
 import { runtimeConfigPath } from "../cli/engine-launch.js";
 import { captureDurableAfterMs, engineStateConfigPaths } from "../cli/engine-config.js";
@@ -430,6 +431,7 @@ export function registerCaptureFunctions(
         removed++;
       }
     }
+    removed += await prunePromptLedgers(kv, cutoff, policy.eventsMax);
     inboxSize = null;
     counters.pruned += removed;
     lastPruneAt = new Date().toISOString();

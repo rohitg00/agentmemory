@@ -70,7 +70,7 @@ async function main() {
       transcriptPrompts.map((prompt, index) =>
         captureObservation(
           withEventId(
-            { hookType: "prompt_submit", sessionId, project, cwd, timestamp, data: { prompt } },
+            { hookType: "prompt_submit", sessionId, project, cwd, timestamp, data: { prompt, backfill: true } },
             {},
             { source: "transcript", transcript: data.transcript_path, index, prompt },
             { stable: true },
