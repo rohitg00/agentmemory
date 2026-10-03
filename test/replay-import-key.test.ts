@@ -64,7 +64,7 @@ function mockSdk(kv: ReturnType<typeof mockKV>) {
   } as any;
 }
 
-describe("import-jsonl re-key on parsed.sessionId (#775)", () => {
+describe("import-jsonl re-key on parsed.sessionId", () => {
   let tmpRoot: string;
 
   beforeEach(() => {

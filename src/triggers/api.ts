@@ -244,7 +244,7 @@ export function buildConfigFlags() {
       needsLlm: true,
       description: "Every observation is compressed by the LLM for richer summaries (costs tokens). OFF uses zero-LLM synthetic compression.",
       enableHow: "Set AGENTMEMORY_AUTO_COMPRESS=true and provide an LLM key.",
-      docsHref: "https://github.com/rohitg00/agentmemory/issues/138",
+      docsHref: "https://github.com/rohitg00/agentmemory#environment-variables",
     },
     {
       key: "AGENTMEMORY_INJECT_CONTEXT",
@@ -255,7 +255,7 @@ export function buildConfigFlags() {
       needsLlm: false,
       description: "Hooks write recalled context into Claude Code's conversation. OFF captures in the background without injecting.",
       enableHow: "Set AGENTMEMORY_INJECT_CONTEXT=true and restart.",
-      docsHref: "https://github.com/rohitg00/agentmemory/issues/143",
+      docsHref: "https://github.com/rohitg00/agentmemory#environment-variables",
     },
   ];
 }
@@ -889,10 +889,6 @@ export function registerApiTriggers(
           body: { error: "token_budget must be a positive integer" },
         };
       }
-      // #817: propagate agentId so the upstream isolation filter
-      // applies. Honors body.agentId (POST body), ?agentId=... query
-      // param, or implicit fallback to the worker's AGENT_ID when
-      // AGENTMEMORY_AGENT_SCOPE=isolated.
       const bodyAgentId =
         typeof body.agentId === "string" && body.agentId.trim().length > 0
           ? (body.agentId as string).trim()
@@ -1763,9 +1759,6 @@ export function registerApiTriggers(
           body: { error: "query or expandIds is required" },
         };
       }
-      // #771: route the X-Agentmemory-Source header into the payload so
-      // the followup-rate diagnostic can skip viewer-originated calls.
-      // Body wins if both are set (advanced callers explicitly override).
       const headers = (req.headers || {}) as Record<string, string | string[] | undefined>;
       const sourceHeader = headers["x-agentmemory-source"] ?? headers["X-Agentmemory-Source"];
       const sourceFromHeader = Array.isArray(sourceHeader) ? sourceHeader[0] : sourceHeader;
@@ -1793,9 +1786,6 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/smart-search", http_method: "POST" },
   });
 
-  // #771: read-back endpoint for the followup-rate diagnostic. Returns
-  // a directional signal — overcounts on legitimate query refinement —
-  // so help text + the CLI status line carry the same caveat.
   sdk.registerFunction("api::diagnostic-followup",
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -2120,11 +2110,6 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/graph/node", http_method: "GET" },
   });
 
-  // #814: explicit snapshot rebuild endpoint. Pays the full graph
-  // enumeration once and persists a top-degree subgraph + aggregate
-  // counts so subsequent /graph/query and /graph/stats calls skip the
-  // unbounded kv.list. Operator-grade endpoint exposed for the viewer
-  // banner action and CLI repair.
   sdk.registerFunction("api::graph-snapshot-rebuild",
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -2146,10 +2131,6 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/graph/snapshot-rebuild", http_method: "POST" },
   });
 
-  // #814 v2: clean-restart endpoint for legacy corpora too large for
-  // safe rebuild. Wipes graph state without touching observations, so
-  // recall + history stay intact while the graph rebuilds incrementally
-  // from new extracts (or a one-shot /graph/build replay).
   sdk.registerFunction("api::graph-reset",
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -2239,10 +2220,6 @@ export function registerApiTriggers(
     config: { api_path: "/agentmemory/graph/extract", http_method: "POST" },
   });
 
-  // Backfill the knowledge graph from existing compressed observations.
-  // Viewer calls this when the graph is empty (#666). Iterates every
-  // session, collects observations that have a `title` (compressed only),
-  // and feeds them through `mem::graph-extract` in batches.
   sdk.registerFunction("api::graph-build",
     async (req: HttpRequest<{ batchSize?: number }>): Promise<Response> => {
       const authErr = checkAuth(req, secret);

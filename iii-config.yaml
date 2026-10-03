@@ -47,7 +47,7 @@ workers:
       # subscriber lagged" WARN, and that WARN re-enters the same
       # stream the subscriber is failing to drain — a positive
       # feedback loop that wrote 137 GB to daemon.log.new on one user
-      # in a few days (#519).
+      # in a few days.
       sampling_ratio: 0.1
       metrics_enabled: true
       logs_enabled: true

@@ -80,12 +80,6 @@ export class OpenAIProvider implements MemoryProvider {
     const body: Record<string, unknown> = {
       model: this.model,
       max_tokens: this.maxTokens,
-      // OpenAI API spec defines `stream` as defaulting to false, so omitting
-      // it should yield a JSON response. Some OpenAI-compatible proxies
-      // (notably 9Router < 0.4.56 — see decolua/9router#1260) default to
-      // text/event-stream when `stream` is absent, which crashes the
-      // `response.json()` call below with `Unexpected token 'd', "data: {"id"...`.
-      // Send it explicitly so non-spec endpoints route to non-streaming too.
       stream: false,
       messages: [
         { role: "system", content: systemPrompt },
@@ -96,12 +90,6 @@ export class OpenAIProvider implements MemoryProvider {
       body.reasoning_effort = this.reasoningEffort;
     }
 
-    // Bound the request via the shared fetchWithTimeout helper, which
-    // owns the AbortController + clearTimeout cleanup for every raw-fetch
-    // provider (minimax, openrouter, gemini, openrouter-embed, etc.).
-    // OPENAI_TIMEOUT_MS keeps its v0.9.17 meaning (OpenAI-scoped alias,
-    // takes precedence); when unset we fall through to
-    // AGENTMEMORY_LLM_TIMEOUT_MS and finally the 60s default. See #446.
     let response: Response;
     try {
       response = await fetchWithTimeout(
@@ -138,9 +126,6 @@ export class OpenAIProvider implements MemoryProvider {
     if (content) {
       return content;
     }
-    // Fallback: some thinking models return reasoning but no content.
-    // DeepSeek V4 / Qwen3 / GLM / Kimi return `reasoning_content`;
-    // older OpenAI o-series + some compatibles return `reasoning`. #627
     const reasoning = message?.reasoning ?? message?.reasoning_content;
     if (reasoning) {
       return reasoning;
@@ -151,11 +136,6 @@ export class OpenAIProvider implements MemoryProvider {
   }
 }
 
-// Resolves the outbound-fetch timeout for the OpenAI LLM path.
-// Precedence (preserving v0.9.17 behaviour):
-//   1. OPENAI_TIMEOUT_MS       — OpenAI-scoped alias (back-compat)
-//   2. AGENTMEMORY_LLM_TIMEOUT_MS — global LLM/embedding timeout (#446)
-//   3. 60 000 ms default
 function resolveTimeout(): number {
   const openaiRaw = getEnvVar("OPENAI_TIMEOUT_MS");
   const openai = parsePositiveInt(openaiRaw);

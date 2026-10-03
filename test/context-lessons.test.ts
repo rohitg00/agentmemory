@@ -72,7 +72,7 @@ async function seedLesson(
   return lesson;
 }
 
-describe("mem::context — lessons auto-injection (#457)", () => {
+describe("mem::context — lessons auto-injection", () => {
   let kv: ReturnType<typeof mockKV>;
   let handler: ContextHandler;
 

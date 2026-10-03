@@ -83,12 +83,7 @@ describe("Consistency checks", () => {
     }
   });
 
-  it("every host-path bind mount in docker-compose.yml is in the published files list (#136)", () => {
-    // Regression guard for #136: docker-compose.yml references
-    // ./iii-config.docker.yaml as a read-only bind mount, but the file
-    // was missing from the published tarball. Docker silently creates
-    // missing bind sources as empty directories, so the engine crashed
-    // with "Is a directory (os error 21)" at /app/config.yaml.
+  it("every host-path bind mount in docker-compose.yml is in the published files list", () => {
     const compose = readText("docker-compose.yml");
     const pkg = JSON.parse(readText("package.json"));
     const files: string[] = pkg.files ?? [];

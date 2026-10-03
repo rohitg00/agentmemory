@@ -124,12 +124,6 @@ export function registerContextFunction(
         }
       }
 
-      // Lessons — closes the loop opened by mem::lesson-save / mem::reflect.
-      // Without this block, lessons sit in KV and only surface when the agent
-      // thinks to call memory_lesson_recall. Ranking puts project-scoped
-      // lessons ahead of global ones, then weights by confidence; we cap at
-      // 10 to keep the block bounded since the outer token-budget loop
-      // below will drop the whole block if it doesn't fit. #457.
       const relevantLessons = lessons
         .filter((l) => !l.deleted && (!l.project || l.project === data.project))
         .sort((a, b) => {

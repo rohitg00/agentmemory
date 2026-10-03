@@ -142,7 +142,7 @@ describe("Graph Functions", () => {
     expect(edges[0].type).toBe("uses");
   });
 
-  it("graph-extract tolerates reordered attributes (#635)", async () => {
+  it("graph-extract tolerates reordered attributes", async () => {
     // Codex CLI's LLM tends to emit attribute order name→type and
     // source→target→type rather than the hard-coded type-first /
     // type/source/target/weight sequence the old parser required.
@@ -225,12 +225,6 @@ describe("Graph Functions", () => {
     expect(result.error).toContain("No observations");
   });
 
-  // #753: an unbounded {} body used to materialize every node+edge in
-  // one payload, which exceeded the iii state response channel on
-  // large corpora (11k+ nodes) and returned HTTP 500 "Invocation
-  // stopped". The fix caps the page at DEFAULT_GRAPH_QUERY_LIMIT (500)
-  // and surfaces totalNodes / totalEdges so callers know it was
-  // truncated.
   it("caps an unbounded graph-query body to a default page and reports totals", async () => {
     // Seed a graph with more nodes than the default page size.
     const NODE_COUNT = 1200;
@@ -262,8 +256,6 @@ describe("Graph Functions", () => {
       await kv.set("mem:graph:edges", edge.id, edge);
     }
 
-    // Post-#814 the empty-body path reads the snapshot exclusively.
-    // Backfill the snapshot from the seeded data first.
     await sdk.trigger("mem::graph-snapshot-rebuild", { force: true });
 
     const unbounded = (await sdk.trigger(
@@ -399,10 +391,7 @@ describe("Graph Functions", () => {
     expect(page.totalEdges).toBe(11);
   });
 
-  // #814: precomputed snapshot path. The viewer-tab default-cap query
-  // and graph-stats both have to work at 75K-node scale where the
-  // full kv.list enumeration exceeds the iii invocation budget.
-  describe("snapshot cache (#814)", () => {
+  describe("snapshot cache", () => {
     async function seed(nodeCount: number, edgeCount: number) {
       for (let i = 0; i < nodeCount; i++) {
         await kv.set("mem:graph:nodes", `n_${i}`, {
@@ -504,9 +493,6 @@ describe("Graph Functions", () => {
     });
 
     it("graph-extract updates snapshot inline (no kv.list, dirty stays false)", async () => {
-      // Post-#814 v2 the snapshot is updated incrementally on every
-      // extract — no dirty flag bounces. Test asserts that after an
-      // extract the snapshot reflects the new nodes/edges.
       await sdk.trigger("mem::graph-extract", { observations: [testObs] });
 
       const snap = await kv.get<{
@@ -540,8 +526,6 @@ describe("Graph Functions", () => {
     });
 
     it("graph-stats returns empty envelope + warning when no snapshot exists", async () => {
-      // Seed nodes but never rebuild the snapshot — simulates a legacy
-      // corpus on a post-#814 upgrade.
       await seed(5, 5);
 
       const stats = (await sdk.trigger("mem::graph-stats", {})) as {
@@ -569,7 +553,7 @@ describe("Graph Functions", () => {
       expect(snap?.stats.totalNodes).toBe(0);
     });
 
-    it("graph-reset writes empty snapshot; legacy rows stay as orphans (#825)", async () => {
+    it("graph-reset writes empty snapshot; legacy rows stay as orphans", async () => {
       await sdk.trigger("mem::graph-extract", { observations: [testObs] });
       // Index entries exist after the extract.
       const nameBefore = await kv.get(
@@ -580,11 +564,6 @@ describe("Graph Functions", () => {
 
       await sdk.trigger("mem::graph-reset", {});
 
-      // Post-#825: reset is enumeration-free. It writes an empty
-      // snapshot; the legacy index rows remain on disk as orphans
-      // but are never read by any post-#816 code path (hot path
-      // reads only the snapshot, which is now empty). Asserting the
-      // visible behavior: snapshot empty, hot path returns empty.
       const snap = await kv.get<{
         stats: { totalNodes: number; totalEdges: number };
       }>("mem:graph:snapshot", "current");
@@ -597,7 +576,7 @@ describe("Graph Functions", () => {
   // the oversized-corpus rebuild refusal. The hot path never enumerates
   // any more, but the rebuild endpoint AND the BFS / query branches
   // still call kv.list — both need explicit failure-mode tests.
-  describe("snapshot write must not fail open (#1381)", () => {
+  describe("snapshot write must not fail open", () => {
     async function seedSnapshot(totalNodes: number) {
       await kv.set("mem:graph:snapshot", "current", {
         version: 1,
@@ -687,7 +666,7 @@ describe("Graph Functions", () => {
     });
   });
 
-  describe("snapshot-reported total floor (#1382)", () => {
+  describe("snapshot-reported total floor", () => {
     function seedSnapshot(
       stats: { totalNodes: number; nodesByType: Record<string, number> },
       topNodeCount: number,
@@ -752,7 +731,7 @@ describe("Graph Functions", () => {
     });
   });
 
-  describe("budget + tooLarge guards (#814 v2)", () => {
+  describe("budget + tooLarge guards", () => {
     function slowKV(delayMs: number) {
       const base = mockKV();
       return {
@@ -847,12 +826,8 @@ describe("Graph Functions", () => {
       expect(result.totalNodes).toBeGreaterThanOrEqual(25001);
     });
 
-    // #825: new pre-flight refusal when no snapshot exists (signals
-    // legacy corpus that would crash on kv.list). force=true bypasses.
     it("graph-snapshot-rebuild refuses on legacy corpus (no snapshot) without force", async () => {
       const localKv = mockKV();
-      // Seed nodes but never persist a snapshot → simulates a corpus
-      // built on a pre-#814 agentmemory.
       await localKv.set("mem:graph:nodes", "legacy_n", {
         id: "legacy_n",
         type: "concept",

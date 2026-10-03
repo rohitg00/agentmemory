@@ -32,13 +32,6 @@ import type { ConnectResult } from "./connect/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Native plugin row — these agents ship an agentmemory plugin or
-// first-party integration. Glyphs match SkillKit's published set
-// where they overlap; the rest fall back to the generic `◇`.
-// Display glyph per agent; the agent set itself comes from connect's
-// ADAPTERS (single source of truth) so the picker can never drift from
-// what `agentmemory connect` can actually wire (#872). Unknown adapters
-// fall back to a neutral glyph.
 const AGENT_GLYPH: Record<string, string> = {
   "claude-code": "⟁",
   "copilot-cli": "◈",

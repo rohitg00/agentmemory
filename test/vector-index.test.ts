@@ -77,7 +77,7 @@ describe("VectorIndex", () => {
     expect(results[0].score).toBe(0);
   });
 
-  it("round-trip preserves dim + identity for pooled-Buffer sizes (#587)", () => {
+  it("round-trip preserves dim + identity for pooled-Buffer sizes", () => {
     // 384-dim floats = 1536 bytes, comfortably inside Node's 8KB Buffer
     // pool. Without explicit byteOffset/byteLength in the base64 round-trip,
     // deserialise reads pool offset 0 and reports the entire pool as a
@@ -102,7 +102,7 @@ describe("VectorIndex", () => {
     }
   });
 
-  it("preserves bytes when source Float32Array is itself a sliced view (#587)", () => {
+  it("preserves bytes when source Float32Array is itself a sliced view", () => {
     // The encode side has the same risk: passing arr.buffer drops the
     // slice metadata if arr is a sub-view (subarray / typedArray.set).
     const backing = new Float32Array(8);

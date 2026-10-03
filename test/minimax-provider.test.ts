@@ -1,7 +1,7 @@
 import { describe, expect, it, afterEach } from "vitest";
 import { MinimaxProvider } from "../src/providers/minimax.js";
 
-describe("MinimaxProvider — base URL resolution (#285)", () => {
+describe("MinimaxProvider — base URL resolution", () => {
   const originalEnv = process.env["MINIMAX_BASE_URL"];
 
   afterEach(() => {

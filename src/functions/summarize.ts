@@ -186,10 +186,6 @@ async function produceSummaryXml(
   return { response, mode: "chunked", chunks: chunks.length, skipped };
 }
 
-// #783: many LLMs (DeepSeek, GPT variants, some Anthropic responses)
-// wrap structured XML in markdown code fences or add conversational
-// text before/after. Strip those wrappers before the tag regex so a
-// well-formed summary doesn't get silently dropped as parse_failed.
 function stripXmlWrappers(raw: string): string {
   if (!raw) return "";
   let cleaned = raw.trim();
@@ -275,11 +271,6 @@ export function registerSummarizeFunction(
       }
 
       try {
-        // #783: chunk-level produceSummaryXml retries internally, but
-        // the final merge used to parse once and bail. Wrap the
-        // produce-and-parse pair in the same 2-attempt loop so a
-        // markdown-wrapped or otherwise wrapped response gets a
-        // second roll-of-the-dice instead of dropping the summary.
         let summary: SessionSummary | null = null;
         let response = "";
         let mode = "single";

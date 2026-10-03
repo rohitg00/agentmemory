@@ -1,10 +1,3 @@
-// Pass byteOffset + byteLength explicitly so the round-trip survives
-// Node's Buffer pool. Buffer.from(b64, "base64") returns a slice of a
-// shared 8KB pool (poolSize), and `new Float32Array(buf.buffer)` ignores
-// the slice metadata — it would mint a 2048-element view over the whole
-// pool. Same risk on the encode side if the input Float32Array is itself
-// a sliced view. Reported as a phantom "2048 dimensions on disk" crash
-// in #455 / #469 / #584 / #587.
 export function float32ToBase64(arr: Float32Array): string {
   return Buffer.from(arr.buffer, arr.byteOffset, arr.byteLength).toString(
     "base64",

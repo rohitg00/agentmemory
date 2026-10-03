@@ -168,7 +168,7 @@ describe("Smart Search Function", () => {
     expect(result.results.length).toBe(0);
   });
 
-  it("compact mode records access for every returned observation id (#119)", async () => {
+  it("compact mode records access for every returned observation id", async () => {
     await sdk.trigger("mem::smart-search", { query: "auth" });
     // recordAccessBatch is fire-and-forget — let the microtask queue drain.
     await new Promise((r) => setImmediate(r));
@@ -184,7 +184,7 @@ describe("Smart Search Function", () => {
     expect(log2?.count).toBe(1);
   });
 
-  it("expand mode records access for expanded observation ids (#119)", async () => {
+  it("expand mode records access for expanded observation ids", async () => {
     await sdk.trigger("mem::smart-search", { expandIds: ["obs_1"] });
     await new Promise((r) => setImmediate(r));
 

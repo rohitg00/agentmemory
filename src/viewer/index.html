@@ -5,14 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>agentmemory viewer</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-  <!-- Removed Google Fonts <link> in #323: the viewer CSP is strict
-       (default-src 'none', style-src 'unsafe-inline', font-src 'self')
-       and external stylesheets from fonts.googleapis.com were blocked,
-       producing console CSP violations that some browsers (Windows
-       Edge in particular) escalate into broader script-execution
-       issues. System-font fallbacks are already declared on every
-       --font-* CSS variable below, so the viewer renders fine with
-       Georgia / system serif / system sans / system mono. -->
   <style>
     :root {
       --bg: #F9F9F7;
@@ -2078,11 +2070,6 @@
         if (!res.ok) {
           if (res.status === 401) showViewerAuthPrompt();
           console.warn('[viewer] API ' + (fetchOpts.method || 'GET') + ' ' + path + ' returned ' + res.status);
-          // Non-2xx responses resolve to null so callers can keep treating
-          // null as "request failed" (e.g. loadGraph's disabled/error state).
-          // The health endpoint opts out via readErrorBody: it intentionally
-          // responds 503 with a valid JSON body when status is "critical"
-          // (see #1019), and the dashboard badge needs that body.
           if (!readErrorBody) return null;
           try {
             return await res.json();

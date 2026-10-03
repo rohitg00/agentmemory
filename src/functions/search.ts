@@ -199,13 +199,6 @@ export function clipEmbedInput(text: string): string {
   return text.slice(0, EMBED_MAX_CHARS)
 }
 
-// Single guarded vector-index write. Returns true on success. Logs and
-// no-ops on:
-//   - dimension mismatch (mis-configured provider would silently corrupt
-//     the index per #248 otherwise — guarded at persistence load there;
-//     this is the symmetric guard at the write site)
-//   - embed throwing (network, rate limit, provider down)
-// Always soft-fails so a downed embedder doesn't break the upstream save.
 export async function vectorIndexAddGuarded(
   id: string,
   sessionId: string,
@@ -721,19 +714,6 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       }
       const projectFilter = typeof data.project === 'string' && data.project.trim().length > 0 ? data.project.trim() : undefined
       const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
-      // #817: agent-scope isolation. mem::search backs REST /search,
-      // memory_recall and recall_context. Without filtering here a
-      // worker booted with AGENT_ID=B + AGENTMEMORY_AGENT_SCOPE=isolated
-      // could read A's memories — the cross-agent leak the issue
-      // documented. Mirrors the smart-search pattern: wildcard "*"
-      // bypasses, explicit agentId pins, isolated mode falls back to
-      // the worker's own AGENT_ID.
-      //
-      // Fail-closed: if isolated mode is on AND no explicit agentId
-      // is given AND env AGENT_ID is unset, refuse the call rather
-      // than silently dropping the filter. Allowing the call through
-      // with filterAgentId=undefined is the same leak this fix is
-      // supposed to close.
       const isolated = isAgentScopeIsolated();
       const explicitAgentId =
         typeof data.agentId === "string" && data.agentId.trim().length > 0
@@ -894,10 +874,6 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         candidates.push(r)
       }
 
-      // Second pass: load observations in parallel. Fall back to
-      // KV.memories when the observation lookup misses — entries indexed
-      // via mem::remember live in the memories scope under a synthetic
-      // sessionId, so the observation key never exists (#265).
       const obsResults = await Promise.all(
         candidates.map(async (r) => {
           if (r.observation) return r.observation
@@ -915,10 +891,6 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       for (let i = 0; i < candidates.length; i++) {
         const obs = obsResults[i]
         if (!obs) continue
-        // #817: enforce agent-scope after the observation/memory is
-        // loaded. The BM25 index doesn't carry agentId so the filter
-        // happens post-lookup. Wildcard ("*") and no-isolation paths
-        // resolved filterAgentId=undefined upstream and pass through.
         if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
         if (enriched.length >= effectiveLimit) break
         enriched.push({

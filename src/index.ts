@@ -158,13 +158,6 @@ function hasGetMeter(
   );
 }
 
-// Top-level safety net for iii-engine invocation timeouts (issue #204).
-// Under sustained write load (e.g. Claude Code hooks across many
-// projects) `state::set` can occasionally exceed the SDK's 30s timeout.
-// We don't want one such timeout to terminate the long-lived memory
-// service — the rejection is surfaced to the relevant call site via
-// .catch() where it matters; everything else is logged-and-continued.
-// Throttle logs to avoid spamming on bursts.
 let lastUnhandledLogAt = 0;
 process.on("unhandledRejection", (reason) => {
   const now = Date.now();
@@ -703,10 +696,6 @@ async function main() {
     insightDecayTimer.unref();
   }
 
-  // #771: hourly TTL sweep for the followup-rate diagnostic. The
-  // recent-searches scope only needs the last entry per session;
-  // sweeping anything older than the retention window keeps the scope
-  // from growing unbounded across long-lived deployments.
   const recentSearchesSweepTimer = setInterval(async () => {
     try {
       await sdk.trigger({

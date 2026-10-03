@@ -62,7 +62,7 @@ function seedSessions(kv: ReturnType<typeof countingKV>, count: number, obsBytes
   }
 }
 
-describe("mem::export stops assembling once the frame budget is exceeded (#1334)", () => {
+describe("mem::export stops assembling once the frame budget is exceeded", () => {
   it("never lists observations or the graph when memories alone exceed the limit", async () => {
     const kv = countingKV();
     const sdk = mockSdk();

@@ -78,19 +78,6 @@ TIMEOUT = 5
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _plaintext_bearer_warned = False
 
-# agentmemory's documented runtime config lives at ~/.agentmemory/.env.
-# When agentmemory is launched as a systemd user service (or any other
-# process manager that loads that file directly), those values never
-# reach an interactive shell. `hermes memory status` then reads
-# os.environ in the Hermes CLI process, finds AGENTMEMORY_URL /
-# AGENTMEMORY_SECRET unset, and reports the plugin as "Missing" even
-# though the service is healthy and live sessions can use it (#250).
-#
-# Preload the file at plugin-import time using os.environ.setdefault so
-# we never override anything the user explicitly set in the shell. The
-# preload is best-effort and silent on any failure (file absent,
-# unreadable, malformed) — the plugin falls back to its existing default
-# (http://localhost:3111) and Hermes status reflects that.
 def _preload_agentmemory_dotenv() -> None:
     candidates: list[Path] = []
     home = os.environ.get("HOME")
@@ -114,10 +101,6 @@ def _preload_agentmemory_dotenv() -> None:
                     os.environ.setdefault(key, value)
         except (OSError, UnicodeDecodeError):
             continue
-    # Guarantee AGENTMEMORY_URL is set so `hermes memory status` never
-    # reports it as Missing when a user runs agentmemory at the default
-    # localhost:3111 (or via systemd with the URL line commented out in
-    # ~/.agentmemory/.env because it matches the default). #520.
     os.environ.setdefault("AGENTMEMORY_URL", DEFAULT_BASE_URL)
 
 

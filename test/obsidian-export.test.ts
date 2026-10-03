@@ -320,11 +320,6 @@ describe("Obsidian Export", () => {
     expect(result.errors).toBeUndefined();
   });
 
-  // #729: any record missing an id used to crash `sanitize(undefined.id)`
-  // outside the per-record try, escaping the handler entirely and
-  // returning HTTP 500 `{"error":"[object Object]"}` with zero files
-  // written. The hardened loops filter id-less records and the outer
-  // try/catch keeps thrown errors from ever reaching the HTTP serializer.
   it("skips records that are missing an id and keeps exporting the rest", async () => {
     await kv.set("mem:memories", "orphan-memory", { ...makeMemory("mem_missing"), id: undefined } as any);
     await kv.set("mem:lessons", "orphan-lesson", { ...makeLesson("lsn_missing"), id: undefined } as any);

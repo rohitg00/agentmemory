@@ -97,8 +97,6 @@ export const DEFAULT_SLOTS: ReadonlyArray<
   },
 ];
 
-// Read merged env so values loaded from ~/.agentmemory/.env are
-// honoured. process.env alone misses .env-only exports (#678).
 export function isSlotsEnabled(): boolean {
   return getEnvVar("AGENTMEMORY_SLOTS") === "true";
 }

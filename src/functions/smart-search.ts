@@ -23,11 +23,6 @@ import { logger } from "../logger.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { getCounters } from "../telemetry/setup.js";
 
-// #771: smart-search followup-rate diagnostic. Stored per session as
-// the most recent search payload, used to detect whether the next
-// search inside the window had a disjoint result set. sessionId is
-// duplicated into the row so the hourly sweep can delete by it
-// (StateKV.list returns values only).
 export interface RecentSearch {
   sessionId: string;
   query: string;
@@ -93,23 +88,10 @@ export function registerSmartSearchFunction(
       // roles through one server. "*" opts out of the env-default
       // scope and returns hits from every agent.
       agentId?: string;
-      // #771: session anchor for the followup-rate diagnostic. The
-      // API trigger fills this from req.body / headers; direct
-      // sdk.trigger callers can pass it explicitly.
       sessionId?: string;
-      // #771: marks viewer-originated searches so the diagnostic
-      // ignores them — only agent-initiated re-queries should count.
       source?: string;
     }) => {
 
-      // Compute the agent filter once, up front. Both the expandIds
-      // branch and the hybrid-search branch consult it — otherwise
-      // expandIds becomes a cross-agent leak (#554 follow-up).
-      //
-      // #817 follow-up: fail-closed when isolated mode is on AND no
-      // agent id is resolvable from any source. Silently letting
-      // filterAgentId fall through to `undefined` would be the same
-      // cross-agent leak this filter is meant to prevent.
       const isolated = isAgentScopeIsolated();
       const explicitAgentId =
         typeof data.agentId === "string" && data.agentId.trim().length > 0
@@ -228,13 +210,6 @@ export function registerSmartSearchFunction(
         compact.map((r) => r.obsId),
       );
 
-      // #771: followup-rate diagnostic. Only fires for agent-initiated
-      // searches that carry a sessionId — viewer-originated searches
-      // (source === "viewer") and direct-sdk callers without a session
-      // anchor are skipped. The result-set comparison uses obsIds: a
-      // disjoint set under the window suggests the previous call's
-      // results were not used, which is our directional proxy for
-      // reader-failure-with-evidence.
       if (
         data.sessionId &&
         typeof data.sessionId === "string" &&

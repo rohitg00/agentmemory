@@ -16,7 +16,7 @@ function observePayload(hookType: string, data: unknown) {
   };
 }
 
-describe("observe dedup for hooks without tool_input (#1173)", () => {
+describe("observe dedup for hooks without tool_input", () => {
   beforeEach(() => {
     vi.resetModules();
   });

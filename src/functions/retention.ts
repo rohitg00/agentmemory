@@ -325,14 +325,6 @@ export function registerRetentionFunctions(
         };
       }
 
-      // Branch on source (#124). Pre-0.8.10 rows have no `source` field,
-      // and that includes semantic retention rows that were written by
-      // the old scorer — so we can't just default to episodic, that
-      // would silently no-op the delete and leave the stranded semantic
-      // memory alive (the exact bug #124 is about). When `source` is
-      // missing, probe both namespaces to find where the memoryId
-      // actually lives and route the delete there. After one re-score
-      // (mem::retention-score) every row will have the correct tag.
       let evicted = 0;
       let evictedEpisodic = 0;
       let evictedSemantic = 0;

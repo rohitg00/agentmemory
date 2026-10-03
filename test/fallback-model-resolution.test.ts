@@ -1,9 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-// #778: fallback providers used to inherit the primary provider's
-// model name and 404 on every call. Each fallback must resolve its
-// own env-driven default model.
-
 const captured: Array<{ provider: string; model: string }> = [];
 
 vi.mock("../src/providers/openai.js", () => ({
@@ -72,7 +68,7 @@ vi.mock("../src/providers/minimax.js", () => ({
 import { createFallbackProvider } from "../src/providers/index.js";
 import type { ProviderConfig, FallbackConfig } from "../src/types.js";
 
-describe("Fallback provider model resolution (#778)", () => {
+describe("Fallback provider model resolution", () => {
   const savedEnv: Record<string, string | undefined> = {};
   const envKeys = [
     "OPENAI_API_KEY",

@@ -156,7 +156,7 @@ describe("mem::search", () => {
     ).rejects.toThrow("format must be one of");
   });
 
-  it("surfaces saved memories from KV.memories (#265)", async () => {
+  it("surfaces saved memories from KV.memories", async () => {
     // mem::remember persists to KV.memories under a synthetic sessionId
     // ("memory") that has no corresponding KV.observations entry. mem::search
     // must fall back to KV.memories or memory_recall returns empty.

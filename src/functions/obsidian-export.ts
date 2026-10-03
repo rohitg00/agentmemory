@@ -27,9 +27,6 @@ function sanitize(name: string): string {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").slice(0, 100);
 }
 
-// #729: every record helper used to crash on null/undefined fields,
-// poisoning the whole export. These helpers stay strict about types but
-// return sensible fallbacks instead of throwing.
 function hasExportId<T extends { id?: unknown }>(
   item: T | null | undefined,
 ): item is T & { id: string } {
@@ -277,10 +274,6 @@ export function registerObsidianExportFunction(
         sessions: join(vaultDir, "sessions"),
       };
 
-      // Outer try/catch keeps the function from ever throwing out to the
-      // iii engine's HTTP serializer; #729 surfaced an unhandled
-      // TypeError as `{"error":"[object Object]"}`. With this guard the
-      // worst case is `{success: false, error: <string>}`.
       try {
         const roots = [getExportRoot()];
         await Promise.all(Object.values(dirs).map((dir) => mkdirConfined(dir, roots)));

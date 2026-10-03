@@ -264,7 +264,7 @@ describe("RetentionScoring", () => {
     expect(sem1.score).toBeGreaterThan(sem2.score);
   });
 
-  it("scores tag rows with their source scope (#124)", async () => {
+  it("scores tag rows with their source scope", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"
     );
@@ -297,15 +297,11 @@ describe("RetentionScoring", () => {
     expect(semStored).toMatchObject({ source: "semantic" });
   });
 
-  it("mem::retention-evict deletes semantic memories from mem:semantic, not mem:memories (#124)", async () => {
+  it("mem::retention-evict deletes semantic memories from mem:semantic, not mem:memories", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"
     );
 
-    // Both are 500 days old with zero access → both will score below
-    // the default cold threshold. Before #124 the loop silently called
-    // kv.delete(mem:memories, <semantic-id>) which was a no-op, leaving
-    // the semantic row in mem:semantic forever.
     const sdk = mockSdk();
     const kv = mockKV(
       [makeMemory("mem_evict", "fact", 500)],
@@ -333,7 +329,7 @@ describe("RetentionScoring", () => {
     expect(remainingScores).toHaveLength(0);
   });
 
-  it("mem::retention-evict emits a single batched audit record on success (#124, audit policy)", async () => {
+  it("mem::retention-evict emits a single batched audit record on success (audit policy)", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"
     );
@@ -399,7 +395,7 @@ describe("RetentionScoring", () => {
     expect(evictEntries).toHaveLength(0);
   });
 
-  it("mem::retention-score emits a batched audit row per rescore (#124, audit policy)", async () => {
+  it("mem::retention-score emits a batched audit row per rescore (audit policy)", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"
     );
@@ -434,17 +430,11 @@ describe("RetentionScoring", () => {
     expect(entry.details.semantic).toBe(1);
   });
 
-  it("mem::retention-evict probes namespaces for legacy semantic rows (backwards-compat, #124)", async () => {
+  it("mem::retention-evict probes namespaces for legacy semantic rows (backwards-compat)", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"
     );
 
-    // The actual nasty case from CodeRabbit's review: a pre-0.8.10
-    // store that had a semantic memory scored by the old code path.
-    // The retention row has NO source field and the memory lives in
-    // mem:semantic. If the eviction path blindly defaults missing
-    // source to episodic, it no-ops the delete and strands the
-    // semantic row forever — which is the exact bug #124 is about.
     const sdk = mockSdk();
     const kv = mockKV([], [makeSemanticMemory("sem_legacy", 500, 0)]);
     registerRetentionFunctions(sdk as never, kv as never);
@@ -475,7 +465,7 @@ describe("RetentionScoring", () => {
     expect(remainingSem).toHaveLength(0);
   });
 
-  it("mem::retention-evict routes pre-0.8.10 episodic rows with missing source to mem:memories (#124)", async () => {
+  it("mem::retention-evict routes pre-0.8.10 episodic rows with missing source to mem:memories", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"
     );

@@ -55,7 +55,7 @@ function mockSdk() {
   };
 }
 
-describe("mem::forget audit coverage (issue #125)", () => {
+describe("mem::forget audit coverage", () => {
   it("emits a single audit row when a memory is forgotten", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
@@ -127,9 +127,6 @@ describe("mem::forget audit coverage (issue #125)", () => {
     expect(auditRows).toHaveLength(0);
   });
 
-  // Regression coverage for issue #1120: mem::forget must not report a
-  // deletion for ids it never touches (e.g. lesson ids live in KV.lessons,
-  // not KV.memories).
   it("returns deleted: 0 for a nonexistent memoryId (lesson id)", async () => {
     const sdk = mockSdk();
     const kv = mockKV();
@@ -303,7 +300,7 @@ describe("mem::forget search-index cleanup", () => {
   });
 });
 
-describe("mem::forget counts only records that were really deleted (#1428)", () => {
+describe("mem::forget counts only records that were really deleted", () => {
   type ForgetResult = {
     success: boolean;
     deleted: number;

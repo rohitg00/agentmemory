@@ -416,10 +416,6 @@ describe("mem::summarize chunking", () => {
     expect(maxInflight).toBe(2);
   });
 
-  // #783: markdown-wrapped XML used to silently fail parsing because
-  // the tag regex looked for <title> in the raw payload. stripXmlWrappers
-  // now peels ```xml ... ``` fences and conversational pre/postamble
-  // before the regex runs.
   it("parses a summary even when the LLM wraps XML in markdown fences", async () => {
     const wrappedXml = "Here's the summary:\n```xml\n" + summaryXml({
       title: "wrapped",

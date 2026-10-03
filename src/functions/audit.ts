@@ -10,34 +10,6 @@ import { getEnvVar, getAuditMigrateMaxBytes } from "../config.js";
 import { runtimeConfigPath } from "../cli/engine-launch.js";
 import { ENGINE_DEFAULT_SAVE_INTERVAL_MS, engineSaveIntervalMs, engineStateConfigPaths } from "../cli/engine-config.js";
 
-// Audit coverage policy (issue #125).
-//
-// Every structural deletion of a memory, observation, session, or
-// semantic row MUST call recordAudit. Two shapes are allowed, keyed to
-// whether the caller is scoped or bulk:
-//
-//   Scoped deletions — a user-visible, per-call action removing a
-//   bounded set of items. Emit ONE audit row per call with targetIds
-//   populated. Examples: mem::governance-delete, mem::forget.
-//
-//   Bulk deletions — automatic sweeps (retention, TTL eviction,
-//   auto-forget) that can remove hundreds of rows per invocation.
-//   Emit ONE batched audit row per invocation with targetIds listing
-//   every removed id and details.evicted holding the count. Per-item
-//   audit rows would flood the audit log during routine sweeps.
-//
-//   Either shape is required; silent deletes are not acceptable.
-//
-// operation field:
-//   - "delete"          — permanent removal (governance, retention sweep, evict).
-//   - "forget"          — forget/removal flows. Scoped when emitted by
-//                         mem::forget (user-initiated); bulk-batched when
-//                         emitted by mem::auto-forget (automatic sweep).
-//   - everything else   — see AuditEntry["operation"] union in src/types.ts.
-//
-// When adding a new deletion path, add an explicit recordAudit call
-// BEFORE kv.delete(...) and match one of the two shapes above.
-
 const AUDIT_MIGRATE_FUNCTION_ID = "mem::audit-migrate";
 const AUDIT_MIGRATION_COPY_CONCURRENCY = 32;
 const AUDIT_MIGRATION_DELETE_CONCURRENCY = 8;

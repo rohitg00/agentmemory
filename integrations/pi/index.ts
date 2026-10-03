@@ -393,7 +393,6 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
     // /new, /resume, /fork and reloads fire this too; only quit ends the session.
     if (event.reason !== "quit") return;
     if (!lastHealthOk || !sessionId) return;
-    // session/end already fans out the summary server-side (#1203).
     await callAgentMemory("session/end", {
       body: { sessionId },
       timeoutMs: 5_000,

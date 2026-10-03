@@ -33,12 +33,6 @@ import {
 } from "../src/mcp/rest-proxy.js";
 import { writeFileSync } from "node:fs";
 
-// Issue #449: hard-coded fetch() against :3111 in the livez probe was racing
-// with vitest's mock setup, making this file the "10-11 pre-existing failures"
-// referenced in the last 5 release notes. Stub the probe with an instant
-// ok:false response so the shim takes the deterministic InMemoryKV fallback
-// path on every test. Guard the real network with a fetch trap so any
-// regression that bypasses the DI seam fails loudly instead of timing out.
 const instantLocalFallbackProbe = vi.fn(async () => ({
   ok: false,
   status: 0,
@@ -163,7 +157,7 @@ describe("handleToolCall", () => {
     resetHandleForTests();
   });
 
-  it("livez probe stub is invoked instead of the real fetch (issue #449)", async () => {
+  it("livez probe stub is invoked instead of the real fetch", async () => {
     const kv = new InMemoryKV();
     await handleToolCall("memory_save", { content: "regression guard" }, kv);
     expect(instantLocalFallbackProbe).toHaveBeenCalledTimes(1);
@@ -223,7 +217,7 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("TypeScript is great");
   });
 
-  it("memory_save accepts concepts/files as arrays (plugin skill format, #139)", async () => {
+  it("memory_save accepts concepts/files as arrays (plugin skill format)", async () => {
     const kv = new InMemoryKV();
     const result = await handleToolCall(
       "memory_save",
@@ -263,7 +257,7 @@ describe("handleToolCall", () => {
     expect(mem?.files).toEqual(["src/auth.ts"]);
   });
 
-  it("memory_smart_search falls back to substring match in the standalone shim (#139)", async () => {
+  it("memory_smart_search falls back to substring match in the standalone shim", async () => {
     const kv = new InMemoryKV();
     await handleToolCall(
       "memory_save",
@@ -285,7 +279,7 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("Use bcrypt for password hashing");
   });
 
-  it("memory_smart_search rejects empty query to prevent match-all in forget flow (#139)", async () => {
+  it("memory_smart_search rejects empty query to prevent match-all in forget flow", async () => {
     const kv = new InMemoryKV();
     await handleToolCall("memory_save", { content: "anything" }, kv);
     await expect(
@@ -299,7 +293,7 @@ describe("handleToolCall", () => {
     ).rejects.toThrow("query is required");
   });
 
-  it("memory_smart_search searches files and concepts, not just title/content (#139)", async () => {
+  it("memory_smart_search searches files and concepts, not just title/content", async () => {
     const kv = new InMemoryKV();
     await handleToolCall(
       "memory_save",
@@ -338,7 +332,7 @@ describe("handleToolCall", () => {
     expect(byConcept.results).toHaveLength(1);
   });
 
-  it("memory_sessions honours the limit arg (#139)", async () => {
+  it("memory_sessions honours the limit arg", async () => {
     const kv = new InMemoryKV();
     for (let i = 0; i < 5; i++) {
       await kv.set("mem:sessions", `ses_${i}`, {
@@ -381,7 +375,7 @@ describe("handleToolCall", () => {
     expect(JSON.parse(huge.content[0].text).results).toHaveLength(100);
   });
 
-  it("memory_governance_delete removes memories by id array (#139)", async () => {
+  it("memory_governance_delete removes memories by id array", async () => {
     const kv = new InMemoryKV();
     const a = JSON.parse(
       (await handleToolCall("memory_save", { content: "one" }, kv)).content[0]

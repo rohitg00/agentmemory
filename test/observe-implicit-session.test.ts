@@ -56,7 +56,7 @@ function mockSdk() {
   };
 }
 
-describe("observe implicit session create (#638)", () => {
+describe("observe implicit session create", () => {
   beforeEach(() => {
     vi.resetModules();
   });

@@ -8,7 +8,7 @@ import { loadClaudeBridgeConfig } from "../src/config.js";
 // where <slug> replaces every / and \ with - and KEEPS any leading -.
 // The memory/ subdirectory holds MEMORY.md (the index) plus per-topic
 // .md files — this is where Claude Code 2.x actually reads/writes.
-describe("loadClaudeBridgeConfig path (#625)", () => {
+describe("loadClaudeBridgeConfig path", () => {
   const ORIG_ENV = { ...process.env };
   beforeEach(() => {
     delete process.env["CLAUDE_MEMORY_BRIDGE"];

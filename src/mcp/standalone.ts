@@ -389,9 +389,6 @@ export async function handleToolCall(
   const handle = await resolveHandle();
   announceMode(handle);
 
-  // Tools the local InMemoryKV fallback doesn't implement: forward straight
-  // to the server. Local validation would otherwise raise "Unknown tool"
-  // (issue #234).
   if (!IMPLEMENTED_TOOLS.has(toolName)) {
     if (handle.mode === "proxy") {
       try {

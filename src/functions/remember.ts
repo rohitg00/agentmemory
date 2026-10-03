@@ -197,11 +197,6 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         }
         await kv.set(KV.memories, memory.id, memory);
 
-        // Without this, mem::remember persists the row but the BM25
-        // index never sees it, so memory_smart_search and memory_recall
-        // return empty even seconds after save (#257). Use try/catch so
-        // an indexing failure doesn't block the save itself — the
-        // restart-time rebuild will pick the memory up either way.
         try {
           getSearchIndex().add(memoryToObservation(memory));
           scheduleIndexSave();

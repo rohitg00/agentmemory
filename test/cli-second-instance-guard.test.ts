@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 // engine restart). Two guards prevent that: unknown subcommands error instead
 // of falling through to the server boot, and the boot path probes livez and
 // refuses when a live daemon already answers on the resolved port.
-describe("CLI second-instance guards (#1140)", () => {
+describe("CLI second-instance guards", () => {
   const src = readFileSync("src/cli.ts", "utf-8");
 
   it("unknown subcommands do not fall through to the server boot", () => {

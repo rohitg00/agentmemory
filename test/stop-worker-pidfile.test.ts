@@ -1,11 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
-// #640 + #474: stop must also kill the worker process, not just the
-// iii engine. We expose the worker pidfile from src/index.ts and read it
-// from src/cli.ts. Static check that both files use the resolved runtime
-// metadata directory and that stop reads it.
-describe("stop reaps the worker process (#640, #474)", () => {
+describe("stop reaps the worker process", () => {
   it("src/index.ts writes worker.pid alongside iii.pid", () => {
     const source = readFileSync("src/index.ts", "utf-8");
     expect(source).toMatch(/workerPidfilePath\(\)/);

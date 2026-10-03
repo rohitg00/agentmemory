@@ -15,7 +15,7 @@ function installFetch(handler: (url: string, init?: RequestInit) => Response): F
 
 const BASE = "http://localhost:3111";
 
-describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
+describe("@agentmemory/mcp standalone — server proxy", () => {
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
@@ -75,7 +75,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(body.results[0].id).toBe("m1");
   });
 
-  it("proxies memory_recall to POST /agentmemory/search and forwards format/token_budget (#507)", async () => {
+  it("proxies memory_recall to POST /agentmemory/search and forwards format/token_budget", async () => {
     const calls: Array<{ url: string; body?: unknown }> = [];
     installFetch((url, init) => {
       if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
@@ -115,7 +115,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(calls.find((c) => c.url.endsWith("/agentmemory/smart-search"))).toBeUndefined();
   });
 
-  it("memory_recall defaults format to 'full' when omitted (#507)", async () => {
+  it("memory_recall defaults format to 'full' when omitted", async () => {
     let recallBody: Record<string, unknown> | undefined;
     installFetch((url, init) => {
       if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
@@ -269,7 +269,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(probeCount).toBe(1);
   });
 
-  it("forwards non-essential tools to /agentmemory/mcp/call (#234)", async () => {
+  it("forwards non-essential tools to /agentmemory/mcp/call", async () => {
     const calls: Array<{ url: string; body?: unknown }> = [];
     installFetch((url, init) => {
       if (url.endsWith("/agentmemory/livez")) {
@@ -306,7 +306,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     });
   });
 
-  it("rejects non-essential tools when no server is reachable (#234)", async () => {
+  it("rejects non-essential tools when no server is reachable", async () => {
     installFetch(() => {
       throw new Error("ECONNREFUSED");
     });
@@ -380,7 +380,7 @@ describe("@agentmemory/mcp standalone — server proxy (issue #159)", () => {
     expect(joined).toMatch(/AGENTMEMORY_FORCE_PROXY/);
   });
 
-  it("local fallback tools/list returns all 7 IMPLEMENTED_TOOLS regardless of AGENTMEMORY_TOOLS env (#234)", async () => {
+  it("local fallback tools/list returns all 7 IMPLEMENTED_TOOLS regardless of AGENTMEMORY_TOOLS env", async () => {
     const { handleToolsList } = await import("../src/mcp/standalone.js");
     installFetch(() => {
       throw new Error("ECONNREFUSED");

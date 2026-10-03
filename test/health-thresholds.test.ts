@@ -18,7 +18,7 @@ function snap(over: Partial<HealthSnapshot> = {}): HealthSnapshot {
 }
 
 describe("evaluateHealth memory severity", () => {
-  it("stays healthy when heap fills a tiny steady-state process (issue #158)", () => {
+  it("stays healthy when heap fills a tiny steady-state process", () => {
     const s = snap({
       memory: {
         heapUsed: 45 * 1024 * 1024,
@@ -35,7 +35,7 @@ describe("evaluateHealth memory severity", () => {
     expect(notes.find((n) => n.startsWith("memory_heap_tight_"))).toBeDefined();
   });
 
-  it("measures heap against the V8 limit, not the allocated heap (#1406)", () => {
+  it("measures heap against the V8 limit, not the allocated heap", () => {
     const mb = 1024 * 1024;
     const reported = snap({
       memory: { heapUsed: 589 * mb, heapTotal: 629 * mb, heapLimit: 4144 * mb, rss: 923 * mb, external: 0 },

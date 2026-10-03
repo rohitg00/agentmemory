@@ -67,14 +67,6 @@ function authHeader(): Record<string, string> {
   return secret ? { authorization: `Bearer ${secret}` } : {};
 }
 
-/**
- * Probes the agentmemory server's livez endpoint. Returns a Response-shaped
- * object whose `ok` flag drives the proxy/local-fallback decision.
- *
- * Tests can swap this via {@link setLivezProbe} to avoid the real 2s
- * AbortController race that destabilises mcp-standalone test runs (#449).
- * Production callers should leave it on the default.
- */
 export type LivezProbe = (
   url: string,
   timeoutMs: number,

@@ -5,11 +5,6 @@ import type {
 } from "../types.js";
 import { createObservationSource } from "./observation-source.js";
 
-// Zero-LLM compression path. Converts a RawObservation into a
-// CompressedObservation using only heuristics — no Claude call, no token
-// spend. This is the default as of 0.8.8 (#138); users who want richer
-// LLM-generated summaries set AGENTMEMORY_AUTO_COMPRESS=true.
-
 function inferType(
   toolName: string | undefined,
   hookType: string,

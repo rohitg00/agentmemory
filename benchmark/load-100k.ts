@@ -1,28 +1,3 @@
-/**
- * Load harness — seeds N synthetic memories against a local agentmemory
- * daemon, then drives a matrix of (N, concurrency, endpoint) cells and
- * records p50 / p90 / p99 latency + throughput per cell.
- *
- * Spec: GitHub issue #346.
- *
- * Runs against an already-running daemon at `http://localhost:3111` by
- * default. Set `AGENTMEMORY_BENCH_AUTOSTART=1` to spawn one via
- * `node dist/cli.js start` for the duration of the run.
- *
- * Env knobs:
- *   AGENTMEMORY_BENCH_AUTOSTART   "1" to spawn the daemon (default: assume up)
- *   AGENTMEMORY_URL               base URL of the daemon (default: http://localhost:3111)
- *   BENCH_N                       comma-separated N sizes (default: 1000,10000,100000)
- *   BENCH_C                       comma-separated concurrency levels (default: 1,10,100)
- *   BENCH_OPS                     ops per cell during measurement (default: 200)
- *   BENCH_SEED                    seed for the mulberry32 RNG (default: 0xC0FFEE)
- *   BENCH_OUT_DIR                 results dir (default: benchmark/results)
- *
- * The harness writes one JSON file per run named
- * `load-100k-<short-git-sha>.json`. The git sha is best-effort — falls
- * back to a timestamp when run outside a checkout.
- */
-
 import { spawn, type ChildProcess } from "node:child_process";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
