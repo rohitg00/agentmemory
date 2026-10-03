@@ -13,10 +13,11 @@ Three kinds of numbers live in this directory:
 
 3. **Resource cost**: `capture-costs.ts`. Disk, resident memory, CPU,
    hook cost, provider calls, agent-visible context and recovery cost of
-   the built capture path, each reported separately. Published envelope:
-   `docs/benchmarks/2026-10-02-capture-costs.md`.
+   the built capture path, each reported separately.
 
 ## capture-costs.ts
+
+![Capture costs and crash recovery](../docs/benchmarks/capture-costs.svg)
 
 Runs the built `dist/` artifact (CLI, worker and the bundled hooks in
 `dist/hooks/`) in an isolated instance per run: a fresh `HOME`, a fresh
