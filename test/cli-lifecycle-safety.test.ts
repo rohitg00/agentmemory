@@ -1,4 +1,9 @@
 import { spawnSync } from "node:child_process";
+import { pathToFileURL } from "node:url";
+
+const IS_WIN = process.platform === "win32";
+// The CLI removes iii.exe on Windows, so fixtures must use that name.
+const III_BIN = IS_WIN ? "iii.exe" : "iii";
 import {
   chmodSync,
   existsSync,
@@ -9,7 +14,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, delimiter } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const sandboxes: string[] = [];
@@ -24,7 +29,10 @@ function sandbox(): string {
 
 function installFakeDocker(binDir: string): void {
   mkdirSync(binDir, { recursive: true });
-  const dockerPath = join(binDir, "docker");
+  // `where docker` reports a bare file before any .cmd, and CreateProcess
+  // cannot run a shebang script, so the fake lives under a .js name and a
+  // .cmd shim carries the "docker" name.
+  const dockerPath = join(binDir, IS_WIN ? "docker-fake.js" : "docker");
   writeFileSync(
     dockerPath,
     `#!/usr/bin/env node
@@ -67,6 +75,12 @@ process.exit(0);
 `,
   );
   chmodSync(dockerPath, 0o755);
+  if (IS_WIN) {
+    writeFileSync(
+      join(binDir, "docker.cmd"),
+      `@echo off\r\n"${process.execPath}" "${dockerPath}" %*\r\n`,
+    );
+  }
 }
 
 function runDockerStop(
@@ -80,7 +94,7 @@ function runDockerStop(
   const binDir = join(root, "bin");
   const composeFile = join(root, "docker-compose.yml");
   const dockerLog = join(root, "docker.log");
-  const privateBin = join(runtimeDir, "bin", "iii");
+  const privateBin = join(runtimeDir, "bin", III_BIN);
   mkdirSync(runtimeDir, { recursive: true });
   mkdirSync(dataDir, { recursive: true });
   if (command === "remove") {
@@ -129,7 +143,7 @@ function runDockerStop(
         HOME: home,
         USERPROFILE: home,
         CI: "1",
-        PATH: `${binDir}:${process.env.PATH ?? ""}`,
+        PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}`,
         DOCKER_LOG: dockerLog,
         DOCKER_FAILURE_MODE: failureMode,
         DOCKER_DATA_DIR: dataDir,
@@ -149,7 +163,7 @@ function runDockerStop(
 function runInstanceRemove(instanceArgs = ["--instance", "1"]) {
   const root = sandbox();
   const home = join(root, "home");
-  const privateBin = join(home, ".agentmemory", "bin", "iii");
+  const privateBin = join(home, ".agentmemory", "bin", III_BIN);
   const dataBase = join(root, "data");
   mkdirSync(join(home, ".agentmemory", "bin"), { recursive: true });
   writeFileSync(privateBin, "shared binary");
@@ -185,7 +199,7 @@ function runNativeRemoveWithWorkerFailure() {
   const root = sandbox();
   const home = join(root, "home");
   const runtimeDir = join(home, ".agentmemory");
-  const privateBin = join(runtimeDir, "bin", "iii");
+  const privateBin = join(runtimeDir, "bin", III_BIN);
   const engineState = join(runtimeDir, "engine-state.json");
   const enginePidfile = join(runtimeDir, "iii.pid");
   const workerPidfile = join(runtimeDir, "worker.pid");
@@ -223,7 +237,8 @@ process.kill = (pid, signal) => {
     process.execPath,
     [
       "--import",
-      preload,
+      // A bare Windows path is not a valid ESM specifier; --import needs a URL.
+      pathToFileURL(preload).href,
       "--import",
       "tsx",
       "src/cli.ts",
@@ -352,5 +367,61 @@ describe("native removal shutdown", () => {
     expect(result.status).toBe(1);
     expect(existsSync(privateBin)).toBe(true);
     expect(`${result.stdout}\n${result.stderr}`).toContain("stop --instance 1");
+  });
+});
+
+describe.runIf(IS_WIN)("cmd.exe argument safety (#1264)", () => {
+  it("does not let cmd.exe expand a %VAR% hiding inside a container id", () => {
+    const root = sandbox();
+    const home = join(root, "home");
+    const runtimeDir = join(home, ".agentmemory");
+    const dataDir = join(root, "data");
+    const binDir = join(root, "bin");
+    const dockerLog = join(root, "docker.log");
+    mkdirSync(runtimeDir, { recursive: true });
+    mkdirSync(dataDir, { recursive: true });
+    installFakeDocker(binDir);
+    const statePath = join(runtimeDir, "engine-state.json");
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        kind: "docker",
+        schemaVersion: 2,
+        composeFile: join(root, "docker-compose.yml"),
+        projectName: "agentmemory-3111",
+        engineVersion: "0.11.2",
+        restPort: 3111,
+        dataDir,
+        containerId: "candidate-%TEMP%",
+        dataMountType: "bind",
+        dataMountSource: dataDir,
+        preserveContainer: false,
+      }),
+    );
+
+    const tempSentinel = join(root, "cmd-expansion-sentinel");
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", "src/cli.ts", "stop", "--data-dir", dataDir],
+      {
+        cwd: process.cwd(),
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: home,
+          USERPROFILE: home,
+          TEMP: tempSentinel,
+          CI: "1",
+          PATH: `${binDir}${delimiter}${process.env.PATH ?? ""}`,
+          DOCKER_LOG: dockerLog,
+          DOCKER_FAILURE_MODE: "none",
+          DOCKER_DATA_DIR: dataDir,
+          FULL_CONTAINER_ID,
+        },
+      },
+    );
+
+    expect(result.status).not.toBe(0);
+    expect(existsSync(dockerLog)).toBe(false);
   });
 });
