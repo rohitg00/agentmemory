@@ -730,8 +730,9 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Cursor (MCP only)** | `~/.cursor/mcp.json` | Merge into `mcpServers`, or `agentmemory connect cursor`. One-click deeplink also available on the website. |
 | **Cursor (full plugin)** | `.cursor-plugin/` | Cursor Marketplace listing (submission in review) or Cursor Settings → Plugins → local checkout. Registers 7 auto-capture hooks (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skills + the MCP server, with `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` managed in Cursor's plugin dashboard. Works in the Cursor IDE and `cursor-agent` CLI; CLI print-mode prompts are backfilled from the session transcript at session end. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | Merge into `mcpServers`. Restart Claude Desktop after editing. |
-| **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | Same `mcpServers` block. |
-| **Devin CLI (MCP + hooks)** | `~/.config/devin/config.json` | `agentmemory connect devin` merges the MCP entry; `--with-hooks` adds six native auto-capture hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) with Devin'"'"'s lowercase tool matchers. Verify with `devin mcp list` and `/hooks` inside devin. |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` | Same `mcpServers` block. |
+| **GitHub Copilot / VS Code** | `.vscode/mcp.json` or VS Code user MCP settings | Uses VS Code's `servers` shape, not `mcpServers`; see the block below. |
+| **Devin CLI (MCP + hooks)** | `~/.config/devin/config.json` | `agentmemory connect devin` merges the MCP entry; `--with-hooks` adds six native auto-capture hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) with Devin's lowercase tool matchers. Verify with `devin mcp list` and `/hooks` inside devin. |
 | **Devin CLI (full plugin)** | `plugin/.devin-plugin/` | `devin plugins install ./plugin` from a checkout registers all 17 skills as `/agentmemory:<skill>` slash commands plus the MCP server. Devin plugin hooks cannot fire `SessionStart`/`SessionEnd`, so pair it with `connect devin --with-hooks` for full session capture. |
 | **Devin (cloud)** | Settings → Connections → MCP servers | Add a custom MCP (STDIO): command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` pointing at a network-reachable agentmemory deployment plus `AGENTMEMORY_SECRET` (cloud sessions cannot reach localhost — see [`deploy/`](deploy/)). Store the secret in Devin Secrets, then use "Test listing tools" to verify all 54 tools appear. |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (auto-merges). |
@@ -759,6 +760,26 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Any agent (32+)** | n/a | `npx skillkit install agentmemory` auto-detects the host and merges. |
 
 **Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach (e.g. your LAN IP).
+
+GitHub Copilot in VS Code uses a different MCP JSON shape:
+
+```json
+{
+  "servers": {
+    "agentmemory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@agentmemory/mcp"],
+      "env": {
+        "AGENTMEMORY_URL": "http://localhost:3111",
+        "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET}"
+      }
+    }
+  }
+}
+```
+
+Start `npx @agentmemory/agentmemory` in another terminal first if you want the MCP shim to proxy to the persistent server instead of using its local fallback. The `env` block is optional; keep it when proxying to a protected or remote server, and omit it for the local fallback.
 
 ### Programmatic access (Python / Rust / Node)
 
