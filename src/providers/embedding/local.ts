@@ -1,4 +1,5 @@
 import type { EmbeddingProvider } from "../../types.js";
+import { loadTransformers } from "./_transformers.js";
 
 type FeatureExtractor = (
   texts: string[],
@@ -26,17 +27,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
 
   private async getExtractor() {
     if (this.extractor) return this.extractor;
-    let transformers: typeof import("@huggingface/transformers");
-    try {
-      transformers = await import("@huggingface/transformers");
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") {
-        throw new Error(
-          "Install @huggingface/transformers for local embeddings: npm install @huggingface/transformers",
-        );
-      }
-      throw err;
-    }
+    const transformers = await loadTransformers();
     this.extractor = (await transformers.pipeline(
       "feature-extraction",
       "Xenova/all-MiniLM-L6-v2",

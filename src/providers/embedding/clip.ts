@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { RawImage } from "@huggingface/transformers";
 import type { EmbeddingProvider } from "../../types.js";
+import { loadTransformers } from "./_transformers.js";
 
 type TransformersModule = typeof import("@huggingface/transformers");
 type ClipPipeline = (
@@ -33,7 +34,7 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedImage(src: string): Promise<Float32Array> {
-    const t = await loadTransformers();
+    const t = await loadTransformers("CLIP embeddings");
     const image = await loadImage(t, src);
     const extractor = await this.getImageExtractor();
     const output = await extractor(image);
@@ -43,29 +44,16 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
 
   private async getTextExtractor(): Promise<ClipPipeline> {
     if (this.textExtractor) return this.textExtractor;
-    const t = await loadTransformers();
+    const t = await loadTransformers("CLIP embeddings");
     this.textExtractor = (await t.pipeline("feature-extraction", this.modelId, { dtype: "q8" })) as ClipPipeline;
     return this.textExtractor;
   }
 
   private async getImageExtractor(): Promise<ClipPipeline> {
     if (this.imageExtractor) return this.imageExtractor;
-    const t = await loadTransformers();
+    const t = await loadTransformers("CLIP embeddings");
     this.imageExtractor = (await t.pipeline("image-feature-extraction", this.modelId, { dtype: "q8" })) as ClipPipeline;
     return this.imageExtractor;
-  }
-}
-
-async function loadTransformers(): Promise<TransformersModule> {
-  try {
-    return await import("@huggingface/transformers");
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") {
-      throw new Error(
-        "Install @huggingface/transformers for CLIP embeddings: npm install @huggingface/transformers",
-      );
-    }
-    throw err;
   }
 }
 
