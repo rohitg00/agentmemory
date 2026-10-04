@@ -295,7 +295,9 @@ describe("Copilot hook scripts", () => {
     expect(result.requests[0]?.path).toBe("/agentmemory/session/start");
     expect(result.requests[0]?.body).toMatchObject({
       sessionId: "copilot-session",
-      project: "C:\\repo",
+      // basename() only treats a backslash as a separator on Windows,
+      // so this cwd resolves to "repo" there and stays whole on POSIX.
+      project: process.platform === "win32" ? "repo" : "C:\\repo",
       cwd: "C:\\repo",
     });
   });
