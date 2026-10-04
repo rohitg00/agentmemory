@@ -24,6 +24,19 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+function isPlainTextHost(): boolean {
+  return Boolean(
+    process.env["FACTORY_PROJECT_DIR"] || process.env["DROID_PLUGIN_ROOT"],
+  );
+}
+
+function wantsStructuredOutput(data: Record<string, unknown>): boolean {
+  if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== undefined) {
+    return true;
+  }
+  return data.hook_event_name === "SessionStart" && !isPlainTextHost();
+}
+
 function contextPayload(data: Record<string, unknown>, context: string): string {
   if (
     typeof data.cursor_version === "string" ||
@@ -31,7 +44,7 @@ function contextPayload(data: Record<string, unknown>, context: string): string 
   ) {
     return JSON.stringify({ additional_context: context });
   }
-  if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== undefined) {
+  if (wantsStructuredOutput(data)) {
     return JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "SessionStart",

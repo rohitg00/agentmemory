@@ -116,9 +116,16 @@ function authHeaders() {
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
 	return h;
 }
+function isPlainTextHost() {
+	return Boolean(process.env["FACTORY_PROJECT_DIR"] || process.env["DROID_PLUGIN_ROOT"]);
+}
+function wantsStructuredOutput(data) {
+	if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== void 0) return true;
+	return data.hook_event_name === "SessionStart" && !isPlainTextHost();
+}
 function contextPayload(data, context) {
 	if (typeof data.cursor_version === "string" || data.hook_event_name === "sessionStart") return JSON.stringify({ additional_context: context });
-	if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== void 0) return JSON.stringify({ hookSpecificOutput: {
+	if (wantsStructuredOutput(data)) return JSON.stringify({ hookSpecificOutput: {
 		hookEventName: "SessionStart",
 		additionalContext: context
 	} });
