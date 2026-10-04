@@ -2792,7 +2792,8 @@ export function registerApiTriggers(
           body: { error: "queryText, queryImageRef, or queryImageBase64 required" },
         };
       }
-      const topKParsed = parseOptionalPositiveInt(body["topK"]);
+      const topKRaw = body["topK"] ?? body["limit"];
+      const topKParsed = parseOptionalPositiveInt(topKRaw);
       if (topKParsed === null) {
         return { status_code: 400, body: { error: "topK must be a positive integer" } };
       }
