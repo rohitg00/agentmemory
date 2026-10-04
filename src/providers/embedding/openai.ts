@@ -26,9 +26,9 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     // then fall back to OPENAI_API_KEY. Allows e.g. a placeholder key for
     // local endpoints that ignore Authorization (most do).
     this.apiKey =
-      apiKey ||
-      getEnvVar("OPENAI_EMBEDDING_API_KEY") ||
-      getEnvVar("OPENAI_API_KEY") ||
+      apiKey?.trim() ||
+      getEnvVar("OPENAI_EMBEDDING_API_KEY")?.trim() ||
+      getEnvVar("OPENAI_API_KEY")?.trim() ||
       "";
     if (!this.apiKey) {
       throw new Error(
