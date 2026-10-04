@@ -252,6 +252,9 @@ Environment:
   AGENTMEMORY_USE_DOCKER=1     Prefer the bundled docker-compose path over the
                                native iii-engine binary on first run.
   AGENTMEMORY_III_VERSION      Override pinned iii-engine version (default ${IIPINNED_VERSION}).
+  AGENTMEMORY_III_CONFIG       Engine config to start from (default: ./iii-config.yaml,
+                               then ~/.agentmemory/iii-config.yaml, then the bundled
+                               loopback-only config).
   AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS
                                Window (seconds) for the smart-search follow-up diagnostic
                                (default 30). Long values overcount, short values undercount.

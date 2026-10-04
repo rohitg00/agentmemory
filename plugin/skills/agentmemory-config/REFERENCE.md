@@ -79,6 +79,12 @@ Configuration is read from the environment and from `~/.agentmemory/.env` (no `e
 - `AGENTMEMORY_VIEWER_URL`
 <!-- AUTOGEN:env END -->
 
+## Engine config
+
+- `AGENTMEMORY_III_CONFIG`: path to the engine config the CLI starts from. Lookup order: this variable, `./iii-config.yaml`, `~/.agentmemory/iii-config.yaml`, the bundled `iii-config.yaml`. The chosen file is rendered into `~/.agentmemory/data/iii-config.runtime.yaml` on every start; its `host:` values are kept as written.
+
+The bundled config binds `127.0.0.1`, also inside a container. To reach a containerized CLI through published ports, point `AGENTMEMORY_III_CONFIG` at a config that binds `0.0.0.0` (the packaged `iii-config.docker.yaml` does, and stores state under `/data`) and keep `AGENTMEMORY_SECRET` set. The repo's `docker-compose.yml` mounts `iii-config.docker.yaml` straight into the engine container and does not use this lookup. See the README section "Engine config and bind address".
+
 ## State backend
 
 - `AGENTMEMORY_STATE_BACKEND`: `file` (default) or `redis`. Anything else stops startup with an error.

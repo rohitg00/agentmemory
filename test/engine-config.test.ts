@@ -216,6 +216,31 @@ describe("renderEngineConfig", () => {
   });
 });
 
+describe("renderEngineConfig bind hosts", () => {
+  const ports = { restPort: 3111, streamPort: 3112, viewerPort: 3113, enginePort: 49134 };
+  const hostsOf = (text: string) =>
+    [...text.matchAll(/^\s*host:\s*(\S+)\s*$/gm)].map((m) => m[1]);
+
+  it("keeps the bundled config on loopback", () => {
+    const source = readFileSync(join(import.meta.dirname, "..", "iii-config.yaml"), "utf8");
+    const hosts = hostsOf(renderEngineConfig(source, { dataDir: "/tmp/am", ports }));
+    expect(hosts.length).toBeGreaterThan(0);
+    expect(new Set(hosts)).toEqual(new Set(["127.0.0.1"]));
+  });
+
+  it("keeps the 0.0.0.0 binds of a config chosen through AGENTMEMORY_III_CONFIG", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "..", "iii-config.docker.yaml"),
+      "utf8",
+    );
+    const rendered = renderEngineConfig(source, { dataDir: "/tmp/am", ports });
+    expect(hostsOf(rendered)).toEqual(["0.0.0.0", "0.0.0.0", "0.0.0.0"]);
+    expect(rendered).toContain("port: 3111");
+    expect(rendered).toContain("port: 3112");
+    expect(rendered).toContain("port: 49134");
+  });
+});
+
 describe("clearPersistedBuiltinConfig", () => {
   const configPath = join("/srv", "state", "iii-config.runtime.yaml");
 

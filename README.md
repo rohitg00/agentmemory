@@ -1292,6 +1292,14 @@ On engine 0.22.x keep the `iii-` prefixed names for the builtins above; the unpr
 
 Full registry: [workers.iii.dev](https://workers.iii.dev). Every worker there composes through the same primitives agentmemory uses, and the agentmemory you already have is one of them.
 
+### Engine config and bind address
+
+`agentmemory start` reads the engine config from the first file that exists: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` in the current directory, `~/.agentmemory/iii-config.yaml`, then the bundled `iii-config.yaml`. On every start it renders that file (data paths, ports, state backend) into `~/.agentmemory/data/iii-config.runtime.yaml` and launches the engine with the rendered copy, so edit the source file, not the rendered one. The `host:` values of the source file are kept as written.
+
+The bundled `iii-config.yaml` binds `127.0.0.1` on purpose, and that default also applies inside a container. A CLI started in a container listens on the container's loopback, so published ports reach nothing. To serve a containerized CLI through published ports, set `AGENTMEMORY_III_CONFIG` to a config that binds `0.0.0.0`. The packaged `iii-config.docker.yaml` is one: it binds `iii-http`, `iii-stream` and the engine port to `0.0.0.0` and stores state under `/data`, so mount a writable volume there. Keep `AGENTMEMORY_SECRET` set, and publish only the ports you need, on `127.0.0.1` or behind a proxy you trust.
+
+This repo's `docker-compose.yml` does not go through the CLI's config lookup: it mounts `iii-config.docker.yaml` at `/app/config.yaml`, and the `iii-engine` container starts with `--config /app/config.yaml`. The one-click [deploy templates](deploy/) write their own `0.0.0.0` config in their entrypoints.
+
 ### Storage backend: file (default) vs redis
 
 `iii-state` and `iii-stream` default to iii-engine's bundled file-based KV store: one JSON file per scope, held in the engine process's memory and rewritten to disk on a timer. That's the right default for a single-user local install; a shared daemon with several concurrent writers gets real per-key writes from Redis instead, at the cost of a network round trip per operation (every `state::*` call still serializes on one Redis connection, so this trades the file store's lock for a socket, not for parallelism).
