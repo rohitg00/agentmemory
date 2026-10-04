@@ -292,3 +292,109 @@ describe("Smart Search Function", () => {
     });
   });
 });
+
+import { extractNamedConcept } from "../src/functions/smart-search.js";
+
+describe("extractNamedConcept (v4-B)", () => {
+  it("matches 'who is X' / 'what is X' / 'what does X mean'", () => {
+    expect(extractNamedConcept("who is the careful generator?")).toBe("careful generator");
+    expect(extractNamedConcept("what is a circuit breaker")).toBe("circuit breaker");
+    expect(extractNamedConcept("what's the auth middleware?")).toBe("auth middleware");
+    expect(extractNamedConcept("what does eventual consistency mean?")).toBe("eventual consistency");
+  });
+  it("returns null for non-named-concept queries", () => {
+    expect(extractNamedConcept("fix the bug in observe.ts")).toBeNull();
+    expect(extractNamedConcept("recent decisions")).toBeNull();
+    expect(extractNamedConcept("")).toBeNull();
+  });
+  it("rejects degenerate phrases (too short or too long)", () => {
+    expect(extractNamedConcept("what is it?")).toBeNull();
+    expect(extractNamedConcept("what is x")).toBeNull();
+    expect(extractNamedConcept(
+      "what is the eight token thing we discussed earlier on the call",
+    )).toBeNull(); // >6 tokens
+  });
+});
+
+describe("Smart Search named-concept boost (v4-B)", () => {
+  let sdk: ReturnType<typeof mockSdk>;
+  let kv: ReturnType<typeof mockKV>;
+  let searchResults: HybridSearchResult[];
+
+  beforeEach(async () => {
+    sdk = mockSdk();
+    kv = mockKV();
+
+    // Two observations: the one whose TITLE names the concept ("careful
+    // generator") starts with a LOWER bm25 score so we can prove the
+    // boost re-ranks it above the busier observation.
+    const obsNamed = makeObs({
+      id: "obs_named",
+      sessionId: "ses_1",
+      title: "Tier 2 — careful generator (Qwen3.6-35B-A3B-FP8)",
+      narrative: "Picked Qwen3.6 for the careful generator role on vast.",
+    });
+    const obsBusy = makeObs({
+      id: "obs_busy",
+      sessionId: "ses_1",
+      title: "Refactor the request handler — moved validation",
+      narrative: "Random unrelated session work.",
+    });
+
+    searchResults = [
+      // BM25 prefers the busier observation (more tokens), so without
+      // boost the named-concept obs ranks SECOND.
+      {
+        observation: obsBusy,
+        bm25Score: 0.9,
+        vectorScore: 0,
+        combinedScore: 0.9,
+        sessionId: "ses_1",
+      },
+      {
+        observation: obsNamed,
+        bm25Score: 0.6,
+        vectorScore: 0,
+        combinedScore: 0.6,
+        sessionId: "ses_1",
+      },
+    ];
+
+    const session: Session = {
+      id: "ses_1",
+      project: "p",
+      cwd: "/tmp",
+      startedAt: "2026-02-01T00:00:00Z",
+      status: "completed",
+      observationCount: 2,
+    };
+    await kv.set("mem:sessions", "ses_1", session);
+    await kv.set("mem:obs:ses_1", "obs_named", obsNamed);
+    await kv.set("mem:obs:ses_1", "obs_busy", obsBusy);
+
+    const searchFn = async (_query: string, _limit: number) => searchResults;
+    registerSmartSearchFunction(sdk as never, kv as never, searchFn);
+  });
+
+  it("named-concept query boosts the title-matching observation to rank #1", async () => {
+    const result = (await sdk.trigger("mem::smart-search", {
+      query: "who is the careful generator?",
+      includeLessons: false,
+    })) as { results: CompactSearchResult[] };
+    expect(result.results.length).toBe(2);
+    expect(result.results[0].obsId).toBe("obs_named"); // title-boosted above busier obs
+    expect(result.results[1].obsId).toBe("obs_busy");
+    // Score on the boosted hit must exceed the original 0.6 by the
+    // title-boost factor (2.0x).
+    expect(result.results[0].score).toBeGreaterThan(1.0);
+  });
+
+  it("non-named-concept query preserves original ordering", async () => {
+    const result = (await sdk.trigger("mem::smart-search", {
+      query: "refactor request handler",
+      includeLessons: false,
+    })) as { results: CompactSearchResult[] };
+    expect(result.results[0].obsId).toBe("obs_busy"); // unchanged: bm25 0.9 > 0.6
+    expect(result.results[1].obsId).toBe("obs_named");
+  });
+});
