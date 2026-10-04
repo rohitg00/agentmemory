@@ -289,7 +289,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   pi.on("session_start", async (_event, ctx) => {
     const sessionFile = ctx.sessionManager.getSessionFile();
     sessionId = sessionFile ? path.basename(sessionFile).replace(/\.[^.]+$/, "") : `ephemeral-${crypto.randomUUID().slice(0, 8)}`;
-    currentCwd = process.cwd();
+    currentCwd = ctx.cwd;
     currentProject = resolveProjectName(currentCwd);
     await refreshStatus(ctx);
     // After refreshStatus: that is where lastHealthOk is first populated.
@@ -301,7 +301,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
-    currentCwd = event.systemPromptOptions.cwd || process.cwd();
+    currentCwd = event.systemPromptOptions.cwd || ctx.cwd;
     currentProject = resolveProjectName(currentCwd);
     lastPrompt = event.prompt?.trim() || "";
     if (!lastPrompt) return;
