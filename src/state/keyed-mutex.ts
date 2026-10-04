@@ -11,7 +11,11 @@ export function withKeyedLock<T>(
     () => {},
   );
   locks.set(key, cleanup);
-  cleanup.then(() => {
+  // Use void operator to explicitly mark the cleanup chain as intentionally
+  // fire-and-forget. Previously the floating .then() could trigger
+  // unhandled-rejection warnings in strict Node.js environments because
+  // the returned Promise was never awaited or caught.
+  void cleanup.then(() => {
     if (locks.get(key) === cleanup) locks.delete(key);
   });
   return next;
