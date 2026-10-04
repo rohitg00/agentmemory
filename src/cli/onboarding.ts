@@ -38,6 +38,7 @@ const AGENT_GLYPH: Record<string, string> = {
   codex: "◎",
   cursor: "◫",
   "gemini-cli": "✦",
+  klaatcode: "◭",
   opencode: "⬡",
 };
 

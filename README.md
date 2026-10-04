@@ -242,6 +242,11 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 <strong>Warp</strong><br/>
 <sub>connect + MCP + skills</sub>
 </td>
+<td align="center" width="12.5%">
+<a href="https://github.com/KlaatAI/klaatcode"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/klaatcode.png" alt="Klaat Code" width="48" height="48" /></a><br/>
+<strong>Klaat Code</strong><br/>
+<sub>6 hooks + MCP</sub>
+</td>
 </tr>
 </table>
 
@@ -748,6 +753,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Antigravity** (replaces Gemini CLI) | `mcp_config.json` (in Antigravity's User dir) | `agentmemory connect antigravity` writes the standard `mcpServers` block. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Use after the 2026-06-18 Gemini CLI sunset. |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. The `agy` CLI keeps its own config under `~/.gemini/`, separate from the Antigravity IDE above. Pass `--with-hooks` for native auto-capture via `~/.gemini/config/hooks.json`. |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` writes the user-level config. Workspace overrides go in `.kiro/settings/mcp.json` next to your code. |
+| **Klaat Code (MCP + hooks)** | `~/.klaatai/mcp.json` | `agentmemory connect klaatcode` merges the MCP entry under Klaat Code's `servers` key (not `mcpServers`); `--with-hooks` adds six native auto-capture hooks (`session_start`, `before_message`, `before_tool`, `after_tool`, `after_message`, `session_end`) into `~/.klaatai/hooks.json` with Klaat Code's snake_case tool matchers. Verify with `/mcp` and `/hooks` inside klaatcode. Hooks fire in the interactive TUI only — `klaatai run` (headless) and ACP sessions are not captured. Klaat Code also auto-loads `.claude/skills/`, so the 17 agentmemory skills work with no extra step. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` writes the standard `mcpServers` block. Warp also auto-discovers skills from `.claude/skills/`; once the Claude Code plugin is installed the 8 agentmemory skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) appear natively in Warp's slash-command palette. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` writes the standard `mcpServers` block. VS Code extension users: paste the same block via Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferred) or `config.json` (legacy) | `agentmemory connect continue` creates `config.yaml` from scratch when neither exists, or modifies existing `config.json`. **If you already have `config.yaml`** the adapter prints the exact block to paste under `mcpServers:`; it won't silently rewrite your yaml because preserving comments and anchors safely needs a YAML parser the package doesn't ship. Continue uses array form (not object) for `mcpServers`. |

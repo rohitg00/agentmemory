@@ -84,6 +84,16 @@ export function guidelineTargets(
       scope: "global",
       source: "https://kiro.dev/docs/steering",
     },
+    // Klaat Code has capture hooks but discards their stdout, so unlike Claude
+    // Code and Codex it has no path for injecting recalled context. Without a
+    // guideline nothing ever prompts the model to call memory_recall.
+    klaatcode: {
+      globalPath: join(home, ".klaatai", "rules.md"),
+      projectPath: join(".klaatai", "rules.md"),
+      format: "block",
+      scope: "global",
+      source: "https://github.com/KlaatAI/klaatcode#project-rules",
+    },
     "gemini-cli": {
       globalPath: join(home, ".gemini", "GEMINI.md"),
       projectPath: "GEMINI.md",

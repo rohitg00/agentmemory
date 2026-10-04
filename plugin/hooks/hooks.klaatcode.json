@@ -1,0 +1,39 @@
+{
+  "session_start": [
+    {
+      "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs\"",
+      "timeout": 5
+    }
+  ],
+  "before_message": [
+    {
+      "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/prompt-submit.mjs\"",
+      "timeout": 5
+    }
+  ],
+  "before_tool": [
+    {
+      "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-use.mjs\"",
+      "matcher": "^(run_command|edit_file|multi_edit|write_file|read_file|apply_patch|grep|glob)$",
+      "timeout": 5
+    }
+  ],
+  "after_tool": [
+    {
+      "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-use.mjs\"",
+      "timeout": 5
+    }
+  ],
+  "after_message": [
+    {
+      "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop.mjs\"",
+      "timeout": 5
+    }
+  ],
+  "session_end": [
+    {
+      "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-end.mjs\"",
+      "timeout": 5
+    }
+  ]
+}
