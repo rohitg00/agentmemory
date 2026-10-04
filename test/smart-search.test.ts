@@ -291,4 +291,74 @@ describe("Smart Search Function", () => {
       expect(result.lessons).toEqual([]);
     });
   });
+
+  describe("project scoping", () => {
+    // Mirror what mem::remember produces: observations indexed under a
+    // synthetic sessionId ("memory") with no KV.sessions row, and the
+    // project carried on the KV.memories record. This exercises the real
+    // resolver path (session miss -> KV.memories lookup) rather than a
+    // synthetic observation that already carries `project`.
+    async function seedTwoProjects() {
+      const builderObs = makeObs({
+        id: "obs_builder",
+        sessionId: "memory",
+        title: "Planner model choice",
+      });
+      const reviewObs = makeObs({
+        id: "obs_review",
+        sessionId: "memory",
+        title: "Reviewer escalation",
+      });
+      await kv.set("mem:memories", "obs_builder", {
+        id: "obs_builder",
+        project: "builder",
+      });
+      await kv.set("mem:memories", "obs_review", {
+        id: "obs_review",
+        project: "review",
+      });
+      searchResults = [
+        {
+          observation: builderObs,
+          bm25Score: 0.8,
+          vectorScore: 0,
+          combinedScore: 0.8,
+          sessionId: "memory",
+        },
+        {
+          observation: reviewObs,
+          bm25Score: 0.7,
+          vectorScore: 0,
+          combinedScore: 0.7,
+          sessionId: "memory",
+        },
+      ];
+    }
+
+    it("compact mode returns only observations from the requested project", async () => {
+      await seedTwoProjects();
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "model",
+        project: "builder",
+        includeLessons: false,
+      })) as { results: CompactSearchResult[] };
+
+      expect(result.results.map((r) => r.obsId)).toEqual(["obs_builder"]);
+    });
+
+    it("omitting project returns observations from every project", async () => {
+      await seedTwoProjects();
+
+      const result = (await sdk.trigger("mem::smart-search", {
+        query: "model",
+        includeLessons: false,
+      })) as { results: CompactSearchResult[] };
+
+      expect(result.results.map((r) => r.obsId).sort()).toEqual([
+        "obs_builder",
+        "obs_review",
+      ]);
+    });
+  });
 });
