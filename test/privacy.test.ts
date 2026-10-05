@@ -2,6 +2,31 @@ import { describe, it, expect } from "vitest";
 import { stripPrivateData } from "../src/functions/privacy.js";
 
 describe("stripPrivateData", () => {
+  it.each([
+    "task-runner-that-does-something-long",
+    "risk-report-generator-version-2026",
+    "prefix-sk-1234567890abcdefghijklmnopqr",
+    "prefix_pk-1234567890abcdefghijklmnopqr",
+    "work-rk-1234567890abcdefghijklmnopqr",
+    "break-1234567890abcdefghijklmnopqr",
+  ])("preserves compound words containing a generic key prefix: %s", (input) => {
+    expect(stripPrivateData(input)).toBe(input);
+  });
+
+  it.each(["sk", "pk", "rk", "ak"])("redacts standalone %s keys at punctuation boundaries", (prefix) => {
+    const key = `${prefix}-1234567890abcdefghijklmnopqr`;
+    expect(stripPrivateData(key)).toBe("[REDACTED_SECRET]");
+    expect(stripPrivateData(`value='${key}' (${key}) /${key}`)).toBe(
+      "value='[REDACTED_SECRET]' ([REDACTED_SECRET]) /[REDACTED_SECRET]",
+    );
+  });
+
+  it("preserves ordinary text while redacting a separate real key", () => {
+    expect(stripPrivateData("task-runner-that-does-something-long sk-1234567890abcdefghijklmnopqr")).toBe(
+      "task-runner-that-does-something-long [REDACTED_SECRET]",
+    );
+  });
+
   it("strips private tags", () => {
     expect(stripPrivateData("hello <private>secret</private> world")).toBe(
       "hello [REDACTED] world",
