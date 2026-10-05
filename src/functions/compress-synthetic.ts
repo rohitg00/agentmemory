@@ -61,9 +61,13 @@ function stringifyForNarrative(v: unknown): string {
   if (v == null) return "";
   if (typeof v === "string") return v;
   try {
-    return JSON.stringify(v);
+    return JSON.stringify(v) ?? String(v);
   } catch {
-    return String(v);
+    try {
+      return String(v);
+    } catch {
+      return "";
+    }
   }
 }
 
@@ -82,6 +86,10 @@ export function buildSyntheticCompression(
   const narrativeParts = [promptStr, inputStr, outputStr].filter(
     (s) => s.length > 0,
   );
+  const fallbackStr = narrativeParts.length === 0
+    ? stringifyForNarrative(raw.raw)
+    : "";
+  if (fallbackStr) narrativeParts.push(fallbackStr);
 
   const result: CompressedObservation = {
     id: raw.id,
@@ -89,7 +97,9 @@ export function buildSyntheticCompression(
     timestamp: raw.timestamp,
     type: inferType(toolName, raw.hookType),
     title: truncate(toolName || "observation", 80),
-    subtitle: inputStr ? truncate(inputStr, 120) : undefined,
+    subtitle: inputStr || fallbackStr
+      ? truncate(inputStr || fallbackStr, 120)
+      : undefined,
     facts: [],
     narrative: truncate(narrativeParts.join(" | "), 400),
     concepts: [],

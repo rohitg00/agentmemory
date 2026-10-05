@@ -146,6 +146,32 @@ describe("mem::observe auto-compress gate", () => {
     expect(compressCalls).toHaveLength(1);
   });
 
+  it("persists searchable notification content with secrets scrubbed", async () => {
+    const { registerObserveFunction } = await import(
+      "../src/functions/observe.js"
+    );
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerObserveFunction(sdk as never, kv as never);
+    const payload = validPayload({
+      hookType: "notification",
+      data: {
+        message: "task-runner-that-does-something-long finished",
+        key: "sk-1234567890abcdefghijklmnopqr",
+      },
+    });
+
+    await sdk.trigger("mem::observe", payload);
+
+    const stored = await kv.list<{ narrative: string; subtitle?: string }>(
+      `mem:obs:${payload.sessionId}`,
+    );
+    expect(stored).toHaveLength(1);
+    expect(stored[0].narrative).toContain("task-runner-that-does-something-long finished");
+    expect(stored[0].narrative).toContain("[REDACTED_SECRET]");
+    expect(JSON.stringify(stored)).not.toContain("sk-1234567890abcdefghijklmnopqr");
+  });
+
   it("AGENTMEMORY_AUTO_COMPRESS=false explicitly: does NOT fire mem::compress", async () => {
     process.env["AGENTMEMORY_AUTO_COMPRESS"] = "false";
     const { registerObserveFunction } = await import(
@@ -163,6 +189,84 @@ describe("mem::observe auto-compress gate", () => {
 });
 
 describe("buildSyntheticCompression", () => {
+  it.each(["notification", "custom_event"])("keeps raw payloads searchable for %s hooks", async (hookType) => {
+    const { buildSyntheticCompression } = await import(
+      "../src/functions/compress-synthetic.js"
+    );
+    const payload = { message: "Background indexing finished", status: "ready" };
+    const synth = buildSyntheticCompression({
+      id: "obs_raw",
+      sessionId: "ses_1",
+      timestamp: new Date().toISOString(),
+      hookType: hookType as RawObservation["hookType"],
+      raw: payload,
+    });
+    expect(synth.narrative).toBe(JSON.stringify(payload));
+    expect(synth.subtitle).toBe(JSON.stringify(payload));
+  });
+
+  it.each([
+    { toolInput: { command: "echo ready" }, expected: '{"command":"echo ready"}' },
+    { toolOutput: "ready", expected: "ready" },
+    { userPrompt: "Check the worker", expected: "Check the worker" },
+  ])("uses structured fields without appending raw payloads", async ({ expected, ...structured }) => {
+    const { buildSyntheticCompression } = await import(
+      "../src/functions/compress-synthetic.js"
+    );
+    const synth = buildSyntheticCompression({
+      id: "obs_structured",
+      sessionId: "ses_1",
+      timestamp: new Date().toISOString(),
+      hookType: "post_tool_use",
+      raw: { message: "Do not duplicate this payload" },
+      ...structured,
+    });
+    expect(synth.narrative).toBe(expected);
+    expect(synth.subtitle).toBe(structured.toolInput ? expected : undefined);
+  });
+
+  it("bounds fallback narrative and subtitle lengths", async () => {
+    const { buildSyntheticCompression } = await import(
+      "../src/functions/compress-synthetic.js"
+    );
+    const synth = buildSyntheticCompression({
+      id: "obs_long_raw",
+      sessionId: "ses_1",
+      timestamp: new Date().toISOString(),
+      hookType: "notification",
+      toolInput: null,
+      toolOutput: "",
+      userPrompt: "",
+      raw: "x".repeat(2000),
+    });
+    expect(synth.narrative).toBe("x".repeat(399) + "\u2026");
+    expect(synth.subtitle).toBe("x".repeat(119) + "\u2026");
+  });
+
+  it("handles raw payloads that cannot be JSON serialized", async () => {
+    const { buildSyntheticCompression } = await import(
+      "../src/functions/compress-synthetic.js"
+    );
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const unprintable = {
+      toJSON() { throw new Error("unserializable"); },
+      toString() { throw new Error("unprintable"); },
+    };
+    for (const payload of [cyclic, 1n, Symbol("event"), unprintable, null, undefined]) {
+      const synth = buildSyntheticCompression({
+        id: "obs_unserializable",
+        sessionId: "ses_1",
+        timestamp: new Date().toISOString(),
+        hookType: "notification",
+        toolName: "notification",
+        raw: payload,
+      });
+      expect(typeof synth.narrative).toBe("string");
+      expect(synth.narrative.length).toBeLessThanOrEqual(400);
+    }
+  });
+
   it("maps common tool names to the right ObservationType", async () => {
     const { buildSyntheticCompression } = await import(
       "../src/functions/compress-synthetic.js"
