@@ -673,31 +673,33 @@ codex plugin add agentmemory@agentmemory
 
 ה-plugin של Codex נשלח מתוך אותה תיקיית `plugin/` כמו ה-plugin של Claude Code. הוא רושם:
 
-- את `@agentmemory/mcp` כשרת MCP (עושה proxy לכל 54 הכלים כש-`AGENTMEMORY_URL` מצביע על שרת agentmemory רץ; חוזר ל-7 כלים מקומיים כשאין שרת נגיש)
+- גשר MCP מצורף מסוג stdio ל-daemon הרץ, בלי הורדת npm ובלי מאגר fallback. ראו את [מדריך ה-Codex המקומי](../docs/plugins/codex-local.md) כדי לבדוק build שלא פורסם.
 - 6 hooks של מחזור חיים: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 skills שניתן להפעיל: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, בתוספת 8 skills של עיון (reference) שהסוכן טוען לפי הצורך (משמעת זיכרון, כלי MCP, REST API, תצורה, סוכנים, hooks, ארכיטקטורה, ומדריך כתיבת skills)
 
 מנוע ה-hooks של Codex מזריק את `CLAUDE_PLUGIN_ROOT` לתוך תת-תהליכי ה-hook (לפי [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), כך שאותם סקריפטי hook עובדים בשני ה-hosts בלי שכפול. אירועי Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure הם ייחודיים ל-Claude Code ולא רשומים עבור Codex.
 
-#### Codex Desktop: ה-hooks של ה-plugin שקטים כרגע (קיים פתרון עוקף)
+#### אמון ב-hooks של Codex ותאימות
 
-`CodexHooks` ו-`PluginHooks` הם שניהם stable + מופעלים כברירת מחדל ב-[`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), אבל build-ים של Codex Desktop כרגע לא מפעילים את `hooks.json` המקומי ל-plugin ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). כלי MCP עדיין עובדים; רק התצפיות של מחזור החיים חסרות.
+שילוח ה-hooks הנטיביים של ה-plugin מאומת עם Codex CLI 0.150.1. בטחו ב-hooks של ה-plugin לפני שאתם מצפים ללכידה. ההתנהגות ב-Desktop תלויה ב-runtime המצורף שלו; בדקו את `/hooks` ואשרו אירוע שנלכד לפני הפעלת פתרון עוקף.
 
-עד שהתיקון ינחת ב-upstream, שכפלו את אותן פקודות hook לתוך `~/.codex/hooks.json` הגלובלי:
+אם ה-host שלכם דורש hooks גלובליים, שכפלו את הפקודות לתוך `~/.codex/hooks.json`. כש-MCP כבר מחווט, המתאם הנוכחי צריך `--force` כדי להגיע להתקנת ה-hooks:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-זה מוסיף בלוק אידמפוטנטי ל-`~/.codex/hooks.json` שמפנה ל-paths מוחלטים לסקריפטים המצורפים (אין צורך בהתרחבות של `${CLAUDE_PLUGIN_ROOT}` בתחום המשתמש). הריצו את אותה פקודה מחדש אחרי שדרוג agentmemory כדי לרפרש את ה-paths. רשומות משתמש באותו קובץ נשמרות; רק רשומות agentmemory קודמות מוחלפות.
+זה ממזג hooks גלובליים וכותב מחדש את הרשומה של agentmemory MCP, בעוד שהרשומות הלא-קשורות נשמרות. בדקו הגדרות endpoint מותאמות אישית של agentmemory לפני השימוש ב-`--force`. הריצו מחדש אחרי שדרוג כדי לרפרש paths של סקריפטים. הפעילו או hooks נטיביים של ה-plugin או עותקים גלובליים כדי להימנע מלכידה כפולה.
 
 ### GitHub Copilot CLI
+
+למצב ה-agent של VS Code, השתמשו ב-[מדריך Copilot MCP ולכידה אוטומטית](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions). מתאם ה-CLI לא מגדיר את VS Code.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -801,14 +803,14 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **GitHub Copilot CLI (plugin מלא)** | התקנת plugin של Copilot | `copilot plugin install rohitg00/agentmemory:plugin` עבור ה-plugin מתוך ה-subdir ב-GitHub. |
 | **OpenClaw** | תצורת MCP של OpenClaw | אותו בלוק `mcpServers`. לעומק: `openclaw plugins install ./integrations/openclaw` תופס את slot הזיכרון של OpenClaw (עובר אוטומטית מ-`memory-core`); הגדירו `plugins.entries.agentmemory.hooks.allowConversationAccess=true` אחרת לכידת ה-turn נחסמת בשקט. ראו [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (MCP בלבד)** | `.codex/config.toml` | מבנה TOML: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, או הוסיפו `[mcp_servers.agentmemory]` ידנית. |
-| **Codex CLI (plugin מלא)** | marketplace של plugin-ים ב-Codex | `codex plugin marketplace add rohitg00/agentmemory` ואז `codex plugin add agentmemory@agentmemory`. רושם MCP + 6 hooks של מחזור חיים (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills. ב-Codex Desktop, הריצו גם `agentmemory connect codex --with-hooks` עד ש-[openai/codex#16430](https://github.com/openai/codex/issues/16430) ינחת; ה-hooks של ה-plugin שקטים שם כרגע. |
+| **Codex CLI (plugin מלא)** | marketplace של plugin-ים ב-Codex | `codex plugin marketplace add rohitg00/agentmemory` ואז `codex plugin add agentmemory@agentmemory`. רושם MCP + 6 hooks של מחזור חיים + 17 skills. בטחו ב-hooks ואמתו לכידה ב-host שלכם; ראו [הגדרה ואימות של Codex](../docs/plugins/codex-local.md). |
 | **OpenCode (MCP בלבד)** | `opencode.json` | מבנה שונה: מפתח `mcp` ב-top-level, command כמערך: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (plugin מלא)** | `plugin/opencode/` | 22 hooks של לכידה אוטומטית שמכסים מחזור חיים של session, הודעות, tools, שגיאות. ייחוס הפרויקט הוא per-session, כך שתהליך OpenCode אחד שמשתרע על כמה repositories מתעד כל session תחת הפרויקט שלו. שתי פקודות slash (`/recall`, `/remember`). העתיקו את `plugin/opencode/` ל-workspace של OpenCode שלכם והוסיפו את רשומת ה-plugin ל-`opencode.json`. ראו [`plugin/opencode/README.md`](../plugin/opencode/README.md) לטבלת ה-hooks המלאה + ניתוח הפערים. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` מתקין את ה-extension המצורף לתוך תיקיית הגילוי האוטומטי של pi (recall בהתחלת הסוכן, capture בסיום הסוכן, כלי `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`). `/reload` ב-pi רץ קולט את זה. [`integrations/pi`](../integrations/pi/) הוא גם חבילת pi (`pi install ./integrations/pi` מתוך checkout). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` נותן את ספק הזיכרון בן 6 ה-hooks (prefetch, לכידת turn, סיום session, pre-compress, שיקוף MEMORY.md, בלוק system prompt). אמתו עם `hermes plugins doctor` ו-`hermes memory status`. ראו [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` כותב את בלוק ה-`mcpServers` הסטנדרטי. ה-payload של ה-hook תואם-שדות ל-Claude Code, כך שסקריפטי ה-12 hooks הקיימים עובדים בלי שינוי; חווטו אותם דרך סקשן ה-`hooks` באותו `settings.json`. |
-| **Antigravity** (מחליף את Gemini CLI) | `mcp_config.json` (בתיקיית User של Antigravity) | `agentmemory connect antigravity` כותב את בלוק ה-`mcpServers` הסטנדרטי. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. להשתמש אחרי ה-sunset של Gemini CLI בתאריך 2026-06-18. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. ה-CLI `agy` שומר תצורה נפרדת שלו תחת `~/.gemini/`, בנפרד מה-Antigravity IDE מעלה. העבירו `--with-hooks` ללכידה אוטומטית מובנית דרך `~/.gemini/config/hooks.json`. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` מתקין MCP ו-hooks של לכידה בתיקיית ההתאמה האישית המשותפת. ראו [הגדרה ומגבלות של Antigravity](../docs/plugins/antigravity.md). |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` משתמש באותה תצורת MCP ו-hooks כמו גרסאות ה-IDE הנוכחיות. התקנות קיימות צריכות לרפרש עם `--force`; ראו את [הערות השדרוג](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` כותב את התצורה בשכבת המשתמש. override-ים בשכבת ה-workspace נכנסים ב-`.kiro/settings/mcp.json` לצד הקוד שלכם. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` כותב את בלוק ה-`mcpServers` הסטנדרטי. Warp גם מגלה אוטומטית skills מ-`.claude/skills/`; כשה-plugin של Claude Code מותקן, 8 ה-skills של agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) מופיעים באופן מובנה בפלטת פקודות ה-slash של Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` כותב את בלוק ה-`mcpServers` הסטנדרטי. למשתמשי ה-extension של VS Code: הדביקו את אותו בלוק דרך Cline Settings → MCP Servers → Edit JSON. |

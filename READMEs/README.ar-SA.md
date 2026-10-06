@@ -673,31 +673,33 @@ codex plugin add agentmemory@agentmemory
 
 تُشحن إضافة Codex من نفس دليل `plugin/` الذي تُشحن منه إضافة Claude Code. وهي تُسجِّل:
 
-- `@agentmemory/mcp` كخادم MCP (يُمرِّر جميع الأدوات الـ54 عندما يشير `AGENTMEMORY_URL` إلى خادم agentmemory يعمل؛ ويرجع إلى 7 أدوات محلية عندما لا يمكن الوصول إلى أي خادم)
+- جسر MCP مُضمَّن من نوع stdio إلى العفريت (daemon) العامل، دون تنزيل npm أو مخزن احتياطي (fallback). راجع [دليل Codex المحلي](../docs/plugins/codex-local.md) لاختبار إصدار (build) غير منشور.
 - 6 خطافات لدورة الحياة: `SessionStart` و`UserPromptSubmit` و`PreToolUse` و`PostToolUse` و`PreCompact` و`Stop`
 - 9 مهارات قابلة للاستدعاء: `/recall` و`/remember` و`/session-history` و`/forget` و`/recap` و`/handoff` و`/lesson` و`/commit-context` و`/commit-history`، بالإضافة إلى 8 مهارات مرجعية يُحمّلها الوكيل عند الطلب (انضباط الذاكرة، وأدوات MCP، وواجهة REST API، والإعدادات، والوكلاء، والخطافات، والبنية المعمارية، ودليل تأليف المهارات)
 
 يحقن محرك خطافات Codex متغيّر `CLAUDE_PLUGIN_ROOT` في العمليات الفرعية للخطافات (حسب [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs))، لذا تعمل نصوص الخطافات نفسها على كلتا البيئتين دون تكرار. أما أحداث Subagent وSessionEnd وNotification وTaskCompleted وPostToolUseFailure فهي خاصة بـ Claude Code فقط، ولا تُسجَّل في Codex.
 
-#### Codex Desktop: خطافات الإضافة صامتة حاليًا (يوجد حل بديل)
+#### ثقة خطافات Codex والتوافق
 
-كلا `CodexHooks` و`PluginHooks` مستقران ومُفعَّلان افتراضيًا في [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs)، لكن إصدارات Codex Desktop الحالية لا تُرسِل ملف `hooks.json` الخاص بالإضافة محليًا ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). ولا تزال أدوات MCP تعمل؛ والملاحظات المتعلقة بدورة الحياة فقط هي المفتقدة.
+تم التحقق من إرسال خطافات الإضافة الأصلية (native) مع Codex CLI 0.150.1. ثِق بخطافات الإضافة قبل أن تتوقع الالتقاط (capture). يعتمد سلوك Desktop على وقت التشغيل (runtime) المُضمَّن فيه؛ تحقّق من `/hooks` وتأكّد من التقاط حدث قبل تفعيل حل بديل.
 
-وإلى أن يُدرِج المصدر الأساسي (upstream) الإصلاح، اعكس نفس أوامر الخطافات في الملف العام `~/.codex/hooks.json`:
+إذا كان المضيف (host) الخاص بك يتطلب خطافات عامة (global)، فاعكس الأوامر إلى `~/.codex/hooks.json`. وعندما يكون MCP موصولًا بالفعل، يحتاج المحوّل الحالي إلى `--force` للوصول إلى تثبيت الخطافات:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-يُضيف هذا كتلة متكررة التطبيق (idempotent) إلى `~/.codex/hooks.json` تشير إلى مسارات مطلقة للنصوص المُضمَّنة (لا حاجة إلى توسيع `${CLAUDE_PLUGIN_ROOT}` على مستوى المستخدم). أعد تشغيل الأمر نفسه بعد ترقية agentmemory لتحديث المسارات. تُحفظ إدخالات المستخدم في نفس الملف؛ ويُستبدل إدخالات agentmemory السابقة فقط.
+يدمج هذا الخطافات العامة (global) ويعيد كتابة إدخال agentmemory MCP، مع الحفاظ على الإدخالات غير المرتبطة. راجع أي إعدادات نقطة نهاية (endpoint) مخصصة لـ agentmemory قبل استخدام `--force`. أعد التشغيل بعد الترقية لتحديث مسارات النصوص. فعِّل خطافات الإضافة الأصلية أو النُّسخ العامة لتجنّب الالتقاط المكرر.
 
 ### GitHub Copilot CLI
+
+لوضع الوكيل (agent mode) في VS Code، استخدم [دليل Copilot MCP والالتقاط التلقائي](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions). لا يضبط محوّل CLI إعدادات VS Code.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -801,14 +803,14 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **GitHub Copilot CLI (الإضافة الكاملة)** | تثبيت إضافة Copilot | `copilot plugin install rohitg00/agentmemory:plugin` لتثبيت الإضافة من الدليل الفرعي على GitHub. |
 | **OpenClaw** | إعدادات MCP في OpenClaw | نفس كتلة `mcpServers`. للتكامل الأعمق: يستحوذ `openclaw plugins install ./integrations/openclaw` على فُتحة الذاكرة (memory slot) في OpenClaw (ينتقل تلقائيًا من `memory-core`)؛ اضبط `plugins.entries.agentmemory.hooks.allowConversationAccess=true` وإلا يُحجب التقاط المداولة بصمت. راجع [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (MCP فقط)** | `.codex/config.toml` | بصيغة TOML: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`، أو أضف `[mcp_servers.agentmemory]` يدويًا. |
-| **Codex CLI (الإضافة الكاملة)** | سوق إضافات Codex | `codex plugin marketplace add rohitg00/agentmemory` ثم `codex plugin add agentmemory@agentmemory`. يُسجِّل MCP + 6 خطافات دورة حياة (SessionStart و UserPromptSubmit و PreToolUse و PostToolUse و PreCompact و Stop) + 17 مهارة. على Codex Desktop، شغّل أيضًا `agentmemory connect codex --with-hooks` إلى أن يُدرَج الإصلاح [openai/codex#16430](https://github.com/openai/codex/issues/16430)؛ فخطافات الإضافة صامتة هناك حاليًا. |
+| **Codex CLI (الإضافة الكاملة)** | سوق إضافات Codex | `codex plugin marketplace add rohitg00/agentmemory` ثم `codex plugin add agentmemory@agentmemory`. يُسجِّل MCP + 6 خطافات دورة حياة + 17 مهارة. ثِق بالخطافات وتحقّق من الالتقاط في مضيفك (host)؛ راجع [إعداد Codex والتحقق منه](../docs/plugins/codex-local.md). |
 | **OpenCode (MCP فقط)** | `opencode.json` | بصيغة مختلفة: مفتاح `mcp` على المستوى الأعلى، والأمر كمصفوفة: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (الإضافة الكاملة)** | `plugin/opencode/` | 22 خطاف التقاط تلقائي تغطي دورة حياة الجلسة والرسائل والأدوات والأخطاء. ويُحدَّد المشروع لكل جلسة على حدة، فعملية OpenCode واحدة تمتد عبر عدة مستودعات تُسجِّل كل جلسة تحت مشروعها الخاص بها. أمرا شرطة اثنان (`/recall` و`/remember`). انسخ `plugin/opencode/` إلى مساحة عمل OpenCode الخاصة بك وأضف إدخال الإضافة إلى `opencode.json`. راجع [`plugin/opencode/README.md`](../plugin/opencode/README.md) للحصول على جدول الخطافات الكامل وتحليل الثغرات. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | يُثبّت `agentmemory connect pi` الإضافة المُضمَّنة في دليل الاكتشاف التلقائي لـ pi (استرجاع عند بدء الوكيل، والتقاط عند انتهائه، وأدوات `memory_search` / `memory_save` / `memory_health`، و`/agentmemory-status`). يلتقطها أمر `/reload` في pi قيد التشغيل. كما أن [`integrations/pi`](../integrations/pi/) حزمة pi أيضًا (`pi install ./integrations/pi` من نسخة محلية). |
 | **وكيل Hermes** | `~/.hermes/config.yaml` | يمنحك `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` مزوّد ذاكرة بستة خطافات (جلب مسبق، والتقاط المداولة، وانتهاء الجلسة، وما قبل الضغط، ومرآة لـ MEMORY.md، وكتلة موجّه النظام). تحقّق باستخدام `hermes plugins doctor` و`hermes memory status`. راجع [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | يكتب `agentmemory connect qwen` كتلة `mcpServers` القياسية. حمولة الخطاف متوافقة الحقول مع Claude Code، فتعمل نصوص الخطافات الـ12 الموجودة دون أي تعديل؛ اربطها عبر قسم `hooks` في نفس ملف `settings.json`. |
-| **Antigravity** (يحل محل Gemini CLI) | `mcp_config.json` (في دليل User الخاص بـ Antigravity) | يكتب `agentmemory connect antigravity` كتلة `mcpServers` القياسية. على macOS: `~/Library/Application Support/Antigravity/User/`. وعلى Linux: `~/.config/Antigravity/User/`. يُستخدم بعد إيقاف Gemini CLI في 2026-06-18. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. تحتفظ واجهة `agy` CLI بإعداداتها الخاصة تحت `~/.gemini/`، منفصلة عن بيئة Antigravity IDE أعلاه. مرّر `--with-hooks` لالتقاط تلقائي أصلي عبر `~/.gemini/config/hooks.json`. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | يُثبِّت `agentmemory connect antigravity --with-hooks` خطافات MCP والالتقاط في دليل التخصيص (customization) المشترك. راجع [إعداد Antigravity وحدوده](../docs/plugins/antigravity.md). |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | يستخدم `agentmemory connect antigravity-cli --with-hooks` نفس إعدادات MCP والخطافات المستخدمة في إصدارات IDE الحالية. ينبغي للتثبيتات الحالية التحديث باستخدام `--force`؛ راجع [ملاحظات الترقية](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | يكتب `agentmemory connect kiro` الإعدادات على مستوى المستخدم. وتوضع تجاوزات مساحة العمل في `.kiro/settings/mcp.json` بجانب شفرتك. |
 | **Warp** | `~/.warp/.mcp.json` | يكتب `agentmemory connect warp` كتلة `mcpServers` القياسية. يكتشف Warp أيضًا المهارات تلقائيًا من `.claude/skills/`؛ وبمجرد تثبيت إضافة Claude Code، تظهر مهارات agentmemory الثماني (`remember` و`recall` و`recap` و`handoff` و`forget` و`commit-context` و`commit-history` و`session-history`) أصليًا في لوحة أوامر الشرطة في Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | يكتب `agentmemory connect cline` كتلة `mcpServers` القياسية. لمستخدمي إضافة VS Code: الصق الكتلة نفسها عبر Cline Settings ← MCP Servers ← Edit JSON. |

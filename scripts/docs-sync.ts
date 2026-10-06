@@ -73,8 +73,10 @@ function countTests(): number | null {
 }
 
 const TOOL_NOUNS = [
-  "MCP tools", "MCP-Tools", "memory tools", "tools", "tool", "outils", "herramientas", "ferramentas",
-  "Werkzeuge", "инструмент", "ツール", "个工具", "個工具", "工具", "개의 도구", "개 도구", "araç", "टूल",
+  "MCP tools", "MCP-Tools", "memory tools", "tools", "tool", "outils", "herramientas", "ferramentas", "Werkzeuge", "инструмент", "ツール", "个工具", "個工具",
+  "工具", "개의 도구", "개 도구", "araç", "टूल", "nástroj", "værktøj", "verktyg", "verktøy", "MCP-verktøy", "MCP-verktyg", "MCP-værktøj", "MCP-työkalu",
+  "työkalu", "narzędz", "de instrumente", "instrument", "eszköz", "εργαλεί", "інструмент", "strumenti", "na tool", "tool MCP", "MCP tool",
+  "MCP nástroj", "MCP eszköz", "MCP টুল", "MCP ٹول", "ٹول", "أدا", "أدوات", "টি টুল", "টুল", "เครื่องมือ", "הכלים", "כלי",
 ];
 
 const FACTS: Fact[] = [
@@ -103,23 +105,30 @@ const FACTS: Fact[] = [
     label: "REST endpoints",
     value: () => String(countMatches("src/triggers/api.ts", /api_path:\s*["`]/g)),
     nouns: [
-      "REST endpoints", "REST API endpoints", "endpoints", "endpoint", "Endpunkte", "эндпоинт",
-      "个端点", "個端點", "개 엔드포인트", "개의 엔드포인트", "エンドポイント", "uç nokta", "एंडपॉइंट",
+      "REST endpoints", "REST API endpoints", "endpoints", "endpoint", "Endpunkte", "эндпоинт", "个端点", "個端點", "개 엔드포인트", "개의 엔드포인트", "エンドポイント",
+      "uç nokta", "एंडपॉइंट", "endepunkt", "de endpoint", "ендпоінт", "na endpoint", "اینڈ پوائنٹ", "نقطة نهاية", "এন্ডপয়েন্ট", "개",
     ],
   },
   {
     key: "skills",
     label: "skills",
     value: () => String(trackedFiles().filter((f) => /^plugin\/skills\/[^/_][^/]*\/SKILL\.md$/.test(f)).length),
-    nouns: ["native skills", "skills", "skill", "SKILL", "個の skills", "個 skills", "個 Skills", "개의 skills", "개 skills", "навык"],
+    nouns: [
+      "native skills", "skills", "skill", "SKILL", "個の skills", "個 skills", "個 Skills", "개의 skills", "개 skills", "навык", "个 skill", "個 skill",
+      "個の skill", "개의 skill", "fichiers SKILL", "ficheros SKILL", "ficheiros SKILL", "arquivos SKILL", "archivos SKILL", "file SKILL", "plików SKILL",
+      "fișiere SKILL", "файлов SKILL", "файлів SKILL", "αρχεία SKILL", "nativních skill", "souborů SKILL", "taitoa", "скіл", "اسکل", "مهار",
+      "টি স্কিল", "টি SKILL", "স্কিল", "ไฟล์", "ตัว", "na skill", "ה-skill", "קבצי", "skilli",
+    ],
   },
   {
     key: "hooks",
     label: "hooks",
     value: () => String(countHookTypes()),
     nouns: [
-      "auto hooks", "hooks", "hook", "-hook", "scripts de hooks", "Hook-Skripte", "хук", "скриптов хуков",
-      "フック", "훅",
+      "auto hooks", "hooks", "hook", "-hook", "scripts de hooks", "Hook-Skripte", "хук", "скриптов хуков", "フック", "훅", "automatických hook",
+      "automatiske hook", "Auto-Hook", "αυτόματα hook", "scripts hooks", "automaattista hook", "automatikus hook", "automatycznych hook",
+      "automatiska hook", "автоматичних хук", "خودکار ہکس", "ہکس", "awtomatikong hook", "自動 hook", "个自动 hook", "個自動 hook", "অটো হুক", "হুক",
+      "script hook", "خطاف", "ตัว", "hookia", "hooków", "hook-uri",
     ],
     badge: "stat-hooks.svg",
   },
@@ -130,33 +139,51 @@ const FACTS: Fact[] = [
       const n = countTests();
       return n === null ? null : `${floorTo(n, 100)}+`;
     },
-    nouns: ["tests passing", "tests", "Tests", "test", "个测试", "個測試", "testes", "pruebas", "тест", "テスト", "测试", "測試", "테스트"],
+    nouns: [
+      "tests passing", "tests", "Tests", "test", "个测试", "個測試", "testes", "pruebas", "тест", "テスト", "测试", "測試", "테스트", "bestandene Tests",
+      "beståede test", "godkända test", "zaliczonych test", "επιτυχημένες δοκιμ", "δοκιμ", "sikeres teszt", "teszt", "pengujian", "件のテスト", "개",
+      "pumapasang test", "na test", "รายการ", "การทดสอบ", "בדיקות", "اختبار", "ٹیسٹس", "টেস্ট", "项测试", "項測試", "testů", "testiä",
+    ],
     badge: "stat-tests.svg",
   },
   {
     key: "functions",
     label: "iii functions",
     value: () => String(sourceFiles().reduce((n, f) => n + (read(f).match(/registerFunction\(/g)?.length ?? 0), 0)),
-    nouns: ["iii functions", "functions", "funciones", "funções", "fonctions", "Funktionen", "функци", "個函式", "个函数", "개 함수", "개의 함수", "fonksiyon"],
+    nouns: [
+      "iii functions", "functions", "funciones", "funções", "fonctions", "Funktionen", "функци", "個函式", "个函数", "개 함수", "개의 함수", "fonksiyon", "funkc",
+      "funktion", "funksjon", "funktio", "functie", "funcții", "funzioni", "fungsi", "function", "개", "פונקצי", "دالة", "فنکشن", "ফাংশন",
+      "na function", "функц",
+    ],
   },
   {
     key: "sourceFiles",
     label: "source files",
     value: () => String(sourceFiles().length),
-    nouns: ["source files", "fichiers sources", "ficheros de código", "arquivos de código", "archivos fuente", "arquivos-fonte", "arquivos fonte", "fichiers source", "Quelldateien", "исходных файл", "個原始檔", "个源文件", "개 소스 파일", "개의 소스 파일", "ソースファイル", "kaynak dosya"],
+    nouns: [
+      "source files", "fichiers sources", "ficheros de código", "arquivos de código", "archivos fuente", "arquivos-fonte", "arquivos fonte",
+      "fichiers source", "Quelldateien", "исходных файл", "個原始檔", "个源文件", "개 소스 파일", "개의 소스 파일", "ソースファイル", "kaynak dosya", "zdrojových soubor",
+      "kildefiler", "αρχεία πηγαίου", "lähdetiedosto", "forrásfájl", "file sorgente", "bronbestand", "plików źródłowych", "ficheiros de código",
+      "fișiere sursă", "källkodsfiler", "source file", "na source file", "file source", "вихідних файл", "file sumber", "קבצי מקור", "ملف مصدري",
+      "سورس فائل", "সোর্স ফাইল", "개",
+    ],
   },
   {
     key: "loc",
     label: "lines of code",
     value: () => String(floorTo(sourceFiles().reduce((n, f) => n + read(f).split("\n").length, 0), 1000)),
-    nouns: ["LOC", "行程式碼", "行代码", "行のコード"],
+    nouns: ["LOC", "行程式碼", "行代码", "行のコード", "řádků kódu", "righe di codice", "줄", "سطر برمجي", "لائنز کوڈ"],
     before: "~",
   },
   {
     key: "kvScopes",
     label: "KV scopes",
     value: () => String(countKvScopes()),
-    nouns: ["KV scopes", "KV-Scopes", "KV scope", "KV-scope", "scopes KV", "scopes de KV", "escopos KV", "областей KV", "個 KV", "个 KV", "개 KV", "KV スコープ", "KV kapsam"],
+    nouns: [
+      "KV scopes", "KV-Scopes", "KV scope", "KV-scope", "scopes KV", "scopes de KV", "escopos KV", "областей KV", "個 KV", "个 KV", "개 KV", "KV スコープ",
+      "KV kapsam", "نطاق KV", "KV স্কোপ", "תחומי KV", "KV-hatókör", "scope KV", "개", "zakresów KV", "âmbitos de KV", "domenii KV", "na KV scope",
+      "KV-скоуп", "KV اسکوپ",
+    ],
   },
 ];
 

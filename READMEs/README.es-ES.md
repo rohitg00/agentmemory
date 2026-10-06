@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 El plugin de Codex se sirve desde el mismo directorio `plugin/` que el de Claude Code. Registra:
 
-- `@agentmemory/mcp` como servidor MCP (hace de proxy a las 54 tools cuando `AGENTMEMORY_URL` apunta a un servidor agentmemory en ejecución; cae a 7 tools en local cuando no hay servidor accesible)
+- Un bridge MCP vía stdio empaquetado al daemon en ejecución, sin descarga npm ni almacén de fallback. Consulta la [guía local de Codex](../docs/plugins/codex-local.md) para probar una build aún no publicada.
 - 6 hooks de ciclo de vida: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 skills invocables: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, más 8 skills de referencia que el agente carga bajo demanda (memory discipline, tools MCP, REST API, config, agentes, hooks, arquitectura y la guía de autoría de skills)
 
 El motor de hooks de Codex inyecta `CLAUDE_PLUGIN_ROOT` en los subprocesos de hook (según [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), por lo que los mismos scripts de hook funcionan en ambos hosts sin duplicación. Los eventos Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure son exclusivos de Claude Code y no se registran para Codex.
 
-#### Codex Desktop: los hooks del plugin están silenciados (con workaround)
+#### Confianza y compatibilidad de los hooks de Codex
 
-`CodexHooks` y `PluginHooks` son estables y están activados por defecto en [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), pero las builds actuales de Codex Desktop no despachan el `hooks.json` local del plugin ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). Las tools MCP siguen funcionando; solo faltan las observaciones del ciclo de vida.
+El despacho nativo de hooks de plugin está verificado con Codex CLI 0.150.1. Confía en los hooks del plugin antes de esperar captura. El comportamiento en Desktop depende de su runtime empaquetado; comprueba `/hooks` y confirma un evento capturado antes de habilitar un workaround.
 
-Hasta que se solucione upstream, replica los mismos comandos de hook en el `~/.codex/hooks.json` global:
+Si tu host requiere hooks globales, replica los comandos en `~/.codex/hooks.json`. Cuando el MCP ya está configurado, el conector actual necesita `--force` para llegar a la instalación de hooks:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-Esto añade un bloque idempotente a `~/.codex/hooks.json` que referencia rutas absolutas a los scripts empaquetados (no hace falta expandir `${CLAUDE_PLUGIN_ROOT}` en el ámbito de usuario). Vuelve a ejecutar el mismo comando tras actualizar agentmemory para refrescar las rutas. Las entradas de usuario en el mismo fichero se preservan; solo se reemplazan las entradas previas de agentmemory.
+Esto fusiona los hooks globales y reescribe la entrada MCP de agentmemory, preservando las entradas no relacionadas. Revisa cualquier configuración personalizada del endpoint de agentmemory antes de usar `--force`. Vuelve a ejecutar tras actualizar para refrescar las rutas de los scripts. Habilita los hooks nativos del plugin o las copias globales para evitar captura duplicada.
 
 ### GitHub Copilot CLI
+
+Para el modo agente de VS Code, usa la [guía de MCP y captura automática de Copilot](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions). El conector de la CLI no configura VS Code.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ La entrada de agentmemory es el **mismo bloque de servidor MCP** en todos los ho
 | **GitHub Copilot CLI (plugin completo)** | Instalación de plugin de Copilot | `copilot plugin install rohitg00/agentmemory:plugin` para el plugin desde el subdirectorio de GitHub. |
 | **OpenClaw** | Configuración MCP de OpenClaw | El mismo bloque `mcpServers`. Más a fondo: `openclaw plugins install ./integrations/openclaw` reclama el slot de memoria de OpenClaw (cambia automáticamente desde `memory-core`); define `plugins.entries.agentmemory.hooks.allowConversationAccess=true` o la captura de turnos queda bloqueada silenciosamente. Ver [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (solo MCP)** | `.codex/config.toml` | Forma TOML: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, o añade `[mcp_servers.agentmemory]` manualmente. |
-| **Codex CLI (plugin completo)** | Marketplace de plugins Codex | `codex plugin marketplace add rohitg00/agentmemory` y luego `codex plugin add agentmemory@agentmemory`. Registra MCP + 6 hooks de ciclo de vida (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills. En Codex Desktop, ejecuta también `agentmemory connect codex --with-hooks` hasta que aterrice [openai/codex#16430](https://github.com/openai/codex/issues/16430); los hooks de plugin están silenciados allí por ahora. |
+| **Codex CLI (plugin completo)** | Marketplace de plugins Codex | `codex plugin marketplace add rohitg00/agentmemory` y luego `codex plugin add agentmemory@agentmemory`. Registra MCP + 6 hooks de ciclo de vida + 17 skills. Confía en los hooks y verifica la captura en tu host; consulta [configuración y validación de Codex](../docs/plugins/codex-local.md). |
 | **OpenCode (solo MCP)** | `opencode.json` | Forma distinta: clave `mcp` de nivel superior, comando como array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (plugin completo)** | `plugin/opencode/` | 22 hooks de captura automática que cubren ciclo de vida de sesión, mensajes, tools y errores. La atribución de proyecto es por sesión, así que un único proceso de OpenCode que abarque varios repositorios archiva cada sesión bajo su propio proyecto. Dos slash commands (`/recall`, `/remember`). Copia `plugin/opencode/` a tu workspace de OpenCode y añade la entrada del plugin a `opencode.json`. Ver [`plugin/opencode/README.md`](../plugin/opencode/README.md) para la tabla completa de hooks + análisis de gaps. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` instala la extensión empaquetada en el directorio de auto-descubrimiento de pi (recall al arrancar el agente, captura al terminar, tools `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`). Un `/reload` en un pi en ejecución la detecta. [`integrations/pi`](../integrations/pi/) también es un paquete pi (`pi install ./integrations/pi` desde un checkout). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` activa el memory provider de 6 hooks (prefetch, captura de turnos, fin de sesión, pre-compresión, espejado de MEMORY.md, bloque de system prompt). Valida con `hermes plugins doctor` y `hermes memory status`. Ver [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` escribe el bloque `mcpServers` estándar. El payload de los hooks es compatible a nivel de campo con Claude Code, así que los scripts de los 12 hooks existentes funcionan sin modificación; conéctalos en la sección `hooks` del mismo `settings.json`. |
-| **Antigravity** (sustituye a Gemini CLI) | `mcp_config.json` (en el directorio User de Antigravity) | `agentmemory connect antigravity` escribe el bloque `mcpServers` estándar. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Úsalo tras el fin de vida de Gemini CLI del 2026-06-18. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. La CLI `agy` mantiene su propia configuración bajo `~/.gemini/`, separada del IDE Antigravity de arriba. Pasa `--with-hooks` para captura automática nativa vía `~/.gemini/config/hooks.json`. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` instala el MCP y los hooks de captura en el directorio de personalización compartido. Consulta [configuración y límites de Antigravity](../docs/plugins/antigravity.md). |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` usa la misma configuración de MCP y hooks que las versiones actuales del IDE. Las instalaciones existentes deben actualizar con `--force`; consulta las [notas de actualización](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` escribe la configuración a nivel de usuario. Los overrides de workspace van en `.kiro/settings/mcp.json` junto a tu código. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` escribe el bloque `mcpServers` estándar. Warp también auto-descubre skills desde `.claude/skills/`; una vez instalado el plugin de Claude Code, las 8 skills de agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) aparecen de forma nativa en la paleta de slash commands de Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` escribe el bloque `mcpServers` estándar. Usuarios de la extensión de VS Code: pega el mismo bloque vía Cline Settings → MCP Servers → Edit JSON. |

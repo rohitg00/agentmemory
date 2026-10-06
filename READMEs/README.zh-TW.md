@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 Codex 外掛來自與 Claude Code 外掛相同的 `plugin/` 目錄。它會註冊:
 
-- `@agentmemory/mcp` 作為 MCP 伺服器(當 `AGENTMEMORY_URL` 指向一個執行中的 agentmemory 伺服器時,代理全部 54 個工具;若沒有可連接的伺服器,則退回本機的 7 個工具)
+- 一個捆綁的 stdio MCP 橋接,直接連到執行中的常駐行程,不需要 npm 下載,也沒有退回儲存。參見[本機 Codex 指南](../docs/plugins/codex-local.md)以測試尚未發布的版本。
 - 6 個生命週期 hooks:`SessionStart`、`UserPromptSubmit`、`PreToolUse`、`PostToolUse`、`PreCompact`、`Stop`
 - 9 個可呼叫的 skills:`/recall`、`/remember`、`/session-history`、`/forget`、`/recap`、`/handoff`、`/lesson`、`/commit-context`、`/commit-history`,外加 8 個代理按需載入的參考 skills(memory discipline、MCP 工具、REST API、設定、代理、hooks、架構,以及 skill 撰寫指南)
 
 Codex 的 hook 引擎會把 `CLAUDE_PLUGIN_ROOT` 注入 hook 子行程中(參見 [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)),因此同樣的 hook 腳本可以在兩種宿主上運作,不需要重複實作。Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure 事件僅限 Claude Code,Codex 不會註冊這些事件。
 
-#### Codex Desktop:外掛 hooks 目前沒有反應(有變通方法)
+#### Codex hook 信任與相容性
 
-`CodexHooks` 和 `PluginHooks` 在 [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs) 中都已穩定且預設啟用,但 Codex Desktop 目前不會派發外掛本地的 `hooks.json`([openai/codex#16430](https://github.com/openai/codex/issues/16430))。MCP 工具仍能正常運作;只有生命週期觀測缺失。
+原生外掛 hook 分發已在 Codex CLI 0.150.1 上驗證。在期待擷取生效之前,先信任外掛 hooks。Desktop 的行為取決於其捆綁的執行環境;在啟用變通方法之前,先檢查 `/hooks` 並確認已擷取到一個事件。
 
-在上游修正落地之前,把同樣的 hook 指令鏡像到全域的 `~/.codex/hooks.json`:
+如果你的宿主需要全域 hooks,請把這些指令鏡像到 `~/.codex/hooks.json`。當 MCP 已經接好後,目前的連接器需要 `--force` 才能完成 hook 安裝:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-這會在 `~/.codex/hooks.json` 中新增一個具冪等性的區塊,內含捆綁腳本的絕對路徑(使用者層級不需要展開 `${CLAUDE_PLUGIN_ROOT}`)。升級 agentmemory 後重新執行同一指令以刷新路徑。同一檔案中既有的使用者條目會被保留;只有先前的 agentmemory 條目會被取代。
+這會合併全域 hooks 並重寫 agentmemory 的 MCP 條目,同時保留不相關的條目。在使用 `--force` 之前,先檢查你自訂的 agentmemory 端點設定。升級後重新執行以刷新腳本路徑。只啟用原生外掛 hooks 或全域副本中的一種,以避免重複擷取。
 
 ### GitHub Copilot CLI
+
+對於 VS Code 代理模式,請參閱[Copilot MCP 與自動擷取指南](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions)。CLI 連接器不會設定 VS Code。
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **GitHub Copilot CLI(完整外掛)** | Copilot plugin install | 執行 `copilot plugin install rohitg00/agentmemory:plugin`,從 GitHub 子目錄安裝外掛。 |
 | **OpenClaw** | OpenClaw MCP 設定 | 同樣的 `mcpServers` 區塊。更深入的整合:`openclaw plugins install ./integrations/openclaw` 會接管 OpenClaw 的記憶槽位(自動從 `memory-core` 切換過來);請設定 `plugins.entries.agentmemory.hooks.allowConversationAccess=true`,否則回合擷取會被靜默封鎖。見 [`integrations/openclaw`](../integrations/openclaw/)。 |
 | **Codex CLI(僅 MCP)** | `.codex/config.toml` | TOML 格式:`codex mcp add agentmemory -- npx -y @agentmemory/mcp`,或手動新增 `[mcp_servers.agentmemory]`。 |
-| **Codex CLI(完整外掛)** | Codex plugin marketplace | 先執行 `codex plugin marketplace add rohitg00/agentmemory`,再執行 `codex plugin add agentmemory@agentmemory`。會註冊 MCP + 6 個生命週期 hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、PreCompact、Stop)+ 17 個 skills。在 Codex Desktop 上,在 [openai/codex#16430](https://github.com/openai/codex/issues/16430) 修正落地前,還要額外執行 `agentmemory connect codex --with-hooks`;外掛 hooks 目前在那裡沒有反應。 |
+| **Codex CLI(完整外掛)** | Codex plugin marketplace | 先執行 `codex plugin marketplace add rohitg00/agentmemory`,再執行 `codex plugin add agentmemory@agentmemory`。會註冊 MCP + 6 個生命週期 hooks + 17 個 skills。請在你的宿主上信任 hooks 並驗證擷取是否生效;參見[Codex 設定與驗證](../docs/plugins/codex-local.md)。 |
 | **OpenCode(僅 MCP)** | `opencode.json` | 格式不同:頂層 `mcp` 鍵,指令為陣列:`{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`。 |
 | **OpenCode(完整外掛)** | `plugin/opencode/` | 22 個自動擷取 hooks,涵蓋會話生命週期、訊息、工具、錯誤。專案歸屬是以會話為單位,因此一個橫跨多個倉庫的 OpenCode 行程,會把每個會話各自歸入它自己的專案。提供兩個斜線指令(`/recall`、`/remember`)。把 `plugin/opencode/` 複製到你的 OpenCode 工作區,並在 `opencode.json` 中加入外掛條目。完整的 hook 對照表 + 差異分析見 [`plugin/opencode/README.md`](../plugin/opencode/README.md)。 |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` 會把捆綁的擴充功能安裝到 pi 的自動探索目錄(代理啟動時召回、代理結束時捕捉、`memory_search` / `memory_save` / `memory_health` 工具、`/agentmemory-status`)。在執行中的 pi 裡,`/reload` 即可套用。[`integrations/pi`](../integrations/pi/) 也是一個 pi 套件(從 checkout 執行 `pi install ./integrations/pi`)。 |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` 搭配 `memory.provider: agentmemory`,即可取得 6-hook 記憶提供者(prefetch、回合捕捉、session end、pre-compress、MEMORY.md 鏡像、system prompt block)。用 `hermes plugins doctor` 和 `hermes memory status` 驗證。見 [`integrations/hermes`](../integrations/hermes/)。 |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` 會寫入標準的 `mcpServers` 區塊。hook 的負載欄位與 Claude Code 相容,因此既有的 12-hook 腳本不用修改就能運作;透過同一個 `settings.json` 中的 `hooks` 區塊接上它們。 |
-| **Antigravity**(取代 Gemini CLI) | `mcp_config.json`(位於 Antigravity 的 User 目錄) | `agentmemory connect antigravity` 會寫入標準的 `mcpServers` 區塊。macOS:`~/Library/Application Support/Antigravity/User/`。Linux:`~/.config/Antigravity/User/`。適用於 2026-06-18 Gemini CLI 停用之後。 |
-| **Antigravity CLI**(`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`。`agy` CLI 把自己的設定保存在 `~/.gemini/` 下,與上面的 Antigravity IDE 是分開的。傳入 `--with-hooks` 以透過 `~/.gemini/config/hooks.json` 取得原生自動擷取。 |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` 會在共用的自訂目錄中安裝 MCP 和擷取 hooks。參見[Antigravity 設定與限制](../docs/plugins/antigravity.md)。 |
+| **Antigravity CLI**(`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` 使用與目前 IDE 版本相同的 MCP 和 hook 設定。既有安裝應使用 `--force` 刷新;參見[升級說明](../docs/plugins/antigravity.md)。 |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` 會寫入使用者層級的設定。工作區層級的覆寫請放在你程式碼旁的 `.kiro/settings/mcp.json`。 |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` 會寫入標準的 `mcpServers` 區塊。Warp 也會自動從 `.claude/skills/` 探索 skills;一旦安裝了 Claude Code 外掛,8 個 agentmemory skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`commit-context`、`commit-history`、`session-history`)就會原生出現在 Warp 的斜線指令選單中。 |
 | **Cline(CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` 會寫入標準的 `mcpServers` 區塊。VS Code 擴充功能使用者:透過 Cline Settings → MCP Servers → Edit JSON 貼上同一個區塊。 |

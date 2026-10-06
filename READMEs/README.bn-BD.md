@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 Codex প্লাগইনটি Claude Code প্লাগইনের মতো একই `plugin/` ডিরেক্টরি থেকে আসে। এটি রেজিস্টার করে:
 
-- `@agentmemory/mcp`-কে একটি MCP সার্ভার হিসেবে (`AGENTMEMORY_URL` কোনো চলমান agentmemory সার্ভারের দিকে থাকলে সব 54 টুলের প্রক্সি করে; কোনো সার্ভার না পেলে লোকালি 7 টুলে ফলব্যাক করে)
+- চলমান daemon-এর একটি bundled stdio MCP bridge, কোনো npm download বা fallback store ছাড়াই। একটি unreleased build টেস্ট করতে [লোকাল Codex গাইড](../docs/plugins/codex-local.md) দেখুন।
 - 6টি লাইফসাইকেল হুক: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9টি ইনভোকেবল স্কিল: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, এবং আরও 8টি রেফারেন্স স্কিল যা এজেন্ট প্রয়োজনমতো লোড করে (memory discipline, MCP টুল, REST API, কনফিগ, এজেন্ট, হুক, আর্কিটেকচার, এবং স্কিল-লেখার গাইড)
 
 Codex-এর হুক ইঞ্জিন হুক সাবপ্রসেসে `CLAUDE_PLUGIN_ROOT` ইনজেক্ট করে (দেখুন [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), তাই একই হুক স্ক্রিপ্ট দুই হোস্টেই কোনো ডুপ্লিকেশন ছাড়া কাজ করে। Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure ইভেন্টগুলো কেবল Claude-Code-এর, এবং Codex-এর জন্য রেজিস্টার করা হয় না।
 
-#### Codex Desktop: প্লাগইন হুক বর্তমানে নিশ্চুপ (ওয়ার্কঅ্যারাউন্ড আছে)
+#### Codex হুকের বিশ্বাস ও কম্প্যাটিবিলিটি
 
-[`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs)-এ `CodexHooks` এবং `PluginHooks` দুটোই স্টেবল + ডিফল্টভাবে চালু, কিন্তু Codex Desktop বিল্ড বর্তমানে প্লাগইন-লোকাল `hooks.json` ডিসপ্যাচ করে না ([openai/codex#16430](https://github.com/openai/codex/issues/16430))। MCP টুল তখনও কাজ করে; শুধু লাইফসাইকেল অবজারভেশনগুলো মিসিং।
+Codex CLI 0.150.1-এর সাথে নেটিভ প্লাগইন হুক ডিসপ্যাচ ভেরিফাই করা হয়েছে। ক্যাপচার আশা করার আগে প্লাগইন হুকগুলোকে বিশ্বাস করুন। Desktop-এর আচরণ তার বান্ডলড রানটাইমের উপর নির্ভর করে; একটি workaround চালু করার আগে `/hooks` চেক করুন এবং একটি captured event নিশ্চিত করুন।
 
-আপস্ট্রিমে ফিক্সটি না আসা পর্যন্ত, একই হুক কমান্ডগুলো গ্লোবাল `~/.codex/hooks.json`-এ মিরর করুন:
+যদি আপনার হোস্টের গ্লোবাল হুক প্রয়োজন হয়, তাহলে কমান্ডগুলো `~/.codex/hooks.json`-এ মিরর করুন। MCP যখন আগে থেকেই ওয়্যারড থাকে, তখন বর্তমান কনেক্টরের হুক ইনস্টলেশন পর্যন্ত পৌঁছাতে `--force` প্রয়োজন হয়:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-এটি `~/.codex/hooks.json`-এ একটি আইডেমপোটেন্ট ব্লক যুক্ত করে যা বান্ডলড স্ক্রিপ্টের অ্যাবসোলিউট পাথ রেফারেন্স করে (ইউজার-স্কোপে `${CLAUDE_PLUGIN_ROOT}` এক্সপ্যানশন প্রয়োজন নেই)। পাথ রিফ্রেশ করতে agentmemory আপগ্রেড করার পর একই কমান্ড আবার চালান। একই ফাইলের ইউজার এন্ট্রিগুলো রক্ষিত থাকে; শুধু আগের agentmemory এন্ট্রিগুলো রিপ্লেস হয়।
+এটি গ্লোবাল হুক মার্জ করে এবং agentmemory MCP এন্ট্রি রিরাইট করে, অসম্পর্কিত এন্ট্রিগুলো সংরক্ষণ করে। `--force` ব্যবহারের আগে কাস্টম agentmemory এন্ডপয়েন্ট সেটিংস রিভিউ করুন। স্ক্রিপ্ট পাথ রিফ্রেশ করতে আপগ্রেড করার পর আবার চালান। ডুপ্লিকেট ক্যাপচার এড়াতে নেটিভ প্লাগইন হুক বা গ্লোবাল কপির মধ্যে একটি সক্রিয় করুন।
 
 ### GitHub Copilot CLI
+
+VS Code এজেন্ট মোডের জন্য, [Copilot MCP এবং অটোমেটিক-ক্যাপচার গাইড](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions) ব্যবহার করুন। CLI কনেক্টর VS Code কনফিগার করে না।
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **GitHub Copilot CLI (পূর্ণ প্লাগইন)** | Copilot প্লাগইন ইনস্টল | GitHub সাবডির থেকে প্লাগইনের জন্য `copilot plugin install rohitg00/agentmemory:plugin`। |
 | **OpenClaw** | OpenClaw MCP কনফিগ | একই `mcpServers` ব্লক। আরও গভীরে: `openclaw plugins install ./integrations/openclaw` OpenClaw-র মেমরি স্লট দাবি করে (`memory-core` থেকে অটো-সুইচ করে); `plugins.entries.agentmemory.hooks.allowConversationAccess=true` সেট করুন, না হলে টার্ন ক্যাপচার নিঃশব্দে ব্লক হয়ে যায়। দেখুন [`integrations/openclaw`](../integrations/openclaw/)। |
 | **Codex CLI (কেবল MCP)** | `.codex/config.toml` | TOML শেপ: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, বা ম্যানুয়ালি `[mcp_servers.agentmemory]` যুক্ত করুন। |
-| **Codex CLI (পূর্ণ প্লাগইন)** | Codex প্লাগইন মার্কেটপ্লেস | `codex plugin marketplace add rohitg00/agentmemory` তারপর `codex plugin add agentmemory@agentmemory`। MCP + 6টি লাইফসাইকেল হুক (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17টি স্কিল রেজিস্টার করে। Codex Desktop-এ, [openai/codex#16430](https://github.com/openai/codex/issues/16430) ল্যান্ড না হওয়া পর্যন্ত `agentmemory connect codex --with-hooks`-ও চালান; প্লাগইন হুক এখন সেখানে নিশ্চুপ। |
+| **Codex CLI (পূর্ণ প্লাগইন)** | Codex প্লাগইন মার্কেটপ্লেস | `codex plugin marketplace add rohitg00/agentmemory` তারপর `codex plugin add agentmemory@agentmemory`। MCP + 6টি লাইফসাইকেল হুক + 17টি স্কিল রেজিস্টার করে। আপনার হোস্টে হুক বিশ্বাস করুন এবং ক্যাপচার যাচাই করুন; দেখুন [Codex সেটআপ ও যাচাইকরণ](../docs/plugins/codex-local.md)। |
 | **OpenCode (কেবল MCP)** | `opencode.json` | ভিন্ন শেপ: টপ-লেভেল `mcp` কি, কমান্ড অ্যারে হিসেবে: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`। |
 | **OpenCode (পূর্ণ প্লাগইন)** | `plugin/opencode/` | সেশন লাইফসাইকেল, মেসেজ, টুল, এরর কভার করা 22টি অটো-ক্যাপচার হুক। প্রজেক্ট অ্যাট্রিবিউশন প্রতি-সেশন, তাই একাধিক রিপোজিটরি জুড়ে চলা একটি OpenCode প্রসেস প্রতিটি সেশনকে তার নিজের প্রজেক্টের অধীনে ফাইল করে। দুটি স্ল্যাশ কমান্ড (`/recall`, `/remember`)। আপনার OpenCode ওয়ার্কস্পেসে `plugin/opencode/` কপি করুন এবং `opencode.json`-এ প্লাগইন এন্ট্রি যুক্ত করুন। পূর্ণ হুক টেবিল + গ্যাপ অ্যানালিসিসের জন্য দেখুন [`plugin/opencode/README.md`](../plugin/opencode/README.md)। |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` pi-র অটো-ডিসকভারি ডিরেক্টরিতে বান্ডলড এক্সটেনশন ইনস্টল করে (এজেন্ট শুরুতে রিকল, এজেন্ট শেষে ক্যাপচার, `memory_search` / `memory_save` / `memory_health` টুল, `/agentmemory-status`)। চলমান pi-তে `/reload` এটি নিয়ে নেয়। [`integrations/pi`](../integrations/pi/) নিজেও একটি pi প্যাকেজ (একটি চেকআউট থেকে `pi install ./integrations/pi`)। |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` 6-হুক মেমরি প্রোভাইডার দেয় (প্রিফেচ, টার্ন ক্যাপচার, সেশন শেষ, প্রি-কম্প্রেস, MEMORY.md মিররিং, সিস্টেম প্রম্পট ব্লক)। `hermes plugins doctor` এবং `hermes memory status` দিয়ে যাচাই করুন। দেখুন [`integrations/hermes`](../integrations/hermes/)। |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। হুক পেলোড Claude Code-এর সাথে ফিল্ড-কম্প্যাটিবল, তাই বিদ্যমান 12-হুক স্ক্রিপ্টগুলো কোনো পরিবর্তন ছাড়াই কাজ করে; একই `settings.json`-এর `hooks` সেকশনে এগুলো ওয়্যার করুন। |
-| **Antigravity** (Gemini CLI-র পরিবর্তে) | `mcp_config.json` (Antigravity-র User ডিরেক্টরিতে) | `agentmemory connect antigravity` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। macOS: `~/Library/Application Support/Antigravity/User/`। Linux: `~/.config/Antigravity/User/`। 2026-06-18-এর Gemini CLI সানসেটের পর এটি ব্যবহার করুন। |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`। `agy` CLI উপরের Antigravity IDE থেকে আলাদা, নিজের কনফিগ `~/.gemini/`-এর নিচে রাখে। `~/.gemini/config/hooks.json`-এর মাধ্যমে নেটিভ অটো-ক্যাপচারের জন্য `--with-hooks` পাস করুন। |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` শেয়ার্ড কাস্টমাইজেশন ডিরেক্টরিতে MCP এবং ক্যাপচার হুক ইনস্টল করে। দেখুন [Antigravity সেটআপ ও সীমাবদ্ধতা](../docs/plugins/antigravity.md)। |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` বর্তমান IDE ভার্সনের মতো একই MCP এবং হুক কনফিগারেশন ব্যবহার করে। বিদ্যমান ইনস্টলেশনগুলো `--force` দিয়ে রিফ্রেশ করা উচিত; দেখুন [আপগ্রেড নোটস](../docs/plugins/antigravity.md)। |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` ইউজার-লেভেল কনফিগ লেখে। ওয়ার্কস্পেস ওভাররাইড আপনার কোডের পাশে `.kiro/settings/mcp.json`-এ যায়। |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। Warp `.claude/skills/` থেকেও স্কিল অটো-ডিসকভার করে; Claude Code প্লাগইন ইনস্টল হলে agentmemory-র 8টি স্কিল (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) Warp-এর স্ল্যাশ-কমান্ড প্যালেটে নেটিভভাবে দেখা যায়। |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। VS Code এক্সটেনশন ইউজাররা: Cline Settings → MCP Servers → Edit JSON-এর মাধ্যমে একই ব্লক পেস্ট করুন। |

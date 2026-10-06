@@ -669,31 +669,33 @@ codex plugin add agentmemory@agentmemory
 
 Codex plugin ถูก ship มาจาก directory `plugin/` เดียวกันกับ Claude Code plugin มันจะลงทะเบียน:
 
-- `@agentmemory/mcp` เป็น MCP server (proxy เครื่องมือทั้ง 54 ตัวเมื่อ `AGENTMEMORY_URL` ชี้ไปยัง agentmemory server ที่กำลังรันอยู่; จะ fallback เป็น 7 เครื่องมือในเครื่องเมื่อไม่มี server ให้เชื่อมต่อ)
+- stdio MCP bridge ที่ bundle มาด้วย เชื่อมต่อไปยัง daemon ที่กำลังรันอยู่ ไม่มีการดาวน์โหลด npm หรือ fallback store ดู [คู่มือ Codex แบบ local](../docs/plugins/codex-local.md) เพื่อทดสอบ build ที่ยังไม่ได้ปล่อย
 - lifecycle hook 6 ตัว: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - skill ที่เรียกใช้ได้ 9 ตัว: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, บวก reference skill อีก 8 ตัวที่ agent โหลดตามต้องการ (memory discipline, MCP tools, REST API, config, agents, hooks, architecture, และคู่มือการเขียน skill)
 
 hook engine ของ Codex จะ inject `CLAUDE_PLUGIN_ROOT` เข้าไปใน hook subprocess (ตาม [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)) ดังนั้น hook script เดียวกันจะทำงานได้บนทั้งสอง host โดยไม่ต้องทำซ้ำ event อย่าง Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure เป็นของ Claude Code เท่านั้น และไม่ได้ลงทะเบียนสำหรับ Codex
 
-#### Codex Desktop: plugin hooks currently silent (workaround available)
+#### Trust และความเข้ากันได้ของ hook ของ Codex
 
-`CodexHooks` และ `PluginHooks` เป็น stable และเปิดใช้งาน default ทั้งคู่ใน [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs) แต่ build ของ Codex Desktop ในปัจจุบันยังไม่ dispatch `hooks.json` ที่อยู่ใน plugin เอง ([openai/codex#16430](https://github.com/openai/codex/issues/16430)) เครื่องมือ MCP ยังทำงานได้ตามปกติ มีเพียง observation ของ lifecycle เท่านั้นที่หายไป
+การ dispatch native plugin hook ได้รับการ verify แล้วกับ Codex CLI 0.150.1 ต้อง trust plugin hook ก่อนที่จะคาดหวัง capture พฤติกรรมของ Desktop ขึ้นอยู่กับ runtime ที่ bundle มาด้วย ตรวจสอบ `/hooks` และยืนยันว่ามี event ที่ capture ได้ก่อนเปิดใช้ workaround
 
-จนกว่า upstream จะแก้ไข ให้ mirror คำสั่ง hook เดียวกันไปยัง `~/.codex/hooks.json` แบบ global:
+ถ้า host ของคุณต้องใช้ global hook ให้ mirror คำสั่งไปยัง `~/.codex/hooks.json` ถ้า MCP เชื่อมต่อไว้อยู่แล้ว connector ตัวปัจจุบันต้องใช้ `--force` เพื่อให้ไปถึงขั้นติดตั้ง hook:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-คำสั่งนี้จะเพิ่ม block แบบ idempotent เข้าไปใน `~/.codex/hooks.json` โดยอ้างอิง absolute path ไปยัง script ที่ bundle มาด้วย (ไม่ต้องขยาย `${CLAUDE_PLUGIN_ROOT}` ที่ user-scope) ให้รันคำสั่งเดียวกันซ้ำหลัง upgrade agentmemory เพื่อ refresh path รายการของผู้ใช้ในไฟล์เดียวกันจะยังคงอยู่ มีเพียงรายการของ agentmemory เดิมที่จะถูกแทนที่
+คำสั่งนี้จะ merge global hook และเขียนทับรายการ MCP ของ agentmemory ใหม่ โดยรายการอื่นที่ไม่เกี่ยวข้องจะยังคงอยู่ ตรวจสอบการตั้งค่า endpoint ของ agentmemory แบบ custom ก่อนใช้ `--force` รันซ้ำหลัง upgrade เพื่อ refresh path ของ script เปิดใช้อย่างใดอย่างหนึ่งระหว่าง native plugin hook หรือ global copy เพื่อเลี่ยงการ capture ซ้ำ
 
 ### GitHub Copilot CLI
+
+สำหรับ VS Code agent mode ให้ใช้ [คู่มือ MCP และ automatic-capture ของ Copilot](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions) CLI connector ตัวนี้ไม่ได้ตั้งค่า VS Code ให้
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -797,14 +799,14 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **GitHub Copilot CLI (full plugin)** | ติดตั้ง plugin ของ Copilot | `copilot plugin install rohitg00/agentmemory:plugin` สำหรับ plugin จาก GitHub subdir |
 | **OpenClaw** | OpenClaw MCP config | ใช้ `mcpServers` block เดียวกัน เชิงลึกกว่านั้น: `openclaw plugins install ./integrations/openclaw` จะยึด memory slot ของ OpenClaw (สลับจาก `memory-core` อัตโนมัติ) ตั้งค่า `plugins.entries.agentmemory.hooks.allowConversationAccess=true` ไม่เช่นนั้นการ capture turn จะถูกบล็อกแบบเงียบ ๆ ดู [`integrations/openclaw`](../integrations/openclaw/) |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | รูปแบบ TOML: `codex mcp add agentmemory -- npx -y @agentmemory/mcp` หรือเพิ่ม `[mcp_servers.agentmemory]` เอง |
-| **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` แล้ว `codex plugin add agentmemory@agentmemory` ลงทะเบียน MCP + lifecycle hook 6 ตัว (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + skill 17 ตัว บน Codex Desktop ให้รัน `agentmemory connect codex --with-hooks` เพิ่มด้วยจนกว่า [openai/codex#16430](https://github.com/openai/codex/issues/16430) จะถูกแก้ไข; plugin hook ยังเงียบอยู่ที่นั่น |
+| **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` แล้ว `codex plugin add agentmemory@agentmemory` ลงทะเบียน MCP + lifecycle hook 6 ตัว + skill 17 ตัว ต้อง trust hook และ verify การ capture ใน host ของคุณ ดู [การ setup และ validate Codex](../docs/plugins/codex-local.md) |
 | **OpenCode (MCP only)** | `opencode.json` | รูปแบบต่างออกไป: key ระดับบนสุดคือ `mcp`, command เป็น array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}` |
 | **OpenCode (full plugin)** | `plugin/opencode/` | auto-capture hook 22 ตัว ครอบคลุม session lifecycle, message, tool, error การระบุ project เป็นแบบต่อเซสชัน ดังนั้น OpenCode process เดียวที่ครอบคลุมหลาย repository จะเก็บแต่ละเซสชันไว้ใน project ของตัวเอง มีคำสั่ง slash สองตัว (`/recall`, `/remember`) copy `plugin/opencode/` เข้าไปใน OpenCode workspace ของคุณแล้วเพิ่มรายการ plugin ลงใน `opencode.json` ดู [`plugin/opencode/README.md`](../plugin/opencode/README.md) สำหรับตาราง hook แบบเต็มพร้อม gap analysis |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` จะติดตั้ง extension ที่ bundle มาเข้าไปใน auto-discovery directory ของ pi (recall ตอน agent เริ่ม, capture ตอน agent จบ, เครื่องมือ `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`) `/reload` ใน pi ที่กำลังรันอยู่จะรับค่านี้ [`integrations/pi`](../integrations/pi/) ยังเป็น pi package ด้วย (`pi install ./integrations/pi` จาก checkout) |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` จะให้ memory provider แบบ 6-hook (prefetch, turn capture, session end, pre-compress, MEMORY.md mirroring, system prompt block) ตรวจสอบด้วย `hermes plugins doctor` และ `hermes memory status` ดู [`integrations/hermes`](../integrations/hermes/) |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` เขียน `mcpServers` block แบบมาตรฐาน payload ของ hook เข้ากันได้กับ Claude Code ดังนั้น hook script 12 ตัวที่มีอยู่ใช้งานได้โดยไม่ต้องแก้ไข เชื่อมต่อผ่าน section `hooks` ใน `settings.json` เดียวกัน |
-| **Antigravity** (มาแทน Gemini CLI) | `mcp_config.json` (ใน User dir ของ Antigravity) | `agentmemory connect antigravity` เขียน `mcpServers` block แบบมาตรฐาน macOS: `~/Library/Application Support/Antigravity/User/` Linux: `~/.config/Antigravity/User/` ใช้หลังจาก Gemini CLI sunset วันที่ 2026-06-18 |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli` CLI `agy` มี config ของตัวเองแยกไว้ใต้ `~/.gemini/` คนละที่กับ Antigravity IDE ด้านบน ใส่ `--with-hooks` เพื่อ auto-capture แบบ native ผ่าน `~/.gemini/config/hooks.json` |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` จะติดตั้ง MCP และ capture hook ไว้ใน shared customization directory ดู [การตั้งค่าและข้อจำกัดของ Antigravity](../docs/plugins/antigravity.md) |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` ใช้ config ของ MCP และ hook แบบเดียวกับ IDE เวอร์ชันปัจจุบัน การติดตั้งที่มีอยู่แล้วควร refresh ด้วย `--force`; ดู [upgrade notes](../docs/plugins/antigravity.md) |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` เขียน config ระดับ user การ override ระดับ workspace ไปอยู่ที่ `.kiro/settings/mcp.json` ข้าง ๆ โค้ดของคุณ |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` เขียน `mcpServers` block แบบมาตรฐาน Warp ยัง auto-discover skill จาก `.claude/skills/` ด้วย เมื่อติดตั้ง Claude Code plugin แล้ว skill ทั้ง 8 ตัวของ agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) จะปรากฏใน slash-command palette ของ Warp โดยตรง |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` เขียน `mcpServers` block แบบมาตรฐาน ผู้ใช้ VS Code extension: paste block เดียวกันผ่าน Cline Settings → MCP Servers → Edit JSON |

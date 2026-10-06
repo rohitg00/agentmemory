@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 Codex-pluginet levereras från samma `plugin/`-katalog som Claude Code-pluginet. Det registrerar:
 
-- `@agentmemory/mcp` som en MCP-server (proxyar alla 54 verktyg när `AGENTMEMORY_URL` pekar på en körande agentmemory-server; faller tillbaka till 7 lokala verktyg när ingen server går att nå)
+- En medföljande stdio MCP-brygga till den körande daemonen, utan npm-nedladdning eller fallback-lager. Se [lokala Codex-guiden](../docs/plugins/codex-local.md) för att testa en build som ännu inte är publicerad.
 - 6 livscykel-hooks: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 anropsbara skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, plus 8 referens-skills som agenten laddar vid behov (minnesdisciplin, MCP-verktyg, REST API, konfiguration, agenter, hooks, arkitektur och guiden för att skriva skills)
 
 Codex hook-motor injicerar `CLAUDE_PLUGIN_ROOT` i hook-underprocesser (enligt [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), så samma hook-skript fungerar på båda värdarna utan duplicering. Händelserna Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure är specifika för Claude Code och registreras inte för Codex.
 
-#### Codex Desktop: plugin-hooks är för närvarande tysta (lösning finns)
+#### Codex hooks: tillit och kompatibilitet
 
-`CodexHooks` och `PluginHooks` är båda stabila och aktiverade som standard i [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), men Codex Desktop-byggen skickar för närvarande inte ut plugin-lokala `hooks.json` ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). MCP-verktygen fungerar fortfarande; det är bara livscykelobservationerna som saknas.
+Native plugin-hook-utlösning är verifierad med Codex CLI 0.150.1. Lita på plugin-hooksen innan du förväntar dig infångning. Desktop-beteendet beror på dess medföljande körtid; kontrollera `/hooks` och bekräfta en infångad händelse innan du aktiverar en lösning.
 
-Tills uppströmsprojektet landar fixen, spegla samma hook-kommandon i den globala `~/.codex/hooks.json`:
+Om din värd kräver globala hooks, spegla kommandona till `~/.codex/hooks.json`. När MCP redan är inkopplat behöver den nuvarande adaptern `--force` för att nå hook-installationen:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-Detta lägger till ett idempotent block i `~/.codex/hooks.json` som refererar till absoluta sökvägar till de medföljande skripten (ingen `${CLAUDE_PLUGIN_ROOT}`-expansion behövs på användarnivå). Kör samma kommando igen efter att du har uppgraderat agentmemory för att uppdatera sökvägarna. Användarens egna poster i samma fil bevaras; endast tidigare agentmemory-poster ersätts.
+Detta slår samman globala hooks och skriver om agentmemory-MCP-posten, och bevarar orelaterade poster. Granska eventuella anpassade agentmemory-endpoint-inställningar innan du använder `--force`. Kör om efter uppgradering för att uppdatera skriptsökvägarna. Aktivera antingen native plugin-hooks eller globala kopior för att undvika dubblerad infångning.
 
 ### GitHub Copilot CLI
+
+För VS Code agent-läge, använd [Copilot MCP- och automatisk-infångningsguiden](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions). CLI-adaptern konfigurerar inte VS Code.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ agentmemory-posten är **samma MCP-serverblock** på alla värdar som använder 
 | **GitHub Copilot CLI (fullständigt plugin)** | Copilot plugin-installation | `copilot plugin install rohitg00/agentmemory:plugin` för pluginet från GitHub-underkatalogen. |
 | **OpenClaw** | OpenClaw MCP-konfiguration | Samma `mcpServers`-block. Djupare integration: `openclaw plugins install ./integrations/openclaw` tar över OpenClaws minnesplats (byter automatiskt från `memory-core`); sätt `plugins.entries.agentmemory.hooks.allowConversationAccess=true`, annars blockeras tur-infångningen i det tysta. Se [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (endast MCP)** | `.codex/config.toml` | TOML-form: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, eller lägg till `[mcp_servers.agentmemory]` manuellt. |
-| **Codex CLI (fullständigt plugin)** | Codex plugin-marketplace | `codex plugin marketplace add rohitg00/agentmemory` och sedan `codex plugin add agentmemory@agentmemory`. Registrerar MCP + 6 livscykel-hooks (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills. På Codex Desktop, kör även `agentmemory connect codex --with-hooks` tills [openai/codex#16430](https://github.com/openai/codex/issues/16430) landar; plugin-hooks är för närvarande tysta där. |
+| **Codex CLI (fullständigt plugin)** | Codex plugin-marketplace | `codex plugin marketplace add rohitg00/agentmemory` och sedan `codex plugin add agentmemory@agentmemory`. Registrerar MCP + 6 livscykel-hooks + 17 skills. Lita på hooksen och verifiera infångningen i din värd; se [Codex-konfiguration och validering](../docs/plugins/codex-local.md). |
 | **OpenCode (endast MCP)** | `opencode.json` | Annan form: en toppnivånyckel `mcp`, kommando som array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (fullständigt plugin)** | `plugin/opencode/` | 22 auto-infångnings-hooks som täcker sessionslivscykel, meddelanden, verktyg, fel. Projekttillhörighet är per session, så en OpenCode-process som spänner över flera repon registrerar varje session under sitt eget projekt. Två snabbkommandon (`/recall`, `/remember`). Kopiera `plugin/opencode/` till din OpenCode-arbetsyta och lägg till plugin-posten i `opencode.json`. Se [`plugin/opencode/README.md`](../plugin/opencode/README.md) för den fullständiga hook-tabellen + luckanalysen. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` installerar det medföljande tillägget i pi:s katalog för automatisk upptäckt (recall vid agentstart, infångning vid agentslut, verktygen `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`). `/reload` i en körande pi plockar upp det. [`integrations/pi`](../integrations/pi/) är även ett pi-paket (`pi install ./integrations/pi` från en checkout). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` ger minnesleverantören med 6 hooks (förhämtning, turinfångning, sessionsslut, förkomprimering, MEMORY.md-spegling, systemprompt-block). Validera med `hermes plugins doctor` och `hermes memory status`. Se [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` skriver det vanliga `mcpServers`-blocket. Hook-nyttolasten är fältkompatibel med Claude Code, så de befintliga 12-hooks-skripten fungerar utan ändring; koppla in dem via `hooks`-avsnittet i samma `settings.json`. |
-| **Antigravity** (ersätter Gemini CLI) | `mcp_config.json` (i Antigravitys User-katalog) | `agentmemory connect antigravity` skriver det vanliga `mcpServers`-blocket. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Används efter att Gemini CLI lades ner 2026-06-18. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. `agy`-CLI:n har sin egen konfiguration under `~/.gemini/`, separat från Antigravity-IDE:n ovan. Ange `--with-hooks` för inbyggd auto-infångning via `~/.gemini/config/hooks.json`. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` installerar MCP och infångnings-hooks i den delade anpassningskatalogen. Se [Antigravity-konfiguration och begränsningar](../docs/plugins/antigravity.md). |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` använder samma MCP- och hook-konfiguration som nuvarande IDE-versioner. Befintliga installationer bör uppdateras med `--force`; se [uppgraderingsanteckningarna](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` skriver konfigurationen på användarnivå. Arbetsyteöverskrivningar läggs i `.kiro/settings/mcp.json` bredvid din kod. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` skriver det vanliga `mcpServers`-blocket. Warp upptäcker också automatiskt skills från `.claude/skills/`; när Claude Code-pluginet är installerat visas agentmemorys 8 skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) naturligt i Warps snabbkommando-palett. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` skriver det vanliga `mcpServers`-blocket. VS Code-tilläggsanvändare: klistra in samma block via Cline Settings → MCP Servers → Edit JSON. |

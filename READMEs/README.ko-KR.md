@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 Codex 플러그인은 Claude Code 플러그인과 동일한 `plugin/` 디렉터리에서 제공됩니다. 다음을 등록합니다:
 
-- `@agentmemory/mcp`를 MCP 서버로 등록(`AGENTMEMORY_URL`이 실행 중인 agentmemory 서버를 가리키면 54개 도구 전부를 프록시하고, 도달 가능한 서버가 없으면 로컬에서 7개 도구로 폴백)
+- 실행 중인 데몬에 연결되는 번들된 stdio MCP 브리지로, npm 다운로드도 폴백 저장소도 없습니다. 미출시 빌드를 테스트하려면 [로컬 Codex 가이드](../docs/plugins/codex-local.md)를 참고하십시오.
 - 6개의 라이프사이클 hook: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 호출 가능한 skill 9개: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, 그리고 에이전트가 필요할 때 로드하는 참조 skill 8개(memory discipline, MCP 도구, REST API, 설정, 에이전트, hook, 아키텍처, skill 작성 가이드)
 
 Codex의 hook 엔진은 hook 서브프로세스에 `CLAUDE_PLUGIN_ROOT`를 주입하므로([`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs) 참고), 동일한 hook 스크립트가 중복 없이 두 호스트 모두에서 동작합니다. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure 이벤트는 Claude Code 전용이며 Codex에는 등록되지 않습니다.
 
-#### Codex Desktop: 플러그인 hook이 현재 동작하지 않음 (해결책 있음)
+#### Codex hook 신뢰와 호환성
 
-`CodexHooks`와 `PluginHooks`는 [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs)에서 모두 stable + 기본 활성화 상태이지만, 현재 Codex Desktop 빌드는 플러그인 로컬 `hooks.json`을 디스패치하지 않습니다([openai/codex#16430](https://github.com/openai/codex/issues/16430)). MCP 도구는 여전히 동작하며, 라이프사이클 관측만 누락됩니다.
+네이티브 플러그인 hook 디스패치는 Codex CLI 0.150.1에서 검증되었습니다. 캡처를 기대하기 전에 플러그인 hooks를 신뢰하십시오. Desktop의 동작은 번들된 런타임에 따라 달라집니다. 해결책을 활성화하기 전에 `/hooks`를 확인하고 캡처된 이벤트가 있는지 확인하십시오.
 
-업스트림 수정이 반영될 때까지, 동일한 hook 명령을 전역 `~/.codex/hooks.json`에 미러링하십시오:
+호스트에 전역 hooks가 필요하다면, 명령을 `~/.codex/hooks.json`에 미러링하십시오. MCP가 이미 연결되어 있다면, 현재 커넥터가 hook 설치에 도달하려면 `--force`가 필요합니다:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-이 명령은 번들된 스크립트의 절대 경로를 참조하는 idempotent 블록을 `~/.codex/hooks.json`에 추가합니다(사용자 스코프에서는 `${CLAUDE_PLUGIN_ROOT}` 확장이 필요 없습니다). agentmemory를 업그레이드한 뒤에는 동일한 명령을 다시 실행해서 경로를 갱신하십시오. 같은 파일의 사용자 항목은 보존되며, 이전 agentmemory 항목만 교체됩니다.
+이 명령은 전역 hooks를 병합하고 agentmemory MCP 항목을 다시 작성하며, 관련 없는 항목은 보존합니다. `--force`를 사용하기 전에 커스텀 agentmemory 엔드포인트 설정을 검토하십시오. 업그레이드한 뒤에는 다시 실행해서 스크립트 경로를 갱신하십시오. 중복 캡처를 피하려면 네이티브 플러그인 hooks나 전역 사본 중 하나만 활성화하십시오.
 
 ### GitHub Copilot CLI
+
+VS Code 에이전트 모드에서는 [Copilot MCP 및 자동 캡처 가이드](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions)를 사용하십시오. CLI 커넥터는 VS Code를 구성하지 않습니다.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ agentmemory 항목은 `mcpServers` 형태를 사용하는 모든 호스트(Curso
 | **GitHub Copilot CLI (전체 플러그인)** | Copilot 플러그인 설치 | GitHub 서브디렉터리의 플러그인을 위해 `copilot plugin install rohitg00/agentmemory:plugin`. |
 | **OpenClaw** | OpenClaw MCP 설정 | 동일한 `mcpServers` 블록. 더 깊은 통합: `openclaw plugins install ./integrations/openclaw`는 OpenClaw의 memory 슬롯을 차지합니다(`memory-core`에서 자동 전환). `plugins.entries.agentmemory.hooks.allowConversationAccess=true`를 설정하지 않으면 턴 캡처가 조용히 차단됩니다. [`integrations/openclaw`](../integrations/openclaw/) 참고. |
 | **Codex CLI (MCP만)** | `.codex/config.toml` | TOML 형태: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, 또는 `[mcp_servers.agentmemory]`를 수동으로 추가. |
-| **Codex CLI (전체 플러그인)** | Codex 플러그인 마켓플레이스 | `codex plugin marketplace add rohitg00/agentmemory` 후 `codex plugin add agentmemory@agentmemory`. MCP + 라이프사이클 hook 6개(SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + skill 17개를 등록합니다. Codex Desktop에서는 [openai/codex#16430](https://github.com/openai/codex/issues/16430)이 반영될 때까지 `agentmemory connect codex --with-hooks`도 함께 실행하십시오. 그곳에서는 현재 플러그인 hook이 동작하지 않습니다. |
+| **Codex CLI (전체 플러그인)** | Codex 플러그인 마켓플레이스 | `codex plugin marketplace add rohitg00/agentmemory` 후 `codex plugin add agentmemory@agentmemory`. MCP + 라이프사이클 hook 6개 + skill 17개를 등록합니다. 호스트에서 hooks를 신뢰하고 캡처를 확인하십시오. [Codex 설정 및 검증](../docs/plugins/codex-local.md) 참고. |
 | **OpenCode (MCP만)** | `opencode.json` | 다른 형태: 최상위 `mcp` 키, command는 배열: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (전체 플러그인)** | `plugin/opencode/` | 세션 라이프사이클, 메시지, 도구, 오류를 다루는 자동 캡처 hook 22개. 프로젝트 귀속은 세션 단위이므로, 여러 저장소를 넘나드는 OpenCode 프로세스 하나도 각 세션을 자신의 프로젝트 아래에 기록합니다. 슬래시 명령 2개(`/recall`, `/remember`). `plugin/opencode/`를 OpenCode workspace에 복사하고 플러그인 항목을 `opencode.json`에 추가하십시오. 전체 hook 표와 gap 분석은 [`plugin/opencode/README.md`](../plugin/opencode/README.md)를 참고하십시오. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi`는 번들된 확장을 pi의 자동 탐색 디렉터리에 설치합니다(에이전트 시작 시 recall, 에이전트 종료 시 capture, `memory_search` / `memory_save` / `memory_health` 도구, `/agentmemory-status`). 실행 중인 pi에서 `/reload`하면 적용됩니다. [`integrations/pi`](../integrations/pi/)는 pi 패키지이기도 합니다(체크아웃에서 `pi install ./integrations/pi`). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory`로 6-hook 메모리 프로바이더(prefetch, 턴 캡처, 세션 종료, 압축 전 처리, MEMORY.md 미러링, 시스템 프롬프트 블록)를 얻습니다. `hermes plugins doctor`와 `hermes memory status`로 검증하십시오. [`integrations/hermes`](../integrations/hermes/) 참고. |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen`은 표준 `mcpServers` 블록을 작성합니다. hook payload는 Claude Code와 필드 호환되므로, 기존 12-hook 스크립트가 수정 없이 동작합니다. 동일한 `settings.json`의 `hooks` 섹션을 통해 연결하십시오. |
-| **Antigravity** (Gemini CLI 대체) | `mcp_config.json` (Antigravity의 User 디렉터리 내) | `agentmemory connect antigravity`는 표준 `mcpServers` 블록을 작성합니다. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. 2026-06-18 Gemini CLI 종료 이후 사용하십시오. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. `agy` CLI는 위의 Antigravity IDE와 별도로 자체 설정을 `~/.gemini/` 아래에 보관합니다. `~/.gemini/config/hooks.json`을 통한 네이티브 자동 캡처를 위해 `--with-hooks`를 전달하십시오. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks`는 공유 커스터마이징 디렉터리에 MCP와 캡처 hooks를 설치합니다. [Antigravity 설정 및 제한사항](../docs/plugins/antigravity.md) 참고. |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks`는 현재 IDE 버전과 동일한 MCP 및 hook 설정을 사용합니다. 기존 설치는 `--force`로 갱신해야 합니다. [업그레이드 노트](../docs/plugins/antigravity.md) 참고. |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro`는 사용자 수준 설정을 작성합니다. workspace 재정의는 코드 옆의 `.kiro/settings/mcp.json`에 둡니다. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp`는 표준 `mcpServers` 블록을 작성합니다. Warp는 `.claude/skills/`에서 skill도 자동으로 탐색합니다. Claude Code 플러그인을 설치하면 8개의 agentmemory skill(`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`)이 Warp의 슬래시 명령 팔레트에 네이티브로 나타납니다. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline`은 표준 `mcpServers` 블록을 작성합니다. VS Code 확장 사용자는 Cline Settings → MCP Servers → Edit JSON을 통해 동일한 블록을 붙여넣으십시오. |

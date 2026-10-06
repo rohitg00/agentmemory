@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 Codex eklentisi, Claude Code eklentisiyle aynı `plugin/` dizininden gönderilir. Şunları kaydeder:
 
-- `@agentmemory/mcp`, bir MCP sunucusu olarak (`AGENTMEMORY_URL` çalışan bir agentmemory sunucusuna işaret ettiğinde tüm 54 tool'u proxy'ler; erişilebilir sunucu yoksa yerel olarak 7 tool'a düşer)
+- Çalışan daemon'a giden, npm indirmesi veya fallback store gerektirmeyen paketlenmiş bir stdio MCP bridge. Yayınlanmamış bir build'i test etmek için [yerel Codex kılavuzuna](../docs/plugins/codex-local.md) bakın.
 - 6 yaşam döngüsü hook'u: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 çağrılabilir (invocable) skill: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, ve ajanın gerektiğinde yüklediği 8 referans skill (bellek disiplini, MCP tool'ları, REST API, yapılandırma, ajanlar, hook'lar, mimari ve skill yazma kılavuzu)
 
 Codex'in hook engine'i, hook subprocess'lerine `CLAUDE_PLUGIN_ROOT`'u enjekte eder ([`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)'a göre), bu yüzden aynı hook scriptleri her iki host'ta da kopyalama olmadan çalışır. Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure olayları yalnızca Claude Code'a özgüdür ve Codex için kaydedilmez.
 
-#### Codex Desktop: eklenti hook'ları şu anda sessiz (geçici çözüm mevcut)
+#### Codex hook güveni ve uyumluluk
 
-`CodexHooks` ve `PluginHooks`, [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs) içinde hem stable hem de varsayılan olarak etkindir; ancak Codex Desktop build'leri şu anda eklenti-yerel `hooks.json`'u dispatch etmiyor ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). MCP tool'ları hâlâ çalışır; yalnızca yaşam döngüsü gözlemleri eksiktir.
+Native eklenti hook dispatch'i Codex CLI 0.150.1 ile doğrulanmıştır. Yakalama beklemeden önce eklenti hook'larına güvenin. Codex Desktop davranışı, paketlenmiş runtime'ına bağlıdır; bir geçici çözüm etkinleştirmeden önce `/hooks`'u kontrol edin ve yakalanan bir olayı doğrulayın.
 
-Upstream düzeltmeyi uygulayana kadar, aynı hook komutlarını global `~/.codex/hooks.json` içine yansıtın:
+Host'unuz global hook'lar gerektiriyorsa, komutları `~/.codex/hooks.json` içine yansıtın. MCP zaten bağlıysa, mevcut connector'ın hook kurulumuna ulaşması için `--force` gerekir:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-Bu, paketlenmiş scriptlere absolute path'lerle referans veren idempotent bir bloğu `~/.codex/hooks.json`'a ekler (user-scope'ta `${CLAUDE_PLUGIN_ROOT}` genişletmesine gerek yoktur). Path'leri yenilemek için agentmemory'yi yükselttikten sonra aynı komutu yeniden çalıştırın. Aynı dosyadaki kullanıcı girdileri korunur; yalnızca önceki agentmemory girdileri değiştirilir.
+Bu, global hook'ları birleştirir ve agentmemory MCP girdisini yeniden yazarken ilgisiz girdileri korur. `--force` kullanmadan önce özel agentmemory endpoint ayarlarınızı gözden geçirin. Script path'lerini yenilemek için yükseltme sonrasında yeniden çalıştırın. Çift yakalamayı önlemek için native eklenti hook'larını veya global kopyaları etkinleştirin, ikisini birden değil.
 
 ### GitHub Copilot CLI
+
+VS Code agent modu için [Copilot MCP ve otomatik yakalama kılavuzuna](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions) bakın. CLI connector'ı VS Code'u yapılandırmaz.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatif olarak, GitHub alt dizininden tam hook/skill eklentisi
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ agentmemory girdisi, `mcpServers` şeklini kullanan her host'ta (Cursor, Claude 
 | **GitHub Copilot CLI (tam eklenti)** | Copilot eklenti kurulumu | GitHub alt dizininden eklenti için `copilot plugin install rohitg00/agentmemory:plugin`. |
 | **OpenClaw** | OpenClaw MCP yapılandırması | Aynı `mcpServers` bloğu. Daha derin entegrasyon: `openclaw plugins install ./integrations/openclaw`, OpenClaw'ın bellek slot'unu talep eder (`memory-core`'dan otomatik geçer); `plugins.entries.agentmemory.hooks.allowConversationAccess=true` ayarlayın, aksi halde turn yakalama sessizce bloklanır. Bkz. [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (yalnızca MCP)** | `.codex/config.toml` | TOML şekli: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, veya manuel olarak `[mcp_servers.agentmemory]` ekleyin. |
-| **Codex CLI (tam eklenti)** | Codex eklenti marketplace'i | `codex plugin marketplace add rohitg00/agentmemory`, ardından `codex plugin add agentmemory@agentmemory`. MCP + 6 yaşam döngüsü hook'u (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skill kaydeder. Codex Desktop'ta, [openai/codex#16430](https://github.com/openai/codex/issues/16430) gelene kadar `agentmemory connect codex --with-hooks`'u da çalıştırın; eklenti hook'ları orada şu anda sessizdir. |
+| **Codex CLI (tam eklenti)** | Codex eklenti marketplace'i | `codex plugin marketplace add rohitg00/agentmemory`, ardından `codex plugin add agentmemory@agentmemory`. MCP + 6 yaşam döngüsü hook'u + 17 skill kaydeder. Host'unuzda hook'lara güvenin ve yakalamayı doğrulayın; bkz. [Codex kurulumu ve doğrulaması](../docs/plugins/codex-local.md). |
 | **OpenCode (yalnızca MCP)** | `opencode.json` | Farklı bir şekil: üst seviye `mcp` key'i, dizi olarak komut: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (tam eklenti)** | `plugin/opencode/` | Oturum yaşam döngüsünü, mesajları, tool'ları, hataları kapsayan 22 otomatik yakalama hook'u. Proje attribution'ı oturum başınadır, bu yüzden birden fazla repository'ye yayılan tek bir OpenCode süreci, her oturumu kendi projesi altında dosyalar. İki slash komutu (`/recall`, `/remember`). `plugin/opencode/`'u OpenCode workspace'inize kopyalayın ve eklenti girdisini `opencode.json`'a ekleyin. Tam hook tablosu + boşluk analizi için [`plugin/opencode/README.md`](../plugin/opencode/README.md)'a bakın. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi`, paketlenmiş eklentiyi pi'nin otomatik keşif dizinine kurar (ajan başlangıcında recall, ajan sonunda yakalama, `memory_search` / `memory_save` / `memory_health` tool'ları, `/agentmemory-status`). Çalışan bir pi'de `/reload` bunu alır. [`integrations/pi`](../integrations/pi/), aynı zamanda bir pi paketidir (bir checkout'tan `pi install ./integrations/pi`). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory`, 6-hook'lu bellek sağlayıcısını verir (prefetch, turn yakalama, oturum sonu, pre-compress, MEMORY.md mirroring, sistem prompt bloğu). `hermes plugins doctor` ve `hermes memory status` ile doğrulayın. Bkz. [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen`, standart `mcpServers` bloğunu yazar. Hook payload'u Claude Code ile alan uyumludur (field-compatible), bu yüzden mevcut 12-hook'lu scriptler değişiklik yapılmadan çalışır; bunları aynı `settings.json` içindeki `hooks` bölümü üzerinden bağlayın. |
-| **Antigravity** (Gemini CLI'nin yerini alır) | `mcp_config.json` (Antigravity'nin User dizininde) | `agentmemory connect antigravity`, standart `mcpServers` bloğunu yazar. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. 2026-06-18 Gemini CLI sunset'inden sonra kullanın. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. `agy` CLI'si, yukarıdaki Antigravity IDE'den ayrı olarak kendi yapılandırmasını `~/.gemini/` altında tutar. `~/.gemini/config/hooks.json` üzerinden yerel otomatik yakalama için `--with-hooks` geçirin. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks`, paylaşılan customization dizinine MCP ve yakalama hook'larını kurar. Bkz. [Antigravity kurulumu ve sınırları](../docs/plugins/antigravity.md). |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks`, güncel IDE sürümleriyle aynı MCP ve hook yapılandırmasını kullanır. Mevcut kurulumlar `--force` ile yenilenmelidir; bkz. [yükseltme notları](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro`, kullanıcı seviyesindeki yapılandırmayı yazar. Workspace geçersiz kılmaları, kodunuzun yanındaki `.kiro/settings/mcp.json` içine gider. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp`, standart `mcpServers` bloğunu yazar. Warp, ayrıca `.claude/skills/`'ten skill'leri otomatik keşfeder; Claude Code eklentisi kurulduğunda 8 agentmemory skill'i (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`), Warp'ın slash-komut paletinde yerli olarak görünür. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline`, standart `mcpServers` bloğunu yazar. VS Code eklenti kullanıcıları: aynı bloğu Cline Settings → MCP Servers → Edit JSON üzerinden yapıştırın. |

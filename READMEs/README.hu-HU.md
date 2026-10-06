@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 A Codex plugin ugyanabból a `plugin/` mappából kerül kiadásra, mint a Claude Code plugin. Ez regisztrálja:
 
-- a `@agentmemory/mcp`-t MCP szerverként (az összes 54 eszközt proxyzza, amikor az `AGENTMEMORY_URL` egy futó agentmemory szerverre mutat; ha nincs elérhető szerver, lokálisan 7 eszközre esik vissza)
+- Egy becsomagolt stdio MCP híd a futó daemonhoz, npm-letöltés vagy fallback-tár nélkül. Lásd a [helyi Codex-útmutatót](../docs/plugins/codex-local.md) egy ki nem adott build teszteléséhez.
 - 6 életciklus-hookot: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 meghívható skillt: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, plusz 8 referencia-skillt, amelyeket az ágens igény szerint tölt be (memóriadiszciplína, MCP eszközök, REST API, konfiguráció, ágensek, hookok, architektúra, és a skill-írási útmutató)
 
 A Codex hook-motorja befecskendezi a `CLAUDE_PLUGIN_ROOT`-ot a hook-alfolyamatokba (lásd [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), így ugyanazok a hook-szkriptek mindkét hoszton működnek, duplikálás nélkül. A Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure események csak Claude Code-specifikusak, és nincsenek regisztrálva a Codexhez.
 
-#### Codex Desktop: a plugin-hookok jelenleg némák (van megoldás)
+#### A Codex-hookok bizalma és kompatibilitása
 
-A `CodexHooks` és a `PluginHooks` is stabil és alapértelmezetten engedélyezett a [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs)-ben, de a Codex Desktop buildek jelenleg nem küldik el a plugin-helyi `hooks.json`-t ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). Az MCP eszközök még működnek; csak az életciklus-megfigyelések hiányoznak.
+A natív plugin-hook kiváltás a Codex CLI 0.150.1-gyel ellenőrzött. A rögzítés elvárása előtt bízz meg (trust) a plugin-hookokban. A Codex Desktop viselkedése a becsomagolt runtime-jától függ; ellenőrizd a `/hooks`-ot, és erősíts meg egy rögzített eseményt, mielőtt engedélyeznél egy megoldást.
 
-Amíg az upstream nem oldja meg a hibát, tükrözd ugyanazokat a hook-parancsokat a globális `~/.codex/hooks.json`-ba:
+Ha a hosztod globális hookokat igényel, tükrözd a parancsokat a `~/.codex/hooks.json`-ba. Amikor az MCP már bekötve van, a jelenlegi connector `--force`-ot igényel a hook-telepítés eléréséhez:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-Ez egy idempotens blokkot ad hozzá a `~/.codex/hooks.json`-hoz, amely a becsomagolt szkriptek abszolút elérési útjaira hivatkozik (nincs szükség `${CLAUDE_PLUGIN_ROOT}` kiterjesztésre felhasználói szinten). Futtasd újra ugyanazt a parancsot az agentmemory frissítése után, hogy felfrissítsd az útvonalakat. A felhasználó saját bejegyzései ugyanabban a fájlban megmaradnak; csak a korábbi agentmemory-bejegyzések kerülnek lecserélésre.
+Ez beolvasztja a globális hookokat, és felülírja az agentmemory MCP-bejegyzést, megtartva a nem kapcsolódó bejegyzéseket. A `--force` használata előtt nézd át az agentmemory egyedi endpoint-beállításait. Frissítés után futtasd újra, hogy felfrissítsd a szkriptek elérési útjait. Engedélyezd vagy a natív plugin-hookokat, vagy a globális másolatokat, hogy elkerüld a duplikált rögzítést.
 
 ### GitHub Copilot CLI
+
+VS Code agent módhoz használd a [Copilot MCP és automatikus rögzítés útmutatót](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions). A CLI connector nem konfigurálja a VS Code-ot.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ Az agentmemory bejegyzés **ugyanaz az MCP szerver blokk** minden olyan hoszton,
 | **GitHub Copilot CLI (teljes plugin)** | Copilot plugin telepítés | `copilot plugin install rohitg00/agentmemory:plugin` a GitHub-aldirektóriumban lévő pluginhoz. |
 | **OpenClaw** | OpenClaw MCP konfiguráció | Ugyanaz a `mcpServers` blokk. Mélyebben: az `openclaw plugins install ./integrations/openclaw` igényt tart az OpenClaw memória-slotjára (automatikusan átvált a `memory-core`-ról); állítsd be a `plugins.entries.agentmemory.hooks.allowConversationAccess=true`-t, különben a rögzítés némán blokkolva lesz. Lásd [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (csak MCP)** | `.codex/config.toml` | TOML formátum: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, vagy add hozzá manuálisan a `[mcp_servers.agentmemory]`-t. |
-| **Codex CLI (teljes plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory`, majd `codex plugin add agentmemory@agentmemory`. Regisztrálja az MCP-t + 6 életciklus-hookot (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skillt. Codex Desktopon futtasd le az `agentmemory connect codex --with-hooks`-ot is, amíg az [openai/codex#16430](https://github.com/openai/codex/issues/16430) nem landol; a plugin-hookok ott jelenleg némák. |
+| **Codex CLI (teljes plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory`, majd `codex plugin add agentmemory@agentmemory`. Regisztrálja az MCP-t + 6 életciklus-hookot + 17 skillt. Bízz meg a hookokban, és ellenőrizd a rögzítést a hosztodon; lásd a [Codex beállítása és ellenőrzése](../docs/plugins/codex-local.md) útmutatót. |
 | **OpenCode (csak MCP)** | `opencode.json` | Más formátum: felső szintű `mcp` kulcs, a parancs tömbként: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (teljes plugin)** | `plugin/opencode/` | 22 automatikus rögzítő hook, amely lefedi a session-életciklust, az üzeneteket, a toolokat és a hibákat. A projekt-attribúció sessiononkénti, így egyetlen, több repón átnyúló OpenCode-folyamat minden sessiont a saját projektje alá fájloz. Két slash parancs (`/recall`, `/remember`). Másold a `plugin/opencode/`-ot az OpenCode workspace-edbe, és add hozzá a plugin-bejegyzést az `opencode.json`-hoz. Lásd a [`plugin/opencode/README.md`](../plugin/opencode/README.md) fájlt a teljes hook-táblázatért + hiányanalízisért. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | Az `agentmemory connect pi` telepíti a becsomagolt extension-t a pi automatikus felismerő mappájába (felidézés az ágens indulásakor, rögzítés az ágens végén, `memory_search` / `memory_save` / `memory_health` eszközök, `/agentmemory-status`). A `/reload` egy futó piben felveszi. [`integrations/pi`](../integrations/pi/) egyben egy pi-csomag is (`pi install ./integrations/pi` egy checkoutból). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | A `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` adja a 6-hookos memóriaszolgáltatót (prefetch, kör-rögzítés, session-vég, pre-compress, MEMORY.md-tükrözés, system prompt blokk). Validáld a `hermes plugins doctor` és a `hermes memory status` paranccsal. Lásd [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | Az `agentmemory connect qwen` beírja a standard `mcpServers` blokkot. A hook-payload mezőkompatibilis a Claude Code-dal, így a meglévő 12-hookos szkriptek módosítás nélkül működnek; kösd be őket a `hooks` szekcióban, ugyanabban a `settings.json`-ban. |
-| **Antigravity** (a Gemini CLI helyett) | `mcp_config.json` (az Antigravity User mappájában) | Az `agentmemory connect antigravity` beírja a standard `mcpServers` blokkot. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Használd a 2026-06-18-i Gemini CLI-kivezetés után. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. Az `agy` CLI a saját konfigurációját a `~/.gemini/` alatt tartja, külön a fenti Antigravity IDE-től. Add meg a `--with-hooks`-ot a natív automatikus rögzítéshez a `~/.gemini/config/hooks.json` révén. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | Az `agentmemory connect antigravity --with-hooks` telepíti az MCP-t és a rögzítő hookokat a megosztott testreszabási mappába. Lásd az [Antigravity beállítása és korlátai](../docs/plugins/antigravity.md) útmutatót. |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | Az `agentmemory connect antigravity-cli --with-hooks` ugyanazt az MCP- és hook-konfigurációt használja, mint a jelenlegi IDE-verziók. A meglévő telepítéseknek frissülniük kell a `--force`-szal; lásd a [frissítési megjegyzéseket](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | Az `agentmemory connect kiro` beírja a felhasználói szintű konfigurációt. A workspace-szintű felülírások a `.kiro/settings/mcp.json`-ba kerülnek, a kódod mellé. |
 | **Warp** | `~/.warp/.mcp.json` | Az `agentmemory connect warp` beírja a standard `mcpServers` blokkot. A Warp a skilleket is automatikusan felismeri a `.claude/skills/`-ből; a Claude Code plugin telepítése után a 8 agentmemory skill (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) natívan megjelenik a Warp slash-parancs palettáján. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | Az `agentmemory connect cline` beírja a standard `mcpServers` blokkot. VS Code extension felhasználóknak: illeszd be ugyanazt a blokkot a Cline Settings → MCP Servers → Edit JSON útján. |

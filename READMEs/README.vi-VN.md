@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 Plugin Codex được phát hành từ cùng thư mục `plugin/` như plugin Claude Code. Nó đăng ký:
 
-- `@agentmemory/mcp` như một MCP server (proxy toàn bộ 54 tool khi `AGENTMEMORY_URL` chỉ tới một agentmemory server đang chạy; lùi về (fallback) 7 tool cục bộ khi không có server nào tiếp cận được)
+- Một cầu nối MCP qua stdio được đóng gói sẵn tới daemon đang chạy, không cần tải npm hay fallback store. Xem [hướng dẫn Codex local](../docs/plugins/codex-local.md) để test một build chưa được release.
 - 6 hook lifecycle: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 skill có thể gọi (invocable): `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, cùng 8 skill tham chiếu mà agent nạp theo nhu cầu (memory discipline, MCP tools, REST API, config, agents, hooks, architecture, và hướng dẫn viết skill)
 
 Hook engine của Codex tiêm `CLAUDE_PLUGIN_ROOT` vào các subprocess hook (theo [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), nên cùng các hook script này hoạt động trên cả hai host mà không cần trùng lặp. Các event Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure chỉ dành riêng cho Claude Code và không được đăng ký cho Codex.
 
-#### Codex Desktop: hook plugin hiện đang im lặng (có cách khắc phục tạm)
+#### Trust và tính tương thích của hook Codex
 
-`CodexHooks` và `PluginHooks` cả hai đều stable + được bật theo mặc định trong [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), nhưng các bản build Codex Desktop hiện tại chưa dispatch `hooks.json` cục bộ của plugin ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). Các MCP tool vẫn hoạt động; chỉ thiếu phần observation lifecycle.
+Dispatch hook plugin gốc đã được verify với Codex CLI 0.150.1. Hãy trust các hook plugin trước khi kỳ vọng capture. Hành vi của Desktop phụ thuộc vào runtime đi kèm của nó; kiểm tra `/hooks` và xác nhận có một event được capture trước khi bật một cách khắc phục tạm.
 
-Cho tới khi upstream đưa bản fix vào, hãy sao chép các hook command tương tự vào `~/.codex/hooks.json` ở mức toàn cục:
+Nếu host của bạn cần global hook, hãy sao chép các command vào `~/.codex/hooks.json`. Khi MCP đã được kết nối sẵn, connector hiện tại cần `--force` để tiến tới bước cài hook:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-Lệnh này thêm một block mang tính idempotent vào `~/.codex/hooks.json`, tham chiếu tới đường dẫn tuyệt đối của các script đi kèm (không cần mở rộng `${CLAUDE_PLUGIN_ROOT}` ở user-scope). Chạy lại cùng lệnh này sau khi nâng cấp agentmemory để làm mới các đường dẫn. Các entry của người dùng trong cùng file được giữ lại; chỉ các entry agentmemory trước đó bị thay thế.
+Lệnh này gộp các global hook và viết lại entry MCP của agentmemory, trong khi vẫn giữ nguyên các entry không liên quan. Hãy xem lại mọi cấu hình endpoint agentmemory tùy chỉnh trước khi dùng `--force`. Chạy lại sau khi nâng cấp để làm mới các đường dẫn script. Chỉ nên bật một trong hai: hook plugin gốc hoặc các bản sao global, để tránh capture trùng lặp.
 
 ### GitHub Copilot CLI
+
+Đối với VS Code agent mode, hãy dùng [hướng dẫn MCP và automatic-capture của Copilot](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions). Connector CLI này không cấu hình VS Code.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ Entry của agentmemory là **cùng một block MCP server** trên mọi host d�
 | **GitHub Copilot CLI (plugin đầy đủ)** | Copilot plugin install | `copilot plugin install rohitg00/agentmemory:plugin` để lấy plugin từ subdir GitHub. |
 | **OpenClaw** | OpenClaw MCP config | Cùng block `mcpServers`. Sâu hơn: `openclaw plugins install ./integrations/openclaw` chiếm memory slot của OpenClaw (tự chuyển từ `memory-core`); đặt `plugins.entries.agentmemory.hooks.allowConversationAccess=true` nếu không turn capture sẽ bị chặn một cách im lặng. Xem [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (chỉ MCP)** | `.codex/config.toml` | Hình thái TOML: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, hoặc thêm `[mcp_servers.agentmemory]` thủ công. |
-| **Codex CLI (plugin đầy đủ)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` sau đó `codex plugin add agentmemory@agentmemory`. Đăng ký MCP + 6 hook lifecycle (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skill. Trên Codex Desktop, cũng chạy thêm `agentmemory connect codex --with-hooks` cho tới khi [openai/codex#16430](https://github.com/openai/codex/issues/16430) được xử lý; hook plugin ở đó hiện đang im lặng. |
+| **Codex CLI (plugin đầy đủ)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` sau đó `codex plugin add agentmemory@agentmemory`. Đăng ký MCP + 6 hook lifecycle + 17 skill. Hãy trust các hook và verify việc capture trên host của bạn; xem [hướng dẫn setup và validation Codex](../docs/plugins/codex-local.md). |
 | **OpenCode (chỉ MCP)** | `opencode.json` | Hình thái khác: key `mcp` ở cấp cao nhất, command là một array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (plugin đầy đủ)** | `plugin/opencode/` | 22 hook auto-capture bao phủ lifecycle session, message, tool, lỗi. Attribution project theo từng session, nên một process OpenCode trải trên nhiều repository sẽ ghi mỗi session dưới đúng project của nó. Hai slash command (`/recall`, `/remember`). Copy `plugin/opencode/` vào workspace OpenCode của bạn và thêm entry plugin vào `opencode.json`. Xem [`plugin/opencode/README.md`](../plugin/opencode/README.md) để biết bảng hook đầy đủ + phân tích phần còn thiếu. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` cài extension đi kèm vào thư mục auto-discovery của pi (recall khi agent khởi động, capture khi agent kết thúc, các tool `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`). `/reload` trong một pi đang chạy sẽ nhận nó. [`integrations/pi`](../integrations/pi/) cũng là một package pi (`pi install ./integrations/pi` từ một checkout). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` cho bạn memory provider 6-hook (prefetch, turn capture, session end, pre-compress, mirror MEMORY.md, system prompt block). Kiểm tra bằng `hermes plugins doctor` và `hermes memory status`. Xem [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` viết block `mcpServers` chuẩn. Payload hook tương thích field với Claude Code, nên các script 12-hook hiện có hoạt động không cần sửa đổi; kết nối chúng qua phần `hooks` trong cùng `settings.json`. |
-| **Antigravity** (thay thế Gemini CLI) | `mcp_config.json` (trong thư mục User của Antigravity) | `agentmemory connect antigravity` viết block `mcpServers` chuẩn. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Dùng sau khi Gemini CLI bị ngừng vào 2026-06-18. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. CLI `agy` giữ config riêng của nó dưới `~/.gemini/`, tách biệt với Antigravity IDE ở trên. Truyền `--with-hooks` để có auto-capture gốc qua `~/.gemini/config/hooks.json`. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` cài MCP và capture hook vào thư mục customization chung. Xem [thiết lập và giới hạn của Antigravity](../docs/plugins/antigravity.md). |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` dùng cùng cấu hình MCP và hook như các phiên bản IDE hiện tại. Các bản cài đặt sẵn có nên refresh bằng `--force`; xem [ghi chú upgrade](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` viết config ở cấp user. Các override ở cấp workspace nằm trong `.kiro/settings/mcp.json` cạnh code của bạn. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` viết block `mcpServers` chuẩn. Warp cũng tự phát hiện skill từ `.claude/skills/`; khi plugin Claude Code được cài, 8 skill agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) sẽ xuất hiện một cách tự nhiên trong bảng slash-command của Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` viết block `mcpServers` chuẩn. Người dùng extension VS Code: dán cùng block này qua Cline Settings → MCP Servers → Edit JSON. |

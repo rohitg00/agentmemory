@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 Codex-plugin toimitetaan samasta `plugin/`-hakemistosta kuin Claude Code -plugin. Se rekisteröi:
 
-- `@agentmemory/mcp` MCP-palvelimena (välittää kaikki 54 työkalua, kun `AGENTMEMORY_URL` osoittaa käynnissä olevaan agentmemory-palvelimeen; palaa 7 työkalun paikalliseen settiin, kun palvelinta ei tavoiteta)
+- Mukana tuleva stdio MCP -silta käynnissä olevaan daemoniin, ilman npm-latausta tai fallback-varastoa. Katso [paikallinen Codex-opas](../docs/plugins/codex-local.md) testataksesi julkaisematonta buildia.
 - 6 elinkaarihookia: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 kutsuttavaa taitoa: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, plus 8 viitetaitoa, jotka agentti lataa tarpeen mukaan (muistikuri, MCP-työkalut, REST-rajapinta, asetukset, agentit, hookit, arkkitehtuuri ja taitojen kirjoittamisen opas)
 
 Codexin hook-moottori injektoi `CLAUDE_PLUGIN_ROOT`-muuttujan hook-aliprosesseihin (ks. [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), niin että samat hook-skriptit toimivat molemmissa isännissä päällekkäisyyttä aiheuttamatta. Subagent-/SessionEnd-/Notification-/TaskCompleted-/PostToolUseFailure-tapahtumat ovat vain Claude Codelle, eikä niitä rekisteröidä Codexille.
 
-#### Codex Desktop: plugin-hookit ovat toistaiseksi hiljaa (kiertotapa saatavilla)
+#### Codex-hookit: luottamus ja yhteensopivuus
 
-`CodexHooks` ja `PluginHooks` ovat molemmat vakaita ja oletuksena käytössä tiedostossa [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), mutta Codex Desktop -käännökset eivät toistaiseksi laukaise pluginikohtaista `hooks.json`-tiedostoa ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). MCP-työkalut toimivat yhä; vain elinkaarihavainnot puuttuvat.
+Natiivi plugin-hookien välitys on vahvistettu Codex CLI -versiolla 0.150.1. Luota plugin-hookeihin ennen kuin odotat tallennusta. Desktop-käytös riippuu sen mukana tulevasta ajonaikaisesta ympäristöstä; tarkista `/hooks` ja vahvista tallennettu tapahtuma ennen kuin otat kiertotavan käyttöön.
 
-Kunnes korjaus saapuu ylävirrasta, peilaa samat hook-komennot globaaliin tiedostoon `~/.codex/hooks.json`:
+Jos isäntäsi vaatii globaaleja hookeja, peilaa komennot tiedostoon `~/.codex/hooks.json`. Kun MCP on jo kytketty, nykyinen sovitin tarvitsee `--force`-valitsimen päästäkseen hook-asennukseen:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-Tämä lisää idempotentin lohkon tiedostoon `~/.codex/hooks.json`, joka viittaa absoluuttisiin polkuihin mukana tuleviin skripteihin (ei tarvetta `${CLAUDE_PLUGIN_ROOT}`-laajennukselle käyttäjätasolla). Aja sama komento uudelleen agentmemoryn päivityksen jälkeen päivittääksesi polut. Käyttäjän omat merkinnät samassa tiedostossa säilyvät; vain aiemmat agentmemory-merkinnät korvataan.
+Tämä yhdistää globaalit hookit ja kirjoittaa agentmemory MCP -merkinnän uudelleen säilyttäen muut merkinnät. Tarkista mahdolliset mukautetut agentmemoryn päätepisteasetukset ennen `--force`-valitsimen käyttöä. Aja uudelleen päivityksen jälkeen päivittääksesi skriptien polut. Ota käyttöön natiivit plugin-hookit tai globaalit kopiot kaksinkertaisen tallennuksen välttämiseksi.
 
 ### GitHub Copilot CLI
+
+VS Coden agenttitilaa varten käytä [Copilotin MCP- ja automaattitallennusopasta](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions). CLI-sovitin ei määritä VS Codea.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ agentmemory-merkintä on **sama MCP-palvelinlohko** jokaisessa isännässä, jok
 | **GitHub Copilot CLI (täysi plugin)** | Copilot-pluginin asennus | `copilot plugin install rohitg00/agentmemory:plugin` GitHub-alikansion pluginille. |
 | **OpenClaw** | OpenClawin MCP-asetukset | Sama `mcpServers`-lohko. Syvemmälle: `openclaw plugins install ./integrations/openclaw` ottaa OpenClawin muistipaikan haltuun (vaihtaa automaattisesti `memory-core`:sta); aseta `plugins.entries.agentmemory.hooks.allowConversationAccess=true`, tai tallennus estyy hiljaisesti. Katso [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (vain MCP)** | `.codex/config.toml` | TOML-muoto: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, tai lisää `[mcp_servers.agentmemory]` käsin. |
-| **Codex CLI (täysi plugin)** | Codexin plugin-markkinapaikka | `codex plugin marketplace add rohitg00/agentmemory`, sitten `codex plugin add agentmemory@agentmemory`. Rekisteröi MCP + 6 elinkaarihookia (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 taitoa. Codex Desktopissa aja myös `agentmemory connect codex --with-hooks`, kunnes [openai/codex#16430](https://github.com/openai/codex/issues/16430) on korjattu; plugin-hookit ovat siellä toistaiseksi hiljaa. |
+| **Codex CLI (täysi plugin)** | Codexin plugin-markkinapaikka | `codex plugin marketplace add rohitg00/agentmemory`, sitten `codex plugin add agentmemory@agentmemory`. Rekisteröi MCP + 6 elinkaarihookia + 17 taitoa. Luota hookeihin ja varmista tallennus isännässäsi; katso [Codexin asennus ja validointi](../docs/plugins/codex-local.md). |
 | **OpenCode (vain MCP)** | `opencode.json` | Eri muoto: ylätason `mcp`-avain, komento taulukkona: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (täysi plugin)** | `plugin/opencode/` | 22 automaattitallennushookia kattaen istunnon elinkaaren, viestit, työkalut ja virheet. Projektiattribuutio on istuntokohtainen, niin yksi OpenCode-prosessi, joka kattaa useita repositorioita, tallentaa jokaisen istunnon oman projektinsa alle. Kaksi pikakomentoa (`/recall`, `/remember`). Kopioi `plugin/opencode/` OpenCode-työtilaasi ja lisää plugin-merkintä tiedostoon `opencode.json`. Katso [`plugin/opencode/README.md`](../plugin/opencode/README.md) täydelle hook-taulukolle + puuteanalyysille. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` asentaa mukana tulevan laajennuksen pi:n automaattisen tunnistuksen hakemistoon (palautus agentin käynnistyessä, tallennus agentin päättyessä, `memory_search`/`memory_save`/`memory_health`-työkalut, `/agentmemory-status`). `/reload` käynnissä olevassa pi:ssä ottaa sen käyttöön. [`integrations/pi`](../integrations/pi/) on myös pi-paketti (`pi install ./integrations/pi` checkoutista). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` antaa 6-hookisen muistitarjoajan (esihaku, vuoron tallennus, istunnon päättyminen, esipakkaus, MEMORY.md-peilaus, system prompt -lohko). Vahvista komennoilla `hermes plugins doctor` ja `hermes memory status`. Katso [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` kirjoittaa standardin `mcpServers`-lohkon. Hook-hyötykuorma on kenttätasolla yhteensopiva Claude Coden kanssa, niin olemassa olevat 12-hookin skriptit toimivat muokkaamatta; kytke ne `hooks`-osiossa samassa `settings.json`-tiedostossa. |
-| **Antigravity** (korvaa Gemini CLI:n) | `mcp_config.json` (Antigravityn User-hakemistossa) | `agentmemory connect antigravity` kirjoittaa standardin `mcpServers`-lohkon. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Käytä Gemini CLI:n 2026-06-18 käytöstäpoiston jälkeen. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. `agy`-CLI säilyttää omat asetuksensa polussa `~/.gemini/`, erillään yllä olevasta Antigravity-IDE:stä. Välitä `--with-hooks` natiivia automaattitallennusta varten tiedoston `~/.gemini/config/hooks.json` kautta. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` asentaa MCP:n ja tallennushookit jaettuun mukautushakemistoon. Katso [Antigravityn asennus ja rajoitukset](../docs/plugins/antigravity.md). |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` käyttää samaa MCP- ja hook-määritystä kuin nykyiset IDE-versiot. Olemassa olevat asennukset tulisi päivittää `--force`-valitsimella; katso [päivitysohjeet](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` kirjoittaa käyttäjätason asetukset. Työtilakohtaiset ylikirjoitukset menevät tiedostoon `.kiro/settings/mcp.json` koodisi vierelle. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` kirjoittaa standardin `mcpServers`-lohkon. Warp myös tunnistaa automaattisesti taidot kansiosta `.claude/skills/`; kun Claude Code -plugin on asennettu, 8 agentmemory-taitoa (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) näkyvät natiivisti Warpin pikakomentopaletissa. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` kirjoittaa standardin `mcpServers`-lohkon. VS Code -laajennuksen käyttäjät: liitä sama lohko Cline Settings → MCP Servers → Edit JSON -kautta. |

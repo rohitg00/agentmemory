@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 Plugin Codex dikirim dari direktori `plugin/` yang sama dengan plugin Claude Code. Ia mendaftarkan:
 
-- `@agentmemory/mcp` sebagai server MCP (men-proxy semua 54 tool saat `AGENTMEMORY_URL` mengarah ke server agentmemory yang berjalan; fallback ke 7 tool lokal saat tidak ada server yang terjangkau)
+- Bridge MCP stdio bundel ke daemon yang berjalan, tanpa unduhan npm atau fallback store. Lihat [panduan Codex lokal](../docs/plugins/codex-local.md) untuk menguji build yang belum dirilis.
 - 6 hook lifecycle: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 skill yang bisa dipanggil: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, ditambah 8 skill referensi yang dimuat agen sesuai kebutuhan (disiplin memori, tool MCP, REST API, konfigurasi, agen, hook, arsitektur, dan panduan penulisan skill)
 
 Engine hook Codex menyuntikkan `CLAUDE_PLUGIN_ROOT` ke subproses hook (per [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), sehingga script hook yang sama bekerja di kedua host tanpa duplikasi. Event Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure hanya berlaku untuk Claude Code dan tidak didaftarkan untuk Codex.
 
-#### Codex Desktop: hook plugin saat ini senyap (ada workaround)
+#### Trust dan kompatibilitas hook Codex
 
-`CodexHooks` dan `PluginHooks` keduanya stabil + default-enabled di [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), tetapi build Codex Desktop saat ini tidak mengirimkan `hooks.json` plugin-local ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). Tool MCP tetap berfungsi; hanya observasi lifecycle yang hilang.
+Dispatch hook plugin native sudah terverifikasi dengan Codex CLI 0.150.1. Percayai (trust) hook plugin sebelum mengharapkan capture. Perilaku Desktop bergantung pada runtime bundelnya; periksa `/hooks` dan pastikan ada event yang ter-capture sebelum mengaktifkan workaround.
 
-Sampai perbaikannya mendarat di upstream, cerminkan perintah hook yang sama ke `~/.codex/hooks.json` global:
+Jika host Anda memerlukan hook global, cerminkan perintahnya ke `~/.codex/hooks.json`. Jika MCP sudah tersambung, connector saat ini memerlukan `--force` untuk mencapai instalasi hook:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-Ini menambahkan blok idempotent ke `~/.codex/hooks.json` yang merujuk path absolut ke script bundel (tidak perlu ekspansi `${CLAUDE_PLUGIN_ROOT}` di user-scope). Jalankan ulang perintah yang sama setelah upgrade agentmemory untuk menyegarkan path-nya. Entri pengguna di file yang sama tetap dipertahankan; hanya entri agentmemory sebelumnya yang diganti.
+Ini menggabungkan hook global dan menulis ulang entri MCP agentmemory, sambil mempertahankan entri lain yang tidak terkait. Tinjau kembali setelan endpoint agentmemory custom Anda sebelum memakai `--force`. Jalankan ulang setelah upgrade untuk menyegarkan path script. Aktifkan salah satu: hook plugin native atau salinan global, untuk menghindari capture ganda.
 
 ### GitHub Copilot CLI
+
+Untuk mode agen VS Code, gunakan [panduan MCP dan automatic-capture Copilot](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions). Connector CLI ini tidak mengonfigurasi VS Code.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ Entri agentmemory adalah **blok server MCP yang sama** di setiap host yang memak
 | **GitHub Copilot CLI (plugin lengkap)** | Instalasi plugin Copilot | `copilot plugin install rohitg00/agentmemory:plugin` untuk plugin dari subdir GitHub. |
 | **OpenClaw** | Konfigurasi MCP OpenClaw | Blok `mcpServers` yang sama. Lebih dalam: `openclaw plugins install ./integrations/openclaw` mengklaim slot memori OpenClaw (auto-switch dari `memory-core`); set `plugins.entries.agentmemory.hooks.allowConversationAccess=true` atau capture-nya akan diam-diam diblokir. Lihat [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (MCP saja)** | `.codex/config.toml` | Bentuk TOML: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, atau tambahkan `[mcp_servers.agentmemory]` secara manual. |
-| **Codex CLI (plugin lengkap)** | Marketplace plugin Codex | `codex plugin marketplace add rohitg00/agentmemory` lalu `codex plugin add agentmemory@agentmemory`. Mendaftarkan MCP + 6 hook lifecycle (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skill. Di Codex Desktop, jalankan juga `agentmemory connect codex --with-hooks` sampai [openai/codex#16430](https://github.com/openai/codex/issues/16430) mendarat; hook plugin saat ini senyap di sana. |
+| **Codex CLI (plugin lengkap)** | Marketplace plugin Codex | `codex plugin marketplace add rohitg00/agentmemory` lalu `codex plugin add agentmemory@agentmemory`. Mendaftarkan MCP + 6 hook lifecycle + 17 skill. Percayai (trust) hook dan verifikasi capture di host Anda; lihat [setup dan validasi Codex](../docs/plugins/codex-local.md). |
 | **OpenCode (MCP saja)** | `opencode.json` | Bentuk berbeda: key top-level `mcp`, command sebagai array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (plugin lengkap)** | `plugin/opencode/` | 22 hook auto-capture mencakup lifecycle sesi, message, tool, error. Atribusi proyek bersifat per-sesi, sehingga satu proses OpenCode yang membentang beberapa repository mencatat setiap sesi di bawah proyeknya sendiri. Dua slash command (`/recall`, `/remember`). Salin `plugin/opencode/` ke workspace OpenCode Anda dan tambahkan entri plugin ke `opencode.json`. Lihat [`plugin/opencode/README.md`](../plugin/opencode/README.md) untuk tabel hook lengkap + analisis gap. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` memasang extension bundel ke direktori auto-discovery milik pi (recall saat agen start, capture saat agen end, tool `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`). `/reload` pada pi yang berjalan akan mengambilnya. [`integrations/pi`](../integrations/pi/) juga adalah paket pi (`pi install ./integrations/pi` dari sebuah checkout). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` memberikan memory provider 6-hook (prefetch, turn capture, session end, pre-compress, mirroring MEMORY.md, blok system prompt). Validasi dengan `hermes plugins doctor` dan `hermes memory status`. Lihat [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` menulis blok `mcpServers` standar. Payload hook kompatibel secara field dengan Claude Code, sehingga 12 script hook yang sudah ada bekerja tanpa modifikasi; sambungkan lewat bagian `hooks` di `settings.json` yang sama. |
-| **Antigravity** (menggantikan Gemini CLI) | `mcp_config.json` (di direktori User milik Antigravity) | `agentmemory connect antigravity` menulis blok `mcpServers` standar. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Gunakan setelah Gemini CLI disunset pada 2026-06-18. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. CLI `agy` menyimpan konfigurasinya sendiri di `~/.gemini/`, terpisah dari IDE Antigravity di atas. Tambahkan `--with-hooks` untuk auto-capture native lewat `~/.gemini/config/hooks.json`. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` memasang MCP dan hook capture di direktori kustomisasi bersama. Lihat [pengaturan dan batasan Antigravity](../docs/plugins/antigravity.md). |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` memakai konfigurasi MCP dan hook yang sama dengan versi IDE saat ini. Instalasi yang sudah ada sebaiknya di-refresh dengan `--force`; lihat [catatan upgrade](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` menulis konfigurasi tingkat pengguna. Override workspace masuk di `.kiro/settings/mcp.json` di sebelah kode Anda. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` menulis blok `mcpServers` standar. Warp juga auto-discover skill dari `.claude/skills/`; setelah plugin Claude Code terpasang, 8 skill agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) muncul secara native di palet slash-command Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` menulis blok `mcpServers` standar. Pengguna ekstensi VS Code: tempel blok yang sama lewat Cline Settings → MCP Servers → Edit JSON. |

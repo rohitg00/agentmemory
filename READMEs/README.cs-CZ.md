@@ -671,31 +671,33 @@ codex plugin add agentmemory@agentmemory
 
 Plugin pro Codex se dodává ze stejného adresáře `plugin/` jako plugin pro Claude Code. Registruje:
 
-- `@agentmemory/mcp` jako server MCP (proxuje všech 54 nástrojů, když `AGENTMEMORY_URL` ukazuje na běžící server agentmemory; při nedostupném serveru se lokálně vrátí na 7 nástrojů)
+- Zabalený stdio MCP most k běžícímu daemonu, bez stažení přes npm nebo fallback úložiště. Viz [lokální průvodce Codexem](../docs/plugins/codex-local.md) pro testování nevydaného buildu.
 - 6 hooks životního cyklu: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PreCompact`, `Stop`
 - 9 vyvolatelných skills: `/recall`, `/remember`, `/session-history`, `/forget`, `/recap`, `/handoff`, `/lesson`, `/commit-context`, `/commit-history`, plus 8 referenčních skills, které agent načítá podle potřeby (disciplína paměti, nástroje MCP, REST API, konfigurace, agenti, hooks, architektura a průvodce psaním skills)
 
 Enginový hook Codexu vkládá `CLAUDE_PLUGIN_ROOT` do subprocesů hooks (podle [`codex-rs/hooks/src/engine/discovery.rs`](https://github.com/openai/codex/blob/main/codex-rs/hooks/src/engine/discovery.rs)), takže stejné skripty hooks fungují na obou hostitelích bez duplikace. Události Subagent / SessionEnd / Notification / TaskCompleted / PostToolUseFailure jsou pouze pro Claude Code a pro Codex se neregistrují.
 
-#### Codex Desktop: hooks pluginu momentálně nefungují (řešení existuje)
+#### Důvěra a kompatibilita hooků Codexu
 
-`CodexHooks` i `PluginHooks` jsou stabilní a výchozí zapnuté v [`codex-rs/features/src/lib.rs`](https://github.com/openai/codex/blob/main/codex-rs/features/src/lib.rs), ale buildy Codex Desktop momentálně nevolají lokální `hooks.json` pluginu ([openai/codex#16430](https://github.com/openai/codex/issues/16430)). Nástroje MCP fungují i tak; chybí pouze pozorování z životního cyklu.
+Nativní vyvolávání hooků pluginu je ověřeno s Codex CLI 0.150.1. Před očekáváním zachycení udělte hookům pluginu důvěru (trust). Chování Codex Desktop závisí na jeho zabaleném runtime; zkontrolujte `/hooks` a potvrďte zachycenou událost, než povolíte náhradní řešení.
 
-Dokud upstream oprava nedorazí, zrcadlete stejné příkazy hooks do globálního `~/.codex/hooks.json`:
+Pokud váš hostitel vyžaduje globální hooky, zrcadlete příkazy do `~/.codex/hooks.json`. Když je MCP již zapojené, současný konektor potřebuje `--force`, aby se dostal k instalaci hooků:
 
 ```bash
-agentmemory connect codex --with-hooks
+agentmemory connect codex --with-hooks --force
 ```
 
-Tohle přidá idempotentní blok do `~/.codex/hooks.json` odkazující na absolutní cesty k zabaleným skriptům (expanze `${CLAUDE_PLUGIN_ROOT}` na úrovni uživatele není potřeba). Po upgradu agentmemory spusťte stejný příkaz znovu, aby se cesty obnovily. Uživatelské položky ve stejném souboru zůstanou zachovány; nahrazeny jsou pouze předchozí položky agentmemory.
+Tohle sloučí globální hooky a přepíše záznam MCP agentmemory, při zachování nesouvisejících položek. Před použitím `--force` zkontrolujte veškerá vlastní nastavení endpointu agentmemory. Po upgradu spusťte znovu, abyste obnovili cesty ke skriptům. Povolte buď nativní hooky pluginu, nebo globální kopie, abyste se vyhnuli duplicitnímu zachycení.
 
 ### GitHub Copilot CLI
+
+Pro agentní režim VS Code použijte [průvodce MCP a automatickým zachycením pro Copilot](../docs/plugins/copilot.md#vs-code-copilot-local-agent-sessions). Konektor CLI nekonfiguruje VS Code.
 
 ```bash
 # MCP-only wiring
 agentmemory connect copilot-cli
 
-# Full hooks/skills plugin from the GitHub subdir
+# Alternatively, full hooks/skills plugin from the GitHub subdir
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
@@ -799,14 +801,14 @@ Položka agentmemory je **stejný blok serveru MCP** na všech hostitelích, kte
 | **GitHub Copilot CLI (plný plugin)** | instalace pluginu Copilot | `copilot plugin install rohitg00/agentmemory:plugin` pro plugin z podadresáře GitHub. |
 | **OpenClaw** | konfigurace MCP OpenClaw | Stejný blok `mcpServers`. Hlouběji: `openclaw plugins install ./integrations/openclaw` obsadí paměťový slot OpenClaw (automaticky přepne z `memory-core`); nastavte `plugins.entries.agentmemory.hooks.allowConversationAccess=true`, jinak je zachycení tahů tiše blokováno. Viz [`integrations/openclaw`](../integrations/openclaw/). |
 | **Codex CLI (pouze MCP)** | `.codex/config.toml` | Tvar TOML: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, nebo manuálně přidejte `[mcp_servers.agentmemory]`. |
-| **Codex CLI (plný plugin)** | marketplace pluginů Codex | `codex plugin marketplace add rohitg00/agentmemory`, pak `codex plugin add agentmemory@agentmemory`. Registruje MCP + 6 hooks životního cyklu (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PreCompact, Stop) + 17 skills. Na Codex Desktop navíc spusťte `agentmemory connect codex --with-hooks`, dokud nedorazí oprava [openai/codex#16430](https://github.com/openai/codex/issues/16430); hooks pluginu tam momentálně nefungují. |
+| **Codex CLI (plný plugin)** | marketplace pluginů Codex | `codex plugin marketplace add rohitg00/agentmemory`, pak `codex plugin add agentmemory@agentmemory`. Registruje MCP + 6 hooks životního cyklu + 17 skills. Důvěřujte hookům a ověřte zachycení ve svém hostiteli; viz [nastavení a validace Codexu](../docs/plugins/codex-local.md). |
 | **OpenCode (pouze MCP)** | `opencode.json` | Jiný tvar: klíč `mcp` na nejvyšší úrovni, příkaz jako pole: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (plný plugin)** | `plugin/opencode/` | 22 hooks pro automatické zachycení pokrývajících životní cyklus session, zprávy, nástroje a chyby. Přiřazení k projektu je po jednotlivých sessions, takže jeden proces OpenCode pokrývající více repozitářů zařadí každou session pod její vlastní projekt. Dva slash příkazy (`/recall`, `/remember`). Zkopírujte `plugin/opencode/` do svého workspace OpenCode a doplňte položku pluginu do `opencode.json`. Úplnou tabulku hooks + analýzu mezer najdete v [`plugin/opencode/README.md`](../plugin/opencode/README.md). |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` nainstaluje zabalené rozšíření do adresáře automatického vyhledávání pi (recall při startu agenta, zachycení při konci agenta, nástroje `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`). `/reload` v běžícím pi ho načte. [`integrations/pi`](../integrations/pi/) je také balíček pi (`pi install ./integrations/pi` z checkoutu). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` dá poskytovatele paměti se 6 hooks (prefetch, zachycení tahu, konec session, pre-compress, zrcadlení MEMORY.md, blok systémového promptu). Ověřte pomocí `hermes plugins doctor` a `hermes memory status`. Viz [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` zapíše standardní blok `mcpServers`. Payload hooks je polově kompatibilní s Claude Code, takže existující skripty pro 12 hooks fungují bez úprav; zapojte je přes sekci `hooks` ve stejném `settings.json`. |
-| **Antigravity** (náhrada Gemini CLI) | `mcp_config.json` (v uživatelském adresáři Antigravity) | `agentmemory connect antigravity` zapíše standardní blok `mcpServers`. macOS: `~/Library/Application Support/Antigravity/User/`. Linux: `~/.config/Antigravity/User/`. Použijte po ukončení Gemini CLI 2026-06-18. |
-| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli`. CLI `agy` si vede vlastní konfiguraci pod `~/.gemini/`, odděleně od výše uvedeného IDE Antigravity. Pro nativní automatické zachycení přes `~/.gemini/config/hooks.json` přidejte `--with-hooks`. |
+| **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` nainstaluje MCP a hooky pro zachycení do sdíleného adresáře přizpůsobení. Viz [nastavení a limity Antigravity](../docs/plugins/antigravity.md). |
+| **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` používá stejnou konfiguraci MCP a hooků jako aktuální verze IDE. Stávající instalace by měly provést refresh pomocí `--force`; viz [poznámky k upgradu](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` zapíše konfiguraci na úrovni uživatele. Přepisy na úrovni workspace patří do `.kiro/settings/mcp.json` vedle vašeho kódu. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` zapíše standardní blok `mcpServers`. Warp také automaticky vyhledává skills z `.claude/skills/`; po instalaci pluginu Claude Code se 8 skills agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) objeví nativně v paletě slash příkazů Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` zapíše standardní blok `mcpServers`. Uživatelé rozšíření VS Code: vložte stejný blok přes Cline Settings → MCP Servers → Edit JSON. |
