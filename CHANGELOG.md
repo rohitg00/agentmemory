@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `@agentmemory/mcp` pins the exact matching `@agentmemory/agentmemory` release instead of a `~` range, so an installed shim never resolves a newer runtime than the one it was published with.
+
 ## [0.9.30] - 2026-10-06
 
 Scale, durability and safety release. The iii engine moves from 0.11.2 to 0.22.1. The stores that grew without bound on shared daemons (graph provenance, the audit log, the vector index, the viewer stream backlog) are bounded and heal themselves at boot. Capture is durable end to end: the server accepts each observation into a persistent inbox with a restart-safe event id, and hooks keep an offline spool while the server is down. Vectors survive a force-kill through a pending log. The REST API requires auth by default. Redis becomes an opt-in state backend, and the viewer is rebuilt around one snapshot plus live stream events with a Health page backed by `GET /agentmemory/status`. Every publish now goes through a release gate that installs the packed tarballs and runs capture and recovery against them. Contributions from david-waltermire, a652, cbsincool, dmazhukov and Tyxiel, with earlier work by DaveCole, Srinath279, joyjit and cristianbdev carried into merged PRs.
