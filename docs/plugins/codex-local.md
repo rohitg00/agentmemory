@@ -156,12 +156,16 @@ metadata is a retrieval aid, not an account or tenant authorization boundary.
 
 ## Public directory submission
 
-The generated `agentmemory-codex-review` ZIP has MCP and skills but no lifecycle
-hooks. It is a preparation artifact, not a submission-ready claim. OpenAI's
-standard public flow currently expects a production HTTPS MCP server. Its guide
-directs authors who need local MCP to contact OpenAI for support. Confirm local
-stdio eligibility and the supported test environment before submitting this
-archive. Removing hooks does not remove that requirement.
+`npm run plugin:pack:codex` writes three archives. `agentmemory-codex-skills`
+carries the 17 skills and nothing else, which is what the directory's skills-only
+upload path accepts; its README tells users to run `agentmemory connect codex`
+so the skills find the memory tools. `agentmemory-codex-review` keeps MCP and
+skills but no lifecycle hooks. It is a preparation artifact, not a
+submission-ready claim. OpenAI's standard public flow currently expects a
+production HTTPS MCP server. Its guide directs authors who need local MCP to
+contact OpenAI for support. Confirm local stdio eligibility and the supported
+test environment before submitting that archive. Removing hooks does not remove
+that requirement.
 
 Once eligibility is confirmed: select a verified developer identity in the
 [plugin dashboard](https://platform.openai.com/plugins), upload the complete MCP

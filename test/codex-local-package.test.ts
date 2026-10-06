@@ -259,6 +259,24 @@ describe("Codex release packaging", () => {
     expect(manifest.hooks).toBeUndefined();
     expect(manifest.mcpServers).toBe("./.mcp.json");
   });
+
+  it("builds a skills-only ZIP with no MCP server, hooks, or scripts for the directory's skills path", () => {
+    const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
+    const archive = join(root, `dist/plugins/agentmemory-codex-skills-${version}.zip`);
+    const listing = execFileSync("unzip", ["-Z1", archive], { encoding: "utf8" });
+    expect(listing).not.toContain(".mcp.json");
+    expect(listing).not.toMatch(/^(hooks|scripts)\//m);
+    expect(listing).toContain("skills/agentmemory-config/SKILL.md");
+    expect(listing).toContain("README.md");
+    const manifest = JSON.parse(execFileSync("unzip", ["-p", archive, ".codex-plugin/plugin.json"], { encoding: "utf8" }));
+    expect(manifest.mcpServers).toBeUndefined();
+    expect(manifest.hooks).toBeUndefined();
+    expect(manifest.author.name).toBe(manifest.interface.developerName);
+    expect(manifest.interface.longDescription).toContain("agentmemory connect codex");
+    const agents = execFileSync("unzip", ["-p", archive, "skills/agentmemory-agents/SKILL.md"], { encoding: "utf8" });
+    expect(agents).toContain("default to `codex`");
+    expect(agents).not.toContain("default to `claude-code`");
+  });
 });
 
 describe("authenticated bridge URL policy", () => {
