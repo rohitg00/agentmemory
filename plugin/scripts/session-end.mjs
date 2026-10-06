@@ -57,6 +57,13 @@ function extractTranscriptPrompts(data) {
 		} catch {
 			continue;
 		}
+		if (msg.type === "USER_INPUT" && msg.source === "USER_EXPLICIT" && typeof msg.content === "string") {
+			if (prompts.length >= 50) return prompts;
+			const match = msg.content.match(/<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/);
+			const text = (match ? match[1] : msg.content).trim();
+			if (text) prompts.push(text.slice(0, 8e3));
+			continue;
+		}
 		if (msg.role !== "user") continue;
 		for (const block of msg.message?.content ?? []) {
 			if (prompts.length >= 50) return prompts;

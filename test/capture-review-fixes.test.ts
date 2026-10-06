@@ -132,7 +132,7 @@ describe("spool operations without the lock", () => {
 function statusInputs(capture: CaptureStatus | null | undefined): StatusInputs {
   return {
     now: new Date("2026-10-02T12:00:00.000Z"),
-    version: "0.10.0",
+    version: "0.9.30",
     engineVersion: "0.22.1",
     uptimeSeconds: 60,
     stateBackend: "file",

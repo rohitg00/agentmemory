@@ -112,6 +112,24 @@ across an engine restart. It launches hook scripts directly;
 desktop hook dispatch and host trust UI still require a manual host test. The
 normal test suite skips this check unless the engine path is explicitly set.
 
+To exercise native plugin discovery and hook dispatch with an installed Codex CLI:
+
+```sh
+npm run plugin:pack:codex
+AGENTMEMORY_TEST_CODEX=/absolute/path/to/codex node scripts/plugins/test-codex-native.mjs
+```
+
+The test uses a temporary home and a synthetic local Responses API to make Codex
+read one generated file. It checks MCP startup, session context reaching the model,
+prompt/tool capture, and session completion. It trusts only the built test plugin
+for that invocation through Codex's automation flag. No account credentials or
+paid model calls are used. Verified with Codex CLI 0.150.1; desktop trust UI and
+PreCompact dispatch are separate checks.
+
+The current `connect codex --with-hooks` path skips hook installation if MCP is
+already wired. The native plugin path above works. For global hooks, inspect your
+agentmemory MCP settings before using `--force`, which rewrites that MCP entry.
+
 After publishing the selected runtime and shim versions, run:
 
 ```sh

@@ -23,11 +23,21 @@ function extractTranscriptPrompts(data: Record<string, unknown>): string[] {
     if (!line.trim()) continue;
     let msg: {
       role?: string;
+      type?: string;
+      source?: string;
+      content?: unknown;
       message?: { content?: Array<{ type?: string; text?: string }> };
     };
     try {
       msg = JSON.parse(line);
     } catch {
+      continue;
+    }
+    if (msg.type === "USER_INPUT" && msg.source === "USER_EXPLICIT" && typeof msg.content === "string") {
+      if (prompts.length >= 50) return prompts;
+      const match = msg.content.match(/<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/);
+      const text = (match ? match[1] : msg.content).trim();
+      if (text) prompts.push(text.slice(0, 8000));
       continue;
     }
     if (msg.role !== "user") continue;

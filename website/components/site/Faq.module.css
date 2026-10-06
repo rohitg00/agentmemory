@@ -1,0 +1,107 @@
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr);
+  gap: clamp(24px, 4vw, 64px);
+  align-items: start;
+}
+
+.list {
+  border-top: 1px solid var(--line);
+}
+
+.item {
+  border-bottom: 1px solid var(--line);
+}
+
+.item summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-4);
+  padding: var(--s-5) 0;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: var(--t-20);
+  font-weight: 520;
+  letter-spacing: -0.01em;
+}
+
+.item summary::-webkit-details-marker {
+  display: none;
+}
+
+.mark {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex: none;
+}
+
+.mark::before,
+.mark::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6.5px;
+  width: 14px;
+  height: 1px;
+  background: var(--ink);
+  transition: transform var(--dur-2) var(--ease-out);
+}
+
+.mark::after {
+  transform: rotate(90deg);
+}
+
+.item[open] .mark::after {
+  transform: rotate(0deg);
+}
+
+.item p {
+  padding: 0 var(--s-6) var(--s-5) 0;
+  color: var(--muted);
+  font-size: var(--t-16);
+  line-height: 1.65;
+  max-width: 62ch;
+  animation: open var(--dur-3) var(--ease-out);
+}
+
+.item summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 4px;
+}
+
+@keyframes open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .item summary {
+    font-size: var(--t-16);
+  }
+  .item p {
+    padding-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item p {
+    animation: none;
+  }
+  .mark::before,
+  .mark::after {
+    transition: none;
+  }
+}

@@ -124,6 +124,7 @@ function wantsStructuredOutput(data) {
 	return data.hook_event_name === "SessionStart" && !isPlainTextHost();
 }
 function contextPayload(data, context) {
+	if (process.env["COPILOT_PLUGIN_ROOT"] && !data.hook_event_name) return JSON.stringify({ additionalContext: context });
 	if (typeof data.cursor_version === "string" || data.hook_event_name === "sessionStart") return JSON.stringify({ additional_context: context });
 	if (wantsStructuredOutput(data)) return JSON.stringify({ hookSpecificOutput: {
 		hookEventName: "SessionStart",

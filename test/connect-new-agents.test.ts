@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
 
@@ -76,23 +76,26 @@ describe("connect: Antigravity", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("writes mcpServers.agentmemory to the platform-specific config path", async () => {
-    const isMac = platform() === "darwin";
-    const userDir = isMac
+  it.each(["antigravity", "antigravity-ide", "legacy"])("detects %s and writes the shared config while preserving other servers", async (surface) => {
+    const legacyDir = platform() === "darwin"
       ? join(home, "Library", "Application Support", "Antigravity", "User")
       : join(home, ".config", "Antigravity", "User");
-    mkdirSync(userDir, { recursive: true });
+    mkdirSync(surface === "legacy" ? legacyDir : join(home, ".gemini", surface), { recursive: true });
+    const configDir = join(home, ".gemini", "config");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "mcp_config.json"), JSON.stringify({ mcpServers: { existing: { command: "custom" } } }));
     const { adapter } = await import("../src/cli/connect/antigravity.js");
     expect(adapter.detect()).toBe(true);
-    const result = await adapter.install({ dryRun: false, force: false });
+    const result = await adapter.install({ dryRun: false, force: false, withHooks: true });
     expect(result.kind).toBe("installed");
     const cfg = JSON.parse(
-      readFileSync(join(userDir, "mcp_config.json"), "utf-8"),
+      readFileSync(join(configDir, "mcp_config.json"), "utf-8"),
     );
     expect(cfg.mcpServers.agentmemory.command).toBe("npx");
-    expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_URL).toMatch(
-      /\$\{AGENTMEMORY_URL:-/,
-    );
+    expect(cfg.mcpServers.existing).toEqual({ command: "custom" });
+    expect(existsSync(join(legacyDir, "mcp_config.json"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(configDir, "hooks.json"), "utf8")).agentmemory.enabled).toBe(true);
+    expect(cfg.mcpServers.agentmemory.env).toEqual({});
   });
 });
 

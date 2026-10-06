@@ -336,7 +336,7 @@ describe("AGENTMEMORY_GRAPH_COMPACT_ON_BOOT", () => {
 describe("graph compaction in /agentmemory/status", () => {
   const base: StatusInputs = {
     now: new Date("2026-10-01T12:00:00.000Z"),
-    version: "0.10.0",
+    version: "0.9.30",
     engineVersion: "0.22.1",
     uptimeSeconds: 10,
     stateBackend: "file",

@@ -50,18 +50,11 @@ describe("MCP tool surface default", () => {
     }
   });
 
-  it("plugin .mcp.json provides default env interpolation so CC parse never fails", () => {
-    const raw = readFileSync("plugin/.mcp.json", "utf-8");
-    const cfg = JSON.parse(raw) as {
-      mcpServers: { agentmemory: { env: Record<string, string> } };
-    };
-    const env = cfg.mcpServers.agentmemory.env;
-    // Per Claude Code MCP docs: ${VAR} without a default fails config
-    // parse when VAR is unset, silently dropping the server. ${VAR:-x}
-    // form is what unblocks fresh installs that haven't exported
-    // AGENTMEMORY_URL.
-    expect(env["AGENTMEMORY_URL"]).toMatch(/\$\{AGENTMEMORY_URL:-/);
-    expect(env["AGENTMEMORY_SECRET"]).toMatch(/\$\{AGENTMEMORY_SECRET:-/);
-    expect(env["AGENTMEMORY_TOOLS"]).toMatch(/\$\{AGENTMEMORY_TOOLS:-all\}/);
+  it("plugin MCP uses its bundled bridge and inherits the host environment", () => {
+    const cfg = JSON.parse(readFileSync("plugin/.mcp.json", "utf-8"));
+    expect(cfg.mcpServers.agentmemory).toEqual({
+      command: "node",
+      args: ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bridge.mjs"],
+    });
   });
 });

@@ -1,6 +1,6 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync, cpSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:net";
@@ -24,7 +24,7 @@ async function stop(child: ChildProcess) {
   children.delete(child);
 }
 
-afterAll(async () => {
+afterEach(async () => {
   await Promise.all([...children].map(stop));
   if (sandbox) rmSync(sandbox, { recursive: true, force: true });
 });
@@ -77,7 +77,7 @@ function mcp(script: string, cwd: string, env: NodeJS.ProcessEnv) {
   return { child, request, tool };
 }
 
-describe.skipIf(!engineBin)("local plugin against the pinned iii daemon", () => {
+describe.skipIf(!engineBin).each(["codex", "copilot", "antigravity"] as const)("%s plugin against the pinned iii daemon", (host) => {
   it("authenticates locally, captures and recovers hooks, shares memory, and persists across restart", async () => {
     // vitest.config.ts isolates user configuration for the entire test process.
     expect(homedir()).toContain("agentmemory-test-home-");
@@ -112,8 +112,12 @@ describe.skipIf(!engineBin)("local plugin against the pinned iii daemon", () => 
       }
       throw new Error(`Daemon failed to become ready:\n${engine.diagnostic()}\n${worker.diagnostic()}`);
     };
-    const packaged = join(root, "dist/plugins/agentmemory-codex-local");
-    const codex = mcp(join(packaged, "scripts/plugin-bridge.mjs"), packaged, env);
+    const packaged = host === "codex" ? join(root, "dist/plugins/agentmemory-codex-local") : join(sandbox, `${host} plugin`);
+    if (host !== "codex") cpSync(join(root, "plugin"), packaged, { recursive: true });
+    const configPath = join(packaged, ".mcp.json");
+    const mcpConfig = JSON.parse(readFileSync(configPath, "utf8")).mcpServers.agentmemory;
+    const bridge = resolve(packaged, mcpConfig.args[0].replaceAll("${CLAUDE_PLUGIN_ROOT}", packaged));
+    const codex = mcp(bridge, packaged, env);
     await codex.request("initialize", { protocolVersion: "2025-11-25" });
     expect((await codex.request("tools/list")).error).toBeDefined();
     let running = await daemon();
@@ -134,11 +138,42 @@ describe.skipIf(!engineBin)("local plugin against the pinned iii daemon", () => 
     const cwd = join(sandbox, "smoke-alpha");
     mkdirSync(cwd);
     const sessionId = `ses_${token}`;
+    let step = 0;
     const hook = async (name: string, input: Record<string, unknown>) => {
-      const { child, diagnostic } = launch(process.execPath, [join(packaged, `scripts/${name}.mjs`)], cwd, env);
+      const event = { "session-start": "PreInvocation", "post-tool-use": "PostToolUse", stop: "Stop" }[name];
+      const args = host === "antigravity"
+        ? [join(packaged, "scripts/antigravity-bridge.mjs"), event!]
+        : [join(packaged, `scripts/${name}.mjs`)];
+      const { child, diagnostic } = launch(process.execPath, args, cwd, env);
       child.stdout.resume();
       const exit = new Promise<number | null>((done) => child.once("exit", done));
-      child.stdin.end(JSON.stringify({ session_id: sessionId, cwd, ...input }));
+      const payload: Record<string, unknown> = { session_id: sessionId, cwd, ...input };
+      if (host === "copilot") {
+        for (const [from, to] of Object.entries({ session_id: "sessionId", tool_name: "toolName", tool_input: "toolArgs", tool_use_id: "toolUseId" })) {
+          if (payload[from] !== undefined) { payload[to] = payload[from]; delete payload[from]; }
+        }
+        if (payload.tool_response !== undefined) {
+          payload.toolResult = { resultType: "success", textResultForLlm: payload.tool_response };
+          delete payload.tool_response;
+        }
+      }
+      if (host === "antigravity") {
+        payload.conversationId = sessionId;
+        payload.workspacePaths = [cwd];
+        payload.invocationNum = 0;
+        payload.fullyIdle = true;
+        delete payload.session_id;
+        delete payload.cwd;
+        if (payload.tool_name) {
+          payload.stepIdx = step++;
+          payload.toolCall = { name: "run_command", args: { CommandLine: (payload.tool_input as { cmd: string }).cmd } };
+          delete payload.tool_name;
+          delete payload.tool_input;
+          delete payload.tool_response;
+          delete payload.tool_use_id;
+        }
+      }
+      child.stdin.end(JSON.stringify(payload));
       const code = await exit;
       expect(code, diagnostic()).toBe(0);
     };

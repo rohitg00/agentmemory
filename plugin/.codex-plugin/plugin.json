@@ -1,6 +1,6 @@
 {
   "name": "agentmemory",
-  "version": "0.9.29",
+  "version": "0.9.30",
   "description": "Local persistent memory for coding agents. Recall decisions, resume sessions, learn from corrections, and manage memory through 54 MCP tools and 17 skills. Optional capture through 6 Codex hooks.",
   "author": {
     "name": "Rohit Ghumare",

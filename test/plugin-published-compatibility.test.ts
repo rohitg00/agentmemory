@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { publishedCompatibilityErrors } from "../scripts/plugins/verify-published.mjs";
 
-const local = { version: "0.10.0", dependencies: { "iii-sdk": "0.22.1", "@iii-dev/helpers": "0.22.1" } };
-const shim = { version: "0.10.0", dependencies: { "@agentmemory/agentmemory": "0.10.0" } };
+const local = { version: "0.9.30", dependencies: { "iii-sdk": "0.22.1", "@iii-dev/helpers": "0.22.1" } };
+const shim = { version: "0.9.30", dependencies: { "@agentmemory/agentmemory": "0.9.30" } };
 
 describe("published plugin compatibility gate", () => {
   it("accepts an exact runtime, engine SDK, helper, and shim match", () => {

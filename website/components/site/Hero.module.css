@@ -1,0 +1,330 @@
+.hero {
+  padding: clamp(48px, 8vw, 112px) 0 var(--s-9);
+  position: relative;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: clamp(32px, 5vw, 72px);
+  align-items: center;
+}
+
+.copy {
+  display: grid;
+  gap: var(--s-5);
+  align-content: start;
+}
+
+.chip {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--t-12);
+  color: var(--muted);
+  background: var(--surface);
+  transition: border-color var(--dur-1) ease, color var(--dur-1) ease;
+}
+
+.chip:hover {
+  border-color: var(--line-2);
+  color: var(--ink);
+}
+
+.chip .mono {
+  color: var(--ink);
+}
+
+.sep {
+  width: 1px;
+  height: 12px;
+  background: var(--line-2);
+}
+
+.title {
+  font-size: var(--t-76);
+  line-height: var(--lh-tight);
+  letter-spacing: var(--track-display);
+  font-weight: 600;
+  animation: rise 900ms var(--ease-out) both;
+}
+
+.lede {
+  font-size: var(--t-20);
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 34em;
+  animation: rise 900ms var(--ease-out) 80ms both;
+}
+
+.install {
+  display: grid;
+  gap: var(--s-3);
+  animation: rise 900ms var(--ease-out) 160ms both;
+}
+
+.cmd {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  max-width: 520px;
+  height: 52px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+  font-size: var(--t-14);
+  color: var(--ink);
+  transition: border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
+}
+
+.cmd:hover {
+  border-color: var(--ink);
+}
+
+.cmd:active {
+  transform: scale(0.99);
+}
+
+.cmd code {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.prompt {
+  color: var(--faint);
+  font-family: var(--font-mono), monospace;
+}
+
+.cmd :global(.copy-state),
+.row :global(.copy-state) {
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.promptBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 10px 20px 10px 16px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--bg);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  transition: transform 200ms var(--ease-out), background-color 150ms ease, border-color 150ms ease,
+    color 150ms ease;
+}
+
+.promptBtn:active {
+  transform: scale(0.97);
+}
+
+.promptBtn[data-copied] {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+}
+
+.glyphs {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.glyph {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  opacity: 0.92;
+  transition: transform 200ms var(--ease-out);
+}
+
+.row :global(.btn) {
+  border-radius: 999px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .promptBtn:hover {
+    transform: translateY(-2px);
+  }
+  .promptBtn:hover:active {
+    transform: translateY(-2px) scale(0.97);
+  }
+  .promptBtn:hover .glyph {
+    transform: translateY(-1.5px) scale(1.12);
+  }
+  .promptBtn:hover .glyph:nth-child(2) {
+    transition-delay: 40ms;
+  }
+  .promptBtn:hover .glyph:nth-child(3) {
+    transition-delay: 80ms;
+  }
+}
+
+.docs {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-size: var(--t-14);
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 4px;
+  transition: color var(--dur-1) ease, text-decoration-color var(--dur-1) ease;
+}
+
+.docs:hover {
+  color: var(--ink);
+  text-decoration-color: var(--accent);
+}
+
+.star svg {
+  flex: none;
+}
+
+.starCount {
+  padding-left: 10px;
+  margin-left: 2px;
+  border-left: 1px solid var(--line-2);
+  font-size: var(--t-12);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-6);
+  margin: var(--s-2) 0 0;
+  padding-top: var(--s-5);
+  border-top: 1px solid var(--line);
+  animation: rise 900ms var(--ease-out) 240ms both;
+}
+
+.facts dt {
+  font-size: var(--t-12);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 4px 0 0;
+  font-size: var(--t-20);
+  color: var(--ink);
+  font-weight: 540;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.visual {
+  animation: fade 1100ms var(--ease-out) 120ms both;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 1000px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .cmd {
+    font-size: var(--t-12);
+    gap: var(--s-2);
+    height: auto;
+    min-height: 52px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+  .cmd code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
+  }
+  .promptBtn {
+    flex: 1 1 100%;
+  }
+  .row :global(.btn) {
+    flex: 1 1 100%;
+    min-width: 0;
+    height: auto;
+    min-height: 44px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    justify-content: center;
+    white-space: normal;
+    text-align: center;
+  }
+  .facts {
+    gap: var(--s-4);
+  }
+  .lede {
+    font-size: 1.0625rem;
+    line-height: 1.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .title,
+  .lede,
+  .install,
+  .facts,
+  .visual {
+    animation: none;
+  }
+  .promptBtn,
+  .glyph {
+    transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+  }
+  .promptBtn:hover,
+  .promptBtn:hover .glyph {
+    transform: none;
+  }
+}

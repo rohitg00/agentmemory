@@ -93,16 +93,7 @@ PRs with commits lacking sign-off will not merge.
 
 ## Release process
 
-Maintainers cut releases. Every bump touches these files in lockstep (the consistency tests fail if the trio of doc counts or any version drifts):
-
-1. `package.json`
-2. `src/version.ts`
-3. `plugin/.claude-plugin/plugin.json`
-4. `plugin/plugin.json`
-5. `plugin/.codex-plugin/plugin.json`
-6. `packages/mcp/package.json`
-7. `src/types.ts` (`ExportData.version` union)
-8. `src/functions/export-import.ts` (`supportedVersions` Set)
+Maintainers cut releases. To bump the version, change only `package.json`, then run `npm run docs:sync`. It carries the new version into `src/version.ts`, the `ExportData.version` union in `src/types.ts`, the `supportedVersions` set in `src/functions/export-import.ts`, every plugin and package manifest that shared the old version, the deploy templates, the AGENTS.md stats heading, and CHANGELOG.md (the Unreleased section becomes the new version with today's date and its compare link). Commit everything it changes, and check with `npm run docs:check`.
 
 No lockfiles are committed. `test/export-import.test.ts` asserts against the `VERSION` constant, so it needs no per-release edit. Run `npm run skills:gen` if the endpoint or env surface changed.
 

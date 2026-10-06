@@ -1,57 +1,67 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
+import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { SITE_URL } from "@/lib/site";
 
-const inter = Inter({
+const sans = Geist({
   subsets: ["latin"],
   variable: "--font-sans",
   display: "swap",
 });
 
-const jetbrains = JetBrains_Mono({
+const mono = Geist_Mono({
   subsets: ["latin"],
-  weight: ["400", "500"],
   variable: "--font-mono",
   display: "swap",
 });
 
+const description =
+  "Persistent memory for AI coding agents. agentmemory captures what your agent did, keeps it on your machine, and hands the right context back in the next session. Open source, Apache-2.0.";
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://agentmemory.dev"),
-  title: "agentmemory: persistent memory for AI coding agents",
-  description:
-    "Persistent memory for AI coding agents. Capture every session, recall it in the next one. Runs locally with zero external databases. Works with every MCP client.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "agentmemory: persistent memory for AI coding agents",
+    template: "%s · agentmemory",
+  },
+  description,
+  alternates: { canonical: "/" },
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     apple: "/icon.svg",
   },
   openGraph: {
     title: "agentmemory",
-    description:
-      "Persistent memory for AI coding agents. Runs locally. Zero external databases.",
+    description,
     type: "website",
     url: "/",
+    siteName: "agentmemory",
   },
   twitter: {
     card: "summary_large_image",
     title: "agentmemory",
-    description:
-      "Persistent memory for AI coding agents. Runs locally. Zero external databases.",
+    description,
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0a",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#fafafa" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
   width: "device-width",
   initialScale: 1,
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+const themeScript = `try{var t=localStorage.getItem("am-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrains.variable}`}>
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <link rel="alternate" type="text/plain" href="/llms.txt" title="llms.txt" />
+      </head>
       <body>{children}</body>
     </html>
   );

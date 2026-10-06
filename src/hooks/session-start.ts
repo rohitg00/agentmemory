@@ -38,6 +38,9 @@ function wantsStructuredOutput(data: Record<string, unknown>): boolean {
 }
 
 function contextPayload(data: Record<string, unknown>, context: string): string {
+  if (process.env["COPILOT_PLUGIN_ROOT"] && !data.hook_event_name) {
+    return JSON.stringify({ additionalContext: context });
+  }
   if (
     typeof data.cursor_version === "string" ||
     data.hook_event_name === "sessionStart"
