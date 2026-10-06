@@ -5,6 +5,8 @@ import {
 } from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
+import { LocalEmbeddingProvider } from "../src/providers/embedding/local.js";
+import { detectEmbeddingProvider } from "../src/config.js";
 import type { EmbeddingProvider } from "../src/types.js";
 
 describe("createEmbeddingProvider", () => {
@@ -24,7 +26,16 @@ describe("createEmbeddingProvider", () => {
     process.env = originalEnv;
   });
 
-  it("returns null when no API keys are set", () => {
+  // #395/#931: this used to assert the defect - a keyless install left
+  // currentEmbeddingProvider null and every vector write silently
+  // no-opped. Local is now the fallback provider.
+  it("returns LocalEmbeddingProvider when no API keys are set", () => {
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(LocalEmbeddingProvider);
+  });
+
+  it("returns null when EMBEDDING_PROVIDER=none opts out explicitly", () => {
+    process.env["EMBEDDING_PROVIDER"] = "none";
     const provider = createEmbeddingProvider();
     expect(provider).toBeNull();
   });
@@ -49,6 +60,26 @@ describe("createEmbeddingProvider", () => {
     process.env["EMBEDDING_PROVIDER"] = "openai";
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
+  });
+});
+
+describe("detectEmbeddingProvider local fallback", () => {
+  it("falls back to local when no cloud key is set (#395, #931)", () => {
+    expect(detectEmbeddingProvider({})).toBe("local");
+  });
+
+  it("still prefers an explicitly configured provider", () => {
+    expect(detectEmbeddingProvider({ EMBEDDING_PROVIDER: "openai" })).toBe(
+      "openai",
+    );
+  });
+
+  it("still prefers a cloud key over local", () => {
+    expect(detectEmbeddingProvider({ GEMINI_API_KEY: "k" })).toBe("gemini");
+  });
+
+  it("honours an explicit opt-out", () => {
+    expect(detectEmbeddingProvider({ EMBEDDING_PROVIDER: "none" })).toBeNull();
   });
 });
 
