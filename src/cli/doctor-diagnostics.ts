@@ -59,6 +59,11 @@ export type Diagnostic = {
   manualOnly?: boolean;
 };
 
+/** True when doctor may apply this diagnostic's fix without user involvement. */
+export function canAutoFix(d: Diagnostic): boolean {
+  return !d.manualOnly;
+}
+
 // Diagnostic ids are stable for testing and machine-readable doctor output.
 export const DIAGNOSTIC_IDS = [
   "env-missing",
@@ -215,21 +220,37 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     },
     {
       id: "engine-version-mismatch",
-      message: "iii binary on PATH doesn't match the version agentmemory pins to.",
+      message: "No iii binary matches the version agentmemory pins to.",
       fixPreview:
         "Re-run the iii installer for the pinned version and restart the engine.",
       moreInfo:
         "agentmemory pins the iii engine to a specific release because newer engines " +
         "use a different worker model. Running a mismatched binary surfaces as EPIPE " +
-        "reconnect loops and empty search results.",
+        "reconnect loops and empty search results. At runtime agentmemory prefers the " +
+        "private install at ~/.agentmemory/bin/iii when the iii on PATH mismatches the pin.",
       check: async (ctx) => {
+        const privateVersion = effects.iiiBinaryVersion(effects.localBinIiiPath());
         const bin = effects.findIiiBinary();
-        if (!bin) return { ok: false, detail: "iii not on PATH" };
-        const v = effects.iiiBinaryVersion(bin);
-        if (!v) return { ok: false, detail: "iii on PATH but --version failed" };
+        const pathVersion = bin ? effects.iiiBinaryVersion(bin) : null;
+        if (privateVersion === ctx.pinnedVersion) {
+          const note =
+            pathVersion && pathVersion !== ctx.pinnedVersion
+              ? `; PATH iii is ${pathVersion} but the private install wins at runtime`
+              : "";
+          return {
+            ok: true,
+            detail: `private install ${privateVersion} (pinned ${ctx.pinnedVersion})${note}`,
+          };
+        }
+        if (!bin) {
+          return { ok: false, detail: "iii not on PATH and no private install" };
+        }
+        if (!pathVersion) {
+          return { ok: false, detail: "iii on PATH but --version failed" };
+        }
         return {
-          ok: v === ctx.pinnedVersion,
-          detail: `${v} (pinned ${ctx.pinnedVersion})`,
+          ok: pathVersion === ctx.pinnedVersion,
+          detail: `${pathVersion} (pinned ${ctx.pinnedVersion})`,
         };
       },
       fix: async () => {
@@ -308,7 +329,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     {
       id: "iii-on-path-not-local-bin",
       message:
-        "iii is on PATH but not at agentmemory's private install path.",
+        "iii is on PATH but agentmemory's private install is absent or mismatched.",
       fixPreview:
         "Install the pinned version to ~/.agentmemory/bin — won't touch your PATH.",
       moreInfo:
@@ -317,14 +338,19 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         "When agentmemory needs the pin and PATH doesn't have it, it falls back to the " +
         "private install. If neither exists, run the installer.",
       manualOnly: true,
-      check: async () => {
+      check: async (ctx) => {
         const bin = effects.findIiiBinary();
         if (!bin) return { ok: true, detail: "iii not on PATH (handled elsewhere)" };
         const localBin = effects.localBinIiiPath();
-        return {
-          ok: bin === localBin,
-          detail: bin === localBin ? undefined : `iii at: ${bin}`,
-        };
+        if (bin === localBin) return { ok: true };
+        const privateVersion = effects.iiiBinaryVersion(localBin);
+        if (privateVersion === ctx.pinnedVersion) {
+          return {
+            ok: true,
+            detail: `private install pinned; PATH iii at ${bin} stays untouched`,
+          };
+        }
+        return { ok: false, detail: `iii at: ${bin}` };
       },
       fix: async () =>
         effects.runIiiInstaller().then((r) => ({
