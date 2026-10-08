@@ -43,6 +43,9 @@ const DEFAULT_TIMEOUT_MS = 60_000;
  *                              thinking models). Set to "none" to ensure
  *                              message.content is populated instead of only
  *                              message.reasoning.
+ *   OPENAI_EXTRA_BODY        — JSON object merged into every chat request, for
+ *                              endpoint-specific fields such as OpenRouter's
+ *                              `provider` routing object. Fields set above win.
  */
 export class OpenAIProvider implements MemoryProvider {
   name = "openai";
@@ -51,6 +54,7 @@ export class OpenAIProvider implements MemoryProvider {
   private maxTokens: number;
   private baseUrl: string;
   private reasoningEffort?: string;
+  private extraBody: Record<string, unknown>;
   private timeoutMs: number;
   private isAzure: boolean;
   private azureApiVersion: string;
@@ -61,6 +65,7 @@ export class OpenAIProvider implements MemoryProvider {
     this.maxTokens = maxTokens;
     this.baseUrl = normalizeBaseUrl(baseURL || getEnvVar("OPENAI_BASE_URL"));
     this.reasoningEffort = getEnvVar("OPENAI_REASONING_EFFORT") || undefined;
+    this.extraBody = parseExtraBody(getEnvVar("OPENAI_EXTRA_BODY"));
     this.timeoutMs = resolveTimeout();
     this.azureApiVersion =
       getEnvVar("OPENAI_API_VERSION") || DEFAULT_AZURE_API_VERSION;
@@ -78,6 +83,7 @@ export class OpenAIProvider implements MemoryProvider {
   private async call(systemPrompt: string, userPrompt: string): Promise<string> {
     const url = buildChatUrl(this.baseUrl, this.isAzure, this.azureApiVersion);
     const body: Record<string, unknown> = {
+      ...this.extraBody,
       model: this.model,
       max_tokens: this.maxTokens,
       stream: false,
@@ -160,3 +166,16 @@ function parsePositiveInt(raw: string | null | undefined): number | undefined {
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
 
+function parseExtraBody(raw: string | null | undefined): Record<string, unknown> {
+  if (!raw || !raw.trim()) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    parsed = undefined;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error('OPENAI_EXTRA_BODY must be a JSON object, e.g. {"provider":{"order":["deepinfra"]}}');
+  }
+  return parsed as Record<string, unknown>;
+}
