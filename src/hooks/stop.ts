@@ -44,7 +44,7 @@ async function main() {
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ sessionId }),
+    body: JSON.stringify({ sessionId, final: false }),
     signal: AbortSignal.timeout(5000),
   }).catch(() => {});
 

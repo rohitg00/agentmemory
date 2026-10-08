@@ -1,10 +1,11 @@
-import type { IIIClient } from "iii-sdk";
+import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Session } from "../types.js";
 import { logger } from "../logger.js";
 import { safeAudit } from "./audit.js";
+import { clearSessionFinalize } from "./session-finalize.js";
 import {
   isSessionSweepEnabled,
   getSessionSweepStaleHours,
@@ -50,16 +51,32 @@ export function registerSessionSweepFunction(sdk: IIIClient, kv: StateKV): void 
       for (const candidate of sessions) {
         if (!isStaleActive(candidate, cutoff)) continue;
         try {
-          const marked = await withKeyedLock(`obs:${candidate.id}`, async () => {
+          const abandonedSession = await withKeyedLock(`obs:${candidate.id}`, async () => {
             const current = await kv.get<Session>(KV.sessions, candidate.id);
-            if (!isStaleActive(current, cutoff)) return false;
+            if (!isStaleActive(current, cutoff)) return null;
             await kv.update(KV.sessions, candidate.id, [
               { type: "set", path: "status", value: "abandoned" },
               { type: "set", path: "endedAt", value: new Date().toISOString() },
             ]);
-            return true;
+            return current;
           });
-          if (marked) abandonedIds.push(candidate.id);
+          if (!abandonedSession) continue;
+          abandonedIds.push(candidate.id);
+          await clearSessionFinalize(kv, candidate.id).catch(() => {});
+          if ((abandonedSession.observationCount ?? 0) > 0) {
+            void sdk
+              .trigger({
+                function_id: "event::session::stopped",
+                payload: { sessionId: candidate.id, skipConsolidation: true },
+                action: TriggerAction.Void(),
+              })
+              .catch((err) => {
+                logger.warn("event::session::stopped trigger failed", {
+                  sessionId: candidate.id,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              });
+          }
         } catch (err) {
           failed++;
           logger.warn("Session sweep update failed", {

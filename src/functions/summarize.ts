@@ -224,6 +224,35 @@ function parseSummaryXml(
   };
 }
 
+function visibleAt(observation: CompressedObservation): string {
+  return observation.compressedAt ?? observation.timestamp;
+}
+
+async function reduceWithExisting(
+  provider: MemoryProvider,
+  existing: SessionSummary,
+  delta: SessionSummary,
+  total: number,
+): Promise<string> {
+  const existingEnd = Math.max(1, total - delta.observationCount);
+  const partial = (s: SessionSummary, obsRangeStart: number, obsRangeEnd: number) => ({
+    title: s.title,
+    narrative: s.narrative,
+    keyDecisions: s.keyDecisions,
+    filesModified: s.filesModified,
+    concepts: s.concepts,
+    obsRangeStart,
+    obsRangeEnd,
+  });
+  return provider.summarize(
+    REDUCE_SYSTEM,
+    buildReducePrompt([
+      partial(existing, 1, existingEnd),
+      partial(delta, existingEnd + 1, total),
+    ]),
+  );
+}
+
 export function registerSummarizeFunction(
   sdk: IIIClient,
   kv: StateKV,
@@ -231,7 +260,7 @@ export function registerSummarizeFunction(
   metricsStore?: MetricsStore,
 ): void {
   sdk.registerFunction("mem::summarize", 
-    async (data: { sessionId: string } | undefined) => {
+    async (data: { sessionId: string; force?: boolean } | undefined) => {
       const startMs = Date.now();
       if (!data || typeof data.sessionId !== "string" || !data.sessionId.trim()) {
         return { success: false, error: "sessionId is required" };
@@ -249,7 +278,9 @@ export function registerSummarizeFunction(
       const observations = await kv.list<CompressedObservation>(
         KV.observations(sessionId),
       );
-      const compressed = observations.filter((o) => o.title);
+      const compressed = observations
+        .filter((o) => o.title)
+        .sort((a, b) => visibleAt(a).localeCompare(visibleAt(b)) || a.id.localeCompare(b.id));
 
       if (compressed.length === 0) {
         logger.info("No observations to summarize", {
@@ -257,6 +288,22 @@ export function registerSummarizeFunction(
         });
         return { success: false, error: "no_observations" };
       }
+
+      const existing =
+        data.force === true
+          ? null
+          : await kv.get<SessionSummary>(KV.summaries, sessionId).catch(() => null);
+      const watermark = existing?.coveredThrough;
+      const delta = watermark
+        ? compressed.filter((o) => visibleAt(o) > watermark)
+        : compressed;
+      if (existing && watermark && delta.length === 0) {
+        return { success: true, unchanged: true, summary: existing };
+      }
+      const incremental =
+        existing && watermark && delta.length < compressed.length ? existing : null;
+      const input = incremental ? delta : compressed;
+      const coveredThrough = visibleAt(compressed[compressed.length - 1]);
 
       if (isNoopProvider(provider)) {
         logger.info("Summarize skipped — no LLM provider configured", {
@@ -278,12 +325,12 @@ export function registerSummarizeFunction(
         for (let attempt = 1; attempt <= 2; attempt++) {
           const produced = await produceSummaryXml(
             provider,
-            compressed,
+            input,
             sessionId,
             session.project,
           );
           response = produced.response;
-          mode = produced.mode;
+          mode = incremental ? "incremental" : produced.mode;
           chunks = produced.chunks;
           if (!response || !response.trim()) {
             logger.warn("Empty provider response on summarize", {
@@ -291,7 +338,7 @@ export function registerSummarizeFunction(
               provider: provider.name,
               mode,
               chunks,
-              observationCount: compressed.length,
+              observationCount: input.length,
               attempt,
             });
             continue;
@@ -300,8 +347,12 @@ export function registerSummarizeFunction(
             response,
             sessionId,
             session.project,
-            compressed.length,
+            input.length,
           );
+          if (summary && incremental) {
+            response = await reduceWithExisting(provider, incremental, summary, compressed.length);
+            summary = parseSummaryXml(response, sessionId, session.project, compressed.length);
+          }
           if (summary) break;
           logger.warn("Failed to parse summary XML", { sessionId, attempt });
         }
@@ -321,7 +372,7 @@ export function registerSummarizeFunction(
           }
           return { success: false, error: "parse_failed" };
         }
-        summary = scrubRecord(summary);
+        summary = scrubRecord({ ...summary, observationCount: compressed.length, coveredThrough });
 
         const summaryForValidation = {
           title: summary.title,
@@ -354,6 +405,7 @@ export function registerSummarizeFunction(
         await safeAudit(kv, "compress", "mem::summarize", [sessionId], {
           title: summary.title,
           observationCount: compressed.length,
+          newObservations: input.length,
         });
 
         const latencyMs = Date.now() - startMs;
@@ -374,7 +426,7 @@ export function registerSummarizeFunction(
           valid: validation.valid,
         });
 
-        return { success: true, summary, qualityScore };
+        return { success: true, summary, qualityScore, incremental: incremental !== null };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const latencyMs = Date.now() - startMs;

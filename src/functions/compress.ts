@@ -167,6 +167,7 @@ export function registerCompressFunction(
           id: data.observationId,
           sessionId: data.sessionId,
           timestamp: data.raw.timestamp,
+          compressedAt: new Date().toISOString(),
           ...scrubRecord(parsed),
           confidence: qualityScore / 100,
           source: createObservationSource(data.raw),

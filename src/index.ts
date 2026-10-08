@@ -20,6 +20,7 @@ import {
   isSessionSweepEnabled,
   isGraphCompactOnBootEnabled,
   getSessionSweepStaleHours,
+  getFinalizeIdleMs,
 } from "./config.js";
 import {
   createProvider,
@@ -71,6 +72,7 @@ import { registerTimelineFunction } from "./functions/timeline.js";
 import { registerSmartSearchFunction } from "./functions/smart-search.js";
 import { registerRecentSearchesSweepFunction } from "./functions/recent-searches-sweep.js";
 import { registerSessionSweepFunction } from "./functions/session-sweep.js";
+import { FINALIZE_TICK_MS, registerSessionFinalizeFunction } from "./functions/session-finalize.js";
 import { registerProfileFunction } from "./functions/profile.js";
 import { registerAutoForgetFunction } from "./functions/auto-forget.js";
 import { registerExportImportFunction } from "./functions/export-import.js";
@@ -299,6 +301,7 @@ async function main() {
   registerRememberFunction(sdk, kv);
   registerEvictFunction(sdk, kv);
   registerSessionSweepFunction(sdk, kv);
+  registerSessionFinalizeFunction(sdk, kv);
 
   registerRelationsFunction(sdk, kv);
   registerTimelineFunction(sdk, kv);
@@ -718,6 +721,19 @@ async function main() {
     }, 60 * 60 * 1000);
     sessionSweepTimer.unref();
     bootLog(`Session sweep: enabled (hourly, stale after ${getSessionSweepStaleHours()}h)`);
+  }
+
+  const finalizeIdleMs = getFinalizeIdleMs();
+  if (finalizeIdleMs > 0) {
+    const sessionFinalizeTimer = setInterval(async () => {
+      try {
+        await sdk.trigger({ function_id: "mem::session-finalize", payload: {} });
+      } catch (err) {
+        bootLog(`Session finalize failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }, FINALIZE_TICK_MS);
+    sessionFinalizeTimer.unref();
+    bootLog(`Session finalize: idle sessions complete after ${Math.round(finalizeIdleMs / 1000)}s`);
   }
 
   if (isConsolidationEnabled()) {

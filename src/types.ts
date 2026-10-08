@@ -103,6 +103,7 @@ export interface CompressedObservation {
   agentId?: string;
   origin?: Origin;
   captureKey?: string;
+  compressedAt?: string;
 }
 
 export type ObservationType =
@@ -157,6 +158,7 @@ export interface SessionSummary {
   filesModified: string[];
   concepts: string[];
   observationCount: number;
+  coveredThrough?: string;
 }
 
 export type HookType =

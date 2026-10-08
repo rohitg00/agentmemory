@@ -120,7 +120,11 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
   });
 
   sdk.registerFunction("event::session::stopped", async (data: { sessionId: string; skipConsolidation?: boolean }) => {
-    const summary = await sdk.trigger({ function_id: "mem::summarize", payload: data });
+    const summary = await sdk.trigger<typeof data, { unchanged?: boolean } | undefined>({
+      function_id: "mem::summarize",
+      payload: data,
+    });
+    if (summary?.unchanged === true) return summary;
     const fireVoid = (function_id: string, payload: unknown) =>
       sdk
         .trigger({ function_id, payload, action: TriggerAction.Void() })

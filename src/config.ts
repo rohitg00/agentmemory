@@ -249,6 +249,12 @@ export function getSessionSweepStaleHours(): number {
   return parsed > 0 ? parsed : 24;
 }
 
+export function getFinalizeIdleMs(): number {
+  const raw = getMergedEnv()["AGENTMEMORY_FINALIZE_IDLE_MS"];
+  if (!raw || !/^\d+$/.test(raw.trim())) return 120000;
+  return parseInt(raw.trim(), 10);
+}
+
 export function isGraphCompactOnBootEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_GRAPH_COMPACT_ON_BOOT"] !== "false";
 }

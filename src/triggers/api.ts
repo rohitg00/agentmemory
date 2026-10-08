@@ -51,7 +51,9 @@ import { logger } from "../logger.js";
 import { isValidEventId } from "../capture/event-id.js";
 import { getCaptureController, type CaptureResult } from "../functions/capture.js";
 import { withoutObservationSource } from "../functions/observation-source.js";
+import { clearSessionFinalize, scheduleSessionFinalize } from "../functions/session-finalize.js";
 import {
+  getFinalizeIdleMs,
   isGraphExtractionEnabled,
   isConsolidationEnabled,
   getConsolidationIntervalMs,
@@ -1110,12 +1112,45 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::session::end",
-    async (req: HttpRequest<{ sessionId: string }>): Promise<Response> => {
-      const sessionId = asNonEmptyString((req.body as Record<string, unknown>)?.sessionId);
+    async (req: HttpRequest<{ sessionId: string; final?: boolean }>): Promise<Response> => {
+      const body = req.body as Record<string, unknown> | undefined;
+      const sessionId = asNonEmptyString(body?.sessionId);
       if (!sessionId) {
         return {
           status_code: 400,
           body: { error: "sessionId is required and must be a non-empty string" },
+        };
+      }
+      if (body?.final === false && getFinalizeIdleMs() > 0) {
+        const deferResult = await withKeyedLock(`obs:${sessionId}`, async () => {
+          const session = await kv.get<Session>(KV.sessions, sessionId);
+          if (!session || session.id !== sessionId) return "not_found" as const;
+          if (session.status === "completed") return "already_completed" as const;
+          const updates: Array<{ type: "set" | "remove"; path: string; value?: unknown }> = [
+            { type: "set", path: "updatedAt", value: new Date().toISOString() },
+          ];
+          if (session.status === "abandoned") {
+            updates.push({ type: "set", path: "status", value: "active" });
+            updates.push({ type: "remove", path: "endedAt" });
+          }
+          await kv.update(KV.sessions, sessionId, updates);
+          return "deferred" as const;
+        });
+        if (deferResult !== "deferred") {
+          return {
+            status_code: 200,
+            body: { success: true, ended: false, reason: deferResult },
+          };
+        }
+        const finalizeAt = await scheduleSessionFinalize(kv, sessionId);
+        return {
+          status_code: 200,
+          body: {
+            success: true,
+            ended: false,
+            reason: "deferred",
+            finalizeAt: new Date(finalizeAt).toISOString(),
+          },
         };
       }
       const endResult = await withKeyedLock(`obs:${sessionId}`, async () => {
@@ -1135,6 +1170,7 @@ export function registerApiTriggers(
           body: { success: true, ended: false, reason: endResult },
         };
       }
+      await clearSessionFinalize(kv, sessionId).catch(() => {});
       // Fan out session-stopped lifecycle (non-blocking).
       try {
         sdk.trigger({

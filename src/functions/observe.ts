@@ -304,7 +304,7 @@ export function registerObserveFunction(
               value: (session.observationCount || 0) + 1,
             },
           ];
-          if (session.status === "abandoned") {
+          if (session.status !== "active") {
             updates.push({ type: "set", path: "status", value: "active" });
             updates.push({ type: "remove", path: "endedAt" });
           }

@@ -380,7 +380,7 @@ const v1Hooks: Plugin = async (ctx) => {
           if (DEBUG) console.error("[agentmemory] session.deleted with no session ID");
           return;
         }
-        await post("/session/end", { sessionId: sid });
+        await post("/session/end", { sessionId: sid, final: true });
         post("/crystals/auto", { olderThanDays: 7 }, 30000);
         post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
         if (sid === activeSessionId) activeSessionId = null;
@@ -1260,7 +1260,7 @@ async function v2Setup(ctx: any) {
       case "session.deleted": {
         const sid = (data.sessionID as string) || activeSessionId;
         if (!sid) return;
-        await post("/session/end", { sessionId: sid });
+        await post("/session/end", { sessionId: sid, final: true });
         void post("/crystals/auto", { olderThanDays: 7 }, 30000);
         void post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
         if (sid === activeSessionId) activeSessionId = null;

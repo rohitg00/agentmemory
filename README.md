@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="2,500+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="2,600+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**219 source files · ~52,000 LOC · 2,500+ tests · 311 functions · 60 KV scopes**, all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
+**220 source files · ~52,000 LOC · 2,600+ tests · 312 functions · 60 KV scopes**, all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -1761,6 +1761,9 @@ Create `~/.agentmemory/.env`:
                                            # the threshold as abandoned. Deletes nothing;
                                            # new activity makes the session active again.
 # AGENTMEMORY_SESSION_SWEEP_STALE_HOURS=24
+# AGENTMEMORY_FINALIZE_IDLE_MS=120000       # Per-turn Stop hooks leave the session open; it
+                                           # is completed and summarized once it has been idle
+                                           # this long. 0 completes it on every Stop.
 
 # Capture filters (hooks)
 # AGENTMEMORY_CAPTURE_ALLOW=               # Comma or space list of tool names or globs;
@@ -1812,7 +1815,7 @@ curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:31
 | `GET` | `/agentmemory/status` | What is wrong and how to fix it (HTML for browsers, JSON otherwise) |
 | `GET` | `/agentmemory/viewer/snapshot` | Everything the viewer shows, in one response |
 | `POST` | `/agentmemory/session/start` | Start session + get context |
-| `POST` | `/agentmemory/session/end` | End session |
+| `POST` | `/agentmemory/session/end` | End session; `final: false` (per-turn hooks) defers completion until the session is idle |
 | `POST` | `/agentmemory/observe` | Capture observation (see capture delivery below) |
 | `GET` | `/agentmemory/capture` | Capture inbox, dead letters and offline spool |
 | `POST` | `/agentmemory/capture/retry` | Retry dead-letter captures |
@@ -1870,7 +1873,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 2,500+ tests
+npm test                  # 2,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

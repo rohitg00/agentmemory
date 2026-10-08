@@ -83,7 +83,7 @@ describe.each(["observe", "compress"] as const)("live %s source budget", (mode) 
     expect(payloadByteLength(first.source)).toBeLessThan(payloadByteLength(buildSyntheticCompression(raw("unbounded")).source));
     const second = await r.write();
     expect(second.source).toBeUndefined();
-    expect(withoutObservationSource(second)).toEqual({ ...expected, id: second.id });
+    expect(withoutObservationSource(second)).toEqual({ ...expected, id: second.id, compressedAt: second.compressedAt });
     const rows = await r.kv.list(scope);
     expect(sourceBytes(rows)).toBeLessThanOrEqual(SESSION_SOURCE_MAX_BYTES);
     expect(payloadByteLength({ result: rows })).toBeLessThan(SAFE_PAYLOAD_BYTES);
@@ -109,7 +109,7 @@ describe.each(["observe", "compress"] as const)("live %s source budget", (mode) 
     await r.kv.set(scope, seed.id, seed);
     const saved = await r.write();
     expect(saved.source).toBeUndefined();
-    expect(withoutObservationSource(saved)).toEqual({ ...expected, id: saved.id });
+    expect(withoutObservationSource(saved)).toEqual({ ...expected, id: saved.id, compressedAt: saved.compressedAt });
   });
 });
 

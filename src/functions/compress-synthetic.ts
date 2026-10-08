@@ -87,6 +87,7 @@ export function buildSyntheticCompression(
     id: raw.id,
     sessionId: raw.sessionId,
     timestamp: raw.timestamp,
+    compressedAt: new Date().toISOString(),
     type: inferType(toolName, raw.hookType),
     title: truncate(toolName || "observation", 80),
     subtitle: inputStr ? truncate(inputStr, 120) : undefined,
