@@ -12,6 +12,7 @@ import { addSessionToProjectIndex } from "../state/session-index.js";
 import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import type { ResilientProvider } from "../providers/resilient.js";
+import { getLlmUsage } from "../providers/usage.js";
 import { III_PINNED_VERSION, VERSION } from "../version.js";
 import { CONSOLIDATION_COUNTS_REUSE_MS, CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, describeConsolidation, type ConsolidationRunRecord, type ConsolidationStatus } from "../functions/consolidation-status.js";
 import { UNINDEXED_SCAN_REUSE_MS, evaluateStatus, prefersHtml, renderStatusHtml, singleFlight, type GraphStatsInput, type StatusReport } from "../functions/status.js";
@@ -428,6 +429,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
       functionMetrics: functionMetrics ?? [],
       provider: detectLlmProviderKind(),
       embeddingProvider: describeEmbeddingProvider(),
+      llmUsage: getLlmUsage(),
       flags: buildConfigFlags(),
       index: {
         bm25Documents: idx.size,
