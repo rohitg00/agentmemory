@@ -1,4 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -143,7 +145,7 @@ function makeSession(id: string): Session {
 describe("Obsidian Export", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
-  const exportRoot = "/tmp/agentmemory-export-root";
+  const exportRoot = join(tmpdir(), "agentmemory-export-root");
 
   beforeEach(() => {
     process.env.AGENTMEMORY_EXPORT_ROOT = exportRoot;
@@ -186,7 +188,7 @@ describe("Obsidian Export", () => {
     expect(result.exported.memories).toBe(1);
 
     const memFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("memories/mem_001.md"),
+      k.includes(join("memories", "mem_001.md")),
     );
     expect(memFile).toBeDefined();
     const content = memFile![1];
@@ -208,7 +210,7 @@ describe("Obsidian Export", () => {
     expect(result.exported.lessons).toBe(1);
 
     const lsnFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("lessons/lsn_001.md"),
+      k.includes(join("lessons", "lsn_001.md")),
     );
     expect(lsnFile).toBeDefined();
     const content = lsnFile![1];
@@ -224,7 +226,7 @@ describe("Obsidian Export", () => {
     await sdk.trigger("mem::obsidian-export", {});
 
     const crysFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("crystals/crys_001.md"),
+      k.includes(join("crystals", "crys_001.md")),
     );
     expect(crysFile).toBeDefined();
     expect(crysFile![1]).toContain("[[act_1]]");
@@ -244,19 +246,20 @@ describe("Obsidian Export", () => {
   });
 
   it("respects custom vaultDir", async () => {
+    const customVaultDir = join(exportRoot, "test-vault");
     await sdk.trigger("mem::obsidian-export", {
-      vaultDir: "/tmp/agentmemory-export-root/test-vault",
+      vaultDir: customVaultDir,
     });
 
     const hasCustomPath = [...createdDirs].some((d) =>
-      d.startsWith("/tmp/agentmemory-export-root/test-vault"),
+      d.startsWith(customVaultDir),
     );
     expect(hasCustomPath).toBe(true);
   });
 
   it("rejects vaultDir outside the export root", async () => {
     const result = (await sdk.trigger("mem::obsidian-export", {
-      vaultDir: "/tmp/outside-root",
+      vaultDir: join(tmpdir(), "outside-root"),
     })) as { success: boolean; error: string };
 
     expect(result.success).toBe(false);
@@ -340,7 +343,7 @@ describe("Obsidian Export", () => {
     expect(result.exported.sessions).toBe(1);
     expect(result.errors).toBeUndefined();
     expect([...writtenFiles.keys()].some((path) => path.includes("undefined.md"))).toBe(false);
-    expect([...writtenFiles.keys()].some((path) => path.includes("sessions/ses_valid.md"))).toBe(true);
+    expect([...writtenFiles.keys()].some((path) => path.includes(join("sessions", "ses_valid.md")))).toBe(true);
   });
 
   it("tolerates malformed startedAt timestamps when sorting sessions", async () => {
@@ -376,7 +379,7 @@ describe("Obsidian Export", () => {
     expect(result.exported.memories).toBe(1);
 
     const memFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("memories/mem_incomplete.md"),
+      k.includes(join("memories", "mem_incomplete.md")),
     );
     expect(memFile).toBeDefined();
     const content = memFile![1];
@@ -411,17 +414,17 @@ describe("Obsidian Export", () => {
     expect(result.exported.crystals).toBe(1);
 
     const memFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("memories/mem_no_title.md"),
+      k.includes(join("memories", "mem_no_title.md")),
     );
     expect(memFile![1]).toContain("# mem_no_title");
 
     const lsnFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("lessons/lsn_no_content.md"),
+      k.includes(join("lessons", "lsn_no_content.md")),
     );
     expect(lsnFile![1]).toContain("# Lesson: lsn_no_content");
 
     const crysFile = [...writtenFiles.entries()].find(([k]) =>
-      k.includes("crystals/crys_no_narr.md"),
+      k.includes(join("crystals", "crys_no_narr.md")),
     );
     expect(crysFile![1]).toContain("# Crystal: crys_no_narr");
   });
