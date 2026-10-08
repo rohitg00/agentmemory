@@ -331,6 +331,19 @@ describe("singleFlight", () => {
 });
 
 describe("renderStatusHtml", () => {
+  it("names the LLM route instead of the bare word llm", () => {
+    const report = evaluateStatus(inputs({ llmRoute: "openai · deepseek/deepseek-v4.1-flash:floor · openrouter.ai" }));
+    expect(report.provider.llm).toBe("llm");
+    expect(report.provider.route).toBe("openai · deepseek/deepseek-v4.1-flash:floor · openrouter.ai");
+    expect(renderStatusHtml(report, "n")).toContain("openai · deepseek/deepseek-v4.1-flash:floor · openrouter.ai");
+  });
+
+  it("reports no route without an LLM", () => {
+    const report = evaluateStatus(inputs({ provider: "noop", llmRoute: "stale" }));
+    expect(report.provider.route).toBeNull();
+    expect(renderStatusHtml(report, "n")).toContain("none configured");
+  });
+
   it("escapes every server-provided string and carries no script", () => {
     const report = evaluateStatus(
       inputs({

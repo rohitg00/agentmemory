@@ -54,6 +54,7 @@ export interface StatusInputs {
     cpuPercent?: number;
   } | null;
   circuitBreaker: { state?: string; failures?: number } | null;
+  llmRoute?: string | null;
   functionMetrics: FunctionMetricInput[];
   provider: string;
   embeddingProvider: string;
@@ -107,6 +108,7 @@ export interface StatusReport {
   health: StatusInputs["health"];
   provider: {
     llm: string;
+    route: string | null;
     embeddings: string;
     circuitBreaker: StatusInputs["circuitBreaker"];
     offWithoutLlm: string[];
@@ -491,6 +493,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     health: input.health,
     provider: {
       llm: input.provider,
+      route: input.provider === "noop" ? null : (input.llmRoute ?? null),
       embeddings: input.embeddingProvider,
       circuitBreaker: input.circuitBreaker,
       offWithoutLlm: noLlm ? OFF_WITHOUT_LLM : [],
@@ -829,7 +832,7 @@ ${row("Streams port", escapeHtml(ports.streams ?? "unknown"))}
 ${row("Viewer port", escapeHtml(ports.viewer ?? "not running"))}
 </table>
 <h2>LLM and embeddings</h2><table>
-${row("LLM", escapeHtml(report.provider.llm === "noop" ? "none configured" : report.provider.llm))}
+${row("LLM", escapeHtml(report.provider.llm === "noop" ? "none configured" : (report.provider.route ?? report.provider.llm)))}
 ${report.provider.offWithoutLlm.length ? row("Off without an LLM", escapeHtml(report.provider.offWithoutLlm.join(", ")) + `<p class="note">${escapeHtml(LLM_KEY_FIX)}</p>`) : ""}
 ${row("Embeddings", escapeHtml(report.provider.embeddings === "none" ? "none (keyword search only)" : report.provider.embeddings))}
 ${row("Circuit breaker", escapeHtml(report.provider.circuitBreaker ? `${report.provider.circuitBreaker.state ?? "unknown"} (${report.provider.circuitBreaker.failures ?? 0} failures)` : "not in use"))}

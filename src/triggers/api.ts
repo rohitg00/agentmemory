@@ -60,6 +60,7 @@ import {
   isAutoCompressEnabled,
   isContextInjectionEnabled,
   detectEmbeddingProvider,
+  describeLlmRoute,
   detectLlmProviderKind,
   getAgentId,
   isAgentScopeIsolated,
@@ -425,6 +426,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
           }
         : null,
       circuitBreaker: circuit,
+      llmRoute: describeLlmRoute(config.provider),
       functionMetrics: functionMetrics ?? [],
       provider: detectLlmProviderKind(),
       embeddingProvider: describeEmbeddingProvider(),

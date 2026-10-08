@@ -306,6 +306,19 @@ export function detectLlmProviderKind(
   return "noop";
 }
 
+export function describeLlmRoute(provider: ProviderConfig): string | null {
+  if (provider.provider === "noop") return null;
+  const parts = [provider.provider, provider.model];
+  if (provider.baseURL) {
+    try {
+      parts.push(new URL(provider.baseURL).host);
+    } catch {
+      parts.push("custom base URL");
+    }
+  }
+  return parts.join(" · ");
+}
+
 export function loadEmbeddingConfig(): EmbeddingConfig {
   const env = getMergedEnv();
   let bm25Weight = parseFloat(env["BM25_WEIGHT"] || "0.4");
