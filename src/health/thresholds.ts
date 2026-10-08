@@ -20,11 +20,45 @@ const DEFAULTS: ThresholdConfig = {
   memoryRssFloorBytes: 512 * 1024 * 1024,
 };
 
+const ENV_VARS: Record<keyof ThresholdConfig, string> = {
+  eventLoopLagWarnMs: "AGENTMEMORY_HEALTH_EVENTLOOP_WARN_MS",
+  eventLoopLagCriticalMs: "AGENTMEMORY_HEALTH_EVENTLOOP_CRITICAL_MS",
+  cpuWarnPercent: "AGENTMEMORY_HEALTH_CPU_WARN_PCT",
+  cpuCriticalPercent: "AGENTMEMORY_HEALTH_CPU_CRITICAL_PCT",
+  memoryWarnPercent: "AGENTMEMORY_HEALTH_MEM_WARN_PCT",
+  memoryCriticalPercent: "AGENTMEMORY_HEALTH_MEM_CRITICAL_PCT",
+  memoryRssFloorBytes: "AGENTMEMORY_HEALTH_MEM_RSS_FLOOR_MB",
+};
+
+function parseThreshold(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw.trim() === "") return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+export function thresholdOverridesFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): Partial<ThresholdConfig> {
+  const overrides: Partial<ThresholdConfig> = {};
+  for (const key of Object.keys(ENV_VARS) as (keyof ThresholdConfig)[]) {
+    const parsed = parseThreshold(env[ENV_VARS[key]]);
+    if (parsed === undefined) continue;
+    if (key === "memoryRssFloorBytes") {
+      const bytes = parsed * 1024 * 1024;
+      if (!Number.isFinite(bytes)) continue;
+      overrides[key] = bytes;
+    } else {
+      overrides[key] = parsed;
+    }
+  }
+  return overrides;
+}
+
 export function evaluateHealth(
   snapshot: HealthSnapshot,
   config: Partial<ThresholdConfig> = {},
 ): { status: "healthy" | "degraded" | "critical"; alerts: string[]; notes: string[] } {
-  const cfg = { ...DEFAULTS, ...config };
+  const cfg = { ...DEFAULTS, ...thresholdOverridesFromEnv(), ...config };
   const alerts: string[] = [];
   const notes: string[] = [];
   let critical = false;
