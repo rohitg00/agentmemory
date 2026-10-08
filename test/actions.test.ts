@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerActionsFunction } from "../src/functions/actions.js";
+import { registerMcpEndpoints } from "../src/mcp/server.js";
 import type { Action, ActionEdge } from "../src/types.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
 
@@ -449,5 +450,81 @@ describe("Actions Functions", () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain("action not found");
     });
+  });
+});
+
+describe("memory_action_create MCP tool", () => {
+  let sdk: ReturnType<typeof mockSdk>;
+  let kv: ReturnType<typeof mockKV>;
+
+  beforeEach(() => {
+    sdk = mockSdk();
+    kv = mockKV();
+    registerActionsFunction(sdk as never, kv as never);
+    registerMcpEndpoints(sdk as never, kv as never);
+  });
+
+  it("forwards createdBy from tool arguments to the created action", async () => {
+    const result = (await sdk.trigger("mcp::tools::call", {
+      body: {
+        name: "memory_action_create",
+        arguments: { title: "Review PR", createdBy: "agent-42" },
+      },
+      headers: {},
+    })) as { status_code: number; body: { content: [{ text: string }] } };
+
+    const parsed = JSON.parse(result.body.content[0].text) as {
+      success: boolean;
+      action: Action;
+    };
+
+    expect(result.status_code).toBe(200);
+    expect(parsed.success).toBe(true);
+    expect(parsed.action.createdBy).toBe("agent-42");
+  });
+
+  it("defaults to unknown when createdBy is omitted", async () => {
+    const result = (await sdk.trigger("mcp::tools::call", {
+      body: {
+        name: "memory_action_create",
+        arguments: { title: "Review PR" },
+      },
+      headers: {},
+    })) as { status_code: number; body: { content: [{ text: string }] } };
+
+    const parsed = JSON.parse(result.body.content[0].text) as {
+      action: Action;
+    };
+
+    expect(parsed.action.createdBy).toBe("unknown");
+  });
+
+  it("advertises createdBy as an optional string in the tool schema", async () => {
+    const result = (await sdk.trigger("mcp::tools::list", {
+      body: {},
+      headers: {},
+    })) as {
+      status_code: number;
+      body: {
+        tools: Array<{
+          name: string;
+          inputSchema: {
+            properties: Record<string, { type: string }>;
+            required?: string[];
+          };
+        }>;
+      };
+    };
+
+    const tool = result.body.tools.find(
+      (t) => t.name === "memory_action_create",
+    );
+
+    expect(tool).toBeDefined();
+    expect(tool!.inputSchema.properties.createdBy).toEqual({
+      type: "string",
+      description: "Agent or user ID creating this action",
+    });
+    expect(tool!.inputSchema.required).not.toContain("createdBy");
   });
 });
