@@ -49,7 +49,9 @@ If I want deeper integration — pre-LLM context injection, turn-level
 capture, memory-write mirroring to MEMORY.md, and system prompt block
 injection — copy `integrations/hermes` from the agentmemory repo to
 `~/.hermes/plugins/agentmemory` instead. That gives me the
-6-hook memory provider plugin on top of the MCP server.
+6-hook memory provider plugin on top of the MCP server. After copying
+it, run `hermes plugins enable agentmemory --no-allow-tool-override`;
+the hooks take effect on the next session.
 ```
 
 That's it. Hermes handles the rest.
@@ -82,7 +84,11 @@ Copy this folder to your Hermes plugins directory:
 
 ```bash
 cp -r integrations/hermes ~/.hermes/plugins/agentmemory
+hermes plugins enable agentmemory --no-allow-tool-override
 ```
+
+Hermes user plugins are opt-in. Copying the directory alone leaves the
+plugin installed but disabled, so its lifecycle hooks will not load.
 
 Start the agentmemory server:
 
