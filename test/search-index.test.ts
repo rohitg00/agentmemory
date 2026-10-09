@@ -91,6 +91,26 @@ describe("SearchIndex", () => {
     expect(index.search("auth", 5).length).toBe(5);
   });
 
+  it("does not let multiple prefix variants outweigh an exact term", () => {
+    const common = { title: "", subtitle: "", concepts: [], facts: [], files: [] };
+    index.add(makeObs({ ...common, id: "exact", narrative: "redis alpha beta gamma" }));
+    index.add(makeObs({ ...common, id: "prefix", narrative: "redistool redisproxy rediscache redisserver" }));
+    const hits = index.search("redis");
+    expect(hits.map((hit) => hit.obsId)).toEqual(["exact", "prefix"]);
+    expect(hits[0].score).toBeGreaterThan(hits[1].score);
+  });
+
+  it("does not add prefix bonuses to a document already matching the exact term", () => {
+    const common = { title: "", subtitle: "", concepts: [], facts: [], files: [] };
+    index.add(makeObs({ ...common, id: "exact", narrative: "redis alpha beta gamma" }));
+    index.add(makeObs({ ...common, id: "other", narrative: "redistool redisproxy rediscache redisserver" }));
+    const before = index.search("redis").find((hit) => hit.obsId === "exact")!.score;
+    index.add(makeObs({ ...common, id: "exact", narrative: "redis redismonitor redislogger redisclient" }));
+    const after = index.search("redis").find((hit) => hit.obsId === "exact")!.score;
+    expect(after).toBeCloseTo(before);
+    expect(SearchIndex.deserialize(index.serialize()).search("redis")).toEqual(index.search("redis"));
+  });
+
   it("clears the index", () => {
     index.add(makeObs());
     index.clear();

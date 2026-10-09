@@ -36,8 +36,10 @@
     "test:plugin:live": "node scripts/plugins/test-live.mjs",
     "bench:load": "node --import tsx benchmark/load-100k.ts",
     "bench:capture-costs": "node --import tsx benchmark/capture-costs.ts",
-    "eval:longmemeval": "tsx eval/runner/longmemeval.ts",
-    "eval:coding-life": "tsx eval/runner/coding-life.ts"
+    "eval:longmemeval": "node --import tsx eval/runner/longmemeval.ts",
+    "eval:coding-life": "node --import tsx eval/runner/coding-life.ts",
+    "eval:lifecycle": "node --import tsx eval/runner/lifecycle.ts",
+    "eval:check": "tsc --noEmit --project tsconfig.eval.json && vitest run test/eval-adapters.test.ts test/eval-integrity.test.ts"
   },
   "keywords": [
     "ai",
