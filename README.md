@@ -1464,14 +1464,14 @@ agentmemory auto-detects providers from your environment. A provider makes LLM-b
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
-| **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
+| **Local (Responses-compatible server)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` + `OPENAI_MODEL=<your model>` | Requires a working `/responses` endpoint, not just Chat Completions. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions; it used to cause unbounded Stop-hook recursion, so it is no longer the default. |
 
 ### Local models (Ollama / LM Studio / vLLM)
 
-agentmemory talks to any OpenAI-API-compatible server, so anything that exposes `/v1/chat/completions` works without code changes. No paid keys, no cloud, no rate limits; runs entirely on your hardware.
+The OpenAI LLM provider uses the Responses API. A local server must implement `/v1/responses`; supporting only `/v1/chat/completions` is not enough. Check your server version and model support before configuring it. Embeddings still use the separate `/v1/embeddings` endpoint.
 
-**Ollama** (default port `11434`):
+**Ollama** (default port `11434`; use only a version with `/v1/responses` support):
 
 ```bash
 ollama pull qwen3:8b   # or qwen3:4b, gpt-oss:20b, qwen3-coder:30b, etc.
@@ -1485,7 +1485,7 @@ OPENAI_BASE_URL=http://localhost:11434/v1
 OPENAI_MODEL=qwen3:8b
 ```
 
-**LM Studio** (default port `1234`):
+**LM Studio** (default port `1234`; confirm its server exposes `/v1/responses`):
 
 Open LM Studio → Local Server tab → Start Server. Pick any chat model from the picker (Qwen 3, gpt-oss, DeepSeek R1, etc.).
 
@@ -1496,7 +1496,7 @@ OPENAI_BASE_URL=http://localhost:1234/v1
 OPENAI_MODEL=qwen3-8b                          # match the model name from LM Studio
 ```
 
-**vLLM / llama.cpp / Text Generation Inference**: same shape. Point `OPENAI_BASE_URL` at whatever URL your server exposes and set `OPENAI_MODEL` to a name your server will accept.
+**vLLM / llama.cpp / Text Generation Inference**: use only a server version that implements Responses. Point `OPENAI_BASE_URL` at its API base URL and set `OPENAI_MODEL` to a name it accepts.
 
 **Model picks for memory work**: compression and summarization are short tasks (<2K tokens in, <500 tokens out) where a 7B instruct model is plenty. Recommendations:
 
@@ -1636,23 +1636,16 @@ Create `~/.agentmemory/.env`:
 #                                          # embedding provider (further below). Set
 #                                          # OPENAI_API_KEY_FOR_LLM=false to scope it
 #                                          # to embeddings only.
-# OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
-#                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
-#                                          # Auto-detected from `.openai.azure.com` hostname; uses
-#                                          # api-key header + api-version query param.
-# OPENAI_API_VERSION=2024-08-01-preview    # Optional: Azure api-version query param
+# OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Responses-compatible endpoints
+#                                          # A custom endpoint must support /responses.
 # OPENAI_MODEL=gpt-5.6-luna                # Optional: default model
-# OPENAI_TIMEOUT_MS=60000                  # Optional: OpenAI-scoped alias for the outbound fetch
+# OPENAI_TIMEOUT_MS=60000                  # Optional: OpenAI-scoped alias for the outbound SDK request
 #                                          # timeout. Takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
 #                                          # for back-compat with v0.9.17. New configs should
 #                                          # prefer the global AGENTMEMORY_LLM_TIMEOUT_MS below.
 # OPENAI_REASONING_EFFORT=none             # Optional: "low" | "medium" | "high" | "none"
-#                                          # Honored only by OpenAI's reasoning models (o1, o3,
-#                                          # gpt-*-reasoning) and providers that mirror that
-#                                          # schema (Ollama Cloud thinking models). Standard
-#                                          # chat models reject this field with 400. Set to
-#                                          # "none" for thinking models that return reasoning
-#                                          # but no content.
+#                                          # Sent as reasoning.effort to Responses. Models that
+#                                          # do not support reasoning may reject it.
 # OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
 #                                          # for LLM (useful if you only want OpenAI for embeddings)
 # Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
@@ -1663,7 +1656,7 @@ Create `~/.agentmemory/.env`:
 # EMBEDDING_PROVIDER=local
 # VOYAGE_API_KEY=...
 # OPENAI_API_KEY=sk-...
-# OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
+# OPENAI_BASE_URL=https://api.openai.com   # Embedding base URL (or set OPENAI_EMBEDDING_BASE_URL)
 # OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 # OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
 # OPENAI_EMBEDDING_BASE_URL=https://...   # Embeddings only; falls back to OPENAI_BASE_URL
@@ -1671,9 +1664,9 @@ Create `~/.agentmemory/.env`:
 
 # Outbound LLM / embedding timeout
 # AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every
-                                          # raw-fetch provider (Gemini, OpenRouter, MiniMax,
-                                          # OpenAI LLM, OpenAI/Cohere/Voyage/OpenRouter
-                                          # embedding). For the OpenAI LLM path, the
+# raw-fetch providers (Gemini, OpenRouter, MiniMax and embeddings).
+#                                          # The OpenAI LLM uses the SDK with the same timeout.
+#                                          # For the OpenAI LLM path, the
                                           # OpenAI-scoped OPENAI_TIMEOUT_MS alias (above)
                                           # takes precedence when set, for back-compat
                                           # with v0.9.17.

@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   buildAuthHeaders,
-  buildChatUrl,
   buildEmbeddingUrl,
   detectAzure,
   normalizeBaseUrl,
@@ -31,92 +30,6 @@ describe("_openai-shared — detectAzure", () => {
   it("returns false for malformed URLs", () => {
     expect(detectAzure("not-a-url")).toBe(false);
     expect(detectAzure("")).toBe(false);
-  });
-});
-
-describe("_openai-shared — buildChatUrl", () => {
-  it("appends /v1/chat/completions for standard OpenAI", () => {
-    expect(buildChatUrl("https://api.openai.com", false, "2024-08-01-preview")).toBe(
-      "https://api.openai.com/v1/chat/completions",
-    );
-  });
-
-  it("appends /chat/completions + api-version for Azure", () => {
-    const url = buildChatUrl(
-      "https://myresource.openai.azure.com/openai/deployments/mydeploy",
-      true,
-      "2024-08-01-preview",
-    );
-    expect(url).toBe(
-      "https://myresource.openai.azure.com/openai/deployments/mydeploy/chat/completions?api-version=2024-08-01-preview",
-    );
-  });
-
-  it("URL-encodes the api-version", () => {
-    const url = buildChatUrl(
-      "https://r.openai.azure.com/openai/deployments/d",
-      true,
-      "preview/with/slashes",
-    );
-    expect(url).toContain("api-version=preview%2Fwith%2Fslashes");
-  });
-
-  it("preserves pre-existing query params on the base URL (CodeRabbit catch)", () => {
-    // A corporate proxy or diagnostics endpoint might already carry
-    // query parameters on the base URL. String-concat would have
-    // interpolated the route path into the query string; URL-API
-    // composition keeps the query intact and adds api-version
-    // alongside.
-    const url = buildChatUrl(
-      "https://proxy.example.com/openai/deployments/d?tenant=acme",
-      true,
-      "2024-08-01-preview",
-    );
-    const parsed = new URL(url);
-    expect(parsed.pathname).toBe("/openai/deployments/d/chat/completions");
-    expect(parsed.searchParams.get("tenant")).toBe("acme");
-    expect(parsed.searchParams.get("api-version")).toBe("2024-08-01-preview");
-  });
-
-  it("strips trailing slashes from base path before joining route", () => {
-    const url = buildChatUrl(
-      "https://r.openai.azure.com/openai/deployments/d/",
-      true,
-      "2024-08-01-preview",
-    );
-    expect(new URL(url).pathname).toBe("/openai/deployments/d/chat/completions");
-  });
-
-  it("routes through /openai/v1 when the base URL has no /deployments/ segment (Azure v1 GA)", () => {
-    // Azure shipped a v1 URL pattern that mirrors the OpenAI shape:
-    // /openai/v1/chat/completions, deployment passed in the body as
-    // `model`. No api-version query param.
-    const url = buildChatUrl(
-      "https://r.openai.azure.com",
-      true,
-      "2024-08-01-preview", // ignored on v1
-    );
-    const parsed = new URL(url);
-    expect(parsed.pathname).toBe("/openai/v1/chat/completions");
-    expect(parsed.searchParams.get("api-version")).toBeNull();
-  });
-
-  it("strips a trailing /openai or /openai/v1 prefix when composing v1 URLs", () => {
-    // Users may pre-configure OPENAI_BASE_URL with the /openai/v1
-    // suffix already present. We should not double it.
-    const fromOpenai = buildChatUrl(
-      "https://r.openai.azure.com/openai",
-      true,
-      "ignored",
-    );
-    expect(new URL(fromOpenai).pathname).toBe("/openai/v1/chat/completions");
-
-    const fromV1 = buildChatUrl(
-      "https://r.openai.azure.com/openai/v1",
-      true,
-      "ignored",
-    );
-    expect(new URL(fromV1).pathname).toBe("/openai/v1/chat/completions");
   });
 });
 
@@ -153,21 +66,11 @@ describe("_openai-shared — buildEmbeddingUrl", () => {
 describe("_openai-shared — non-OpenAI base URLs", () => {
   it("does not double /v1 when base URL already ends with /v1 (DeepSeek shape)", () => {
     expect(
-      buildChatUrl("https://api.deepseek.com/v1", false, "2024-08-01-preview"),
-    ).toBe("https://api.deepseek.com/v1/chat/completions");
-    expect(
       buildEmbeddingUrl("https://api.deepseek.com/v1", false, "2024-08-01-preview"),
     ).toBe("https://api.deepseek.com/v1/embeddings");
   });
 
   it("does not inject /v1 when provider uses non-OpenAI version segment (Zhipu /api/paas/v4)", () => {
-    expect(
-      buildChatUrl(
-        "https://open.bigmodel.cn/api/paas/v4",
-        false,
-        "2024-08-01-preview",
-      ),
-    ).toBe("https://open.bigmodel.cn/api/paas/v4/chat/completions");
     expect(
       buildEmbeddingUrl(
         "https://open.bigmodel.cn/api/paas/v4",
@@ -177,20 +80,6 @@ describe("_openai-shared — non-OpenAI base URLs", () => {
     ).toBe("https://open.bigmodel.cn/api/paas/v4/embeddings");
   });
 
-  it("tolerates trailing slash on already-versioned base", () => {
-    expect(
-      buildChatUrl("https://api.deepseek.com/v1/", false, "2024-08-01-preview"),
-    ).toBe("https://api.deepseek.com/v1/chat/completions");
-  });
-
-  it("handles localhost OpenAI-compatible servers with explicit /v1", () => {
-    expect(
-      buildChatUrl("http://localhost:11434/v1", false, "2024-08-01-preview"),
-    ).toBe("http://localhost:11434/v1/chat/completions");
-    expect(
-      buildChatUrl("http://localhost:8000/v1", false, "2024-08-01-preview"),
-    ).toBe("http://localhost:8000/v1/chat/completions");
-  });
 });
 
 describe("_openai-shared — buildAuthHeaders", () => {

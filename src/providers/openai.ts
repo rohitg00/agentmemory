@@ -1,70 +1,38 @@
+import OpenAI from "openai";
 import type { MemoryProvider } from "../types.js";
 import { getEnvVar } from "../config.js";
-import { fetchWithTimeout } from "./_fetch.js";
-import {
-  DEFAULT_AZURE_API_VERSION,
-  buildAuthHeaders,
-  buildChatUrl,
-  detectAzure,
-  normalizeBaseUrl,
-} from "./_openai-shared.js";
+import { normalizeBaseUrl } from "./_openai-shared.js";
 
-const DEFAULT_MODEL = "gpt-5.6-luna";
 const DEFAULT_TIMEOUT_MS = 60_000;
 
-/**
- * OpenAI-compatible LLM provider.
- *
- * Uses raw fetch (no SDK) to support any OpenAI-compatible endpoint:
- *   - OpenAI official
- *   - Azure OpenAI (auto-detected from .openai.azure.com host)
- *   - DeepSeek
- *   - 硅基流动 (SiliconFlow)
- *   - vLLM / LM Studio / Ollama (with OpenAI compatibility layer)
- *   - Any other proxy implementing /v1/chat/completions
- *
- * Required env vars:
- *   OPENAI_API_KEY  — API key
- *
- * Optional:
- *   OPENAI_BASE_URL          — base URL without path (default: https://api.openai.com).
- *                              Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
- *   OPENAI_MODEL             — model name (default: gpt-5.6-luna)
- *   OPENAI_API_VERSION       — Azure api-version query param (default: 2024-08-01-preview)
- *   OPENAI_TIMEOUT_MS        — outbound fetch timeout in ms (OpenAI-scoped alias,
- *                              takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
- *                              for back-compat with the v0.9.17 shipping name).
- *   AGENTMEMORY_LLM_TIMEOUT_MS — outbound fetch timeout in ms shared across all
- *                              raw-fetch LLM + embedding providers. Used when
- *                              OPENAI_TIMEOUT_MS is not set. Default: 60000.
- *   MAX_TOKENS               — max output tokens (default: from config or 4096)
- *   OPENAI_REASONING_EFFORT  — "low" | "medium" | "high" | "none"
- *                              Passthrough for reasoning models (e.g. Ollama Cloud
- *                              thinking models). Set to "none" to ensure
- *                              message.content is populated instead of only
- *                              message.reasoning.
- */
 export class OpenAIProvider implements MemoryProvider {
   name = "openai";
-  private apiKey: string;
+  private client: OpenAI;
   private model: string;
   private maxTokens: number;
-  private baseUrl: string;
-  private reasoningEffort?: string;
+  private reasoningEffort?: "none" | "low" | "medium" | "high";
   private timeoutMs: number;
-  private isAzure: boolean;
-  private azureApiVersion: string;
 
   constructor(apiKey: string, model: string, maxTokens: number, baseURL?: string) {
-    this.apiKey = apiKey;
     this.model = model;
     this.maxTokens = maxTokens;
-    this.baseUrl = normalizeBaseUrl(baseURL || getEnvVar("OPENAI_BASE_URL"));
-    this.reasoningEffort = getEnvVar("OPENAI_REASONING_EFFORT") || undefined;
     this.timeoutMs = resolveTimeout();
-    this.azureApiVersion =
-      getEnvVar("OPENAI_API_VERSION") || DEFAULT_AZURE_API_VERSION;
-    this.isAzure = detectAzure(this.baseUrl);
+
+    const reasoningEffort = getEnvVar("OPENAI_REASONING_EFFORT");
+    if (reasoningEffort) {
+      if (!isReasoningEffort(reasoningEffort)) {
+        throw new Error(`Invalid OPENAI_REASONING_EFFORT: ${reasoningEffort}`);
+      }
+      this.reasoningEffort = reasoningEffort;
+    }
+
+    const url = new URL(normalizeBaseUrl(baseURL || getEnvVar("OPENAI_BASE_URL")));
+    if (url.pathname === "/") url.pathname = "/v1";
+    this.client = new OpenAI({
+      apiKey,
+      baseURL: url.toString().replace(/\/+$/, ""),
+      timeout: this.timeoutMs,
+    });
   }
 
   async compress(systemPrompt: string, userPrompt: string): Promise<string> {
@@ -76,73 +44,59 @@ export class OpenAIProvider implements MemoryProvider {
   }
 
   private async call(systemPrompt: string, userPrompt: string): Promise<string> {
-    const url = buildChatUrl(this.baseUrl, this.isAzure, this.azureApiVersion);
-    const body: Record<string, unknown> = {
-      model: this.model,
-      max_tokens: this.maxTokens,
-      stream: false,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-    };
-    if (this.reasoningEffort) {
-      body.reasoning_effort = this.reasoningEffort;
-    }
-
-    let response: Response;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      response = await fetchWithTimeout(
-        url,
+      const response = await this.client.responses.create(
         {
-          method: "POST",
-          headers: buildAuthHeaders(this.apiKey, this.isAzure),
-          body: JSON.stringify(body),
+          model: this.model,
+          instructions: systemPrompt,
+          input: userPrompt,
+          max_output_tokens: this.maxTokens,
+          store: false,
+          ...(this.reasoningEffort && { reasoning: { effort: this.reasoningEffort } }),
         },
-        this.timeoutMs,
+        { signal: controller.signal },
       );
+
+      if (response.status !== "completed") {
+        throw new Error(
+          `OpenAI response ${response.status}: ${response.error?.message ?? response.incomplete_details?.reason ?? "no completed output"}`,
+        );
+      }
+      if (!response.output_text.trim()) {
+        const refusal = response.output
+          .filter((item) => item.type === "message")
+          .flatMap((item) => item.content)
+          .find((content) => content.type === "refusal");
+        throw new Error(
+          `OpenAI returned no output text${refusal ? `: ${refusal.refusal}` : ""}`,
+        );
+      }
+      return response.output_text;
     } catch (err) {
-      const aborted = err instanceof Error && err.name === "AbortError";
-      if (aborted) {
+      if (controller.signal.aborted || err instanceof OpenAI.APIConnectionTimeoutError) {
         throw new Error(
           `OpenAI API request timed out after ${this.timeoutMs}ms — set OPENAI_TIMEOUT_MS (or AGENTMEMORY_LLM_TIMEOUT_MS) to raise the bound or check the provider status.`,
+          { cause: err },
         );
       }
       throw err;
+    } finally {
+      clearTimeout(timeout);
     }
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`OpenAI API error (${response.status}): ${text}`);
-    }
-
-    const data = (await response.json()) as {
-      choices?: Array<{
-        message?: { content?: string; reasoning?: string; reasoning_content?: string };
-      }>;
-    };
-    const message = data.choices?.[0]?.message;
-    const content = message?.content;
-    if (content) {
-      return content;
-    }
-    const reasoning = message?.reasoning ?? message?.reasoning_content;
-    if (reasoning) {
-      return reasoning;
-    }
-    throw new Error(
-      `OpenAI returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
-    );
   }
 }
 
+function isReasoningEffort(value: string): value is "none" | "low" | "medium" | "high" {
+  return value === "none" || value === "low" || value === "medium" || value === "high";
+}
+
 function resolveTimeout(): number {
-  const openaiRaw = getEnvVar("OPENAI_TIMEOUT_MS");
-  const openai = parsePositiveInt(openaiRaw);
+  const openai = parsePositiveInt(getEnvVar("OPENAI_TIMEOUT_MS"));
   if (openai !== undefined) return openai;
 
-  const globalRaw = getEnvVar("AGENTMEMORY_LLM_TIMEOUT_MS");
-  const globalMs = parsePositiveInt(globalRaw);
+  const globalMs = parsePositiveInt(getEnvVar("AGENTMEMORY_LLM_TIMEOUT_MS"));
   if (globalMs !== undefined) return globalMs;
 
   return DEFAULT_TIMEOUT_MS;
@@ -151,12 +105,7 @@ function resolveTimeout(): number {
 function parsePositiveInt(raw: string | null | undefined): number | undefined {
   if (!raw) return undefined;
   const trimmed = raw.trim();
-  // Reject malformed values like "30ms" or "1_000" — parseInt would
-  // silently return 30 / 1, swallowing user typos as valid timeouts.
-  // The regex enforces pure digits (no sign, no trailing units, no
-  // separators) before we hand off to Number.
   if (!/^\d+$/.test(trimmed)) return undefined;
   const n = Number(trimmed);
   return Number.isFinite(n) && n > 0 ? n : undefined;
 }
-

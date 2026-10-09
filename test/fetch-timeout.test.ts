@@ -503,7 +503,7 @@ describe("OpenAIProvider timeout env precedence", () => {
   });
 });
 
-describe("OpenAIProvider thinking-model fallback", () => {
+describe("OpenAIProvider Responses output", () => {
   beforeEach(() => {
     delete process.env["OPENAI_TIMEOUT_MS"];
     delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
@@ -522,46 +522,42 @@ describe("OpenAIProvider thinking-model fallback", () => {
     );
   }
 
-  it("returns reasoning_content when content is empty (DeepSeek V4 / Qwen3 shape)", async () => {
+  it("returns text from output items rather than reasoning items", async () => {
     mockOpenAIResponse({
-      choices: [
+      object: "response",
+      status: "completed",
+      output: [
+        { type: "reasoning", summary: [{ text: "internal" }] },
         {
-          message: {
-            content: "",
-            reasoning_content: "thinking-mode output",
-          },
+          type: "message",
+          content: [{ type: "output_text", text: "summary" }],
         },
       ],
     });
     const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
     const out = await provider.compress("system", "user");
-    expect(out).toBe("thinking-mode output");
+    expect(out).toBe("summary");
   });
 
-  it("still returns reasoning (no underscore) for older o-series shape", async () => {
+  it("does not treat reasoning-only output as a summary", async () => {
     mockOpenAIResponse({
-      choices: [{ message: { content: "", reasoning: "older shape" } }],
+      object: "response",
+      status: "completed",
+      output: [{ type: "reasoning", summary: [{ text: "internal" }] }],
     });
     const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
-    const out = await provider.compress("system", "user");
-    expect(out).toBe("older shape");
+    await expect(provider.compress("system", "user")).rejects.toThrow(/no output text/);
   });
 
-  it("content wins over both reasoning fields when present", async () => {
+  it("rejects incomplete output even when text is present", async () => {
     mockOpenAIResponse({
-      choices: [
-        {
-          message: {
-            content: "real content",
-            reasoning: "ignore",
-            reasoning_content: "also ignore",
-          },
-        },
-      ],
+      object: "response",
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [{ type: "message", content: [{ type: "output_text", text: "partial" }] }],
     });
     const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
-    const out = await provider.compress("system", "user");
-    expect(out).toBe("real content");
+    await expect(provider.compress("system", "user")).rejects.toThrow(/max_output_tokens/);
   });
 });
 

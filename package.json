@@ -71,26 +71,27 @@
     "url": "https://github.com/rohitg00/agentmemory"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.142",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.296",
     "@anthropic-ai/sdk": "^0.100.1",
-    "@clack/prompts": "^1.2.0",
-    "dotenv": "^18.0.3",
+    "@clack/prompts": "^1.8.1",
     "@iii-dev/helpers": "0.22.1",
+    "dotenv": "^18.0.7",
     "iii-sdk": "0.22.1",
+    "openai": "^7.32.0",
     "picocolors": "^1.1.1",
-    "zod": "^4.0.0"
+    "zod": "^4.6.5"
   },
   "optionalDependencies": {
-    "@huggingface/transformers": "^4.2.0",
-    "@node-rs/jieba": "^2.0.1",
+    "@huggingface/transformers": "^4.3.1",
+    "@node-rs/jieba": "^2.0.4",
     "tiny-segmenter": "^0.2.0"
   },
   "devDependencies": {
-    "@types/node": "^26.6.2",
+    "@types/node": "^26.6.5",
     "tsdown": "^0.21.10",
-    "tsx": "^4.19.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "qs": "^6.15.2",

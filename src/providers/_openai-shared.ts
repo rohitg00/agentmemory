@@ -21,7 +21,7 @@
 // builder; otherwise v1. Users opt into v1 by stripping the
 // `/openai/deployments/<deployment>` suffix from their
 // OPENAI_BASE_URL (or never adding it). See azureStyleOf().
-
+// NOTE: This has been modified 
 export const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com";
 
 // Default api-version for the legacy Azure URL pattern. Only used
@@ -100,19 +100,6 @@ function appendOpenAIRoute(baseUrl: string, route: string): string {
     return `${trimmedBase}/v1${cleanRoute}`;
   }
   return `${trimmedBase}${cleanRoute}`;
-}
-
-export function buildChatUrl(
-  baseUrl: string,
-  isAzure: boolean,
-  azureApiVersion: string,
-): string {
-  if (isAzure) {
-    return azureStyleOf(baseUrl) === "legacy"
-      ? legacyAzureUrl(baseUrl, "/chat/completions", azureApiVersion)
-      : v1AzureUrl(baseUrl, "/chat/completions");
-  }
-  return appendOpenAIRoute(baseUrl, "/chat/completions");
 }
 
 export function buildEmbeddingUrl(
