@@ -1,0 +1,9 @@
+{
+  "planned": 11,
+  "executed": 11,
+  "passed": 9,
+  "failed": 2,
+  "complete": true,
+  "finishedAt": "2026-10-09T15:08:46.556Z",
+  "claim": "Development regression fixture. No competitor ranking or agent task-success claim."
+}
