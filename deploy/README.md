@@ -17,6 +17,7 @@ exec'ing the agentmemory CLI.
 | [Railway](./railway/README.md) | Push from GitHub, volume in the dashboard. Easiest managed dashboard flow. | $5/month (Hobby plan flat fee) |
 | [Render](./render/README.md) | Blueprint-driven; persistent disk attaches automatically. Most "set it and forget it." | $7.25/month (Starter web + 1 GB disk) |
 | [Coolify](./coolify/README.md) | Self-hosted on your own VPS. Same Docker Compose stack, you own the host and the data. | VPS cost only (Hetzner CX22 ~€3.79/month) |
+| [ZopDay](./zopday/README.md) | Managed ZopCloud, or a Helm release in your own AWS/GCP account. Same cloud as the rest of your infrastructure. | ZopCloud free tier; own cloud billed by your provider |
 
 ## What every template guarantees
 
@@ -49,8 +50,11 @@ exec'ing the agentmemory CLI.
 - Pick **Coolify** if you already run a VPS and want a self-hosted
   control plane — same Docker Compose stack, no third-party host has
   your memories.
+- Pick **ZopDay** if your team already runs in AWS or GCP and wants
+  agentmemory in that account, or if you want a managed pool with no
+  cloud account to connect (ZopCloud).
 
-All four give you the same agentmemory API at the same port (3111)
+All five give you the same agentmemory API at the same port (3111)
 with the same auth model. Migrating between them later is a `tar` of
 `/data` and a re-import — see each platform's README for the exact
 commands.
