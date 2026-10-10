@@ -12,6 +12,7 @@ npm run eval:coding-life -- --adapters grep,bm25
 npm run build
 npm run eval:coding-life -- --adapters grep,bm25,agentmemory
 npm run eval:lifecycle
+npm run eval:recall
 ```
 
 The defaults are local and require no model API keys. The HTTP adapter and lifecycle suite require an installed **iii 0.22.1** binary. Set `AGENTMEMORY_EVAL_III` to its absolute path, or use the binary installed by AgentMemory at `~/.agentmemory/bin/iii`.
@@ -89,6 +90,17 @@ Query timing excludes initialization and cleanup. Ingestion timing includes sand
 The reader is a deterministic command selector over returned text. The fixture creates an Action record and verifies its stored arguments/provenance. It does not run shell commands or measure LLM reasoning. All assertions must pass for a successful exit; current runtime failures remain red rather than being marked expected failures.
 
 ## Methodology and publication
+
+`eval:recall` runs a synthetic saved-memory regression against the built CLI and
+iii. Each of five queries has one long saved memory and 360 short tool observations;
+a separate-project memory tests scope preservation. It checks filtering before
+retrieval limits, all recall formats over REST and MCP, tiny-budget disclosure,
+full-content expansion, observation-only search, and restart persistence. Reports
+include mixed and memory-only result IDs, source fingerprints, and every check.
+The distractors exceed both keyword and hybrid candidate windows, and the mixed
+search control must miss the saved record before filtered recall is tested.
+These checks measure the response contract on a development fixture, not general
+answer accuracy or competitor performance.
 
 Useful methods were adapted from [gbrain-evals](https://github.com/garrytan/gbrain-evals) (strict evidence and lifecycle controls), [Mem0 memory-benchmarks](https://github.com/mem0ai/memory-benchmarks) (long-history coverage), [DolphinBench](https://github.com/mem0ai/dolphinbench) (memory-to-action checks), and [Supermemory MemoryBench](https://github.com/supermemoryai/memorybench) (provider separation and per-case reporting). This is an independent implementation, not an official run of those suites.
 

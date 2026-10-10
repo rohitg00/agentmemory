@@ -39,6 +39,7 @@
     "eval:longmemeval": "node --import tsx eval/runner/longmemeval.ts",
     "eval:coding-life": "node --import tsx eval/runner/coding-life.ts",
     "eval:lifecycle": "node --import tsx eval/runner/lifecycle.ts",
+    "eval:recall": "node --import tsx eval/runner/recall-quality.ts",
     "eval:check": "tsc --noEmit --project tsconfig.eval.json && vitest run test/eval-adapters.test.ts test/eval-integrity.test.ts"
   },
   "keywords": [

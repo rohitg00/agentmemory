@@ -31,9 +31,9 @@ describe("SearchIndex", () => {
 
   it("counts memory and lesson documents apart from observations", () => {
     index.add(makeObs({ id: "obs_1" }));
-    index.add(makeObs({ id: "mem_1", sessionId: "memory" }));
-    index.add(makeObs({ id: "mem_2", sessionId: "ses_1" }));
-    index.add(makeObs({ id: "lsn_1", sessionId: "lesson" }));
+    index.add(makeObs({ id: "mem_1", sessionId: "memory" }), "memory");
+    index.add(makeObs({ id: "mem_2", sessionId: "ses_1" }), "memory");
+    index.add(makeObs({ id: "lsn_1", sessionId: "lesson" }), "lesson");
 
     expect(index.documentKindCounts()).toEqual({ memories: 2, lessons: 1 });
   });

@@ -102,7 +102,7 @@ describe("reconcileIndex", () => {
     const kv = mockKV();
     await kv.set("mem:sessions", "s1", makeSession("s1", 1));
     await kv.set("mem:obs:s1", "obs_a", makeObs("obs_a", "s1"));
-    getSearchIndex().add(makeObs("mem_x", "s1"));
+    getSearchIndex().add(makeObs("mem_x", "s1"), "memory");
 
     const added = await reconcileIndex(kv as never);
 

@@ -30,12 +30,19 @@ id, or an importance score. If nothing comes back, say so.
 
 1. Call `memory_smart_search` with the user's text as `query` and `limit: 10`.
    Pass `project` when the user scopes to a specific repo.
+   Use `targetLayer: "memory"` for explicitly saved knowledge, or
+   `targetLayer: "observation"` for captured activity. Omit it for mixed search.
 2. Group results by session. Records carry a provenance channel (`user`, `agent`,
    `tool`, `import`, `shared`); when results conflict, prefer `user` over `agent`
    inference, and flag `shared` records as another teammate's write.
 3. For each observation show its type, title, and narrative.
 4. Lead with the high-signal observations (importance >= 7).
-5. If zero results, suggest 2-3 alternative search terms and stop. Do not guess.
+5. With `memory_recall`, inspect `matched_count`, `excluded_by_budget`, and
+   `content_truncated` before treating an empty or shortened response as absent
+   knowledge. Recover full content with `memory_smart_search` using `expandIds`
+   and the same project, agent, and layer filters. `minimum_budget` reports the
+   estimated budget needed for a minimal preview when the budget is too small.
+6. If there are no matches, suggest 2-3 alternative search terms and stop. Do not guess.
 
 ## Anti-patterns
 

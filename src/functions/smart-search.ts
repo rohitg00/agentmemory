@@ -7,6 +7,7 @@ import type {
   Lesson,
   Memory,
 } from "../types.js";
+import { getSearchResultLayer, isSearchLayer, matchesSearchLayer, type SearchLayer, type SearchResultLayer } from "../state/search-layer.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
@@ -24,6 +25,7 @@ import { logger } from "../logger.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { getCounters } from "../telemetry/setup.js";
 import { memoryToObservation } from "../state/memory-utils.js";
+import { getSearchIndex } from "./search.js";
 
 export interface RecentSearch {
   sessionId: string;
@@ -77,7 +79,7 @@ const LESSON_CONTENT_PREVIEW_CHARS = 240;
 export function registerSmartSearchFunction(
   sdk: IIIClient,
   kv: StateKV,
-  searchFn: (query: string, limit: number) => Promise<HybridSearchResult[]>,
+  searchFn: (query: string, limit: number, targetLayer?: SearchLayer) => Promise<HybridSearchResult[]>,
 ): void {
   sdk.registerFunction("mem::smart-search",
     async (data: {
@@ -86,6 +88,7 @@ export function registerSmartSearchFunction(
       limit?: number;
       project?: string;
       includeLessons?: boolean;
+      targetLayer?: SearchLayer;
       // optional per-call agent filter for runtimes routing many
       // roles through one server. "*" opts out of the env-default
       // scope and returns hits from every agent.
@@ -94,6 +97,10 @@ export function registerSmartSearchFunction(
       source?: string;
     }) => {
 
+      if (data.targetLayer !== undefined && !isSearchLayer(data.targetLayer)) {
+        throw new Error("mem::smart-search: targetLayer must be one of 'all', 'memory', or 'observation'");
+      }
+      const targetLayer = data.targetLayer ?? "all";
       const isolated = isAgentScopeIsolated();
       const explicitAgentId =
         typeof data.agentId === "string" && data.agentId.trim().length > 0
@@ -125,11 +132,11 @@ export function registerSmartSearchFunction(
       const matchesProject = project ? makeProjectMatcher(kv, project) : undefined;
 
       if (data.expandIds && data.expandIds.length > 0) {
-        const raw = data.expandIds.slice(0, 20);
+        const raw = data.expandIds.slice(0, 100);
         const items = raw.map((entry) => {
           if (typeof entry === "string") return { obsId: entry, sessionId: undefined as string | undefined };
-          if (entry && typeof entry === "object" && typeof (entry as any).obsId === "string") {
-            return { obsId: (entry as any).obsId, sessionId: (entry as any).sessionId as string | undefined };
+          if (entry && typeof entry === "object" && typeof entry.obsId === "string") {
+            return { obsId: entry.obsId, sessionId: typeof entry.sessionId === "string" ? entry.sessionId : undefined };
           }
           return null;
         }).filter((item): item is NonNullable<typeof item> => item !== null);
@@ -138,37 +145,40 @@ export function registerSmartSearchFunction(
           obsId: string;
           sessionId: string;
           observation: CompressedObservation;
+          layer: SearchResultLayer;
         }> = [];
 
-        const results = await Promise.all(
-          items.map(({ obsId, sessionId }) =>
-            findObservation(kv, obsId, sessionId).then((obs) =>
-              obs ? { obsId, sessionId: obs.sessionId, observation: withoutObservationSource(obs) } : null,
-            ),
-          ),
-        );
-        for (const r of results) {
-          if (r) expanded.push(r);
+        let attempted = 0;
+        for (let offset = 0; offset < items.length && expanded.length < 20; offset += 10) {
+          const batch = items.slice(offset, offset + 10);
+          const results = await Promise.all(batch.map(({ obsId, sessionId }) => findObservation(kv, obsId, sessionId)));
+          attempted += batch.length;
+          for (const result of results) {
+            if (!result) continue;
+            const { observation, layer } = result;
+            if (!matchesSearchLayer(observation.id, observation.sessionId, targetLayer, layer)) continue;
+            if (filterAgentId && observation.agentId !== filterAgentId) continue;
+            if (matchesProject && !await matchesProject(observation.id, observation.sessionId)) continue;
+            expanded.push({
+              obsId: observation.id,
+              sessionId: observation.sessionId,
+              observation: withoutObservationSource(observation),
+              layer,
+            });
+          }
         }
-
-        const projectScoped = matchesProject
-          ? await filterProjectResults(expanded, (entry) => matchesProject(entry.obsId, entry.sessionId))
-          : expanded;
-        const scoped = filterAgentId
-          ? projectScoped.filter((e) => e.observation.agentId === filterAgentId)
-          : projectScoped;
+        const scoped = expanded.slice(0, 20);
 
         void recordAccessBatch(
           kv,
           scoped.map((e) => e.observation.id),
         );
 
-        const truncated = data.expandIds.length > raw.length;
+        const truncated = data.expandIds.length > raw.length || attempted < items.length || expanded.length > scoped.length;
         logger.info("Smart search expanded", {
           requested: data.expandIds.length,
-          attempted: raw.length,
+          attempted,
           returned: scoped.length,
-          filteredOutOfScope: expanded.length - scoped.length,
           truncated,
         });
         return { mode: "expanded", results: scoped, truncated };
@@ -182,21 +192,27 @@ export function registerSmartSearchFunction(
       // Lesson recall stays capped: lessons are denser than raw
       // observations so 10 covers most recall flows.
       const lessonLimit = Math.min(limit, 10);
-      const includeLessons = data.includeLessons !== false;
+      const includeLessons = targetLayer === "all" && data.includeLessons !== false;
       const overFetchLimit = filterAgentId || project
         ? Math.max(Math.min(limit * 10, 300), 100)
         : limit;
 
       const [hybridResults, lessons] = await Promise.all([
-        searchFn(data.query, overFetchLimit),
+        searchFn(data.query, overFetchLimit, targetLayer),
         includeLessons
           ? recallLessons(sdk, data.query, lessonLimit, project)
           : Promise.resolve([]),
       ]);
 
+      const layerResults = hybridResults.filter((result) => matchesSearchLayer(
+        result.observation.id,
+        result.sessionId,
+        targetLayer,
+        result.layer ?? getSearchIndex().layerOf(result.observation.id),
+      ));
       const projectResults = matchesProject
-        ? await filterProjectResults(hybridResults, (result) => matchesProject(result.observation.id, result.sessionId))
-        : hybridResults;
+        ? await filterProjectResults(layerResults, (result) => matchesProject(result.observation.id, result.sessionId))
+        : layerResults;
 
       const filteredHybrid = filterAgentId
         ? projectResults
@@ -206,6 +222,7 @@ export function registerSmartSearchFunction(
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
+        layer: r.layer ?? getSearchIndex().layerOf(r.observation.id) ?? getSearchResultLayer(r.observation.id, r.sessionId),
         sessionId: r.sessionId,
         title: r.observation.title,
         type: r.observation.type,
@@ -351,15 +368,15 @@ async function findObservation(
   kv: StateKV,
   obsId: string,
   sessionIdHint?: string,
-): Promise<CompressedObservation | null> {
-  const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
-  if (memory) return memoryToObservation(memory);
+): Promise<{ observation: CompressedObservation; layer: SearchResultLayer } | null> {
+  const memory = await kv.get<Memory>(KV.memories, obsId);
+  if (memory) return { observation: memoryToObservation(memory), layer: "memory" };
 
   if (sessionIdHint) {
     const obs = await kv
       .get<CompressedObservation>(KV.observations(sessionIdHint), obsId)
       .catch(() => null);
-    if (obs) return obs;
+    if (obs) return { observation: obs, layer: "observation" };
   }
 
   const indexedSessionId = await lookupObservationSession(kv, obsId);
@@ -367,7 +384,7 @@ async function findObservation(
     const obs = await kv
       .get<CompressedObservation>(KV.observations(indexedSessionId), obsId)
       .catch(() => null);
-    if (obs) return obs;
+    if (obs) return { observation: obs, layer: "observation" };
   }
 
   const sessions = await kv.list<{ id: string }>(KV.sessions);
@@ -384,7 +401,7 @@ async function findObservation(
       await indexObservationSession(kv, obsId, batch[foundIndex].id).catch(
         () => {},
       );
-      return found;
+      return { observation: found, layer: "observation" };
     }
   }
   return null;

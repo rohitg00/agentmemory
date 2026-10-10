@@ -17,6 +17,8 @@ vi.mock("../src/mcp/transport.js", () => ({
 
 vi.mock("../src/config.js", () => ({
   getStandalonePersistPath: vi.fn(() => "/tmp/test-standalone.json"),
+  getAgentId: vi.fn(() => undefined),
+  isAgentScopeIsolated: vi.fn(() => false),
 }));
 
 import {
@@ -214,7 +216,8 @@ describe("handleToolCall", () => {
     );
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.results).toHaveLength(1);
-    expect(parsed.results[0].content).toBe("TypeScript is great");
+    expect(parsed.format).toBe("full");
+    expect(parsed.results[0].observation.narrative).toBe("TypeScript is great");
   });
 
   it("memory_save accepts concepts/files as arrays (plugin skill format)", async () => {

@@ -3,7 +3,12 @@
 import { InMemoryKV } from "./in-memory-kv.js";
 import { createStdioTransport } from "./transport.js";
 import { getAllTools } from "./tools-registry.js";
-import { getStandalonePersistPath } from "../config.js";
+import { getAgentId, getStandalonePersistPath, isAgentScopeIsolated } from "../config.js";
+import { isSearchLayer, type SearchLayer } from "../state/search-layer.js";
+import { memoryToObservation } from "../state/memory-utils.js";
+import { buildRecallResponse } from "../functions/recall-response.js";
+import { parseSearchExpansionIds, type SearchExpansionId } from "./search-arguments.js";
+import type { Memory, SearchResult, Session } from "../types.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
 import { queryAudit } from "../functions/audit.js";
@@ -111,8 +116,14 @@ interface Validated {
   agentId?: string;
   query?: string;
   limit?: number;
-  format?: string;
+  format?: "full" | "compact" | "narrative";
   tokenBudget?: number;
+  targetLayer?: SearchLayer;
+  cwd?: string;
+  expandIds?: SearchExpansionId[];
+  sessionId?: string;
+  source?: string;
+  includeLessons?: boolean;
   memoryIds?: string[];
   reason?: string;
 }
@@ -145,22 +156,40 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
     }
     case "memory_recall":
     case "memory_smart_search": {
+      if (args.targetLayer !== undefined && !isSearchLayer(args.targetLayer)) {
+        throw new Error("targetLayer must be one of: all, memory, observation");
+      }
+      v.targetLayer = args.targetLayer ?? "all";
+      for (const field of ["project", "cwd", "agentId", "sessionId", "source"] as const) {
+        if (args[field] !== undefined && typeof args[field] !== "string") {
+          throw new Error(`${field} must be a string`);
+        }
+        if (typeof args[field] === "string" && args[field].trim()) v[field] = args[field].trim();
+      }
+      if (toolName === "memory_smart_search") {
+        v.expandIds = parseSearchExpansionIds(args.expandIds);
+        if (typeof args.includeLessons === "boolean") v.includeLessons = args.includeLessons;
+      }
       const query = args["query"];
       if (typeof query !== "string" || !query.trim()) {
-        throw new Error("query is required");
+        if (!v.expandIds?.length) throw new Error("query is required unless expandIds is provided");
+      } else {
+        v.query = query.trim();
       }
-      v.query = query.trim();
       v.limit = parseLimit(args["limit"]);
-      const fmt = args["format"];
-      if (typeof fmt === "string" && fmt.trim()) {
-        v.format = fmt.trim().toLowerCase();
-      }
-      const budget = args["token_budget"];
-      if (typeof budget === "number" && Number.isFinite(budget) && budget > 0) {
-        v.tokenBudget = Math.floor(budget);
-      } else if (typeof budget === "string" && budget.trim()) {
-        const n = Number(budget);
-        if (Number.isFinite(n) && n > 0) v.tokenBudget = Math.floor(n);
+      if (toolName === "memory_recall") {
+        const format = typeof args.format === "string" ? args.format.trim().toLowerCase() : args.format ?? "full";
+        if (format !== "full" && format !== "compact" && format !== "narrative") {
+          throw new Error("format must be one of: full, compact, narrative");
+        }
+        v.format = format;
+        if (args.token_budget !== undefined) {
+          const budget = typeof args.token_budget === "string" ? Number(args.token_budget) : args.token_budget;
+          if (typeof budget !== "number" || !Number.isInteger(budget) || budget < 1) {
+            throw new Error("token_budget must be a positive integer");
+          }
+          v.tokenBudget = budget;
+        }
       }
       return v;
     }
@@ -210,6 +239,10 @@ async function handleProxy(
         query: v.query,
         limit: v.limit,
         format: v.format ?? "full",
+        targetLayer: v.targetLayer,
+        project: v.project,
+        cwd: v.cwd,
+        agentId: v.agentId,
       };
       if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
       const result = await handle.call("/agentmemory/search", {
@@ -219,9 +252,17 @@ async function handleProxy(
       return textResponse(result, true);
     }
     case "memory_smart_search": {
-      const body: Record<string, unknown> = { query: v.query, limit: v.limit };
-      if (v.format != null) body["format"] = v.format;
-      if (v.tokenBudget != null) body["token_budget"] = v.tokenBudget;
+      const body: Record<string, unknown> = {
+        query: v.query,
+        limit: v.limit,
+        targetLayer: v.targetLayer,
+        project: v.project,
+        agentId: v.agentId,
+        expandIds: v.expandIds,
+        sessionId: v.sessionId,
+        source: v.source,
+        includeLessons: v.includeLessons,
+      };
       const result = await handle.call("/agentmemory/smart-search", {
         method: "POST",
         body: JSON.stringify(body),
@@ -291,6 +332,8 @@ async function handleLocal(
         version: 1,
         isLatest: true,
         sessionIds: [],
+        ...(v.project !== undefined && { project: v.project }),
+        ...((v.agentId ?? getAgentId()) !== undefined && { agentId: v.agentId ?? getAgentId() }),
       });
       kvInstance.persist();
       return textResponse({ saved: id });
@@ -298,26 +341,48 @@ async function handleLocal(
 
     case "memory_recall":
     case "memory_smart_search": {
+      const isolated = isAgentScopeIsolated();
+      const agentId = v.agentId === "*" ? undefined : v.agentId ?? (isolated ? getAgentId() : undefined);
+      if (isolated && v.agentId !== "*" && !agentId) {
+        throw new Error("AGENTMEMORY_AGENT_SCOPE=isolated requires an agentId; pass '*' to read across agents");
+      }
       const query = (v.query || "").toLowerCase();
       const limit = v.limit ?? DEFAULT_LIMIT;
-      const all =
-        await kvInstance.list<Record<string, unknown>>("mem:memories");
-      const results = all
-        .filter((m) => {
-          const text = [
-            typeof m["title"] === "string" ? m["title"] : "",
-            typeof m["content"] === "string" ? m["content"] : "",
-            Array.isArray(m["files"]) ? m["files"].join(" ") : "",
-            Array.isArray(m["concepts"]) ? m["concepts"].join(" ") : "",
-            Array.isArray(m["sessionIds"]) ? m["sessionIds"].join(" ") : "",
-            typeof m["id"] === "string" ? m["id"] : "",
-          ]
-            .join(" ")
-            .toLowerCase();
-          return query.split(/\s+/).every((word) => text.includes(word));
-        })
-        .slice(0, limit);
-      return textResponse({ mode: "compact", results }, true);
+      const all = v.targetLayer === "observation" ? [] : await kvInstance.list<Memory>("mem:memories");
+      const sessions = v.project || v.cwd ? await kvInstance.list<Session>("mem:sessions") : [];
+      const sessionsById = new Map(sessions.map((session) => [session.id, session]));
+      const scoped = all.filter((memory) => {
+        if (memory.isLatest === false || (agentId && memory.agentId !== agentId)) return false;
+        const linkedSessions = (memory.sessionIds ?? []).map((id) => sessionsById.get(id));
+        if (v.project && (memory.project ? memory.project !== v.project : !linkedSessions.some((session) => session?.project === v.project))) return false;
+        if (v.cwd && !linkedSessions.some((session) => session?.cwd === v.cwd)) return false;
+        return true;
+      });
+      if (v.tool === "memory_smart_search" && v.expandIds?.length) {
+        const ids = v.expandIds.map((entry) => typeof entry === "string" ? entry : entry.obsId);
+        const byId = new Map(scoped.map((memory) => [memory.id, memory]));
+        const eligible = ids.filter((id) => byId.has(id));
+        const results = eligible.slice(0, 20).map((id) => {
+          const observation = memoryToObservation(byId.get(id)!);
+          return { obsId: id, sessionId: observation.sessionId, observation, layer: "memory" };
+        });
+        return textResponse({ mode: "expanded", results, truncated: eligible.length > 20 }, true);
+      }
+      const results = scoped.filter((memory) => {
+        const text = [memory.title, memory.content, ...(memory.files ?? []), ...(memory.concepts ?? []), ...(memory.sessionIds ?? []), memory.id]
+          .join(" ").toLowerCase();
+        return query.split(/\s+/).every((word) => text.includes(word));
+      }).slice(0, limit);
+      if (v.tool === "memory_recall") {
+        const matches: SearchResult[] = results.map((memory) => {
+          const observation = memoryToObservation(memory);
+          return { sessionId: observation.sessionId, observation, score: 1, layer: "memory" };
+        });
+        return textResponse(buildRecallResponse(matches, v.format ?? "full", v.tokenBudget), true);
+      }
+      return textResponse({ mode: "compact", results: results.map((memory) => ({
+        ...memory, obsId: memory.id, sessionId: memory.sessionIds?.[0] ?? "memory", layer: "memory",
+      })) }, true);
     }
 
     case "memory_sessions": {

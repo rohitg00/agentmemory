@@ -95,7 +95,7 @@ describe("paginated and filtered list endpoints", () => {
     const other = memory("mem_db", "2026-09-05T00:00:00Z", { title: "db", content: "postgres vacuum schedule", project: "web" });
     const scoped = memory("mem_auth_api", "2026-09-06T00:00:00Z", { title: "jwt", content: "jwt verification in api gateway", project: "api" });
     const index = getSearchIndex();
-    for (const m of [auth, other, scoped]) index.add(memoryToObservation(m));
+    for (const m of [auth, other, scoped]) index.add(memoryToObservation(m), "memory");
     const { handlers } = setup({ [KV.memories]: { [auth.id]: auth, [other.id]: other, [scoped.id]: scoped } });
 
     const res = await call(handlers, "api::memories", { q: "jwt", project: "web" });
@@ -111,7 +111,7 @@ describe("paginated and filtered list endpoints", () => {
   it("fuses keyword and vector ranks so a meaning-only match still surfaces", async () => {
     const index = getSearchIndex();
     const keywordHit = memory("mem_kw", "2026-09-01T00:00:00Z", { title: "deploy", content: "deploy pipeline uses canary stage" });
-    index.add(memoryToObservation(keywordHit));
+    index.add(memoryToObservation(keywordHit), "memory");
     const vectors = new VectorIndex();
     vectors.add("mem_vec", "memory", new Float32Array([1, 0, 0]));
     vectors.add("mem_kw", "memory", new Float32Array([0, 1, 0]));

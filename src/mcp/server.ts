@@ -10,6 +10,8 @@ import type {
   GraphEdge,
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
+import { parseSearchExpansionIds } from "./search-arguments.js";
+import { isSearchLayer } from "../state/search-layer.js";
 import { checkAuth } from "../triggers/api.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
@@ -75,6 +77,14 @@ export function registerMcpEndpoints(
       try {
         switch (name) {
           case "memory_recall": {
+            if (args.targetLayer !== undefined && !isSearchLayer(args.targetLayer)) {
+              return { status_code: 400, body: { error: "targetLayer must be one of: all, memory, observation" } };
+            }
+            for (const field of ["project", "cwd", "agentId"] as const) {
+              if (args[field] !== undefined && typeof args[field] !== "string") {
+                return { status_code: 400, body: { error: `${field} must be a string` } };
+              }
+            }
             if (typeof args.query !== "string" || !args.query.trim()) {
               return {
                 status_code: 400,
@@ -111,15 +121,11 @@ export function registerMcpEndpoints(
               format,
               token_budget: tokenBudget,
               agentId: recallAgentId,
+              project: asNonEmptyString(args.project),
+              cwd: asNonEmptyString(args.cwd),
+              targetLayer: args.targetLayer ?? "all",
             } });
-            const text =
-              format === "narrative" &&
-              result &&
-              typeof result === "object" &&
-              "text" in (result as Record<string, unknown>) &&
-              typeof (result as { text?: unknown }).text === "string"
-                ? (result as { text: string }).text
-                : JSON.stringify(result, null, 2);
+            const text = JSON.stringify(result, null, 2);
             return {
               status_code: 200,
               body: {
@@ -255,20 +261,34 @@ export function registerMcpEndpoints(
           }
 
           case "memory_smart_search": {
-            if (typeof args.query !== "string" || !args.query.trim()) {
+            if (args.targetLayer !== undefined && !isSearchLayer(args.targetLayer)) {
+              return { status_code: 400, body: { error: "targetLayer must be one of: all, memory, observation" } };
+            }
+            for (const field of ["project", "agentId", "sessionId", "source"] as const) {
+              if (args[field] !== undefined && typeof args[field] !== "string") {
+                return { status_code: 400, body: { error: `${field} must be a string` } };
+              }
+            }
+            const expandIds = parseSearchExpansionIds(args.expandIds);
+            if ((typeof args.query !== "string" || !args.query.trim()) && expandIds.length === 0) {
               return {
                 status_code: 400,
-                body: { error: "query is required for memory_smart_search" },
+                body: { error: "query or expandIds is required for memory_smart_search" },
               };
             }
-            const expandIds = parseCsvList(args.expandIds).slice(0, 20);
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
-                query: args.query,
+                query: asNonEmptyString(args.query),
                 expandIds,
                 limit,
+                project: asNonEmptyString(args.project),
+                agentId: asNonEmptyString(args.agentId),
+                sessionId: asNonEmptyString(args.sessionId),
+                source: asNonEmptyString(args.source),
+                includeLessons: typeof args.includeLessons === "boolean" ? args.includeLessons : undefined,
+                targetLayer: args.targetLayer ?? "all",
               },
             });
             return {
