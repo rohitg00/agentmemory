@@ -21,6 +21,7 @@ import net from "node:net";
 import { homedir, tmpdir, platform, arch } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertRecoveredVectors, isVectorRecoverySettled } from "./recovery.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FORBIDDEN_PORTS = new Set([3111, 3112, 3113, 4098, 4131, 4132, 4133, 49134]);
@@ -32,7 +33,7 @@ const SCENARIOS = [
   ["offline", "hooks run while the service is down and the spool is recovered on restart"],
   ["dedup", "a replayed host event after a force kill stays one observation"],
   ["deadletter", "an accepted capture that fails processing survives a restart and is visible as a dead letter"],
-  ["vectors", "vectors made before the first checkpoint survive a crash"],
+  ["vectors", "checkpointed and pending vectors survive a crash without re-embedding"],
   ["stopflush", "agentmemory stop then start loses nothing"],
   ["status", "viewer serves and /agentmemory/status explains every problem"],
   ["roundtrip", "export then import into a fresh home round-trips"],
@@ -907,33 +908,39 @@ async function main() {
     await ensureUp(instB);
     const sid = `gate-vectors-${randomBytes(4).toString("hex")}`;
     const count = 20;
-    for (let i = 0; i < count; i++) await instB.hook("PostToolUse", instB.toolEvent(sid, marker(`vec${i}x`)));
+    await instB.hook("PostToolUse", instB.toolEvent(sid, marker("vec0x")));
     const t0 = Date.now();
     const st = await poll("the first vector checkpoint", async () => {
       const s = await instB.status();
       const p = s.indexPersistence;
-      const durable = p && !p.saving && (p.pendingChanges === 0 || (p.pendingLog ?? 0) >= p.pendingChanges);
-      return (s.index?.vectorDocuments ?? 0) >= count && p?.vector?.lastSavedAt && !p.firstCheckpointPending && durable ? s : null;
+      return s.index?.vectorDocuments === 1 && p?.vector?.lastSavedAt && !p.firstCheckpointPending && !p.saving && p.pendingChanges === 0 ? s : null;
     }, { timeoutMs: 60_000, intervalMs: 500 });
     d.firstCheckpointWaitMs = Date.now() - t0;
     d.saveIntervalMs = st.indexPersistence.saveIntervalMs;
-    const vectorsBefore = st.index.vectorDocuments;
-    d.vectorsBefore = vectorsBefore;
+    d.checkpointVectors = st.index.vectorDocuments;
     assert(d.saveIntervalMs > d.firstCheckpointWaitMs, "the checkpoint only happened at the regular save interval, so the first-checkpoint boundary was not exercised");
+    for (let i = 1; i < count; i++) await instB.hook("PostToolUse", instB.toolEvent(sid, marker(`vec${i}x`)));
+    const before = await poll("vectors written after the checkpoint to reach the pending log", async () => {
+      const s = await instB.status();
+      const p = s.indexPersistence;
+      return s.index?.vectorDocuments === count && !p?.saving && p?.pendingChanges === count - 1 && p.pendingLog >= p.pendingChanges ? s : null;
+    }, { timeoutMs: 60_000, intervalMs: 500 });
+    const vectorsBefore = before.index.vectorDocuments;
+    d.vectorsBefore = vectorsBefore;
+    d.pendingLogBeforeCrash = before.indexPersistence.pendingLog;
     await sleep(STATE_FLUSH_WAIT_MS);
     const embedBefore = gate.fake.stats.inputs;
     await instB.forceKill();
     d.restartMs = await instB.start();
-    const after = await poll("vector index to load", async () => {
+    const after = await poll("startup index recovery to finish", async () => {
       const s = await instB.status();
-      return typeof s.index?.vectorDocuments === "number" && s.index.vectorDocuments > 0 ? s : null;
+      return isVectorRecoverySettled(s) ? s : null;
     }, { timeoutMs: 30_000 });
     d.vectorsAfter = after.index.vectorDocuments;
     d.pendingVectorBackfill = after.index.pendingVectorBackfill;
+    d.vectorBackfillState = after.index.vectorBackfillState;
     d.embeddingsAfterRestart = gate.fake.stats.inputs - embedBefore;
-    assert(d.vectorsAfter === vectorsBefore, `${d.vectorsAfter} vectors after the crash, expected ${vectorsBefore}`);
-    assert(d.pendingVectorBackfill === 0, `${d.pendingVectorBackfill} documents wait for vector backfill after the crash`);
-    assert(d.embeddingsAfterRestart === 0, `the restart re-embedded ${d.embeddingsAfterRestart} inputs instead of loading saved vectors`);
+    assertRecoveredVectors(after, vectorsBefore, d.embeddingsAfterRestart);
     await instB.stop();
   });
 
