@@ -5,6 +5,7 @@ import type {
   CompressedObservation,
   HybridSearchResult,
   Lesson,
+  Memory,
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -22,6 +23,7 @@ import {
 import { logger } from "../logger.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { getCounters } from "../telemetry/setup.js";
+import { memoryToObservation } from "../state/memory-utils.js";
 
 export interface RecentSearch {
   sessionId: string;
@@ -102,6 +104,10 @@ export function registerSmartSearchFunction(
       const filterAgentId = wildcardAgent
         ? undefined
         : explicitAgentId ?? envAgentId;
+      const project =
+        typeof data.project === "string" && data.project.trim()
+          ? data.project.trim()
+          : undefined;
       if (
         isolated &&
         !wildcardAgent &&
@@ -143,9 +149,24 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
+        const projectMatches = project
+          ? await Promise.all(
+              expanded.map((entry) =>
+                observationMatchesProject(
+                  kv,
+                  entry.obsId,
+                  entry.sessionId,
+                  project,
+                ),
+              ),
+            )
+          : expanded.map(() => true);
+        const projectScoped = expanded.filter(
+          (_, index) => projectMatches[index],
+        );
         const scoped = filterAgentId
-          ? expanded.filter((e) => e.observation.agentId === filterAgentId)
-          : expanded;
+          ? projectScoped.filter((e) => e.observation.agentId === filterAgentId)
+          : projectScoped;
 
         void recordAccessBatch(
           kv,
@@ -172,15 +193,14 @@ export function registerSmartSearchFunction(
       // observations so 10 covers most recall flows.
       const lessonLimit = Math.min(limit, 10);
       const includeLessons = data.includeLessons !== false;
-
       // Over-fetch when filtering. Hybrid search can't filter on
       // agentId (BM25/vector indexes don't carry it), so we ask the
       // searcher for more hits than we need and trim post-filter. 3×
       // is a defensible middle ground: enough headroom for a small
       // workload, capped at 300 so a 100-limit request never asks for
       // thousands of hits.
-      const overFetchLimit = filterAgentId
-        ? Math.min(limit * 3, 300)
+      const overFetchLimit = filterAgentId || project
+        ? Math.max(Math.min(limit * 10, 300), 100)
         : limit;
 
       const [hybridResults, lessons] = await Promise.all([
@@ -190,11 +210,26 @@ export function registerSmartSearchFunction(
           : Promise.resolve([]),
       ]);
 
+      let projectResults = hybridResults;
+      if (project) {
+        const matches = await Promise.all(
+          hybridResults.map((result) =>
+            observationMatchesProject(
+              kv,
+              result.observation.id,
+              result.sessionId,
+              project,
+            ),
+          ),
+        );
+        projectResults = hybridResults.filter((_, index) => matches[index]);
+      }
+
       const filteredHybrid = filterAgentId
-        ? hybridResults
+        ? projectResults
             .filter((r) => r.observation.agentId === filterAgentId)
             .slice(0, limit)
-        : hybridResults.slice(0, limit);
+        : projectResults.slice(0, limit);
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
@@ -344,6 +379,9 @@ async function findObservation(
   obsId: string,
   sessionIdHint?: string,
 ): Promise<CompressedObservation | null> {
+  const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
+  if (memory) return memoryToObservation(memory);
+
   if (sessionIdHint) {
     const obs = await kv
       .get<CompressedObservation>(KV.observations(sessionIdHint), obsId)
@@ -377,4 +415,18 @@ async function findObservation(
     }
   }
   return null;
+}
+
+async function observationMatchesProject(
+  kv: StateKV,
+  obsId: string,
+  sessionId: string,
+  project: string,
+): Promise<boolean> {
+  const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
+  if (memory?.project !== undefined) return memory.project === project;
+  const session = await kv
+    .get<{ project?: string }>(KV.sessions, sessionId)
+    .catch(() => null);
+  return session?.project === project;
 }
