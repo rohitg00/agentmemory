@@ -86,6 +86,107 @@ describe("pending vector log", () => {
     expect(typeof rows.get("mem_b")!.e).toBe("string");
     expect(rows.get("obs_a")!.q as number).toBeGreaterThan(rows.get("mem_b")!.q as number);
     expect(persistence.status().pendingLog).toBe(2);
+    expect(persistence.status().pendingLogAcknowledged).toBe(2);
+  });
+
+  it("acknowledges a pending row only after its write succeeds even beyond five seconds", async () => {
+    vi.useFakeTimers();
+    const kv = mockKV();
+    const slow = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope === PENDING_SCOPE) await new Promise((resolve) => setTimeout(resolve, 6_000));
+        return kv.set(scope, key, data);
+      },
+    };
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(slow as never, vector, { saveIntervalMs: 600_000 });
+    vector.add("obs_slow", "ses_1", v(1));
+
+    await vi.advanceTimersByTimeAsync(5_001);
+    expect(persistence.status()).toMatchObject({ pendingLog: 1, pendingLogAcknowledged: 0 });
+    expect(pendingRows(kv).size).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(999);
+    await persistence.flushPendingLog();
+    expect(persistence.status().pendingLogAcknowledged).toBe(1);
+  });
+
+  it("counts successful keys independently when writes finish out of order", async () => {
+    vi.useFakeTimers();
+    const kv = mockKV();
+    const delayed = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope === PENDING_SCOPE) await new Promise((resolve) => setTimeout(resolve, key === "obs_first" ? 6_000 : 1_000));
+        return kv.set(scope, key, data);
+      },
+    };
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(delayed as never, vector, { saveIntervalMs: 600_000 });
+    vector.add("obs_first", "ses_1", v(1));
+    vector.add("obs_second", "ses_1", v(2));
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect([...pendingRows(kv).keys()]).toEqual(["obs_second"]);
+    expect(persistence.status()).toMatchObject({ pendingLog: 2, pendingLogAcknowledged: 1 });
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await persistence.flushPendingLog();
+    expect(persistence.status().pendingLogAcknowledged).toBe(2);
+  });
+
+  it("does not acknowledge a failed row when an unrelated success clears the error", async () => {
+    const kv = mockKV();
+    const failing = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope === PENDING_SCOPE && key === "obs_failed") throw new Error("pending write refused");
+        return kv.set(scope, key, data);
+      },
+    };
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(failing as never, vector, { saveIntervalMs: 600_000 });
+    vector.add("obs_failed", "ses_1", v(1));
+    await persistence.flushPendingLog();
+    expect(persistence.status().pendingLogError).toContain("pending write refused");
+
+    vector.add("obs_ok", "ses_1", v(2));
+    await persistence.flushPendingLog();
+    expect(persistence.status()).toMatchObject({ pendingLog: 2, pendingLogAcknowledged: 1, pendingLogError: null });
+    expect([...pendingRows(kv).keys()]).toEqual(["obs_ok"]);
+  });
+
+  it("requires the latest same-key write acknowledgment and invalidates an earlier success", async () => {
+    vi.useFakeTimers();
+    const kv = mockKV();
+    const slow = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (scope === PENDING_SCOPE) await new Promise((resolve) => setTimeout(resolve, 6_000));
+        return kv.set(scope, key, data);
+      },
+    };
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(slow as never, vector, { saveIntervalMs: 600_000 });
+    vector.add("obs_latest", "ses_1", v(1));
+    await vi.advanceTimersByTimeAsync(0);
+    vector.add("obs_latest", "ses_1", v(2));
+
+    await vi.advanceTimersByTimeAsync(6_000);
+    expect(pendingRows(kv).size).toBe(1);
+    expect(persistence.status()).toMatchObject({ pendingLog: 1, pendingLogAcknowledged: 0 });
+
+    await vi.advanceTimersByTimeAsync(6_000);
+    await persistence.flushPendingLog();
+    expect(persistence.status().pendingLogAcknowledged).toBe(1);
+
+    vector.remove("obs_latest");
+    expect(persistence.status().pendingLogAcknowledged).toBe(0);
+    await vi.advanceTimersByTimeAsync(6_000);
+    await persistence.flushPendingLog();
+    expect(persistence.status().pendingLogAcknowledged).toBe(1);
+    expect(pendingRows(kv).get("obs_latest")).toMatchObject({ t: 1 });
   });
 
   it("does nothing when there is no vector index", async () => {
@@ -100,6 +201,7 @@ describe("pending vector log", () => {
     expect(kv.ops.filter((o) => o.scope === PENDING_SCOPE)).toEqual([]);
     expect(replay.entries).toBe(0);
     expect(persistence.status().pendingLog).toBe(0);
+    expect(persistence.status().pendingLogAcknowledged).toBe(0);
   });
 
   it("replays adds and removals after a force-kill without any embedding calls", async () => {
@@ -122,9 +224,11 @@ describe("pending vector log", () => {
     expect([...second.vector.entries()].map(([id]) => id).sort()).toEqual(["obs_2", "obs_3", "obs_4"]);
     expect(Array.from(second.vector.get("obs_3")!.embedding)).toEqual(Array.from(v(3)));
     expect(second.persistence.status().pendingLog).toBe(3);
+    expect(second.persistence.status().pendingLogAcknowledged).toBe(3);
 
     await second.persistence.save();
     expect(pendingRows(kv).size).toBe(0);
+    expect(second.persistence.status().pendingLogAcknowledged).toBe(0);
     const third = await boot(kv);
     expect([...third.vector.entries()].map(([id]) => id).sort()).toEqual(["obs_2", "obs_3", "obs_4"]);
   });
@@ -171,6 +275,7 @@ describe("pending vector log", () => {
 
     expect([...pendingRows(kv).keys()]).toEqual(["obs_during"]);
     expect(persistence.status().pendingLog).toBe(1);
+    expect(persistence.status().pendingLogAcknowledged).toBe(1);
   });
 
   it("keeps every entry when the snapshot write fails", async () => {
@@ -190,6 +295,7 @@ describe("pending vector log", () => {
 
     expect(persistence.status().vector?.lastError).toContain("state write refused");
     expect(pendingRows(kv).size).toBe(2);
+    expect(persistence.status().pendingLogAcknowledged).toBe(2);
     expect(kv.ops.filter((o) => o.op === "delete" && o.scope === PENDING_SCOPE)).toEqual([]);
   });
 
@@ -209,9 +315,11 @@ describe("pending vector log", () => {
     const second = await boot(kv);
     expect([...second.vector.entries()].map(([id]) => id).sort()).toEqual(["obs_flip", "obs_new"]);
     expect(Array.from(second.vector.get("obs_flip")!.embedding)).toEqual(Array.from(v(5)));
+    expect(second.persistence.status().pendingLogAcknowledged).toBe(pendingRows(kv).size);
 
     await second.persistence.save();
     expect(pendingRows(kv).size).toBe(0);
+    expect(second.persistence.status().pendingLogAcknowledged).toBe(0);
     const third = await boot(kv);
     expect([...third.vector.entries()].map(([id]) => id).sort()).toEqual(["obs_flip", "obs_new"]);
   });
