@@ -62,6 +62,12 @@ function parseMemoryXml(
   };
 }
 
+function overlapShare(sourceIds: string[] | undefined, obsIds: string[]): number {
+  if (!sourceIds?.length || obsIds.length === 0) return 0;
+  const source = new Set(sourceIds);
+  return obsIds.filter((id) => source.has(id)).length / obsIds.length;
+}
+
 export function registerConsolidateFunction(
   sdk: IIIClient,
   kv: StateKV,
@@ -111,10 +117,21 @@ export function registerConsolidateFunction(
       }
 
       let consolidated = 0;
+      let skipped = 0;
       const existingMemories = await kv.list<Memory>(KV.memories);
-      const existingTitles = new Set(
-        existingMemories.map((m) => m.title.toLowerCase()),
-      );
+      const scopedProject =
+        typeof data.project === "string" && data.project.trim().length > 0
+          ? data.project.trim()
+          : undefined;
+      // A scoped consolidation run must only evolve memories that belong
+      // to the same project. Without this guard, two projects that happen
+      // to consolidate observations into an identically-titled memory would
+      // cause one project's memory to silently evolve the other's — the
+      // exact class of cross-project corruption this fix is designed to
+      // prevent. An unscoped run (no data.project, background cron path)
+      // preserves the pre-existing behavior and may evolve any memory.
+      const evolvable = (m: Memory) =>
+        m.isLatest !== false && (!scopedProject || !m.project || m.project === scopedProject);
 
       const MAX_LLM_CALLS = 10;
       let llmCallCount = 0;
@@ -130,6 +147,14 @@ export function registerConsolidateFunction(
           .sort((a, b) => b.importance - a.importance)
           .slice(0, 8);
         const sessionIds = [...new Set(top.map((o) => o.sid))];
+        const obsIds = [...new Set(top.map((o) => o.id))];
+
+        // The LLM rewords titles between runs, so re-consolidating the same
+        // observations would store a reworded copy of a memory that exists.
+        if (existingMemories.some((m) => evolvable(m) && overlapShare(m.sourceObservationIds, obsIds) === 1)) {
+          skipped++;
+          continue;
+        }
 
         const prompt = top
           .map(
@@ -153,24 +178,20 @@ export function registerConsolidateFunction(
           if (!parsed) continue;
 
           const now = new Date().toISOString();
-          const obsIds = [...new Set(top.map((o) => o.id))];
-          const scopedProject =
-            typeof data.project === "string" && data.project.trim().length > 0
-              ? data.project.trim()
-              : undefined;
-
-          // A scoped consolidation run must only evolve memories that belong
-          // to the same project. Without this guard, two projects that happen
-          // to consolidate observations into an identically-titled memory would
-          // cause one project's memory to silently evolve the other's — the
-          // exact class of cross-project corruption this fix is designed to
-          // prevent. An unscoped run (no data.project, background cron path)
-          // preserves the pre-existing behavior and may evolve any memory.
-          const existingMatch = existingMemories.find(
-            (m) =>
-              m.title.toLowerCase() === parsed.title.toLowerCase() &&
-              (!scopedProject || !m.project || m.project === scopedProject),
+          const candidates = existingMemories.filter(evolvable);
+          let existingMatch = candidates.find(
+            (m) => m.title.toLowerCase() === parsed.title.toLowerCase(),
           );
+          if (!existingMatch) {
+            let best = 0.5;
+            for (const m of candidates) {
+              const share = overlapShare(m.sourceObservationIds, obsIds);
+              if (share >= best) {
+                best = share;
+                existingMatch = m;
+              }
+            }
+          }
 
           if (existingMatch) {
             existingMatch.isLatest = false;
@@ -202,7 +223,7 @@ export function registerConsolidateFunction(
               newId: evolved.id,
               concept,
             });
-            existingTitles.add(evolved.title.toLowerCase());
+            existingMemories.push(evolved);
             consolidated++;
           } else {
             const memory: Memory = {
@@ -220,7 +241,7 @@ export function registerConsolidateFunction(
               action: "create_memory",
               concept,
             });
-            existingTitles.add(memory.title.toLowerCase());
+            existingMemories.push(memory);
             consolidated++;
           }
         } catch (err) {
@@ -233,9 +254,10 @@ export function registerConsolidateFunction(
 
       logger.info("Consolidation complete", {
         consolidated,
+        skipped,
         totalObs: allObs.length,
       });
-      return { consolidated, totalObservations: allObs.length };
+      return { consolidated, skipped, totalObservations: allObs.length };
     },
   );
 }
