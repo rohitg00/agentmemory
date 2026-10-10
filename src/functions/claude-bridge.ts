@@ -7,6 +7,8 @@ import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
 
+const SYNC_HEADER = "# Agent Memory (auto-synced by agentmemory)";
+
 function parseMemoryMd(content: string): {
   sections: Map<string, string>;
   raw: string;
@@ -39,7 +41,7 @@ function serializeToMemoryMd(
   lineBudget: number,
 ): string {
   const lines: string[] = [];
-  lines.push("# Agent Memory (auto-synced by agentmemory)");
+  lines.push(SYNC_HEADER);
   lines.push("");
 
   if (projectSummary) {
@@ -118,6 +120,21 @@ export function registerClaudeBridgeFunction(
       }
 
       try {
+        // The target is often a hand-curated MEMORY.md; only a file this
+        // bridge wrote (or an empty one) may be replaced.
+        if (existsSync(config.memoryFilePath)) {
+          const current = readFileSync(config.memoryFilePath, "utf-8");
+          if (current.trim() && !current.startsWith(SYNC_HEADER)) {
+            logger.warn("Claude bridge: refusing to overwrite a MEMORY.md it did not write", {
+              path: config.memoryFilePath,
+            });
+            return {
+              success: false,
+              error: `${config.memoryFilePath} holds content agentmemory did not write, so the bridge will not overwrite it. Move that content elsewhere first if agentmemory should own this file.`,
+            };
+          }
+        }
+
         const memories = await kv.list<Memory>(KV.memories);
         const latestMemories = memories.filter((m) => m.isLatest);
 

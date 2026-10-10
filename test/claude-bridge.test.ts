@@ -139,6 +139,7 @@ describe("Claude Bridge Functions", () => {
     await kv.set("mem:memories", "mem_1", mem);
 
     vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("# Agent Memory (auto-synced by agentmemory)\n\n## Key Memories\n");
 
     const result = (await sdk.trigger("mem::claude-bridge-sync", {})) as {
       success: boolean;
@@ -151,6 +152,39 @@ describe("Claude Bridge Functions", () => {
     expect(writeFileSync).toHaveBeenCalled();
     const writtenContent = vi.mocked(writeFileSync).mock.calls[0][1] as string;
     expect(writtenContent).toContain("Auth pattern");
+  });
+
+  it("claude-bridge-sync creates MEMORY.md when none exists", async () => {
+    registerClaudeBridgeFunction(sdk as never, kv as never, enabledConfig);
+    vi.mocked(existsSync).mockReturnValue(false);
+
+    const result = (await sdk.trigger("mem::claude-bridge-sync", {})) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(writeFileSync).toHaveBeenCalled();
+  });
+
+  it("claude-bridge-sync never overwrites a hand-written MEMORY.md", async () => {
+    registerClaudeBridgeFunction(sdk as never, kv as never, enabledConfig);
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("# Memory Index\n\n- [Curated](curated.md) — keep me\n");
+
+    const result = (await sdk.trigger("mem::claude-bridge-sync", {})) as { success: boolean; error: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("/tmp/.claude/MEMORY.md holds content agentmemory did not write");
+    expect(writeFileSync).not.toHaveBeenCalled();
+  });
+
+  it("claude-bridge-sync may replace an empty MEMORY.md", async () => {
+    registerClaudeBridgeFunction(sdk as never, kv as never, enabledConfig);
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readFileSync).mockReturnValue("  \n");
+
+    const result = (await sdk.trigger("mem::claude-bridge-sync", {})) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(writeFileSync).toHaveBeenCalled();
   });
 
   it("claude-bridge-sync returns error when not configured", async () => {
