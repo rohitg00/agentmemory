@@ -111,6 +111,7 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
       limit: 5,
       format: "full",
       token_budget: 800,
+      targetLayer: "all",
     });
     expect(calls.find((c) => c.url.endsWith("/agentmemory/smart-search"))).toBeUndefined();
   });
@@ -205,9 +206,9 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
     await handleToolCall("memory_save", { content: "local only" }, localKv);
     const recall = await handleToolCall("memory_recall", { query: "local" }, localKv);
     const out = JSON.parse(recall.content[0].text);
-    expect(out.mode).toBe("compact");
+    expect(out.format).toBe("full");
     expect(out.results).toHaveLength(1);
-    expect(out.results[0].content).toBe("local only");
+    expect(out.results[0].observation.narrative).toBe("local only");
   });
 
   it("invalidates the handle on proxy failure, so the next call re-probes", async () => {

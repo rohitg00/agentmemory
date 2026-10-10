@@ -220,6 +220,7 @@ export interface SearchResult {
   observation: CompressedObservation;
   score: number;
   sessionId: string;
+  layer?: "memory" | "observation" | "lesson" | "insight";
 }
 
 export interface ContextBlock {
@@ -304,6 +305,7 @@ export interface MemoryRelation {
 
 export interface HybridSearchResult {
   observation: CompressedObservation;
+  layer?: "memory" | "observation" | "lesson" | "insight";
   bm25Score: number;
   vectorScore: number;
   graphScore: number;
@@ -319,6 +321,7 @@ export interface CompactSearchResult {
   type: ObservationType;
   score: number;
   timestamp: string;
+  layer?: "memory" | "observation" | "lesson" | "insight";
 }
 
 export interface CompactLessonResult {

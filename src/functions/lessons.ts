@@ -39,7 +39,7 @@ async function ensureLessonIndex(kv: StateKV): Promise<SearchIndex> {
       if (generation !== lessonIndexGeneration) return;
       for (const l of all) {
         if (!l.deleted) {
-          idx.add(lessonToObservation(l));
+          idx.add(lessonToObservation(l), "lesson");
           lessonRecords.set(l.id, l);
         }
       }
@@ -119,7 +119,7 @@ export function registerLessonsFunctions(sdk: IIIClient, kv: StateKV): void {
         lessonRecords.set(existing.id, existing);
         if (indexedTextChanged && lessonIndex) {
           lessonIndex.remove(existing.id);
-          lessonIndex.add(lessonToObservation(existing));
+          lessonIndex.add(lessonToObservation(existing), "lesson");
         }
         noteLessonMutation();
 
@@ -161,7 +161,7 @@ export function registerLessonsFunctions(sdk: IIIClient, kv: StateKV): void {
 
       await kv.set(KV.lessons, lesson.id, lesson);
       lessonRecords.set(lesson.id, lesson);
-      if (lessonIndex) lessonIndex.add(lessonToObservation(lesson));
+      if (lessonIndex) lessonIndex.add(lessonToObservation(lesson), "lesson");
       noteLessonMutation();
 
       try {

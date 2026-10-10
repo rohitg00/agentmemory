@@ -2,6 +2,7 @@ import type {
   GraphNode,
   GraphEdge,
 } from "../types.js";
+import { matchesSearchLayer, type SearchLayer, type SearchLayerResolver } from "../state/search-layer.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 
@@ -39,12 +40,13 @@ function buildGraphContext(
 }
 
 export class GraphRetrieval {
-  constructor(private kv: StateKV) {}
+  constructor(private kv: StateKV, private resolveLayer?: SearchLayerResolver) {}
 
   async searchByEntities(
     entityNames: string[],
     maxDepth = 2,
     maxResults = 20,
+    targetLayer: SearchLayer = "all",
   ): Promise<GraphRetrievalResult[]> {
     const allNodes = (await this.kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
     const allEdges = (await this.kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
@@ -74,7 +76,7 @@ export class GraphRetrieval {
       for (const path of paths) {
         const lastNode = path[path.length - 1].node;
         for (const obsId of lastNode.sourceObservationIds) {
-          if (visitedObs.has(obsId)) continue;
+          if (visitedObs.has(obsId) || !matchesSearchLayer(obsId, "", targetLayer, this.resolveLayer?.(obsId, ""))) continue;
           visitedObs.add(obsId);
 
           const pathLength = path.length;
@@ -98,7 +100,7 @@ export class GraphRetrieval {
       }
 
       for (const obsId of startNode.sourceObservationIds) {
-        if (visitedObs.has(obsId)) continue;
+        if (visitedObs.has(obsId) || !matchesSearchLayer(obsId, "", targetLayer, this.resolveLayer?.(obsId, ""))) continue;
         visitedObs.add(obsId);
         results.push({
           obsId,
@@ -118,6 +120,7 @@ export class GraphRetrieval {
     obsIds: string[],
     maxDepth = 1,
     maxResults = 10,
+    targetLayer: SearchLayer = "all",
   ): Promise<GraphRetrievalResult[]> {
     const allNodes = (await this.kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
     const allEdges = (await this.kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
@@ -134,7 +137,7 @@ export class GraphRetrieval {
       for (const path of paths) {
         const lastNode = path[path.length - 1].node;
         for (const obsId of lastNode.sourceObservationIds) {
-          if (visitedObs.has(obsId)) continue;
+          if (visitedObs.has(obsId) || !matchesSearchLayer(obsId, "", targetLayer, this.resolveLayer?.(obsId, ""))) continue;
           visitedObs.add(obsId);
 
           const pathLength = path.length;

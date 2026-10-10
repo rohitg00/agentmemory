@@ -1,4 +1,5 @@
 import { SearchIndex } from "./search-index.js";
+import type { SearchLayer } from "./search-layer.js";
 import { VectorIndex } from "./vector-index.js";
 import type {
   EmbeddingProvider,
@@ -32,17 +33,18 @@ export class HybridSearch {
     private graphWeight = 0.3,
     private rerankEnabled = process.env.RERANK_ENABLED === "true",
   ) {
-    this.graphRetrieval = new GraphRetrieval(kv);
+    this.graphRetrieval = new GraphRetrieval(kv, (id) => this.bm25.layerOf(id));
   }
 
-  async search(query: string, limit = 20): Promise<HybridSearchResult[]> {
-    return this.tripleStreamSearch(query, limit);
+  async search(query: string, limit = 20, targetLayer: SearchLayer = "all"): Promise<HybridSearchResult[]> {
+    return this.tripleStreamSearch(query, limit, targetLayer);
   }
 
   async searchWithExpansion(
     query: string,
     limit: number,
     expansion: QueryExpansion,
+    targetLayer: SearchLayer = "all",
   ): Promise<HybridSearchResult[]> {
     const allQueries = [
       query,
@@ -56,7 +58,7 @@ export class HybridSearch {
     ];
 
     const resultSets = await Promise.all(
-      allQueries.map((q) => this.tripleStreamSearch(q, limit, allEntities)),
+      allQueries.map((q) => this.tripleStreamSearch(q, limit, targetLayer, allEntities)),
     );
 
     const merged = new Map<string, HybridSearchResult>();
@@ -73,7 +75,7 @@ export class HybridSearch {
       .sort(
         (a, b) =>
           b.combinedScore - a.combinedScore ||
-          (a.obsId < b.obsId ? -1 : a.obsId > b.obsId ? 1 : 0),
+          (a.observation.id < b.observation.id ? -1 : a.observation.id > b.observation.id ? 1 : 0),
       )
       .slice(0, limit);
   }
@@ -81,9 +83,10 @@ export class HybridSearch {
   private async tripleStreamSearch(
     query: string,
     limit: number,
+    targetLayer: SearchLayer,
     entityHints?: string[],
   ): Promise<HybridSearchResult[]> {
-    const bm25Results = this.bm25.search(query, limit * 2);
+    const bm25Results = this.bm25.search(query, limit * 2, targetLayer);
 
     let vectorResults: Array<{
       obsId: string;
@@ -95,7 +98,7 @@ export class HybridSearch {
     if (this.vector && this.embeddingProvider && this.vector.size > 0) {
       try {
         queryEmbedding = await this.embeddingProvider.embed(query);
-        vectorResults = this.vector.search(queryEmbedding, limit * 2);
+        vectorResults = this.vector.search(queryEmbedding, limit * 2, targetLayer, (id) => this.bm25.layerOf(id));
       } catch {
         // fall through to BM25-only
       }
@@ -115,6 +118,7 @@ export class HybridSearch {
           entities,
           2,
           limit,
+          targetLayer,
         );
       } catch {
         // graph search is best-effort
@@ -125,7 +129,7 @@ export class HybridSearch {
     if (graphEnabled && topVectorObs.length > 0) {
       try {
         const expansionResults =
-          await this.graphRetrieval.expandFromChunks(topVectorObs, 1, 5);
+          await this.graphRetrieval.expandFromChunks(topVectorObs, 1, 5, targetLayer);
         graphResults = [...graphResults, ...expansionResults];
       } catch {
         // expansion is best-effort
@@ -315,7 +319,7 @@ export class HybridSearch {
         const obs = await this.kv
           .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
           .catch(() => null);
-        if (obs) return obs;
+        if (obs) return { observation: obs, layer: "observation" as const };
         // Fallback: indexed entry may originate from mem::remember, which
         // writes to KV.memories with a synthetic sessionId ("memory" or the
         // memory's first associated session). Coerce the Memory record into
@@ -323,15 +327,16 @@ export class HybridSearch {
         const mem = await this.kv
           .get<Memory>(KV.memories, r.obsId)
           .catch(() => null);
-        return mem ? memoryToObservation(mem) : null;
+        return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null;
       }),
     );
     const enriched: HybridSearchResult[] = [];
     for (let i = 0; i < sliced.length; i++) {
-      const obs = observations[i];
-      if (obs) {
+      const resolved = observations[i];
+      if (resolved) {
         enriched.push({
-          observation: obs,
+          observation: resolved.observation,
+          layer: resolved.layer,
           bm25Score: sliced[i].bm25Score,
           vectorScore: sliced[i].vectorScore,
           graphScore: sliced[i].graphScore,

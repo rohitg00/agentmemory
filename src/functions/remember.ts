@@ -198,7 +198,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         await kv.set(KV.memories, memory.id, memory);
 
         try {
-          getSearchIndex().add(memoryToObservation(memory));
+          getSearchIndex().add(memoryToObservation(memory), "memory");
           scheduleIndexSave();
         } catch (err) {
           logger.warn("Failed to index saved memory into BM25", {

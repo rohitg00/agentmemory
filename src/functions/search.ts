@@ -1,12 +1,14 @@
 import type { IIIClient } from 'iii-sdk'
 import type { IndexPersistenceStatus } from "../state/index-persistence.js";
-import type { CompactSearchResult, CompressedObservation, Memory, SearchResult, Session } from '../types.js'
+import type { CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
+import { getSearchResultLayer, isSearchLayer, matchesSearchLayer, type SearchLayer, type SearchResultLayer } from "../state/search-layer.js";
 import { SearchIndex } from '../state/search-index.js'
 import { VectorIndex } from '../state/vector-index.js'
 import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
+import { buildRecallResponse, type RecallFormat } from "./recall-response.js";
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
 import { withoutObservationSource } from "./observation-source.js";
@@ -30,7 +32,8 @@ let currentEmbeddingProvider: EmbeddingProvider | null = null
 type HybridRanker = (
   query: string,
   limit: number,
-) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number }>>
+  targetLayer?: SearchLayer,
+) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number; layer?: SearchResultLayer }>>
 let hybridRanker: HybridRanker | null = null
 
 export function setHybridRanker(fn: HybridRanker | null): void {
@@ -106,7 +109,6 @@ export function getEmbeddingProvider(): EmbeddingProvider | null {
   return currentEmbeddingProvider
 }
 
-const MEMORY_ID_PREFIX = "mem_"
 const RANK_FUSION_K = 60
 
 export async function rankMemoryIds(
@@ -115,15 +117,13 @@ export async function rankMemoryIds(
 ): Promise<{ ids: string[]; mode: "hybrid" | "keyword" }> {
   const fetchLimit = Math.max(limit * 4, 50)
   const keyword = getSearchIndex()
-    .search(query, fetchLimit)
-    .filter((hit) => hit.obsId.startsWith(MEMORY_ID_PREFIX))
+    .search(query, fetchLimit, "memory")
   let semantic: Array<{ obsId: string }> = []
   if (vectorIndex && vectorIndex.size > 0 && currentEmbeddingProvider) {
     try {
       const embedding = await currentEmbeddingProvider.embed(query)
       semantic = vectorIndex
-        .search(embedding, fetchLimit)
-        .filter((hit) => hit.obsId.startsWith(MEMORY_ID_PREFIX))
+        .search(embedding, fetchLimit, "memory", (id) => getSearchIndex().layerOf(id))
     } catch (err) {
       logger.warn("memory vector ranking failed, using keyword ranking", {
         error: err instanceof Error ? err.message : String(err),
@@ -380,7 +380,7 @@ export async function indexRecords(
   for (const memory of memories) {
     if (memory.isLatest === false) continue
     if (!memory.title || !memory.content) continue
-    idx.add(memoryToObservation(memory))
+    idx.add(memoryToObservation(memory), "memory")
     await enqueue({
       id: memory.id,
       sessionId: memory.sessionIds?.[0] ?? 'memory',
@@ -580,7 +580,7 @@ async function runKeywordRebuild(
     for (const memory of memories) {
       if (memory.isLatest === false) continue
       if (!memory.title || !memory.content) continue
-      idx.add(memoryToObservation(memory))
+      idx.add(memoryToObservation(memory), "memory")
       consider(memory.id, memory.sessionIds?.[0] ?? 'memory', memory.title + ' ' + memory.content, memory.createdAt, "memory")
       documents++
     }
@@ -695,6 +695,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       cwd?: string
       format?: string
       token_budget?: number
+      targetLayer?: SearchLayer
       agentId?: string
     }) => {
       const idx = getSearchIndex()
@@ -704,6 +705,10 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         throw new Error('mem::search: query must be a non-empty string')
       }
       const query = data.query.trim()
+      if (data.targetLayer !== undefined && !isSearchLayer(data.targetLayer)) {
+        throw new Error("mem::search: targetLayer must be one of 'all', 'memory', or 'observation'")
+      }
+      const targetLayer = data.targetLayer ?? 'all'
       const MAX_LIMIT = 100
       let effectiveLimit = 20
       if (data.limit !== undefined) {
@@ -788,24 +793,26 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         sessionId: string
         score: number
         observation?: CompressedObservation
+        layer?: SearchResultLayer
       }>
       if (hybridRanker && vectorIndex && vectorIndex.size > 0) {
         try {
-          const hybrid = await hybridRanker(query, fetchLimit)
+          const hybrid = await hybridRanker(query, fetchLimit, targetLayer)
           results = hybrid.map((r) => ({
             obsId: r.observation.id,
             sessionId: r.sessionId,
             score: r.combinedScore,
             observation: r.observation,
+            layer: r.layer,
           }))
         } catch (err) {
           logger.warn("hybrid ranking failed, falling back to keyword search", {
             error: err instanceof Error ? err.message : String(err),
           })
-          results = idx.search(query, fetchLimit)
+          results = idx.search(query, fetchLimit, targetLayer)
         }
       } else {
-        results = idx.search(query, fetchLimit)
+        results = idx.search(query, fetchLimit, targetLayer)
       }
 
       // Resolve session -> project/cwd once per sessionId we touch.
@@ -817,15 +824,10 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         return s ?? null
       }
 
-      // Cache for memory project lookups. Memories indexed via mem::remember
-      // use a synthetic sessionId ('memory' or the first real sessionId) that
-      // either has no KV.sessions entry or belongs to a different project.
-      // When loadSession returns null we fall through to a KV.memories probe
-      // so project-filtered search can include or exclude them correctly.
       const memoryProjectCache = new Map<string, string | null>()
       const loadMemoryProject = async (obsId: string): Promise<string | null> => {
         if (memoryProjectCache.has(obsId)) return memoryProjectCache.get(obsId)!
-        const mem = await kv.get<Memory>(KV.memories, obsId).catch(() => null)
+        const mem = await kv.get<Memory>(KV.memories, obsId)
         const proj = mem?.project ?? null
         memoryProjectCache.set(obsId, proj)
         return proj
@@ -844,31 +846,17 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       const candidates: typeof results = []
       for (const r of results) {
         if (candidates.length >= earlyCap) break
+        const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
+        if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) continue
         if (filtering) {
-          const s = await loadSession(r.sessionId)
-          if (s) {
-            if (projectFilter && s.project !== projectFilter) continue
-            if (cwdFilter && s.cwd !== cwdFilter) continue
-          } else {
-            // Session not found. Two cases arrive here:
-            //   1. Synthetic sessionId — memories indexed via mem::remember use
-            //      sessionIds[0] ?? 'memory'. The string 'memory' has no session
-            //      entry; neither does a real sessionId when sessionIds[0] happens
-            //      to be a session from a different lifecycle. Probe KV.memories
-            //      directly to get the memory's own project field.
-            //   2. Deleted session — the session existed when the entry was indexed
-            //      but was since evicted. The KV.memories probe returns null for
-            //      these (they are observations, not memories), so memProject is
-            //      null and the entry passes through as unscoped. This is the safe
-            //      fallback: we lose the ability to filter but never incorrectly
-            //      block a result whose session we can no longer verify.
-            // In both cases, a null memProject means "project unknown — treat as
-            // unscoped and let it through" to preserve backward-compatibility.
-            if (projectFilter) {
-              const memProject = await loadMemoryProject(r.obsId)
-              if (memProject !== null && memProject !== projectFilter) continue
-            }
-            // cwd filter does not apply to unbound entries.
+          const memoryProject = projectFilter && layer === "memory"
+            ? await loadMemoryProject(r.obsId)
+            : null
+          if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) continue
+          const session = await loadSession(r.sessionId)
+          if (session) {
+            if (projectFilter && memoryProject === null && session.project !== projectFilter) continue
+            if (cwdFilter && session.cwd !== cwdFilter) continue
           }
         }
         candidates.push(r)
@@ -876,115 +864,46 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
 
       const obsResults = await Promise.all(
         candidates.map(async (r) => {
-          if (r.observation) return r.observation
+          if (r.observation) return { observation: r.observation, layer: r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId) }
           const obs = await kv
             .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
             .catch(() => null)
-          if (obs) return obs
+          if (obs) return { observation: obs, layer: "observation" as const }
           const mem = await kv
             .get<Memory>(KV.memories, r.obsId)
             .catch(() => null)
-          return mem ? memoryToObservation(mem) : null
+          return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
         })
       )
       const enriched: SearchResult[] = []
       for (let i = 0; i < candidates.length; i++) {
-        const obs = obsResults[i]
-        if (!obs) continue
+        const resolved = obsResults[i]
+        if (!resolved) continue
+        const obs = resolved.observation
+        if (!matchesSearchLayer(obs.id, obs.sessionId, targetLayer, resolved.layer)) continue
         if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
         if (enriched.length >= effectiveLimit) break
         enriched.push({
           observation: withoutObservationSource(obs),
+          layer: resolved.layer,
           score: candidates[i].score,
           sessionId: candidates[i].sessionId,
         })
       }
 
+      const response = buildRecallResponse(enriched, format as RecallFormat, tokenBudget)
       void recordAccessBatch(
         kv,
-        enriched.map((r) => r.observation.id),
+        enriched.slice(0, response.results.length).map((result) => result.observation.id),
       )
 
-      const estimateTokens = (value: unknown): number =>
-        Math.max(1, Math.ceil(JSON.stringify(value).length / 3))
-
-      const applyTokenBudget = <T>(items: T[]): {
-        items: T[]
-        used: number
-        truncated: boolean
-      } => {
-        if (!tokenBudget) return { items, used: items.reduce((sum, item) => sum + estimateTokens(item), 0), truncated: false }
-        const selected: T[] = []
-        let used = 0
-        for (const item of items) {
-          const itemTokens = estimateTokens(item)
-          if (used + itemTokens > tokenBudget) {
-            return { items: selected, used, truncated: selected.length < items.length }
-          }
-          selected.push(item)
-          used += itemTokens
-        }
-        return { items: selected, used, truncated: false }
-      }
-
-      if (format === 'compact') {
-        const compactResults: CompactSearchResult[] = enriched.map((r) => ({
-          obsId: r.observation.id,
-          sessionId: r.sessionId,
-          title: r.observation.title,
-          type: r.observation.type,
-          score: r.score,
-          timestamp: r.observation.timestamp,
-        }))
-        const packed = applyTokenBudget(compactResults)
-        return {
-          format,
-          results: packed.items,
-          tokens_used: packed.used,
-          tokens_budget: tokenBudget,
-          truncated: packed.truncated,
-        }
-      }
-
-      if (format === 'narrative') {
-        const narrativeResults = enriched.map((r) => ({
-          obsId: r.observation.id,
-          sessionId: r.sessionId,
-          title: r.observation.title,
-          narrative: r.observation.narrative,
-          score: r.score,
-          timestamp: r.observation.timestamp,
-        }))
-        const packed = applyTokenBudget(narrativeResults)
-        const text = packed.items
-          .map((r, index) => `${index + 1}. ${r.title}\n${r.narrative}`)
-          .join('\n\n')
-        return {
-          format,
-          results: packed.items,
-          text,
-          tokens_used: packed.used,
-          tokens_budget: tokenBudget,
-          truncated: packed.truncated,
-        }
-      }
-
-      const packed = applyTokenBudget(enriched)
-
-      // Avoid logging raw cwd/project (host paths). Log only that filters were active.
       logger.info('Search completed', {
         query,
-        results: packed.items.length,
+        results: response.results.length,
         hasProjectFilter: !!projectFilter,
         hasCwdFilter: !!cwdFilter,
       })
-      return {
-        format,
-        results: packed.items,
-        tokens_used: packed.used,
-        tokens_budget: tokenBudget,
-        truncated: packed.truncated,
-      }
+      return response
     }
   )
 }

@@ -3,7 +3,7 @@ export type McpToolDef = {
   description: string;
   inputSchema: {
     type: "object";
-    properties: Record<string, { type: string; description: string }>;
+    properties: Record<string, { type: string; description: string; enum?: string[] }>;
     required?: string[];
   };
 };
@@ -12,7 +12,7 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_recall",
     description:
-      "Search past session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before.",
+      "Search stored memories and session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before.",
     inputSchema: {
       type: "object",
       properties: {
@@ -30,8 +30,16 @@ export const CORE_TOOLS: McpToolDef[] = [
         },
         token_budget: {
           type: "number",
-          description: "Optional token budget to trim returned results",
+          description: "Optional estimated content token budget; response includes truncation and recovery metadata",
         },
+        targetLayer: {
+          type: "string",
+          enum: ["all", "memory", "observation"],
+          description: "Search all indexed layers (default), durable memories, or raw observations before ranking",
+        },
+        project: { type: "string", description: "Filter by project path" },
+        cwd: { type: "string", description: "Filter by session working directory" },
+        agentId: { type: "string", description: "Filter by owning agent; '*' reads across agents" },
       },
       required: ["query"],
     },
@@ -131,18 +139,25 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_smart_search",
-    description: "Hybrid semantic+keyword search with progressive disclosure.",
+    description: "Hybrid semantic+keyword search with progressive disclosure. Pass query to search, or expandIds to recover full results.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query" },
         expandIds: {
           type: "string",
-          description: "Comma-separated observation IDs to expand",
+          description: "Comma-separated memory or observation IDs to expand; query is optional when provided",
         },
         limit: { type: "number", description: "Max results (default 10)" },
+        targetLayer: {
+          type: "string",
+          enum: ["all", "memory", "observation"],
+          description: "Search all indexed layers (default), durable memories, or raw observations before ranking",
+        },
+        project: { type: "string", description: "Filter by project path" },
+        agentId: { type: "string", description: "Filter by owning agent; '*' reads across agents" },
+        includeLessons: { type: "boolean", description: "Include lesson matches when targetLayer is all (default true)" },
       },
-      required: ["query"],
     },
   },
   {
