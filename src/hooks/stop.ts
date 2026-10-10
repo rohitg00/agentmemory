@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { resolveClientSecret } from "../secret-store.js";
+import { resolveProject, hookCwd } from "./_project.js";
+import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
 
 // Inlined — see src/hooks/sdk-guard.ts for canonical version. Kept local
 // per-hook so tsdown does not emit a shared hashed chunk that would churn
@@ -10,16 +11,12 @@ function isSdkChildContext(payload: unknown): boolean {
   return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
 }
 
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = resolveClientSecret(REST_URL);
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
+const OBSERVE_TIMEOUT_MS = 2000;
+const EXIT_CAP_MS = 2500;
+const REPLY_MAX_CHARS = 4000;
 
 async function main() {
+  if (isDrainChild()) return runDrainChild();
   let input = "";
   for await (const chunk of process.stdin) {
     input += chunk;
@@ -41,6 +38,20 @@ async function main() {
 
   const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
 
+  const reply = data.last_assistant_message;
+  if (typeof reply === "string" && reply.trim()) {
+    const cwd = hookCwd(data) || process.cwd();
+    const body = {
+      hookType: "stop",
+      sessionId,
+      project: resolveProject(cwd),
+      cwd,
+      timestamp: new Date().toISOString(),
+      data: { last_assistant_message: reply.slice(0, REPLY_MAX_CHARS) },
+    };
+    void captureObservation(withEventId(body, {}), OBSERVE_TIMEOUT_MS);
+  }
+
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",
     headers: authHeaders(),
@@ -48,7 +59,7 @@ async function main() {
     signal: AbortSignal.timeout(5000),
   }).catch(() => {});
 
-  setTimeout(() => process.exit(0), 1500).unref();
+  setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 
 main().catch(() => process.exit(0));

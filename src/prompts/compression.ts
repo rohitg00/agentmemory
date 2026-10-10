@@ -33,6 +33,7 @@ export function buildCompressionPrompt(observation: {
   toolInput?: unknown;
   toolOutput?: unknown;
   userPrompt?: string;
+  assistantResponse?: string;
   timestamp: string;
 }): string {
   const parts = [
@@ -57,6 +58,9 @@ export function buildCompressionPrompt(observation: {
   }
   if (observation.userPrompt) {
     parts.push(`User prompt:\n${truncate(observation.userPrompt, 2000)}`);
+  }
+  if (observation.assistantResponse) {
+    parts.push(`Assistant response:\n${truncate(observation.assistantResponse, 4000)}`);
   }
 
   return parts.join("\n\n");

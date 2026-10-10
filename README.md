@@ -1044,7 +1044,7 @@ Memories decay over time (Ebbinghaus curve). Frequently accessed memories streng
 | `PostToolUseFailure` | Error context |
 | `PreCompact` | Re-injects memory before compaction |
 | `SubagentStart/Stop` | Sub-agent lifecycle |
-| `Stop` | End-of-session summary |
+| `Stop` | Assistant's final reply of each turn (privacy-filtered) |
 | `SessionEnd` | Session complete marker |
 
 ### Key Capabilities

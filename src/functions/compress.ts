@@ -123,6 +123,7 @@ export function registerCompressFunction(
           ? `[Image Description]: ${imageDescription}\n\n${data.raw.toolOutput ?? ""}`
           : data.raw.toolOutput,
         userPrompt: data.raw.userPrompt,
+        assistantResponse: data.raw.assistantResponse,
         timestamp: data.raw.timestamp,
       });
 

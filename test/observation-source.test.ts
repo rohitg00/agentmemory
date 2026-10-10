@@ -170,6 +170,29 @@ describe("retained observation source", () => {
     expect(JSON.stringify(updates)).not.toContain(tail);
   });
 
+  it("makes a captured stop reply searchable and keeps it as the replay response", async () => {
+    const { observe, call } = rig();
+    const reply = "We decided to use bge-m3 for Spanish embeddings because it handles accents.";
+    const saved = await observe("stop", { last_assistant_message: reply });
+    expect(saved.source?.assistantResponse).toBe(reply);
+    expect(saved.narrative).toContain(reply);
+    expect(JSON.stringify(await call("mem::search", { query: "Spanish embeddings accents" }))).toContain(saved.id);
+  });
+
+  it("gives the compression model the reply of a stop observation", async () => {
+    const r = rig();
+    vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
+    const provider: MemoryProvider = {
+      name: "test", summarize: vi.fn(),
+      compress: vi.fn(async () => "<type>decision</type><title>Chose bge-m3 embeddings</title><facts><fact>bge-m3 for Spanish</fact></facts><narrative>The agent chose bge-m3.</narrative><concepts><concept>embeddings</concept></concepts><files></files><importance>7</importance>"),
+    };
+    registerCompressFunction(r.sdk as never, r.kv as never, provider);
+    const reply = "We decided to use bge-m3 for Spanish embeddings.";
+    const saved = await r.observe("stop", { last_assistant_message: reply });
+    expect(JSON.stringify(vi.mocked(provider.compress).mock.calls)).toContain(reply);
+    expect(saved.source?.assistantResponse).toBe(reply);
+  });
+
   it("leaves sanitized stored source intact when model compression fails", async () => {
     const r = rig();
     vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
