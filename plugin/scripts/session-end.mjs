@@ -39,6 +39,23 @@ function isSdkChildContext(payload) {
 	if (!payload || typeof payload !== "object") return false;
 	return payload.entrypoint === "sdk-ts";
 }
+const HARNESS_TEXT = /^(?:<(?:command-name|command-message|command-args|local-command-stdout|local-command-stderr|local-command-caveat|bash-input|bash-stdout|bash-stderr|task-notification|system-reminder|ci-monitor-event|cross-session-message|scheduled-task)(?=[\s>])|\[Request interrupted)/;
+function isUserTurn(msg) {
+	if (msg.isSidechain || msg.isMeta || msg.isCompactSummary) return false;
+	return msg.role === "user" || msg.type === "user" || msg.message?.role === "user";
+}
+function promptText(raw) {
+	const m = raw.match(/<user_query>\n?([\s\S]*?)\n?<\/user_query>/);
+	const text = (m ? m[1] : raw).trim();
+	return HARNESS_TEXT.test(text) ? "" : text;
+}
+function turnTexts(content) {
+	if (typeof content === "string") return [content];
+	if (!Array.isArray(content)) return [];
+	const texts = [];
+	for (const block of content) if (block?.type === "text" && typeof block.text === "string") texts.push(block.text);
+	return texts;
+}
 function extractTranscriptPrompts(data) {
 	const path = data.transcript_path;
 	if (typeof path !== "string" || !path.endsWith(".jsonl")) return [];
@@ -61,16 +78,20 @@ function extractTranscriptPrompts(data) {
 			if (prompts.length >= 50) return prompts;
 			const match = msg.content.match(/<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/);
 			const text = (match ? match[1] : msg.content).trim();
-			if (text) prompts.push(text.slice(0, 8e3));
+			if (text) prompts.push({ prompt: text.slice(0, 8e3) });
 			continue;
 		}
-		if (msg.role !== "user") continue;
-		for (const block of msg.message?.content ?? []) {
+		if (!isUserTurn(msg)) continue;
+		const texts = turnTexts(msg.message?.content).map(promptText).filter(Boolean);
+		const promptId = typeof msg.promptId === "string" ? msg.promptId : void 0;
+		const timestamp = typeof msg.timestamp === "string" ? msg.timestamp : void 0;
+		for (const text of promptId ? [texts.join("\n\n")].filter(Boolean) : texts) {
 			if (prompts.length >= 50) return prompts;
-			if (block.type !== "text" || typeof block.text !== "string") continue;
-			const m = block.text.match(/<user_query>\n?([\s\S]*?)\n?<\/user_query>/);
-			const text = (m ? m[1] : block.text).trim();
-			if (text) prompts.push(text.slice(0, 8e3));
+			prompts.push({
+				prompt: text.slice(0, 8e3),
+				promptId,
+				timestamp
+			});
 		}
 	}
 	return prompts;
@@ -93,17 +114,17 @@ async function main() {
 		const cwd = hookCwd(data) || process.cwd();
 		const project = resolveProject(cwd);
 		const timestamp = (/* @__PURE__ */ new Date()).toISOString();
-		await Promise.allSettled(transcriptPrompts.map((prompt, index) => captureObservation(withEventId({
+		await Promise.allSettled(transcriptPrompts.map(({ prompt, promptId, timestamp: at }, index) => captureObservation(withEventId({
 			hookType: "prompt_submit",
 			sessionId,
 			project,
 			cwd,
-			timestamp,
+			timestamp: at ?? timestamp,
 			data: {
 				prompt,
 				backfill: true
 			}
-		}, {}, {
+		}, promptId ? { prompt_id: promptId } : {}, {
 			source: "transcript",
 			transcript: data.transcript_path,
 			index,
