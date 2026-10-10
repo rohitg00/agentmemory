@@ -122,6 +122,8 @@ export function registerSmartSearchFunction(
         );
       }
 
+      const matchesProject = project ? makeProjectMatcher(kv, project) : undefined;
+
       if (data.expandIds && data.expandIds.length > 0) {
         const raw = data.expandIds.slice(0, 20);
         const items = raw.map((entry) => {
@@ -149,21 +151,9 @@ export function registerSmartSearchFunction(
           if (r) expanded.push(r);
         }
 
-        const projectMatches = project
-          ? await Promise.all(
-              expanded.map((entry) =>
-                observationMatchesProject(
-                  kv,
-                  entry.obsId,
-                  entry.sessionId,
-                  project,
-                ),
-              ),
-            )
-          : expanded.map(() => true);
-        const projectScoped = expanded.filter(
-          (_, index) => projectMatches[index],
-        );
+        const projectScoped = matchesProject
+          ? await filterProjectResults(expanded, (entry) => matchesProject(entry.obsId, entry.sessionId))
+          : expanded;
         const scoped = filterAgentId
           ? projectScoped.filter((e) => e.observation.agentId === filterAgentId)
           : projectScoped;
@@ -193,12 +183,6 @@ export function registerSmartSearchFunction(
       // observations so 10 covers most recall flows.
       const lessonLimit = Math.min(limit, 10);
       const includeLessons = data.includeLessons !== false;
-      // Over-fetch when filtering. Hybrid search can't filter on
-      // agentId (BM25/vector indexes don't carry it), so we ask the
-      // searcher for more hits than we need and trim post-filter. 3×
-      // is a defensible middle ground: enough headroom for a small
-      // workload, capped at 300 so a 100-limit request never asks for
-      // thousands of hits.
       const overFetchLimit = filterAgentId || project
         ? Math.max(Math.min(limit * 10, 300), 100)
         : limit;
@@ -206,24 +190,13 @@ export function registerSmartSearchFunction(
       const [hybridResults, lessons] = await Promise.all([
         searchFn(data.query, overFetchLimit),
         includeLessons
-          ? recallLessons(sdk, data.query, lessonLimit, data.project)
+          ? recallLessons(sdk, data.query, lessonLimit, project)
           : Promise.resolve([]),
       ]);
 
-      let projectResults = hybridResults;
-      if (project) {
-        const matches = await Promise.all(
-          hybridResults.map((result) =>
-            observationMatchesProject(
-              kv,
-              result.observation.id,
-              result.sessionId,
-              project,
-            ),
-          ),
-        );
-        projectResults = hybridResults.filter((_, index) => matches[index]);
-      }
+      const projectResults = matchesProject
+        ? await filterProjectResults(hybridResults, (result) => matchesProject(result.observation.id, result.sessionId))
+        : hybridResults;
 
       const filteredHybrid = filterAgentId
         ? projectResults
@@ -417,16 +390,32 @@ async function findObservation(
   return null;
 }
 
-async function observationMatchesProject(
-  kv: StateKV,
-  obsId: string,
-  sessionId: string,
-  project: string,
-): Promise<boolean> {
-  const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
-  if (memory) return memory.project === project;
-  const session = await kv
-    .get<{ project?: string }>(KV.sessions, sessionId)
-    .catch(() => null);
-  return session?.project === project;
+function makeProjectMatcher(kv: StateKV, project: string): (obsId: string, sessionId: string) => Promise<boolean> {
+  const memories = new Map<string, Promise<Memory | null>>();
+  const sessions = new Map<string, Promise<{ project?: string } | null>>();
+  return async (obsId, sessionId) => {
+    let memoryRead = memories.get(obsId);
+    if (!memoryRead) {
+      memoryRead = kv.get<Memory>(KV.memories, obsId);
+      memories.set(obsId, memoryRead);
+    }
+    const memory = await memoryRead;
+    if (memory) return memory.project === project;
+    let sessionRead = sessions.get(sessionId);
+    if (!sessionRead) {
+      sessionRead = kv.get<{ project?: string }>(KV.sessions, sessionId);
+      sessions.set(sessionId, sessionRead);
+    }
+    return (await sessionRead)?.project === project;
+  };
+}
+
+async function filterProjectResults<T>(items: T[], matches: (item: T) => Promise<boolean>): Promise<T[]> {
+  const scoped: T[] = [];
+  for (let offset = 0; offset < items.length; offset += 10) {
+    const batch = items.slice(offset, offset + 10);
+    const selected = await Promise.all(batch.map(matches));
+    scoped.push(...batch.filter((_, index) => selected[index]));
+  }
+  return scoped;
 }
