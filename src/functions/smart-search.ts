@@ -424,7 +424,7 @@ async function observationMatchesProject(
   project: string,
 ): Promise<boolean> {
   const memory = await kv.get<Memory>(KV.memories, obsId).catch(() => null);
-  if (memory) return memory.project === project;
+  if (memory?.project !== undefined) return memory.project === project;
   const session = await kv
     .get<{ project?: string }>(KV.sessions, sessionId)
     .catch(() => null);
