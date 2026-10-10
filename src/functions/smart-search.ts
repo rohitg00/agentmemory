@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   CompactLessonResult,
   CompactSearchResult,
@@ -10,6 +10,10 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import {
+  indexObservationSession,
+  lookupObservationSession,
+} from "../state/obs-index.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import {
   getAgentId,
@@ -17,14 +21,10 @@ import {
   getFollowupWindowSeconds,
 } from "../config.js";
 import { logger } from "../logger.js";
+import { withoutObservationSource } from "./observation-source.js";
 import { getCounters } from "../telemetry/setup.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 
-// #771: smart-search followup-rate diagnostic. Stored per session as
-// the most recent search payload, used to detect whether the next
-// search inside the window had a disjoint result set. sessionId is
-// duplicated into the row so the hourly sweep can delete by it
-// (StateKV.list returns values only).
 export interface RecentSearch {
   sessionId: string;
   query: string;
@@ -75,7 +75,7 @@ export function resetFollowupStatsForTests(): void {
 const LESSON_CONTENT_PREVIEW_CHARS = 240;
 
 export function registerSmartSearchFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   searchFn: (query: string, limit: number) => Promise<HybridSearchResult[]>,
 ): void {
@@ -90,23 +90,10 @@ export function registerSmartSearchFunction(
       // roles through one server. "*" opts out of the env-default
       // scope and returns hits from every agent.
       agentId?: string;
-      // #771: session anchor for the followup-rate diagnostic. The
-      // API trigger fills this from req.body / headers; direct
-      // sdk.trigger callers can pass it explicitly.
       sessionId?: string;
-      // #771: marks viewer-originated searches so the diagnostic
-      // ignores them — only agent-initiated re-queries should count.
       source?: string;
     }) => {
 
-      // Compute the agent filter once, up front. Both the expandIds
-      // branch and the hybrid-search branch consult it — otherwise
-      // expandIds becomes a cross-agent leak (#554 follow-up).
-      //
-      // #817 follow-up: fail-closed when isolated mode is on AND no
-      // agent id is resolvable from any source. Silently letting
-      // filterAgentId fall through to `undefined` would be the same
-      // cross-agent leak this filter is meant to prevent.
       const isolated = isAgentScopeIsolated();
       const explicitAgentId =
         typeof data.agentId === "string" && data.agentId.trim().length > 0
@@ -154,7 +141,7 @@ export function registerSmartSearchFunction(
         const results = await Promise.all(
           items.map(({ obsId, sessionId }) =>
             findObservation(kv, obsId, sessionId).then((obs) =>
-              obs ? { obsId, sessionId: obs.sessionId, observation: obs } : null,
+              obs ? { obsId, sessionId: obs.sessionId, observation: withoutObservationSource(obs) } : null,
             ),
           ),
         );
@@ -258,13 +245,6 @@ export function registerSmartSearchFunction(
         compact.map((r) => r.obsId),
       );
 
-      // #771: followup-rate diagnostic. Only fires for agent-initiated
-      // searches that carry a sessionId — viewer-originated searches
-      // (source === "viewer") and direct-sdk callers without a session
-      // anchor are skipped. The result-set comparison uses obsIds: a
-      // disjoint set under the window suggests the previous call's
-      // results were not used, which is our directional proxy for
-      // reader-failure-with-evidence.
       if (
         data.sessionId &&
         typeof data.sessionId === "string" &&
@@ -323,7 +303,7 @@ export function registerSmartSearchFunction(
 }
 
 async function recallLessons(
-  sdk: ISdk,
+  sdk: IIIClient,
   query: string,
   limit: number,
   project?: string,
@@ -409,6 +389,14 @@ async function findObservation(
     if (obs) return obs;
   }
 
+  const indexedSessionId = await lookupObservationSession(kv, obsId);
+  if (indexedSessionId) {
+    const obs = await kv
+      .get<CompressedObservation>(KV.observations(indexedSessionId), obsId)
+      .catch(() => null);
+    if (obs) return obs;
+  }
+
   const sessions = await kv.list<{ id: string }>(KV.sessions);
   for (let i = 0; i < sessions.length; i += 5) {
     const batch = sessions.slice(i, i + 5);
@@ -417,8 +405,14 @@ async function findObservation(
         kv.get<CompressedObservation>(KV.observations(s.id), obsId).catch(() => null),
       ),
     );
-    const found = results.find((r) => r !== null);
-    if (found) return found;
+    const foundIndex = results.findIndex((r) => r !== null);
+    if (foundIndex !== -1) {
+      const found = results[foundIndex] as CompressedObservation;
+      await indexObservationSession(kv, obsId, batch[foundIndex].id).catch(
+        () => {},
+      );
+      return found;
+    }
   }
   return null;
 }

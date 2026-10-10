@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { resolveClientSecret } from "../secret-store.js";
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { hookCwd } from "./_project.js";
 
 const exec = promisify(execFile);
 
@@ -12,7 +14,7 @@ function isSdkChildContext(payload: unknown): boolean {
 }
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = resolveClientSecret(REST_URL);
 const TIMEOUT_MS = 1500;
 
 function authHeaders(): Record<string, string> {
@@ -49,9 +51,7 @@ async function main() {
   if (isSdkChildContext(data)) return;
 
   const cwd =
-    (data.cwd as string) ||
-    process.env["AGENTMEMORY_CWD"] ||
-    process.cwd();
+    hookCwd(data) || process.env["AGENTMEMORY_CWD"] || process.cwd();
   const sessionId =
     (data.session_id as string) ||
     process.env["AGENTMEMORY_SESSION_ID"] ||

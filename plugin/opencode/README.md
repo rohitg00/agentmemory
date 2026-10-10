@@ -9,8 +9,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/MCP-53_tools-1f6feb?style=flat-square" alt="53 MCP tools" />
+  <img src="https://img.shields.io/badge/MCP-54_tools-1f6feb?style=flat-square" alt="54 MCP tools" />
   <img src="https://img.shields.io/badge/Plugin-22_hooks-1f6feb?style=flat-square" alt="22 hooks" />
+  <img src="https://img.shields.io/badge/OpenCode-1.x_%2B_2.x-1f6feb?style=flat-square" alt="OpenCode 1.x and 2.x" />
   <img src="https://img.shields.io/badge/Commands-2_slash-1f6feb?style=flat-square" alt="2 slash commands" />
   <img src="https://img.shields.io/badge/R@5-95.2%25-00875f?style=flat-square" alt="95.2% R@5" />
 </p>
@@ -45,20 +46,41 @@ Add to `~/.config/opencode/opencode.json` or your project's `.opencode/opencode.
 
 ### 3. Install the plugin
 
-Add to `~/.config/opencode/opencode.json`:
-
-```json
-{
-  "plugin": ["./plugins/agentmemory-capture.ts"]
-}
-```
-
-Copy the plugin file from this repo:
+Copy the plugin file:
 
 ```bash
 mkdir -p ~/.config/opencode/plugins
 cp plugin/opencode/agentmemory-capture.ts ~/.config/opencode/plugins/
 ```
+
+That is the whole install. OpenCode loads every plugin file in
+`~/.config/opencode/plugins/` automatically, so there is nothing to register.
+
+> **Do not also add it to `opencode.json`.** Listing the file under
+> `"plugins"` on top of leaving it in the auto-loaded directory registers the
+> same plugin twice, and it then captures every event twice. If you see doubled
+> observations, remove the `"plugins"` entry and keep the file where it is.
+>
+> If you would rather keep plugins outside that directory, install the file
+> somewhere else and point the config key at it:
+>
+> ```json
+> {
+>   "plugins": ["./my-plugins/agentmemory-capture.ts"]
+> }
+> ```
+>
+> Either location works. The two must not both be in effect at once.
+
+**OpenCode 1.x** — the same file works, using the V1 key instead:
+
+```json
+{
+  "plugin": ["./my-plugins/agentmemory-capture.ts"]
+}
+```
+
+See [OpenCode 1.x and 2.x](#opencode-1x-and-2x) below.
 
 ### 4. Add the slash commands
 
@@ -71,6 +93,213 @@ cp plugin/opencode/commands/remember.md ~/.config/opencode/commands/
 ```
 
 Restart OpenCode or open a new session. The plugin auto-captures everything.
+
+## OpenCode 1.x and 2.x
+
+`agentmemory-capture.ts` supports both plugin APIs from a single file.
+
+OpenCode 2 replaced the V1 `Hooks`-object plugin shape: the default export must
+carry an `id` plus a `setup(ctx)`, and hooks are registered on the domain that
+owns the operation. The plugin therefore default-exports both:
+
+```ts
+export default {
+  id: "agentmemory-capture",
+  setup: v2Setup,    // OpenCode 2.x
+  server: v1Hooks,   // OpenCode 1.x (SDK 1.18.x era)
+}
+```
+
+- **OpenCode 2.x** reads `id` and `setup()`.
+- **OpenCode 1.17 and 1.18** call `server()` and use the returned hooks. They
+  also call `setup()`, with a context that has no `tool`, `session` or `event`.
+  `setup()` returns immediately when those are missing, so only the V1 hooks
+  run there.
+- The two implementations are separate on purpose. Sharing an export does not
+  translate V1 hooks into V2 hooks, and the payloads differ enough that a shared
+  core would overstate V2 coverage.
+- The named `export const AgentmemoryCapturePlugin` exists for direct imports
+  and for V1 releases older than 1.18.29, which expect a function as the
+  default export. A V1 loader that resolves `default` and calls `server()` on it
+  sees one plugin; the named export is not consulted unless a loader iterates
+  every export, which no observed version does.
+
+**V1 load, verified.** OpenCode 1.17.10 and 1.18.34 (the `opencode-ai` npm
+package) were run against this file in live sessions: one plugin instance,
+reads and shell calls captured through the V1 hooks, and one `config_loaded`
+per session.
+
+Validated against **OpenCode v2.0.22**, and re-checked on **v2.0.24**, by running the plugin inside a live
+session and logging the objects as they arrive, not by reading the generated
+SDK types. That distinction matters: `@opencode-ai/sdk` 1.4.10 declares
+`event.properties` and the V1 event names, and it is stale relative to the
+runtime. Where this README says a payload was observed, it was read off a
+running server.
+
+### What the V2 runtime actually does
+
+- **The payload is in `event.data`, not `event.properties`.** The envelope is
+  `created, data, id, location, type`. Reading `properties` yields `{}`.
+- **The V1 event names are gone.** They were not renamed one-for-one; the
+  stream is organised differently. `location` on the envelope is
+  process-level, so session identity comes from `data.sessionID`.
+- **`list()` returns `{ data, location }`.** `ctx.agent.list()`,
+  `ctx.provider.list()` and `ctx.mcp.list()` all resolve to that shape.
+- **`ctx.model.default()` is a promise.** Unawaited it is `{}`.
+- **`session.created` exists.** On v2.0.24 it carries `sessionID`,
+  `projectID`, `location`, `version`, `subpath` and `slug`. The title arrives
+  later in `session.renamed`, so a session registers on creation with its
+  directory in hand. The fallback to
+  "first event carrying an ID" remains for sessions that predate the plugin
+  load, which never emit the event. An earlier revision of this plugin claimed
+  `session.created` did not exist; that came from observing an already-open
+  session and never creating one, which is absence in a sample rather than
+  absence in the API.
+- **`ctx.session.hook("compaction")` registers, but its invocation is
+  unverified.** Calling `ctx.session.compact()` only *queues* a compaction
+  request; the hook would fire when the compaction actually runs. Forcing a
+  compaction in a running v2.0.22 emitted `session.compaction.started` and
+  `session.compaction.failed` immediately, with `Nothing to compact yet`,
+  because the session was empty. That proves the events fire and says nothing
+  about the hook, which never got a real compaction to run. The hook is kept
+  and the events are captured alongside it: if the hook is invoked it attaches
+  memory to the compaction prompt, and the events record that compaction
+  happened either way.
+- **`session.execution.succeeded` triggers `/summarize`.** It fires when a run
+  finishes and carries only `{ sessionID }`, so it adds no observation. V1
+  summarizes when a session goes idle; this is the V2 equivalent.
+- **`session.instructions.updated` carries `delta`, a map from instruction
+  source to content hash.** The plugin records the source names, not the
+  hashes.
+- **A standalone `opencode session delete` exits before the plugin sees
+  `session.deleted`.** The session then stays open in agentmemory. Summaries do
+  not depend on it, because they come from `session.execution.succeeded`.
+- **`parentID` is accepted by `ctx.session.create` but appears in no event
+  payload.** The `parentID` sent to `/session/start` is therefore always null;
+  the field is kept in case a future version populates it.
+
+### Hook mapping
+
+| V1 | V2 | Status |
+|---|---|---|
+| `event` | `ctx.event.subscribe()` | ported |
+| `tool.execute.before` | `ctx.tool.hook("execute.before")` | ported |
+| tool results (`message.part.updated`) | `ctx.tool.hook("execute.after")` | ported |
+| `chat.message` | `ctx.session.hook("prompt")` | ported |
+| `experimental.chat.system.transform` | `ctx.session.hook("context")` | ported |
+| `experimental.session.compacting` | `ctx.session.hook("compaction")` | ported, **unverified** |
+| `config` | *(no hook)* | snapshot at `setup`, refreshed on `*.updated` |
+| `chat.params` | *(no equivalent)* | not captured |
+
+`output.system` (a string array) became `event.system` (`SystemPart[]`), so
+injection pushes part objects rather than strings.
+
+### Event mapping
+
+| V1 event | V2 |
+|---|---|
+| `session.created` | `session.created` (or first event carrying `data.sessionID`) |
+| `session.deleted` | `session.deleted` |
+| `session.status`, `session.idle` | `session.step.started` / `session.step.ended`; `session.execution.succeeded` triggers `/summarize` |
+| `message.updated` | `session.text.ended` (`assistant_message`), `session.reasoning.ended` |
+| `message.part.updated` | `ctx.tool.hook("execute.after")` |
+| `command.executed` | the command arrives through `execute.after`; `shell.exited` records a non-zero exit |
+| `session.error` | `session.execution.failed` |
+| `file.edited` | `file.watcher.updated` |
+| `session.compacted` | `session.compaction.started` / `.failed` |
+| `permission.updated` | `permission.asked` (payload is a `PermissionRequest`) |
+| `todo.updated`, `session.diff` | *no V2 equivalent observed* |
+
+`permission.asked` and `permission.replied` were not seen firing during
+development. They are handled against the documented shape, reading both the
+V2 field names and the V1 fallbacks, and are not covered by the observed
+columns in the table below.
+
+### Injection happens on every call, fetched once per prompt
+
+`ctx.session.hook("context")` fires on every model call, so recalled memory is
+injected every time. The previous implementation injected once per session,
+which meant only the first prompt of a session carried memory.
+
+Because the hook also fires on each tool continuation, `/context` is requested
+at most once per prompt and then reused for the rest of the turn: the recalled
+set does not change while a prompt is being answered. A new prompt clears the
+cache. The `compaction` hook reuses the same turn cache.
+
+Compaction is also captured from the `session.compaction.started` / `.failed`
+events, which are observed.
+
+### What V2 cannot do
+
+- **`chat.params`** — V2's `context` hook exposes `options` with `maxTokens`
+  only; temperature and `topP` are absent, and `model` carries only
+  `id` / `providerID` / `variant`. Recorded `llm_params` would be wrong rather
+  than partial, so they are not recorded. The `model` on the hook is captured
+  in `step_start` instead, where it is real.
+
+### Why `ctx` is typed `any`
+
+The V2 setup signature is `async function v2Setup(ctx: any)`. That is
+deliberate, and worth explaining because it looks like a shortcut.
+
+Typing it properly would mean importing types from `@opencode-ai/plugin`. The
+generated types shipped for that package are **stale for V2**: SDK 1.4.10
+declares `EventSessionCreated = { type, properties: { sessionID, info } }` and
+enumerates the V1 event names, none of which the v2.0.22 runtime emits. A
+type-only import would therefore make the compiler reject correct code while
+accepting the shape that caused the original bug. Silence was the safer of the
+two failure modes, so `any` is used and the correctness burden moved to runtime
+verification.
+
+The known cost, stated plainly:
+
+- The compiler will not catch V2 payload drift. A renamed field becomes a
+  `undefined` at runtime instead of a type error.
+- Nothing checks that the event names in `handleEvent` are real. This branch
+  shipped a handler for fifteen V1 event names, none of which fire.
+- There is no compile-time guarantee that `ctx.session.hook(...)` takes a name
+  that exists. The loader accepts any string, so a typo registers nothing and
+  fails silently.
+
+That is why the verification suite drives the plugin with payloads captured
+from a live server instead of hand-built objects, and why the
+[Verification](#verification) section distinguishes observed from inferred. If a
+future release ships correct V2 types, this signature should be tightened and
+these three risks retired with it.
+
+### Verification
+
+- `test/opencode-plugin-v2.test.ts` — 38 cases driving the V2 path with payloads
+  captured from v2.0.22. It runs under the repo's existing vitest, so:
+
+  ```bash
+  npx vitest run test/opencode-plugin-v2.test.ts
+  ```
+
+  It covers session lifecycle, the tool hooks, memory injection on every model
+  call, compaction, the event switch, and the regression where an early
+  `return` ended the event subscription. Each case added with the compaction
+  change was checked against the previous commit: the three compaction cases
+  fail on it and pass here.
+- In a live session the plugin produced real observations for
+  `post_tool_use`, `config_loaded`, `step_start`, `step_finish`,
+  `reasoning`, `assistant_message` and `notification`, and requested
+  `/summarize` when the run finished.
+  `session.compaction.started` and `session.compaction.failed` were confirmed
+  by forcing a compaction in a running v2.0.22.
+
+`session.text.started`, `session.reasoning.started`, `session.inbox.delivered`,
+`shell.created` and `session.usage.updated` are read but not recorded. The
+first two carry no text yet, the inbox event carries only an ID, `shell.created`
+duplicates the command that `execute.after` already records, and usage
+duplicates the token and cost figures in `step_finish`. A config snapshot equal
+to the previous one is not recorded again.
+
+Earlier in this branch the V2 path loaded cleanly and captured almost nothing,
+because it was verified against a hand-built context object that agreed with
+its own assumptions. Verifying that the plugin loads is not verifying that it
+works, and the suite exists so that the next person does not have to learn that
+twice.
 
 ## What gets captured
 
@@ -89,12 +318,12 @@ Restart OpenCode or open a new session. The plugin auto-captures everything.
 
 ### Messages & prompts
 
-| Event | Hook | agentmemory API |
-|---|---|---|
-| User prompt (rich) | `chat.message` | POST /observe |
-| User prompt metadata | `message.updated` (user) | POST /observe |
-| Assistant response | `message.updated` (assistant) | POST /observe |
-| Message removed (undo) | `message.removed` | POST /observe |
+| Event | V1 hook | V2 hook | agentmemory API |
+|---|---|---|---|
+| User prompt (rich) | `chat.message` | `ctx.session.hook("prompt")` | POST /observe |
+| User prompt metadata | `message.updated` (user) | `message.updated` (user) | POST /observe |
+| Assistant response | `message.updated` (assistant) | `message.updated` (assistant) | POST /observe |
+| Message removed (undo) | `message.removed` | `message.removed` | POST /observe |
 
 ### Parts & steps
 
@@ -112,20 +341,23 @@ Restart OpenCode or open a new session. The plugin auto-captures everything.
 
 ### File enrichment pipeline
 
-| Event | Hook | agentmemory API |
-|---|---|---|
-| File tool params | `tool.execute.before` → stash paths | — |
-| File edited | `file.edited` → stash paths | — |
-| File part attached | `message.part.updated` (file) → stash paths | — |
-| Enrichment inject | `experimental.chat.system.transform` | POST /enrich → `output.system[]` |
-| Memory context inject | `experimental.chat.system.transform` | POST /context → `output.system[]` |
+| Event | V1 hook | V2 hook | agentmemory API |
+|---|---|---|---|
+| File tool params | `tool.execute.before` → stash paths | `ctx.tool.hook("execute.before")` | - |
+| File edited | `file.edited` → stash paths | `file.edited` | - |
+| File part attached | `message.part.updated` (file) → stash paths | `message.part.updated` (file) | - |
+| Enrichment inject | `experimental.chat.system.transform` | `ctx.session.hook("context")` | POST /enrich → system prompt |
+| Memory context inject | `experimental.chat.system.transform` | `ctx.session.hook("context")` | POST /context → system prompt |
+
+On V1 the two injects land in `output.system[]`. On V2 they are pushed as
+`SystemPart` objects onto `event.system`.
 
 ### Permissions
 
-| Event | Hook | agentmemory API |
-|---|---|---|
-| Permission prompt | `permission.updated` | POST /observe |
-| Permission reply | `permission.replied` | POST /observe |
+| Event | V1 hook | V2 hook | agentmemory API |
+|---|---|---|---|
+| Permission prompt | `permission.updated` | `permission.asked` | POST /observe |
+| Permission reply | `permission.replied` | `permission.replied` | POST /observe |
 
 ### Tasks & commands
 
@@ -136,11 +368,15 @@ Restart OpenCode or open a new session. The plugin auto-captures everything.
 
 ### Model & config
 
-| Event | Hook | agentmemory API |
-|---|---|---|
-| LLM parameters | `chat.params` | POST /observe |
-| Config loaded | `config` | POST /observe |
-| Compaction (WIP) | `experimental.session.compacting` | POST /context → `output.context[]` |
+| Event | V1 hook | V2 | agentmemory API |
+|---|---|---|---|
+| LLM parameters | `chat.params` | not captured | POST /observe (V1 only) |
+| Config loaded | `config` | snapshot at setup | POST /observe |
+| Compaction context | `experimental.session.compacting` | `ctx.session.hook("compaction")`, unverified | POST /context → `event.system[]` |
+
+These three are the only differences between the V1 and V2 paths. Everything
+else in this document is captured identically on both. See
+[What V2 cannot do](#what-v2-cannot-do).
 
 ### File enrichment + memory injection (two-layer pipeline)
 

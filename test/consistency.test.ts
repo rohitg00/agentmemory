@@ -35,6 +35,15 @@ describe("Consistency checks", () => {
     expect(plugin.version).toBe(pkg.version);
   });
 
+  it("packages/mcp version matches package.json", () => {
+    // The mcp package publishes in lockstep with the main package but its
+    // version lives in its own manifest; without this guard a release bump
+    // can silently ship a stale @agentmemory/mcp (it slipped in 0.9.29).
+    const pkg = JSON.parse(readText("package.json"));
+    const mcp = JSON.parse(readText("packages/mcp/package.json"));
+    expect(mcp.version).toBe(pkg.version);
+  });
+
   it("export-import.ts supports current version", () => {
     const src = readText("src/functions/export-import.ts");
     expect(src).toContain(`"${VERSION}"`);
@@ -74,12 +83,7 @@ describe("Consistency checks", () => {
     }
   });
 
-  it("every host-path bind mount in docker-compose.yml is in the published files list (#136)", () => {
-    // Regression guard for #136: docker-compose.yml references
-    // ./iii-config.docker.yaml as a read-only bind mount, but the file
-    // was missing from the published tarball. Docker silently creates
-    // missing bind sources as empty directories, so the engine crashed
-    // with "Is a directory (os error 21)" at /app/config.yaml.
+  it("every host-path bind mount in docker-compose.yml is in the published files list", () => {
     const compose = readText("docker-compose.yml");
     const pkg = JSON.parse(readText("package.json"));
     const files: string[] = pkg.files ?? [];

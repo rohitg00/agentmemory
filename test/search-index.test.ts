@@ -29,6 +29,15 @@ describe("SearchIndex", () => {
     index = new SearchIndex();
   });
 
+  it("counts memory and lesson documents apart from observations", () => {
+    index.add(makeObs({ id: "obs_1" }));
+    index.add(makeObs({ id: "mem_1", sessionId: "memory" }));
+    index.add(makeObs({ id: "mem_2", sessionId: "ses_1" }));
+    index.add(makeObs({ id: "lsn_1", sessionId: "lesson" }));
+
+    expect(index.documentKindCounts()).toEqual({ memories: 2, lessons: 1 });
+  });
+
   it("starts empty", () => {
     expect(index.size).toBe(0);
   });
@@ -80,6 +89,26 @@ describe("SearchIndex", () => {
       index.add(makeObs({ id: `obs_${i}`, title: `auth feature ${i}` }));
     }
     expect(index.search("auth", 5).length).toBe(5);
+  });
+
+  it("does not let multiple prefix variants outweigh an exact term", () => {
+    const common = { title: "", subtitle: "", concepts: [], facts: [], files: [] };
+    index.add(makeObs({ ...common, id: "exact", narrative: "redis alpha beta gamma" }));
+    index.add(makeObs({ ...common, id: "prefix", narrative: "redistool redisproxy rediscache redisserver" }));
+    const hits = index.search("redis");
+    expect(hits.map((hit) => hit.obsId)).toEqual(["exact", "prefix"]);
+    expect(hits[0].score).toBeGreaterThan(hits[1].score);
+  });
+
+  it("does not add prefix bonuses to a document already matching the exact term", () => {
+    const common = { title: "", subtitle: "", concepts: [], facts: [], files: [] };
+    index.add(makeObs({ ...common, id: "exact", narrative: "redis alpha beta gamma" }));
+    index.add(makeObs({ ...common, id: "other", narrative: "redistool redisproxy rediscache redisserver" }));
+    const before = index.search("redis").find((hit) => hit.obsId === "exact")!.score;
+    index.add(makeObs({ ...common, id: "exact", narrative: "redis redismonitor redislogger redisclient" }));
+    const after = index.search("redis").find((hit) => hit.obsId === "exact")!.score;
+    expect(after).toBeCloseTo(before);
+    expect(SearchIndex.deserialize(index.serialize()).search("redis")).toEqual(index.search("redis"));
   });
 
   it("clears the index", () => {

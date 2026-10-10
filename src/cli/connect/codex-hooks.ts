@@ -2,25 +2,6 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/**
- * Workaround for openai/codex#16430 — Codex Desktop does not dispatch
- * plugin-local `hooks.json` even though both `CodexHooks` and `PluginHooks`
- * feature flags are stable + default-enabled in
- * `codex-rs/features/src/lib.rs`. Until upstream fixes plugin-scope
- * dispatch, the same hook commands can be mirrored into the global
- * `~/.codex/hooks.json`, which is loaded reliably.
- *
- * This module builds that mirror, with `${CLAUDE_PLUGIN_ROOT}` resolved to
- * the bundled `plugin/` directory so the user-scope file does not depend
- * on env-var expansion (Codex only injects `CLAUDE_PLUGIN_ROOT` for
- * plugin-scope hooks).
- *
- * Identification on re-install: every command we write contains the
- * resolved `<pluginRoot>/scripts/` prefix, so subsequent installs can
- * strip our entries and re-add cleanly without touching the user's other
- * hook entries.
- */
-
 type HookHandler = { type: string; command: string };
 type HookEntry = { matcher?: string; hooks: HookHandler[] };
 export type HookManifest = { hooks: Record<string, HookEntry[]> };

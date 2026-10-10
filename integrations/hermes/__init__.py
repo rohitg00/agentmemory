@@ -13,6 +13,30 @@ import json
 import os
 import sys
 import threading
+import subprocess
+from pathlib import PurePath
+
+
+def _resolve_project(cwd: str) -> str:
+    """Canonical project scope, matching the hooks' resolveProject order:
+    AGENTMEMORY_PROJECT_NAME env override, git toplevel basename, cwd basename.
+    Keeps Hermes sessions in the same project bucket as every other agent."""
+    explicit = os.environ.get("AGENTMEMORY_PROJECT_NAME", "").strip()
+    if explicit:
+        return explicit
+    try:
+        top = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        if top:
+            return PurePath(top).name
+    except Exception:
+        pass
+    return PurePath(cwd).name or cwd
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -54,19 +78,6 @@ TIMEOUT = 5
 LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
 _plaintext_bearer_warned = False
 
-# agentmemory's documented runtime config lives at ~/.agentmemory/.env.
-# When agentmemory is launched as a systemd user service (or any other
-# process manager that loads that file directly), those values never
-# reach an interactive shell. `hermes memory status` then reads
-# os.environ in the Hermes CLI process, finds AGENTMEMORY_URL /
-# AGENTMEMORY_SECRET unset, and reports the plugin as "Missing" even
-# though the service is healthy and live sessions can use it (#250).
-#
-# Preload the file at plugin-import time using os.environ.setdefault so
-# we never override anything the user explicitly set in the shell. The
-# preload is best-effort and silent on any failure (file absent,
-# unreadable, malformed) — the plugin falls back to its existing default
-# (http://localhost:3111) and Hermes status reflects that.
 def _preload_agentmemory_dotenv() -> None:
     candidates: list[Path] = []
     home = os.environ.get("HOME")
@@ -90,10 +101,6 @@ def _preload_agentmemory_dotenv() -> None:
                     os.environ.setdefault(key, value)
         except (OSError, UnicodeDecodeError):
             continue
-    # Guarantee AGENTMEMORY_URL is set so `hermes memory status` never
-    # reports it as Missing when a user runs agentmemory at the default
-    # localhost:3111 (or via systemd with the URL line commented out in
-    # ~/.agentmemory/.env because it matches the default). #520.
     os.environ.setdefault("AGENTMEMORY_URL", DEFAULT_BASE_URL)
 
 
@@ -150,12 +157,58 @@ def _reset_plaintext_bearer_guard_for_tests() -> None:
     _plaintext_bearer_warned = False
 
 
+def _usable_secret(value: str | None) -> str:
+    trimmed = (value or "").strip()
+    if not trimmed or (trimmed.startswith("${") and trimmed.endswith("}")):
+        return ""
+    return trimmed
+
+
+def _read_agentmemory_file(name: str) -> str:
+    try:
+        return (Path.home() / ".agentmemory" / name).read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
+
+
+def _env_file_secret() -> str:
+    found = ""
+    for raw in _read_agentmemory_file(".env").splitlines():
+        line = raw.strip()
+        if line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        if key.startswith("export "):
+            key = key[len("export "):].strip()
+        if key != "AGENTMEMORY_SECRET":
+            continue
+        value = value.strip()
+        close = value.find(value[0], 1) if value[:1] in ("'", '"') else -1
+        if close > 0:
+            value = value[1:close]
+        elif " #" in value:
+            value = value[: value.index(" #")]
+        found = _usable_secret(value)
+    return found
+
+
+def _stored_secret(base: str) -> str:
+    try:
+        host = (urlparse(base).hostname or "").lower()
+    except ValueError:
+        return ""
+    if host not in ("localhost", "::1") and not host.startswith("127."):
+        return ""
+    return _env_file_secret() or _usable_secret(_read_agentmemory_file("secret"))
+
+
 def _api(base: str, path: str, body: dict | None = None, method: str = "POST", secret: str = "") -> dict | None:
     if not _validate_url(base):
         return None
     url = f"{base}/agentmemory/{path}"
     headers = {"Content-Type": "application/json"}
-    auth = secret or os.environ.get("AGENTMEMORY_SECRET", "")
+    auth = _usable_secret(secret) or _usable_secret(os.environ.get("AGENTMEMORY_SECRET")) or _stored_secret(base)
     _check_plaintext_bearer_guard(base, auth)
     if auth:
         headers["Authorization"] = f"Bearer {auth}"
@@ -188,14 +241,15 @@ class AgentMemoryProvider(MemoryProvider):
     def initialize(self, session_id: str, **kwargs: Any) -> None:
         self._base = os.environ.get("AGENTMEMORY_URL", DEFAULT_BASE_URL)
         self._session_id = session_id
-        self._project = kwargs.get("cwd", os.getcwd())
+        self._cwd = kwargs.get("cwd", os.getcwd())
+        self._project = _resolve_project(self._cwd)
         if os.environ.get("AGENTMEMORY_REQUIRE_HTTPS") == "1":
             _check_plaintext_bearer_guard(self._base, os.environ.get("AGENTMEMORY_SECRET", ""))
 
         _api(self._base, "session/start", {
             "sessionId": session_id,
             "project": self._project,
-            "cwd": self._project,
+            "cwd": self._cwd,
         })
 
     def get_config_schema(self) -> list[dict]:
@@ -348,7 +402,7 @@ class AgentMemoryProvider(MemoryProvider):
             "hookType": "post_tool_use",
             "sessionId": kwargs.get("session_id", self._session_id),
             "project": self._project,
-            "cwd": self._project,
+            "cwd": self._cwd,
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "data": {
                 "tool_name": "conversation",

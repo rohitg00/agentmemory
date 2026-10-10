@@ -6,9 +6,11 @@ import { getAllTools } from "./tools-registry.js";
 import { getStandalonePersistPath } from "../config.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
+import { queryAudit } from "../functions/audit.js";
 import {
   resolveHandle,
   invalidateHandle,
+  ProxyCallError,
   type Handle,
   type ProxyHandle,
 } from "./rest-proxy.js";
@@ -23,10 +25,16 @@ const IMPLEMENTED_TOOLS = new Set([
   "memory_governance_delete",
 ]);
 
+const SUPPORTED_PROTOCOL_VERSIONS = [
+  "2025-11-25",
+  "2025-06-18",
+  "2025-03-26",
+  "2024-11-05",
+];
+
 const SERVER_INFO = {
   name: "agentmemory",
   version: VERSION,
-  protocolVersion: "2024-11-05",
 };
 
 const kv = new InMemoryKV(getStandalonePersistPath());
@@ -99,6 +107,8 @@ interface Validated {
   type?: string;
   concepts?: string[];
   files?: string[];
+  project?: string;
+  agentId?: string;
   query?: string;
   limit?: number;
   format?: string;
@@ -122,6 +132,15 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
+      // The tool schema exposes project (and now agentId); dropping them
+      // here silently broke project/agent scoping through the stdio
+      // package specifically.
+      if (typeof args["project"] === "string" && args["project"].trim()) {
+        v.project = args["project"].trim();
+      }
+      if (typeof args["agentId"] === "string" && args["agentId"].trim()) {
+        v.agentId = args["agentId"].trim();
+      }
       return v;
     }
     case "memory_recall":
@@ -180,6 +199,8 @@ async function handleProxy(
           type: v.type,
           concepts: v.concepts,
           files: v.files,
+          ...(v.project !== undefined && { project: v.project }),
+          ...(v.agentId !== undefined && { agentId: v.agentId }),
         }),
       });
       return textResponse(result);
@@ -222,8 +243,20 @@ async function handleProxy(
       return textResponse(result);
     }
     case "memory_export": {
-      const result = await handle.call("/agentmemory/export", { method: "GET" });
-      return textResponse(result, true);
+      try {
+        const result = await handle.call("/agentmemory/export", { method: "GET" });
+        return textResponse(result, true);
+      } catch (err) {
+        if (
+          err instanceof ProxyCallError &&
+          err.body != null &&
+          typeof err.body === "object" &&
+          (err.body as { oversized?: boolean }).oversized === true
+        ) {
+          return textResponse(err.body, true);
+        }
+        throw err;
+      }
     }
     case "memory_audit": {
       const result = await handle.call(
@@ -318,14 +351,10 @@ async function handleLocal(
     }
 
     case "memory_audit": {
-      const entries = await kvInstance.list("mem:audit");
-      const limit = v.limit ?? 50;
-      return textResponse(
-        {
-          entries: (entries as Array<Record<string, unknown>>).slice(0, limit),
-        },
-        true,
-      );
+      const result = await queryAudit(kvInstance as never, {
+        limit: v.limit ?? 50,
+      });
+      return textResponse(result, true);
     }
 
     default:
@@ -339,7 +368,7 @@ async function handleProxyGeneric(
   handle: ProxyHandle,
 ): Promise<{ content: Array<{ type: string; text: string }> }> {
   // Forward to the server's full MCP surface so non-Claude clients can
-  // reach all 53 tools (lessons, sentinels, slots, signals, graph, …)
+  // reach all 54 tools (lessons, sentinels, slots, signals, graph, …)
   // instead of being capped at the 7 IMPLEMENTED_TOOLS set baked into
   // this shim. The server validates arguments per tool.
   const result = (await handle.call("/agentmemory/mcp/call", {
@@ -360,9 +389,6 @@ export async function handleToolCall(
   const handle = await resolveHandle();
   announceMode(handle);
 
-  // Tools the local InMemoryKV fallback doesn't implement: forward straight
-  // to the server. Local validation would otherwise raise "Unknown tool"
-  // (issue #234).
   if (!IMPLEMENTED_TOOLS.has(toolName)) {
     if (handle.mode === "proxy") {
       try {
@@ -447,15 +473,23 @@ export async function handleToolsList(): Promise<{ tools: unknown[] }> {
 
 const transport = createStdioTransport(async (method, params) => {
   switch (method) {
-    case "initialize":
+    case "initialize": {
+      const requested = (params as { protocolVersion?: unknown } | undefined)
+        ?.protocolVersion;
+      const protocolVersion =
+        typeof requested === "string" &&
+        SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+          ? requested
+          : SUPPORTED_PROTOCOL_VERSIONS[0];
       return {
-        protocolVersion: SERVER_INFO.protocolVersion,
+        protocolVersion,
         capabilities: { tools: { listChanged: false } },
         serverInfo: {
           name: SERVER_INFO.name,
           version: SERVER_INFO.version,
         },
       };
+    }
 
     case "notifications/initialized":
       return {};

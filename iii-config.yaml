@@ -13,6 +13,7 @@ workers:
         name: kv
         config:
           store_method: file_based
+          save_interval_ms: 2000
           file_path: ./data/state_store.db
   - name: iii-queue
     config:
@@ -34,6 +35,7 @@ workers:
         name: kv
         config:
           store_method: file_based
+          save_interval_ms: 2000
           file_path: ./data/stream_store
   - name: iii-observability
     config:
@@ -45,7 +47,7 @@ workers:
       # subscriber lagged" WARN, and that WARN re-enters the same
       # stream the subscriber is failing to drain — a positive
       # feedback loop that wrote 137 GB to daemon.log.new on one user
-      # in a few days (#519).
+      # in a few days.
       sampling_ratio: 0.1
       metrics_enabled: true
       logs_enabled: true

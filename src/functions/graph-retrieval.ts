@@ -227,17 +227,6 @@ export class GraphRetrieval {
     return latest;
   }
 
-  // Weighted shortest-path traversal (#328). Replaces the prior BFS,
-  // which fell back to edge-count order and ignored the 0.1-1.0 weight
-  // attached to every graph edge. Dijkstra over `cost = 1/weight`
-  // (cheaper edges = stronger relationships) returns the
-  // highest-weighted path to each reachable node within maxDepth. Also
-  // tightens the perf profile:
-  //   - Adjacency built once in O(V+E) (previous BFS re-filtered
-  //     allEdges per visited node, O(V·E) overall).
-  //   - Min-heap dequeue is O(log V) per pop (previous queue.shift()
-  //     was O(n) — the dominant cost on graphs above ~200 nodes per
-  //     the contributor's benchmark in #328).
   private dijkstraTraversal(
     startNode: GraphNode,
     allNodes: GraphNode[],
@@ -304,9 +293,6 @@ export class GraphRetrieval {
   }
 }
 
-// Minimal binary min-heap. Pulled inline so graph-retrieval doesn't
-// take a new dependency for the perf-critical inner loop of #328.
-// Comparator returns negative when `a` should pop before `b`.
 class MinHeap<T> {
   private heap: T[] = [];
 

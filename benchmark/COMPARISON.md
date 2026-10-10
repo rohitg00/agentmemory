@@ -121,6 +121,22 @@ This isn't a "agentmemory wins everything" page. Different tools solve different
 - Multi-agent shared memory as a primary feature
 - "Forget by default, earn persistence through use" philosophy
 
+**Choose TencentDB Agent Memory if you want:**
+- Team-level shared memory: conversations, docs, and code turned into four asset types (Chat Memory, Skill, Wiki, CodeGraph) with team roles and ownership
+- Zero-integration capture via an LLM proxy (point the agent's base URL at it; no hooks or MCP required)
+- CodeGraph impact analysis (symbols, call relationships) alongside memory
+- Note: the proxy sits in front of every model call, deployment is a multi-service Docker stack (Core + Hub + Proxy), the published benchmark is PersonaMem (76%, self-reported), and automated memory routing is still in progress per their README
+
+**Choose Zep / Graphiti if you want:**
+- A temporal knowledge graph: facts carry a time dimension, so "what was true when" is a first-class query
+- The strongest published temporal-query results (LongMemEval 63.8%)
+- Note: graph construction runs in the background, so freshly ingested facts can take time to become retrievable, and per-conversation memory footprint is reported to run far above extraction-based systems
+
+**Choose Cognee if you want:**
+- Knowledge-graph construction from documents and structured data before query time
+- Entity-relationship extraction as the primary product rather than session capture
+- Note: Python-only, and built for document ingestion rather than coding-agent memory
+
 ---
 
 ## Running Your Own Benchmarks

@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   CompressedObservation,
   EnrichedChunk,
@@ -114,7 +114,7 @@ function parseEnrichedXml(xml: string): {
 }
 
 export function registerSlidingWindowFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
 ): void {

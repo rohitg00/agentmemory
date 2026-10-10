@@ -35,8 +35,11 @@ concepts so a future `recall` finds it, and preserve the user's own phrasing.
    (`jwt-refresh-rotation` beats `auth`).
 3. Extract referenced file paths (absolute or repo-relative). Empty if none.
 4. Call `memory_save` with `content`, `concepts` (comma-separated string), and
-   `files` (comma-separated string).
+   `files` (comma-separated string). In a multi-agent setup pass `agentId` so
+   the memory lands in the right agent's scope.
 5. Confirm the save and echo the concepts so the user knows the retrieval terms.
+6. To update a fact, save the corrected version outright: near-duplicate content
+   supersedes the old record, which leaves recall but stays in the version chain.
 
 ## Anti-patterns
 
@@ -55,6 +58,8 @@ RIGHT: `concepts: "jwt-refresh-rotation, token-revocation"` (specific, retrievab
 
 - `recall`: retrieve what you save here (the pair to this skill).
 - `forget`: remove a memory you saved by mistake.
+- `lesson`: behavioral rules from corrections; memories are for facts.
+- `memory-discipline`: when to save unprompted.
 
 ## Troubleshooting
 

@@ -1,0 +1,331 @@
+{
+  "byAdapter": {
+    "grep": {
+      "n": 500,
+      "completed": 500,
+      "failed": 0,
+      "scored": 470,
+      "answerable": {
+        "attempted": 470,
+        "completed": 470,
+        "failed": 0
+      },
+      "unanswerable": 30,
+      "unanswerableCompleted": 30,
+      "unanswerableFailed": 0,
+      "p": 0.2953191489361707,
+      "r": 0.8081914893617022,
+      "recallAll": 0.7212765957446808,
+      "hit": 417,
+      "strictSuccessOverAttempts": 0.7212765957446808,
+      "latencyP50": 2.3301249999999527,
+      "latencyP95": 5.3191249999999854,
+      "ingestionP50": 0.003624999999829015
+    },
+    "agentmemory-bm25-component": {
+      "n": 500,
+      "completed": 500,
+      "failed": 0,
+      "scored": 470,
+      "answerable": {
+        "attempted": 470,
+        "completed": 470,
+        "failed": 0
+      },
+      "unanswerable": 30,
+      "unanswerableCompleted": 30,
+      "unanswerableFailed": 0,
+      "p": 0.27234042553191656,
+      "r": 0.766985815602837,
+      "recallAll": 0.6574468085106383,
+      "hit": 413,
+      "strictSuccessOverAttempts": 0.6574468085106383,
+      "latencyP50": 1.7853749999994761,
+      "latencyP95": 2.110207999998238,
+      "ingestionP50": 127.45508299999346
+    }
+  },
+  "byType": {
+    "single-session-user": {
+      "grep": {
+        "n": 70,
+        "completed": 70,
+        "failed": 0,
+        "scored": 64,
+        "answerable": {
+          "attempted": 64,
+          "completed": 64,
+          "failed": 0
+        },
+        "unanswerable": 6,
+        "unanswerableCompleted": 6,
+        "unanswerableFailed": 0,
+        "p": 0.18749999999999983,
+        "r": 0.9375,
+        "recallAll": 0.9375,
+        "hit": 60,
+        "strictSuccessOverAttempts": 0.9375,
+        "latencyP50": 1.6135410000001684,
+        "latencyP95": 2.6478749999998854,
+        "ingestionP50": 0.0016669999999976426
+      },
+      "agentmemory-bm25-component": {
+        "n": 70,
+        "completed": 70,
+        "failed": 0,
+        "scored": 64,
+        "answerable": {
+          "attempted": 64,
+          "completed": 64,
+          "failed": 0
+        },
+        "unanswerable": 6,
+        "unanswerableCompleted": 6,
+        "unanswerableFailed": 0,
+        "p": 0.18437499999999984,
+        "r": 0.921875,
+        "recallAll": 0.921875,
+        "hit": 59,
+        "strictSuccessOverAttempts": 0.921875,
+        "latencyP50": 1.727458999999726,
+        "latencyP95": 2.0319589999999152,
+        "ingestionP50": 127.15204100000028
+      }
+    },
+    "multi-session": {
+      "grep": {
+        "n": 133,
+        "completed": 133,
+        "failed": 0,
+        "scored": 121,
+        "answerable": {
+          "attempted": 121,
+          "completed": 121,
+          "failed": 0
+        },
+        "unanswerable": 12,
+        "unanswerableCompleted": 12,
+        "unanswerableFailed": 0,
+        "p": 0.37355371900826406,
+        "r": 0.7450413223140495,
+        "recallAll": 0.5289256198347108,
+        "hit": 114,
+        "strictSuccessOverAttempts": 0.5289256198347108,
+        "latencyP50": 2.1924169999999776,
+        "latencyP95": 3.5546250000002146,
+        "ingestionP50": 0.004958000000215179
+      },
+      "agentmemory-bm25-component": {
+        "n": 133,
+        "completed": 133,
+        "failed": 0,
+        "scored": 121,
+        "answerable": {
+          "attempted": 121,
+          "completed": 121,
+          "failed": 0
+        },
+        "unanswerable": 12,
+        "unanswerableCompleted": 12,
+        "unanswerableFailed": 0,
+        "p": 0.320661157024793,
+        "r": 0.6553719008264463,
+        "recallAll": 0.4214876033057851,
+        "hit": 108,
+        "strictSuccessOverAttempts": 0.4214876033057851,
+        "latencyP50": 1.758625000002212,
+        "latencyP95": 2.0413749999988795,
+        "ingestionP50": 128.19058399999994
+      }
+    },
+    "single-session-preference": {
+      "grep": {
+        "n": 30,
+        "completed": 30,
+        "failed": 0,
+        "scored": 30,
+        "answerable": {
+          "attempted": 30,
+          "completed": 30,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.09333333333333334,
+        "r": 0.4666666666666667,
+        "recallAll": 0.4666666666666667,
+        "hit": 14,
+        "strictSuccessOverAttempts": 0.4666666666666667,
+        "latencyP50": 2.3111249999999472,
+        "latencyP95": 3.4541249999999764,
+        "ingestionP50": 0.002540999999837368
+      },
+      "agentmemory-bm25-component": {
+        "n": 30,
+        "completed": 30,
+        "failed": 0,
+        "scored": 30,
+        "answerable": {
+          "attempted": 30,
+          "completed": 30,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.12000000000000004,
+        "r": 0.6,
+        "recallAll": 0.6,
+        "hit": 18,
+        "strictSuccessOverAttempts": 0.6,
+        "latencyP50": 1.8175000000010186,
+        "latencyP95": 2.1893749999981083,
+        "ingestionP50": 130.27545800000007
+      }
+    },
+    "temporal-reasoning": {
+      "grep": {
+        "n": 133,
+        "completed": 133,
+        "failed": 0,
+        "scored": 127,
+        "answerable": {
+          "attempted": 127,
+          "completed": 127,
+          "failed": 0
+        },
+        "unanswerable": 6,
+        "unanswerableCompleted": 6,
+        "unanswerableFailed": 0,
+        "p": 0.32755905511810973,
+        "r": 0.7692913385826772,
+        "recallAll": 0.6692913385826772,
+        "hit": 109,
+        "strictSuccessOverAttempts": 0.6692913385826772,
+        "latencyP50": 2.6010000000001128,
+        "latencyP95": 4.164374999999836,
+        "ingestionP50": 0.004292000000077678
+      },
+      "agentmemory-bm25-component": {
+        "n": 133,
+        "completed": 133,
+        "failed": 0,
+        "scored": 127,
+        "answerable": {
+          "attempted": 127,
+          "completed": 127,
+          "failed": 0
+        },
+        "unanswerable": 6,
+        "unanswerableCompleted": 6,
+        "unanswerableFailed": 0,
+        "p": 0.3181102362204719,
+        "r": 0.7730971128608924,
+        "recallAll": 0.6614173228346457,
+        "hit": 113,
+        "strictSuccessOverAttempts": 0.6614173228346457,
+        "latencyP50": 1.7791250000009313,
+        "latencyP95": 2.0122919999994338,
+        "ingestionP50": 127.35704200000328
+      }
+    },
+    "knowledge-update": {
+      "grep": {
+        "n": 78,
+        "completed": 78,
+        "failed": 0,
+        "scored": 72,
+        "answerable": {
+          "attempted": 72,
+          "completed": 72,
+          "failed": 0
+        },
+        "unanswerable": 6,
+        "unanswerableCompleted": 6,
+        "unanswerableFailed": 0,
+        "p": 0.3777777777777773,
+        "r": 0.9444444444444444,
+        "recallAll": 0.9166666666666666,
+        "hit": 70,
+        "strictSuccessOverAttempts": 0.9166666666666666,
+        "latencyP50": 2.0108339999997042,
+        "latencyP95": 3.255166999999801,
+        "ingestionP50": 0.0037090000000716827
+      },
+      "agentmemory-bm25-component": {
+        "n": 78,
+        "completed": 78,
+        "failed": 0,
+        "scored": 72,
+        "answerable": {
+          "attempted": 72,
+          "completed": 72,
+          "failed": 0
+        },
+        "unanswerable": 6,
+        "unanswerableCompleted": 6,
+        "unanswerableFailed": 0,
+        "p": 0.3388888888888885,
+        "r": 0.8472222222222222,
+        "recallAll": 0.7222222222222222,
+        "hit": 70,
+        "strictSuccessOverAttempts": 0.7222222222222222,
+        "latencyP50": 1.7610419999982696,
+        "latencyP95": 2.0056669999976293,
+        "ingestionP50": 126.29587500000343
+      }
+    },
+    "single-session-assistant": {
+      "grep": {
+        "n": 56,
+        "completed": 56,
+        "failed": 0,
+        "scored": 56,
+        "answerable": {
+          "attempted": 56,
+          "completed": 56,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.17857142857142852,
+        "r": 0.8928571428571429,
+        "recallAll": 0.8928571428571429,
+        "hit": 50,
+        "strictSuccessOverAttempts": 0.8928571428571429,
+        "latencyP50": 5.193457999999737,
+        "latencyP95": 7.714500000000044,
+        "ingestionP50": 0.0024160000002666493
+      },
+      "agentmemory-bm25-component": {
+        "n": 56,
+        "completed": 56,
+        "failed": 0,
+        "scored": 56,
+        "answerable": {
+          "attempted": 56,
+          "completed": 56,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.16071428571428573,
+        "r": 0.8035714285714286,
+        "recallAll": 0.8035714285714286,
+        "hit": 45,
+        "strictSuccessOverAttempts": 0.8035714285714286,
+        "latencyP50": 2.0024999999950523,
+        "latencyP95": 2.3042500000010477,
+        "ingestionP50": 126.53137500000594
+      }
+    }
+  },
+  "planned": 1000,
+  "completed": 1000,
+  "failed": 0,
+  "finishedAt": "2026-10-09T15:01:53.691Z",
+  "claim": "Development evaluation only. No competitor ranking or answer-accuracy claim."
+}

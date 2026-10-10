@@ -39,7 +39,10 @@ an explicit yes before calling delete. Delete by memory ID, never a bare session
    comma-separated string) and optional `reason` (default `plugin skill request`).
 4. To drop a whole session, collect every memory id in that session from the
    search results and pass them all. The MCP does not accept a bare `sessionId`.
-5. Report the deletion count back.
+5. Lessons are separate: delete one with `memory_lesson_delete` and its
+   `lessonId`; `memory_governance_delete` does not touch lessons.
+6. Report the deletion count back. A count of 0 means the ids did not exist;
+   say so instead of claiming a delete.
 
 ## Anti-patterns
 

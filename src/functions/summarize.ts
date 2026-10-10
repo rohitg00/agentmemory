@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   CompressedObservation,
   SessionSummary,
@@ -17,9 +17,11 @@ import { getXmlTag, getXmlChildren } from "../prompts/xml.js";
 import { SummaryOutputSchema } from "../eval/schemas.js";
 import { validateOutput } from "../eval/validator.js";
 import { scoreSummary } from "../eval/quality.js";
+import { isNoopProvider } from "../providers/noop.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { safeAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { scrubRecord } from "./privacy.js";
 
 // Per-chunk observation budget when a session is too large to fit in one
 // LLM call. Default ≈ 50k input tokens per chunk at ~110 tok/obs — fits
@@ -184,10 +186,6 @@ async function produceSummaryXml(
   return { response, mode: "chunked", chunks: chunks.length, skipped };
 }
 
-// #783: many LLMs (DeepSeek, GPT variants, some Anthropic responses)
-// wrap structured XML in markdown code fences or add conversational
-// text before/after. Strip those wrappers before the tag regex so a
-// well-formed summary doesn't get silently dropped as parse_failed.
 function stripXmlWrappers(raw: string): string {
   if (!raw) return "";
   let cleaned = raw.trim();
@@ -226,14 +224,43 @@ function parseSummaryXml(
   };
 }
 
+function visibleAt(observation: CompressedObservation): string {
+  return observation.compressedAt ?? observation.timestamp;
+}
+
+async function reduceWithExisting(
+  provider: MemoryProvider,
+  existing: SessionSummary,
+  delta: SessionSummary,
+  total: number,
+): Promise<string> {
+  const existingEnd = Math.max(1, total - delta.observationCount);
+  const partial = (s: SessionSummary, obsRangeStart: number, obsRangeEnd: number) => ({
+    title: s.title,
+    narrative: s.narrative,
+    keyDecisions: s.keyDecisions,
+    filesModified: s.filesModified,
+    concepts: s.concepts,
+    obsRangeStart,
+    obsRangeEnd,
+  });
+  return provider.summarize(
+    REDUCE_SYSTEM,
+    buildReducePrompt([
+      partial(existing, 1, existingEnd),
+      partial(delta, existingEnd + 1, total),
+    ]),
+  );
+}
+
 export function registerSummarizeFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
   metricsStore?: MetricsStore,
 ): void {
   sdk.registerFunction("mem::summarize", 
-    async (data: { sessionId: string } | undefined) => {
+    async (data: { sessionId: string; force?: boolean } | undefined) => {
       const startMs = Date.now();
       if (!data || typeof data.sessionId !== "string" || !data.sessionId.trim()) {
         return { success: false, error: "sessionId is required" };
@@ -251,7 +278,9 @@ export function registerSummarizeFunction(
       const observations = await kv.list<CompressedObservation>(
         KV.observations(sessionId),
       );
-      const compressed = observations.filter((o) => o.title);
+      const compressed = observations
+        .filter((o) => o.title)
+        .sort((a, b) => visibleAt(a).localeCompare(visibleAt(b)) || a.id.localeCompare(b.id));
 
       if (compressed.length === 0) {
         logger.info("No observations to summarize", {
@@ -260,7 +289,23 @@ export function registerSummarizeFunction(
         return { success: false, error: "no_observations" };
       }
 
-      if (provider.name === "noop") {
+      const existing =
+        data.force === true
+          ? null
+          : await kv.get<SessionSummary>(KV.summaries, sessionId).catch(() => null);
+      const watermark = existing?.coveredThrough;
+      const delta = watermark
+        ? compressed.filter((o) => visibleAt(o) > watermark)
+        : compressed;
+      if (existing && watermark && delta.length === 0) {
+        return { success: true, unchanged: true, summary: existing };
+      }
+      const incremental =
+        existing && watermark && delta.length < compressed.length ? existing : null;
+      const input = incremental ? delta : compressed;
+      const coveredThrough = visibleAt(compressed[compressed.length - 1]);
+
+      if (isNoopProvider(provider)) {
         logger.info("Summarize skipped — no LLM provider configured", {
           sessionId,
         });
@@ -273,11 +318,6 @@ export function registerSummarizeFunction(
       }
 
       try {
-        // #783: chunk-level produceSummaryXml retries internally, but
-        // the final merge used to parse once and bail. Wrap the
-        // produce-and-parse pair in the same 2-attempt loop so a
-        // markdown-wrapped or otherwise wrapped response gets a
-        // second roll-of-the-dice instead of dropping the summary.
         let summary: SessionSummary | null = null;
         let response = "";
         let mode = "single";
@@ -285,12 +325,12 @@ export function registerSummarizeFunction(
         for (let attempt = 1; attempt <= 2; attempt++) {
           const produced = await produceSummaryXml(
             provider,
-            compressed,
+            input,
             sessionId,
             session.project,
           );
           response = produced.response;
-          mode = produced.mode;
+          mode = incremental ? "incremental" : produced.mode;
           chunks = produced.chunks;
           if (!response || !response.trim()) {
             logger.warn("Empty provider response on summarize", {
@@ -298,7 +338,7 @@ export function registerSummarizeFunction(
               provider: provider.name,
               mode,
               chunks,
-              observationCount: compressed.length,
+              observationCount: input.length,
               attempt,
             });
             continue;
@@ -307,8 +347,12 @@ export function registerSummarizeFunction(
             response,
             sessionId,
             session.project,
-            compressed.length,
+            input.length,
           );
+          if (summary && incremental) {
+            response = await reduceWithExisting(provider, incremental, summary, compressed.length);
+            summary = parseSummaryXml(response, sessionId, session.project, compressed.length);
+          }
           if (summary) break;
           logger.warn("Failed to parse summary XML", { sessionId, attempt });
         }
@@ -328,6 +372,7 @@ export function registerSummarizeFunction(
           }
           return { success: false, error: "parse_failed" };
         }
+        summary = scrubRecord({ ...summary, observationCount: compressed.length, coveredThrough });
 
         const summaryForValidation = {
           title: summary.title,
@@ -360,6 +405,7 @@ export function registerSummarizeFunction(
         await safeAudit(kv, "compress", "mem::summarize", [sessionId], {
           title: summary.title,
           observationCount: compressed.length,
+          newObservations: input.length,
         });
 
         const latencyMs = Date.now() - startMs;
@@ -380,7 +426,7 @@ export function registerSummarizeFunction(
           valid: validation.valid,
         });
 
-        return { success: true, summary, qualityScore };
+        return { success: true, summary, qualityScore, incremental: incremental !== null };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         const latencyMs = Date.now() - startMs;

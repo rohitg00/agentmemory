@@ -1,10 +1,10 @@
-import { constants } from "node:fs";
-import { lstat, open, readFile, writeFile } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import { basename, dirname, extname, join, resolve } from "node:path";
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { MemoryProvider } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
+import { allowedFileRoots, confinePath, expandHome, writeConfinedFile } from "./path-guard.js";
 
 const SENSITIVE_PATH_TERMS = [
   "secret",
@@ -84,6 +84,13 @@ function validateCompression(original: string, compressed: string): string[] {
   return errors;
 }
 
+function writeFailure(err: unknown, fallback: string): string {
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === "ELOOP" || code === "EINVAL") return "symlinks are not supported";
+  if (code) return fallback;
+  return err instanceof Error ? err.message : fallback;
+}
+
 function resolveBackupPath(filePath: string): string {
   const base = basename(filePath, extname(filePath));
   const name = base.endsWith(".original")
@@ -93,7 +100,7 @@ function resolveBackupPath(filePath: string): string {
 }
 
 export function registerCompressFileFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
 ): void {
@@ -104,9 +111,9 @@ export function registerCompressFileFunction(
         return { success: false, error: "filePath is required" };
       }
 
-      const absolutePath = resolve(data.filePath);
-      const lowerPath = absolutePath.toLowerCase();
-      if (extname(absolutePath).toLowerCase() !== ".md") {
+      const requestedPath = resolve(expandHome(data.filePath));
+      const lowerPath = requestedPath.toLowerCase();
+      if (extname(requestedPath).toLowerCase() !== ".md") {
         return { success: false, error: "filePath must point to a .md file" };
       }
       if (SENSITIVE_PATH_TERMS.some((term) => lowerPath.includes(term))) {
@@ -114,13 +121,19 @@ export function registerCompressFileFunction(
       }
 
       try {
-        const stat = await lstat(absolutePath);
+        const stat = await lstat(requestedPath);
         if (stat.isSymbolicLink()) {
           return { success: false, error: "symlinks are not supported" };
         }
       } catch {
         return { success: false, error: "file not found" };
       }
+
+      const confined = await confinePath(requestedPath);
+      if (!confined.ok) {
+        return { success: false, error: confined.error };
+      }
+      const absolutePath = confined.path;
 
       let original: string;
       try {
@@ -147,24 +160,18 @@ export function registerCompressFileFunction(
         };
       }
 
-      const backupPath = resolveBackupPath(absolutePath);
-      await writeFile(backupPath, original, "utf-8");
-
-      let fd: Awaited<ReturnType<typeof open>> | null = null;
+      const roots = allowedFileRoots();
+      let backupPath: string;
       try {
-        fd = await open(
-          absolutePath,
-          constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW,
-        );
-        await fd.writeFile(compressed, "utf-8");
+        backupPath = await writeConfinedFile(resolveBackupPath(absolutePath), original, roots);
       } catch (err: unknown) {
-        const code = (err as NodeJS.ErrnoException).code;
-        if (code === "ELOOP" || code === "EINVAL") {
-          return { success: false, error: "symlinks are not supported" };
-        }
-        return { success: false, error: "failed to write compressed file" };
-      } finally {
-        await fd?.close().catch(() => {});
+        return { success: false, error: writeFailure(err, "failed to write backup file") };
+      }
+
+      try {
+        await writeConfinedFile(absolutePath, compressed, roots);
+      } catch (err: unknown) {
+        return { success: false, error: writeFailure(err, "failed to write compressed file") };
       }
 
       try {

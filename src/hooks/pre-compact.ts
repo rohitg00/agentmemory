@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import { resolveProject } from "./_project.js";
+import { resolveClientSecret } from "../secret-store.js";
+import { preCompactBudget } from "./_capture-filter.js";
+import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -8,7 +10,7 @@ function isSdkChildContext(payload: unknown): boolean {
 }
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = resolveClientSecret(REST_URL);
 
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
@@ -32,8 +34,8 @@ async function main() {
   if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
 
-  const sessionId = ((data.session_id || data.sessionId) as string) || "unknown";
-  const project = resolveProject(data.cwd as string | undefined);
+  const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
+  const project = resolveProject(hookCwd(data));
 
   if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") {
     try {
@@ -48,11 +50,14 @@ async function main() {
     }
   }
 
+  const budget = preCompactBudget();
+  if (budget === 0) return;
+
   try {
     const res = await fetch(`${REST_URL}/agentmemory/context`, {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ sessionId, project, budget: 1500 }),
+      body: JSON.stringify({ sessionId, project, budget }),
       signal: AbortSignal.timeout(5000),
     });
 

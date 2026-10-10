@@ -4,7 +4,8 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { registerLessonsFunctions } from "../src/functions/lessons.js";
+import { normalizeLessonSourceIds, registerLessonsFunctions } from "../src/functions/lessons.js";
+import { currentAuditScope } from "./helpers/mocks.js";
 import type { Lesson } from "../src/types.js";
 
 function mockKV() {
@@ -128,6 +129,33 @@ describe("Lessons", () => {
       expect(result.lesson.source).toBe("crystal");
       expect(result.lesson.sourceIds).toEqual(["crys_123"]);
       expect(result.lesson.confidence).toBe(0.6);
+    });
+
+    it("merges new sourceIds into an existing lesson when it is strengthened", async () => {
+      await sdk.trigger("mem::lesson-save", { content: "Run tsc first", sourceIds: ["ses_a", "mem_1"] });
+      const result = (await sdk.trigger("mem::lesson-save", {
+        content: "Run tsc first",
+        sourceIds: ["mem_1", "ses_b"],
+      })) as { action: string; lesson: Lesson };
+
+      expect(result.action).toBe("strengthened");
+      expect(result.lesson.sourceIds).toEqual(["ses_a", "mem_1", "ses_b"]);
+    });
+  });
+
+  describe("normalizeLessonSourceIds", () => {
+    it("trims, dedupes and accepts a missing value", () => {
+      expect(normalizeLessonSourceIds(undefined)).toEqual([]);
+      expect(normalizeLessonSourceIds([" ses_1 ", "ses_1", "mem_2"])).toEqual(["ses_1", "mem_2"]);
+    });
+
+    it("rejects anything that is not a short list of id strings", () => {
+      expect(normalizeLessonSourceIds("ses_1")).toBeNull();
+      expect(normalizeLessonSourceIds([1])).toBeNull();
+      expect(normalizeLessonSourceIds([""])).toBeNull();
+      expect(normalizeLessonSourceIds(["two words"])).toBeNull();
+      expect(normalizeLessonSourceIds(["x".repeat(201)])).toBeNull();
+      expect(normalizeLessonSourceIds(Array.from({ length: 51 }, (_, i) => `ses_${i}`))).toBeNull();
     });
   });
 
@@ -347,6 +375,109 @@ describe("Lessons", () => {
       const after = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
       expect(after!.confidence).toBeCloseTo(0.55, 2);
       expect(after!.confidence).toBeGreaterThan(0.4);
+    });
+  });
+
+  describe("mem::lesson-delete", () => {
+    it("soft-deletes an existing lesson", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Delete me",
+        confidence: 0.7,
+      })) as { lesson: Lesson };
+
+      const result = (await sdk.trigger("mem::lesson-delete", {
+        lessonId: saved.lesson.id,
+      })) as { success: boolean; lesson: Lesson };
+
+      expect(result.success).toBe(true);
+      expect(result.lesson.deleted).toBe(true);
+
+      const stored = await kv.get<Lesson>("mem:lessons", saved.lesson.id);
+      expect(stored!.deleted).toBe(true);
+    });
+
+    it("excludes a soft-deleted lesson from recall and list", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Hide me from recall",
+        confidence: 0.9,
+      })) as { lesson: Lesson };
+
+      await sdk.trigger("mem::lesson-delete", { lessonId: saved.lesson.id });
+
+      const recall = (await sdk.trigger("mem::lesson-recall", {
+        query: "hide recall",
+      })) as { lessons: Lesson[] };
+      expect(recall.lessons.some((l) => l.id === saved.lesson.id)).toBe(false);
+
+      const list = (await sdk.trigger("mem::lesson-list", {})) as {
+        lessons: Lesson[];
+      };
+      expect(list.lessons.some((l) => l.id === saved.lesson.id)).toBe(false);
+    });
+
+    it("returns not found for an already-deleted lesson", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Double delete",
+      })) as { lesson: Lesson };
+
+      await sdk.trigger("mem::lesson-delete", { lessonId: saved.lesson.id });
+      const second = (await sdk.trigger("mem::lesson-delete", {
+        lessonId: saved.lesson.id,
+      })) as { success: boolean; error?: string };
+
+      expect(second.success).toBe(false);
+      expect(second.error).toBe("lesson not found");
+    });
+
+    it("returns not found for a nonexistent lessonId", async () => {
+      const result = (await sdk.trigger("mem::lesson-delete", {
+        lessonId: "lsn_nonexistent",
+      })) as { success: boolean; error?: string };
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("lesson not found");
+    });
+
+    it("rejects a missing lessonId", async () => {
+      const result = (await sdk.trigger("mem::lesson-delete", {})) as {
+        success: boolean;
+        error?: string;
+      };
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("lessonId is required");
+    });
+
+    it("creates a fresh lesson when deleted content is re-saved", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Resave after delete",
+      })) as { lesson: Lesson };
+
+      await sdk.trigger("mem::lesson-delete", { lessonId: saved.lesson.id });
+
+      const resaved = (await sdk.trigger("mem::lesson-save", {
+        content: "Resave after delete",
+      })) as { action: string; lesson: Lesson };
+
+      expect(resaved.action).toBe("created");
+      expect(resaved.lesson.id).toBe(saved.lesson.id);
+      expect(resaved.lesson.deleted).toBeUndefined();
+    });
+
+    it("records a lesson_delete audit row", async () => {
+      const saved = (await sdk.trigger("mem::lesson-save", {
+        content: "Audited delete",
+      })) as { lesson: Lesson };
+
+      await sdk.trigger("mem::lesson-delete", { lessonId: saved.lesson.id });
+
+      const auditRows = (await kv.list(currentAuditScope())) as Array<{
+        operation: string;
+        targetIds: string[];
+      }>;
+      const row = auditRows.find((r) => r.operation === "lesson_delete");
+      expect(row).toBeDefined();
+      expect(row!.targetIds).toEqual([saved.lesson.id]);
     });
   });
 });

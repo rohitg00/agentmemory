@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
@@ -12,7 +12,10 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { addSessionToProjectIndex } from "../state/session-index.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
+import { boundRecordSources } from "./graph.js";
 import { VERSION } from "../version.js";
 import { logger } from "../logger.js";
 
@@ -37,12 +40,22 @@ async function ensureGitRepo(dir: string): Promise<void> {
 }
 
 export function registerSnapshotFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   snapshotDir: string,
 ): void {
-  sdk.registerFunction("mem::snapshot-create", 
+  // Serialize snapshots: the periodic timer, REST (api::snapshot-create), and
+  // MCP can all trigger this concurrently. Two runs writing state.json and
+  // committing in the same git repo at once race on the index lock. An
+  // overlapping call is a no-op success; the winner captures current state.
+  let snapshotInFlight = false;
+
+  sdk.registerFunction("mem::snapshot-create",
     async (data?: { message?: string }) => {
+      if (snapshotInFlight) {
+        return { success: true, message: "Snapshot already in progress" };
+      }
+      snapshotInFlight = true;
 
       try {
         await ensureGitRepo(snapshotDir);
@@ -124,6 +137,8 @@ export function registerSnapshotFunction(
         const msg = err instanceof Error ? err.message : String(err);
         logger.error("Snapshot failed", { error: msg });
         return { success: false, error: msg };
+      } finally {
+        snapshotInFlight = false;
       }
     },
   );
@@ -183,7 +198,19 @@ export function registerSnapshotFunction(
 
         if (state.sessions) {
           for (const session of state.sessions) {
-            await kv.set(KV.sessions, session.id, session);
+            await withKeyedLock(`obs:${session.id}`, () =>
+              kv.set(KV.sessions, session.id, session),
+            );
+            const project = session.project;
+            const startedAt = session.startedAt;
+            if (typeof project === "string" && typeof startedAt === "string") {
+              const agentId = session.agentId;
+              await addSessionToProjectIndex(kv, project, {
+                id: session.id,
+                startedAt,
+                ...(typeof agentId === "string" ? { agentId } : {}),
+              }).catch(() => {});
+            }
           }
         }
         if (state.memories) {
@@ -193,7 +220,9 @@ export function registerSnapshotFunction(
         }
         if (state.graphNodes) {
           for (const node of state.graphNodes) {
-            await kv.set(KV.graphNodes, node.id, node);
+            await withKeyedLock("graph:persist", () =>
+              kv.set(KV.graphNodes, node.id, boundRecordSources(node)),
+            );
           }
         }
         if (state.observations) {

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800">
+  <rect width="800" height="800" rx="160" fill="#101010"/>
   <path fill="#ffffff" fill-rule="evenodd" d="
     M165.29 165.29
     H517.36

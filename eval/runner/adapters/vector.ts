@@ -1,4 +1,5 @@
 import type { Adapter, RankedDoc, Session } from "../types.js";
+import { sessionText } from "../input.js";
 
 interface VectorState {
   sessions: Session[];
@@ -84,7 +85,7 @@ export const vectorAdapter: Adapter<VectorState> = {
     for (let i = 0; i < sessions.length; i += BATCH) {
       const batch = sessions.slice(i, i + BATCH);
       const vecs = await embedBatch(
-        batch.map((s) => s.content.slice(0, 8000)),
+        batch.map((s) => sessionText(s).slice(0, 8000)),
         apiKey,
       );
       for (let j = 0; j < vecs.length; j++) embeddings[i + j] = vecs[j];

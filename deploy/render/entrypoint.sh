@@ -16,9 +16,18 @@
 set -eu
 
 DATA_DIR="${AGENTMEMORY_DATA_DIR:-/data}"
+export AGENTMEMORY_DATA_DIR="$DATA_DIR"
 HMAC_FILE="${AGENTMEMORY_HMAC_FILE:-/data/.hmac}"
 RUN_AS="node:node"
 III_CONFIG="/opt/agentmemory/node_modules/@agentmemory/agentmemory/dist/iii-config.yaml"
+
+if [ -z "${MALLOC_ARENA_MAX:-}" ]; then
+  export MALLOC_ARENA_MAX=2
+fi
+cur_nofile="$(ulimit -n)"
+if [ "$cur_nofile" != unlimited ] && [ "$cur_nofile" -lt 10240 ]; then
+  ulimit -n 10240 2>/dev/null || ulimit -n "$(ulimit -H -n)" 2>/dev/null || true
+fi
 
 mkdir -p "$DATA_DIR"
 chown -R "$RUN_AS" "$DATA_DIR"
@@ -43,6 +52,7 @@ workers:
         name: kv
         config:
           store_method: file_based
+          save_interval_ms: 2000
           file_path: /data/state_store.db
   - name: iii-queue
     config:
@@ -64,16 +74,17 @@ workers:
         name: kv
         config:
           store_method: file_based
+          save_interval_ms: 2000
           file_path: /data/stream_store
   - name: iii-observability
     config:
       enabled: true
       service_name: agentmemory
       exporter: memory
-      sampling_ratio: 1.0
+      sampling_ratio: 0.1
       metrics_enabled: true
       logs_enabled: true
-      logs_console_output: true
+      logs_console_output: false
 EOF
 chown "$RUN_AS" "$III_CONFIG"
 

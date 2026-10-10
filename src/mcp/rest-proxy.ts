@@ -1,3 +1,4 @@
+import { resolveClientSecret } from "../secret-store.js";
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 const CALL_TIMEOUT_MS = 15_000;
@@ -19,6 +20,18 @@ export interface ProxyHandle {
   mode: "proxy";
   baseUrl: string;
   call: (path: string, init?: RequestInit) => Promise<unknown>;
+}
+
+export class ProxyCallError extends Error {
+  status: number;
+  body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ProxyCallError";
+    this.status = status;
+    this.body = body;
+  }
 }
 
 export interface LocalHandle {
@@ -50,18 +63,10 @@ function baseUrl(): string {
 }
 
 function authHeader(): Record<string, string> {
-  const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
+  const secret = resolveClientSecret(baseUrl());
   return secret ? { authorization: `Bearer ${secret}` } : {};
 }
 
-/**
- * Probes the agentmemory server's livez endpoint. Returns a Response-shaped
- * object whose `ok` flag drives the proxy/local-fallback decision.
- *
- * Tests can swap this via {@link setLivezProbe} to avoid the real 2s
- * AbortController race that destabilises mcp-standalone test runs (#449).
- * Production callers should leave it on the default.
- */
 export type LivezProbe = (
   url: string,
   timeoutMs: number,
@@ -147,8 +152,19 @@ export async function resolveHandle(): Promise<Handle> {
             signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
           });
           if (!res.ok) {
-            throw new Error(
+            const errText = await res.text().catch(() => "");
+            let errBody: unknown = undefined;
+            if (errText) {
+              try {
+                errBody = JSON.parse(errText);
+              } catch {
+                errBody = undefined;
+              }
+            }
+            throw new ProxyCallError(
               `${init?.method || "GET"} ${path} -> ${res.status} ${res.statusText}`,
+              res.status,
+              errBody,
             );
           }
           const text = await res.text();

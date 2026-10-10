@@ -5,6 +5,8 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerExportImportFunction } from "../src/functions/export-import.js";
+import { VERSION } from "../src/version.js";
+import { getSearchIndex } from "../src/functions/search.js";
 import type {
   Session,
   CompressedObservation,
@@ -108,6 +110,10 @@ describe("Export/Import Functions", () => {
   beforeEach(async () => {
     sdk = mockSdk();
     kv = mockKV();
+    // getSearchIndex() returns a module-level singleton shared across
+    // tests. Clear it so index assertions here don't see rows added by
+    // a prior test's import.
+    getSearchIndex().clear();
     registerExportImportFunction(sdk as never, kv as never);
 
     await kv.set("mem:sessions", "ses_1", testSession);
@@ -119,7 +125,7 @@ describe("Export/Import Functions", () => {
   it("export produces valid ExportData structure", async () => {
     const result = (await sdk.trigger("mem::export", {})) as ExportData;
 
-    expect(result.version).toBe("0.9.28");
+    expect(result.version).toBe(VERSION);
     expect(result.exportedAt).toBeDefined();
     expect(result.sessions.length).toBe(1);
     expect(result.sessions[0].id).toBe("ses_1");
@@ -149,6 +155,59 @@ describe("Export/Import Functions", () => {
 
     const allSessions = await kv.list("mem:sessions");
     expect(allSessions.length).toBe(2);
+  });
+
+  it("import adds imported records to the search index", async () => {
+    // Regression: mem::import wrote rows to KV but never indexed them.
+    // On an existing install the boot rebuild gate (bm25.size === 0) is
+    // false, so imported data stayed invisible to mem::search forever.
+    const importedObs: CompressedObservation = {
+      id: "obs_imported",
+      sessionId: "ses_imported",
+      timestamp: "2026-03-01T10:00:00Z",
+      type: "file_edit",
+      title: "Kubernetes deployment rollout",
+      facts: ["Scaled replicas"],
+      narrative: "Adjusted the kubernetes deployment rollout strategy",
+      concepts: ["k8s"],
+      files: ["deploy.yaml"],
+      importance: 6,
+    };
+    const importedMem: Memory = {
+      ...testMemory,
+      id: "mem_imported",
+      title: "Postgres connection pooling",
+      content: "Use pgbouncer for postgres connection pooling",
+    };
+    const exportData: ExportData = {
+      version: "0.9.28",
+      exportedAt: new Date().toISOString(),
+      sessions: [
+        { ...testSession, id: "ses_imported", observationCount: 1 },
+      ],
+      observations: { ses_imported: [importedObs] },
+      memories: [importedMem],
+      summaries: [],
+    };
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "merge",
+    })) as { success: boolean; observations: number; memories: number };
+
+    expect(result.success).toBe(true);
+    expect(result.observations).toBe(1);
+    expect(result.memories).toBe(1);
+
+    const idx = getSearchIndex();
+    expect(idx.has("obs_imported")).toBe(true);
+    expect(idx.has("mem_imported")).toBe(true);
+
+    const obsHit = idx.search("kubernetes rollout");
+    expect(obsHit.some((r) => r.obsId === "obs_imported")).toBe(true);
+
+    const memHit = idx.search("postgres pooling");
+    expect(memHit.some((r) => r.obsId === "mem_imported")).toBe(true);
   });
 
   it("import with skip strategy does not overwrite existing", async () => {
@@ -248,5 +307,64 @@ describe("Export/Import Functions", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("Unsupported export version");
+  });
+});
+
+const bloatedIds = (prefix: string, n: number) =>
+  Array.from({ length: n }, (_, i) => `${prefix}_${String(i).padStart(3, "0")}`);
+
+describe("import bounds graph provenance", () => {
+  it("caps sourceObservationIds on imported graph nodes and edges", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const exportData = {
+      version: "0.9.28",
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      graphNodes: [
+        {
+          id: "gn_bloat",
+          type: "file",
+          name: "src/hot.ts",
+          properties: {},
+          sourceObservationIds: bloatedIds("obs", 400),
+          createdAt: "2026-03-01T00:00:00Z",
+        },
+        {
+          id: "gn_small",
+          type: "file",
+          name: "src/cold.ts",
+          properties: {},
+          sourceObservationIds: ["obs_x"],
+          createdAt: "2026-03-01T00:00:00Z",
+        },
+      ],
+      graphEdges: [
+        {
+          id: "ge_bloat",
+          type: "related_to",
+          sourceNodeId: "gn_bloat",
+          targetNodeId: "gn_small",
+          weight: 0.5,
+          sourceObservationIds: bloatedIds("eobs", 100),
+          createdAt: "2026-03-01T00:00:00Z",
+        },
+      ],
+    } as unknown as ExportData;
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "merge",
+    })) as { success: boolean };
+    expect(result.success).toBe(true);
+    const n = await kv.get<{ sourceObservationIds: string[] }>("mem:graph:nodes", "gn_bloat");
+    const s = await kv.get<{ sourceObservationIds: string[] }>("mem:graph:nodes", "gn_small");
+    const e = await kv.get<{ sourceObservationIds: string[] }>("mem:graph:edges", "ge_bloat");
+    expect(n!.sourceObservationIds).toEqual(bloatedIds("obs", 400).slice(-32));
+    expect(s!.sourceObservationIds).toEqual(["obs_x"]);
+    expect(e!.sourceObservationIds).toEqual(bloatedIds("eobs", 100).slice(-32));
   });
 });

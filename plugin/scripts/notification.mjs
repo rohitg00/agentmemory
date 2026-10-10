@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
 import { basename } from "node:path";
+import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -20,6 +21,16 @@ function resolveProject(cwd) {
 	} catch {}
 	return basename(dir);
 }
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots)) {
+		for (const root of roots) if (typeof root === "string" && root.trim()) return root;
+	}
+	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
+	if (projectDir && projectDir.trim()) return projectDir;
+}
 //#endregion
 //#region src/hooks/notification.ts
 function isSdkChildContext(payload) {
@@ -27,14 +38,10 @@ function isSdkChildContext(payload) {
 	if (!payload || typeof payload !== "object") return false;
 	return payload.entrypoint === "sdk-ts";
 }
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-function authHeaders() {
-	const h = { "Content-Type": "application/json" };
-	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-	return h;
-}
+const OBSERVE_TIMEOUT_MS = 2e3;
+const EXIT_CAP_MS = 2500;
 async function main() {
+	if (isDrainChild()) return runDrainChild();
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
 	let data;
@@ -47,26 +54,26 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	const notificationType = data.notification_type ?? data.notificationType;
 	if (notificationType !== "permission_prompt") return;
-	const rawSessionId = data.session_id ?? data.sessionId;
-	const sessionId = typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : "unknown";
-	fetch(`${REST_URL}/agentmemory/observe`, {
-		method: "POST",
-		headers: authHeaders(),
-		body: JSON.stringify({
-			hookType: "notification",
-			sessionId,
-			project: resolveProject(data.cwd),
-			cwd: data.cwd || process.cwd(),
-			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-			data: {
-				notification_type: notificationType,
-				title: data.title,
-				message: data.message
-			}
-		}),
-		signal: AbortSignal.timeout(2e3)
-	}).catch(() => {});
-	setTimeout(() => process.exit(0), 500).unref();
+	const rawSessionId = [
+		data.session_id,
+		data.sessionId,
+		data.conversation_id
+	].find((v) => typeof v === "string" && v.length > 0);
+	const sessionId = typeof rawSessionId === "string" ? rawSessionId : "unknown";
+	const cwd = hookCwd(data) || process.cwd();
+	captureObservation(withEventId({
+		hookType: "notification",
+		sessionId,
+		project: resolveProject(cwd),
+		cwd,
+		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+		data: {
+			notification_type: notificationType,
+			title: data.title,
+			message: data.message
+		}
+	}, data), OBSERVE_TIMEOUT_MS);
+	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 main().catch(() => process.exit(0));
 //#endregion

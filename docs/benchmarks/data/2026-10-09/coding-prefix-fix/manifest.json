@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "metricVersion": "distinct-session-retrieval-v2",
+  "inputTransform": "role-flattened; opaque source IDs; all supplied dates retained; identical repeated IDs coalesced (v1)",
+  "benchmark": "coding-agent-life-v1",
+  "scope": "supplied-session retrieval; no reader, judge, or capture-quality score",
+  "startedAt": "2026-10-09T15:07:05.621Z",
+  "source": {
+    "revision": "df3d4a83b966d8d415cb9180d5a4724b07f729dc",
+    "dirty": true,
+    "contentSha256": "92dedec461c8a72db99237d9ecaffd0c6ee3b3c6072eb196ea9e7ac6f32d0093",
+    "dependencies": {
+      "@anthropic-ai/claude-agent-sdk": "0.3.295",
+      "@anthropic-ai/sdk": "0.100.1",
+      "@clack/prompts": "1.8.1",
+      "@huggingface/transformers": "4.3.1",
+      "@iii-dev/helpers": "0.22.1",
+      "@node-rs/jieba": "2.0.4",
+      "@types/node": "26.6.4",
+      "dotenv": "18.0.6",
+      "iii-sdk": "0.22.1",
+      "picocolors": "1.1.1",
+      "tiny-segmenter": "0.2.0",
+      "tsdown": "0.21.10",
+      "tsx": "4.23.15",
+      "typescript": "6.0.3",
+      "vitest": "4.1.11",
+      "zod": "4.6.5"
+    },
+    "installedLockSha256": "5f91fac54c5227649080944e92129a9b8f6efb9ae17d1c59d0891d1818d52cbd",
+    "builtArtifactSha256": "6a05eaca036ab987ba5264e809a690a6764ca01f8b6a649ccb49f5597a34dc81",
+    "engine": {
+      "version": "0.22.1",
+      "sha256": "6452e54b05e73bee301e05bd8b75c0a6eb1986d8cb37664c4465859612110ed2"
+    }
+  },
+  "datasetFiles": [
+    {
+      "name": "sessions.json",
+      "sha256": "d32f0c3c35a35e6c5aa0ac1fd0bd92e1f413c132efe3b1262038595589df3f16"
+    },
+    {
+      "name": "queries.json",
+      "sha256": "4f36fb00ea1e0ce3ccbefea9348fc4da027201a26a1fd7b5349391bcc69a24b4"
+    }
+  ],
+  "datasetSha256": "7c37494bd6c3211e937c132b7501a594151f56337f933d8c617f79d4bf4c0701",
+  "selectedQuestionIds": [
+    "q-001",
+    "q-002",
+    "q-003",
+    "q-004",
+    "q-005",
+    "q-006",
+    "q-007",
+    "q-008",
+    "q-009",
+    "q-010",
+    "q-011",
+    "q-012",
+    "q-013",
+    "q-014",
+    "q-015"
+  ],
+  "coalescedRepeatedSources": 0,
+  "adapters": [
+    "grep",
+    "agentmemory-bm25-component",
+    "agentmemory-http-bm25"
+  ],
+  "k": 5,
+  "retrievalUnit": "top k distinct source sessions",
+  "config": {},
+  "runtime": {
+    "node": "v25.6.1",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "planned": 45
+}

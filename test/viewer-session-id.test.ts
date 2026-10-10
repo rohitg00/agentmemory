@@ -53,13 +53,12 @@ function loadViewerSandbox() {
       setAttribute: (name: string, value: unknown) => {
         attributes.set(name, String(value));
       },
-      // Added in #313 — switchTab toggles aria-selected via removeAttribute
-      // on the non-active tab buttons. The mock previously only had
-      // get/setAttribute, so the new hash-routing path threw TypeError.
       removeAttribute: (name: string) => {
         attributes.delete(name);
       },
       querySelectorAll: () => [],
+      querySelector: () => null,
+      closest: () => null,
     };
   };
   const getElement = (id: string) => {
@@ -69,23 +68,24 @@ function loadViewerSandbox() {
 
   const tabs = [
     "dashboard",
-    "graph",
     "memories",
-    "timeline",
-    "sessions",
     "lessons",
-    "actions",
     "crystals",
-    "audit",
+    "graph",
+    "sessions",
+    "timeline",
+    "actions",
+    "replay",
     "activity",
     "profile",
-    "replay",
+    "health",
+    "audit",
   ];
   const tabButtons = tabs.map((tab) => ({ ...createMockElement(), dataset: { tab } }));
   const views = tabs.map((tab) => ({ ...createMockElement(`view-${tab}`), id: `view-${tab}` }));
   const checkboxes = [createMockElement(), createMockElement()].map((el) => ({ ...el, checked: false }));
   const querySelectorAll = (selector: string) => {
-    if (selector === ".tab-bar button") return tabButtons;
+    if (selector === ".tab-bar button[data-tab]") return tabButtons;
     if (selector === ".view") return views;
     if (selector === 'input[type="checkbox"]') return checkboxes;
     return [];
@@ -93,6 +93,7 @@ function loadViewerSandbox() {
 
   const document = {
     documentElement: { dataset: {} },
+    body: createMockElement("body"),
     createElement: () => {
       let text = "";
       return {
@@ -124,10 +125,6 @@ function loadViewerSandbox() {
       matchMedia: () => ({ matches: false }),
       addEventListener: () => {},
     },
-    // Stubbed in #313 — the viewer now calls history.replaceState
-    // inside updateTabRoute → switchTab to drive the hash-route surface.
-    // The vm sandbox is otherwise zero-globals so the call would
-    // throw ReferenceError. No-op is fine for the rendering tests.
     history: { replaceState: () => {}, pushState: () => {} },
     location: {
       hash: "",
@@ -206,35 +203,31 @@ describe("viewer session rendering", () => {
     expect(prompt.innerHTML).not.toContain("/data/.hmac");
   });
 
-  it("does not throw when dashboard sessions are missing ids", () => {
+  it("drops sessions without an id instead of throwing, and renders the rest", () => {
     const { sandbox, getElement } = loadViewerSandbox();
-    sandbox.state.dashboard = {
-      loaded: true,
-      health: { status: "healthy", health: {} },
-      sessions: [{ status: "active", observationCount: 3, startedAt: "2026-05-13T12:00:00Z" }],
-      memories: [],
-      graphStats: null,
-      recentAudit: [],
-      lessons: [],
-      crystals: [],
-    };
+    sandbox.store.snapshot = { version: "1" };
+    sandbox.store.counts = { sessions: 2, activeSessions: 2, memories: 0, latestMemories: 0 };
+    sandbox.replaceBucket("session", [
+      { status: "active", observationCount: 3, startedAt: "2026-05-13T12:00:00Z" },
+      { id: "ses_ok", project: "/work/web-app", status: "active", observationCount: 2, startedAt: "2026-05-13T13:00:00Z" },
+    ]);
+    sandbox.store.loaded.session = true;
+    expect(Object.keys(sandbox.store.entities.session)).toEqual(["ses_ok"]);
 
     expect(() => sandbox.renderDashboard()).not.toThrow();
-    expect(getElement("view-dashboard").innerHTML).toContain("Unknown session");
+    expect(getElement("view-dashboard").innerHTML).toContain("web-app");
   });
 
-  it("does not throw when timeline and sessions tabs receive sessions missing ids", () => {
+  it("renders sessions without a project, and switches tabs", () => {
     const { sandbox, getElement } = loadViewerSandbox();
-    const sessions = [{ status: "active", observationCount: 1, startedAt: "2026-05-13T12:00:00Z" }];
+    sandbox.store.snapshot = { version: "1" };
+    sandbox.replaceBucket("session", [{ id: "ses_no_project_123456", status: "active", observationCount: 1, startedAt: "2026-05-13T12:00:00Z" }]);
+    sandbox.store.loaded.session = true;
 
-    expect(() => sandbox.renderTimelineToolbar(sessions)).not.toThrow();
-    expect(getElement("view-timeline").innerHTML).toContain("Unknown session");
-
-    sandbox.state.sessions.items = sessions;
     expect(() => sandbox.renderSessions()).not.toThrow();
-    expect(getElement("view-sessions").innerHTML).toContain("Unknown session");
+    expect(getElement("session-list").innerHTML).toContain("123456");
 
-    const tabButtons = sandbox.document.querySelectorAll(".tab-bar button");
+    const tabButtons = sandbox.document.querySelectorAll(".tab-bar button[data-tab]");
     expect(tabButtons.length).toBeGreaterThan(0);
     expect(() => sandbox.switchTab("sessions")).not.toThrow();
     expect(tabButtons.some((button: any) => button.classList.contains("active"))).toBe(true);

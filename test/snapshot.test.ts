@@ -32,7 +32,10 @@ vi.mock("node:fs", () => ({
     .mockReturnValue('{"version":"0.4.0","sessions":[],"memories":[]}'),
 }));
 
+import { readFileSync } from "node:fs";
 import { registerSnapshotFunction } from "../src/functions/snapshot.js";
+import { currentAuditScope } from "./helpers/mocks.js";
+import { getProjectSessionIndex } from "../src/state/session-index.js";
 import type { Session, Memory, SnapshotMeta } from "../src/types.js";
 
 function mockKV() {
@@ -157,10 +160,136 @@ describe("Snapshot Functions", () => {
     expect(result.commitHash).toBe("abc1234");
   });
 
+  it("snapshot-restore self-heals the project session index for restored sessions", async () => {
+    const restoredSession: Session = {
+      id: "ses_restored",
+      project: "proj-restored",
+      cwd: "/tmp/restored",
+      startedAt: "2026-02-01T00:00:00Z",
+      status: "completed",
+      observationCount: 0,
+    };
+    vi.mocked(readFileSync).mockReturnValueOnce(
+      JSON.stringify({
+        version: "0.4.0",
+        sessions: [restoredSession],
+        memories: [],
+      }),
+    );
+
+    expect(
+      await getProjectSessionIndex(kv as never, "proj-restored"),
+    ).toBeNull();
+
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const index = await getProjectSessionIndex(kv as never, "proj-restored");
+    expect(index?.map((e) => e.id)).toEqual(["ses_restored"]);
+  });
+
   it("snapshot-create records an audit entry", async () => {
     await sdk.trigger("mem::snapshot-create", { message: "Audit test" });
 
-    const audits = await kv.list("mem:audit");
+    const audits = await kv.list(currentAuditScope());
     expect(audits.length).toBe(1);
+  });
+});
+
+describe("snapshot-create reentrancy guard", () => {
+  // Regression (P2): mem::snapshot-create is triggered by the periodic timer,
+  // REST (api::snapshot-create), and MCP. Two runs writing state.json and
+  // committing in the same git repo at once race on the index lock. An
+  // overlapping call must be a no-op success while the first run finishes.
+  it("skips an overlapping call and releases the guard on completion", async () => {
+    let releaseFirst!: () => void;
+    const firstListGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    let listCalls = 0;
+    const store = new Map<string, Map<string, unknown>>();
+    const gatedKv = {
+      get: async () => null,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (!store.has(scope)) store.set(scope, new Map());
+        store.get(scope)!.set(key, data);
+        return data;
+      },
+      delete: async () => {},
+      list: async <T>(scope: string): Promise<T[]> => {
+        listCalls++;
+        // Park the first snapshot inside its initial list() so a second
+        // snapshot-create observes the in-flight guard.
+        if (listCalls === 1) await firstListGate;
+        return (Array.from(store.get(scope)?.values() ?? []) as T[]) ?? [];
+      },
+    };
+    const localSdk = mockSdk();
+    registerSnapshotFunction(localSdk as never, gatedKv as never, "/tmp/reentrant");
+
+    // Start the first snapshot; it parks inside kv.list with the guard held.
+    const p1 = localSdk.trigger("mem::snapshot-create", { message: "first" });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Overlapping call: must be rejected as already-in-progress, NOT run git.
+    const r2 = (await localSdk.trigger("mem::snapshot-create", {
+      message: "second",
+    })) as { success: boolean; message?: string; snapshot?: unknown };
+    expect(r2).toEqual({
+      success: true,
+      message: "Snapshot already in progress",
+    });
+    expect(r2.snapshot).toBeUndefined();
+
+    // Release the first run; it completes normally.
+    releaseFirst();
+    const r1 = (await p1) as { success: boolean; snapshot?: unknown };
+    expect(r1.success).toBe(true);
+    expect(r1.snapshot).toBeDefined();
+
+    // Guard is released: a fresh call runs the full body again.
+    const r3 = (await localSdk.trigger("mem::snapshot-create", {
+      message: "third",
+    })) as { success: boolean; snapshot?: unknown };
+    expect(r3.success).toBe(true);
+    expect(r3.snapshot).toBeDefined();
+  });
+});
+
+const bloatedIds = (prefix: string, n: number) =>
+  Array.from({ length: n }, (_, i) => `${prefix}_${String(i).padStart(3, "0")}`);
+
+describe("snapshot-restore bounds graph provenance", () => {
+  it("caps sourceObservationIds on restored graph nodes", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSnapshotFunction(sdk as never, kv as never, "/tmp/agentmemory-snapshots");
+    vi.mocked(readFileSync).mockReturnValueOnce(
+      JSON.stringify({
+        version: "0.4.0",
+        sessions: [],
+        memories: [],
+        graphNodes: [
+          {
+            id: "gn_bloat",
+            type: "file",
+            name: "src/hot.ts",
+            properties: {},
+            sourceObservationIds: bloatedIds("obs", 250),
+            createdAt: "2026-03-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+    expect(result.success).toBe(true);
+    const n = await kv.get<{ name: string; sourceObservationIds: string[] }>("mem:graph:nodes", "gn_bloat");
+    expect(n!.name).toBe("src/hot.ts");
+    expect(n!.sourceObservationIds).toEqual(bloatedIds("obs", 250).slice(-32));
   });
 });

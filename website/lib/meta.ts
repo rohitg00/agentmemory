@@ -7,19 +7,24 @@ export interface ProjectMeta {
   hooks: number;
   restEndpoints: number;
   testsPassing: number;
+  stars: number;
+  forks: number;
+  contributors: number;
+  releases: number;
+  npmWeekly: number;
+  npmMonthly: number;
+  npmAllTime: number;
+  generatedAt: string;
 }
 
-// Values are baked at build time by scripts/gen-meta.mjs (see package.json
-// prebuild). Runtime file lookups via import.meta.url break after Next.js
-// moves server components into .next/server/ — `../..` from there stays
-// inside the build cache, not at the repo root, and version silently falls
-// back to "0.0.0". Static JSON import sidesteps that entirely.
 export function getProjectMeta(): ProjectMeta {
-  return {
-    version: generated.version,
-    mcpTools: generated.mcpTools,
-    hooks: generated.hooks,
-    restEndpoints: generated.restEndpoints,
-    testsPassing: generated.testsPassing,
-  };
+  return generated as ProjectMeta;
+}
+
+export function compact(n: number): string {
+  if (n >= 1000) {
+    const k = n / 1000;
+    return `${k >= 100 ? Math.round(k) : k.toFixed(1).replace(/\.0$/, "")}K`;
+  }
+  return String(n);
 }

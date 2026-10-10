@@ -68,10 +68,11 @@ PRs with commits lacking sign-off will not merge.
 | `src/mcp/` | Standalone MCP server (`@agentmemory/mcp`), tools registry, transport, in-memory KV. |
 | `src/functions/` | Core memory operations — observe, compress, consolidate, retention, forget, graph, smart-search, export-import, governance. |
 | `src/hooks/` | The 12 auto-hooks that capture sessions in agents. |
+| `src/cli/` | The `agentmemory` CLI, including `connect/` adapters for 18 agents and the guideline writer for hook-less agents. |
 | `src/health/` | Liveness + readiness + alert thresholds. |
 | `src/state/` | KV schema, keyed mutex, access log. |
-| `integrations/` | First-party plugins: `hermes/`, `openclaw/`, `filesystem-watcher/`. |
-| `plugin/` | Claude Code plugin (`agentmemory@agentmemory`). |
+| `integrations/` | First-party plugins: `hermes/`, `openclaw/`, `pi/`, `filesystem-watcher/`. |
+| `plugin/` | Agent plugin bundle: Claude Code plugin, hook manifests for Codex/Copilot/Droid, the OpenCode capture plugin, and the skills. Hook manifests and skill REFERENCE files are partly generated; run `npm run skills:gen` after touching registered endpoints or env vars. |
 | `website/` | Marketing site (Next.js 16). |
 | `test/` | Vitest test suite. |
 
@@ -92,18 +93,19 @@ PRs with commits lacking sign-off will not merge.
 
 ## Release process
 
-Maintainers cut releases. Every bump touches 8 files in lockstep:
+Maintainers cut releases. To bump the version, change only `package.json`, then run `npm run docs:sync`. It carries the new version into `src/version.ts`, the `ExportData.version` union in `src/types.ts`, the `supportedVersions` set in `src/functions/export-import.ts`, every plugin and package manifest that shared the old version, the deploy templates, the AGENTS.md stats heading, and CHANGELOG.md (the Unreleased section becomes the new version with today's date and its compare link). Commit everything it changes, and check with `npm run docs:check`.
 
-1. `package.json`
-2. `package-lock.json` (top + `packages[""].version`)
-3. `plugin/.claude-plugin/plugin.json`
-4. `packages/mcp/package.json` (self + `~x.y.z` pin on the main package)
-5. `src/version.ts` (extend the union, assign)
-6. `src/types.ts` (`ExportData.version` union)
-7. `src/functions/export-import.ts` (`supportedVersions` Set)
-8. `test/export-import.test.ts` (assertion)
+No lockfiles are committed. `test/export-import.test.ts` asserts against the `VERSION` constant, so it needs no per-release edit. Run `npm run skills:gen` if the endpoint or env surface changed.
 
-Then: CHANGELOG section, PR, merge, tag, GitHub release. The `Publish to npm` workflow picks up the release trigger and publishes `@agentmemory/agentmemory`, `@agentmemory/mcp`, and `@agentmemory/fs-watcher` to npm with provenance.
+Before publishing, run the release gate on the release commit:
+
+```bash
+npm run release:gate
+```
+
+It builds, packs `@agentmemory/agentmemory` and `@agentmemory/mcp`, installs both tarballs into a fresh prefix with a clean `HOME`, starts the installed CLI on random free ports with a deterministic local embedding server (no API keys), and checks capture through the bundled hooks, offline capture and spool recovery, replay dedup after a force kill, dead letters across a restart, vector survival before the first checkpoint, `agentmemory stop` then start, export and import into a fresh home, the MCP entrypoints, and the viewer plus `/agentmemory/status`. It prints a pass or fail line per scenario and a JSON summary, writes logs and `summary.json` to the output directory it prints, and stops only the processes it started. To gate the exact file you will publish, pass it in: `npm pack` then `npm run release:gate -- --tarball agentmemory-agentmemory-<version>.tgz`, and publish that tarball. Do not publish when a scenario fails. The `Release gate` workflow runs the same script on Ubuntu and macOS for pull requests and pushes to main.
+
+Then: CHANGELOG section, PR, merge, tag, GitHub release. The `Publish to npm` workflow picks up the release trigger and publishes `@agentmemory/agentmemory`, `@agentmemory/mcp`, and `@agentmemory/fs-watcher` to npm with provenance (`@agentmemory/fs-watcher` versions independently from `integrations/filesystem-watcher/package.json`).
 
 ## Security issues
 

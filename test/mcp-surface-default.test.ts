@@ -5,12 +5,12 @@ import {
   getVisibleTools,
 } from "../src/mcp/tools-registry.js";
 
-// plugin manifests and README advertise 51 MCP tools. The old
+// plugin manifests and README advertise 54 MCP tools. The old
 // default was AGENTMEMORY_TOOLS=core which silently capped the surface
-// at 8 essentials with no indication the other 43 existed. Default
+// at 8 essentials with no indication the other 46 existed. Default
 // flipped to "all"; the lean set is still accessible via
 // AGENTMEMORY_TOOLS=core.
-describe("MCP tool surface default (#553)", () => {
+describe("MCP tool surface default", () => {
   const ORIG = process.env["AGENTMEMORY_TOOLS"];
   beforeEach(() => {
     delete process.env["AGENTMEMORY_TOOLS"];
@@ -20,7 +20,7 @@ describe("MCP tool surface default (#553)", () => {
     else process.env["AGENTMEMORY_TOOLS"] = ORIG;
   });
 
-  it("default returns the full 51-tool surface, matching plugin advertising", () => {
+  it("default returns the full 54-tool surface, matching plugin advertising", () => {
     const visible = getVisibleTools();
     const all = getAllTools();
     expect(visible.length).toBe(all.length);
@@ -50,18 +50,11 @@ describe("MCP tool surface default (#553)", () => {
     }
   });
 
-  it("plugin .mcp.json provides default env interpolation so CC parse never fails (#510)", () => {
-    const raw = readFileSync("plugin/.mcp.json", "utf-8");
-    const cfg = JSON.parse(raw) as {
-      mcpServers: { agentmemory: { env: Record<string, string> } };
-    };
-    const env = cfg.mcpServers.agentmemory.env;
-    // Per Claude Code MCP docs: ${VAR} without a default fails config
-    // parse when VAR is unset, silently dropping the server. ${VAR:-x}
-    // form is what unblocks fresh installs that haven't exported
-    // AGENTMEMORY_URL.
-    expect(env["AGENTMEMORY_URL"]).toMatch(/\$\{AGENTMEMORY_URL:-/);
-    expect(env["AGENTMEMORY_SECRET"]).toMatch(/\$\{AGENTMEMORY_SECRET:-/);
-    expect(env["AGENTMEMORY_TOOLS"]).toMatch(/\$\{AGENTMEMORY_TOOLS:-all\}/);
+  it("plugin MCP uses its bundled bridge and inherits the host environment", () => {
+    const cfg = JSON.parse(readFileSync("plugin/.mcp.json", "utf-8"));
+    expect(cfg.mcpServers.agentmemory).toEqual({
+      command: "node",
+      args: ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bridge.mjs"],
+    });
   });
 });

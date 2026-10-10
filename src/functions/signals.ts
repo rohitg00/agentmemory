@@ -1,10 +1,10 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import type { Signal } from "../types.js";
 import { recordAudit } from "./audit.js";
 
-export function registerSignalsFunction(sdk: ISdk, kv: StateKV): void {
+export function registerSignalsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::signal-send", 
     async (data: {
       from: string;

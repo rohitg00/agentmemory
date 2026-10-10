@@ -1,32 +1,20 @@
 import { readFile } from "node:fs/promises";
+import type { RawImage } from "@huggingface/transformers";
 import type { EmbeddingProvider } from "../../types.js";
 
-type TransformersModule = {
-  pipeline: (
-    task: string,
-    model: string,
-  ) => Promise<ClipPipeline>;
-  RawImage: {
-    fromBlob: (blob: Blob) => Promise<RawImageInstance>;
-  };
-};
-
-type RawImageInstance = unknown;
-
+type TransformersModule = typeof import("@huggingface/transformers");
 type ClipPipeline = (
-  input: string[] | RawImageInstance | RawImageInstance[],
+  input: string[] | RawImage | RawImage[],
   options?: { pooling?: string; normalize?: boolean },
 ) => Promise<{ tolist: () => number[][]; data: Float32Array }>;
 
 const DEFAULT_MODEL = "Xenova/clip-vit-base-patch32";
-const DIMENSIONS = 512;
 
 export class ClipEmbeddingProvider implements EmbeddingProvider {
   readonly name = "clip";
-  readonly dimensions = DIMENSIONS;
+  readonly dimensions = 512;
   private textExtractor: ClipPipeline | null = null;
   private imageExtractor: ClipPipeline | null = null;
-  private transformers: TransformersModule | null = null;
   private readonly modelId: string;
 
   constructor(modelId: string = DEFAULT_MODEL) {
@@ -45,7 +33,7 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedImage(src: string): Promise<Float32Array> {
-    const t = await this.getTransformers();
+    const t = await loadTransformers();
     const image = await loadImage(t, src);
     const extractor = await this.getImageExtractor();
     const output = await extractor(image);
@@ -53,47 +41,46 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
     return normalize(vec);
   }
 
-  private async getTransformers(): Promise<TransformersModule> {
-    if (this.transformers) return this.transformers;
-    try {
-      this.transformers = (await import("@xenova/transformers")) as unknown as TransformersModule;
-    } catch {
-      throw new Error(
-        "Install @xenova/transformers for CLIP image embeddings: npm install @xenova/transformers",
-      );
-    }
-    return this.transformers;
-  }
-
   private async getTextExtractor(): Promise<ClipPipeline> {
     if (this.textExtractor) return this.textExtractor;
-    const t = await this.getTransformers();
-    this.textExtractor = await t.pipeline("feature-extraction", this.modelId);
+    const t = await loadTransformers();
+    this.textExtractor = (await t.pipeline("feature-extraction", this.modelId, { dtype: "q8" })) as ClipPipeline;
     return this.textExtractor;
   }
 
   private async getImageExtractor(): Promise<ClipPipeline> {
     if (this.imageExtractor) return this.imageExtractor;
-    const t = await this.getTransformers();
-    this.imageExtractor = await t.pipeline("image-feature-extraction", this.modelId);
+    const t = await loadTransformers();
+    this.imageExtractor = (await t.pipeline("image-feature-extraction", this.modelId, { dtype: "q8" })) as ClipPipeline;
     return this.imageExtractor;
+  }
+}
+
+async function loadTransformers(): Promise<TransformersModule> {
+  try {
+    return await import("@huggingface/transformers");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") {
+      throw new Error(
+        "Install @huggingface/transformers for CLIP embeddings: npm install @huggingface/transformers",
+      );
+    }
+    throw err;
   }
 }
 
 async function loadImage(
   t: TransformersModule,
   src: string,
-): Promise<RawImageInstance> {
+): Promise<RawImage> {
   if (src.startsWith("data:")) {
     const comma = src.indexOf(",");
     const b64 = comma >= 0 ? src.slice(comma + 1) : src;
     const buf = Buffer.from(b64, "base64");
-    const blob = new Blob([buf]);
-    return t.RawImage.fromBlob(blob);
+    return t.RawImage.fromBlob(new Blob([buf]));
   }
   const data = await readFile(src);
-  const blob = new Blob([data]);
-  return t.RawImage.fromBlob(blob);
+  return t.RawImage.fromBlob(new Blob([data]));
 }
 
 function normalize(vec: Float32Array): Float32Array {

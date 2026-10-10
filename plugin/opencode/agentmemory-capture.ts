@@ -1,12 +1,67 @@
 import type { Plugin } from "@opencode-ai/plugin";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, join } from "node:path";
 
 const API = process.env.AGENTMEMORY_URL || "http://localhost:3111";
-const FILE_TOOLS = new Set(["Read", "Write", "Edit", "Glob", "Grep"]);
+// OpenCode reports tool names in lowercase ("read", "edit", ...); matching is
+// case-insensitive at the call site so a future casing change cannot silently
+// kill file enrichment again.
+const FILE_TOOLS = new Set(["read", "write", "edit", "glob", "grep"]);
 const FILE_KEYS = ["filePath", "file_path", "path", "file", "pattern"];
 const MAX_STASHED_FILES = 20;
 
 const DEBUG = process.env.OPENCODE_AGENTMEMORY_DEBUG === "1";
-const SECRET = process.env.AGENTMEMORY_SECRET || "";
+function usableSecret(value: unknown): string {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed || (trimmed.startsWith("${") && trimmed.endsWith("}"))) return "";
+  return trimmed;
+}
+
+function readAgentmemoryFile(name: string): string {
+  try {
+    return readFileSync(join(homedir(), ".agentmemory", name), "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function envFileSecret(): string {
+  let found = "";
+  for (const line of readAgentmemoryFile(".env").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== "AGENTMEMORY_SECRET") continue;
+    let value = trimmed.slice(eq + 1).trim();
+    const quote = value[0];
+    const close = quote === '"' || quote === "'" ? value.indexOf(quote, 1) : -1;
+    if (close > 0) value = value.slice(1, close);
+    else if (value.includes(" #")) value = value.slice(0, value.indexOf(" #"));
+    found = usableSecret(value);
+  }
+  return found;
+}
+
+function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
+  } catch {
+    return false;
+  }
+}
+
+function resolveSecret(url: string, explicit: string | undefined): string {
+  const configured = usableSecret(explicit);
+  if (configured) return configured;
+  if (!isLoopbackUrl(url)) return "";
+  return envFileSecret() || usableSecret(readAgentmemoryFile("secret"));
+}
+
+const SECRET = resolveSecret(API, process.env.AGENTMEMORY_SECRET);
 
 function authHeaders(): Record<string, string> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
@@ -47,11 +102,12 @@ async function observe(
   hookType: string,
   data: Record<string, unknown>,
 ): Promise<void> {
+  const proj = projectFor(sessionId);
   await post("/observe", {
     hookType,
     sessionId,
-    project: projectPath,
-    cwd: projectPath,
+    project: proj.name,
+    cwd: proj.cwd,
     timestamp: new Date().toISOString(),
     data,
   });
@@ -59,7 +115,46 @@ async function observe(
 
 let activeSessionId: string | null = null;
 let pendingConfig: Record<string, unknown> | null = null;
-let projectPath: string | null = null;
+// Default scope resolved at plugin init (same resolution order as the hooks'
+// resolveProject: env override, git toplevel basename, cwd basename). In a
+// long-lived OpenCode process serving multiple directories these defaults are
+// only a fallback — attribution is per-session via sessionProjects, resolved
+// from each session's own directory at session.created. Module-level-only
+// state recorded home-directory sessions under whatever repo loaded first.
+let defaultProjectName: string | null = null;
+let defaultProjectCwd: string | null = null;
+const sessionProjects = new Map<string, { name: string; cwd: string }>();
+
+function projectFor(sessionId: string): { name: string | null; cwd: string | null } {
+  const p = sessionProjects.get(sessionId);
+  return p ?? { name: defaultProjectName, cwd: defaultProjectCwd };
+}
+
+const projectNameCache = new Map<string, string>();
+
+function resolveProjectName(dir: string): string {
+  const explicit = process.env.AGENTMEMORY_PROJECT_NAME?.trim();
+  if (explicit) return explicit;
+  const cached = projectNameCache.get(dir);
+  if (cached !== undefined) return cached;
+  try {
+    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
+      cwd: dir,
+      stdio: ["ignore", "pipe", "ignore"],
+      encoding: "utf8",
+    }).trim();
+    if (top) {
+      const name = basename(top);
+      projectNameCache.set(dir, name);
+      return name;
+    }
+  } catch {
+    // not a git repo, fall through
+  }
+  const fallback = basename(dir) || dir;
+  projectNameCache.set(dir, fallback);
+  return fallback;
+}
 const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();
 const seenToolCallIds = new Map<string, Set<string>>();
@@ -93,6 +188,7 @@ function pruneSessionMaps(sid: string): void {
   stashedFiles.delete(sid);
   seenSubtaskIds.delete(sid);
   seenToolCallIds.delete(sid);
+  sessionProjects.delete(sid);
 }
 
 function safeSlice(v: unknown, max: number): string {
@@ -167,8 +263,9 @@ function extractErrorMessage(err: unknown): string {
   return String(err ?? "");
 }
 
-export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
-  projectPath = ctx.worktree || ctx.project?.id || process.cwd();
+const v1Hooks: Plugin = async (ctx) => {
+  defaultProjectCwd = ctx.worktree || ctx.project?.id || process.cwd();
+  defaultProjectName = resolveProjectName(defaultProjectCwd);
 
   return {
     event: async ({ event }) => {
@@ -188,13 +285,28 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         // and another `session.created` event during the await could
         // rebind it, causing context to be cached against the wrong key.
         const sessionId = activeSessionId;
+        // Attribute this session to its own directory when the event
+        // carries one; a multi-directory OpenCode process otherwise
+        // records every session under whichever repo loaded the plugin.
+        const sessionDir =
+          typeof info?.directory === "string" && info.directory
+            ? info.directory
+            : defaultProjectCwd;
+        let proj: { name: string | null; cwd: string | null };
+        if (sessionDir) {
+          const entry = { cwd: sessionDir, name: resolveProjectName(sessionDir) };
+          sessionProjects.set(sessionId, entry);
+          proj = entry;
+        } else {
+          proj = projectFor(sessionId);
+        }
         const startResult = await postJson("/session/start", {
           sessionId,
           title: info?.title ?? null,
           parentID: info?.parentID ?? null,
           version: info?.version ?? null,
-          project: projectPath,
-          cwd: projectPath,
+          project: proj.name,
+          cwd: proj.cwd,
         });
         // cache the context returned at session/start so the
         // chat.system.transform hook injects it without a second fetch.
@@ -268,14 +380,12 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
           if (DEBUG) console.error("[agentmemory] session.deleted with no session ID");
           return;
         }
-        await post("/session/end", { sessionId: sid });
+        await post("/session/end", { sessionId: sid, final: true });
         post("/crystals/auto", { olderThanDays: 7 }, 30000);
         post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
         if (sid === activeSessionId) activeSessionId = null;
-        stashedFiles.delete(sid);
+        pruneSessionMaps(sid);
         startContextCache.delete(sid);
-        seenSubtaskIds.delete(sid);
-        seenToolCallIds.delete(sid);
         contextInjectedSessions.delete(sid);
       }
 
@@ -581,7 +691,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
     // ── tool.execute.before ──
     "tool.execute.before": async (input, output) => {
-      if (!FILE_TOOLS.has(input.tool)) return;
+      if (!FILE_TOOLS.has(String(input.tool ?? "").toLowerCase())) return;
       const sid = input.sessionID || activeSessionId;
       if (!sid) return;
       const args = output.args as Record<string, unknown> | undefined;
@@ -612,7 +722,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
         if (typeof ctx !== "string" || ctx.length === 0) {
           const result = await postJson("/context", {
             sessionId: sid,
-            project: projectPath,
+            project: projectFor(sid).name,
           });
           ctx = (result as any)?.context;
         } else {
@@ -650,7 +760,7 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
 
       const result = await postJson("/context", {
         sessionId: sid,
-        project: projectPath,
+        project: projectFor(sid).name,
       });
       const ctx = (result as any)?.context;
       if (typeof ctx === "string" && ctx.length > 0) {
@@ -685,3 +795,522 @@ export const AgentmemoryCapturePlugin: Plugin = async (ctx) => {
     },
   };
 };
+
+async function v2Setup(ctx: any) {
+  if (typeof ctx?.tool?.hook !== "function" || typeof ctx?.session?.hook !== "function" || typeof ctx?.event?.subscribe !== "function") {
+    return;
+  }
+  const location = ctx.location;
+  defaultProjectCwd = location?.directory ?? location?.project?.directory ?? process.cwd();
+  defaultProjectName = resolveProjectName(defaultProjectCwd);
+
+  async function observeV2(sessionId: string, hookType: string, data: Record<string, unknown>): Promise<void> {
+    await observe(sessionId, hookType, data);
+  }
+
+  const shellSessions = new Map<string, string>();
+  const turnContextCache = new Map<string, string>();
+
+  function stashAdd(sid: string, paths: Iterable<string>): void {
+    const stash = stashFor(sid);
+    for (const p of paths) stash.add(p);
+    if (stash.size > MAX_STASHED_FILES) {
+      const keep = [...stash].slice(-MAX_STASHED_FILES);
+      stash.clear();
+      for (const k of keep) stash.add(k);
+    }
+  }
+
+  const toolNames = new Map<string, string>();
+  const toolCallInputs = new Map<string, Record<string, unknown>>();
+  const reportedToolCalls = new Set<string>();
+  const registeredSessions = new Set<string>();
+
+  function namesFrom(result: unknown): string[] {
+    const arr = Array.isArray(result) ? result : (result as any)?.data;
+    if (!Array.isArray(arr)) return [];
+    return arr.map((x: any) => (typeof x === "string" ? x : x?.id ?? x?.name)).filter(Boolean);
+  }
+
+  let lastConfigSnapshot: string | null = null;
+
+  async function snapshotConfig(): Promise<void> {
+    const [agents, providers, mcp, modelDefault] = await Promise.all([
+      ctx.agent?.list?.().catch(() => null),
+      ctx.provider?.list?.().catch(() => null),
+      ctx.mcp?.list?.().catch(() => null),
+      Promise.resolve(ctx.model?.default?.()).catch(() => null),
+    ]);
+    const model = Array.isArray(modelDefault) ? modelDefault[0] : (modelDefault as any)?.data;
+    const payload = {
+      agents: namesFrom(agents),
+      providers: namesFrom(providers),
+      mcp_servers: namesFrom(mcp),
+      model: model ? `${model.providerID ?? ""}/${model.id ?? model.modelID ?? ""}` : null,
+      model_limits: model?.limit ?? null,
+      location: defaultProjectCwd,
+    };
+    const snapshot = JSON.stringify(payload);
+    if (snapshot === lastConfigSnapshot) return;
+    lastConfigSnapshot = snapshot;
+    if (activeSessionId) await observeV2(activeSessionId, "config_loaded", payload);
+    else pendingConfig = payload;
+  }
+
+  void snapshotConfig().catch((e) => {
+    if (DEBUG) console.error("[agentmemory] config snapshot failed:", (e as Error).message);
+  });
+
+  await ctx.tool.hook("execute.before", (event: any) => {
+    if (!FILE_TOOLS.has(String(event?.tool ?? "").toLowerCase())) return;
+    const sid = event?.sessionID || activeSessionId;
+    if (!sid) return;
+    const args = event?.input as Record<string, unknown> | undefined;
+    if (!args) return;
+    stashAdd(sid, extractFilePaths(args));
+  });
+
+  await ctx.tool.hook("execute.after", async (event: any) => {
+    const sid = event?.sessionID || activeSessionId;
+    if (!sid) return;
+    const tool = String(event?.tool ?? "");
+    const callId = (event?.id as string) || (event?.messageID as string) || null;
+    const status = String(event?.status ?? "");
+    const result = event?.result ?? {};
+    const metadata = (result?.metadata ?? {}) as Record<string, unknown>;
+    const output = result?.output as Record<string, unknown> | undefined;
+    const raw = output?.output ?? result?.content;
+    const text = Array.isArray(raw)
+      ? raw.map((p: any) => (typeof p === "string" ? p : (p?.text ?? ""))).join("\n")
+      : typeof raw === "string"
+        ? raw
+        : "";
+    const startMs = typeof metadata?.started === "number" ? metadata.started : null;
+    const endMs = typeof metadata?.ended === "number" ? metadata.ended : null;
+    const duration = startMs != null && endMs != null ? endMs - startMs : null;
+
+    if (status === "error") {
+      await observeV2(sid, "post_tool_failure", {
+        tool_name: tool,
+        call_id: callId,
+        tool_input: safeSlice(event?.input, 4000),
+        tool_output: safeSlice(text || extractErrorMessage(event?.error) || extractErrorMessage(metadata?.error), 8000),
+        duration_ms: duration,
+      });
+      if (callId) reportedToolCalls.add(`${sid}:${callId}`);
+      return;
+    }
+
+    await observeV2(sid, "post_tool_use", {
+      tool_name: tool,
+      call_id: callId,
+      tool_input: safeSlice(event?.input, 4000),
+      tool_output: safeSlice(text, 8000),
+      title: (output?.title as string) ?? null,
+      metadata: metadata,
+      duration_ms: duration,
+      attachments: Array.isArray(output?.attachments)
+        ? (output?.attachments as Array<Record<string, unknown>>).map((a) => a.filename || a.url)
+        : [],
+    });
+    if (callId) reportedToolCalls.add(`${sid}:${callId}`);
+  });
+
+  await ctx.session.hook("prompt", async (event: any) => {
+    const sid = event?.sessionID || activeSessionId;
+    if (!sid) return;
+    const files = (event?.prompt?.files ?? [])
+      .map((f: any) => (typeof f === "string" ? f : f?.uri ?? f?.filename ?? f?.url))
+      .filter(Boolean) as string[];
+    stashAdd(sid, files);
+    turnContextCache.delete(sid);
+    await observeV2(sid, "prompt_submit", {
+      prompt: (event?.prompt?.text ?? "").slice(0, 8000),
+      files: files.slice(0, 20),
+      agents: event?.prompt?.agents ?? [],
+      skills: event?.prompt?.skills ?? [],
+      delivery: event?.delivery ?? null,
+    });
+  });
+
+  await ctx.session.hook("context", async (event: any) => {
+    const sid = event?.sessionID || activeSessionId;
+    if (!sid) return;
+    if (!Array.isArray(event.system)) return;
+
+    if (!contextInjectedSessions.has(sid)) {
+      event.system.push({ type: "text", text: AGENTMEMORY_INSTRUCTIONS });
+      contextInjectedSessions.add(sid);
+    }
+
+    let ctxText = startContextCache.get(sid) ?? turnContextCache.get(sid);
+    if (typeof ctxText !== "string" || ctxText.length === 0) {
+      const result = await postJson("/context", { sessionId: sid, project: projectFor(sid).name });
+      ctxText = (result as any)?.context;
+    }
+    if (typeof ctxText === "string" && ctxText.length > 0) {
+      turnContextCache.set(sid, ctxText);
+      startContextCache.delete(sid);
+      event.system.push({ type: "text", text: ctxText });
+    }
+
+    const stash = stashFor(sid);
+    if (stash.size === 0) return;
+    const files = [...stash].slice(0, 10);
+    const enrichResult = await postJson("/enrich", { sessionId: sid, files, toolName: "enrich_inject" });
+    const enrichCtx = (enrichResult as any)?.context;
+    if (typeof enrichCtx === "string" && enrichCtx.length > 0) {
+      event.system.push({ type: "text", text: enrichCtx });
+      for (const f of files) stash.delete(f);
+    }
+  });
+
+  await ctx.session.hook("compaction", async (event: any) => {
+    const sid = event?.sessionID || activeSessionId;
+    if (!sid) return;
+    if (!Array.isArray(event?.system)) return;
+    let ctxText = turnContextCache.get(sid);
+    if (typeof ctxText !== "string" || ctxText.length === 0) {
+      const result = await postJson("/context", { sessionId: sid, project: projectFor(sid).name });
+      ctxText = (result as any)?.context;
+      if (typeof ctxText === "string" && ctxText.length > 0) turnContextCache.set(sid, ctxText);
+    }
+    if (typeof ctxText === "string" && ctxText.length > 0) {
+      event.system.push({ type: "text", text: ctxText });
+    }
+  });
+
+  const controller = new AbortController();
+
+  const handleEvent = async (event: any): Promise<void> => {
+    const type = String(event?.type ?? "");
+    const data: any = event?.data ?? {};
+    const eventSid = typeof data.sessionID === "string" && data.sessionID ? data.sessionID : null;
+    const sid0 = eventSid || activeSessionId;
+
+    if (eventSid && !registeredSessions.has(eventSid)) {
+      if (!activeSessionId) activeSessionId = eventSid;
+      stashedFiles.set(sid0, new Set());
+      seenSubtaskIds.delete(sid0);
+      seenToolCallIds.delete(sid0);
+      contextInjectedSessions.delete(sid0);
+      const dir = (data.location?.directory as string) || (event?.location?.directory as string) || null;
+      if (dir) {
+        sessionProjects.set(sid0, { cwd: dir, name: resolveProjectName(dir) });
+      }
+      const proj = projectFor(sid0);
+      const startResult = await postJson("/session/start", {
+        sessionId: sid0,
+        title: (data.title as string) ?? null,
+        parentID: (data.parentID as string) ?? null,
+        project: proj.name,
+        cwd: proj.cwd,
+      });
+
+      if (startResult === null) {
+        stashedFiles.delete(sid0);
+        contextInjectedSessions.delete(sid0);
+        if (activeSessionId === eventSid) activeSessionId = null;
+        if (DEBUG) {
+          console.error("[agentmemory] /session/start failed, will retry on the next event for", eventSid);
+        }
+        return;
+      }
+      registeredSessions.add(eventSid);
+
+      const startCtx = (startResult as any)?.context;
+      if (typeof startCtx === "string" && startCtx.length > 0) startContextCache.set(sid0, startCtx);
+      await observeV2(sid0, "session_started", {});
+      if (pendingConfig) {
+        await observeV2(sid0, "config_loaded", pendingConfig);
+        pendingConfig = null;
+      }
+    }
+
+    switch (type) {
+
+      case "session.execution.failed": {
+        if (!sid0) return;
+        await observeV2(sid0, "post_tool_failure", {
+          tool_name: "session.execution",
+          tool_input: "",
+          tool_output: safeSlice(extractErrorMessage(data.error ?? data), 8000),
+        });
+        return;
+      }
+
+      case "session.compaction.started": {
+        if (!sid0) return;
+        await observeV2(sid0, "compaction_event", {
+          state: "started",
+          reason: (data.reason as string) ?? null,
+          inputID: (data.inputID as string) ?? null,
+          recent: safeSlice(data.recent, 8000),
+        });
+        return;
+      }
+
+      case "session.compaction.failed": {
+        if (!sid0) return;
+        await observeV2(sid0, "compaction_event", {
+          state: "failed",
+          reason: (data.reason as string) ?? null,
+          inputID: (data.inputID as string) ?? null,
+          tool_output: safeSlice(extractErrorMessage(data.error ?? data.reason), 8000),
+        });
+        return;
+      }
+
+      case "session.step.started": {
+        if (!sid0) return;
+        await observeV2(sid0, "step_start", {
+          messageID: (data.assistantMessageID as string) ?? null,
+          agent: (data.agent as string) ?? null,
+          model: data.model ? `${data.model.providerID ?? ""}/${data.model.id ?? ""}` : null,
+        });
+        return;
+      }
+
+      case "session.step.ended": {
+        if (!sid0) return;
+        const tokens = (data.tokens ?? {}) as Record<string, any>;
+        await observeV2(sid0, "step_finish", {
+          messageID: (data.assistantMessageID as string) ?? null,
+          reason: (data.rawFinish as string) ?? (data.finish as string) ?? null,
+          cost: data.cost ?? 0,
+          input_tokens: tokens.input ?? 0,
+          output_tokens: tokens.output ?? 0,
+          reasoning_tokens: tokens.reasoning ?? 0,
+          cache_read: tokens.cache?.read ?? 0,
+          cache_write: tokens.cache?.write ?? 0,
+        });
+        return;
+      }
+
+      case "session.agent.selected": {
+        if (!sid0) return;
+        await observeV2(sid0, "agent_selected", {
+          name: (data.agent as string) ?? null,
+          previous: (data.previous as string) ?? null,
+        });
+        return;
+      }
+
+      case "session.reasoning.ended": {
+        if (!sid0) return;
+        await observeV2(sid0, "reasoning", {
+          messageID: (data.assistantMessageID as string) ?? null,
+          text: safeSlice(data.text, 4000),
+        });
+        return;
+      }
+
+      case "session.instructions.updated": {
+        if (!sid0) return;
+        const sources = data.delta && typeof data.delta === "object" ? Object.keys(data.delta) : [];
+        if (sources.length === 0) return;
+        await observeV2(sid0, "notification", {
+          notification_type: "instructions_updated",
+          sources: sources.slice(0, 50),
+        });
+        return;
+      }
+
+      case "session.text.ended": {
+        if (!sid0) return;
+        const text = typeof data.text === "string" ? data.text : "";
+        if (!text) return;
+        await observeV2(sid0, "assistant_message", {
+          messageID: (data.assistantMessageID as string) ?? null,
+          text: text.slice(0, 8000),
+        });
+        return;
+      }
+
+      case "session.execution.succeeded": {
+        if (!sid0) return;
+        await post("/summarize", { sessionId: sid0 });
+        return;
+      }
+
+      case "shell.created": {
+        const info = (data.info ?? {}) as Record<string, any>;
+        const shellSid = (info.metadata?.sessionID as string) || sid0;
+        if (!shellSid) return;
+        if (info.id) shellSessions.set(String(info.id), shellSid);
+        return;
+      }
+
+      case "shell.exited": {
+        const shellId = String(data.id ?? "");
+        const shellSid = shellSessions.get(shellId) || activeSessionId;
+        if (!shellSid) return;
+        const exit = Number(data.exit ?? 0);
+        if (exit !== 0) {
+          await observeV2(shellSid, "post_tool_failure", {
+            tool_name: "shell",
+            call_id: shellId,
+            tool_input: null,
+            tool_output: safeSlice(data.status, 4000),
+            duration_ms: null,
+          });
+        }
+        return;
+      }
+
+      case "shell.deleted": {
+        const shellId = String(data.id ?? "");
+        shellSessions.delete(shellId);
+        return;
+      }
+
+      case "file.watcher.updated":
+      case "filesystem.changed":
+      case "vcs.branch.updated": {
+        const sid = sid0 || activeSessionId;
+        if (!sid) return;
+        const file = (data.file as string) ?? (data.path as string) ?? null;
+        if (file) stashAdd(sid, [file]);
+        return;
+      }
+
+      case "session.tool.input.started": {
+        if (!sid0) return;
+        if (data.id) toolNames.set(String(data.id), String(data.name ?? ""));
+        return;
+      }
+
+      case "session.tool.input.ended": {
+        if (!sid0) return;
+        if (data.id && typeof data.text === "string" && !toolNames.has(String(data.id))) {
+          try {
+            const parsed = JSON.parse(data.text);
+            if (typeof parsed?.name === "string") toolNames.set(String(data.id), parsed.name);
+          } catch {
+          }
+        }
+        return;
+      }
+
+      case "session.tool.called": {
+        if (!sid0) return;
+        if (data.id) toolCallInputs.set(String(data.id), (data.input ?? {}) as Record<string, unknown>);
+        return;
+      }
+
+      case "session.tool.progress": {
+        if (!sid0) return;
+        const callId = String(data.id ?? "");
+        if (!callId || !FILE_TOOLS.has((toolNames.get(callId) ?? "").toLowerCase())) return;
+        const input = toolCallInputs.get(callId);
+        if (!input) return;
+        stashAdd(sid0, extractFilePaths(input));
+        return;
+      }
+
+      case "session.tool.success": {
+        const callId = String(data.id ?? "");
+        toolNames.delete(callId);
+        toolCallInputs.delete(callId);
+        if (sid0) reportedToolCalls.delete(`${sid0}:${callId}`);
+        return;
+      }
+
+      case "session.tool.failed": {
+        if (!sid0) return;
+        const callId = String(data.id ?? "");
+        if (callId && reportedToolCalls.has(`${sid0}:${callId}`)) return;
+        await observeV2(sid0, "post_tool_failure", {
+          tool_name: toolNames.get(callId) || null,
+          call_id: callId || null,
+          tool_input: safeSlice(toolCallInputs.get(callId), 4000),
+          tool_output: safeSlice(extractErrorMessage(data.error), 8000),
+          duration_ms: null,
+        });
+        if (callId) {
+          toolNames.delete(callId);
+          toolCallInputs.delete(callId);
+        }
+        return;
+      }
+
+      case "permission.asked": {
+        if (!sid0) return;
+        const resources = (data.resources ?? data.patterns ?? []) as unknown;
+        await observeV2(sid0, "notification", {
+          notification_type: "permission_prompt",
+          permission: (data.action as string) ?? (data.permission as string) ?? "unknown",
+          pattern: Array.isArray(resources) ? resources.join(", ") : String(resources ?? ""),
+          tool_call_id: (data.tool?.callID as string) ?? (data.callID as string) ?? null,
+          title: (data.action as string) ?? (data.permission as string) ?? "",
+          metadata: data.metadata ?? {},
+        });
+        return;
+      }
+
+      case "permission.replied": {
+        if (!sid0) return;
+        await observeV2(sid0, "permission_replied", {
+          permission_id: (data.requestID as string) ?? (data.permissionID as string) ?? "",
+          response: (data.reply as string) ?? (data.response as string) ?? "",
+        });
+        return;
+      }
+
+      case "session.deleted": {
+        const sid = (data.sessionID as string) || activeSessionId;
+        if (!sid) return;
+        await post("/session/end", { sessionId: sid, final: true });
+        void post("/crystals/auto", { olderThanDays: 7 }, 30000);
+        void post("/consolidate-pipeline", { tier: "all", force: true }, 30000);
+        if (sid === activeSessionId) activeSessionId = null;
+        registeredSessions.delete(sid);
+        pruneSessionMaps(sid);
+        startContextCache.delete(sid);
+        contextInjectedSessions.delete(sid);
+        for (const key of reportedToolCalls) {
+          if (key.startsWith(`${sid}:`)) reportedToolCalls.delete(key);
+        }
+        return;
+      }
+
+      case "config.updated":
+      case "agent.updated":
+      case "provider.updated":
+      case "model.updated":
+      case "mcp.status.changed": {
+        if (DEBUG) console.error("[agentmemory] config changed, re-snapshotting");
+        void snapshotConfig().catch(() => {});
+        return;
+      }
+    }
+  };
+
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        try {
+          await handleEvent(event);
+        } catch (e) {
+          if (DEBUG) console.error("[agentmemory] event handler failed:", (e as Error).message);
+        }
+      }
+    } catch (e) {
+      if (DEBUG) console.error("[agentmemory] event stream failed:", (e as Error).message);
+    }
+  })();
+
+  return () => {
+    controller.abort();
+    startContextCache.clear();
+    contextInjectedSessions.clear();
+  };
+}
+
+export default {
+  id: "agentmemory-capture",
+  setup: v2Setup,
+  server: v1Hooks,
+};
+
+export const AgentmemoryCapturePlugin: Plugin = v1Hooks;

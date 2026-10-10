@@ -1,0 +1,147 @@
+.log {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.head span:last-child {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 52px 96px minmax(0, 1fr);
+  gap: var(--s-3);
+  align-items: baseline;
+  padding: 9px 16px;
+  font-size: var(--t-14);
+  line-height: 1.5;
+  transition: opacity var(--dur-2) var(--ease-out);
+}
+
+.row[data-state="wait"] {
+  opacity: 0.4;
+}
+
+.status {
+  justify-self: start;
+  font-size: var(--t-12);
+  padding: 0 7px;
+  border-radius: 3px;
+  border: 1px solid var(--line-2);
+  color: var(--muted);
+  line-height: 20px;
+  transition: background-color var(--dur-2) ease, color var(--dur-2) ease, border-color var(--dur-2) ease;
+}
+
+.row[data-state="run"] .status {
+  border-color: var(--ink);
+  color: var(--ink);
+  animation: pulse 760ms var(--ease-in-out) infinite alternate;
+}
+
+.row[data-state="pass"] .status {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+
+@keyframes pulse {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.45;
+  }
+}
+
+.id {
+  font-size: var(--t-12);
+  color: var(--ink);
+}
+
+.what {
+  color: var(--ink-2);
+  display: grid;
+  gap: 2px;
+}
+
+.note {
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.verdict {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-12);
+  color: var(--ink);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
+}
+
+.verdict[data-on] {
+  opacity: 1;
+  transform: none;
+}
+
+.links {
+  display: flex;
+  gap: var(--s-4);
+}
+
+@media (max-width: 640px) {
+  .row {
+    grid-template-columns: 48px minmax(0, 1fr);
+    row-gap: 2px;
+    padding: 8px 12px;
+  }
+  .what {
+    grid-column: 2;
+    font-size: var(--t-14);
+  }
+  .head,
+  .verdict {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .row,
+  .status,
+  .verdict {
+    transition: none;
+  }
+  .row[data-state="run"] .status {
+    animation: none;
+  }
+}
+
+.nw {
+  white-space: nowrap;
+}

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -63,6 +63,9 @@ const mockProvider = {
   summarize: vi.fn(),
 };
 
+// Structured fields stay empty so the deterministic heuristic pass
+// contributes nothing and these tests keep exercising the LLM XML
+// parse + persist path in isolation.
 const testObs: CompressedObservation = {
   id: "obs_1",
   sessionId: "ses_1",
@@ -71,20 +74,27 @@ const testObs: CompressedObservation = {
   title: "Edit index file",
   facts: ["Modified main function"],
   narrative: "Updated index.ts with main function",
-  concepts: ["typescript", "entry-point"],
-  files: ["src/index.ts"],
+  concepts: [],
+  files: [],
   importance: 7,
 };
 
 describe("Graph Functions", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
+  const ORIG_GRAPH_FLAG = process.env["GRAPH_EXTRACTION_ENABLED"];
 
   beforeEach(() => {
     sdk = mockSdk();
     kv = mockKV();
     vi.clearAllMocks();
+    process.env["GRAPH_EXTRACTION_ENABLED"] = "true";
     registerGraphFunction(sdk as never, kv as never, mockProvider as never);
+  });
+
+  afterEach(() => {
+    if (ORIG_GRAPH_FLAG === undefined) delete process.env["GRAPH_EXTRACTION_ENABLED"];
+    else process.env["GRAPH_EXTRACTION_ENABLED"] = ORIG_GRAPH_FLAG;
   });
 
   it("graph-extract creates nodes and edges from XML response", async () => {
@@ -132,7 +142,7 @@ describe("Graph Functions", () => {
     expect(edges[0].type).toBe("uses");
   });
 
-  it("graph-extract tolerates reordered attributes (#635)", async () => {
+  it("graph-extract tolerates reordered attributes", async () => {
     // Codex CLI's LLM tends to emit attribute order name→type and
     // source→target→type rather than the hard-coded type-first /
     // type/source/target/weight sequence the old parser required.
@@ -215,12 +225,6 @@ describe("Graph Functions", () => {
     expect(result.error).toContain("No observations");
   });
 
-  // #753: an unbounded {} body used to materialize every node+edge in
-  // one payload, which exceeded the iii state response channel on
-  // large corpora (11k+ nodes) and returned HTTP 500 "Invocation
-  // stopped". The fix caps the page at DEFAULT_GRAPH_QUERY_LIMIT (500)
-  // and surfaces totalNodes / totalEdges so callers know it was
-  // truncated.
   it("caps an unbounded graph-query body to a default page and reports totals", async () => {
     // Seed a graph with more nodes than the default page size.
     const NODE_COUNT = 1200;
@@ -252,8 +256,6 @@ describe("Graph Functions", () => {
       await kv.set("mem:graph:edges", edge.id, edge);
     }
 
-    // Post-#814 the empty-body path reads the snapshot exclusively.
-    // Backfill the snapshot from the seeded data first.
     await sdk.trigger("mem::graph-snapshot-rebuild", { force: true });
 
     const unbounded = (await sdk.trigger(
@@ -389,10 +391,7 @@ describe("Graph Functions", () => {
     expect(page.totalEdges).toBe(11);
   });
 
-  // #814: precomputed snapshot path. The viewer-tab default-cap query
-  // and graph-stats both have to work at 75K-node scale where the
-  // full kv.list enumeration exceeds the iii invocation budget.
-  describe("snapshot cache (#814)", () => {
+  describe("snapshot cache", () => {
     async function seed(nodeCount: number, edgeCount: number) {
       for (let i = 0; i < nodeCount; i++) {
         await kv.set("mem:graph:nodes", `n_${i}`, {
@@ -494,9 +493,6 @@ describe("Graph Functions", () => {
     });
 
     it("graph-extract updates snapshot inline (no kv.list, dirty stays false)", async () => {
-      // Post-#814 v2 the snapshot is updated incrementally on every
-      // extract — no dirty flag bounces. Test asserts that after an
-      // extract the snapshot reflects the new nodes/edges.
       await sdk.trigger("mem::graph-extract", { observations: [testObs] });
 
       const snap = await kv.get<{
@@ -530,8 +526,6 @@ describe("Graph Functions", () => {
     });
 
     it("graph-stats returns empty envelope + warning when no snapshot exists", async () => {
-      // Seed nodes but never rebuild the snapshot — simulates a legacy
-      // corpus on a post-#814 upgrade.
       await seed(5, 5);
 
       const stats = (await sdk.trigger("mem::graph-stats", {})) as {
@@ -559,7 +553,7 @@ describe("Graph Functions", () => {
       expect(snap?.stats.totalNodes).toBe(0);
     });
 
-    it("graph-reset writes empty snapshot; legacy rows stay as orphans (#825)", async () => {
+    it("graph-reset writes empty snapshot; legacy rows stay as orphans", async () => {
       await sdk.trigger("mem::graph-extract", { observations: [testObs] });
       // Index entries exist after the extract.
       const nameBefore = await kv.get(
@@ -570,11 +564,6 @@ describe("Graph Functions", () => {
 
       await sdk.trigger("mem::graph-reset", {});
 
-      // Post-#825: reset is enumeration-free. It writes an empty
-      // snapshot; the legacy index rows remain on disk as orphans
-      // but are never read by any post-#816 code path (hot path
-      // reads only the snapshot, which is now empty). Asserting the
-      // visible behavior: snapshot empty, hot path returns empty.
       const snap = await kv.get<{
         stats: { totalNodes: number; totalEdges: number };
       }>("mem:graph:snapshot", "current");
@@ -587,7 +576,162 @@ describe("Graph Functions", () => {
   // the oversized-corpus rebuild refusal. The hot path never enumerates
   // any more, but the rebuild endpoint AND the BFS / query branches
   // still call kv.list — both need explicit failure-mode tests.
-  describe("budget + tooLarge guards (#814 v2)", () => {
+  describe("snapshot write must not fail open", () => {
+    async function seedSnapshot(totalNodes: number) {
+      await kv.set("mem:graph:snapshot", "current", {
+        version: 1,
+        topNodes: [],
+        topEdges: [],
+        topDegrees: {},
+        stats: { totalNodes, totalEdges: 0, nodesByType: {}, edgesByType: {} },
+        updatedAt: "2026-01-01T00:00:00Z",
+        dirty: false,
+      });
+    }
+
+    async function extractWithFlakySnapshot(kvImpl: ReturnType<typeof mockKV>) {
+      registerGraphFunction(sdk as never, kvImpl as never, mockProvider as never);
+      return (await sdk.trigger("mem::graph-extract", {
+        observations: [testObs],
+      })) as { success: boolean; error?: string; nodesAdded?: number };
+    }
+
+    function flakyKV(failures: number) {
+      let reads = 0;
+      const realGet = kv.get.bind(kv);
+      return {
+        ...kv,
+        get: async <T>(scope: string, key: string): Promise<T | null> => {
+          if (scope === "mem:graph:snapshot" && reads++ < failures) {
+            throw new Error("Invocation timeout after 180000ms: state::get");
+          }
+          return realGet<T>(scope, key);
+        },
+      };
+    }
+
+    it("a persistent read failure aborts the delta instead of zeroing the snapshot", async () => {
+      await seedSnapshot(40000);
+
+      const result = await extractWithFlakySnapshot(flakyKV(Number.POSITIVE_INFINITY));
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("Invocation timeout");
+
+      const snap = await kv.get<{ stats: { totalNodes: number } }>(
+        "mem:graph:snapshot",
+        "current",
+      );
+      expect(snap!.stats.totalNodes).toBe(40000);
+    });
+
+    it("retries a transient read failure once and then merges onto the real snapshot", async () => {
+      await seedSnapshot(40000);
+
+      const result = await extractWithFlakySnapshot(flakyKV(1));
+
+      expect(result.success).toBe(true);
+      const snap = await kv.get<{ stats: { totalNodes: number } }>(
+        "mem:graph:snapshot",
+        "current",
+      );
+      expect(snap!.stats.totalNodes).toBeGreaterThan(39999);
+    });
+
+    it("a snapshot under an unknown schema version aborts instead of reading as empty", async () => {
+      await kv.set("mem:graph:snapshot", "current", {
+        version: 2,
+        stats: { totalNodes: 40000, totalEdges: 0, nodesByType: {}, edgesByType: {} },
+      });
+
+      const result = await extractWithFlakySnapshot(kv);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("unknown schema version");
+
+      const snap = await kv.get<{ version: number }>("mem:graph:snapshot", "current");
+      expect(snap!.version).toBe(2);
+    });
+
+    it("an absent snapshot is still a clean first run", async () => {
+      const result = await extractWithFlakySnapshot(kv);
+
+      expect(result.success).toBe(true);
+      const snap = await kv.get<{ version: number; stats: { totalNodes: number } }>(
+        "mem:graph:snapshot",
+        "current",
+      );
+      expect(snap).not.toBeNull();
+      expect(snap!.stats.totalNodes).toBe(2);
+    });
+  });
+
+  describe("snapshot-reported total floor", () => {
+    function seedSnapshot(
+      stats: { totalNodes: number; nodesByType: Record<string, number> },
+      topNodeCount: number,
+    ) {
+      const topNodes = Array.from({ length: topNodeCount }, (_, i) => ({
+        id: `n_${i}`,
+        type: "file",
+        name: `node-${i}`,
+        properties: {},
+        sourceObservationIds: [`obs_${i}`],
+        firstSeen: "2026-01-01T00:00:00Z",
+        lastSeen: "2026-01-01T00:00:00Z",
+        observationCount: 1,
+        stale: false,
+      }));
+      return kv.set("mem:graph:snapshot", "current", {
+        version: 1,
+        topNodes,
+        topEdges: [],
+        topDegrees: {},
+        stats: {
+          totalNodes: stats.totalNodes,
+          totalEdges: 0,
+          nodesByType: stats.nodesByType,
+          edgesByType: {},
+        },
+        updatedAt: "2026-01-01T00:00:00Z",
+        dirty: false,
+      });
+    }
+
+    it("does not report fewer nodes than it returns when the counter is low", async () => {
+      await seedSnapshot({ totalNodes: 101, nodesByType: { file: 101 } }, 343);
+
+      const result = (await sdk.trigger("mem::graph-query", {})) as GraphQueryResult;
+
+      expect(result.nodes.length).toBe(343);
+      expect(result.totalNodes).toBe(343);
+      expect(result.truncated).toBe(false);
+    });
+
+    it("leaves a healthy counter above the top-N cap alone and raises the banner", async () => {
+      await seedSnapshot({ totalNodes: 40000, nodesByType: { file: 40000 } }, 343);
+
+      const result = (await sdk.trigger("mem::graph-query", {})) as GraphQueryResult;
+
+      expect(result.nodes.length).toBe(343);
+      expect(result.totalNodes).toBe(40000);
+      expect(result.truncated).toBe(true);
+    });
+
+    it("applies the same floor to the type-filtered total", async () => {
+      await seedSnapshot({ totalNodes: 101, nodesByType: { file: 101 } }, 343);
+
+      const result = (await sdk.trigger("mem::graph-query", {
+        nodeType: "file",
+      })) as GraphQueryResult;
+
+      expect(result.nodes.length).toBe(343);
+      expect(result.totalNodes).toBe(343);
+      expect(result.truncated).toBe(false);
+    });
+  });
+
+  describe("budget + tooLarge guards", () => {
     function slowKV(delayMs: number) {
       const base = mockKV();
       return {
@@ -682,12 +826,8 @@ describe("Graph Functions", () => {
       expect(result.totalNodes).toBeGreaterThanOrEqual(25001);
     });
 
-    // #825: new pre-flight refusal when no snapshot exists (signals
-    // legacy corpus that would crash on kv.list). force=true bypasses.
     it("graph-snapshot-rebuild refuses on legacy corpus (no snapshot) without force", async () => {
       const localKv = mockKV();
-      // Seed nodes but never persist a snapshot → simulates a corpus
-      // built on a pre-#814 agentmemory.
       await localKv.set("mem:graph:nodes", "legacy_n", {
         id: "legacy_n",
         type: "concept",

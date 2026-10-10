@@ -29,6 +29,7 @@ export type JsonMcpAdapterConfig = {
   // Extra fields merged into the agentmemory entry. Droid requires
   // type: "stdio"; other hosts ignore unknown fields.
   extraEntryFields?: Record<string, unknown>;
+  installHooks?: (opts: ConnectOptions) => ConnectResult;
 };
 
 type McpEntry = typeof AGENTMEMORY_MCP_BLOCK;
@@ -69,6 +70,14 @@ export function createJsonMcpAdapter(
       const alreadyHas = entryMatches(servers["agentmemory"]);
       if (alreadyHas && !opts.force) {
         logAlreadyWired(config.displayName, config.configPath);
+        if (opts.withHooks && config.installHooks) {
+          const hookResult = config.installHooks(opts);
+          if (hookResult.kind === "skipped") {
+            p.log.warn(
+              `${config.displayName} hooks skipped: ${hookResult.reason}.`,
+            );
+          }
+        }
         return { kind: "already-wired", mutatedPath: config.configPath };
       }
 
@@ -76,6 +85,14 @@ export function createJsonMcpAdapter(
         p.log.info(
           `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} ${wrapperKey}.agentmemory in ${config.configPath}`,
         );
+        if (opts.withHooks && config.installHooks) {
+          const hookResult = config.installHooks(opts);
+          if (hookResult.kind === "skipped") {
+            p.log.warn(
+              `${config.displayName} hooks skipped: ${hookResult.reason}.`,
+            );
+          }
+        }
         return { kind: "installed", mutatedPath: config.configPath };
       }
 
@@ -106,6 +123,16 @@ export function createJsonMcpAdapter(
       }
 
       logInstalled(config.displayName, config.configPath);
+
+      if (opts.withHooks && config.installHooks) {
+        const hookResult = config.installHooks(opts);
+        if (hookResult.kind === "skipped") {
+          p.log.warn(
+            `${config.displayName} hooks skipped: ${hookResult.reason}. MCP wiring still applied.`,
+          );
+        }
+      }
+
       return {
         kind: "installed",
         mutatedPath: config.configPath,

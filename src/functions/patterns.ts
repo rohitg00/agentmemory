@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
@@ -12,15 +12,33 @@ interface Pattern {
   sessions: string[];
 }
 
-export function registerPatternsFunction(sdk: ISdk, kv: StateKV): void {
-  sdk.registerFunction("mem::patterns", 
-    async (data: { project?: string }) => {
+const DEFAULT_SESSION_LIMIT = 50;
+const MAX_SESSION_LIMIT = 500;
+const MAX_OBSERVATIONS_SCANNED = 5_000;
+
+function resolveSessionLimit(raw: unknown): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return DEFAULT_SESSION_LIMIT;
+  return Math.min(Math.max(Math.floor(n), 1), MAX_SESSION_LIMIT);
+}
+
+export function registerPatternsFunction(sdk: IIIClient, kv: StateKV): void {
+  sdk.registerFunction("mem::patterns",
+    async (data?: { project?: string; limit?: number }) => {
+      const { project, limit } = data ?? {};
       const patterns: Pattern[] = [];
+      const sessionLimit = resolveSessionLimit(limit);
 
       const sessions = await kv.list<Session>(KV.sessions);
-      const filtered = data.project
-        ? sessions.filter((s) => s.project === data.project)
-        : sessions;
+      const filtered = (project
+        ? sessions.filter((s) => s.project === project)
+        : sessions
+      )
+        .sort(
+          (a, b) =>
+            new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+        )
+        .slice(0, sessionLimit);
 
       const fileCoOccurrences = new Map<string, number>();
       const fileSessionMap = new Map<string, Set<string>>();
@@ -29,37 +47,80 @@ export function registerPatternsFunction(sdk: ISdk, kv: StateKV): void {
         { count: number; sessions: Set<string> }
       >();
 
-      for (const session of filtered) {
-        const observations = await kv.list<CompressedObservation>(
-          KV.observations(session.id),
-        );
-        if (!observations.length) continue;
-
-        const sessionFiles = new Set<string>();
-        for (const obs of observations) {
-          if (!obs.files) continue;
-          for (const f of obs.files) {
-            sessionFiles.add(f);
-            if (!fileSessionMap.has(f)) fileSessionMap.set(f, new Set());
-            fileSessionMap.get(f)!.add(session.id);
+      let observationsScanned = 0;
+      let sessionsProcessed = 0;
+      const sessionsSkipped: string[] = [];
+      let cursor = 0;
+      while (
+        cursor < filtered.length &&
+        observationsScanned < MAX_OBSERVATIONS_SCANNED
+      ) {
+        const remainingBudget = MAX_OBSERVATIONS_SCANNED - observationsScanned;
+        const eligible: Session[] = [];
+        let plannedObservations = 0;
+        while (cursor < filtered.length && eligible.length < 10) {
+          const session = filtered[cursor];
+          const count = session.observationCount || 0;
+          if (count > remainingBudget) {
+            sessionsSkipped.push(session.id);
+            cursor++;
+            continue;
           }
-
-          if (obs.type === "error" && obs.title) {
-            const key = obs.title.toLowerCase();
-            if (!errorPatterns.has(key)) {
-              errorPatterns.set(key, { count: 0, sessions: new Set() });
-            }
-            const ep = errorPatterns.get(key)!;
-            ep.count++;
-            ep.sessions.add(session.id);
-          }
+          if (plannedObservations + count > remainingBudget) break;
+          plannedObservations += count;
+          eligible.push(session);
+          cursor++;
         }
 
-        const fileList = [...sessionFiles].sort();
-        for (let i = 0; i < fileList.length; i++) {
-          for (let j = i + 1; j < fileList.length; j++) {
-            const pair = `${fileList[i]}::${fileList[j]}`;
-            fileCoOccurrences.set(pair, (fileCoOccurrences.get(pair) || 0) + 1);
+        const loaded = await Promise.all(
+          eligible.map(async (session) => ({
+            session,
+            observations: await kv.list<CompressedObservation>(
+              KV.observations(session.id),
+            ),
+          })),
+        );
+
+        for (const { session, observations } of loaded) {
+          if (observationsScanned >= MAX_OBSERVATIONS_SCANNED) break;
+          sessionsProcessed++;
+          if (!observations.length) continue;
+          const remaining = MAX_OBSERVATIONS_SCANNED - observationsScanned;
+          const bounded =
+            observations.length > remaining
+              ? observations.slice(0, remaining)
+              : observations;
+          observationsScanned += bounded.length;
+
+          const sessionFiles = new Set<string>();
+          for (const obs of bounded) {
+            if (!obs.files) continue;
+            for (const f of obs.files) {
+              sessionFiles.add(f);
+              if (!fileSessionMap.has(f)) fileSessionMap.set(f, new Set());
+              fileSessionMap.get(f)!.add(session.id);
+            }
+
+            if (obs.type === "error" && obs.title) {
+              const key = obs.title.toLowerCase();
+              if (!errorPatterns.has(key)) {
+                errorPatterns.set(key, { count: 0, sessions: new Set() });
+              }
+              const ep = errorPatterns.get(key)!;
+              ep.count++;
+              ep.sessions.add(session.id);
+            }
+          }
+
+          const fileList = [...sessionFiles].sort();
+          for (let i = 0; i < fileList.length; i++) {
+            for (let j = i + 1; j < fileList.length; j++) {
+              const pair = `${fileList[i]}::${fileList[j]}`;
+              fileCoOccurrences.set(
+                pair,
+                (fileCoOccurrences.get(pair) || 0) + 1,
+              );
+            }
           }
         }
       }
@@ -98,10 +159,21 @@ export function registerPatternsFunction(sdk: ISdk, kv: StateKV): void {
 
       logger.info("Pattern detection complete", {
         patterns: patterns.length,
-        sessions: filtered.length,
+        sessionsInScope: filtered.length,
+        sessionsProcessed,
+        sessionsSkipped: sessionsSkipped.length,
+        sessionLimit,
+        observationsScanned,
       });
 
-      return { patterns: patterns.slice(0, 20) };
+      return {
+        patterns: patterns.slice(0, 20),
+        sessionsInScope: filtered.length,
+        sessionsProcessed,
+        sessionsSkipped,
+        sessionLimit,
+        observationsScanned,
+      };
     },
   );
 

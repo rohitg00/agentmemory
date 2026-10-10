@@ -1,9 +1,9 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import type { Facet } from "../types.js";
 
-export function registerFacetsFunction(sdk: ISdk, kv: StateKV): void {
+export function registerFacetsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::facet-tag", 
     async (data: {
       targetId: string;

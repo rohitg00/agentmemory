@@ -1,0 +1,39 @@
+.figure {
+  margin-bottom: var(--s-8);
+}
+
+.tableWrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.tableWrap table {
+  font-variant-numeric: tabular-nums;
+}
+
+.tableWrap td,
+.tableWrap th {
+  white-space: nowrap;
+}
+
+.tableWrap tr:last-child td {
+  border-bottom: 0;
+}
+
+.tableWrap td:first-child {
+  color: var(--ink);
+}
+
+.facts {
+  list-style: none;
+  padding: 0 !important;
+}
+
+.facts li {
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+}

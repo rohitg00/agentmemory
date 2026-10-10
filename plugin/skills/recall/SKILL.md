@@ -30,7 +30,9 @@ id, or an importance score. If nothing comes back, say so.
 
 1. Call `memory_smart_search` with the user's text as `query` and `limit: 10`.
    Pass `project` when the user scopes to a specific repo.
-2. Group results by session.
+2. Group results by session. Records carry a provenance channel (`user`, `agent`,
+   `tool`, `import`, `shared`); when results conflict, prefer `user` over `agent`
+   inference, and flag `shared` records as another teammate's write.
 3. For each observation show its type, title, and narrative.
 4. Lead with the high-signal observations (importance >= 7).
 5. If zero results, suggest 2-3 alternative search terms and stop. Do not guess.
@@ -54,6 +56,7 @@ or `auth rotation`."
 
 - `remember`: the write side; recall retrieves what it stores.
 - `recap`, `handoff`, `session-history`: session-scoped views of the same data.
+- `memory-discipline`: when to run this search unprompted.
 
 ## Troubleshooting
 

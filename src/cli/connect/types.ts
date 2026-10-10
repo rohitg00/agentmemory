@@ -1,13 +1,14 @@
 export type ConnectOptions = {
   dryRun: boolean;
   force: boolean;
-  /**
-   * When true, the Codex adapter additionally writes a global
-   * `~/.codex/hooks.json` block referencing absolute paths to bundled hook
-   * scripts. Workaround for openai/codex#16430, which prevents plugin-local
-   * hooks from dispatching on Codex Desktop. No-op for other adapters.
-   */
   withHooks?: boolean;
+  /**
+   * When true (default), after wiring the agent's MCP/hooks, also write a
+   * memory-usage guideline into the agent's native rules file so hook-less
+   * agents proactively call memory_recall / memory_save. Disabled with
+   * `--no-guidelines`. No-op for agents without a guideline target.
+   */
+  guidelines?: boolean;
 };
 
 export type ConnectAdapter = {
@@ -21,12 +22,6 @@ export type ConnectAdapter = {
    * opt-in bridge for MCP-only clients.
    */
   protocolNote?: string;
-  /**
-   * Integration style, used by onboarding to group agents. "native" =
-   * ships a first-party plugin / lifecycle hooks; "mcp" = wires the MCP
-   * server only. Declared on the adapter so the picker never needs a
-   * separate hardcoded list (#872). Defaults to "mcp" when omitted.
-   */
   category?: "native" | "mcp";
   detect(): boolean;
   install(opts: ConnectOptions): Promise<ConnectResult>;

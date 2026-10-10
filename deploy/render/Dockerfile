@@ -1,26 +1,28 @@
-ARG III_VERSION=0.11.2
+ARG III_VERSION=0.22.1
 
 FROM iiidev/iii:${III_VERSION} AS iii-image
 
 FROM node:22-slim
 
-ARG AGENTMEMORY_VERSION=0.9.28
-ARG III_VERSION=0.11.2
-ARG III_SDK_VERSION=0.11.2
+ARG AGENTMEMORY_VERSION=0.9.30
+ARG III_VERSION=0.22.1
+ARG III_SDK_VERSION=0.22.1
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates tini gosu curl \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=iii-image /app/iii /usr/local/bin/iii
+RUN iii --version 2>&1 | grep -qF "${III_VERSION}" \
+ || { echo "the iiidev/iii:${III_VERSION} image does not contain iii ${III_VERSION}" >&2; exit 1; }
 
 # Install agentmemory into a dedicated prefix so the local package.json's
-# `overrides` field pins iii-sdk down to match the engine (agentmemory's
-# caret range `^0.11.2` otherwise resolves to 0.11.6, the version that
-# requires the new sandbox-everything worker model the agentmemory CLI
-# is not refactored for yet). `npm install -g` ignores overrides, hence
-# the local prefix.
+# `overrides` field pins iii-sdk to the exact engine release in this image
+# (the worker speaks that engine's wire protocol, so the two must match).
+# `npm install -g` ignores overrides, hence the local prefix.
 WORKDIR /opt/agentmemory
+RUN [ "${III_VERSION}" = "${III_SDK_VERSION}" ] \
+ || { echo "III_VERSION=${III_VERSION} and III_SDK_VERSION=${III_SDK_VERSION} must be the same release: the agentmemory worker speaks the wire protocol of the engine it was built against, so override both together" >&2; exit 1; }
 RUN printf '{"name":"agentmemory-deploy","version":"1.0.0","private":true,"overrides":{"iii-sdk":"%s"}}\n' "${III_SDK_VERSION}" > package.json \
  && npm install "@agentmemory/agentmemory@${AGENTMEMORY_VERSION}" --omit=optional --no-fund --no-audit \
  && ln -s /opt/agentmemory/node_modules/.bin/agentmemory /usr/local/bin/agentmemory

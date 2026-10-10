@@ -1,0 +1,359 @@
+.section {
+  border-top: 1px solid var(--line);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.tile {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto auto;
+  gap: var(--s-3);
+  padding: var(--s-7) var(--s-5);
+  border-left: 1px dashed var(--line-2);
+  min-width: 0;
+}
+
+.tile:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.tile:last-child {
+  padding-right: 0;
+}
+
+.tile h3 {
+  font-size: var(--t-16);
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+
+.tile p {
+  font-size: var(--t-14);
+  color: var(--muted);
+  line-height: 1.55;
+  max-width: 34ch;
+}
+
+.tile :global(.src) {
+  justify-self: start;
+}
+
+.art {
+  display: grid;
+  place-items: center;
+  min-height: 230px;
+  padding: var(--s-4) 0;
+}
+
+.gauge {
+  width: 100%;
+  max-width: 300px;
+}
+
+.track {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 2;
+}
+
+.tick {
+  stroke: var(--line-2);
+  stroke-width: 1.2;
+}
+
+.fill {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+}
+
+.readout {
+  font-family: var(--font-mono), monospace;
+  font-size: 30px;
+  fill: var(--ink);
+  letter-spacing: -0.02em;
+}
+
+.scale {
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+  fill: var(--muted);
+}
+
+.call {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--t-12);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.caret {
+  display: inline-block;
+  width: 7px;
+  height: 14px;
+  margin-left: 4px;
+  background: var(--ink);
+  animation: blink 1s steps(1) 3;
+}
+
+.iso {
+  width: 100%;
+  max-width: 300px;
+}
+
+.ghost {
+  fill: none;
+  stroke: var(--line-2);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.drop {
+  stroke: var(--line-2);
+  stroke-dasharray: 2 4;
+}
+
+.faceT {
+  fill: var(--accent);
+  stroke: var(--ink);
+  stroke-width: 1.2;
+}
+
+.faceL {
+  fill: var(--ink);
+  stroke: var(--ink);
+}
+
+.faceR {
+  fill: var(--ink-2);
+  stroke: var(--ink);
+}
+
+.float {
+  transform: translateY(-6px);
+}
+
+:global(.is-in) .float {
+  animation: float 900ms var(--ease-out) 300ms both;
+}
+
+.isoLabel {
+  font-family: var(--font-mono), monospace;
+  font-size: 14px;
+  fill: var(--muted);
+}
+
+.ctx {
+  width: 100%;
+  max-width: 300px;
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.ctxHead {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.ctxFull {
+  color: var(--ink);
+  opacity: 0;
+}
+
+.ctxMem {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: var(--t-12);
+}
+
+.ctxTag {
+  opacity: 0;
+  color: var(--accent);
+}
+
+.ctxRows {
+  position: relative;
+  display: grid;
+  gap: 6px;
+  min-height: 132px;
+  align-content: start;
+}
+
+.ctxRow {
+  height: 10px;
+  border-radius: 2px;
+  background: var(--line-2);
+  transform-origin: top left;
+  opacity: 0;
+}
+
+.ctxSummary {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 4px 8px;
+  border: 1px dashed var(--ink-2);
+  border-radius: 4px;
+  font-size: var(--t-12);
+  color: var(--ink);
+  opacity: 0;
+}
+
+:global(.is-in) .fill {
+  animation: sweep 1200ms var(--ease-out) 300ms both;
+}
+
+:global(.is-in) .ctxRow {
+  animation: rowIn 300ms var(--ease-out) var(--rd, 0ms) both, squash 520ms var(--ease-in-out) 1700ms forwards;
+}
+
+:global(.is-in) .ctxFull {
+  animation: show 300ms var(--ease-out) 1150ms both, hide 300ms var(--ease-out) 1700ms forwards;
+}
+
+:global(.is-in) .ctxSummary {
+  animation: show 400ms var(--ease-out) 1900ms both;
+}
+
+:global(.is-in) .ctxTag {
+  animation: show 400ms var(--ease-out) 2200ms both;
+}
+
+:global(.is-in) .ctxMem {
+  animation: nudge 520ms var(--ease-out) 2100ms both;
+}
+
+@keyframes sweep {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes rowIn {
+  from {
+    opacity: 0;
+    transform: scaleX(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes squash {
+  to {
+    opacity: 0;
+    transform: scaleY(0.2);
+  }
+}
+
+@keyframes hide {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes nudge {
+  0% {
+    transform: none;
+  }
+  40% {
+    transform: translateY(-3px);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes show {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes float {
+  from {
+    transform: translateY(22px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(-6px);
+    opacity: 1;
+  }
+}
+
+@media (max-width: 900px) {
+  .row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tile,
+  .tile:first-child,
+  .tile:last-child {
+    padding: var(--s-6) 0;
+    border-left: 0;
+    border-top: 1px dashed var(--line-2);
+  }
+  .tile:first-child {
+    border-top: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fill {
+    stroke-dashoffset: 0;
+  }
+  .ctxRow {
+    opacity: 0;
+  }
+  .ctxSummary,
+  .ctxTag {
+    opacity: 1;
+  }
+  :global(.is-in) .fill,
+  :global(.is-in) .ctxRow,
+  :global(.is-in) .ctxFull,
+  :global(.is-in) .ctxSummary,
+  :global(.is-in) .ctxTag,
+  :global(.is-in) .ctxMem,
+  .caret,
+  .float {
+    animation: none;
+  }
+}
