@@ -49,7 +49,9 @@ async function main() {
           agent_type: agentType,
         },
       },
-      data,
+      {},
+      undefined,
+      { stable: Boolean(data.agent_id) },
     ),
     OBSERVE_TIMEOUT_MS,
   );

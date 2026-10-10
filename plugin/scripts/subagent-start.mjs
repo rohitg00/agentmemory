@@ -66,7 +66,7 @@ async function main() {
 			agent_id: agentId,
 			agent_type: agentType
 		}
-	}, data), OBSERVE_TIMEOUT_MS);
+	}, {}, void 0, { stable: Boolean(data.agent_id) }), OBSERVE_TIMEOUT_MS);
 	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 main().catch(() => process.exit(0));

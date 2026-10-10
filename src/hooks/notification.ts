@@ -51,7 +51,7 @@ async function main() {
           message: data.message,
         },
       },
-      data,
+      {},
     ),
     OBSERVE_TIMEOUT_MS,
   );

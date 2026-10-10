@@ -72,7 +72,7 @@ async function main() {
 			title: data.title,
 			message: data.message
 		}
-	}, data), OBSERVE_TIMEOUT_MS);
+	}, {}), OBSERVE_TIMEOUT_MS);
 	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 main().catch(() => process.exit(0));

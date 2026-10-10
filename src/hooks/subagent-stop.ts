@@ -52,7 +52,9 @@ async function main() {
           last_message: lastMsg,
         },
       },
-      data,
+      {},
+      undefined,
+      { stable: Boolean(data.agent_id) },
     ),
     OBSERVE_TIMEOUT_MS,
   );
