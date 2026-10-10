@@ -54,6 +54,29 @@ describe("CircuitBreaker", () => {
     expect(cb.getState().state).toBe("half-open");
   });
 
+  it("reports half-open once the recovery timeout passed, before any call", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(29_999);
+    expect(cb.getState().state).toBe("open");
+    vi.advanceTimersByTime(1);
+    expect(cb.getState().state).toBe("half-open");
+  });
+
+  it("reading the state does not change the breaker", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    expect(cb.getState().state).toBe("half-open");
+    cb.recordFailure();
+    expect(cb.getState().state).toBe("open");
+    expect(cb.isAllowed).toBe(false);
+  });
+
   it("closes on success in half-open state", () => {
     const cb = new CircuitBreaker();
     cb.recordFailure();
