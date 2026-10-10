@@ -547,6 +547,28 @@ describe("OpenAIProvider thinking-model fallback", () => {
     expect(out).toBe("older shape");
   });
 
+  it("throws instead of returning partial reasoning when the reply hit max_tokens", async () => {
+    mockOpenAIResponse({
+      choices: [
+        {
+          finish_reason: "length",
+          message: { content: null, reasoning: "The user is asking me to reply with" },
+        },
+      ],
+    });
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 16);
+    await expect(provider.compress("system", "user")).rejects.toThrow(/max_tokens \(16\)/);
+  });
+
+  it("keeps the reasoning fallback when the reply finished normally", async () => {
+    mockOpenAIResponse({
+      choices: [{ finish_reason: "stop", message: { content: "", reasoning_content: "complete answer" } }],
+    });
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
+    const out = await provider.compress("system", "user");
+    expect(out).toBe("complete answer");
+  });
+
   it("content wins over both reasoning fields when present", async () => {
     mockOpenAIResponse({
       choices: [
