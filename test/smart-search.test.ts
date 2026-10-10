@@ -228,6 +228,64 @@ describe("Smart Search Function", () => {
     expect(result.results.map((item) => item.obsId)).toEqual([memory.id]);
   });
 
+  describe.each(["compact", "expanded"])("%s durable memory project scope", (mode) => {
+    it.each([
+      ["uses the linked session when the memory has no project", undefined, "my-project", true],
+      ["excludes a memory linked to another project", undefined, "other-project", false],
+      ["excludes a memory whose linked session is missing", undefined, undefined, false],
+      ["keeps a conflicting memory project authoritative", "other-project", "my-project", false],
+      ["keeps a matching memory project authoritative", "my-project", "other-project", true],
+    ] as const)("%s", async (_name, memoryProject, sessionProject, included) => {
+      const sessionId = "ses_linked";
+      const memory: Memory = {
+        id: "mem_linked",
+        createdAt: "2026-07-19T00:00:00Z",
+        updatedAt: "2026-07-19T00:00:00Z",
+        type: "fact",
+        title: "Linked project policy",
+        content: "The policy belongs to the linked session's project.",
+        concepts: [],
+        files: [],
+        sessionIds: [sessionId],
+        strength: 5,
+        version: 1,
+        isLatest: true,
+      };
+      if (memoryProject !== undefined) memory.project = memoryProject;
+      await kv.set("mem:memories", memory.id, memory);
+      if (sessionProject !== undefined) {
+        const session: Session = {
+          id: sessionId,
+          project: sessionProject,
+          cwd: "/linked",
+          startedAt: "2026-07-19T00:00:00Z",
+          status: "completed",
+          observationCount: 1,
+        };
+        await kv.set("mem:sessions", sessionId, session);
+      }
+      searchResults = [{
+        observation: makeObs({ id: memory.id, sessionId, narrative: memory.content }),
+        sessionId,
+        bm25Score: 1,
+        vectorScore: 0,
+        combinedScore: 1,
+      }];
+
+      const request = mode === "compact"
+        ? { query: "policy" }
+        : { expandIds: [memory.id] };
+      const result = (await sdk.trigger("mem::smart-search", {
+        ...request,
+        project: "my-project",
+        includeLessons: false,
+      })) as { mode: string; results: Array<{ obsId: string }> };
+
+      expect(result.mode).toBe(mode);
+      expect(result.results.map((item) => item.obsId)).toEqual(included ? [memory.id] : []);
+    });
+  });
+
   it("filters compact candidates to the requested project", async () => {
     const other = makeObs({
       id: "obs_other",

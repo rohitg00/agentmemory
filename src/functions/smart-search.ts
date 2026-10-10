@@ -400,7 +400,7 @@ function makeProjectMatcher(kv: StateKV, project: string): (obsId: string, sessi
       memories.set(obsId, memoryRead);
     }
     const memory = await memoryRead;
-    if (memory) return memory.project === project;
+    if (memory?.project !== undefined) return memory.project === project;
     let sessionRead = sessions.get(sessionId);
     if (!sessionRead) {
       sessionRead = kv.get<{ project?: string }>(KV.sessions, sessionId);
