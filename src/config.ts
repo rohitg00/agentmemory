@@ -90,14 +90,40 @@ export function hydrateProcessEnvFromFile(): void {
   }
 }
 
+// Warn once when a configured model is in the premium tier and likely to burn
+// money on background compression. Captured workload data shows ~$5/35h on
+// claude-sonnet-4 vs ~$0.46/35h on deepseek-v4-pro for the same compression
+// mix. Heuristic match avoids hard-coding a pricing table.
+function warnIfPremiumModel(env: Record<string, string>, envName: string, model: string): void {
+  if (
+    warnPremiumModelShown ||
+    !/sonnet|opus|gpt-5\.\d+-sol|gpt-4o(?!.*mini)|gpt-4-turbo/i.test(model) ||
+    env["AGENTMEMORY_SUPPRESS_COST_WARNING"] === "1" ||
+    env["AGENTMEMORY_SUPPRESS_COST_WARNING"] === "true"
+  ) {
+    return;
+  }
+  warnPremiumModelShown = true;
+  process.stderr.write(
+    `[agentmemory] ${envName}=${model} is in the premium tier. ` +
+      `Background compression on this model can cost $5+/day under active use. ` +
+      `Cheaper alternatives with comparable quality for memory compression: ` +
+      `deepseek/deepseek-v4-flash-0731, deepseek/deepseek-v4-pro, qwen/qwen3-coder. ` +
+      `See README "Cost-aware model selection" for the full table. ` +
+      `Set AGENTMEMORY_SUPPRESS_COST_WARNING=1 to silence.\n`,
+  );
+}
+
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
+    const model = env["OPENAI_MODEL"] || "gpt-5.6-luna";
+    warnIfPremiumModel(env, "OPENAI_MODEL", model);
     return {
       provider: "openai",
-      model: env["OPENAI_MODEL"] || "gpt-5.6-luna",
+      model,
       maxTokens,
       baseURL: env["OPENAI_BASE_URL"],
     };
@@ -135,27 +161,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   }
   if (hasRealValue(env["OPENROUTER_API_KEY"])) {
     const model = env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-5";
-    // warn when the configured OpenRouter model is in the
-    // premium tier and likely to burn money on background compression.
-    // Captured workload data shows ~$5/35h on claude-sonnet-4 vs
-    // ~$0.46/35h on deepseek-v4-pro for the same compression mix.
-    // Heuristic match avoids hard-coding a pricing table.
-    if (
-      !warnPremiumModelShown &&
-      /sonnet|opus|gpt-5\.\d+-sol|gpt-4o(?!.*mini)|gpt-4-turbo/i.test(model) &&
-      env["AGENTMEMORY_SUPPRESS_COST_WARNING"] !== "1" &&
-      env["AGENTMEMORY_SUPPRESS_COST_WARNING"] !== "true"
-    ) {
-      warnPremiumModelShown = true;
-      process.stderr.write(
-        `[agentmemory] OPENROUTER_MODEL=${model} is in the premium tier. ` +
-          `Background compression on this model can cost $5+/day under active use. ` +
-          `Cheaper alternatives with comparable quality for memory compression: ` +
-          `deepseek/deepseek-v4-flash-0731, deepseek/deepseek-v4-pro, qwen/qwen3-coder. ` +
-          `See README "Cost-aware model selection" for the full table. ` +
-          `Set AGENTMEMORY_SUPPRESS_COST_WARNING=1 to silence.\n`,
-      );
-    }
+    warnIfPremiumModel(env, "OPENROUTER_MODEL", model);
     return {
       provider: "openrouter",
       model,
