@@ -241,6 +241,93 @@ describe("renderEngineConfig bind hosts", () => {
   });
 });
 
+describe("renderEngineConfig CORS origins", () => {
+  const ports = { restPort: 3211, streamPort: 3212, viewerPort: 3213, enginePort: 49234 };
+  const managedOrigins =
+    '        allowed_origins: ["http://localhost:3211", "http://localhost:3213", "http://127.0.0.1:3211", "http://127.0.0.1:3213"]';
+  const httpWorker = (corsLines: string[]) =>
+    [
+      "workers:",
+      "  - name: iii-worker-manager",
+      "    config:",
+      "      port: 49234",
+      "      host: 127.0.0.1",
+      "  - name: iii-http",
+      "    config:",
+      "      port: 3211",
+      "      cors:",
+      ...corsLines,
+      "        allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]",
+      "  - name: iii-state",
+      "    config: {}",
+    ].join("\n");
+
+  it.each([
+    {
+      shape: "an indented block list",
+      origins: [
+        "        allowed_origins:",
+        '          - "http://localhost:3111"',
+        '          - "http://localhost:3113"',
+      ],
+    },
+    {
+      shape: "a compact block list",
+      origins: [
+        "        allowed_origins:",
+        '        - "http://localhost:3111"',
+        '        - "http://localhost:3113"',
+      ],
+    },
+    {
+      shape: "a commented block list",
+      origins: [
+        "        allowed_origins: # local only",
+        '          - "http://localhost:3111"',
+        "",
+        "          # viewer",
+        '          - "http://localhost:3113"',
+      ],
+    },
+    {
+      shape: "a one-line flow list",
+      origins: ['        allowed_origins: ["http://localhost:3111", "http://localhost:3113"]'],
+    },
+    {
+      shape: "a multi-line flow list",
+      origins: [
+        "        allowed_origins: [",
+        '            "http://localhost:3111",',
+        '            "http://localhost:3113",',
+        "        ]",
+      ],
+    },
+    {
+      shape: "a scalar",
+      origins: ['        allowed_origins: "*"'],
+    },
+  ])("replaces $shape with the managed origins", ({ origins }) => {
+    const rendered = renderEngineConfig(httpWorker(origins), { dataDir: "/tmp/am", ports });
+
+    expect(rendered).toBe(httpWorker([managedOrigins]));
+  });
+
+  it("keeps the comment that introduces the next key", () => {
+    const source = httpWorker([
+      "        allowed_origins:",
+      '          - "http://localhost:3111"',
+      "",
+      "        # the viewer needs OPTIONS",
+    ]);
+
+    const rendered = renderEngineConfig(source, { dataDir: "/tmp/am", ports });
+
+    expect(rendered).toBe(
+      httpWorker([managedOrigins, "", "        # the viewer needs OPTIONS"]),
+    );
+  });
+});
+
 describe("clearPersistedBuiltinConfig", () => {
   const configPath = join("/srv", "state", "iii-config.runtime.yaml");
 

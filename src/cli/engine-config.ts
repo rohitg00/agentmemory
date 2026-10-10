@@ -282,6 +282,25 @@ function replaceKvAdapterWithRedis(
   );
 }
 
+function indentWidth(line: string): number {
+  return line.length - line.trimStart().length;
+}
+
+function mappingValueEnd(lines: string[], keyIndex: number, limit: number): number {
+  const keyIndent = indentWidth(lines[keyIndex]!);
+  let end = keyIndex + 1;
+  for (let i = keyIndex + 1; i < limit; i++) {
+    const text = lines[i]!.trim();
+    if (text === "" || text.startsWith("#")) continue;
+    const indent = indentWidth(lines[i]!);
+    const continuesValue =
+      indent > keyIndent || (indent === keyIndent && /^(-(\s|$)|[\]}])/.test(text));
+    if (!continuesValue) break;
+    end = i + 1;
+  }
+  return end;
+}
+
 function setManagedCorsOrigins(
   lines: string[],
   restPort: number,
@@ -297,6 +316,8 @@ function setManagedCorsOrigins(
   );
   if (originsIndex === -1) return;
   const indent = lines[originsIndex]!.match(/^\s*/)?.[0] ?? "        ";
+  const valueEnd = mappingValueEnd(lines, originsIndex, block.end);
+  lines.splice(originsIndex + 1, valueEnd - originsIndex - 1);
   lines[originsIndex] =
     `${indent}allowed_origins: [` +
     `"http://localhost:${restPort}", ` +
