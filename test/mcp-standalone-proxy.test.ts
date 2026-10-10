@@ -269,6 +269,54 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
     expect(probeCount).toBe(1);
   });
 
+  it("forwards memory_export paging arguments to /agentmemory/export", async () => {
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.includes("/agentmemory/export")) {
+        return new Response(JSON.stringify({ version: "0.9.29" }), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+
+    await handleToolCall("memory_export", {
+      maxSessions: 2,
+      offset: 4,
+      collectionLimit: 10,
+      collectionOffset: 20,
+      collections: "",
+    });
+
+    const exportUrl = new URL(urls.find((u) => u.includes("/agentmemory/export"))!);
+    expect(Object.fromEntries(exportUrl.searchParams)).toEqual({
+      maxSessions: "2",
+      offset: "4",
+      collectionLimit: "10",
+      collectionOffset: "20",
+      collections: "",
+    });
+  });
+
+  it("drops memory_export arguments that are not usable page bounds", async () => {
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      return new Response(JSON.stringify({ version: "0.9.29" }), { status: 200 });
+    });
+
+    await handleToolCall("memory_export", {
+      maxSessions: 0,
+      offset: -1,
+      collectionLimit: "many",
+      collectionOffset: 1.5,
+    });
+
+    const exportUrl = new URL(urls.find((u) => u.includes("/agentmemory/export"))!);
+    expect(exportUrl.search).toBe("");
+  });
+
   it("forwards non-essential tools to /agentmemory/mcp/call", async () => {
     const calls: Array<{ url: string; body?: unknown }> = [];
     installFetch((url, init) => {
