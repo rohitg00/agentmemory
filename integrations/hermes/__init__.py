@@ -19,24 +19,39 @@ from pathlib import PurePath
 
 def _resolve_project(cwd: str) -> str:
     """Canonical project scope, matching the hooks' resolveProject order:
-    AGENTMEMORY_PROJECT_NAME env override, git toplevel basename, cwd basename.
+    AGENTMEMORY_PROJECT_NAME env override, git repository basename, cwd basename.
     Keeps Hermes sessions in the same project bucket as every other agent."""
     explicit = os.environ.get("AGENTMEMORY_PROJECT_NAME", "").strip()
     if explicit:
         return explicit
     try:
-        top = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir"],
             cwd=cwd,
             capture_output=True,
             text=True,
             timeout=5,
         ).stdout.strip()
+        top, git_dir, common_dir = (out.splitlines() + ["", "", ""])[:3]
         if top:
-            return PurePath(top).name
+            return PurePath(_repository_root(cwd, top, git_dir, common_dir)).name
     except Exception:
         pass
     return PurePath(cwd).name or cwd
+
+
+def _repository_root(cwd: str, top: str, git_dir: str, common_dir: str) -> str:
+    """A linked worktree is named by the main checkout owning the shared .git;
+    bare repos and submodules keep the toplevel."""
+    if not git_dir or not common_dir:
+        return top
+    physical = os.path.realpath(cwd)
+    common = os.path.normpath(os.path.join(physical, common_dir))
+    if os.path.normpath(os.path.join(physical, git_dir)) == common:
+        return top
+    if os.path.basename(common) != ".git":
+        return top
+    return os.path.dirname(common)
 import time
 from pathlib import Path
 from typing import Any, Callable

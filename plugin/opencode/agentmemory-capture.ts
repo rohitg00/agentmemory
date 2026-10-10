@@ -1,8 +1,8 @@
 import type { Plugin } from "@opencode-ai/plugin";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 const API = process.env.AGENTMEMORY_URL || "http://localhost:3111";
 // OpenCode reports tool names in lowercase ("read", "edit", ...); matching is
@@ -116,7 +116,7 @@ async function observe(
 let activeSessionId: string | null = null;
 let pendingConfig: Record<string, unknown> | null = null;
 // Default scope resolved at plugin init (same resolution order as the hooks'
-// resolveProject: env override, git toplevel basename, cwd basename). In a
+// resolveProject: env override, git repository basename, cwd basename). In a
 // long-lived OpenCode process serving multiple directories these defaults are
 // only a fallback — attribution is per-session via sessionProjects, resolved
 // from each session's own directory at session.created. Module-level-only
@@ -138,13 +138,19 @@ function resolveProjectName(dir: string): string {
   const cached = projectNameCache.get(dir);
   if (cached !== undefined) return cached;
   try {
-    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd: dir,
-      stdio: ["ignore", "pipe", "ignore"],
-      encoding: "utf8",
-    }).trim();
+    const [top, gitDir, commonDir] = execFileSync(
+      "git",
+      ["rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir"],
+      {
+        cwd: dir,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf8",
+      },
+    )
+      .trim()
+      .split(/\r?\n/);
     if (top) {
-      const name = basename(top);
+      const name = basename(repositoryRoot(dir, top, gitDir, commonDir));
       projectNameCache.set(dir, name);
       return name;
     }
@@ -154,6 +160,14 @@ function resolveProjectName(dir: string): string {
   const fallback = basename(dir) || dir;
   projectNameCache.set(dir, fallback);
   return fallback;
+}
+
+function repositoryRoot(dir: string, top: string, gitDir?: string, commonDir?: string): string {
+  if (!gitDir || !commonDir) return top;
+  const physical = realpathSync(dir);
+  const common = resolve(physical, commonDir);
+  if (resolve(physical, gitDir) === common || basename(common) !== ".git") return top;
+  return dirname(common);
 }
 const stashedFiles = new Map<string, Set<string>>();
 const seenSubtaskIds = new Map<string, Set<string>>();

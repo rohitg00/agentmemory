@@ -117,6 +117,36 @@ describe("OpenCode plugin project name resolution", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("names a linked git worktree after its main checkout", async () => {
+    const { mkdtempSync, mkdirSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { execFileSync } = await import("node:child_process");
+    const root = mkdtempSync(join(tmpdir(), "amem-oc-wt-"));
+    const repo = join(root, "oc-main-repo");
+    const linked = join(root, "oc-feature-branch");
+    mkdirSync(repo, { recursive: true });
+    const git = (...args: string[]) =>
+      execFileSync(
+        "git",
+        [
+          "-c", "user.name=amem",
+          "-c", "user.email=amem@example.invalid",
+          "-c", "commit.gpgsign=false",
+          ...args,
+        ],
+        { cwd: repo, stdio: "ignore" },
+      );
+    try {
+      git("init", "--quiet");
+      git("commit", "--quiet", "--allow-empty", "--no-verify", "-m", "init");
+      git("worktree", "add", "-b", "oc-feature-branch", linked);
+      expect(await projectFor({ worktree: linked })).toBe("oc-main-repo");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("OpenCode plugin file-tool matching", () => {
