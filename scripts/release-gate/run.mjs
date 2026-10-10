@@ -21,7 +21,7 @@ import net from "node:net";
 import { homedir, tmpdir, platform, arch } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertRecoveredVectors, isVectorRecoverySettled } from "./recovery.mjs";
+import { assertRecoveredVectors, hasPersistedVectorFixture, isVectorLogAcknowledged, isVectorRecoverySettled } from "./recovery.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const FORBIDDEN_PORTS = new Set([3111, 3112, 3113, 4098, 4131, 4132, 4133, 49134]);
@@ -368,6 +368,7 @@ class Instance {
     this.name = name;
     this.dir = join(ROOT, name);
     this.home = join(this.dir, "home");
+    this.dataDir = join(this.dir, "data");
     this.cwd = join(this.dir, "cwd");
     this.project = join(this.dir, "projects", "gate-app");
     for (const d of [this.home, this.cwd, this.project]) mkdirSync(d, { recursive: true });
@@ -392,6 +393,7 @@ class Instance {
       OPENAI_BASE_URL: `http://127.0.0.1:${gate.fake.port}`,
       OPENAI_EMBEDDING_DIMENSIONS: String(gate.dims),
       AGENTMEMORY_URL: `http://127.0.0.1:${this.port}`,
+      AGENTMEMORY_DATA_DIR: this.dataDir,
       ...extra,
     };
   }
@@ -520,6 +522,7 @@ class Instance {
           CLAUDE_PLUGIN_ROOT: join(gate.pkgDir, "plugin"),
           CLAUDE_PROJECT_DIR: this.project,
           AGENTMEMORY_URL: `http://127.0.0.1:${this.port}`,
+          AGENTMEMORY_DATA_DIR: this.dataDir,
         },
         cwd: this.project,
         input: JSON.stringify({ hook_event_name: event, cwd: this.project, transcript_path: join(this.dir, "transcript.jsonl"), ...payload }),
@@ -918,17 +921,24 @@ async function main() {
     d.firstCheckpointWaitMs = Date.now() - t0;
     d.saveIntervalMs = st.indexPersistence.saveIntervalMs;
     d.checkpointVectors = st.index.vectorDocuments;
+    const checkpointId = (await instB.observations(sid))[0]?.id;
+    assert(checkpointId, "the checkpoint observation is missing");
     assert(d.saveIntervalMs > d.firstCheckpointWaitMs, "the checkpoint only happened at the regular save interval, so the first-checkpoint boundary was not exercised");
     for (let i = 1; i < count; i++) await instB.hook("PostToolUse", instB.toolEvent(sid, marker(`vec${i}x`)));
-    const before = await poll("vectors written after the checkpoint to reach the pending log", async () => {
+    const before = await poll("every pending vector write to be acknowledged", async () => {
       const s = await instB.status();
-      const p = s.indexPersistence;
-      return s.index?.vectorDocuments === count && !p?.saving && p?.pendingChanges === count - 1 && p.pendingLog >= p.pendingChanges ? s : null;
+      return isVectorLogAcknowledged(s, count, d.checkpointVectors) ? s : null;
     }, { timeoutMs: 60_000, intervalMs: 500 });
     const vectorsBefore = before.index.vectorDocuments;
     d.vectorsBefore = vectorsBefore;
     d.pendingLogBeforeCrash = before.indexPersistence.pendingLog;
-    await sleep(STATE_FLUSH_WAIT_MS);
+    d.pendingLogAcknowledged = before.indexPersistence.pendingLogAcknowledged;
+    const pendingIds = (await instB.observations(sid)).map((observation) => observation.id).filter((id) => id !== checkpointId);
+    assert(pendingIds.length === count - 1, `${pendingIds.length} pending observations, expected ${count - 1}`);
+    await poll("checkpoint and pending vectors to be present on disk", async () =>
+      hasPersistedVectorFixture(instB.dataDir, sid, checkpointId, pendingIds, gate.dims),
+    { timeoutMs: 60_000, intervalMs: 250 });
+    d.persistedVectorsBeforeCrash = pendingIds.length + 1;
     const embedBefore = gate.fake.stats.inputs;
     await instB.forceKill();
     d.restartMs = await instB.start();

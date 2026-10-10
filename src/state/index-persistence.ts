@@ -100,6 +100,7 @@ export interface IndexPersistenceStatus {
   vector: IndexLegStatus | null;
   vectorCountShortfall: VectorCountShortfall | null;
   pendingLog?: number;
+  pendingLogAcknowledged?: number;
   pendingLogError?: string | null;
 }
 
@@ -199,6 +200,7 @@ export class IndexPersistence {
   private vectorCountShortfall: VectorCountShortfall | null = null;
   private seq = 0;
   private pendingLog: Map<string, number> = new Map();
+  private acknowledgedLog: Map<string, number> = new Map();
   private logChains: Map<string, Promise<void>> = new Map();
   private logSuppressed = false;
   private pendingLogUnknown = false;
@@ -259,6 +261,7 @@ export class IndexPersistence {
       vector: this.vector ? { ...this.leg } : null,
       vectorCountShortfall: this.vectorCountShortfall,
       pendingLog: this.vector ? this.pendingLog.size : 0,
+      pendingLogAcknowledged: this.vector ? this.acknowledgedLog.size : 0,
       pendingLogError: this.pendingLogError,
     };
   }
@@ -283,6 +286,7 @@ export class IndexPersistence {
         result.entries++;
         const key = row.c === 1 ? PENDING_CLEAR_KEY : row.id!;
         if ((this.pendingLog.get(key) ?? -Infinity) < row.q) this.pendingLog.set(key, row.q);
+        if (this.pendingLog.get(key) === row.q) this.acknowledgedLog.set(key, row.q);
         if (row.q > this.seq) this.seq = row.q;
         if (row.c === 1) {
           vector.clear();
@@ -369,8 +373,10 @@ export class IndexPersistence {
       row = { q, id, t: 1 };
     }
     this.pendingLog.set(key, q);
+    this.acknowledgedLog.delete(key);
     this.enqueueLog(key, async () => {
       await this.kv.set<PendingVectorRow>(KV.vectorPendingLog, key, row);
+      if (this.pendingLog.get(key) === q) this.acknowledgedLog.set(key, q);
     }).then(
       () => {
         this.pendingLogError = null;
@@ -411,7 +417,10 @@ export class IndexPersistence {
     return this.enqueueLog(key, async () => {
       if (this.pendingLog.get(key) !== q) return;
       await this.kv.delete(KV.vectorPendingLog, key);
-      if (this.pendingLog.get(key) === q) this.pendingLog.delete(key);
+      if (this.pendingLog.get(key) === q) {
+        this.pendingLog.delete(key);
+        this.acknowledgedLog.delete(key);
+      }
     });
   }
 
