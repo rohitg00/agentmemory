@@ -525,11 +525,17 @@ function captureProblems(capture: CaptureStatus | null, now: Date, restPort: num
   const base = captureRestBase(restPort);
   const inbox = capture.inbox;
   if (inbox && inbox.dead > 0) {
+    // Errors returned by mem::observe dead-letter on the first attempt, so the
+    // message cannot claim the retry budget was used.
+    const sessionCap = inbox.lastError?.startsWith("Session observation limit reached") ?? false;
+    const listAndRetry = `List them with curl -s ${CURL_AUTH_HEADER} '${base}/capture?status=dead'. After fixing the cause, retry them with curl -X POST ${base}/capture/retry ${CURL_AUTH_HEADER} -H "Content-Type: application/json" -d '{"all":true}'.`;
     problems.push({
       level: "warn",
       code: "capture-dead-letters",
-      message: `${plural(inbox.dead, "captured observation")} could not be stored after ${plural(capture.policy.maxAttempts, "attempt")} and ${inbox.dead === 1 ? "is parked as a dead letter" : "are parked as dead letters"}${inbox.lastError ? `: ${inbox.lastError}` : "."}`,
-      fix: `List them with curl -s ${CURL_AUTH_HEADER} '${base}/capture?status=dead'. After fixing the cause, retry them with curl -X POST ${base}/capture/retry ${CURL_AUTH_HEADER} -H "Content-Type: application/json" -d '{"all":true}'.`,
+      message: `${plural(inbox.dead, "captured observation")} could not be stored and ${inbox.dead === 1 ? "is parked as a dead letter" : "are parked as dead letters"}${inbox.lastError ? `: ${inbox.lastError}` : "."}`,
+      fix: sessionCap
+        ? `The session reached its MAX_OBS_PER_SESSION cap, so a retry is refused again until the cap is raised. Raise MAX_OBS_PER_SESSION in ~/.agentmemory/.env (0 = no cap) and restart agentmemory. ${listAndRetry}`
+        : listAndRetry,
     });
   }
   if (inbox && inbox.retrying + inbox.pending > 0) {

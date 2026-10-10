@@ -200,6 +200,24 @@ describe("capture status", () => {
     expect(drops[0]!.message).toContain("too-large");
   });
 
+  it("names MAX_OBS_PER_SESSION when the session cap refused the observations", () => {
+    const c = capture([], 3);
+    c.inbox!.lastError = "Session observation limit reached (500)";
+    const dead = evaluateStatus(statusInputs(c)).problems.find((p) => p.code === "capture-dead-letters")!;
+    expect(dead.message).toBe("3 captured observations could not be stored and are parked as dead letters: Session observation limit reached (500)");
+    expect(dead.fix).toMatch(/^The session reached its MAX_OBS_PER_SESSION cap/);
+    expect(dead.fix).toContain("0 = no cap");
+    expect(dead.fix?.split(CURL_AUTH_HEADER).length).toBe(3);
+  });
+
+  it("does not claim the retry budget was used for other dead letters", () => {
+    const c = capture([], 1);
+    c.inbox!.lastError = "disk full";
+    const dead = evaluateStatus(statusInputs(c)).problems.find((p) => p.code === "capture-dead-letters")!;
+    expect(dead.message).not.toMatch(/attempt/);
+    expect(dead.fix).not.toContain("MAX_OBS_PER_SESSION");
+  });
+
   it("prints recovery commands that send the secret", () => {
     const report = evaluateStatus(statusInputs(capture([], 2)));
     const dead = report.problems.find((p) => p.code === "capture-dead-letters");
