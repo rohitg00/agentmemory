@@ -17,6 +17,15 @@ exec'ing the agentmemory CLI.
 | [Railway](./railway/README.md) | Push from GitHub, volume in the dashboard. Easiest managed dashboard flow. | $5/month (Hobby plan flat fee) |
 | [Render](./render/README.md) | Blueprint-driven; persistent disk attaches automatically. Most "set it and forget it." | $7.25/month (Starter web + 1 GB disk) |
 | [Coolify](./coolify/README.md) | Self-hosted on your own VPS. Same Docker Compose stack, you own the host and the data. | VPS cost only (Hetzner CX22 ~€3.79/month) |
+| [systemd](./systemd/README.md) | Bare Linux host, no Docker required. A `systemd` unit supervises a global `npm` install and survives crashes + reboots. | Host cost only (runs on a box you already own) |
+
+The first four templates are Docker-based and share the guarantees below.
+**[systemd](./systemd/README.md)** is the exception: it supervises a
+global `npm install -g @agentmemory/agentmemory` directly on a Linux host
+with no container, so it follows host conventions instead (state under
+`/var/lib/agentmemory`, an operator-set `AGENTMEMORY_SECRET`, loopback
+viewer). Reach for it when you want agentmemory running on a box you
+already own without adding a Docker layer.
 
 ## What every template guarantees
 
@@ -49,8 +58,11 @@ exec'ing the agentmemory CLI.
 - Pick **Coolify** if you already run a VPS and want a self-hosted
   control plane — same Docker Compose stack, no third-party host has
   your memories.
+- Pick **systemd** if you want agentmemory on a Linux box you own with no
+  Docker at all — a global `npm` install supervised by the init system,
+  auto-restarting on crashes and reboots.
 
-All four give you the same agentmemory API at the same port (3111)
+All of them give you the same agentmemory API at the same port (3111)
 with the same auth model. Migrating between them later is a `tar` of
 `/data` and a re-import — see each platform's README for the exact
 commands.
