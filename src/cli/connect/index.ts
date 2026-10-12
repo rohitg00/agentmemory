@@ -16,6 +16,7 @@ import { adapter as droid } from "./droid.js";
 import { adapter as dsh } from "./dsh.js";
 import { adapter as geminiCli } from "./gemini-cli.js";
 import { adapter as hermes } from "./hermes.js";
+import { adapter as jcode } from "./jcode.js";
 import { adapter as kiro } from "./kiro.js";
 import { adapter as openclaw } from "./openclaw.js";
 import { adapter as opencode } from "./opencode.js";
@@ -35,6 +36,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   qwen,
   antigravity,
   antigravityCli,
+  jcode,
   kiro,
   warp,
   cline,
