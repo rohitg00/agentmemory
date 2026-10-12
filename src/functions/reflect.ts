@@ -13,6 +13,7 @@ import type {
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 
 interface ConceptCluster {
   concepts: string[];
@@ -22,6 +23,73 @@ interface ConceptCluster {
   factIds: string[];
   lessonIds: string[];
   crystalIds: string[];
+}
+
+function parseInsight(attributes: string, content: string, cluster: ConceptCluster) {
+  const attributePattern = /(?:^|\s)(confidence|title|sources)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  if (attributes.replace(attributePattern, "").trim()) return null;
+  const values = new Map<string, string>();
+  for (const match of attributes.matchAll(attributePattern)) {
+    if (values.has(match[1])) return null;
+    values.set(match[1], match[2] ?? match[3]);
+  }
+  const confidenceText = values.get("confidence")?.trim();
+  const confidence = Number(confidenceText);
+  const title = values.get("title")?.trim();
+  content = content.trim();
+  if (!confidenceText || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 || !title || !content || /<\/?insight\b/.test(content)) return null;
+
+  const sourceMemoryIds = new Set<string>();
+  const sourceLessonIds = new Set<string>();
+  const sourceCrystalIds = new Set<string>();
+  for (const label of new Set((values.get("sources") ?? "").split(/[\s,]+/).filter(Boolean))) {
+    const match = /^([FLC])([1-9]\d*)$/.exec(label);
+    if (!match) return null;
+    const index = Number(match[2]) - 1;
+    const [ids, selected] = match[1] === "F" ? [cluster.factIds, sourceMemoryIds]
+      : match[1] === "L" ? [cluster.lessonIds, sourceLessonIds]
+      : [cluster.crystalIds, sourceCrystalIds];
+    const id = ids[index];
+    if (typeof id !== "string" || !id) return null;
+    selected.add(id);
+  }
+  if (sourceMemoryIds.size + sourceLessonIds.size + sourceCrystalIds.size < 2) return null;
+  return {
+    confidence, title: decodeXmlText(title), content: decodeXmlText(content),
+    sourceMemoryIds: [...sourceMemoryIds],
+    sourceLessonIds: [...sourceLessonIds],
+    sourceCrystalIds: [...sourceCrystalIds],
+  };
+}
+
+function decodeXmlText(text: string): string {
+  const entities: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'" };
+  return text.replace(/&(amp|lt|gt|quot|apos);/g, (entity) => entities[entity]);
+}
+
+async function evidenceStillCurrent(
+  kv: StateKV,
+  parsed: NonNullable<ReturnType<typeof parseInsight>>,
+  cluster: ConceptCluster,
+): Promise<boolean> {
+  const checks = [
+    ...parsed.sourceMemoryIds.map((id) => ({
+      scope: KV.semantic, id, field: "fact",
+      text: cluster.facts[cluster.factIds.indexOf(id)].fact,
+    })),
+    ...parsed.sourceLessonIds.map((id) => ({
+      scope: KV.lessons, id, field: "content",
+      text: cluster.lessons[cluster.lessonIds.indexOf(id)].content,
+    })),
+    ...parsed.sourceCrystalIds.map((id) => ({
+      scope: KV.crystals, id, field: "narrative",
+      text: cluster.crystalNarratives[cluster.crystalIds.indexOf(id)],
+    })),
+  ];
+  return (await Promise.all(checks.map(async ({ scope, id, field, text }) => {
+    const current = await kv.get<Record<string, unknown>>(scope, id);
+    return !!current && current[field] === text && current.deleted !== true;
+  }))).every(Boolean);
 }
 
 function reinforceInsight(insight: Insight): void {
@@ -207,6 +275,9 @@ export function registerReflectFunctions(
       let reinforced = 0;
       let clustersSkipped = 0;
       let totalInsights = 0;
+      let rejectedInsights = 0;
+      let failedClusters = 0;
+      const acceptedIds = new Set<string>();
 
       for (const conceptNames of conceptClusters) {
         if (totalInsights >= maxTotal) break;
@@ -260,58 +331,74 @@ export function registerReflectFunctions(
           const prompt = buildReflectPrompt(cluster);
           const response = await provider.summarize(REFLECT_SYSTEM, prompt);
 
-          const insightRegex =
-            /<insight\s+confidence="([^"]+)"\s+title="([^"]+)">([\s\S]*?)<\/insight>/g;
-          let match;
+          const matches = [...response.matchAll(/<insight\b([^<>]*)>([\s\S]*?)<\/insight>/g)];
+          const incomplete = (response.match(/<insight\b/g) ?? []).length - matches.length;
+          if (incomplete > 0) {
+            rejectedInsights += incomplete;
+            failedClusters++;
+          }
+          if (matches.length === 0) {
+            if (!incomplete && !/<insights>\s*<\/insights>/.test(response)) failedClusters++;
+            continue;
+          }
           let clusterCount = 0;
 
-          while (
-            (match = insightRegex.exec(response)) !== null &&
-            clusterCount < maxInsightsPerCluster &&
-            totalInsights < maxTotal
-          ) {
-            const parsedConf = parseFloat(match[1]);
-            const confidence = Number.isNaN(parsedConf)
-              ? 0.5
-              : Math.max(0, Math.min(1, parsedConf));
-            const title = match[2].trim();
-            const content = match[3].trim();
-
-            if (!content) continue;
-
-            const fp = fingerprintId("ins", content.trim().toLowerCase());
-            const existing = await kv.get<Insight>(KV.insights, fp);
-
-            if (existing && !existing.deleted) {
-              reinforceInsight(existing);
-              await kv.set(KV.insights, existing.id, existing);
-              reinforced++;
-            } else {
-              const now = new Date().toISOString();
-              const insight: Insight = {
-                id: fp,
-                title,
-                content,
-                confidence,
-                reinforcements: 0,
-                sourceConceptCluster: conceptNames,
-                sourceMemoryIds: cluster.factIds,
-                sourceLessonIds: cluster.lessonIds,
-                sourceCrystalIds: cluster.crystalIds,
-                project: data?.project,
-                tags: conceptNames,
-                createdAt: now,
-                updatedAt: now,
-                decayRate: 0.05,
-              };
-              await kv.set(KV.insights, insight.id, insight);
-              newInsights++;
+          for (const match of matches) {
+            if (clusterCount >= maxInsightsPerCluster || totalInsights >= maxTotal) break;
+            const parsed = parseInsight(match[1], match[2], cluster);
+            if (!parsed) {
+              rejectedInsights++;
+              continue;
             }
+            const { confidence, title, content } = parsed;
+
+            const fp = fingerprintId("ins_v1", JSON.stringify([1, data?.project || null, content.toLowerCase()]));
+            if (acceptedIds.has(fp)) {
+              rejectedInsights++;
+              continue;
+            }
+            const accepted = await withKeyedLock(`insight:${fp}`, async () => {
+              if (!await evidenceStillCurrent(kv, parsed, cluster)) return false;
+              const existing = await kv.get<Insight>(KV.insights, fp);
+              const evidence = {
+                sourceMemoryIds: parsed.sourceMemoryIds,
+                sourceLessonIds: parsed.sourceLessonIds,
+                sourceCrystalIds: parsed.sourceCrystalIds,
+                evidenceVersion: 1 as const,
+              };
+              if (existing && !existing.deleted) {
+                const insight = { ...existing, ...evidence };
+                reinforceInsight(insight);
+                await kv.set(KV.insights, insight.id, insight);
+                reinforced++;
+              } else {
+                const now = new Date().toISOString();
+                const insight: Insight = {
+                  id: fp, title, content, confidence,
+                  reinforcements: 0,
+                  sourceConceptCluster: conceptNames,
+                  ...evidence,
+                  project: data?.project,
+                  tags: conceptNames,
+                  createdAt: now, updatedAt: now,
+                  decayRate: 0.05,
+                };
+                await kv.set(KV.insights, insight.id, insight);
+                newInsights++;
+              }
+              return true;
+            });
+            if (!accepted) {
+              rejectedInsights++;
+              continue;
+            }
+            acceptedIds.add(fp);
 
             clusterCount++;
             totalInsights++;
           }
         } catch {
+          failedClusters++;
           continue;
         }
       }
@@ -323,16 +410,20 @@ export function registerReflectFunctions(
           clustersProcessed: conceptClusters.length - clustersSkipped,
           clustersSkipped,
           usedFallback,
+          rejectedInsights,
+          failedClusters,
         });
       } catch {}
 
       return {
-        success: true,
+        success: failedClusters === 0,
         newInsights,
         reinforced,
         clustersProcessed: conceptClusters.length - clustersSkipped,
         clustersSkipped,
         usedFallback,
+        rejectedInsights,
+        failedClusters,
       };
     },
   );
@@ -434,38 +525,30 @@ export function registerReflectFunctions(
       const timestamp = new Date().toISOString();
       const dirty: Insight[] = [];
 
-      for (const insight of items) {
-        if (insight.deleted) continue;
+      for (const item of items) {
+        await withKeyedLock(`insight:${item.id}`, async () => {
+          const current = await kv.get<Insight>(KV.insights, item.id);
+          if (!current || current.deleted) return;
+          const insight = { ...current };
+          const baseline = Math.max(...[
+            insight.createdAt, insight.lastDecayedAt, insight.lastReinforcedAt,
+          ].filter((date): date is string => !!date).map((date) => new Date(date).getTime()));
+          const weeksSince = (now - baseline) / (1000 * 60 * 60 * 24 * 7);
+          if (!Number.isFinite(weeksSince) || weeksSince < 1) return;
 
-        const baseline =
-          insight.lastDecayedAt ||
-          insight.lastReinforcedAt ||
-          insight.createdAt;
-        const weeksSince =
-          (now - new Date(baseline).getTime()) / (1000 * 60 * 60 * 24 * 7);
-
-        if (weeksSince < 1) continue;
-
-        const decay = insight.decayRate * weeksSince;
-        const newConfidence = Math.max(0.05, insight.confidence - decay);
-
-        if (newConfidence !== insight.confidence) {
+          const newConfidence = Math.max(0.05, insight.confidence - insight.decayRate * weeksSince);
+          if (newConfidence === insight.confidence) return;
           insight.confidence = Math.round(newConfidence * 1000) / 1000;
           insight.lastDecayedAt = timestamp;
           insight.updatedAt = timestamp;
-
-          if (insight.confidence <= 0.1 && insight.reinforcements === 0) {
-            insight.deleted = true;
-            softDeleted++;
-          } else {
-            decayed++;
-          }
-
+          if (insight.confidence <= 0.1 && insight.reinforcements === 0) insight.deleted = true;
+          await kv.set(KV.insights, insight.id, insight);
+          if (insight.deleted) softDeleted++;
+          else decayed++;
           dirty.push(insight);
-        }
+        });
       }
 
-      await Promise.all(dirty.map((i) => kv.set(KV.insights, i.id, i)));
       await recordAudit(kv, "reflect", "mem::insight-decay-sweep", dirty.map((i) => i.id), {
         event: "insight.decay",
         decayed,

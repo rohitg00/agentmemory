@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerReflectFunctions } from "../src/functions/reflect.js";
+import { fingerprintId } from "../src/state/schema.js";
 import type { Insight, GraphNode, GraphEdge, SemanticMemory, Lesson, Crystal } from "../src/types.js";
 
 function mockKV() {
@@ -113,10 +114,10 @@ function makeCrystal(narrative: string, lessons: string[]): Crystal {
 }
 
 const XML_RESPONSE = `<insights>
-<insight confidence="0.85" title="Defense in Depth">
+<insight confidence="0.85" title="Defense in Depth" sources="F1,F2">
 Security requires layered protection: input validation, safe APIs, and deny-lists together.
 </insight>
-<insight confidence="0.7" title="Testing at Boundaries">
+<insight confidence="0.7" title="Testing at Boundaries" sources="F2,F3">
 Focus test effort on system boundaries where trust transitions occur.
 </insight>
 </insights>`;
@@ -138,6 +139,216 @@ describe("Reflect", () => {
   });
 
   describe("mem::reflect", () => {
+    async function seedFacts() {
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      for (const id of ["sem_a", "sem_b", "sem_c"]) {
+        await kv.set("mem:semantic", id, makeSemantic(`security validation evidence ${id}`, id));
+      }
+    }
+
+    it.each([
+      ["missing", ""],
+      ["invented", ' sources="F1,F999"'],
+      ["repeated", ' sources="F1,F1"'],
+      ["wrong type", ' sources="F1,L1"'],
+      ["persistent IDs", ' sources="sem_a,sem_b"'],
+      ["invalid index", ' sources="F0,F2"'],
+    ])("rejects %s evidence references without storing or reinforcing", async (_name, sources) => {
+      await seedFacts();
+      provider.summarize.mockResolvedValue(`<insights><insight confidence="0.8" title="Unsupported"${sources}>Test validation.</insight></insights>`);
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({
+        newInsights: 0, reinforced: 0, rejectedInsights: 1,
+      });
+      expect(await kv.list("mem:insights")).toEqual([]);
+    });
+
+    it("distinguishes malformed model output from a deliberate abstention", async () => {
+      await seedFacts();
+      provider.summarize.mockResolvedValueOnce("not an insight response");
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ success: false, failedClusters: 1, newInsights: 0 });
+      provider.summarize.mockResolvedValueOnce("<insights></insights>");
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ success: true, failedClusters: 0, newInsights: 0 });
+    });
+
+    it.each([
+      'confidence="NaN" title="Invalid" sources="F1,F2"',
+      'confidence="Infinity" title="Invalid" sources="F1,F2"',
+      'confidence="1.1" title="Invalid" sources="F1,F2"',
+      'confidence="-0.1" title="Invalid" sources="F1,F2"',
+      'confidence="0.8" title=" " sources="F1,F2"',
+      'confidence="0.8" confidence="0.9" title="Invalid" sources="F1,F2"',
+      'confidence="0.8" title="Invalid" sources="F1,F2" sources="F2,F3"',
+      'confidence="0.8" title="Invalid" sources="F1,F2" confidence=0.9',
+      `meta='sources="F1,F2"' confidence="0.8" title="Invalid"`,
+    ])("rejects malformed insight attributes: %s", async (attributes) => {
+      await seedFacts();
+      provider.summarize.mockResolvedValue(`<insights><insight ${attributes}>Test validation.</insight></insights>`);
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ newInsights: 0, rejectedInsights: 1 });
+    });
+
+    it("accepts reordered single-quoted attributes and decodes XML text once", async () => {
+      await seedFacts();
+      provider.summarize.mockResolvedValue("<insights><insight sources='F1, F2, F1' title='Checks &amp; guards' confidence='0.8'>Reject &lt;unsafe&gt; &amp; retain &amp;lt;literal&amp;gt;.</insight></insights>");
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ newInsights: 1 });
+      const [insight] = await kv.list<Insight>("mem:insights");
+      expect(insight.title).toBe("Checks & guards");
+      expect(insight.content).toBe("Reject <unsafe> & retain &lt;literal&gt;.");
+      expect(insight.sourceMemoryIds).toEqual(["sem_a", "sem_b"]);
+    });
+
+    it("keeps valid candidates while reporting an unterminated insight", async () => {
+      await seedFacts();
+      provider.summarize.mockResolvedValue('<insights><insight confidence="0.8" title="Checks" sources="F1,F2">Test validation.</insight><insight confidence="0.8" title="Broken" sources="F2,F3">unterminated');
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ newInsights: 1, rejectedInsights: 1, failedClusters: 1, success: false });
+    });
+
+    it("refreshes cited evidence on reinforcement and ignores repeated conclusions within a run", async () => {
+      await seedFacts();
+      const first = '<insight confidence="0.8" title="Checks" sources="F1,F2">Test validation.</insight>';
+      provider.summarize.mockResolvedValueOnce(`<insights>${first}${first}</insights>`);
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ newInsights: 1, reinforced: 0, rejectedInsights: 1 });
+      provider.summarize.mockResolvedValueOnce('<insights><insight confidence="0.8" title="Checks" sources="F2,F3">Test validation.</insight></insights>');
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ newInsights: 0, reinforced: 1 });
+      const insights = await kv.list<Insight>("mem:insights");
+      expect(insights).toHaveLength(1);
+      expect(insights[0].sourceMemoryIds).toEqual(["sem_b", "sem_c"]);
+      expect(insights[0].reinforcements).toBe(1);
+    });
+
+    it.each(["delete", "change"])("rejects evidence that sources %s while the model is running", async (operation) => {
+      await seedFacts();
+      provider.summarize.mockImplementationOnce(async () => {
+        if (operation === "delete") await kv.delete("mem:semantic", "sem_a");
+        else await kv.set("mem:semantic", "sem_a", makeSemantic("Unrelated replacement", "sem_a"));
+        return '<insights><insight confidence="0.8" title="Stale" sources="F1,F2">Test validation.</insight></insights>';
+      });
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ newInsights: 0, rejectedInsights: 1 });
+      expect(await kv.list("mem:insights")).toEqual([]);
+    });
+
+    it("serializes concurrent creation and reinforcement for the same project conclusion", async () => {
+      await seedFacts();
+      const get = kv.get.bind(kv);
+      kv.get = async <T>(scope: string, id: string): Promise<T | null> => structuredClone(await get<T>(scope, id));
+      provider.summarize.mockResolvedValue('<insights><insight confidence="0.8" title="Checks" sources="F1,F2">Test validation.</insight></insights>');
+      const results = await Promise.all(Array.from({ length: 5 }, () => sdk.trigger("mem::reflect", { project: "project-a" }))) as Array<{ newInsights: number; reinforced: number }>;
+      expect(results.reduce((n, r) => n + r.newInsights, 0)).toBe(1);
+      expect(results.reduce((n, r) => n + r.reinforced, 0)).toBe(4);
+      const insights = await kv.list<Insight>("mem:insights");
+      expect(insights).toHaveLength(1);
+      expect(insights[0].reinforcements).toBe(4);
+    });
+
+    it("distinguishes equal imported IDs in different evidence collections", async () => {
+      await seedFacts();
+      await kv.set("mem:lessons", "sem_a", { ...makeLesson("security validation lesson", ["security"]), id: "sem_a" });
+      provider.summarize.mockResolvedValue('<insights><insight confidence="0.8" title="Two records" sources="F1,L1">Test validation.</insight></insights>');
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ newInsights: 1 });
+      const [insight] = await kv.list<Insight>("mem:insights");
+      expect(insight.sourceMemoryIds).toEqual(["sem_a"]);
+      expect(insight.sourceLessonIds).toEqual(["sem_a"]);
+    });
+
+    it("does not let a stale decay snapshot overwrite newly reinforced evidence", async () => {
+      await seedFacts();
+      provider.summarize.mockResolvedValueOnce('<insights><insight confidence="0.12" title="Checks" sources="F1,F2">Test validation.</insight></insights>');
+      await sdk.trigger("mem::reflect", {});
+      const [first] = await kv.list<Insight>("mem:insights");
+      first.createdAt = new Date(Date.now() - 21 * 86400000).toISOString();
+      first.lastDecayedAt = first.createdAt;
+      await kv.set("mem:insights", first.id, first);
+      const list = kv.list.bind(kv);
+      let release!: () => void;
+      let read!: () => void;
+      const pending = new Promise<void>((resolve) => { release = resolve; });
+      const readSnapshot = new Promise<void>((resolve) => { read = resolve; });
+      let hold = true;
+      kv.list = async <T>(scope: string): Promise<T[]> => {
+        const snapshot = structuredClone(await list<T>(scope));
+        if (scope === "mem:insights" && hold) {
+          hold = false;
+          read();
+          await pending;
+        }
+        return snapshot;
+      };
+      const sweep = sdk.trigger("mem::insight-decay-sweep", {});
+      await readSnapshot;
+      provider.summarize.mockResolvedValueOnce('<insights><insight confidence="0.8" title="Checks" sources="F2,F3">Test validation.</insight></insights>');
+      await sdk.trigger("mem::reflect", {});
+      release();
+      expect(await sweep).toMatchObject({ decayed: 0, softDeleted: 0 });
+      const after = await kv.get<Insight>("mem:insights", first.id);
+      expect(after).toMatchObject({ reinforcements: 1, sourceMemoryIds: ["sem_b", "sem_c"] });
+      expect(after?.deleted).not.toBe(true);
+    });
+
+    it("keeps identical generated content independent across projects and global runs", async () => {
+      await seedFacts();
+      provider.summarize.mockResolvedValue('<insights><insight sources="F1,F2" title="Same conclusion" confidence="0.8">Test validation.</insight></insights>');
+      for (const project of ["project-a", "project-b", undefined]) {
+        expect(await sdk.trigger("mem::reflect", { project })).toMatchObject({ newInsights: 1, reinforced: 0 });
+      }
+      const before = await kv.list<Insight>("mem:insights");
+      expect(before).toHaveLength(3);
+      expect(new Set(before.map((i) => i.id)).size).toBe(3);
+      expect(await sdk.trigger("mem::reflect", { project: "project-a" })).toMatchObject({ newInsights: 0, reinforced: 1 });
+      const after = await kv.list<Insight>("mem:insights");
+      expect(after.find((i) => i.project === "project-b")?.reinforcements).toBe(0);
+      expect(after.find((i) => i.project === undefined)?.reinforcements).toBe(0);
+    });
+
+    it("preserves a legacy record whose content resembles the new identity payload", async () => {
+      await seedFacts();
+      const content = '[1,null,"test validation."]';
+      const legacy: Insight = {
+        id: fingerprintId("ins", content), title: "Legacy claim", content,
+        confidence: 0.5, reinforcements: 0, sourceConceptCluster: [],
+        sourceMemoryIds: [], sourceLessonIds: [], sourceCrystalIds: [], tags: [],
+        createdAt: "2026-04-01T00:00:00Z", updatedAt: "2026-04-01T00:00:00Z", decayRate: 0.05,
+      };
+      await kv.set("mem:insights", legacy.id, legacy);
+      provider.summarize.mockResolvedValue('<insights><insight sources="F1,F2" title="Checks" confidence="0.8">Test validation.</insight></insights>');
+      expect(await sdk.trigger("mem::reflect", {})).toMatchObject({ newInsights: 1, reinforced: 0 });
+      expect(await kv.get("mem:insights", legacy.id)).toEqual(legacy);
+      const insights = await kv.list<Insight>("mem:insights");
+      expect(insights).toHaveLength(2);
+      expect(insights.find((i) => i.evidenceVersion === 1)?.content).toBe("Test validation.");
+    });
+
+    it("stores only the evidence cited by each generated insight", async () => {
+      await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
+      await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
+      await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
+      await kv.set("mem:semantic", "sem_a", makeSemantic("security validation protects inputs", "sem_a"));
+      await kv.set("mem:semantic", "sem_b", makeSemantic("security validation checks boundaries", "sem_b"));
+      await kv.set("mem:semantic", "sem_unused", makeSemantic("security validation unused evidence", "sem_unused"));
+      const lesson = makeLesson("security validation needs runtime tests", ["security"]);
+      await kv.set("mem:lessons", lesson.id, lesson);
+      const crystal = makeCrystal("runtime security validation succeeded", ["security"]);
+      await kv.set("mem:crystals", crystal.id, crystal);
+      provider.summarize.mockResolvedValue(`<insights>
+        <insight confidence="0.8" title="Boundary tests" sources="F1,L1">Test validation at runtime.</insight>
+        <insight confidence="0.7" title="Runtime evidence" sources="F2,C1">Use observed outcomes to refine checks.</insight>
+      </insights>`);
+
+      const result = await sdk.trigger("mem::reflect", {});
+      expect(result).toMatchObject({ success: true, newInsights: 2, rejectedInsights: 0 });
+      const insights = await kv.list<Insight>("mem:insights");
+      expect(insights.find((i) => i.title === "Boundary tests")).toMatchObject({
+        sourceMemoryIds: ["sem_a"], sourceLessonIds: [lesson.id], sourceCrystalIds: [], evidenceVersion: 1,
+      });
+      expect(insights.find((i) => i.title === "Runtime evidence")).toMatchObject({
+        sourceMemoryIds: ["sem_b"], sourceLessonIds: [], sourceCrystalIds: [crystal.id], evidenceVersion: 1,
+      });
+      const prompt = provider.summarize.mock.calls[0][1];
+      expect(prompt).toContain('"source":"F1"');
+      expect(prompt).toContain('"source":"L1"');
+      expect(prompt).toContain('"source":"C1"');
+    });
+
     it("returns empty when no graph nodes or memories exist", async () => {
       const result = (await sdk.trigger("mem::reflect", {})) as {
         success: boolean;
@@ -157,9 +368,9 @@ describe("Reflect", () => {
       await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
       await kv.set("mem:graph:edges", "edge_2", makeEdge("security", "testing"));
 
-      await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs"));
-      await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage"));
-      await kv.set("mem:semantic", "sem_3", makeSemantic("Validation prevents injection attacks"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs", "sem_1"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage", "sem_2"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("Validation prevents injection attacks", "sem_3"));
       await kv.set("mem:lessons", "lsn_1", makeLesson("Use execFile for security", ["security"]));
 
       const result = (await sdk.trigger("mem::reflect", {})) as {
@@ -181,7 +392,7 @@ describe("Reflect", () => {
       await kv.set("mem:graph:nodes", "node_sparse", makeConceptNode("sparse"));
       await kv.set("mem:graph:nodes", "node_topic", makeConceptNode("topic"));
       await kv.set("mem:graph:edges", "edge_1", makeEdge("sparse", "topic"));
-      await kv.set("mem:semantic", "sem_1", makeSemantic("One sparse fact"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("One sparse fact", "sem_1"));
 
       const result = (await sdk.trigger("mem::reflect", {})) as {
         clustersSkipped: number;
@@ -197,9 +408,9 @@ describe("Reflect", () => {
       await kv.set("mem:graph:nodes", "node_security", makeConceptNode("security"));
       await kv.set("mem:graph:nodes", "node_validation", makeConceptNode("validation"));
       await kv.set("mem:graph:edges", "edge_1", makeEdge("security", "validation"));
-      await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs"));
-      await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage"));
-      await kv.set("mem:semantic", "sem_3", makeSemantic("Validation prevents injection"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("Always validate security inputs", "sem_1"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("Testing improves security coverage", "sem_2"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("Validation prevents injection", "sem_3"));
 
       await sdk.trigger("mem::reflect", {});
       const first = await kv.list<Insight>("mem:insights");
@@ -219,9 +430,9 @@ describe("Reflect", () => {
     });
 
     it("falls back to Jaccard grouping when graph is empty", async () => {
-      await kv.set("mem:semantic", "sem_1", makeSemantic("security validation is important"));
-      await kv.set("mem:semantic", "sem_2", makeSemantic("security testing prevents bugs"));
-      await kv.set("mem:semantic", "sem_3", makeSemantic("validation testing framework"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("security validation is important", "sem_1"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("security testing prevents bugs", "sem_2"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("validation testing framework", "sem_3"));
       await kv.set("mem:lessons", "lsn_1", makeLesson("Use security headers", ["security", "validation"]));
 
       const result = (await sdk.trigger("mem::reflect", {})) as {
@@ -239,16 +450,17 @@ describe("Reflect", () => {
       await kv.set("mem:graph:nodes", "node_a", makeConceptNode("concept_a"));
       await kv.set("mem:graph:nodes", "node_b", makeConceptNode("concept_b"));
       await kv.set("mem:graph:edges", "edge_1", makeEdge("concept_a", "concept_b"));
-      await kv.set("mem:semantic", "sem_1", makeSemantic("fact about concept_a"));
-      await kv.set("mem:semantic", "sem_2", makeSemantic("fact about concept_b"));
-      await kv.set("mem:semantic", "sem_3", makeSemantic("concept_a and concept_b together"));
+      await kv.set("mem:semantic", "sem_1", makeSemantic("fact about concept_a", "sem_1"));
+      await kv.set("mem:semantic", "sem_2", makeSemantic("fact about concept_b", "sem_2"));
+      await kv.set("mem:semantic", "sem_3", makeSemantic("concept_a and concept_b together", "sem_3"));
 
       const result = (await sdk.trigger("mem::reflect", {})) as {
         success: boolean;
         newInsights: number;
       };
 
-      expect(result.success).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result).toMatchObject({ failedClusters: 1 });
       expect(result.newInsights).toBe(0);
     });
   });

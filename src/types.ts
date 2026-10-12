@@ -903,6 +903,7 @@ export interface Insight {
   sourceMemoryIds: string[];
   sourceLessonIds: string[];
   sourceCrystalIds: string[];
+  evidenceVersion?: 1;
   project?: string;
   tags: string[];
   createdAt: string;
