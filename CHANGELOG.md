@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- **Time filters on `GET /agentmemory/sessions`.** `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` take ISO 8601 timestamps (after is inclusive, before is exclusive) and combine with the existing `project`, `status`, `q` and cursor params. Sessions with no value for the filtered field are excluded; an invalid timestamp returns 400.
+- **Time filters on `GET /agentmemory/sessions`.** `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` take strict ISO 8601 timestamps, with zone-less values read as UTC (after is inclusive, before is exclusive) and combine with the existing `project`, `status`, `q` and cursor params. Sessions with no value for the filtered field are excluded; an invalid timestamp returns 400.
 
 ### Fixed
 

@@ -1544,7 +1544,7 @@ Two modes:
 
 What gets tagged when `AGENT_ID` is set: `Session.agentId`, `RawObservation.agentId`, `CompressedObservation.agentId`, `Memory.agentId`. The role flows from `api::session::start` → `mem::observe` → `mem::compress` → KV.
 
-`GET /agentmemory/sessions` also filters by time with `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` (ISO 8601; after is inclusive, before is exclusive). Sessions with no value for the filtered field are excluded, and an invalid timestamp returns 400.
+`GET /agentmemory/sessions` also filters by time with `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` (ISO 8601, for example `2026-10-09` or `2026-10-09T12:00:00Z`; a value without a zone is read as UTC, and a `+` in an offset must be URL-encoded as `%2B`; after is inclusive, before is exclusive). Sessions with no value for the filtered field are excluded, and an invalid timestamp returns 400.
 
 What gets filtered in isolated mode: `mem::smart-search`, `/agentmemory/memories`, `/agentmemory/observations`, `/agentmemory/sessions`. Each endpoint accepts `?agentId=<role>` to override per-request, and `?agentId=*` to opt out of the env scope entirely. `/memories` also accepts `?includeOrphans=true` to surface pre-AGENT_ID memories whose `agentId` is undefined.
 

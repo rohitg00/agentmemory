@@ -89,7 +89,19 @@ describe("time range filters", () => {
     const ok = parseTimeBounds({ startedAfter: "2026-10-09T00:00:00Z", endedBefore: " 2026-10-10 " });
     expect(ok).toEqual({ bounds: { startedAfter: Date.parse("2026-10-09T00:00:00Z"), endedBefore: Date.parse("2026-10-10") } });
     expect(parseTimeBounds(undefined)).toEqual({ bounds: {} });
+    for (const bad of ["5", "2026", "Oct 5", "0", "2026-13-45", "2026-10-09T25:00:00Z"]) {
+      expect(parseTimeBounds({ startedAfter: bad })).toEqual({ error: "startedAfter must be an ISO 8601 timestamp" });
+    }
     expect(parseTimeBounds({ startedAfter: "yesterday" })).toEqual({ error: "startedAfter must be an ISO 8601 timestamp" });
+  });
+
+  it("reads zone-less values as UTC and accepts an offset whose plus was decoded to a space", () => {
+    const utc = Date.parse("2026-10-09T12:00:00Z");
+    expect(parseTimeBounds({ startedAfter: "2026-10-09T12:00" })).toEqual({ bounds: { startedAfter: utc } });
+    expect(parseTimeBounds({ startedAfter: "2026-10-09" })).toEqual({ bounds: { startedAfter: Date.parse("2026-10-09T00:00:00Z") } });
+    const plus = parseTimeBounds({ startedAfter: "2026-10-09T20:00:00+08:00" });
+    expect(plus).toEqual({ bounds: { startedAfter: utc } });
+    expect(parseTimeBounds({ startedAfter: "2026-10-09T20:00:00 08:00" })).toEqual(plus);
   });
 
   it("treats after as inclusive, before as exclusive, and drops rows without a time", () => {
