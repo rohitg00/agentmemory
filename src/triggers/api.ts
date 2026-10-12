@@ -36,6 +36,8 @@ import {
   pageAfterCursor,
   pageByOffset,
   parseListQuery,
+  parseTimeBounds,
+  inTimeRange,
   sortByKeyDesc,
 } from "../state/list-query.js";
 import { checkRequestGuard, configuredAllowedOrigins, timingSafeCompare } from "../auth.js";
@@ -1378,6 +1380,9 @@ export function registerApiTriggers(
         : explicitAgentId ??
           (isAgentScopeIsolated() ? getAgentId() : undefined);
       const listQuery = parseListQuery(req.query_params);
+      const time = parseTimeBounds(req.query_params);
+      if ("error" in time) return { status_code: 400, body: { error: time.error } };
+      const { startedAfter, startedBefore, endedAfter, endedBefore } = time.bounds;
       let filtered = filterAgentId
         ? validSessions.filter((s) => s.agentId === filterAgentId)
         : validSessions;
@@ -1391,6 +1396,11 @@ export function registerApiTriggers(
           : undefined;
       if (listQuery.project) filtered = filtered.filter((s) => s.project === listQuery.project);
       if (listQuery.status) filtered = filtered.filter((s) => s.status === listQuery.status);
+      filtered = filtered.filter(
+        (s) =>
+          inTimeRange(s.startedAt, startedAfter, startedBefore) &&
+          inTimeRange(s.endedAt, endedAfter, endedBefore),
+      );
       if (listQuery.q) {
         filtered = filtered.filter((s) =>
           matchesText(listQuery.q, s.id, s.project, s.cwd, s.firstPrompt, s.agentId),
