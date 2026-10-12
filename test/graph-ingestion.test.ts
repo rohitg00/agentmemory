@@ -31,7 +31,7 @@ function deferred() {
 
 type Payload = { scope: string; key: string; value?: any; [key: string]: any };
 
-function setup() {
+function setup(backend: "file" | "redis" = "file") {
   const store = new Map<string, Map<string, unknown>>();
   const handlers = new Map<string, (data?: any) => Promise<any>>();
   const calls: Array<{ id: string; payload: Payload }> = [];
@@ -64,7 +64,7 @@ function setup() {
       throw new Error(`Unexpected state call ${id}`);
     },
   };
-  const kv = new StateKV(sdk as never);
+  const kv = new StateKV(sdk as never, { backend });
   registerGraphFunction(sdk as never, kv, { name: "noop" } as never);
   const call = (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload });
   const snapshot = async (view = kv) => (await view.get<GraphSnapshot>(KV.graphSnapshot, "current"))!;
@@ -82,6 +82,150 @@ afterEach(() => {
 });
 
 describe("raw graph ingestion reconciliation", () => {
+  it("checks a clean snapshot once across repeated graph row reads until the next snapshot write", async () => {
+    const { kv, snapshot, calls } = setup();
+    await persistGraphRecords(kv, [node("a")], [], { mode: "merge" });
+    calls.length = 0;
+    for (let i = 0; i < 100; i++) {
+      await kv.get(KV.graphNodes, "a");
+      await kv.get(KV.graphNodeDegree, "a");
+      await kv.get(KV.graphNameIndex, "concept|a");
+    }
+    const snapshotReads = () => calls.filter((call) => call.id === "state::get" && call.payload.scope === KV.graphSnapshot).length;
+    expect(snapshotReads()).toBe(1);
+    const clean = await snapshot();
+    await kv.set(KV.graphSnapshot, "current", clean);
+    calls.length = 0;
+    await kv.get(KV.graphNodes, "a");
+    await kv.get(KV.graphNodes, "a");
+    expect(snapshotReads()).toBe(1);
+  });
+
+  it("bounds snapshot check entries across generations and checks an evicted scope again", async () => {
+    const { kv, calls } = setup();
+    const scope = (i: number) => `${KV.graphNodes}:generation:cache-${i}`;
+    const snapshotReads = () => calls.filter((call) => call.id === "state::get" && inScope(call.payload.scope, KV.graphSnapshot)).length;
+    for (let i = 0; i < 64; i++) await kv.get(scope(i), "missing");
+    expect(snapshotReads()).toBe(64);
+    await kv.get(scope(0), "missing");
+    expect(snapshotReads()).toBe(64);
+    await kv.get(scope(64), "missing");
+    await kv.get(scope(64), "missing");
+    expect(snapshotReads()).toBe(65);
+    await kv.get(scope(0), "missing");
+    expect(snapshotReads()).toBe(66);
+  });
+
+  it("does not cache a failed clean snapshot check", async () => {
+    const { kv, calls, intercept } = setup();
+    intercept((id, p) => {
+      if (id === "state::get" && p.scope === KV.graphSnapshot) throw new Error("snapshot unavailable");
+    });
+    await expect(kv.get(KV.graphNodes, "missing")).rejects.toThrow("snapshot unavailable");
+    intercept();
+    await kv.get(KV.graphNodes, "missing");
+    await kv.get(KV.graphNodes, "missing");
+    expect(calls.filter((call) => call.id === "state::get" && call.payload.scope === KV.graphSnapshot)).toHaveLength(2);
+  });
+
+  it("does not restore an evicted check when an older clean peek finishes", async () => {
+    const { kv, sdk, calls } = setup();
+    const entered = deferred();
+    const release = deferred();
+    const trigger = sdk.trigger.bind(sdk);
+    let paused = false;
+    vi.spyOn(sdk, "trigger").mockImplementation(async (request) => {
+      const value = await trigger(request);
+      if (!paused && request.function_id === "state::get" && request.payload.scope === KV.graphSnapshot) {
+        paused = true; entered.resolve(); await release.promise;
+      }
+      return value;
+    });
+    const reading = kv.get(KV.graphNodes, "missing");
+    await entered.promise;
+    try {
+      for (let i = 0; i < 64; i++) await kv.get(`${KV.graphNodes}:generation:cache-${i}`, "missing");
+    } finally {
+      release.resolve(); await reading;
+    }
+    calls.length = 0;
+    await kv.get(KV.graphNodes, "missing");
+    await kv.get(KV.graphNodes, "missing");
+    expect(calls.filter((call) => call.id === "state::get" && call.payload.scope === KV.graphSnapshot)).toHaveLength(1);
+  });
+
+  it.each([false, true])("invalidates an in-flight clean peek after snapshot deletion, response lost: %s", async (responseLost) => {
+    const { kv, store, calls, intercept } = setup();
+    await persistGraphRecords(kv, [node("before")], [], { mode: "merge" });
+    const entered = deferred();
+    const release = deferred();
+    intercept(async (id, p) => {
+      if (id === "state::delete" && p.scope === KV.graphSnapshot) {
+        entered.resolve(); await release.promise;
+        if (responseLost) {
+          store.get(KV.graphSnapshot)!.delete("current");
+          throw new Error("delete response lost");
+        }
+      }
+    });
+    const deleting = kv.delete(KV.graphSnapshot, "current");
+    const finished = responseLost ? expect(deleting).rejects.toThrow("delete response lost") : deleting;
+    await entered.promise;
+    try {
+      expect(await kv.get(KV.graphNodes, "before")).toMatchObject({ id: "before" });
+    } finally {
+      release.resolve(); await finished; intercept();
+    }
+    calls.length = 0;
+    await kv.get(KV.graphNodes, "before");
+    await kv.get(KV.graphNodes, "before");
+    expect(calls.filter((call) => call.id === "state::get" && call.payload.scope === KV.graphSnapshot)).toHaveLength(1);
+  });
+
+  it.each([
+    ["file", "set"], ["file", "update"], ["redis", "update"],
+  ] as const)("invalidates a clean in-flight peek when a %s %s journal commits but its response is lost", async (backend, operation) => {
+    const { kv, store, snapshot, intercept } = setup(backend);
+    await persistGraphRecords(kv, [node("before")], [], { mode: "merge" });
+    const clean = await snapshot();
+    const added = node("added");
+    const next: GraphSnapshot = {
+      ...clean, topNodes: [...clean.topNodes, added],
+      topDegrees: { ...clean.topDegrees, added: 0 },
+      stats: { ...clean.stats, totalNodes: 2, nodesByType: { concept: 2 } },
+    };
+    const pending: GraphSnapshot = {
+      ...clean, dirty: true,
+      pendingMutation: {
+        snapshot: next,
+        writes: [{ scope: KV.graphNodes, key: added.id, value: added }],
+      },
+    };
+    const entered = deferred();
+    const release = deferred();
+    let paused = false;
+    intercept(async (id, p) => {
+      if (!paused && (id === "state::set" || id === "state::update") && p.scope === KV.graphSnapshot) {
+        paused = true; entered.resolve(); await release.promise;
+        store.get(KV.graphSnapshot)!.set("current", structuredClone(pending));
+        throw new Error("committed response lost");
+      }
+    });
+    const writing = operation === "set"
+      ? kv.set(KV.graphSnapshot, "current", pending)
+      : kv.update(KV.graphSnapshot, "current", [{ type: "set", path: "", value: pending }]);
+    const failed = expect(writing).rejects.toThrow("committed response lost");
+    await entered.promise;
+    try {
+      expect(await kv.get(KV.graphNodes, "before")).toMatchObject({ id: "before" });
+    } finally {
+      release.resolve(); await failed; intercept();
+    }
+    expect((await snapshot()).pendingMutation).toBeUndefined();
+    expect((await snapshot()).stats.totalNodes).toBe(2);
+    expect(await kv.get(KV.graphNodes, "added")).toMatchObject({ id: "added" });
+  });
+
   it("serves a clean committed snapshot while a larger ingestion is still planning its next batch", async () => {
     const { kv, call, intercept } = setup();
     const entered = deferred();

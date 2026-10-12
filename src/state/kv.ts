@@ -126,10 +126,15 @@ export class StateKV {
     scope = await resolveGraphScope(this, scope)
     await ensureGraphConsistency(this, scope)
     noteGraphSnapshotWrite(this, scope, key)
-    const result = await this.sdk.trigger<{ scope: string; key: string; value: T }, T>({
-      function_id: 'state::set',
-      payload: { scope, key, value },
-    })
+    let result: T
+    try {
+      result = await this.sdk.trigger<{ scope: string; key: string; value: T }, T>({
+        function_id: 'state::set',
+        payload: { scope, key, value },
+      })
+    } finally {
+      noteGraphSnapshotWrite(this, scope, key)
+    }
     await notifyGraphGenerationChange(this, scope, key)
     return result
   }
@@ -141,20 +146,30 @@ export class StateKV {
     if (this.backend === 'redis' && canApplyLocally(ops)) {
       return withKeyedLock(`state-update:${scope}\u0000${key}`, async () => {
         // Keep both halves on the scope resolved before acquiring the lock.
-        const oldValue = await this.sdk.trigger<{ scope: string; key: string }, unknown>({
-          function_id: 'state::get', payload: { scope, key },
-        })
-        const newValue = applyUpdateOps(oldValue, ops)
-        await this.sdk.trigger({ function_id: 'state::set', payload: { scope, key, value: newValue } })
+        let result: UpdateResult
+        try {
+          const oldValue = await this.sdk.trigger<{ scope: string; key: string }, unknown>({
+            function_id: 'state::get', payload: { scope, key },
+          })
+          const newValue = applyUpdateOps(oldValue, ops)
+          await this.sdk.trigger({ function_id: 'state::set', payload: { scope, key, value: newValue } })
+          result = { old_value: oldValue, new_value: newValue, errors: [] }
+        } finally {
+          noteGraphSnapshotWrite(this, scope, key)
+        }
         await notifyGraphGenerationChange(this, scope, key)
-        const result: UpdateResult = { old_value: oldValue, new_value: newValue, errors: [] }
         return result as T
       })
     }
-    const result = await this.sdk.trigger<{ scope: string; key: string; ops: UpdateOp[] }, T>({
-      function_id: 'state::update',
-      payload: { scope, key, ops },
-    })
+    let result: T
+    try {
+      result = await this.sdk.trigger<{ scope: string; key: string; ops: UpdateOp[] }, T>({
+        function_id: 'state::update',
+        payload: { scope, key, ops },
+      })
+    } finally {
+      noteGraphSnapshotWrite(this, scope, key)
+    }
     await notifyGraphGenerationChange(this, scope, key)
     return result
   }
@@ -163,10 +178,14 @@ export class StateKV {
     scope = await resolveGraphScope(this, scope)
     await ensureGraphConsistency(this, scope)
     noteGraphSnapshotWrite(this, scope, key)
-    await this.sdk.trigger<{ scope: string; key: string }, void>({
-      function_id: 'state::delete',
-      payload: { scope, key },
-    })
+    try {
+      await this.sdk.trigger<{ scope: string; key: string }, void>({
+        function_id: 'state::delete',
+        payload: { scope, key },
+      })
+    } finally {
+      noteGraphSnapshotWrite(this, scope, key)
+    }
     await notifyGraphGenerationChange(this, scope, key)
   }
 
