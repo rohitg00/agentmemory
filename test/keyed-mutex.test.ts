@@ -81,6 +81,48 @@ describe("keyed mutex context", () => {
     expect(events).toEqual(["first", "second"]);
   });
 
+  it("runs later callbacks and preserves a single callback failure after successful work", async () => {
+    const failure = new Error("notification failed");
+    const later = vi.fn(async () => {});
+    const work = withKeyedLock("callback-failure", async () => {
+      afterKeyedLock("callback-failure", async () => { throw failure; });
+      afterKeyedLock("callback-failure", later);
+      return 42;
+    });
+    await expect(work).rejects.toBe(failure);
+    expect(later).toHaveBeenCalledOnce();
+    expect(await withKeyedLock("callback-failure", async () => 43)).toBe(43);
+  });
+
+  it("collects multiple notification failures while running every callback", async () => {
+    const first = new Error("synchronous notification failure");
+    const second = new Error("asynchronous notification failure");
+    const events: string[] = [];
+    const failure = await withKeyedLock("multiple-failures", async () => {
+      afterKeyedLock("multiple-failures", () => { events.push("first"); throw first; });
+      afterKeyedLock("multiple-failures", async () => { events.push("second"); throw second; });
+      afterKeyedLock("multiple-failures", async () => { events.push("last"); });
+    }).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(AggregateError);
+    expect((failure as AggregateError).errors).toEqual([first, second]);
+    expect(events).toEqual(["first", "second", "last"]);
+  });
+
+  it("preserves the body error when notification callbacks also fail", async () => {
+    const bodyError = new Error("original mutation failure");
+    const first = vi.fn(async () => { throw new Error("first notification failure"); });
+    const second = vi.fn(async () => { throw new Error("second notification failure"); });
+    const last = vi.fn(async () => {});
+    const work = withKeyedLock("body-and-callback-failure", async () => {
+      afterKeyedLock("body-and-callback-failure", first);
+      afterKeyedLock("body-and-callback-failure", second);
+      afterKeyedLock("body-and-callback-failure", last);
+      throw bodyError;
+    });
+    await expect(work).rejects.toBe(bodyError);
+    for (const callback of [first, second, last]) expect(callback).toHaveBeenCalledOnce();
+  });
+
   it("does not treat a released frame retained by background work as held", async () => {
     const release = deferred();
     const callback = vi.fn(async () => {});

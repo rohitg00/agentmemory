@@ -23,6 +23,12 @@ const edge = (id: string, sourceNodeId: string, targetNodeId: string, overrides:
 });
 const inScope = (physical: string, logical: string) => physical === logical || physical.startsWith(`${logical}:generation:`);
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
 type Payload = { scope: string; key: string; value?: any; [key: string]: any };
 
 function setup() {
@@ -76,6 +82,89 @@ afterEach(() => {
 });
 
 describe("raw graph ingestion reconciliation", () => {
+  it("serves a clean committed snapshot while a larger ingestion is still planning its next batch", async () => {
+    const { kv, call, intercept } = setup();
+    const entered = deferred();
+    const release = deferred();
+    intercept(async (id, p) => {
+      if (id === "state::get" && p.scope === KV.graphNodes && p.key === "batch-50") {
+        entered.resolve(); await release.promise;
+      }
+    });
+    const writing = persistGraphRecords(kv, Array.from({ length: 51 }, (_, i) => node(`batch-${i}`)), [], { mode: "merge" });
+    await entered.promise;
+    let observed: { totalNodes: number } | undefined;
+    const reading = call("mem::graph-stats").then((result) => { observed = result; });
+    try {
+      await new Promise<void>((done) => setImmediate(done));
+      expect(observed).toMatchObject({ totalNodes: 50 });
+    } finally {
+      release.resolve();
+      await Promise.all([writing, reading]);
+    }
+  });
+
+  it("does not cache a clean peek that was overtaken by a failed journaled write", async () => {
+    const { kv, sdk, snapshot, intercept } = setup();
+    await persistGraphRecords(kv, [node("before")], [], { mode: "merge" });
+    const entered = deferred();
+    const release = deferred();
+    const trigger = sdk.trigger.bind(sdk);
+    let paused = false;
+    vi.spyOn(sdk, "trigger").mockImplementation(async (request) => {
+      const value = await trigger(request);
+      if (!paused && request.function_id === "state::get" && request.payload.scope === KV.graphSnapshot) {
+        paused = true; entered.resolve(); await release.promise;
+      }
+      return value;
+    });
+    const reading = snapshot();
+    await entered.promise;
+    intercept((id, p) => {
+      if (id === "state::set" && p.scope === KV.graphNameIndex && p.key === "concept|after") throw new Error("injected failure");
+    });
+    try {
+      await expect(persistGraphRecords(kv, [node("after")], [], { mode: "merge" })).rejects.toThrow("injected failure");
+    } finally {
+      intercept(); release.resolve();
+    }
+    await reading;
+    const recovered = await snapshot();
+    expect(recovered.pendingMutation).toBeUndefined();
+    expect(recovered.stats.totalNodes).toBe(2);
+    expect(await kv.get(KV.graphNodes, "after")).toMatchObject({ id: "after" });
+  });
+
+  it("does not cache old clean state while an invalidated journal write is still in flight", async () => {
+    const { kv, call, snapshot, intercept } = setup();
+    await persistGraphRecords(kv, [node("before")], [], { mode: "merge" });
+    const entered = deferred();
+    const release = deferred();
+    intercept(async (id, p) => {
+      if (id === "state::set" && p.scope === KV.graphSnapshot && p.value?.pendingMutation) {
+        entered.resolve(); await release.promise;
+      }
+      if (id === "state::set" && p.scope === KV.graphNameIndex && p.key === "concept|after") throw new Error("injected failure");
+    });
+    const writing = persistGraphRecords(kv, [node("after")], [], { mode: "merge" });
+    const failed = expect(writing).rejects.toThrow("injected failure");
+    await entered.promise;
+    let observed: { totalNodes: number } | undefined;
+    const reading = call("mem::graph-stats").then((result) => { observed = result; });
+    try {
+      await new Promise<void>((done) => setImmediate(done));
+      expect(observed).toMatchObject({ totalNodes: 1 });
+    } finally {
+      release.resolve();
+      await Promise.all([failed, reading]);
+      intercept();
+    }
+    const recovered = await snapshot();
+    expect(recovered.pendingMutation).toBeUndefined();
+    expect(recovered.stats.totalNodes).toBe(2);
+    expect(await kv.get(KV.graphNodes, "after")).toMatchObject({ id: "after" });
+  });
+
   it("matches a raw-record oracle through a deterministic sequence of overlapping mutations", async () => {
     const { kv, snapshot } = setup();
     let randomState = 0x1525;

@@ -56,8 +56,10 @@ export async function ensureGraphConsistency(kv: StateKV, scope: string): Promis
     if (entries.size >= 64) entries.clear();
     entries.add(snapshot);
   });
-  // Existing graph writers already hold this lock; callbacks from our own
-  // replay inherit the recovery context and cannot recursively wait on it.
-  if (isKeyedLockHeld("graph:persist")) await recover();
-  else await withKeyedLock("graph:persist", recover);
+  if (isKeyedLockHeld("graph:persist")) return recover();
+  const peek = await withoutGraphRecovery(() => kv.get<GraphSnapshot>(snapshot, "current"));
+  // An unlocked clean read must not restore a cache entry invalidated by an
+  // in-flight snapshot write. Only the locked recovery path can cache it.
+  if (!peek?.pendingMutation) return;
+  await withKeyedLock("graph:persist", recover);
 }

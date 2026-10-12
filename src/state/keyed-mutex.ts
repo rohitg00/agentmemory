@@ -41,9 +41,21 @@ export function withKeyedLock<T>(
   });
   const flush = async () => {
     await cleanup;
-    for (const notify of context.after.values()) await notify();
+    const errors: unknown[] = [];
+    for (const notify of context.after.values()) {
+      try { await notify(); } catch (error) { errors.push(error); }
+    }
+    return errors;
   };
-  return next.then(async (value) => { await flush(); return value; }, async (error) => { await flush(); throw error; });
+  return next.then(
+    async (value) => {
+      const errors = await flush();
+      if (errors.length === 1) throw errors[0];
+      if (errors.length > 1) throw new AggregateError(errors, "Deferred lock callbacks failed");
+      return value;
+    },
+    async (error) => { await flush(); throw error; },
+  );
 }
 
 export function withKeyedLocks<T>(keys: string[], fn: () => Promise<T>): Promise<T> {

@@ -181,7 +181,7 @@ const FACTS: Fact[] = [
     value: () => String(countKvScopes()),
     nouns: [
       "KV scopes", "KV-Scopes", "KV scope", "KV-scope", "scopes KV", "scopes de KV", "escopos KV", "областей KV", "個 KV", "个 KV", "개 KV", "KV スコープ",
-      "KV kapsam", "نطاق KV", "KV স্কোপ", "תחומי KV", "KV-hatókör", "scope KV", "개", "zakresów KV", "âmbitos de KV", "domenii KV", "na KV scope",
+      "KV kapsam", "نطاق KV", "KV স্কোপ", "תחומי KV", "KV-hatókör", "scope KV", "개", "zakresów KV", "zakresy KV", "âmbitos de KV", "domenii KV", "de domenii KV", "na KV scope",
       "KV-скоуп", "KV اسکوپ",
     ],
   },
