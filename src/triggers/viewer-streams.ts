@@ -216,6 +216,7 @@ export function registerViewerStreamTriggers(
       if (payload.key !== GRAPH_SNAPSHOT_KEY) return { emitted: false };
       if (!await isLegacyGraphState(kv)) return { emitted: false };
       const snapshot = isStateDelete(payload) ? null : payload.new_value ?? null;
+      if (snapshot?.pendingMutation) return { emitted: false };
       noteGraphStats(snapshot?.stats ?? { totalNodes: 0, totalEdges: 0, nodesByType: {}, edgesByType: {} });
       try {
         await sendViewerEvent(sdk, eventId("graph", "snapshot"), "graph.changed", {

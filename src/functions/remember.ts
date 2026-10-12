@@ -214,10 +214,10 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         memory.sessionIds?.[0] ?? "memory",
         memory.title + " " + memory.content,
         { kind: "memory", logId: memory.id },
-        (embedding) =>
+        (embedding, isCurrent) =>
           withKeyedLock("mem:remember", async () => {
             const current = await kv.get<Memory>(KV.memories, memory.id);
-            if (!current || current.isLatest === false) return false;
+            if (!isCurrent() || !current || current.isLatest === false) return false;
             getVectorIndex()?.add(
               memory.id,
               memory.sessionIds?.[0] ?? "memory",

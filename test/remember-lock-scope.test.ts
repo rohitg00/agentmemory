@@ -6,6 +6,8 @@ vi.mock("../src/logger.js", () => ({
 
 import { registerRememberFunction } from "../src/functions/remember.js";
 import {
+  getSearchIndex,
+  indexRecords,
   setVectorIndex,
   setEmbeddingProvider,
   setIndexPersistence,
@@ -189,6 +191,46 @@ describe("mem::remember lock scope", () => {
     } finally {
       setIndexPersistence(null);
     }
+  });
+
+  it("does not overwrite a newer imported body while its commit reread is pending", async () => {
+    getSearchIndex().clear();
+    const sdk = mockSdk();
+    const kv = mockKV();
+    let captured!: Memory;
+    let release!: () => void;
+    let entered!: () => void;
+    const reading = new Promise<void>((resolve) => { entered = resolve; });
+    const blocked = new Promise<void>((resolve) => { release = resolve; });
+    registerRememberFunction(sdk as never, {
+      ...kv,
+      set: async <T>(scope: string, key: string, value: T) => {
+        if (scope === KV.memories) captured = value as Memory;
+        return kv.set(scope, key, value);
+      },
+      get: async <T>(scope: string, key: string): Promise<T | null> => {
+        if (scope === KV.memories && key === captured?.id) {
+          entered();
+          await blocked;
+        }
+        return kv.get<T>(scope, key);
+      },
+    } as never);
+    setEmbeddingProvider({
+      name: "race-test", dimensions: 3,
+      embed: async () => new Float32Array([1, 0, 0]),
+      embedBatch: async (texts) => texts.map(() => new Float32Array([0, 1, 0])),
+    });
+    const saving = sdk.trigger({ function_id: "mem::remember", payload: { content: "original body before import" } });
+    await reading;
+    const replacement = { ...captured, title: "newimportmarker", content: "newimportmarker" };
+    await kv.set(KV.memories, replacement.id, replacement);
+    await indexRecords([], [replacement]);
+    release();
+    await saving;
+    expect(vectorIndex.get(replacement.id)?.embedding).toEqual(new Float32Array([0, 1, 0]));
+    expect(getSearchIndex().search("newimportmarker").map((hit) => hit.obsId)).toEqual([replacement.id]);
+    getSearchIndex().clear();
   });
 
   it("logs a vector-index commit failure distinctly from an embed failure", async () => {

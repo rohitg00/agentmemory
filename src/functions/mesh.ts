@@ -1,10 +1,10 @@
 import { pinGraphState } from "../state/graph-generation.js";
+import { persistGraphRecords } from "../state/graph-ingestion.js";
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
-import { boundRecordSources } from "./graph.js";
 import type {
   MeshPeer,
   Memory,
@@ -109,60 +109,6 @@ async function lwwMergeList<T extends { id: string }>(
 
 function graphNodeTs(node: GraphNode): string {
   return node.updatedAt || node.createdAt;
-}
-
-async function lwwMergeGraphNodes(
-  kv: StateKV,
-  items: GraphNode[] | undefined,
-): Promise<number> {
-  if (!items || !Array.isArray(items)) return 0;
-  let count = 0;
-  for (const item of items) {
-    if (!item.id || typeof item.id !== "string") continue;
-    const ts = graphNodeTs(item);
-    if (!ts || Number.isNaN(new Date(ts).getTime())) continue;
-    const wrote = await withKeyedLock("graph:persist", async () => {
-      const existing = await kv.get<GraphNode>(KV.graphNodes, item.id);
-      if (!existing) {
-        await kv.set(KV.graphNodes, item.id, boundRecordSources(item));
-        return true;
-      }
-      if (new Date(ts) > new Date(graphNodeTs(existing))) {
-        await kv.set(KV.graphNodes, item.id, boundRecordSources(item));
-        return true;
-      }
-      return false;
-    });
-    if (wrote) count++;
-  }
-  return count;
-}
-
-async function lwwMergeGraphEdges(
-  kv: StateKV,
-  items: GraphEdge[] | undefined,
-): Promise<number> {
-  if (!items || !Array.isArray(items)) return 0;
-  let count = 0;
-  for (const item of items) {
-    if (!item.id || typeof item.id !== "string") continue;
-    const ts = item.createdAt;
-    if (!ts || Number.isNaN(new Date(ts).getTime())) continue;
-    const wrote = await withKeyedLock("graph:persist", async () => {
-      const existing = await kv.get<GraphEdge>(KV.graphEdges, item.id);
-      if (!existing) {
-        await kv.set(KV.graphEdges, item.id, boundRecordSources(item));
-        return true;
-      }
-      if (new Date(ts) > new Date(existing.createdAt)) {
-        await kv.set(KV.graphEdges, item.id, boundRecordSources(item));
-        return true;
-      }
-      return false;
-    });
-    if (wrote) count++;
-  }
-  return count;
 }
 
 export function registerMeshFunction(
@@ -392,8 +338,13 @@ export function registerMeshFunction(
           });
         }
       }
-      accepted += await lwwMergeGraphNodes(kv, data.graphNodes);
-      accepted += await lwwMergeGraphEdges(kv, data.graphEdges);
+      const graph = await persistGraphRecords(
+        kv,
+        Array.isArray(data.graphNodes) ? data.graphNodes : [],
+        Array.isArray(data.graphEdges) ? data.graphEdges : [],
+        { mode: "lww" },
+      );
+      accepted += graph.nodesWritten + graph.edgesWritten;
       await recordAudit(kv, "mesh_sync", "mem::mesh-receive", [], {
         action: "mesh.receive",
         accepted,
@@ -516,12 +467,13 @@ async function applySyncData(
       if (wrote) applied++;
     }
   }
-  if (scopes.includes("graph:nodes")) {
-    applied += await lwwMergeGraphNodes(kv, data.graphNodes);
-  }
-  if (scopes.includes("graph:edges")) {
-    applied += await lwwMergeGraphEdges(kv, data.graphEdges);
-  }
+  const graph = await persistGraphRecords(
+    kv,
+    scopes.includes("graph:nodes") && Array.isArray(data.graphNodes) ? data.graphNodes : [],
+    scopes.includes("graph:edges") && Array.isArray(data.graphEdges) ? data.graphEdges : [],
+    { mode: "lww" },
+  );
+  applied += graph.nodesWritten + graph.edgesWritten;
 
   return applied;
 }

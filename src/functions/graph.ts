@@ -183,11 +183,12 @@ function paginateFromSnapshot(
     depth: 0,
     totalNodes: total,
     totalEdges: snap.stats.totalEdges,
-    truncated: total > pageNodes.length,
+    truncated: total > pageNodes.length || snap.sampleIncomplete === true,
     limit,
     offset,
     fromSnapshot: true,
     degrees,
+    ...(snap.sampleIncomplete ? { warning: "Graph counts are current; the bounded snapshot sample may omit nodes or edges after replacements. Use a graph search for specific entities." } : {}),
   };
 }
 

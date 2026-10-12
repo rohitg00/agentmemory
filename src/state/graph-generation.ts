@@ -2,15 +2,16 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import type { StateKV } from "./kv.js";
 import { KV } from "./schema.js";
+import { afterKeyedLock } from "./keyed-mutex.js";
 
 const CONTROL_SCOPE = KV.graphControl;
 const CONTROL_KEY = "generation";
 const GRAPH_SCOPES = new Set<string>([
   KV.graphNodes, KV.graphEdges, KV.graphEdgeHistory, KV.graphSnapshot,
-  KV.graphNameIndex, KV.graphEdgeKey, KV.graphNodeDegree,
+  KV.graphNameIndex, KV.graphEdgeKey, KV.graphNodeDegree, KV.graphMembership,
 ]);
 const pinned = new AsyncLocalStorage<{ kv: StateKV; generation: string | null }>();
-const views = new WeakSet<StateKV>();
+const views = new WeakMap<StateKV, { target: StateKV; id: string | null }>();
 type GraphChange = "reset" | "snapshot" | "nodes" | "edges";
 let onGraphChange: ((kind: GraphChange) => Promise<void>) | null = null;
 
@@ -26,6 +27,8 @@ export async function notifyGraphGenerationChange(kv: StateKV, scope: string, ke
     : scope.startsWith(`${KV.graphNodes}:generation:`) ? "nodes"
     : scope.startsWith(`${KV.graphEdges}:generation:`) ? "edges" : undefined;
   if (!kind) return;
+  if (afterKeyedLock("graph:persist", () => notifyGraphGenerationChange(kv, scope, key), scope)) return;
+  if (afterKeyedLock("graph:viewer-events", () => notifyGraphGenerationChange(kv, scope, key), scope)) return;
   try {
     const current = await generation(kv);
     if (kind !== "reset" && !scope.endsWith(`:generation:${current}`)) return;
@@ -64,6 +67,10 @@ export async function resolveGraphScope(kv: StateKV, scope: string): Promise<str
 export async function pinGraphState(kv: StateKV): Promise<StateKV> {
   if (views.has(kv)) return kv;
   const id = await generation(kv);
+  return graphView(kv, id);
+}
+
+function graphView(kv: StateKV, id: string | null): StateKV {
   const methods = new Set(["get", "set", "update", "delete", "list"]);
   const view = new Proxy(kv, {
     get(target, property, receiver) {
@@ -75,7 +82,7 @@ export async function pinGraphState(kv: StateKV): Promise<StateKV> {
       );
     },
   });
-  views.add(view);
+  views.set(view, { target: kv, id });
   return view;
 }
 
@@ -84,4 +91,16 @@ export async function resetGraphGeneration(kv: StateKV, snapshot: unknown): Prom
   const id = randomUUID();
   await kv.set(physicalScope(KV.graphSnapshot, id), "current", snapshot);
   await kv.set(CONTROL_SCOPE, CONTROL_KEY, id);
+}
+
+export async function replaceGraphGeneration<T>(kv: StateKV, initialize: (fresh: StateKV) => Promise<T>): Promise<T> {
+  const pinnedState = await pinGraphState(kv);
+  const { target, id: previous } = views.get(pinnedState)!;
+  const id = randomUUID();
+  const result = await initialize(graphView(target, id));
+  // A delayed import cannot replace a reset that happened after it was pinned.
+  if (await generation(target) === previous) {
+    await target.set(CONTROL_SCOPE, CONTROL_KEY, id);
+  }
+  return result;
 }

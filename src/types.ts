@@ -504,6 +504,21 @@ export interface GraphQueryResult {
   warning?: string;
 }
 
+export interface GraphIndexMembership {
+  ids: string[];
+}
+
+export interface GraphMutationWrite {
+  scope: string;
+  key: string;
+  value: unknown;
+}
+
+export interface GraphMutationJournal {
+  writes: GraphMutationWrite[];
+  snapshot: GraphSnapshot;
+}
+
 export interface GraphSnapshot {
   version: 1;
   topNodes: GraphNode[];
@@ -523,6 +538,8 @@ export interface GraphSnapshot {
   updatedAt: string;
   dirty: boolean;
   resetAt?: string;
+  sampleIncomplete?: boolean;
+  pendingMutation?: GraphMutationJournal;
 }
 
 export type ConsolidationTier =

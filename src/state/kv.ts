@@ -1,6 +1,7 @@
 import type { IIIClient } from 'iii-sdk'
 import { withKeyedLock } from './keyed-mutex.js'
 import { resolveGraphScope, notifyGraphGenerationChange } from './graph-generation.js'
+import { ensureGraphConsistency, noteGraphSnapshotWrite } from './graph-consistency.js'
 
 export type StateBackend = 'file' | 'redis'
 
@@ -114,6 +115,7 @@ export class StateKV {
 
   async get<T = unknown>(scope: string, key: string): Promise<T | null> {
     scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
     return this.sdk.trigger<{ scope: string; key: string }, T | null>({
       function_id: 'state::get',
       payload: { scope, key },
@@ -122,6 +124,8 @@ export class StateKV {
 
   async set<T = unknown>(scope: string, key: string, value: T): Promise<T> {
     scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    noteGraphSnapshotWrite(this, scope, key)
     const result = await this.sdk.trigger<{ scope: string; key: string; value: T }, T>({
       function_id: 'state::set',
       payload: { scope, key, value },
@@ -132,6 +136,8 @@ export class StateKV {
 
   async update<T = unknown>(scope: string, key: string, ops: UpdateOp[]): Promise<T> {
     scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    noteGraphSnapshotWrite(this, scope, key)
     if (this.backend === 'redis' && canApplyLocally(ops)) {
       return withKeyedLock(`state-update:${scope}\u0000${key}`, async () => {
         // Keep both halves on the scope resolved before acquiring the lock.
@@ -155,6 +161,8 @@ export class StateKV {
 
   async delete(scope: string, key: string): Promise<void> {
     scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    noteGraphSnapshotWrite(this, scope, key)
     await this.sdk.trigger<{ scope: string; key: string }, void>({
       function_id: 'state::delete',
       payload: { scope, key },
@@ -164,6 +172,7 @@ export class StateKV {
 
   async list<T = unknown>(scope: string): Promise<T[]> {
     scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
     const values = await this.sdk.trigger<{ scope: string }, T[]>({
       function_id: 'state::list',
       payload: { scope },

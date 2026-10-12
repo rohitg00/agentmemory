@@ -1,4 +1,5 @@
 import { pinGraphState } from "../state/graph-generation.js";
+import { persistGraphRecords, validateGraphRecords } from "../state/graph-ingestion.js";
 import type { IIIClient } from "iii-sdk";
 import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type {
@@ -35,14 +36,13 @@ import {
   indexObservationSession,
   unindexObservationSession,
 } from "../state/obs-index.js";
-import { withKeyedLock, withKeyedLocks } from "../state/keyed-mutex.js";
+import { withKeyedLocks } from "../state/keyed-mutex.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import { indexRecords } from "./search.js";
 import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
 import { budgetImportedObservationSources } from "./observation-source-budget.js";
-import { boundRecordSources } from "./graph.js";
 
 // Bounded-concurrency chunk size for the import delete/write loops. A
 // "replace" or "merge" of a large export (up to MAX_TOTAL_OBSERVATIONS,
@@ -307,6 +307,11 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           error: `Too many total observations (max ${MAX_TOTAL_OBSERVATIONS})`,
         };
       }
+      try {
+        validateGraphRecords(importData.graphNodes ?? [], importData.graphEdges ?? []);
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
 
       const stats = {
         sessions: 0,
@@ -412,18 +417,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
             await kv.list<Insight>(KV.insights).catch(() => []),
             (i) => kv.delete(KV.insights, i.id),
           );
-          await withKeyedLock("graph:persist", async () =>
-            runChunked(
-              await kv.list<{ id: string }>(KV.graphNodes).catch(() => []),
-              (n) => kv.delete(KV.graphNodes, n.id),
-            ),
-          );
-          await withKeyedLock("graph:persist", async () =>
-            runChunked(
-              await kv.list<{ id: string }>(KV.graphEdges).catch(() => []),
-              (e) => kv.delete(KV.graphEdges, e.id),
-            ),
-          );
           await runChunked(
             await kv.list<{ id: string }>(KV.semantic).catch(() => []),
             (s) => kv.delete(KV.semantic, s.id),
@@ -515,27 +508,12 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         stats.summaries++;
       });
 
-      if (importData.graphNodes) {
-        await withKeyedLock("graph:persist", () =>
-          runChunked(importData.graphNodes!, async (node) => {
-            if (strategy === "skip") {
-              const existing = await kv.get(KV.graphNodes, node.id).catch(() => null);
-              if (existing) { stats.skipped++; return; }
-            }
-            await kv.set(KV.graphNodes, node.id, boundRecordSources(node));
-          }),
-        );
-      }
-      if (importData.graphEdges) {
-        await withKeyedLock("graph:persist", () =>
-          runChunked(importData.graphEdges!, async (edge) => {
-            if (strategy === "skip") {
-              const existing = await kv.get(KV.graphEdges, edge.id).catch(() => null);
-              if (existing) { stats.skipped++; return; }
-            }
-            await kv.set(KV.graphEdges, edge.id, boundRecordSources(edge));
-          }),
-        );
+      if (strategy === "replace" || importData.graphNodes || importData.graphEdges) {
+        const graph = await persistGraphRecords(kv, importData.graphNodes ?? [], importData.graphEdges ?? [], {
+          mode: strategy === "skip" ? "skip" : "merge",
+          replace: strategy === "replace",
+        });
+        stats.skipped += graph.nodesSkipped + graph.edgesSkipped;
       }
       if (importData.semanticMemories) {
         await runChunked(importData.semanticMemories, async (sem) => {

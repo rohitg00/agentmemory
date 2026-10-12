@@ -11,17 +11,25 @@ interface IndexEntry {
   layer: SearchResultLayer;
 }
 
+export interface SearchIndexRevision {
+  isCurrent(): boolean;
+  release(): void;
+}
+
 export class SearchIndex {
   private entries: Map<string, IndexEntry> = new Map();
   private invertedIndex: Map<string, Set<string>> = new Map();
   private docTermCounts: Map<string, Map<string, number>> = new Map();
   private totalDocLength = 0;
   private sortedTerms: string[] | null = null;
+  private revisionGeneration: object = {};
+  private absentRevisions = new Map<string, { token: object; readers: number }>();
 
   private readonly k1 = 1.2;
   private readonly b = 0.75;
 
   add(obs: CompressedObservation, layer: SearchResultLayer = "observation"): void {
+    this.invalidateAbsentRevision(obs.id);
     if (this.entries.has(obs.id)) this.remove(obs.id);
     const terms = this.extractTerms(obs);
     const termFreq = new Map<string, number>();
@@ -49,6 +57,48 @@ export class SearchIndex {
     }
 
     this.sortedTerms = null;
+  }
+
+  watchRevision(id: string): SearchIndexRevision {
+    const generation = this.revisionGeneration;
+    const entry = this.entries.get(id);
+    if (entry) {
+      return {
+        isCurrent: () => this.revisionGeneration === generation && this.entries.get(id) === entry,
+        release: () => {},
+      };
+    }
+    // Only absent IDs need a lease: retaining deleted-ID tombstones would grow
+    // forever, while one shared absent epoch would cancel unrelated writes.
+    let slot = this.absentRevisions.get(id);
+    if (!slot) {
+      slot = { token: {}, readers: 0 };
+      this.absentRevisions.set(id, slot);
+    }
+    slot.readers++;
+    const token = slot.token;
+    let released = false;
+    return {
+      isCurrent: () => !released && this.revisionGeneration === generation &&
+        this.entries.get(id) === undefined && slot.token === token,
+      release: () => {
+        if (released) return;
+        released = true;
+        slot.readers--;
+        if (slot.readers === 0 && this.absentRevisions.get(id) === slot) this.absentRevisions.delete(id);
+      },
+    };
+  }
+
+  private invalidateAbsentRevision(id: string): void {
+    const slot = this.absentRevisions.get(id);
+    if (slot) slot.token = {};
+  }
+
+  invalidateRevision(id: string): void {
+    this.invalidateAbsentRevision(id);
+    const entry = this.entries.get(id);
+    if (entry) this.entries.set(id, { ...entry });
   }
 
   has(id: string): boolean {
@@ -83,6 +133,7 @@ export class SearchIndex {
   }
 
   remove(id: string): void {
+    this.invalidateAbsentRevision(id);
     const entry = this.entries.get(id);
     if (!entry) return;
 
@@ -201,6 +252,8 @@ export class SearchIndex {
   }
 
   clear(): void {
+    this.revisionGeneration = {};
+    this.absentRevisions.clear();
     this.entries.clear();
     this.invertedIndex.clear();
     this.docTermCounts.clear();
@@ -209,6 +262,8 @@ export class SearchIndex {
   }
 
   restoreFrom(other: SearchIndex): void {
+    this.revisionGeneration = {};
+    this.absentRevisions.clear();
     this.entries = new Map(
       Array.from(other.entries.entries()).map(([k, v]) => [k, { ...v }]),
     );

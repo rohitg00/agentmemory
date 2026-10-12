@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+const snapshotContent = vi.hoisted(() => vi.fn(() => '{"version":"0.4.0","sessions":[],"memories":[]}'));
+
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -19,7 +21,7 @@ vi.mock("node:util", async () => {
   >;
   return {
     ...actual,
-    promisify: () => async () => ({ stdout: "abc1234\n", stderr: "" }),
+    promisify: () => async (_file: string, args: string[]) => ({ stdout: args[0] === "show" ? snapshotContent() : "abc1234\n", stderr: "" }),
   };
 });
 
@@ -27,12 +29,8 @@ vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(true),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
-  readFileSync: vi
-    .fn()
-    .mockReturnValue('{"version":"0.4.0","sessions":[],"memories":[]}'),
 }));
 
-import { readFileSync } from "node:fs";
 import { registerSnapshotFunction } from "../src/functions/snapshot.js";
 import { currentAuditScope } from "./helpers/mocks.js";
 import { getProjectSessionIndex } from "../src/state/session-index.js";
@@ -169,7 +167,7 @@ describe("Snapshot Functions", () => {
       status: "completed",
       observationCount: 0,
     };
-    vi.mocked(readFileSync).mockReturnValueOnce(
+    snapshotContent.mockReturnValueOnce(
       JSON.stringify({
         version: "0.4.0",
         sessions: [restoredSession],
@@ -267,7 +265,7 @@ describe("snapshot-restore bounds graph provenance", () => {
     const sdk = mockSdk();
     const kv = mockKV();
     registerSnapshotFunction(sdk as never, kv as never, "/tmp/agentmemory-snapshots");
-    vi.mocked(readFileSync).mockReturnValueOnce(
+    snapshotContent.mockReturnValueOnce(
       JSON.stringify({
         version: "0.4.0",
         sessions: [],
