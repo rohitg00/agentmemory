@@ -56,6 +56,7 @@ import {
   type RemoveOptions,
 } from "./cli/remove-plan.js";
 import { portFlagSuffix } from "./cli/ready-hint.js";
+import { embeddingStatusLabel } from "./cli/embedding-status.js";
 import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive } from "./cli/engine-install.js";
 import {
   dockerComposeArgs,
@@ -2254,7 +2255,8 @@ async function runStatus() {
 
     if (flagsRes) {
       const provider = flagsRes.provider === "llm" ? pc.green("✓ llm") : pc.yellow("✗ noop (no key)");
-      const embed = flagsRes.embeddingProvider === "embeddings" ? pc.green("✓ embeddings") : pc.dim("bm25-only");
+      const embedding = embeddingStatusLabel(flagsRes.embeddingProvider);
+      const embed = embedding ? pc.green(`✓ ${embedding}`) : pc.dim("bm25-only");
       const flagRows = (flagsRes.flags || []).map((f: { key: string; enabled: boolean; label: string }) =>
         `  ${f.enabled ? pc.green("✓") : pc.dim("✗")} ${pc.bold(f.key.padEnd(32))} ${f.label}`
       );
