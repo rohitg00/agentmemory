@@ -6,7 +6,9 @@ import {
   matchesText,
   pageAfterCursor,
   pageByOffset,
+  inTimeRange,
   parseListQuery,
+  parseTimeBounds,
   sortByKeyDesc,
 } from "../src/state/list-query.js";
 
@@ -79,5 +81,24 @@ describe("list query helpers", () => {
     expect(matchesText("AUTH", "fix auth bug", undefined)).toBe(true);
     expect(matchesText("auth", null, "other")).toBe(false);
     expect(matchesText(undefined, "anything")).toBe(true);
+  });
+});
+
+describe("time range filters", () => {
+  it("parses ISO bounds and rejects invalid ones", () => {
+    const ok = parseTimeBounds({ startedAfter: "2026-10-09T00:00:00Z", endedBefore: " 2026-10-10 " });
+    expect(ok).toEqual({ bounds: { startedAfter: Date.parse("2026-10-09T00:00:00Z"), endedBefore: Date.parse("2026-10-10") } });
+    expect(parseTimeBounds(undefined)).toEqual({ bounds: {} });
+    expect(parseTimeBounds({ startedAfter: "yesterday" })).toEqual({ error: "startedAfter must be an ISO 8601 timestamp" });
+  });
+
+  it("treats after as inclusive, before as exclusive, and drops rows without a time", () => {
+    const after = Date.parse("2026-10-09T00:00:00Z");
+    const before = Date.parse("2026-10-10T00:00:00Z");
+    expect(inTimeRange("2026-10-09T00:00:00Z", after, before)).toBe(true);
+    expect(inTimeRange("2026-10-10T00:00:00Z", after, before)).toBe(false);
+    expect(inTimeRange("2026-10-08T23:59:59Z", after, before)).toBe(false);
+    expect(inTimeRange(undefined, after)).toBe(false);
+    expect(inTimeRange(undefined)).toBe(true);
   });
 });

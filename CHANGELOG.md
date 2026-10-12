@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Time filters on `GET /agentmemory/sessions`.** `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` take ISO 8601 timestamps (after is inclusive, before is exclusive) and combine with the existing `project`, `status`, `q` and cursor params. Sessions with no value for the filtered field are excluded; an invalid timestamp returns 400.
+
 ### Fixed
 
 - **JSONL import keeps real session times and no longer duplicates on re-import.** `parseJsonlText` took `startedAt`/`endedAt` from the first and last line even when it was a timestampless metadata entry (`last-prompt`, `cost-state`), so the session got the import time. It now uses only entries that carry a timestamp. Observation ids are derived from the entry `uuid` (or session id and line position when absent) instead of a random id, so importing the same transcript again overwrites the same rows, and `observationCount` counts only rows that were new. Rows imported by earlier versions keep their random ids, so the first re-import after upgrading adds one last copy.
