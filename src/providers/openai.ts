@@ -118,13 +118,22 @@ export class OpenAIProvider implements MemoryProvider {
 
     const data = (await response.json()) as {
       choices?: Array<{
+        finish_reason?: string;
         message?: { content?: string; reasoning?: string; reasoning_content?: string };
       }>;
     };
-    const message = data.choices?.[0]?.message;
+    const choice = data.choices?.[0];
+    const message = choice?.message;
     const content = message?.content;
     if (content) {
       return content;
+    }
+    // A reasoning model that hits max_tokens returns only its partial chain of
+    // thought; returning that would store it as the compression result.
+    if (choice?.finish_reason === "length") {
+      throw new Error(
+        `OpenAI response hit max_tokens (${this.maxTokens}) before any content — raise MAX_TOKENS or lower OPENAI_REASONING_EFFORT.`,
+      );
     }
     const reasoning = message?.reasoning ?? message?.reasoning_content;
     if (reasoning) {
