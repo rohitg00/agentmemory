@@ -33,7 +33,7 @@ import { VectorIndex } from "./state/vector-index.js";
 import type { SearchLayer } from "./state/search-layer.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
-import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, settleWithin } from "./shutdown.js";
+import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, runStartupCleanup, settleWithin } from "./shutdown.js";
 import { registerPrivacyFunction, withWriteScrubbing } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
 import { registerCaptureFunctions } from "./functions/capture.js";
@@ -749,12 +749,12 @@ async function main() {
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
-    const hardExit = setTimeout(() => {
+    const hardExit = setTimeout(async () => {
       console.warn(
         `[agentmemory] Shutdown still blocked after ${SHUTDOWN_HARD_EXIT_MS}ms; exiting now.`,
       );
       clearWorkerPidfile();
-      process.exit(1);
+      process.exit(await runStartupCleanup(1).catch(() => 1));
     }, SHUTDOWN_HARD_EXIT_MS);
     hardExit.unref();
     healthMonitor.stop();
@@ -779,13 +779,13 @@ async function main() {
       console.warn(`[agentmemory] SDK shutdown failed:`, err);
     });
     clearWorkerPidfile();
-    process.exit(0);
+    process.exit(await runStartupCleanup(0).catch(() => 1));
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error(`[agentmemory] Fatal:`, err);
-  process.exit(1);
+  process.exit(await runStartupCleanup(1).catch(() => 1));
 });

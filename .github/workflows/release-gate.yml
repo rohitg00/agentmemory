@@ -44,10 +44,13 @@ jobs:
           node-version: 22
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - run: npm run release:gate -- --out "${{ runner.temp }}/release-gate"
+      - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: release-gate-${{ matrix.os }}
-          path: ${{ runner.temp }}/release-gate
+          path: |
+            ${{ runner.temp }}/release-gate
+            ${{ runner.temp }}/startup-gate
           if-no-files-found: ignore
           retention-days: 14
