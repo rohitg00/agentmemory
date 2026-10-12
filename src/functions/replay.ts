@@ -488,7 +488,7 @@ export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
             const failure = results.find((result) => result.status === "rejected");
             if (failure) throw failure.reason;
           }
-          return { ...planned, sessionRow };
+          return { ...planned, sessionRow, added };
         });
         if (!committed.success) return { ...committed, imported: sessionIds.length, sessionIds, observations: observationCount };
         const { sessionRow, observations: compressed } = committed;
@@ -509,7 +509,7 @@ export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
             error: err instanceof Error ? err.message : String(err),
           });
         }
-        observationCount += parsed.observations.length;
+        observationCount += committed.added;
         sessionIds.push(parsed.sessionId);
 
         await deriveCrystalAndLessons(

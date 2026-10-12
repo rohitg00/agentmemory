@@ -143,7 +143,10 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
 
   const observations: RawObservation[] = [];
 
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
+    let produced = 0;
+    const nextId = () =>
+      fingerprintId("obs", `${entry.uuid ?? `${sessionId}:${index}`}:${produced++}`);
     if (entry.sessionId && !sessionId) sessionId = entry.sessionId;
     if (typeof entry.cwd === "string" && entry.cwd.trim() && !cwd) cwd = entry.cwd;
     if (entry.timestamp) {
@@ -160,7 +163,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
       if (toolResults.length > 0) {
         for (const result of toolResults) {
           observations.push({
-            id: "",
+            id: nextId(),
             sessionId: sessionId || "imported",
             timestamp: ts,
             hookType: (result.isError ? "post_tool_failure" : "post_tool_use") as HookType,
@@ -174,7 +177,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
         const text = toText(content);
         if (text.trim().length > 0) {
           observations.push({
-            id: "",
+            id: nextId(),
             sessionId: sessionId || "imported",
             timestamp: ts,
             hookType: "prompt_submit" as HookType,
@@ -188,7 +191,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
       const tools = extractToolUses(content);
       if (text.trim().length > 0) {
         observations.push({
-          id: "",
+          id: nextId(),
           sessionId: sessionId || "imported",
           timestamp: ts,
           hookType: "stop" as HookType,
@@ -198,7 +201,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
       }
       for (const tool of tools) {
         observations.push({
-          id: "",
+          id: nextId(),
           sessionId: sessionId || "imported",
           timestamp: ts,
           hookType: "pre_tool_use" as HookType,
@@ -213,9 +216,8 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
   }
 
   const effectiveSessionId = sessionId || fallbackSessionId || generateId("sess");
-  for (const [i, obs] of observations.entries()) {
+  for (const obs of observations) {
     if (obs.sessionId === "imported") obs.sessionId = effectiveSessionId;
-    obs.id = fingerprintId("obs", `${effectiveSessionId}:${i}`);
   }
 
   const nowIso = new Date().toISOString();
