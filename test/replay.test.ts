@@ -167,3 +167,24 @@ describe("rawFromCompressed", () => {
   });
 });
 
+
+describe("parseJsonlText metadata lines and re-import", () => {
+  const jsonl = [
+    { type: "last-prompt" },
+    { type: "user", sessionId: "s1", timestamp: "2026-10-09T09:12:38Z", message: { role: "user", content: "hi" } },
+    { type: "assistant", sessionId: "s1", timestamp: "2026-10-09T09:54:34Z", message: { role: "assistant", content: "hello" } },
+    { type: "cost-state" },
+  ].map((e) => JSON.stringify(e)).join("\n");
+
+  it("ignores timestampless entries for startedAt/endedAt", () => {
+    const out = parseJsonlText(jsonl);
+    expect(out.startedAt).toBe("2026-10-09T09:12:38Z");
+    expect(out.endedAt).toBe("2026-10-09T09:54:34Z");
+  });
+
+  it("derives the same observation ids on every parse", () => {
+    const ids = (t: string) => parseJsonlText(t).observations.map((o) => o.id);
+    expect(ids(jsonl)).toEqual(ids(jsonl));
+    expect(new Set(ids(jsonl)).size).toBe(2);
+  });
+});

@@ -474,7 +474,9 @@ export function registerReplayFunctions(sdk: IIIClient, kv: StateKV): void {
             firstPrompt,
           };
           sessionRow.id ||= parsed.sessionId;
-          sessionRow.observationCount = (sessionRow.observationCount || 0) + parsed.observations.length;
+          const knownIds = new Set(existingRows.map((row) => row.id));
+          const added = planned.observations.filter((obs) => !knownIds.has(obs.id)).length;
+          sessionRow.observationCount = (sessionRow.observationCount || 0) + added;
           if (parsed.endedAt > (sessionRow.endedAt || "")) sessionRow.endedAt = parsed.endedAt;
           if (sessionRow.status === "active") sessionRow.status = "completed";
           if (!sessionRow.tags?.includes("jsonl-import")) sessionRow.tags = [...(sessionRow.tags || []), "jsonl-import"];
