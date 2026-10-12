@@ -20,6 +20,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
  *   - Azure OpenAI (auto-detected from .openai.azure.com host)
  *   - DeepSeek
  *   - 硅基流动 (SiliconFlow)
+ *   - Novita AI (https://api.novita.ai/openai/v1)
  *   - vLLM / LM Studio / Ollama (with OpenAI compatibility layer)
  *   - Any other proxy implementing /v1/chat/completions
  *
