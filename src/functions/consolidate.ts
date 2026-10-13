@@ -7,7 +7,9 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
-import { recordAudit } from "./audit.js";
+import { safeAudit } from "./audit.js";
+import { withKeyedLocks } from "../state/keyed-mutex.js";
+import { stableStringify } from "../capture/event-id.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
 
@@ -62,6 +64,11 @@ function parseMemoryXml(
   };
 }
 
+function sameIds(left: string[] | undefined, right: string[]): boolean {
+  const ids = new Set(left);
+  return ids.size === right.length && right.every((id) => ids.has(id));
+}
+
 export function registerConsolidateFunction(
   sdk: IIIClient,
   kv: StateKV,
@@ -111,10 +118,6 @@ export function registerConsolidateFunction(
       }
 
       let consolidated = 0;
-      const existingMemories = await kv.list<Memory>(KV.memories);
-      const existingTitles = new Set(
-        existingMemories.map((m) => m.title.toLowerCase()),
-      );
 
       const MAX_LLM_CALLS = 10;
       let llmCallCount = 0;
@@ -138,17 +141,19 @@ export function registerConsolidateFunction(
           )
           .join("\n\n");
 
+        let timer: ReturnType<typeof setTimeout> | undefined;
         try {
+          llmCallCount++;
           const response = await Promise.race([
             provider.compress(
               CONSOLIDATION_SYSTEM,
               `Concept: "${concept}"\n\nObservations:\n${prompt}`,
             ),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("compress timeout")), 30_000),
-            ),
+            new Promise<never>((_, reject) => {
+              timer = setTimeout(() => reject(new Error("compress timeout")), 30_000);
+            }),
           ]);
-          llmCallCount++;
+          clearTimeout(timer);
           const parsed = parseMemoryXml(response, sessionIds);
           if (!parsed) continue;
 
@@ -159,75 +164,98 @@ export function registerConsolidateFunction(
               ? data.project.trim()
               : undefined;
 
-          // A scoped consolidation run must only evolve memories that belong
-          // to the same project. Without this guard, two projects that happen
-          // to consolidate observations into an identically-titled memory would
-          // cause one project's memory to silently evolve the other's — the
-          // exact class of cross-project corruption this fix is designed to
-          // prevent. An unscoped run (no data.project, background cron path)
-          // preserves the pre-existing behavior and may evolve any memory.
-          const existingMatch = existingMemories.find(
-            (m) =>
-              m.title.toLowerCase() === parsed.title.toLowerCase() &&
-              (!scopedProject || !m.project || m.project === scopedProject),
-          );
+          const publicationLocks = ["mem:remember", ...sessionIds.map((sid) => `obs:${sid}`)];
+          const published = await withKeyedLocks(publicationLocks, async () => {
+            for (const sid of sessionIds) {
+              const current = await kv.get<Session>(KV.sessions, sid);
+              const original = filtered.find((session) => session.id === sid)!;
+              if (!current || current.project !== original.project || current.agentId !== original.agentId) return false;
+            }
+            for (const { sid, ...original } of top) {
+              const current = await kv.get<CompressedObservation>(KV.observations(sid), original.id);
+              if (!current || stableStringify(current) !== stableStringify(original)) return false;
+            }
+            const memories = await kv.list<Memory>(KV.memories);
+            const candidates = memories.filter((memory) =>
+              memory.isLatest !== false &&
+              (!scopedProject || !memory.project || memory.project === scopedProject),
+            );
+            const children = new Map<string, Memory[]>();
+            for (const memory of candidates) {
+              if (!memory.parentId) continue;
+              const siblings = children.get(memory.parentId) ?? [];
+              siblings.push(memory);
+              children.set(memory.parentId, siblings);
+            }
+            // Complete an interrupted successor publication only for unambiguous lineage.
+            for (const parent of candidates) {
+              const successors = children.get(parent.id);
+              if (successors?.length !== 1) continue;
+              const child = successors[0];
+              if (child.title.toLowerCase() !== parent.title.toLowerCase() ||
+                  child.version !== (parent.version || 1) + 1 ||
+                  !child.supersedes?.includes(parent.id)) continue;
+              await kv.set(KV.memories, parent.id, { ...parent, isLatest: false });
+              parent.isLatest = false;
+              await safeAudit(kv, "evolve", "mem::consolidate", [parent.id], {
+                action: "complete_publication", newId: child.id,
+              });
+            }
+            const heads = candidates.filter((memory) => memory.isLatest !== false);
+            if (heads.some((memory) =>
+              sameIds(memory.sourceObservationIds, obsIds) &&
+              sameIds(memory.sessionIds, sessionIds),
+            )) return false;
 
-          if (existingMatch) {
-            existingMatch.isLatest = false;
-            await kv.set(KV.memories, existingMatch.id, existingMatch);
-            await recordAudit(kv, "evolve", "mem::consolidate", [existingMatch.id], {
-              action: "mark_non_latest",
-              concept,
-            });
-
-            const evolved: Memory = {
-              id: generateId("mem"),
-              createdAt: now,
-              updatedAt: now,
-              ...parsed,
-              version: (existingMatch.version || 1) + 1,
-              parentId: existingMatch.id,
-              supersedes: [
-                existingMatch.id,
-                ...(existingMatch.supersedes || []),
-              ],
-              sourceObservationIds: obsIds,
-              isLatest: true,
-              ...(scopedProject !== undefined && { project: scopedProject }),
-            };
-            await kv.set(KV.memories, evolved.id, evolved);
-            await recordAudit(kv, "evolve", "mem::consolidate", [evolved.id], {
-              action: "evolve_memory",
-              oldId: existingMatch.id,
-              newId: evolved.id,
-              concept,
-            });
-            existingTitles.add(evolved.title.toLowerCase());
-            consolidated++;
-          } else {
+            const previous = heads.find((memory) =>
+              memory.title.toLowerCase() === parsed.title.toLowerCase(),
+            );
             const memory: Memory = {
               id: generateId("mem"),
               createdAt: now,
               updatedAt: now,
               ...parsed,
               sourceObservationIds: obsIds,
-              version: 1,
+              version: previous ? (previous.version || 1) + 1 : 1,
               isLatest: true,
+              ...(previous && {
+                parentId: previous.id,
+                supersedes: [previous.id, ...(previous.supersedes || [])],
+              }),
               ...(scopedProject !== undefined && { project: scopedProject }),
             };
-            await kv.set(KV.memories, memory.id, memory);
-            await recordAudit(kv, "remember", "mem::consolidate", [memory.id], {
-              action: "create_memory",
+
+            // Keep the previous version readable until its successor is stored.
+            try {
+              await kv.set(KV.memories, memory.id, memory);
+            } catch (error) {
+              if (!(await kv.get<Memory>(KV.memories, memory.id))) throw error;
+            }
+            if (previous) {
+              try {
+                await kv.set(KV.memories, previous.id, { ...previous, isLatest: false });
+              } catch (error) {
+                // A write can commit before its acknowledgement fails.
+                await kv.set(KV.memories, previous.id, previous);
+                await kv.delete(KV.memories, memory.id);
+                throw error;
+              }
+            }
+            await safeAudit(kv, previous ? "evolve" : "remember", "mem::consolidate", [memory.id], {
+              action: previous ? "evolve_memory" : "create_memory",
+              ...(previous && { oldId: previous.id, newId: memory.id }),
               concept,
             });
-            existingTitles.add(memory.title.toLowerCase());
-            consolidated++;
-          }
+            return true;
+          });
+          if (published) consolidated++;
         } catch (err) {
           logger.warn("Consolidation failed for concept", {
             concept,
             error: err instanceof Error ? err.message : String(err),
           });
+        } finally {
+          clearTimeout(timer);
         }
       }
 

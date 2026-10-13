@@ -5,7 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 vi.mock("../src/functions/audit.js", () => ({
-  recordAudit: vi.fn(),
+  safeAudit: vi.fn(),
 }));
 
 import { registerConsolidateFunction } from "../src/functions/consolidate.js";
