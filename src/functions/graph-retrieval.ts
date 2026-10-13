@@ -40,8 +40,66 @@ function buildGraphContext(
   return parts.join(" ");
 }
 
+const MAX_START_NODES = 25;
+const MAX_DISCOVERED_NODES = 2000;
+const MAX_EXAMINED_EDGES = 10_000;
+
+type GraphView = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  byId: Map<string, GraphNode>;
+  adjacency: Map<string, Array<{ neighborId: string; edge: GraphEdge }>>;
+};
+type TraversalBudget = { nodes: number; edges: number };
+
+async function readGraph(kv: StateKV): Promise<GraphView> {
+  const pinned = await pinGraphState(kv);
+  const nodes = (await pinned.list<GraphNode>(KV.graphNodes)).filter((node) => !node.stale);
+  const edges = (await pinned.list<GraphEdge>(KV.graphEdges)).filter((edge) => !edge.stale);
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const adjacency: GraphView["adjacency"] = new Map();
+  for (const edge of edges) {
+    if (!byId.has(edge.sourceNodeId) || !byId.has(edge.targetNodeId)) continue;
+    for (const [from, to] of [[edge.sourceNodeId, edge.targetNodeId], [edge.targetNodeId, edge.sourceNodeId]]) {
+      let neighbors = adjacency.get(from);
+      if (!neighbors) adjacency.set(from, neighbors = []);
+      neighbors.push({ neighborId: to, edge });
+    }
+  }
+  for (const neighbors of adjacency.values()) {
+    neighbors.sort((a, b) =>
+      b.edge.weight - a.edge.weight ||
+      a.neighborId.localeCompare(b.neighborId) ||
+      a.edge.id.localeCompare(b.edge.id),
+    );
+  }
+  return { nodes, edges, byId, adjacency };
+}
+
 export class GraphRetrieval {
   constructor(private kv: StateKV, private resolveLayer?: SearchLayerResolver) {}
+
+  // The caller owns this query's lifetime; never retain its view across searches.
+  createQuery(): GraphQuery {
+    let view: Promise<GraphView> | undefined;
+    return new GraphQuery(() => view ??= readGraph(this.kv), this.resolveLayer);
+  }
+
+  searchByEntities(...args: Parameters<GraphQuery["searchByEntities"]>): Promise<GraphRetrievalResult[]> {
+    return this.createQuery().searchByEntities(...args);
+  }
+
+  expandFromChunks(...args: Parameters<GraphQuery["expandFromChunks"]>): Promise<GraphRetrievalResult[]> {
+    return this.createQuery().expandFromChunks(...args);
+  }
+
+  temporalQuery(...args: Parameters<GraphQuery["temporalQuery"]>): ReturnType<GraphQuery["temporalQuery"]> {
+    return this.createQuery().temporalQuery(...args);
+  }
+}
+
+export class GraphQuery {
+  constructor(private loadGraph: () => Promise<GraphView>, private resolveLayer?: SearchLayerResolver) {}
 
   async searchByEntities(
     entityNames: string[],
@@ -49,31 +107,27 @@ export class GraphRetrieval {
     maxResults = 20,
     targetLayer: SearchLayer = "all",
   ): Promise<GraphRetrievalResult[]> {
-    const kv = await pinGraphState(this.kv);
-    const allNodes = (await kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
-    const allEdges = (await kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
-
-    const matchingNodes = allNodes.filter((n) => {
-      const nameLower = n.name.toLowerCase();
-      return entityNames.some(
-        (e) =>
-          nameLower.includes(e.toLowerCase()) ||
-          e.toLowerCase().includes(nameLower),
-      );
-    });
+    const names = [...new Set(entityNames.map((name) => name.trim().toLowerCase()).filter(Boolean))];
+    if (names.length === 0 || maxResults <= 0) return [];
+    const graph = await this.loadGraph();
+    const matchingNodes = graph.nodes
+      .map((node) => ({ node, name: node.name.toLowerCase() }))
+      .filter(({ name }) => name.length > 0 && names.some((entity) => name.includes(entity) || entity.includes(name)))
+      .sort((a, b) =>
+        Number(names.includes(b.name)) - Number(names.includes(a.name)) ||
+        a.name.localeCompare(b.name) || a.node.id.localeCompare(b.node.id),
+      )
+      .slice(0, MAX_START_NODES)
+      .map(({ node }) => node);
 
     if (matchingNodes.length === 0) return [];
 
     const results: GraphRetrievalResult[] = [];
     const visitedObs = new Set<string>();
 
+    const budget = { nodes: MAX_DISCOVERED_NODES, edges: MAX_EXAMINED_EDGES };
     for (const startNode of matchingNodes) {
-      const paths = this.dijkstraTraversal(
-        startNode,
-        allNodes,
-        allEdges,
-        maxDepth,
-      );
+      const paths = this.dijkstraTraversal(startNode, graph, maxDepth, budget);
 
       for (const path of paths) {
         const lastNode = path[path.length - 1].node;
@@ -124,19 +178,20 @@ export class GraphRetrieval {
     maxResults = 10,
     targetLayer: SearchLayer = "all",
   ): Promise<GraphRetrievalResult[]> {
-    const kv = await pinGraphState(this.kv);
-    const allNodes = (await kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
-    const allEdges = (await kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
-
-    const linkedNodes = allNodes.filter((n) =>
-      n.sourceObservationIds.some((id) => obsIds.includes(id)),
-    );
+    if (obsIds.length === 0 || maxResults <= 0) return [];
+    const graph = await this.loadGraph();
+    const wanted = new Set(obsIds);
+    const linkedNodes = graph.nodes
+      .filter((node) => node.sourceObservationIds.some((id) => wanted.has(id)))
+      .sort((a, b) => a.id.localeCompare(b.id))
+      .slice(0, MAX_START_NODES);
 
     const results: GraphRetrievalResult[] = [];
     const visitedObs = new Set<string>(obsIds);
 
+    const budget = { nodes: MAX_DISCOVERED_NODES, edges: MAX_EXAMINED_EDGES };
     for (const node of linkedNodes) {
-      const paths = this.dijkstraTraversal(node, allNodes, allEdges, maxDepth);
+      const paths = this.dijkstraTraversal(node, graph, maxDepth, budget);
       for (const path of paths) {
         const lastNode = path[path.length - 1].node;
         for (const obsId of lastNode.sourceObservationIds) {
@@ -169,9 +224,7 @@ export class GraphRetrieval {
     currentState: GraphEdge[];
     history: GraphEdge[];
   }> {
-    const kv = await pinGraphState(this.kv);
-    const allNodes = (await kv.list<GraphNode>(KV.graphNodes)).filter((n) => !n.stale);
-    const allEdges = (await kv.list<GraphEdge>(KV.graphEdges)).filter((e) => !e.stale);
+    const { nodes: allNodes, edges: allEdges } = await this.loadGraph();
 
     const entity = allNodes.find(
       (n) => n.name.toLowerCase() === entityName.toLowerCase(),
@@ -236,22 +289,13 @@ export class GraphRetrieval {
 
   private dijkstraTraversal(
     startNode: GraphNode,
-    allNodes: GraphNode[],
-    allEdges: GraphEdge[],
+    graph: GraphView,
     maxDepth: number,
+    budget: TraversalBudget,
   ): Array<Array<{ node: GraphNode; edge?: GraphEdge }>> {
-    const nodeIndex = new Map<string, GraphNode>();
-    for (const n of allNodes) nodeIndex.set(n.id, n);
-
-    const adjacency = new Map<string, Array<{ neighborId: string; edge: GraphEdge }>>();
-    for (const edge of allEdges) {
-      const a = edge.sourceNodeId;
-      const b = edge.targetNodeId;
-      if (!adjacency.has(a)) adjacency.set(a, []);
-      if (!adjacency.has(b)) adjacency.set(b, []);
-      adjacency.get(a)!.push({ neighborId: b, edge });
-      adjacency.get(b)!.push({ neighborId: a, edge });
-    }
+    if (budget.nodes <= 0 || budget.edges <= 0 || maxDepth <= 0) return [];
+    budget.nodes--;
+    const { byId: nodeIndex, adjacency } = graph;
 
     const dist = new Map<string, number>();
     const pathTo = new Map<string, Array<{ node: GraphNode; edge?: GraphEdge }>>();
@@ -263,7 +307,7 @@ export class GraphRetrieval {
     );
     heap.push({ nodeId: startNode.id, depth: 0, cost: 0 });
 
-    while (heap.size() > 0) {
+    while (heap.size() > 0 && budget.edges > 0) {
       const { nodeId, depth, cost } = heap.pop()!;
       // Skip stale heap entries (cost beaten by a later push).
       if (cost > (dist.get(nodeId) ?? Infinity)) continue;
@@ -271,6 +315,8 @@ export class GraphRetrieval {
 
       const neighbors = adjacency.get(nodeId) ?? [];
       for (const { neighborId, edge } of neighbors) {
+        if (budget.edges <= 0) break;
+        budget.edges--;
         const nextNode = nodeIndex.get(neighborId);
         if (!nextNode) continue;
         // Clamp weight to avoid division-by-zero on malformed edges;
@@ -278,6 +324,10 @@ export class GraphRetrieval {
         const edgeCost = 1 / Math.max(edge.weight, 0.01);
         const newCost = cost + edgeCost;
         if (newCost < (dist.get(neighborId) ?? Infinity)) {
+          if (!dist.has(neighborId)) {
+            if (budget.nodes <= 0) continue;
+            budget.nodes--;
+          }
           dist.set(neighborId, newCost);
           pathTo.set(neighborId, [
             ...pathTo.get(nodeId)!,
