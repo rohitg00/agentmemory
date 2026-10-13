@@ -1430,7 +1430,7 @@ fi
 | Prometheus / Grafana | iii OTEL + 健康監控 |
 | 自訂外掛系統 | `iii worker add <name>` |
 
-**232 個原始檔 · ~55,000 行程式碼 · 3,300+ 測試 · 312 個函式 · 62 個 KV 範圍**,全部基於三種原語。沒有 `agentmemory plugin install`。外掛系統就是 iii 本身。
+**230 個原始檔 · ~55,000 行程式碼 · 3,300+ 測試 · 312 個函式 · 62 個 KV 範圍**,全部基於三種原語。沒有 `agentmemory plugin install`。外掛系統就是 iii 本身。
 
 ---
 

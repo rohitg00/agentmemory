@@ -184,6 +184,45 @@ describe("graph traversal bounds", () => {
     expect(hits[0].obsId).toBe("obs_exact");
   });
 
+  it("orders exact names, partial names, and duplicate-name IDs by code units before the start cap", async () => {
+    const r = rig();
+    await r.seed([
+      ...["ä", "a", "Z", "😀"].map((id) => node(id, id === "Z" ? "AUTH" : "auth")),
+      ...["Ä", "Z", "á", "a", "😀"].map((name) => node(`partial-${name}`, `auth-${name}`)),
+      ...Array.from({ length: 30 }, (_, i) => node(`tail-${i}`, `auth-界${String(i).padStart(2, "0")}`)),
+    ].reverse());
+    const hits = await new GraphRetrieval(r.kv).searchByEntities([" AUTH ", "auth"], 0, 1000);
+    expect(hits.map((hit) => hit.obsId)).toEqual([
+      "obs_Z", "obs_a", "obs_ä", "obs_😀",
+      "obs_partial-a", "obs_partial-Z", "obs_partial-á", "obs_partial-Ä",
+      ...Array.from({ length: 17 }, (_, i) => `obs_tail-${i}`),
+    ]);
+  });
+
+  it("orders chunk-expansion starts by code units rather than host collation", async () => {
+    const r = rig();
+    const ids = ["ä", "a", "Z", "😀"];
+    await r.seed([
+      ...ids.map((id) => node(id, id, ["seed"])),
+      ...ids.map((id) => node(`end-${id}`)),
+    ], ids.map((id) => edge(`edge-${id}`, id, `end-${id}`)));
+    const hits = await new GraphRetrieval(r.kv).expandFromChunks(["seed"], 1, 10);
+    expect(hits.map((hit) => hit.obsId)).toEqual(["obs_end-Z", "obs_end-a", "obs_end-ä", "obs_end-😀"]);
+  });
+
+  it("breaks equal-weight adjacency ties by neighbor and edge IDs using code units", async () => {
+    const r = rig();
+    const ids = ["ä", "a", "Z", "😀"];
+    await r.seed([node("hub", "Anchor", ["seed"]), ...ids.map((id) => node(id))], [
+      ...ids.map((id) => edge(`edge-${id}`, "hub", id)),
+      { ...edge("A", "hub", "Z"), type: "uses" },
+      { ...edge("a", "hub", "Z"), type: "imports" },
+    ]);
+    const hits = await new GraphRetrieval(r.kv).expandFromChunks(["seed"], 1, 10);
+    expect(hits.map((hit) => hit.obsId)).toEqual(["obs_Z", "obs_a", "obs_ä", "obs_😀"]);
+    expect(hits[0].graphContext).toContain("--uses-->");
+  });
+
   it("caps chunk expansion starts as well as entity starts", async () => {
     const r = rig();
     const starts = Array.from({ length: 100 }, (_, i) => node(`start_${i}`, `source-${i}`, ["seed"]));

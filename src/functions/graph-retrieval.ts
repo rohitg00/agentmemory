@@ -52,6 +52,11 @@ type GraphView = {
 };
 type TraversalBudget = { nodes: number; edges: number };
 
+function compareText(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
+}
+
 async function readGraph(kv: StateKV): Promise<GraphView> {
   const pinned = await pinGraphState(kv);
   const nodes = (await pinned.list<GraphNode>(KV.graphNodes)).filter((node) => !node.stale);
@@ -69,8 +74,8 @@ async function readGraph(kv: StateKV): Promise<GraphView> {
   for (const neighbors of adjacency.values()) {
     neighbors.sort((a, b) =>
       b.edge.weight - a.edge.weight ||
-      a.neighborId.localeCompare(b.neighborId) ||
-      a.edge.id.localeCompare(b.edge.id),
+      compareText(a.neighborId, b.neighborId) ||
+      compareText(a.edge.id, b.edge.id),
     );
   }
   return { nodes, edges, byId, adjacency };
@@ -107,15 +112,16 @@ export class GraphQuery {
     maxResults = 20,
     targetLayer: SearchLayer = "all",
   ): Promise<GraphRetrievalResult[]> {
-    const names = [...new Set(entityNames.map((name) => name.trim().toLowerCase()).filter(Boolean))];
+    const exactNames = new Set(entityNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
+    const names = [...exactNames];
     if (names.length === 0 || maxResults <= 0) return [];
     const graph = await this.loadGraph();
     const matchingNodes = graph.nodes
       .map((node) => ({ node, name: node.name.toLowerCase() }))
       .filter(({ name }) => name.length > 0 && names.some((entity) => name.includes(entity) || entity.includes(name)))
       .sort((a, b) =>
-        Number(names.includes(b.name)) - Number(names.includes(a.name)) ||
-        a.name.localeCompare(b.name) || a.node.id.localeCompare(b.node.id),
+        Number(exactNames.has(b.name)) - Number(exactNames.has(a.name)) ||
+        compareText(a.name, b.name) || compareText(a.node.id, b.node.id),
       )
       .slice(0, MAX_START_NODES)
       .map(({ node }) => node);
@@ -183,7 +189,7 @@ export class GraphQuery {
     const wanted = new Set(obsIds);
     const linkedNodes = graph.nodes
       .filter((node) => node.sourceObservationIds.some((id) => wanted.has(id)))
-      .sort((a, b) => a.id.localeCompare(b.id))
+      .sort((a, b) => compareText(a.id, b.id))
       .slice(0, MAX_START_NODES);
 
     const results: GraphRetrievalResult[] = [];
