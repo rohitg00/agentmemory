@@ -158,6 +158,8 @@ async function startModel() {
       if (modelMode === "missing") content = '<insight confidence="0.8" title="Uncited result">An unsupported checkpoint assertion.</insight>';
       else if (modelMode === "malformed") content = '<insight confidence="0.8" title="Truncated output" sources="F1,L1">No closing tag';
       else if (modelMode === "empty") content = "<insights></insights>";
+      else if (modelMode === "oversized") content = "x".repeat(65537);
+      else if (modelMode === "excessive-citations") content = `<insight confidence="0.8" title="Too much evidence" sources="${Array.from({ length: 20 }, (_, i) => `F${i + 1}`).join(",")},L1">${modelContent}</insight>`;
       else {
         const fact = sourceLabel(prompt, "FACT_ALPHA", "F");
         const lesson = sourceLabel(prompt, "LESSON_SELECTED", "L");
@@ -214,15 +216,19 @@ async function install() {
   const binDir = join(runtime, "bin"); mkdirSync(binDir);
   copyFileSync(engine, join(binDir, "iii")); chmodSync(join(binDir, "iii"), 0o755);
 }
-async function rest(path, body, { auth = true } = {}) {
+async function rest(path, body, { auth = true, expectedStatus = 200 } = {}) {
   const headers = { "content-type": "application/json" };
   if (auth) headers.authorization = `Bearer ${secret}`;
   const response = await fetch(`http://127.0.0.1:${port}/agentmemory${path}`, { method: body === undefined ? "GET" : "POST", headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30_000) });
   const text = await response.text();
   let json;
   try { json = JSON.parse(text); } catch { json = text; }
-  if (path !== "/livez") wire.push({ path, status: response.status, request: body, response: json });
-  assert.equal(response.status, 200, `${path}: ${response.status} ${text.slice(0, 600)}`);
+  if (path !== "/livez") wire.push({
+    path, status: response.status,
+    request: JSON.stringify(body ?? "").length > 65536 ? { bytes: Buffer.byteLength(JSON.stringify(body)) } : body,
+    response: text.length > 65536 ? { bytes: Buffer.byteLength(text), insightIds: json.insights?.map((item) => item.id) } : json,
+  });
+  assert.equal(response.status, expectedStatus, `${path}: ${response.status} ${text.slice(0, 600)}`);
   return json;
 }
 async function startDaemon() {
@@ -395,6 +401,70 @@ async function main() {
     assert.deepEqual(after, before);
     const throughBridge = await bridge.call("memory_insight_list", { project: "reflection-a" });
     assert.deepEqual(throughBridge.insights, before);
+  });
+  await scenario("bounded-evidence-and-reinforcement", async () => {
+    const imported = fixture();
+    const template = imported.semanticMemories[0];
+    imported.semanticMemories.unshift({ ...template, id: "fact-oversized", fact: `checkpoint ${"界".repeat(3000)}` });
+    for (let i = 0; i < 50; i++) imported.semanticMemories.push({ ...template, id: `zz-extra-${i}`, fact: `EXTRA_${i} checkpoint rotation evidence` });
+    assert.equal((await rest("/import", { exportData: imported, strategy: "replace" })).success, true);
+    modelMode = "valid";
+    const first = await rest("/reflect", { project: "reflection-a", maxClusters: 1 });
+    assert.equal(first.newInsights, 1);
+    const request = modelRequests.at(-1);
+    assert(Buffer.byteLength(request.system + request.prompt) <= 65536);
+    assert(!request.prompt.includes("界"));
+    assert.equal([...request.prompt.matchAll(/"source":"F\d+"/g)].length, 20);
+    verifyEvidence((await rest("/insights")).insights[0], "a");
+    modelMode = "excessive-citations";
+    const rejected = await rest("/reflect", { project: "reflection-a", maxClusters: 1 });
+    assert.equal(rejected.rejectedInsights, 1); assert.equal(rejected.reinforced, 0);
+    modelMode = "valid";
+    assert.equal((await rest("/reflect", { project: "reflection-a", maxClusters: 1 })).reinforced, 1);
+    modelMode = "oversized";
+    const oversized = await rest("/reflect", { project: "reflection-a", maxClusters: 1 });
+    assert.equal(oversized.failedClusters, 1); assert.equal(oversized.success, false);
+  });
+  await scenario("count-validation-on-rest-and-mcp", async () => {
+    await rest("/reflect", { maxClusters: -1 }, { expectedStatus: 400 });
+    await rest("/insights?limit=-1", undefined, { expectedStatus: 400 });
+    await rest("/insights/search", { query: "checkpoint", limit: 1.5 }, { expectedStatus: 400 });
+    await rest("/mcp/call", { name: "memory_insight_list", arguments: { limit: -1 } }, { expectedStatus: 400 });
+    const rows = Array.from({ length: 510 }, (_, i) => ({
+      id: `count-${i}`, title: "Checkpoint", content: "checkpoint count fixture", confidence: 0.8,
+      reinforcements: 0, sourceConceptCluster: [], sourceMemoryIds: [], sourceLessonIds: [], sourceCrystalIds: [],
+      project: "count-proof", tags: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), decayRate: 0.05,
+    }));
+    await rest("/import", { exportData: { ...fixture(), insights: rows }, strategy: "replace" });
+    assert.equal((await rest("/insights?project=count-proof&limit=30000")).insights.length, 500);
+    assert.equal((await directTool("memory_insight_list", { project: "count-proof", limit: 30000 })).insights.length, 500);
+  });
+  await scenario("large-legacy-results-refuse-without-disconnecting-worker", async () => {
+    const base = (await rest("/insights?project=count-proof&limit=1")).insights[0];
+    for (let i = 0; i < 18; i++) {
+      const row = { ...base, id: `large-${i}`, project: "large-proof", content: `checkpoint ${"x".repeat(950 * 1024)}` };
+      await rest("/import", { exportData: { ...fixture(), insights: [row] }, strategy: "merge" });
+    }
+    const result = await rest("/insights?project=large-proof", undefined, { expectedStatus: 413 });
+    assert.equal(result.oversized, true);
+    await rest("/insights/search", { query: "checkpoint", project: "large-proof", limit: 500 }, { expectedStatus: 413 });
+    await rest("/mcp/call", { name: "memory_insight_list", arguments: { project: "large-proof" } }, { expectedStatus: 413 });
+    assert.equal((await rest("/insights?project=count-proof&limit=1")).insights.length, 1);
+    assert.equal((await rest("/insights?project=large-proof&limit=1")).insights.length, 1);
+  });
+  await scenario("mcp-escaping-budget-with-small-inner-response", async () => {
+    const base = (await rest("/insights?project=count-proof&limit=1")).insights[0];
+    for (let i = 0; i < 10; i++) {
+      const row = { ...base, id: `escaped-${i}`, project: "escaped-proof", content: '"'.repeat(400 * 1024) };
+      await rest("/import", { exportData: { ...fixture(), insights: [row] }, strategy: "merge" });
+    }
+    const raw = await rest("/insights?project=escaped-proof");
+    assert.equal(raw.insights.length, 10);
+    assert(Buffer.byteLength(JSON.stringify(raw)) < 15 * 1024 * 1024);
+    const response = await rest("/mcp/call", { name: "memory_insight_list", arguments: { project: "escaped-proof" } }, { expectedStatus: 413 });
+    assert.equal(response.isError, true);
+    assert(Buffer.byteLength(JSON.stringify(response)) < 2048);
+    assert.equal((await rest("/insights?project=count-proof&limit=1")).insights.length, 1);
   });
   await scenario("installed-package-unchanged", async () => assert.equal(packageDigest(), packageBefore));
 }

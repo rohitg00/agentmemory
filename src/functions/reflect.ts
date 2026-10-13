@@ -14,6 +14,45 @@ import type {
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { checkPayloadFrameSize, payloadByteLength } from "../state/frame-guard.js";
+
+export const INSIGHT_MAX_RESULTS = 500;
+export const INSIGHT_MAX_SOURCES = 20;
+export const REFLECT_MAX_RECORD_BYTES = 4 * 1024;
+export const REFLECT_MAX_TYPE_BYTES = 16 * 1024;
+export const REFLECT_MAX_CONCEPTS = 32;
+export const REFLECT_MAX_CONCEPT_BYTES = 128;
+export const REFLECT_MAX_RESPONSE_BYTES = 64 * 1024;
+
+function positiveLimit(value: unknown, fallback: number, maximum: number): number | null {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) return null;
+  return Math.min(value, maximum);
+}
+
+function validConfidence(value: unknown): boolean {
+  return value === undefined || (typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 1);
+}
+
+function invalidOption(error: string): { success: false; invalid: true; error: string } {
+  return { success: false, invalid: true, error };
+}
+
+function selectEvidence<T extends { id: string }>(items: T[], record: (item: T) => unknown): T[] {
+  const selected: T[] = [];
+  const seen = new Set<string>();
+  let bytes = 0;
+  for (const item of items) {
+    if (selected.length >= INSIGHT_MAX_SOURCES) break;
+    if (seen.has(item.id)) continue;
+    const size = payloadByteLength([item.id, record(item)]);
+    if (size > REFLECT_MAX_RECORD_BYTES || bytes + size > REFLECT_MAX_TYPE_BYTES) continue;
+    selected.push(item);
+    seen.add(item.id);
+    bytes += size;
+  }
+  return selected;
+}
 
 interface ConceptCluster {
   concepts: string[];
@@ -35,9 +74,13 @@ function parseInsight(attributes: string, content: string, cluster: ConceptClust
   }
   const confidenceText = values.get("confidence")?.trim();
   const confidence = Number(confidenceText);
-  const title = values.get("title")?.trim();
+  let title = values.get("title")?.trim();
   content = content.trim();
   if (!confidenceText || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 || !title || !content || /<\/?insight\b/.test(content)) return null;
+
+  title = decodeXmlText(title);
+  content = decodeXmlText(content);
+  if (Buffer.byteLength(title, "utf8") > 256 || Buffer.byteLength(content, "utf8") > REFLECT_MAX_RECORD_BYTES) return null;
 
   const sourceMemoryIds = new Set<string>();
   const sourceLessonIds = new Set<string>();
@@ -53,9 +96,10 @@ function parseInsight(attributes: string, content: string, cluster: ConceptClust
     if (typeof id !== "string" || !id) return null;
     selected.add(id);
   }
-  if (sourceMemoryIds.size + sourceLessonIds.size + sourceCrystalIds.size < 2) return null;
+  const sourceCount = sourceMemoryIds.size + sourceLessonIds.size + sourceCrystalIds.size;
+  if (sourceCount < 2 || sourceCount > INSIGHT_MAX_SOURCES) return null;
   return {
-    confidence, title: decodeXmlText(title), content: decodeXmlText(content),
+    confidence, title, content,
     sourceMemoryIds: [...sourceMemoryIds],
     sourceLessonIds: [...sourceLessonIds],
     sourceCrystalIds: [...sourceCrystalIds],
@@ -237,8 +281,9 @@ export function registerReflectFunctions(
   const kv = state;
   sdk.registerFunction("mem::reflect", 
     async (data: { maxClusters?: number; project?: string }) => {
+      const maxClusters = positiveLimit(data?.maxClusters, 10, 20);
+      if (maxClusters === null) return invalidOption("maxClusters must be a positive safe integer");
       const kv = await pinGraphState(state);
-      const maxClusters = Math.min(data?.maxClusters ?? 10, 20);
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
 
@@ -279,30 +324,33 @@ export function registerReflectFunctions(
       let failedClusters = 0;
       const acceptedIds = new Set<string>();
 
-      for (const conceptNames of conceptClusters) {
+      for (const candidates of conceptClusters) {
         if (totalInsights >= maxTotal) break;
+        const conceptNames = [...new Set(candidates)]
+          .filter((name) => payloadByteLength(name) <= REFLECT_MAX_CONCEPT_BYTES)
+          .slice(0, REFLECT_MAX_CONCEPTS);
 
         const conceptSet = new Set(conceptNames.map((c) => c.toLowerCase()));
 
-        const clusterFacts = semanticMemories.filter((s) => {
+        const clusterFacts = selectEvidence(semanticMemories.filter((s) => {
           const factTerms = s.fact.toLowerCase().split(/\s+/);
           return factTerms.some((t) => conceptSet.has(t));
-        });
+        }), (f) => ({ source: `F${INSIGHT_MAX_SOURCES}`, fact: f.fact, confidence: f.confidence }));
 
-        const clusterLessons = activeLessons.filter((l) =>
+        const clusterLessons = selectEvidence(activeLessons.filter((l) =>
           l.tags.some((t) => conceptSet.has(t.toLowerCase())) ||
           conceptNames.some((c) =>
             l.content.toLowerCase().includes(c.toLowerCase()),
           ),
-        );
+        ), (l) => ({ source: `L${INSIGHT_MAX_SOURCES}`, content: l.content, confidence: l.confidence }));
 
-        const clusterCrystals = crystals.filter((c) =>
+        const clusterCrystals = selectEvidence(crystals.filter((c) =>
           (c.lessons || []).some((l) =>
             conceptNames.some((cn) =>
               l.toLowerCase().includes(cn.toLowerCase()),
             ),
           ),
-        );
+        ), (c) => ({ source: `C${INSIGHT_MAX_SOURCES}`, narrative: c.narrative }));
 
         const totalItems =
           clusterFacts.length + clusterLessons.length + clusterCrystals.length;
@@ -330,6 +378,10 @@ export function registerReflectFunctions(
         try {
           const prompt = buildReflectPrompt(cluster);
           const response = await provider.summarize(REFLECT_SYSTEM, prompt);
+          if (Buffer.byteLength(response, "utf8") > REFLECT_MAX_RESPONSE_BYTES) {
+            failedClusters++;
+            continue;
+          }
 
           const matches = [...response.matchAll(/<insight\b([^<>]*)>([\s\S]*?)<\/insight>/g)];
           const incomplete = (response.match(/<insight\b/g) ?? []).length - matches.length;
@@ -367,7 +419,10 @@ export function registerReflectFunctions(
                 evidenceVersion: 1 as const,
               };
               if (existing && !existing.deleted) {
-                const insight = { ...existing, ...evidence };
+                const insight = {
+                  ...existing, ...evidence, title,
+                  sourceConceptCluster: conceptNames, tags: conceptNames,
+                };
                 reinforceInsight(insight);
                 await kv.set(KV.insights, insight.id, insight);
                 reinforced++;
@@ -434,7 +489,9 @@ export function registerReflectFunctions(
       minConfidence?: number;
       limit?: number;
     }) => {
-      const limit = data?.limit ?? 50;
+      const limit = positiveLimit(data?.limit, 50, INSIGHT_MAX_RESULTS);
+      if (limit === null) return invalidOption("limit must be a positive safe integer");
+      if (!validConfidence(data?.minConfidence)) return invalidOption("minConfidence must be a finite number between 0 and 1");
       const minConfidence = data?.minConfidence ?? 0;
       let items = await kv.list<Insight>(KV.insights);
 
@@ -448,7 +505,8 @@ export function registerReflectFunctions(
 
       items.sort((a, b) => b.confidence - a.confidence);
 
-      return { success: true, insights: items.slice(0, limit) };
+      const result = { success: true, insights: items.slice(0, limit) };
+      return checkPayloadFrameSize(result, "reduce limit or filter by project") ?? result;
     },
   );
 
@@ -459,13 +517,14 @@ export function registerReflectFunctions(
       minConfidence?: number;
       limit?: number;
     }) => {
-      if (!data?.query?.trim()) {
-        return { success: false, error: "query is required" };
+      if (typeof data?.query !== "string" || !data.query.trim()) {
+        return invalidOption("query is required");
       }
-
+      const limit = positiveLimit(data.limit, 10, INSIGHT_MAX_RESULTS);
+      if (limit === null) return invalidOption("limit must be a positive safe integer");
+      if (!validConfidence(data.minConfidence)) return invalidOption("minConfidence must be a finite number between 0 and 1");
       const query = data.query.toLowerCase();
       const minConfidence = data.minConfidence ?? 0.1;
-      const limit = data.limit ?? 10;
 
       let items = await kv.list<Insight>(KV.insights);
       items = items.filter(
@@ -506,13 +565,14 @@ export function registerReflectFunctions(
         });
       } catch {}
 
-      return {
+      const result = {
         success: true,
         insights: scored.slice(0, limit).map((s) => ({
           ...s.insight,
           score: Math.round(s.score * 1000) / 1000,
         })),
       };
+      return checkPayloadFrameSize(result, "reduce limit or narrow the search") ?? result;
     },
   );
 

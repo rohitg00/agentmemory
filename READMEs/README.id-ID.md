@@ -1447,7 +1447,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Sistem plugin custom | `iii worker add <name>` |
 
-**230 file sumber · ~54,000 LOC · 3,200+ pengujian · 312 fungsi · 62 scope KV**, semua di atas tiga primitif. Tidak ada `agentmemory plugin install`. Sistem plugin-nya adalah iii itu sendiri.
+**231 file sumber · ~55,000 LOC · 3,200+ pengujian · 312 fungsi · 62 scope KV**, semua di atas tiga primitif. Tidak ada `agentmemory plugin install`. Sistem plugin-nya adalah iii itu sendiri.
 
 ---
 

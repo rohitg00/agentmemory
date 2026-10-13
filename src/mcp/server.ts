@@ -14,6 +14,7 @@ import { getVisibleTools } from "./tools-registry.js";
 import { parseSearchExpansionIds } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
 import { isSearchLayer } from "../state/search-layer.js";
+import { insightHttpResponse } from "../state/insight-response.js";
 import { checkAuth } from "../triggers/api.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
@@ -1158,7 +1159,7 @@ export function registerMcpEndpoints(
               project: args.project,
               maxClusters: args.maxClusters,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(reflectResult, null, 2) }] } };
+            return insightHttpResponse(reflectResult, true);
           }
 
           case "memory_insight_list": {
@@ -1167,7 +1168,7 @@ export function registerMcpEndpoints(
               minConfidence: args.minConfidence,
               limit: args.limit,
             } });
-            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(insightListResult, null, 2) }] } };
+            return insightHttpResponse(insightListResult, true);
           }
 
           case "memory_obsidian_export": {
