@@ -14,6 +14,7 @@ import { KV } from "./schema.js";
 import {
   GraphRetrieval,
   type GraphRetrievalResult,
+  type GraphQuery,
 } from "../functions/graph-retrieval.js";
 import { extractEntitiesFromQuery } from "../functions/query-expansion.js";
 import { rerank } from "./reranker.js";
@@ -37,7 +38,7 @@ export class HybridSearch {
   }
 
   async search(query: string, limit = 20, targetLayer: SearchLayer = "all"): Promise<HybridSearchResult[]> {
-    return this.tripleStreamSearch(query, limit, targetLayer);
+    return this.tripleStreamSearch(query, limit, targetLayer, this.graphRetrieval.createQuery());
   }
 
   async searchWithExpansion(
@@ -57,8 +58,10 @@ export class HybridSearch {
       ...extractEntitiesFromQuery(query),
     ];
 
+    const graphQuery = this.graphRetrieval.createQuery();
+    const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
     const resultSets = await Promise.all(
-      allQueries.map((q) => this.tripleStreamSearch(q, limit, targetLayer, allEntities)),
+      allQueries.map((q) => this.tripleStreamSearch(q, retrievalLimit, targetLayer, graphQuery, allEntities, false)),
     );
 
     const merged = new Map<string, HybridSearchResult>();
@@ -71,22 +74,25 @@ export class HybridSearch {
       }
     }
 
-    return Array.from(merged.values())
+    const combined = Array.from(merged.values())
       .sort(
         (a, b) =>
           b.combinedScore - a.combinedScore ||
           (a.observation.id < b.observation.id ? -1 : a.observation.id > b.observation.id ? 1 : 0),
-      )
-      .slice(0, limit);
+      );
+    return this.rerankResults(query, combined, limit);
   }
 
   private async tripleStreamSearch(
     query: string,
     limit: number,
     targetLayer: SearchLayer,
+    graphQuery: GraphQuery,
     entityHints?: string[],
+    applyReranking = true,
   ): Promise<HybridSearchResult[]> {
-    const bm25Results = this.bm25.search(query, limit * 2, targetLayer);
+    const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
+    const bm25Results = this.bm25.search(query, retrievalLimit * 2, targetLayer);
 
     let vectorResults: Array<{
       obsId: string;
@@ -98,7 +104,7 @@ export class HybridSearch {
     if (this.vector && this.embeddingProvider && this.vector.size > 0) {
       try {
         queryEmbedding = await this.embeddingProvider.embed(query);
-        vectorResults = this.vector.search(queryEmbedding, limit * 2, targetLayer, (id) => this.bm25.layerOf(id));
+        vectorResults = this.vector.search(queryEmbedding, retrievalLimit * 2, targetLayer, (id) => this.bm25.layerOf(id));
       } catch {
         // fall through to BM25-only
       }
@@ -114,10 +120,10 @@ export class HybridSearch {
     const graphEnabled = this.graphWeight > 0;
     if (graphEnabled && entities.length > 0) {
       try {
-        graphResults = await this.graphRetrieval.searchByEntities(
+        graphResults = await graphQuery.searchByEntities(
           entities,
           2,
-          limit,
+          retrievalLimit,
           targetLayer,
         );
       } catch {
@@ -129,7 +135,7 @@ export class HybridSearch {
     if (graphEnabled && topVectorObs.length > 0) {
       try {
         const expansionResults =
-          await this.graphRetrieval.expandFromChunks(topVectorObs, 1, 5, targetLayer);
+          await graphQuery.expandFromChunks(topVectorObs, 1, 5, targetLayer);
         graphResults = [...graphResults, ...expansionResults];
       } catch {
         // expansion is best-effort
@@ -193,7 +199,7 @@ export class HybridSearch {
           bm25Rank: Infinity,
           vectorRank: Infinity,
           graphRank: i + 1,
-          sessionId: r.sessionId,
+          sessionId: r.sessionId || this.bm25.sessionOf(r.obsId) || "",
           bm25Score: 0,
           vectorScore: 0,
           graphScore: r.score,
@@ -247,22 +253,21 @@ export class HybridSearch {
     }));
 
     const retrievalDepth = Math.max(limit, 20);
-    const rerankWindow = 20;
     const diversified = this.diversifyBySession(combined, retrievalDepth);
     const enriched = await this.enrichResults(diversified, retrievalDepth);
 
-    if (this.rerankEnabled && enriched.length > 1) {
+    return applyReranking ? this.rerankResults(query, enriched, limit) : enriched.slice(0, limit);
+  }
+
+  private async rerankResults(query: string, results: HybridSearchResult[], limit: number): Promise<HybridSearchResult[]> {
+    if (this.rerankEnabled && results.length > 1) {
       try {
-        const head = enriched.slice(0, rerankWindow);
-        const tail = enriched.slice(rerankWindow);
-        const reranked = await rerank(query, head, rerankWindow);
-        return reranked.concat(tail).slice(0, limit);
+        return (await rerank(query, results, 20)).slice(0, limit);
       } catch {
-        return enriched.slice(0, limit);
+        return results.slice(0, limit);
       }
     }
-
-    return enriched.slice(0, limit);
+    return results.slice(0, limit);
   }
 
   private diversifyBySession(

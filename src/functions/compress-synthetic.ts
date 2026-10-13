@@ -68,7 +68,9 @@ function stringifyForNarrative(v: unknown): string {
 }
 
 function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n - 1) + "\u2026" : s;
+  if (s.length <= n) return s;
+  const end = /[\uD800-\uDBFF]/.test(s[n - 2]) ? n - 2 : n - 1;
+  return s.slice(0, end) + "\u2026";
 }
 
 export function buildSyntheticCompression(
@@ -78,10 +80,16 @@ export function buildSyntheticCompression(
   const inputStr = stringifyForNarrative(raw.toolInput);
   const outputStr = stringifyForNarrative(raw.toolOutput);
   const promptStr = raw.userPrompt ?? "";
+  const source = createObservationSource(raw);
 
   const narrativeParts = [promptStr, inputStr, outputStr].filter(
     (s) => s.length > 0,
   );
+  const payload = source.payload;
+  if (narrativeParts.length === 0 && payload != null &&
+      (typeof payload !== "object" || Object.keys(payload).length > 0)) {
+    narrativeParts.push(stringifyForNarrative(payload));
+  }
 
   const result: CompressedObservation = {
     id: raw.id,
@@ -97,7 +105,7 @@ export function buildSyntheticCompression(
     files: extractFiles(raw.toolName, raw.toolInput),
     importance: 5,
     confidence: 0.3,
-    source: createObservationSource(raw),
+    source,
   };
   if (raw.modality) result.modality = raw.modality;
   if (raw.imageData) result.imageData = raw.imageData;

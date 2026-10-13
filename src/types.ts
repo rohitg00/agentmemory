@@ -321,6 +321,8 @@ export interface HybridSearchResult {
   combinedScore: number;
   sessionId: string;
   graphContext?: string;
+  rerankScore?: number;
+  rerankPosition?: number;
 }
 
 export interface CompactSearchResult {

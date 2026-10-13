@@ -25,10 +25,8 @@ let currentEmbeddingProvider: EmbeddingProvider | null = null
 
 // Hybrid ranking hook for mem::search. Wired by index.ts once the
 // hybrid searcher exists (it is constructed after this module's
-// registration runs). When set and the vector index has entries,
-// mem::search ranks candidates through the full BM25+vector+graph
-// fusion instead of BM25 alone — previously only mem::smart-search got
-// hybrid ranking while the primary recall surface stayed keyword-only.
+// registration runs). The graph stream can retrieve evidence even when
+// embeddings are disabled or the vector index is still empty.
 type HybridRanker = (
   query: string,
   limit: number,
@@ -818,7 +816,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         observation?: CompressedObservation
         layer?: SearchResultLayer
       }>
-      if (hybridRanker && vectorIndex && vectorIndex.size > 0) {
+      if (hybridRanker) {
         try {
           const hybrid = await hybridRanker(query, fetchLimit, targetLayer)
           results = hybrid.map((r) => ({
