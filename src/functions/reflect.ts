@@ -263,7 +263,8 @@ export function registerReflectFunctions(
         maxClusters,
       );
 
-      const usedFallback = conceptClusters.length === 0;
+      const clusterStrategy = conceptClusters.length === 0 ? "jaccard" : "graph";
+      const usedFallback = clusterStrategy === "jaccard";
       if (usedFallback) {
         conceptClusters = buildJaccardClusters(
           semanticMemories,
@@ -410,6 +411,7 @@ export function registerReflectFunctions(
           reinforced,
           clustersProcessed: conceptClusters.length - clustersSkipped,
           clustersSkipped,
+          clusterStrategy,
           usedFallback,
           rejectedInsights,
           failedClusters,
@@ -422,6 +424,8 @@ export function registerReflectFunctions(
         reinforced,
         clustersProcessed: conceptClusters.length - clustersSkipped,
         clustersSkipped,
+        clusterStrategy,
+        /** @deprecated Use clusterStrategy to identify the clustering algorithm. */
         usedFallback,
         rejectedInsights,
         failedClusters,

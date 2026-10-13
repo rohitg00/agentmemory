@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + monitor stanu |
 | Niestandardowe systemy pluginów | `iii worker add <name>` |
 
-**232 plików źródłowych · ~55,000 LOC · 3,300+ testów · 312 funkcji · 62 zakresy KV**, wszystko na trzech prymitywach. Nie ma `agentmemory plugin install`. Systemem pluginów jest sam iii.
+**230 plików źródłowych · ~55,000 LOC · 3,300+ testów · 312 funkcji · 62 zakresy KV**, wszystko na trzech prymitywach. Nie ma `agentmemory plugin install`. Systemem pluginów jest sam iii.
 
 ---
 
