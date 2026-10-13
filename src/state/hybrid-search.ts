@@ -14,6 +14,7 @@ import { KV } from "./schema.js";
 import {
   GraphRetrieval,
   type GraphRetrievalResult,
+  type GraphQuery,
 } from "../functions/graph-retrieval.js";
 import { extractEntitiesFromQuery } from "../functions/query-expansion.js";
 import { rerank } from "./reranker.js";
@@ -37,7 +38,7 @@ export class HybridSearch {
   }
 
   async search(query: string, limit = 20, targetLayer: SearchLayer = "all"): Promise<HybridSearchResult[]> {
-    return this.tripleStreamSearch(query, limit, targetLayer);
+    return this.tripleStreamSearch(query, limit, targetLayer, this.graphRetrieval.createQuery());
   }
 
   async searchWithExpansion(
@@ -57,9 +58,10 @@ export class HybridSearch {
       ...extractEntitiesFromQuery(query),
     ];
 
+    const graphQuery = this.graphRetrieval.createQuery();
     const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
     const resultSets = await Promise.all(
-      allQueries.map((q) => this.tripleStreamSearch(q, retrievalLimit, targetLayer, allEntities, false)),
+      allQueries.map((q) => this.tripleStreamSearch(q, retrievalLimit, targetLayer, graphQuery, allEntities, false)),
     );
 
     const merged = new Map<string, HybridSearchResult>();
@@ -85,6 +87,7 @@ export class HybridSearch {
     query: string,
     limit: number,
     targetLayer: SearchLayer,
+    graphQuery: GraphQuery,
     entityHints?: string[],
     applyReranking = true,
   ): Promise<HybridSearchResult[]> {
@@ -117,7 +120,7 @@ export class HybridSearch {
     const graphEnabled = this.graphWeight > 0;
     if (graphEnabled && entities.length > 0) {
       try {
-        graphResults = await this.graphRetrieval.searchByEntities(
+        graphResults = await graphQuery.searchByEntities(
           entities,
           2,
           retrievalLimit,
@@ -132,7 +135,7 @@ export class HybridSearch {
     if (graphEnabled && topVectorObs.length > 0) {
       try {
         const expansionResults =
-          await this.graphRetrieval.expandFromChunks(topVectorObs, 1, 5, targetLayer);
+          await graphQuery.expandFromChunks(topVectorObs, 1, 5, targetLayer);
         graphResults = [...graphResults, ...expansionResults];
       } catch {
         // expansion is best-effort
@@ -196,7 +199,7 @@ export class HybridSearch {
           bm25Rank: Infinity,
           vectorRank: Infinity,
           graphRank: i + 1,
-          sessionId: r.sessionId,
+          sessionId: r.sessionId || this.bm25.sessionOf(r.obsId) || "",
           bm25Score: 0,
           vectorScore: 0,
           graphScore: r.score,

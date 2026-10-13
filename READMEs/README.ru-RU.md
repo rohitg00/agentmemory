@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,200+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,300+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + монитор состояния |
 | Самописные плагинные системы | `iii worker add <name>` |
 
-**230 исходных файлов · ~54,000 LOC · 3,200+ тестов · 312 функций · 62 KV-scope**, всё на трёх примитивах. Никакого `agentmemory plugin install`. Плагинная система — это сам iii.
+**232 исходных файлов · ~55,000 LOC · 3,300+ тестов · 312 функций · 62 KV-scope**, всё на трёх примитивах. Никакого `agentmemory plugin install`. Плагинная система — это сам iii.
 
 ---
 
@@ -1870,7 +1870,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,200+ tests
+npm test                  # 3,300+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

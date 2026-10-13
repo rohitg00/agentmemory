@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 ferramentas MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks automáticos" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 bases de dados externas" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,200+ testes aprovados" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,300+ testes aprovados" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1446,7 +1446,7 @@ O `/agentmemory/export` também aceita `?maxSessions=` e `?offset=` para dividir
 | Prometheus / Grafana | iii OTEL + monitor de saúde |
 | Sistemas de plugins personalizados | `iii worker add <name>` |
 
-**230 ficheiros de código-fonte · ~54,000 LOC · 3,200+ testes · 312 funções · 62 âmbitos de KV**, tudo sobre três primitivos. Sem `agentmemory plugin install`. O sistema de plugins é o próprio iii.
+**232 ficheiros de código-fonte · ~55,000 LOC · 3,300+ testes · 312 funções · 62 âmbitos de KV**, tudo sobre três primitivos. Sem `agentmemory plugin install`. O sistema de plugins é o próprio iii.
 
 ---
 
@@ -1870,7 +1870,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,200+ tests
+npm test                  # 3,300+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

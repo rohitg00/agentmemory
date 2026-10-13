@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-verktyg" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiska hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externa databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,200+ godkända tester" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,300+ godkända tester" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1437,7 +1437,7 @@ fi
 | Prometheus / Grafana | iii OTEL + hälsoövervakare |
 | Anpassade pluginsystem | `iii worker add <name>` |
 
-**230 källkodsfiler · ~54,000 LOC · 3,200+ tester · 312 funktioner · 62 KV-scopes**, allt på tre primitiv. Inget `agentmemory plugin install`. Pluginsystemet är iii självt.
+**232 källkodsfiler · ~55,000 LOC · 3,300+ tester · 312 funktioner · 62 KV-scopes**, allt på tre primitiv. Inget `agentmemory plugin install`. Pluginsystemet är iii självt.
 
 ---
 
@@ -1861,7 +1861,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,200+ tests
+npm test                  # 3,300+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
