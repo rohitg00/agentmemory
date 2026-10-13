@@ -1437,7 +1437,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom eklenti sistemleri | `iii worker add <name>` |
 
-**234 kaynak dosya · ~55,000 LOC · 3,400+ test · 316 fonksiyon · 62 KV scope**, hepsi üç primitif üzerinde. `agentmemory plugin install` yok. Eklenti sistemi, iii'nin kendisidir.
+**236 kaynak dosya · ~55,000 LOC · 3,400+ test · 318 fonksiyon · 63 KV scope**, hepsi üç primitif üzerinde. `agentmemory plugin install` yok. Eklenti sistemi, iii'nin kendisidir.
 
 ---
 

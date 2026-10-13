@@ -55,15 +55,17 @@ const IMPORT_CHUNK_SIZE = 20;
 // Run `fn` over `items` in fixed-size chunks, awaiting each chunk before
 // starting the next. Preserves ordering guarantees across chunks (chunk N
 // fully settles before chunk N+1 begins) while parallelizing within a
-// chunk. Errors propagate — a failing item rejects the whole import, same
-// as the original serial loops.
+// chunk. Settle sibling writes before propagating a failure so mutation
+// locks are not released while state writes are still pending.
 async function runChunked<T>(
   items: readonly T[],
   fn: (item: T) => Promise<void>,
 ): Promise<void> {
   for (let i = 0; i < items.length; i += IMPORT_CHUNK_SIZE) {
     const chunk = items.slice(i, i + IMPORT_CHUNK_SIZE);
-    await Promise.all(chunk.map(fn));
+    const results = await Promise.allSettled(chunk.map(fn));
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
   }
 }
 
@@ -324,7 +326,8 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       };
 
       const replaceSessions = strategy === "replace" ? await kv.list<Session>(KV.sessions) : [];
-      const sessionKeys = [...obsBuckets, ...importData.sessions.map((session) => session.id), ...replaceSessions.map((session) => session.id)]
+      const sessionKeys = [...obsBuckets, ...importData.sessions.map((session) => session.id),
+        ...importData.summaries.map((summary) => summary.sessionId), ...replaceSessions.map((session) => session.id)]
         .map((id) => `obs:${id}`);
       const indexObs: CompressedObservation[] = [];
       const indexMems: Memory[] = [];
@@ -349,6 +352,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           const obsDeletes: Array<{ sessionId: string; obsId: string; captureKey?: string }> = [];
           await runChunked(existing, async (session) => {
             await kv.delete(KV.sessions, session.id);
+            await kv.delete(KV.summaryRepairs, session.id);
             await removeSessionFromProjectIndex(
               kv,
               session.project,
@@ -470,6 +474,20 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           });
         }
 
+        await runChunked(importData.summaries, async (summary) => {
+          if (strategy === "skip") {
+            const existing = await kv
+              .get<SessionSummary>(KV.summaries, summary.sessionId)
+              .catch(() => null);
+            if (existing) {
+              stats.skipped++;
+              return;
+            }
+          }
+          await kv.set(KV.summaries, summary.sessionId, summary);
+          stats.summaries++;
+        });
+
         return null;
       });
       if (preflightError) return preflightError;
@@ -492,20 +510,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         await kv.set(KV.memories, memory.id, memory);
         stats.memories++;
         indexMems.push(memory);
-      });
-
-      await runChunked(importData.summaries, async (summary) => {
-        if (strategy === "skip") {
-          const existing = await kv
-            .get<SessionSummary>(KV.summaries, summary.sessionId)
-            .catch(() => null);
-          if (existing) {
-            stats.skipped++;
-            return;
-          }
-        }
-        await kv.set(KV.summaries, summary.sessionId, summary);
-        stats.summaries++;
       });
 
       if (strategy === "replace" || importData.graphNodes || importData.graphEdges) {

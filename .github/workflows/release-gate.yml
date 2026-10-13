@@ -45,6 +45,7 @@ jobs:
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - run: npm run release:gate -- --out "${{ runner.temp }}/release-gate"
       - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
+      - run: npm run test:summary-recovery:packaged -- --skip-build --out "${{ runner.temp }}/summary-recovery-gate"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -52,5 +53,6 @@ jobs:
           path: |
             ${{ runner.temp }}/release-gate
             ${{ runner.temp }}/startup-gate
+            ${{ runner.temp }}/summary-recovery-gate
           if-no-files-found: ignore
           retention-days: 14

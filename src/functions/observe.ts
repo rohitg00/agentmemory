@@ -10,7 +10,7 @@ import { indexObservationSession } from "../state/obs-index.js";
 import { stripPrivateData } from "./privacy.js";
 import { DedupMap, recordDedupSkip } from "./dedup.js";
 import { afterKeyedLock, withKeyedLock } from "../state/keyed-mutex.js";
-import { isAutoCompressEnabled } from "../config.js";
+import { getFinalizeIdleMs, isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { isCaptureKey } from "../capture/event-record.js";
 import { claimBackfillPrompt, isBackfillPrompt, recordLivePrompt } from "../capture/prompt-ledger.js";
@@ -21,6 +21,8 @@ import { saveImageToDisk } from "../utils/image-store.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { budgetLiveObservationSource } from "./observation-source-budget.js";
 import { markCompressionDispatchFailed, pendingCompression } from "./compression-state.js";
+import { requestSummaryRefresh } from "./summary-state.js";
+import { scheduleSessionFinalize } from "./session-finalize.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -245,6 +247,12 @@ export function registerObserveFunction(
         }
 
         const autoCompress = isAutoCompressEnabled();
+        const finalizeIdleMs = getFinalizeIdleMs();
+        if (existingSession && existingSession.status !== "active") {
+          const dueAt = Date.now() + finalizeIdleMs;
+          await requestSummaryRefresh(kv, payload.sessionId, dueAt);
+          if (finalizeIdleMs > 0) await scheduleSessionFinalize(kv, payload.sessionId, dueAt);
+        }
         const synthetic = budgetLiveObservationSource(buildSyntheticCompression(raw), existing);
         if (autoCompress) synthetic.compression = pendingCompression();
         try {
@@ -307,7 +315,7 @@ export function registerObserveFunction(
               value: (session.observationCount || 0) + 1,
             },
           ];
-          if (session.status !== "active") {
+          if (session.status !== "active" && finalizeIdleMs > 0) {
             updates.push({ type: "set", path: "status", value: "active" });
             updates.push({ type: "remove", path: "endedAt" });
           }

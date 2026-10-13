@@ -377,6 +377,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
             const session = await kv.get<Session>(KV.sessions, sessionId);
             if (!session) return false;
             await kv.delete(KV.sessions, sessionId);
+            await kv.delete(KV.summaryRepairs, sessionId);
             await removeSessionFromProjectIndex(
               kv,
               session.project,

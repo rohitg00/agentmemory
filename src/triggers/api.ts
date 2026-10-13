@@ -54,6 +54,7 @@ import { isValidEventId } from "../capture/event-id.js";
 import { getCaptureController, type CaptureResult } from "../functions/capture.js";
 import { withoutObservationSource } from "../functions/observation-source.js";
 import { clearSessionFinalize, scheduleSessionFinalize } from "../functions/session-finalize.js";
+import { requestSummaryRefresh } from "../functions/summary-state.js";
 import { registerCompressionApi } from "./compression.js";
 import {
   getFinalizeIdleMs,
@@ -1185,6 +1186,7 @@ export function registerApiTriggers(
         if (!session || session.id !== sessionId) return "not_found" as const;
         if (session.status === "completed") return "already_completed" as const;
 
+        await requestSummaryRefresh(kv, sessionId);
         await kv.update(KV.sessions, sessionId, [
           { type: "set", path: "endedAt", value: new Date().toISOString() },
           { type: "set", path: "status", value: "completed" },

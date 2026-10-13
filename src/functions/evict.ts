@@ -174,6 +174,8 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
               });
             if (!observations) continue;
 
+            const sessionRevision = JSON.stringify(session);
+            const observationsRevision = JSON.stringify(observations);
             let recovered = false;
             const hasCompressedObservations = observations.some(
               isCompressedObservation,
@@ -190,7 +192,16 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
             }
 
             try {
-              await kv.delete(KV.sessions, session.id);
+              const removed = await withKeyedLock(`obs:${session.id}`, async () => {
+                const current = await kv.get<Session>(KV.sessions, session.id);
+                if (!current || JSON.stringify(current) !== sessionRevision) return false;
+                const currentObservations = await kv.list(KV.observations(session.id));
+                if (JSON.stringify(currentObservations) !== observationsRevision) return false;
+                await kv.delete(KV.sessions, session.id);
+                await kv.delete(KV.summaryRepairs, session.id);
+                return true;
+              });
+              if (!removed) continue;
               stats.staleSessions++;
             } catch (err) {
               logger.warn("Eviction delete failed", {
