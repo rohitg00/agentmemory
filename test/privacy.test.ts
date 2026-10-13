@@ -104,4 +104,37 @@ describe("stripPrivateData", () => {
     expect(stripPrivateData(input)).toBe("[REDACTED_SECRET]");
     expect(stripPrivateData(input)).toBe("[REDACTED_SECRET]");
   });
+
+  it.each([
+    "task-runner-that-does-something-long",
+    "bookmark-this-long-reference-identifier",
+    "break-this-long-background-operation",
+    "task-proj-abcdefghijklmnopqrstuvwxyz",
+    "task-ant-abcdefghijklmnopqrstuvwxyz",
+    "prefix_pk-abcdefghijklmnopqrstuvwxyz",
+    "42rk-abcdefghijklmnopqrstuvwxyz",
+    "éak-abcdefghijklmnopqrstuvwxyz",
+    "漢sk-abcdefghijklmnopqrstuvwxyz",
+    "e\u0301sk-abcdefghijklmnopqrstuvwxyz",
+  ])("preserves key-like suffixes inside identifiers: %s", (identifier) => {
+    expect(stripPrivateData(identifier)).toBe(identifier);
+  });
+
+  it.each(["sk", "pk", "rk", "ak", "sk-proj", "sk-ant"])(
+    "still redacts standalone %s keys at punctuation and whitespace boundaries",
+    (prefix) => {
+      const key = `${prefix}-abcdefghijklmnopqrstuvwxyz`;
+      for (const [before, after] of [["", ""], ["'", "'"], ['"', '"'], ["(", ")"], ["/", "."], ["\n", "\t"], ["🔑", "!"]]) {
+        expect(stripPrivateData(`${before}${key}${after}`)).toBe(`${before}[REDACTED_SECRET]${after}`);
+      }
+    },
+  );
+
+  it("preserves identifiers while redacting adjacent keys on repeated passes", () => {
+    const input = '{"task":"task-runner-that-does-something-long","key":"sk-abcdefghijklmnopqrstuvwxyz"}';
+    const expected = '{"task":"task-runner-that-does-something-long","key":"[REDACTED_SECRET]"}';
+    expect(stripPrivateData(input)).toBe(expected);
+    expect(stripPrivateData(input)).toBe(expected);
+    expect(stripPrivateData(expected)).toBe(expected);
+  });
 });

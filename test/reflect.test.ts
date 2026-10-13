@@ -429,6 +429,71 @@ describe("Reflect", () => {
       expect(after[0].reinforcements).toBe(1);
     });
 
+    it("clusters every disconnected concept group instead of stopping at a visited seed", async () => {
+      await kv.set("mem:graph:nodes", "node_alpha", makeConceptNode("alpha"));
+      await kv.set("mem:graph:nodes", "node_beta", makeConceptNode("beta"));
+      await kv.set("mem:graph:nodes", "node_gamma", makeConceptNode("gamma"));
+      await kv.set("mem:graph:nodes", "node_delta", makeConceptNode("delta"));
+      await kv.set("mem:graph:nodes", "node_epsilon", makeConceptNode("epsilon"));
+      await kv.set("mem:graph:edges", "edge_ab", makeEdge("alpha", "beta"));
+      await kv.set("mem:graph:edges", "edge_bg", makeEdge("beta", "gamma"));
+      await kv.set("mem:graph:edges", "edge_ga", makeEdge("gamma", "alpha"));
+      await kv.set("mem:graph:edges", "edge_de", makeEdge("delta", "epsilon"));
+
+      await kv.set("mem:semantic", "sem_a1", makeSemantic("alpha beta gamma pipeline", "sem_a1"));
+      await kv.set("mem:semantic", "sem_a2", makeSemantic("alpha caching layer", "sem_a2"));
+      await kv.set("mem:semantic", "sem_a3", makeSemantic("beta gamma queue", "sem_a3"));
+      await kv.set("mem:semantic", "sem_b1", makeSemantic("delta epsilon storage", "sem_b1"));
+      await kv.set("mem:semantic", "sem_b2", makeSemantic("delta epsilon index", "sem_b2"));
+      await kv.set("mem:semantic", "sem_b3", makeSemantic("epsilon delta flush", "sem_b3"));
+      provider.summarize
+        .mockResolvedValueOnce('<insights><insight confidence="0.8" title="Pipeline caching" sources="F1,F2">The alpha pipeline includes a caching layer.</insight></insights>')
+        .mockResolvedValueOnce('<insights><insight confidence="0.8" title="Storage indexing" sources="F1,F2">Delta and epsilon provide storage and indexing.</insight></insights>');
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        clustersProcessed: number;
+        newInsights: number;
+      };
+
+      expect(result.clustersProcessed).toBe(2);
+      expect(result.newInsights).toBe(2);
+      expect(provider.summarize).toHaveBeenCalledTimes(2);
+      expect(await kv.list<Insight>("mem:insights")).toMatchObject([
+        { title: "Pipeline caching", sourceMemoryIds: ["sem_a1", "sem_a2"] },
+        { title: "Storage indexing", sourceMemoryIds: ["sem_b1", "sem_b2"] },
+      ]);
+    });
+
+    it("stops at the maxClusters bound even when more groups exist", async () => {
+      await kv.set("mem:graph:nodes", "node_alpha", makeConceptNode("alpha"));
+      await kv.set("mem:graph:nodes", "node_beta", makeConceptNode("beta"));
+      await kv.set("mem:graph:nodes", "node_gamma", makeConceptNode("gamma"));
+      await kv.set("mem:graph:nodes", "node_delta", makeConceptNode("delta"));
+      await kv.set("mem:graph:nodes", "node_epsilon", makeConceptNode("epsilon"));
+      await kv.set("mem:graph:edges", "edge_ab", makeEdge("alpha", "beta"));
+      await kv.set("mem:graph:edges", "edge_bg", makeEdge("beta", "gamma"));
+      await kv.set("mem:graph:edges", "edge_ga", makeEdge("gamma", "alpha"));
+      await kv.set("mem:graph:edges", "edge_de", makeEdge("delta", "epsilon"));
+
+      await kv.set("mem:semantic", "sem_a1", makeSemantic("alpha beta gamma pipeline", "sem_a1"));
+      await kv.set("mem:semantic", "sem_a2", makeSemantic("alpha caching layer", "sem_a2"));
+      await kv.set("mem:semantic", "sem_a3", makeSemantic("beta gamma queue", "sem_a3"));
+      await kv.set("mem:semantic", "sem_b1", makeSemantic("delta epsilon storage", "sem_b1"));
+      await kv.set("mem:semantic", "sem_b2", makeSemantic("delta epsilon index", "sem_b2"));
+      await kv.set("mem:semantic", "sem_b3", makeSemantic("epsilon delta flush", "sem_b3"));
+      provider.summarize.mockResolvedValue('<insights><insight confidence="0.8" title="Pipeline caching" sources="F1,F2">The alpha pipeline includes a caching layer.</insight></insights>');
+
+      const result = (await sdk.trigger("mem::reflect", { maxClusters: 1 })) as {
+        clustersProcessed: number;
+      };
+
+      expect(result.clustersProcessed).toBe(1);
+      expect(provider.summarize).toHaveBeenCalledTimes(1);
+      expect(await kv.list<Insight>("mem:insights")).toMatchObject([
+        { title: "Pipeline caching", sourceMemoryIds: ["sem_a1", "sem_a2"] },
+      ]);
+    });
+
     it("falls back to Jaccard grouping when graph is empty", async () => {
       await kv.set("mem:semantic", "sem_1", makeSemantic("security validation is important", "sem_1"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("security testing prevents bugs", "sem_2"));
