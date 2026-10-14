@@ -45,6 +45,18 @@ jobs:
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - run: npm run release:gate -- --out "${{ runner.temp }}/release-gate"
       - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
+      - name: Test packaged vector recovery
+        shell: bash
+        run: |
+          pack_dir="$(mktemp -d "${{ runner.temp }}/vector-recovery-pack.XXXXXX")"
+          npm pack --pack-destination "$pack_dir"
+          tarballs=("$pack_dir"/agentmemory-agentmemory-*.tgz)
+          test "${#tarballs[@]}" -eq 1
+          test -f "${tarballs[0]}"
+          npm run test:vector-recovery:packaged -- \
+            --tarball "${tarballs[0]}" \
+            --dependencies "$GITHUB_WORKSPACE/node_modules" \
+            --out "${{ runner.temp }}/vector-recovery-gate"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -52,5 +64,6 @@ jobs:
           path: |
             ${{ runner.temp }}/release-gate
             ${{ runner.temp }}/startup-gate
+            ${{ runner.temp }}/vector-recovery-gate
           if-no-files-found: ignore
           retention-days: 14

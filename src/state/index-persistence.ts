@@ -198,8 +198,8 @@ export class IndexPersistence {
   private lastSaveAt: number;
   private dirtyEpoch = 0;
   private markedDuringRunAt: number | null = null;
-  private metaWritten = false;
-  private firstSaveAttempted = false;
+  private hasVectorCheckpoint = false;
+  private firstVectorSaveAttempted = false;
   private nextSaveAt: number | null = null;
   private leg: IndexLegStatus = emptyLegStatus();
   private readonly saveIntervalMs: number;
@@ -273,7 +273,7 @@ export class IndexPersistence {
   status(): IndexPersistenceStatus {
     return {
       saveIntervalMs: this.saveIntervalMs,
-      firstCheckpointPending: Boolean(this.vector && !this.metaWritten && (this.vector.pendingChanges > 0 || this.running)),
+      firstCheckpointPending: Boolean(this.vector && !this.hasVectorCheckpoint && (this.vector.pendingChanges > 0 || this.running)),
       nextSaveAt: this.nextSaveAt === null ? null : new Date(this.nextSaveAt).toISOString(),
       saving: this.running !== null,
       buckets: this.bucketCountInUse(),
@@ -578,7 +578,7 @@ export class IndexPersistence {
     if (meta && meta.v === 3 && Number.isInteger(meta.bucketCount) && meta.bucketCount >= 0) {
       const loaded = await this.loadBuckets(meta.bucketCount);
       if (!loaded) return { vector: null, state: "unavailable", savedAt: null };
-      this.metaWritten = true;
+      this.hasVectorCheckpoint = loaded.size > 0;
       this.checkpointBackfillSince = meta.backfillSince;
       await this.removeLegacyVectorSnapshotIfPresent();
       await this.removeLegacyBm25Snapshot();
@@ -637,7 +637,7 @@ export class IndexPersistence {
     if (this.stopped || !this.recoveryReady || this.recoveryError || this.timer || !this.vector?.pendingChanges) return;
     const now = this.now();
     const remaining = Math.max(0, this.lastSaveAt + this.saveIntervalMs - now);
-    const delay = !this.metaWritten && !this.firstSaveAttempted
+    const delay = !this.hasVectorCheckpoint && !this.firstVectorSaveAttempted
       ? Math.min(FIRST_CHECKPOINT_DELAY_MS, remaining)
       : remaining;
     this.nextSaveAt = now + delay;
@@ -661,10 +661,13 @@ export class IndexPersistence {
     const vector = this.vector;
     if (!vector || this.isRecoveryPaused()) return;
     if (!vector.pendingChanges && !this.needsRecoveryCheckpoint()) return;
+    const hasVectorChanges = vector.pendingChanges > 0;
     const epoch = this.dirtyEpoch;
     this.markedDuringRunAt = null;
-    this.lastSaveAt = this.now();
-    this.firstSaveAttempted = true;
+    if (hasVectorChanges) {
+      this.lastSaveAt = this.now();
+      this.firstVectorSaveAttempted = true;
+    }
     const coveredSeq = this.seq;
     try {
       await this.writeChanges(vector);
@@ -684,7 +687,7 @@ export class IndexPersistence {
       this.leg.lastError = errorMessage(err);
       this.leg.lastErrorAt = new Date(this.now()).toISOString();
       if (this.leg.dirtySince === null) this.leg.dirtySince = this.leg.lastErrorAt;
-      this.lastSaveAt = this.now();
+      if (hasVectorChanges) this.lastSaveAt = this.now();
       this.clearTimer();
       this.logFailure(err);
     }
@@ -736,7 +739,8 @@ export class IndexPersistence {
       vector.returnChanges(changes);
       throw err;
     }
-    this.metaWritten = true;
+    this.hasVectorCheckpoint = this.bucketOfId.size > 0;
+    if (!this.hasVectorCheckpoint) this.firstVectorSaveAttempted = false;
   }
 
   private async loadBuckets(bucketCount: number): Promise<VectorIndex | null> {
