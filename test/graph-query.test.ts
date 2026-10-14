@@ -264,11 +264,15 @@ describe("graph traversal bounds", () => {
     const r = await rig();
     const spokes = Array.from({ length: 2500 }, (_, i) => node(`spoke_${i}`));
     await r.seed([node("hub", "Anchor"), ...spokes], spokes.map((spoke, i) => edge(`edge_${i}`, "hub", spoke.id)));
-    const retrieval = new GraphRetrieval(r.kv);
-    const hits = mode === "entities" ? await retrieval.searchByEntities(["Anchor"], 2, 5000) : await retrieval.expandFromChunks(["obs_hub"], 2, 5000);
+    r.reads.length = 0;
+    const query = new GraphRetrieval(r.kv).createQuery();
+    const hits = mode === "entities" ? await query.searchByEntities(["Anchor"], 2, 5000) : await query.expandFromChunks(["obs_hub"], 2, 5000);
     expect(hits.length).toBeGreaterThan(0);
     expect(hits.length).toBeLessThanOrEqual(2000);
-  });
+    expect(query.diagnostics().truncated).toBe(true);
+    expect(r.reads.length).toBeLessThanOrEqual(512);
+    expect(graphReads(r.lists)).toEqual([]);
+  }, 30_000);
 
   it("bounds examined edges even when parallel edges discover very few nodes", async () => {
     const r = await rig();
@@ -284,7 +288,7 @@ describe("graph traversal bounds", () => {
     expect(r.reads.filter((read) => read.key.includes(":record:edge:")).length).toBeLessThanOrEqual(256);
     expect(r.reads.length).toBeLessThanOrEqual(512);
     expect(graphReads(r.lists)).toEqual([]);
-  });
+  }, 30_000);
 });
 
 describe("hybrid graph query lifetime", () => {
