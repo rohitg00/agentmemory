@@ -25,6 +25,7 @@
     "test:watch": "vitest --exclude test/integration.test.ts",
     "test:integration": "vitest run test/integration.test.ts",
     "test:all": "vitest run",
+    "test:vector-recovery:packaged": "node scripts/release-gate/vector-recovery.mjs",
     "test:startup:packaged": "node scripts/release-gate/startup.mjs",
     "test:skills:packaged": "node scripts/release-gate/skills.mjs",
     "test:openclaw:packaged": "node scripts/release-gate/openclaw.mjs",

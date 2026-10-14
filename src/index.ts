@@ -15,6 +15,7 @@ import {
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
   getVectorBackfillMax,
+  isVectorBackfillAllEnabled,
   getAuditRetentionMonths,
   getStateBackend,
   isSessionSweepEnabled,
@@ -45,9 +46,9 @@ import { registerDiskSizeManager } from "./functions/disk-size-manager.js";
 import { registerCompressFunction } from "./functions/compress.js";
 import {
   registerSearchFunction,
-  backfillVectors,
   backfillVectorBacklog,
   isBm25RebuildIncomplete,
+  isMemoryIndexReady,
   rebuildKeywordIndex,
   markKeywordRebuildPending,
   getSearchIndex,
@@ -452,13 +453,14 @@ async function main() {
         : undefined,
   });
 
-  const indexPersistence = new IndexPersistence(kv, vectorIndex);
+  const indexPersistence = new IndexPersistence(kv, vectorIndex, { requireRecoveryPlan: true });
   setIndexPersistence(indexPersistence);
 
   const loaded = await indexPersistence.load().catch((err) => {
     console.warn(`[agentmemory] Failed to load persisted vector index:`, err);
     return null;
   });
+  let vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, isVectorBackfillAllEnabled());
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
     // Persisted vectors carry whatever dimension the provider had when
     // they were written. If the active provider declares a different
@@ -483,6 +485,7 @@ async function main() {
       const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
       const dropStale = isDropStaleIndexEnabled();
       if (dropStale) {
+        vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, true);
         for (const [obsId] of loaded.vector.entries()) vectorIndex.markRemoved(obsId);
         console.warn(
           `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
@@ -516,6 +519,8 @@ async function main() {
 
   if (vectorIndex && loaded && loaded.state !== "unavailable") {
     const replay = await indexPersistence.replayPendingLog(embeddingProvider?.dimensions ?? 0);
+    if (replay.skipped > 0) vectorBackfillSince = null;
+    if (indexPersistence.isRecoveryPaused()) vectorBackfillSince = undefined;
     if (replay.entries > 0) {
       bootLog(
         `Recovered ${replay.added} vectors and ${replay.removed} removals written after the last index save, without calling the embedding provider` +
@@ -526,78 +531,65 @@ async function main() {
 
   const auditMigration = startAuditMigration(kv).catch(() => {});
 
-  const vectorCountShortfall =
-    Boolean(loaded?.vector) &&
-    loaded?.expectedCount !== undefined &&
-    loaded.vector!.size < loaded.expectedCount;
-  let vectorBackfillSince =
-    !loaded || loaded.state === "unavailable"
-      ? undefined
-      : loaded.state === "none" || vectorCountShortfall
-        ? null
-        : loaded.savedAt;
-  const incrementalBackfill = typeof vectorBackfillSince === "string" && Boolean(vectorIndex && embeddingProvider);
-  if (incrementalBackfill) {
-    const since = vectorBackfillSince as string;
-    const marker = await indexPersistence.readBackfillMarker();
-    if (marker !== null && Date.parse(marker) < Date.parse(since)) vectorBackfillSince = marker;
-    await indexPersistence.markBackfillSince(vectorBackfillSince as string).catch((err) => {
-      bootWarn(`Could not save the vector backfill marker: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }
   const keywordStart = Date.now();
   try {
     const keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
     bootLog(
       `Rebuilt BM25 index from stored content (${keyword.documents} docs in ${Date.now() - keywordStart} ms)`,
     );
-    setPendingVectorBackfillCount(keyword.vectorJobs.length + keyword.fullBackfillPending);
-    setVectorBackfillState(keyword.fullBackfillPending > 0 ? "waiting-for-opt-in" : "idle");
+    const pending = keyword.vectorJobs.length + keyword.fullBackfillPending;
+    const backlogScanComplete = !isBm25RebuildIncomplete() && isMemoryIndexReady();
+    const optedIn = isVectorBackfillAllEnabled();
+    const activeIds = new Set(keyword.vectorJobs.map((job) => job.id));
+    const hasVector = (id: string) => Boolean(vectorIndex?.has(id));
+    const countRemaining = () => bm25Index.countMissingDocuments(hasVector, vectorBackfillSince, activeIds);
+    setPendingVectorBackfillCount(indexPersistence.isRecoveryPaused() ? countRemaining() : pending);
+    if (indexPersistence.isRecoveryPaused()) {
+      setVectorBackfillState("paused");
+    } else if (vectorBackfillSince !== undefined) {
+      setVectorBackfillState(keyword.fullBackfillPending > 0 && !optedIn ? "waiting-for-opt-in" : backlogScanComplete ? "idle" : "paused");
+    }
     if (keyword.fullBackfillPending > 0) {
-      bootLog(
-        `Vector backfill needs ${keyword.fullBackfillPending} embeddings but a full backfill was not started ` +
-          `(set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`,
-      );
+      bootLog(optedIn
+        ? `Vector backfill has ${keyword.fullBackfillPending} additional documents beyond this start's limit; restart to resume.`
+        : `Vector backfill needs ${keyword.fullBackfillPending} embeddings (set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`);
     }
-    const backlogScanComplete = !isBm25RebuildIncomplete();
-    if (incrementalBackfill && backlogScanComplete && keyword.vectorJobs.length === 0) {
-      await indexPersistence.clearBackfillMarker().catch(() => {});
+    if (vectorBackfillSince !== undefined && backlogScanComplete && pending === 0) {
+      if (!(await indexPersistence.completeBackfill(() => countRemaining() === 0))) {
+        setPendingVectorBackfillCount(countRemaining());
+        setVectorBackfillState("paused");
+      }
     }
-    if (incrementalBackfill && keyword.vectorJobs.length > 0) {
+    if (keyword.vectorJobs.length > 0 && !(await indexPersistence.beginBackfill())) {
+      setVectorBackfillState("paused");
+      activeIds.clear();
+      for (const job of keyword.vectorJobs) job.revision?.release();
+    } else if (keyword.vectorJobs.length > 0) {
       setVectorBackfillState("running");
-      bootLog(
-        `Re-embedding ${keyword.vectorJobs.length} vectors missing since the last index save, ${getVectorBackfillMax()} per batch in the background`,
-      );
-      void backfillVectorBacklog(keyword.vectorJobs)
+      bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors, ${getVectorBackfillMax()} per batch in the background`);
+      void backfillVectorBacklog(keyword.vectorJobs, {
+        remainingAfter: keyword.fullBackfillPending,
+        remainingCount: countRemaining,
+      })
         .then(async (result) => {
-          if (result.complete && backlogScanComplete) await indexPersistence.clearBackfillMarker().catch(() => {});
-          setVectorBackfillState(result.complete ? "idle" : "paused");
+          const complete = result.complete && backlogScanComplete && await indexPersistence.completeBackfill(() => countRemaining() === 0);
+          const remaining = countRemaining();
+          setPendingVectorBackfillCount(remaining);
+          setVectorBackfillState(complete ? "idle" : "paused");
           if (result.added > 0) bootLog(`Vector index backfilled: ${result.added} entries`);
-          if (!result.complete) {
-            bootWarn(
-              `Vector backfill stopped with ${result.remaining} documents still missing a vector. They are retried on the next start.`,
-            );
-          }
+          if (!complete) bootWarn(`Vector recovery remains incomplete (${remaining} documents pending); it resumes on the next start.`);
         })
         .catch((err) => {
           setVectorBackfillState("paused");
           console.warn(`[agentmemory] Failed to backfill vectors:`, err);
-        });
-    } else if (keyword.vectorJobs.length > 0) {
-      setVectorBackfillState("running");
-      bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors in the background`);
-      void backfillVectors(keyword.vectorJobs)
-        .then((count) => {
-          setPendingVectorBackfillCount(keyword.fullBackfillPending);
-          setVectorBackfillState(keyword.fullBackfillPending > 0 ? "waiting-for-opt-in" : "idle");
-          if (count > 0) bootLog(`Vector index backfilled: ${count} entries`);
         })
-        .catch((err) => {
-          setVectorBackfillState("idle");
-          console.warn(`[agentmemory] Failed to backfill vectors:`, err);
+        .finally(() => {
+          activeIds.clear();
+          for (const job of keyword.vectorJobs) job.revision?.release();
         });
     }
   } catch (err) {
+    setVectorBackfillState("paused");
     console.warn(`[agentmemory] Failed to rebuild the BM25 index:`, err);
   }
 
