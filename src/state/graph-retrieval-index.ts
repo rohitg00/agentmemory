@@ -14,7 +14,7 @@ const MAX_JOURNAL_BYTES = 8 * 1024 * 1024;
 const MAX_POSTINGS = 192;
 const CONTROL_KEY = "current";
 export type GraphIndexRecordKind = "node" | "edge" | "history";
-export type GraphPostingKind = "name" | "character" | "observation" | "edgeObservation" | "adjacency" | "history" | "nodes" | "edges" | "historyEdges";
+export type GraphPostingKind = "name" | "character" | "observation" | "edgeObservation" | "edgeKey" | "adjacency" | "history" | "nodes" | "edges" | "historyEdges";
 export type GraphNodeProjection = GraphNode & { indexIncomplete?: boolean };
 export type GraphEdgeProjection = GraphEdge & { indexIncomplete?: boolean };
 type PostingRoot = { head: string | null; count: number };
@@ -37,6 +37,7 @@ const WAIT_FOR_BATCH = Symbol("graph index batch");
 const NODE_TYPES = new Set(["file", "function", "concept", "error", "decision", "pattern", "library", "person", "project", "preference", "location", "organization", "event"]);
 const EDGE_TYPES = new Set(["uses", "imports", "modifies", "causes", "fixes", "depends_on", "related_to", "works_at", "prefers", "blocked_by", "caused_by", "optimizes_for", "rejected", "avoids", "located_in", "succeeded_by"]);
 export const normalizeGraphIndexText = (value: string): string => value.normalize("NFKC").toLowerCase();
+export const graphEdgeLookupKey = (edge: Pick<GraphEdge, "sourceNodeId" | "targetNodeId" | "type">): string => JSON.stringify([edge.sourceNodeId, edge.targetNodeId, edge.type]);
 const token = (kind: GraphPostingKind, value: string) => hash(`${kind}\0${kind === "name" || kind === "character" ? normalizeGraphIndexText(value) : value}`);
 const recordKey = (buildId: string, kind: GraphIndexRecordKind, id: string) => `${buildId}:record:${kind}:${hash(id)}`;
 const rootKey = (buildId: string, posting: string) => `${buildId}:root:${posting}`;
@@ -44,7 +45,7 @@ const entryKey = (buildId: string, posting: string, id: string) => `${buildId}:e
 const countKey = (kind: GraphIndexRecordKind) => kind === "node" ? "nodes" : kind === "edge" ? "edges" : "historyEdges";
 
 function validateControl(value: GraphRetrievalIndexControl): void {
-  if (bytes(value) > MAX_CONTROL_BYTES || value.schema !== 1 || typeof value.buildId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.buildId) ||
+  if (bytes(value) > MAX_CONTROL_BYTES || value.schema !== 2 || typeof value.buildId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.buildId) ||
       !["building", "ready", "paused"].includes(value.status) ||
       ![value.revision, value.nodes, value.edges, value.historyEdges, value.incompleteRecords, value.otherTypes].every(finiteCount) ||
       !value.nodesByType || !value.edgesByType ||
@@ -65,7 +66,7 @@ export async function getGraphIndexStatus(state: StateKV): Promise<GraphRetrieva
 export async function initializeGraphIndex(state: StateKV, options: { status: "building" | "ready"; buildId?: string }): Promise<GraphRetrievalIndexControl> {
   const kv = await pinGraphState(state);
   return lock(kv, async () => {
-    const value: GraphRetrievalIndexControl = { schema: 1, buildId: options.buildId ?? randomUUID(), status: options.status,
+    const value: GraphRetrievalIndexControl = { schema: 2, buildId: options.buildId ?? randomUUID(), status: options.status,
       revision: 0, nodes: 0, edges: 0, historyEdges: 0, incompleteRecords: 0, nodesByType: {}, edgesByType: {}, otherTypes: 0, updatedAt: new Date().toISOString() };
     validateControl(value);
     const previous = await kv.get<GraphRetrievalIndexControl>(KV.graphRetrievalControl, CONTROL_KEY);
@@ -155,7 +156,10 @@ function project(kind: GraphIndexRecordKind, id: string, input: unknown): GraphR
   } else {
     const edge = row as GraphEdgeProjection;
     for (const nodeId of [edge.sourceNodeId, edge.targetNodeId]) postings.add(token(kind === "history" ? "history" : "adjacency", nodeId));
-    if (kind === "edge") for (const observationId of row.sourceObservationIds) postings.add(token("edgeObservation", observationId));
+    if (kind === "edge") {
+      if (edge.isLatest !== false) postings.add(token("edgeKey", graphEdgeLookupKey(edge)));
+      for (const observationId of row.sourceObservationIds) postings.add(token("edgeObservation", observationId));
+    }
   }
   if (incomplete) row.indexIncomplete = true;
   return { row, postings: [...postings], incomplete };

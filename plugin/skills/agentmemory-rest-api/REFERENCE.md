@@ -62,7 +62,7 @@ The REST API is the primary surface. All paths are under `http://localhost:3111`
 | POST | `/agentmemory/graph/extract` |
 | POST | `/agentmemory/graph/import-graphify` |
 | GET | `/agentmemory/graph/index` |
-| GET | `/agentmemory/graph/index/migrate` |
+| POST | `/agentmemory/graph/index/migrate` |
 | POST | `/agentmemory/graph/index/resume` |
 | GET | `/agentmemory/graph/node` |
 | POST | `/agentmemory/graph/query` |

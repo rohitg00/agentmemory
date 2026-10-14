@@ -129,7 +129,9 @@ function readPage(value: unknown, job: GraphIndexMigration): GraphIndexManifestP
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof GraphIndexMigrationError ? error.message : "Graph index migration stopped after a storage failure. Check the server and resume when storage is available.";
+  return error instanceof GraphIndexMigrationError || error instanceof GraphIndexError
+    ? error.message
+    : "Graph index migration stopped after a storage failure. Check the server and resume when storage is available.";
 }
 
 export async function getGraphIndexMigrationStatus(kv: StateKV): Promise<GraphIndexMigrationStatus> {

@@ -314,16 +314,27 @@ describe("explicit graph index migration", () => {
     expect(await reader.finish()).toBe(true);
   });
 
-  it("repairs corrupt derived control only through an explicit new migration", async () => {
+  it.each(["corrupt", "older-schema"])("repairs %s derived control only through an explicit new migration", async (kind) => {
     const { controller, rows, calls, intercept } = setup();
     rows.set(KV.graphNodes, new Map([["a", node("a")]]));
     await controller.start({ allowLegacyScan: true }); await controller.waitForIdle();
     const old = (await controller.status()).jobId;
-    rows.get(KV.graphRetrievalControl)!.set("current", { schema: 999 });
+    const control = rows.get(KV.graphRetrievalControl)!.get("current") as object;
+    rows.get(KV.graphRetrievalControl)!.set("current", kind === "corrupt" ? { schema: 999 } : { ...control, schema: 1 });
+    calls.length = 0;
+    expect(await controller.status()).toMatchObject({
+      state: "unavailable", ready: false,
+      error: "Invalid graph retrieval index control; run explicit graph-index migration",
+    });
     await expect(controller.start({ resume: true })).rejects.toThrow();
     await expect(controller.start()).rejects.toThrow();
+    expect(calls.every((call) => call.fn === "state::get")).toBe(true);
     calls.length = 0;
     intercept((fn, payload) => { if (fn === "state::get" && payload.scope === KV.graphRetrievalControl) throw new Error("storage offline"); });
+    expect(await controller.status()).toMatchObject({
+      state: "unavailable", ready: false,
+      error: "Graph index migration stopped after a storage failure. Check the server and resume when storage is available.",
+    });
     await expect(controller.start({ allowLegacyScan: true })).rejects.toThrow("storage offline");
     expect(calls.some((call) => call.fn === "state::set" || call.fn === "state::list")).toBe(false);
     intercept();

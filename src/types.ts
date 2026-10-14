@@ -511,7 +511,7 @@ export interface GraphIndexMembership {
 }
 
 export interface GraphRetrievalIndexControl {
-  schema: 1;
+  schema: 2;
   buildId: string;
   status: "building" | "ready" | "paused";
   revision: number;

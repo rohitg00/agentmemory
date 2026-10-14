@@ -45,7 +45,7 @@ function setup(kv = mockKV(), deps: Record<string, unknown> = {}) {
   return { handlers, triggers, sent, kv };
 }
 
-const graphControl = (nodes: number, edges = 0) => ({ schema: 1, buildId: "test", status: "ready", revision: 0, nodes, edges, historyEdges: 0, incompleteRecords: 0, nodesByType: {}, edgesByType: {}, otherTypes: 0, updatedAt: "now" });
+const graphControl = (nodes: number, edges = 0) => ({ schema: 2, buildId: "test", status: "ready", revision: 0, nodes, edges, historyEdges: 0, incompleteRecords: 0, nodesByType: {}, edgesByType: {}, otherTypes: 0, updatedAt: "now" });
 
 const seeded = () =>
   mockKV({

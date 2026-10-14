@@ -1,4 +1,4 @@
-import { createGraphIndexReader, normalizeGraphIndexText } from "../state/graph-retrieval-index.js";
+import { createGraphIndexReader, graphEdgeLookupKey, normalizeGraphIndexText } from "../state/graph-retrieval-index.js";
 import { persistGraphRecords } from "../state/graph-ingestion.js";
 import { readIndexedEntity } from "./graph-index-temporal.js";
 import { pinGraphState } from "../state/graph-generation.js";
@@ -246,14 +246,19 @@ export function registerTemporalGraphFunctions(
             let cursor: string | undefined;
             let existingEdge: GraphEdge | null = null;
             do {
-              const page = await reader.posting("adjacency", edge.sourceNodeId, { cursor, limit: 64 });
+              const page = await reader.posting("edgeKey", graphEdgeLookupKey(edge), { cursor, limit: 64 });
               for (const id of page.ids) {
                 const candidate = await reader.getEdge(id);
                 if (candidate && !candidate.stale && candidate.isLatest !== false &&
                     candidate.sourceNodeId === edge.sourceNodeId && candidate.targetNodeId === edge.targetNodeId && candidate.type === edge.type &&
                     (!existingEdge || (candidate.version ?? 1) > (existingEdge.version ?? 1) ||
                       (candidate.version ?? 1) === (existingEdge.version ?? 1) && candidate.id < existingEdge.id)) {
-                  existingEdge = await kv.get<GraphEdge>(KV.graphEdges, id);
+                  const canonical = await reader.read<GraphEdge>(KV.graphEdges, id);
+                  if (reader.exhausted) break;
+                  if (!canonical || canonical.id !== id || canonical.stale || canonical.isLatest === false || graphEdgeLookupKey(canonical) !== graphEdgeLookupKey(edge)) {
+                    throw new Error("Temporal edge reconciliation found a missing or changed canonical predecessor");
+                  }
+                  existingEdge = canonical;
                 }
               }
               cursor = page.cursor ?? undefined;

@@ -233,6 +233,24 @@ async function command(p, args, code = 0, extraEnv = {}) {
   return JSON.parse(result.output);
 }
 const state = (p, id, payload) => p.client.trigger({ function_id: id, payload });
+async function assertEdgeKey(p, source, target, type, expectedIds) {
+  const control = await rest(p, "/graph/index");
+  assert(control.ready);
+  const scope = control.generation ? `${scopes.index}:generation:${control.generation}` : scopes.index;
+  const posting = createHash("sha256").update(JSON.stringify(`edgeKey\0${JSON.stringify([source, target, type])}`)).digest("hex");
+  const key = `${control.buildId}:root:${posting}`;
+  const root = await state(p, "state::get", { scope, key });
+  assert.equal(root?.count, expectedIds.length);
+  const ids = [];
+  let next = root.head;
+  while (next !== null) {
+    assert(ids.length < expectedIds.length, "Exact edge posting contains extra or cyclic entries");
+    const entry = await state(p, "state::get", { scope, key: `${control.buildId}:entry:${posting}:${next}` });
+    assert(entry, "Missing exact edge posting entry");
+    ids.push(entry.id); next = entry.next;
+  }
+  assert.deepEqual(ids.sort(), [...expectedIds].sort());
+}
 function persisted(p, scope) {
   try { return decodeRkyvJsonScope(readFileSync(join(p.data, "state_store.db", `${encodeURIComponent(scope)}.bin`))); } catch { return {}; }
 }
@@ -346,6 +364,7 @@ try {
   assert(ready.ready, ready.error ?? ready.action);
   assert.equal(ready.jobId, accepted.jobId); assert.equal(ready.nodes, nodeCount); assert.equal(ready.edges, edgeCount); assert.equal(ready.historyEdges, 1);
   assert.equal(ready.processed, nodeCount + edgeCount + 1); assert.equal(ready.coverage, "complete");
+  await assertEdgeKey(primary, "node-0", "node-1", "related_to", ["edge-0", `edge-${nodeCount}`, `edge-${nodeCount * 2}`]);
   const migrationMs = performance.now() - resumeStart;
   assert.equal(primary.traceSummary.get(primary.phase).canonicalLists.length, 0);
   assert.equal(primary.traceSummary.get(primary.phase).snapshotOperations, 0);
@@ -387,6 +406,8 @@ try {
   assert((await find(primary, "OnyxRestored")).some((row) => row.id === "node-0"));
   const restored = await rest(primary, "/graph/node?id=node-0&limit=200");
   assert(restored.relations.some((relation) => relation.edgeId === "edge-0" && relation.neighbor?.id === "node-2" && relation.type === "uses"));
+  await assertEdgeKey(primary, "node-0", "node-1", "related_to", [`edge-${nodeCount}`, `edge-${nodeCount * 2}`]);
+  await assertEdgeKey(primary, "node-0", "node-2", "uses", ["edge-0"]);
   const remembered = await rest(primary, "/remember", { content: "Indigo durable capture survives graph migration restart", project: "fixture-primary", agentId: "fixture-agent" });
   assert.equal(remembered.success, true);
   assert(remembered.memory?.id);
@@ -401,6 +422,8 @@ try {
   primary.phase = "completed-restart";
   await start(primary, "completed-restart");
   assert.equal((await command(primary, ["status", "--json"])).ready, true);
+  await assertEdgeKey(primary, "node-0", "node-1", "related_to", [`edge-${nodeCount}`, `edge-${nodeCount * 2}`]);
+  await assertEdgeKey(primary, "node-0", "node-2", "uses", ["edge-0"]);
   note("completed-restart-startup", ordinaryReads(primary, primary.phase));
   await measuredReads(primary, "cold-engine-query", [["graph-query", async () => assert((await find(primary, "OnyxRestored")).some((row) => row.id === "node-0"))]]);
   await measuredReads(primary, "repeated-engine-query", [["graph-query", async () => assert((await find(primary, "OnyxRestored")).some((row) => row.id === "node-0"))]]);
@@ -409,6 +432,30 @@ try {
   assert((await rest(primary, "/search", { query: "Indigo durable capture", project: "fixture-primary", agentId: "fixture-agent", limit: 5 })).results.length > 0);
   assert.equal((await rest(primary, "/search", { query: "Indigo durable capture", project: "different-project", limit: 5 })).results.length, 0);
   note("completed-restart-recall", ordinaryReads(primary, primary.phase));
+
+  const indexed = await rest(primary, "/graph/index");
+  const controlScope = indexed.generation ? `${scopes.control}:generation:${indexed.generation}` : scopes.control;
+  const oldControl = await state(primary, "state::get", { scope: controlScope, key: "current" });
+  await state(primary, "state::set", { scope: controlScope, key: "current", value: { ...oldControl, schema: 1 } });
+  await stop(primary, true);
+  primary.phase = "older-index-startup";
+  await start(primary, "older-index-startup");
+  const unavailable = await command(primary, ["status", "--json"]);
+  assert.equal(unavailable.state, "unavailable");
+  assert(unavailable.error.includes("explicit graph-index migration"));
+  note("older-index-startup", ordinaryReads(primary, primary.phase));
+  primary.phase = "explicit-index-rebuild";
+  await command(primary, ["migrate", "--allow-legacy-scan", "--json"]);
+  const rebuilt = await poll("older index rebuilt explicitly", async () => {
+    const status = await rest(primary, "/graph/index");
+    return status.ready || status.state === "paused" ? status : null;
+  }, 300_000);
+  assert(rebuilt.ready, rebuilt.error ?? rebuilt.action);
+  assert.notEqual(rebuilt.buildId, indexed.buildId);
+  assert.equal(rebuilt.nodes, nodeCount);
+  await assertEdgeKey(primary, "node-0", "node-2", "uses", ["edge-0"]);
+  assert((await graphRecall()).results.some((row) => row.observation?.id === remembered.memory.id));
+  note("explicit-index-rebuild", { canonicalMemoryPreserved: true, exactEdgeKeyRestored: true });
 
   const secondary = await profile("secondary", 1, primary.home); secondary.phase = "named-instance-startup-status-search";
   secondary.explicitSecret = randomBytes(32).toString("hex");

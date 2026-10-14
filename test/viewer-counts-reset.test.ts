@@ -7,7 +7,7 @@ import {
 } from "../src/state/viewer-counts.js";
 import { createGraphIndexState } from "./helpers/graph-index-state.js";
 
-const control = (nodes: number) => ({ schema: 1, buildId: "test", status: "ready", revision: 0, nodes, edges: 0, historyEdges: 0, incompleteRecords: 0, nodesByType: {}, edgesByType: {}, otherTypes: 0, updatedAt: "now" });
+const control = (nodes: number) => ({ schema: 2, buildId: "test", status: "ready", revision: 0, nodes, edges: 0, historyEdges: 0, incompleteRecords: 0, nodesByType: {}, edgesByType: {}, otherTypes: 0, updatedAt: "now" });
 
 const stats = (totalNodes: number) => ({ totalNodes, totalEdges: 0, nodesByType: {}, edgesByType: {} });
 
