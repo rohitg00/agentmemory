@@ -34,7 +34,9 @@ export type CompressResult = {
   qualityScore?: number;
   sourceTruncated?: boolean;
 };
-const activeByStore = new WeakMap<StateKV, Map<string, Promise<CompressResult>>>();
+type CompressionAttempt = { revisions: Set<string>; resultRevision?: string };
+type ActiveCompression = { promise: Promise<CompressResult>; attempt: CompressionAttempt };
+const activeByStore = new WeakMap<StateKV, Map<string, ActiveCompression>>();
 
 export function compressionInFlight(kv: StateKV, sessionId: string, observationId: string): boolean {
   return activeByStore.get(kv)?.has(JSON.stringify([sessionId, observationId])) ?? false;
@@ -51,14 +53,21 @@ export function registerCompressFunction(
   provider: MemoryProvider,
   metricsStore?: MetricsStore,
 ): void {
-  const active = activeByStore.get(kv) ?? new Map<string, Promise<CompressResult>>();
+  const active = activeByStore.get(kv) ?? new Map<string, ActiveCompression>();
   activeByStore.set(kv, active);
 
-  async function compress(data: CompressRequest): Promise<CompressResult> {
+  async function matchesScope(data: CompressRequest, row: StoredObservation): Promise<boolean> {
+    if (!data.scope) return true;
+    const session = await kv.get<Session>(KV.sessions, data.sessionId);
+    return Boolean(session && (!data.scope.project || session.project === data.scope.project) &&
+      (!data.scope.agentId || (row.agentId ?? session.agentId) === data.scope.agentId));
+  }
+
+  async function compress(data: CompressRequest, attempt: CompressionAttempt, deadline: number): Promise<CompressResult> {
     const { sessionId, observationId } = data;
     const startMs = Date.now();
     async function bounded<T>(work: () => Promise<T>): Promise<T> {
-      const remaining = COMPRESSION_TIMEOUT_MS - (Date.now() - startMs);
+      const remaining = deadline - Date.now();
       if (remaining <= 0) throw new Error("compression_timeout");
       let timer: ReturnType<typeof setTimeout> | undefined;
       try {
@@ -67,16 +76,10 @@ export function registerCompressFunction(
         })]);
       } finally { clearTimeout(timer); }
     }
-    async function matchesScope(row: StoredObservation): Promise<boolean> {
-      if (!data.scope) return true;
-      const session = await kv.get<Session>(KV.sessions, sessionId);
-      return Boolean(session && (!data.scope.project || session.project === data.scope.project) &&
-        (!data.scope.agentId || (row.agentId ?? session.agentId) === data.scope.agentId));
-    }
     const prepared = await withKeyedLock(`obs:${sessionId}`, async () => {
       const stored = await kv.get<StoredObservation>(KV.observations(sessionId), observationId);
       if (!stored || typeof stored !== "object" || stored.id !== observationId || stored.sessionId !== sessionId) return null;
-      if (!await matchesScope(stored)) return { skipped: true as const };
+      if (!await matchesScope(data, stored)) return { skipped: true as const };
       if (data.expectedRevision && observationRevision(stored) !== data.expectedRevision) return { skipped: true as const };
       if (!needsCompression(stored) && !data.raw) return { skipped: true as const };
       const rows = await kv.list<CompressedObservation>(KV.observations(sessionId));
@@ -89,6 +92,8 @@ export function registerCompressFunction(
       };
       const claimed = { ...stored, compression };
       await kv.set(KV.observations(sessionId), observationId, claimed);
+      attempt.revisions.add(observationRevision(stored));
+      attempt.revisions.add(observationRevision(claimed));
       if ("title" in claimed) indexObservation(claimed);
       return { raw, claimed, fallback, revision: observationRevision(claimed) };
     });
@@ -101,9 +106,10 @@ export function registerCompressFunction(
       const changed = await withKeyedLock(`obs:${sessionId}`, async () => {
         const current = await kv.get<StoredObservation>(KV.observations(sessionId), observationId);
         if (!current || observationRevision(current) !== revision) return true;
-        await kv.set(KV.observations(sessionId), observationId, {
-          ...claimed, compression: { ...claimed.compression, status: "failed", error },
-        });
+        const failed = { ...claimed, compression: { ...claimed.compression!, status: "failed" as const, error } };
+        await kv.set(KV.observations(sessionId), observationId, failed);
+        attempt.resultRevision = observationRevision(failed);
+        attempt.revisions.add(attempt.resultRevision);
         return false;
       });
       await metricsStore?.record("mem::compress", Date.now() - startMs, false).catch(() => {});
@@ -173,10 +179,12 @@ export function registerCompressFunction(
       };
       const compressed = await withKeyedLock(`obs:${sessionId}`, async () => {
         const current = await kv.get<StoredObservation>(KV.observations(sessionId), observationId);
-        if (!current || observationRevision(current) !== revision || !await matchesScope(current)) return null;
+        if (!current || observationRevision(current) !== revision || !await matchesScope(data, current)) return null;
         const rows = await kv.list<CompressedObservation>(KV.observations(sessionId));
         const bounded = budgetLiveObservationSource(candidate, rows);
         await kv.set(KV.observations(sessionId), observationId, bounded);
+        attempt.resultRevision = observationRevision(bounded);
+        attempt.revisions.add(attempt.resultRevision);
         indexObservation(bounded);
         return bounded;
       });
@@ -194,7 +202,7 @@ export function registerCompressFunction(
       )).catch(() => {});
       const published = await withKeyedLock(`obs:${sessionId}`, async () => {
         const current = await kv.get<StoredObservation>(KV.observations(sessionId), observationId);
-        if (!current || observationRevision(current) !== committedRevision || !await matchesScope(current)) return false;
+        if (!current || observationRevision(current) !== committedRevision || !await matchesScope(data, current)) return false;
         await sdk.trigger({
           function_id: "stream::send",
           payload: {
@@ -215,6 +223,42 @@ export function registerCompressFunction(
     }
   }
 
+  async function dispatch(data: CompressRequest, deadline: number): Promise<CompressResult> {
+    const key = JSON.stringify([data.sessionId, data.observationId]);
+    const existing = active.get(key);
+    if (existing) {
+      const changed: CompressResult = { success: false, error: "observation_changed", skipped: true, retryable: false };
+      const requestedRevision = await withKeyedLock(`obs:${data.sessionId}`, async () => {
+        const current = await kv.get<StoredObservation>(KV.observations(data.sessionId), data.observationId);
+        if (!current || current.id !== data.observationId || current.sessionId !== data.sessionId || !await matchesScope(data, current)) return null;
+        const revision = observationRevision(current);
+        if (data.expectedRevision && data.expectedRevision !== revision && !existing.attempt.revisions.has(data.expectedRevision)) return null;
+        return data.expectedRevision ?? revision;
+      });
+      if (!requestedRevision) return changed;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const result = await Promise.race([existing.promise, new Promise<CompressResult>((resolve) => {
+        timer = setTimeout(() => resolve({ success: false, error: "compression_timeout", retryable: true }), Math.max(0, deadline - Date.now()));
+      })]).finally(() => clearTimeout(timer));
+      if (result.error === "compression_timeout") return result;
+      const shared = await withKeyedLock(`obs:${data.sessionId}`, async () => {
+        const current = await kv.get<StoredObservation>(KV.observations(data.sessionId), data.observationId);
+        if (!current || current.id !== data.observationId || current.sessionId !== data.sessionId || !await matchesScope(data, current)) return changed;
+        const revision = observationRevision(current);
+        if (revision === existing.attempt.resultRevision && existing.attempt.revisions.has(requestedRevision)) return result;
+        return revision === requestedRevision && (needsCompression(current) || data.raw) ? null : changed;
+      });
+      return shared ?? dispatch({ ...data, expectedRevision: requestedRevision }, deadline);
+    }
+    if (Date.now() >= deadline) return { success: false, error: "compression_timeout", retryable: true };
+    const attempt: CompressionAttempt = { revisions: new Set() };
+    const task: ActiveCompression = { attempt, promise: compress(data, attempt, deadline).finally(() => {
+      if (active.get(key) === task) active.delete(key);
+    }) };
+    active.set(key, task);
+    return task.promise;
+  }
+
   sdk.registerFunction("mem::compress", (data: CompressRequest): Promise<CompressResult> => {
     if (!data || typeof data.sessionId !== "string" || !data.sessionId.trim() ||
         typeof data.observationId !== "string" || !data.observationId.trim()) {
@@ -223,12 +267,7 @@ export function registerCompressFunction(
     if (data.raw !== undefined && (!data.raw || typeof data.raw.hookType !== "string" || !data.raw.hookType)) {
       return Promise.resolve({ success: false, error: "invalid_raw_observation" });
     }
-    const key = JSON.stringify([data.sessionId, data.observationId]);
-    const existing = active.get(key);
-    if (existing) return existing;
-    const task = compress(data).finally(() => { if (active.get(key) === task) active.delete(key); });
-    active.set(key, task);
-    return task;
+    return dispatch(data, Date.now() + COMPRESSION_TIMEOUT_MS);
   });
   registerCompressionRecovery(sdk, kv);
 }
