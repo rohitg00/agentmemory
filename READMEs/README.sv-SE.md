@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-verktyg" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiska hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externa databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,300+ godkända tester" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ godkända tester" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1437,7 +1437,7 @@ fi
 | Prometheus / Grafana | iii OTEL + hälsoövervakare |
 | Anpassade pluginsystem | `iii worker add <name>` |
 
-**230 källkodsfiler · ~55,000 LOC · 3,300+ tester · 312 funktioner · 62 KV-scopes**, allt på tre primitiv. Inget `agentmemory plugin install`. Pluginsystemet är iii självt.
+**236 källkodsfiler · ~56,000 LOC · 3,400+ tester · 318 funktioner · 66 KV-scopes**, allt på tre primitiv. Inget `agentmemory plugin install`. Pluginsystemet är iii självt.
 
 ---
 
@@ -1780,7 +1780,7 @@ Skapa `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-138 endpoints på port `3111`. REST API:et binder till `127.0.0.1` som standard. Skyddade endpoints kräver `Authorization: Bearer <secret>`, och mesh-synk-endpoints kräver en explicit satt `AGENTMEMORY_SECRET` på båda parterna.
+141 endpoints på port `3111`. REST API:et binder till `127.0.0.1` som standard. Skyddade endpoints kräver `Authorization: Bearer <secret>`, och mesh-synk-endpoints kräver en explicit satt `AGENTMEMORY_SECRET` på båda parterna.
 
 **Autentisering är aktiverad som standard.** När `AGENTMEMORY_SECRET` inte är satt (i skalet eller i `~/.agentmemory/.env`), genererar servern en slumpmässig hemlighet vid första start och lagrar den i `~/.agentmemory/secret` med rättigheterna `0600`. Varje medföljande klient läser den därifrån när den talar med en lokal server: CLI:n, viewern, hookarna under `plugin/scripts`, MCP-servern och `@agentmemory/mcp`-shimmen, konfigurationerna skrivna av `agentmemory connect`, och de medföljande integrationerna för OpenCode, Pi, OpenClaw, Hermes och filsystemsbevakaren. Den lagrade hemligheten skickas bara till loopback-URL:er (`localhost`, `127.0.0.0/8`, `::1`). En explicit `AGENTMEMORY_SECRET` vinner alltid, och fjärrklienter måste fortfarande ha den satt. Docker och startpunkterna i `deploy/` genererar och exporterar redan sin egen hemlighet. För att anropa API:et för hand:
 
@@ -1861,7 +1861,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,300+ tests
+npm test                  # 3,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

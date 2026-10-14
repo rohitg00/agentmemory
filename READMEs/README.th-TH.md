@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 เครื่องมือ MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook อัตโนมัติ" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="ไม่ต้องพึ่ง external DB เลย" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 3,300+ รายการ" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 3,400+ รายการ" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1444,7 +1444,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**230 source file · ~55,000 LOC · 3,300+ การทดสอบ · 312 function · 62 KV scope** ทั้งหมดอยู่บน primitive สามตัว ไม่มี `agentmemory plugin install` ระบบ plugin ก็คือ iii เองนั่นแหละ
+**236 source file · ~56,000 LOC · 3,400+ การทดสอบ · 318 function · 66 KV scope** ทั้งหมดอยู่บน primitive สามตัว ไม่มี `agentmemory plugin install` ระบบ plugin ก็คือ iii เองนั่นแหละ
 
 ---
 
@@ -1787,7 +1787,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-138 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
+141 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
 
 **Authentication เปิดอยู่โดย default** เมื่อไม่ได้ตั้งค่า `AGENTMEMORY_SECRET` (ทั้งใน shell หรือใน `~/.agentmemory/.env`) server จะสร้าง secret แบบสุ่มตอนเริ่มครั้งแรก และเก็บไว้ที่ `~/.agentmemory/secret` ด้วย mode `0600` client ที่ bundle มาทุกตัวจะอ่านมันจากที่นั่นเมื่อคุยกับ server ในเครื่อง: CLI, viewer, hook ใต้ `plugin/scripts`, MCP server และ shim `@agentmemory/mcp`, config ที่เขียนโดย `agentmemory connect`, และ integration ของ OpenCode, Pi, OpenClaw, Hermes และ filesystem-watcher ที่ bundle มา secret ที่เก็บไว้จะถูกส่งไปที่ loopback URL เท่านั้น (`localhost`, `127.0.0.0/8`, `::1`) `AGENTMEMORY_SECRET` แบบ explicit จะมีสิทธิ์เหนือเสมอ และ client แบบ remote ยังต้องตั้งค่ามันไว้ Docker และ entrypoint ของ [deploy](../deploy/) สร้างและ export secret ของตัวเองไว้แล้ว เรียก API ด้วยมือ:
 
@@ -1868,7 +1868,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,300+ tests
+npm test                  # 3,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

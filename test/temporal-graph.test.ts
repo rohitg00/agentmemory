@@ -1,3 +1,5 @@
+import { createGraphIndexState } from "./helpers/graph-index-state.js";
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { describe, it, expect, vi } from "vitest";
 import type { GraphNode, GraphEdge, MemoryProvider } from "../src/types.js";
 
@@ -5,38 +7,19 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-function mockKV(
-  nodes: GraphNode[] = [],
-  edges: GraphEdge[] = [],
-) {
-  const store = new Map<string, Map<string, unknown>>();
-  const nodesMap = new Map<string, unknown>();
-  for (const n of nodes) nodesMap.set(n.id, n);
-  store.set("mem:graph:nodes", nodesMap);
-
-  const edgesMap = new Map<string, unknown>();
-  for (const e of edges) edgesMap.set(e.id, e);
-  store.set("mem:graph:edges", edgesMap);
-
-  store.set("mem:graph:edge-history", new Map());
-
-  return {
-    get: async <T>(scope: string, key: string): Promise<T | null> => {
-      return (store.get(scope)?.get(key) as T) ?? null;
-    },
-    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
-      if (!store.has(scope)) store.set(scope, new Map());
-      store.get(scope)!.set(key, data);
-      return data;
-    },
-    delete: async (scope: string, key: string): Promise<void> => {
-      store.get(scope)?.delete(key);
-    },
-    list: async <T>(scope: string): Promise<T[]> => {
-      const entries = store.get(scope);
-      return entries ? (Array.from(entries.values()) as T[]) : [];
-    },
-  };
+async function mockKV(nodes: GraphNode[] = [], edges: GraphEdge[] = []) {
+  const { kv } = createGraphIndexState();
+  await initializeGraphIndex(kv, { status: "ready" });
+  for (const node of nodes) await kv.set("mem:graph:nodes", node.id, node);
+  for (const edge of edges) {
+    for (const id of [edge.sourceNodeId, edge.targetNodeId]) {
+      if (!await kv.get("mem:graph:nodes", id)) await kv.set("mem:graph:nodes", id, {
+        id, name: id, type: "location", properties: {}, sourceObservationIds: [], createdAt: edge.createdAt,
+      });
+    }
+    await kv.set("mem:graph:edges", edge.id, edge);
+  }
+  return kv;
 }
 
 function mockSdk() {
@@ -67,7 +50,7 @@ describe("TemporalGraph", () => {
       "../src/functions/temporal-graph.js"
     );
     const sdk = mockSdk();
-    const kv = mockKV();
+    const kv = await mockKV();
     const provider: MemoryProvider = {
       name: "test",
       compress: vi.fn().mockResolvedValue(""),
@@ -109,7 +92,7 @@ describe("TemporalGraph", () => {
     };
 
     const sdk = mockSdk();
-    const kv = mockKV();
+    const kv = await mockKV();
     registerTemporalGraphFunctions(sdk as never, kv as never, provider);
 
     const result = (await sdk.trigger("mem::temporal-graph-extract", {
@@ -200,7 +183,7 @@ describe("TemporalGraph", () => {
     };
 
     const sdk = mockSdk();
-    const kv = mockKV([existingNode, existingNode2], [existingEdge]);
+    const kv = await mockKV([existingNode, existingNode2], [existingEdge]);
     registerTemporalGraphFunctions(sdk as never, kv as never, provider);
 
     const result = (await sdk.trigger("mem::temporal-graph-extract", {
@@ -274,7 +257,7 @@ describe("TemporalGraph", () => {
     };
 
     const sdk = mockSdk();
-    const kv = mockKV([node], [edge1, edge2]);
+    const kv = await mockKV([node], [edge1, edge2]);
     const provider: MemoryProvider = {
       name: "test",
       compress: vi.fn(),
@@ -334,7 +317,7 @@ describe("TemporalGraph", () => {
     };
 
     const sdk = mockSdk();
-    const kv = mockKV([node], [edge1, edge2]);
+    const kv = await mockKV([node], [edge1, edge2]);
     const provider: MemoryProvider = {
       name: "test",
       compress: vi.fn(),
@@ -357,7 +340,7 @@ describe("TemporalGraph", () => {
       "../src/functions/temporal-graph.js"
     );
     const sdk = mockSdk();
-    const kv = mockKV();
+    const kv = await mockKV();
     const provider: MemoryProvider = {
       name: "test",
       compress: vi.fn(),

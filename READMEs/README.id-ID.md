@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 tool MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook otomatis" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 DB eksternal" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,300+ pengujian lolos" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ pengujian lolos" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1447,7 +1447,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Sistem plugin custom | `iii worker add <name>` |
 
-**230 file sumber · ~55,000 LOC · 3,300+ pengujian · 312 fungsi · 62 scope KV**, semua di atas tiga primitif. Tidak ada `agentmemory plugin install`. Sistem plugin-nya adalah iii itu sendiri.
+**236 file sumber · ~56,000 LOC · 3,400+ pengujian · 318 fungsi · 66 scope KV**, semua di atas tiga primitif. Tidak ada `agentmemory plugin install`. Sistem plugin-nya adalah iii itu sendiri.
 
 ---
 
@@ -1790,7 +1790,7 @@ Buat `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-138 endpoint di port `3111`. REST API terbind ke `127.0.0.1` secara default. Endpoint yang terlindungi membutuhkan `Authorization: Bearer <secret>`, dan endpoint mesh sync membutuhkan `AGENTMEMORY_SECRET` yang diset secara eksplisit di kedua peer.
+141 endpoint di port `3111`. REST API terbind ke `127.0.0.1` secara default. Endpoint yang terlindungi membutuhkan `Authorization: Bearer <secret>`, dan endpoint mesh sync membutuhkan `AGENTMEMORY_SECRET` yang diset secara eksplisit di kedua peer.
 
 **Autentikasi aktif secara default.** Saat `AGENTMEMORY_SECRET` tidak diset (di shell atau di `~/.agentmemory/.env`), server menghasilkan secret acak pada start pertama dan menyimpannya di `~/.agentmemory/secret` dengan mode `0600`. Setiap klien bundel membacanya dari sana saat berbicara dengan server lokal: CLI, viewer, hook di bawah `plugin/scripts`, server MCP dan shim `@agentmemory/mcp`, konfigurasi yang ditulis `agentmemory connect`, serta integrasi OpenCode, Pi, OpenClaw, Hermes, dan filesystem-watcher bundel. Secret yang tersimpan hanya dikirim ke URL loopback (`localhost`, `127.0.0.0/8`, `::1`). `AGENTMEMORY_SECRET` eksplisit selalu menang, dan klien remote tetap membutuhkannya diset. Docker dan entrypoint `deploy/` sudah menghasilkan dan mengekspor secret-nya sendiri. Untuk memanggil API secara manual:
 
@@ -1871,7 +1871,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,300+ tests
+npm test                  # 3,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

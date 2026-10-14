@@ -15,6 +15,7 @@ import {
   GraphRetrieval,
   type GraphRetrievalResult,
   type GraphQuery,
+  type GraphObservationAuthorization,
 } from "../functions/graph-retrieval.js";
 import { extractEntitiesFromQuery } from "../functions/query-expansion.js";
 import { rerank } from "./reranker.js";
@@ -37,11 +38,11 @@ export class HybridSearch {
     private graphWeight = 0.3,
     private rerankEnabled = process.env.RERANK_ENABLED === "true",
   ) {
-    this.graphRetrieval = new GraphRetrieval(kv, (id) => this.bm25.layerOf(id));
+    this.graphRetrieval = new GraphRetrieval(kv, (id) => this.bm25.layerOf(id), (id) => this.bm25.sessionOf(id));
   }
 
-  async search(query: string, limit = 20, targetLayer: SearchLayer = "all"): Promise<HybridSearchResult[]> {
-    return this.tripleStreamSearch(query, limit, targetLayer, this.graphRetrieval.createQuery());
+  async search(query: string, limit = 20, targetLayer: SearchLayer = "all", authorizeGraph?: GraphObservationAuthorization): Promise<HybridSearchResult[]> {
+    return this.tripleStreamSearch(query, limit, targetLayer, this.graphRetrieval.createQuery(authorizeGraph));
   }
 
   async searchWithExpansion(
@@ -49,6 +50,7 @@ export class HybridSearch {
     limit: number,
     expansion: QueryExpansion,
     targetLayer: SearchLayer = "all",
+    authorizeGraph?: GraphObservationAuthorization,
   ): Promise<HybridSearchResult[]> {
     const allQueries = [
       query,
@@ -61,7 +63,7 @@ export class HybridSearch {
       ...extractEntitiesFromQuery(query),
     ];
 
-    const graphQuery = this.graphRetrieval.createQuery();
+    const graphQuery = this.graphRetrieval.createQuery(authorizeGraph);
     const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
     const resultSets = await Promise.all(
       allQueries.map((q) => this.tripleStreamSearch(q, retrievalLimit, targetLayer, graphQuery, allEntities, false)),
@@ -253,7 +255,7 @@ export class HybridSearch {
         entities.length ? query.searchByEntities(entities, 2, limit, layer).catch(() => []) : [],
         observations.length ? query.expandFromChunks(observations, 1, 5, layer).catch(() => []) : [],
       ]).then((results) => results.flat());
-      return await Promise.race([
+      const results = await Promise.race([
         work,
         new Promise<GraphRetrievalResult[]>((resolve) => {
           timer = setTimeout(() => {
@@ -266,6 +268,12 @@ export class HybridSearch {
           }, GRAPH_BUDGET_MS);
         }),
       ]);
+      const diagnostic = query.diagnostics();
+      if ((diagnostic.status !== "ready" || diagnostic.truncated) && Date.now() - this.lastGraphTimeoutWarningAt >= 60_000) {
+        this.lastGraphTimeoutWarningAt = Date.now();
+        logger.warn("Graph enrichment is unavailable or partial", diagnostic);
+      }
+      return results;
     } finally {
       clearTimeout(timer);
     }

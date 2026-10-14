@@ -80,6 +80,7 @@ import { registerExportImportFunction } from "./functions/export-import.js";
 import { registerEnrichFunction } from "./functions/enrich.js";
 import { registerClaudeBridgeFunction } from "./functions/claude-bridge.js";
 import { registerGraphFunction } from "./functions/graph.js";
+import { registerGraphIndexMigrationFunctions } from "./state/graph-index-migration.js";
 import { GRAPH_COMPACT_BOOT_DELAY_MS, runGraphCompactOnBoot, setGraphCompactBootDisabled } from "./functions/graph-compact-boot.js";
 import { registerGraphImportFunction } from "./functions/graph-import.js";
 import { registerConsolidationPipelineFunction } from "./functions/consolidation-pipeline.js";
@@ -320,6 +321,7 @@ async function main() {
   }
 
   registerGraphFunction(sdk, kv, provider);
+  const graphIndexMigration = registerGraphIndexMigrationFunctions(sdk, kv);
   registerGraphImportFunction(sdk, kv);
   bootLog(
     `Knowledge graph: structural extraction on (LLM relations ${isGraphExtractionEnabled() ? "enabled" : "off"})`,
@@ -433,8 +435,8 @@ async function main() {
     graphWeight,
   );
 
-  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer) =>
-    hybridSearch.search(query, limit, targetLayer);
+  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3]) =>
+    hybridSearch.search(query, limit, targetLayer, authorizeGraph);
   registerSmartSearchFunction(sdk, kv, hybridRanker);
   setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);
@@ -609,7 +611,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 138 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 141 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -642,6 +644,10 @@ async function main() {
     secret,
     config.restPort,
   );
+
+  void graphIndexMigration.resumeOnBoot().catch(() => {
+    bootWarn("Graph index migration could not resume. Run agentmemory graph-index status for recovery instructions.");
+  });
 
   if (isGraphCompactOnBootEnabled()) {
     const graphCompactTimer = setTimeout(() => {
@@ -760,6 +766,7 @@ async function main() {
     healthMonitor.stop();
     dedupMap.stop();
     capture.stop();
+    await settleWithin(graphIndexMigration.stop(), SHUTDOWN_FLUSH_TIMEOUT_MS);
     indexPersistence.stop();
     const viewerClosed = new Promise<void>((resolve) =>
       viewerServer.close(() => resolve()),

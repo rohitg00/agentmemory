@@ -105,6 +105,7 @@ const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
 import { resolveDataDir } from "./cli-data-dir.js";
 import { runCaptureCommand } from "./cli/capture.js";
+import { runGraphIndexCommand } from "./cli/graph-index.js";
 import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -239,6 +240,9 @@ Commands:
   capture [--drain]  Show capture health: the local offline spool and the server
                      inbox (pending, retrying, dead letters). --drain sends
                      spooled observations now. --json for machine output.
+  graph-index       Inspect bounded graph index status. --json for machine output.
+                     migrate --allow-legacy-scan explicitly scans legacy graph data.
+                     resume continues a sealed migration without another full scan.
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
                      --max-files <N> | --max-files=<N>: override scan cap (default 200, max 1000;
                      out-of-range is rejected; for trees >1000 files, batch by subdirectory)
@@ -302,7 +306,7 @@ if (toolsIdx !== -1 && args[toolsIdx + 1]) {
   process.env["AGENTMEMORY_TOOLS"] = toolsMode;
 }
 
-const URL_CLIENT_COMMANDS = new Set(["status", "doctor", "mcp", "capture"]);
+const URL_CLIENT_COMMANDS = new Set(["status", "doctor", "mcp", "capture", "graph-index"]);
 let hasExplicitLocalPortOverride = false;
 let selectedInstance = 0;
 
@@ -2348,8 +2352,8 @@ async function runStatus() {
     const version = healthRes?.version || "?";
     const sessionList = Array.isArray(sessionsRes?.sessions) ? sessionsRes.sessions : [];
     const sessions = sessionList.length;
-    const nodes = Number(graphRes?.totalNodes ?? graphRes?.nodes ?? graphRes?.nodeCount ?? 0);
-    const edges = Number(graphRes?.totalEdges ?? graphRes?.edges ?? graphRes?.edgeCount ?? 0);
+    const nodes = graphRes?.available === false ? "unknown" : graphRes?.totalNodes ?? graphRes?.nodes ?? graphRes?.nodeCount ?? "unknown";
+    const edges = graphRes?.available === false ? "unknown" : graphRes?.totalEdges ?? graphRes?.edges ?? graphRes?.edgeCount ?? "unknown";
     const cb = healthRes?.circuitBreaker?.state || "closed";
     const heapMB = h?.memory ? Math.round(h.memory.heapUsed / 1048576) : 0;
     const uptime = h?.uptimeSeconds ? Math.round(h.uptimeSeconds) : 0;
@@ -2652,10 +2656,8 @@ async function passiveServerChecks(): Promise<DoctorCheck[]> {
 
   const hasLlm = flags?.provider === "llm";
   const hasEmbed = flags?.embeddingProvider === "embeddings";
-  const graphNodeCount = Number(
-    graph?.totalNodes ?? graph?.nodes ?? graph?.nodeCount ?? 0,
-  );
-  const graphHas = graphNodeCount > 0;
+  const graphNodeCount = graph?.available === false ? null : graph?.totalNodes ?? graph?.nodes ?? graph?.nodeCount ?? null;
+  const graphHas = typeof graphNodeCount === "number" && graphNodeCount > 0;
 
   checks.push(
     {
@@ -2723,7 +2725,9 @@ async function passiveServerChecks(): Promise<DoctorCheck[]> {
     ok: graphHas,
     hint: graphHas
       ? undefined
-      : "Graph is empty. Run a session with GRAPH_EXTRACTION_ENABLED=true.",
+      : graphNodeCount === null
+        ? "Graph counts are unavailable. Run agentmemory graph-index status."
+        : "Graph is empty. Run a session with GRAPH_EXTRACTION_ENABLED=true.",
   });
 
   return checks;
@@ -4230,6 +4234,11 @@ async function runCapture(): Promise<void> {
   process.exit(code);
 }
 
+async function runGraphIndex(): Promise<void> {
+  const base = getBaseUrl();
+  process.exit(await runGraphIndexCommand({ base, args: args.slice(1), secret: resolveClientSecret(base) }));
+}
+
 const commands: Record<string, () => Promise<void>> = {
   init: runInit,
   connect: runConnectCmd,
@@ -4243,6 +4252,7 @@ const commands: Record<string, () => Promise<void>> = {
   mcp: runMcp,
   "import-jsonl": runImportJsonl,
   capture: runCapture,
+  "graph-index": runGraphIndex,
 };
 
 const first = args[0] ?? "";

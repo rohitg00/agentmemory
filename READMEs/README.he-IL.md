@@ -73,7 +73,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 כלי MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks אוטומטיים" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 מסדי נתונים חיצוניים" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,300+ בדיקות עוברות" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ בדיקות עוברות" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1439,7 +1439,7 @@ fi
 | Prometheus / Grafana | iii OTEL + מוניטור health |
 | מערכות plugin מותאמות אישית | `iii worker add <name>` |
 
-**230 קבצי מקור · ~55,000 LOC · 3,300+ בדיקות · 312 פונקציות · 62 תחומי KV**, הכול על שלושה primitives. אין `agentmemory plugin install`. מערכת ה-plugin היא iii עצמו.
+**236 קבצי מקור · ~56,000 LOC · 3,400+ בדיקות · 318 פונקציות · 66 תחומי KV**, הכול על שלושה primitives. אין `agentmemory plugin install`. מערכת ה-plugin היא iii עצמו.
 
 ---
 
@@ -1782,7 +1782,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-138 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
+141 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
 
 **אימות (Authentication) פעיל כברירת מחדל.** כש-`AGENTMEMORY_SECRET` לא מוגדר (ב-shell או ב-`~/.agentmemory/.env`), השרת מייצר secret אקראי בהפעלה הראשונה ושומר אותו ב-`~/.agentmemory/secret` במוד `0600`. כל לקוח מצורף קורא אותו משם כשהוא מדבר עם שרת מקומי: ה-CLI, המציג, ה-hooks תחת `plugin/scripts`, שרת ה-MCP וה-shim `@agentmemory/mcp`, התצורות שנכתבות על ידי `agentmemory connect`, והאינטגרציות המצורפות של OpenCode, Pi, OpenClaw, Hermes וה-filesystem-watcher. ה-secret המאוחסן נשלח רק ל-URLs של loopback (`localhost`, `127.0.0.0/8`, `::1`). `AGENTMEMORY_SECRET` מפורש גובר תמיד, ולקוחות מרוחקים עדיין צריכים אותו מוגדר. Docker וה-entrypoints של `deploy/` כבר מייצרים ומייצאים את ה-secret שלהם. כדי לקרוא ל-API ביד:
 
@@ -1863,7 +1863,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,300+ tests
+npm test                  # 3,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

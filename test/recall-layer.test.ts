@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GraphRetrieval } from "../src/functions/graph-retrieval.js";
+import { initializeGraphIndex, reconcileGraphIndexRecord } from "../src/state/graph-retrieval-index.js";
+import { GraphRetrieval, type GraphObservationAuthorization } from "../src/functions/graph-retrieval.js";
 import {
   getSearchIndex,
   rankMemoryIds,
@@ -42,6 +43,7 @@ function fixture() {
   const kv = {
     get: async <T>(scope: string, id: string): Promise<T | null> => (records.get(`${scope}/${id}`) as T) ?? null,
     set: async <T>(scope: string, id: string, value: T): Promise<T> => { records.set(`${scope}/${id}`, value); return value; },
+    delete: async (scope: string, id: string): Promise<void> => { records.delete(`${scope}/${id}`); },
     list: async <T>(scope: string): Promise<T[]> => [...records].filter(([key]) => key.startsWith(`${scope}/`)).map(([, value]) => value as T),
   };
   const handlers = new Map<string, (data: any) => Promise<any>>();
@@ -58,11 +60,16 @@ function fixture() {
   const vector = new VectorIndex();
   const embedding = { name: "fixed", dimensions: 2, embed: async () => new Float32Array([1, 0]), embedBatch: async () => [] };
   const hybrid = new HybridSearch(index, vector, embedding, kv as never, 0.4, 0.6, 0);
-  const search = vi.fn((query: string, limit: number, targetLayer?: "all" | "memory" | "observation") => hybrid.search(query, limit, targetLayer));
+  const search = vi.fn((query: string, limit: number, targetLayer?: "all" | "memory" | "observation", authorizeGraph?: GraphObservationAuthorization) => hybrid.search(query, limit, targetLayer, authorizeGraph));
   registerSearchFunction(sdk as never, kv as never);
   registerSmartSearchFunction(sdk as never, kv as never, search);
   return {
     kv, sdk, index, vector, embedding, search,
+    prepareGraph: async () => {
+      await initializeGraphIndex(kv as never, { status: "ready" });
+      for (const node of await kv.list<any>(KV.graphNodes)) await reconcileGraphIndexRecord(kv as never, "node", node.id, node);
+      for (const edge of await kv.list<any>(KV.graphEdges)) await reconcileGraphIndexRecord(kv as never, "edge", edge.id, edge);
+    },
     call: (id: string, args: Record<string, unknown>) => sdk.trigger({ function_id: id, payload: args }),
     addObservation: async (obs: CompressedObservation) => {
       index.add(obs);
@@ -113,7 +120,7 @@ describe("recall layer selection", () => {
     setHybridRanker(f.search);
     const recall = await f.call("mem::search", { query: "quasar policy", limit: 1, targetLayer: "memory" });
     expect(recall.results[0]).toMatchObject({ layer: "memory", observation: { id: "mem_decision" } });
-    expect(f.search).toHaveBeenLastCalledWith("quasar policy", 1, "memory");
+    expect(f.search).toHaveBeenLastCalledWith("quasar policy", 1, "memory", expect.any(Function));
     const smart = await f.call("mem::smart-search", { query: "quasar policy", limit: 1, targetLayer: "memory" });
     expect(smart.results).toEqual([expect.objectContaining({ obsId: "mem_decision", layer: "memory" })]);
     expect(smart).not.toHaveProperty("lessons");
@@ -164,8 +171,11 @@ describe("recall layer selection", () => {
       id: "neighbor", name: "Rollout", type: "service", properties: {},
       sourceObservationIds: ["obs_3", "mem_other"],
     });
-    await f.kv.set(KV.graphEdges, "edge", { id: "edge", sourceNodeId: "node", targetNodeId: "neighbor", type: "uses", weight: 1 });
-    const graph = new GraphRetrieval(f.kv as never);
+    await f.kv.set(KV.graphEdges, "edge", { id: "edge", sourceNodeId: "node", targetNodeId: "neighbor", type: "uses", weight: 1, sourceObservationIds: ["mem_decision"] });
+    await f.addMemory(memory());
+    await f.addMemory(memory({ id: "mem_other" }));
+    await f.prepareGraph();
+    const graph = new GraphRetrieval(f.kv as never, (id) => f.index.layerOf(id), (id) => f.index.sessionOf(id));
     expect((await graph.searchByEntities(["Quasar"], 2, 1, "memory")).map((hit) => hit.obsId)).toEqual(["mem_decision"]);
     expect((await graph.expandFromChunks(["mem_decision"], 1, 1, "memory")).map((hit) => hit.obsId)).toEqual(["mem_other"]);
   });
@@ -267,7 +277,8 @@ describe("recall layer selection", () => {
       id: "node", name: "Quasar", type: "service", properties: {},
       sourceObservationIds: ["mem_capture", "imported-decision"],
     });
-    const graph = new GraphRetrieval(f.kv as never, (id) => f.index.layerOf(id));
+    await f.prepareGraph();
+    const graph = new GraphRetrieval(f.kv as never, (id) => f.index.layerOf(id), (id) => f.index.sessionOf(id));
     expect((await graph.searchByEntities(["Quasar"], 2, 1, "memory")).map((hit) => hit.obsId)).toEqual(["imported-decision"]);
     expect((await graph.searchByEntities(["Quasar"], 2, 1, "observation")).map((hit) => hit.obsId)).toEqual(["mem_capture"]);
   });
@@ -299,4 +310,24 @@ describe("recall layer selection", () => {
     });
     await expect(f.call("mem::search", { query: "quasar", targetLayer: "memory", project: "public" })).rejects.toThrow("project lookup failed");
   });
+});
+
+it.each(["mem::search", "mem::smart-search"])("does not traverse a foreign project or agent's graph evidence in %s", async (handler) => {
+  const f = fixture();
+  const own = { ...observation("own"), sessionId: "own-session", agentId: "own-agent" };
+  const foreign = { ...observation("foreign"), sessionId: "foreign-session", agentId: "foreign-agent" };
+  await f.addObservation(own);
+  await f.addObservation(foreign);
+  await f.kv.set(KV.sessions, own.sessionId, { id: own.sessionId, project: "own", cwd: "/own" });
+  await f.kv.set(KV.sessions, foreign.sessionId, { id: foreign.sessionId, project: "foreign", cwd: "/foreign" });
+  await f.kv.set(KV.graphNodes, "seed", { id: "seed", name: "Cobalt", type: "concept", properties: {}, sourceObservationIds: [foreign.id], createdAt: timestamp });
+  await f.kv.set(KV.graphNodes, "own-node", { id: "own-node", name: "Other", type: "concept", properties: {}, sourceObservationIds: [own.id], createdAt: timestamp });
+  await f.kv.set(KV.graphEdges, "edge", { id: "edge", sourceNodeId: "seed", targetNodeId: "own-node", type: "uses", weight: 1, sourceObservationIds: [foreign.id], createdAt: timestamp });
+  await f.prepareGraph();
+  const hybrid = new HybridSearch(f.index, null, null, f.kv as never);
+  const rank = (query: string, limit: number, layer?: "all" | "memory" | "observation", authorize?: GraphObservationAuthorization) => hybrid.search(query, limit, layer, authorize);
+  setHybridRanker(rank);
+  registerSmartSearchFunction(f.sdk as never, f.kv as never, rank);
+  const result = await f.call(handler, { query: "Cobalt", project: "own", agentId: "own-agent", cwd: "/own" });
+  expect(result.results).toEqual([]);
 });

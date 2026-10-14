@@ -181,6 +181,40 @@ describe("evaluateStatus", () => {
     expect(report.problems[0].code).toBe("no-llm-provider");
   });
 
+  it("reports graph migration separately from empty graph data and snapshot rebuilds", () => {
+    const report = evaluateStatus(inputs({ graph: { fromSnapshot: false }, graphIndex: {
+      state: "needs-migration", ready: false, coverage: "unknown", action: "Run graph-index migrate --allow-legacy-scan",
+    } }));
+    expect(codes(report)).toEqual(["graph-index-not-ready"]);
+    expect(report.problems[0].fix).toContain("--allow-legacy-scan");
+    expect(renderStatusHtml(report, "n")).toContain("needs-migration, unknown coverage");
+  });
+
+  it("preserves unknown graph counts instead of displaying an empty graph", () => {
+    const report = evaluateStatus(inputs({ graph: { totalNodes: null, totalEdges: null, available: false, coverage: "unknown", fromIndex: false }, graphIndex: {
+      state: "needs-migration", ready: false, coverage: "unknown",
+    } }));
+    expect(report.graph).toMatchObject({ totalNodes: null, totalEdges: null, available: false });
+    const html = renderStatusHtml(report, "n");
+    expect(html).toContain("<th>Nodes / edges</th><td>unknown / unknown</td>");
+    expect(html).not.toContain("<th>Nodes / edges</th><td>0 / 0</td>");
+    const empty = evaluateStatus(inputs({ graph: { totalNodes: 0, totalEdges: 0, available: true, fromIndex: true } }));
+    expect(renderStatusHtml(empty, "n")).toContain("<th>Nodes / edges</th><td>0 / 0</td>");
+  });
+
+  it("surfaces partial and unavailable graph indexes without claiming complete coverage", () => {
+    const partial = evaluateStatus(inputs({ graphIndex: { state: "ready", ready: true, coverage: "partial", incompleteRecords: 3, action: "Inspect oversized records" } }));
+    expect(codes(partial)).toEqual(["graph-index-partial"]);
+    expect(partial.status).toBe("warn");
+    expect(partial.problems[0].message).toContain("3 graph records");
+    expect(codes(evaluateStatus(inputs({ graphIndex: null })))).toEqual(["graph-index-unavailable"]);
+  });
+
+  it("does not recommend legacy snapshot scans for an index-backed graph", () => {
+    const report = evaluateStatus(inputs({ graph: { fromIndex: true, totalNodes: 12, totalEdges: 2, updatedAt: "2020-01-01T00:00:00Z" }, graphIndex: { state: "ready", ready: true, coverage: "complete" } }));
+    expect(report.problems).toEqual([]);
+  });
+
   it("reports a frozen legacy audit log only when the migration left it in place", () => {
     expect(codes(evaluateStatus(inputs({ auditLegacy: { status: "too-large", sizeBytes: 1 } })))).toContain(
       "audit-legacy-frozen",
@@ -464,7 +498,8 @@ describe("status wiring", () => {
 
   it("time-boxes every status probe so a slow store cannot hang the page", () => {
     const reporter = api.slice(api.indexOf("export function createStatusReporter"), api.indexOf("export function createConsolidationStatusReader"));
-    expect(reporter.match(/valueWithin\(/g)?.length).toBe(6);
+    expect(reporter.match(/valueWithin\(/g)?.length).toBe(7);
+    expect(reporter).toContain("valueWithin(getGraphIndexMigrationStatus(kv), STATUS_CHECK_TIMEOUT_MS)");
     expect(reporter).toMatch(/valueWithin\(scan\.run\(\), STATUS_CHECK_TIMEOUT_MS\)/);
     expect(api).toMatch(/run: singleFlight\(async \(\) => \{\s*const value = await findUnindexedObservations\(kv\);/);
     const handler = api.slice(api.indexOf('registerFunction("api::status"'), api.indexOf('function_id: "api::status"'));

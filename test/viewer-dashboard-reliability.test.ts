@@ -186,6 +186,15 @@ describe("viewer live event reducer", () => {
 });
 
 describe("viewer navigation and shared components", () => {
+  it("renders deferred graph compaction as requiring explicit maintenance, not completed", () => {
+    const render = new Function("hrow", "esc", `${extractFunction("graphCompactionRowHtml")}\nreturn graphCompactionRowHtml;`)(
+      (...args: unknown[]) => args, String,
+    );
+    expect(render({ state: "deferred" })).toEqual([
+      "Provenance compaction", "deferred", null, expect.stringContaining("explicit maintenance"),
+    ]);
+  });
+
   it("parses deep links into a tab and an entity id", () => {
     const deps = ["normalizeTab", "decodePart", "parseRoute"].map(extractFunction).join("\n");
     const parse = new Function(

@@ -73,7 +73,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,300+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1439,7 +1439,7 @@ fi
 | Prometheus / Grafana | OTEL في iii + مراقب الحالة الصحية |
 | أنظمة إضافات مخصصة | `iii worker add <name>` |
 
-**230 ملف مصدري · ~55,000 سطر برمجي · 3,300+ اختبار · 312 دالة · 62 نطاق KV**، كل ذلك على ثلاث بنى أساسية. لا يوجد أمر `agentmemory plugin install`. نظام الإضافات هو iii نفسه.
+**236 ملف مصدري · ~56,000 سطر برمجي · 3,400+ اختبار · 318 دالة · 66 نطاق KV**، كل ذلك على ثلاث بنى أساسية. لا يوجد أمر `agentmemory plugin install`. نظام الإضافات هو iii نفسه.
 
 ---
 
@@ -1782,7 +1782,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-138 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
+141 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
 
 **المصادقة مُفعَّلة افتراضيًا.** عندما لا يكون `AGENTMEMORY_SECRET` مضبوطًا (في الصدفة أو في `~/.agentmemory/.env`)، يُولِّد الخادم سرًا عشوائيًا عند أول تشغيل ويخزِّنه في `~/.agentmemory/secret` بوضع صلاحيات `0600`. ويقرؤه كل عميل مُضمَّن من هناك عند التحدث إلى خادم محلي: الواجهة الطرفية CLI، والعارض، والخطافات تحت `plugin/scripts`، وخادم MCP والوسيط `@agentmemory/mcp`، والإعدادات التي يكتبها `agentmemory connect`، وتكاملات OpenCode وPi وOpenClaw وHermes ومراقب نظام الملفات (filesystem-watcher) المُضمَّنة. ولا يُرسَل السر المخزَّن إلا إلى عناوين loopback (`localhost`، و`127.0.0.0/8`، و`::1`). ويتغلّب `AGENTMEMORY_SECRET` الصريح دائمًا، ولا يزال العملاء البعيدون بحاجة إلى ضبطه. وتُولِّد Docker وقوالب [`deploy/`](../deploy/) سرها الخاص وتُصدِّره مسبقًا. ولاستدعاء الواجهة البرمجية يدويًا:
 
@@ -1863,7 +1863,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,300+ tests
+npm test                  # 3,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

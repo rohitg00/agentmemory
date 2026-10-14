@@ -2,7 +2,7 @@ import type { GraphEdge, GraphNode, GraphSnapshot, GraphMutationWrite, GraphInde
 import type { StateKV } from "./kv.js";
 import { KV } from "./schema.js";
 import { pinGraphState, replaceGraphGeneration } from "./graph-generation.js";
-import { withKeyedLock } from "./keyed-mutex.js";
+import { isKeyedLockHeld, withKeyedLock } from "./keyed-mutex.js";
 import { withoutGraphRecovery } from "./graph-consistency.js";
 
 export interface GraphIngestionOptions {
@@ -218,7 +218,8 @@ export async function persistGraphRecords(
     }
     return result;
   };
-  return withKeyedLock("graph:persist", () => options.replace
+  const persist = () => options.replace
     ? replaceGraphGeneration(kv, (fresh) => run(fresh, true))
-    : run(kv));
+    : run(kv);
+  return isKeyedLockHeld("graph:persist") ? persist() : withKeyedLock("graph:persist", persist);
 }
