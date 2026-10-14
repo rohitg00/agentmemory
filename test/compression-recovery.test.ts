@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerCompressFunction, COMPRESSION_TIMEOUT_MS } from "../src/functions/compress.js";
 import { registerObserveFunction } from "../src/functions/observe.js";
 import { registerCompressionApi } from "../src/triggers/compression.js";
+import { registerApiTriggers } from "../src/triggers/api.js";
 import { buildSyntheticCompression } from "../src/functions/compress-synthetic.js";
-import { pendingCompression } from "../src/functions/compression-state.js";
+import { observationRevision, pendingCompression } from "../src/functions/compression-state.js";
 import { getSearchIndex, setEmbeddingProvider, setVectorIndex, vectorIndexRemove } from "../src/functions/search.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import { KV } from "../src/state/schema.js";
@@ -140,6 +141,135 @@ describe("compression recovery", () => {
     first.resolve(xml); second.resolve(xml); await Promise.all(tasks);
     expect(await a.kv.get(KV.observations("session-recovery"), raw().id)).toMatchObject({ compression: { attempts: 1, status: "complete" } });
     expect(await b.kv.get(KV.observations("session-recovery"), raw().id)).toMatchObject({ compression: { attempts: 1, status: "complete" } });
+  });
+
+  it.each(["project", "agentId"])("does not return shared compression outside a joining caller's %s scope", async (field) => {
+    const model = deferred<string>(); const provider = { name: "test", compress: vi.fn(() => model.promise), summarize: vi.fn() };
+    const r = rig(provider); await r.seed();
+    const automatic = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id });
+    await vi.waitFor(() => expect(provider.compress).toHaveBeenCalledOnce());
+    const scoped = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id,
+      scope: { [field]: "unrelated" } });
+    model.resolve(xml);
+    expect(await automatic).toMatchObject({ success: true });
+    expect(await scoped).toMatchObject({ skipped: true });
+    expect(await scoped).not.toHaveProperty("compressed");
+    expect(provider.compress).toHaveBeenCalledOnce();
+  });
+
+  it.each(["project", "agentId"])("revalidates a joining retry after session-start changes its %s", async (field) => {
+    const model = deferred<string>(); const provider = { name: "test", compress: vi.fn(() => model.promise), summarize: vi.fn() };
+    const r = rig(provider); await r.seed();
+    const automatic = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id });
+    await vi.waitFor(() => expect(provider.compress).toHaveBeenCalledOnce());
+    const claimed = await r.kv.get(KV.observations("session-recovery"), raw().id);
+    const scoped = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id,
+      expectedRevision: observationRevision(claimed), scope: { project: "project-a", agentId: "agent-a" } });
+    const retry = r.call("mem::compression-retry", { project: "project-a", agentId: "agent-a" });
+    await vi.waitFor(() => expect(r.sdk.trigger.mock.calls.some(([input]) => input.function_id === "mem::compress")).toBe(true));
+    registerApiTriggers(r.sdk as never, r.kv as never, "test-auth");
+    r.sdk.registerFunction("mem::context", async () => ({ context: "" }));
+    expect(await r.call("api::session::start", { method: "POST", headers: { authorization: "Bearer test-auth" },
+      body: { sessionId: "session-recovery", project: "project-a", agentId: "agent-a", [field]: `${field}-b`, cwd: "/fixture-b" } })).toMatchObject({ status_code: 200 });
+    model.resolve(xml);
+    expect(await automatic).toMatchObject({ success: true });
+    expect(await scoped).toMatchObject({ skipped: true });
+    expect(await scoped).not.toHaveProperty("compressed");
+    expect(await retry).toMatchObject({ recovered: 0, items: [{ outcome: "changed" }] });
+    expect(await r.kv.get(KV.observations("session-recovery"), raw().id)).toMatchObject({ compression: { status: "complete" } });
+  });
+
+  it("rejects an obsolete expected revision even while the requested observation is active", async () => {
+    const model = deferred<string>(); const provider = { name: "test", compress: vi.fn(() => model.promise), summarize: vi.fn() };
+    const r = rig(provider); await r.seed();
+    const automatic = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id });
+    await vi.waitFor(() => expect(provider.compress).toHaveBeenCalledOnce());
+    const obsolete = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id, expectedRevision: "obsolete" });
+    model.resolve(xml); await automatic;
+    expect(await obsolete).toMatchObject({ skipped: true });
+    expect(await obsolete).not.toHaveProperty("compressed");
+    expect(provider.compress).toHaveBeenCalledOnce();
+  });
+
+  it("keeps an observation's explicit agent scope when the session agent changes", async () => {
+    const model = deferred<string>(); const provider = { name: "test", compress: vi.fn(() => model.promise), summarize: vi.fn() };
+    const r = rig(provider); await r.seed();
+    await r.kv.set(KV.observations("session-recovery"), raw().id, { ...raw(), agentId: "agent-a" });
+    const automatic = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id });
+    await vi.waitFor(() => expect(provider.compress).toHaveBeenCalledOnce());
+    const retry = r.call("mem::compression-retry", { project: "project-a", agentId: "agent-a" });
+    await vi.waitFor(() => expect(r.sdk.trigger.mock.calls.some(([input]) => input.function_id === "mem::compress")).toBe(true));
+    const session = await r.kv.get(KV.sessions, "session-recovery");
+    await withKeyedLock("obs:session-recovery", () => r.kv.set(KV.sessions, session.id, { ...session, agentId: "agent-b" }));
+    model.resolve(xml); await automatic;
+    expect(await retry).toMatchObject({ recovered: 1 });
+    expect(provider.compress).toHaveBeenCalledOnce();
+  });
+
+  it("retries the current replacement once after an obsolete shared attempt finishes", async () => {
+    const model = deferred<string>();
+    const provider = { name: "test", compress: vi.fn().mockImplementationOnce(() => model.promise).mockResolvedValue(xml), summarize: vi.fn() };
+    const r = rig(provider); await r.seed();
+    const automatic = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id });
+    await vi.waitFor(() => expect(provider.compress).toHaveBeenCalledOnce());
+    const replacement = { ...buildSyntheticCompression({ ...raw(), toolOutput: "replacement source" }), compression: pendingCompression() };
+    await withKeyedLock("obs:session-recovery", () => r.kv.set(KV.observations("session-recovery"), raw().id, replacement));
+    const retries = Array.from({ length: 2 }, () => r.call("mem::compression-retry", { project: "project-a", agentId: "agent-a" }));
+    await vi.waitFor(() => expect(r.sdk.trigger.mock.calls.filter(([input]) => input.function_id === "mem::compress")).toHaveLength(2));
+    model.resolve(xml);
+    expect(await automatic).toMatchObject({ skipped: true, error: "observation_changed" });
+    for (const result of await Promise.all(retries)) expect(result).toMatchObject({ recovered: 1 });
+    expect(provider.compress).toHaveBeenCalledTimes(2);
+    expect(provider.compress.mock.calls[1][1]).toContain("replacement source");
+    expect(await r.kv.get(KV.observations("session-recovery"), raw().id)).toMatchObject({ source: replacement.source, compression: { status: "complete", attempts: 1 } });
+    const restarted = rig(undefined, r.kv);
+    expect(await restarted.call("mem::compression-retry", { sessionId: "session-recovery" })).toMatchObject({ attempted: 0 });
+    expect(restarted.provider.compress).not.toHaveBeenCalled();
+  });
+
+  it("does not share observations with equal IDs across sessions", async () => {
+    const model = deferred<string>(); const provider = { name: "test", compress: vi.fn(() => model.promise), summarize: vi.fn() };
+    const r = rig(provider); await r.seed(); await r.seed(raw().id, "other-session", "project-b", "agent-b");
+    const tasks = [r.call("mem::compression-retry", { project: "project-a", agentId: "agent-a" }),
+      r.call("mem::compression-retry", { project: "project-b", agentId: "agent-b" })];
+    await vi.waitFor(() => expect(provider.compress).toHaveBeenCalledTimes(2));
+    model.resolve(xml);
+    for (const result of await Promise.all(tasks)) expect(result).toMatchObject({ recovered: 1 });
+  });
+
+  it("does not restart a joining retry when its replacement is deleted", async () => {
+    const model = deferred<string>(); const provider = { name: "test", compress: vi.fn(() => model.promise), summarize: vi.fn() };
+    const r = rig(provider); await r.seed();
+    const automatic = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id });
+    await vi.waitFor(() => expect(provider.compress).toHaveBeenCalledOnce());
+    const replacement = { ...buildSyntheticCompression(raw()), compression: pendingCompression() };
+    await withKeyedLock("obs:session-recovery", () => r.kv.set(KV.observations("session-recovery"), raw().id, replacement));
+    const retry = r.call("mem::compression-retry", { sessionId: "session-recovery" });
+    await vi.waitFor(() => expect(r.sdk.trigger.mock.calls.some(([input]) => input.function_id === "mem::compress")).toBe(true));
+    await withKeyedLock("obs:session-recovery", () => r.kv.delete(KV.observations("session-recovery"), raw().id));
+    model.resolve(xml); await automatic;
+    expect(await retry).toMatchObject({ recovered: 0, items: [{ outcome: "changed" }] });
+    expect(provider.compress).toHaveBeenCalledOnce();
+    expect(await r.kv.get(KV.observations("session-recovery"), raw().id)).toBeNull();
+  });
+
+  it("includes time spent waiting for obsolete work in a replacement retry's deadline", async () => {
+    vi.useFakeTimers();
+    const oldModel = deferred<string>(); const newModel = deferred<string>();
+    const provider = { name: "test", compress: vi.fn().mockImplementationOnce(() => oldModel.promise).mockImplementation(() => newModel.promise), summarize: vi.fn() };
+    const r = rig(provider); await r.seed();
+    const automatic = r.call("mem::compress", { sessionId: "session-recovery", observationId: raw().id });
+    await vi.advanceTimersByTimeAsync(10_000);
+    const replacement = { ...buildSyntheticCompression(raw()), compression: pendingCompression() };
+    await withKeyedLock("obs:session-recovery", () => r.kv.set(KV.observations("session-recovery"), raw().id, replacement));
+    const retry = r.call("mem::compression-retry", { sessionId: "session-recovery" });
+    await vi.advanceTimersByTimeAsync(30_000);
+    oldModel.resolve(xml); await vi.advanceTimersByTimeAsync(1); await automatic;
+    expect(provider.compress).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await retry).toMatchObject({ success: false, failed: 1, recovered: 0 });
+    newModel.resolve(xml); await vi.advanceTimersByTimeAsync(1);
+    expect(await r.kv.get(KV.observations("session-recovery"), raw().id)).toMatchObject({ source: replacement.source, compression: { status: "failed", attempts: 1 } });
   });
 
   it.each([["delete", xml], ["replace", xml], ["delete", "invalid"], ["replace", "invalid"]])("discards a late model result after %s (%s)", async (operation, output) => {
