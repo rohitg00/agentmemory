@@ -5,28 +5,40 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerReflectFunctions } from "../src/functions/reflect.js";
-import { fingerprintId } from "../src/state/schema.js";
+import { initializeGraphIndex, reconcileGraphIndexRecord } from "../src/state/graph-retrieval-index.js";
+import { indexObservationSession } from "../src/state/obs-index.js";
+import { KV, fingerprintId } from "../src/state/schema.js";
 import type { Insight, GraphNode, GraphEdge, SemanticMemory, Lesson, Crystal } from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
-  return {
+  const kv = {
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
     },
     set: async <T>(scope: string, key: string, data: T): Promise<T> => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
+      if (scope === KV.graphNodes || scope === KV.graphEdges) {
+        const row = data as GraphNode | GraphEdge;
+        for (const id of row.sourceObservationIds ?? []) {
+          await indexObservationSession(kv as never, id, "session");
+          await kv.set(KV.observations("session"), id, { id, sessionId: "session", title: "source" });
+        }
+        await reconcileGraphIndexRecord(kv as never, scope === KV.graphNodes ? "node" : "edge", row.id, row);
+      }
       return data;
     },
     delete: async (scope: string, key: string): Promise<void> => {
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
+      if (scope === KV.graphNodes || scope === KV.graphEdges) throw new Error("Unbounded graph read forbidden");
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
   };
+  return kv;
 }
 
 function mockSdk() {
@@ -53,7 +65,7 @@ function makeConceptNode(name: string): GraphNode {
     type: "concept",
     name,
     properties: {},
-    sourceObservationIds: [],
+    sourceObservationIds: [`obs_${name}`],
     createdAt: "2026-04-01T00:00:00Z",
   };
 }
@@ -65,7 +77,7 @@ function makeEdge(src: string, tgt: string): GraphEdge {
     sourceNodeId: `node_${src}`,
     targetNodeId: `node_${tgt}`,
     weight: 1,
-    sourceObservationIds: [],
+    sourceObservationIds: [`obs_${src}`],
     createdAt: "2026-04-01T00:00:00Z",
   };
 }
@@ -127,9 +139,10 @@ describe("Reflect", () => {
   let kv: ReturnType<typeof mockKV>;
   let provider: { name: string; compress: ReturnType<typeof vi.fn>; summarize: ReturnType<typeof vi.fn> };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sdk = mockSdk();
     kv = mockKV();
+    await initializeGraphIndex(kv as never, { status: "ready" });
     provider = {
       name: "test",
       compress: vi.fn(),
@@ -624,6 +637,58 @@ describe("Reflect", () => {
 
       const after = await kv.get<Insight>("mem:insights", "ins_weak");
       expect(after!.deleted).toBe(true);
+    });
+  });
+});
+
+describe("bounded reflection graph context", () => {
+  async function fixture() {
+    const kv = mockKV();
+    await initializeGraphIndex(kv as never, { status: "ready" });
+    await kv.set(KV.graphNodes, "node_security", makeConceptNode("security"));
+    await kv.set(KV.graphNodes, "node_validation", makeConceptNode("validation"));
+    await kv.set(KV.graphEdges, "edge", makeEdge("security", "validation"));
+    const sdk = mockSdk();
+    const summarize = vi.fn(async () => "<insights></insights>");
+    registerReflectFunctions(sdk as never, kv as never, { name: "fixture", summarize } as never);
+    return { kv, sdk, summarize };
+  }
+
+  it("skips unmigrated graph state without enumerating canonical graph scopes", async () => {
+    const f = await fixture();
+    await f.kv.delete(KV.graphRetrievalControl, "current");
+    const list = vi.spyOn(f.kv, "list");
+    const result = await f.sdk.trigger("mem::reflect", {});
+    expect(result).toMatchObject({ usedFallback: true, graph: { status: "unavailable", nodes: 0, edges: 0 } });
+    expect(list.mock.calls.some(([scope]) => scope === KV.graphNodes || scope === KV.graphEdges)).toBe(false);
+  });
+
+  it("excludes foreign and forgotten graph provenance before forming project clusters", async () => {
+    const f = await fixture();
+    await f.kv.set(KV.sessions, "session", { id: "session", project: "private" });
+    expect(await f.sdk.trigger("mem::reflect", { project: "public" })).toMatchObject({ graph: { nodes: 0, edges: 0 } });
+    expect(await f.sdk.trigger("mem::reflect", { project: "private" })).toMatchObject({ graph: { nodes: 2, edges: 1 } });
+    await f.kv.delete(KV.observations("session"), "obs_security");
+    expect(await f.sdk.trigger("mem::reflect", { project: "private" })).toMatchObject({ graph: { nodes: 1, edges: 0 } });
+  });
+
+  it("reports partial inventory and remains within its point-read budget", async () => {
+    const f = await fixture();
+    for (let i = 0; i < 100; i++) await f.kv.set(KV.graphNodes, `node_${i}`, makeConceptNode(String(i)));
+    const get = vi.spyOn(f.kv, "get");
+    const result = await f.sdk.trigger("mem::reflect", {});
+    expect(result.graph.truncated).toBe(true);
+    expect(result.graph.nodes).toBeLessThanOrEqual(64);
+    expect(get.mock.calls.length).toBeLessThanOrEqual(258);
+  });
+
+  it("reports incomplete projections even when the inventory fits in one page", async () => {
+    const f = await fixture();
+    await f.kv.set(KV.graphNodes, "node_security", {
+      ...makeConceptNode("security"), properties: { description: "x".repeat(513) },
+    });
+    expect(await f.sdk.trigger("mem::reflect", {})).toMatchObject({
+      graph: { status: "ready", truncated: true, nodes: 2, edges: 1 },
     });
   });
 });

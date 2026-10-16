@@ -1,11 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { StateKV } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
 import { resetGraphGeneration, setGraphGenerationListener } from "../src/state/graph-generation.js";
 import { registerViewerStreamTriggers } from "../src/triggers/viewer-streams.js";
 import { getViewerCounts, resetViewerCounts } from "../src/state/viewer-counts.js";
 import { setAuditRecordedListener } from "../src/functions/audit.js";
 import type { GraphNode, GraphSnapshot } from "../src/types.js";
+import { createGraphIndexState } from "./helpers/graph-index-state.js";
+import { withoutGraphRecovery } from "../src/state/graph-consistency.js";
 
 function snapshot(count: number): GraphSnapshot {
   const topNodes: GraphNode[] = Array.from({ length: count }, (_, i) => ({
@@ -20,212 +21,151 @@ function snapshot(count: number): GraphSnapshot {
 }
 
 async function setup() {
-  const store = new Map<string, Map<string, unknown>>();
+  const fixture = createGraphIndexState();
+  const { kv } = fixture;
   const handlers = new Map<string, (data: any) => Promise<any>>();
-  const sent: Array<{ type: string; data: { delta: any; stats: any; generation?: string; reset?: boolean } }> = [];
+  const sent: Array<{ type: string; data: any }> = [];
   let failSend = false;
   const sdk = {
     registerFunction: vi.fn((id: string, handler: (data: any) => Promise<any>) => handlers.set(id, handler)), registerTrigger: vi.fn(),
-    trigger: async ({ function_id, payload: p }: { function_id: string; payload: any }): Promise<any> => {
+    trigger: async ({ function_id, payload }: { function_id: string; payload: any }): Promise<any> => {
       if (function_id === "stream::send") {
         if (failSend) { failSend = false; throw new Error("stream unavailable"); }
-        sent.push(structuredClone(p)); return {};
+        sent.push(structuredClone(payload)); return {};
       }
-      const rows = store.get(p.scope) ?? new Map<string, unknown>();
-      if (function_id === "state::get") return structuredClone(rows.get(p.key) ?? null);
-      if (function_id === "state::list") return structuredClone([...rows.values()]);
-      if (function_id === "state::set") {
-        rows.set(p.key, structuredClone(p.value)); store.set(p.scope, rows); return p.value;
-      }
-      if (function_id === "state::delete") { rows.delete(p.key); return; }
       throw new Error(`Unexpected call ${function_id}`);
     },
   };
-  const kv = new StateKV(sdk as never);
   await resetGraphGeneration(kv, snapshot(0));
   registerViewerStreamTriggers(sdk as never, kv);
-  const write = (value: GraphSnapshot) => kv.set(KV.graphSnapshot, "current", value);
+  const write = async (count: number) => {
+    for (const node of snapshot(count).topNodes) await kv.set(KV.graphNodes, node.id, node);
+    await kv.set(KV.graphSnapshot, "current", snapshot(count));
+  };
   const graphEvents = () => sent.filter((e) => e.type === "graph.changed");
-  return { kv, sdk, write, graphEvents, handlers, sent, failNextSend: () => { failSend = true; } };
+  return { ...fixture, sdk, write, graphEvents, handlers, sent, failNextSend: () => { failSend = true; } };
 }
 
 afterEach(() => {
-  vi.restoreAllMocks();
-  vi.useRealTimers();
-  setGraphGenerationListener(null);
-  setAuditRecordedListener(null);
-  resetViewerCounts();
+  vi.restoreAllMocks(); vi.useRealTimers();
+  setGraphGenerationListener(null); setAuditRecordedListener(null); resetViewerCounts();
 });
 
-describe("generation graph viewer deltas", () => {
-  it("sends a bounded single-node patch for a 250-node graph after its initial invalidation", async () => {
-    const { write, graphEvents } = await setup();
-    const initial = snapshot(250);
-    await write(initial);
-    expect(graphEvents()[0].data.delta).toBeNull();
-    const changed = structuredClone(initial);
-    changed.topNodes[125].properties = { changed: true };
-    await write(changed);
-    expect(graphEvents()[1].data.delta).toEqual({
-      full: false, nodes: [changed.topNodes[125]], edges: [],
-      removedNodeIds: [], removedEdgeIds: [], degrees: {},
-    });
-    changed.topNodes.splice(10, 1);
-    delete changed.topDegrees.n10;
-    changed.stats.totalNodes--;
-    await write(changed);
-    expect(graphEvents()[2].data.delta).toMatchObject({ full: false, nodes: [], removedNodeIds: ["n10"] });
+describe("generation graph viewer metadata", () => {
+  it("uses bounded index metadata and invalidates the viewer instead of reading snapshot payloads", async () => {
+    const { kv, write, graphEvents, calls } = await setup();
+    await write(3);
+    calls.length = 0;
+    await withoutGraphRecovery(() => kv.set(KV.graphSnapshot, "current", { ...snapshot(999), padding: "x".repeat(512 * 1024) }));
+    expect(graphEvents().at(-1)?.data).toMatchObject({ source: "snapshot", stats: { totalNodes: 3 }, delta: null });
+    expect(Buffer.byteLength(JSON.stringify(graphEvents().at(-1)))).toBeLessThan(4096);
+    expect(calls.filter((call) => call.id === "state::get" && call.scope.startsWith(KV.graphSnapshot))).toEqual([]);
   });
 
-  it("starts with a complete baseline after listener restart, then uses incremental patches", async () => {
-    const { kv, sdk, write, graphEvents } = await setup();
-    await write(snapshot(2));
-    await write(snapshot(3));
-    expect(graphEvents()[1].data.delta).toMatchObject({ full: false, nodes: [{ id: "n2" }] });
-    registerViewerStreamTriggers(sdk as never, kv);
-    await write(snapshot(4));
-    expect(graphEvents()[2].data.delta).toMatchObject({ full: true, nodes: snapshot(4).topNodes });
-    await write(snapshot(5));
-    expect(graphEvents()[3].data.delta).toMatchObject({ full: false, nodes: [{ id: "n4" }] });
-  });
-
-  it("does not advance its baseline when a stream send fails", async () => {
-    const { write, graphEvents, failNextSend } = await setup();
-    await write(snapshot(2));
-    failNextSend();
-    await write(snapshot(3));
+  it("retains accurate metadata after listener restart and failed delivery", async () => {
+    const { kv, sdk, write, graphEvents, failNextSend } = await setup();
+    await write(2);
+    failNextSend(); await write(3);
     expect(graphEvents()).toHaveLength(1);
-    await write(snapshot(4));
-    expect(graphEvents()[1].data.delta).toMatchObject({ full: false, nodes: [{ id: "n2" }, { id: "n3" }] });
+    registerViewerStreamTriggers(sdk as never, kv);
+    await write(4);
+    expect(graphEvents().at(-1)?.data).toMatchObject({ stats: { totalNodes: 4 }, delta: null });
   });
 
-  it("invalidates the baseline across repeated same-timestamp resets, including a failed reset notification", async () => {
+  it("detects repeated same-timestamp resets, including a lost reset notification", async () => {
     const { kv, write, graphEvents, failNextSend } = await setup();
-    await write(snapshot(2));
+    await write(2);
     for (const lostReset of [false, true, false]) {
       if (lostReset) failNextSend();
       const before = graphEvents().length;
       await resetGraphGeneration(kv, snapshot(0));
-      if (!lostReset) expect(graphEvents()[before].data.delta).toMatchObject({ full: true, nodes: [] });
-      await write(snapshot(1));
-      const latest = graphEvents().at(-1)!.data.delta;
-      expect(latest).toMatchObject({ full: lostReset, nodes: [{ id: "n0" }] });
-      expect(graphEvents().at(-1)!.data.reset).toBe(lostReset);
-      expect(graphEvents().at(-1)!.data.generation).toBe(await kv.get(KV.graphControl, "generation"));
-      await write(snapshot(2));
-      expect(graphEvents().at(-1)!.data.delta).toMatchObject({ full: false, nodes: [{ id: "n1" }] });
+      if (!lostReset) expect(graphEvents()[before].data).toMatchObject({ reset: true, stats: { totalNodes: 0 }, delta: null });
+      await write(1);
+      expect(graphEvents().at(-1)?.data).toMatchObject({ reset: lostReset, stats: { totalNodes: 1 }, delta: null,
+        generation: await kv.get(KV.graphControl, "generation") });
     }
   });
 
-  it("keeps the last delivered baseline after a snapshot read failure", async () => {
-    const { kv, write, graphEvents } = await setup();
-    await write(snapshot(2));
-    const original = kv.get.bind(kv);
-    let failRead = true;
-    vi.spyOn(kv, "get").mockImplementation(async (scope, key) => {
-      if (scope === KV.graphSnapshot && failRead) { failRead = false; throw new Error("read failed"); }
-      return original(scope, key);
+  it("invalidates after metadata failure and refreshes counts after reset", async () => {
+    const { kv, write, graphEvents, intercept } = await setup();
+    await write(2);
+    expect((await getViewerCounts(kv)).graphNodes).toBe(2);
+    let controlReads = 0;
+    intercept(async (id, payload) => {
+      if (id === "state::get" && payload.scope.startsWith(KV.graphRetrievalControl) && ++controlReads === 3) {
+        intercept(); throw new Error("read failed");
+      }
     });
-    await write(snapshot(3));
-    expect(graphEvents()).toHaveLength(2);
-    expect(graphEvents()[1].data).toMatchObject({ source: "items", coveredBySnapshot: false });
-    await write(snapshot(4));
-    expect(graphEvents()[2].data.delta).toMatchObject({ full: false, nodes: [{ id: "n2" }, { id: "n3" }] });
-  });
-
-  it("refreshes cached counts even if reading the reset snapshot fails", async () => {
-    const { kv, write, graphEvents } = await setup();
-    await write(snapshot(20));
-    expect((await getViewerCounts(kv)).graphNodes).toBe(20);
-    const original = kv.get.bind(kv);
-    let failRead = true;
-    vi.spyOn(kv, "get").mockImplementation(async (scope, key) => {
-      if (scope === KV.graphSnapshot && failRead) { failRead = false; throw new Error("read failed"); }
-      return original(scope, key);
-    });
+    await kv.set(KV.graphSnapshot, "current", snapshot(3));
+    expect(graphEvents().at(-1)?.data).toMatchObject({ source: "items", coveredBySnapshot: false });
     await resetGraphGeneration(kv, snapshot(0));
     expect((await getViewerCounts(kv)).graphNodes).toBe(0);
-    expect(graphEvents().at(-1)!.data).toMatchObject({ source: "items", reset: true, coveredBySnapshot: false });
-    expect(graphEvents().at(-1)!.data).not.toHaveProperty("generation");
   });
 
-  it("still pushes counts immediately after a successful reset", async () => {
+  it("pushes counts after reset and does not mark failed notifications as covering item changes", async () => {
     vi.useFakeTimers();
-    const { kv, write, sent } = await setup();
-    await write(snapshot(20));
-    await getViewerCounts(kv);
+    const { kv, write, sent, graphEvents, failNextSend } = await setup();
+    await write(2); await getViewerCounts(kv);
     await resetGraphGeneration(kv, snapshot(0));
     await vi.advanceTimersByTimeAsync(500);
     expect(sent.filter((e) => e.type === "counts.changed").at(-1)?.data).toMatchObject({ counts: { graphNodes: 0 } });
-  });
-
-  it("does not mark coalesced item events covered by a failed snapshot send", async () => {
-    vi.useFakeTimers();
-    const { kv, write, graphEvents, failNextSend } = await setup();
-    await write(snapshot(2));
-    await kv.set(KV.graphNodes, "n2", snapshot(3).topNodes[2]);
-    failNextSend();
-    await write(snapshot(3));
+    await kv.set(KV.graphNodes, "n0", snapshot(1).topNodes[0]);
+    failNextSend(); await kv.set(KV.graphSnapshot, "current", snapshot(1));
     await vi.advanceTimersByTimeAsync(1000);
     expect(graphEvents().at(-1)?.data).toMatchObject({ source: "items", coveredBySnapshot: false });
   });
 
-  it("tags the reconnect snapshot with its generation", async () => {
-    const { kv, write, handlers } = await setup();
-    await write(snapshot(2));
+  it("tags reconnect metadata with its generation without reading the snapshot", async () => {
+    const { kv, write, handlers, calls } = await setup();
+    await write(2); calls.length = 0;
     const response = await handlers.get("api::viewer-snapshot")!({ headers: {}, query_params: {} });
-    expect(response.body.graph).toMatchObject({
-      generation: await kv.get(KV.graphControl, "generation"), stats: { totalNodes: 2 },
-    });
+    expect(response.body.graph).toMatchObject({ generation: await kv.get(KV.graphControl, "generation"), stats: { totalNodes: 2 } });
+    expect(calls.filter((call) => call.id === "state::get" && call.scope.startsWith(KV.graphSnapshot))).toEqual([]);
   });
 
-  it("orders queued snapshot deltas from the last delivered graph", async () => {
-    const { kv, write, graphEvents } = await setup();
-    await write(snapshot(250));
-    const original = kv.get.bind(kv);
-    let entered!: () => void;
-    let release!: () => void;
-    const ready = new Promise<void>((r) => { entered = r; });
-    const gate = new Promise<void>((r) => { release = r; });
-    let pause = true;
-    vi.spyOn(kv, "get").mockImplementation(async (scope, key) => {
-      const value = await original(scope, key);
-      if (scope === KV.graphSnapshot && pause) { pause = false; entered(); await gate; }
-      return value;
+  it("defers direct-write notifications until the index commit finishes, even beyond the coalescing interval", async () => {
+    vi.useFakeTimers();
+    const { kv, sent, graphEvents, intercept } = await setup();
+    expect((await getViewerCounts(kv)).graphNodes).toBe(0);
+    let entered!: () => void, release!: () => void;
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    intercept(async (id, payload) => {
+      if (id === "state::set" && payload.scope.startsWith(KV.graphRetrievalData)) {
+        intercept(); entered(); await gate;
+      }
     });
-    const first = write(snapshot(251));
+    const mutation = kv.set(KV.graphNodes, "n0", snapshot(1).topNodes[0]);
     await ready;
-    const second = write(snapshot(252));
-    release();
-    await Promise.all([first, second]);
-    expect(graphEvents()[1].data.delta).toMatchObject({ full: false, nodes: [{ id: "n250" }] });
-    expect(graphEvents()[2].data.delta).toMatchObject({ full: false, nodes: [{ id: "n251" }] });
+    try {
+      await vi.advanceTimersByTimeAsync(1500);
+      expect(graphEvents()).toEqual([]);
+    } finally { release(); }
+    await mutation;
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(graphEvents().at(-1)?.data).toMatchObject({ source: "items", nodesChanged: 1 });
+    expect(sent.filter((event) => event.type === "counts.changed").at(-1)?.data).toMatchObject({ counts: { graphNodes: 1 } });
   });
 
-  it("does not associate a pre-reset snapshot with the new generation when reads overlap reset", async () => {
-    const { kv, write, graphEvents } = await setup();
-    await write(snapshot(250));
-    const original = kv.get.bind(kv);
-    let entered!: () => void;
-    let release!: () => void;
+  it("does not associate pre-reset counts with the new generation when metadata reads overlap reset", async () => {
+    const { kv, write, graphEvents, intercept } = await setup();
+    await write(2);
+    let entered!: () => void, release!: () => void;
     const ready = new Promise<void>((r) => { entered = r; });
     const gate = new Promise<void>((r) => { release = r; });
-    let pause = true;
-    vi.spyOn(kv, "get").mockImplementation(async (scope, key) => {
-      const value = await original(scope, key);
-      if (scope === KV.graphSnapshot && pause) { pause = false; entered(); await gate; }
-      return value;
+    let controlReads = 0;
+    intercept(async (id, payload) => {
+      if (id === "state::get" && payload.scope.startsWith(KV.graphRetrievalControl) && ++controlReads === 3) {
+        intercept(); entered(); await gate;
+      }
     });
-    const writeBeforeReset = write(snapshot(251));
+    const notification = kv.set(KV.graphSnapshot, "current", snapshot(3));
     await ready;
-    const oldGeneration = await original(KV.graphControl, "generation");
+    const oldGeneration = await kv.get(KV.graphControl, "generation");
     const reset = resetGraphGeneration(kv, snapshot(0));
-    // Wait for publication, while its notification remains queued behind the old read.
-    await vi.waitFor(async () => expect(await original(KV.graphControl, "generation")).not.toBe(oldGeneration));
-    release();
-    await Promise.all([writeBeforeReset, reset]);
-    for (const event of graphEvents().slice(1)) {
-      expect(event.data).toMatchObject({ reset: true, stats: { totalNodes: 0 }, delta: { full: true, nodes: [] } });
-    }
+    try { await vi.waitFor(async () => expect(await kv.get(KV.graphControl, "generation")).not.toBe(oldGeneration)); }
+    finally { release(); }
+    await Promise.all([notification, reset]);
+    for (const event of graphEvents().slice(1)) expect(event.data).toMatchObject({ reset: true, stats: { totalNodes: 0 }, delta: null });
   });
 });

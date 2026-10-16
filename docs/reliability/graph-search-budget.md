@@ -1,0 +1,13 @@
+# Graph enrichment budget
+
+Hybrid search allows 500 ms for optional graph enrichment after keyword and vector retrieval. When that timer expires, it returns the available keyword/vector results without graph context and records a warning at most once per minute. A subsequent search can use graph enrichment again. Enrichment uses a request-scoped index reader with bounded point reads, decoded bytes, concurrency and traversal work.
+
+Cancellation prevents additional graph work after the request expires. Name, character, observation and adjacency postings avoid listing canonical graph scopes. Every request checks the active generation and index revision before returning graph evidence. Pending writes, import, mesh updates, reset or restore invalidate an in-flight view. Optional model context contains only titles of current observations authorized for the requested scope; graph properties and intermediate labels do not become model evidence.
+
+The graph view returns at most 500 nodes and uses a separate budget of 2,048 reads and 4 MiB. Default pages follow indexed inventory order, not a global degree ranking. Filtered counts describe examined records when the response is truncated. Temporal and graph-node lookups also report partial results when their budgets or projection limits are reached. Graph statistics use maintained index counts; an unavailable index reports unknown counts rather than an empty graph.
+
+Existing stores require an [explicit legacy migration](graph-index-migration.md). Its initial discovery still reads complete scopes because the pinned engine cannot paginate them. Startup, indexed search, graph views, graph-node lookup and server status never start that scan, and automatic legacy boot compaction is deferred. Explicit maintenance, export, mesh push and snapshot creation remain bulk operations. The standalone MCP graph-stats resource still enumerates canonical graph scopes and requires a separate update; the bounded server graph-stats function does not. The index adds write and storage overhead, so a large migration needs a maintenance window and disk capacity.
+
+The optional enrichment timer is not a strict end-to-end response limit. It cannot cancel an engine allocation already in progress, response decoding can delay timers, and independent requests have independent budgets. Index limits bound application-level reads; they do not change the engine's internal storage implementation.
+
+`AGENTMEMORY_GRAPH_WEIGHT=0` skips graph enrichment entirely while preserving keyword and configured vector search. It reduces graph recall and is an operational workaround, not a replacement for the storage-level fix.

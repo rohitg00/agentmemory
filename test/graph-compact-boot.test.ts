@@ -129,13 +129,35 @@ async function maxIds(kv: KV): Promise<number> {
   return max;
 }
 
-const fast = { sliceSize: 3, pauseMs: 0, retryDelayMs: 0, sleep: async () => {} };
+const fast = { allowLegacyScan: true, sliceSize: 3, pauseMs: 0, retryDelayMs: 0, sleep: async () => {} };
 const marker = (kv: KV) => kv.get<GraphCompactBootProgress>(CONFIG, GRAPH_COMPACT_BOOT_KEY);
 
 beforeEach(() => resetGraphCompactBootStatus());
 afterEach(() => vi.unstubAllEnvs());
 
 describe("graph compaction on boot", () => {
+  it("defers legacy enumeration without reading any graph scope during normal startup", async () => {
+    const kv = mockKV();
+    await seed(kv, 4, 2, 1);
+    kv.calls.get.length = 0;
+    kv.calls.set.length = 0;
+    const status = await runGraphCompactOnBoot(kv as never);
+    expect(status.state).toBe("deferred");
+    expect(kv.calls).toEqual({ get: [], set: [], list: [] });
+    expect(describeGraphCompactBoot(status)).toMatch(/explicit maintenance/);
+  });
+
+  it("does not resume an old bulk compaction marker implicitly after restart", async () => {
+    const kv = mockKV();
+    await kv.set(CONFIG, GRAPH_COMPACT_BOOT_KEY, {
+      version: GRAPH_COMPACT_BOOT_VERSION, cap: MAX_GRAPH_SOURCE_OBSERVATIONS,
+      status: "running", phase: "nodes", offset: 100,
+    });
+    kv.calls.get.length = 0;
+    kv.calls.set.length = 0;
+    expect((await runGraphCompactOnBoot(kv as never)).state).toBe("deferred");
+    expect(kv.calls).toEqual({ get: [], set: [], list: [] });
+  });
   it("trims nodes, edges, edge history and the snapshot to the cap and marks it done", async () => {
     const kv = mockKV();
     await seed(kv, 10, 7, 5);

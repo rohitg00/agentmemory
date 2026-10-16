@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 ferramentas MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks automáticos" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 bases de dados externas" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ testes aprovados" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,600+ testes aprovados" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1446,7 +1446,7 @@ O `/agentmemory/export` também aceita `?maxSessions=` e `?offset=` para dividir
 | Prometheus / Grafana | iii OTEL + monitor de saúde |
 | Sistemas de plugins personalizados | `iii worker add <name>` |
 
-**236 ficheiros de código-fonte · ~55,000 LOC · 3,400+ testes · 318 funções · 63 âmbitos de KV**, tudo sobre três primitivos. Sem `agentmemory plugin install`. O sistema de plugins é o próprio iii.
+**242 ficheiros de código-fonte · ~55,000 LOC · 3,400+ testes · 324 funções · 67 âmbitos de KV**, tudo sobre três primitivos. Sem `agentmemory plugin install`. O sistema de plugins é o próprio iii.
 
 ---
 
@@ -1789,7 +1789,7 @@ Crie `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-140 endpoints na porta `3111`. A REST API faz bind em `127.0.0.1` por predefinição. Os endpoints protegidos exigem `Authorization: Bearer <secret>`, e os endpoints de sincronização mesh exigem uma `AGENTMEMORY_SECRET` explicitamente definida em ambos os pares.
+143 endpoints na porta `3111`. A REST API faz bind em `127.0.0.1` por predefinição. Os endpoints protegidos exigem `Authorization: Bearer <secret>`, e os endpoints de sincronização mesh exigem uma `AGENTMEMORY_SECRET` explicitamente definida em ambos os pares.
 
 **A autenticação está ativa por predefinição.** Quando `AGENTMEMORY_SECRET` não está definida (na shell ou em `~/.agentmemory/.env`), o servidor gera um segredo aleatório no primeiro arranque e guarda-o em `~/.agentmemory/secret` com o modo `0600`. Todo o cliente incluído lê-o a partir daí quando fala com um servidor local: o CLI, o visualizador, os hooks em `plugin/scripts`, o servidor MCP e o shim `@agentmemory/mcp`, as configurações escritas por `agentmemory connect`, e as integrações incluídas do OpenCode, Pi, OpenClaw, Hermes e do filesystem-watcher. O segredo guardado só é enviado para URLs de loopback (`localhost`, `127.0.0.0/8`, `::1`). Uma `AGENTMEMORY_SECRET` explícita vence sempre, e os clientes remotos continuam a precisar de a ter definida. O Docker e os entrypoints de `deploy/` já geram e exportam o seu próprio segredo. Para chamar a API manualmente:
 
@@ -1870,7 +1870,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,400+ tests
+npm test                  # 3,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -45,6 +45,8 @@ function setup(kv = mockKV(), deps: Record<string, unknown> = {}) {
   return { handlers, triggers, sent, kv };
 }
 
+const graphControl = (nodes: number, edges = 0) => ({ schema: 2, buildId: "test", status: "ready", revision: 0, nodes, edges, historyEdges: 0, incompleteRecords: 0, nodesByType: {}, edgesByType: {}, otherTypes: 0, updatedAt: "now" });
+
 const seeded = () =>
   mockKV({
     [KV.sessions]: {
@@ -60,6 +62,7 @@ const seeded = () =>
       l2: { id: "l2", content: "b", deleted: true },
     },
     [KV.actions]: { a1: { id: "a1" } },
+    [KV.graphRetrievalControl]: { current: graphControl(12, 7) },
     [KV.graphSnapshot]: {
       current: { stats: { totalNodes: 12, totalEdges: 7, nodesByType: {}, edgesByType: {} }, updatedAt: "t" },
     },
@@ -140,13 +143,13 @@ describe("viewer stream triggers", () => {
     for (let i = 0; i < 5; i++) await handlers.get("event::viewer::graph-nodes-changed")!({ key: `n${i}` });
     for (let i = 0; i < 3; i++) await handlers.get("event::viewer::graph-edges-changed")!({ key: `e${i}` });
     expect(sent.map((e) => e.type)).toEqual(["graph.changed"]);
-    expect(sent[0].data).toMatchObject({ source: "snapshot", stats: { totalNodes: 3, totalEdges: 2 } });
+    expect(sent[0].data).toMatchObject({ source: "snapshot", stats: null, graphIndex: { status: "needs-migration" }, delta: null });
     await vi.advanceTimersByTimeAsync(1000);
     expect(sent.map((e) => e.type)).toEqual(["graph.changed", "graph.changed"]);
     expect(sent[1].data).toMatchObject({ source: "items", nodesChanged: 5, edgesChanged: 3 });
   });
 
-  it("carries the changed subgraph on graph.changed so the viewer patches without a fetch", async () => {
+  it("invalidates legacy snapshot changes without forwarding unverified graph rows", async () => {
     vi.useFakeTimers();
     const { handlers, sent } = setup();
     const n1 = { id: "n1", type: "file", name: "a.ts", properties: {}, sourceObservationIds: ["o1"], createdAt: "t" };
@@ -158,16 +161,10 @@ describe("viewer stream triggers", () => {
     const before = { topNodes: [n1, n2], topEdges: [e1], topDegrees: { n1: 1, n2: 1 }, stats, updatedAt: "u1" };
     const after = { topNodes: [n2, n3], topEdges: [e2], topDegrees: { n2: 1, n3: 1 }, stats, updatedAt: "u2" };
     await handlers.get("event::viewer::graph-snapshot-changed")!({ key: "current", event_type: "state:updated", old_value: before, new_value: after });
-    expect(sent[0].data.delta).toEqual({
-      full: false,
-      nodes: [n3],
-      edges: [e2],
-      removedNodeIds: ["n1"],
-      removedEdgeIds: ["e1"],
-      degrees: { n3: 1 },
-    });
+    expect(sent[0].data.delta).toBeNull();
+    expect(sent[0].data.stats).toBeNull();
     await handlers.get("event::viewer::graph-snapshot-changed")!({ key: "current", event_type: "state:created", new_value: after });
-    expect(sent[1].data.delta).toMatchObject({ full: true, nodes: [n2, n3], removedNodeIds: [] });
+    expect(sent[1].data.delta).toBeNull();
 
     await handlers.get("event::viewer::graph-nodes-changed")!({ key: "n3" });
     await vi.advanceTimersByTimeAsync(1000);
@@ -305,6 +302,7 @@ describe("viewer counts", () => {
       old_value: { id: "l1" },
       new_value: { id: "l1", deleted: true },
     });
+    await kv.set(KV.graphRetrievalControl, "current", graphControl(20, 9));
     await handlers.get("event::viewer::graph-snapshot-changed")!({
       key: "current",
       event_type: "state:updated",

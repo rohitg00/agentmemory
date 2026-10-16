@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 个 MCP 工具" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 个自动 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 个外部数据库" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ 项测试通过" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,600+ 项测试通过" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1444,7 +1444,7 @@ fi
 | Prometheus / Grafana | iii OTEL + 健康监控 |
 | Custom plugin systems | `iii worker add <name>` |
 
-**236 个源文件 · ~55,000 行代码 · 3,400+ 个测试 · 318 个函数 · 63 个 KV 作用域**,全部基于三种原语。没有 `agentmemory plugin install`。插件系统就是 iii 本身。
+**242 个源文件 · ~55,000 行代码 · 3,400+ 个测试 · 324 个函数 · 67 个 KV 作用域**,全部基于三种原语。没有 `agentmemory plugin install`。插件系统就是 iii 本身。
 
 ---
 
@@ -1787,7 +1787,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-端口 `3111` 上有 140 个端点。REST API 默认绑定到 `127.0.0.1`。受保护的端点需要 `Authorization: Bearer <secret>`,mesh 同步端点则需要双方都显式设置 `AGENTMEMORY_SECRET`。
+端口 `3111` 上有 143 个端点。REST API 默认绑定到 `127.0.0.1`。受保护的端点需要 `Authorization: Bearer <secret>`,mesh 同步端点则需要双方都显式设置 `AGENTMEMORY_SECRET`。
 
 **身份验证默认是开启的。** 当 `AGENTMEMORY_SECRET`(在 shell 或 `~/.agentmemory/.env` 中)没有设置时,服务器会在首次启动时生成一个随机密钥,并以 `0600` 权限存储在 `~/.agentmemory/secret` 中。每个捆绑的客户端在与本地服务器通信时都会从那里读取它:CLI、查看器、`plugin/scripts` 下的 hooks、MCP 服务器和 `@agentmemory/mcp` shim、由 `agentmemory connect` 写入的配置,以及捆绑的 OpenCode、Pi、OpenClaw、Hermes 和文件系统监视集成。存储的密钥只会发送到回环地址(`localhost`、`127.0.0.0/8`、`::1`)。显式设置的 `AGENTMEMORY_SECRET` 始终优先,远程客户端仍然需要设置它。Docker 和 `deploy/` 的 entrypoint 已经会生成并导出自己的密钥。要手动调用 API:
 
@@ -1868,7 +1868,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,400+ tests
+npm test                  # 3,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

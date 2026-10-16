@@ -1,4 +1,5 @@
 import type { IIIClient } from 'iii-sdk'
+import type { GraphObservationAuthorization } from "./graph-retrieval.js";
 import type { IndexPersistenceStatus } from "../state/index-persistence.js";
 import type { CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
@@ -31,6 +32,7 @@ type HybridRanker = (
   query: string,
   limit: number,
   targetLayer?: SearchLayer,
+  authorizeGraph?: GraphObservationAuthorization,
 ) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number; layer?: SearchResultLayer }>>
 let hybridRanker: HybridRanker | null = null
 
@@ -816,9 +818,21 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         observation?: CompressedObservation
         layer?: SearchResultLayer
       }>
+      const authorizeGraph: GraphObservationAuthorization = async (record, sessionId, read) => {
+        if (filterAgentId !== undefined && record.agentId !== filterAgentId) return false
+        const memoryProject = "content" in record ? record.project : undefined
+        if (projectFilter && memoryProject !== undefined && memoryProject !== projectFilter) return false
+        if (cwdFilter || (projectFilter && memoryProject === undefined)) {
+          const session = await read<Session>(KV.sessions, sessionId)
+          if (!session) return false
+          if (cwdFilter && session.cwd !== cwdFilter) return false
+          if (projectFilter && memoryProject === undefined && session.project !== projectFilter) return false
+        }
+        return true
+      }
       if (hybridRanker) {
         try {
-          const hybrid = await hybridRanker(query, fetchLimit, targetLayer)
+          const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph)
           results = hybrid.map((r) => ({
             obsId: r.observation.id,
             sessionId: r.sessionId,
