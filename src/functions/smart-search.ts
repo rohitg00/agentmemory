@@ -1,3 +1,4 @@
+import type { GraphObservationAuthorization } from "./graph-retrieval.js";
 import type { IIIClient } from "iii-sdk";
 import type {
   CompactLessonResult,
@@ -79,7 +80,7 @@ const LESSON_CONTENT_PREVIEW_CHARS = 240;
 export function registerSmartSearchFunction(
   sdk: IIIClient,
   kv: StateKV,
-  searchFn: (query: string, limit: number, targetLayer?: SearchLayer) => Promise<HybridSearchResult[]>,
+  searchFn: (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: GraphObservationAuthorization) => Promise<HybridSearchResult[]>,
 ): void {
   sdk.registerFunction("mem::smart-search",
     async (data: {
@@ -197,8 +198,14 @@ export function registerSmartSearchFunction(
         ? Math.max(Math.min(limit * 10, 300), 100)
         : limit;
 
+      const authorizeGraph: GraphObservationAuthorization = async (record, sessionId, read) => {
+        if (filterAgentId !== undefined && record.agentId !== filterAgentId) return false;
+        if (!project) return true;
+        if ("content" in record && record.project !== undefined) return record.project === project;
+        return (await read<{ project?: string }>(KV.sessions, sessionId))?.project === project;
+      };
       const [hybridResults, lessons] = await Promise.all([
-        searchFn(data.query, overFetchLimit, targetLayer),
+        searchFn(data.query, overFetchLimit, targetLayer, authorizeGraph),
         includeLessons
           ? recallLessons(sdk, data.query, lessonLimit, project)
           : Promise.resolve([]),

@@ -45,6 +45,12 @@ jobs:
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - run: npm run release:gate -- --out "${{ runner.temp }}/release-gate"
       - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
+      - name: Verify bounded graph migration with the packaged CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/graph-index-pack"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/graph-index-pack"
+          archives=("$RUNNER_TEMP"/graph-index-pack/*.tgz)
+          npm run test:graph-index:packaged -- --tarball "${archives[0]}" --out "$RUNNER_TEMP/graph-index-gate"
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -52,5 +58,6 @@ jobs:
           path: |
             ${{ runner.temp }}/release-gate
             ${{ runner.temp }}/startup-gate
+            ${{ runner.temp }}/graph-index-gate
           if-no-files-found: ignore
           retention-days: 14

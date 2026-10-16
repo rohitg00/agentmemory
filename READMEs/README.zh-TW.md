@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 個 MCP 工具" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 個自動 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 個外部資料庫" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ 測試通過" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,600+ 測試通過" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1430,7 +1430,7 @@ fi
 | Prometheus / Grafana | iii OTEL + 健康監控 |
 | 自訂外掛系統 | `iii worker add <name>` |
 
-**234 個原始檔 · ~55,000 行程式碼 · 3,400+ 測試 · 316 個函式 · 62 個 KV 範圍**,全部基於三種原語。沒有 `agentmemory plugin install`。外掛系統就是 iii 本身。
+**240 個原始檔 · ~55,000 行程式碼 · 3,600+ 測試 · 322 個函式 · 62 個 KV 範圍**,全部基於三種原語。沒有 `agentmemory plugin install`。外掛系統就是 iii 本身。
 
 ---
 
@@ -1773,7 +1773,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-連接埠 `3111` 上有 140 個端點。REST API 預設綁定 `127.0.0.1`。受保護的端點需要 `Authorization: Bearer <secret>`,而網狀同步端點要求兩端都明確設定 `AGENTMEMORY_SECRET`。
+連接埠 `3111` 上有 143 個端點。REST API 預設綁定 `127.0.0.1`。受保護的端點需要 `Authorization: Bearer <secret>`,而網狀同步端點要求兩端都明確設定 `AGENTMEMORY_SECRET`。
 
 **驗證預設是開啟的。** 當 `AGENTMEMORY_SECRET` 未設定時(無論是在殼層中或 `~/.agentmemory/.env` 中),伺服器會在第一次啟動時產生一個隨機密鑰,並以 `0600` 權限存進 `~/.agentmemory/secret`。每個捆綁的客戶端在與本機伺服器溝通時都會從那裡讀取它:CLI、檢視器、`plugin/scripts` 下的 hooks、MCP 伺服器和 `@agentmemory/mcp` shim、由 `agentmemory connect` 寫入的設定,以及捆綁的 OpenCode、Pi、OpenClaw、Hermes 和檔案系統監看整合。儲存的密鑰只會被送到 loopback 的 URL(`localhost`、`127.0.0.0/8`、`::1`)。明確設定的 `AGENTMEMORY_SECRET` 永遠優先,而遠端客戶端仍需要設定它。Docker 和 `deploy/` 的 entrypoint 已經會自行產生並匯出自己的密鑰。要手動呼叫 API:
 
@@ -1854,7 +1854,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,400+ tests
+npm test                  # 3,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

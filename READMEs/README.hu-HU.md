@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP eszköz" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatikus hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 külső adatbázis" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ sikeres teszt" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,600+ sikeres teszt" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1446,7 +1446,7 @@ A `/agentmemory/export` emellett elfogadja a `?maxSessions=`-t és a `?offset=`-
 | Prometheus / Grafana | iii OTEL + egészségfigyelő |
 | Egyéni plugin-rendszerek | `iii worker add <name>` |
 
-**234 forrásfájl · ~55,000 LOC · 3,400+ teszt · 316 funkció · 62 KV-hatókör**, mindez három primitíven. Nincs `agentmemory plugin install`. A plugin-rendszer maga az iii.
+**240 forrásfájl · ~55,000 LOC · 3,600+ teszt · 322 funkció · 62 KV-hatókör**, mindez három primitíven. Nincs `agentmemory plugin install`. A plugin-rendszer maga az iii.
 
 ---
 
@@ -1789,7 +1789,7 @@ Hozd létre a `~/.agentmemory/.env`-et:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-140 endpoint a `3111`-es porton. A REST API alapértelmezetten a `127.0.0.1`-hez kötődik. A védett végpontok `Authorization: Bearer <secret>`-et igényelnek, és a mesh-sync végpontok mindkét oldalon explicit módon beállított `AGENTMEMORY_SECRET`-et igényelnek.
+143 endpoint a `3111`-es porton. A REST API alapértelmezetten a `127.0.0.1`-hez kötődik. A védett végpontok `Authorization: Bearer <secret>`-et igényelnek, és a mesh-sync végpontok mindkét oldalon explicit módon beállított `AGENTMEMORY_SECRET`-et igényelnek.
 
 **A hitelesítés alapértelmezetten be van kapcsolva.** Amikor az `AGENTMEMORY_SECRET` nincs beállítva (sem a shellben, sem a `~/.agentmemory/.env`-ben), a szerver az első indításkor egy véletlen secretet generál, és `0600` móddal tárolja a `~/.agentmemory/secret`-ben. Minden becsomagolt kliens onnan olvassa, amikor egy lokális szerverrel beszél: a CLI, a megjelenítő, a `plugin/scripts` alatti hookok, az MCP szerver és a `@agentmemory/mcp` shim, az `agentmemory connect` által írt konfigurációk, és a becsomagolt OpenCode, Pi, OpenClaw, Hermes és fájlrendszer-figyelő integrációk. A tárolt secret csak loopback URL-eknek kerül elküldésre (`localhost`, `127.0.0.0/8`, `::1`). Egy explicit `AGENTMEMORY_SECRET` mindig elsőbbséget kap, és a távoli klienseknek továbbra is be kell állítaniuk. A Docker és a `deploy/` entrypointok már generálnak és exportálnak egy saját secretet. Az API kézi hívásához:
 
@@ -1870,7 +1870,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,400+ tests
+npm test                  # 3,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

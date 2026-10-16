@@ -519,6 +519,41 @@ export interface GraphIndexMembership {
   ids: string[];
 }
 
+export interface GraphRetrievalIndexControl {
+  schema: 2;
+  buildId: string;
+  status: "building" | "ready" | "paused";
+  revision: number;
+  nodes: number;
+  edges: number;
+  historyEdges: number;
+  incompleteRecords: number;
+  nodesByType: Record<string, number>;
+  edgesByType: Record<string, number>;
+  otherTypes: number;
+  updatedAt: string;
+  pending?: { kind: "node" | "edge" | "history"; id: string };
+  batchPending?: boolean;
+  error?: string;
+}
+
+export interface GraphRetrievalIndexRecord {
+  row: (GraphNode | GraphEdge) & { indexIncomplete?: boolean } | null;
+  postings: string[];
+  incomplete: boolean;
+}
+
+export interface GraphCascadeProgress {
+  schema: 1;
+  generation: string | null;
+  sourceFingerprint: string;
+  offset: number;
+  reason: string;
+  updatedAt: string;
+}
+
+export type { GraphIndexMigration, GraphIndexManifestPage } from "./state/graph-index-migration.js";
+
 export interface GraphMutationWrite {
   scope: string;
   key: string;
@@ -675,6 +710,7 @@ export interface AuditEntry {
     | "slot_delete"
     | "slot_reflect"
     | "graph_compact"
+    | "graph_index_migrate"
     | "audit_migrate"
     | "session_sweep";
   userId?: string;

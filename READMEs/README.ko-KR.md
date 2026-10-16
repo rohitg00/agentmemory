@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,600+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health 모니터 |
 | 커스텀 플러그인 시스템 | `iii worker add <name>` |
 
-**소스 파일 234개 · LOC ~55,000줄 · 테스트 3,400+개 · 함수 316개 · KV 스코프 62개**, 모두 세 가지 프리미티브 위에서 동작합니다. `agentmemory plugin install` 같은 것은 없습니다. 플러그인 시스템은 곧 iii 자체입니다.
+**소스 파일 240개 · LOC ~55,000줄 · 테스트 3,600+개 · 함수 322개 · KV 스코프 62개**, 모두 세 가지 프리미티브 위에서 동작합니다. `agentmemory plugin install` 같은 것은 없습니다. 플러그인 시스템은 곧 iii 자체입니다.
 
 ---
 
@@ -1789,7 +1789,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-포트 `3111`의 엔드포인트 140개. REST API는 기본적으로 `127.0.0.1`에 바인딩됩니다. 보호된 엔드포인트는 `Authorization: Bearer <secret>`을 요구하며, mesh sync 엔드포인트는 양쪽 피어 모두에 `AGENTMEMORY_SECRET`이 명시적으로 설정되어 있어야 합니다.
+포트 `3111`의 엔드포인트 143개. REST API는 기본적으로 `127.0.0.1`에 바인딩됩니다. 보호된 엔드포인트는 `Authorization: Bearer <secret>`을 요구하며, mesh sync 엔드포인트는 양쪽 피어 모두에 `AGENTMEMORY_SECRET`이 명시적으로 설정되어 있어야 합니다.
 
 **인증은 기본적으로 켜져 있습니다.** `AGENTMEMORY_SECRET`이(셸이나 `~/.agentmemory/.env`에) 설정되어 있지 않으면, 서버는 첫 시작 시 무작위 시크릿을 생성해 `~/.agentmemory/secret`에 `0600` 권한으로 저장합니다. 번들된 모든 클라이언트는 로컬 서버와 통신할 때 그곳에서 이를 읽습니다: CLI, 뷰어, `plugin/scripts` 아래의 hook, MCP 서버와 `@agentmemory/mcp` shim, `agentmemory connect`가 작성하는 설정, 그리고 번들된 OpenCode, Pi, OpenClaw, Hermes, filesystem-watcher 통합까지입니다. 저장된 시크릿은 loopback URL(`localhost`, `127.0.0.0/8`, `::1`)에만 전송됩니다. 명시적인 `AGENTMEMORY_SECRET`은 항상 우선하며, 원격 클라이언트는 여전히 이를 설정해야 합니다. Docker와 `deploy/` 진입점은 이미 자체 시크릿을 생성하고 export합니다. API를 직접 호출하려면:
 
@@ -1870,7 +1870,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,400+ tests
+npm test                  # 3,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

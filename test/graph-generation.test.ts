@@ -1,3 +1,5 @@
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
+import { indexObservationSession } from "../src/state/obs-index.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
@@ -37,7 +39,7 @@ function deferred<T = void>() {
   return { promise, resolve };
 }
 
-function setup(provider = { name: "noop", compress: vi.fn(async () => xml), summarize: vi.fn(async () => "") }) {
+async function setup(provider = { name: "noop", compress: vi.fn(async () => xml), summarize: vi.fn(async () => "") }) {
   const store = new Map<string, Map<string, unknown>>();
   const handlers = new Map<string, (data?: any) => Promise<any>>();
   const sent: any[] = [];
@@ -62,6 +64,7 @@ function setup(provider = { name: "noop", compress: vi.fn(async () => xml), summ
     },
   };
   const kv = new StateKV(sdk as never);
+  await initializeGraphIndex(kv, { status: "ready" });
   registerGraphFunction(sdk as never, kv, provider as never);
   registerTemporalGraphFunctions(sdk as never, kv, provider as never);
   registerExportImportFunction(sdk as never, kv);
@@ -72,6 +75,10 @@ function setup(provider = { name: "noop", compress: vi.fn(async () => xml), summ
 }
 
 async function seed(kv: StateKV) {
+  for (const id of ["old-a", "old-b", "old-edge-observation"]) {
+    await kv.set(KV.observations("s"), id, { ...observation, id });
+    await indexObservationSession(kv, id, "s");
+  }
   await persistGraphDelta(kv, [node("old-a", "alpha"), node("old-b", "beta")], [edge("old-edge", "old-a", "old-b")]);
   await kv.set(KV.graphEdgeHistory, "old-history", edge("old-history", "old-a", "old-b"));
 }
@@ -86,7 +93,7 @@ afterEach(() => {
 
 describe("graph generation reset", () => {
   it("hides legacy nodes, edges, history and indexes from every graph read path, rebuild and export", async () => {
-    const { kv, call, store, provider } = setup();
+    const { kv, call, store, provider } = await setup();
     await seed(kv);
     await kv.set(KV.graphNodes, "undated", { ...node("undated"), createdAt: undefined });
     const retrieval = new GraphRetrieval(kv);
@@ -125,7 +132,7 @@ describe("graph generation reset", () => {
 
   it("uses unique generations for same-millisecond resets and never merges old provenance on re-extraction", async () => {
     vi.useFakeTimers(); vi.setSystemTime(timestamp);
-    const { kv, call } = setup();
+    const { kv, call } = await setup();
     await seed(kv);
     await call("mem::graph-reset");
     const first = await kv.get(KV.graphControl, "generation");
@@ -143,12 +150,14 @@ describe("graph generation reset", () => {
     vi.stubEnv("GRAPH_EXTRACTION_ENABLED", "true");
     const entered = deferred(); const response = deferred<string>();
     const provider = { name: "test", compress: vi.fn(() => { entered.resolve(); return response.promise; }), summarize: vi.fn(async () => "") };
-    const { kv, call } = setup(provider);
+    const { kv, call } = await setup(provider);
     const extraction = call(id, { observations: [observation] });
     await entered.promise;
     await call("mem::graph-reset");
     response.resolve(xml);
-    expect((await extraction).success).toBe(true);
+    const late = await extraction;
+    expect(late.success).toBe(id !== "mem::temporal-graph-extract");
+    if (id === "mem::temporal-graph-extract") expect(late.error).toContain("changed revision");
     expect(await kv.list(KV.graphNodes)).toEqual([]);
     expect(await kv.list(KV.graphEdges)).toEqual([]);
     expect((await call("mem::graph-stats")).totalNodes).toBe(0);
@@ -160,7 +169,7 @@ describe("graph generation reset", () => {
   });
 
   it("keeps a persist queued behind reset in its starting generation", async () => {
-    const { kv, call, intercept } = setup();
+    const { kv, call, intercept } = await setup();
     const entered = deferred(); const release = deferred();
     intercept(async (id, p) => {
       if (id === "state::get" && p.scope === KV.graphNameIndex) {
@@ -178,7 +187,7 @@ describe("graph generation reset", () => {
   });
 
   it("preserves the old active graph if snapshot initialization or pointer publication fails", async () => {
-    const { kv, call, intercept } = setup();
+    const { kv, call, intercept } = await setup();
     await seed(kv);
     for (const failPointer of [false, true]) {
       intercept(async (id, p) => {
@@ -194,7 +203,7 @@ describe("graph generation reset", () => {
   });
 
   it("retains the boundary across StateKV restart and fails closed on an unreadable or corrupt pointer", async () => {
-    const { kv, sdk, call, intercept } = setup();
+    const { kv, sdk, call, intercept } = await setup();
     await seed(kv); await call("mem::graph-reset");
     const restarted = new StateKV(sdk as never);
     expect(await restarted.list(KV.graphNodes)).toEqual([]);
@@ -209,7 +218,7 @@ describe("graph generation reset", () => {
   });
 
   it("accepts intentional imports into the active generation without timestamp-based duplication", async () => {
-    const { kv, call } = setup();
+    const { kv, call } = await setup();
     await seed(kv); await call("mem::graph-reset");
     const imported = { ...node("imported", "alpha", "import-observation"), createdAt: "2020-01-01T00:00:00.000Z" };
     await call("mem::import", { exportData: { version: "0.9.30", exportedAt: timestamp, sessions: [], observations: {}, memories: [], summaries: [], graphNodes: [imported] } });
@@ -225,7 +234,7 @@ describe("graph generation reset", () => {
   });
 
   it.each(["mem::import", "mem::mesh-receive"])("keeps delayed %s graph writes out of a concurrent reset", async (id) => {
-    const { kv, call, intercept } = setup();
+    const { kv, call, intercept } = await setup();
     const entered = deferred(); const release = deferred();
     intercept(async (fn, p) => {
       if (fn === "state::set" && p.scope === KV.memories) {
@@ -242,7 +251,7 @@ describe("graph generation reset", () => {
   });
 
   it("pins snapshot restore before filesystem and non-graph work, while allowing a later deliberate restore", async () => {
-    const { kv, sdk, call, intercept } = setup();
+    const { kv, sdk, call, intercept } = await setup();
     const dir = mkdtempSync(join(process.cwd(), ".graph-generation-test-"));
     try {
       registerSnapshotFunction(sdk as never, kv, dir);
@@ -271,7 +280,7 @@ describe("graph generation reset", () => {
   });
 
   it("never re-resolves the namespace halfway through a Redis read-modify-write", async () => {
-    const { kv, sdk, call, intercept, store } = setup();
+    const { kv, sdk, call, intercept, store } = await setup();
     await seed(kv);
     const redis = new StateKV(sdk as never, { backend: "redis" });
     const entered = deferred(); const release = deferred();
@@ -289,7 +298,7 @@ describe("graph generation reset", () => {
   });
 
   it("updates cached viewer counts and refuses late legacy snapshot events after reset", async () => {
-    const { kv, sdk, call, sent } = setup();
+    const { kv, sdk, call, sent } = await setup();
     await seed(kv);
     const legacy = await kv.get<GraphSnapshot>(KV.graphSnapshot, "current");
     registerViewerStreamTriggers(sdk as never, kv);
@@ -307,7 +316,7 @@ describe("graph generation reset", () => {
   });
 
   it("orders a delayed legacy viewer callback before reset completion", async () => {
-    const { kv, sdk, call, sent } = setup();
+    const { kv, sdk, call, sent } = await setup();
     await seed(kv);
     const legacy = await kv.get<GraphSnapshot>(KV.graphSnapshot, "current");
     registerViewerStreamTriggers(sdk as never, kv);
