@@ -140,7 +140,7 @@ const FACTS: Fact[] = [
       return n === null ? null : `${floorTo(n, 100)}+`;
     },
     nouns: [
-      "tests passing", "tests", "Tests", "test", "个测试", "個測試", "testes", "pruebas", "тест", "テスト", "测试", "測試", "테스트", "bestandene Tests",
+      "tests passing", "tests", "Tests", "test", "de teste", "个测试", "個測試", "testes", "pruebas", "тест", "テスト", "测试", "測試", "테스트", "bestandene Tests",
       "beståede test", "godkända test", "zaliczonych test", "επιτυχημένες δοκιμ", "δοκιμ", "sikeres teszt", "teszt", "pengujian", "件のテスト", "개",
       "pumapasang test", "na test", "รายการ", "การทดสอบ", "בדיקות", "اختبار", "ٹیسٹس", "টেস্ট", "项测试", "項測試", "testů", "testiä",
     ],
@@ -153,7 +153,7 @@ const FACTS: Fact[] = [
     nouns: [
       "iii functions", "functions", "funciones", "funções", "fonctions", "Funktionen", "функци", "個函式", "个函数", "개 함수", "개의 함수", "fonksiyon", "funkc",
       "funktion", "funksjon", "funktio", "functie", "funcții", "funzioni", "fungsi", "function", "개", "פונקצי", "دالة", "فنکشن", "ফাংশন",
-      "na function", "функц",
+      "na function", "функц", "de funcții",
     ],
   },
   {
@@ -165,7 +165,7 @@ const FACTS: Fact[] = [
       "fichiers source", "Quelldateien", "исходных файл", "個原始檔", "个源文件", "개 소스 파일", "개의 소스 파일", "ソースファイル", "kaynak dosya", "zdrojových soubor",
       "kildefiler", "αρχεία πηγαίου", "lähdetiedosto", "forrásfájl", "file sorgente", "bronbestand", "plików źródłowych", "ficheiros de código",
       "fișiere sursă", "källkodsfiler", "source file", "na source file", "file source", "вихідних файл", "file sumber", "קבצי מקור", "ملف مصدري",
-      "سورس فائل", "সোর্স ফাইল", "개",
+      "سورس فائل", "সোর্স ফাইল", "개", "pliki źródłowe", "de fișiere sursă",
     ],
   },
   {
