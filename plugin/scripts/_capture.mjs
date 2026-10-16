@@ -252,7 +252,20 @@ function scrubRecord(value, options = {}) {
 	if (value !== null && typeof value === "object") {
 		const proto = Object.getPrototypeOf(value);
 		if (proto !== Object.prototype && proto !== null) return value;
-		return Object.fromEntries(Object.entries(value).map(([key, item]) => [options.scrubKeys ? stripPrivateData(key) : key, scrubRecord(item, options)]));
+		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? stripPrivateData(key) : key, item]);
+		const reserved = new Set(entries.map(([key]) => key));
+		const used = /* @__PURE__ */ new Set();
+		return Object.fromEntries(entries.map(([key, item]) => {
+			let unique = key;
+			if (used.has(unique)) {
+				let suffix = 2;
+				do
+					unique = `${key}_${suffix++}`;
+				while (reserved.has(unique) || used.has(unique));
+			}
+			used.add(unique);
+			return [unique, scrubRecord(item, options)];
+		}));
 	}
 	return value;
 }

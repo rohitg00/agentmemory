@@ -112,8 +112,8 @@ async function rest(path, body, timeoutMs = 3_000) {
   const response = await fetch(`http://127.0.0.1:${port}/agentmemory${path}`, { method: body ? "POST" : "GET", headers: { "content-type": "application/json", ...(secret ? { authorization: `Bearer ${secret}` } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) });
   assert(response.ok, `${path}: HTTP ${response.status}`); return response.json();
 }
-function persisted() {
-  try { return decodeRkyvJsonScope(readFileSync(join(data, "state_store.db", `${encodeURIComponent("mem:index:bm25")}.bin`))); } catch { return {}; }
+function persisted(scope = "mem:index:bm25") {
+  try { return decodeRkyvJsonScope(readFileSync(join(data, "state_store.db", `${encodeURIComponent(scope)}.bin`))); } catch { return {}; }
 }
 async function state(functionId, payload) {
   const client = registerWorker(`ws://127.0.0.1:${port + 46023}`, { workerName: "vector-recovery-fixture", invocationTimeoutMs: 5_000, enableMetricsReporting: false, otel: { enabled: false } });
@@ -232,7 +232,12 @@ try {
   failEmbeddings = true;
   assert.equal((await rest("/snapshot/restore", { commitHash }, 30_000)).success, true);
   failEmbeddings = false; releaseHeld(); releaseHeld = undefined;
-  await check("incremental-snapshot", 7, 1, "paused", 4); await stop();
+  await check("incremental-snapshot", 7, 1, "paused", 4);
+  await poll("restored observation persisted before restart", () => {
+    const restored = persisted("mem:obs:incremental")[target.id];
+    return restored?.title === "Onyx restored historical state" && restored?.timestamp === timestamp;
+  });
+  await stop();
   await start("incremental-snapshot-gated");
   await check("incremental-snapshot-gated", 7, 1, "waiting-for-opt-in", 0); await stop();
   await start("incremental-snapshot-recovered", { AGENTMEMORY_VECTOR_BACKFILL: "all" });

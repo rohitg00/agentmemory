@@ -164,8 +164,15 @@ describe("scrubRecord property names", () => {
     expect(input["__proto__"].note).toBe(secret);
   });
 
-  it("keeps the last value when scrubbed property names collide", () => {
+  it("preserves both values when scrubbed property names collide", () => {
     expect(scrubRecord({ [secret]: "first", "[REDACTED_SECRET]": "last" }, { scrubKeys: true }))
-      .toEqual({ "[REDACTED_SECRET]": "last" });
+      .toEqual({ "[REDACTED_SECRET]": "first", "[REDACTED_SECRET]_2": "last" });
+  });
+
+  it("avoids existing names when allocating collision suffixes", () => {
+    const input = { [secret]: "first", "pk-abcdefghijklmnopqrstuvwxyz": "second", "[REDACTED_SECRET]_2": "ordinary" };
+    const output = scrubRecord(input, { scrubKeys: true });
+    expect(output).toEqual({ "[REDACTED_SECRET]": "first", "[REDACTED_SECRET]_3": "second", "[REDACTED_SECRET]_2": "ordinary" });
+    expect(scrubRecord(output, { scrubKeys: true })).toEqual(output);
   });
 });

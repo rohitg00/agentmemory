@@ -42,11 +42,22 @@ export function scrubRecord<T>(value: T, options: { scrubKeys?: boolean } = {}):
   if (value !== null && typeof value === "object") {
     const proto = Object.getPrototypeOf(value);
     if (proto !== Object.prototype && proto !== null) return value;
+    const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+      options.scrubKeys ? stripPrivateData(key) : key,
+      item,
+    ] as const);
+    const reserved = new Set(entries.map(([key]) => key));
+    const used = new Set<string>();
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-        options.scrubKeys ? stripPrivateData(key) : key,
-        scrubRecord(item, options),
-      ]),
+      entries.map(([key, item]) => {
+        let unique = key;
+        if (used.has(unique)) {
+          let suffix = 2;
+          do { unique = `${key}_${suffix++}`; } while (reserved.has(unique) || used.has(unique));
+        }
+        used.add(unique);
+        return [unique, scrubRecord(item, options)];
+      }),
     ) as T;
   }
   return value;

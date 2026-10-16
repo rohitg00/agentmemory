@@ -23,6 +23,11 @@ class SerializedToolOutput {
 
 const CASES = [
   {
+    name: "colliding redacted property names",
+    data: { nested: [{ [`sk-${SECRET}`]: "first", [`pk-${SECRET}`]: "second", "[REDACTED_SECRET]_2": "ordinary" }] },
+    expected: { nested: [{ "[REDACTED_SECRET]": "first", "[REDACTED_SECRET]_3": "second", "[REDACTED_SECRET]_2": "ordinary" }] },
+  },
+  {
     name: "nested URL objects and dates",
     data: { tool_name: "Read", tool_input: [{ url: new URL(`https://user:${SECRET}@example.test/path`) }], tool_output: new Date("2026-10-16T00:00:00.000Z") },
     expected: { tool_name: "Read", tool_input: [{ url: "https://[REDACTED_SECRET]@example.test/path" }], tool_output: "2026-10-16T00:00:00.000Z" },
