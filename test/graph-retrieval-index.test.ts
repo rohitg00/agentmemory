@@ -1,13 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createHash } from "node:crypto";
-import { StateKV, applyUpdateOps } from "../src/state/kv.js";
+import { StateKV, applyUpdateOps, type StateBackend } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
-import { pinGraphState, resetGraphGeneration } from "../src/state/graph-generation.js";
+import { pinGraphState, resetGraphGeneration, setGraphGenerationListener } from "../src/state/graph-generation.js";
 import { createGraphIndexReader, finishGraphIndexBuild, getGraphIndexStatus, initializeGraphIndex, reconcileGraphIndexRecord, recoverGraphIndex } from "../src/state/graph-retrieval-index.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import type { GraphNode } from "../src/types.js";
 
 const node = (id: string, name = id): GraphNode => ({ id, name, type: "concept", properties: {}, sourceObservationIds: [`obs-${id}`], createdAt: "2026-10-14T00:00:00Z" });
-function fixture() {
+function fixture(backend: StateBackend = "file") {
   const data = new Map<string, unknown>();
   const calls: Array<{ function_id: string; payload: any }> = [];
   let fail: ((call: typeof calls[number], committed: boolean) => void) | undefined;
@@ -24,8 +25,10 @@ function fixture() {
     } else throw new Error(`Unbounded or unexpected operation: ${call.function_id}`);
     fail?.(call, true); return result;
   } };
-  return { data, calls, sdk, kv: new StateKV(sdk as never), fail: (fn?: typeof fail) => { fail = fn; } };
+  return { data, calls, sdk, kv: new StateKV(sdk as never, { backend }), fail: (fn?: typeof fail) => { fail = fn; } };
 }
+
+afterEach(() => setGraphGenerationListener(null));
 
 describe("bounded graph retrieval index", () => {
   it("keeps unknown legacy stores unavailable and never lists or reads their snapshot for status", async () => {
@@ -35,8 +38,8 @@ describe("bounded graph retrieval index", () => {
     expect(calls.every((c) => c.function_id === "state::get" && c.payload.scope !== KV.graphSnapshot)).toBe(true);
   });
 
-  it("maintains duplicate names, aliases, provenance and adjacency through set, update, stale and delete", async () => {
-    const { kv } = fixture(); await initializeGraphIndex(kv, { status: "ready" });
+  it.each(["file", "redis"] as const)("maintains duplicate names, aliases, provenance and adjacency through %s set, update, stale and delete", async (backend) => {
+    const { kv } = fixture(backend); await initializeGraphIndex(kv, { status: "ready" });
     await kv.set(KV.graphNodes, "a", { ...node("a", "Alpha"), aliases: ["北京"] });
     await kv.set(KV.graphNodes, "b", node("b", "Alpha"));
     let reader = (await createGraphIndexReader(kv))!;
@@ -66,14 +69,16 @@ describe("bounded graph retrieval index", () => {
     expect(await getGraphIndexStatus(kv)).toMatchObject({ nodes: 1, edges: 0, historyEdges: 1 });
   });
 
-  it.each([false, true])("recovers an interrupted canonical write with committed=%s", async (committed) => {
-    const f = fixture(); await initializeGraphIndex(f.kv, { status: "ready" });
+  it.each([
+    ["file", false], ["file", true], ["redis", false], ["redis", true],
+  ] as const)("recovers an interrupted %s canonical write with committed=%s", async (backend, committed) => {
+    const f = fixture(backend); await initializeGraphIndex(f.kv, { status: "ready" });
     await f.kv.set(KV.graphNodes, "a", node("a", "old"));
     f.fail((c, done) => { if (c.function_id === "state::set" && c.payload.scope === KV.graphNodes && done === committed) throw new Error("offline"); });
     await expect(f.kv.set(KV.graphNodes, "a", node("a", "new"))).rejects.toThrow("offline");
     f.fail();
     expect(await createGraphIndexReader(f.kv)).toBeNull();
-    const restarted = new StateKV(f.sdk as never); await recoverGraphIndex(restarted);
+    const restarted = new StateKV(f.sdk as never, { backend }); await recoverGraphIndex(restarted);
     const reader = (await createGraphIndexReader(restarted))!;
     expect((await reader.getNode("a"))?.name).toBe(committed ? "new" : "old");
     expect((await reader.posting("name", committed ? "old" : "new")).ids).toEqual([]);
@@ -92,15 +97,15 @@ describe("bounded graph retrieval index", () => {
     expect(await getGraphIndexStatus(f.kv)).toMatchObject({ nodes: 2 });
   });
 
-  it("does not mutate canonical data when the durable barrier fails", async () => {
-    const f = fixture(); await initializeGraphIndex(f.kv, { status: "ready" });
+  it.each(["file", "redis"] as const)("does not mutate canonical %s data when the durable barrier fails", async (backend) => {
+    const f = fixture(backend); await initializeGraphIndex(f.kv, { status: "ready" });
     f.fail((c) => { if (c.function_id === "state::set" && c.payload.scope === KV.graphRetrievalControl) throw new Error("barrier"); });
     await expect(f.kv.set(KV.graphNodes, "a", node("a"))).rejects.toThrow("barrier");
     expect(f.data.has(`${KV.graphNodes}\0a`)).toBe(false);
   });
 
-  it("keeps reset indexes isolated from a pinned old view and validates an in-flight reader", async () => {
-    const { kv } = fixture(); await initializeGraphIndex(kv, { status: "ready" });
+  it.each(["file", "redis"] as const)("keeps %s reset indexes isolated from a pinned old view and validates an in-flight reader", async (backend) => {
+    const { kv } = fixture(backend); await initializeGraphIndex(kv, { status: "ready" });
     await kv.set(KV.graphNodes, "old", node("old"));
     const old = await pinGraphState(kv), reader = (await createGraphIndexReader(kv))!;
     await resetGraphGeneration(kv, { version: 1, dirty: false });
@@ -128,28 +133,28 @@ describe("bounded graph retrieval index", () => {
     expect(calls.every((c) => c.function_id === "state::get" && ![KV.graphNodes, KV.graphEdges, KV.graphSnapshot].includes(c.payload.scope))).toBe(true);
   });
 
-  it("keeps multirow snapshot journals unavailable and explicitly resumes them after restart", async () => {
-    const f = fixture(); await initializeGraphIndex(f.kv, { status: "ready" });
+  it.each(["file", "redis"] as const)("keeps %s multirow snapshot journals unavailable and explicitly resumes them after restart", async (backend) => {
+    const f = fixture(backend); await initializeGraphIndex(f.kv, { status: "ready" });
     const snapshot = { version: 1, dirty: false, topNodes: [], topEdges: [], topDegrees: {}, stats: { totalNodes: 2, totalEdges: 0, nodesByType: {}, edgesByType: {} }, updatedAt: "now" };
     const pending = { ...snapshot, dirty: true, pendingMutation: { writes: [{ scope: KV.graphNodes, key: "a", value: node("a") }, { scope: KV.graphNodes, key: "b", value: node("b") }], snapshot } };
     await f.kv.set(KV.graphSnapshot, "current", pending);
     expect(await createGraphIndexReader(f.kv)).toBeNull();
     f.calls.length = 0;
-    expect(await createGraphIndexReader(new StateKV(f.sdk as never))).toBeNull();
+    expect(await createGraphIndexReader(new StateKV(f.sdk as never, { backend }))).toBeNull();
     expect(f.calls.every((c) => c.payload.scope !== KV.graphSnapshot)).toBe(true);
-    await recoverGraphIndex(new StateKV(f.sdk as never), { allowSnapshotRecovery: true });
+    await recoverGraphIndex(new StateKV(f.sdk as never, { backend }), { allowSnapshotRecovery: true });
     const reader = (await createGraphIndexReader(f.kv))!;
     expect((await reader.posting("nodes")).ids.sort()).toEqual(["a", "b"]);
     expect(await reader.finish()).toBe(true);
   });
 
-  it("recovers a lost clean-snapshot acknowledgement without leaving the index stuck", async () => {
-    const f = fixture(); await initializeGraphIndex(f.kv, { status: "ready" });
+  it.each(["file", "redis"] as const)("recovers a lost %s clean-snapshot acknowledgement without leaving the index stuck", async (backend) => {
+    const f = fixture(backend); await initializeGraphIndex(f.kv, { status: "ready" });
     await f.kv.set(KV.graphSnapshot, "current", { version: 1, dirty: true });
     f.fail((c, done) => { if (done && c.function_id === "state::set" && c.payload.scope === KV.graphSnapshot) throw new Error("lost ack"); });
     await expect(f.kv.set(KV.graphSnapshot, "current", { version: 1, dirty: false })).rejects.toThrow("lost ack");
     f.fail(); expect(await createGraphIndexReader(f.kv)).toBeNull();
-    await recoverGraphIndex(new StateKV(f.sdk as never), { allowSnapshotRecovery: true });
+    await recoverGraphIndex(new StateKV(f.sdk as never, { backend }), { allowSnapshotRecovery: true });
     expect(await createGraphIndexReader(f.kv)).not.toBeNull();
   });
 
@@ -224,8 +229,10 @@ describe("bounded graph retrieval index", () => {
     }
   });
 
-  it.each(["rename", "delete"])("recovers every durable %s write boundary before and after acknowledgement", async (operation) => {
-    const f = fixture(); await initializeGraphIndex(f.kv, { status: "ready" });
+  it.each([
+    ["file", "rename"], ["file", "delete"], ["redis", "rename"], ["redis", "delete"],
+  ] as const)("recovers every durable %s %s write boundary before and after acknowledgement", async (backend, operation) => {
+    const f = fixture(backend); await initializeGraphIndex(f.kv, { status: "ready" });
     for (const id of ["head", "middle", "tail"]) await f.kv.set(KV.graphNodes, id, node(id, "shared"));
     const saved = structuredClone(f.data);
     const mutate = (kv: StateKV) => operation === "rename" ? kv.set(KV.graphNodes, "middle", { ...node("middle", "renamed"), aliases: ["别名"] }) : kv.delete(KV.graphNodes, "middle");
@@ -238,9 +245,9 @@ describe("bounded graph retrieval index", () => {
       f.fail((c, committed) => {
         if (committed === after && (c.function_id === "state::set" || c.function_id === "state::delete") && ++seen === boundary) throw new Error("interrupted");
       });
-      await expect(mutate(new StateKV(f.sdk as never))).rejects.toThrow("interrupted");
+      await expect(mutate(new StateKV(f.sdk as never, { backend }))).rejects.toThrow("interrupted");
       f.fail();
-      const restarted = new StateKV(f.sdk as never); await recoverGraphIndex(restarted);
+      const restarted = new StateKV(f.sdk as never, { backend }); await recoverGraphIndex(restarted);
       const canonical = f.data.get(`${KV.graphNodes}\0middle`) as GraphNode | undefined;
       const reader = (await createGraphIndexReader(restarted))!;
       expect(await reader.getNode("middle")).toEqual(canonical ?? null);
@@ -280,8 +287,8 @@ describe("bounded graph retrieval index", () => {
     expect(await getGraphIndexStatus(kv)).toMatchObject({ nodesByType: { file: 1 }, otherTypes: 0 });
   });
 
-  it("guards snapshot updates and deletion before readers can use a ready index", async () => {
-    const { kv } = fixture(); await initializeGraphIndex(kv, { status: "ready" });
+  it.each(["file", "redis"] as const)("guards %s snapshot updates and deletion before readers can use a ready index", async (backend) => {
+    const { kv } = fixture(backend); await initializeGraphIndex(kv, { status: "ready" });
     const clean = { version: 1, dirty: false, topNodes: [], topEdges: [], topDegrees: {}, stats: { totalNodes: 0, totalEdges: 0, nodesByType: {}, edgesByType: {} }, updatedAt: "now" };
     await kv.set(KV.graphSnapshot, "current", clean);
     await kv.update(KV.graphSnapshot, "current", [{ type: "set", path: "dirty", value: true }, { type: "set", path: "pendingMutation", value: {
@@ -296,6 +303,58 @@ describe("bounded graph retrieval index", () => {
     expect(await createGraphIndexReader(kv)).toBeNull();
     await recoverGraphIndex(kv, { allowSnapshotRecovery: true });
     expect(await createGraphIndexReader(kv)).toBeNull();
+  });
+
+  it.each(["file", "redis"] as const)("allows a %s graph listener to update the same key after its index is ready", async (backend) => {
+    const { kv } = fixture(backend);
+    await resetGraphGeneration(kv, { version: 1, dirty: false });
+    await kv.set(KV.graphNodes, "reentrant", node("reentrant", "initial"));
+    let reentered = false;
+    let listenerSawReadyIndex = false;
+    setGraphGenerationListener(async (kind) => {
+      if (kind !== "nodes" || reentered) return;
+      reentered = true;
+      listenerSawReadyIndex = await createGraphIndexReader(kv) !== null;
+      await kv.update(KV.graphNodes, "reentrant", [{ type: "set", path: "name", value: "listener" }]);
+    });
+    const updated = kv.update(KV.graphNodes, "reentrant", [{ type: "set", path: "name", value: "outer" }]);
+    await Promise.race([
+      updated,
+      new Promise<void>((resolve) => setImmediate(resolve)).then(() => { throw new Error("Ready-index listener cannot reenter the mutation queue"); }),
+    ]);
+    expect(reentered).toBe(true);
+    expect(listenerSawReadyIndex).toBe(true);
+    expect(await kv.get(KV.graphNodes, "reentrant")).toMatchObject({ name: "listener" });
+    const reader = (await createGraphIndexReader(kv))!;
+    expect(await reader.getNode("reentrant")).toMatchObject({ name: "listener" });
+    expect((await reader.posting("name", "outer")).ids).toEqual([]);
+    expect((await reader.posting("name", "listener")).ids).toEqual(["reentrant"]);
+    expect(await reader.finish()).toBe(true);
+  });
+
+  it("acquires the graph snapshot barrier before the Redis key mutex during concurrent persistence", async () => {
+    const { kv } = fixture("redis");
+    await initializeGraphIndex(kv, { status: "ready" });
+    await kv.set(KV.graphSnapshot, "current", { version: 1, dirty: false });
+    let enter!: () => void;
+    let release!: () => void;
+    const entered = new Promise<void>((resolve) => { enter = resolve; });
+    const released = new Promise<void>((resolve) => { release = resolve; });
+    const persisting = withKeyedLock("graph:persist", async () => {
+      enter();
+      await released;
+      await kv.update(KV.graphSnapshot, "current", [{ type: "set", path: "writer", value: "persist" }]);
+    });
+    await entered;
+    const concurrent = kv.update(KV.graphSnapshot, "current", [{ type: "set", path: "writer", value: "concurrent" }]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    release();
+    await Promise.race([
+      Promise.all([persisting, concurrent]),
+      new Promise<void>((resolve) => setImmediate(resolve)).then(() => { throw new Error("Snapshot barrier and Redis key mutex acquired in conflicting order"); }),
+    ]);
+    expect(await kv.get(KV.graphSnapshot, "current")).toEqual({ version: 1, dirty: false, writer: "concurrent" });
+    expect(await createGraphIndexReader(kv)).not.toBeNull();
   });
 
   it("counts only latest live edges while retaining temporal projections and distinguishes Unicode IDs", async () => {

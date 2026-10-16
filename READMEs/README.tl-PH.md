@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tool" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 awtomatikong hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 panlabas na DB" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ pumapasang test" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,500+ pumapasang test" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1446,7 +1446,7 @@ Tinatanggap din ng `/agentmemory/export` ang `?maxSessions=` at `?offset=` para 
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom na plugin system | `iii worker add <name>` |
 
-**236 na source file · ~56,000 LOC · 3,400+ na test · 318 na function · 66 na KV scope**, lahat sa tatlong primitive. Walang `agentmemory plugin install`. Ang plugin system mismo ay ang iii.
+**238 na source file · ~56,000 LOC · 3,500+ na test · 318 na function · 66 na KV scope**, lahat sa tatlong primitive. Walang `agentmemory plugin install`. Ang plugin system mismo ay ang iii.
 
 ---
 
@@ -1870,7 +1870,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,400+ tests
+npm test                  # 3,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

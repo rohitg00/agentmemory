@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP ツール" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 自動 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="外部 DB 0 個" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,400+ 件のテストが成功" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,500+ 件のテストが成功" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1445,7 +1445,7 @@ fi
 | Prometheus / Grafana | iii OTEL + ヘルスモニタ |
 | カスタムプラグインシステム | `iii worker add <name>` |
 
-**236 ソースファイル · ~56,000 LOC · 3,400+ テスト · 318 functions · 66 KV スコープ** — すべて 3 つのプリミティブの上に。`agentmemory plugin install` はありません。プラグインシステムは iii そのものです。
+**238 ソースファイル · ~56,000 LOC · 3,500+ テスト · 318 functions · 66 KV スコープ** — すべて 3 つのプリミティブの上に。`agentmemory plugin install` はありません。プラグインシステムは iii そのものです。
 
 ---
 
@@ -1869,7 +1869,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,400+ tests
+npm test                  # 3,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
