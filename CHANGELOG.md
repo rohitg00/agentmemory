@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Time filters on `GET /agentmemory/sessions`.** `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` take strict ISO 8601 timestamps, with zone-less values read as UTC (after is inclusive, before is exclusive) and combine with the existing `project`, `status`, `q` and cursor params. Sessions with no value for the filtered field are excluded; an invalid timestamp returns 400.
+
 ### Fixed
 
 - **Session summaries cover the whole session again** (#745). 0.9.30 completed a session on the first per-turn Stop and ignored every later end, so summaries and graph extraction stopped at turn 1. `mem::observe` now reopens a completed session when new observations arrive, the Stop hook sends `final: false` so the session stays open, and an idle finalizer completes it once nothing has happened for `AGENTMEMORY_FINALIZE_IDLE_MS` (default 2 minutes). SessionEnd, the CLI and the OpenCode plugin send `final: true` and complete at once; a request without the flag behaves as before. The sweep summarizes a session before marking it abandoned (#737).

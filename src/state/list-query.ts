@@ -19,6 +19,41 @@ function firstParam(params: QueryParams, name: string): string | undefined {
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+const TIME_PARAMS = ["startedAfter", "startedBefore", "endedAfter", "endedBefore"] as const;
+export type TimeParam = (typeof TIME_PARAMS)[number];
+
+const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2}| \d{2}:?\d{2})?)?$/;
+
+function parseIso(raw: string): number {
+  if (!ISO_TIMESTAMP.test(raw)) return Number.NaN;
+  const hasTime = raw.length > 10;
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2}| \d{2}:?\d{2})$/.test(raw) && hasTime;
+  let normalized = raw.replace(/ (\d{2}:?\d{2})$/, "+$1").replace(" ", "T");
+  if (hasTime && !hasZone) normalized += "Z";
+  return Date.parse(normalized);
+}
+
+export function parseTimeBounds(
+  params: QueryParams,
+): { bounds: Partial<Record<TimeParam, number>> } | { error: string } {
+  const bounds: Partial<Record<TimeParam, number>> = {};
+  for (const name of TIME_PARAMS) {
+    const raw = firstParam(params, name);
+    if (raw === undefined) continue;
+    const ms = parseIso(raw);
+    if (Number.isNaN(ms)) return { error: `${name} must be an ISO 8601 timestamp` };
+    bounds[name] = ms;
+  }
+  return { bounds };
+}
+
+export function inTimeRange(value: string | undefined, after?: number, before?: number): boolean {
+  if (after === undefined && before === undefined) return true;
+  const ms = value ? Date.parse(value) : Number.NaN;
+  if (Number.isNaN(ms)) return false;
+  return (after === undefined || ms >= after) && (before === undefined || ms < before);
+}
+
 export function parseListQuery(params: QueryParams): ListQuery {
   const rawLimit = firstParam(params, "limit");
   const parsedLimit = rawLimit === undefined ? Number.NaN : Number(rawLimit);
