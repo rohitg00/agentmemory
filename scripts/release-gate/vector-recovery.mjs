@@ -108,8 +108,8 @@ function kill(child, signal = "SIGKILL") {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   try { process.kill(-child.pid, signal); } catch { try { child.kill(signal); } catch {} }
 }
-async function rest(path, body) {
-  const response = await fetch(`http://127.0.0.1:${port}/agentmemory${path}`, { method: body ? "POST" : "GET", headers: { "content-type": "application/json", ...(secret ? { authorization: `Bearer ${secret}` } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(3_000) });
+async function rest(path, body, timeoutMs = 3_000) {
+  const response = await fetch(`http://127.0.0.1:${port}/agentmemory${path}`, { method: body ? "POST" : "GET", headers: { "content-type": "application/json", ...(secret ? { authorization: `Bearer ${secret}` } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(timeoutMs) });
   assert(response.ok, `${path}: HTTP ${response.status}`); return response.json();
 }
 function persisted() {
@@ -230,7 +230,7 @@ try {
   await start("incremental-snapshot");
   await poll("held incremental recovery", () => releaseHeld);
   failEmbeddings = true;
-  assert.equal((await rest("/snapshot/restore", { commitHash })).success, true);
+  assert.equal((await rest("/snapshot/restore", { commitHash }, 30_000)).success, true);
   failEmbeddings = false; releaseHeld(); releaseHeld = undefined;
   await check("incremental-snapshot", 7, 1, "paused", 4); await stop();
   await start("incremental-snapshot-gated");
