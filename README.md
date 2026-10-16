@@ -1122,7 +1122,7 @@ Three tool surfaces, smallest to largest: `AGENTMEMORY_TOOLS=core` trims visibil
 | `memory_vision_search` | Search image observations |
 | `memory_timeline` | Chronological observations |
 | `memory_profile` | Project profile (concepts, files, patterns) |
-| `memory_export` | Export all memory data |
+| `memory_export` | Export memory data, in pages or selected collections on a large store |
 | `memory_relations` | Query relationship graph |
 | `memory_commit_lookup` | Sessions behind a git commit |
 | `memory_commits` | Commits recorded for a session |
@@ -1422,7 +1422,7 @@ else
 fi
 ```
 
-`/agentmemory/export` also accepts `?maxSessions=` and `?offset=` for chunking a large corpus across several calls; `strategy` on import is `merge` (default-safe), `replace`, or `skip`.
+`/agentmemory/export` also accepts `?maxSessions=` and `?offset=` for chunking a large corpus across several calls, `?collectionLimit=` and `?collectionOffset=` to page memories, the graph and the other collections, and `?collections=` to return only the named ones; `strategy` on import is `merge` (default-safe), `replace`, or `skip`, and `replace` refuses a paged or selected export.
 
 ### What iii replaces
 
