@@ -249,6 +249,7 @@ const VERSION_FILES: Array<{ file: RegExp; pattern: (v: string) => RegExp; repla
   { file: /^src\/version\.ts$/, pattern: (v) => new RegExp(`(VERSION = ")${escapeRegex(v)}(")`), replace: (v) => `$1${v}$2` },
   { file: /^AGENTS\.md$/, pattern: (v) => new RegExp(`(## Current Stats \\(v)${escapeRegex(v)}(\\))`), replace: (v) => `$1${v}$2` },
   { file: /^packages\/mcp\/package\.json$/, pattern: (v) => new RegExp(`("@agentmemory/agentmemory":\\s*"~?)${escapeRegex(v)}(")`), replace: (v) => `$1${v}$2` },
+  { file: /^plugin\/\.devin-plugin\/plugin\.json$/, pattern: (v) => new RegExp(`("@agentmemory/mcp@)${escapeRegex(v)}(")`), replace: (v) => `$1${v}$2` },
 ];
 
 function syncVersion(files: Map<string, string>, from: string, to: string): void {

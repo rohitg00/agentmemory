@@ -12,7 +12,9 @@ user-invocable: false
 agentmemory connect claude-code   # or cursor, codex, gemini-cli, ...
 ```
 
-After wiring, restart the host or run its MCP reload (for example `/mcp` in Claude Code) so it picks up the server. Then confirm the agent lists agentmemory's tools.
+After wiring, restart the host or run its MCP reload (for example `/mcp` in Claude Code, or a new session after `devin mcp list` in Devin CLI) so it picks up the server. Then confirm the agent lists agentmemory's tools.
+
+Devin CLI and Devin Desktop can also install the whole plugin with `devin plugins install rohitg00/agentmemory#plugin`, which adds the skills, the MCP server, and the capture hooks in one step. Cloud Devin sessions cannot reach a local agentmemory server, so the plugin is for local sessions only.
 
 ## Workflow
 
