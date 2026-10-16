@@ -11,6 +11,14 @@ interface IndexEntry {
   layer: SearchResultLayer;
 }
 
+// The raw capture fields are the only place the user's own words survive,
+// and for non-English users those words appear nowhere else in the record
+// (issue #1539: userPrompt is mostly CJK while title/narrative/concepts
+// are ~96% English). Both are indexed with a per-field cap so a pasted
+// transcript or long tool output cannot blow up the BM25 index.
+const USER_PROMPT_TERM_CAP = 2000;
+const ASSISTANT_RESPONSE_TERM_CAP = 1000;
+
 export interface SearchIndexRevision {
   isCurrent(): boolean;
   release(): void;
@@ -337,6 +345,14 @@ export class SearchIndex {
       ...obs.files,
       obs.type,
     ];
+    if (obs.source?.userPrompt) {
+      parts.push(obs.source.userPrompt.slice(0, USER_PROMPT_TERM_CAP));
+    }
+    if (obs.source?.assistantResponse) {
+      parts.push(
+        obs.source.assistantResponse.slice(0, ASSISTANT_RESPONSE_TERM_CAP),
+      );
+    }
     return this.tokenize(parts.join(" ").toLowerCase());
   }
 

@@ -6,7 +6,7 @@ import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
-import { memoryToObservation } from "../state/memory-utils.js";
+import { memoryToObservation, observationEmbedText } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { recordAudit } from "./audit.js";
 import { getSearchIndex, getVectorIndex, isMemoryIndexReady, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
@@ -209,7 +209,11 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       await vectorIndexAddGuarded(
         memory.id,
         memory.sessionIds?.[0] ?? "memory",
-        memory.title + " " + memory.content,
+        observationEmbedText({
+          title: memory.title,
+          narrative: memory.content,
+          concepts: memory.concepts,
+        }),
         { kind: "memory", logId: memory.id },
         (embedding, isCurrent) =>
           withKeyedLock("mem:remember", async () => {

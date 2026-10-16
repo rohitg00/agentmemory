@@ -20,6 +20,7 @@ import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { budgetLiveObservationSource } from "./observation-source-budget.js";
+import { observationEmbedText } from "../state/memory-utils.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -53,7 +54,7 @@ export async function restoreIndexEntries(obs: CompressedObservation): Promise<v
   }
   const vectors = getVectorIndex();
   if (vectors && !vectors.has(obs.id)) {
-    await vectorIndexAddGuarded(obs.id, obs.sessionId, obs.title + " " + (obs.narrative || ""), {
+    await vectorIndexAddGuarded(obs.id, obs.sessionId, observationEmbedText(obs), {
       kind: "synthetic",
       logId: obs.id,
     });
@@ -390,7 +391,7 @@ export function registerObserveFunction(
           await vectorIndexAddGuarded(
             synthetic.id,
             synthetic.sessionId,
-            synthetic.title + " " + (synthetic.narrative || ""),
+            observationEmbedText(synthetic),
             { kind: "synthetic", logId: synthetic.id },
           );
           await sdk.trigger({

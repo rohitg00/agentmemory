@@ -44,3 +44,18 @@ export function lessonToObservation(l: Lesson): CompressedObservation {
     importance: l.confidence,
   };
 }
+
+// The text a record is embedded with for the vector index: title + body +
+// concepts. concepts is the field the compression prompt explicitly asks
+// the model to fill with "reusable search terms", and for non-English
+// users it is the only field that may carry words in their language —
+// leaving it out left CJK queries with no anchor in the vector leg
+// (issue #1539: the English paraphrase of a query hit #3 while the
+// same-meaning Chinese paraphrase missed the top-100). Every site that
+// embeds a record goes through this so live writes and the migrate
+// rebuild produce the same text.
+export function observationEmbedText(
+  record: Pick<CompressedObservation, "title" | "narrative" | "concepts">,
+): string {
+  return `${record.title} ${record.narrative || ""} ${(record.concepts || []).join(" ")}`.trim();
+}
