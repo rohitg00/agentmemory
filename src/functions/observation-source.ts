@@ -43,8 +43,11 @@ export function createObservationSource(
   if (Object.values(fields).every((value) => value === undefined)) fields.payload = raw.raw;
   const retained = sanitize(fields) as Record<string, unknown>;
   const hookType = prefixWithinBytes(stripPrivateData(raw.hookType), 128) as HookType;
-  const originalBytes = Math.max(bytes({ hookType: raw.hookType, ...retained }), previous?.originalBytes ?? 0);
-  const truncated = previous?.truncated === true || hookType !== raw.hookType;
+  const dropped = raw.assistantResponseBytes === undefined
+    ? 0
+    : Math.max(0, raw.assistantResponseBytes - Buffer.byteLength(raw.assistantResponse ?? "", "utf8"));
+  const originalBytes = Math.max(bytes({ hookType: raw.hookType, ...retained }) + dropped, previous?.originalBytes ?? 0);
+  const truncated = previous?.truncated === true || hookType !== raw.hookType || dropped > 0;
   const full = { hookType, originalBytes, truncated, ...retained };
   if (bytes(full) <= maxBytes) return full;
 

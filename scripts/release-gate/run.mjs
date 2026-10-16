@@ -774,14 +774,15 @@ async function main() {
     const sid = `gate-capture-${randomBytes(4).toString("hex")}`;
     markers.capture = [marker("amber"), marker("birch"), marker("cedar")];
     markers.prompt = marker("prompt");
+    markers.reply = marker("reply");
     d.sessionId = sid;
     const timings = [];
     timings.push((await instA.hook("SessionStart", { session_id: sid, source: "startup" })).ms);
     timings.push((await instA.hook("UserPromptSubmit", { session_id: sid, prompt: `Investigate the flaky parser test ${markers.prompt}` })).ms);
     for (const m of markers.capture) timings.push((await instA.hook("PostToolUse", instA.toolEvent(sid, m))).ms);
-    timings.push((await instA.hook("Stop", { session_id: sid, stop_hook_active: false })).ms);
+    timings.push((await instA.hook("Stop", { session_id: sid, stop_hook_active: false, last_assistant_message: `The parser flake came from CRLF handling ${markers.reply} in the tokenizer` })).ms);
     d.hookMs = timings;
-    for (const m of markers.capture) {
+    for (const m of [...markers.capture, markers.reply]) {
       await poll(`search to find ${m}`, () => instA.searchFinds(m), { timeoutMs: 20_000 });
       const n = await instA.countMarker(sid, m);
       assert(n === 1, `marker ${m} is stored in ${n} observations, expected 1`);
@@ -829,20 +830,23 @@ async function main() {
     await instA.stop();
     const sid = `gate-offline-${randomBytes(4).toString("hex")}`;
     markers.offline = [marker("cobalt"), marker("indigo"), marker("violet")];
+    markers.offlineReply = marker("lapis");
+    const recovered = [...markers.offline, markers.offlineReply];
     const hookMs = [];
     for (const m of markers.offline) hookMs.push((await instA.hook("PostToolUse", instA.toolEvent(sid, m))).ms);
+    hookMs.push((await instA.hook("Stop", { session_id: sid, stop_hook_active: false, last_assistant_message: `Offline turn ended with ${markers.offlineReply} pending` })).ms);
     d.hookMs = hookMs;
     assert(Math.max(...hookMs) < 5000, `a hook took ${Math.max(...hookMs)} ms while the service was down`);
     const cap = await mustRun("agentmemory capture --json", gate.bin("agentmemory"), ["capture", "--json"], { env: instA.env(), cwd: instA.cwd, timeoutMs: 30_000 });
     const spool = JSON.parse(cap.stdout.slice(cap.stdout.indexOf("{"))).spool;
     d.spooledWhileDown = spool.records;
-    assert(spool.records >= markers.offline.length, `spool holds ${spool.records} records, expected ${markers.offline.length}`);
+    assert(spool.records >= recovered.length, `spool holds ${spool.records} records, expected ${recovered.length}`);
     d.restartMs = await instA.start();
-    for (const m of markers.offline) {
+    for (const m of recovered) {
       await poll(`recovered observation ${m}`, async () => (await instA.countMarker(sid, m)) >= 1, { timeoutMs: 30_000 });
       await poll(`search to find ${m}`, () => instA.searchFinds(m), { timeoutMs: 20_000 });
     }
-    for (const m of markers.offline) {
+    for (const m of recovered) {
       const n = await instA.countMarker(sid, m);
       assert(n === 1, `offline marker ${m} is stored ${n} times, expected 1`);
     }
@@ -1009,7 +1013,7 @@ async function main() {
       return t.sessions === source.sessions && t.observations === source.observations && t.memories === source.memories ? t : null;
     }, { timeoutMs: 60_000, intervalMs: 1000 });
     d.restored = restored;
-    const probe = [...(markers.capture ?? []), ...(markers.offline ?? [])];
+    const probe = [...(markers.capture ?? []), ...(markers.offline ?? []), markers.reply, markers.offlineReply].filter(Boolean);
     for (const m of probe) await poll(`restored search to find ${m}`, () => instC.searchFinds(m), { timeoutMs: 30_000 });
     if (markers.mcp) {
       const mem = await request("GET", `${instC.base}/memories`);

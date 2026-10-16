@@ -161,6 +161,10 @@ export function registerObserveFunction(
         if (payload.hookType === "stop") {
           const response = d["assistant_response"] ?? d["last_assistant_message"] ?? d["response"];
           if (typeof response === "string") raw.assistantResponse = response;
+          const originalBytes = d["last_assistant_message_bytes"];
+          if (typeof originalBytes === "number" && Number.isSafeInteger(originalBytes) && originalBytes >= 0) {
+            raw.assistantResponseBytes = originalBytes;
+          }
         }
 
         extractedImage = extractImage(sanitizedRaw);
