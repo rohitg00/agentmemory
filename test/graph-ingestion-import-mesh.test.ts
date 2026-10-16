@@ -1,3 +1,4 @@
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StateKV, applyUpdateOps } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
@@ -67,6 +68,7 @@ async function rig(rotated = true) {
   registerViewerStreamTriggers(sdk as never, kv);
   const call = (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload });
   if (rotated) await call("mem::graph-reset");
+  else await initializeGraphIndex(kv, { status: "ready" });
   await getViewerCounts(kv);
   return { kv, call, store, intercept: (fn?: typeof intercept) => { intercept = fn; } };
 }

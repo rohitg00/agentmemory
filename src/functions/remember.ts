@@ -354,7 +354,9 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       ) {
         const sessionId = data.sessionId;
         for (const obsId of data.observationIds) {
-          await attempt(obsId, () => forgetObservation(sessionId, obsId));
+          await attempt(obsId, () =>
+            withKeyedLock(`obs:${sessionId}`, () => forgetObservation(sessionId, obsId)),
+          );
         }
       }
 
@@ -364,34 +366,37 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         !data.memoryId
       ) {
         const sessionId = data.sessionId;
-        const observations = await kv.list<ObservationRef & { id: string }>(
-          KV.observations(sessionId),
-        );
-        for (const obs of observations) {
-          await attempt(obs.id, () => forgetObservation(sessionId, obs.id, obs));
-        }
-        await attempt(sessionId, async () => {
-          const session = await kv.get<Session>(KV.sessions, sessionId);
-          if (!session) return false;
-          await kv.delete(KV.sessions, sessionId);
-          await removeSessionFromProjectIndex(
-            kv,
-            session.project,
-            sessionId,
-          ).catch(() => {});
-          deletedSession = true;
-          return true;
-        });
-        try {
-          const summary = await kv.get(KV.summaries, sessionId);
-          if (summary) {
-            await kv.delete(KV.summaries, sessionId);
-            deletedSummary = true;
-            deleted++;
+        await withKeyedLock(`obs:${sessionId}`, async () => {
+          const observations = await kv.list<ObservationRef & { id: string }>(
+            KV.observations(sessionId),
+          );
+          for (const obs of observations) {
+            await attempt(obs.id, () => forgetObservation(sessionId, obs.id, obs));
           }
-        } catch (err) {
-          recordFailure(`summary:${sessionId}`, err);
-        }
+          await attempt(sessionId, async () => {
+            const session = await kv.get<Session>(KV.sessions, sessionId);
+            if (!session) return false;
+            await kv.delete(KV.sessions, sessionId);
+            await kv.delete(KV.summaryRepairs, sessionId);
+            await removeSessionFromProjectIndex(
+              kv,
+              session.project,
+              sessionId,
+            ).catch(() => {});
+            deletedSession = true;
+            return true;
+          });
+          try {
+            const summary = await kv.get(KV.summaries, sessionId);
+            if (summary) {
+              await kv.delete(KV.summaries, sessionId);
+              deletedSummary = true;
+              deleted++;
+            }
+          } catch (err) {
+            recordFailure(`summary:${sessionId}`, err);
+          }
+        });
       }
 
       if (deleted > 0 || indexCleaned) await flushIndexSave();

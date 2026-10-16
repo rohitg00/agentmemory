@@ -326,7 +326,7 @@ export function appendSpool(
       spooledAt: new Date().toISOString(),
       reason,
       attempts: options.attempts ?? 0,
-      body: scrubRecord(body, { scrubKeys: true }),
+      body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true }),
     };
     let line = JSON.stringify(record) + "\n";
     if (Buffer.byteLength(line) > policy.maxRecordBytes) {
@@ -433,7 +433,7 @@ export function retainSent(
       spooledAt: new Date(now).toISOString(),
       reason: "sent",
       attempts: 0,
-      body: scrubRecord(body, { scrubKeys: true }),
+      body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true }),
       bootId: mark.bootId,
     };
     let line = JSON.stringify(record) + "\n";

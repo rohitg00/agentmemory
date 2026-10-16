@@ -6,6 +6,7 @@ import type {
 } from "../src/types.js";
 import { registerEvictFunction } from "../src/functions/evict.js";
 import { KV } from "../src/state/schema.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import { currentAuditScope } from "./helpers/mocks.js";
 import {
   indexObservationSession,
@@ -135,6 +136,7 @@ describe("mem::evict stale sessions", () => {
     const store = storeForObservedSession(sessionId);
     const kv = mockKV(store);
     const { sdk, calls } = mockSdk();
+    await kv.set(KV.summaryRepairs, sessionId, { sessionId, token: "old-repair", dueAt: 0, attempts: 0 });
 
     registerEvictFunction(sdk as never, kv as never);
     sdk.registerFunction("event::session::stopped", async (payload) => {
@@ -158,6 +160,7 @@ describe("mem::evict stale sessions", () => {
 
     expect(result.staleSessions).toBe(1);
     expect(await kv.get(KV.sessions, sessionId)).toBeNull();
+    expect(await kv.get(KV.summaryRepairs, sessionId)).toBeNull();
     const audits = await kv.list<{
       details: { reason: string };
     }>(currentAuditScope());
@@ -251,6 +254,34 @@ describe("mem::evict stale sessions", () => {
     const fnIds = calls.map((c) => c.function_id);
     expect(fnIds.filter((f) => f === "mem::consolidate-pipeline")).toHaveLength(1);
     expect(fnIds.filter((f) => f === "mem::auto-crystallize")).toHaveLength(1);
+  });
+
+  it("does not delete a session restarted while eviction waits for publication", async () => {
+    const sessionId = "ses_restarted";
+    const kv = mockKV(storeForObservations(sessionId, []));
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+    const list = vi.spyOn(kv, "list");
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const restarted = { ...makeSession(sessionId), startedAt: new Date().toISOString() };
+    const repair = { sessionId, token: "new-repair", dueAt: 0, attempts: 0 };
+    const publishing = withKeyedLock(`obs:${sessionId}`, async () => {
+      entered(); await gate;
+      await kv.set(KV.sessions, sessionId, restarted);
+      await kv.set(KV.summaryRepairs, sessionId, repair);
+    });
+    await ready;
+    const evicting = sdk.trigger({ function_id: "mem::evict", payload: {} });
+    try {
+      await vi.waitFor(() => expect(list).toHaveBeenCalledWith(KV.observations(sessionId)));
+      expect(await kv.get(KV.sessions, sessionId)).not.toBeNull();
+    } finally { release(); await publishing; }
+    expect(await evicting).toMatchObject({ staleSessions: 0 });
+    expect(await kv.get(KV.sessions, sessionId)).toEqual(restarted);
+    expect(await kv.get(KV.summaryRepairs, sessionId)).toEqual(repair);
   });
 
   it("keeps a stale observed session when recovery fails", async () => {

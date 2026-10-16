@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 інструменти MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 автоматичних хуків" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 зовнішніх БД" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,300+ тестів пройдено" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,600+ тестів пройдено" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1447,7 +1447,7 @@ fi
 | Prometheus / Grafana | iii OTEL + монітор стану здоров'я |
 | Власні системи плагінів | `iii worker add <name>` |
 
-**230 вихідних файлів · ~55,000 LOC · 3,300+ тестів · 312 функцій · 62 KV-скоупів**, усе на трьох примітивах. Жодного `agentmemory plugin install`. Система плагінів — це сам iii.
+**242 вихідних файлів · ~55,000 LOC · 3,400+ тестів · 324 функцій · 67 KV-скоупів**, усе на трьох примітивах. Жодного `agentmemory plugin install`. Система плагінів — це сам iii.
 
 ---
 
@@ -1790,7 +1790,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-138 ендпоінтів на порту `3111`. REST API за замовчуванням прив'язується до `127.0.0.1`. Захищені ендпоінти вимагають `Authorization: Bearer <secret>`, а ендпоінти синхронізації mesh вимагають явно встановленого `AGENTMEMORY_SECRET` на обох сторонах.
+143 ендпоінтів на порту `3111`. REST API за замовчуванням прив'язується до `127.0.0.1`. Захищені ендпоінти вимагають `Authorization: Bearer <secret>`, а ендпоінти синхронізації mesh вимагають явно встановленого `AGENTMEMORY_SECRET` на обох сторонах.
 
 **Автентифікація увімкнена за замовчуванням.** Коли `AGENTMEMORY_SECRET` не встановлено (ні в оболонці, ні в `~/.agentmemory/.env`), сервер генерує випадковий секрет під час першого запуску та зберігає його в `~/.agentmemory/secret` з режимом `0600`. Кожен вбудований клієнт зчитує його звідти, коли спілкується з локальним сервером: CLI, переглядач, хуки в `plugin/scripts`, MCP-сервер та шим `@agentmemory/mcp`, конфігурації, записані `agentmemory connect`, а також вбудовані інтеграції OpenCode, Pi, OpenClaw, Hermes та спостерігача за файловою системою. Збережений секрет надсилається лише на loopback-URL (`localhost`, `127.0.0.0/8`, `::1`). Явний `AGENTMEMORY_SECRET` завжди переважає, і віддаленим клієнтам все одно потрібно його встановити. Docker та точки входу `deploy/` уже генерують і експортують власний секрет. Щоб викликати API вручну:
 
@@ -1871,7 +1871,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,300+ tests
+npm test                  # 3,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

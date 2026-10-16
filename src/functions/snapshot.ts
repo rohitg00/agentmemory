@@ -225,12 +225,14 @@ export function registerSnapshotFunction(
             memoryIds.add(memory.id);
           }
           for (const [sessionId, observations] of Object.entries(archive.observations ?? {})) {
-            for (const observation of observations) {
-              await kv.set(KV.observations(sessionId), observation.id, observation);
-              getSearchIndex().remove(observation.id);
-              vectorIndexRemove(observation.id);
-              observationSessions.set(observation.id, sessionId);
-            }
+            await withKeyedLock(`obs:${sessionId}`, async () => {
+              for (const observation of observations) {
+                await kv.set(KV.observations(sessionId), observation.id, observation);
+                getSearchIndex().remove(observation.id);
+                vectorIndexRemove(observation.id);
+                observationSessions.set(observation.id, sessionId);
+              }
+            });
           }
           if (archive.graphNodes?.length || archive.graphEdges?.length) {
             await persistGraphRecords(kv, archive.graphNodes ?? [], archive.graphEdges ?? [], { mode: "merge" });

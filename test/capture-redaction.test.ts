@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { appendSpool, retainSent, type SpoolRecord } from "../src/capture/spool.js";
 import { registerObserveFunction } from "../src/functions/observe.js";
 import { KV } from "../src/state/schema.js";
-import type { RawObservation } from "../src/types.js";
+import type { CompressedObservation, RawObservation } from "../src/types.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
 
 vi.mock("../src/logger.js", () => ({
@@ -15,7 +15,33 @@ vi.mock("../src/logger.js", () => ({
 const SECRET = "abcdefghijklmnopqrstuvwxyz";
 const PRIVATE_TEXT = "private capture details";
 const NORMAL = { count: 3, ok: true, empty: null, text: "quoted \"text\" and a \\ path\nnext line" };
+class SerializedToolOutput {
+  toJSON(key: string) {
+    return { key, [`sk-${SECRET}`]: `password=${SECRET}`, ["__proto__"]: { note: `<private>${PRIVATE_TEXT}</private>` } };
+  }
+}
+
 const CASES = [
+  {
+    name: "nested URL objects and dates",
+    data: { tool_name: "Read", tool_input: [{ url: new URL(`https://user:${SECRET}@example.test/path`) }], tool_output: new Date("2026-10-16T00:00:00.000Z") },
+    expected: { tool_name: "Read", tool_input: [{ url: "https://[REDACTED_SECRET]@example.test/path" }], tool_output: "2026-10-16T00:00:00.000Z" },
+  },
+  {
+    name: "custom JSON representations and boxed strings",
+    data: { tool_name: "Read", tool_input: new String(`api_key=${SECRET}`), tool_output: new SerializedToolOutput() },
+    expected: { tool_name: "Read", tool_input: "[REDACTED_SECRET]", tool_output: { key: "tool_output", "[REDACTED_SECRET]": "[REDACTED_SECRET]", ["__proto__"]: { note: "[REDACTED]" } } },
+  },
+  {
+    name: "plain objects with custom JSON representations",
+    data: { toJSON() { return { tool_name: "Read", tool_output: `api_key=${SECRET}` }; } },
+    expected: { tool_name: "Read", tool_output: "[REDACTED_SECRET]" },
+  },
+  {
+    name: "undefined payloads",
+    data: undefined,
+    expected: undefined,
+  },
   {
     name: "a secret assignment at the end of a string",
     data: { tool_name: "Bash", tool_input: { command: "printenv" }, tool_output: `api_key=${SECRET}` },
@@ -102,7 +128,7 @@ describe.each(["pending", "retained"] as const)("%s capture spool redaction", (m
 
   it.each(CASES)("preserves structure while scrubbing $name", ({ data, expected }) => {
     const body = payload(data);
-    const before = structuredClone(body);
+    const before = JSON.stringify(body);
     const url = "http://localhost:4811";
     const eventId = "evc_redaction000001";
     if (mode === "pending") {
@@ -115,9 +141,9 @@ describe.each(["pending", "retained"] as const)("%s capture spool redaction", (m
     const text = readFileSync(join(dir, files[0]!), "utf-8");
     expectClean(text);
     const record = JSON.parse(text.trim()) as SpoolRecord;
-    expect(record.body).toEqual({ ...body, data: expected });
+    expect(record.body).toEqual(JSON.parse(JSON.stringify({ ...payload(expected) })));
     expect(record.eventId).toBe(eventId);
-    expect(body).toEqual(before);
+    expect(JSON.stringify(body)).toBe(before);
   });
 });
 
@@ -139,23 +165,21 @@ describe("direct observation redaction", () => {
     sdk.registerFunction("mem::compress", compress);
     registerObserveFunction(sdk as never, kv as never);
     const input = payload(data);
-    const before = structuredClone(input);
+    const before = JSON.stringify(input);
 
     const result = await sdk.trigger({ function_id: "mem::observe", payload: input }) as { observationId: string };
 
     expect(result.observationId).toBeTruthy();
-    const stored = await kv.get<RawObservation>(KV.observations(input.sessionId), result.observationId);
-    expect(stored?.raw).toEqual(expected);
-    if (!Array.isArray(expected)) {
-      expect(stored?.toolName).toBe(expected.tool_name);
-      expect(stored?.toolInput).toEqual(expected.tool_input);
-      expect(stored?.toolOutput).toEqual(expected.tool_output);
-    }
+    const stored = await kv.get<CompressedObservation>(KV.observations(input.sessionId), result.observationId);
+    const streamed = (stream.mock.calls[0]![0] as { data: { observation: RawObservation } }).data.observation;
+    expect(streamed.raw).toEqual(expected);
+    expect(stored?.source?.toolName).toBe(streamed.toolName);
+    expect(stored?.source?.toolInput).toEqual(streamed.toolInput);
+    expect(stored?.source?.toolOutput).toEqual(streamed.toolOutput);
+    if (!streamed.toolName) expect(stored?.source?.payload).toEqual(expected);
     expectClean(stored);
-    expect(stream).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ observation: stored }),
-    }));
-    expect(compress).toHaveBeenCalledWith(expect.objectContaining({ raw: stored }));
-    expect(input).toEqual(before);
+    expectClean(streamed);
+    expect(compress).toHaveBeenCalledWith({ observationId: result.observationId, sessionId: input.sessionId });
+    expect(JSON.stringify(input)).toBe(before);
   });
 });

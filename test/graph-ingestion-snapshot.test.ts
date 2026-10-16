@@ -1,3 +1,4 @@
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -21,7 +22,7 @@ const memory = (id: string, marker: string, extra: Partial<Memory> = {}): Memory
 const observation = (id: string, marker: string): CompressedObservation => ({ id, sessionId: "session", timestamp, type: "discovery", title: marker, narrative: marker, concepts: [], files: [], facts: [], importance: 5 });
 const dirs: string[] = [];
 
-function setup() {
+async function setup() {
   const dir = mkdtempSync(join(process.cwd(), ".graph-ingestion-snapshot-test-"));
   dirs.push(dir);
   const store = new Map<string, Map<string, unknown>>();
@@ -46,6 +47,7 @@ function setup() {
     },
   };
   const kv = new StateKV(sdk as never);
+  await initializeGraphIndex(kv, { status: "ready" });
   registerGraphFunction(sdk as never, kv, { name: "noop" } as never);
   registerSnapshotFunction(sdk as never, kv, dir);
   const call = (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload });
@@ -76,7 +78,7 @@ afterEach(() => {
 
 describe("Git snapshot ingestion", () => {
   it("round-trips graph edges and makes a restore after reset immediately queryable and deduplicated", async () => {
-    const r = setup();
+    const r = await setup();
     await persistGraphDelta(r.kv, [node("a", "alpha"), node("b", "beta")], [edge("ab", "a", "b")]);
     const created = await r.call("mem::snapshot-create");
     expect(created.success).toBe(true);
@@ -93,7 +95,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("restores legacy nodes-only archives as an overlay without changing the Git worktree", async () => {
-    const r = setup();
+    const r = await setup();
     await persistGraphDelta(r.kv, [node("existing")], []);
     const commitHash = r.archive({ graphNodes: [node("legacy")] });
     const uncommitted = '{"uncommitted":"preserve me"}';
@@ -106,7 +108,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("replaces warm keyword terms and stale vectors while preserving unrelated indexed rows", async () => {
-    const r = setup();
+    const r = await setup();
     const oldMemory = memory("mem_restore", "olduniquememory"), oldObs = observation("obs_restore", "olduniqueobservation");
     const unrelated = memory("mem_keep", "unrelatedmarker");
     await indexRecords([oldObs], [oldMemory, unrelated]);
@@ -133,7 +135,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("removes old keyword and vector entries for raw observations and nonlatest memories", async () => {
-    const r = setup();
+    const r = await setup();
     const oldMemory = memory("mem_raw", "oldmemory"), oldObs = observation("obs_raw", "oldobservation");
     await indexRecords([oldObs], [oldMemory]);
     const vectors = new VectorIndex();
@@ -151,7 +153,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("rejects corrupt graph rows before restoring any memory records", async () => {
-    const r = setup();
+    const r = await setup();
     const original = memory("mem_preflight", "originalmarker");
     await r.kv.set(KV.memories, original.id, original);
     await indexRecords([], [original]);
@@ -163,7 +165,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("reconciles committed records when a later restore write fails", async () => {
-    const r = setup();
+    const r = await setup();
     const untouched = memory("mem_failed", "untouchedmarker");
     await r.kv.set(KV.memories, untouched.id, untouched);
     await indexRecords([], [untouched]);
@@ -179,7 +181,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("reconciles committed search rows when graph ingestion fails", async () => {
-    const r = setup();
+    const r = await setup();
     const commitHash = r.archive({ memories: [memory("mem_before_graph", "beforegraphmarker")], graphNodes: [node("graph_failure")] });
     r.intercept(async (id, p) => { if (id === "state::set" && p.key === "graph_failure") throw new Error("synthetic graph write failure"); });
     expect(await r.call("mem::snapshot-restore", { commitHash })).toMatchObject({ success: false });
@@ -187,7 +189,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("indexes the current committed row if another writer replaced it during restore", async () => {
-    const r = setup();
+    const r = await setup();
     const commitHash = r.archive({ memories: [memory("mem_race", "snapshotmarker")], graphNodes: [node("gate")] });
     r.intercept(async (id, p) => {
       if (id === "state::set" && p.key === "gate") {
@@ -201,7 +203,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("preserves a newer first record while reconciliation waits for a second record", async () => {
-    const r = setup();
+    const r = await setup();
     const first = memory("mem_first", "firstsnapshotmarker");
     const second = memory("mem_second", "secondsnapshotmarker");
     const commitHash = r.archive({ memories: [first, second] });
@@ -235,7 +237,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("reads snapshots larger than execFile's default output buffer", async () => {
-    const r = setup();
+    const r = await setup();
     const large = memory("mem_large", "largemarker", { content: "largemarker " + "x".repeat(1_100_000) });
     const commitHash = r.archive({ memories: [large] });
     expect(await r.call("mem::snapshot-restore", { commitHash })).toMatchObject({ success: true });
@@ -244,7 +246,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("reports index reconciliation failures, flushes stale-entry removals, and permits retry", async () => {
-    const r = setup();
+    const r = await setup();
     await indexRecords([], [memory("mem_retry", "obsoletekeyword")]);
     const save = vi.fn(async () => {});
     setIndexPersistence({ scheduleSave: vi.fn(), save });
@@ -262,7 +264,7 @@ describe("Git snapshot ingestion", () => {
   });
 
   it("embeds replacement records using their restored text", async () => {
-    const r = setup();
+    const r = await setup();
     const vectors = new VectorIndex();
     vectors.add("mem_vector", "memory", new Float32Array([1, 0]));
     setVectorIndex(vectors);

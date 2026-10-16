@@ -4,6 +4,7 @@ import { KV } from "../src/state/schema.js";
 import { pinGraphState, setGraphGenerationListener } from "../src/state/graph-generation.js";
 import { persistGraphDelta, registerGraphFunction } from "../src/functions/graph.js";
 import { persistGraphRecords } from "../src/state/graph-ingestion.js";
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { registerViewerStreamTriggers } from "../src/triggers/viewer-streams.js";
 import { resetViewerCounts } from "../src/state/viewer-counts.js";
 import { setAuditRecordedListener } from "../src/functions/audit.js";
@@ -226,8 +227,9 @@ describe("raw graph ingestion reconciliation", () => {
     expect(await kv.get(KV.graphNodes, "added")).toMatchObject({ id: "added" });
   });
 
-  it("serves a clean committed snapshot while a larger ingestion is still planning its next batch", async () => {
+  it("serves committed index counts while a larger ingestion is still planning its next batch", async () => {
     const { kv, call, intercept } = setup();
+    await initializeGraphIndex(kv, { status: "ready" });
     const entered = deferred();
     const release = deferred();
     intercept(async (id, p) => {
@@ -281,6 +283,7 @@ describe("raw graph ingestion reconciliation", () => {
 
   it("does not cache old clean state while an invalidated journal write is still in flight", async () => {
     const { kv, call, snapshot, intercept } = setup();
+    await initializeGraphIndex(kv, { status: "ready" });
     await persistGraphRecords(kv, [node("before")], [], { mode: "merge" });
     const entered = deferred();
     const release = deferred();
@@ -297,7 +300,7 @@ describe("raw graph ingestion reconciliation", () => {
     const reading = call("mem::graph-stats").then((result) => { observed = result; });
     try {
       await new Promise<void>((done) => setImmediate(done));
-      expect(observed).toMatchObject({ totalNodes: 1 });
+      expect(observed).toMatchObject({ available: false, totalNodes: null });
     } finally {
       release.resolve();
       await Promise.all([failed, reading]);
@@ -307,6 +310,7 @@ describe("raw graph ingestion reconciliation", () => {
     expect(recovered.pendingMutation).toBeUndefined();
     expect(recovered.stats.totalNodes).toBe(2);
     expect(await kv.get(KV.graphNodes, "after")).toMatchObject({ id: "after" });
+    expect(await call("mem::graph-stats")).toMatchObject({ available: true, totalNodes: 2 });
   });
 
   it("matches a raw-record oracle through a deterministic sequence of overlapping mutations", async () => {
