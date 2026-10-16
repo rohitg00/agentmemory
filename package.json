@@ -30,6 +30,8 @@
     "test:skills:packaged": "node scripts/release-gate/skills.mjs",
     "test:openclaw:packaged": "node scripts/release-gate/openclaw.mjs",
     "release:gate": "node scripts/release-gate/run.mjs",
+    "release:prepare": "node scripts/release/publish.mjs prepare",
+    "release:publish": "node scripts/release/publish.mjs publish",
     "skills:gen": "tsx scripts/skills/generate.ts",
     "engine:hashes": "node scripts/engine-hashes.mjs",
     "skills:check": "tsx scripts/skills/generate.ts --check && tsx scripts/skills/check.ts",
@@ -99,6 +101,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
+    "sigstore": "4.1.1",
     "tsdown": "^0.21.10",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",

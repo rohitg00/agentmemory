@@ -1444,7 +1444,7 @@ fi
 | Prometheus / Grafana | iii OTEL + 健康监控 |
 | Custom plugin systems | `iii worker add <name>` |
 
-**238 个源文件 · ~56,000 行代码 · 3,500+ 个测试 · 318 个函数 · 66 个 KV 作用域**,全部基于三种原语。没有 `agentmemory plugin install`。插件系统就是 iii 本身。
+**236 个源文件 · ~56,000 行代码 · 3,500+ 个测试 · 318 个函数 · 66 个 KV 作用域**,全部基于三种原语。没有 `agentmemory plugin install`。插件系统就是 iii 本身。
 
 ---
 

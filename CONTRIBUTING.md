@@ -109,7 +109,13 @@ For startup changes, also run `npm run test:startup:packaged`. It installs the p
 
 For Hermes, OpenClaw or shared skill changes, follow [Native integration tests](docs/native-integration-tests.md). Those gates load plugins and skills from an installed tarball and inspect the native model requests and backend records. Source tests alone do not establish native lifecycle capture or skill discovery.
 
-Then: CHANGELOG section, PR, merge, tag, GitHub release. The `Publish to npm` workflow picks up the release trigger and publishes `@agentmemory/agentmemory`, `@agentmemory/mcp`, and `@agentmemory/fs-watcher` to npm with provenance (`@agentmemory/fs-watcher` versions independently from `integrations/filesystem-watcher/package.json`).
+Then: CHANGELOG section, PR, merge, tag, GitHub release. The `Publish to npm` workflow picks up the release trigger and publishes `@agentmemory/agentmemory` and `@agentmemory/mcp` to npm with provenance. It packs once, runs the release gate with both exact tarballs, checks their hashes again, and publishes those files with lifecycle scripts disabled. It retains the manifest, tarballs and gate logs as workflow artifacts. A failed gate prevents publication.
+
+Manual runs accept a comma-separated selection of `agentmemory`, `mcp`, and `fs-watcher`. The default is `agentmemory,mcp`; `@agentmemory/fs-watcher` versions independently and must be explicitly selected when releasing a new connector version. Its exact packed CLI must pass capture, credential, scope and shutdown checks. An MCP-only run also verifies that the registry's main package is the artifact used in its gate.
+
+Before publishing any selected package, the workflow checks existing versions. An existing version is accepted only when its SHA512 matches the gated tarball and its cryptographically verified SLSA provenance identifies this repository, workflow, ref and source commit. Conflicting or unprovenanced versions fail the run and cannot be overwritten. Only a registry version lookup returning HTTP 404 permits publication; authorization, network and other registry failures never count as absence. After publication, bounded retries allow registry metadata and provenance to propagate, then require the same verification. Reruns can skip only identical, verified artifacts from the same source identity.
+
+These checks do not configure or prove npm publish authorization. Maintainers must separately ensure that each selected package permits this workflow to publish, using its configured trusted publisher or publish token. The workflow retains the existing credential configuration. A successful dry run does not establish that npm will accept a future publication or persist its provenance.
 
 ## Security issues
 
