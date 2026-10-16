@@ -45,6 +45,7 @@ jobs:
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - run: npm run release:gate -- --out "${{ runner.temp }}/release-gate"
       - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
+      - run: npm run test:summary-recovery:packaged -- --skip-build --out "${{ runner.temp }}/summary-recovery-gate"
       - name: Verify bounded graph migration with the packaged CLI
         run: |
           mkdir -p "$RUNNER_TEMP/graph-index-pack"
@@ -58,6 +59,7 @@ jobs:
           path: |
             ${{ runner.temp }}/release-gate
             ${{ runner.temp }}/startup-gate
+            ${{ runner.temp }}/summary-recovery-gate
             ${{ runner.temp }}/graph-index-gate
           if-no-files-found: ignore
           retention-days: 14

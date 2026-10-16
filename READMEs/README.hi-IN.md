@@ -1449,7 +1449,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**240 source files · ~55,000 LOC · 3,600+ tests · 322 functions · 62 KV scopes**, सब कुछ तीन primitives पर। कोई `agentmemory plugin install` नहीं। Plugin system iii स्वयं है।
+**242 source files · ~55,000 LOC · 3,400+ tests · 324 functions · 67 KV scopes**, सब कुछ तीन primitives पर। कोई `agentmemory plugin install` नहीं। Plugin system iii स्वयं है।
 
 ---
 

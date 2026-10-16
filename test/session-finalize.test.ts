@@ -102,6 +102,18 @@ describe("mem::session-finalize", () => {
     expect(await kv.get(KV.config, FINALIZE_DUE_KEY)).toEqual({ s2: nowMs + 2 * MIN });
   });
 
+  it("preserves disabled idle finalization while still draining summary repairs", async () => {
+    vi.stubEnv("AGENTMEMORY_FINALIZE_IDLE_MS", "0");
+    await kv.set(KV.sessions, "s1", session({ updatedAt: new Date(nowMs - 3 * MIN).toISOString() }));
+    await scheduleSessionFinalize(kv as never, "s1", nowMs - 1);
+    const result = await sdk.trigger({ function_id: "mem::session-finalize", payload: { now: nowMs } });
+    expect(result).toMatchObject({ finalized: 0 });
+    expect((await kv.get<Session>(KV.sessions, "s1"))!.status).toBe("active");
+    expect(await kv.get(KV.config, FINALIZE_DUE_KEY)).toEqual({ s1: nowMs - 1 });
+    expect(sdk.triggers).toContainEqual({ function_id: "mem::summary-recover", payload: { now: nowMs } });
+    expect(stoppedTriggers(sdk)).toHaveLength(0);
+  });
+
   it("completes an idle session once its entry is due and publishes the stopped lifecycle", async () => {
     await kv.set(KV.sessions, "s1", session({ updatedAt: new Date(nowMs - 3 * MIN).toISOString() }));
     await scheduleSessionFinalize(kv as never, "s1", nowMs - 1);

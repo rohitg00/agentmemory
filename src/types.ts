@@ -157,6 +157,15 @@ export interface Memory {
   origin?: Origin;
 }
 
+export interface SessionSummaryRepair {
+  sessionId: string;
+  token: string;
+  dueAt: number;
+  attempts: number;
+  compressionCursor?: string;
+  lastError?: "pending" | "no_provider" | "summary_failed" | "compression_pending" | "source_unavailable" | "recovery_failed";
+}
+
 export interface SessionSummary {
   sessionId: string;
   project: string;
@@ -168,6 +177,7 @@ export interface SessionSummary {
   concepts: string[];
   observationCount: number;
   coveredThrough?: string;
+  coveredFingerprint?: string;
 }
 
 export type HookType =

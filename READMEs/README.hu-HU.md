@@ -1446,7 +1446,7 @@ A `/agentmemory/export` emellett elfogadja a `?maxSessions=`-t és a `?offset=`-
 | Prometheus / Grafana | iii OTEL + egészségfigyelő |
 | Egyéni plugin-rendszerek | `iii worker add <name>` |
 
-**240 forrásfájl · ~55,000 LOC · 3,600+ teszt · 322 funkció · 62 KV-hatókör**, mindez három primitíven. Nincs `agentmemory plugin install`. A plugin-rendszer maga az iii.
+**242 forrásfájl · ~55,000 LOC · 3,400+ teszt · 324 funkció · 67 KV-hatókör**, mindez három primitíven. Nincs `agentmemory plugin install`. A plugin-rendszer maga az iii.
 
 ---
 

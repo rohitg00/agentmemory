@@ -26,6 +26,7 @@
     "test:integration": "vitest run test/integration.test.ts",
     "test:all": "vitest run",
     "test:startup:packaged": "node scripts/release-gate/startup.mjs",
+    "test:summary-recovery:packaged": "node scripts/release-gate/summary-recovery.mjs",
     "test:graph-index:packaged": "node scripts/release-gate/graph-index.mjs",
     "test:skills:packaged": "node scripts/release-gate/skills.mjs",
     "test:openclaw:packaged": "node scripts/release-gate/openclaw.mjs",

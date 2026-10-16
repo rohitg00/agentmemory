@@ -731,17 +731,22 @@ async function main() {
   }
 
   const finalizeIdleMs = getFinalizeIdleMs();
-  if (finalizeIdleMs > 0) {
-    const sessionFinalizeTimer = setInterval(async () => {
-      try {
-        await sdk.trigger({ function_id: "mem::session-finalize", payload: {} });
-      } catch (err) {
-        bootLog(`Session finalize failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }, FINALIZE_TICK_MS);
-    sessionFinalizeTimer.unref();
-    bootLog(`Session finalize: idle sessions complete after ${Math.round(finalizeIdleMs / 1000)}s`);
-  }
+  let finalizeRunning = false;
+  const runSessionFinalize = async () => {
+    if (finalizeRunning) return;
+    finalizeRunning = true;
+    try {
+      await sdk.trigger({ function_id: "mem::session-finalize", payload: {} });
+    } catch (err) {
+      bootLog(`Session finalize failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      finalizeRunning = false;
+    }
+  };
+  const sessionFinalizeTimer = setInterval(runSessionFinalize, FINALIZE_TICK_MS);
+  sessionFinalizeTimer.unref();
+  void runSessionFinalize();
+  bootLog(`Session finalize: ${finalizeIdleMs > 0 ? `idle sessions complete after ${Math.round(finalizeIdleMs / 1000)}s` : "idle finalization disabled"}; pending summaries recover at startup and every ${FINALIZE_TICK_MS / 1000}s`);
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {
@@ -766,6 +771,7 @@ async function main() {
     healthMonitor.stop();
     dedupMap.stop();
     capture.stop();
+    clearInterval(sessionFinalizeTimer);
     await settleWithin(graphIndexMigration.stop(), SHUTDOWN_FLUSH_TIMEOUT_MS);
     indexPersistence.stop();
     const viewerClosed = new Promise<void>((resolve) =>
