@@ -1,0 +1,4 @@
+{"role":"user","content":"Fix the login bug","sessionId":"sess-openai","timestamp":"2026-04-17T10:00:00.000Z","cwd":"/Users/alice/project"}
+{"role":"assistant","content":"Let me check the auth module.","tool_calls":[{"id":"call_1","call_id":"call_1","type":"function","function":{"name":"Bash","arguments":"{\"command\":\"cat src/auth.ts\"}"}}],"sessionId":"sess-openai","timestamp":"2026-04-17T10:00:05.000Z"}
+{"role":"tool","tool_call_id":"call_1","content":"export function login() { ... }","sessionId":"sess-openai","timestamp":"2026-04-17T10:00:06.000Z"}
+{"role":"assistant","content":"Found the bug — missing await on the token refresh.","sessionId":"sess-openai","timestamp":"2026-04-17T10:00:10.000Z"}
