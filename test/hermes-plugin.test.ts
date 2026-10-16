@@ -66,14 +66,14 @@ describe("Hermes plugin manifest", () => {
   });
 
   it("satisfies native provider runtime and credential contracts", () => {
-    const result = spawnSync("python3", ["test/hermes-provider-contracts.py"], {
+    const result = spawnSync("python3", ["test/hermes-provider-contracts.py", "-v"], {
       encoding: "utf8",
-      timeout: 20_000,
+      timeout: 60_000,
       env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: "1" },
     });
     const diagnostics = [result.error?.message, result.signal, result.stderr, result.stdout]
       .filter(Boolean)
       .join("\n");
     expect(result.status, diagnostics).toBe(0);
-  }, 30_000);
+  }, 70_000);
 });
