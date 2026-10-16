@@ -1,5 +1,6 @@
 import { pinGraphState } from "../state/graph-generation.js";
 import { persistGraphRecords, validateGraphRecords } from "../state/graph-ingestion.js";
+import { MAX_IMPORT_OBS_PER_SESSION } from "../config.js";
 import type { IIIClient } from "iii-sdk";
 import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type {
@@ -242,7 +243,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       const MAX_SESSIONS = 10_000;
       const MAX_MEMORIES = 50_000;
       const MAX_SUMMARIES = 10_000;
-      const MAX_OBS_PER_SESSION = 5_000;
       const MAX_TOTAL_OBSERVATIONS = 500_000;
       const MAX_ACCESS_LOGS = 50_000;
 
@@ -291,14 +291,18 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       }
 
       let totalObservations = 0;
-      for (const [, obs] of Object.entries(importData.observations)) {
+      for (const [sessionId, obs] of Object.entries(importData.observations)) {
         if (!Array.isArray(obs)) {
           return { success: false, error: "observation values must be arrays" };
         }
-        if (obs.length > MAX_OBS_PER_SESSION) {
+        if (obs.length > MAX_IMPORT_OBS_PER_SESSION) {
           return {
             success: false,
-            error: `Too many observations per session (max ${MAX_OBS_PER_SESSION})`,
+            error:
+              `Too many observations in session ${sessionId}: ${obs.length} ` +
+              `(max ${MAX_IMPORT_OBS_PER_SESSION}). MAX_OBS_PER_SESSION may be ` +
+              `configured above this import ceiling; lower it to at most ` +
+              `${MAX_IMPORT_OBS_PER_SESSION} or split the session before exporting.`,
           };
         }
         totalObservations += obs.length;
