@@ -69,7 +69,8 @@ async function main() {
 	].find((v) => typeof v === "string" && v.length > 0);
 	const sessionId = typeof rawSessionId === "string" ? rawSessionId : "unknown";
 	const cwd = hookCwd(data) || process.cwd();
-	captureObservation(withEventId({
+	const promptId = [data.prompt_id, data.promptId].find((v) => typeof v === "string" && v.length > 0);
+	const body = {
 		hookType: "notification",
 		sessionId,
 		project: resolveProject(cwd),
@@ -80,7 +81,12 @@ async function main() {
 			title: data.title,
 			message: data.message
 		}
-	}, data), OBSERVE_TIMEOUT_MS);
+	};
+	captureObservation(withEventId(body, {}, {
+		...body.data,
+		prompt_id: promptId,
+		agent_id: data.agent_id
+	}, { stable: promptId !== void 0 }), OBSERVE_TIMEOUT_MS);
 	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 main().catch(() => process.exit(0));

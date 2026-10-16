@@ -38,21 +38,24 @@ async function main() {
 
   const cwd = hookCwd(data) || process.cwd();
 
+  const body = {
+    hookType: "subagent_stop",
+    sessionId,
+    project: resolveProject(cwd),
+    cwd,
+    timestamp: new Date().toISOString(),
+    data: {
+      agent_id: agentId,
+      agent_type: agentType,
+      last_message: lastMsg,
+    },
+  };
   void captureObservation(
     withEventId(
-      {
-        hookType: "subagent_stop",
-        sessionId,
-        project: resolveProject(cwd),
-        cwd,
-        timestamp: new Date().toISOString(),
-        data: {
-          agent_id: agentId,
-          agent_type: agentType,
-          last_message: lastMsg,
-        },
-      },
-      data,
+      body,
+      {},
+      { ...body.data, stop_hook_active: data.stop_hook_active === true },
+      { stable: Boolean(data.agent_id) },
     ),
     OBSERVE_TIMEOUT_MS,
   );
