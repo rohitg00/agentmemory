@@ -390,7 +390,8 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
       return new Response("not found", { status: 404 });
     });
     try {
-      await handleToolCall("memory_save", { content: "force-proxy" });
+      const result = await handleToolCall("memory_save", { content: "force-proxy" });
+      expect(JSON.parse(result.content[0].text)).toEqual({ id: "m-1", action: "created" });
       expect(calls.some((u) => u.endsWith("/agentmemory/livez"))).toBe(false);
       expect(calls.some((u) => u.endsWith("/agentmemory/remember"))).toBe(true);
     } finally {
