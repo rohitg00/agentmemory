@@ -314,6 +314,18 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
+      for (const section of ["profiles", ...EXPORT_COLLECTIONS.map(([field]) => field)] as const) {
+        const rows = importData[section];
+        if (rows != null && !Array.isArray(rows)) {
+          return { success: false, error: `${section} must be an array` };
+        }
+      }
+      if ((importData.accessLogs?.length ?? 0) > MAX_ACCESS_LOGS) {
+        return {
+          success: false,
+          error: `Too many access logs (max ${MAX_ACCESS_LOGS})`,
+        };
+      }
 
       const stats = {
         sessions: 0,
@@ -653,15 +665,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         });
       }
       if (importData.accessLogs) {
-        if (!Array.isArray(importData.accessLogs)) {
-          return { success: false, error: "accessLogs must be an array" };
-        }
-        if (importData.accessLogs.length > MAX_ACCESS_LOGS) {
-          return {
-            success: false,
-            error: `Too many access logs (max ${MAX_ACCESS_LOGS})`,
-          };
-        }
         const memoryIds = new Set<string>(
           importData.memories.map((m) => m.id),
         );

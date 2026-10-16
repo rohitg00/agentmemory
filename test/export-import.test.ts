@@ -105,6 +105,10 @@ const testSummary: SessionSummary = {
   observationCount: 1,
 };
 
+const testLesson = { id: "les_1", content: "Validate tokens" };
+
+const testAccessLog = { memoryId: "mem_1", count: 3, lastAt: "2026-02-01T00:00:00Z", recent: [] };
+
 describe("Export/Import Functions", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
@@ -122,6 +126,8 @@ describe("Export/Import Functions", () => {
     await kv.set("mem:obs:ses_1", "obs_1", testObs);
     await kv.set("mem:memories", "mem_1", testMemory);
     await kv.set("mem:summaries", "ses_1", testSummary);
+    await kv.set("mem:lessons", "les_1", testLesson);
+    await kv.set("mem:access", "mem_1", testAccessLog);
   });
 
   it("export produces valid ExportData structure", async () => {
@@ -320,6 +326,39 @@ describe("Export/Import Functions", () => {
     const oldSession = await kv.get("mem:sessions", "ses_1");
     expect(oldSession).toBeNull();
     expect(await kv.get(KV.summaryRepairs, testSession.id)).toBeNull();
+  });
+
+  it.each([
+    { section: "lessons", shape: "an object", value: { les_1: { id: "les_1" } }, error: "lessons must be an array" },
+    { section: "profiles", shape: "a string", value: "ab", error: "profiles must be an array" },
+    { section: "accessLogs", shape: "a string", value: "oops", error: "accessLogs must be an array" },
+    {
+      section: "accessLogs",
+      shape: "over the cap",
+      value: Array.from({ length: 50_001 }, () => ({ memoryId: testMemory.id })),
+      error: "Too many access logs (max 50000)",
+    },
+  ])("replace import leaves the store intact when $section is $shape", async ({ section, value, error }) => {
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      [section]: value,
+    } as unknown as ExportData;
+
+    const result = await sdk
+      .trigger("mem::import", { exportData, strategy: "replace" })
+      .catch((thrown: unknown) => thrown);
+
+    expect(result).not.toBeInstanceOf(Error);
+    expect(result).toMatchObject({ success: false, error });
+    expect(await kv.get(KV.sessions, testSession.id)).toEqual(testSession);
+    expect(await kv.get(KV.memories, testMemory.id)).toEqual(testMemory);
+    expect(await kv.get(KV.lessons, testLesson.id)).toEqual(testLesson);
+    expect(await kv.get(KV.accessLog, testAccessLog.memoryId)).toEqual(testAccessLog);
   });
 
   it("export then import round-trip preserves data", async () => {
