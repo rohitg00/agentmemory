@@ -122,71 +122,62 @@ export class StateKV {
     })
   }
 
-  async set<T = unknown>(scope: string, key: string, value: T): Promise<T> {
+  private async mutate<T>(
+    scope: string,
+    key: string,
+    operation: (resolvedScope: string) => Promise<T>,
+  ): Promise<T> {
     scope = await resolveGraphScope(this, scope)
     await ensureGraphConsistency(this, scope)
-    noteGraphSnapshotWrite(this, scope, key)
-    let result: T
-    try {
-      result = await this.sdk.trigger<{ scope: string; key: string; value: T }, T>({
-        function_id: 'state::set',
-        payload: { scope, key, value },
-      })
-    } finally {
+    const write = async () => {
       noteGraphSnapshotWrite(this, scope, key)
+      try {
+        return await operation(scope)
+      } finally {
+        noteGraphSnapshotWrite(this, scope, key)
+      }
     }
+    const result = this.backend === 'redis'
+      ? await withKeyedLock(`state-update:${scope}\u0000${key}`, write)
+      : await write()
     await notifyGraphGenerationChange(this, scope, key)
     return result
+  }
+
+  async set<T = unknown>(scope: string, key: string, value: T): Promise<T> {
+    return this.mutate(scope, key, (resolvedScope) =>
+      this.sdk.trigger<{ scope: string; key: string; value: T }, T>({
+        function_id: 'state::set',
+        payload: { scope: resolvedScope, key, value },
+      }),
+    )
   }
 
   async update<T = unknown>(scope: string, key: string, ops: UpdateOp[]): Promise<T> {
-    scope = await resolveGraphScope(this, scope)
-    await ensureGraphConsistency(this, scope)
-    noteGraphSnapshotWrite(this, scope, key)
-    if (this.backend === 'redis' && canApplyLocally(ops)) {
-      return withKeyedLock(`state-update:${scope}\u0000${key}`, async () => {
-        // Keep both halves on the scope resolved before acquiring the lock.
-        let result: UpdateResult
-        try {
-          const oldValue = await this.sdk.trigger<{ scope: string; key: string }, unknown>({
-            function_id: 'state::get', payload: { scope, key },
-          })
-          const newValue = applyUpdateOps(oldValue, ops)
-          await this.sdk.trigger({ function_id: 'state::set', payload: { scope, key, value: newValue } })
-          result = { old_value: oldValue, new_value: newValue, errors: [] }
-        } finally {
-          noteGraphSnapshotWrite(this, scope, key)
-        }
-        await notifyGraphGenerationChange(this, scope, key)
+    return this.mutate(scope, key, async (resolvedScope) => {
+      if (this.backend === 'redis' && canApplyLocally(ops)) {
+        const oldValue = await this.sdk.trigger<{ scope: string; key: string }, unknown>({
+          function_id: 'state::get', payload: { scope: resolvedScope, key },
+        })
+        const newValue = applyUpdateOps(oldValue, ops)
+        await this.sdk.trigger({ function_id: 'state::set', payload: { scope: resolvedScope, key, value: newValue } })
+        const result: UpdateResult = { old_value: oldValue, new_value: newValue, errors: [] }
         return result as T
-      })
-    }
-    let result: T
-    try {
-      result = await this.sdk.trigger<{ scope: string; key: string; ops: UpdateOp[] }, T>({
+      }
+      return this.sdk.trigger<{ scope: string; key: string; ops: UpdateOp[] }, T>({
         function_id: 'state::update',
-        payload: { scope, key, ops },
+        payload: { scope: resolvedScope, key, ops },
       })
-    } finally {
-      noteGraphSnapshotWrite(this, scope, key)
-    }
-    await notifyGraphGenerationChange(this, scope, key)
-    return result
+    })
   }
 
   async delete(scope: string, key: string): Promise<void> {
-    scope = await resolveGraphScope(this, scope)
-    await ensureGraphConsistency(this, scope)
-    noteGraphSnapshotWrite(this, scope, key)
-    try {
+    await this.mutate(scope, key, async (resolvedScope) => {
       await this.sdk.trigger<{ scope: string; key: string }, void>({
         function_id: 'state::delete',
-        payload: { scope, key },
+        payload: { scope: resolvedScope, key },
       })
-    } finally {
-      noteGraphSnapshotWrite(this, scope, key)
-    }
-    await notifyGraphGenerationChange(this, scope, key)
+    })
   }
 
   async list<T = unknown>(scope: string): Promise<T[]> {

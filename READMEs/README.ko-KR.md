@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health 모니터 |
 | 커스텀 플러그인 시스템 | `iii worker add <name>` |
 
-**소스 파일 232개 · LOC ~55,000줄 · 테스트 3,300+개 · 함수 312개 · KV 스코프 62개**, 모두 세 가지 프리미티브 위에서 동작합니다. `agentmemory plugin install` 같은 것은 없습니다. 플러그인 시스템은 곧 iii 자체입니다.
+**소스 파일 230개 · LOC ~55,000줄 · 테스트 3,300+개 · 함수 312개 · KV 스코프 62개**, 모두 세 가지 프리미티브 위에서 동작합니다. `agentmemory plugin install` 같은 것은 없습니다. 플러그인 시스템은 곧 iii 자체입니다.
 
 ---
 
