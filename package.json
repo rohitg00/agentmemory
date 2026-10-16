@@ -27,6 +27,8 @@
     "test:all": "vitest run",
     "test:vector-recovery:packaged": "node scripts/release-gate/vector-recovery.mjs",
     "test:startup:packaged": "node scripts/release-gate/startup.mjs",
+    "test:summary-recovery:packaged": "node scripts/release-gate/summary-recovery.mjs",
+    "test:graph-index:packaged": "node scripts/release-gate/graph-index.mjs",
     "test:skills:packaged": "node scripts/release-gate/skills.mjs",
     "test:openclaw:packaged": "node scripts/release-gate/openclaw.mjs",
     "release:gate": "node scripts/release-gate/run.mjs",
@@ -102,7 +104,8 @@
     "tsdown": "^0.21.10",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "ws": "^8.21.0"
   },
   "overrides": {
     "qs": "^6.15.2",

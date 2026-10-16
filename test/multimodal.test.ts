@@ -148,7 +148,6 @@ describe("End-to-End Multimodal Flow", () => {
     const result = await compressCallback({
       observationId: raw.id,
       sessionId: raw.sessionId,
-      raw,
     });
 
     expect(result.success).toBe(true);
@@ -401,6 +400,7 @@ describe("mem::compress image descriptions", () => {
       modality: "image",
       imageData: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
     } as unknown as RawObservation;
+    await store.set(`mem:obs:${raw.sessionId}`, raw.id, raw);
     const result = await handler({ observationId: raw.id, sessionId: raw.sessionId, raw });
     expect(result.success).toBe(true);
     return (await store.get("mem:obs:ses_img_scrub", "obs_img_scrub")) as CompressedObservation;

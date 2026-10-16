@@ -15,14 +15,18 @@ import {
   GraphRetrieval,
   type GraphRetrievalResult,
   type GraphQuery,
+  type GraphObservationAuthorization,
 } from "../functions/graph-retrieval.js";
 import { extractEntitiesFromQuery } from "../functions/query-expansion.js";
 import { rerank } from "./reranker.js";
+import { logger } from "../logger.js";
 
 const RRF_K = 60;
+const GRAPH_BUDGET_MS = 500;
 
 export class HybridSearch {
   private graphRetrieval: GraphRetrieval;
+  private lastGraphTimeoutWarningAt = -Infinity;
 
   constructor(
     private bm25: SearchIndex,
@@ -34,11 +38,11 @@ export class HybridSearch {
     private graphWeight = 0.3,
     private rerankEnabled = process.env.RERANK_ENABLED === "true",
   ) {
-    this.graphRetrieval = new GraphRetrieval(kv, (id) => this.bm25.layerOf(id));
+    this.graphRetrieval = new GraphRetrieval(kv, (id) => this.bm25.layerOf(id), (id) => this.bm25.sessionOf(id));
   }
 
-  async search(query: string, limit = 20, targetLayer: SearchLayer = "all"): Promise<HybridSearchResult[]> {
-    return this.tripleStreamSearch(query, limit, targetLayer, this.graphRetrieval.createQuery());
+  async search(query: string, limit = 20, targetLayer: SearchLayer = "all", authorizeGraph?: GraphObservationAuthorization): Promise<HybridSearchResult[]> {
+    return this.tripleStreamSearch(query, limit, targetLayer, this.graphRetrieval.createQuery(authorizeGraph));
   }
 
   async searchWithExpansion(
@@ -46,6 +50,7 @@ export class HybridSearch {
     limit: number,
     expansion: QueryExpansion,
     targetLayer: SearchLayer = "all",
+    authorizeGraph?: GraphObservationAuthorization,
   ): Promise<HybridSearchResult[]> {
     const allQueries = [
       query,
@@ -58,7 +63,7 @@ export class HybridSearch {
       ...extractEntitiesFromQuery(query),
     ];
 
-    const graphQuery = this.graphRetrieval.createQuery();
+    const graphQuery = this.graphRetrieval.createQuery(authorizeGraph);
     const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
     const resultSets = await Promise.all(
       allQueries.map((q) => this.tripleStreamSearch(q, retrievalLimit, targetLayer, graphQuery, allEntities, false)),
@@ -114,33 +119,10 @@ export class HybridSearch {
       entityHints && entityHints.length > 0
         ? entityHints
         : extractEntitiesFromQuery(query);
-    let graphResults: GraphRetrievalResult[] = [];
-    // Both traversals list every node and edge. At weight 0 their scores are
-    // discarded anyway, so skip the reads rather than pay for them.
-    const graphEnabled = this.graphWeight > 0;
-    if (graphEnabled && entities.length > 0) {
-      try {
-        graphResults = await graphQuery.searchByEntities(
-          entities,
-          2,
-          retrievalLimit,
-          targetLayer,
-        );
-      } catch {
-        // graph search is best-effort
-      }
-    }
-
     const topVectorObs = vectorResults.slice(0, 5).map((r) => r.obsId);
-    if (graphEnabled && topVectorObs.length > 0) {
-      try {
-        const expansionResults =
-          await graphQuery.expandFromChunks(topVectorObs, 1, 5, targetLayer);
-        graphResults = [...graphResults, ...expansionResults];
-      } catch {
-        // expansion is best-effort
-      }
-    }
+    const graphResults = this.graphWeight > 0
+      ? await this.graphResults(graphQuery, entities, topVectorObs, retrievalLimit, targetLayer)
+      : [];
 
     const scores = new Map<
       string,
@@ -257,6 +239,44 @@ export class HybridSearch {
     const enriched = await this.enrichResults(diversified, retrievalDepth);
 
     return applyReranking ? this.rerankResults(query, enriched, limit) : enriched.slice(0, limit);
+  }
+
+  private async graphResults(
+    query: GraphQuery,
+    entities: string[],
+    observations: string[],
+    limit: number,
+    layer: SearchLayer,
+  ): Promise<GraphRetrievalResult[]> {
+    if (!entities.length && !observations.length) return [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const work = Promise.all([
+        entities.length ? query.searchByEntities(entities, 2, limit, layer).catch(() => []) : [],
+        observations.length ? query.expandFromChunks(observations, 1, 5, layer).catch(() => []) : [],
+      ]).then((results) => results.flat());
+      const results = await Promise.race([
+        work,
+        new Promise<GraphRetrievalResult[]>((resolve) => {
+          timer = setTimeout(() => {
+            query.cancel();
+            if (Date.now() - this.lastGraphTimeoutWarningAt >= 60_000) {
+              this.lastGraphTimeoutWarningAt = Date.now();
+              logger.warn("Graph enrichment exceeded its budget; returning keyword and vector results", { budgetMs: GRAPH_BUDGET_MS });
+            }
+            resolve([]);
+          }, GRAPH_BUDGET_MS);
+        }),
+      ]);
+      const diagnostic = query.diagnostics();
+      if ((diagnostic.status !== "ready" || diagnostic.truncated) && Date.now() - this.lastGraphTimeoutWarningAt >= 60_000) {
+        this.lastGraphTimeoutWarningAt = Date.now();
+        logger.warn("Graph enrichment is unavailable or partial", diagnostic);
+      }
+      return results;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   private async rerankResults(query: string, results: HybridSearchResult[], limit: number): Promise<HybridSearchResult[]> {

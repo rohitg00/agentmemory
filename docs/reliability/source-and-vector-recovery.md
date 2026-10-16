@@ -10,6 +10,8 @@ Live compression and imports allocate new source from an 8 MiB session budget af
 
 These locks coordinate one worker process. They do not provide distributed transactions. JSONL imports commit one file at a time, so a rejected later file can leave earlier files imported. Raising the ordinary capture limit of 500 observations does not raise the retained-source allowance; summary data and temporary raw observations have separate storage and response-size requirements.
 
+Failed opt-in model compression keeps a searchable synthetic observation and retryable status. See [compression recovery](compression-recovery.md) for scoped inspection and explicit retries of failed or legacy raw observations.
+
 Retention adds storage and serialization work. It does not enable model compression, inject extra source into ordinary recall, or add a queue. Explicit replay and export responses can be larger and can consume agent context if an agent requests them.
 
 ## First checkpoint and crash window

@@ -3,6 +3,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAllTools, ESSENTIAL_TOOLS } from "../../src/mcp/tools-registry.js";
 import { ADAPTERS } from "../../src/cli/connect/index.js";
+import { collectRestEndpoints } from "./rest-endpoints.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -86,25 +87,7 @@ function tools(): string {
 
 function rest(): string {
   const text = readFileSync(join(SRC, "triggers", "api.ts"), "utf8");
-  const found: { path: string; method: string }[] = [];
-  const re = /api_path:\s*"([^"]+)"/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    const path = m[1];
-    const win = text.slice(Math.max(0, m.index - 140), m.index + 140);
-    const mm = /http_method:\s*"([A-Z]+)"/.exec(win);
-    found.push({ path, method: mm ? mm[1] : "POST" });
-  }
-  // Dedupe on method+path, not path alone: ten paths register both GET and
-  // POST, and a path-only dedupe hid the second method and undercounted the
-  // surface (119 listed vs 130 registered).
-  const seen = new Set<string>();
-  const rows = found
-    .filter((e) => {
-      const key = `${e.method} ${e.path}`;
-      return seen.has(key) ? false : (seen.add(key), true);
-    })
-    .sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+  const rows = collectRestEndpoints(text);
   const lines = [
     `The REST API is the primary surface. All paths are under \`http://localhost:3111\` (override with \`--port\`). Send \`Authorization: Bearer <secret>\`: the value of \`AGENTMEMORY_SECRET\`, or the one generated into \`~/.agentmemory/secret\` on first start when it is unset. Writes must use \`Content-Type: application/json\`.`,
     "",

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { GraphRetrieval } from "../src/functions/graph-retrieval.js";
+import { GraphRetrieval, type GraphObservationAuthorization } from "../src/functions/graph-retrieval.js";
 import { registerExportImportFunction } from "../src/functions/export-import.js";
 import { registerMeshFunction } from "../src/functions/mesh.js";
 import { registerGraphFunction } from "../src/functions/graph.js";
@@ -10,6 +10,8 @@ import { getSearchIndex, registerSearchFunction, setHybridRanker, setVectorIndex
 import { registerSmartSearchFunction } from "../src/functions/smart-search.js";
 import { StateKV, applyUpdateOps } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
+import { indexObservationSession } from "../src/state/obs-index.js";
 import { persistGraphRecords } from "../src/state/graph-ingestion.js";
 import { setGraphGenerationListener } from "../src/state/graph-generation.js";
 import { HybridSearch } from "../src/state/hybrid-search.js";
@@ -25,7 +27,7 @@ const node = (id: string, name = id, sources = [`obs_${id}`]): GraphNode => ({
 });
 const edge = (id: string, from: string, to: string, weight = 0.8): GraphEdge => ({
   id, sourceNodeId: from, targetNodeId: to, type: "related_to", weight,
-  sourceObservationIds: [], createdAt: timestamp,
+  sourceObservationIds: [`obs_${from}`], createdAt: timestamp,
 });
 const observation = (id: string): CompressedObservation => ({
   id, sessionId: "session", timestamp, type: "discovery", title: "React auth", narrative: "React authentication",
@@ -38,10 +40,11 @@ function deferred() {
   return { promise, resolve };
 }
 
-function rig() {
+async function rig() {
   const store = new Map<string, Map<string, unknown>>();
   const handlers = new Map<string, (data: any) => Promise<any>>();
   const lists: string[] = [];
+  const reads: Array<{ scope: string; key: string }> = [];
   let afterList: ((scope: string) => Promise<void>) | undefined;
   const sdk = {
     registerFunction: (id: string, fn: (data: any) => Promise<any>) => handlers.set(id, fn),
@@ -50,7 +53,12 @@ function rig() {
       if (id.startsWith("stream::")) return {};
       if (!id.startsWith("state::")) return handlers.get(id)!(payload);
       const rows = store.get(payload.scope) ?? new Map<string, unknown>();
-      if (id === "state::get") return structuredClone(rows.get(payload.key) ?? null);
+      if (id === "state::get") {
+        reads.push({ scope: payload.scope, key: payload.key });
+        const result = structuredClone(rows.get(payload.key) ?? null);
+        await afterList?.(payload.scope);
+        return result;
+      }
       if (id === "state::list") {
         lists.push(payload.scope);
         const result = structuredClone([...rows.values()]);
@@ -67,14 +75,27 @@ function rig() {
     },
   };
   const kv = new StateKV(sdk as never);
+  await initializeGraphIndex(kv, { status: "ready" });
   registerGraphFunction(sdk as never, kv, { name: "noop" } as never);
   registerExportImportFunction(sdk as never, kv);
   registerMeshFunction(sdk as never, kv);
   return {
-    kv, sdk, lists,
+    kv, sdk, lists, reads,
     call: (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload }),
     intercept: (fn?: typeof afterList) => { afterList = fn; },
+    seedSources: async (nodes: GraphNode[], edges: GraphEdge[] = []) => {
+      for (const row of [...nodes, ...edges]) for (const id of row.sourceObservationIds) {
+        const sessionId = getSearchIndex().sessionOf(id) ?? "session";
+        if (!await kv.get(KV.observations(sessionId), id)) await kv.set(KV.observations(sessionId), id, { ...observation(id), sessionId });
+        await indexObservationSession(kv, id, sessionId);
+      }
+    },
     seed: async (nodes: GraphNode[], edges: GraphEdge[] = []) => {
+      for (const row of [...nodes, ...edges]) for (const id of row.sourceObservationIds) {
+        const sessionId = getSearchIndex().sessionOf(id) ?? "session";
+        if (!await kv.get(KV.observations(sessionId), id)) await kv.set(KV.observations(sessionId), id, { ...observation(id), sessionId });
+        await indexObservationSession(kv, id, sessionId);
+      }
       for (const row of nodes) await kv.set(KV.graphNodes, row.id, row);
       for (const row of edges) await kv.set(KV.graphEdges, row.id, row);
     },
@@ -97,9 +118,10 @@ afterEach(() => {
 
 describe("request graph views", () => {
   it("shares a lazy pinned view across concurrent streams, but never across requests", async () => {
-    const r = rig();
+    const r = await rig();
     await r.seed([node("a", "React"), node("b", "Hooks")], [edge("ab", "a", "b")]);
     const retrieval = new GraphRetrieval(r.kv);
+    r.reads.length = 0;
     const query = retrieval.createQuery();
     expect(graphReads(r.lists)).toEqual([]);
     const [entities, expanded, temporal] = await Promise.all([
@@ -108,13 +130,15 @@ describe("request graph views", () => {
     expect(entities.map((hit) => hit.obsId)).toContain("obs_b");
     expect(expanded.map((hit) => hit.obsId)).toEqual(["obs_b"]);
     expect(temporal.entity?.id).toBe("a");
-    expect(graphReads(r.lists)).toEqual([KV.graphNodes, KV.graphEdges]);
+    expect(graphReads(r.lists)).toEqual([]);
+    const recordReads = () => r.reads.filter((read) => read.key.includes(":record:node:"));
+    expect(recordReads()).toHaveLength(2);
     await retrieval.searchByEntities(["React"]);
-    expect(graphReads(r.lists)).toHaveLength(4);
+    expect(recordReads()).toHaveLength(4);
   });
 
   it("refreshes after writes, updates, deletion and stale markers without a TTL", async () => {
-    const r = rig();
+    const r = await rig();
     const retrieval = new GraphRetrieval(r.kv);
     await r.seed([node("a", "React"), node("b", "Hooks")], [edge("ab", "a", "b")]);
     expect(await retrieval.expandFromChunks(["obs_a"])).toHaveLength(1);
@@ -129,11 +153,11 @@ describe("request graph views", () => {
   });
 
   it("does not mix generations when reset occurs between node and edge reads", async () => {
-    const r = rig();
+    const r = await rig();
     await r.seed([node("a", "React"), node("b", "Hooks")], [edge("ab", "a", "b")]);
     const entered = deferred(); const release = deferred();
     r.intercept(async (scope) => {
-      if (scope === KV.graphNodes) { r.intercept(); entered.resolve(); await release.promise; }
+      if (scope === KV.graphRetrievalData) { r.intercept(); entered.resolve(); await release.promise; }
     });
     const retrieval = new GraphRetrieval(r.kv);
     const pending = retrieval.searchByEntities(["React"]);
@@ -141,27 +165,30 @@ describe("request graph views", () => {
     await r.call("mem::graph-reset");
     await r.seed([node("fresh", "React")]);
     release.resolve();
-    expect((await pending).map((hit) => hit.obsId).sort()).toEqual(["obs_a", "obs_b"]);
+    expect(await pending).toEqual([]);
     expect((await retrieval.searchByEntities(["React"])).map((hit) => hit.obsId)).toEqual(["obs_fresh"]);
   });
 
   it("retries a failed load on the next request while sharing failure within one request", async () => {
-    const r = rig();
+    const r = await rig();
     await r.seed([node("a", "React")]);
-    r.intercept(async () => { throw new Error("unavailable"); });
+    r.reads.length = 0;
+    r.intercept(async (scope) => { if (scope === KV.graphRetrievalControl) throw new Error("unavailable"); });
     const retrieval = new GraphRetrieval(r.kv);
     const query = retrieval.createQuery();
     await expect(query.searchByEntities(["React"])).rejects.toThrow("unavailable");
     await expect(query.expandFromChunks(["obs_a"])).rejects.toThrow("unavailable");
-    expect(graphReads(r.lists)).toHaveLength(1);
+    expect(r.reads.filter((read) => read.scope === KV.graphRetrievalControl)).toHaveLength(1);
+    expect(graphReads(r.lists)).toEqual([]);
     r.intercept();
     expect(await retrieval.searchByEntities(["React"])).toHaveLength(1);
   });
 
   it("keeps stores and layer resolvers separate and skips empty work", async () => {
-    const a = rig(); const b = rig();
+    const a = await rig(); const b = await rig();
     await a.seed([node("a", "React", ["custom_memory", "mem_observation"])]);
     await b.seed([node("b", "React")]);
+    await a.kv.set(KV.memories, "custom_memory", { id: "custom_memory", title: "Saved", content: "Saved", sessionIds: [], isLatest: true });
     const retrieval = new GraphRetrieval(a.kv, (id) => id === "custom_memory" ? "memory" : "observation");
     const query = retrieval.createQuery();
     expect((await query.searchByEntities(["React"], 2, 20, "memory")).map((hit) => hit.obsId)).toEqual(["custom_memory"]);
@@ -177,7 +204,7 @@ describe("request graph views", () => {
 
 describe("graph traversal bounds", () => {
   it("caps matching starts and retains an exact match after many partial matches", async () => {
-    const r = rig();
+    const r = await rig();
     await r.seed([...Array.from({ length: 100 }, (_,i) => node(`partial_${i}`, `auth-${i}`)), node("exact", "auth")]);
     const hits = await new GraphRetrieval(r.kv).searchByEntities(["auth"], 2, 1000);
     expect(hits).toHaveLength(25);
@@ -185,7 +212,7 @@ describe("graph traversal bounds", () => {
   });
 
   it("orders exact names, partial names, and duplicate-name IDs by code units before the start cap", async () => {
-    const r = rig();
+    const r = await rig();
     await r.seed([
       ...["ä", "a", "Z", "😀"].map((id) => node(id, id === "Z" ? "AUTH" : "auth")),
       ...["Ä", "Z", "á", "a", "😀"].map((name) => node(`partial-${name}`, `auth-${name}`)),
@@ -200,7 +227,7 @@ describe("graph traversal bounds", () => {
   });
 
   it("orders chunk-expansion starts by code units rather than host collation", async () => {
-    const r = rig();
+    const r = await rig();
     const ids = ["ä", "a", "Z", "😀"];
     await r.seed([
       ...ids.map((id) => node(id, id, ["seed"])),
@@ -211,7 +238,7 @@ describe("graph traversal bounds", () => {
   });
 
   it("breaks equal-weight adjacency ties by neighbor and edge IDs using code units", async () => {
-    const r = rig();
+    const r = await rig();
     const ids = ["ä", "a", "Z", "😀"];
     await r.seed([node("hub", "Anchor", ["seed"]), ...ids.map((id) => node(id))], [
       ...ids.map((id) => edge(`edge-${id}`, "hub", id)),
@@ -220,11 +247,11 @@ describe("graph traversal bounds", () => {
     ]);
     const hits = await new GraphRetrieval(r.kv).expandFromChunks(["seed"], 1, 10);
     expect(hits.map((hit) => hit.obsId)).toEqual(["obs_Z", "obs_a", "obs_ä", "obs_😀"]);
-    expect(hits[0].graphContext).toContain("--uses-->");
+    expect(hits[0].graphContext).toBe("[graph evidence] React auth");
   });
 
   it("caps chunk expansion starts as well as entity starts", async () => {
-    const r = rig();
+    const r = await rig();
     const starts = Array.from({ length: 100 }, (_, i) => node(`start_${i}`, `source-${i}`, ["seed"]));
     const ends = starts.map((_, i) => node(`end_${i}`));
     await r.seed([...starts, ...ends], starts.map((start, i) => edge(`edge_${i}`, start.id, ends[i].id)));
@@ -234,30 +261,39 @@ describe("graph traversal bounds", () => {
   });
 
   it.each(["entities", "chunks"])("bounds discovered nodes on a wide hub for %s", async (mode) => {
-    const r = rig();
+    const r = await rig();
     const spokes = Array.from({ length: 2500 }, (_, i) => node(`spoke_${i}`));
     await r.seed([node("hub", "Anchor"), ...spokes], spokes.map((spoke, i) => edge(`edge_${i}`, "hub", spoke.id)));
-    const retrieval = new GraphRetrieval(r.kv);
-    const hits = mode === "entities" ? await retrieval.searchByEntities(["Anchor"], 2, 5000) : await retrieval.expandFromChunks(["obs_hub"], 2, 5000);
+    r.reads.length = 0;
+    const query = new GraphRetrieval(r.kv).createQuery();
+    const hits = mode === "entities" ? await query.searchByEntities(["Anchor"], 2, 5000) : await query.expandFromChunks(["obs_hub"], 2, 5000);
     expect(hits.length).toBeGreaterThan(0);
     expect(hits.length).toBeLessThanOrEqual(2000);
-  });
+    expect(query.diagnostics().truncated).toBe(true);
+    expect(r.reads.length).toBeLessThanOrEqual(512);
+    expect(graphReads(r.lists)).toEqual([]);
+  }, 30_000);
 
   it("bounds examined edges even when parallel edges discover very few nodes", async () => {
-    const r = rig();
+    const r = await rig();
     await r.seed([node("hub", "Anchor"), node("a"), node("tail")], [
       ...Array.from({ length: 10_001 }, (_, i) => edge(`parallel_${i}`, "hub", "a", 1)),
       edge("tail", "hub", "tail", 0.1),
     ]);
-    const hits = await new GraphRetrieval(r.kv).searchByEntities(["Anchor"], 2, 100);
+    r.reads.length = 0;
+    const query = new GraphRetrieval(r.kv).createQuery();
+    const hits = await query.searchByEntities(["Anchor"], 2, 100);
     expect(hits.map((hit) => hit.obsId)).toContain("obs_a");
-    expect(hits.map((hit) => hit.obsId)).not.toContain("obs_tail");
-  });
+    expect(query.diagnostics().truncated).toBe(true);
+    expect(r.reads.filter((read) => read.key.includes(":record:edge:")).length).toBeLessThanOrEqual(256);
+    expect(r.reads.length).toBeLessThanOrEqual(512);
+    expect(graphReads(r.lists)).toEqual([]);
+  }, 30_000);
 });
 
 describe("hybrid graph query lifetime", () => {
   it.each(["mem::search", "mem::smart-search"])("retrieves graph-only observations through %s without embeddings and preserves scope", async (handler) => {
-    const r = rig();
+    const r = await rig();
     const index = getSearchIndex();
     const captures = [
       { ...observation("owned"), sessionId: "owned_session", agentId: "agent-a" },
@@ -272,7 +308,7 @@ describe("hybrid graph query lifetime", () => {
     await r.kv.set(KV.sessions, "other_session", { id: "other_session", project: "project-b", cwd: "/other" });
     await r.seed([node("anchor", "GraphAnchor", captures.map((obs) => obs.id))]);
     const hybrid = new HybridSearch(index, null, null, r.kv, 0.4, 0.6, 0.3, false);
-    const rank = (query: string, limit: number, layer?: "all" | "memory" | "observation") => hybrid.search(query, limit, layer);
+    const rank = (query: string, limit: number, layer?: "all" | "memory" | "observation", authorize?: GraphObservationAuthorization) => hybrid.search(query, limit, layer, authorize);
     setHybridRanker(rank);
     registerSearchFunction(r.sdk as never, r.kv);
     registerSmartSearchFunction(r.sdk as never, r.kv, rank);
@@ -289,7 +325,7 @@ describe("hybrid graph query lifetime", () => {
   });
 
   async function hybridRig(weight = 0.3) {
-    const r = rig(); const index = new SearchIndex(); const vectors = new VectorIndex();
+    const r = await rig(); const index = new SearchIndex(); const vectors = new VectorIndex();
     const obs = observation("obs_a"); index.add(obs); vectors.add(obs.id, obs.sessionId, new Float32Array([1, 0]));
     await r.kv.set(KV.observations(obs.sessionId), obs.id, obs);
     await r.seed([node("a", "React"), node("b", "Hooks")], [edge("ab", "a", "b")]);
@@ -304,9 +340,11 @@ describe("hybrid graph query lifetime", () => {
       ? r.hybrid.searchWithExpansion("React auth", 10, { reformulations: ["React", "authentication"], temporalConcretizations: ["recent React"], entityExtractions: ["React"] })
       : r.hybrid.search("React auth", 10);
     expect(await run()).not.toEqual([]);
-    expect(graphReads(r.lists)).toHaveLength(2);
+    expect(graphReads(r.lists)).toEqual([]);
+    const readsBefore = r.reads.filter((read) => read.scope === KV.graphRetrievalControl).length;
     await run();
-    expect(graphReads(r.lists)).toHaveLength(4);
+    expect(r.reads.filter((read) => read.scope === KV.graphRetrievalControl).length).toBeGreaterThan(readsBefore);
+    expect(graphReads(r.lists)).toEqual([]);
   });
 
   it("does not read or pin graph state when graph weight is zero, including expansion", async () => {
@@ -321,12 +359,13 @@ describe("hybrid graph query lifetime", () => {
 
 describe("graph mutations between search requests", () => {
   it.each(["import", "mesh"])("sees %s changes without a stale warmed view", async (mode) => {
-    const r = rig();
+    const r = await rig();
     const retrieval = new GraphRetrieval(r.kv);
     await r.call("mem::graph-reset");
     expect(await retrieval.searchByEntities(["React"])).toEqual([]);
     const graphNodes = [node("a", "React"), node("b", "Hooks")];
     const graphEdges = [edge("ab", "a", "b")];
+    await r.seedSources(graphNodes, graphEdges);
     const result = mode === "import"
       ? await r.call("mem::import", { exportData: { version: "0.9.30", exportedAt: timestamp, sessions: [], observations: {}, memories: [], summaries: [], graphNodes, graphEdges } })
       : await r.call("mem::mesh-receive", { graphNodes, graphEdges });
@@ -337,8 +376,9 @@ describe("graph mutations between search requests", () => {
   });
 
   it("refreshes the same retrieval instance after snapshot restoration and reset", async () => {
-    const r = rig(); const dir = mkdtempSync(join(process.cwd(), ".graph-query-snapshot-")); dirs.push(dir);
+    const r = await rig(); const dir = mkdtempSync(join(process.cwd(), ".graph-query-snapshot-")); dirs.push(dir);
     registerSnapshotFunction(r.sdk as never, r.kv, dir);
+    await r.seedSources([node("a", "React"), node("b", "Hooks")], [edge("ab", "a", "b")]);
     await persistGraphRecords(r.kv, [node("a", "React"), node("b", "Hooks")], [edge("ab", "a", "b")]);
     const saved = await r.call("mem::snapshot-create"); expect(saved.success).toBe(true);
     const retrieval = new GraphRetrieval(r.kv);

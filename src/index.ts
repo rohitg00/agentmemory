@@ -81,6 +81,7 @@ import { registerExportImportFunction } from "./functions/export-import.js";
 import { registerEnrichFunction } from "./functions/enrich.js";
 import { registerClaudeBridgeFunction } from "./functions/claude-bridge.js";
 import { registerGraphFunction } from "./functions/graph.js";
+import { registerGraphIndexMigrationFunctions } from "./state/graph-index-migration.js";
 import { GRAPH_COMPACT_BOOT_DELAY_MS, runGraphCompactOnBoot, setGraphCompactBootDisabled } from "./functions/graph-compact-boot.js";
 import { registerGraphImportFunction } from "./functions/graph-import.js";
 import { registerConsolidationPipelineFunction } from "./functions/consolidation-pipeline.js";
@@ -321,6 +322,7 @@ async function main() {
   }
 
   registerGraphFunction(sdk, kv, provider);
+  const graphIndexMigration = registerGraphIndexMigrationFunctions(sdk, kv);
   registerGraphImportFunction(sdk, kv);
   bootLog(
     `Knowledge graph: structural extraction on (LLM relations ${isGraphExtractionEnabled() ? "enabled" : "off"})`,
@@ -434,8 +436,8 @@ async function main() {
     graphWeight,
   );
 
-  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer) =>
-    hybridSearch.search(query, limit, targetLayer);
+  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3]) =>
+    hybridSearch.search(query, limit, targetLayer, authorizeGraph);
   registerSmartSearchFunction(sdk, kv, hybridRanker);
   setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);
@@ -601,7 +603,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 138 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 143 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -634,6 +636,10 @@ async function main() {
     secret,
     config.restPort,
   );
+
+  void graphIndexMigration.resumeOnBoot().catch(() => {
+    bootWarn("Graph index migration could not resume. Run agentmemory graph-index status for recovery instructions.");
+  });
 
   if (isGraphCompactOnBootEnabled()) {
     const graphCompactTimer = setTimeout(() => {
@@ -717,17 +723,22 @@ async function main() {
   }
 
   const finalizeIdleMs = getFinalizeIdleMs();
-  if (finalizeIdleMs > 0) {
-    const sessionFinalizeTimer = setInterval(async () => {
-      try {
-        await sdk.trigger({ function_id: "mem::session-finalize", payload: {} });
-      } catch (err) {
-        bootLog(`Session finalize failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }, FINALIZE_TICK_MS);
-    sessionFinalizeTimer.unref();
-    bootLog(`Session finalize: idle sessions complete after ${Math.round(finalizeIdleMs / 1000)}s`);
-  }
+  let finalizeRunning = false;
+  const runSessionFinalize = async () => {
+    if (finalizeRunning) return;
+    finalizeRunning = true;
+    try {
+      await sdk.trigger({ function_id: "mem::session-finalize", payload: {} });
+    } catch (err) {
+      bootLog(`Session finalize failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      finalizeRunning = false;
+    }
+  };
+  const sessionFinalizeTimer = setInterval(runSessionFinalize, FINALIZE_TICK_MS);
+  sessionFinalizeTimer.unref();
+  void runSessionFinalize();
+  bootLog(`Session finalize: ${finalizeIdleMs > 0 ? `idle sessions complete after ${Math.round(finalizeIdleMs / 1000)}s` : "idle finalization disabled"}; pending summaries recover at startup and every ${FINALIZE_TICK_MS / 1000}s`);
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {
@@ -752,6 +763,8 @@ async function main() {
     healthMonitor.stop();
     dedupMap.stop();
     capture.stop();
+    clearInterval(sessionFinalizeTimer);
+    await settleWithin(graphIndexMigration.stop(), SHUTDOWN_FLUSH_TIMEOUT_MS);
     indexPersistence.stop();
     const viewerClosed = new Promise<void>((resolve) =>
       viewerServer.close(() => resolve()),

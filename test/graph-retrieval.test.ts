@@ -1,8 +1,11 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { GraphRetrieval } from "../src/functions/graph-retrieval.js";
+import { getGraphIndexStatus, initializeGraphIndex, reconcileGraphIndexRecord } from "../src/state/graph-retrieval-index.js";
+import { indexObservationSession } from "../src/state/obs-index.js";
+import { KV } from "../src/state/schema.js";
 import type { GraphNode, GraphEdge } from "../src/types.js";
 
-function mockKV(
+async function mockKV(
   nodes: GraphNode[] = [],
   edges: GraphEdge[] = [],
 ) {
@@ -15,7 +18,7 @@ function mockKV(
   for (const e of edges) edgesMap.set(e.id, e);
   store.set("mem:graph:edges", edgesMap);
 
-  return {
+  const kv = {
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
     },
@@ -27,11 +30,16 @@ function mockKV(
     delete: async (scope: string, key: string): Promise<void> => {
       store.get(scope)?.delete(key);
     },
-    list: async <T>(scope: string): Promise<T[]> => {
-      const entries = store.get(scope);
-      return entries ? (Array.from(entries.values()) as T[]) : [];
-    },
+    list: vi.fn(async <T>(_scope: string): Promise<T[]> => { throw new Error("Whole-store listing is forbidden during retrieval"); }),
   };
+  await initializeGraphIndex(kv as never, { status: "ready" });
+  for (const node of nodes) await reconcileGraphIndexRecord(kv as never, "node", node.id, node);
+  for (const edge of edges) await reconcileGraphIndexRecord(kv as never, "edge", edge.id, edge);
+  for (const row of [...nodes, ...edges]) for (const id of row.sourceObservationIds) {
+    await indexObservationSession(kv as never, id, "session");
+    await kv.set(KV.observations("session"), id, { id, sessionId: "session", title: `Evidence ${id}`, facts: [], narrative: "verified source", concepts: [], files: [] });
+  }
+  return kv;
 }
 
 function makeNode(
@@ -76,7 +84,7 @@ describe("GraphRetrieval", () => {
       makeNode("n1", "React", "library", ["obs_1"]),
       makeNode("n2", "Vue", "library", ["obs_2"]),
     ];
-    const kv = mockKV(nodes, []);
+    const kv = await mockKV(nodes, []);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.searchByEntities(["React"]);
@@ -86,7 +94,7 @@ describe("GraphRetrieval", () => {
 
   it("finds entities by partial name match", async () => {
     const nodes = [makeNode("n1", "auth-middleware", "function", ["obs_1"])];
-    const kv = mockKV(nodes, []);
+    const kv = await mockKV(nodes, []);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.searchByEntities(["auth"]);
@@ -99,7 +107,7 @@ describe("GraphRetrieval", () => {
       makeNode("n2", "Component", "concept", ["obs_2"]),
     ];
     const edges = [makeEdge("e1", "n1", "n2", "uses")];
-    const kv = mockKV(nodes, edges);
+    const kv = await mockKV(nodes, edges);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.searchByEntities(["React"], 2);
@@ -109,7 +117,7 @@ describe("GraphRetrieval", () => {
   });
 
   it("returns empty for no matches", async () => {
-    const kv = mockKV([], []);
+    const kv = await mockKV([], []);
     const retrieval = new GraphRetrieval(kv as never);
     const results = await retrieval.searchByEntities(["nonexistent"]);
     expect(results).toEqual([]);
@@ -121,7 +129,7 @@ describe("GraphRetrieval", () => {
       makeNode("n2", "jwt", "concept", ["obs_2"]),
     ];
     const edges = [makeEdge("e1", "n1", "n2", "uses")];
-    const kv = mockKV(nodes, edges);
+    const kv = await mockKV(nodes, edges);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.expandFromChunks(["obs_1"]);
@@ -131,7 +139,7 @@ describe("GraphRetrieval", () => {
 
   it("does not duplicate already-seen observations in expansion", async () => {
     const nodes = [makeNode("n1", "file.ts", "file", ["obs_1", "obs_2"])];
-    const kv = mockKV(nodes, []);
+    const kv = await mockKV(nodes, []);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.expandFromChunks(["obs_1"]);
@@ -149,7 +157,7 @@ describe("GraphRetrieval", () => {
         isLatest: true,
       },
     ];
-    const kv = mockKV(nodes, edges);
+    const kv = await mockKV(nodes, edges);
     const retrieval = new GraphRetrieval(kv as never);
 
     const result = await retrieval.temporalQuery("Alice");
@@ -159,7 +167,7 @@ describe("GraphRetrieval", () => {
   });
 
   it("returns null entity for unknown name", async () => {
-    const kv = mockKV([], []);
+    const kv = await mockKV([], []);
     const retrieval = new GraphRetrieval(kv as never);
     const result = await retrieval.temporalQuery("Unknown");
     expect(result.entity).toBeNull();
@@ -175,7 +183,7 @@ describe("GraphRetrieval", () => {
       makeEdge("e1", "n1", "n2", "uses", 0.9),
       makeEdge("e2", "n2", "n3", "related_to", 0.8),
     ];
-    const kv = mockKV(nodes, edges);
+    const kv = await mockKV(nodes, edges);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.searchByEntities(["React"], 3);
@@ -199,7 +207,7 @@ describe("GraphRetrieval", () => {
       makeEdge("e_strong_a", "n1", "n2", "related_to", 0.9),
       makeEdge("e_strong_b", "n2", "n3", "related_to", 0.9),
     ];
-    const kv = mockKV(nodes, edges);
+    const kv = await mockKV(nodes, edges);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.searchByEntities(["Start"], 3);
@@ -208,7 +216,8 @@ describe("GraphRetrieval", () => {
     // Path is [Start → Mid → End] (length 3) — Dijkstra picked the
     // chain of two strong edges over the direct weak one.
     expect(endResult!.pathLength).toBe(3);
-    expect(endResult!.graphContext).toContain("Mid");
+    expect(endResult!.graphContext).toContain("Evidence obs_end");
+    expect(endResult!.graphContext).not.toContain("Mid");
   });
 
   it("handles disconnected nodes without crashing", async () => {
@@ -219,7 +228,7 @@ describe("GraphRetrieval", () => {
       makeNode("n3", "Lonely", "concept", ["obs_lonely"]),
     ];
     const edges = [makeEdge("e1", "n1", "n2", "related_to", 0.7)];
-    const kv = mockKV(nodes, edges);
+    const kv = await mockKV(nodes, edges);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.searchByEntities(["A"], 5);
@@ -237,7 +246,7 @@ describe("GraphRetrieval", () => {
     // floor at 0.01 means traversal completes with a very high cost
     // rather than throwing or producing Infinity.
     const edges = [makeEdge("e1", "n1", "n2", "related_to", 0)];
-    const kv = mockKV(nodes, edges);
+    const kv = await mockKV(nodes, edges);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.searchByEntities(["Anchor"], 2);
@@ -252,7 +261,7 @@ describe("GraphRetrieval", () => {
       makeNode("n2", "Hook", "concept", ["obs_neighbor"]),
     ];
     const edges = [makeEdge("e1", "n1", "n2", "uses", 0.8)];
-    const kv = mockKV(nodes, edges);
+    const kv = await mockKV(nodes, edges);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.searchByEntities(["React"], 2);
@@ -276,11 +285,175 @@ describe("GraphRetrieval", () => {
       makeEdge("e2", "n2", "n3", "related_to", 0.8),
       makeEdge("e3", "n3", "n4", "related_to", 0.8),
     ];
-    const kv = mockKV(nodes, edges);
+    const kv = await mockKV(nodes, edges);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.searchByEntities(["Start"], 2);
     expect(results.find((r) => r.obsId === "obs_3")).toBeDefined();
     expect(results.find((r) => r.obsId === "obs_4")).toBeUndefined();
   });
+
+  it("preserves exact-match observations when a neighbor has oversized legacy provenance", async () => {
+    const kv = await mockKV([
+      makeNode("root", "Cobalt", "concept", ["exact"]),
+      makeNode("neighbor", "Neighbor", "concept", Array.from({ length: 10_001 }, (_, i) => `related_${i}`)),
+    ], [makeEdge("edge", "root", "neighbor")]);
+    const results = await new GraphRetrieval(kv as never).searchByEntities(["Cobalt"]);
+    expect(results[0]).toMatchObject({ obsId: "exact", score: 1, pathLength: 0 });
+    expect(results).toHaveLength(20);
+  });
+
+  it("bounds graph context from oversized imported properties and edge reasoning", async () => {
+    const neighbor = makeNode("neighbor", "Neighbor", "concept", ["related"]);
+    neighbor.properties = Object.fromEntries(Array.from({ length: 10_000 }, (_, i) => [`property_${i}`, "x".repeat(1000)]));
+    const edge = { ...makeEdge("edge", "root", "neighbor"), context: { reasoning: "y".repeat(20_000) } };
+    const kv = await mockKV([makeNode("root", "Cobalt", "concept", ["exact"]), neighbor], [edge]);
+    const results = await new GraphRetrieval(kv as never).searchByEntities(["Cobalt"]);
+    const related = results.find((result) => result.obsId === "related")!;
+    expect(related.graphContext).toBe("[graph evidence] Evidence related");
+    expect(related.graphContext).not.toContain("property_0=");
+    expect(related.graphContext.length).toBeLessThanOrEqual(4096);
+  });
+
+  it("keeps graph hits when imported optional reasoning is not text", async () => {
+    const edge = { ...makeEdge("edge", "root", "neighbor"), context: { reasoning: 42 } };
+    const kv = await mockKV([
+      makeNode("root", "Cobalt", "concept", ["exact"]),
+      makeNode("neighbor", "Neighbor", "concept", ["related"]),
+    ], [edge as unknown as GraphEdge]);
+    const results = await new GraphRetrieval(kv as never).searchByEntities(["Cobalt"]);
+    expect(results.map((result) => result.obsId)).toEqual(["exact", "related"]);
+  });
+});
+
+
+describe("bounded graph index reads", () => {
+  it("reports incomplete projections when omitted searchable text produces no matches", async () => {
+    const source = { ...makeNode("large", "Anchor"), properties: { description: "x".repeat(512) + "遗漏" } };
+    const kv = await mockKV([source]);
+    const query = new GraphRetrieval(kv as never).createQuery();
+    expect(await query.searchByEntities(["遗漏"])).toEqual([]);
+    expect(query.diagnostics()).toMatchObject({ status: "ready", truncated: true });
+    expect(kv.list).not.toHaveBeenCalled();
+  });
+
+  it("requires explicit migration for legacy rows without enumerating them", async () => {
+    const list = vi.fn(async () => { throw new Error("unbounded"); });
+    const graph = new GraphRetrieval({ get: async () => null, list } as never).createQuery();
+    expect(await graph.searchByEntities(["React"])).toEqual([]);
+    expect(graph.diagnostics().status).not.toBe("ready");
+    expect(list).not.toHaveBeenCalled();
+  });
+
+  it("matches Unicode, short names and duplicate names through bounded postings", async () => {
+    const kv = await mockKV([
+      makeNode("a", "数据库", "concept", ["one"]), makeNode("b", "数据库", "concept", ["two"]),
+      makeNode("c", "R", "concept", ["three"]), makeNode("d", "ＦＯＯ", "concept", ["four"]),
+    ]);
+    const retrieval = new GraphRetrieval(kv as never);
+    expect((await retrieval.searchByEntities(["数据"])).map((hit) => hit.obsId)).toEqual(["one", "two"]);
+    expect((await retrieval.searchByEntities(["R"])).map((hit) => hit.obsId)).toContain("three");
+    expect((await retrieval.searchByEntities(["foo"])).map((hit) => hit.obsId)).toContain("four");
+    expect(kv.list).not.toHaveBeenCalled();
+  });
+
+  it("excludes forgotten sources and avoids leaking properties from mixed provenance", async () => {
+    const root = makeNode("root", "Cobalt", "concept", ["private", "public"]);
+    root.properties = { secret: "do not disclose" };
+    const kv = await mockKV([root, makeNode("neighbor", "SecretName", "concept", ["forgotten"])], [makeEdge("edge", "root", "neighbor")]);
+    await kv.delete(KV.observations("session"), "forgotten");
+    const query = new GraphRetrieval(kv as never).createQuery((record) => record.id !== "private");
+    expect(await query.searchByEntities(["Cobalt"])).toEqual([
+      expect.objectContaining({ obsId: "public", graphContext: "[graph evidence] Evidence public" }),
+    ]);
+  });
+
+  it("excludes superseded edges and missing or stale neighbors", async () => {
+    const kv = await mockKV([
+      makeNode("root", "Cobalt", "concept", ["root"]),
+      makeNode("old", "Old", "concept", ["old"]),
+      { ...makeNode("stale", "Stale", "concept", ["stale"]), stale: true },
+    ], [
+      { ...makeEdge("old", "root", "old"), isLatest: false },
+      makeEdge("stale", "root", "stale"), makeEdge("missing", "root", "missing"), makeEdge("self", "root", "root"),
+    ]);
+    expect((await new GraphRetrieval(kv as never).searchByEntities(["Cobalt"])).map((hit) => hit.obsId)).toEqual(["root"]);
+  });
+
+  it("retains a more expensive shallow route needed to reach a node within the depth limit", async () => {
+    const kv = await mockKV([
+      makeNode("a", "Start", "concept", ["a"]), makeNode("b", "Middle", "concept", ["b"]),
+      makeNode("c", "Junction", "concept", ["c"]), makeNode("d", "End", "concept", ["d"]),
+    ], [makeEdge("ac", "a", "c", "related_to", 0.1), makeEdge("ab", "a", "b", "related_to", 1),
+      makeEdge("bc", "b", "c", "related_to", 1), makeEdge("cd", "c", "d", "related_to", 1)]);
+    const results = await new GraphRetrieval(kv as never).searchByEntities(["Start"], 2);
+    expect(results.find((hit) => hit.obsId === "d")?.pathLength).toBe(3);
+  });
+
+  it("shares bounded work across repeated operations and reports partial high degree", async () => {
+    const nodes = [makeNode("root", "Cobalt", "concept", ["root"]), ...Array.from({ length: 180 }, (_, i) => makeNode(`n${i}`, `Other ${i}`, "concept", [`o${i}`]))];
+    const kv = await mockKV(nodes, nodes.slice(1).map((node, i) => makeEdge(`e${i}`, "root", node.id)));
+    const get = vi.spyOn(kv, "get");
+    const query = new GraphRetrieval(kv as never).createQuery();
+    const [a, b] = await Promise.all([query.searchByEntities(["Cobalt"]), query.searchByEntities(["Cobalt"])]);
+    expect(a).toEqual(b);
+    expect(a.length).toBeGreaterThan(0);
+    expect(query.diagnostics().truncated).toBe(true);
+    expect(get.mock.calls.length).toBeLessThanOrEqual(520);
+    expect(kv.list).not.toHaveBeenCalled();
+  });
+});
+
+it("discards results after the graph revision changes during an awaited source read", async () => {
+  const root = makeNode("root", "Cobalt", "concept", ["root"]);
+  const kv = await mockKV([root]);
+  const get = kv.get;
+  let changed = false;
+  vi.spyOn(kv, "get").mockImplementation(async (scope, key) => {
+    const value = await get(scope, key);
+    if (!changed && scope === KV.observations("session")) {
+      changed = true;
+      await reconcileGraphIndexRecord(kv as never, "node", root.id, { ...root, name: "Renamed" });
+    }
+    return value;
+  });
+  const query = new GraphRetrieval(kv as never).createQuery();
+  expect(await query.searchByEntities(["Cobalt"])).toEqual([]);
+  expect(query.diagnostics().status).toBe("changed");
+});
+
+it("rechecks canonical evidence before exposing a result after forget", async () => {
+  const kv = await mockKV([makeNode("root", "Cobalt", "concept", ["root"])]);
+  const get = kv.get;
+  vi.spyOn(kv, "get").mockImplementation(async (scope, key) => {
+    const value = await get(scope, key);
+    if (scope === KV.observations("session")) await kv.delete(scope, key);
+    return value;
+  });
+  expect(await new GraphRetrieval(kv as never).searchByEntities(["Cobalt"])).toEqual([]);
+});
+
+
+it("matches a contained node name when the query begins with a different Unicode character", async () => {
+  const kv = await mockKV([makeNode("node", "React", "library", ["source"])]);
+  expect((await new GraphRetrieval(kv as never).searchByEntities(["  Using React  "])).map((hit) => hit.obsId)).toEqual(["source"]);
+});
+
+
+it("reports dirty index status without repairing or listing during retrieval", async () => {
+  const kv = await mockKV([makeNode("root", "Cobalt", "concept", ["root"])]);
+  const control = await getGraphIndexStatus(kv as never);
+  await kv.set(KV.graphRetrievalControl, "current", { ...control, pending: { kind: "node", id: "root" } });
+  const query = new GraphRetrieval(kv as never).createQuery();
+  expect(await query.searchByEntities(["Cobalt"])).toEqual([]);
+  expect(query.diagnostics().status).toBe("dirty");
+  expect(kv.list).not.toHaveBeenCalled();
+});
+
+it("does not replay cached operations after the caller cancels its query", async () => {
+  const kv = await mockKV([makeNode("root", "Cobalt", "concept", ["root"])]);
+  const query = new GraphRetrieval(kv as never).createQuery();
+  expect(await query.searchByEntities(["Cobalt"])).toHaveLength(1);
+  query.cancel();
+  await expect(query.searchByEntities(["Cobalt"])).rejects.toThrow();
 });
