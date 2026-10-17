@@ -3184,10 +3184,13 @@ export function registerApiTriggers(
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const listQuery = parseListQuery(req.query_params);
       const result = await sdk.trigger({ function_id: "mem::action-list", payload: {
         status: req.query_params?.["status"],
         project: req.query_params?.["project"],
         parentId: req.query_params?.["parentId"],
+        limit: listQuery.limit,
+        cursor: listQuery.cursor,
       } });
       return { status_code: 200, body: result };
     },
