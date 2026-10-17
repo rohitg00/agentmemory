@@ -185,3 +185,44 @@ describe("JSONL observation write batching", () => {
     }
   });
 });
+
+describe("JSONL re-import", () => {
+  it("overwrites the same rows and counts only new observations", async () => {
+    const folder = mkdtempSync(join(__dirname, "replay-reimport-"));
+    process.env.AGENTMEMORY_IMPORT_ROOT = folder;
+    const path = join(folder, "session.jsonl");
+    const sessionId = "reimport-session";
+    const line = (i: number) => JSON.stringify({
+      type: "user", uuid: `entry-${i}`, sessionId, timestamp: "2026-09-30T00:00:00Z",
+      message: { role: "user", content: `record ${i}` },
+    });
+    const store = new Map<string, Map<string, unknown>>();
+    const kv = {
+      get: async (bucket: string, key: string) => store.get(bucket)?.get(key) ?? null,
+      list: async (bucket: string) => Array.from(store.get(bucket)?.values() ?? []),
+      set: async (bucket: string, key: string, value: unknown) => {
+        if (!store.has(bucket)) store.set(bucket, new Map());
+        store.get(bucket)!.set(key, value);
+        return value;
+      },
+    };
+    let importJsonl: (data: { path: string }) => Promise<unknown> = async () => undefined;
+    const sdk = {
+      registerFunction: (id: string, handler: typeof importJsonl) => {
+        if (id === "mem::replay::import-jsonl") importJsonl = handler;
+      },
+    };
+    registerReplayFunctions(sdk as never, kv as never);
+    try {
+      writeFileSync(path, [0, 1, 2].map(line).join("\n"));
+      expect(await importJsonl({ path })).toMatchObject({ success: true, observations: 3 });
+      expect(await importJsonl({ path })).toMatchObject({ success: true, observations: 0 });
+      writeFileSync(path, [0, 1, 2, 3].map(line).join("\n"));
+      expect(await importJsonl({ path })).toMatchObject({ success: true, observations: 1 });
+      expect(store.get(KV.observations(sessionId))?.size).toBe(4);
+      expect((store.get(KV.sessions)?.get(sessionId) as { observationCount: number }).observationCount).toBe(4);
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
+  });
+});
