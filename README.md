@@ -1,4 +1,6 @@
 <p align="center">
+
+[![Deploy to Railyard](https://app.railyard.run/deploy/badge)](https://app.railyard.run/deploy?repo=https://github.com/rohitg00/agentmemory)
   <img src="assets/banner.png" alt="agentmemory: persistent memory for AI coding agents" width="720" />
 </p>
 
