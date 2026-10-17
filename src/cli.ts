@@ -130,7 +130,7 @@ const IS_RESET = args.includes("--reset");
 // (getRestPort/getBaseUrl/getStreamPort/getEnginePort) or the --port /
 // --instance / --tools handlers below. Only-if-unset, so a real
 // process.env value — including one just set by a CLI flag — still wins.
-hydrateProcessEnvFromFile();
+const shellEnv = hydrateProcessEnvFromFile();
 
 // --version / -V early exit. Print VERSION + exit before any side effects
 // (engine boot, env load, dir mkdir). `-v` is taken by --verbose so we
@@ -2514,6 +2514,7 @@ function buildDoctorEffects(): DoctorEffects {
         return {};
       }
     },
+    processEnv: () => shellEnv,
     pidfileExists: () => existsSync(enginePidfilePath()),
     pidfilePidIsAlive: () => {
       const pid = readEnginePidfile();

@@ -43,7 +43,11 @@ function loadEnvFile(): Record<string, string> {
     envFileCache = {};
     return envFileCache;
   }
-  const content = readFileSync(ENV_FILE, "utf-8");
+  envFileCache = parseEnvContent(readFileSync(ENV_FILE, "utf-8"));
+  return envFileCache;
+}
+
+export function parseEnvContent(content: string): Record<string, string> {
   const vars: Record<string, string> = {};
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
@@ -62,8 +66,7 @@ function loadEnvFile(): Record<string, string> {
     }
     vars[key] = val;
   }
-  envFileCache = vars;
-  return envFileCache;
+  return vars;
 }
 
 // Test hook: clears the memoized .env so the next loadEnvFile() re-reads disk
@@ -84,10 +87,14 @@ function hasRealValue(v: string | undefined): v is string {
 // ignored by them. Copy the file's vars into process.env, but only when the
 // key is currently unset so a real process.env value still wins (this
 // preserves the {...fileEnv, ...process.env} precedence getMergedEnv uses).
-export function hydrateProcessEnvFromFile(): void {
+// Returns process.env from before the copy: the hydrated values go stale once
+// the file is edited, so a caller that re-reads the file merges over these.
+export function hydrateProcessEnvFromFile(): Record<string, string | undefined> {
+  const beforeHydration = { ...process.env };
   for (const [k, v] of Object.entries(loadEnvFile())) {
     if (process.env[k] === undefined) process.env[k] = v;
   }
+  return beforeHydration;
 }
 
 // Warn once when a configured model is in the premium tier and likely to burn
