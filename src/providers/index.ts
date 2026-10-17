@@ -5,6 +5,7 @@ import type {
 } from "../types.js";
 import { AgentSDKProvider } from "./agent-sdk.js";
 import { AnthropicProvider } from "./anthropic.js";
+import { CheaperInferenceProvider } from "./cheaperinference.js";
 import { MinimaxProvider } from "./minimax.js";
 import { NoopProvider } from "./noop.js";
 import { OpenAIProvider } from "./openai.js";
@@ -35,6 +36,8 @@ function defaultModelFor(providerType: ProviderConfig["provider"]): string {
       return getEnvVar("GEMINI_MODEL") || "gemini-3.7-flash";
     case "openrouter":
       return getEnvVar("OPENROUTER_MODEL") || "anthropic/claude-sonnet-5";
+    case "cheaperinference":
+      return getEnvVar("CHEAPER_INFERENCE_MODEL") || "gpt-5.4-mini";
     case "minimax":
       return getEnvVar("MINIMAX_MODEL") || "MiniMax-M3";
     case "agent-sdk":
@@ -114,6 +117,12 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
         config.model,
         config.maxTokens,
         "https://openrouter.ai/api/v1/chat/completions",
+      );
+    case "cheaperinference":
+      return new CheaperInferenceProvider(
+        requireEnvVar("CHEAPER_INFERENCE_API_KEY"),
+        config.model,
+        config.maxTokens,
       );
     case "openai": {
       const openaiKey = getEnvVar("OPENAI_API_KEY");
