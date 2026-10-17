@@ -15,9 +15,13 @@ function fmt(level: string, msg: string, fields: Fields): string {
 
 function emit(level: string, msg: string, fields: Fields): void {
   try {
-    process.stderr.write(fmt(level, msg, fields) + "\n");
+    const line = fmt(level, msg, fields) + "\n";
+    if (level === "error" || process.env["AGENTMEMORY_MCP_STDIO__"] === "1") {
+      process.stderr.write(line);
+    }
+    else process.stdout.write(line);
   } catch {
-    // stderr is unavailable in some weird test/worker contexts — swallow
+    // stdout or stderr is unavailable in some test/worker contexts — swallow
     // so no log line can ever crash a handler.
   }
 }
