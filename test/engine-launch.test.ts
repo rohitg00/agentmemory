@@ -86,6 +86,13 @@ describe("engine-launch path resolution", () => {
   });
 });
 
+describe("bundled iii-config.yaml", () => {
+  it("leaves worker ownership to the CLI", () => {
+    const raw = readFileSync(join(import.meta.dirname, "..", "iii-config.yaml"), "utf-8");
+    expect(raw).not.toContain("- name: iii-exec");
+  });
+});
+
 describe("rewriteBundledConfig", () => {
   const SAMPLE = [
     "          file_path: ./data/state_store.db",
