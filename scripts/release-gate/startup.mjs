@@ -160,19 +160,20 @@ class Instance {
   env(extra = {}) { return { ...baseEnv(this.home), AGENTMEMORY_DATA_DIR: this.data, AGENTMEMORY_RUNTIME_DIR: this.runtime, III_REST_PORT: String(this.port), III_STREAM_PORT: String(this.port + 1), III_VIEWER_PORT: String(this.port + 2), III_ENGINE_PORT: String(this.port + 46023), AGENTMEMORY_METRICS_PORT: String(this.port + 6353), ...this.envExtra, ...extra }; }
   get url() { return `http://127.0.0.1:${this.port}`; }
   pid(name) { try { return Number(readFileSync(join(this.runtime, `${name}.pid`), "utf8").trim()); } catch { return null; } }
-  config({ delayMs = 0, earlyPid = false, worker = true } = {}) {
+  config({ delayMs = 0, earlyPid = false, worker = true, relative = false } = {}) {
     let raw = readFileSync(join(pkg, "iii-config.yaml"), "utf8").split("  - name: iii-exec")[0];
     raw = raw.replaceAll("3111", String(this.port)).replaceAll("3112", String(this.port + 1)).replaceAll("3113", String(this.port + 2)).replaceAll("./data/", `${this.data}/`);
     raw += `  - name: iii-worker-manager\n    config:\n      port: ${this.port + 46023}\n      host: 127.0.0.1\n`;
     if (worker) {
-      const wrapper = join(this.dir, "delayed-worker.mjs");
+      const wrapper = join(this.dir, relative ? "dist/index.mjs" : "delayed-worker.mjs");
+      mkdirSync(dirname(wrapper), { recursive: true });
       writeFileSync(wrapper, `import { appendFileSync, writeFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(join(this.dir, "worker-starts.jsonl"))}, JSON.stringify({pid:process.pid,at:Date.now()})+'\\n');\n${earlyPid ? `writeFileSync(${JSON.stringify(join(this.runtime, "worker.pid"))}, String(process.pid));` : ""}\nawait new Promise(r=>setTimeout(r,${delayMs}));\nawait import(${JSON.stringify(pathToFileURL(join(pkg, "dist/index.mjs")).href)});\n`);
-      raw += `  - name: iii-exec\n    config:\n      exec:\n        - ${process.execPath} ${wrapper}\n`;
+      raw += `  - name: iii-exec\n    config:\n      exec:\n        - ${relative ? "node dist/index.mjs" : `${process.execPath} ${wrapper}`}\n`;
     }
-    const file = join(this.dir, "iii-config.yaml"); writeFileSync(file, raw); this.envExtra.AGENTMEMORY_III_CONFIG = file; if (worker) this.envExtra.AGENTMEMORY_ENGINE_MANAGES_WORKER = "true"; return file;
+    const file = join(this.dir, "iii-config.yaml"); writeFileSync(file, raw); this.envExtra.AGENTMEMORY_III_CONFIG = file; if (worker && !relative) this.envExtra.AGENTMEMORY_ENGINE_MANAGES_WORKER = "true"; return file;
   }
-  start(args = [], env = {}) {
-    this.cli = launch(process.execPath, [cli, ...args, "--port", String(this.port)], this.env(env), this.dir, this.logFile);
+  start(args = [], env = {}, cwd = this.dir) {
+    this.cli = launch(process.execPath, [cli, ...args, "--port", String(this.port)], this.env(env), cwd, this.logFile);
     this.ownedPids.add(this.cli.pid); return this.cli;
   }
   async startEngine(config) {
@@ -209,8 +210,8 @@ async function scenario(name, fn) {
   catch (err) { results.push({ name, status: "fail", ms: Date.now() - at, error: err.stack, details }); log(`FAIL ${name}: ${err.message}`); }
   finally { if (instance) await instance.close(); }
 }
-async function delayedConfigured(instance, details, { delayMs, earlyPid = false, adopt = false, args = [] } = {}) {
-  const config = instance.config({ delayMs, earlyPid });
+async function delayedConfigured(instance, details, { delayMs, earlyPid = false, relative = false, adopt = false, args = [] } = {}) {
+  const config = instance.config({ delayMs, earlyPid, relative });
   if (adopt) await instance.startEngine(config);
   const at = Date.now(); instance.start(args); await instance.ready(delayMs + 25_000);
   details.readyMs = Date.now() - at; details.delayMs = delayMs; details.transport = "real pinned native engine and installed worker via custom delayed-import config";
@@ -283,6 +284,15 @@ async function main() {
     const at = Date.now(); i.start([], { AGENTMEMORY_READY_TIMEOUT_MS: "3000" }); await i.ready(8_000);
     d.readyMs = Date.now() - at; assert.equal(i.pid("worker"), i.cli.pid, "Unrelated exec prevented the CLI-owned worker from starting");
     d.transport = "real engine with unrelated iii-exec command plus installed CLI-owned worker";
+  });
+  await scenario("relative-exec", (i, d) => delayedConfigured(i, d, { delayMs: 8_000, relative: true }));
+  await scenario("unresolved-relative-exec", async (i, d) => {
+    const config = i.config({ worker: false });
+    appendFileSync(config, "  - name: iii-exec\n    config:\n      exec:\n        - node dist/index.mjs\n");
+    const cliCwd = join(i.dir, "cli-cwd"); mkdirSync(join(cliCwd, "dist"), { recursive: true }); writeFileSync(join(cliCwd, "dist/index.mjs"), "");
+    const at = Date.now(); i.start([], { AGENTMEMORY_READY_TIMEOUT_MS: "5000" }, cliCwd); await i.ready(10_000);
+    d.readyMs = Date.now() - at; assert.equal(i.pid("worker"), i.cli.pid, "A relative exec entry missing from the engine working directory prevented the CLI-owned worker from starting");
+    d.transport = "real engine with a relative iii-exec worker entry that does not exist in its working directory; installed CLI-owned worker";
   });
   await scenario("native-engine-timeout", async (i, d) => {
     i.config({ worker: false });
