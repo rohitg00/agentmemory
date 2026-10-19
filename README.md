@@ -1497,7 +1497,7 @@ OPENAI_MODEL=qwen3-8b                          # match the model name from LM St
 | `gpt-oss:20b` | ~14 GB | Strong general model that fits 16 GB RAM |
 | `deepseek-r1:8b` | ~5.2 GB | Reasoning distill; slower but cleaner extractions |
 
-Qwen 3 models think by default and can burn the whole token budget on reasoning before any output. Set `AGENTMEMORY_LLM_NOTHINK=1` to append `/no_think` to graph-extraction prompts, and raise `MAX_TOKENS` (16384 works) if extractions come back empty.
+Qwen 3 models think by default and can burn the whole token budget on reasoning before any output. Set `AGENTMEMORY_LLM_NOTHINK=1` to append `/no_think` to graph-extraction prompts, and raise `MAX_TOKENS` above its 16384 default if extractions come back empty.
 
 Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `content` with a `reasoning` field your local server may not surface. If extractions come back blank, switch to a non-reasoning model first. The `OPENAI_REASONING_EFFORT=none` env can also disable thinking on Ollama Cloud thinking models that mirror the OpenAI reasoning schema.
 

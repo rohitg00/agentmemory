@@ -115,7 +115,7 @@ function warnIfPremiumModel(env: Record<string, string>, envName: string, model:
 }
 
 function detectProvider(env: Record<string, string>): ProviderConfig {
-  const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
+  const maxTokens = parseInt(env["MAX_TOKENS"] || "16384", 10);
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {

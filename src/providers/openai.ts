@@ -37,7 +37,7 @@ const DEFAULT_TIMEOUT_MS = 60_000;
  *   AGENTMEMORY_LLM_TIMEOUT_MS — outbound fetch timeout in ms shared across all
  *                              raw-fetch LLM + embedding providers. Used when
  *                              OPENAI_TIMEOUT_MS is not set. Default: 60000.
- *   MAX_TOKENS               — max output tokens (default: from config or 4096)
+ *   MAX_TOKENS               — max output tokens (default: from config or 16384)
  *   OPENAI_REASONING_EFFORT  — "low" | "medium" | "high" | "none"
  *                              Passthrough for reasoning models (e.g. Ollama Cloud
  *                              thinking models). Set to "none" to ensure
