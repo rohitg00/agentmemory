@@ -65,7 +65,7 @@ async function main() {
 	const agentType = data.agent_type || data.agentDisplayName || data.agentName;
 	const lastMsg = typeof data.last_assistant_message === "string" ? data.last_assistant_message.slice(0, 4e3) : "";
 	const cwd = hookCwd(data) || process.cwd();
-	captureObservation(withEventId({
+	const body = {
 		hookType: "subagent_stop",
 		sessionId,
 		project: resolveProject(cwd),
@@ -76,7 +76,11 @@ async function main() {
 			agent_type: agentType,
 			last_message: lastMsg
 		}
-	}, data), OBSERVE_TIMEOUT_MS);
+	};
+	captureObservation(withEventId(body, {}, {
+		...body.data,
+		stop_hook_active: data.stop_hook_active === true
+	}, { stable: Boolean(data.agent_id) }), OBSERVE_TIMEOUT_MS);
 	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 main().catch(() => process.exit(0));

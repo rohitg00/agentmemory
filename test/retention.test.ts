@@ -329,6 +329,67 @@ describe("RetentionScoring", () => {
     expect(remainingScores).toHaveLength(0);
   });
 
+  it("mem::retention-evict removes facets pointing at evicted memories", async () => {
+    const { registerRetentionFunctions } = await import(
+      "../src/functions/retention.js"
+    );
+
+    const sdk = mockSdk();
+    const kv = mockKV(
+      [makeMemory("mem_evict", "fact", 500), makeMemory("mem_keep", "architecture", 1)],
+      [makeSemanticMemory("sem_evict", 500, 0)],
+    );
+    registerRetentionFunctions(sdk as never, kv as never);
+
+    const scoreRow = (memoryId: string, source: "episodic" | "semantic", score: number) => ({
+      memoryId,
+      source,
+      score,
+      salience: score,
+      temporalDecay: score,
+      reinforcementBoost: 0,
+      lastAccessed: new Date().toISOString(),
+      accessCount: 0,
+    });
+    await kv.set("mem:retention", "mem_evict", scoreRow("mem_evict", "episodic", 0.01));
+    await kv.set("mem:retention", "sem_evict", scoreRow("sem_evict", "semantic", 0.01));
+    await kv.set("mem:retention", "mem_keep", scoreRow("mem_keep", "episodic", 0.99));
+
+    await kv.set("mem:facets", "fct_mem", {
+      id: "fct_mem",
+      targetId: "mem_evict",
+      targetType: "memory",
+      dimension: "probe",
+      value: "value",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    await kv.set("mem:facets", "fct_sem", {
+      id: "fct_sem",
+      targetId: "sem_evict",
+      targetType: "memory",
+      dimension: "probe",
+      value: "value",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    await kv.set("mem:facets", "fct_keep", {
+      id: "fct_keep",
+      targetId: "mem_keep",
+      targetType: "memory",
+      dimension: "probe",
+      value: "value",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+
+    const result = (await sdk.trigger({
+      function_id: "mem::retention-evict",
+      payload: { threshold: 0.9 },
+    })) as any;
+
+    expect(result.evicted).toBe(2);
+    const remaining = await kv.list<{ id: string }>("mem:facets");
+    expect(remaining.map((f) => f.id)).toEqual(["fct_keep"]);
+  });
+
   it("mem::retention-evict emits a single batched audit record on success (audit policy)", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"

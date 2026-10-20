@@ -1,4 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   configStartsAgentmemoryWorker,
   probeEngine,
@@ -72,15 +75,83 @@ describe("startup configuration", () => {
 
 describe("configured worker ownership", () => {
   const config = (command: string) => `workers:\n  - name: iii-exec\n    config:\n      exec:\n        - ${command}\n  - name: iii-http\n    config:\n      port: 3111\n`;
+  let engineCwd: string;
+  let emptyCwd: string;
+  let distOnlyCwd: string;
+  let dirEntryCwd: string;
+  let linkCwd: string;
+  beforeAll(() => {
+    engineCwd = mkdtempSync(join(tmpdir(), "am-engine-cwd-"));
+    emptyCwd = mkdtempSync(join(tmpdir(), "am-engine-cwd-empty-"));
+    mkdirSync(join(emptyCwd, "dist"));
+    mkdirSync(join(emptyCwd, "src"));
+    distOnlyCwd = mkdtempSync(join(tmpdir(), "am-engine-cwd-dist-"));
+    mkdirSync(join(distOnlyCwd, "dist"));
+    writeFileSync(join(distOnlyCwd, "dist/index.mjs"), "");
+    dirEntryCwd = mkdtempSync(join(tmpdir(), "am-engine-cwd-dir-"));
+    mkdirSync(join(dirEntryCwd, "dist/index.mjs"), { recursive: true });
+    mkdirSync(join(dirEntryCwd, "src/index.ts"), { recursive: true });
+    linkCwd = mkdtempSync(join(tmpdir(), "am-engine-cwd-link-"));
+    mkdirSync(join(linkCwd, "dist"));
+    mkdirSync(join(linkCwd, "src"));
+    writeFileSync(join(linkCwd, "target.mjs"), "");
+    symlinkSync(join(linkCwd, "target.mjs"), join(linkCwd, "dist/index.mjs"));
+    symlinkSync(join(linkCwd, "src"), join(linkCwd, "src/index.ts"));
+    for (const entry of ["dist/index.mjs", "src/index.ts", "other.mjs", "delayed-wrapper.mjs"]) {
+      mkdirSync(dirname(join(engineCwd, entry)), { recursive: true });
+      writeFileSync(join(engineCwd, entry), "");
+    }
+  });
+  afterAll(() => {
+    rmSync(engineCwd, { recursive: true, force: true });
+    rmSync(emptyCwd, { recursive: true, force: true });
+    rmSync(distOnlyCwd, { recursive: true, force: true });
+    rmSync(dirEntryCwd, { recursive: true, force: true });
+    rmSync(linkCwd, { recursive: true, force: true });
+  });
   it.each(["node dist/index.mjs", "node ./dist/index.mjs", "node --import tsx src/index.ts", "tsx ./src/index.ts", '"node dist/index.mjs"', "node dist/index.mjs # worker", '"node dist/index.mjs" # worker', "node --max-old-space-size=8192 dist/index.mjs", '\'/opt/node /package/dist/index.mjs\''])("recognizes a direct worker command: %s", (command) => {
-    expect(configStartsAgentmemoryWorker(config(command), "/package/dist/index.mjs")).toBe(true);
+    expect(configStartsAgentmemoryWorker(config(command), "/package/dist/index.mjs", engineCwd)).toBe(true);
   });
   it.each(["node other.mjs", "node delayed-wrapper.mjs", "echo node dist/index.mjs", "sh -c 'node dist/index.mjs'", "node dist/index.mjs && something", "node dist/index.mjs.fake"])("does not claim unrelated or wrapped command: %s", (command) => {
+    expect(configStartsAgentmemoryWorker(config(command), "/package/dist/index.mjs", engineCwd)).toBe(false);
+  });
+  it.each(["node dist/index.mjs", "node ./dist/index.mjs", "node --import tsx src/index.ts", "tsx ./src/index.ts"])("does not claim a relative worker entry missing from the engine working directory: %s", (command) => {
+    expect(configStartsAgentmemoryWorker(config(command), "/package/dist/index.mjs", emptyCwd)).toBe(false);
+  });
+  it.each(["node dist/index.mjs", "node ./dist/index.mjs", "node --import tsx src/index.ts", "tsx ./src/index.ts"])("does not claim a relative worker entry that is a directory in the engine working directory: %s", (command) => {
+    expect(configStartsAgentmemoryWorker(config(command), "/package/dist/index.mjs", dirEntryCwd)).toBe(false);
+  });
+  it("follows a symlinked relative worker entry to what it points at", () => {
+    expect(configStartsAgentmemoryWorker(config("node dist/index.mjs"), "/package/dist/index.mjs", linkCwd)).toBe(true);
+    expect(configStartsAgentmemoryWorker(config("tsx ./src/index.ts"), "/package/dist/index.mjs", linkCwd)).toBe(false);
+  });
+  it("treats an unreadable relative worker entry as missing and keeps reading the exec list", () => {
+    const raw = `workers:\n  - name: iii-exec\n    config:\n      exec:\n        - node dist/index.mjs\n        - /opt/node /package/dist/index.mjs\n`;
+    const loopCwd = mkdtempSync(join(tmpdir(), "am-engine-cwd-loop-"));
+    try {
+      mkdirSync(join(loopCwd, "dist"));
+      symlinkSync(join(loopCwd, "dist/index.mjs"), join(loopCwd, "dist/index.mjs"));
+      expect(configStartsAgentmemoryWorker(raw, "/package/dist/index.mjs", loopCwd)).toBe(true);
+      expect(configStartsAgentmemoryWorker(config("node dist/index.mjs"), "/package/dist/index.mjs", loopCwd)).toBe(false);
+    } finally {
+      rmSync(loopCwd, { recursive: true, force: true });
+    }
+  });
+  it.each(["node --import tsx src/index.ts", "tsx ./src/index.ts"])("does not claim the source entry when only the built entry exists in the engine working directory: %s", (command) => {
+    expect(configStartsAgentmemoryWorker(config(command), "/package/dist/index.mjs", distOnlyCwd)).toBe(false);
+  });
+  it("recognizes the absolute worker entry without an engine working directory", () => {
+    expect(configStartsAgentmemoryWorker(config("/opt/node /package/dist/index.mjs"), "/package/dist/index.mjs")).toBe(true);
+  });
+  it.each(["node dist/index.mjs", "node ./dist/index.mjs", "node --import tsx src/index.ts", "tsx ./src/index.ts"])("keeps recognizing a relative worker entry when the engine working directory is unknown: %s", (command) => {
+    expect(configStartsAgentmemoryWorker(config(command), "/package/dist/index.mjs")).toBe(true);
+  });
+  it.each(["node other.mjs", "sh -c 'node dist/index.mjs'"])("does not claim an unrelated entry when the engine working directory is unknown: %s", (command) => {
     expect(configStartsAgentmemoryWorker(config(command), "/package/dist/index.mjs")).toBe(false);
   });
   it("ignores comments, other workers and sibling configuration lists", () => {
     const raw = `# - name: iii-exec\n#   exec:\n#     - node dist/index.mjs\n  - name: iii-state\n    config:\n      exec:\n        - node dist/index.mjs\n  - name: iii-exec\n    config:\n      exec:\n        - node other.mjs\n      watch:\n        - node dist/index.mjs\n`;
-    expect(configStartsAgentmemoryWorker(raw, "/package/dist/index.mjs")).toBe(false);
+    expect(configStartsAgentmemoryWorker(raw, "/package/dist/index.mjs", engineCwd)).toBe(false);
   });
 });
 

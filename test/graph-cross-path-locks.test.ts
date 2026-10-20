@@ -7,57 +7,9 @@ vi.mock("../src/logger.js", () => ({
 import { persistGraphDelta } from "../src/functions/graph.js";
 import { registerCascadeFunction } from "../src/functions/cascade.js";
 import { KV } from "../src/state/schema.js";
+import { createGraphIndexReader, initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
 import type { GraphNode, GraphSnapshot, Memory } from "../src/types.js";
-
-function clone<T>(value: T): T {
-  return value === null || value === undefined
-    ? value
-    : (JSON.parse(JSON.stringify(value)) as T);
-}
-
-function mockKV() {
-  const store = new Map<string, Map<string, unknown>>();
-  let gate: {
-    scope: string;
-    key: string;
-    release: () => void;
-    promise: Promise<void>;
-  } | null = null;
-
-  return {
-    store,
-    armGetGate: (scope: string, key: string) => {
-      let release!: () => void;
-      const promise = new Promise<void>((res) => {
-        release = res;
-      });
-      gate = { scope, key, release, promise };
-      return release;
-    },
-    get: async <T>(scope: string, key: string): Promise<T | null> => {
-      const value = clone((store.get(scope)?.get(key) as T) ?? null);
-      if (gate && gate.scope === scope && gate.key === key) {
-        const g = gate;
-        gate = null;
-        await g.promise;
-      }
-      return value;
-    },
-    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
-      const stored = clone(data);
-      if (!store.has(scope)) store.set(scope, new Map());
-      store.get(scope)!.set(key, stored);
-      return clone(stored);
-    },
-    delete: async (scope: string, key: string) => {
-      store.get(scope)?.delete(key);
-    },
-    list: async <T>(scope: string): Promise<T[]> => {
-      const m = store.get(scope);
-      return m ? clone(Array.from(m.values()) as T[]) : [];
-    },
-  };
-}
+import { createGraphIndexState } from "./helpers/graph-index-state.js";
 
 function mockSdk() {
   const fns = new Map<string, (data: unknown) => Promise<unknown>>();
@@ -75,7 +27,9 @@ async function flush() {
 
 describe("graph:persist serializes cross-path graph mutations", () => {
   it("does not lose cascade's stale flag or persistGraphDelta's merge when they race on the same node", async () => {
-    const kv = mockKV();
+    const fixture = createGraphIndexState();
+    const { kv } = fixture;
+    await initializeGraphIndex(kv, { status: "ready" });
 
     const node: GraphNode = {
       id: "node_1",
@@ -123,7 +77,16 @@ describe("graph:persist serializes cross-path graph mutations", () => {
     const sdk = mockSdk();
     registerCascadeFunction(sdk as never, kv as never);
 
-    const releaseNodeRowRead = kv.armGetGate(KV.graphNodes, "node_1");
+    let releaseNodeRowRead!: () => void;
+    let enteredNodeRowRead!: () => void;
+    const blocked = new Promise<void>((resolve) => { releaseNodeRowRead = resolve; });
+    const entered = new Promise<void>((resolve) => { enteredNodeRowRead = resolve; });
+    fixture.intercept(async (id, payload) => {
+      if (id !== "state::get" || payload.scope !== KV.graphNodes || payload.key !== "node_1") return;
+      fixture.intercept();
+      enteredNodeRowRead();
+      await blocked;
+    });
 
     const incomingNode: GraphNode = {
       id: "node_new",
@@ -134,28 +97,40 @@ describe("graph:persist serializes cross-path graph mutations", () => {
       createdAt: new Date().toISOString(),
     };
     const persistPromise = persistGraphDelta(
-      kv as never,
+      kv,
       [incomingNode],
       [],
-      ["obs_new"],
     );
 
-    await flush();
+    await entered;
 
+    let cascadeSettled = false;
     const cascadePromise = sdk.trigger("mem::cascade-update", {
       supersededMemoryId: "mem_old",
-    }) as Promise<{ success: boolean; flagged: { nodes: number } }>;
+    }).then((value) => {
+      cascadeSettled = true;
+      return value as { success: boolean; graphDeferred: boolean; flagged: { nodes: number } };
+    });
 
-    await flush();
-    releaseNodeRowRead();
+    try {
+      await flush();
+      expect(cascadeSettled).toBe(false);
+    } finally {
+      releaseNodeRowRead();
+    }
 
     const [, cascadeResult] = await Promise.all([persistPromise, cascadePromise]);
 
     expect(cascadeResult.success).toBe(true);
+    expect(cascadeResult.graphDeferred).toBe(false);
     expect(cascadeResult.flagged.nodes).toBe(1);
 
     const finalNode = await kv.get<GraphNode>(KV.graphNodes, "node_1");
     expect(finalNode!.stale).toBe(true);
     expect(finalNode!.sourceObservationIds.sort()).toEqual(["obs_new", "obs_old"]);
+    const reader = (await createGraphIndexReader(kv))!;
+    expect(await reader.getNode("node_1")).toBeNull();
+    expect((await reader.posting("observation", "obs_old")).ids).toEqual([]);
+    expect(await reader.finish()).toBe(true);
   });
 });

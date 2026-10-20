@@ -33,6 +33,8 @@ vi.mock("node:fs", () => ({
 
 import { registerSnapshotFunction } from "../src/functions/snapshot.js";
 import { currentAuditScope } from "./helpers/mocks.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
+import { KV } from "../src/state/schema.js";
 import { getProjectSessionIndex } from "../src/state/session-index.js";
 import type { Session, Memory, SnapshotMeta } from "../src/types.js";
 
@@ -186,6 +188,29 @@ describe("Snapshot Functions", () => {
     expect(result.success).toBe(true);
     const index = await getProjectSessionIndex(kv as never, "proj-restored");
     expect(index?.map((e) => e.id)).toEqual(["ses_restored"]);
+  });
+
+  it("waits for summary publication before replacing restored observation content", async () => {
+    const old = { id: "obs_locked", sessionId: "ses_1", timestamp: "2026-02-01T00:00:00Z",
+      type: "decision", title: "Original", narrative: "Old content", facts: [], concepts: [], files: [], importance: 5 };
+    const replacement = { ...old, title: "Restored", narrative: "Changed content" };
+    await kv.set(KV.observations("ses_1"), old.id, old);
+    snapshotContent.mockReturnValueOnce(JSON.stringify({
+      sessions: [], memories: [], observations: { ses_1: [replacement] },
+    }));
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const publishing = withKeyedLock("obs:ses_1", async () => { entered(); await gate; });
+    await ready;
+    const restoring = sdk.trigger("mem::snapshot-restore", { commitHash: "abc1234" });
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(await kv.get(KV.observations("ses_1"), old.id)).toEqual(old);
+    } finally { release(); await publishing; }
+    expect(await restoring).toMatchObject({ success: true });
+    expect(await kv.get(KV.observations("ses_1"), old.id)).toEqual(replacement);
   });
 
   it("snapshot-create records an audit entry", async () => {

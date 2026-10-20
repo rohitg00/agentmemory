@@ -68,6 +68,88 @@ describe("IndexPersistence save throttling", () => {
     expect(metaSaves(kv)).toBe(2);
   });
 
+  it.each([false, true])("checkpoints the first captured vector early after metadata-only recovery (restart: %s)", async (restart) => {
+    let vector = new VectorIndex();
+    let persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 600_000, requireRecoveryPlan: true });
+    await persistence.prepareBackfill(await persistence.load());
+    expect(await persistence.completeBackfill()).toBe(true);
+    expect(metaSaves(kv)).toBe(1);
+
+    if (restart) {
+      persistence.stop();
+      vector = new VectorIndex();
+      persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 600_000, requireRecoveryPlan: true });
+      await persistence.prepareBackfill(await persistence.load());
+      expect(await persistence.completeBackfill()).toBe(true);
+    }
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    touch(vector, "obs_first");
+    persistence.scheduleSave();
+    expect(persistence.status().firstCheckpointPending).toBe(true);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(metaSaves(kv)).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(metaSaves(kv)).toBe(2);
+    expect(persistence.status().pendingChanges).toBe(0);
+    expect(persistence.status().firstCheckpointPending).toBe(false);
+
+    touch(vector, "obs_second");
+    persistence.scheduleSave();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(metaSaves(kv)).toBe(2);
+    persistence.stop();
+  });
+
+  it("rearms the early checkpoint after clearing all persisted vectors", async () => {
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 600_000 });
+    touch(vector, "obs_old");
+    await persistence.save();
+    vector.clear();
+    await persistence.save();
+    expect(metaSaves(kv)).toBe(2);
+
+    touch(vector, "obs_replacement");
+    persistence.scheduleSave();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(metaSaves(kv)).toBe(3);
+    expect(persistence.status().pendingChanges).toBe(0);
+    persistence.stop();
+  });
+
+  it("keeps a vector added during metadata-only recovery eligible for the early checkpoint", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const writing = new Promise<void>((resolve) => { entered = resolve; });
+    let held = false;
+    const slowKV = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (key === META_KEY && !held) {
+          held = true;
+          entered();
+          await gate;
+        }
+        return kv.set(scope, key, data);
+      },
+    };
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(slowKV as never, vector, { saveIntervalMs: 600_000, requireRecoveryPlan: true });
+    await persistence.prepareBackfill(await persistence.load());
+    const completion = persistence.completeBackfill();
+    await writing;
+    touch(vector, "obs_concurrent");
+    persistence.scheduleSave();
+    release();
+    expect(await completion).toBe(false);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(metaSaves(kv)).toBe(2);
+    expect(persistence.status().pendingChanges).toBe(0);
+    persistence.stop();
+  });
+
   it("an explicit save runs immediately and cancels the pending timer", async () => {
     const vector = new VectorIndex();
     const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 60_000, bucketSize: 16 });

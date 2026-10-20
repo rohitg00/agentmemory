@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { stripPrivateData } from "../src/functions/privacy.js";
+import { scrubRecord, stripPrivateData } from "../src/functions/privacy.js";
 
 describe("stripPrivateData", () => {
   it("strips private tags", () => {
@@ -136,5 +136,43 @@ describe("stripPrivateData", () => {
     expect(stripPrivateData(input)).toBe(expected);
     expect(stripPrivateData(input)).toBe(expected);
     expect(stripPrivateData(expected)).toBe(expected);
+  });
+});
+
+describe("scrubRecord property names", () => {
+  const secret = "sk-abcdefghijklmnopqrstuvwxyz";
+
+  it("leaves property names unchanged by default", () => {
+    expect(scrubRecord({ [secret]: secret })).toEqual({ [secret]: "[REDACTED_SECRET]" });
+  });
+
+  it("optionally scrubs property names recursively without changing the input", () => {
+    const input = { nested: [{ [secret]: { note: secret, count: 3, ok: true, empty: null } }] };
+    const before = structuredClone(input);
+    expect(scrubRecord(input, { scrubKeys: true })).toEqual({
+      nested: [{ "[REDACTED_SECRET]": { note: "[REDACTED_SECRET]", count: 3, ok: true, empty: null } }],
+    });
+    expect(input).toEqual(before);
+  });
+
+  it.each([false, true])("preserves own __proto__ fields with scrubKeys=%s", (scrubKeys) => {
+    const input = { ["__proto__"]: { note: secret }, constructor: "ordinary value" };
+    const output = scrubRecord(input, { scrubKeys });
+    expect(Object.getPrototypeOf(output)).toBe(Object.prototype);
+    expect(Object.hasOwn(output, "__proto__")).toBe(true);
+    expect(output).toEqual({ ["__proto__"]: { note: "[REDACTED_SECRET]" }, constructor: "ordinary value" });
+    expect(input["__proto__"].note).toBe(secret);
+  });
+
+  it("preserves both values when scrubbed property names collide", () => {
+    expect(scrubRecord({ [secret]: "first", "[REDACTED_SECRET]": "last" }, { scrubKeys: true }))
+      .toEqual({ "[REDACTED_SECRET]": "first", "[REDACTED_SECRET]_2": "last" });
+  });
+
+  it("avoids existing names when allocating collision suffixes", () => {
+    const input = { [secret]: "first", "pk-abcdefghijklmnopqrstuvwxyz": "second", "[REDACTED_SECRET]_2": "ordinary" };
+    const output = scrubRecord(input, { scrubKeys: true });
+    expect(output).toEqual({ "[REDACTED_SECRET]": "first", "[REDACTED_SECRET]_3": "second", "[REDACTED_SECRET]_2": "ordinary" });
+    expect(scrubRecord(output, { scrubKeys: true })).toEqual(output);
   });
 });

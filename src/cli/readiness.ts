@@ -1,3 +1,6 @@
+import { statSync } from "node:fs";
+import { join } from "node:path";
+
 export const DEFAULT_ENGINE_TIMEOUT_MS = 120_000;
 export const DEFAULT_WORKER_TIMEOUT_MS = 300_000;
 export const MAX_STARTUP_TIMEOUT_MS = 3_600_000;
@@ -27,7 +30,7 @@ export function startupTimeouts(env: NodeJS.ProcessEnv = process.env): {
   };
 }
 
-export function configStartsAgentmemoryWorker(raw: string, workerEntry: string): boolean {
+export function configStartsAgentmemoryWorker(raw: string, workerEntry: string, engineCwd?: string): boolean {
   const lines = raw.split(/\r?\n/);
   let workerIndent: number | undefined;
   let execIndent: number | undefined;
@@ -65,7 +68,13 @@ export function configStartsAgentmemoryWorker(raw: string, workerEntry: string):
     const entry = tokens.length === 2
       ? tokens[1]
       : tokens.length === 4 && tokens[1] === "--import" && tokens[2] === "tsx" ? tokens[3] : undefined;
-    if (entry === workerEntry.replaceAll("\\", "/") || entry === "dist/index.mjs" || entry === "./dist/index.mjs" || entry === "src/index.ts" || entry === "./src/index.ts") return true;
+    if (entry === workerEntry.replaceAll("\\", "/")) return true;
+    if (entry === "dist/index.mjs" || entry === "./dist/index.mjs" || entry === "src/index.ts" || entry === "./src/index.ts") {
+      if (engineCwd === undefined) return true;
+      try {
+        if (statSync(join(engineCwd, entry)).isFile()) return true;
+      } catch {}
+    }
   }
   return false;
 }

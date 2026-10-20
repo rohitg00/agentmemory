@@ -3,9 +3,11 @@ import type {
   CompressedObservation,
   RawObservation,
   Session,
+  Memory,
 } from "../src/types.js";
 import { registerEvictFunction } from "../src/functions/evict.js";
 import { KV } from "../src/state/schema.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import { currentAuditScope } from "./helpers/mocks.js";
 import {
   indexObservationSession,
@@ -135,6 +137,7 @@ describe("mem::evict stale sessions", () => {
     const store = storeForObservedSession(sessionId);
     const kv = mockKV(store);
     const { sdk, calls } = mockSdk();
+    await kv.set(KV.summaryRepairs, sessionId, { sessionId, token: "old-repair", dueAt: 0, attempts: 0 });
 
     registerEvictFunction(sdk as never, kv as never);
     sdk.registerFunction("event::session::stopped", async (payload) => {
@@ -158,6 +161,7 @@ describe("mem::evict stale sessions", () => {
 
     expect(result.staleSessions).toBe(1);
     expect(await kv.get(KV.sessions, sessionId)).toBeNull();
+    expect(await kv.get(KV.summaryRepairs, sessionId)).toBeNull();
     const audits = await kv.list<{
       details: { reason: string };
     }>(currentAuditScope());
@@ -253,6 +257,34 @@ describe("mem::evict stale sessions", () => {
     expect(fnIds.filter((f) => f === "mem::auto-crystallize")).toHaveLength(1);
   });
 
+  it("does not delete a session restarted while eviction waits for publication", async () => {
+    const sessionId = "ses_restarted";
+    const kv = mockKV(storeForObservations(sessionId, []));
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+    const list = vi.spyOn(kv, "list");
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const restarted = { ...makeSession(sessionId), startedAt: new Date().toISOString() };
+    const repair = { sessionId, token: "new-repair", dueAt: 0, attempts: 0 };
+    const publishing = withKeyedLock(`obs:${sessionId}`, async () => {
+      entered(); await gate;
+      await kv.set(KV.sessions, sessionId, restarted);
+      await kv.set(KV.summaryRepairs, sessionId, repair);
+    });
+    await ready;
+    const evicting = sdk.trigger({ function_id: "mem::evict", payload: {} });
+    try {
+      await vi.waitFor(() => expect(list).toHaveBeenCalledWith(KV.observations(sessionId)));
+      expect(await kv.get(KV.sessions, sessionId)).not.toBeNull();
+    } finally { release(); await publishing; }
+    expect(await evicting).toMatchObject({ staleSessions: 0 });
+    expect(await kv.get(KV.sessions, sessionId)).toEqual(restarted);
+    expect(await kv.get(KV.summaryRepairs, sessionId)).toEqual(repair);
+  });
+
   it("keeps a stale observed session when recovery fails", async () => {
     const sessionId = "ses_unrecovered";
     const store = storeForObservedSession(sessionId);
@@ -332,5 +364,118 @@ describe("mem::evict stale sessions", () => {
     expect(calls.map((call) => call.function_id)).not.toContain(
       "event::session::stopped",
     );
+  });
+});
+
+describe("mem::evict memory cleanup", () => {
+  function makeEvictMemory(overrides: Partial<Memory>): Memory {
+    return {
+      id: "mem_1",
+      createdAt: daysAgo(31),
+      updatedAt: daysAgo(31),
+      type: "fact",
+      title: "Evicted memory",
+      content: "evicted",
+      concepts: [],
+      files: [],
+      sessionIds: ["ses_1"],
+      strength: 1,
+      version: 1,
+      isLatest: true,
+      ...overrides,
+    };
+  }
+
+  function makeEvictFacet(id: string, targetId: string) {
+    return {
+      id,
+      targetId,
+      targetType: "memory" as const,
+      dimension: "probe",
+      value: "value",
+      createdAt: daysAgo(1),
+    };
+  }
+
+  function registerEvictStubs(
+    sdk: ReturnType<typeof mockSdk>["sdk"],
+    kv: ReturnType<typeof mockKV>,
+  ) {
+    registerEvictFunction(sdk as never, kv as never);
+    sdk.registerFunction("event::session::stopped", () => ({
+      success: true,
+    }));
+    sdk.registerFunction("mem::consolidate-pipeline", () => ({
+      success: true,
+    }));
+    sdk.registerFunction("mem::auto-crystallize", () => ({ success: true }));
+  }
+
+  it("removes facets that point at an expired memory", async () => {
+    const kv = mockKV(new Map());
+    const { sdk } = mockSdk();
+
+    const memory = makeEvictMemory({ id: "mem_expired", forgetAfter: daysAgo(1) });
+    const survivor = makeEvictMemory({ id: "mem_survivor" });
+    await kv.set(KV.memories, memory.id, memory);
+    await kv.set(KV.memories, survivor.id, survivor);
+    await kv.set(KV.facets, "fct_1", makeEvictFacet("fct_1", memory.id));
+    await kv.set(KV.facets, "fct_2", makeEvictFacet("fct_2", memory.id));
+    await kv.set(KV.facets, "fct_3", makeEvictFacet("fct_3", survivor.id));
+
+    registerEvictStubs(sdk, kv);
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { expiredMemories: number };
+
+    expect(result.expiredMemories).toBe(1);
+    const remaining = await kv.list<{ id: string }>(KV.facets);
+    expect(remaining.map((f) => f.id)).toEqual(["fct_3"]);
+  });
+
+  it("removes facets that point at an old non-latest memory", async () => {
+    const kv = mockKV(new Map());
+    const { sdk } = mockSdk();
+
+    const memory = makeEvictMemory({
+      id: "mem_stale",
+      createdAt: daysAgo(120),
+      updatedAt: daysAgo(120),
+      isLatest: false,
+    });
+    const survivor = makeEvictMemory({ id: "mem_survivor" });
+    await kv.set(KV.memories, memory.id, memory);
+    await kv.set(KV.memories, survivor.id, survivor);
+    await kv.set(KV.facets, "fct_1", makeEvictFacet("fct_1", memory.id));
+    await kv.set(KV.facets, "fct_2", makeEvictFacet("fct_2", survivor.id));
+
+    registerEvictStubs(sdk, kv);
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { nonLatestMemories: number };
+
+    expect(result.nonLatestMemories).toBe(1);
+    const remaining = await kv.list<{ id: string }>(KV.facets);
+    expect(remaining.map((f) => f.id)).toEqual(["fct_2"]);
+  });
+
+  it("keeps facets in dryRun", async () => {
+    const kv = mockKV(new Map());
+    const { sdk } = mockSdk();
+
+    const memory = makeEvictMemory({ id: "mem_expired", forgetAfter: daysAgo(1) });
+    await kv.set(KV.memories, memory.id, memory);
+    await kv.set(KV.facets, "fct_1", makeEvictFacet("fct_1", memory.id));
+
+    registerEvictStubs(sdk, kv);
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: { dryRun: true },
+    })) as { expiredMemories: number };
+
+    expect(result.expiredMemories).toBe(1);
+    expect(await kv.list(KV.facets)).toHaveLength(1);
   });
 });

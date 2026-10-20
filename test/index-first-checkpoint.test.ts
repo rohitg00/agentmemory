@@ -137,9 +137,11 @@ describe("first vector checkpoint", () => {
     expect((await new IndexPersistence(kv as never, new VectorIndex()).load()).vector?.size).toBe(1);
   });
 
-  it.each(["entry", "metadata"])("retries a failed first %s write at the normal interval", async (failure) => {
+  it.each([
+    ["entry", false], ["metadata", false], ["entry", true], ["metadata", true],
+  ])("retries a failed first %s write at the normal interval (after recovery: %s)", async (failure, afterRecovery) => {
     const kv = mockKV();
-    let fail = true;
+    let fail = false;
     const failingKV = {
       ...kv,
       set: async <T>(scope: string, key: string, data: T): Promise<T> => {
@@ -150,13 +152,20 @@ describe("first vector checkpoint", () => {
       },
     };
     const vector = new VectorIndex();
-    add(vector, "obs_1");
     const persistence = new IndexPersistence(failingKV as never, vector, { saveIntervalMs: 60_000 });
+    if (afterRecovery) {
+      await persistence.prepareBackfill(await persistence.load());
+      expect(await persistence.completeBackfill()).toBe(true);
+    }
+    const previousMeta = await kv.get(INDEX_SCOPE, META_KEY);
+    const previousSavedAt = persistence.status().vector?.lastSavedAt;
+    fail = true;
+    add(vector, "obs_1");
     persistence.scheduleSave();
     await vi.advanceTimersByTimeAsync(5_000);
     expect(persistence.status()).toMatchObject({ firstCheckpointPending: true, pendingChanges: 1 });
-    expect(persistence.status().vector?.lastSavedAt).toBeNull();
-    expect(await kv.get(INDEX_SCOPE, META_KEY)).toBeNull();
+    expect(persistence.status().vector?.lastSavedAt).toBe(previousSavedAt);
+    expect(await kv.get(INDEX_SCOPE, META_KEY)).toEqual(previousMeta);
     const writesAfterFailure = kv.writes.length;
     fail = false;
     await vi.advanceTimersByTimeAsync(59_999);

@@ -14,6 +14,7 @@ import {
   normalizeAccessLog,
 } from "./access-tracker.js";
 import { recordAudit, runAuditRetentionSweep } from "./audit.js";
+import { deleteFacetsForTargets } from "./facets.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
 import { getAuditRetentionMonths } from "../config.js";
@@ -329,51 +330,67 @@ export function registerRetentionFunctions(
       let evictedEpisodic = 0;
       let evictedSemantic = 0;
       const evictedIds: string[] = [];
+      const missingIds: string[] = [];
       for (const candidate of candidates) {
         try {
           let scope: string | null = null;
           let resolvedSource: "episodic" | "semantic" | null = null;
+          let mem: Memory | null = null;
           if (candidate.source === "semantic") {
-            scope = KV.semantic;
-            resolvedSource = "semantic";
+            mem = await kv.get<Memory>(KV.semantic, candidate.memoryId);
+            if (mem) {
+              scope = KV.semantic;
+              resolvedSource = "semantic";
+            }
           } else if (candidate.source === "episodic") {
-            scope = KV.memories;
-            resolvedSource = "episodic";
-          } else {
-            const episodic = await kv.get(KV.memories, candidate.memoryId);
-            if (episodic !== null) {
+            mem = await kv.get<Memory>(KV.memories, candidate.memoryId);
+            if (mem) {
+              scope = KV.memories;
+              resolvedSource = "episodic";
+            }
+          }
+          if (!mem && !candidate.source) {
+            mem = await kv.get<Memory>(KV.memories, candidate.memoryId);
+            if (mem) {
               scope = KV.memories;
               resolvedSource = "episodic";
             } else {
-              const semantic = await kv.get(KV.semantic, candidate.memoryId);
-              if (semantic !== null) {
+              mem = await kv.get<Memory>(KV.semantic, candidate.memoryId);
+              if (mem) {
                 scope = KV.semantic;
                 resolvedSource = "semantic";
               }
             }
           }
 
-          if (!scope || !resolvedSource) {
+          if (!scope || !mem) {
+            if (candidate.source) {
+              const other =
+                candidate.source === "semantic" ? KV.memories : KV.semantic;
+              if (await kv.get(other, candidate.memoryId)) continue;
+            }
+            missingIds.push(candidate.memoryId);
             continue;
           }
 
-          const mem = await kv.get<Memory>(scope, candidate.memoryId);
-          if (mem && mem.imageRef) {
+          if (mem.imageRef) {
             await decrementImageRef(kv, sdk, mem.imageRef);
           }
           await kv.delete(scope, candidate.memoryId);
+          evictedIds.push(candidate.memoryId);
+          evicted++;
+          if (resolvedSource === "semantic") evictedSemantic++;
+          else evictedEpisodic++;
           await kv.delete(KV.retentionScores, candidate.memoryId);
           await deleteAccessLog(kv, candidate.memoryId);
           getSearchIndex().remove(candidate.memoryId);
           vectorIndexRemove(candidate.memoryId);
-          evicted++;
-          evictedIds.push(candidate.memoryId);
-          if (resolvedSource === "semantic") evictedSemantic++;
-          else evictedEpisodic++;
         } catch {
           continue;
         }
       }
+
+      await deleteFacetsForTargets(kv, [...evictedIds, ...missingIds]);
 
       // Retention eviction is a structural delete path that removes
       // memories, retention scores, and access logs, so it needs to

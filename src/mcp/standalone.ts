@@ -133,6 +133,7 @@ interface Validated {
   includeLessons?: boolean;
   memoryIds?: string[];
   reason?: string;
+  exportQuery?: string;
   sessionQuery?: Record<string, string>;
 }
 
@@ -212,8 +213,17 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.reason = (args["reason"] as string) || "plugin skill request";
       return v;
     }
-    case "memory_export":
+    case "memory_export": {
+      const query = new URLSearchParams();
+      for (const key of ["maxSessions", "offset", "collectionLimit", "collectionOffset"]) {
+        const n = Number(args[key]);
+        const min = key === "maxSessions" || key === "collectionLimit" ? 1 : 0;
+        if (args[key] !== undefined && Number.isInteger(n) && n >= min) query.set(key, String(n));
+      }
+      if (typeof args["collections"] === "string") query.set("collections", args["collections"]);
+      v.exportQuery = query.toString();
       return v;
+    }
     case "memory_audit": {
       v.limit = parseLimit(args["limit"], 50);
       return v;
@@ -293,7 +303,10 @@ async function handleProxy(
     }
     case "memory_export": {
       try {
-        const result = await handle.call("/agentmemory/export", { method: "GET" });
+        const result = await handle.call(
+          `/agentmemory/export${v.exportQuery ? `?${v.exportQuery}` : ""}`,
+          { method: "GET" },
+        );
         return textResponse(result, true);
       } catch (err) {
         if (
@@ -320,6 +333,16 @@ async function handleProxy(
   }
 }
 
+function localFallbackNotice(persisted: boolean) {
+  const store = persisted
+    ? "the local fallback file, which the server does not read"
+    : "this process's in-memory fallback store, which is lost when the process exits";
+  return {
+    storage: "local",
+    warning: `agentmemory server at ${displayAgentmemoryUrl()} did not confirm this call, so it ran against ${store}.`,
+  };
+}
+
 async function handleLocal(
   v: Validated,
   kvInstance: InMemoryKV,
@@ -344,8 +367,8 @@ async function handleLocal(
         ...(v.project !== undefined && { project: v.project }),
         ...((v.agentId ?? getAgentId()) !== undefined && { agentId: v.agentId ?? getAgentId() }),
       });
-      kvInstance.persist();
-      return textResponse({ saved: id });
+      const persisted = kvInstance.persist();
+      return textResponse({ saved: id, ...localFallbackNotice(persisted) });
     }
 
     case "memory_recall":
@@ -422,11 +445,12 @@ async function handleLocal(
           deleted++;
         }
       }
-      kvInstance.persist();
+      const persisted = kvInstance.persist();
       return textResponse({
         deleted,
         requested: (v.memoryIds || []).length,
         reason: v.reason,
+        ...localFallbackNotice(persisted),
       });
     }
 

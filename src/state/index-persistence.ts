@@ -41,6 +41,7 @@ type VectorMeta = {
   bucketCount: number;
   savedAt: string;
   count: number;
+  backfillSince?: string | null;
 };
 
 type PersistedVector = {
@@ -60,8 +61,8 @@ type PendingVectorRow = {
 };
 
 type BackfillMarker = {
-  v: 1;
-  since: string;
+  v: 1 | 2;
+  since: string | null;
 };
 
 export interface PendingReplayResult {
@@ -76,6 +77,7 @@ type IndexPersistenceOptions = {
   saveIntervalMs?: number;
   bucketSize?: number;
   now?: () => number;
+  requireRecoveryPlan?: boolean;
 };
 
 export interface IndexLegStatus {
@@ -111,6 +113,7 @@ export interface VectorLoadResult {
   state: VectorLoadState;
   savedAt: string | null;
   expectedCount?: number;
+  backfillSince?: string | null;
 }
 
 export function vectorBucketScope(bucket: number): string {
@@ -123,6 +126,15 @@ function statePath(scope: string, key: string): string {
 
 function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+function earliestBackfillSince(...cutoffs: Array<string | null | undefined>): string | null | undefined {
+  let earliest: string | undefined;
+  for (const cutoff of cutoffs) {
+    if (cutoff === null) return null;
+    if (cutoff !== undefined && (earliest === undefined || Date.parse(cutoff) < Date.parse(earliest))) earliest = cutoff;
+  }
+  return earliest;
 }
 
 function generationTime(generation: string | undefined): string | null {
@@ -186,8 +198,8 @@ export class IndexPersistence {
   private lastSaveAt: number;
   private dirtyEpoch = 0;
   private markedDuringRunAt: number | null = null;
-  private metaWritten = false;
-  private firstSaveAttempted = false;
+  private hasVectorCheckpoint = false;
+  private firstVectorSaveAttempted = false;
   private nextSaveAt: number | null = null;
   private leg: IndexLegStatus = emptyLegStatus();
   private readonly saveIntervalMs: number;
@@ -206,12 +218,20 @@ export class IndexPersistence {
   private pendingLogUnknown = false;
   private pendingLogError: string | null = null;
   private earlySaveQueued = false;
+  private backfillQueue: Promise<void> = Promise.resolve();
+  private recoveryError: string | null = null;
+  private backfillRevision = 0;
+  private recoveryReady: boolean;
+  private backfillSince: string | null | undefined;
+  private checkpointBackfillSince: string | null | undefined;
+  private completingBackfill = false;
 
   constructor(
     private kv: StateKV,
     private vector: VectorIndex | null,
     options: IndexPersistenceOptions = {},
   ) {
+    this.recoveryReady = !options.requireRecoveryPlan || !vector;
     this.vector?.setChangeListener((id, entry) => this.logChange(id, entry));
     this.now = options.now ?? Date.now;
     const interval = options.saveIntervalMs;
@@ -228,7 +248,7 @@ export class IndexPersistence {
   }
 
   scheduleSave(): void {
-    if (this.stopped || !this.vector?.pendingChanges) return;
+    if (this.stopped || !this.recoveryReady || this.recoveryError || !this.vector?.pendingChanges) return;
     const now = this.now();
     this.dirtyEpoch++;
     if (this.running && this.markedDuringRunAt === null) this.markedDuringRunAt = now;
@@ -253,7 +273,7 @@ export class IndexPersistence {
   status(): IndexPersistenceStatus {
     return {
       saveIntervalMs: this.saveIntervalMs,
-      firstCheckpointPending: Boolean(this.vector && !this.metaWritten && (this.vector.pendingChanges > 0 || this.running)),
+      firstCheckpointPending: Boolean(this.vector && !this.hasVectorCheckpoint && (this.vector.pendingChanges > 0 || this.running)),
       nextSaveAt: this.nextSaveAt === null ? null : new Date(this.nextSaveAt).toISOString(),
       saving: this.running !== null,
       buckets: this.bucketCountInUse(),
@@ -269,7 +289,7 @@ export class IndexPersistence {
   async replayPendingLog(expectedDimensions = 0): Promise<PendingReplayResult> {
     const result: PendingReplayResult = { entries: 0, added: 0, removed: 0, cleared: false, skipped: 0 };
     const vector = this.vector;
-    if (!vector) return result;
+    if (!vector || this.recoveryError) return result;
     let rows: unknown[];
     try {
       rows = await this.kv.list<unknown>(KV.vectorPendingLog);
@@ -318,31 +338,130 @@ export class IndexPersistence {
     } finally {
       this.logSuppressed = false;
     }
+    if (result.skipped > 0) {
+      try { await this.markBackfillSince(null); } catch (err) { this.pauseRecovery(err); }
+    }
     if (result.added + result.removed > 0 || result.cleared) this.scheduleSave();
     return result;
   }
 
-  async readBackfillMarker(): Promise<string | null> {
-    if (!this.vector) return null;
+  async readBackfillMarker(): Promise<string | null | undefined> {
+    if (!this.vector) return undefined;
+    const marker = await this.kv.get<BackfillMarker>(KV.bm25Index, BACKFILL_MARKER_KEY);
+    if (!marker) return undefined;
+    if (marker.v === 2 && marker.since === null) return null;
+    if ((marker.v === 1 || marker.v === 2) && typeof marker.since === "string" && Number.isFinite(Date.parse(marker.since))) return marker.since;
+    throw new Error("Invalid persisted vector backfill marker");
+  }
+
+  markBackfillSince(since: string | null): Promise<void> {
+    this.backfillRevision++;
+    return this.queueBackfillChange(async () => {
+      if (!this.vector || (since !== null && !Number.isFinite(Date.parse(since)))) return;
+      const current = await this.readBackfillMarker();
+      const next = earliestBackfillSince(current, this.backfillSince, since)!;
+      if (current !== next) await this.kv.set<BackfillMarker>(KV.bm25Index, BACKFILL_MARKER_KEY, { v: 2, since: next });
+      this.backfillSince = next;
+    });
+  }
+
+  private queueBackfillChange(change: () => Promise<void>): Promise<void> {
+    const run = this.backfillQueue.then(change);
+    this.backfillQueue = run.catch(() => {});
+    return run;
+  }
+
+  isRecoveryPaused(): boolean {
+    return this.recoveryError !== null || !this.recoveryReady;
+  }
+
+  private pauseRecovery(error: unknown): void {
+    this.recoveryReady = false;
+    this.recoveryError = `Vector recovery paused until restart: ${errorMessage(error)}`;
+    this.leg.lastError = this.recoveryError;
+    this.leg.lastErrorAt = new Date(this.now()).toISOString();
+    this.clearTimer();
+    logger.warn(this.recoveryError);
+  }
+
+  async prepareBackfill(loaded: VectorLoadResult | null, forceFull = false): Promise<string | null | undefined> {
+    if (!this.vector || this.recoveryError) return undefined;
+    if (!loaded || loaded.state === "unavailable") {
+      this.pauseRecovery(new Error("Persisted vector checkpoint is unavailable"));
+      return undefined;
+    }
+    const shortfall = loaded.expectedCount !== undefined && (loaded.vector?.size ?? 0) < loaded.expectedCount;
+    const since = forceFull || loaded.state === "none" || shortfall || !Number.isFinite(Date.parse(loaded.savedAt ?? "")) ? null : loaded.savedAt;
     try {
-      const marker = await this.kv.get<BackfillMarker>(KV.bm25Index, BACKFILL_MARKER_KEY);
-      return marker && typeof marker.since === "string" && !Number.isNaN(Date.parse(marker.since)) ? marker.since : null;
+      const fallback = loaded.backfillSince;
+      if (fallback !== undefined && fallback !== null && (typeof fallback !== "string" || !Number.isFinite(Date.parse(fallback)))) {
+        throw new Error("Invalid persisted vector recovery cutoff");
+      }
+      await this.markBackfillSince(earliestBackfillSince(since, fallback)!);
+      const marker = await this.readBackfillMarker();
+      this.recoveryReady = true;
+      this.scheduleSave();
+      return marker;
     } catch (err) {
-      logger.warn("index persistence: vector backfill marker read failed", { message: errorMessage(err) });
-      return null;
+      this.pauseRecovery(err);
+      return undefined;
     }
   }
 
-  async markBackfillSince(since: string): Promise<void> {
-    if (!this.vector || Number.isNaN(Date.parse(since))) return;
-    const current = await this.readBackfillMarker();
-    if (current !== null && Date.parse(current) <= Date.parse(since)) return;
-    await this.kv.set<BackfillMarker>(KV.bm25Index, BACKFILL_MARKER_KEY, { v: 1, since });
+  async beginBackfill(): Promise<boolean> {
+    if (this.isRecoveryPaused()) return false;
+    try {
+      await this.markBackfillSince(null);
+      return true;
+    } catch (err) {
+      this.pauseRecovery(err);
+      return false;
+    }
   }
 
-  async clearBackfillMarker(): Promise<void> {
-    if (!this.vector) return;
-    await this.kv.delete(KV.bm25Index, BACKFILL_MARKER_KEY);
+  private checkpointRecoveryCutoff(): string | null | undefined {
+    return this.completingBackfill ? null : this.backfillSince;
+  }
+
+  private needsRecoveryCheckpoint(): boolean {
+    const cutoff = this.checkpointRecoveryCutoff();
+    return cutoff !== undefined && cutoff !== this.checkpointBackfillSince;
+  }
+
+  async completeBackfill(isCovered: () => boolean = () => true): Promise<boolean> {
+    if (this.isRecoveryPaused()) return false;
+    const revision = this.backfillRevision;
+    const since = this.backfillSince;
+    this.completingBackfill = since !== undefined;
+    await this.save();
+    if (this.leg.lastError || this.vector?.pendingChanges || !isCovered()) return false;
+    let cleared = false;
+    try {
+      await this.queueBackfillChange(async () => {
+        if (this.recoveryError || this.backfillRevision !== revision || !isCovered()) return;
+        await this.kv.delete(KV.bm25Index, BACKFILL_MARKER_KEY);
+        cleared = true;
+      });
+      if (!cleared) return false;
+      if (this.backfillRevision !== revision || !isCovered()) {
+        if (since !== undefined) await this.markBackfillSince(since);
+        return false;
+      }
+      // The checkpoint retains the cutoff through the delete/crash window. A later
+      // ordinary checkpoint can remove it once this recovery has completed.
+      this.backfillSince = undefined;
+      this.completingBackfill = false;
+      return true;
+    } catch (err) {
+      this.pauseRecovery(err);
+      return false;
+    }
+  }
+
+  clearBackfillMarker(): Promise<void> {
+    return this.queueBackfillChange(async () => {
+      if (this.vector) await this.kv.delete(KV.bm25Index, BACKFILL_MARKER_KEY);
+    });
   }
 
   async flushPendingLog(): Promise<void> {
@@ -355,7 +474,7 @@ export class IndexPersistence {
   }
 
   private logChange(id: string | null, entry: VectorEntry | null): void {
-    if (this.logSuppressed) return;
+    if (this.logSuppressed || !this.recoveryReady || this.recoveryError) return;
     const key = id ?? PENDING_CLEAR_KEY;
     const q = this.nextSeq();
     let row: PendingVectorRow;
@@ -403,7 +522,7 @@ export class IndexPersistence {
   }
 
   private maybeEarlySave(): void {
-    if (this.stopped || this.running || this.earlySaveQueued) return;
+    if (this.stopped || !this.recoveryReady || this.recoveryError || this.running || this.earlySaveQueued) return;
     if (this.pendingLog.size < PENDING_LOG_SAVE_THRESHOLD) return;
     if (this.now() - this.lastSaveAt < EARLY_SAVE_MIN_GAP_MS) return;
     this.earlySaveQueued = true;
@@ -459,7 +578,8 @@ export class IndexPersistence {
     if (meta && meta.v === 3 && Number.isInteger(meta.bucketCount) && meta.bucketCount >= 0) {
       const loaded = await this.loadBuckets(meta.bucketCount);
       if (!loaded) return { vector: null, state: "unavailable", savedAt: null };
-      this.metaWritten = true;
+      this.hasVectorCheckpoint = loaded.size > 0;
+      this.checkpointBackfillSince = meta.backfillSince;
       await this.removeLegacyVectorSnapshotIfPresent();
       await this.removeLegacyBm25Snapshot();
       const expectedCount = Number.isInteger(meta.count) ? meta.count : undefined;
@@ -472,7 +592,7 @@ export class IndexPersistence {
           ...this.vectorCountShortfall,
         });
       }
-      return { vector: loaded, state: "buckets", savedAt: meta.savedAt ?? null, expectedCount };
+      return { vector: loaded, state: "buckets", savedAt: meta.savedAt ?? null, expectedCount, backfillSince: meta.backfillSince };
     }
 
     return this.migrateLegacy();
@@ -514,10 +634,10 @@ export class IndexPersistence {
   }
 
   private queueSave(): void {
-    if (this.stopped || this.timer || !this.vector?.pendingChanges) return;
+    if (this.stopped || !this.recoveryReady || this.recoveryError || this.timer || !this.vector?.pendingChanges) return;
     const now = this.now();
     const remaining = Math.max(0, this.lastSaveAt + this.saveIntervalMs - now);
-    const delay = !this.metaWritten && !this.firstSaveAttempted
+    const delay = !this.hasVectorCheckpoint && !this.firstVectorSaveAttempted
       ? Math.min(FIRST_CHECKPOINT_DELAY_MS, remaining)
       : remaining;
     this.nextSaveAt = now + delay;
@@ -539,11 +659,15 @@ export class IndexPersistence {
 
   private async runSave(): Promise<void> {
     const vector = this.vector;
-    if (!vector?.pendingChanges) return;
+    if (!vector || this.isRecoveryPaused()) return;
+    if (!vector.pendingChanges && !this.needsRecoveryCheckpoint()) return;
+    const hasVectorChanges = vector.pendingChanges > 0;
     const epoch = this.dirtyEpoch;
     this.markedDuringRunAt = null;
-    this.lastSaveAt = this.now();
-    this.firstSaveAttempted = true;
+    if (hasVectorChanges) {
+      this.lastSaveAt = this.now();
+      this.firstVectorSaveAttempted = true;
+    }
     const coveredSeq = this.seq;
     try {
       await this.writeChanges(vector);
@@ -563,7 +687,7 @@ export class IndexPersistence {
       this.leg.lastError = errorMessage(err);
       this.leg.lastErrorAt = new Date(this.now()).toISOString();
       if (this.leg.dirtySince === null) this.leg.dirtySince = this.leg.lastErrorAt;
-      this.lastSaveAt = this.now();
+      if (hasVectorChanges) this.lastSaveAt = this.now();
       this.clearTimer();
       this.logFailure(err);
     }
@@ -571,7 +695,7 @@ export class IndexPersistence {
 
   private async writeChanges(vector: VectorIndex): Promise<void> {
     const changes = vector.takeChanges();
-    if (changes.size === 0) return;
+    if (changes.size === 0 && !this.needsRecoveryCheckpoint()) return;
     const failed = new Map<string, boolean>();
     const failures = await inBatches([...changes], WRITE_CONCURRENCY, async ([id, present]) => {
       const entry = present ? vector.get(id) : undefined;
@@ -601,18 +725,22 @@ export class IndexPersistence {
         `${failures.length} of ${changes.size} vector writes failed: ${errorMessage(failures[0])}`,
       );
     }
+    const backfillSince = this.checkpointRecoveryCutoff();
     try {
       await this.kv.set<VectorMeta>(KV.bm25Index, VECTOR_META_KEY, {
         v: 3,
         bucketCount: this.bucketCountInUse(),
         savedAt: new Date(this.now()).toISOString(),
         count: vector.size,
+        ...(backfillSince !== undefined ? { backfillSince } : {}),
       });
+      this.checkpointBackfillSince = backfillSince;
     } catch (err) {
       vector.returnChanges(changes);
       throw err;
     }
-    this.metaWritten = true;
+    this.hasVectorCheckpoint = this.bucketOfId.size > 0;
+    if (!this.hasVectorCheckpoint) this.firstVectorSaveAttempted = false;
   }
 
   private async loadBuckets(bucketCount: number): Promise<VectorIndex | null> {
@@ -677,6 +805,7 @@ export class IndexPersistence {
     const staging = new VectorIndex();
     for (const [id, entry] of legacy.entries()) staging.add(id, entry.sessionId, entry.embedding);
     try {
+      await this.markBackfillSince(savedAt);
       await this.writeChanges(staging);
     } catch (err) {
       logger.warn("index persistence: migrating the legacy vector snapshot failed; it stays in place and the next save retries", {

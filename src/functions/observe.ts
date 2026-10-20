@@ -7,10 +7,10 @@ import { StateKV } from "../state/kv.js";
 import { trackViewerStreamItem, pruneViewerStreamIfDue } from "../state/viewer-stream.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { indexObservationSession } from "../state/obs-index.js";
-import { stripPrivateData } from "./privacy.js";
+import { scrubRecord } from "./privacy.js";
 import { DedupMap, recordDedupSkip } from "./dedup.js";
-import { withKeyedLock } from "../state/keyed-mutex.js";
-import { isAutoCompressEnabled } from "../config.js";
+import { afterKeyedLock, withKeyedLock } from "../state/keyed-mutex.js";
+import { getFinalizeIdleMs, isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { isCaptureKey } from "../capture/event-record.js";
 import { claimBackfillPrompt, isBackfillPrompt, recordLivePrompt } from "../capture/prompt-ledger.js";
@@ -20,6 +20,9 @@ import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { budgetLiveObservationSource } from "./observation-source-budget.js";
+import { markCompressionDispatchFailed, pendingCompression } from "./compression-state.js";
+import { requestSummaryRefresh } from "./summary-state.js";
+import { scheduleSessionFinalize } from "./session-finalize.js";
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -120,14 +123,10 @@ export function registerObserveFunction(
         }
       }
 
-      let sanitizedRaw: unknown = payload.data;
-      try {
-        const jsonStr = JSON.stringify(payload.data);
-        const sanitized = stripPrivateData(jsonStr);
-        sanitizedRaw = JSON.parse(sanitized);
-      } catch {
-        sanitizedRaw = stripPrivateData(String(payload.data));
-      }
+      const serializedData = JSON.stringify(payload.data);
+      const sanitizedRaw = serializedData === undefined
+        ? undefined
+        : scrubRecord(JSON.parse(serializedData), { scrubKeys: true });
 
       let originChannel: Origin["channel"] = "agent";
       if (payload.hookType === "prompt_submit") originChannel = "user";
@@ -162,6 +161,10 @@ export function registerObserveFunction(
         if (payload.hookType === "stop") {
           const response = d["assistant_response"] ?? d["last_assistant_message"] ?? d["response"];
           if (typeof response === "string") raw.assistantResponse = response;
+          const originalBytes = d["last_assistant_message_bytes"];
+          if (typeof originalBytes === "number" && Number.isSafeInteger(originalBytes) && originalBytes >= 0) {
+            raw.assistantResponseBytes = originalBytes;
+          }
         }
 
         extractedImage = extractImage(sanitizedRaw);
@@ -243,9 +246,17 @@ export function registerObserveFunction(
           }
         }
 
+        const autoCompress = isAutoCompressEnabled();
+        const finalizeIdleMs = getFinalizeIdleMs();
+        if (existingSession && existingSession.status !== "active") {
+          const dueAt = Date.now() + finalizeIdleMs;
+          await requestSummaryRefresh(kv, payload.sessionId, dueAt);
+          if (finalizeIdleMs > 0) await scheduleSessionFinalize(kv, payload.sessionId, dueAt);
+        }
+        const synthetic = budgetLiveObservationSource(buildSyntheticCompression(raw), existing);
+        if (autoCompress) synthetic.compression = pendingCompression();
         try {
-
-          await kv.set(KV.observations(payload.sessionId), obsId, raw);
+          await kv.set(KV.observations(payload.sessionId), obsId, synthetic);
           await indexObservationSession(kv, obsId, payload.sessionId).catch(
             (err) => {
               logger.warn("observation index update failed", {
@@ -304,7 +315,7 @@ export function registerObserveFunction(
               value: (session.observationCount || 0) + 1,
             },
           ];
-          if (session.status !== "active") {
+          if (session.status !== "active" && finalizeIdleMs > 0) {
             updates.push({ type: "set", path: "status", value: "active" });
             updates.push({ type: "remove", path: "endedAt" });
           }
@@ -364,57 +375,49 @@ export function registerObserveFunction(
           });
         }
 
-        // Per-observation LLM compression is opt-in as of 0.8.8.
-        // Default path: build a zero-LLM synthetic compression so recall
-        // and BM25 search still work without burning the user's Claude
-        // token allocation on every tool invocation.
-        if (isAutoCompressEnabled()) {
-          await sdk.trigger({
-            function_id: "mem::compress",
-            payload: {
-              observationId: obsId,
+        getSearchIndex().add(synthetic);
+        scheduleIndexSave();
+        await vectorIndexAddGuarded(
+          synthetic.id,
+          synthetic.sessionId,
+          synthetic.title + " " + (synthetic.narrative || ""),
+          { kind: "synthetic", logId: synthetic.id },
+        );
+        await sdk.trigger({
+          function_id: "stream::set",
+          payload: {
+            stream_name: STREAM.name,
+            group_id: STREAM.viewerGroup,
+            item_id: obsId,
+            data: {
+              type: "compressed",
+              observation: withoutObservationSource(synthetic),
               sessionId: payload.sessionId,
-              raw,
             },
-            action: TriggerAction.Void(),
+          },
+        });
+        trackViewerStreamItem(obsId);
+        void pruneViewerStreamIfDue(sdk).catch(() => {});
+
+        if (autoCompress) {
+          afterKeyedLock(`obs:${payload.sessionId}`, async () => {
+            try {
+              await sdk.trigger({
+                function_id: "mem::compress",
+                payload: { observationId: obsId, sessionId: payload.sessionId },
+                action: TriggerAction.Void(),
+              });
+            } catch {
+              await markCompressionDispatchFailed(kv, synthetic);
+            }
           });
-        } else {
-          const synthetic = budgetLiveObservationSource(buildSyntheticCompression(raw), existing);
-          await kv.set(
-            KV.observations(payload.sessionId),
-            obsId,
-            synthetic,
-          );
-          getSearchIndex().add(synthetic);
-          scheduleIndexSave();
-          await vectorIndexAddGuarded(
-            synthetic.id,
-            synthetic.sessionId,
-            synthetic.title + " " + (synthetic.narrative || ""),
-            { kind: "synthetic", logId: synthetic.id },
-          );
-          await sdk.trigger({
-            function_id: "stream::set",
-            payload: {
-              stream_name: STREAM.name,
-              group_id: STREAM.viewerGroup,
-              item_id: obsId,
-              data: {
-                type: "compressed",
-                observation: withoutObservationSource(synthetic),
-                sessionId: payload.sessionId,
-              },
-            },
-          });
-          trackViewerStreamItem(obsId);
-          void pruneViewerStreamIfDue(sdk).catch(() => {});
         }
 
         logger.info("Observation captured", {
           obsId,
           sessionId: payload.sessionId,
           hook: payload.hookType,
-          compress: isAutoCompressEnabled() ? "llm" : "synthetic",
+          compress: autoCompress ? "llm" : "synthetic",
         });
         return { observationId: obsId };
       });

@@ -2,6 +2,7 @@ import type { IndexLegStatus, IndexPersistenceStatus } from "../state/index-pers
 import type { VectorBackfillState } from "./search.js";
 import { describeGraphCompactBoot, type GraphCompactBootStatus } from "./graph-compact-boot.js";
 import type { CaptureStatus } from "./capture.js";
+import type { GraphIndexMigrationStatus } from "../state/graph-index-migration.js";
 
 export type StatusLevel = "ok" | "info" | "warn" | "error";
 
@@ -29,12 +30,15 @@ export interface StatusFlag {
 }
 
 export interface GraphStatsInput {
-  totalNodes?: number;
-  totalEdges?: number;
+  totalNodes?: number | null;
+  totalEdges?: number | null;
+  available?: boolean;
+  coverage?: "complete" | "partial" | "unknown";
   fromSnapshot?: boolean;
   updatedAt?: string;
   dirty?: boolean;
   warning?: string;
+  fromIndex?: boolean;
 }
 
 export interface StatusInputs {
@@ -75,6 +79,7 @@ export interface StatusInputs {
   graph: GraphStatsInput | null;
   graphExtractionEnabled: boolean;
   graphCompaction?: GraphCompactBootStatus | null;
+  graphIndex?: GraphIndexMigrationStatus | null;
   auditLegacy: { status: string; sizeBytes?: number } | null;
   indexPersistence?: IndexPersistenceStatus | null;
   stateStore?: { ok: boolean; latencyMs?: number } | null;
@@ -117,6 +122,7 @@ export interface StatusReport {
   indexPersistence: IndexPersistenceStatus | null;
   graph: (GraphStatsInput & { ageSeconds: number | null; extractionEnabled: boolean }) | null;
   graphCompaction: GraphCompactBootStatus | null;
+  graphIndex: GraphIndexMigrationStatus | null;
   capture: CaptureStatus | null;
   observeDedup: ObserveDedupStatus | null;
   functions: Array<FunctionMetricInput & { failureRate: number; offWithoutLlm: boolean }>;
@@ -391,14 +397,14 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
   if (input.graph) {
     const ageSeconds = secondsBetween(input.now, input.graph.updatedAt);
     graph = { ...input.graph, ageSeconds, extractionEnabled: input.graphExtractionEnabled };
-    if (input.graphExtractionEnabled && !input.graph.fromSnapshot) {
+    if (input.graphExtractionEnabled && !input.graph.fromSnapshot && !input.graph.fromIndex && !input.graphIndex) {
       problems.push({
         level: "warn",
         code: "graph-no-snapshot",
-        message: "Graph extraction is on but no graph snapshot exists, so graph counts read as zero.",
+        message: "Graph extraction is on but no graph snapshot exists, so graph counts are unavailable.",
         fix: "Use Rebuild Graph in the viewer, or POST /agentmemory/graph/snapshot-rebuild.",
       });
-    } else if (input.graph.fromSnapshot && ageSeconds !== null && ageSeconds > GRAPH_SNAPSHOT_STALE_SECONDS) {
+    } else if (!input.graph.fromIndex && input.graph.fromSnapshot && ageSeconds !== null && ageSeconds > GRAPH_SNAPSHOT_STALE_SECONDS) {
       const age = ageSeconds >= 2 * 86400 ? `${Math.floor(ageSeconds / 86400)} days` : `${Math.round(ageSeconds / 3600)} hours`;
       problems.push({
         level: "info",
@@ -415,6 +421,20 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
         fix: "No action needed: the next graph write settles the counts.",
       });
     }
+  }
+
+  const graphIndex = input.graphIndex ?? null;
+  if (input.graphIndex === null || graphIndex?.state === "unavailable") {
+    problems.push({ level: "info", code: "graph-index-unavailable", message: "The bounded graph index could not be checked. Keyword and vector search remain available.", fix: "Run agentmemory graph-index status and check the state store." });
+  } else if (graphIndex && !graphIndex.ready) {
+    problems.push({
+      level: graphIndex.state === "paused" ? "warn" : "info",
+      code: "graph-index-not-ready",
+      message: `Graph retrieval is unavailable while its index is ${graphIndex.state}. Keyword search, vector search and capture remain available.`,
+      fix: graphIndex.action,
+    });
+  } else if (graphIndex?.coverage === "partial") {
+    problems.push({ level: "warn", code: "graph-index-partial", message: `${graphIndex.incompleteRecords ?? "Some"} graph records exceed index limits; graph retrieval has partial coverage.`, fix: graphIndex.action });
   }
 
   const compaction = input.graphCompaction ?? null;
@@ -502,6 +522,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     indexPersistence: persistence,
     graph,
     graphCompaction: compaction,
+    graphIndex,
     capture: input.capture ?? null,
     observeDedup: input.observeDedup ?? null,
     functions,
@@ -861,10 +882,11 @@ ${report.observeDedup ? row("Repeats skipped", escapeHtml(`${report.observeDedup
 <h2>Knowledge graph</h2><table>
 ${graph
   ? row("Extraction", graph.extractionEnabled ? "on" : "off") +
-    row("Nodes / edges", escapeHtml(`${graph.totalNodes ?? 0} / ${graph.totalEdges ?? 0}`)) +
-    row("Snapshot age", escapeHtml(graph.fromSnapshot ? formatDuration(graph.ageSeconds) : "no snapshot"))
+    row("Nodes / edges", escapeHtml(`${graph.totalNodes ?? "unknown"} / ${graph.totalEdges ?? "unknown"}`)) +
+    row(graph.fromIndex ? "Count source" : "Snapshot age", escapeHtml(graph.fromIndex ? "maintained index" : graph.fromSnapshot ? formatDuration(graph.ageSeconds) : "no snapshot"))
   : row("Graph", "unavailable")}
 ${report.graphCompaction ? row("Provenance compaction", escapeHtml(describeGraphCompactBoot(report.graphCompaction))) : ""}
+${report.graphIndex ? row("Retrieval index", escapeHtml(`${report.graphIndex.state}, ${report.graphIndex.coverage} coverage`)) : ""}
 </table>
 <h2>Features</h2><table class="list"><tr><th>Feature</th><th>Setting</th><th>State</th><th>How to change</th></tr>${flags}</table>
 <h2>Process</h2><table>

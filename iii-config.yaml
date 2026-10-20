@@ -55,9 +55,3 @@ workers:
       # console layer to amplify. Re-enable per-session via env if you
       # need verbose tracing for debugging.
       logs_console_output: false
-  - name: iii-exec
-    config:
-      watch:
-        - src/**/*.ts
-      exec:
-        - node dist/index.mjs

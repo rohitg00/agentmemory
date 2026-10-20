@@ -11,7 +11,7 @@ vi.mock("../src/functions/search.js", () => ({
 }));
 
 import { registerCompressFunction } from "../src/functions/compress.js";
-import { STREAM } from "../src/state/schema.js";
+import { KV, STREAM } from "../src/state/schema.js";
 import type { MemoryProvider, RawObservation } from "../src/types.js";
 
 const VALID_COMPRESS_XML = `<observation><type>command_run</type>
@@ -25,22 +25,21 @@ const VALID_COMPRESS_XML = `<observation><type>command_run</type>
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
   return {
-    get: async () => null,
+    get: async (scope: string, key: string) => store.get(scope)?.get(key) ?? null,
     set: async (scope: string, key: string, data: unknown) => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
       return data;
     },
     delete: async () => {},
-    list: async () => [],
+    list: async (scope: string) => [...(store.get(scope)?.values() ?? [])],
   };
 }
 
 describe("compress no longer writes a per-session mem-live group", () => {
   it("only targets the viewer group on stream:: calls", async () => {
     const trigger = vi.fn(async () => undefined);
-    const sdk = { trigger } as never;
-    const kv = mockKV() as never;
+    const kv = mockKV();
 
     const provider: MemoryProvider = {
       name: "mock",
@@ -65,7 +64,7 @@ describe("compress no longer writes a per-session mem-live group", () => {
         if (id === "mem::compress") compressCallback = fn;
       },
     };
-    registerCompressFunction(registerSdk as never, kv, provider);
+    registerCompressFunction(registerSdk as never, kv as never, provider);
     expect(compressCallback).not.toBeNull();
 
     const sessionId = "ses_compress_stream_test";
@@ -80,6 +79,7 @@ describe("compress no longer writes a per-session mem-live group", () => {
       raw: {},
     };
 
+    await kv.set(KV.observations(sessionId), raw.id, raw);
     await compressCallback!({
       observationId: "obs_1",
       sessionId,

@@ -447,6 +447,98 @@ describe("handleToolCall", () => {
     expect(parsed.deleted).toBe(1);
     expect(parsed.requested).toBe(2);
   });
+
+  describe("local fallback writes", () => {
+    const serverUrl = "http://127.0.0.1:3999";
+    const originalUrl = process.env["AGENTMEMORY_URL"];
+
+    beforeEach(() => {
+      process.env["AGENTMEMORY_URL"] = serverUrl;
+    });
+
+    afterEach(() => {
+      if (originalUrl === undefined) delete process.env["AGENTMEMORY_URL"];
+      else process.env["AGENTMEMORY_URL"] = originalUrl;
+    });
+
+    it("memory_save tells the caller the memory went to the local file, not the server", async () => {
+      const kv = new InMemoryKV("/tmp/test-fallback.json");
+      const result = await handleToolCall("memory_save", { content: "fallback save" }, kv);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.saved).toMatch(/^mem_/);
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain(serverUrl);
+      expect(parsed.warning).not.toContain("/tmp/test-fallback.json");
+      expect(parsed.warning).not.toContain("lost");
+      expect(writeFileSync).toHaveBeenCalledTimes(1);
+    });
+
+    it("memory_save says the memory is lost on exit when there is no local file", async () => {
+      const kv = new InMemoryKV();
+      const parsed = JSON.parse(
+        (await handleToolCall("memory_save", { content: "no file" }, kv)).content[0].text,
+      );
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain(serverUrl);
+      expect(parsed.warning).toContain("lost when");
+    });
+
+    it("memory_save says the memory is lost on exit when writing the local file failed", async () => {
+      vi.mocked(writeFileSync).mockImplementationOnce(() => {
+        throw new Error("EACCES");
+      });
+      const kv = new InMemoryKV("/tmp/test-fallback.json");
+      const parsed = JSON.parse(
+        (await handleToolCall("memory_save", { content: "unwritable" }, kv)).content[0].text,
+      );
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain("lost when");
+      expect(writeFileSync).toHaveBeenCalledTimes(1);
+    });
+
+    it("memory_save marks the result local when the server stops answering mid-session", async () => {
+      setLivezProbe(async () => ({ ok: true, status: 200, statusText: "OK" }));
+      (globalThis as { fetch: typeof fetch }).fetch = vi.fn(async () => {
+        throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      }) as unknown as typeof fetch;
+      const kv = new InMemoryKV("/tmp/test-fallback.json");
+      const parsed = JSON.parse(
+        (await handleToolCall("memory_save", { content: "hung server" }, kv)).content[0].text,
+      );
+      expect(parsed.saved).toMatch(/^mem_/);
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain(serverUrl);
+    });
+
+    it("memory_governance_delete marks the result local", async () => {
+      const kv = new InMemoryKV("/tmp/test-fallback.json");
+      const parsed = JSON.parse(
+        (await handleToolCall(
+          "memory_governance_delete",
+          { memoryIds: ["mem_on_server"] },
+          kv,
+        )).content[0].text,
+      );
+      expect(parsed.deleted).toBe(0);
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain(serverUrl);
+      expect(parsed.warning).not.toContain("lost");
+      expect(writeFileSync).toHaveBeenCalledTimes(1);
+    });
+
+    it("memory_governance_delete says the change is lost on exit when there is no local file", async () => {
+      const kv = new InMemoryKV();
+      const parsed = JSON.parse(
+        (await handleToolCall(
+          "memory_governance_delete",
+          { memoryIds: ["mem_on_server"] },
+          kv,
+        )).content[0].text,
+      );
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain("lost when");
+    });
+  });
 });
 
 describe("initialize protocol version negotiation", () => {

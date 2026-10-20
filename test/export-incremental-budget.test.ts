@@ -160,6 +160,50 @@ describe("mem::export stops assembling once the frame budget is exceeded", () =>
   });
 });
 
+describe("mem::export pages a collection that alone exceeds the frame limit", () => {
+  it("serves summaries in pages under the limit once the whole collection is refused", async () => {
+    const kv = countingKV();
+    const sdk = mockSdk();
+    registerExportImportFunction(sdk as never, kv as never);
+    registerApiTriggers(sdk as never, kv as never, BEARER);
+    seedSessions(kv, 3, 10);
+    const ids: string[] = [];
+    for (let i = 0; i < 24; i++) {
+      ids.push(`ses_${i}`);
+      kv.seed(KV.summaries, `ses_${i}`, { sessionId: `ses_${i}`, narrative: "s".repeat(MIB) });
+    }
+    type Page = {
+      status_code: number;
+      body: {
+        stoppedAt?: string;
+        summaries: Array<{ sessionId: string }>;
+        collectionPagination: { hasMore: boolean };
+      };
+    };
+    const get = (query_params: Record<string, string>) =>
+      sdk.fns.get("api::export")!({
+        headers: { authorization: `Bearer ${BEARER}` },
+        query_params,
+      }) as Promise<Page>;
+
+    const whole = await get({});
+    expect(whole.status_code).toBe(413);
+    expect(whole.body.stoppedAt).toBe("summaries");
+
+    const exported: string[] = [];
+    let last: Page | undefined;
+    for (const collectionOffset of ["0", "10", "20"]) {
+      last = await get({ collections: "summaries", collectionLimit: "10", collectionOffset });
+      expect(last.status_code).toBe(200);
+      expect(payloadByteLength(last.body)).toBeLessThanOrEqual(SAFE_PAYLOAD_BYTES);
+      exported.push(...last.body.summaries.map((s) => s.sessionId));
+    }
+
+    expect(last!.body.collectionPagination.hasMore).toBe(false);
+    expect(exported.sort()).toEqual(ids.sort());
+  });
+});
+
 describe("ExportBudget", () => {
   it("tracks a collection's serialized size to within its framing", () => {
     const items = [{ a: 1 }, { b: "two" }, { c: [3, 4] }];

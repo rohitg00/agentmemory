@@ -8,6 +8,7 @@ import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { deleteFacetsForTargets } from "./facets.js";
 import { recordAudit } from "./audit.js";
 import { getSearchIndex, getVectorIndex, isMemoryIndexReady, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
@@ -333,15 +334,19 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         const memoryId = data.memoryId;
         await attempt(memoryId, async () => {
           const mem = await kv.get<Memory>(KV.memories, memoryId);
-          if (!mem) return false;
+          if (!mem) {
+            await deleteFacetsForTargets(kv, [memoryId]);
+            return false;
+          }
           await kv.delete(KV.memories, memoryId);
           deletedMemoryIds.push(memoryId);
           getSearchIndex().remove(memoryId);
           vectorIndexRemove(memoryId);
           indexCleaned = true;
           await cleanup(memoryId, async () => {
-            if (mem.imageRef) await decrementImageRef(kv, sdk, mem.imageRef);
             await deleteAccessLog(kv, memoryId);
+            await deleteFacetsForTargets(kv, [memoryId]);
+            if (mem.imageRef) await decrementImageRef(kv, sdk, mem.imageRef);
           });
           return true;
         });
@@ -354,7 +359,9 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       ) {
         const sessionId = data.sessionId;
         for (const obsId of data.observationIds) {
-          await attempt(obsId, () => forgetObservation(sessionId, obsId));
+          await attempt(obsId, () =>
+            withKeyedLock(`obs:${sessionId}`, () => forgetObservation(sessionId, obsId)),
+          );
         }
       }
 
@@ -364,34 +371,37 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         !data.memoryId
       ) {
         const sessionId = data.sessionId;
-        const observations = await kv.list<ObservationRef & { id: string }>(
-          KV.observations(sessionId),
-        );
-        for (const obs of observations) {
-          await attempt(obs.id, () => forgetObservation(sessionId, obs.id, obs));
-        }
-        await attempt(sessionId, async () => {
-          const session = await kv.get<Session>(KV.sessions, sessionId);
-          if (!session) return false;
-          await kv.delete(KV.sessions, sessionId);
-          await removeSessionFromProjectIndex(
-            kv,
-            session.project,
-            sessionId,
-          ).catch(() => {});
-          deletedSession = true;
-          return true;
-        });
-        try {
-          const summary = await kv.get(KV.summaries, sessionId);
-          if (summary) {
-            await kv.delete(KV.summaries, sessionId);
-            deletedSummary = true;
-            deleted++;
+        await withKeyedLock(`obs:${sessionId}`, async () => {
+          const observations = await kv.list<ObservationRef & { id: string }>(
+            KV.observations(sessionId),
+          );
+          for (const obs of observations) {
+            await attempt(obs.id, () => forgetObservation(sessionId, obs.id, obs));
           }
-        } catch (err) {
-          recordFailure(`summary:${sessionId}`, err);
-        }
+          await attempt(sessionId, async () => {
+            const session = await kv.get<Session>(KV.sessions, sessionId);
+            if (!session) return false;
+            await kv.delete(KV.sessions, sessionId);
+            await kv.delete(KV.summaryRepairs, sessionId);
+            await removeSessionFromProjectIndex(
+              kv,
+              session.project,
+              sessionId,
+            ).catch(() => {});
+            deletedSession = true;
+            return true;
+          });
+          try {
+            const summary = await kv.get(KV.summaries, sessionId);
+            if (summary) {
+              await kv.delete(KV.summaries, sessionId);
+              deletedSummary = true;
+              deleted++;
+            }
+          } catch (err) {
+            recordFailure(`summary:${sessionId}`, err);
+          }
+        });
       }
 
       if (deleted > 0 || indexCleaned) await flushIndexSave();
