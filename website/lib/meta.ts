@@ -45,16 +45,20 @@ function lastPage(link: string | null): number | undefined {
 
 async function npmAllTime(): Promise<number> {
   const end = Date.now();
-  let total = 0;
-  for (const pkg of NPM_PACKAGES) {
-    for (let from = Date.parse(`${NPM_FIRST_DAY}T00:00:00Z`); from <= end; from += NPM_RANGE_DAYS * DAY_MS) {
-      const to = Math.min(end, from + (NPM_RANGE_DAYS - 1) * DAY_MS);
-      const range = `${new Date(from).toISOString().slice(0, 10)}:${new Date(to).toISOString().slice(0, 10)}`;
-      const data = (await (await liveFetch(`https://api.npmjs.org/downloads/point/${range}/${pkg}`)).json()) as { downloads?: number };
-      total += data.downloads ?? 0;
-    }
+  const ranges: string[] = [];
+  for (let from = Date.parse(`${NPM_FIRST_DAY}T00:00:00Z`); from <= end; from += NPM_RANGE_DAYS * DAY_MS) {
+    const to = Math.min(end, from + (NPM_RANGE_DAYS - 1) * DAY_MS);
+    ranges.push(`${new Date(from).toISOString().slice(0, 10)}:${new Date(to).toISOString().slice(0, 10)}`);
   }
-  return total;
+  const counts = await Promise.all(
+    NPM_PACKAGES.flatMap((pkg) =>
+      ranges.map(async (range) => {
+        const data = (await (await liveFetch(`https://api.npmjs.org/downloads/point/${range}/${pkg}`)).json()) as { downloads?: number };
+        return data.downloads ?? 0;
+      }),
+    ),
+  );
+  return counts.reduce((sum, n) => sum + n, 0);
 }
 
 export async function getLiveProjectMeta(): Promise<ProjectMeta> {

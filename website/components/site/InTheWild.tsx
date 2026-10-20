@@ -55,9 +55,9 @@ function OutletCard({ f }: { f: Outlet }) {
   const badge = "badge" in f ? f.badge : undefined;
   if (badge) {
     return (
-      <a className={`${s.outlet} ${s.badgeOutlet}`} href={f.href} target="_blank" rel="noopener noreferrer">
-        <img src={badge.light} alt={badge.alt} width={250} height={54} className="theme-light-only" decoding="async" />
-        <img src={badge.dark} alt="" aria-hidden="true" width={250} height={54} className="theme-dark-only" decoding="async" />
+      <a className={`${s.outlet} ${s.badgeOutlet}`} href={f.href} target="_blank" rel="noopener noreferrer" aria-label={badge.alt}>
+        <img src={badge.light} alt="" width={250} height={54} className="theme-light-only" decoding="async" />
+        <img src={badge.dark} alt="" width={250} height={54} className="theme-dark-only" decoding="async" />
       </a>
     );
   }
