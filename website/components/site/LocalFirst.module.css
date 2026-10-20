@@ -303,7 +303,7 @@
   .packet {
     right: auto;
     top: auto;
-    bottom: calc(var(--i) * 12px + 14px);
+    bottom: calc(var(--i) * 12px + 8px);
     left: 0;
   }
   @keyframes travel {

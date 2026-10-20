@@ -301,6 +301,36 @@ video {
   border-color: var(--accent);
 }
 
+.flow-arrow {
+  --head: 7px;
+  position: relative;
+  display: block;
+  flex: none;
+  height: 9px;
+  color: var(--ink-2);
+}
+
+.flow-arrow::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
+  right: calc(var(--head) - 1px);
+  height: 1px;
+  background: repeating-linear-gradient(to left, currentColor 0 4px, transparent 4px 7px);
+}
+
+.flow-arrow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--head);
+  height: 9px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
 .theme-dark-only {
   display: none !important;
 }

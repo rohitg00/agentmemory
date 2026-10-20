@@ -95,7 +95,7 @@ export function ContextFunnel() {
           </div>
 
           <div className={s.flow} aria-hidden="true">
-            <span className={s.arrow} />
+            <span className="flow-arrow" />
           </div>
 
           <div className={`${s.col} ${s.engine}`}>
@@ -114,7 +114,7 @@ export function ContextFunnel() {
           </div>
 
           <div className={s.flow} aria-hidden="true">
-            <span className={s.arrow} />
+            <span className="flow-arrow" />
           </div>
 
           <div className={`${s.col} ${s.window}`}>

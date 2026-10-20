@@ -62,7 +62,10 @@ export async function Hero() {
               </a>
             </div>
             <a className={s.docs} href="/docs">
-              Read the docs <span aria-hidden="true">→</span>
+              <span className={s.docsText}>Read the docs</span>
+              <span className={s.docsArrow} aria-hidden="true">
+                →
+              </span>
             </a>
           </div>
 
