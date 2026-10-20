@@ -21,6 +21,7 @@ export const src = {
   changelog: `${REPO_URL}/blob/main/CHANGELOG.md`,
   paper: "https://arxiv.org/abs/2410.10813",
   dataset: "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned",
+  wiki: "https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2",
 };
 
 export const NAV = [
@@ -101,6 +102,7 @@ export const GATE_SCENARIOS = [
 ];
 
 export const FEATURED = [
+  { name: "OpenUK", sub: "AI Openness 2026 case study", href: "https://openuk.uk/report/aiopenness2026/" },
   { name: "AlphaSignal", sub: "Technical deep-dive, 180K subscribers", href: "https://alphasignalai.substack.com/p/how-agentmemory-works-and-how-to" },
   { name: "Agentic AI Foundation", sub: "Linux Foundation backed", href: "https://aaif.io/" },
   {
@@ -111,6 +113,26 @@ export const FEATURED = [
       light: "https://trendshift.io/api/badge/repositories/25123",
       dark: "https://trendshift.io/api/badge/repositories/25123",
       alt: "rohitg00/agentmemory on Trendshift",
+    },
+  },
+  {
+    name: "Trendshift weekly",
+    sub: "#1 Repository of the Week, TypeScript",
+    href: "https://trendshift.io/repositories/25123",
+    badge: {
+      light: "https://trendshift.io/api/badge/trendshift/repositories/25123/weekly?language=TypeScript",
+      dark: "https://trendshift.io/api/badge/trendshift/repositories/25123/weekly?language=TypeScript",
+      alt: "agentmemory, #1 TypeScript Repository of the Week on Trendshift",
+    },
+  },
+  {
+    name: "Trendshift monthly",
+    sub: "#5 Repository of the Month, TypeScript",
+    href: "https://trendshift.io/repositories/25123",
+    badge: {
+      light: "https://trendshift.io/api/badge/trendshift/repositories/25123/monthly?language=TypeScript",
+      dark: "https://trendshift.io/api/badge/trendshift/repositories/25123/monthly?language=TypeScript",
+      alt: "agentmemory, #5 TypeScript Repository of the Month on Trendshift",
     },
   },
   {
@@ -132,6 +154,65 @@ export const QUOTES = [
   { name: "Alper Tayfur", context: "Product Hunt launch thread", quote: "Tackles one of the biggest pain points with coding agents: losing useful project context across sessions without bloating the context window.", href: PH },
   { name: "Thomas Hall", context: "Product Hunt launch thread", quote: "Memory often becomes just more noise over time. Agentmemory feels more intentional compared to a lot of tools in this space.", href: PH },
   { name: "Pranav Prakash", context: "Two weeks of daily use", quote: "Been using it for 2 weeks, and I definitely see improvements.", href: PH },
+];
+
+export interface Paper {
+  title: string;
+  authors: string;
+  venue: string;
+  date: string;
+  href: string;
+  cites: "LLM Wiki v2" | "agentmemory";
+  quote?: string;
+  note?: string;
+}
+
+export const RESEARCH: Paper[] = [
+  {
+    title: "Memory as Metabolism: A Design for Companion Knowledge Systems",
+    authors: "Stefan Miteski",
+    venue: "arXiv 2604.12034",
+    date: "Apr 2026",
+    href: "https://arxiv.org/abs/2604.12034",
+    cites: "LLM Wiki v2",
+    quote: "This is the closest practitioner-level prior art to the governance profile this paper proposes.",
+  },
+  {
+    title: "The Missing Knowledge Layer in Cognitive Architectures for AI Agents",
+    authors: "Michaël Roynard",
+    venue: "arXiv 2604.11364",
+    date: "Apr 2026",
+    href: "https://arxiv.org/abs/2604.11364",
+    cites: "LLM Wiki v2",
+    quote: "Closest informal statement of the four-layer thesis.",
+  },
+  {
+    title: "Managed Memory Is Still Not Governed State: Production Lessons from LLM Wiki v2",
+    authors: "Peter Bell",
+    venue: "Zenodo 19545947",
+    date: "Apr 2026",
+    href: "https://doi.org/10.5281/zenodo.19545947",
+    cites: "LLM Wiki v2",
+    quote: "Karpathy’s original pattern gives compiled memory. LLM Wiki v2 gives managed memory.",
+  },
+  {
+    title: "Beyond Memory: A Templated Substrate for Heterogeneous Collaborative Knowledge Work with LLM Agents",
+    authors: "Priscila Saboia Moreira, Christopher R. Sweet",
+    venue: "arXiv 2607.24759",
+    date: "May 2026",
+    href: "https://arxiv.org/abs/2607.24759",
+    cites: "LLM Wiki v2",
+    quote: "LLM Wiki v2 (rohitg00, 2026) adds confidence scoring and explicit supersession of stale claims by higher-confidence successor pages.",
+  },
+  {
+    title: "TOKI: A Bitemporal Operator Algebra for Contradiction Resolution in LLM-Agent Persistent Memory",
+    authors: "Ziming Wang",
+    venue: "arXiv 2606.06240",
+    date: "Jun 2026",
+    href: "https://arxiv.org/abs/2606.06240",
+    cites: "agentmemory",
+    note: "Cites agentmemory v0.9.17 and names it as a future integration for testing the paper’s contradiction predicates.",
+  },
 ];
 
 export const FAQ = [
