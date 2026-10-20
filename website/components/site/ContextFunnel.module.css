@@ -237,7 +237,7 @@
   justify-self: start;
 }
 
-.figure:not(.play) .sq {
+:global(.js) .figure:not(.play) .sq {
   opacity: 0;
   transform: translateY(4px);
 }
@@ -327,6 +327,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .figure:not(.play) .sq,
+  :global(.js) .figure:not(.play) .sq,
   .play .sq,
   .focus .sel {
     opacity: 1;

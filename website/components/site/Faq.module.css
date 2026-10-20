@@ -7,6 +7,7 @@
 
 .list {
   border-top: 1px solid var(--line);
+  interpolate-size: allow-keywords;
 }
 
 .item {
@@ -64,7 +65,17 @@
   font-size: var(--t-16);
   line-height: 1.65;
   max-width: 62ch;
-  animation: open var(--dur-3) var(--ease-out);
+  animation: open var(--dur-2) var(--ease-out);
+}
+
+.item::details-content {
+  block-size: 0;
+  overflow-y: clip;
+  transition: block-size var(--dur-2) var(--ease-out), content-visibility var(--dur-2) allow-discrete;
+}
+
+.item[open]::details-content {
+  block-size: auto;
 }
 
 .item summary:focus-visible {
@@ -83,6 +94,12 @@
   }
 }
 
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+}
+
 @media (max-width: 900px) {
   .grid {
     grid-template-columns: minmax(0, 1fr);
@@ -98,7 +115,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .item p {
-    animation: none;
+    animation: fade 150ms var(--ease-out);
+  }
+  .item::details-content {
+    transition: none;
   }
   .mark::before,
   .mark::after {

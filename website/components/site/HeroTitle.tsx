@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import s from "./HeroTitle.module.css";
 
 const MODES = ["persistent", "cross-agent", "infinite", "shared", "local", "long-term"];
@@ -19,29 +19,31 @@ const STEP = 2400;
 export function HeroTitle({ rankHref }: { rankHref: string }) {
   const [mode, setMode] = useState(0);
   const [agent, setAgent] = useState(0);
+  const ref = useRef<HTMLHeadingElement | null>(null);
 
   useEffect(() => {
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const el = ref.current;
+    if (!el || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     let tick = 0;
-    let visible = !document.hidden;
-    const onVis = () => {
-      visible = !document.hidden;
-    };
-    document.addEventListener("visibilitychange", onVis);
+    let onScreen = true;
+    const io = new IntersectionObserver(([e]) => {
+      onScreen = e.isIntersecting;
+    });
+    io.observe(el);
     const id = setInterval(() => {
-      if (!visible) return;
+      if (document.hidden || !onScreen) return;
       tick += 1;
       if (tick % 2 === 1) setAgent((a) => (a + 1) % AGENTS.length);
       else setMode((m) => (m + 1) % MODES.length);
     }, STEP / 2);
     return () => {
       clearInterval(id);
-      document.removeEventListener("visibilitychange", onVis);
+      io.disconnect();
     };
   }, []);
 
   return (
-    <h1 className={s.title}>
+    <h1 ref={ref} className={s.title}>
       <span className="sr-only">The number one persistent memory for coding agents.</span>
       <span aria-hidden="true" className={s.line}>
         <a className={s.rank} href={rankHref} target="_blank" rel="noreferrer" tabIndex={-1}>

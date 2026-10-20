@@ -72,6 +72,9 @@
   stroke-width: 4;
   stroke-linecap: round;
   stroke-dasharray: 1;
+}
+
+:global(.js) .fill {
   stroke-dashoffset: 1;
 }
 
@@ -193,8 +196,11 @@
 }
 
 .ctxTag {
-  opacity: 0;
   color: var(--accent);
+}
+
+:global(.js) .ctxTag {
+  opacity: 0;
 }
 
 .ctxRows {
@@ -222,6 +228,9 @@
   border-radius: 4px;
   font-size: var(--t-12);
   color: var(--ink);
+}
+
+:global(.js) .ctxSummary {
   opacity: 0;
 }
 
@@ -336,14 +345,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fill {
+  .fill,
+  :global(.js) .fill {
     stroke-dashoffset: 0;
   }
   .ctxRow {
     opacity: 0;
   }
   .ctxSummary,
-  .ctxTag {
+  .ctxTag,
+  :global(.js) .ctxSummary,
+  :global(.js) .ctxTag {
     opacity: 1;
   }
   :global(.is-in) .fill,

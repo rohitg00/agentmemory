@@ -25,8 +25,12 @@
 }
 
 .k {
-  opacity: 0;
   will-change: opacity, transform;
+}
+
+.k[data-b2]:not([data-dim]),
+:global(.js) .k {
+  opacity: 0;
 }
 
 .side {
