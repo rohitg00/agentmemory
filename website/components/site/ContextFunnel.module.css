@@ -355,3 +355,22 @@
     transition: none;
   }
 }
+
+:global(html:not(.js)) .figure .sq:not(.sel) {
+  opacity: 0.22;
+}
+
+:global(html:not(.js)) .figure .sel,
+:global(html:not(.js)) .figure .slot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+:global(html:not(.js)) .figure .steps li {
+  color: var(--bg);
+}
+
+:global(html:not(.js)) .figure .tick {
+  background: var(--accent);
+  border-color: var(--accent);
+}

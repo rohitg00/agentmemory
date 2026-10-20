@@ -229,7 +229,17 @@
     flex-wrap: wrap;
     padding-right: 0;
   }
-  .set[inert] {
+  .set[aria-hidden] {
     display: none;
+  }
+  .item {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+  .outlet {
+    height: auto;
+    min-height: 64px;
+    padding-block: 10px;
+    white-space: normal;
   }
 }

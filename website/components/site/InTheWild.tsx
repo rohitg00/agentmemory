@@ -51,11 +51,19 @@ function mixed(): Outlet[] {
   return more.flatMap((f, i) => (fewer[i] ? [f, fewer[i]] : [f]));
 }
 
-function OutletCard({ f }: { f: Outlet }) {
+function OutletCard({ f, copy }: { f: Outlet; copy: boolean }) {
   const badge = "badge" in f ? f.badge : undefined;
+  const tabIndex = copy ? -1 : undefined;
   if (badge) {
     return (
-      <a className={`${s.outlet} ${s.badgeOutlet}`} href={f.href} target="_blank" rel="noopener noreferrer" aria-label={badge.alt}>
+      <a
+        className={`${s.outlet} ${s.badgeOutlet}`}
+        href={f.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={badge.alt}
+        tabIndex={tabIndex}
+      >
         <img src={badge.light} alt="" width={250} height={54} className="theme-light-only" decoding="async" />
         <img src={badge.dark} alt="" width={250} height={54} className="theme-dark-only" decoding="async" />
       </a>
@@ -63,7 +71,7 @@ function OutletCard({ f }: { f: Outlet }) {
   }
   const logo = FEATURED_LOGOS[f.name];
   return (
-    <a className={s.outlet} href={f.href} target="_blank" rel="noreferrer">
+    <a className={s.outlet} href={f.href} target="_blank" rel="noreferrer" tabIndex={tabIndex}>
       {logo && (
         <img
           src={logo.src}
@@ -91,10 +99,10 @@ export function Featured() {
         <div className={s.marquee}>
           <div className={s.track}>
             {[false, true].map((copy) => (
-              <ul key={String(copy)} className={s.set} inert={copy || undefined} aria-hidden={copy || undefined}>
+              <ul key={String(copy)} className={s.set} aria-hidden={copy || undefined}>
                 {items.map((f) => (
                   <li key={f.name} className={s.item}>
-                    <OutletCard f={f} />
+                    <OutletCard f={f} copy={copy} />
                   </li>
                 ))}
               </ul>

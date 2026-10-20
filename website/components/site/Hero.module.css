@@ -207,7 +207,7 @@
   text-decoration-color: var(--accent);
 }
 
-@media (hover: hover) and (pointer: fine) {
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
   .docs:hover .docsArrow {
     transform: translateX(2px);
   }
