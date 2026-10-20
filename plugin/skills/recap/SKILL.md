@@ -1,25 +1,68 @@
 ---
 name: recap
-description: Summarize the last N agent sessions for the current project, grouped by date. Use when the user asks "recap", "what have we been doing", "this week", "today", or wants a rollup of recent work.
+description: Summarize the last N agent sessions for the current project, grouped by date, with highlight observations per session. Use when the user asks "recap", "what have we been doing", "today", "this week", or wants a rollup of recent work.
 argument-hint: "[last N | today | this week]"
 user-invocable: true
 ---
 
 The user wants a recap. Time window args: $ARGUMENTS
 
-Parse `$ARGUMENTS` to determine the window:
-- `today` -> sessions started on the current local date
-- `this week` -> sessions started in the last 7 days
-- `last <n>` -> the most recent N sessions
-- bare numeric -> treat as `last <n>`
-- empty -> default to `last 10`
+## Quick start
 
-Call the `memory_sessions` MCP tool, then filter to the current project (match by `cwd` against the working directory). Apply the time window. Sort by `startedAt` descending.
+```json
+memory_sessions { "project": "<current-project-id>", "limit": 30 }
+```
 
-Group the surviving sessions by their local calendar date (YYYY-MM-DD). For each date:
-- List each session: id (first 8 chars), title or first prompt, observation count, status
-- Indent two or three highlight observations per session (importance >= 7) drawn from `memory_recall` with a per-session query, limit 3
+Then per surviving session: `memory_recall { "query": "<top concepts>", "project": "<current-project-id>", "limit": 3 }`.
+When an agent is requested, pass the same `agentId` to both calls.
 
-End with a one-line total: "N sessions across M days, K observations."
+Expected output:
 
-If MCP tools are unavailable, fall back to HTTP: `GET $AGENTMEMORY_URL/agentmemory/sessions` and `POST $AGENTMEMORY_URL/agentmemory/recall` with `Authorization: Bearer $AGENTMEMORY_SECRET` when set. Do not invent sessions; if the window is empty, say so.
+```text
+2026-06-07
+  7f3a9c2 · "Auth refresh rework" · 14 obs · completed
+    - [8] Rotate refresh tokens on every use
+3 sessions across 2 days, 41 observations.
+```
+
+## Why
+
+Only summarize sessions and observations the tools returned. An empty window is
+a real answer, not a prompt to invent activity.
+
+## Workflow
+
+1. Parse `$ARGUMENTS`: `today` = current local date; `this week` = last 7 days;
+   `last <n>` or bare numeric = most recent N; empty = `last 10`.
+2. Call `memory_sessions` with the exact recorded project identifier when known
+   and the requested `agentId`. Follow `nextCursor` with the same filters until
+   the requested window is covered or pages end. When the project identifier is
+   unknown, match normalized `cwd` by directory boundary across pages before
+   applying the time/count window. Sort by `startedAt` descending.
+3. Group survivors by local calendar date (YYYY-MM-DD).
+4. Per session list id (first 8), title or first prompt, observation count,
+   status. Obtain highlights with `memory_recall`, retaining project/agent scope,
+   and verify each result belongs to that session before including it.
+5. End with "N sessions across M days, K observations."
+
+## Anti-patterns
+
+WRONG: window is empty, so you summarize "a productive week of auth work" from
+memory of the conversation.
+
+RIGHT: "No sessions in the last 7 days for this project."
+
+## Checklist
+
+- Window parsed correctly from the argument.
+- Sessions filtered to the current project's cwd.
+- Highlights come from `memory_recall`, not paraphrase.
+- Totals line reflects the actual counts shown.
+
+## See also
+
+- `handoff`, `session-history`, `recall`: same session data, different lens.
+
+## Troubleshooting
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if `memory_sessions` or `memory_recall` is not available.

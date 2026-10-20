@@ -13,6 +13,7 @@
 
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { runtimeConfigPath } from "./engine-launch.js";
 
 export type RemovePlanItem = {
   /** Stable id, used in tests and CLI output. */
@@ -34,11 +35,17 @@ export type RemoveOptions = {
   force: boolean;
   /** Keep ~/.agentmemory/* user data; only remove binaries/symlinks. */
   keepData: boolean;
+  /** Keep engine ownership metadata needed to recover retained Docker data. */
+  preserveRuntimeState?: boolean;
 };
 
 export type RemoveContext = {
   /** $HOME (so tests can sandbox). */
   home: string;
+  /** Resolved directory containing pidfiles and engine ownership state. */
+  runtimeDir: string;
+  /** Resolved iii-engine data directory selected for this invocation. */
+  dataDir: string;
   /** Pinned engine version we expect ~/.local/bin/iii to match. */
   pinnedVersion: string;
   /**
@@ -66,12 +73,16 @@ export type ConnectManifest = {
   }>;
 };
 
-export function pidfilePath(home: string): string {
-  return join(home, ".agentmemory", "iii.pid");
+export function pidfilePath(runtimeDir: string): string {
+  return join(runtimeDir, "iii.pid");
 }
 
-export function enginePath(home: string): string {
-  return join(home, ".agentmemory", "engine-state.json");
+export function workerPidfilePath(runtimeDir: string): string {
+  return join(runtimeDir, "worker.pid");
+}
+
+export function enginePath(runtimeDir: string): string {
+  return join(runtimeDir, "engine-state.json");
 }
 
 export function envPath(home: string): string {
@@ -84,10 +95,6 @@ export function preferencesPath(home: string): string {
 
 export function backupsDir(home: string): string {
   return join(home, ".agentmemory", "backups");
-}
-
-export function dataDir(home: string): string {
-  return join(home, ".agentmemory", "data");
 }
 
 // Platform-aware binary name. Windows requires the .exe suffix or the
@@ -138,7 +145,14 @@ export function buildRemovePlan(
   ctx: RemoveContext,
   options: RemoveOptions,
 ): RemovePlanItem[] {
-  const { home, pinnedVersion, localBinIiiVersion, connectManifest } = ctx;
+  const {
+    home,
+    runtimeDir,
+    dataDir,
+    pinnedVersion,
+    localBinIiiVersion,
+    connectManifest,
+  } = ctx;
   const plan: RemovePlanItem[] = [];
 
   plan.push({
@@ -146,26 +160,39 @@ export function buildRemovePlan(
     description: "Stop running iii-engine (if any) cleanly",
     path: null,
     alwaysAsk: false,
-    applicable: pathExists(pidfilePath(home)) || pathExists(enginePath(home)),
+    applicable:
+      pathExists(pidfilePath(runtimeDir)) ||
+      pathExists(workerPidfilePath(runtimeDir)) ||
+      pathExists(enginePath(runtimeDir)),
     sizeBytes: -1,
   });
 
   plan.push({
     id: "pidfile",
     description: "Delete pidfile",
-    path: pidfilePath(home),
+    path: pidfilePath(runtimeDir),
     alwaysAsk: false,
-    applicable: pathExists(pidfilePath(home)),
-    sizeBytes: safeSize(pidfilePath(home)),
+    applicable: pathExists(pidfilePath(runtimeDir)),
+    sizeBytes: safeSize(pidfilePath(runtimeDir)),
+  });
+
+  plan.push({
+    id: "worker-pidfile",
+    description: "Delete worker pidfile",
+    path: workerPidfilePath(runtimeDir),
+    alwaysAsk: false,
+    applicable: pathExists(workerPidfilePath(runtimeDir)),
+    sizeBytes: safeSize(workerPidfilePath(runtimeDir)),
   });
 
   plan.push({
     id: "engine-state",
     description: "Delete engine-state.json",
-    path: enginePath(home),
+    path: enginePath(runtimeDir),
     alwaysAsk: false,
-    applicable: pathExists(enginePath(home)),
-    sizeBytes: safeSize(enginePath(home)),
+    applicable:
+      !options.preserveRuntimeState && pathExists(enginePath(runtimeDir)),
+    sizeBytes: safeSize(enginePath(runtimeDir)),
   });
 
   // .env holds the user's API keys. Always ask before deleting, even on
@@ -195,6 +222,15 @@ export function buildRemovePlan(
     alwaysAsk: false,
     applicable: !options.keepData && pathExists(backupsDir(home)),
     sizeBytes: -1,
+  });
+
+  plan.push({
+    id: "runtime-config",
+    description: "Delete generated iii-config.runtime.yaml",
+    path: runtimeConfigPath(dataDir),
+    alwaysAsk: false,
+    applicable: pathExists(runtimeConfigPath(dataDir)),
+    sizeBytes: safeSize(runtimeConfigPath(dataDir)),
   });
 
   // Iterate over connect-installed agent symlinks. We always honor these
@@ -252,11 +288,10 @@ export function buildRemovePlan(
   // behavior is keep.
   plan.push({
     id: "data-dir",
-    description:
-      "Delete memory data directory (~/.agentmemory/data/) — will ask separately",
-    path: dataDir(home),
+    description: `Delete memory data directory (${dataDir}) — will ask separately`,
+    path: dataDir,
     alwaysAsk: true,
-    applicable: !options.keepData && pathExists(dataDir(home)),
+    applicable: !options.keepData && pathExists(dataDir),
     sizeBytes: -1,
   });
 

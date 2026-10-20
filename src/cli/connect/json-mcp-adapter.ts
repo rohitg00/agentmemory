@@ -19,12 +19,17 @@ export type JsonMcpAdapterConfig = {
   configPath: string;
   docs?: string;
   protocolNote?: string;
+  // Integration style for onboarding grouping. Defaults to "mcp" since a
+  // JSON MCP config writer is MCP-only by construction; hosts that also
+  // ship hooks (e.g. OpenClaw) pass "native".
+  category?: "native" | "mcp";
   // Wrapper key under which servers live. Default "mcpServers".
   // Zed uses "context_servers"; otherwise same shape.
   wrapperKey?: string;
   // Extra fields merged into the agentmemory entry. Droid requires
   // type: "stdio"; other hosts ignore unknown fields.
   extraEntryFields?: Record<string, unknown>;
+  installHooks?: (opts: ConnectOptions) => ConnectResult;
 };
 
 type McpEntry = typeof AGENTMEMORY_MCP_BLOCK;
@@ -45,6 +50,7 @@ export function createJsonMcpAdapter(
   return {
     name: config.name,
     displayName: config.displayName,
+    category: config.category ?? "mcp",
     ...(config.docs !== undefined && { docs: config.docs }),
     ...(config.protocolNote !== undefined && {
       protocolNote: config.protocolNote,
@@ -64,6 +70,14 @@ export function createJsonMcpAdapter(
       const alreadyHas = entryMatches(servers["agentmemory"]);
       if (alreadyHas && !opts.force) {
         logAlreadyWired(config.displayName, config.configPath);
+        if (opts.withHooks && config.installHooks) {
+          const hookResult = config.installHooks(opts);
+          if (hookResult.kind === "skipped") {
+            p.log.warn(
+              `${config.displayName} hooks skipped: ${hookResult.reason}.`,
+            );
+          }
+        }
         return { kind: "already-wired", mutatedPath: config.configPath };
       }
 
@@ -71,6 +85,14 @@ export function createJsonMcpAdapter(
         p.log.info(
           `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} ${wrapperKey}.agentmemory in ${config.configPath}`,
         );
+        if (opts.withHooks && config.installHooks) {
+          const hookResult = config.installHooks(opts);
+          if (hookResult.kind === "skipped") {
+            p.log.warn(
+              `${config.displayName} hooks skipped: ${hookResult.reason}.`,
+            );
+          }
+        }
         return { kind: "installed", mutatedPath: config.configPath };
       }
 
@@ -101,6 +123,16 @@ export function createJsonMcpAdapter(
       }
 
       logInstalled(config.displayName, config.configPath);
+
+      if (opts.withHooks && config.installHooks) {
+        const hookResult = config.installHooks(opts);
+        if (hookResult.kind === "skipped") {
+          p.log.warn(
+            `${config.displayName} hooks skipped: ${hookResult.reason}. MCP wiring still applied.`,
+          );
+        }
+      }
+
       return {
         kind: "installed",
         mutatedPath: config.configPath,

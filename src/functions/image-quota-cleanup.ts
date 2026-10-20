@@ -1,16 +1,15 @@
-import { TriggerAction, type ISdk } from "iii-sdk";
+import { TriggerAction, type IIIClient } from "iii-sdk";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { IMAGES_DIR, getMaxBytes, deleteImage } from "../utils/image-store.js";
-import { getImageRefCount } from "./image-refs.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { logger } from "../logger.js";
 
 const GRACE_PERIOD_MS = 30_000;
 
-export function registerImageQuotaCleanup(sdk: ISdk, kv: StateKV): void {
+export function registerImageQuotaCleanup(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     "mem::image-quota-cleanup",
     async () => {
@@ -56,6 +55,7 @@ export function registerImageQuotaCleanup(sdk: ISdk, kv: StateKV): void {
           await withKeyedLock(`imgRef:${f.filePath}`, async () => {
             let refCount: number;
             try {
+              const { getImageRefCount } = await import("./image-refs.js");
               refCount = await getImageRefCount(kv, f.filePath);
             } catch (err) {
               // Fail-closed: if we cannot determine refCount we must NOT

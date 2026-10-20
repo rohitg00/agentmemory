@@ -80,6 +80,15 @@ Recipe with agentmemory:
 
 This is the broadest sweep across artifacts that live alongside the code. agentmemory then captures everything the agent does while exploring that graph — the questions you asked, the conclusions, the decisions — so the next session opens with both the graph and the conversation history available.
 
+agentmemory can also import the graph directly. With `GRAPH_EXTRACTION_ENABLED=true`:
+
+```bash
+curl -X POST localhost:3111/agentmemory/graph/import-graphify \
+  -H 'content-type: application/json' -d '{"cwd": "'"$PWD"'"}'
+```
+
+This merges Graphify's structural entities and relationships (with their EXTRACTED/INFERRED confidence carried over as edge weight) into agentmemory's knowledge graph, so graph retrieval and context injection see codebase structure the developer never touched in a session. Re-importing after `graphify update .` merges instead of duplicating.
+
 ## How the four projects line up
 
 Four planes, four consumers, four update models. None of them try to do what the others do.

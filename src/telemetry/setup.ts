@@ -39,18 +39,7 @@ interface Counters {
   auditLog: Counter;
   snapshotCreate: Counter;
   governanceDelete: Counter;
-  // #771: smart-search follow-up proxy. Incremented when a session
-  // issues a second smart-search inside the configured window AND the
-  // new result set has zero overlap with the previous one (a
-  // directional signal for "the first results didn't satisfy"). Treat
-  // as directional, not absolute — legitimate query refinement counts
-  // here too.
   smartSearchFollowupWithinWindow: Counter;
-  // #771: benchmark-mode counter. Incremented by the benchmark scorer
-  // when judge_correct === false AND the gold-evidence-IDs are a
-  // subset of the retrieved-context-IDs (reader missed the answer
-  // despite retrieval being correct). Never incremented by core in
-  // live use; reserved here so dashboards keep a stable name.
   readerFailureWithEvidence: Counter;
 }
 

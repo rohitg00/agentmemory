@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agentmemory": {
+      "command": "node",
+      "args": ["scripts/plugin-bridge.mjs"],
+      "cwd": ".",
+      "env_vars": ["AGENTMEMORY_URL", "AGENTMEMORY_SECRET"],
+      "startup_timeout_sec": 20,
+      "tool_timeout_sec": 30
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   CompressedObservation,
   Session,
@@ -8,8 +8,9 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import { logger } from "../logger.js";
+import { withoutObservationSource } from "./observation-source.js";
 
-export function registerTimelineFunction(sdk: ISdk, kv: StateKV): void {
+export function registerTimelineFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::timeline", 
     async (data: {
       anchor: string;
@@ -85,7 +86,7 @@ export function registerTimelineFunction(sdk: ISdk, kv: StateKV): void {
         const obs = allObs[i];
         const { sid, ...observation } = obs;
         entries.push({
-          observation,
+          observation: withoutObservationSource(observation),
           sessionId: sid,
           relativePosition: i - anchorIdx,
         });

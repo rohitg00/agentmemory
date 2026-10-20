@@ -49,21 +49,21 @@ describe("OpenClaw plaintext bearer guard", () => {
 
   it("keeps loopback HTTP silent", async () => {
     const { handlers, warn } = registerOpenClaw("http://localhost:3111");
-    await handlers.get("before_agent_start")?.({ prompt: "recall auth work" });
+    await handlers.get("before_prompt_build")?.({ prompt: "recall auth work", sessionId: "s", cwd: "/project" });
     expect(warn).not.toHaveBeenCalled();
   });
 
   it("warns once for non-loopback HTTP with a bearer secret", async () => {
     const { handlers, warn } = registerOpenClaw("http://remote.example:3111");
-    await handlers.get("before_agent_start")?.({ prompt: "first" });
-    await handlers.get("before_agent_start")?.({ prompt: "second" });
+    await handlers.get("before_prompt_build")?.({ prompt: "first", sessionId: "s", cwd: "/project" });
+    await handlers.get("before_prompt_build")?.({ prompt: "second", sessionId: "s", cwd: "/project" });
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain("plaintext HTTP to http://remote.example:3111");
   });
 
   it("keeps HTTPS with a bearer secret silent", async () => {
     const { handlers, warn } = registerOpenClaw("https://remote.example");
-    await handlers.get("before_agent_start")?.({ prompt: "recall auth work" });
+    await handlers.get("before_prompt_build")?.({ prompt: "recall auth work", sessionId: "s", cwd: "/project" });
     expect(warn).not.toHaveBeenCalled();
   });
 

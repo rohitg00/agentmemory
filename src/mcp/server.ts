@@ -1,6 +1,8 @@
-import type { ISdk, ApiRequest } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
+import type { HttpRequest } from "@iii-dev/helpers/http";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
+import { pinGraphState } from "../state/graph-generation.js";
 import type {
   SessionSummary,
   Memory,
@@ -9,7 +11,11 @@ import type {
   GraphEdge,
 } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
-import { timingSafeCompare } from "../auth.js";
+import { parseSearchExpansionIds } from "./search-arguments.js";
+import { parseSessionArguments } from "./session-arguments.js";
+import { isSearchLayer } from "../state/search-layer.js";
+import { checkAuth } from "../triggers/api.js";
+import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
 type McpResponse = {
   status_code: number;
@@ -40,25 +46,12 @@ function parseCsvList(value: unknown): string[] {
 }
 
 export function registerMcpEndpoints(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   secret?: string,
 ): void {
-  function checkAuth(
-    req: ApiRequest,
-    sec: string | undefined,
-  ): McpResponse | null {
-    if (!sec) return null;
-    const auth =
-      req.headers?.["authorization"] || req.headers?.["Authorization"];
-    if (typeof auth !== "string" || !timingSafeCompare(auth, `Bearer ${sec}`)) {
-      return { status_code: 401, body: { error: "unauthorized" } };
-    }
-    return null;
-  }
-
   sdk.registerFunction("mcp::tools::list", 
-    async (req: ApiRequest): Promise<McpResponse> => {
+    async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       return { status_code: 200, body: { tools: getVisibleTools() } };
@@ -72,7 +65,7 @@ export function registerMcpEndpoints(
 
   sdk.registerFunction("mcp::tools::call", 
     async (
-      req: ApiRequest<{ name: string; arguments: Record<string, unknown> }>,
+      req: HttpRequest<{ name: string; arguments: Record<string, unknown> }>,
     ): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
@@ -86,6 +79,14 @@ export function registerMcpEndpoints(
       try {
         switch (name) {
           case "memory_recall": {
+            if (args.targetLayer !== undefined && !isSearchLayer(args.targetLayer)) {
+              return { status_code: 400, body: { error: "targetLayer must be one of: all, memory, observation" } };
+            }
+            for (const field of ["project", "cwd", "agentId"] as const) {
+              if (args[field] !== undefined && typeof args[field] !== "string") {
+                return { status_code: 400, body: { error: `${field} must be a string` } };
+              }
+            }
             if (typeof args.query !== "string" || !args.query.trim()) {
               return {
                 status_code: 400,
@@ -112,20 +113,21 @@ export function registerMcpEndpoints(
                 body: { error: "token_budget must be a positive integer" },
               };
             }
+            const recallAgentId =
+              typeof args.agentId === "string" && args.agentId.trim().length > 0
+                ? (args.agentId as string).trim()
+                : undefined;
             const result = await sdk.trigger({ function_id: "mem::search", payload: {
               query: args.query,
               limit: typeof args.limit === "number" ? args.limit : 10,
               format,
               token_budget: tokenBudget,
+              agentId: recallAgentId,
+              project: asNonEmptyString(args.project),
+              cwd: asNonEmptyString(args.cwd),
+              targetLayer: args.targetLayer ?? "all",
             } });
-            const text =
-              format === "narrative" &&
-              result &&
-              typeof result === "object" &&
-              "text" in (result as Record<string, unknown>) &&
-              typeof (result as { text?: unknown }).text === "string"
-                ? (result as { text: string }).text
-                : JSON.stringify(result, null, 2);
+            const text = JSON.stringify(result, null, 2);
             return {
               status_code: 200,
               body: {
@@ -176,6 +178,10 @@ export function registerMcpEndpoints(
               typeof args.project === "string" && args.project.trim().length > 0
                 ? args.project.trim()
                 : undefined;
+            const saveAgentId =
+              typeof args.agentId === "string" && args.agentId.trim().length > 0
+                ? (args.agentId as string).trim()
+                : undefined;
 
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
@@ -183,6 +189,7 @@ export function registerMcpEndpoints(
               concepts,
               files,
               ...(project !== undefined && { project }),
+              ...(saveAgentId !== undefined && { agentId: saveAgentId }),
             } });
             return {
               status_code: 200,
@@ -231,6 +238,7 @@ export function registerMcpEndpoints(
           case "memory_patterns": {
             const result = await sdk.trigger({ function_id: "mem::patterns", payload: {
               project: args.project as string,
+              limit: args.limit,
             } });
             return {
               status_code: 200,
@@ -243,32 +251,55 @@ export function registerMcpEndpoints(
           }
 
           case "memory_sessions": {
-            const sessions = await kv.list(KV.sessions);
+            let query: Record<string, string>;
+            try { query = parseSessionArguments(args); }
+            catch (error) {
+              return { status_code: 400, body: { error: (error as Error).message } };
+            }
+            const result = await sdk.trigger({
+              function_id: "api::sessions",
+              payload: { headers: req.headers, query_params: query },
+            }) as McpResponse;
+            if (result.status_code !== 200) return result;
             return {
               status_code: 200,
               body: {
                 content: [
-                  { type: "text", text: JSON.stringify({ sessions }, null, 2) },
+                  { type: "text", text: JSON.stringify(result.body, null, 2) },
                 ],
               },
             };
           }
 
           case "memory_smart_search": {
-            if (typeof args.query !== "string" || !args.query.trim()) {
+            if (args.targetLayer !== undefined && !isSearchLayer(args.targetLayer)) {
+              return { status_code: 400, body: { error: "targetLayer must be one of: all, memory, observation" } };
+            }
+            for (const field of ["project", "agentId", "sessionId", "source"] as const) {
+              if (args[field] !== undefined && typeof args[field] !== "string") {
+                return { status_code: 400, body: { error: `${field} must be a string` } };
+              }
+            }
+            const expandIds = parseSearchExpansionIds(args.expandIds);
+            if ((typeof args.query !== "string" || !args.query.trim()) && expandIds.length === 0) {
               return {
                 status_code: 400,
-                body: { error: "query is required for memory_smart_search" },
+                body: { error: "query or expandIds is required for memory_smart_search" },
               };
             }
-            const expandIds = parseCsvList(args.expandIds).slice(0, 20);
             const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {
-                query: args.query,
+                query: asNonEmptyString(args.query),
                 expandIds,
                 limit,
+                project: asNonEmptyString(args.project),
+                agentId: asNonEmptyString(args.agentId),
+                sessionId: asNonEmptyString(args.sessionId),
+                source: asNonEmptyString(args.source),
+                includeLessons: typeof args.includeLessons === "boolean" ? args.includeLessons : undefined,
+                targetLayer: args.targetLayer ?? "all",
               },
             });
             return {
@@ -352,7 +383,25 @@ export function registerMcpEndpoints(
           }
 
           case "memory_export": {
-            const result = await sdk.trigger({ function_id: "mem::export", payload: {} });
+            const exportPayload: {
+              maxSessions?: number;
+              offset?: number;
+              collectionLimit?: number;
+              collectionOffset?: number;
+              collections?: string;
+            } = {};
+            for (const key of ["maxSessions", "collectionLimit"] as const) {
+              const n = Number(args[key]);
+              if (Number.isInteger(n) && n > 0) exportPayload[key] = n;
+            }
+            for (const key of ["offset", "collectionOffset"] as const) {
+              const n = Number(args[key]);
+              if (Number.isInteger(n) && n >= 0) exportPayload[key] = n;
+            }
+            if (typeof args.collections === "string") {
+              exportPayload.collections = args.collections;
+            }
+            const result = await sdk.trigger({ function_id: "mem::export", payload: exportPayload });
             return {
               status_code: 200,
               body: {
@@ -1112,6 +1161,16 @@ export function registerMcpEndpoints(
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonRecallResult, null, 2) }] } };
           }
 
+          case "memory_lesson_delete": {
+            if (typeof args.lessonId !== "string" || !args.lessonId.trim()) {
+              return { status_code: 400, body: { error: "lessonId is required" } };
+            }
+            const lessonDeleteResult = await sdk.trigger({ function_id: "mem::lesson-delete", payload: {
+              lessonId: args.lessonId.trim(),
+            } });
+            return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonDeleteResult, null, 2) }] } };
+          }
+
           case "memory_reflect": {
             const reflectResult = await sdk.trigger({ function_id: "mem::reflect", payload: {
               project: args.project,
@@ -1310,7 +1369,7 @@ export function registerMcpEndpoints(
   ];
 
   sdk.registerFunction("mcp::resources::list", 
-    async (req: ApiRequest): Promise<McpResponse> => {
+    async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       return { status_code: 200, body: { resources: MCP_RESOURCES } };
@@ -1323,7 +1382,7 @@ export function registerMcpEndpoints(
   });
 
   sdk.registerFunction("mcp::resources::read", 
-    async (req: ApiRequest<{ uri: string }>): Promise<McpResponse> => {
+    async (req: HttpRequest<{ uri: string }>): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
 
@@ -1454,8 +1513,9 @@ export function registerMcpEndpoints(
 
         if (uri === "agentmemory://graph/stats") {
           try {
-            const nodes = await kv.list<GraphNode>(KV.graphNodes);
-            const edges = await kv.list<GraphEdge>(KV.graphEdges);
+            const graphState = await pinGraphState(kv);
+            const nodes = await graphState.list<GraphNode>(KV.graphNodes);
+            const edges = await graphState.list<GraphEdge>(KV.graphEdges);
             const nodesByType: Record<string, number> = {};
             for (const n of nodes)
               nodesByType[n.type] = (nodesByType[n.type] || 0) + 1;
@@ -1596,7 +1656,7 @@ export function registerMcpEndpoints(
   ];
 
   sdk.registerFunction("mcp::prompts::list", 
-    async (req: ApiRequest): Promise<McpResponse> => {
+    async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       return { status_code: 200, body: { prompts: MCP_PROMPTS } };
@@ -1610,7 +1670,7 @@ export function registerMcpEndpoints(
 
   sdk.registerFunction("mcp::prompts::get", 
     async (
-      req: ApiRequest<{ name: string; arguments?: Record<string, string> }>,
+      req: HttpRequest<{ name: string; arguments?: Record<string, string> }>,
     ): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
@@ -1642,7 +1702,19 @@ export function registerMcpEndpoints(
               })
               .catch(() => ({ results: [] }));
             const memories = await kv.list<Memory>(KV.memories);
-            const relevant = memories.filter((m) => m.isLatest).slice(0, 5);
+            const isolated = isAgentScopeIsolated();
+            const activeAgentId = isolated ? getAgentId() : undefined;
+            const relevant =
+              isolated && activeAgentId === undefined
+                ? []
+                : memories
+                    .filter((m) => m.isLatest)
+                    .filter(
+                      (m) =>
+                        activeAgentId === undefined ||
+                        m.agentId === activeAgentId,
+                    )
+                    .slice(0, 5);
             return {
               status_code: 200,
               body: {

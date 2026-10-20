@@ -10,8 +10,8 @@ import { fetchWithTimeout } from './_fetch.js'
  *
  * Required env vars (loaded from ~/.agentmemory/.env or process.env):
  *   MINIMAX_API_KEY  — your MiniMax API key
- *   MINIMAX_MODEL    — model name (default: MiniMax-M3; MiniMax-M2.7 / MiniMax-M2.7-highspeed also supported)
- *   MAX_TOKENS       — max output tokens (default: 800; MiniMax-M2.7 needs ≤800, MiniMax-M3 supports up to 128K)
+ *   MINIMAX_MODEL    — model name (default: MiniMax-M3.1-Flash; MiniMax-M3 optional)
+ *   MAX_TOKENS       — max output tokens (default: 4096)
  *
  * Optional:
  *   MINIMAX_BASE_URL — base URL without path (default: https://api.minimax.io/anthropic)

@@ -3,6 +3,7 @@ export interface Session {
   project: string;
   cwd: string;
   startedAt: string;
+  updatedAt?: string;
   endedAt?: string;
   status: "active" | "completed" | "abandoned";
   observationCount: number;
@@ -11,6 +12,12 @@ export interface Session {
   firstPrompt?: string;
   summary?: string;
   commitShas?: string[];
+  agentId?: string;
+}
+
+export interface ProjectSessionIndexEntry {
+  id: string;
+  startedAt: string;
   agentId?: string;
 }
 
@@ -27,6 +34,23 @@ export interface CommitLink {
   linkedAt: string;
 }
 
+// Immutable write-time provenance: which trust boundary the content
+// crossed, inherited by derived records.
+export interface Origin {
+  channel: "user" | "agent" | "tool" | "import" | "shared";
+  detail?: string;
+  capturedAt: string;
+}
+
+export function importOrigin(
+  existing: Origin | undefined,
+  capturedAt: string,
+  detail?: string,
+): Origin {
+  if (existing) return existing;
+  return { channel: "import", capturedAt, ...(detail ? { detail } : {}) };
+}
+
 export interface RawObservation {
   id: string;
   sessionId: string;
@@ -37,10 +61,34 @@ export interface RawObservation {
   toolOutput?: unknown;
   userPrompt?: string;
   assistantResponse?: string;
+  assistantResponseBytes?: number;
   raw: unknown;
   modality?: "text" | "image" | "mixed";
   imageData?: string;
   agentId?: string;
+  origin?: Origin;
+  eventId?: string;
+  captureKey?: string;
+}
+
+export interface ObservationSource {
+  hookType: HookType;
+  originalBytes: number;
+  truncated: boolean;
+  toolName?: string;
+  toolInput?: unknown;
+  toolOutput?: unknown;
+  userPrompt?: string;
+  assistantResponse?: string;
+  payload?: unknown;
+}
+
+export interface ObservationCompression {
+  status: "pending" | "failed" | "complete";
+  revision: string;
+  attempts: number;
+  lastAttemptAt?: string;
+  error?: "dispatch_failed" | "compression_failed" | "parse_failed" | "validation_failed" | "source_unavailable";
 }
 
 export interface CompressedObservation {
@@ -56,11 +104,16 @@ export interface CompressedObservation {
   files: string[];
   importance: number;
   confidence?: number;
+  source?: ObservationSource;
   imageRef?: string;
   imageData?: string;
   imageDescription?: string;
   modality?: "text" | "image" | "mixed";
   agentId?: string;
+  origin?: Origin;
+  captureKey?: string;
+  compressedAt?: string;
+  compression?: ObservationCompression;
 }
 
 export type ObservationType =
@@ -102,6 +155,16 @@ export interface Memory {
   imageData?: string;
   agentId?: string;
   project?: string;
+  origin?: Origin;
+}
+
+export interface SessionSummaryRepair {
+  sessionId: string;
+  token: string;
+  dueAt: number;
+  attempts: number;
+  compressionCursor?: string;
+  lastError?: "pending" | "no_provider" | "summary_failed" | "compression_pending" | "source_unavailable" | "recovery_failed";
 }
 
 export interface SessionSummary {
@@ -114,6 +177,8 @@ export interface SessionSummary {
   filesModified: string[];
   concepts: string[];
   observationCount: number;
+  coveredThrough?: string;
+  coveredFingerprint?: string;
 }
 
 export type HookType =
@@ -137,6 +202,9 @@ export interface HookPayload {
   cwd: string;
   timestamp: string;
   data: unknown;
+  eventId?: string;
+  observationId?: string;
+  captureKey?: string;
 }
 
 export interface ProviderConfig {
@@ -160,6 +228,7 @@ export interface AgentMemoryConfig {
   engineUrl: string;
   restPort: number;
   streamsPort: number;
+  viewerPort: number;
   provider: ProviderConfig;
   tokenBudget: number;
   maxObservationsPerSession: number;
@@ -171,6 +240,7 @@ export interface SearchResult {
   observation: CompressedObservation;
   score: number;
   sessionId: string;
+  layer?: "memory" | "observation" | "lesson" | "insight";
 }
 
 export interface ContextBlock {
@@ -204,6 +274,7 @@ export interface HealthSnapshot {
   memory: {
     heapUsed: number;
     heapTotal: number;
+    heapLimit?: number;
     rss: number;
     external: number;
   };
@@ -211,6 +282,7 @@ export interface HealthSnapshot {
   eventLoopLagMs: number;
   uptimeSeconds: number;
   kvConnectivity?: { status: string; latencyMs?: number; error?: string };
+  streamRelay?: "ok" | "down" | "unknown";
   status: "healthy" | "degraded" | "critical";
   alerts: string[];
   notes?: string[];
@@ -253,12 +325,15 @@ export interface MemoryRelation {
 
 export interface HybridSearchResult {
   observation: CompressedObservation;
+  layer?: "memory" | "observation" | "lesson" | "insight";
   bm25Score: number;
   vectorScore: number;
   graphScore: number;
   combinedScore: number;
   sessionId: string;
   graphContext?: string;
+  rerankScore?: number;
+  rerankPosition?: number;
 }
 
 export interface CompactSearchResult {
@@ -268,6 +343,7 @@ export interface CompactSearchResult {
   type: ObservationType;
   score: number;
   timestamp: string;
+  layer?: "memory" | "observation" | "lesson" | "insight";
 }
 
 export interface CompactLessonResult {
@@ -306,8 +382,16 @@ export interface ExportPagination {
   hasMore: boolean;
 }
 
+export interface ExportCollectionPagination {
+  offset: number;
+  limit?: number;
+  collections?: string[];
+  totals: Record<string, number>;
+  hasMore: boolean;
+}
+
 export interface ExportData {
-  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0" | "0.7.2" | "0.7.3" | "0.7.4" | "0.7.5" | "0.7.6" | "0.7.7" | "0.7.9" | "0.8.0" | "0.8.1" | "0.8.2" | "0.8.3" | "0.8.4" | "0.8.5" | "0.8.6" | "0.8.7" | "0.8.8" | "0.8.9" | "0.8.10" | "0.8.11" | "0.8.12" | "0.8.13" | "0.9.0" | "0.9.1" | "0.9.2" | "0.9.3" | "0.9.4" | "0.9.5" | "0.9.6" | "0.9.7" | "0.9.8" | "0.9.9" | "0.9.10" | "0.9.11" | "0.9.12" | "0.9.13" | "0.9.14" | "0.9.15" | "0.9.16" | "0.9.17" | "0.9.18" | "0.9.19" | "0.9.20" | "0.9.21" | "0.9.22" | "0.9.23" | "0.9.24" | "0.9.25" | "0.9.26";
+  version: "0.3.0" | "0.4.0" | "0.5.0" | "0.6.0" | "0.6.1" | "0.7.0" | "0.7.2" | "0.7.3" | "0.7.4" | "0.7.5" | "0.7.6" | "0.7.7" | "0.7.9" | "0.8.0" | "0.8.1" | "0.8.2" | "0.8.3" | "0.8.4" | "0.8.5" | "0.8.6" | "0.8.7" | "0.8.8" | "0.8.9" | "0.8.10" | "0.8.11" | "0.8.12" | "0.8.13" | "0.9.0" | "0.9.1" | "0.9.2" | "0.9.3" | "0.9.4" | "0.9.5" | "0.9.6" | "0.9.7" | "0.9.8" | "0.9.9" | "0.9.10" | "0.9.11" | "0.9.12" | "0.9.13" | "0.9.14" | "0.9.15" | "0.9.16" | "0.9.17" | "0.9.18" | "0.9.19" | "0.9.20" | "0.9.21" | "0.9.22" | "0.9.23" | "0.9.24" | "0.9.25" | "0.9.26" | "0.9.27" | "0.9.28" | "0.9.29" | "0.9.30";
   exportedAt: string;
   sessions: Session[];
   observations: Record<string, CompressedObservation[]>;
@@ -331,6 +415,7 @@ export interface ExportData {
   insights?: Insight[];
   accessLogs?: AccessLogExport[];
   pagination?: ExportPagination;
+  collectionPagination?: ExportCollectionPagination;
 }
 
 export interface AccessLogExport {
@@ -438,11 +523,6 @@ export interface GraphQueryResult {
   nodes: GraphNode[];
   edges: GraphEdge[];
   depth: number;
-  // #753: pagination + truncation signals for large graphs. `total*`
-  // counts reflect the full unbounded result for the given filter so
-  // the viewer can show "showing N of M" without re-querying. `truncated`
-  // is true when the default cap kicked in (operator may have wanted
-  // the full set but didn't ask for one).
   totalNodes?: number;
   totalEdges?: number;
   truncated?: boolean;
@@ -450,6 +530,82 @@ export interface GraphQueryResult {
   // detect when the default was applied vs an explicit `limit`.
   limit?: number;
   offset?: number;
+  fromSnapshot?: boolean;
+  degrees?: Record<string, number>;
+  warning?: string;
+}
+
+export interface GraphIndexMembership {
+  ids: string[];
+}
+
+export interface GraphRetrievalIndexControl {
+  schema: 2;
+  buildId: string;
+  status: "building" | "ready" | "paused";
+  revision: number;
+  nodes: number;
+  edges: number;
+  historyEdges: number;
+  incompleteRecords: number;
+  nodesByType: Record<string, number>;
+  edgesByType: Record<string, number>;
+  otherTypes: number;
+  updatedAt: string;
+  pending?: { kind: "node" | "edge" | "history"; id: string };
+  batchPending?: boolean;
+  error?: string;
+}
+
+export interface GraphRetrievalIndexRecord {
+  row: (GraphNode | GraphEdge) & { indexIncomplete?: boolean } | null;
+  postings: string[];
+  incomplete: boolean;
+}
+
+export interface GraphCascadeProgress {
+  schema: 1;
+  generation: string | null;
+  sourceFingerprint: string;
+  offset: number;
+  reason: string;
+  updatedAt: string;
+}
+
+export type { GraphIndexMigration, GraphIndexManifestPage } from "./state/graph-index-migration.js";
+
+export interface GraphMutationWrite {
+  scope: string;
+  key: string;
+  value: unknown;
+}
+
+export interface GraphMutationJournal {
+  writes: GraphMutationWrite[];
+  snapshot: GraphSnapshot;
+}
+
+export interface GraphSnapshot {
+  version: 1;
+  topNodes: GraphNode[];
+  topEdges: GraphEdge[];
+  // Synchronous degree lookup keyed by nodeId. Maintained alongside
+  // topNodes so re-ranking after an edge write doesn't require an
+  // async kv.get for every top-N entry inside the sort comparator.
+  // Keys are limited to the top-N set; non-top nodes track their
+  // degree in KV.graphNodeDegree only.
+  topDegrees: Record<string, number>;
+  stats: {
+    totalNodes: number;
+    totalEdges: number;
+    nodesByType: Record<string, number>;
+    edgesByType: Record<string, number>;
+  };
+  updatedAt: string;
+  dirty: boolean;
+  resetAt?: string;
+  sampleIncomplete?: boolean;
+  pendingMutation?: GraphMutationJournal;
 }
 
 export type ConsolidationTier =
@@ -469,6 +625,7 @@ export interface SemanticMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface ProceduralMemory {
@@ -485,6 +642,7 @@ export interface ProceduralMemory {
   strength: number;
   createdAt: string;
   updatedAt: string;
+  lastDecayedAt?: string;
 }
 
 export interface TeamConfig {
@@ -557,6 +715,7 @@ export interface AuditEntry {
     | "lesson_save"
     | "lesson_recall"
     | "lesson_strengthen"
+    | "lesson_delete"
     | "obsidian_export"
     | "reflect"
     | "insight_search"
@@ -569,12 +728,36 @@ export interface AuditEntry {
     | "slot_replace"
     | "slot_create"
     | "slot_delete"
-    | "slot_reflect";
+    | "slot_reflect"
+    | "graph_compact"
+    | "graph_index_migrate"
+    | "audit_migrate"
+    | "session_sweep";
   userId?: string;
   functionId: string;
   targetIds: string[];
   details: Record<string, unknown>;
   qualityScore?: number;
+}
+
+export interface AuditMonthIndex {
+  months: string[];
+}
+
+export interface AuditMigrationState {
+  status: "too-large" | "unreadable" | "copied" | "done";
+  safeToListLegacy: boolean;
+  legacySizeBytes?: number;
+  migrated: number;
+  purged: number;
+  summaryWritten: boolean;
+  checkedAt: string;
+}
+
+export interface AuditQueryResult {
+  entries: AuditEntry[];
+  legacyFrozen: boolean;
+  legacyFrozenBytes?: number;
 }
 
 export interface GovernanceFilter {
@@ -787,6 +970,7 @@ export interface Insight {
   sourceMemoryIds: string[];
   sourceLessonIds: string[];
   sourceCrystalIds: string[];
+  evidenceVersion?: 1;
   project?: string;
   tags: string[];
   createdAt: string;
@@ -875,10 +1059,6 @@ export interface TemporalState {
 
 export interface RetentionScore {
   memoryId: string;
-  // Which KV scope this row came from. Needed by mem::retention-evict
-  // so the delete loop routes to KV.memories or KV.semantic correctly.
-  // Missing on pre-0.8.10 rows — callers must treat `undefined` as
-  // "unknown" and probe both scopes for backwards-compat. See #124.
   source?: "episodic" | "semantic";
   score: number;
   salience: number;

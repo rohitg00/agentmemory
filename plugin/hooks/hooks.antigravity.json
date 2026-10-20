@@ -1,0 +1,43 @@
+{
+  "agentmemory": {
+    "enabled": true,
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs PreInvocation",
+        "timeout": 10
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "view_file|view_code_item|read_file|edit_file|replace_file_content|write_to_file|create_file|grep_search|codebase_search|find_by_name|list_dir",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs PreToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs PostToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node ${CLAUDE_PLUGIN_ROOT}/scripts/antigravity-bridge.mjs Stop",
+        "timeout": 10
+      }
+    ]
+  }
+}

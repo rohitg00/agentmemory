@@ -1,93 +1,56 @@
-import type { Adapter, RankedDoc, Session } from "../types.js";
+import { randomUUID } from "node:crypto";
+import { startSandbox, type Sandbox } from "../sandbox.js";
+import { sessionText } from "../input.js";
+import type { Adapter, RankedDoc } from "../types.js";
 
 interface AgentMemoryState {
-  baseUrl: string;
-  secret?: string;
-  sessions: Session[];
-  observationToSession: Map<string, string>;
+  sandbox: Sandbox;
+  scope: string;
+  memoryToSession: Map<string, string>;
 }
 
-interface RememberResponse {
-  memory?: { id?: string };
-  observationId?: string;
-  id?: string;
-  observation?: { id?: string };
-}
-
-interface SmartSearchResponse {
-  results?: Array<{
-    obsId?: string;
-    id?: string;
-    observationId?: string;
-    sessionId?: string;
-    score?: number;
-    content?: string;
-  }>;
-  observations?: Array<{
-    obsId?: string;
-    id?: string;
-    sessionId?: string;
-    score?: number;
-    content?: string;
-  }>;
-}
-
-function authHeaders(secret?: string): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (secret) h.Authorization = `Bearer ${secret}`;
-  return h;
-}
-
-export const agentmemoryAdapter: Adapter<AgentMemoryState> = {
-  name: "agentmemory-hybrid",
-  async init(sessions, config) {
-    const baseUrl = (config?.baseUrl as string) ?? process.env.AGENTMEMORY_BASE_URL ?? "http://localhost:3111";
-    const secret = (config?.secret as string) ?? process.env.AGENTMEMORY_SECRET;
-    const observationToSession = new Map<string, string>();
-    for (const s of sessions) {
-      const res = await fetch(`${baseUrl}/agentmemory/remember`, {
-        method: "POST",
-        headers: authHeaders(secret),
-        body: JSON.stringify({
-          content: s.content,
-          type: "eval-session",
-          concepts: [s.id],
-        }),
+export function createAgentMemoryAdapter(factory: () => Promise<Sandbox> = startSandbox): Adapter<AgentMemoryState> {
+  return {
+    name: "agentmemory-http-bm25",
+    async init(sessions) {
+      const sandbox = await factory();
+      const scope = "eval-" + randomUUID();
+      const memoryToSession = new Map<string, string>();
+      try {
+        for (const session of sessions) {
+          const body = await sandbox.request<{ success: boolean; memory?: { id: string } }>("/remember", {
+            content: sessionText(session), type: "fact", project: scope, agentId: scope,
+          });
+          if (body.success !== true || !body.memory?.id) throw new Error("remember returned no memory ID");
+          memoryToSession.set(body.memory.id, session.id);
+        }
+        return { sandbox, scope, memoryToSession };
+      } catch (error) {
+        await sandbox.close();
+        throw error;
+      }
+    },
+    async query(query, state, k) {
+      const body = await state.sandbox.request<{ results?: Array<{ obsId?: string; id?: string;
+        observation?: { id?: string; narrative?: string }; score?: number; combinedScore?: number }> }>("/search", {
+        query, project: state.scope, agentId: state.scope, limit: Math.min(100, k * 3), format: "full",
       });
-      if (!res.ok) {
-        throw new Error(`remember failed for ${s.id}: ${res.status} ${await res.text()}`);
+      if (!Array.isArray(body.results)) throw new Error("search returned no results array");
+      const ranked: RankedDoc[] = [];
+      const seen = new Set<string>();
+      for (const row of body.results) {
+        const id = row.observation?.id ?? row.obsId ?? row.id;
+        const sessionId = id ? state.memoryToSession.get(id) : undefined;
+        if (!sessionId) throw new Error("search returned a source outside this case");
+        if (seen.has(sessionId)) continue;
+        seen.add(sessionId);
+        ranked.push({ sessionId, score: row.combinedScore ?? row.score ?? 0, content: row.observation?.narrative });
+        if (ranked.length === k) break;
       }
-      const body = (await res.json()) as RememberResponse;
-      const obsId =
-        body.memory?.id ?? body.observationId ?? body.id ?? body.observation?.id;
-      if (obsId) observationToSession.set(obsId, s.id);
-    }
-    return { baseUrl, secret, sessions, observationToSession };
-  },
-  async query(q, state, k) {
-    const res = await fetch(`${state.baseUrl}/agentmemory/smart-search`, {
-      method: "POST",
-      headers: authHeaders(state.secret),
-      body: JSON.stringify({ query: q, limit: Math.max(k * 10, 50) }),
-    });
-    if (!res.ok) {
-      throw new Error(`smart-search failed: ${res.status} ${await res.text()}`);
-    }
-    const body = (await res.json()) as SmartSearchResponse;
-    const rows = body.results ?? body.observations ?? [];
-    const ranked: RankedDoc[] = [];
-    const seen = new Set<string>();
-    for (const row of rows) {
-      let sessionId = row.sessionId;
-      if (!sessionId) {
-        const memId = row.obsId ?? row.id ?? row.observationId;
-        sessionId = memId ? state.observationToSession.get(memId) : undefined;
-      }
-      if (!sessionId || seen.has(sessionId)) continue;
-      seen.add(sessionId);
-      ranked.push({ sessionId, score: row.score ?? 0 });
-      if (ranked.length >= k) break;
-    }
-    return ranked;
-  },
-};
+      return ranked;
+    },
+    async teardown(state) { await state.sandbox.close(); },
+  };
+}
+
+export const agentmemoryAdapter = createAgentMemoryAdapter();

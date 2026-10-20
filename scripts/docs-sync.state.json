@@ -1,0 +1,38 @@
+{
+  "version": "0.9.30",
+  "facts": {
+    "mcpTools": [
+      "54"
+    ],
+    "coreTools": [
+      "8"
+    ],
+    "fallbackTools": [
+      "7"
+    ],
+    "restEndpoints": [
+      "143"
+    ],
+    "skills": [
+      "17"
+    ],
+    "hooks": [
+      "12"
+    ],
+    "tests": [
+      "3800+"
+    ],
+    "functions": [
+      "324"
+    ],
+    "sourceFiles": [
+      "242"
+    ],
+    "loc": [
+      "57000"
+    ],
+    "kvScopes": [
+      "67"
+    ]
+  }
+}

@@ -4,25 +4,31 @@ const STRICTER_SUFFIX = `
 
 IMPORTANT: Your previous response was invalid. Please ensure your output strictly follows the required XML format. Every required field must be present with valid values.`;
 
-export async function compressWithRetry(
+type ValidationResult<T> =
+  | { valid: true; data: T }
+  | { valid: false; errors?: string[] };
+
+export async function compressWithRetry<T>(
   provider: MemoryProvider,
   systemPrompt: string,
   userPrompt: string,
-  validator: (response: string) => { valid: boolean; errors?: string[] },
+  validator: (response: string) => ValidationResult<T>,
   maxRetries = 1,
-): Promise<{ response: string; retried: boolean }> {
+): Promise<ValidationResult<T> & { retried: boolean }> {
   const first = await provider.compress(systemPrompt, userPrompt);
-  const result = validator(first);
-  if (result.valid) return { response: first, retried: false };
+  let result = validator(first);
+  if (result.valid) return { ...result, retried: false };
 
+  let retried = false;
   for (let i = 0; i < maxRetries; i++) {
+    retried = true;
     const retry = await provider.compress(
       systemPrompt + STRICTER_SUFFIX,
       userPrompt,
     );
-    const retryResult = validator(retry);
-    if (retryResult.valid) return { response: retry, retried: true };
+    result = validator(retry);
+    if (result.valid) return { ...result, retried };
   }
 
-  return { response: first, retried: true };
+  return { ...result, retried };
 }

@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true, "types": ["node"] },
+  "include": ["eval/runner/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test"]
+}
