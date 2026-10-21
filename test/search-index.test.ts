@@ -319,4 +319,60 @@ describe("SearchIndex", () => {
     expect(segmentCjk("leading 项目")).toEqual(["leading", "项目"]);
     expect(segmentCjk("项目 trailing")).toEqual(["项目", "trailing"]);
   });
+
+  // Regression coverage for issue #1539: the user's own words live in
+  // source.userPrompt, which was never part of the BM25 document. With an
+  // English card (title/narrative/concepts all English) a Chinese query
+  // built from the user's original wording must still recall the record.
+  it("indexes source.userPrompt so the user's own CJK words are searchable", () => {
+    index.add(
+      makeObs({
+        id: "obs_zh_prompt",
+        source: {
+          hookType: "prompt_submit",
+          originalBytes: 64,
+          truncated: false,
+          userPrompt: "登录之后总是超时，帮我修复登录超时的问题",
+        },
+      }),
+    );
+    const results = index.search("登录超时");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.find((r) => r.obsId === "obs_zh_prompt")).toBeDefined();
+  });
+
+  it("indexes a bounded prefix of source.assistantResponse", () => {
+    index.add(
+      makeObs({
+        id: "obs_zh_response",
+        source: {
+          hookType: "stop",
+          originalBytes: 64,
+          truncated: false,
+          assistantResponse: "排查结论：redis 连接池耗尽导致请求堆积",
+        },
+      }),
+    );
+    const results = index.search("连接池");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.find((r) => r.obsId === "obs_zh_response")).toBeDefined();
+  });
+
+  it("caps the indexed length of source fields so oversized transcripts stay bounded", () => {
+    index.add(
+      makeObs({
+        id: "obs_capped",
+        source: {
+          hookType: "prompt_submit",
+          originalBytes: 40000,
+          truncated: true,
+          // "headmarker" sits inside the cap, "tailmarker" far beyond any
+          // reasonable per-field budget — only the prefix may be indexed.
+          userPrompt: `headmarker ${"filler ".repeat(2000)} tailmarker`,
+        },
+      }),
+    );
+    expect(index.search("headmarker").length).toBeGreaterThan(0);
+    expect(index.search("tailmarker")).toEqual([]);
+  });
 });
