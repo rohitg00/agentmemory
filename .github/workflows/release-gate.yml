@@ -65,7 +65,7 @@ jobs:
           archives=("$RUNNER_TEMP"/graph-index-pack/*.tgz)
           npm run test:graph-index:packaged -- --tarball "${archives[0]}" --out "$RUNNER_TEMP/graph-index-gate"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-gate-${{ matrix.os }}
           path: |
