@@ -132,6 +132,32 @@ describe("vision-search", () => {
     expect(res.error).toMatch(/managed/);
   });
 
+  it("accepts `limit` as an alias for topK", async () => {
+    for (const r of [LOGIN_REF, DASH_REF, OTHER_REF]) await seedRef(r);
+    await visionEmbed({ imageRef: LOGIN_REF });
+    await visionEmbed({ imageRef: DASH_REF });
+    await visionEmbed({ imageRef: OTHER_REF });
+
+    const res = (await visionSearch({ queryText: "the login form", limit: 2 })) as {
+      success: boolean;
+      results: Array<{ imageRef: string }>;
+    };
+    expect(res.success).toBe(true);
+    expect(res.results).toHaveLength(2);
+  });
+
+  it("prefers topK when both topK and limit are given", async () => {
+    for (const r of [LOGIN_REF, DASH_REF, OTHER_REF]) await seedRef(r);
+    await visionEmbed({ imageRef: LOGIN_REF });
+    await visionEmbed({ imageRef: DASH_REF });
+    await visionEmbed({ imageRef: OTHER_REF });
+
+    const res = (await visionSearch({ queryText: "the login form", topK: 1, limit: 3 })) as {
+      results: Array<{ imageRef: string }>;
+    };
+    expect(res.results).toHaveLength(1);
+  });
+
   it("sessionId filters out embeddings from other sessions", async () => {
     await seedRef(LOGIN_REF);
     await seedRef(DASH_REF);
