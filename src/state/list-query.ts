@@ -26,6 +26,8 @@ const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?
 
 function parseIso(raw: string): number {
   if (!ISO_TIMESTAMP.test(raw)) return Number.NaN;
+  const [year, month, day] = raw.slice(0, 10).split("-").map(Number);
+  if (new Date(Date.UTC(year, month - 1, day)).getUTCDate() !== day) return Number.NaN;
   const hasTime = raw.length > 10;
   const hasZone = /(?:Z|[+-]\d{2}:?\d{2}| \d{2}:?\d{2})$/.test(raw) && hasTime;
   let normalized = raw.replace(/ (\d{2}:?\d{2})$/, "+$1").replace(" ", "T");
@@ -38,9 +40,8 @@ export function parseTimeBounds(
 ): { bounds: Partial<Record<TimeParam, number>> } | { error: string } {
   const bounds: Partial<Record<TimeParam, number>> = {};
   for (const name of TIME_PARAMS) {
-    const raw = firstParam(params, name);
-    if (raw === undefined) continue;
-    const ms = parseIso(raw);
+    if (params?.[name] === undefined) continue;
+    const ms = parseIso(firstParam(params, name) ?? "");
     if (Number.isNaN(ms)) return { error: `${name} must be an ISO 8601 timestamp` };
     bounds[name] = ms;
   }

@@ -89,9 +89,11 @@ describe("time range filters", () => {
     const ok = parseTimeBounds({ startedAfter: "2026-10-09T00:00:00Z", endedBefore: " 2026-10-10 " });
     expect(ok).toEqual({ bounds: { startedAfter: Date.parse("2026-10-09T00:00:00Z"), endedBefore: Date.parse("2026-10-10") } });
     expect(parseTimeBounds(undefined)).toEqual({ bounds: {} });
-    for (const bad of ["5", "2026", "Oct 5", "0", "2026-13-45", "2026-10-09T25:00:00Z"]) {
+    for (const bad of ["5", "2026", "Oct 5", "0", "2026-13-45", "2026-10-09T25:00:00Z", "2026-02-30", "2027-02-29", "", "  "]) {
       expect(parseTimeBounds({ startedAfter: bad })).toEqual({ error: "startedAfter must be an ISO 8601 timestamp" });
     }
+    expect(parseTimeBounds({ endedBefore: "" })).toEqual({ error: "endedBefore must be an ISO 8601 timestamp" });
+    expect(parseTimeBounds({ startedAfter: "2028-02-29" })).toEqual({ bounds: { startedAfter: Date.parse("2028-02-29") } });
     expect(parseTimeBounds({ startedAfter: "yesterday" })).toEqual({ error: "startedAfter must be an ISO 8601 timestamp" });
   });
 
