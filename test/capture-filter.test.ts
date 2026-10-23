@@ -5,6 +5,7 @@ import {
   preCompactBudget,
   shouldCaptureTool,
   truncateCaptureOutput,
+  truncateText,
 } from "../src/hooks/_capture-filter.js";
 
 describe("bareToolName", () => {
@@ -98,6 +99,20 @@ describe("captureOutputMax", () => {
   it("reads a positive override", () => {
     process.env[key] = "4096";
     expect(captureOutputMax()).toBe(4096);
+  });
+});
+
+describe("truncateText", () => {
+  it("returns text within the limit unchanged", () => {
+    expect(truncateText("ab\u{1F600}", 4)).toBe("ab\u{1F600}");
+  });
+
+  it("keeps a surrogate pair that ends exactly at the limit", () => {
+    expect(truncateText("ab\u{1F600}c", 4)).toBe("ab\u{1F600}");
+  });
+
+  it("drops a surrogate pair that the limit would split", () => {
+    expect(truncateText("ab\u{1F600}c", 3)).toBe("ab");
   });
 });
 

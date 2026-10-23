@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
+import { truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
 import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
 
@@ -75,7 +76,7 @@ function extractTranscriptPrompts(data: Record<string, unknown>): TranscriptProm
       if (prompts.length >= 50) return prompts;
       const match = msg.content.match(/<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/);
       const text = (match ? match[1] : msg.content).trim();
-      if (text) prompts.push({ prompt: text.slice(0, 8000) });
+      if (text) prompts.push({ prompt: truncateText(text, 8000) });
       continue;
     }
     if (!isUserTurn(msg)) continue;
@@ -84,7 +85,7 @@ function extractTranscriptPrompts(data: Record<string, unknown>): TranscriptProm
     const timestamp = typeof msg.timestamp === "string" ? msg.timestamp : undefined;
     for (const text of promptId ? [texts.join("\n\n")].filter(Boolean) : texts) {
       if (prompts.length >= 50) return prompts;
-      prompts.push({ prompt: text.slice(0, 8000), promptId, timestamp });
+      prompts.push({ prompt: truncateText(text, 8000), promptId, timestamp });
     }
   }
   return prompts;
