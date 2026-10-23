@@ -104,6 +104,8 @@ describe("time range filters", () => {
     const plus = parseTimeBounds({ startedAfter: "2026-10-09T20:00:00+08:00" });
     expect(plus).toEqual({ bounds: { startedAfter: utc } });
     expect(parseTimeBounds({ startedAfter: "2026-10-09T20:00:00 08:00" })).toEqual(plus);
+    expect(parseTimeBounds({ startedAfter: "2026-10-09 12:00" })).toEqual({ bounds: { startedAfter: utc } });
+    expect(parseTimeBounds({ startedAfter: "2026-10-09 20:00:00 08:00" })).toEqual(plus);
   });
 
   it("treats after as inclusive, before as exclusive, and drops rows without a time", () => {

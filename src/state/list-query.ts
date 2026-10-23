@@ -29,8 +29,9 @@ function parseIso(raw: string): number {
   const [year, month, day] = raw.slice(0, 10).split("-").map(Number);
   if (new Date(Date.UTC(year, month - 1, day)).getUTCDate() !== day) return Number.NaN;
   const hasTime = raw.length > 10;
-  const hasZone = /(?:Z|[+-]\d{2}:?\d{2}| \d{2}:?\d{2})$/.test(raw) && hasTime;
-  let normalized = raw.replace(/ (\d{2}:?\d{2})$/, "+$1").replace(" ", "T");
+  const dated = raw.replace(/^(\d{4}-\d{2}-\d{2}) /, "$1T");
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2}| \d{2}:?\d{2})$/.test(dated) && hasTime;
+  let normalized = dated.replace(/ (\d{2}:?\d{2})$/, "+$1");
   if (hasTime && !hasZone) normalized += "Z";
   return Date.parse(normalized);
 }
