@@ -2,7 +2,7 @@ export const MACHINE_NODES = [
   { name: "coding agent", sub: "Claude Code, Codex, Cursor and others" },
   { name: "hooks + MCP", sub: "PostToolUse, SessionStart, 54 tools" },
   { name: "agentmemory", sub: "127.0.0.1:3111, REST and MCP, auth on" },
-  { name: "iii engine", sub: "streams :3112, workers :49134" },
+  { name: "iii engine", sub: "Worker Compose; state/http workers, engine :49134" },
   { name: "on disk", sub: "~/.agentmemory and the data dir" },
 ];
 

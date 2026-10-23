@@ -100,7 +100,7 @@ Krav:
 
 - Node.js 20 eller nyere med npm og npx (`node -v`, `npm -v` og `npx -v`).
 - Automatisk installation af iii-engine på macOS/Linux kræver også `curl`, en POSIX `sh` og `tar`. Minimale images som `node:20-slim` indeholder dem muligvis ikke.
-- Native Windows kræver, at den fastlåste iii-engine v0.22.1 `iii.exe` installeres manuelt. WSL2 eller Docker Desktop er de andre understøttede veje.
+- Native Windows kræver manuel installation af den fastlåste iii-engine v0.24.6 `iii.exe`; WSL2 bruger macOS/Linux-installationsprogrammet.
 
 Den kanoniske kommando til en ny installation:
 
@@ -112,7 +112,7 @@ Den første kørsel er en interaktiv opsætning: du vælger de agenter, der skal
 
 Nøgleløs tilstand deaktiverer vektor-embeddings. `memory_recall` (stien `mem::search`) bruger BM25, mens `memory_smart_search` også kan kombinere strukturelle graf-match, når der allerede findes graf-data. For gratis semantisk recall på enheden, sæt `EMBEDDING_PROVIDER=local` i `~/.agentmemory/.env` og genstart. Den første embedding-forespørgsel downloader `Xenova/all-MiniLM-L6-v2`; herefter køres inferens lokalt.
 
-Den lokale runtime bruger fire porte: `3111` til REST/MCP HTTP, `3112` til iii-streams, `3113` til viewer, og `49134` til iii-workerens WebSocket. Persistent iii-tilstand ligger i `~/Library/Application Support/agentmemory` på macOS, `$XDG_DATA_HOME/agentmemory` eller `~/.local/share/agentmemory` på Linux, og `%APPDATA%\agentmemory` på Windows. Brug `--data-dir <path>` eller `AGENTMEMORY_DATA_DIR` til at ændre det, og genbrug samme værdi ved hver genstart. Af bagudkompatibilitet har en eksisterende `./data/state_store.db` eller `./data/iii-config.yaml` forrang over platformens standardplacering for instans 0; et eksplicit flag eller en miljøvariabel vinder stadig.
+Den lokale CLI-runtime bruger REST/MCP HTTP på `3111`, viewer på `3113` og iii-workerens interne WebSocket på `49134`. Viewer-opdateringer bruger SSE via `GET /agentmemory/viewer/events` på REST-porten. Persistent tilstand gemmes som standard i `~/Library/Application Support/agentmemory` på macOS, `$XDG_DATA_HOME/agentmemory` eller `~/.local/share/agentmemory` på Linux og `%APPDATA%\agentmemory` på Windows. Tilsidesæt placeringen med `--data-dir <path>` eller `AGENTMEMORY_DATA_DIR`; instans 0 genbruger også en eksisterende `./data/state_store.db`. `--instance N` isolerer yderligere runtimes, og `AGENTMEMORY_ENV_FILE` vælger en anden `.env`-fil.
 
 Bevis derefter, at recall virker, og giv din agent dens skills:
 
@@ -132,7 +132,7 @@ Forbind flere agenter når som helst med `agentmemory connect <agent>` — 20 ad
 <details>
 <summary><strong>Windows</strong></summary>
 
-Den hurtige vej er WSL2. Opsætning af native Windows-engine kræver, at den fastlåste v0.22.1-ZIP downloades, og at `iii.exe` udpakkes manuelt; CLI'en udpakker ikke automatisk. Docker Desktop understøttes også. Se [Windows-noterne](#windows) for trin-for-trin-vejledningen.
+Den hurtige vej er WSL2. Native Windows kræver, at den fastlåste v0.24.6-ZIP downloades, og at `iii.exe` udpakkes manuelt. Se trinnene i [Windows-noterne](#windows).
 
 </details>
 
@@ -157,7 +157,7 @@ npx cacher pr. version. Tving den nyeste med `npx -y @agentmemory/agentmemory@la
 <details>
 <summary><strong>Kører allerede din egen iii-engine</strong></summary>
 
-agentmemory fastlåser iii-engine v0.22.1 og tilkobler sig ikke en anden version (workeren kan ikke tale en anden engines protokol). Stop den anden engine, og kør derefter `npx -y @agentmemory/agentmemory@latest`. Den installerer og kører den fastlåste v0.22.1 i `~/.agentmemory/bin` og lader din egen `iii` være uberørt.
+agentmemory fastlåser iii-engine v0.24.6 og tilkobler sig ikke en anden version (workeren kan ikke tale en anden engines protokol). Stop den anden engine, og kør derefter `npx -y @agentmemory/agentmemory@latest`. Den installerer og kører den fastlåste v0.24.6 i `~/.agentmemory/bin` og lader din egen `iii` være uberørt.
 
 </details>
 
@@ -319,14 +319,14 @@ Du forklarer den samme arkitektur i hver session. Du genopdager de samme fejl. D
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Som standard lagrer agentmemory iii-engine-tilstand uden for det repository, du starter den fra: `~/Library/Application Support/agentmemory` på macOS, `$XDG_DATA_HOME/agentmemory` eller `~/.local/share/agentmemory` på Linux, og `%APPDATA%\agentmemory` på Windows. En eksisterende, forældet `./data/state_store.db` eller `./data/iii-config.yaml` genbruges til instans 0 før platformens standard. For at vælge en placering eksplicit, angiv `--data-dir <path>` eller sæt `AGENTMEMORY_DATA_DIR`; begge eksplicitte indstillinger har forrang over den forældede opdagelse:
+Som standard lagrer agentmemory iii-engine-tilstand uden for det repository, du starter den fra: `~/Library/Application Support/agentmemory` på macOS, `$XDG_DATA_HOME/agentmemory` eller `~/.local/share/agentmemory` på Linux og `%APPDATA%\agentmemory` på Windows. En eksisterende `./data/state_store.db` genbruges til instans 0. Vælg en placering eksplicit med `--data-dir <path>` eller `AGENTMEMORY_DATA_DIR`:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-Native og Docker-opstarter bruger samme opløste hostmappe; Docker bind-mounter den på `/data`. `--instance 1` tilføjer `instance-1` til den opløste mappe og vælger den separate standard-portkvartet `3211/3212/3213/49234`.
+`--instance 1` tilføjer `instance-1` til den opløste datamappe og bruger portene `3211` (REST), `3213` (viewer) og `49234` (engine).
 
 Seneste udgivelsesnoter: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +476,7 @@ Seneste udgivelsesnoter: [CHANGELOG.md](../CHANGELOG.md).
 </tr>
 <tr>
 <td><strong>Eksterne afhængigheder</strong></td>
-<td>Ingen (SQLite + iii-engine)</td>
+<td>Ingen (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vektordatabase</td>
 <td>Flere</td>
@@ -556,7 +556,7 @@ Ingen af disse indsamler automatisk fra kodeagent-hooks, leverer en local-first 
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Hurtig start" height="32" /></picture></h2>
 
-Kompatibilitet: denne udgivelse målretter `iii-sdk` 0.22.1 og fastlåser iii-engine v0.22.1.
+Kompatibilitet: denne udgivelse bruger iii 0.24.6 med registry-workers `state@0.22.20` og `http@0.22.7`.
 
 ### Prøv det på 30 sekunder
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Opstartens ready-panel tager højde for alle fire porte: REST/MCP HTTP på 3111, iii-streams på 3112, viewer på 3113, og iii-workerens WebSocket på 49134. `status` bekræfter agentmemorys health og den aktive provider-/embedding-tilstand. Gem en probe, og bekræft at den er søgbar:
+Runtime bruger REST/MCP HTTP på 3111, viewer på 3113 og iii-workerens interne WebSocket på 49134. Viewerens livehændelser bruger SSE over REST. `status` bekræfter agentmemorys health, den fastlåste engine-version (`enginePinnedVersion`) og den aktive provider-/embedding-tilstand. Gem en probe, og bekræft at den er søgbar:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ Brug vedligeholdelseskommandoen, når du bevidst vil opdatere din lokale runtime
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Advarsel: denne kommando ændrer det nuværende workspace/runtime. Den kan opdatere JavaScript-afhængigheder og hente det fastlåste `iiidev/iii:0.22.1` Docker-image. Den installerer aldrig en ikke-fastlåst eller nyere iii-engine.
+Advarsel: denne kommando ændrer det nuværende workspace/runtime. Den kan opdatere JavaScript-afhængigheder og installere den fastlåste iii 0.24.6-engine-binary.
 
 Implementeringsdetaljer findes i `src/cli.ts` (se `runUpgrade` omkring regionen `src/cli.ts:544-595`).
 
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 Gennemarbejdet eksempel: [`examples/python/`](../examples/python/) (quickstart + observations-/recall-flow). REST på `:3111` er stadig tilgængeligt for hosts uden en iii-runtime.
@@ -853,83 +861,33 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Dette starter agentmemory med en lokal `iii-engine`, hvis den fastlåste binary allerede er installeret, eller bruger Docker Compose, når det er valgt. REST, streams og viewer binder til `127.0.0.1` som standard. Den automatiske binary-vej på macOS/Linux kræver `curl`, en POSIX `sh` og `tar`.
-
-Installér `iii-engine` manuelt. **agentmemory fastlåser i øjeblikket `iii-engine` til `v0.22.1`**, samme udgivelse som dens `iii-sdk`-afhængighed; workeren taler denne engines wire-protokol, og 0.20.0 omorganiserede SDK-overfladen, så de to følges i agentmemorys udgivelser. Overskriv med `AGENTMEMORY_III_VERSION=<version>`, hvis du kører din egen engine og ved, at den passer.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** erstat `aarch64-apple-darwin` med `x86_64-apple-darwin`
-- **Linux x64:** erstat med `x86_64-unknown-linux-gnu`
-- **Linux arm64:** erstat med `aarch64-unknown-linux-gnu`
-- **Windows:** download `iii-x86_64-pc-windows-msvc.zip` fra [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1), og udpak `iii.exe` til `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Hvert arkiv har en tilhørende `.sha256`-fil på udgivelsessiden; når du skifter platform, så brug den fils hash i checket ovenfor (på Windows: `Get-FileHash`). Den automatiske installer i `npx @agentmemory/agentmemory` fastlåser disse hashes og afviser et arkiv, der ikke matcher.
-
-Eller brug Docker (den medfølgende `docker-compose.yml` henter `iiidev/iii:0.22.1`). Fuld dokumentation: [iii.dev/docs](https://iii.dev/docs).
+`npm start` starter det samme iii Worker Compose-runtime som CLI’en: iii 0.24.6 med registry-workers `state@0.22.20` og `http@0.22.7`. På macOS/Linux downloader CLI’en den fastlåste engine-binary til `~/.agentmemory/bin`; automatisk installation kræver `curl`, POSIX `sh` og `tar`. Lokal REST og viewer lytter på `127.0.0.1`. Viewer-opdateringer bruger SSE via `GET /agentmemory/viewer/events` på REST-porten. `/agentmemory/status` angiver den fastlåste engine-version som `enginePinnedVersion`; standardversionen er iii 0.24.6. `AGENTMEMORY_III_VERSION` kan tilsidesætte fastlåsningen bevidst.
 
 ### Windows
 
-agentmemory kører på Windows 10/11, men Node.js-pakken alene er ikke nok; du skal også have den fastlåste iii-engine v0.22.1-runtime som en baggrundsproces. CLI'en udpakker ikke automatisk Windows-ZIP'en, så native Windows-brugere skal installere `iii.exe` manuelt, bruge WSL2 eller vælge Docker Desktop.
+agentmemory kører på Windows 10/11. WSL2 følger Linux-vejen og kan installere den fastlåste engine automatisk. Native Windows kræver, at den fastlåste iii-engine v0.24.6-binary installeres manuelt; download det tilsvarende arkiv fra [iii v0.24.6-udgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), verificér checksum, og placér `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI’en pakker ikke Windows-ZIP’en ud automatisk.
 
-Automatiseret MCP-forbindelse på native Windows understøtter kun `agentmemory connect copilot-cli`. For Claude Code, Codex, Cursor og alle andre native Windows-agenter skal du kopiere den manuelle MCP-blok fra [Other agents](#other-agents) ind i den agents Windows-konfiguration. At køre `connect` i WSL er kun hensigtsmæssigt, når målagenten også er installeret i samme WSL-miljø; det redigerer ikke en Windows-host-agents konfiguration.
+Automatisk MCP-opsætning på native Windows understøtter kun `agentmemory connect copilot-cli`. Brug den manuelle MCP-blok fra [Andre agenter](#other-agents) til andre native Windows-agenter. Kør kun `connect` i WSL, hvis målagenten er installeret i samme WSL-miljø.
 
-**Mulighed A: prækompileret Windows-binary (anbefalet)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Mulighed B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Mulighed C: kun standalone MCP (ingen engine).** Hvis du kun har brug for MCP-værktøjerne til din agent og ikke behøver REST API, viewer eller cron-jobs, kan du springe engine'en helt over:
+**Kun standalone MCP (uden engine).** Hvis du kun har brug for MCP-værktøjerne og ikke REST API, viewer eller runtime-tjenester:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Diagnostik til Windows:** hvis `npx -y @agentmemory/agentmemory@latest` fejler, så kør den igen med `--verbose` for at se den faktiske engine-stderr. Almindelige fejltilstande:
-
-| Symptom | Løsning |
-|---|---|
-| `The engine process started but the REST API never responded.` | Bekræft at alle fire afledte porte er frie, verificér at den fastlåste `iii.exe` forblev i live, og kør derefter igen med `--verbose`, og undersøg den fangede engine-stderr |
-| `Could not start iii-engine` | Hverken `iii.exe` eller Docker er installeret. Se mulighed A eller B ovenfor |
-| Portkonflikt | `netstat -ano \| findstr :3111` for at se, hvad der er bundet, og dræb det derefter, eller brug `--port <N>` |
-| Docker-fallback springes over, selv om Docker er installeret | Sørg for, at Docker Desktop faktisk kører (ikon i systembakken) |
-
-> Bemærk: iii-**engine** er en prækompileret binary, ikke en cargo crate, så prøv ikke at `cargo install` den. (iii-**SDK'erne** er publiceret på crates.io, npm og PyPI, men agentmemory har ikke brug for dem.) De understøttede installationsmetoder for engine er alle fastlåst til v0.22.1: den prækompilerede binary ovenfor, agentmemorys macOS/Linux-auto-installationsvej (`curl`, POSIX `sh` og `tar` er nødvendige), og Docker-imaget `iiidev/iii:0.22.1`. En ren upstream `install.sh | sh` installerer den nyeste engine, hvilket agentmemory ikke understøtter. Brug `npx -y @agentmemory/agentmemory@latest`; på macOS/Linux henter den den fastlåste engine ind i `~/.agentmemory/bin`.
+**Diagnostik:** Hvis opstart fejler, kør igen med `--verbose` for at se engine-stderr. Kontrollér, at REST-port `3111`, viewer-port `3113` og engine-port `49134` er ledige; brug `--port <N>` eller `--instance <N>` til en anden isoleret runtime. CLI’en bruger sin egen fastlåste engine-binary og erstatter ikke en iii-eksekverbar fil på `PATH`.
 
 ---
 
 <h2 id="deploy">Deployment</h2>
 
-One-click-skabeloner til administrerede hosts. Hver enkelt leveres med en selvstændig Dockerfile, der henter `@agentmemory/agentmemory` fra npm og kopierer iii-engine-binaryen ind fra det officielle `iiidev/iii` Docker Hub-image; intet prækompileret agentmemory-image er nødvendigt. Persistent lagring monteres på `/data`; first-boot-entrypointet overskriver den npm-medfølgende iii-konfiguration (som binder `127.0.0.1`) med en deploy-tunet udgave, der binder `0.0.0.0` og bruger absolutte `/data`-paths, genererer HMAC-secreten, og frafalder derefter privilegier fra `root` til `node` via `gosu`, før den eksekverer agentmemory-CLI'en.
+Docker understøttes til self-hosting fra dette repository, ikke som CLI-starttilstand. One-click-skabeloner bruger `deploy/Dockerfile` og `deploy/runtime/worker-compose.yaml`, fastlåser samme iii 0.24.6-runtime-workers og gemmer state, traces og den genererede secret på et persistent `/data`-volume. Docker Compose bruger som standard det eksisterende navngivne `iii-data`-volume; angiv `AGENTMEMORY_DATA_DIR` som en hoststi for at bruge et bind mount. Det eksisterende filbaserede store fra 0.22.1 læses direkte fra `/data/state_store.db` uden migration eller konvertering. REST CORS tillader som standard de lokale REST- og viewer-origins; sæt `REST_ALLOWED_ORIGINS` til en kommasepareret liste med præcise origins, når en betroet browser-origin skal have adgang. Se [`deploy/README.md`](../deploy/README.md) for opsætning og sikkerhed.
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy til fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy til Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy til fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy til Railway" /></a>
 </p>
 
 Renders one-click-deploy-knap kræver `render.yaml` i repositoryets rod, som vi med vilje holder ren. Brug Render Blueprint-flowet, dokumenteret i [`deploy/render/`](.././deploy/render/README.md), til manuelt at pege på blueprintet i repositoryet.
@@ -947,10 +905,16 @@ minimumsomkostninger) findes i [`deploy/`](.././deploy/README.md):
   egen VPS via [Coolify](https://coolify.io/self-hosted); samme Docker
   Compose-stack, du ejer hosten og dataene.
 
-Kun port `3111` eksponeres. Viewer på `3113` forbliver bundet til
-loopback inde i containeren; hver skabelons README dokumenterer
-SSH-tunnel-mønsteret for at nå den.
+REST bruger port `3111`; viewer er på `3113` og publiceres kun, hvor platformsskabelonen understøtter en separat beskyttet rute. Live-opdateringer bruger bearer-autentificeret SSE på REST-endpointet `/agentmemory/viewer/events`. Engine-WebSocket på `49134` er intern og må ikke publiceres. Se [`deploy/README.md`](../deploy/README.md) for platformspecifik eksponering og allowlist-vejledning.
 
+
+### Migrering af ældre CLI-administrerede Docker-installationer
+
+Den aktuelle CLI starter eller administrerer ikke Docker-installationer. Hvis den finder en ældre Docker-livscykluspost, bevarer den metadataene og udskriver den præcise kommando `docker stop ...`; kør kommandoen før migreringen. Start ikke det nye runtime-miljø, mens den gamle container stadig har volumenet tilkoblet.
+
+Behold den gamle persistente volumen (normalt `iii-data`), og tag en sikkerhedskopi af den, eller kopiér indholdet af `/data` til et bind mount. State-workeren læser den eksisterende `/data/state_store.db` direkte uden eksport eller konvertering. Det gamle runtime-miljø brugte UID/GID `65532:65532`; det nye image udfører en engangsmigrering af ejerskabet rekursivt til `node:node` (`1000:1000`) og skriver `/data/.ownership-migrated-node-v1`. Tilkobl ikke volumenet til det gamle runtime-miljø igen efter migreringen.
+
+Det gamle runtime-miljø gemte også den genererede bearer secret i `/data/.hmac`. Det nye image bevarer denne secret under migreringen; en eksplicit angivet `AGENTMEMORY_SECRET` har forrang. Start det nye Compose-projekt fra repositoryts rod med `docker compose up --build -d`. Hvis det gamle volumen har et projektnavnspræfiks i stedet for `iii-data`, skal du udtrykkeligt genbruge eller omdøbe det — undgå ved en fejl at initialisere et tomt volumen. Kontrollér `/agentmemory/livez`, og bekræft, at både gamle og nye minder kan findes. Undgå `docker compose down -v`, medmindre det er hensigten at slette dataene.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Hvorfor agentmemory" height="32" /></picture></h2>
@@ -1244,7 +1208,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Realtids-viewer" height="32" /></picture></h2>
 
-Starter automatisk på port `3113`. Viewer indlæser ét snapshot, når den forbinder (`GET /agentmemory/viewer/snapshot`), og anvender derefter live stream-events: nye hukommelser, lessons, observationer, audit-indgange, grafændringer og health-opdateringer vises uden polling eller gensidsindlæsninger. De eneste andre forespørgsler er de handlinger, du klikker på, "load more"-sider og søgninger. Når streamen falder ud, viser viewer, hvor gamle dens tal er, genforbinder med backoff, og resynkroniserer fra ét snapshot.
+Starter automatisk på port `3113`. Viewer indlæser ét snapshot, når den forbinder (`GET /agentmemory/viewer/snapshot`), og anvender derefter livehændelser via SSE på `/agentmemory/viewer/events` i REST-workeren: nye hukommelser, lessons, observationer, audit-poster, grafændringer og health-opdateringer vises uden polling eller genindlæsning af siden. De eneste andre forespørgsler er de handlinger, du klikker på, "load more"-sider og søgninger. Når feedet afbrydes, viser viewer, hvor gamle dens tal er, genopretter forbindelsen med backoff og synkroniserer fra ét snapshot.
 
 - **12 faner i fire grupper** med live-tal, deep links (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), tastaturgenveje og en mobilmenu.
 - **Memories:** søgning på serversiden, filtre efter projekt, agent og type, et detaljepanel med versionskæden og en orddiff, herkomstlinks, kopiér-knapper til id'et, MCP-kaldet og en curl-kommando, rediger (en ny version), glem med bekræftelse, bulk-glem og JSON-eksport.
@@ -1257,23 +1221,25 @@ Starter automatisk på port `3113`. Viewer indlæser ét snapshot, når den forb
 open http://localhost:3113
 ```
 
-Viewer-serveren binder til `127.0.0.1` som standard og tilføjer server-secreten, når den videresender forespørgsler til REST API'et, så den kræver ingen opsætning. Den REST-serverede `/agentmemory/viewer`-endpoint følger de normale bearer-token-regler og omdirigerer browsere uden token til viewer-porten. CSP-headers bruger en per-response script-nonce og deaktiverer inline handler-attributter (`script-src-attr 'none'`).
+Viewer-serveren binder til `127.0.0.1` som standard og tilføjer server-secreten, når den videresender forespørgsler til REST API'et. Ved bind uden for loopback forbliver HTML-skallen offentlig, men hver proxy-forespørgsel kræver bearer-token; viewer beder om det og gemmer det i session storage. Konfigurér eksplicitte host-/origin-allowlists og TLS, før viewer eksponeres. REST-endpointet `/agentmemory/viewer` følger de normale bearer-token-regler og omdirigerer browsere uden token til viewer-porten. CSP-headers bruger en per-response script-nonce og forbyder inline handler-attributter (`script-src-attr 'none'`).
 
 ---
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
 
-Viewer på `:3113` viser, hvad din agent **huskede**. [iii console](https://iii.dev/docs/console) viser, hvad din agent **gjorde**: hver hukommelsesoperation som en OpenTelemetry-trace, hver KV-indgang redigerbar, hver funktion kaldbar, hver stream aftappelig. To vinduer på den samme hukommelse: ét produkt-formet, ét engine-formet.
+Viewer på `:3113` viser, hvad din agent **huskede**. [iii console](https://iii.dev/docs/console) viser, hvad din agent **gjorde**: hver hukommelsesoperation som en OpenTelemetry-trace, hver KV-post redigerbar, hver funktion direkte kaldbar og runtime-aktivitet.
 
-agentmemory leverer dette gratis, fordi hvert funktionskald og trigger affyres gennem iii; intet custom, intet at instrumentere.
+Se `memory_smart_search` blive kaldt, og følg BM25-søgning → embedding-opslag → RRF-fusion → reranker som et waterfall. Redigér en fastlåst konsolideringstimer i KV-browseren. Afspil `PostToolUse`-hooket med en ændret payload.
+
+agentmemory leverer dette gratis, fordi hvert funktionskald og hver trigger går gennem iii; intet specialbygget, intet at instrumentere.
 
 <p align="center">
-  <img src="../assets/iii-console/workers.png" alt="iii console Workers-siden: forbundne workers inklusive agentmemory-instanser med live funktionstal og runtime-metadata" width="720" />
+  <img src="../assets/iii-console/workers.png" alt="Workers-side i iii console: forbundne workers, herunder agentmemory-instanser med live funktionsantal og runtime-metadata" width="720" />
   <br/>
-  <em>Workers-siden: hver forbundne worker, inklusive agentmemory selv, med PID, funktionstal, runtime og senest set.</em>
+  <em>Workers-side: hver forbundet worker, herunder agentmemory selv, med PID, funktionsantal, runtime og sidst set.</em>
 </p>
 
-**Allerede installeret.** Konsollen leveres med den fastlåste `iii`-engine (0.22+); intet separat at installere. Den første opstart downloader konsol-binaryen ved siden af enginen.
+**Allerede installeret.** Konsollen leveres med den fastlåste `iii` 0.24.6-engine; intet separat at installere. Første start downloader konsollens binary ved siden af enginen.
 
 **Start sammen med agentmemory:**
 
@@ -1281,57 +1247,47 @@ agentmemory leverer dette gratis, fordi hvert funktionskald og trigger affyres g
 agentmemory console
 ```
 
-Dette kører den fastlåste engines `iii console` mod de porte, agentmemory har opløst (REST, streams, bridge), og serverer den én port over viewer, `http://localhost:3114` som standard. `--console-port N` vælger en anden port; `--port` og `--instance` vælger agentmemory-instansen på samme måde som for `stop`; ethvert andet flag videresendes, for eksempel `--enable-flow` til den eksperimentelle arkitektur-graf-side.
+Dette kører den fastlåste engines `iii console` mod de porte, agentmemory har valgt (REST og worker-WebSocket) og serverer konsollen én port over viewer, som standard `http://localhost:3114`. `--console-port N` vælger en anden port; `--port` og `--instance` vælger agentmemory-instansen på samme måde som for `stop`; andre flag sendes videre, for eksempel `--enable-flow` til den eksperimentelle arkitekturgrafside.
 
-Det samme manuelt, nyttigt når `agentmemory` ikke er på PATH:
+Samme kommando manuelt, nyttig når `agentmemory` ikke er på PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **Hvad du kan gøre fra konsollen:**
 
-| Side | Brug den til at |
+| Side | Brug den til |
 |------|-----------|
-| **Workers** | Se hver forbundne worker og dens live metrics, inklusive agentmemory-workeren selv. |
-| **Functions** | Kalde enhver af agentmemorys funktioner direkte med en JSON-payload; praktisk til at teste `memory.recall`, `memory.consolidate`, `graph.query` uden at forbinde en klient. |
-| **Triggers** | Afspille HTTP-, cron-, event- og state-triggers igen: udløse konsoliderings-cronen manuelt, gentage en HTTP-rute, udsende en state-ændring. |
-| **States** | KV-browser med fuld CRUD over sessioner, memory-slots, livscyklustimere og embeddings-indekset; redigere værdier direkte. |
-| **Streams** | Live WebSocket-monitor for hukommelsesskrivninger, hook-events og observationsopdateringer, mens de flyder gennem iii-streams. |
-| **Queues** | Durable queue-topics + dead-letter-håndtering. Afspille eller droppe mislykkede embedding-/kompressionsjobs. |
-| **Traces** | OpenTelemetry waterfall-/flame-/service-breakdown-visninger. Filtrere efter `trace_id` for at se præcis, hvilke funktioner, DB-kald og embedding-forespørgsler en enkelt `memory.search` producerede. |
-| **Logs** | Strukturerede OTEL-logs filtreret og korreleret til trace-/span-ID'er. |
+| **Workers** | Se alle forbundne workers og deres live-metrics, herunder agentmemory-workeren. |
+| **Functions** | Kalde enhver agentmemory-funktion direkte med en JSON-payload; praktisk til at teste `memory.recall`, `memory.consolidate`, `graph.query` uden klient. |
+| **Triggers** | Afspille HTTP-, cron-, event- og state-triggers: køre konsoliderings-cronen manuelt, gentage en HTTP-route eller udsende en state-ændring. |
+| **States** | KV-browser med fuld CRUD for sessioner, memory-slots, livscyklustimere og embeddings-indeks; redigér værdier direkte. |
+| **Traces** | OpenTelemetry-waterfall-, flame- og serviceopdelingsvisninger. Filtrér efter `trace_id` for at se præcis, hvilke funktioner, DB-kald og embedding-forespørgsler ét `memory.search` udløste. |
+| **Logs** | Strukturerede OTEL-logs filtreret og korreleret med trace-/span-ID’er. |
 | **Config** | Runtime-konfiguration: se præcis, hvilke workers, providere og porte din engine kører med. |
-| **Flow** | (Valgfrit, `--enable-flow`) Interaktiv arkitekturgraf over hver worker, trigger og stream. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="iii console trace-waterfall-visning, der viser varighed pr. span" width="720" />
   <br/>
-  <em>Traces: waterfall-/flame-/service-breakdown for hver hukommelsesoperation.</em>
+  <em>Traces: waterfall-/flame-/serviceopdeling for hver hukommelsesoperation.</em>
 </p>
 
-**Traces er allerede aktiveret:**
+**Tracing og logs:** iii console kan inspicere runtime-telemetri. Se [iii observability-dokumentationen](https://iii.dev/docs) for konfiguration af eksportør og sampling.
 
-`iii-config.yaml` leveres med `iii-observability`-workeren aktiveret (`exporter: memory`, `sampling_ratio: 0.1`, metrics + logs). Ingen ekstra konfiguration nødvendig; i det øjeblik agentmemory starter, udsender hver hukommelsesoperation en struktureret log, konsollen kan læse, og én ud af ti af dem (`sampling_ratio: 0.1`) udsender også et trace-span.
-
-Hvis du i stedet vil eksportere til Jaeger/Honeycomb/Grafana Tempo, så ændr `exporter: memory` til `exporter: otlp`, og sæt collector-endpointet jf. iii's observability-dokumentation.
-
-> **Vigtigt:** der er ingen auth gennemtvunget på konsollen selv; hold den bundet til `127.0.0.1` (standarden), og eksponér den aldrig offentligt.
+> **Bemærk:** Konsollen håndhæver ikke selv autentificering; hold den bundet til `127.0.0.1` (standard), og eksponér den aldrig offentligt.
 
 ---
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="Drevet af iii" height="32" /></picture></h2>
 
-agentmemory er **allerede en kørende [iii](https://iii.dev)-instans**. Tre primitiver (worker, function, trigger) sammensætter runtimen; KV-state, streams og OTEL-traces kommer fra iii-state-, iii-stream- og iii-observability-workers, der leveres med iii. Du installerede ikke Postgres, Redis, Express, pm2 eller Prometheus, fordi iii erstatter dem.
+agentmemory er en worker på [iii](https://iii.dev)-runtime. Worker Compose ejer enginen og starter agentmemory sammen med registry-workers `state` og `http`. Viewerens feed leveres som SSE over REST-endpointet.
 
-Det betyder, at én kommando mere udvider agentmemory med en helt ny funktion.
+Det betyder, at én ekstra kommando kan udvide agentmemory med en ny funktion.
 
 ### Udvid agentmemory med flere workers
 
-De builtins, agentmemory har brug for, er allerede i `iii-config.yaml` og starter op med den: `iii-state` (KV), `iii-queue` (durable retries til event-subscribers), `iii-pubsub`, `iii-cron`, `iii-stream` og `iii-observability` (OTEL-traces, metrics og logs på hver funktion). Alt andet fra [iii worker registry](https://workers.iii.dev) kobler sig til den samme engine: kopiér `iii-config.yaml` til `~/.agentmemory/iii-config.yaml` (CLI'en foretrækker denne fil frem for den medfølgende og indsætter stadig porte og data-paths i den), tilføj indgangen, installér worker-runtimen én gang med `~/.agentmemory/bin/iii update worker`, og genstart agentmemory.
+Runtimen kombinerer registry-workers `state` (KV) og `http` med agentmemory. Andre workers fra [iii worker registry](https://workers.iii.dev) kan føjes til et Worker Compose-projekt.
 
 ```yaml
 workers:
@@ -1344,26 +1300,22 @@ workers:
 | Worker | Hvad du får i tillæg til agentmemory |
 |---|---|
 | [`database`](https://workers.iii.dev/workers/database) | SQL-baseret state-adapter, når du vokser fra KV-standarderne i hukommelsen |
-| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Kode, der kom ud af `memory_recall`, køres inde i en kortlivet VM, ikke din shell |
-| [`mcp`](https://workers.iii.dev/workers/mcp) | Sæt ekstra MCP-servere op ved siden af agentmemorys, del samme engine |
+| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Kode fra `memory_recall` køres i en kortlivet VM, ikke i din shell |
+| [`mcp`](https://workers.iii.dev/workers/mcp) | Ekstra MCP-servere ved siden af agentmemory i samme engine |
 
-På engine 0.22.x skal du bevare de `iii-`-præfikserede navne for builtins ovenfor; de upræfikserede `http`-, `state`-, `queue`-, `pubsub`- og `cron`-indgange er de selvstændige registry-workers, agentmemory flytter til med 0.23-migreringen.
+Runtimen fastlåser registry-pakkerne `state@0.22.20` og `http@0.22.7` i CLI’ens genererede Worker Compose-projekt.
 
-Fuldt register: [workers.iii.dev](https://workers.iii.dev). Hver worker der sammensættes gennem de samme primitiver, agentmemory bruger, og den agentmemory, du allerede har, er én af dem.
+Fuldt register: [workers.iii.dev](https://workers.iii.dev). Alle workers dér sammensættes gennem de samme primitiver som agentmemory, og agentmemory er selv én af dem.
 
-### Engine-konfiguration og bind-adresse
+### CLI-runtime og bind-adresser
 
-`agentmemory start` læser engine-konfigurationen fra den første fil, der findes: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` i den aktuelle mappe, `~/.agentmemory/iii-config.yaml`, derefter den medfølgende `iii-config.yaml`. Ved hver opstart renderer den denne fil (data-paths, porte, state-backend) ind i `~/.agentmemory/data/iii-config.runtime.yaml` og starter enginen med den rendererede kopi, så redigér kildefilen, ikke den rendererede. `host:`-værdierne i kildefilen bevares som skrevet.
-
-Den medfølgende `iii-config.yaml` binder bevidst `127.0.0.1`, og denne standard gælder også inde i en container. En CLI, der startes i en container, lytter på containerens loopback, så eksponerede porte ikke når nogen steder. For at servere en containeriseret CLI gennem eksponerede porte, sæt `AGENTMEMORY_III_CONFIG` til en konfiguration, der binder `0.0.0.0`. Den medfølgende `iii-config.docker.yaml` er en sådan: den binder `iii-http`, `iii-stream` og engine-porten til `0.0.0.0` og lagrer state under `/data`, så montér et skrivbart volume der. Hold `AGENTMEMORY_SECRET` sat, og eksponér kun de porte, du har brug for, på `127.0.0.1` eller bag en proxy, du har tillid til.
-
-Dette repositorys `docker-compose.yml` går ikke gennem CLI'ens konfigurationsopslag: den monterer `iii-config.docker.yaml` på `/app/config.yaml`, og `iii-engine`-containeren starter med `--config /app/config.yaml`. One-click [deploy-skabelonerne](../deploy/) skriver deres egen `0.0.0.0`-konfiguration i deres entrypoints.
+Kørsel af `agentmemory` (eller pakken uden underkommando) starter iii Worker Compose med et isoleret manifest i den valgte datamappe. Den bruger iii 0.24.6, `state@0.22.20` og `http@0.22.7`. Den lokale CLI’s REST og viewer lytter på `127.0.0.1`; engine-WebSocket er intern runtime-trafik. Docker-self-hosting fra repositoryet bruger den separate [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml); se [`deploy/README.md`](../deploy/README.md).
 
 ### Storage-backend: file (standard) vs. redis
 
-`iii-state` og `iii-stream` falder som standard tilbage til iii-engines medfølgende filbaserede KV-lager: én JSON-fil pr. scope, holdt i engine-processens hukommelse og genskrevet til disk på en timer. Det er det rette standardvalg til en lokal single-user-installation; en delt daemon med flere samtidige skrivere får i stedet rigtige per-key-skrivninger fra Redis, til prisen af en netværksrundtur pr. operation (hvert `state::*`-kald serialiserer stadig på én Redis-forbindelse, så dette ombytter fillagrets lock til en socket, ikke til parallelisme).
+`state`-workeren bruger som standard et filbaseret KV-store, der holdes i hukommelsen og skrives til disk med jævne mellemrum. Redis er muligt, når flere skrivere deler en runtime; det tilføjer et netværks-roundtrip og gør ikke en enkelt worker-forbindelse parallel.
 
-Sæt `AGENTMEMORY_STATE_BACKEND=redis` (plus `AGENTMEMORY_REDIS_URL`) for at skifte begge workers til iii-engines indbyggede `redis`-adapter, som lagrer hver key som et Redis hash-felt (`HSET`) i stedet for at genskrive et helt scope ved hver skrivning:
+Sæt `AGENTMEMORY_STATE_BACKEND=redis` og `AGENTMEMORY_REDIS_URL` for at bruge `state`-workerens Redis-adapter, der lagrer hver key som et Redis-hashfelt (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1371,31 +1323,30 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` er som standard `file`; at lade den stå usat bevarer dagens opførsel uændret, og en ikke-genkendt værdi (alt andet end `file` eller `redis`) er en opstartsfejl frem for en tavs fallback. `/agentmemory/status` og viewers Health-side (State store-rækken) rapporterer, hvilken backend der er aktiv, og om den svarer, aldrig URL'en.
+`AGENTMEMORY_STATE_BACKEND` er som standard `file`; en ukendt værdi (alt andet end `file` eller `redis`) er en opstartsfejl frem for en tavs fallback. `/agentmemory/status` og viewers Health-side (State store-rækken) rapporterer den aktive backend og om den svarer, aldrig URL’en.
 
-**Kun almindelig `redis://`.** Den fastlåste engine (0.22.1) bygger sin Redis-klient uden TLS-understøttelse, så en `rediss://`-URL (de fleste administrerede Redis-tjenester, som Upstash, Redis Cloud og ElastiCache med kryptering under transport, er som standard kun TLS) kan ikke forbinde. Forbindelsen er ukrypteret, så Redis-adgangskoden og hver lagret hukommelse krydser ledningen i klartekst: peg på en lokal Redis eller én på et privat netværk, du har tillid til. For enhver anden Redis, så kør en krypteret tunnel (stunnel, SSH eller en VPN) på agentmemory-hosten, så det almindelige `redis://`-hop forbliver på den host, og tunnelens upstream-forbindelse er krypteret og autentificeret. Hvis en Redis-adgangskode indeholder et enkelt anførselstegn, så percent-encode det (`%27`); enginen udvider URL'en i sin YAML-konfiguration, før den parses.
+**Kun almindelig `redis://`.** Den fastlåste `state`-worker understøtter kun almindelig `redis://`; TLS-only `rediss://`-tjenester kræver en krypteret tunnel. Redis-forbindelsen er ukrypteret, så brug en lokal/privat netværksforbindelse eller tunnel. Hvis en Redis-adgangskode indeholder et enkelt anførselstegn, percent-encod det (`%27`); enginen udvider URL’en i sin YAML-konfiguration, før den parses.
 
-**Én Redis-server pr. `--instance`.** Enginens Redis-key-præfikser (`state:<scope>`, `stream:<name>:<group>`) er fikserede, så to agentmemory-instanser (`--instance 1`, `--instance 2`, ...), der peger på samme database, overskriver hinandens data. Et separat database-indeks (`redis://localhost:6379/1`) holder de lagrede data adskilt, men enginen relayerer live viewer-events over én Redis pub/sub-kanal (`stream::events`), og Redis pub/sub ignorerer database-indekset, så hver instans' viewer stadig ville vise den anden instans' live events. Giv hver instans sin egen Redis-server (eller port), når du kører mere end én.
+**Én Redis-database pr. instans.** Giv hver samtidig instans sin egen database eller Redis-server for at holde state isoleret.
 
-**Hvad der er det samme, og hvad der er forskelligt.** Hver agentmemory-funktion fungerer på Redis: sessioner, observationer, hukommelser (remember, supersede, evolve, forget), søgning og indeks-buckets, lessons, grafen, audit-loggen og dens månedlige scopes, eksport og import, governance-sletninger, konsolideringsstatus, viewer-snapshottet og dens live stream, samt health-monitoren. Enginen lagrer hvert scope som ét Redis-hash (`HSET`/`HGET`/`HGETALL`) og udløser de samme state-triggers som fillagret. Tre engine-forskelle håndteres inde i agentmemory:
+**Hvad der er det samme, og hvad der er forskelligt.** Alle agentmemory-funktioner virker på Redis: sessioner, observationer, hukommelser (remember, supersede, evolve, forget), søgning og indeks-buckets, lessons, grafen, audit-loggen og dens månedlige scopes, eksport og import, governance-sletninger, konsolideringsstatus, viewer-snapshot og dens live SSE-feed samt health-monitoren. `state`-workeren lagrer hvert scope som et Redis-hash (`HSET`/`HGET`/`HGETALL`) og udløser de samme state-triggers som fillagret. Tre storage-forskelle håndteres inde i agentmemory:
 
-- Redis returnerer et scopes poster i ingen fast rækkefølge. agentmemory sorterer dem ældst først (efter oprettelsestidspunktet i post-id'et, derefter dets timestamp), så lister, paginering og eksport-chunks kommer tilbage i samme rækkefølge som på fillagret.
-- Enginen anvender delvise opdateringer på Redis i et Lua-script, der gør tomme arrays til tomme objekter. agentmemory anvender selv disse opdateringer (læs, ændr, skriv under en per-key-lock) på Redis, så felter som `tags: []` forbliver arrays.
-- Det gamle audit-log-check læser det gamle scope fra Redis i stedet for at kigge efter fillagrets fil på disken.
+- Redis returnerer et scopes poster i ingen fast rækkefølge. agentmemory sorterer dem ældst først (efter oprettelsestidspunktet i post-id’et, derefter timestamp), så lister, paginering og eksport-chunks har samme rækkefølge som på fillagret.
+- Enginen anvender delvise Redis-opdateringer i et Lua-script, der gør tomme arrays til tomme objekter. agentmemory anvender selv opdateringerne (læs, ændr, skriv under en per-key-lock), så felter som `tags: []` forbliver arrays.
+- Det gamle audit-log-check læser det gamle scope fra Redis i stedet for at lede efter fillagrets fil på disken.
 
-Én forskel kræver din indgriben: **efter Redis genstarter, stopper enginen med at relaye live events** til viewer, indtil agentmemory genstarter. Data gemmes og læses stadig normalt. Health-monitoren sender et testevent gennem Redis hvert 30. sekund; når det ikke kommer tilbage, viser `/agentmemory/status` og viewers Health-side "Live updates are not reaching the viewer" med løsningen: genstart agentmemory. Hvis Redis er nede, viser statusrapporten "The state store is not answering" og hvordan man tjekker det (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). At liste et meget stort scope læser hele hashet i ét `HGETALL`, samme omkostning som når fillagret holder det i hukommelsen.
+Viewerens livehændelser bruger SSE på REST-workeren og udsendes fra den kørende agentmemory-proces; de bruger ikke Redis pub/sub eller en periodisk Redis-stream-probe. Redis’ tilgængelighed påvirker state-læsninger og -skrivninger, ikke viewer-transporten. Hvis Redis er nede, viser statusrapporten "The state store is not answering" og hvordan den kontrolleres (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). At liste et meget stort scope læser hele hashet i ét `HGETALL`, samme omkostning som ved fillagerets hukommelsescache.
 
-**Anbefalede Redis-indstillinger.** Standard-snapshot-politikken `save 3600 1 300 100 60 10000` kan tabe minutter af skrivninger ved et crash, værre end fillagrets 5-sekunders flush-vindue. Sæt `appendonly yes` for alt, du ville være ked af at tabe. Sæt `maxmemory-policy noeviction`; `allkeys-lru` eller lignende smider stille og roligt hukommelser ud, så snart Redis når sin hukommelsesgrænse.
+**Anbefalede Redis-indstillinger.** Standard-snapshot-politikken `save 3600 1 300 100 60 10000` kan tabe flere minutters skrivninger ved et crash. Sæt `appendonly yes` for data, du ikke vil miste. Sæt `maxmemory-policy noeviction`; `allkeys-lru` og lignende dropper stille hukommelser, når Redis når sin hukommelsesgrænse.
 
-En native (ikke-Docker) opstart, og hver one-click [deploy-skabelon](../deploy/) (de overskriver den medfølgende `iii-config.yaml` og starter nativt), læser `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` og indsætter dem i den startede `iii-config`. Selve URL'en skrives aldrig til den rendererede fil, kun en `${AGENTMEMORY_REDIS_URL}`-reference, som engine-processen udvider fra sit eget miljø ved opstart. Kun dette repositorys egen Docker Compose-vej (`AGENTMEMORY_USE_DOCKER=1`, eller genoptagelse af en engine, der allerede er startet på den måde) monterer `iii-config.docker.yaml` skrivebeskyttet og renderer aldrig; `agentmemory start` advarer, når den registrerer denne kombination. Skift den fil manuelt, idet du følger samme `name: redis` / `config: redis_url: ...`-form, der vises i worker-dokumentationen for [iii-state](https://workers.iii.dev/workers/iii-state) og [iii-stream](https://workers.iii.dev/workers/iii-stream), og peg `redis_url` på en Redis, der kan nås fra containeren. `docker-compose.yml` sender `AGENTMEMORY_REDIS_URL` ind i engine-containeren, så `redis_url: '${AGENTMEMORY_REDIS_URL}'` fungerer der og holder URL'en ude af den monterede fil.
+CLI’ens genererede Worker Compose-projekt sender disse variabler videre til `state`-workeren. Se [`deploy/README.md`](../deploy/README.md) og [state-worker-dokumentationen](https://workers.iii.dev/workers/state) for Docker-self-hosting.
 
-Den rendererede konfiguration holder URL'en ude af `~/.agentmemory/data/iii-config.runtime.yaml`, men enginens egen konfigurations-worker persisterer stadig den *udvidede* værdi til `~/.agentmemory/config/iii-state.yaml` og `iii-stream.yaml`, når den starter op (iii-engines `${VAR}`-udvidelse sker, før den worker lagrer sit seed, og den lagrer den opløste værdi, ikke referencen). Behandl den mappe som om den indeholder et credential: `chmod 700 ~/.agentmemory` på enhver delt host, og foretræk en Redis ACL-bruger, scopet til det, agentmemory har brug for, over databasens admin-credentials.
+Behandl gemt worker-konfiguration som følsom, hvis den indeholder en Redis-URL, da den kan rumme legitimationsoplysninger. Begræns tilladelserne på den valgte datamappe (for eksempel `chmod 700 <data-dir>` på en delt host). Foretræk en Redis ACL-bruger begrænset til det nødvendige frem for databasens administratoroplysninger.
 
-**Migrering er ikke automatisk.** At skifte `AGENTMEMORY_STATE_BACKEND` starter fra et tomt lager på begge sider; intet kopierer eksisterende data fra file til Redis eller tilbage. Eksportér fra den backend, du forlader, og importér til den, du flytter til. Dette køres identisk under bash og zsh (inklusive `bash -u`). Et array som `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` gør ikke: zsh holder headeren som ét forkert-formet ord, hvor bash splitter den i to, så begge forespørgsler giver 401, når `AGENTMEMORY_SECRET` er sat:
+**Migration sker ikke automatisk.** Skift af `AGENTMEMORY_STATE_BACKEND` starter med et tomt store på begge sider; eksisterende data kopieres ikke mellem fil og Redis. Eksportér fra den gamle backend, og importér til den nye. Det følgende virker ens i bash og zsh (også med `bash -u`). Et array som `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` gør ikke: zsh beholder headeren som ét fejlformet ord, mens bash deler den i to, så begge forespørgsler giver 401, når `AGENTMEMORY_SECRET` er sat:
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1423,20 +1374,20 @@ else
 fi
 ```
 
-`/agentmemory/export` accepterer også `?maxSessions=` og `?offset=` til at opdele et stort korpus over flere kald; `strategy` ved import er `merge` (standard-sikker), `replace` eller `skip`.
+`/agentmemory/export` accepterer også `?maxSessions=` og `?offset=` til at opdele et stort korpus i flere kald, `?collectionLimit=` og `?collectionOffset=` til at paginere memories, grafen og andre samlinger, og `?collections=` til kun at returnere de navngivne samlinger; `strategy` ved import er `merge` (sikker standard), `replace` eller `skip`, og `replace` afviser en pagineret eller udvalgt eksport.
 
 ### Hvad iii erstatter
 
 | Traditionel stack | agentmemory bruger |
 |---|---|
 | Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + in-memory vektorindeks |
-| SSE / Socket.io | iii Streams (WebSocket) |
-| pm2 / systemd | iii engine worker-supervision |
-| Prometheus / Grafana | iii OTEL + health monitor |
-| Custom plugin-systemer | `iii worker add <name>` |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | REST-endpointet `GET /agentmemory/viewer/events` (SSE) |
+| pm2 / systemd | iii-engine-worker-overvågning |
+| Prometheus / Grafana | iii OTEL + health-monitor |
+| Tilpassede plugin-systemer | `iii worker add <name>` |
 
-**242 kildefiler · ~55,000 LOC · 3,400+ tests · 324 funktioner · 67 KV-scopes**, alt på tre primitiver. Intet `agentmemory plugin install`. Plugin-systemet er iii selv.
+**246 kildefiler · ~56,000 LOC · 3,600+ tests · 322 funktioner · 65 KV-scopes**, alt på tre primitiver. Intet `agentmemory plugin install`. Plugin-systemet er iii selv.
 
 ---
 
@@ -1553,39 +1504,23 @@ Når `AGENT_ID` ikke er sat, forbliver hukommelsen uscopet (legacy-opførsel, in
 
 ### Porte
 
-agentmemory + iii-engine binder fire porte som standard. Hvis en genstart fejler med `port in use`, fortæller denne tabel dig, hvilken proces du skal kigge efter.
+Den lokale runtime bruger tre lyttere. iii-engine-WebSocket bruges til intern worker-registrering og må ikke eksponeres på det offentlige netværk.
 
 | Port | Proces | Formål | Env-override |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Intern streams-worker (bruges af agentmemory + viewer) | `III_STREAM_PORT` (foretrukket) eller legacy `III_STREAMS_PORT` |
-| `3113` | agentmemory | Realtids-viewer (`http://localhost:3113`) | `III_VIEWER_PORT` eller `AGENTMEMORY_VIEWER_URL` for den rapporterede URL |
-| `49134` | iii-engine | WebSocket; workers registrerer sig her, OTel-telemetri flyder over den | `III_ENGINE_PORT` eller `III_ENGINE_URL` |
+| `3111` | registry-worker `http` | REST API, MCP HTTP, health og autentificeret viewer-SSE på `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | viewer-UI og viewer-proxy | `III_VIEWER_PORT` |
+| `49134` | iii-engine | intern worker-WebSocket | `III_ENGINE_PORT` eller `III_ENGINE_URL` |
 
-`--port <N>` ændrer REST-ankeret og afleder streams `N+1`, viewer `N+2` og engine-WebSocket `N+46023`, kun hvor den tilsvarende eksplicitte port eller URL ovenfor ikke er sat. Det opretter ikke et isoleret livscyklus-namespace. Brug `--instance 1` til en anden daemon; den bruger anker 3211, er som standard `3211/3212/3213/49234`, og får en separat `instance-1`-data- og livscyklusmappe. Instanser 1 til 50 følger samme mønster.
+`--port <N>` angiver REST-porten og udleder viewer-porten `N+2` og engine-WebSocket-porten `N+46023`, når de ikke er sat eksplicit. Brug `--instance N` til en isoleret runtime.
 
-Den fastlåste engine starter med `--no-update-check` (ingen opslag efter opdateringer eller sikkerhedsråd mod GitHub ved boot) og med iii's anonyme brugstelemetri slået fra: agentmemory sætter `III_TELEMETRY_ENABLED=false` for den engine, den starter, med mindre du selv eksporterer variablen, og den medfølgende compose-fil gør det samme.
-
-Rydning af forældede processer, når porte forbliver bundet efter en crashet kørsel:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` rydder både worker- og engine-pidfilen pænt op ved en graciøs native nedlukning. I Docker-tilstand flusher den den native worker, stopper den nøjagtige validerede engine-container, og bevarer både containeren og dens `/data`-mount til en lossless genstart; den næste opstart validerer og genoptager samme container. Docker-baseret afinstallation kræver `agentmemory remove --keep-data`: den fjerner delte agentmemory-styrede filer, mens den bevarer den validerede container, dens data-mount og det livscyklus-record, der er nødvendigt for at gendanne dem. Destruktiv sletning af Docker-data er med vilje overlad til operatøren efter en backup. CLI'en afviser også at adoptere eller signalere Docker- eller VM-port-indehavere (Docker backend, vpnkit, colima) som den native engine, med mindre `--force` sendes med. Den manuelle rydning ovenfor er kun til post-crash-tilfældet, hvor ingen af pidfilerne er efterladt.
+Self-host-deployment publicerer REST og viewer, som standard `127.0.0.1:3111` og `127.0.0.1:3113`; host-portene kan ændres med `AGENTMEMORY_REST_PORT` og `AGENTMEMORY_VIEWER_PORT`. REST CORS tillader som standard `http://localhost` og `http://127.0.0.1` på de konfigurerede REST- og viewer-porte. Tillad ekstra betroede browser-origins ved at sætte Docker-variablen `REST_ALLOWED_ORIGINS` til en kommasepareret liste over præcise origins.
 
 ### Konfigurationsfil
 
-Placér agentmemorys runtime-konfiguration i `~/.agentmemory/.env` i stedet for at eksportere variabler i hver shell. Hvis viewer viser et opsætningshint som `export ANTHROPIC_API_KEY=...`, kopiér det ind i denne fil som `ANTHROPIC_API_KEY=...` uden `export`-præfikset, og genstart derefter agentmemory.
+Placér agentmemorys runtime-konfiguration i `~/.agentmemory/.env` i stedet for at eksportere variabler i hver shell. Hvis viewer viser et opsætningshint som `export ANTHROPIC_API_KEY=...`, kopiér det ind i denne fil som `ANTHROPIC_API_KEY=...` uden `export`-præfikset, og genstart derefter agentmemory. Sæt `AGENTMEMORY_ENV_FILE` for at vælge en anden env-fil.
 
-Procesmiljøvariabler fungerer stadig og har forrang over værdier i filen.
+Procesmiljøvariabler fungerer stadig og har forrang over værdier i filen. CLI’ens genererede Worker Compose-projekt sender Redis-indstillinger fra `AGENTMEMORY_STATE_BACKEND` og `AGENTMEMORY_REDIS_URL` videre til `state`-workeren.
 
 På Windows ligger samme fil på `%USERPROFILE%\.agentmemory\.env`:
 
@@ -1675,7 +1610,7 @@ Opret `~/.agentmemory/.env`:
 # VECTOR_WEIGHT=0.6
 # TOKEN_BUDGET=2000
 
-# Auth (generated into ~/.agentmemory/secret on first start when unset)
+# Auth (generated in the selected data directory as `secret` on first start when unset)
 # AGENTMEMORY_SECRET=your-secret
 # VIEWER_ALLOWED_ORIGINS=https://memory.example.com
 # AGENTMEMORY_IMPORT_ROOT=~/projects
@@ -1739,8 +1674,7 @@ Opret `~/.agentmemory/.env`:
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1779,12 +1713,12 @@ Opret `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoints på port `3111`. REST API'et binder til `127.0.0.1` som standard. Beskyttede endpoints kræver `Authorization: Bearer <secret>`, og mesh-sync-endpoints kræver en eksplicit sat `AGENTMEMORY_SECRET` på begge peers.
+144 endpoints på port `3111`. REST API'et binder til `127.0.0.1` som standard. Beskyttede endpoints kræver `Authorization: Bearer <secret>`, og mesh-sync-endpoints kræver en eksplicit sat `AGENTMEMORY_SECRET` på begge peers.
 
-**Autentificering er slået til som standard.** Når `AGENTMEMORY_SECRET` ikke er sat (i shellen eller i `~/.agentmemory/.env`), genererer serveren en tilfældig secret ved første opstart og lagrer den i `~/.agentmemory/secret` med rettigheden `0600`. Hver medfølgende klient læser den fra der, når den taler med en lokal server: CLI'en, viewer, hooks under `plugin/scripts`, MCP-serveren og `@agentmemory/mcp`-shimmen, konfigurationerne skrevet af `agentmemory connect`, og de medfølgende OpenCode-, Pi-, OpenClaw-, Hermes- og filesystem-watcher-integrationer. Den lagrede secret sendes kun til loopback-URL'er (`localhost`, `127.0.0.0/8`, `::1`). En eksplicit `AGENTMEMORY_SECRET` vinder altid, og eksterne klienter skal stadig have den sat. Docker og `deploy/`-entrypoints genererer og eksporterer allerede deres egen secret. For at kalde API'et manuelt:
+**Autentificering er slået til som standard.** Når `AGENTMEMORY_SECRET` ikke er sat (i shellen eller i `~/.agentmemory/.env`), genererer CLI’en en tilfældig secret ved første opstart og lagrer den som `secret` i den valgte datamappe med rettigheden `0600` (platformens standardplacering er beskrevet ovenfor). Alle medfølgende klienter læser den derfra, når de taler med en lokal server: CLI’en, viewer, hooks under `plugin/scripts`, MCP-serveren og `@agentmemory/mcp`-shimmen, konfigurationerne skrevet af `agentmemory connect`, og de medfølgende OpenCode-, Pi-, OpenClaw-, Hermes- og filesystem-watcher-integrationer. Den lagrede secret sendes kun til loopback-URL’er (`localhost`, `127.0.0.0/8`, `::1`). En eksplicit `AGENTMEMORY_SECRET` vinder altid, og eksterne klienter skal have den i deres miljø. Docker-self-hosting fra repositoryet og `deploy/`-entrypoints genererer og eksporterer deres egen secret. Sådan kaldes API’et manuelt:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **Request-regler for skrivninger.** `POST`-, `PUT`-, `PATCH`- og `DELETE`-forespørgsler til REST API'et og viewer skal sende `Content-Type: application/json` (en `charset`-parameter er fint) når de bærer en body, og en `Origin`-header, når den er til stede, skal være en loopback-origin for den konfigurerede REST- eller viewer-port eller være listet i `VIEWER_ALLOWED_ORIGINS` (kommasepareret, f.eks. `https://memory.example.com`). Klienter, der ikke sender en `Origin`-header (CLI, hooks, MCP, curl, server-til-server), er ikke påvirket. Viewer accepterer også sin egen origin.
@@ -1864,7 +1798,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Forudsætninger:** Node.js >= 20 med npm/npx; [iii-engine](https://iii.dev/docs) v0.22.1 eller Docker. Den automatiske engine-installation på macOS/Linux kræver også `curl`, en POSIX `sh` og `tar`; native Windows bruger den manuelt fastlåste `iii.exe`, WSL2 eller Docker Desktop.
+**Forudsætninger:** Node.js >= 20 med npm/npx. Den CLI-administrerede engine-installation på macOS/Linux kræver også `curl`, POSIX `sh` og `tar`; native Windows kræver en manuelt installeret, fastlåst `iii.exe` eller kan bruge WSL2.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Licens" height="32" /></picture></h2>
 

@@ -102,7 +102,7 @@
 
 - Node.js 20 ואילך עם npm ו-npx (`node -v`, `npm -v`, ו-`npx -v`).
 - התקנה אוטומטית של iii-engine ב-macOS/Linux דורשת גם `curl`, מעטפת `sh` תואמת POSIX, ו-`tar`. תמונות מינימליות כמו `node:20-slim` לא בהכרח כוללות אותן.
-- Windows מקורי מחייב התקנה ידנית של `iii.exe` בגרסה הנעוצה v0.22.1 של iii-engine. WSL2 או Docker Desktop הם המסלולים הנתמכים האחרים.
+- Windows מקורי מחייב התקנה ידנית של `iii.exe` מ-iii-engine v0.24.6 הנעוץ; ב-WSL2 נעשה שימוש במסלול Linux להתקנה אוטומטית.
 
 פקודת ההתקנה הראשונית הקנונית:
 
@@ -114,7 +114,7 @@ npx -y @agentmemory/agentmemory@latest
 
 מצב ללא מפתח (keyless) משבית embeddings וקטוריים. `memory_recall` (נתיב `mem::search`) משתמש ב-BM25, בעוד ש-`memory_smart_search` יכול גם לשלב התאמות מבניות מגרף כשנתוני גרף קיימים כבר. לשליפה סמנטית חינמית במכשיר עצמו, יש להגדיר `EMBEDDING_PROVIDER=local` בקובץ `~/.agentmemory/.env` ולהפעיל מחדש. בקשת ה-embedding הראשונה מורידה את `Xenova/all-MiniLM-L6-v2`; לאחר ההורדה הראשונית, ההסקה רצה מקומית.
 
-סביבת ההרצה המקומית משתמשת בארבעה פורטים: `3111` עבור REST/MCP HTTP, `3112` עבור זרמי iii, `3113` עבור המציג, ו-`49134` עבור ה-WebSocket של worker ה-iii. מצב ה-iii המתמשך חי ב-`~/Library/Application Support/agentmemory` ב-macOS, ב-`$XDG_DATA_HOME/agentmemory` או `~/.local/share/agentmemory` ב-Linux, וב-`%APPDATA%\agentmemory` ב-Windows. יש להשתמש ב-`--data-dir <path>` או ב-`AGENTMEMORY_DATA_DIR` כדי לשנות זאת, ולהשתמש באותו ערך בכל הפעלה מחדש. לשם תאימות לאחור, `./data/state_store.db` או `./data/iii-config.yaml` קיימים מקבלים עדיפות על פני ברירת המחדל של הפלטפורמה עבור instance 0; דגל מפורש או override של משתנה סביבה עדיין גובר.
+סביבת ההרצה המקומית של ה-CLI משתמשת ב-REST/MCP HTTP בפורט `3111`, במציג בפורט `3113`, וב-WebSocket פנימי של workers ב-`49134`. עדכוני המציג מגיעים ב-SSE דרך `GET /agentmemory/viewer/events` בפורט REST. כברירת מחדל, מצב מתמשך נשמר ב-`~/Library/Application Support/agentmemory` ב-macOS, ב-`$XDG_DATA_HOME/agentmemory` או `~/.local/share/agentmemory` ב-Linux, וב-`%APPDATA%\agentmemory` ב-Windows. לשינוי הנתיב השתמשו ב-`--data-dir <path>` או `AGENTMEMORY_DATA_DIR`; instance 0 גם עושה שימוש חוזר ב-`./data/state_store.db` קיים. `--instance N` מבודד סביבות נוספות, ו-`AGENTMEMORY_ENV_FILE` בוחר קובץ `.env` אחר.
 
 לאחר מכן, הדגימו ששליפה עובדת ותנו לסוכן שלכם את ה-skills שלו:
 
@@ -134,7 +134,7 @@ npx skills add rohitg00/agentmemory -y   # 17 native skills so your agent knows 
 <details>
 <summary><strong>Windows</strong></summary>
 
-המסלול המהיר הוא WSL2. הגדרת מנוע ב-Windows מקורי דורשת הורדה של קובץ ה-ZIP הנעוץ v0.22.1 וחילוץ `iii.exe` באופן ידני; ה-CLI לא מחלץ אותו אוטומטית. Docker Desktop נתמך גם הוא. ראו את [הערות Windows](#windows) לפירוט שלב-אחר-שלב.
+המסלול המהיר הוא WSL2. ב-Windows מקורי יש להוריד את ZIP v0.24.6 הנעוץ ולחלץ את `iii.exe` ידנית. השלבים נמצאים ב-[הערות Windows](#windows).
 
 </details>
 
@@ -159,7 +159,7 @@ npx שומר במטמון לפי גרסה. אפשר לכפות את הגרסה �
 <details>
 <summary><strong>כבר מריצים iii engine משלכם</strong></summary>
 
-agentmemory נעוץ לגרסה v0.22.1 של iii-engine ולא יתחבר לגרסה אחרת (ה-worker לא יודע לדבר בפרוטוקול של מנוע אחר). עצרו את המנוע האחר, ואז הריצו `npx -y @agentmemory/agentmemory@latest`. זה מתקין ומריץ את הגרסה הנעוצה v0.22.1 בתוך `~/.agentmemory/bin`, מבלי לגעת ב-`iii` שלכם.
+agentmemory נעוץ ל-iii 0.24.6 ולא יתחבר לגרסה אחרת (ה-worker אינו תואם לפרוטוקול של מנוע אחר). עצרו את המנוע האחר והריצו `npx -y @agentmemory/agentmemory@latest`. ה-CLI מתקין ומפעיל את המנוע הנעוץ שלו ב-`~/.agentmemory/bin`, בלי לגעת ב-`iii` שלכם.
 
 </details>
 
@@ -321,14 +321,14 @@ agentmemory עובד עם כל סוכן שתומך ב-hooks, ב-MCP, או ב-RES
 npx -y @agentmemory/agentmemory@latest
 ```
 
-כברירת מחדל, agentmemory שומר את מצב ה-iii-engine מחוץ ל-repository שממנו הפעלתם אותו: `~/Library/Application Support/agentmemory` ב-macOS, `$XDG_DATA_HOME/agentmemory` או `~/.local/share/agentmemory` ב-Linux, ו-`%APPDATA%\agentmemory` ב-Windows. `./data/state_store.db` או `./data/iii-config.yaml` legacy קיימים מקבלים שימוש חוזר עבור instance 0 לפני ברירת המחדל של הפלטפורמה. כדי לבחור מיקום באופן מפורש, יש להעביר `--data-dir <path>` או להגדיר `AGENTMEMORY_DATA_DIR`; כל הגדרה מפורשת גוברת על הגילוי ה-legacy:
+כברירת מחדל, agentmemory שומר את מצב מנוע iii מחוץ למאגר שממנו הפעלתם אותו: `~/Library/Application Support/agentmemory` ב-macOS,‏ `$XDG_DATA_HOME/agentmemory` או `~/.local/share/agentmemory` ב-Linux, ו-`%APPDATA%\agentmemory` ב-Windows. קובץ `./data/state_store.db` קיים משמש מחדש עבור instance 0. כדי לבחור מיקום, העבירו `--data-dir <path>` או הגדירו `AGENTMEMORY_DATA_DIR`:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-הפעלות native ו-Docker משתמשות באותה תיקיית host שנפתרה; Docker עושה לה bind-mount בתוך `/data`. `--instance 1` מוסיף `instance-1` לתיקייה שנפתרה ובוחר ברביעיית הפורטים הנפרדת שבברירת המחדל `3211/3212/3213/49234`.
+`--instance 1` מוסיף `instance-1` לתיקיית הנתונים ובוחר בפורטים `3211` (REST),‏ `3213` (מציג) ו-`49234` (מנוע).
 
 הערות השחרור העדכניות: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -478,7 +478,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 </tr>
 <tr>
 <td><strong>תלויות חיצוניות</strong></td>
-<td>אין (SQLite + iii-engine)</td>
+<td>אין (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + מסד נתונים וקטורי</td>
 <td>מרובות</td>
@@ -558,7 +558,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="התחלה מהירה" height="32" /></picture></h2>
 
-תאימות: הגרסה הזו מיועדת ל-`iii-sdk` 0.22.1 ונעוצה לגרסה v0.22.1 של iii-engine.
+תאימות: גרסה זו משתמשת ב-iii 0.24.6 עם workers מה-registry: ‏state 0.22.20 ו-http 0.22.7.
 
 ### נסו את זה ב-30 שניות
 
@@ -585,7 +585,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-פאנל המוכנות (ready) שעולה בהפעלה מתייחס לכל ארבעת הפורטים: REST/MCP HTTP בפורט 3111, זרמי iii בפורט 3112, המציג בפורט 3113, וה-WebSocket של worker ה-iii בפורט 49134. `status` מאשר את ה-health של agentmemory ואת מצב הספק/embedding הפעיל. שמרו probe ואמתו שהוא ניתן לחיפוש:
+סביבת ההרצה המקומית של ה-CLI משתמשת ב-REST/MCP HTTP בפורט `3111`, במציג בפורט `3113`, וב-WebSocket פנימי של workers ב-`49134`. עדכוני המציג מגיעים ב-SSE דרך `GET /agentmemory/viewer/events` בפורט REST. כברירת מחדל, מצב מתמשך נשמר ב-`~/Library/Application Support/agentmemory` ב-macOS, ב-`$XDG_DATA_HOME/agentmemory` או `~/.local/share/agentmemory` ב-Linux, וב-`%APPDATA%\agentmemory` ב-Windows. לשינוי הנתיב השתמשו ב-`--data-dir <path>` או `AGENTMEMORY_DATA_DIR`; instance 0 גם עושה שימוש חוזר ב-`./data/state_store.db` קיים. `--instance N` מבודד סביבות נוספות, ו-`AGENTMEMORY_ENV_FILE` בוחר קובץ `.env` אחר.
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -637,7 +637,7 @@ sessions מיובאים מופיעים בבורר ה-Replay לצד אלה המק
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-אזהרה: הפקודה הזו משנה את ה-workspace/runtime הנוכחי. היא יכולה לעדכן תלויות JavaScript ולמשוך את תמונת ה-Docker הנעוצה `iiidev/iii:0.22.1`. היא לעולם לא מתקינה iii engine לא-נעוץ או חדש יותר.
+אזהרה: הפקודה הזו משנה את סביבת העבודה/ההרצה הנוכחית. היא עשויה לעדכן תלויות JavaScript ולהתקין את הבינארי הנעוץ של מנוע iii 0.24.6.
 
 פרטי המימוש נמצאים בקובץ `src/cli.ts` (ראו `runUpgrade` באזור `src/cli.ts:544-595`).
 
@@ -835,15 +835,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 דוגמה עובדת: [`examples/python/`](../examples/python/) (quickstart + זרימת observation/recall). ה-REST בפורט `:3111` נשאר זמין ל-hosts בלי runtime של iii.
@@ -855,83 +863,33 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-זה מפעיל את agentmemory עם `iii-engine` מקומי אם הבינארי הנעוץ כבר מותקן, או משתמש ב-Docker Compose כשנבחר. REST, streams, והמציג נקשרים (bind) ל-`127.0.0.1` כברירת מחדל. הנתיב האוטומטי של הבינארי ב-macOS/Linux דורש `curl`, מעטפת `sh` תואמת POSIX, ו-`tar`.
-
-התקינו את `iii-engine` ידנית. **agentmemory נעוץ כרגע ל-`iii-engine` בגרסה `v0.22.1`**, אותה גרסה כמו התלות ב-`iii-sdk`; ה-worker מדבר בפרוטוקול ה-wire של אותו מנוע, וגרסה 0.20.0 ארגנה מחדש את שטח ה-SDK, כך שהשניים זזים יחד בגרסאות agentmemory. override עם `AGENTMEMORY_III_VERSION=<version>` אם אתם מריצים מנוע משלכם ויודעים שהוא מתאים.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** החליפו את `aarch64-apple-darwin` ב-`x86_64-apple-darwin`
-- **Linux x64:** החליפו ל-`x86_64-unknown-linux-gnu`
-- **Linux arm64:** החליפו ל-`aarch64-unknown-linux-gnu`
-- **Windows:** הורידו את `iii-x86_64-pc-windows-msvc.zip` מ-[iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) וחלצו את `iii.exe` ל-`%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-לכל archive יש קובץ `.sha256` תואם בעמוד ה-release; כשמחליפים פלטפורמה, משתמשים ב-hash של אותו קובץ בבדיקה שלמעלה (ב-Windows: `Get-FileHash`). המתקין האוטומטי ב-`npx @agentmemory/agentmemory` נעוץ ל-hashes האלה ומסרב ל-archive שלא תואם.
-
-או השתמשו ב-Docker (ה-`docker-compose.yml` המצורף מוריד את `iiidev/iii:0.22.1`). תיעוד מלא: [iii.dev/docs](https://iii.dev/docs).
+`npm start` מפעיל את אותה סביבת iii Worker Compose כמו ה-CLI: ‏iii 0.24.6 עם ה-workers ‏state 0.22.20 ו-http 0.22.7 מה-registry. ב-macOS/Linux ה-CLI מוריד את הבינארי הנעוץ אל `~/.agentmemory/bin`; התקנה אוטומטית דורשת `curl`,‏ `sh` תואמת POSIX ו-`tar`. מאזיני REST והמַציג המקומיים קשורים ל-`127.0.0.1`. המַציג מקבל עדכונים ב-SSE ב-`GET /agentmemory/viewer/events` דרך REST. ‏`/agentmemory/status` מדווח על גרסת המנוע הנעוצה תחת `enginePinnedVersion`; ברירת המחדל הנתמכת היא iii 0.24.6. אפשר לדרוס את הנעיצה במכוון באמצעות `AGENTMEMORY_III_VERSION`.
 
 ### Windows
 
-agentmemory רץ על Windows 10/11, אבל חבילת ה-Node.js בלבד לא מספיקה; צריך גם את ה-runtime הנעוץ v0.22.1 של iii-engine כתהליך רץ ברקע. ה-CLI לא מחלץ אוטומטית את ה-ZIP של Windows, כך שמשתמשי Windows מקורי חייבים להתקין את `iii.exe` ידנית, להשתמש ב-WSL2, או לבחור ב-Docker Desktop.
+agentmemory פועל ב-Windows 10/11. ‏WSL2 פועל במסלול Linux ויכול להתקין את המנוע הנעוץ אוטומטית. ב-Windows מקורי יש להתקין ידנית את הבינארי הנעוץ iii-engine v0.24.6: הורידו את הארכיון המתאים מ-[דף ההפצה של iii 0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), אמתו את ה-checksum והוסיפו את `iii.exe` ל-`PATH` (למשל `%USERPROFILE%\.local\bin\iii.exe`). ה-CLI אינו מחלץ אוטומטית את ZIP של Windows.
 
-חיווט MCP אוטומטי ב-Windows מקורי תומך רק ב-`agentmemory connect copilot-cli`. עבור Claude Code, Codex, Cursor, וכל סוכן Windows מקורי אחר, העתיקו את בלוק ה-MCP הידני מ[סוכנים אחרים](#other-agents) לתוך תצורת ה-Windows של אותו סוכן. הרצת `connect` ב-WSL מתאימה רק כשהסוכן המיועד מותקן גם הוא באותה סביבת WSL; הוא לא עורך את התצורה של סוכן שרץ על Windows host.
+חיבור MCP אוטומטי ב-Windows מקורי נתמך רק עבור `agentmemory connect copilot-cli`. עבור סוכנים מקומיים אחרים ב-Windows, השתמשו בבלוק MCP הידני מתוך [סוכנים אחרים](#other-agents). הפעילו `connect` בתוך WSL רק אם סוכן היעד מותקן באותה סביבת WSL.
 
-**אפשרות A: בינארי Windows מוכן מראש (מומלץ)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**אפשרות B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**אפשרות C: MCP standalone בלבד (בלי מנוע).** אם אתם צריכים רק את כלי ה-MCP לסוכן שלכם ולא צריכים את ה-REST API, המציג, או עבודות cron, דלגו על המנוע כליל:
+**MCP עצמאי בלבד (ללא מנוע).** אם דרושים רק כלי MCP, ללא REST API, מציג או שירותי runtime:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**דיאגנוסטיקה ל-Windows:** אם `npx -y @agentmemory/agentmemory@latest` נכשל, הריצו אותו מחדש עם `--verbose` כדי לראות את ה-stderr האמיתי של המנוע. תבניות כשל נפוצות:
-
-| תסמין | תיקון |
-|---|---|
-| `The engine process started but the REST API never responded.` | אשרו שכל ארבעת הפורטים הנגזרים פנויים, אמתו שה-`iii.exe` הנעוץ נשאר חי, ואז הריצו מחדש עם `--verbose` ובדקו את ה-stderr שנלכד של המנוע |
-| `Could not start iii-engine` | לא `iii.exe` ולא Docker מותקנים. ראו אפשרות A או B מעלה |
-| קונפליקט פורטים | `netstat -ano \| findstr :3111` כדי לראות מה קשור (bound), ואז הרגו את התהליך או השתמשו ב-`--port <N>` |
-| ה-fallback ל-Docker דולג למרות ש-Docker מותקן | הקפידו ש-Docker Desktop רץ בפועל (אייקון ב-system tray) |
-
-> הערה: ה**מנוע** של iii הוא בינארי מוכן מראש, לא cargo crate, אז אל תנסו `cargo install` אותו. (ה**SDK-ים** של iii מתפרסמים ב-crates.io, npm, ו-PyPI, אבל agentmemory לא צריך אותם.) כל שיטות ההתקנה הנתמכות של המנוע נעוצות ל-v0.22.1: הבינארי המוכן מראש שלמעלה, נתיב ההתקנה האוטומטי של agentmemory ב-macOS/Linux (נדרשים `curl`, מעטפת `sh` תואמת POSIX, ו-`tar`), ותמונת ה-Docker `iiidev/iii:0.22.1`. `install.sh | sh` גולמי מה-upstream מתקין את המנוע העדכני ביותר, שב-agentmemory לא נתמך. השתמשו ב-`npx -y @agentmemory/agentmemory@latest`; ב-macOS/Linux הוא מביא את המנוע הנעוץ לתוך `~/.agentmemory/bin`.
+**אבחון:** אם ההפעלה נכשלת, הפעילו שוב עם `--verbose` כדי לראות stderr של המנוע. ודאו שפורטי REST‏ `3111`, המציג `3113` והמנוע `49134` פנויים; השתמשו ב-`--port <N>` או ב-`--instance <N>` עבור סביבת runtime מבודדת אחרת. ה-CLI משתמש בבינארי הנעוץ שלו ואינו מחליף קובץ iii ב-`PATH`.
 
 ---
 
 <h2 id="deploy">פריסה</h2>
 
-תבניות בלחיצה אחת ל-hosts מנוהלים. כל אחת שולחת Dockerfile עצמאי שמוריד את `@agentmemory/agentmemory` מ-npm ומעתיק את הבינארי של מנוע ה-iii מתוך תמונת ה-Docker Hub הרשמית `iiidev/iii`; לא נדרשת תמונת agentmemory בנויה מראש. אחסון מתמשך נקשר (mount) ב-`/data`; ה-entrypoint של האתחול הראשון מחליף את תצורת ה-iii המצורפת ב-npm (שנקשרת ל-`127.0.0.1`) בתצורה מותאמת-deploy שנקשרת ל-`0.0.0.0` ומשתמשת ב-paths מוחלטים של `/data`, מייצרת את ה-secret של HMAC, ואז מוריד הרשאות מ-`root` ל-`node` באמצעות `gosu` לפני הרצת (exec) ה-CLI של agentmemory.
+Docker נתמך לאירוח עצמי מתוך המאגר, ולא כמצב הפעלה של ה-CLI. תבניות הפריסה משתמשות ב-[`deploy/Dockerfile`](../deploy/Dockerfile) וב-[`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml), נועלות את runtime של iii 0.24.6 ושומרות מצב, traces וסוד שנוצר בכרך מתמשך `/data`. כברירת מחדל Docker Compose משתמש בכרך הנקוב `iii-data`; הגדירו את `AGENTMEMORY_DATA_DIR` לנתיב מארח כדי להשתמש ב-bind mount. מאגר הקבצים הקיים מ-0.22.1 נקרא ישירות מתוך `/data/state_store.db`, ללא הגירה או המרה. CORS של REST מאפשר כברירת מחדל את מקורות REST והמַציג המקומיים; הגדירו `REST_ALLOWED_ORIGINS` כרשימת מקורות מדויקים מופרדת בפסיקים כדי לאפשר דפדפן מהימן. לפרטי התקנה ואבטחה ראו [`deploy/README.md`](../deploy/README.md).
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="פרסו ל-fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="פרסו ל-Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="פרסו ל-fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="פרסו ל-Railway" /></a>
 </p>
 
 כפתור הפריסה בלחיצה אחת של Render דורש `render.yaml` בשורש ה-repository, שאנחנו משאירים נקי בכוונה. השתמשו בזרימת ה-Render Blueprint המתועדת ב-[`deploy/render/`](.././deploy/render/README.md) כדי להפנות ל-blueprint שבתוך ה-repo באופן ידני.
@@ -948,10 +906,16 @@ npx -y @agentmemory/mcp
   שלכם באמצעות [Coolify](https://coolify.io/self-hosted); אותה ערימת Docker
   Compose, אתם הבעלים של ה-host ושל הנתונים.
 
-רק פורט `3111` חשוף (published). המציג בפורט `3113` נשאר קשור
-ל-loopback בתוך ה-container; ה-README של כל תבנית מתעד את תבנית
-ה-SSH-tunnel להגיע אליו.
+REST פועל ב-`3111`; המציג ב-`3113` ונחשף בנפרד רק בתבניות פלטפורמה שמספקות נתיב מוגן. עדכונים חיים משתמשים ב-SSE עם bearer דרך `/agentmemory/viewer/events` של REST. WebSocket המנוע ב-`49134` פנימי ואסור לפרסם אותו. לפרטי חשיפה לכל פלטפורמה ראו [`deploy/README.md`](../deploy/README.md).
 
+
+### העברת התקנות Docker ישנות המנוהלות באמצעות ה־CLI
+
+ה־CLI הנוכחי אינו מפעיל פריסות Docker ואינו מנהל אותן. אם הוא מוצא רשומת מחזור חיים ישנה של Docker, הוא משמר את המטא־נתונים ומציג את הפקודה המדויקת `docker stop ...`; יש להריץ את הפקודה לפני ההעברה. אין להפעיל את סביבת הריצה החדשה כל עוד הקונטיינר הישן עדיין מחבר אליו את ה־volume.
+
+יש לשמור ולגבות את ה־volume המתמיד הישן (בדרך כלל `iii-data`), או להעתיק את התוכן של `/data` אל bind mount. ה־state worker קורא ישירות את `/data/state_store.db` הקיים, ללא ייצוא או המרה. סביבת הריצה הישנה השתמשה ב־UID/GID `65532:65532`; התמונה החדשה מבצעת פעם אחת העברה רקורסיבית של הבעלות אל `node:node` (`1000:1000`) וכותבת את `/data/.ownership-migrated-node-v1`. לאחר ההעברה, אין לחבר את ה־volume בחזרה לסביבת הריצה הישנה.
+
+סביבת הריצה הישנה גם שמרה את ה־bearer secret שנוצר ב־`/data/.hmac`. התמונה החדשה משמרת את הסוד הזה במהלך ההעברה; ערך `AGENTMEMORY_SECRET` שהוגדר במפורש מקבל עדיפות. יש להפעיל את פרויקט Compose החדש משורש המאגר באמצעות `docker compose up --build -d`. אם שם ה־volume הישן כולל קידומת של הפרויקט במקום להיות `iii-data`, יש להשתמש בו מחדש או לשנות את שמו במפורש — אין ליצור בטעות volume ריק. יש לבדוק את `/agentmemory/livez` ולאשר שאפשר למצוא גם זיכרונות ישנים וגם חדשים. יש להימנע מ־`docker compose down -v`, אלא אם מחיקת הנתונים מכוונת.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="למה agentmemory" height="32" /></picture></h2>
@@ -1245,7 +1209,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="מציג בזמן אמת" height="32" /></picture></h2>
 
-מופעל אוטומטית בפורט `3113`. המציג טוען snapshot אחד כשהוא מתחבר (`GET /agentmemory/viewer/snapshot`) ואז מחיל אירועי stream חיים: זיכרונות חדשים, lessons, תצפיות, רשומות audit, שינויי גרף ועדכוני health מופיעים בלי polling או רילוד של הדף. הבקשות האחרות היחידות הן הפעולות שאתם מקליקים, עמודי "טען עוד" וחיפושים. כשה-stream נופל, המציג מציג כמה זמן המספרים שלו ישנים, מתחבר מחדש עם backoff ומסתנכרן מחדש מ-snapshot אחד.
+המַציג מופעל אוטומטית בפורט `3113`. הוא טוען snapshot אחד (`GET /agentmemory/viewer/snapshot`) ואז מחיל אירועים חיים ב-SSE ב-`/agentmemory/viewer/events` על worker ‏REST: זיכרונות, לקחים, תצפיות, רשומות audit, שינויים בגרף ועדכוני health מופיעים ללא polling או טעינת דף מחדש.
 
 - **12 לשוניות בארבע קבוצות** עם ספירות חיות, deep links (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), קיצורי מקלדת, ותפריט מובייל.
 - **זיכרונות:** חיפוש בצד השרת, filters לפי פרויקט, סוכן וסוג, פאנל פרטים עם שרשרת הגרסאות ו-word diff, קישורי provenance, כפתורי copy למזהה, לקריאת ה-MCP ולפקודת curl, עריכה (גרסה חדשה), forget עם אישור, forget בכמות (bulk) וייצוא JSON.
@@ -1264,9 +1228,9 @@ open http://localhost:3113
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="קונסולת iii" height="32" /></picture></h2>
 
-המציג בפורט `:3113` מציג מה הסוכן שלכם **זכר**. [קונסולת iii](https://iii.dev/docs/console) מציגה מה הסוכן שלכם **עשה**: כל פעולת זיכרון כ-trace של OpenTelemetry, כל רשומת KV ניתנת לעריכה, כל פונקציה ניתנת להפעלה, כל stream ניתן להאזנה (tap). שני חלונות על אותו זיכרון: אחד בצורת מוצר, אחד בצורת מנוע.
+המַציג ב-`:3113` מראה מה הסוכן שלכם **זכר**. [קונסולת iii](https://iii.dev/docs/console) מראה מה הוא **עשה**: פעולות זיכרון כ-traces של OpenTelemetry, ערכי KV הניתנים לעריכה, פונקציות להפעלה ופעילות ערוצים של המנוע.
 
-צפו ב-`memory_smart_search` מופעל וראו את סריקת ה-BM25 → חיפוש ה-embedding → fusion של RRF → reranker כ-waterfall. ערכו טיימר קונסולידציה תקוע ב-KV browser. בצעו replay ל-hook `PostToolUse` עם payload משופר. הצמידו (pin) את ה-stream של ה-WebSocket וצפו בתצפיות נוחתות בשידור חי.
+צפו ב-`memory_smart_search` מופעל וראו את סריקת ה-BM25 → חיפוש ה-embedding → fusion של RRF → reranker כ-waterfall. ערכו טיימר קונסולידציה תקוע ב-KV browser. בצעו replay ל-hook `PostToolUse` עם payload משופר.
 
 agentmemory מקבל את זה בחינם כי כל קריאת פונקציה וכל trigger עוברים דרך iii; שום דבר מותאם אישית, שום דבר להתקין לו instrumentation.
 
@@ -1276,7 +1240,7 @@ agentmemory מקבל את זה בחינם כי כל קריאת פונקציה ו
   <em>עמוד ה-Workers: כל worker מחובר, כולל agentmemory עצמו, עם PID, ספירת פונקציות, runtime, ו-last-seen.</em>
 </p>
 
-**מותקן כבר.** הקונסולה נשלחת עם מנוע ה-`iii` הנעוץ (0.22+); אין צורך להתקין שום דבר בנפרד. ההפעלה הראשונה מורידה את הבינארי של הקונסולה לצד המנוע.
+**מותקן כבר.** הקונסולה נשלחת עם מנוע ה-`iii` הנעוץ (0.24.6); אין צורך להתקין שום דבר בנפרד. ההפעלה הראשונה מורידה את הבינארי של הקונסולה לצד המנוע.
 
 **הפעלה לצד agentmemory:**
 
@@ -1284,15 +1248,12 @@ agentmemory מקבל את זה בחינם כי כל קריאת פונקציה ו
 agentmemory console
 ```
 
-זה מריץ את `iii console` של המנוע הנעוץ מול הפורטים ש-agentmemory פתר (REST, streams, bridge) ומגיש אותה פורט אחד מעל המציג, `http://localhost:3114` כברירת מחדל. `--console-port N` בוחר פורט אחר; `--port` ו-`--instance` בוחרים את instance ה-agentmemory באותו אופן שהם עושים ל-`stop`; כל דגל אחר מועבר הלאה, למשל `--enable-flow` לעמוד גרף הארכיטקטורה הניסיוני.
+זה מריץ את `iii console` של המנוע הנעוץ מול הפורטים ש-agentmemory פתר (REST, bridge) ומגיש אותה פורט אחד מעל המציג, `http://localhost:3114` כברירת מחדל. `--console-port N` בוחר פורט אחר; `--port` ו-`--instance` בוחרים את instance ה-agentmemory באותו אופן שהם עושים ל-`stop`; כל דגל אחר מועבר הלאה, למשל `--enable-flow` לעמוד גרף הארכיטקטורה הניסיוני.
 
 אותו דבר ביד, שימושי כש-`agentmemory` לא נמצא ב-PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **מה אפשר לעשות מהקונסולה:**
@@ -1303,12 +1264,10 @@ agentmemory console
 | **Functions** | להפעיל כל פונקציה של agentmemory ישירות עם payload של JSON; שימושי לבדיקת `memory.recall`, `memory.consolidate`, `graph.query` בלי לחווט לקוח. |
 | **Triggers** | לבצע replay ל-triggers מסוג HTTP, cron, event, ו-state: להפעיל את ה-cron של הקונסולידציה ידנית, לנסות שוב route של HTTP, לפלוט שינוי state. |
 | **States** | KV browser עם CRUD מלא על sessions, memory slots, טיימרי מחזור חיים, ואינדקס ה-embeddings; עריכת ערכים במקום. |
-| **Streams** | מוניטור WebSocket חי לכתיבות זיכרון, אירועי hook, ועדכוני תצפית כשהם זורמים דרך streams של iii. |
-| **Queues** | נושאי queue מתמשכים + ניהול dead-letter. replay או drop לעבודות embedding / דחיסה שנכשלו. |
+
 | **Traces** | תצוגות waterfall / flame / פירוק-לפי-שירות של OpenTelemetry. סננו לפי `trace_id` כדי לראות בדיוק אילו functions, קריאות DB, ובקשות embedding יצר `memory.search` בודד. |
 | **Logs** | logs מבניים של OTEL מסוננים ומקושרים (correlated) למזהי trace/span. |
 | **Config** | תצורת runtime: לראות בדיוק עם אילו workers, ספקים, ופורטים המנוע שלכם רץ. |
-| **Flow** | (אופציונלי, `--enable-flow`) גרף ארכיטקטורה אינטראקטיבי של כל worker, trigger, ו-stream. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="תצוגת waterfall של trace בקונסולת iii שמציגה משך זמן per-span" width="720" />
@@ -1318,9 +1277,9 @@ agentmemory console
 
 **Traces כבר פעילים:**
 
-`iii-config.yaml` נשלח עם ה-worker `iii-observability` מופעל (`exporter: memory`, `sampling_ratio: 0.1`, metrics + logs). אין צורך בתצורה נוספת; ברגע ש-agentmemory מתחיל, כל פעולת זיכרון פולטת log מבני שהקונסולה יכולה לקרוא, ואחת מכל עשר מהן (`sampling_ratio: 0.1`) פולטת גם span של trace.
+**Tracing ו-logs:** קונסולת iii מאפשרת לבדוק טלמטריית runtime. להגדרות exporter ו-sampling, עיינו ב-[תיעוד observability של iii](https://iii.dev/docs).
 
-אם אתם רוצים לייצא ל-Jaeger/Honeycomb/Grafana Tempo במקום, שנו את `exporter: memory` ל-`exporter: otlp` והגדירו את ה-endpoint של ה-collector לפי תיעוד ה-observability של iii.
+
 
 > **שימו לב:** אין auth מאולץ על הקונסולה עצמה; השאירו אותה קשורה ל-`127.0.0.1` (ברירת המחדל) ואל תחשפו אותה לעולם באופן ציבורי.
 
@@ -1328,13 +1287,13 @@ agentmemory console
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="מופעל על ידי iii" height="32" /></picture></h2>
 
-agentmemory הוא **כבר instance רץ של [iii](https://iii.dev)**. שלושה primitives (worker, function, trigger) מרכיבים את ה-runtime; מצב KV, streams, ו-OTEL traces מגיעים מ-workers בשם iii-state, iii-stream, ו-iii-observability שמגיעים עם iii. לא התקנתם Postgres, Redis, Express, pm2, או Prometheus, כי iii מחליף אותם.
+agentmemory הוא worker בסביבת [iii](https://iii.dev). ‏Worker Compose מנהל את המנוע ומפעיל את agentmemory יחד עם ה-workers ‏`state` ו-`http` מה-registry. זרם המַציג הוא SSE שמוגש דרך endpoint ה-REST.
 
 זה אומר שפקודה אחת נוספת מרחיבה את agentmemory עם יכולת חדשה שלמה.
 
 ### הרחבת agentmemory עם עוד workers
 
-ה-builtins ש-agentmemory צריך נמצאים כבר ב-`iii-config.yaml` ועולים (boot) איתו: `iii-state` (KV), `iii-queue` (retries מתמשכים למנויי האירועים), `iii-pubsub`, `iii-cron`, `iii-stream`, ו-`iii-observability` (OTEL traces, metrics ו-logs על כל פונקציה). כל דבר אחר מ-[רשימת ה-workers של iii](https://workers.iii.dev) מתחבר לאותו מנוע: העתיקו את `iii-config.yaml` ל-`~/.agentmemory/iii-config.yaml` (ה-CLI מעדיף את הקובץ הזה על פני המצורף ועדיין מרנדר אליו ports ו-paths של נתונים), הוסיפו את הרשומה, התקינו את ה-runtime של ה-worker פעם אחת עם `~/.agentmemory/bin/iii update worker`, והפעילו מחדש את agentmemory.
+סביבת ההרצה מחברת ל-agentmemory את ה-workers ‏`state` (KV) ו-`http` מה-registry. אפשר להוסיף workers אחרים מ-[רישום iii](https://workers.iii.dev) לפרויקט Worker Compose.
 
 ```yaml
 workers:
@@ -1350,23 +1309,19 @@ workers:
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | קוד שיצא מ-`memory_recall` רץ בתוך VM חד-שימושי, לא ב-shell שלכם |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | הקימו שרתי MCP נוספים לצד זה של agentmemory, שתפו את אותו מנוע |
 
-במנוע 0.22.x השאירו את השמות עם ה-prefix `iii-` עבור ה-builtins שלמעלה; הרשומות בלי prefix `http`, `state`, `queue`, `pubsub` ו-`cron` הן ה-workers העצמאיים מהרשימה (registry) ש-agentmemory עובר אליהם עם מעבר הגרסה ל-0.23.
+סביבת ההרצה נועלת את חבילות ה-registry ‏`state@0.22.20` ו-`http@0.22.7` בפרויקט Worker Compose שנוצר ב-CLI.
 
 רשימה (registry) מלאה: [workers.iii.dev](https://workers.iii.dev). כל worker שם מורכב (composes) דרך אותם primitives ש-agentmemory משתמש בהם, וה-agentmemory שכבר יש לכם הוא אחד מהם.
 
-### תצורת מנוע וכתובת bind
+### סביבת הריצה של ה-CLI וכתובות bind
 
-`agentmemory start` קורא את תצורת המנוע מהקובץ הראשון שקיים: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` בתיקייה הנוכחית, `~/.agentmemory/iii-config.yaml`, ואז `iii-config.yaml` המצורף. בכל הפעלה הוא מרנדר את הקובץ הזה (paths של נתונים, ports, state backend) לתוך `~/.agentmemory/data/iii-config.runtime.yaml` ומפעיל את המנוע עם העותק המרונדר, אז יש לערוך את קובץ המקור, לא את המרונדר. ערכי `host:` של קובץ המקור נשמרים כמו שהם נכתבו.
+הרצת `agentmemory` (או החבילה ללא פקודת משנה) מפעילה iii Worker Compose עם manifest מבודד בתיקיית הנתונים שנבחרה. היא משתמשת ב-iii 0.24.6, ב-`state@0.22.20` וב-`http@0.22.7`. מאזיני REST והמַציג המקומיים של ה-CLI קשורים ל-`127.0.0.1`; WebSocket המנוע הוא תעבורה פנימית. פריסות Docker מתוך המאגר משתמשות בקובץ הנפרד [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml); ראו [`deploy/README.md`](../deploy/README.md).
 
-ה-`iii-config.yaml` המצורף נקשר ל-`127.0.0.1` בכוונה, וברירת המחדל הזו חלה גם בתוך container. CLI שמופעל בתוך container מקשיב ל-loopback של ה-container, כך שה-ports המפורסמים לא מגיעים לשום מקום. כדי להגיש CLI בתוך container דרך ports מפורסמים, הגדירו את `AGENTMEMORY_III_CONFIG` לתצורה שנקשרת ל-`0.0.0.0`. ה-`iii-config.docker.yaml` הארוז הוא אחת כזו: היא קושרת את `iii-http`, `iii-stream` ואת port המנוע ל-`0.0.0.0` ושומרת את ה-state תחת `/data`, אז יש לקשר volume לכתיבה שם. השאירו את `AGENTMEMORY_SECRET` מוגדר, ופרסמו רק את ה-ports שאתם צריכים, על `127.0.0.1` או מאחורי proxy שאתם סומכים עליו.
+### Backend אחסון: file (ברירת מחדל) לעומת Redis
 
-ה-`docker-compose.yml` של ה-repo הזה לא עובר דרך חיפוש התצורה של ה-CLI: הוא מקשר את `iii-config.docker.yaml` ב-`/app/config.yaml`, וה-container `iii-engine` מתחיל עם `--config /app/config.yaml`. [תבניות הפריסה](../deploy/) בלחיצה אחת כותבות תצורת `0.0.0.0` משלהן ב-entrypoints שלהן.
+ה-worker ‏`state` משתמש כברירת מחדל במאגר KV מבוסס-קבצים שנשמר בזיכרון ונכתב לדיסק מעת לעת. Redis זמין כשכמה כותבים חולקים runtime; הוא מוסיף round trip ברשת ואינו הופך חיבור יחיד של worker למקבילי.
 
-### Storage backend: file (ברירת מחדל) לעומת redis
-
-`iii-state` ו-`iii-stream` כברירת מחדל משתמשים במאגר KV מבוסס-קבצים המצורף של iii-engine: קובץ JSON אחד לכל scope, מוחזק בזיכרון של תהליך המנוע ונכתב מחדש לדיסק בטיימר. זו ברירת המחדל הנכונה להתקנה מקומית למשתמש בודד; daemon משותף עם כמה כותבים (writers) מקבילים מקבל במקום זאת כתיבות אמיתיות per-key מ-Redis, במחיר של round trip רשת בכל פעולה (כל קריאת `state::*` עדיין מסתדרת (serializes) על חיבור Redis אחד, אז זה מחליף את ה-lock של מאגר הקבצים ב-socket, לא בפרלליות).
-
-הגדירו `AGENTMEMORY_STATE_BACKEND=redis` (בתוספת `AGENTMEMORY_REDIS_URL`) כדי להחליף את שני ה-workers למתאם ה-`redis` המובנה של iii-engine, שמאחסן כל מפתח כשדה hash של Redis (`HSET`) במקום לכתוב מחדש scope שלם בכל כתיבה:
+הגדירו `AGENTMEMORY_STATE_BACKEND=redis` ואת `AGENTMEMORY_REDIS_URL` כדי להשתמש במתאם Redis של worker ‏state, השומר כל מפתח כשדה hash של Redis (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1374,27 +1329,23 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` כברירת מחדל הוא `file`; השארתו לא מוגדרת משאירה את ההתנהגות הנוכחית ללא שינוי, וערך לא מוכר (כל דבר חוץ מ-`file` או `redis`) הוא שגיאת startup ולא fallback שקט. `/agentmemory/status` ועמוד ה-Health של המציג (שורת State store) מדווחים איזה backend פעיל ואם הוא עונה, לעולם לא את ה-URL.
+`AGENTMEMORY_STATE_BACKEND` מוגדר כברירת מחדל ל-`file`; השארתו לא מוגדרת שומרת על ההתנהגות הנוכחית. ערך שאינו `file` או `redis` גורם לכשל בהפעלה. `/agentmemory/status` ודף Health של המַציג מדווחים איזה backend פעיל והאם הוא מגיב, לעולם לא את ה-URL.
 
-**`redis://` רגיל בלבד.** המנוע הנעוץ (0.22.1) בונה את לקוח ה-Redis שלו בלי תמיכת TLS, כך ש-URL מסוג `rediss://` (רוב שירותי ה-Redis המנוהלים, כמו Upstash, Redis Cloud, ו-ElastiCache עם הצפנה in-transit, שברירת המחדל שלהם היא TLS-only) נכשל להתחבר. החיבור לא מוצפן, כך שהסיסמה של Redis וכל זיכרון שמאוחסן עוברים ב-wire בטקסט גלוי: הפנו ל-Redis מקומי או כזה ברשת פרטית שאתם סומכים עליה. לכל Redis אחר, הריצו tunnel מוצפן (stunnel, SSH, או VPN) על ה-host של agentmemory, כך שה-hop של `redis://` הרגיל נשאר על ה-host הזה והחיבור upstream של ה-tunnel מוצפן ומאומת. אם סיסמת Redis מכילה גרש בודד, בצעו לה percent-encode (`%27`); המנוע מרחיב את ה-URL לתוך תצורת ה-YAML שלו לפני ה-parsing.
+**`redis://` רגיל בלבד.** worker ‏state הנעוץ תומך רק ב-`redis://`; שירותי `rediss://` עם TLS בלבד דורשים tunnel מוצפן. חיבור Redis אינו מוצפן, לכן השתמשו ברשת מקומית/פרטית או ב-tunnel. קודדו גרש יחיד בסיסמה כ-`%27`.
 
-**שרת Redis אחד לכל `--instance`.** ה-prefixes של מפתחות Redis של המנוע (`state:<scope>`, `stream:<name>:<group>`) קבועים, כך ששני instances של agentmemory (`--instance 1`, `--instance 2`, ...) שמצביעים על אותו database כותבים זה על גבי הנתונים של זה. אינדקס database נפרד (`redis://localhost:6379/1`) מפריד בין הנתונים המאוחסנים, אבל המנוע מעביר אירועי מציג חיים מעל ערוץ pub/sub אחד של Redis (`stream::events`), ו-pub/sub של Redis מתעלם מאינדקס ה-database, כך שהמציג של כל instance עדיין יראה את האירועים החיים של האחר. תנו לכל instance שרת Redis משלו (או port) כשאתם מריצים יותר מאחד.
+**מסד Redis אחד לכל instance.** הקצו לכל instance פעיל מסד נתונים או שרת Redis נפרד כדי לבודד את המצב.
 
-**מה נשאר אותו דבר, ומה שונה.** כל יכולת של agentmemory עובדת על Redis: sessions, תצפיות, זיכרונות (remember, supersede, evolve, forget), חיפוש ו-buckets של האינדקס, lessons, הגרף, audit log וה-scopes החודשיים שלו, ייצוא וייבוא, מחיקות governance, סטטוס קונסולידציה, ה-snapshot של המציג וה-stream החי שלו, ומוניטור ה-health. המנוע מאחסן כל scope כ-hash אחד של Redis (`HSET`/`HGET`/`HGETALL`) ומפעיל את אותם state triggers כמו מאגר הקבצים. שלושה הבדלי מנוע מטופלים בתוך agentmemory:
+**התכונות וההבדלים.** כל תכונות agentmemory פועלות עם Redis. worker ‏state שומר כל scope כ-Redis hash ומפעיל את אותם state triggers כמו מאגר הקבצים. agentmemory ממיין תוצאות Redis מהישנה לחדשה; מחיל בעצמו עדכונים חלקיים כדי לשמור מערכים ריקים; וקורא מ-Redis את ה-scope הישן של audit log.
 
-- Redis מחזיר את הרשומות של scope בלי סדר קבוע. agentmemory ממיין אותן מהישן ביותר ראשון (לפי זמן היצירה שבתוך מזהה הרשומה, ואז ה-timestamp שלה) כך ש-lists, paging, ו-chunks של ייצוא חוזרים באותו סדר כמו במאגר הקבצים.
-- המנוע מחיל עדכונים חלקיים על Redis בסקריפט Lua שמהפך מערכים ריקים לאובייקטים ריקים. agentmemory מחיל את העדכונים האלה בעצמו (read, change, write תחת lock per-key) על Redis, כך ששדות כמו `tags: []` נשארים מערכים.
-- בדיקת ה-audit log הישנה (legacy) קוראת את ה-scope הישן מ-Redis במקום לחפש את הקובץ של מאגר הקבצים על הדיסק.
+אירועי המַציג החיים משתמשים ב-SSE של worker ‏REST ומופצים מתהליך agentmemory הפעיל; הם אינם משתמשים ב-Redis pub/sub או בבדיקת stream תקופתית. זמינות Redis משפיעה על קריאה וכתיבה של state, לא על תעבורת המַציג. אם Redis אינו זמין, הסטטוס מדווח שמאגר המצב אינו מגיב. קריאת scope גדול דורשת `HGETALL` מלא.
 
-הבדל אחד דורש מכם פעולה: **אחרי ש-Redis מופעל מחדש, המנוע מפסיק להעביר אירועים חיים** למציג עד ש-agentmemory מופעל מחדש. הנתונים עדיין נשמרים ונקראים כרגיל. מוניטור ה-health שולח אירוע בדיקה דרך Redis כל 30 שניות; כשהוא לא חוזר, `/agentmemory/status` ועמוד ה-Health של המציג מציגים "Live updates are not reaching the viewer" עם התיקון: הפעילו מחדש את agentmemory. אם Redis למטה, דוח הסטטוס מציג "The state store is not answering" ואיך לבדוק את זה (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). רישום (listing) של scope גדול מאוד קורא את כל ה-hash ב-`HGETALL` אחד, אותו עלות כמו מאגר הקבצים שמחזיק אותו בזיכרון.
+**הגדרות Redis מומלצות.** מדיניות ה-snapshot ברירת המחדל עלולה לאבד דקות של כתיבות במקרה קריסה. הפעילו `appendonly yes` עבור מידע חשוב ואת `maxmemory-policy noeviction` כדי למנוע פינוי שקט של זיכרונות.
 
-**הגדרות Redis מומלצות.** מדיניות ה-snapshot של ברירת המחדל `save 3600 1 300 100 60 10000` יכולה להפסיד דקות של כתיבות בקריסה, גרוע יותר מחלון ה-flush של 5 שניות של מאגר הקבצים. הגדירו `appendonly yes` לכל דבר שיהיה לכם חשוב לא להפסיד. הגדירו `maxmemory-policy noeviction`; `allkeys-lru` או דומה מפילים זיכרונות בשקט כש-Redis מגיע למגבלת הזיכרון שלו.
+פרויקט Worker Compose שנוצר ב-CLI מעביר את המשתנים האלה ל-worker ‏state. לאירוח עצמי ב-Docker ראו [`deploy/README.md`](../deploy/README.md) ואת [תיעוד worker ‏state](https://workers.iii.dev/workers/state).
 
-הפעלה native (לא-Docker), וכל [תבנית פריסה](../deploy/) בלחיצה אחת (הן כותבות מחדש את `iii-config.yaml` המצורף ומתחילות native), קוראות את `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` ומרנדרות אותן לתוך ה-`iii-config` שמופעל. ה-URL עצמו לעולם לא נכתב לקובץ המרונדר הזה, רק reference מסוג `${AGENTMEMORY_REDIS_URL}` שתהליך המנוע מרחיב מהסביבה שלו עצמו באתחול. רק נתיב ה-Docker Compose של ה-repo הזה עצמו (`AGENTMEMORY_USE_DOCKER=1`, או חידוש מנוע שהופעל כך) מקשר את `iii-config.docker.yaml` לקריאה-בלבד ולא מרנדר לעולם; `agentmemory start` מזהיר כשהוא מגלה את הצירוף הזה. החליפו את הקובץ הזה ביד, בעקבות אותו מבנה `name: redis` / `config: redis_url: ...` שמוצג בתיעוד ה-workers של [iii-state](https://workers.iii.dev/workers/iii-state) ו-[iii-stream](https://workers.iii.dev/workers/iii-stream), והפנו את `redis_url` ל-Redis נגיש מה-container. `docker-compose.yml` מעביר את `AGENTMEMORY_REDIS_URL` לתוך container המנוע, כך ש-`redis_url: '${AGENTMEMORY_REDIS_URL}'` עובד שם ושומר את ה-URL מחוץ לקובץ המקושר.
+התייחסו לתצורת worker שנשמרת ולתיקיית הנתונים כאל מידע רגיש אם הן מכילות URL של Redis עם פרטי גישה. הגבילו הרשאות (למשל `chmod 700 <data-dir>`) והעדיפו משתמש ACL של Redis עם ההרשאות הנדרשות ל-agentmemory בלבד.
 
-התצורה המרונדרת שומרת את ה-URL מחוץ ל-`~/.agentmemory/data/iii-config.runtime.yaml`, אבל ה-worker של התצורה של המנוע עצמו עדיין שומר באופן קבוע את הערך *המורחב* ל-`~/.agentmemory/config/iii-state.yaml` ול-`iii-stream.yaml` ברגע שהוא עולה (ה-הרחבה של `${VAR}` ב-iii-engine קורית לפני שה-worker הזה שומר את ה-seed שלו, והוא שומר את הערך שנפתר, לא את ה-reference). התייחסו לתיקייה הזו כמחזיקה credential: `chmod 700 ~/.agentmemory` בכל host משותף, והעדיפו משתמש ACL של Redis שמוגבל-תחום למה ש-agentmemory צריך על פני ה-credentials המנהליים של ה-database.
-
-**מיגרציה היא לא אוטומטית.** החלפת `AGENTMEMORY_STATE_BACKEND` מתחילה ממאגר ריק בשני הצדדים; שום דבר לא מעתיק נתונים קיימים מ-file ל-Redis או חזרה. ייצאו מה-backend שאתם עוזבים וייבאו לזה שאתם עוברים אליו. זה רץ זהה תחת bash ו-zsh (כולל `bash -u`). מערך כמו `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` לא: zsh משאיר את ה-header כמילה מעוותת אחת במקום ש-bash מפצל אותה לשתיים, כך ששתי הבקשות מקבלות 401 תמיד כש-`AGENTMEMORY_SECRET` מוגדר:
+**העברה אינה אוטומטית.** החלפת `AGENTMEMORY_STATE_BACKEND` מתחילה עם מאגר ריק: ייצאו מה-backend הישן וייבאו לחדש. ההליך פועל באותו אופן ב-bash וב-zsh (כולל `bash -u`).
 
 ```bash
 # 0. Use the generated secret when none is exported:
@@ -1433,13 +1384,13 @@ fi
 | ערימה מסורתית | agentmemory משתמש ב |
 |---|---|
 | Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + אינדקס וקטורי בזיכרון |
-| SSE / Socket.io | iii Streams (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | REST endpoint `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | פיקוח (supervision) workers של מנוע iii |
 | Prometheus / Grafana | iii OTEL + מוניטור health |
 | מערכות plugin מותאמות אישית | `iii worker add <name>` |
 
-**242 קבצי מקור · ~55,000 LOC · 3,400+ בדיקות · 324 פונקציות · 67 תחומי KV**, הכול על שלושה primitives. אין `agentmemory plugin install`. מערכת ה-plugin היא iii עצמו.
+**246 קובצי מקור · ~56,000 LOC · 3,800+ בדיקות · 322 פונקציות · 65 תחומי KV**, הכול על שלושה primitives. אין `agentmemory plugin install`. מערכת התוספים היא iii עצמו.
 
 ---
 
@@ -1556,37 +1507,21 @@ override לפי-קריאה בשכבת SDK / REST: כל endpoint משנה (`/sess
 
 ### פורטים
 
-agentmemory + iii-engine נקשרים לארבעה ports כברירת מחדל. אם הפעלה מחדש נכשלת עם `port in use`, הטבלה הזו אומרת לכם לאיזה תהליך לחפש.
+ה-runtime המקומי משתמש בשלושה מאזינים. WebSocket של מנוע iii משמש לרישום workers פנימי ואסור לחשוף אותו לרשת ציבורית.
 
-| Port | תהליך | מטרה | override של משתנה סביבה |
+| פורט | תהליך | שימוש | משתנה סביבה |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | worker סטרימינג פנימי (נצרך על ידי agentmemory + המציג) | `III_STREAM_PORT` (מועדף) או ה-legacy `III_STREAMS_PORT` |
-| `3113` | agentmemory | מציג בזמן אמת (`http://localhost:3113`) | `III_VIEWER_PORT` או `AGENTMEMORY_VIEWER_URL` ל-URL המדווח |
-| `49134` | iii-engine | WebSocket; workers נרשמים כאן, טלמטריית OTel זורמת מעליו | `III_ENGINE_PORT` או `III_ENGINE_URL` |
+| `3111` | worker registry ‏`http` | REST API, ‏MCP HTTP, health ו-SSE מאומת למַציג ב-`/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | ממשק המַציג ו-proxy | `III_VIEWER_PORT` |
+| `49134` | מנוע iii | WebSocket פנימי של workers | `III_ENGINE_PORT` או `III_ENGINE_URL` |
 
-`--port <N>` משנה את העוגן (anchor) של REST ומגזיר ממנו streams ב-`N+1`, מציג ב-`N+2`, ו-WebSocket של המנוע ב-`N+46023`, רק במקום שבו ה-port או ה-URL המפורש המתאים שלמעלה לא מוגדר. זה לא יוצר namespace מבודד למחזור חיים. השתמשו ב-`--instance 1` ל-daemon שני; הוא משתמש בעוגן 3211, ברירת מחדל `3211/3212/3213/49234`, ומקבל תיקיית data ומחזור-חיים נפרדת `instance-1`. Instances 1 עד 50 הולכים לפי אותה תבנית.
+`--port <N>` קובע את פורט REST וגוזר את פורט המַציג `N+2` ואת WebSocket המנוע `N+46023` אם לא הוגדרו במפורש. השתמשו ב-`--instance N` כדי לבודד runtime.
 
-המנוע הנעוץ מתחיל עם `--no-update-check` (בלי בדיקות עדכון או security-advisory מול GitHub באתחול) ועם הטלמטריית השימוש האנונימית של iii כבויה: agentmemory מגדיר `III_TELEMETRY_ENABLED=false` למנוע שהוא יוצר אלא אם אתם מייצאים (export) את המשתנה בעצמכם, וקובץ ה-compose המצורף עושה את אותו דבר.
-
-ניקוי תהליכים תקועים (stale) כש-ports נשארים קשורים אחרי הרצה שקרסה:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` אוסף (reaps) בצורה נקייה גם את ה-worker וגם את pidfile המנוע ב-shutdown מקורי (native) מסודר. במצב Docker הוא מרוקן את ה-worker המקורי, עוצר את ה-container המדויק של המנוע שאומת, ושומר גם את ה-container וגם את ה-mount שלו ב-`/data` להפעלה מחדש בלי אובדן; ההפעלה הבאה מאמתת ומחדשת את אותו container. הסרת התקנה מבוססת-Docker דורשת `agentmemory remove --keep-data`: היא מסירה קבצים משותפים שמנוהלים על ידי agentmemory בזמן שהיא משמרת את ה-container שאומת, את ה-mount של הנתונים שלו, ואת רשומת מחזור-החיים הנחוצה כדי לשחזר אותם. מחיקת נתוני Docker הרסנית מושארת בכוונה למפעיל אחרי backup. ה-CLI גם מסרב לאמץ או לאותת ל-port holders של Docker או VM (Docker backend, vpnkit, colima) כמנוע native אלא אם `--force` מועבר. הניקוי הידני שלמעלה הוא רק למקרה של אחרי-קריסה שבו לא נשאר שום pidfile.
+אירוח עצמי מפרסם REST ומַציג, כברירת מחדל ב-`127.0.0.1:3111` וב-`127.0.0.1:3113`; אפשר לשנות את פורטי המארח באמצעות `AGENTMEMORY_REST_PORT` ו-`AGENTMEMORY_VIEWER_PORT`. ‏CORS של REST מאפשר כברירת מחדל `http://localhost` ו-`http://127.0.0.1` בפורטים המוגדרים; הגדירו `REST_ALLOWED_ORIGINS` כרשימת מקורות מדויקים מופרדת בפסיקים כדי לאפשר דפדפנים מהימנים נוספים.
 
 ### קובץ תצורה
 
-שימו את תצורת ה-runtime של agentmemory ב-`~/.agentmemory/.env` במקום לייצא (export) משתנים בכל shell. אם המציג מציג רמז הקמה כמו `export ANTHROPIC_API_KEY=...`, העתיקו אותו לקובץ הזה כ-`ANTHROPIC_API_KEY=...` בלי ה-prefix `export`, ואז הפעילו מחדש את agentmemory.
+הגדירו את תצורת זמן הריצה של agentmemory בקובץ `~/.agentmemory/.env` במקום לייצא משתנים בכל shell. אם המַציג מציג הנחיה כמו `export ANTHROPIC_API_KEY=...`, העתיקו לקובץ ללא התחילית `export` ואז הפעילו מחדש את agentmemory. הגדירו `AGENTMEMORY_ENV_FILE` כדי להשתמש בנתיב אחר לקובץ הסביבה.
 
 משתני סביבת התהליך עדיין עובדים וגוברים על ערכים בקובץ.
 
@@ -1742,7 +1677,7 @@ GRAPH_EXTRACTION_ENABLED=true
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
                                            # A hard kill loses at most this window.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
@@ -1782,7 +1717,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
+144 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
 
 **אימות (Authentication) פעיל כברירת מחדל.** כש-`AGENTMEMORY_SECRET` לא מוגדר (ב-shell או ב-`~/.agentmemory/.env`), השרת מייצר secret אקראי בהפעלה הראשונה ושומר אותו ב-`~/.agentmemory/secret` במוד `0600`. כל לקוח מצורף קורא אותו משם כשהוא מדבר עם שרת מקומי: ה-CLI, המציג, ה-hooks תחת `plugin/scripts`, שרת ה-MCP וה-shim `@agentmemory/mcp`, התצורות שנכתבות על ידי `agentmemory connect`, והאינטגרציות המצורפות של OpenCode, Pi, OpenClaw, Hermes וה-filesystem-watcher. ה-secret המאוחסן נשלח רק ל-URLs של loopback (`localhost`, `127.0.0.0/8`, `::1`). `AGENTMEMORY_SECRET` מפורש גובר תמיד, ולקוחות מרוחקים עדיין צריכים אותו מוגדר. Docker וה-entrypoints של `deploy/` כבר מייצרים ומייצאים את ה-secret שלהם. כדי לקרוא ל-API ביד:
 
@@ -1867,7 +1802,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**דרישות מקדימות:** Node.js >= 20 עם npm/npx; [iii-engine](https://iii.dev/docs) v0.22.1 או Docker. ההתקנה האוטומטית של המנוע ב-macOS/Linux דורשת גם `curl`, מעטפת `sh` תואמת POSIX, ו-`tar`; Windows מקורי משתמש ב-`iii.exe` הנעוץ הידני, WSL2, או Docker Desktop.
+**דרישות מקדימות:** Node.js >= 20 עם npm/npx. התקנת המנוע ב-macOS/Linux באמצעות ה-CLI דורשת גם `curl`,‏ `sh` תואם POSIX ו-`tar`; ב-Windows מקורי יש להתקין ידנית את `iii.exe` הנעוץ או להשתמש ב-WSL2.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="רישיון" height="32" /></picture></h2>
 

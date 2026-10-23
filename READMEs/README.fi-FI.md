@@ -100,7 +100,7 @@ Vaatimukset:
 
 - Node.js 20 tai uudempi, mukana npm ja npx (`node -v`, `npm -v` ja `npx -v`).
 - macOS/Linux-automaattiasennus iii-moottorille vaatii lisäksi `curl`:n, POSIX-yhteensopivan `sh`:n ja `tar`:n. Minimaaliset levykuvat kuten `node:20-slim` eivät välttämättä sisällä niitä.
-- Natiivi Windows vaatii kiinnitetyn iii-engine v0.22.1 -version `iii.exe`-tiedoston asentamista käsin. WSL2 tai Docker Desktop ovat muut tuetut reitit.
+- Natiivi Windows vaatii kiinnitetyn iii-engine v0.24.6:n `iii.exe`-tiedoston asentamista käsin; WSL2 käyttää macOS/Linux-automaattiasennusta.
 
 Kanoninen tuore asennuskomento:
 
@@ -112,7 +112,7 @@ Ensimmäinen käynnistys on vuorovaikutteinen asetusvaihe: valitse kytkettävät
 
 Avaimeton tila poistaa vektoriupotukset käytöstä. `memory_recall` (`mem::search`-reitti) käyttää BM25:tä, kun taas `memory_smart_search` voi myös yhdistää rakenteellisia graafiosumia, kun graafidataa on jo olemassa. Saadaksesi ilmaisen, laitteella toimivan semanttisen muistinhaun, aseta `EMBEDDING_PROVIDER=local` tiedostoon `~/.agentmemory/.env` ja käynnistä uudelleen. Ensimmäinen upotuspyyntö lataa mallin `Xenova/all-MiniLM-L6-v2`; päättely toimii sen jälkeen paikallisesti.
 
-Paikallinen ajonaikainen ympäristö käyttää neljää porttia: `3111` REST/MCP HTTP:lle, `3112` iii-streameille, `3113` katseluohjelmalle ja `49134` iii-workerin WebSocketille. Pysyvä iii-tila sijaitsee polussa `~/Library/Application Support/agentmemory` macOS:llä, `$XDG_DATA_HOME/agentmemory` tai `~/.local/share/agentmemory` Linuxilla ja `%APPDATA%\agentmemory` Windowsilla. Käytä `--data-dir <polku>` -valitsinta tai `AGENTMEMORY_DATA_DIR`-muuttujaa ylikirjoittaaksesi tämän, ja käytä samaa arvoa jokaisella uudelleenkäynnistyksellä. Taustayhteensopivuuden vuoksi olemassa oleva `./data/state_store.db` tai `./data/iii-config.yaml` ajaa instanssin 0 kohdalla alustan oletuksen edelle; nimenomainen lippu tai ympäristömuuttuja voittaa edelleen.
+Paikallinen CLI-ajonaikainen ympäristö käyttää REST/MCP HTTP:tä portissa `3111`, katseluohjelmaa portissa `3113` ja sisäistä iii-workerien WebSocket-yhteyttä portissa `49134`. Katseluohjelman päivitykset kulkevat SSE:nä REST-portissa osoitteessa `GET /agentmemory/viewer/events`. Pysyvä tila tallennetaan oletuksena polkuun `~/Library/Application Support/agentmemory` macOS:llä, `$XDG_DATA_HOME/agentmemory` tai `~/.local/share/agentmemory` Linuxilla ja `%APPDATA%\agentmemory` Windowsilla. Ohita sijainti asetuksilla `--data-dir <path>` tai `AGENTMEMORY_DATA_DIR`; instanssi 0 käyttää uudelleen myös olemassa olevaa tiedostoa `./data/state_store.db`. `--instance N` eristää lisäajoympäristöt, ja `AGENTMEMORY_ENV_FILE` valitsee muun kuin oletusarvoisen `.env`-tiedoston.
 
 Todista sitten, että muistin palauttaminen toimii, ja anna agentillesi sen taidot:
 
@@ -132,7 +132,7 @@ Kytke lisää agentteja milloin tahansa komennolla `agentmemory connect <agent>`
 <details>
 <summary><strong>Windows</strong></summary>
 
-Nopein reitti on WSL2. Natiivi Windows-moottorin asennus vaatii kiinnitetyn v0.22.1-ZIP-paketin latauksen ja `iii.exe`:n purkamisen käsin; CLI ei pura sitä automaattisesti. Docker Desktop on myös tuettu. Katso [Windows-huomautukset](#windows) vaihe vaiheelta.
+Nopea reitti on WSL2. Natiivi Windows vaatii kiinnitetyn v0.24.6-ZIP-paketin lataamisen ja `iii.exe`-tiedoston purkamisen käsin. Katso vaiheet kohdasta [Windows](#windows).
 
 </details>
 
@@ -157,7 +157,7 @@ npx käyttää välimuistia versioittain. Pakota uusin versio komennolla `npx -y
 <details>
 <summary><strong>Oma iii-moottori on jo käynnissä</strong></summary>
 
-agentmemory kiinnittää iii-engine-version v0.22.1:een ja ei liity eri versioon (worker ei osaa puhua toisen moottorin protokollaa). Pysäytä toinen moottori ja aja sitten `npx -y @agentmemory/agentmemory@latest`. Se asentaa ja ajaa kiinnitetyn v0.22.1-version polussa `~/.agentmemory/bin`, jättäen oman `iii`-asennuksesi koskemattomaksi.
+agentmemory kiinnittää iii-engine-version v0.24.6 eikä yhdistä toiseen versioon (worker ei osaa puhua toisen moottorin protokollaa). Pysäytä toinen moottori ja suorita `npx -y @agentmemory/agentmemory@latest`. Se asentaa ja käynnistää kiinnitetyn v0.24.6-version polussa `~/.agentmemory/bin` ja jättää oman `iii`-asennuksesi koskemattomaksi.
 
 </details>
 
@@ -319,14 +319,14 @@ Selität saman arkkitehtuurin joka istunnossa. Löydät uudelleen samat bugit. O
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Oletuksena agentmemory tallentaa iii-moottorin tilan sen repositorion ulkopuolelle, josta se käynnistetään: `~/Library/Application Support/agentmemory` macOS:llä, `$XDG_DATA_HOME/agentmemory` tai `~/.local/share/agentmemory` Linuxilla ja `%APPDATA%\agentmemory` Windowsilla. Olemassa oleva vanha `./data/state_store.db` tai `./data/iii-config.yaml` käytetään uudelleen instanssille 0 ennen tätä alustan oletusta. Valitaksesi sijainnin nimenomaisesti, välitä `--data-dir <polku>` tai aseta `AGENTMEMORY_DATA_DIR`; kumpi tahansa nimenomainen asetus ajaa vanhan tunnistuksen edelle:
+Oletuksena agentmemory tallentaa iii-moottorin tilan käynnistyshakemiston ulkopuolelle: `~/Library/Application Support/agentmemory` macOS:llä, `$XDG_DATA_HOME/agentmemory` tai `~/.local/share/agentmemory` Linuxilla ja `%APPDATA%\agentmemory` Windowsilla. Olemassa olevaa tiedostoa `./data/state_store.db` käytetään uudelleen instanssille 0. Valitse sijainti välittämällä `--data-dir <path>` tai asettamalla `AGENTMEMORY_DATA_DIR`:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-Natiivi- ja Docker-käynnistykset käyttävät samaa ratkaistua isäntähakemistoa; Docker liittää sen pisteeseen `/data`. `--instance 1` liittää `instance-1`-hakemiston ratkaistuun hakemistoon ja valitsee erillisen oletusporttineljännyksen `3211/3212/3213/49234`.
+`--instance 1` lisää `instance-1`-hakemiston ratkaistuun datakansioon ja ottaa käyttöön portit `3211` (REST), `3213` (katseluohjelma) ja `49234` (moottori).
 
 Uusimmat julkaisutiedot: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +476,7 @@ Uusimmat julkaisutiedot: [CHANGELOG.md](../CHANGELOG.md).
 </tr>
 <tr>
 <td><strong>Ulkoiset riippuvuudet</strong></td>
-<td>Ei mitään (SQLite + iii-engine)</td>
+<td>Ei mitään (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vektoritietokanta</td>
 <td>Useita</td>
@@ -556,7 +556,7 @@ Mikään näistä ei tallenna automaattisesti koodausagenttien hookeista, toimit
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Pika-aloitus" height="32" /></picture></h2>
 
-Yhteensopivuus: tämä julkaisu kohdistuu `iii-sdk`-versioon 0.22.1 ja kiinnittää iii-engine-version v0.22.1.
+Yhteensopivuus: tämä julkaisu käyttää iii 0.24.6:ta sekä rekisterin workereita state 0.22.20 ja http 0.22.7.
 
 ### Kokeile 30 sekunnissa
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Käynnistyksen valmiuspaneeli huomioi kaikki neljä porttia: REST/MCP HTTP portissa 3111, iii-streamit portissa 3112, katseluohjelma portissa 3113 ja iii-workerin WebSocket portissa 49134. `status` vahvistaa agentmemoryn terveyden ja aktiivisen tarjoaja-/upotustilan. Tallenna koetin ja vahvista, että se on hakukelpoinen:
+Ajonaikainen ympäristö käyttää REST/MCP HTTP:tä portissa 3111, katseluohjelmaa portissa 3113 ja sisäistä iii-workerien WebSocket-yhteyttä portissa 49134. Katseluohjelman reaaliaikaiset tapahtumat kulkevat SSE:nä REST-yhteyden kautta. `status` vahvistaa agentmemoryn kunnon, moottorin kiinnitetyn version (`enginePinnedVersion`) sekä aktiivisen tarjoajan/upotusten tilan. Tallenna koetin ja varmista, että se löytyy haulla:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ Käytä ylläpitokomentoa, kun haluat tarkoituksella päivittää paikallisen aj
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Varoitus: tämä komento muuttaa nykyistä työtilaa/ajonaikaista ympäristöä. Se voi päivittää JavaScript-riippuvuuksia ja hakea kiinnitetyn `iiidev/iii:0.22.1`-Docker-imagen. Se ei koskaan asenna kiinnittämätöntä tai uudempaa iii-moottoria.
+Varoitus: tämä komento muuttaa nykyistä työtilaa/ajonaikaista ympäristöä. Se voi päivittää JavaScript-riippuvuuksia ja asentaa iii 0.24.6:n kiinnitetyn moottoribinäärin.
 
 Toteutuksen yksityiskohdat löytyvät tiedostosta `src/cli.ts` (katso `runUpgrade` alueen `src/cli.ts:544-595` kohdalla).
 
@@ -707,7 +707,7 @@ copilot plugin install rohitg00/agentmemory:plugin
 <summary><b>OpenClaw (liitä tämä kehote)</b></summary>
 
 ```text
-Install agentmemory for OpenClaw. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 54 memory tools:
+Asenna agentmemory OpenClawille. Käynnistä muistipalvelin portissa localhost:3111 suorittamalla komento `npx -y @agentmemory/agentmemory@latest` erillisessä terminaalissa. Lisää sitten tämä OpenClawin MCP-asetuksiin, jotta kaikki agentmemoryn 54 muistityökalua ovat käytettävissä:
 
 {
   "mcpServers": {
@@ -721,7 +721,7 @@ Install agentmemory for OpenClaw. Run `npx -y @agentmemory/agentmemory@latest` i
   }
 }
 
-Restart OpenClaw. Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper memory-slot integration, copy `integrations/openclaw` to `~/.openclaw/extensions/agentmemory` and enable `plugins.slots.memory = "agentmemory"` in `~/.openclaw/openclaw.json`.
+Käynnistä OpenClaw uudelleen. Vahvista toiminta komennolla `curl http://localhost:3111/agentmemory/health`. Avaa reaaliaikainen katseluohjelma osoitteessa http://localhost:3113. Syvempää muistipaikkaintegraatiota varten kopioi `integrations/openclaw` polkuun `~/.openclaw/extensions/agentmemory` ja ota käyttöön `plugins.slots.memory = "agentmemory"` tiedostossa `~/.openclaw/openclaw.json`.
 ```
 
 Täysi opas: [`integrations/openclaw/`](../integrations/openclaw/)
@@ -732,7 +732,7 @@ Täysi opas: [`integrations/openclaw/`](../integrations/openclaw/)
 <summary><b>Hermes Agent (liitä tämä kehote)</b></summary>
 
 ```text
-Install agentmemory for Hermes. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 54 memory tools:
+Asenna agentmemory Hermesille. Käynnistä muistipalvelin portissa localhost:3111 suorittamalla komento `npx -y @agentmemory/agentmemory@latest` erillisessä terminaalissa. Lisää sitten tämä tiedostoon ~/.hermes/config.yaml, jotta Hermes voi käyttää agentmemorya MCP-palvelimena ja sen 54 muistityökalua:
 
 mcp_servers:
   agentmemory:
@@ -742,7 +742,7 @@ mcp_servers:
 memory:
   provider: agentmemory
 
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+Vahvista toiminta komennolla `curl http://localhost:3111/agentmemory/health`. Avaa reaaliaikainen katseluohjelma osoitteessa http://localhost:3113. Syvempää kuuden hookin muistitarjoajaintegraatiota varten (kontekstin lisäys ennen LLM:ää, vuoron tallennus, MEMORY.md-peilaus ja järjestelmäkehotteen lohko) kopioi integrations/hermes agentmemory-repositoriosta polkuun ~/.hermes/plugins/agentmemory.
 ```
 
 Täysi opas: [`integrations/hermes/`](../integrations/hermes/)
@@ -763,7 +763,7 @@ npx skills add rohitg00/agentmemory -y -a warp  # explicit agent
 npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed agent
 ```
 
-Tämä on **täydentävä** komennolle `agentmemory connect <agent>`:
+Tämä täydentää komentoa `agentmemory connect <agent>`:
 
 - `agentmemory connect <agent>` kirjoittaa MCP-palvelimen asetukset, jotta työkalut ovat käytettävissä.
 - `npx skills add rohitg00/agentmemory` asentaa taidot, jotta agentti tietää, milloin kutsua niitä.
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 Toimiva esimerkki: [`examples/python/`](../examples/python/) (pika-aloitus + havainnointi-/palautusvirta). REST portissa `:3111` pysyy saatavilla isännille, joilla ei ole iii-ajonaikaista ympäristöä.
@@ -853,91 +861,32 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Tämä käynnistää agentmemoryn paikallisella `iii-engine`-moottorilla, jos kiinnitetty binääri on jo asennettu, tai käyttää Docker Composea, kun se on valittu. REST, streamit ja katseluohjelma sitoutuvat oletuksena osoitteeseen `127.0.0.1`. Automaattinen macOS/Linux-binääripolku vaatii `curl`:n, POSIX-yhteensopivan `sh`:n ja `tar`:n.
-
-Asenna `iii-engine` käsin. **agentmemory kiinnittää tällä hetkellä `iii-engine`-versioon `v0.22.1`**, samaan julkaisuun kuin sen `iii-sdk`-riippuvuus; worker puhuu kyseisen moottorin lankaprotokollaa, ja 0.20.0 järjesti SDK-pinnan uudelleen, niin molemmat liikkuvat yhdessä agentmemoryn julkaisuissa. Ylikirjoita arvolla `AGENTMEMORY_III_VERSION=<version>`, jos ajat omaa moottoriasi ja tiedät, että se täsmää.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** vaihda `aarch64-apple-darwin` tilalle `x86_64-apple-darwin`
-- **Linux x64:** vaihda tilalle `x86_64-unknown-linux-gnu`
-- **Linux arm64:** vaihda tilalle `aarch64-unknown-linux-gnu`
-- **Windows:** lataa `iii-x86_64-pc-windows-msvc.zip` osoitteesta [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) ja pura `iii.exe` polkuun `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Joka arkistolla on vastaava `.sha256`-tiedosto julkaisusivulla; kun vaihdat alustaa, käytä kyseisen tiedoston tiivistettä yllä olevassa tarkistuksessa (Windowsilla: `Get-FileHash`). `npx @agentmemory/agentmemory`-komennon automaattinen asentaja kiinnittää näihin tiivisteisiin ja hylkää arkiston, joka ei täsmää.
-
-Tai käytä Dockeria (mukana tuleva `docker-compose.yml` hakee imagen `iiidev/iii:0.22.1`). Täysi dokumentaatio: [iii.dev/docs](https://iii.dev/docs).
+`npm start` käynnistää saman iii Worker Compose -ajoympäristön kuin CLI: iii 0.24.6:n sekä rekisterin workerit `state@0.22.20` ja `http@0.22.7`. macOS/Linux-järjestelmissä CLI lataa kiinnitetyn moottoribinäärin polkuun `~/.agentmemory/bin`; automaattinen asennus vaatii `curl`:n, POSIX-yhteensopivan `sh`:n ja `tar`:n. Paikalliset REST- ja katseluohjelmakuuntelijat sitoutuvat osoitteeseen `127.0.0.1`. Katseluohjelman päivitykset kulkevat SSE:nä REST-portissa osoitteessa `GET /agentmemory/viewer/events`. `/agentmemory/status` ilmoittaa moottorin kiinnitetyn version kentässä `enginePinnedVersion`; tuettu oletusversio on iii 0.24.6. `AGENTMEMORY_III_VERSION`-muuttujalla voi halutessaan ohittaa version.
 
 ### Windows
 
-agentmemory toimii Windows 10/11:llä, mutta Node.js-paketti yksinään ei riitä; tarvitset myös kiinnitetyn iii-engine v0.22.1 -ajonaikaisen ympäristön taustaprosessina. CLI ei pura Windows-ZIP-pakettia automaattisesti, niin natiivien Windows-käyttäjien on asennettava `iii.exe` käsin, käytettävä WSL2:ta tai valittava Docker Desktop.
+agentmemory toimii Windows 10/11:ssä. WSL2 noudattaa Linuxin polkua ja voi asentaa kiinnitetyn moottorin automaattisesti. Natiivi Windows vaatii iii-engine v0.24.6:n kiinnitetyn binäärin asentamisen käsin; lataa sopiva paketti [iii v0.24.6 -julkaisusivulta](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), tarkista sen tarkistussumma ja sijoita `iii.exe` `PATH`-polkuun (esimerkiksi `%USERPROFILE%\.local\bin\iii.exe`). CLI ei pura Windows-ZIP-pakettia automaattisesti.
 
-Natiivi Windows-automaattinen MCP-kytkentä tukee vain komentoa `agentmemory connect copilot-cli`. Claude Codea, Codexia, Cursoria ja kaikkia muita natiiveja Windows-agentteja varten kopioi manuaalinen MCP-lohko kohdasta [Muut agentit](#other-agents) kyseisen agentin Windows-asetuksiin. `connect`-komennon ajaminen WSL:ssä on sopivaa vain, kun kohdeagentti on asennettu myös samaan WSL-ympäristöön; se ei muokkaa Windows-isännän agentin asetuksia.
+Natiivin Windowsin automaattinen MCP-kytkentä tukee vain komentoa `agentmemory connect copilot-cli`. Muiden natiivien Windows-agenttien kanssa käytä manuaalista MCP-lohkoa kohdasta [Muut agentit](#other-agents). Suorita `connect` WSL:ssä vain, kun kohdeagentti on asennettu samaan WSL-ympäristöön.
 
-**Vaihtoehto A: valmiiksi käännetty Windows-binääri (suositeltu)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Vaihtoehto B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Vaihtoehto C: vain itsenäinen MCP (ei moottoria).** Jos tarvitset vain MCP-työkalut agentillesi ja et tarvitse REST-rajapintaa, katseluohjelmaa tai cron-tehtäviä, ohita moottori kokonaan:
+**Vain itsenäinen MCP (ei moottoria).** Jos tarvitset vain MCP-työkaluja etkä REST-rajapintaa, katseluohjelmaa tai ajonaikaisia palveluita:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# tai
 npx -y @agentmemory/mcp
 ```
 
-**Diagnostiikka Windowsilla:** jos `npx -y @agentmemory/agentmemory@latest` epäonnistuu, aja se uudelleen lipulla `--verbose` nähdäksesi moottorin todellisen stderr-tulosteen. Yleiset vikatilat:
-
-| Oire | Korjaus |
-|---|---|
-| `The engine process started but the REST API never responded.` | Vahvista, että kaikki neljä johdettua porttia ovat vapaat, varmista, että kiinnitetty `iii.exe` pysyi käynnissä, ja aja sitten uudelleen lipulla `--verbose` ja tarkista tallennettu moottorin stderr |
-| `Could not start iii-engine` | Ei `iii.exe`:tä eikä Dockeria ole asennettu. Katso Vaihtoehto A tai B yllä |
-| Porttiristiriita | `netstat -ano \| findstr :3111` nähdäksesi, mihin on sidottu, sammuta se tai käytä lippua `--port <N>` |
-| Docker-varajärjestelmä ohitetaan, vaikka Docker on asennettu | Varmista, että Docker Desktop on oikeasti käynnissä (järjestelmäpalkin kuvake) |
-
-> Huomio: iii-**moottori** on valmiiksi käännetty binääri, ei cargo-pakki, niin sitä ei kannata yrittää asentaa komennolla `cargo install`. (iii-**SDK:t** on julkaistu crates.io:ssa, npm:ssä ja PyPI:ssä, mutta agentmemory ei tarvitse niitä.) Tuetut moottorin asennustavat on kaikki kiinnitetty versioon v0.22.1: yllä oleva valmiiksi käännetty binääri, agentmemoryn macOS/Linux-automaattiasennusreitti (`curl`, POSIX `sh` ja `tar` vaadittu) ja Docker-image `iiidev/iii:0.22.1`. Paljas ylävirran `install.sh | sh` asentaa uusimman moottorin, jota agentmemory ei tue. Käytä komentoa `npx -y @agentmemory/agentmemory@latest`; macOS/Linuxilla se hakee kiinnitetyn moottorin polkuun `~/.agentmemory/bin`.
+**Vianmääritys:** Jos käynnistys epäonnistuu, suorita komento uudelleen lipulla `--verbose`, niin näet moottorin stderr-tulosteen. Tarkista, että REST-portti `3111`, katseluohjelman portti `3113` ja moottorin portti `49134` ovat vapaina; käytä eristettyyn ajoympäristöön lippua `--port <N>` tai `--instance <N>`. CLI käyttää omaa kiinnitettyä moottoribinääriään eikä korvaa `PATH`-polussa olevaa iii-suoritustiedostoa.
 
 ---
 
 <h2 id="deploy">Käyttöönotto</h2>
 
-Yhden klikkauksen mallipohjat hallinnoiduille isännille. Joka pohja toimittaa
-itsenäisen Dockerfile-tiedoston, joka hakee paketin `@agentmemory/agentmemory`
-npm:stä ja kopioi iii-moottorin binäärin viralliselta `iiidev/iii`-Docker Hub
--imagelta; valmiiksi rakennettua agentmemory-imagea ei tarvita. Pysyvä tallennustila
-liitetään pisteeseen `/data`; ensimmäisen käynnistyksen entrypoint korvaa
-npm:n mukana tulevan iii-asetuksen (joka sitoutuu `127.0.0.1`-osoitteeseen) käyttöönottoa
-varten viritetyllä asetuksella, joka sitoutuu `0.0.0.0`-osoitteeseen ja käyttää absoluuttisia
-`/data`-polkuja, generoi HMAC-salaisuuden, ja luopuu sitten oikeuksista
-`root`-käyttäjästä `node`-käyttäjään `gosu`:n kautta ennen agentmemory-CLI:n exec-komentoa.
-
+Dockeria tuetaan itse ylläpidettävään käyttöönottoon tästä repositoriosta, ei CLI:n käynnistystilana. Yhden napsautuksen mallipohjat käyttävät tiedostoja [`deploy/Dockerfile`](../deploy/Dockerfile) ja [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml), kiinnittävät saman iii 0.24.6 -ajoympäristön ja tallentavat tilan, jäljitykset sekä luodun salaisuuden pysyvään `/data`-taltioon. Docker Compose käyttää oletuksena olemassa olevaa nimettyä `iii-data`-taltioita; aseta `AGENTMEMORY_DATA_DIR` isäntäkoneen polkuun, jos haluat käyttää bind-liitosta. Olemassa oleva tiedostopohjainen tallennus (0.22.1:n tiedostomuodossa) luetaan suoraan polusta `/data/state_store.db` ilman siirtoa tai muunnosta. REST CORS sallii oletuksena paikalliset REST- ja katseluohjelmaoriginit; aseta `REST_ALLOWED_ORIGINS` pilkuilla erotelluksi luetteloksi täsmällisiä originitunnuksia, jos luotetun selaimen origin tarvitsee pääsyn. Katso käyttöönotto- ja suojaustiedot tiedostosta [`deploy/README.md`](../deploy/README.md).
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Ota käyttöön fly.io:ssa" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Ota käyttöön Railwayssa" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Ota käyttöön fly.io:ssa" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Ota käyttöön Railwayssa" /></a>
 </p>
 
 Renderin yhden klikkauksen käyttöönottopainike vaatii `render.yaml`-tiedoston repositorion juuressa, jonka pidämme tarkoituksella siistinä. Käytä [`deploy/render/`](.././deploy/render/README.md)-kansiossa dokumentoitua Render Blueprint -virtaa osoittaaksesi repositorion sisäiseen blueprintiin käsin.
@@ -955,10 +904,16 @@ kustannuslattia) löytyvät kansiosta [`deploy/`](.././deploy/README.md):
   VPS:lläsi [Coolifyn](https://coolify.io/self-hosted) kautta; sama Docker
   Compose -pino, omistat itse isännän ja datan.
 
-Vain portti `3111` julkaistaan. Katseluohjelma portissa `3113` pysyy sidottuna
-loopbackiin kontin sisällä; joka mallipohjan README dokumentoi
-SSH-tunnelimallin sen saavuttamiseksi.
+REST käyttää porttia `3111`; katseluohjelma käyttää porttia `3113` ja julkaistaan vain, kun alustan mallipohja tukee erillistä suojattua reittiä. Reaaliaikaiset päivitykset käyttävät bearer-todennettua SSE:tä REST-päätepisteessä `/agentmemory/viewer/events`. Moottorin WebSocket portissa `49134` on sisäinen, eikä sitä pidä julkaista. Katso alustakohtaiset julkaisu- ja sallittujen osoitteiden ohjeet tiedostosta [`deploy/README.md`](../deploy/README.md).
 
+
+### Vanhojen CLI:n hallinnoimien Docker-asennusten siirtäminen
+
+Nykyinen CLI ei käynnistä eikä hallinnoi Docker-käyttöönottoja. Jos se löytää vanhan Dockerin elinkaaritietueen, se säilyttää metatiedot ja tulostaa tarkan komennon `docker stop ...`; suorita komento ennen siirtoa. Älä käynnistä uutta suoritusaikaa, kun vanhan säilön liitos on yhä käytössä.
+
+Säilytä vanha pysyvä taltio (tavallisesti `iii-data`) ja ota siitä varmuuskopio tai kopioi `/data`-hakemiston sisältö bind mount -liitokseen. State-työntekijä lukee olemassa olevan `/data/state_store.db`-tiedoston suoraan ilman vientiä tai muunnosta. Vanha suoritusaika käytti UID/GID-tunnuksia `65532:65532`; uusi levykuva siirtää omistajuuden kertaalleen rekursiivisesti käyttäjälle ja ryhmälle `node:node` (`1000:1000`) ja kirjoittaa tiedoston `/data/.ownership-migrated-node-v1`. Älä liitä taltiota siirron jälkeen takaisin vanhaan suoritusaikaan.
+
+Vanha suoritusaika tallensi myös luodun bearer-secretin tiedostoon `/data/.hmac`. Uusi levykuva säilyttää salaisuuden siirron aikana; erikseen asetettu `AGENTMEMORY_SECRET` on etusijalla. Käynnistä uusi Compose-projekti repositorion juuresta komennolla `docker compose up --build -d`. Jos vanhan taltion nimessä on projektin etuliite `iii-data`-nimen sijaan, ota se nimenomaisesti uudelleen käyttöön tai nimeä se uudelleen — älä vahingossa alusta tyhjää taltiota. Tarkista `/agentmemory/livez` ja varmista, että sekä vanhat että uudet muistot löytyvät. Vältä komentoa `docker compose down -v`, ellet aio poistaa tietoja.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Miksi agentmemory" height="32" /></picture></h2>
@@ -1112,7 +1067,7 @@ Normaali npm-asennus sisältää valinnaisen `@huggingface/transformers`-ajonaik
 
 54 työkalua, 6 resurssia, 3 kehotetta ja 17 taitoa.
 
-> **MCP-shim vs. täysi palvelin:** julkaistu `@agentmemory/mcp`-paketti on ohut shim. Se paljastaa täyden 54 työkalun pinnan **vain kun se tavoittaa käynnissä olevan agentmemory-palvelimen** `AGENTMEMORY_URL`:n kautta (proxy-tila). Kun palvelinta ei tavoiteta, shim palaa 7 työkalun paikalliseen settiin (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). `AGENTMEMORY_TOOLS=core|all`-ympäristömuuttuja on *palvelinpuolen* lippu; sen asettaminen shimin `env`-lohkossa ei vaikuta mihinkään. Jos näet vain 7 työkalua Cursorissa / OpenCodessa / Gemini CLI:ssä, käynnistä `npx -y @agentmemory/agentmemory@latest` (tai Docker-pino) ja aseta `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP-shim vs. täysi palvelin:** julkaistu `@agentmemory/mcp`-paketti on ohut shim. Se paljastaa täyden 54 työkalun pinnan **vain kun se tavoittaa käynnissä olevan agentmemory-palvelimen** `AGENTMEMORY_URL`:n kautta (proxy-tila). Kun palvelinta ei tavoiteta, shim palaa 7 työkalun paikalliseen settiin (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). `AGENTMEMORY_TOOLS=core|all`-ympäristömuuttuja on *palvelinpuolen* lippu; sen asettaminen shimin `env`-lohkossa ei vaikuta mihinkään. Jos näet vain 7 työkalua Cursorissa / OpenCodessa / Gemini CLI:ssä, käynnistä `npx -y @agentmemory/agentmemory@latest` (tai muodosta yhteys itse ylläpitämääsi palvelimeen) ja aseta `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 54 työkalua
 
@@ -1252,7 +1207,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Reaaliaikainen katseluohjelma" height="32" /></picture></h2>
 
-Käynnistyy automaattisesti portissa `3113`. Katseluohjelma lataa yhden tilannevedoksen yhdistyessään (`GET /agentmemory/viewer/snapshot`) ja soveltaa sitten live-streamitapahtumia: uudet muistot, opetukset, havainnot, auditointimerkinnät, graafimuutokset ja terveyspäivitykset ilmestyvät ilman pollausta tai sivun uudelleenlatausta. Ainoat muut pyynnöt ovat toiminnot, joita klikkaat, "lataa lisää" -sivut ja haut. Kun stream katkeaa, katseluohjelma näyttää, kuinka vanhoja sen luvut ovat, yhdistää uudelleen takaisinvedolla ja synkronoi uudelleen yhdestä tilannevedoksesta.
+Käynnistyy automaattisesti portissa `3113`. Katseluohjelma lataa yhdistyessään yhden tilannevedoksen (`GET /agentmemory/viewer/snapshot`) ja käsittelee sen jälkeen reaaliaikaisia tapahtumia SSE:n kautta REST-workerissä osoitteessa `/agentmemory/viewer/events`: uudet muistot, opetukset, havainnot, auditointimerkinnät, graafimuutokset ja terveystiedot näkyvät ilman kyselyitä tai sivun uudelleenlatausta. Muut pyynnöt liittyvät vain napsauttamiisi toimintoihin, "lataa lisää" -sivuihin ja hakuihin. Jos virta katkeaa, katseluohjelma kertoo tietojen iän, yhdistää uudelleen takaisinviiveellä ja synkronoi tiedot yhdestä tilannevedoksesta.
 
 - **12 välilehteä neljässä ryhmässä** live-laskureilla, syvälinkeillä (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), pikanäppäimillä ja mobiilivalikolla.
 - **Muistot:** palvelinpuolen haku, suodattimet projektin, agentin ja tyypin mukaan, yksityiskohtapaneeli versioketjulla ja sanadiffillä, alkuperälinkit, kopiointipainikkeet id:lle, MCP-kutsulle ja curl-komennolle, muokkaus (uusi versio), unohtaminen vahvistuksella, joukkounohtaminen ja JSON-vienti.
@@ -1265,15 +1220,15 @@ Käynnistyy automaattisesti portissa `3113`. Katseluohjelma lataa yhden tilannev
 open http://localhost:3113
 ```
 
-Katseluohjelman palvelin sitoutuu oletuksena osoitteeseen `127.0.0.1` ja liittää palvelimen salaisuuden välittäessään pyyntöjä REST-rajapinnalle, niin se ei vaadi asetuksia. REST-rajapinnan tarjoama `/agentmemory/viewer`-päätepiste noudattaa normaaleja bearer-tokenisääntöjä ja ohjaa selaimet, joilla ei ole tokenia, katseluohjelman porttiin. CSP-otsikot käyttävät vastauskohtaista script-noncea ja poistavat käytöstä inline-käsittelijäattribuutit (`script-src-attr 'none'`).
+Katseluohjelman palvelin sitoutuu oletuksena osoitteeseen `127.0.0.1` ja liittää palvelimen salaisuuden välittäessään pyyntöjä REST-rajapinnalle. Muuhun kuin loopback-osoitteeseen sidottaessa HTML-runko pysyy julkisena, mutta jokainen proxypyyntö vaatii bearer-tunnuksen; katseluohjelma pyytää sitä ja tallentaa sen istuntokohtaiseen tallennustilaan. Määritä eksplisiittiset host/origin-sallittujen listat ja TLS ennen katseluohjelman avaamista. REST-rajapinnan `/agentmemory/viewer`-päätepiste noudattaa normaaleja bearer-token-sääntöjä ja ohjaa selaimet ilman tokenia katseluohjelman porttiin. CSP-otsakkeet käyttävät vastauskohtaista script-noncea ja poistavat käytöstä inline-käsittelijäattribuutit (`script-src-attr 'none'`).
 
 ---
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii-konsoli" height="32" /></picture></h2>
 
-Katseluohjelma portissa `:3113` näyttää, mitä agenttisi **muisti**. [iii-konsoli](https://iii.dev/docs/console) näyttää, mitä agenttisi **teki**: joka muistioperaatio OpenTelemetry-jäljityksenä, joka KV-merkintä muokattavana, joka funktio kutsuttavana, joka stream napautettavana. Kaksi ikkunaa samaan muistiin: yksi tuoteksikin, yksi moottoriksikin muotoiltu.
+Katseluohjelma portissa `:3113` näyttää, mitä agenttisi **muisti**. [iii-konsoli](https://iii.dev/docs/console) näyttää, mitä agenttisi **teki**: joka muistioperaatio OpenTelemetry-jäljityksenä, joka KV-merkintä muokattavana, joka funktio kutsuttavana. Kaksi ikkunaa samaan muistiin: yksi tuoteksikin, yksi moottoriksikin muotoiltu.
 
-Katso `memory_smart_search`-kutsun laukeavan ja näe BM25-skannaus → upotushaku → RRF-fuusio → uudelleenluokittelu vesiputousnäkymänä. Muokkaa jumittunutta konsolidointiajastinta KV-selaimessa. Toista `PostToolUse`-hook muokatulla hyötykuormalla. Pinnaa WebSocket-stream ja katso havaintojen saapuvan live.
+Katso `memory_smart_search`-kutsun laukeavan ja näe BM25-skannaus → upotushaku → RRF-fuusio → uudelleenluokittelu vesiputousnäkymänä. Muokkaa jumittunutta konsolidointiajastinta KV-selaimessa. Toista `PostToolUse`-hook muokatulla hyötykuormalla.
 
 agentmemory toimittaa tämän ilmaiseksi, koska joka funktiokutsu ja triggeri laukeaa iii:n läpi; ei mitään mukautettua, ei mitään instrumentoitavaa.
 
@@ -1283,7 +1238,7 @@ agentmemory toimittaa tämän ilmaiseksi, koska joka funktiokutsu ja triggeri la
   <em>Workers-sivu: joka yhdistetty worker, mukaan lukien agentmemory itse, PID:llä, funktiomäärällä, ajonaikaisella ympäristöllä ja viimeisimmällä näkymisajalla.</em>
 </p>
 
-**Jo asennettu.** Konsoli toimitetaan kiinnitetyn `iii`-moottorin (0.22+) mukana; ei mitään erillistä asennettavaa. Ensimmäinen käynnistys lataa konsolin binäärin moottorin viereen.
+**Jo asennettu.** Konsoli toimitetaan kiinnitetyn `iii` 0.24.6 -moottorin mukana; mitään erillistä ei tarvitse asentaa. Ensimmäinen käynnistys lataa konsolin binäärin moottorin viereen.
 
 **Käynnistä agentmemoryn rinnalla:**
 
@@ -1291,15 +1246,12 @@ agentmemory toimittaa tämän ilmaiseksi, koska joka funktiokutsu ja triggeri la
 agentmemory console
 ```
 
-Tämä ajaa kiinnitetyn moottorin `iii console`-komennon porteja vastaan, jotka agentmemory ratkaisi (REST, streamit, silta), ja tarjoilee sen yhden portin katseluohjelman yläpuolella, oletuksena `http://localhost:3114`. `--console-port N` valitsee toisen portin; `--port` ja `--instance` valitsevat agentmemory-instanssin samalla tavalla kuin `stop`-komennolle; mikä tahansa muu lippu välitetään läpi, esimerkiksi `--enable-flow` kokeelliselle arkkitehtuurigraafi-sivulle.
+Tämä ajaa kiinnitetyn moottorin `iii console` -komennon agentmemoryn ratkaisemilla porteilla (REST ja workerien WebSocket) ja tarjoaa konsolin yhtä porttia katseluohjelman yläpuolella, oletuksena osoitteessa `http://localhost:3114`. `--console-port N` valitsee toisen portin; `--port` ja `--instance` valitsevat agentmemory-instanssin kuten `stop`-komennossa; muut liput välitetään sellaisinaan, esimerkiksi `--enable-flow` kokeellista arkkitehtuurikaaviosivua varten.
 
 Sama asia käsin, hyödyllinen kun `agentmemory` ei ole PATH:ssa:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **Mitä voit tehdä konsolista:**
@@ -1310,12 +1262,9 @@ Sama asia käsin, hyödyllinen kun `agentmemory` ei ole PATH:ssa:
 | **Functions** | Kutsu mitä tahansa agentmemoryn funktiota suoraan JSON-hyötykuormalla; kätevä testaamaan `memory.recall`, `memory.consolidate`, `graph.query` kytkemättä asiakasta. |
 | **Triggers** | Toista HTTP-, cron-, tapahtuma- ja tilatriggereitä: laukaise konsolidointi-cron käsin, yritä HTTP-reittiä uudelleen, lähetä tilamuutos. |
 | **States** | KV-selain täydellä CRUD:lla istuntoihin, muistipaikkoihin, elinkaariajastimiin ja upotusindeksiin; muokkaa arvoja paikan päällä. |
-| **Streams** | Live-WebSocket-monitori muistikirjoituksille, hook-tapahtumille ja havaintopäivityksille niiden virratessa iii-streamien läpi. |
-| **Queues** | Pysyvät jono-aiheet + dead-letter-hallinta. Toista tai hylkää epäonnistuneet upotus-/pakkaustehtävät. |
 | **Traces** | OpenTelemetry-vesiputous-/liekki-/palvelujaotellut näkymät. Suodata `trace_id`:llä nähdäksesi tarkalleen, mitkä funktiot, tietokantakutsut ja upotuspyynnöt yksi `memory.search` tuotti. |
 | **Logs** | Rakenteelliset OTEL-lokit suodatettuna ja korreloituna trace-/span-ID:ihin. |
 | **Config** | Ajonaikainen konfiguraatio: näe tarkalleen, millä workereilla, tarjoajilla ja porteilla moottorisi käy. |
-| **Flow** | (Valinnainen, `--enable-flow`) Interaktiivinen arkkitehtuurigraafi joka workerista, triggeristä ja streamista. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="iii-konsolin jäljitysvesiputousnäkymä, joka näyttää keston per span" width="720" />
@@ -1323,11 +1272,7 @@ Sama asia käsin, hyödyllinen kun `agentmemory` ei ole PATH:ssa:
   <em>Traces: vesiputous-/liekki-/palvelujaottelu joka muistioperaatiolle.</em>
 </p>
 
-**Jäljitykset ovat jo päällä:**
-
-`iii-config.yaml` toimitetaan `iii-observability`-worker käytössä (`exporter: memory`, `sampling_ratio: 0.1`, metriikat + lokit). Ei mitään lisäasetuksia tarvita; sillä hetkellä, kun agentmemory käynnistyy, joka muistioperaatio lähettää rakenteellisen lokin, jonka konsoli voi lukea, ja yksi kymmenestä niistä (`sampling_ratio: 0.1`) lähettää myös trace-spanin.
-
-Jos haluat viedä datan Jaegeriin/Honeycombiin/Grafana Tempoon sen sijaan, vaihda `exporter: memory` arvoon `exporter: otlp` ja aseta kerääjän päätepiste iii:n observability-dokumentaation mukaan.
+**Jäljitys ja lokit:** iii-konsolissa voi tarkastella ajonaikaisen ympäristön telemetriaa. Noudata viejän ja näytteenoton asetuksissa [iii:n havainnoitavuusdokumentaatiota](https://iii.dev/docs).
 
 > **Huomio:** konsolissa itsessään ei ole pakotettua autentikointia; pidä se sidottuna osoitteeseen `127.0.0.1` (oletus) ja älä koskaan paljasta sitä julkisesti.
 
@@ -1335,13 +1280,13 @@ Jos haluat viedä datan Jaegeriin/Honeycombiin/Grafana Tempoon sen sijaan, vaihd
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="iii:n voimalla" height="32" /></picture></h2>
 
-agentmemory on **jo käynnissä oleva [iii](https://iii.dev)-instanssi**. Kolme primitiiviä (worker, funktio, triggeri) muodostavat ajonaikaisen ympäristön; KV-tila, streamit ja OTEL-jäljitykset tulevat iii-state-, iii-stream- ja iii-observability-workereilta, jotka toimitetaan iii:n mukana. Et asentanut Postgresia, Redistä, Expressiä, pm2:ta tai Prometheusta, koska iii korvaa ne.
+agentmemory on worker [iii](https://iii.dev)-ajoympäristössä. Worker Compose hallitsee moottoria ja käynnistää agentmemoryn rekisterin `state`- ja `http`-workereiden kanssa. Katseluohjelman syöte on REST-päätepisteen kautta tarjottavaa SSE:tä.
 
-Se tarkoittaa, että yksi komento lisää laajentaa agentmemoryn kokonaan uudella kyvykkyydellä.
+Yksi komento siis lisää agentmemoryyn kokonaan uuden ominaisuuden.
 
 ### Laajenna agentmemorya lisäworkereilla
 
-Sisäänrakennetut workerit, joita agentmemory tarvitsee, ovat jo tiedostossa `iii-config.yaml` ja käynnistyvät sen mukana: `iii-state` (KV), `iii-queue` (pysyvät uudelleenyritykset tapahtumatilaajille), `iii-pubsub`, `iii-cron`, `iii-stream` ja `iii-observability` (OTEL-jäljitykset, metriikat ja lokit joka funktiolle). Kaikki muu [iii-workerrekisteristä](https://workers.iii.dev) kytkeytyy samaan moottoriin: kopioi `iii-config.yaml` tiedostoon `~/.agentmemory/iii-config.yaml` (CLI suosii tätä tiedostoa mukana tulevan sijaan ja renderöi siihen edelleen portit ja datapolut), lisää merkintä, asenna workerin ajonaikainen ympäristö kerran komennolla `~/.agentmemory/bin/iii update worker`, ja käynnistä agentmemory uudelleen.
+Ajoympäristö koostaa rekisterin `state`- (KV) ja `http`-workerit agentmemoryn rinnalle. Muita workereita [iii-rekisteristä](https://workers.iii.dev) voi lisätä Worker Compose -projektiin.
 
 ```yaml
 workers:
@@ -1351,29 +1296,25 @@ workers:
   - name: mcp               # extra MCP servers next to agentmemory's, same engine
 ```
 
-| Worker | Mitä saat agentmemoryn päälle |
+| Worker | Mitä saat agentmemoryn lisäksi |
 |---|---|
-| [`database`](https://workers.iii.dev/workers/database) | SQL-pohjainen tila-adapteri, kun kasvat ulos muistinvaraisista KV-oletuksista |
-| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall`:sta tullut koodi ajetaan kertakäyttöisessä VM:ssä, ei shellissäsi |
-| [`mcp`](https://workers.iii.dev/workers/mcp) | Pystytä lisää MCP-palvelimia agentmemoryn rinnalle, jaa sama moottori |
+| [`database`](https://workers.iii.dev/workers/database) | SQL-pohjainen tila-adapteri, kun muistinvaraiset KV-oletukset eivät enää riitä |
+| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall`-hausta saatu koodi suoritetaan kertakäyttöisessä VM:ssä, ei shellissäsi |
+| [`mcp`](https://workers.iii.dev/workers/mcp) | Käynnistä agentmemoryn rinnalle MCP-palvelimia, jotka jakavat saman moottorin |
 
-Moottorin 0.22.x-versiossa pidä `iii-`-etuliitteelliset nimet yllä olevilla sisäänrakennetuilla; etuliitteettömät `http`-, `state`-, `queue`-, `pubsub`- ja `cron`-merkinnät ovat itsenäisen rekisterin workerit, joihin agentmemory siirtyy 0.23-migraation mukana.
+CLI:n luoma Worker Compose -projekti kiinnittää rekisteripaketit `state@0.22.20` ja `http@0.22.7`.
 
-Täysi rekisteri: [workers.iii.dev](https://workers.iii.dev). Joka worker sillä sivulla muodostuu samoista primitiiveistä, joita agentmemory käyttää, ja agentmemory, joka sinulla on jo, on yksi niistä.
+Koko rekisteri: [workers.iii.dev](https://workers.iii.dev). Kaikki sen workerit kootaan samoista perusosista kuin agentmemory, ja jo käyttämäsi agentmemory on yksi niistä.
 
-### Moottorin asetukset ja sidontaosoite
+### CLI-ajoympäristö ja sidontaosoitteet
 
-`agentmemory start` lukee moottorin asetukset ensimmäisestä tiedostosta, joka on olemassa: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` nykyisessä hakemistossa, `~/.agentmemory/iii-config.yaml`, sitten mukana tuleva `iii-config.yaml`. Joka käynnistyksellä se renderöi kyseisen tiedoston (datapolut, portit, tilan taustaosa) tiedostoon `~/.agentmemory/data/iii-config.runtime.yaml` ja käynnistää moottorin renderöidyllä kopiolla, niin muokkaa lähdetiedostoa, ei renderöityä. Lähdetiedoston `host:`-arvot säilytetään kirjoitetussa muodossa.
+`agentmemory`-komennon (tai paketin ilman alikomentoa) suorittaminen käynnistää iii Worker Composen, jonka eristetty manifesti on valitussa datakansiossa. Käytössä ovat iii 0.24.6, `state@0.22.20` ja `http@0.22.7`. CLI:n paikalliset REST- ja katseluohjelmakuuntelijat sitoutuvat osoitteeseen `127.0.0.1`; moottorin WebSocket on sisäistä ajonaikaista liikennettä. Repositoriosta tehtävissä Docker-käyttöönotoissa käytetään erillistä tiedostoa [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml); katso [`deploy/README.md`](../deploy/README.md).
 
-Mukana tuleva `iii-config.yaml` sitoutuu tarkoituksella osoitteeseen `127.0.0.1`, ja tämä oletus pätee myös kontin sisällä. Kontissa käynnistetty CLI kuuntelee kontin loopbackia, niin julkaistut portit eivät tavoita mitään. Tarjoillaksesi konteriutuneen CLI:n julkaistujen porttien kautta, aseta `AGENTMEMORY_III_CONFIG` osoittamaan asetukseen, joka sitoutuu osoitteeseen `0.0.0.0`. Pakattu `iii-config.docker.yaml` on yksi tällainen: se sitoo `iii-http`:n, `iii-stream`:n ja moottorin portin osoitteeseen `0.0.0.0` ja tallentaa tilan polkuun `/data`, niin liitä kirjoitettava volyymi siihen. Pidä `AGENTMEMORY_SECRET` asetettuna, ja julkaise vain tarvitsemasi portit, osoitteessa `127.0.0.1` tai luotettavan proxyn takana.
+### Tallennustaustaosa: tiedosto (oletus) vai Redis
 
-Tämän repositorion `docker-compose.yml` ei kulje CLI:n asetushaun läpi: se liittää `iii-config.docker.yaml`:n pisteeseen `/app/config.yaml`, ja `iii-engine`-kontti käynnistyy lipulla `--config /app/config.yaml`. Yhden klikkauksen [käyttöönottomallipohjat](../deploy/) kirjoittavat omat `0.0.0.0`-asetuksensa niiden entrypointeihin.
+`state`-worker käyttää oletuksena tiedostopohjaista KV-varastoa, jota pidetään muistissa ja kirjoitetaan ajoittain levylle. Redis on käytettävissä, kun useat kirjoittajat jakavat ajoympäristön; se lisää verkkokierroksen eikä tee yhden worker-yhteyden käsittelystä rinnakkaista.
 
-### Tallennuksen taustaosa: file (oletus) vs. redis
-
-`iii-state` ja `iii-stream` käyttävät oletuksena iii-moottorin mukana tulevaa tiedostopohjaista KV-varastoa: yksi JSON-tiedosto per scope, pidettynä moottoriprosessin muistissa ja uudelleenkirjoitettuna levylle ajastimella. Se on oikea oletus yhden käyttäjän paikalliselle asennukselle; jaettu daemon, jossa on useita samanaikaisia kirjoittajia, saa oikeat avainkohtaiset kirjoitukset Redisiltä sen sijaan, verkkokierroksen hinnalla per operaatio (joka `state::*`-kutsu sarjallistuu edelleen yhdelle Redis-yhteydelle, niin tämä vaihtaa tiedostovaraston lukituksen soklaan, ei rinnakkaisuuteen).
-
-Aseta `AGENTMEMORY_STATE_BACKEND=redis` (plus `AGENTMEMORY_REDIS_URL`) vaihtaaksesi molemmat workerit iii-moottorin sisäänrakennettuun `redis`-adapteriin, joka tallentaa joka avaimen Redis-hash-kenttänä (`HSET`) sen sijaan, että uudelleenkirjoittaisi koko scopen jokaisella kirjoituksella:
+Aseta `AGENTMEMORY_STATE_BACKEND=redis` ja `AGENTMEMORY_REDIS_URL`, niin `state`-worker käyttää Redis-adapteria, joka tallentaa kunkin avaimen Redis-hashin kenttänä (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1381,27 +1322,27 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` on oletuksena `file`; sen asettamatta jättäminen pitää tämänpäiväisen käytöksen muuttumattomana, ja tunnistamaton arvo (mikä tahansa muu kuin `file` tai `redis`) on käynnistysvirhe, ei hiljainen varajärjestelmä. `/agentmemory/status` ja katseluohjelman Health-sivu (State store -rivi) ilmoittavat, mikä taustaosa on aktiivinen ja vastaako se, ei koskaan URL-osoitetta.
+`AGENTMEMORY_STATE_BACKEND`-asetuksen oletusarvo on `file`; sen asettamatta jättäminen säilyttää nykyisen toiminnan ennallaan, ja tunnistamaton arvo (mikä tahansa muu kuin `file` tai `redis`) on käynnistysvirhe, ei hiljainen varajärjestelmä. `/agentmemory/status` ja katseluohjelman Health-sivu (State store -rivi) ilmoittavat, mikä taustaosa on aktiivinen ja vastaako se, ei koskaan URL-osoitetta.
 
-**Vain pelkkä `redis://`.** Kiinnitetty moottori (0.22.1) rakentaa Redis-asiakkaansa ilman TLS-tukea, niin `rediss://`-URL (useimmat hallitut Redis-tarjoomat, kuten Upstash, Redis Cloud ja ElastiCache siirron aikaisella salauksella, ovat oletuksena vain-TLS) ei muodosta yhteyttä. Yhteys on salaamaton, niin Redis-salasana ja joka tallennettu muisto kulkevat langalla selkokielisenä: osoita paikalliseen Redisiin tai luotettavassa yksityisessä verkossa olevaan. Mille tahansa muulle Redisille, aja salattu tunneli (stunnel, SSH tai VPN) agentmemory-isännällä, niin pelkkä `redis://`-hyppy pysyy kyseisellä isännällä ja tunnelin ylävirran yhteys on salattu ja todennettu. Jos Redis-salasana sisältää heittomerkin, prosenttikoodaa se (`%27`); moottori laajentaa URL:n YAML-asetukseksi ennen jäsentämistä.
+**Vain tavallinen `redis://` on tuettu.** Kiinnitetty `state`-worker tukee vain tavallista `redis://`-osoitetta; vain TLS:ää tarjoavat `rediss://`-palvelut vaativat salatun tunnelin. Redis-yhteyttä ei ole salattu, joten käytä paikallista/yksityistä verkkoa tai tunnelia. Jos Redis-salasana sisältää yksinkertaisen lainausmerkin, koodaa se prosenttimerkintänä (`%27`); moottori laajentaa URL-osoitteen YAML-asetukseensa ennen jäsennystä.
 
-**Yksi Redis-palvelin per `--instance`.** Moottorin Redis-avainetuliitteet (`state:<scope>`, `stream:<name>:<group>`) on kiinnitetty, niin kaksi agentmemory-instanssia (`--instance 1`, `--instance 2`, ...) osoitettuna samaan tietokantaan ylikirjoittavat toistensa datan. Erillinen tietokantaindeksi (`redis://localhost:6379/1`) pitää tallennetun datan erillään, mutta moottori välittää live-katseluohjelman tapahtumat yhden Redis-pub/sub-kanavan (`stream::events`) yli, ja Redis-pub/sub ohittaa tietokantaindeksin, niin joka instanssin katseluohjelma näyttäisi edelleen toisen live-tapahtumat. Anna joka instanssille omansa Redis-palvelin (tai portti), kun ajat useampaa kuin yhtä.
+**Yksi Redis-tietokanta instanssia kohti.** Anna jokaiselle samanaikaiselle instanssille oma tietokanta tai Redis-palvelin, jotta tila pysyy erillään.
 
-**Mikä pysyy samana, ja mikä eroaa.** Joka agentmemory-ominaisuus toimii Redisillä: istunnot, havainnot, muistot (muista, korvaa, kehitä, unohda), haku ja indeksierät, opetukset, graafi, auditointiloki ja sen kuukausittaiset scopet, vienti ja tuonti, hallintapoistot, konsolidoinnin tila, katseluohjelman tilannevedos ja sen live-stream, ja terveysmonitori. Moottori tallentaa joka scopen yhtenä Redis-hashina (`HSET`/`HGET`/`HGETALL`) ja laukaisee samat tilatriggerit kuin tiedostovarasto. Kolme moottorieroa käsitellään agentmemoryn sisällä:
+**Mikä pysyy samana ja mikä muuttuu.** Kaikki agentmemoryn ominaisuudet toimivat Redisillä: istunnot, havainnot, muistot (remember, supersede, evolve, forget), haut ja indeksin osiot, opetukset, graafi, kuukausittaisine scopeineen varustettu auditointiloki, vienti ja tuonti, hallinnolliset poistot, yhdistämisen tila, katseluohjelman tilannevedos ja reaaliaikainen SSE-syöte sekä terveydentilan valvonta. `state`-worker tallentaa kunkin scopen Redis-hashina (`HSET`/`HGET`/`HGETALL`) ja käynnistää samat tilatriggerit kuin tiedostovarasto. agentmemory käsittelee kolme tallennuseroa:
 
 - Redis palauttaa scopen tietueet ei-kiinnitetyssä järjestyksessä. agentmemory lajittelee ne vanhimmasta alkaen (tietueen ID:ssä olevan luomisajan, sitten sen aikaleiman mukaan), niin listat, sivutus ja vientierät palautuvat samassa järjestyksessä kuin tiedostovarastolla.
-- Moottori soveltaa osittaisia päivityksiä Redisillä Lua-skriptissä, joka muuttaa tyhjät taulukot tyhjiksi objekteiksi. agentmemory soveltaa näitä päivityksiä itse (lue, muuta, kirjoita avainkohtaisen lukon alla) Redisillä, niin kentät kuten `tags: []` pysyvät taulukkoina.
+- Moottori soveltaa osittaisia päivityksiä Redisissä Lua-skriptillä, joka muuttaa tyhjät taulukot tyhjiksi objekteiksi. agentmemory soveltaa näitä päivityksiä itse (lue, muuta, kirjoita avainkohtaisen lukon alla) Redisillä, niin kentät kuten `tags: []` pysyvät taulukkoina.
 - Vanhentunut auditointilokitarkistus lukee vanhan scopen Redisistä sen sijaan, että etsisi tiedostovaraston tiedostoa levyltä.
 
-Yksi ero vaatii sinulta toimia: **Redis-uudelleenkäynnistyksen jälkeen moottori lakkaa välittämästä live-tapahtumia** katseluohjelmalle, kunnes agentmemory käynnistyy uudelleen. Data tallennetaan ja luetaan yhä normaalisti. Terveysmonitori lähettää testitapahtuman Redisin läpi 30 sekunnin välein; kun se ei palaa, `/agentmemory/status` ja katseluohjelman Health-sivu näyttävät "Live updates are not reaching the viewer" korjauksen kanssa: käynnistä agentmemory uudelleen. Jos Redis on alhaalla, tilaraportti näyttää "The state store is not answering" ja kuinka tarkistaa se (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Erittäin suuren scopen listaaminen lukee koko hashin yhdellä `HGETALL`:lla, samalla kustannuksella kuin tiedostovaraston pitäminen muistissa.
+Katseluohjelman reaaliaikaiset tapahtumat välitetään SSE:nä REST-workerissä käynnissä olevasta agentmemory-prosessista; ne eivät käytä Redis pub/subia tai säännöllistä Redis-virran koetusta. Redis-yhteyden tila vaikuttaa tilatietojen lukuun ja kirjoitukseen, ei katseluohjelman tiedonsiirtoon. Jos Redis ei ole käytettävissä, tilaraportti näyttää "The state store is not answering" ja kertoo, miten tarkistaa tilanne (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Erittäin suuren scopen luettelointi lukee koko hashin yhdellä `HGETALL`-komennolla, kuten tiedostovarasto pitää sen muistissa.
 
-**Suositellut Redis-asetukset.** Oletusarvoinen `save 3600 1 300 100 60 10000` -tilannevedospolitiikka voi menettää minuutteja kirjoituksia kaatumisessa, pahemmin kuin tiedostovaraston 5s flush-ikkuna. Aseta `appendonly yes` kaikelle, mistä välittäisit, jos menettäisit sen. Aseta `maxmemory-policy noeviction`; `allkeys-lru` tai vastaava pudottaa hiljaa muistoja, kun Redis osuu muistirajaansa.
+**Suositellut Redis-asetukset.** Oletusarvoinen `save 3600 1 300 100 60 10000` -tilannevedoskäytäntö voi menettää minuutteja kirjoituksia kaatumisessa. Aseta `appendonly yes` tiedoille, joiden menettämisestä olisi haittaa. Aseta `maxmemory-policy noeviction`; `allkeys-lru` tai vastaava pudottaa muistoja hiljaisesti, kun Redis saavuttaa muistirajansa.
 
-Natiivi (ei-Docker) käynnistys, ja joka yhden klikkauksen [käyttöönottomallipohja](../deploy/) (ne ylikirjoittavat mukana tulevan `iii-config.yaml`:n ja käynnistyvät natiivisti), lukevat `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` ja renderöivät ne käynnistettyyn `iii-config`:iin. URL itsessään ei koskaan kirjoiteta tähän renderöityyn tiedostoon, vain `${AGENTMEMORY_REDIS_URL}`-viittaus, jonka moottoriprosessi laajentaa omasta ympäristöstään käynnistyshetkellä. Vain tämän repositorion oma Docker Compose -reitti (`AGENTMEMORY_USE_DOCKER=1`, tai sillä tavalla aiemmin käynnistetyn moottorin jatkaminen) liittää `iii-config.docker.yaml`:n kirjoitussuojattuna ja ei koskaan renderöi; `agentmemory start` varoittaa, kun se havaitsee tämän yhdistelmän. Vaihda tämä tiedosto käsin, seuraten samaa `name: redis` / `config: redis_url: ...` -muotoa, joka näkyy [iii-state](https://workers.iii.dev/workers/iii-state)- ja [iii-stream](https://workers.iii.dev/workers/iii-stream)-workereiden dokumentaatiossa, ja osoita `redis_url` kontista tavoitettavaan Redisiin. `docker-compose.yml` välittää `AGENTMEMORY_REDIS_URL`:n moottorikonttiin, niin `redis_url: '${AGENTMEMORY_REDIS_URL}'` toimii siellä ja pitää URL:n pois liitetystä tiedostosta.
+CLI:n luoma Worker Compose -projekti välittää nämä muuttujat `state`-workerille. Dockerilla itse ylläpidettävästä käyttöönotosta katso [`deploy/README.md`](../deploy/README.md) ja [state-workerin dokumentaatio](https://workers.iii.dev/workers/state).
 
-Renderöity asetus pitää URL:n pois tiedostosta `~/.agentmemory/data/iii-config.runtime.yaml`, mutta moottorin oma konfiguraatioworker tallentaa yhä *laajennetun* arvon pysyvästi tiedostoihin `~/.agentmemory/config/iii-state.yaml` ja `iii-stream.yaml`, kun se käynnistyy (iii-moottorin `${VAR}`-laajennus tapahtuu ennen kuin tämä worker tallentaa siemenensä, ja se tallentaa ratkaistun arvon, ei viittausta). Kohtele tätä hakemistoa tunnuksena: `chmod 700 ~/.agentmemory` millä tahansa jaetulla isännällä, ja suosi Redis-ACL-käyttäjää, joka on rajattu siihen, mitä agentmemory tarvitsee, tietokannan admin-tunnusten sijaan.
+Käsittele pysyviä worker-asetuksia arkaluonteisina, jos ne sisältävät Redis-URL-osoitteen, sillä se voi sisältää tunnistetietoja. Oleta, että valittu datakansio sisältää tunnistetietoja, ja rajoita sen käyttöoikeuksia (esimerkiksi `chmod 700 <data-dir>` jaetussa isäntäjärjestelmässä). Suosi Redis ACL -käyttäjää, jolla on rajatut oikeudet agentmemoryn tarpeisiin, tietokannan järjestelmänvalvojan tunnusten sijasta.
 
-**Migraatio ei ole automaattinen.** `AGENTMEMORY_STATE_BACKEND`:n vaihtaminen aloittaa tyhjästä varastosta molemmilla puolilla; mikään ei kopioi olemassa olevaa dataa tiedostosta Redisiin tai takaisin. Vie data taustaosasta, jota jätät, ja tuo siihen, jota siirryt käyttämään. Tämä toimii identtisesti bashissa ja zshissä (mukaan lukien `bash -u`). Taulukko kuten `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` ei toimi: zsh pitää otsikon yhtenä virheellisenä sanana, kun bash jakaa sen kahdeksi, niin molemmat pyynnöt saavat 401-vastauksen aina kun `AGENTMEMORY_SECRET` on asetettu:
+**Migraatio ei ole automaattinen.** `AGENTMEMORY_STATE_BACKEND`:n vaihtaminen aloittaa tyhjästä varastosta molemmilla puolilla; mikään ei kopioi olemassa olevaa dataa tiedostosta Redisiin tai takaisin. Vie data taustaosasta, jota jätät, ja tuo siihen, jota siirryt käyttämään. Tämä toimii samalla tavalla bashissa ja zshissä (myös komennolla `bash -u`). Taulukko kuten `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` ei toimi: zsh pitää otsikon yhtenä virheellisenä sanana, kun bash jakaa sen kahdeksi, niin molemmat pyynnöt saavat 401-vastauksen aina kun `AGENTMEMORY_SECRET` on asetettu:
 
 ```bash
 # 0. Use the generated secret when none is exported:
@@ -1440,13 +1381,13 @@ fi
 | Perinteinen pino | agentmemory käyttää |
 |---|---|
 | Express.js / Fastify | iii HTTP-triggerit |
-| SQLite / Postgres + pgvector | iii KV-tila + muistinvarainen vektori-indeksi |
-| SSE / Socket.io | iii-streamit (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | REST-päätepiste `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | iii-moottorin workerien valvonta |
 | Prometheus / Grafana | iii OTEL + terveysmonitori |
 | Mukautetut plugin-järjestelmät | `iii worker add <name>` |
 
-**242 lähdetiedostoa · ~55,000 LOC · 3,400+ testiä · 324 funktiota · 67 KV-scopea**, kaikki kolmen primitiivin päällä. Ei `agentmemory plugin install` -komentoa. Plugin-järjestelmä on iii itse.
+**246 lähdetiedostoa · noin 56 000 LOC · 3,600+ testiä · 322 funktiota · 65 KV-scopea**, kaikki kolmen primitiivin päällä. Ei `agentmemory plugin install` -komentoa. Plugin-järjestelmä on iii itse.
 
 ---
 
@@ -1563,39 +1504,23 @@ Kun `AGENT_ID` on asettamatta, muisti pysyy rajaamattomana (vanha käytös, ei t
 
 ### Portit
 
-agentmemory + iii-engine sitovat neljä porttia oletuksena. Jos uudelleenkäynnistys epäonnistuu virheellä `port in use`, tämä taulukko kertoo, mitä prosessia etsiä.
+Paikallisessa ajoympäristössä on kolme kuuntelijaa. iii-moottorin WebSocket-yhteyttä käytetään workerien sisäiseen rekisteröintiin, eikä sitä saa paljastaa julkiseen verkkoon.
 
-| Portti | Prosessi | Tarkoitus | Env-ylikirjoitus |
+| Portti | Prosessi | Tarkoitus | Ympäristömuuttujan ohitus |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST-rajapinta + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Sisäinen streams-worker (agentmemoryn + katseluohjelman kuluttama) | `III_STREAM_PORT` (suositeltu) tai vanha `III_STREAMS_PORT` |
-| `3113` | agentmemory | Reaaliaikainen katseluohjelma (`http://localhost:3113`) | `III_VIEWER_PORT` tai `AGENTMEMORY_VIEWER_URL` ilmoitetulle URL-osoitteelle |
-| `49134` | iii-engine | WebSocket; workerit rekisteröityvät tähän, OTel-telemetria kulkee sen yli | `III_ENGINE_PORT` tai `III_ENGINE_URL` |
+| `3111` | rekisterin `http`-worker | REST-rajapinta, MCP HTTP, terveystiedot ja todennettu katseluohjelman SSE osoitteessa `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | Katseluohjelman käyttöliittymä ja välityspalvelin | `III_VIEWER_PORT` |
+| `49134` | iii-moottori | Workerien sisäinen WebSocket | `III_ENGINE_PORT` tai `III_ENGINE_URL` |
 
-`--port <N>` muuttaa REST-ankkurin ja johtaa streamit `N+1`, katseluohjelman `N+2` ja moottorin WebSocketin `N+46023`, vain siltä osin kuin vastaava eksplisiittinen portti tai URL yllä on asettamatta. Se ei luo eristettyä elinkaarinimiavaruutta. Käytä `--instance 1` toiselle daemonille; se käyttää ankkuria 3211, oletuksena `3211/3212/3213/49234`, ja saa erillisen `instance-1`-data- ja elinkaarihakemiston. Instanssit 1–50 noudattavat samaa mallia.
+`--port <N>` asettaa REST-portin ja johtaa katseluohjelman portiksi `N+2` sekä moottorin WebSocket-portiksi `N+46023`, jos niitä ei ole asetettu erikseen. Käytä eristettyyn ajoympäristöön valitsinta `--instance N`.
 
-Kiinnitetty moottori käynnistyy lipulla `--no-update-check` (ei päivitys- tai turvallisuusneuvontahakuja GitHubista käynnistyksessä) ja iii:n anonyymi käyttötelemetria pois päältä: agentmemory asettaa `III_TELEMETRY_ENABLED=false` moottorille, jonka se käynnistää, ellet itse vie muuttujaa, ja mukana tuleva compose-tiedosto tekee samoin.
-
-Vanhentuneiden prosessien siivous, kun portit pysyvät sidottuina kaatuneen ajon jälkeen:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` kerää siististi sekä workerin että moottorin pidfile:n normaalissa natiivissa sammutuksessa. Docker-tilassa se huuhtelee natiivin workerin, pysäyttää tarkan validoidun moottorikontin, ja säilyttää molemmat, kontin ja sen `/data`-liitoksen, häviöttömälle uudelleenkäynnistykselle. Seuraava käynnistys validoi ja jatkaa samaa konttia. Docker-pohjainen poisto vaatii `agentmemory remove --keep-data`-komennon: se poistaa jaetut agentmemory-hallinnoimat tiedostot säilyttäen validoidun kontin, sen datan liitoksen ja elinkaaritietueen, jota tarvitaan niiden palauttamiseen. Tuhoisa Docker-datan poisto on tarkoituksella jätetty operaattorille varmuuskopion jälkeen. CLI myös kieltäytyy ottamasta haltuun tai signaalittamasta Docker- tai VM-porttien haltijoita (Docker-backend, vpnkit, colima) natiivina moottorina, ellei `--force`-lippua anneta. Yllä oleva manuaalinen siivous on vain kaatumisen jälkeiselle tapaukselle, jossa kumpaakaan pidfileä ei jäänyt.
+Itse ylläpidettävä käyttöönotto julkaisee REST-rajapinnan ja katseluohjelman oletuksena osoitteissa `127.0.0.1:3111` ja `127.0.0.1:3113`; isäntäportteja voi muuttaa asetuksilla `AGENTMEMORY_REST_PORT` ja `AGENTMEMORY_VIEWER_PORT`. REST CORS sallii oletuksena `http://localhost`- ja `http://127.0.0.1`-originin kummassakin määritetyssä portissa. Määritä Dockerissa `REST_ALLOWED_ORIGINS` pilkuilla erotelluksi luetteloksi täsmällisiä originitunnuksia, jos haluat sallia muita luotettuja selainorigineja.
 
 ### Asetustiedosto
 
-Laita agentmemoryn ajonaikaiset asetukset tiedostoon `~/.agentmemory/.env` sen sijaan, että vietäisit muuttujia joka shellissä. Jos katseluohjelma näyttää asetusvihjeen kuten `export ANTHROPIC_API_KEY=...`, kopioi se tähän tiedostoon muodossa `ANTHROPIC_API_KEY=...` ilman `export`-etuliitettä, ja käynnistä sitten agentmemory uudelleen.
+Laita agentmemoryn ajonaikaiset asetukset tiedostoon `~/.agentmemory/.env` sen sijaan, että veisit muuttujia joka shellissä. Jos katseluohjelma näyttää asetusvihjeen, kuten `export ANTHROPIC_API_KEY=...`, kopioi se tähän tiedostoon muodossa `ANTHROPIC_API_KEY=...` ilman `export`-etuliitettä ja käynnistä agentmemory uudelleen. Aseta `AGENTMEMORY_ENV_FILE`, jos haluat käyttää muuta ympäristötiedoston polkua.
 
-Prosessin ympäristömuuttujat toimivat yhä ja voittavat tiedoston arvot.
+Prosessin ympäristömuuttujat toimivat edelleen ja ohittavat tiedoston arvot. CLI:n luoma Worker Compose -projekti välittää `AGENTMEMORY_STATE_BACKEND`- ja `AGENTMEMORY_REDIS_URL`-asetukset `state`-workerille.
 
 Windowsilla sama tiedosto sijaitsee polussa `%USERPROFILE%\.agentmemory\.env`:
 
@@ -1749,7 +1674,7 @@ Luo `~/.agentmemory/.env`:
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
                                            # A hard kill loses at most this window.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
@@ -1789,12 +1714,12 @@ Luo `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpointia portissa `3111`. REST-rajapinta sitoutuu oletuksena osoitteeseen `127.0.0.1`. Suojatut endpointit vaativat `Authorization: Bearer <secret>`, ja mesh-synkronointiendpointit vaativat nimenomaisesti asetetun `AGENTMEMORY_SECRET`-arvon molemmilla vertaisilla.
+144 endpointia portissa `3111`. REST-rajapinta sitoutuu oletuksena osoitteeseen `127.0.0.1`. Suojatut endpointit vaativat `Authorization: Bearer <secret>`, ja mesh-synkronointiendpointit vaativat nimenomaisesti asetetun `AGENTMEMORY_SECRET`-arvon molemmilla vertaisilla.
 
-**Autentikointi on oletuksena päällä.** Kun `AGENTMEMORY_SECRET` ei ole asetettu (shellissä tai tiedostossa `~/.agentmemory/.env`), palvelin generoi satunnaisen salaisuuden ensimmäisellä käynnistyksellä ja tallentaa sen polkuun `~/.agentmemory/secret` oikeuksilla `0600`. Joka mukana tuleva asiakas lukee sen sieltä puhuessaan paikalliselle palvelimelle: CLI, katseluohjelma, hookit kansiossa `plugin/scripts`, MCP-palvelin ja `@agentmemory/mcp`-shim, `agentmemory connect`-komennon kirjoittamat asetukset, ja mukana tulevat OpenCode-, Pi-, OpenClaw-, Hermes- ja tiedostojärjestelmän tarkkailijaintegraatiot. Tallennettu salaisuus lähetetään vain loopback-URL-osoitteisiin (`localhost`, `127.0.0.0/8`, `::1`). Nimenomainen `AGENTMEMORY_SECRET` voittaa aina, ja etäasiakkaat tarvitsevat sen yhä asetettuna. Docker ja `deploy/`-entrypointit generoivat ja vievät jo omansa. Kutsuaksesi rajapintaa käsin:
+**Autentikointi on oletuksena päällä.** Kun `AGENTMEMORY_SECRET`-muuttujaa ei ole asetettu (shellissä tai tiedostossa `~/.agentmemory/.env`), CLI luo ensimmäisellä käynnistyksellä satunnaisen salaisuuden ja tallentaa sen `secret`-nimisenä tiedostona valittuun datakansioon oikeuksin `0600` (alustakohtainen oletuskansio on kuvattu yllä). Kaikki mukana toimitetut asiakkaat lukevat salaisuuden sieltä käyttäessään paikallista palvelinta: CLI, katseluohjelma, `plugin/scripts`-hakemiston hookit, MCP-palvelin ja `@agentmemory/mcp`-shim, `agentmemory connect` -komennon luomat asetukset sekä mukana toimitetut OpenCode-, Pi-, OpenClaw-, Hermes- ja filesystem-watcher-integraatiot. Tallennettu salaisuus lähetetään vain loopback-osoitteisiin (`localhost`, `127.0.0.0/8`, `::1`). Nimenomainen `AGENTMEMORY_SECRET` voittaa aina, ja etäasiakkaiden on asetettava salaisuus ympäristöönsä. Repositorion Docker-itseylläpitokäyttöönotot ja `deploy/`-entrypointit luovat ja vievät oman salaisuutensa. Rajapinnan manuaalinen kutsu:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **Kirjoitusten pyyntösäännöt.** `POST`-, `PUT`-, `PATCH`- ja `DELETE`-pyyntöjen REST-rajapinnalle ja katseluohjelmalle on lähetettävä `Content-Type: application/json` (`charset`-parametri on OK) aina, kun niillä on runko, ja `Origin`-otsikon, kun se on läsnä, on oltava loopback-alkuperä määritetylle REST- tai katseluohjelmaportille tai listattu `VIEWER_ALLOWED_ORIGINS`-muuttujassa (pilkulla eroteltu, esim. `https://memory.example.com`). Asiakkaat, jotka eivät lähetä `Origin`-otsikkoa (CLI, hookit, MCP, curl, palvelin-palvelin-liikenne), eivät kärsi tästä. Katseluohjelma hyväksyy myös oman alkuperänsä.
@@ -1874,7 +1799,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Edellytykset:** Node.js >= 20 npm/npx:llä; [iii-engine](https://iii.dev/docs) v0.22.1 tai Docker. macOS/Linux-automaattinen moottorin asennus vaatii myös `curl`:n, POSIX-yhteensopivan `sh`:n ja `tar`:n; natiivi Windows käyttää manuaalista kiinnitettyä `iii.exe`:tä, WSL2:ta tai Docker Desktopia.
+**Edellytykset:** Node.js >= 20 npm/npx:llä; iii 0.24.6. macOS/Linux-automaattinen moottorin asennus vaatii myös `curl`:n, POSIX-yhteensopivan `sh`:n ja `tar`:n; natiivi Windows käyttää käsin asennettua kiinnitettyä `iii.exe`-tiedostoa tai WSL2:ta.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Lisenssi" height="32" /></picture></h2>
 

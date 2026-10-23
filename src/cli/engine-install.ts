@@ -11,14 +11,14 @@ export const III_INSTALL_SPAWN_TIMEOUT_MS =
 type ChecksumTable = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
 export const III_RELEASE_SHA256: ChecksumTable = {
-  "0.22.1": {
-    "iii-aarch64-apple-darwin.tar.gz": "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4",
-    "iii-x86_64-apple-darwin.tar.gz": "6d33940db2d3ad6a9aef9837aa5b89bf5c5e4acd0679e8178fec258af229d7e1",
-    "iii-x86_64-unknown-linux-gnu.tar.gz": "34d4bd2ec1873e6114bb836be7db9cb3f410d0d63353d240917f0bc9c30df13b",
-    "iii-aarch64-unknown-linux-gnu.tar.gz": "87efc60210c1580ef2e11b13c679a4dad91917a9d80f737c5ba7e3475b3ca413",
-    "iii-armv7-unknown-linux-gnueabihf.tar.gz": "af5dfc45149678c647e5adaca55c055428eebfa73d65884b052c30c98abcfd19",
-    "iii-x86_64-pc-windows-msvc.zip": "d862bf7cf1e864f3290c8a6fc17c308c6ecac097cb2666e4a739efc0040aae96",
-    "iii-aarch64-pc-windows-msvc.zip": "4777a48cee3fc1a742daee929e3d943df09e4ddd3357d27a33d31c9dc9e520ac",
+  "0.24.6": {
+    "iii-aarch64-apple-darwin.tar.gz": "1d50407ff5f0be161e6fc93b4c8c376bd92489ace7b288a62aeb60466d770e91",
+    "iii-x86_64-apple-darwin.tar.gz": "920d1c2f9f5cfa29586c57596b0acf2fec427427a2855e388279b336be56117c",
+    "iii-x86_64-unknown-linux-gnu.tar.gz": "ed6862004c85d75ecc09fd326578d6f6c7e8b4d8b639470dc126821fc070dd76",
+    "iii-aarch64-unknown-linux-gnu.tar.gz": "77016727b951e5d0f985fbe77a6c878454c30480cc8051e77c478a8574287947",
+    "iii-armv7-unknown-linux-gnueabihf.tar.gz": "7d5b8fe1733209914585d087c182accaaa88deceadfe42cac161f0f4160c5081",
+    "iii-x86_64-pc-windows-msvc.zip": "ba121e7c11134614f4e3d69cebaefd945ed0c9b4d71518a543c7d76bc06f0784",
+    "iii-aarch64-pc-windows-msvc.zip": "8f3c6b75ffc281146d964ce57b38f853c68355394bd8221380a93127b6b0985f",
   },
 };
 

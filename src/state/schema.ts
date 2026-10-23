@@ -70,11 +70,6 @@ export const KV = {
   capturePrompts: "mem:capture:prompts",
 } as const;
 
-export const STREAM = {
-  name: "mem-live",
-  viewerGroup: "viewer",
-} as const;
-
 export function generateId(prefix: string): string {
   const ts = Date.now().toString(36);
   const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 12);

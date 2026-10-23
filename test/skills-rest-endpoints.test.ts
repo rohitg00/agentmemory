@@ -12,6 +12,15 @@ describe("generated REST endpoint methods", () => {
     ]);
   });
 
+  it("includes the viewer SSE route registered outside api.ts", () => {
+    const api = readFileSync(new URL("../src/triggers/api.ts", import.meta.url), "utf8");
+    const viewerSse = readFileSync(new URL("../src/triggers/viewer-sse.ts", import.meta.url), "utf8");
+    expect(collectRestEndpoints(api, viewerSse)).toContainEqual({
+      path: "/agentmemory/viewer/events",
+      method: "GET",
+    });
+  });
+
   it("handles either property order and ignores neighboring methods, comments and strings", () => {
     const source = `
       // api_path: "/comment", http_method: "DELETE"

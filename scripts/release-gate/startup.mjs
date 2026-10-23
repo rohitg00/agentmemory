@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { parse as parseYaml } from "yaml";
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -10,7 +11,7 @@ import { dirname, join, resolve, delimiter } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const options = { tarball: null, out: null, only: null, keep: false, delayMs: 48_000, skipBuild: false };
+const options = { tarball: null, out: null, only: null, keep: false, delayMs: 48_000, skipBuild: false, workerBinDir: process.env.AGENTMEMORY_WORKER_BIN_DIR ?? null };
 for (let i = 2; i < process.argv.length; i++) {
   const arg = process.argv[i];
   if (arg === "--tarball") options.tarball = resolve(process.argv[++i]);
@@ -19,8 +20,10 @@ for (let i = 2; i < process.argv.length; i++) {
   else if (arg === "--delay-ms") options.delayMs = Number(process.argv[++i]);
   else if (arg === "--keep") options.keep = true;
   else if (arg === "--skip-build") options.skipBuild = true;
+  else if (arg === "--worker-bin-dir") options.workerBinDir = resolve(process.argv[++i]);
+  else if (arg === "--worker-bin-dir") options.workerBinDir = resolve(process.argv[++i]);
   else if (arg === "--help") {
-    console.log("Usage: node scripts/release-gate/startup.mjs [--tarball file.tgz] [--out dir] [--only names] [--delay-ms 48000] [--skip-build] [--keep]");
+    console.log("Usage: node scripts/release-gate/startup.mjs [--tarball file.tgz] [--out dir] [--only names] [--delay-ms 48000] [--skip-build] [--worker-bin-dir directory] [--keep]");
     process.exit(0);
   } else throw new Error(`Unknown argument ${arg}`);
 }
@@ -44,7 +47,7 @@ const log = (message) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
-function packageDigest() {
+function packageFiles() {
   const files = [];
   const walk = (dir, relative = "") => { for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const name = relative ? `${relative}/${entry.name}` : entry.name;
@@ -52,8 +55,9 @@ function packageDigest() {
     else if (entry.isFile()) files.push([name, sha(join(dir, entry.name))]);
   } };
   walk(pkg); files.sort(([a], [b]) => a.localeCompare(b));
-  return createHash("sha256").update(JSON.stringify(files)).digest("hex");
+  return files;
 }
+function packageDigest() { return createHash("sha256").update(JSON.stringify(packageFiles())).digest("hex"); }
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 function kill(pid, signal = "SIGKILL") {
   if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) return;
@@ -108,7 +112,7 @@ async function free(port) {
 async function portBlock() {
   for (let i = 0; i < 200; i++) {
     const port = 12000 + Math.floor(Math.random() * 7000);
-    if ((await Promise.all([0, 1, 2, 3, 6353, 46023].map((d) => free(port + d)))).every(Boolean)) return port;
+    if ((await Promise.all([0, 1, 2, 3, 4, 6353, 46023].map((d) => free(port + d)))).every(Boolean)) return port;
   }
   throw new Error("No free port block");
 }
@@ -117,9 +121,10 @@ let tarball;
 let artifactSha;
 let cliSha;
 let pkgSha;
+let pkgFiles;
 let engine;
 function baseEnv(home) {
-  return { HOME: home, PATH: [join(prefix, "node_modules/.bin"), nodeDir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(delimiter), TMPDIR: tmpdir(), CI: "1", NO_COLOR: "1", LANG: "C.UTF-8", EMBEDDING_PROVIDER: "none", LLM_PROVIDER: "none", III_TELEMETRY_ENABLED: "false" };
+  return { HOME: home, PATH: [join(prefix, "node_modules/.bin"), nodeDir, "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(delimiter), TMPDIR: tmpdir(), CI: "1", NO_COLOR: "1", LANG: "C.UTF-8", EMBEDDING_PROVIDER: "none", LLM_PROVIDER: "none", III_TELEMETRY_ENABLED: "false", OTEL_ENABLED: "false", RUST_LOG: "error" };
 }
 async function install() {
   tarball = options.tarball;
@@ -141,15 +146,15 @@ async function install() {
   assert(existsSync(engine), `Pinned engine missing: ${engine}. Run the standard release gate once, or set AGENTMEMORY_GATE_ENGINE.`);
   const version = await command(engine, ["--version"]);
   assert(version.includes(installed.dependencies["iii-sdk"]), `Engine version mismatch: ${version}`);
-  cliSha = sha(cli); pkgSha = packageDigest();
+  cliSha = sha(cli); pkgFiles = packageFiles(); pkgSha = createHash("sha256").update(JSON.stringify(pkgFiles)).digest("hex");
   const cliVersion = await command(process.execPath, [cli, "--version"], baseEnv(installHome));
   assert.equal(cliVersion.trim(), installed.version);
 }
 class Instance {
   constructor(name) {
-    this.name = name; this.dir = join(root, name); this.home = join(this.dir, "home"); this.data = join(this.dir, "data"); this.runtime = join(this.home, ".agentmemory");
+    this.name = name; this.dir = join(root, name); this.home = join(this.dir, "home"); this.data = join(this.dir, "data"); this.runtime = join(this.home, ".agentmemory"); this.configPath = null; this.envPath = join(this.runtime, ".env");
     for (const dir of [this.home, this.data, this.runtime]) mkdirSync(dir, { recursive: true });
-    this.logFile = join(out, `${name}.log`); this.envExtra = {}; this.handles = []; this.ownedPids = new Set(); this.dockerProject = null;
+    this.logFile = join(out, `${name}.log`); this.envExtra = {}; this.handles = []; this.ownedPids = new Set();
     instances.add(this);
   }
   async init() {
@@ -157,31 +162,118 @@ class Instance {
     const binDir = join(this.runtime, "bin"); mkdirSync(binDir, { recursive: true }); copyFileSync(engine, join(binDir, "iii")); chmodSync(join(binDir, "iii"), 0o755);
     return this;
   }
-  env(extra = {}) { return { ...baseEnv(this.home), AGENTMEMORY_DATA_DIR: this.data, AGENTMEMORY_RUNTIME_DIR: this.runtime, III_REST_PORT: String(this.port), III_STREAM_PORT: String(this.port + 1), III_VIEWER_PORT: String(this.port + 2), III_ENGINE_PORT: String(this.port + 46023), AGENTMEMORY_METRICS_PORT: String(this.port + 6353), ...this.envExtra, ...extra }; }
+  env(extra = {}) { return { ...baseEnv(this.home), AGENTMEMORY_DATA_DIR: this.data, AGENTMEMORY_RUNTIME_DIR: this.runtime, III_REST_PORT: String(this.port), III_VIEWER_PORT: String(this.port + 2), III_ENGINE_PORT: String(this.port + 46023), AGENTMEMORY_METRICS_PORT: String(this.port + 6353), ...(options.workerBinDir ? { AGENTMEMORY_WORKER_BIN_DIR: options.workerBinDir } : {}), ...this.envExtra, ...extra }; }
   get url() { return `http://127.0.0.1:${this.port}`; }
   pid(name) { try { return Number(readFileSync(join(this.runtime, `${name}.pid`), "utf8").trim()); } catch { return null; } }
-  config({ delayMs = 0, earlyPid = false, worker = true, relative = false } = {}) {
-    let raw = readFileSync(join(pkg, "iii-config.yaml"), "utf8").split("  - name: iii-exec")[0];
-    raw = raw.replaceAll("3111", String(this.port)).replaceAll("3112", String(this.port + 1)).replaceAll("3113", String(this.port + 2)).replaceAll("./data/", `${this.data}/`);
-    raw += `  - name: iii-worker-manager\n    config:\n      port: ${this.port + 46023}\n      host: 127.0.0.1\n`;
-    if (worker) {
-      const wrapper = join(this.dir, relative ? "dist/index.mjs" : "delayed-worker.mjs");
-      mkdirSync(dirname(wrapper), { recursive: true });
-      writeFileSync(wrapper, `import { appendFileSync, writeFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(join(this.dir, "worker-starts.jsonl"))}, JSON.stringify({pid:process.pid,at:Date.now()})+'\\n');\n${earlyPid ? `writeFileSync(${JSON.stringify(join(this.runtime, "worker.pid"))}, String(process.pid));` : ""}\nawait new Promise(r=>setTimeout(r,${delayMs}));\nawait import(${JSON.stringify(pathToFileURL(join(pkg, "dist/index.mjs")).href)});\n`);
-      raw += `  - name: iii-exec\n    config:\n      exec:\n        - ${relative ? "node dist/index.mjs" : `${process.execPath} ${wrapper}`}\n`;
+  config({ delayMs = 0, earlyPid = false, worker = true, workerDataDir = this.data, httpPort = this.port } = {}) {
+    const namespace = `agentmemory-${this.port}`;
+    const enginePort = this.port + 46023;
+    const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
+    const localWorkers = options.workerBinDir;
+    const lines = [
+      `namespace: ${namespace}`,
+      "startup_timeout: 60s",
+      "stop_timeout: 20s",
+      "required_default: true",
+      "engine:",
+      `  url: ws://127.0.0.1:${enginePort}`,
+      "  workers:",
+      "    configuration:",
+      "      adapter:",
+      "        name: fs",
+      "        config:",
+      `          directory: ${quote(join(this.data, "compose-config"))}`,
+      "    iii-worker-manager:",
+      "      host: 127.0.0.1",
+      `      port: ${enginePort}`,
+      "containers:",
+      "  state:",
+      `    worker: ${quote(localWorkers ? `path://${join(this.data, "local-workers/state")}` : "package://api.workers.iii.dev/state")}`,
+      ...(!localWorkers ? ["    version: '0.22.20'"] : []),
+      "    config_name: state",
+      ...(localWorkers ? ["    scripts:", `      run: ${quote(join(localWorkers, "state"))}`] : []),
+      "    config_override:",
+      "      adapter:",
+      "        name: kv",
+      "        config:",
+      "          store_method: file_based",
+      "          save_interval_ms: 2000",
+      `          file_path: ${quote(join(this.data, "state_store.db"))}`,
+      "  http:",
+      `    worker: ${quote(localWorkers ? `path://${join(this.data, "local-workers/http")}` : "package://api.workers.iii.dev/http")}`,
+      ...(!localWorkers ? ["    version: '0.22.7'"] : []),
+      "    config_name: http",
+      ...(localWorkers ? ["    scripts:", `      run: ${quote(join(localWorkers, "http"))}`] : []),
+      "    config_override:",
+      "      host: 127.0.0.1",
+      `      port: ${httpPort}`,
+      "      default_timeout: 180000",
+    ];
+    if (localWorkers) {
+      for (const name of ["state", "http"]) {
+        const workerDir = join(this.data, "local-workers", name);
+        mkdirSync(workerDir, { recursive: true });
+        writeFileSync(join(workerDir, "iii.worker.yaml"), `iii: v1\nname: ${name}\nlanguage: rust\nscripts:\n  start: ${quote(join(localWorkers, name))}\n`);
+      }
     }
-    const file = join(this.dir, "iii-config.yaml"); writeFileSync(file, raw); this.envExtra.AGENTMEMORY_III_CONFIG = file; if (worker && !relative) this.envExtra.AGENTMEMORY_ENGINE_MANAGES_WORKER = "true"; return file;
+    if (worker) {
+      const wrapper = join(this.dir, "delayed-worker.mjs");
+      writeFileSync(wrapper, `import { appendFileSync, writeFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(join(this.dir, "worker-starts.jsonl"))}, JSON.stringify({pid:process.pid,at:Date.now()})+'\\n');\n${earlyPid ? `writeFileSync(${JSON.stringify(join(this.runtime, "worker.pid"))}, String(process.pid));` : ""}\nawait new Promise(r=>setTimeout(r,${delayMs}));\nawait import(${JSON.stringify(pathToFileURL(join(pkg, "dist/index.mjs")).href)});\n`);
+      lines.push(
+        "  agentmemory:",
+        `    worker: ${quote(`path://${pkg}`)}`,
+        "    start_after: [state, http]",
+        "    startup_timeout: 300s",
+        "    config_name: agentmemory",
+        "    scripts:",
+        `      run: ${quote(`${process.execPath} ${wrapper}`)}`,
+        `    working_dir: ${quote(this.dir)}`,
+        "    environment:",
+        `      HOME: ${quote(this.home)}`,
+        `      PATH: ${quote([dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter))}`,
+        `      AGENTMEMORY_DATA_DIR: ${quote(workerDataDir)}`,
+        `      AGENTMEMORY_ENV_FILE: ${quote(this.envPath)}`,
+        `      AGENTMEMORY_RUNTIME_DIR: ${quote(this.runtime)}`,
+        `      III_REST_PORT: ${quote(String(this.port))}`,
+        `      III_VIEWER_PORT: ${quote(String(this.port + 2))}`,
+        `      III_ENGINE_PORT: ${quote(String(enginePort))}`,
+        "      LLM_PROVIDER: 'none'",
+        "      EMBEDDING_PROVIDER: 'none'",
+        "      III_TELEMETRY_ENABLED: 'false'",
+      );
+    }
+    lines.push("");
+    const file = join(this.dir, "worker-compose.yaml");
+    writeFileSync(file, lines.join("\n"));
+    this.configPath = file;
+    return file;
   }
-  start(args = [], env = {}, cwd = this.dir) {
-    this.cli = launch(process.execPath, [cli, ...args, "--port", String(this.port)], this.env(env), cwd, this.logFile);
+
+  start(args = [], env = {}) {
+    this.cli = launch(process.execPath, [cli, ...args, "--port", String(this.port)], this.env(env), this.dir, this.logFile);
     this.ownedPids.add(this.cli.pid); return this.cli;
   }
+  writeComposeState(file, composePid) {
+    this.composePid = composePid;
+    this.configPath = file;
+    const state = {
+      kind: "compose", restPort: this.port, viewerPort: this.port + 2, enginePort: this.port + 46023,
+      engineUrl: `ws://127.0.0.1:${this.port + 46023}`, namespace: `agentmemory-${this.port}`,
+      file, stateDir: join(this.data, "compose-state"), logFile: this.logFile,
+      binPath: join(this.runtime, "bin/iii"), composePid, workerVersions: { local: true },
+    };
+    writeFileSync(join(this.runtime, "engine-state.json"), JSON.stringify(state));
+    return state;
+  }
   async startEngine(config) {
-    this.engine = launch(engine, ["--config", config, "--no-update-check"], this.env(), this.dir, this.logFile);
+    const engineEnv = { III_COMPOSE_STATE_DIR: join(this.data, "compose-state"), ...(options.workerBinDir ? { III_BUNDLE_WORKERS_DISABLED: "1" } : {}) };
+    this.engine = launch(join(this.runtime, "bin/iii"), ["compose", "--namespace", `agentmemory-${this.port}`, "--up", "--file", config], this.env(engineEnv), this.dir, this.logFile);
     this.ownedPids.add(this.engine.pid);
-    await poll("external engine", async () => (await fetch(`${this.url}/`, { signal: AbortSignal.timeout(500) })).status > 0, 20_000);
-    writeFileSync(join(this.runtime, "engine-state.json"), JSON.stringify({ kind: "native", configPath: config, binPath: engine, restPort: this.port, attached: true }));
-    writeFileSync(join(this.runtime, "iii.pid"), String(this.engine.pid));
+    await poll("external Worker Compose engine", async () => {
+      if (this.engine.result && this.engine.result.code !== 0) throw Object.assign(new Error(`Compose exited ${this.engine.result.code}: ${this.engine.text.slice(-1200)}`), { fatal: true });
+      return (await fetch(`${this.url}/`, { signal: AbortSignal.timeout(500) })).status >= 200;
+    }, 180_000);
+    this.writeComposeState(config, this.engine.pid);
   }
   async ready(timeout = 90_000, requireHint = true, allowDoctorDiagnosticsFailure = false) {
     await poll(this.name, async () => {
@@ -196,11 +288,21 @@ class Instance {
   async close() {
     if (this.closed) return; this.closed = true;
     for (const handle of this.handles) { handle.closeAllConnections?.(); handle.close(); }
-    if (this.dockerProject) await command(this.dockerBin, ["compose", "-p", this.dockerProject, "-f", join(pkg, "docker-compose.yml"), "down", "--volumes"], this.env(), this.dir, 30_000, this.logFile).catch((err) => log(`${this.name} Docker cleanup: ${err.message}`));
     for (const name of ["worker", "iii"]) { const pid = this.pid(name); if (pid) this.ownedPids.add(pid); }
     for (const row of this.wrapperStarts()) this.ownedPids.add(row.pid);
+    try { const state = JSON.parse(readFileSync(join(this.runtime, "engine-state.json"), "utf8")); for (const pid of [state.composePid, state.enginePid]) if (Number.isInteger(pid) && pid > 0) this.ownedPids.add(pid); } catch {}
+    for (const pid of [...this.ownedPids]) {
+      try {
+        const rows = execFileSync("ps", ["-eo", "pid=,ppid="], { encoding: "utf8" }).split(/\r?\n/).map((row) => row.trim().split(/\s+/).map(Number)).filter((row) => row.length === 2 && row.every(Number.isFinite));
+        const descendants = new Set([pid]);
+        let changed = true;
+        while (changed) { changed = false; for (const [child, parent] of rows) if (descendants.has(parent) && !descendants.has(child)) { descendants.add(child); changed = true; } }
+        for (const child of descendants) this.ownedPids.add(child);
+      } catch {}
+    }
     for (const pid of this.ownedPids) kill(pid);
-    await sleep(100);
+    const deadline = Date.now() + 10_000;
+    while ([...this.ownedPids].some((pid) => alive(pid)) && Date.now() < deadline) await sleep(100);
   }
 }
 async function scenario(name, fn) {
@@ -210,51 +312,26 @@ async function scenario(name, fn) {
   catch (err) { results.push({ name, status: "fail", ms: Date.now() - at, error: err.stack, details }); log(`FAIL ${name}: ${err.message}`); }
   finally { if (instance) await instance.close(); }
 }
-async function delayedConfigured(instance, details, { delayMs, earlyPid = false, relative = false, adopt = false, args = [] } = {}) {
-  const config = instance.config({ delayMs, earlyPid, relative });
-  if (adopt) await instance.startEngine(config);
-  const at = Date.now(); instance.start(args); await instance.ready(delayMs + 25_000);
-  details.readyMs = Date.now() - at; details.delayMs = delayMs; details.transport = "real pinned native engine and installed worker via custom delayed-import config";
-  assert(details.readyMs >= delayMs - 1000, `Ready before configured worker delay: ${details.readyMs}`);
-  const starts = instance.wrapperStarts(); assert.equal(starts.length, 1, "Configured worker launched more than once");
-  assert.equal(instance.pid("worker"), starts[0].pid, "CLI imported a second worker instead of waiting for the configured worker");
-  details.workerPid = starts[0].pid; details.enginePid = instance.pid("iii");
-}
-async function delayedSocket(instance, backendPort, delayMs) {
-  const connections = new Set();
-  let accepted = 0;
-  const server = net.createServer((socket) => {
-    accepted++; connections.add(socket); socket.pause();
-    const timer = setTimeout(() => {
-      if (socket.destroyed) return;
-      const upstream = net.connect(backendPort, "127.0.0.1"); connections.add(upstream);
-      upstream.on("connect", () => { socket.pipe(upstream); upstream.pipe(socket); socket.resume(); });
-      upstream.on("error", () => socket.destroy()); socket.on("error", () => upstream.destroy());
-      socket.on("close", () => upstream.destroy()); upstream.on("close", () => connections.delete(upstream));
-    }, delayMs);
-    socket.on("close", () => { clearTimeout(timer); connections.delete(socket); });
-    socket.on("error", () => {});
-  });
-  server.closeAllConnections = () => { for (const socket of connections) socket.destroy(); };
-  await new Promise((r) => server.listen(0, "127.0.0.1", r)); instance.handles.push(server);
-  return { port: server.address().port, accepted: () => accepted };
-}
 async function fixtureServer(instance, livez) {
   let probes = 0;
+  const upstreamPort = instance.port + 1;
   const server = http.createServer((req, res) => {
     if (req.url === "/agentmemory/livez") {
       probes++;
       if (probes === 1) { res.writeHead(404); res.end(); return; }
       livez(req, res, probes - 1); return;
     }
-    res.writeHead(200, { "content-type": "application/json" }); res.end("{}");
+    const upstream = http.request({ hostname: "127.0.0.1", port: upstreamPort, method: req.method, path: req.url, headers: req.headers }, (response) => {
+      res.writeHead(response.statusCode ?? 502, response.headers);
+      response.pipe(res);
+    });
+    upstream.on("error", () => { if (!res.headersSent) res.writeHead(502); res.end(); });
+    req.pipe(upstream);
   });
   await new Promise((r) => server.listen(instance.port, "127.0.0.1", r)); instance.handles.push(server);
-  const sleeper = launch(process.execPath, ["-e", "setInterval(()=>{},1000)"], instance.env(), instance.dir);
-  instance.ownedPids.add(sleeper.pid); writeFileSync(join(instance.runtime, "worker.pid"), String(sleeper.pid));
-  instance.config({ worker: false });
-  writeFileSync(join(instance.runtime, "engine-state.json"), JSON.stringify({ kind: "native", configPath: instance.envExtra.AGENTMEMORY_III_CONFIG, binPath: engine, restPort: instance.port, attached: true }));
-  return { worker: sleeper, probes: () => probes };
+  const config = instance.config({ worker: false, httpPort: upstreamPort });
+  await instance.startEngine(config);
+  return { worker: instance.engine, probes: () => probes, state: JSON.parse(readFileSync(join(instance.runtime, "engine-state.json"), "utf8")) };
 }
 async function expectFailure(instance, args, env, { budgetMs = 5000, message } = {}) {
   const at = Date.now(); const child = instance.start(args, env); const result = await exited(child, budgetMs);
@@ -262,229 +339,191 @@ async function expectFailure(instance, args, env, { budgetMs = 5000, message } =
   if (message) assert(child.text.includes(message), `Missing ${message}: ${child.text.slice(-1500)}`);
   return { elapsedMs: Date.now() - at, exitCode: result.code };
 }
-function dockerFixture(instance, mode) {
-  const fixtureBin = join(instance.dir, "fixture-bin"); mkdirSync(fixtureBin);
-  const project = `agentmemory-${instance.port}`; const containerId = "startup-fixture-owned-container";
-  const record = { Id: containerId, State: { Running: false }, Config: { Image: `iiidev/iii:${installed.dependencies["iii-sdk"]}`, Labels: { "com.docker.compose.project": project, "com.docker.compose.service": "iii-engine" } }, HostConfig: { PortBindings: { [`${instance.port}/tcp`]: [{ HostPort: String(instance.port) }] } }, Mounts: [{ Type: "bind", Source: instance.data, Destination: "/data" }] };
-  const pidFile = join(instance.dir, "docker-stub.pid");
-  const file = join(fixtureBin, "docker");
-  writeFileSync(file, `#!${process.execPath}\nconst {writeFileSync}=require('node:fs');\nconst args=process.argv.slice(2);\nif(args[0]===${JSON.stringify(mode)}) { writeFileSync(${JSON.stringify(pidFile)},String(process.pid)); process.on('SIGTERM',()=>{}); setInterval(()=>{},1000); }\nelse if(args[0]==='inspect') console.log(${JSON.stringify(JSON.stringify([record]))});\nelse if(args.includes('ps')) console.log(${JSON.stringify(containerId)});\n`); chmodSync(file, 0o755);
-  instance.envExtra.PATH = [fixtureBin, instance.env().PATH].join(delimiter);
-  writeFileSync(join(instance.runtime, "engine-state.json"), JSON.stringify({ kind: "docker", schemaVersion: 2, composeFile: join(pkg, "docker-compose.yml"), projectName: project, engineVersion: installed.dependencies["iii-sdk"], restPort: instance.port, dataDir: instance.data, containerId, dataMountType: "bind", dataMountSource: instance.data, preserveContainer: mode === "inspect" }));
-  return pidFile;
-}
+
 async function main() {
+  if (options.workerBinDir) {
+    assert(["state", "http"].every((name) => existsSync(join(options.workerBinDir, name))), `--worker-bin-dir must contain executable state and http binaries: ${options.workerBinDir}`);
+    log(`local Worker Compose fixtures: ${options.workerBinDir}`);
+  }
   await install();
-  await scenario("slow-native", (i, d) => delayedConfigured(i, d, { delayMs: options.delayMs, earlyPid: true }));
-  await scenario("configured-adoption", (i, d) => delayedConfigured(i, d, { delayMs: 8_000, adopt: true }));
-  await scenario("unrelated-exec", async (i, d) => {
-    const config = i.config({ worker: false });
-    const other = join(i.dir, "unrelated-worker.mjs"); writeFileSync(other, "setInterval(()=>{},1000);\n");
-    appendFileSync(config, `  - name: iii-exec\n    config:\n      exec:\n        - ${process.execPath} ${other}\n`);
-    const at = Date.now(); i.start([], { AGENTMEMORY_READY_TIMEOUT_MS: "3000" }); await i.ready(8_000);
-    d.readyMs = Date.now() - at; assert.equal(i.pid("worker"), i.cli.pid, "Unrelated exec prevented the CLI-owned worker from starting");
-    d.transport = "real engine with unrelated iii-exec command plus installed CLI-owned worker";
+  await scenario("slow-compose-worker", async (i, d) => {
+    const config = i.config({ delayMs: options.delayMs, earlyPid: true });
+    await i.startEngine(config);
+    const at = Date.now(); i.start(["--no-engine"]);
+    await i.ready(options.delayMs + 25_000);
+    d.readyMs = Date.now() - at; d.delayMs = options.delayMs; d.transport = "managed Compose project with delayed packaged worker; CLI joins it with --no-engine";
+    assert(d.readyMs >= options.delayMs - 1000, `Ready before configured Compose worker delay: ${d.readyMs}`);
+    const starts = i.wrapperStarts(); assert.equal(starts.length, 1, "Compose launched the delayed packaged worker more than once");
+    assert.equal(i.pid("worker"), starts[0].pid, "CLI imported a duplicate instead of waiting for the Compose worker");
+    assert(alive(i.composePid), "CLI --no-engine stopped the externally owned Compose project");
   });
-  await scenario("relative-exec", (i, d) => delayedConfigured(i, d, { delayMs: 8_000, relative: true }));
-  await scenario("unresolved-relative-exec", async (i, d) => {
-    const config = i.config({ worker: false });
-    appendFileSync(config, "  - name: iii-exec\n    config:\n      exec:\n        - node dist/index.mjs\n");
-    const cliCwd = join(i.dir, "cli-cwd"); mkdirSync(join(cliCwd, "dist"), { recursive: true }); writeFileSync(join(cliCwd, "dist/index.mjs"), "");
-    const at = Date.now(); i.start([], { AGENTMEMORY_READY_TIMEOUT_MS: "5000" }, cliCwd); await i.ready(10_000);
-    d.readyMs = Date.now() - at; assert.equal(i.pid("worker"), i.cli.pid, "A relative exec entry missing from the engine working directory prevented the CLI-owned worker from starting");
-    d.transport = "real engine with a relative iii-exec worker entry that does not exist in its working directory; installed CLI-owned worker";
+  await scenario("configured-compose-adoption", async (i, d) => {
+    const config = i.config({ delayMs: 0, earlyPid: true });
+    await i.startEngine(config); await poll("configured Compose worker ready", async () => (await fetch(`${i.url}/agentmemory/livez`)).ok, 30_000);
+    const startsBefore = i.wrapperStarts(); assert.equal(startsBefore.length, 1);
+    i.start(["--no-engine"]); await i.ready(10_000);
+    assert.equal(i.wrapperStarts().length, 1, "CLI started a duplicate instead of joining the already-ready Compose worker");
+    assert(alive(startsBefore[0].pid)); assert(alive(i.composePid));
+    d.workerPid = startsBefore[0].pid; d.composePid = i.composePid; d.transport = "already-ready external Worker Compose project";
   });
-  await scenario("native-engine-timeout", async (i, d) => {
+  await scenario("compose-engine-timeout", async (i, d) => {
     i.config({ worker: false });
-    const binary = join(i.runtime, "bin/iii"); const launchPid = join(i.dir, "launched-engine.pid");
+    const binary = join(i.runtime, "bin/iii"); const launchPid = join(i.dir, "launched-compose.pid");
     writeFileSync(binary, `#!${process.execPath}\nconst {writeFileSync}=require('node:fs');\nif(process.argv.includes('--version')) { console.log('iii ${installed.dependencies["iii-sdk"]}'); process.exit(0); }\nwriteFileSync(${JSON.stringify(launchPid)},String(process.pid));\nsetInterval(()=>{},1000);\n`); chmodSync(binary, 0o755);
-    Object.assign(d, await expectFailure(i, [], { AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "300" }, { message: "0.3s" }));
-    const pid = Number(readFileSync(launchPid, "utf8")); i.ownedPids.add(pid); await poll("owned engine timeout cleanup", () => !alive(pid), 5_000);
-    assert(!existsSync(join(i.runtime, "iii.pid"))); assert(!existsSync(join(i.runtime, "engine-state.json")));
-    d.transport = "version-compatible engine executable fixture that stays alive without opening HTTP; actual installed CLI";
-  });
-  await scenario("untracked-native-adoption", async (i, d) => {
-    const config = i.config({ worker: false }); const externalConfig = join(i.dir, "external-config.yaml");
-    copyFileSync(config, externalConfig); rmSync(config); await i.startEngine(externalConfig);
-    delete i.envExtra.AGENTMEMORY_III_CONFIG;
-    rmSync(join(i.runtime, "engine-state.json")); rmSync(join(i.runtime, "iii.pid"));
-    i.start([], { AGENTMEMORY_READY_TIMEOUT_MS: "3000" }); await i.ready(6_000);
-    assert.equal(i.pid("worker"), i.cli.pid, "Untracked engine was assumed to own a configured worker");
-    assert(alive(i.engine.pid)); d.transport = "real native engine without lifecycle metadata or AgentMemory exec config";
+    Object.assign(d, await expectFailure(i, [], { AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "300" }, { message: "The engine process started but the REST API never responded." }));
+    const pid = Number(readFileSync(launchPid, "utf8")); i.ownedPids.add(pid); await poll("owned Compose engine timeout cleanup", () => !alive(pid), 5_000);
+    assert(!existsSync(join(i.runtime, "engine-state.json")));
+    d.transport = "version-compatible iii fixture accepting compose but never opening the engine port; actual installed CLI";
   });
   await scenario("cancel-owned-startup", async (i, d) => {
-    i.config({ delayMs: 10_000, earlyPid: true }); i.start([], { AGENTMEMORY_READY_TIMEOUT_MS: "15000" });
-    await poll("owned engine ready before cancellation", async () => i.pid("worker") && (await fetch(i.url, { signal: AbortSignal.timeout(500) })).status > 0, 5_000);
-    const enginePid = i.pid("iii"); const workerPid = i.pid("worker");
-    i.cli.kill("SIGINT"); const result = await exited(i.cli, 6_000); assert.equal(result.code, 130, `Cancellation result ${JSON.stringify(result)}: ${i.cli.text.slice(-800)}`);
-    await poll("cancelled owned process cleanup", () => !alive(enginePid) && !alive(workerPid), 5_000);
-    d.exitCode = result.code; d.ownedEngineStopped = true;
+    const launchPid = join(i.dir, "cancel-owned-compose.pid");
+    const binary = join(i.runtime, "bin/iii");
+    writeFileSync(binary, `#!${process.execPath}\nconst {writeFileSync}=require('node:fs');\nif(process.argv.includes('--version')) { console.log('iii ${installed.dependencies["iii-sdk"]}'); process.exit(0); }\nwriteFileSync(${JSON.stringify(launchPid)},String(process.pid));\nsetInterval(()=>{},1000);\n`); chmodSync(binary, 0o755);
+    i.start([], { AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "300000" });
+    const composePid = await poll("CLI-owned Compose daemon", () => { try { return JSON.parse(readFileSync(join(i.runtime, "engine-state.json"), "utf8")).composePid; } catch { return null; } }, 5_000);
+    i.ownedPids.add(composePid);
+    const fakePid = await poll("non-serving owned engine process", () => { try { return Number(readFileSync(launchPid, "utf8")); } catch { return null; } }, 5_000); i.ownedPids.add(fakePid);
+    i.cli.kill("SIGINT"); const result = await exited(i.cli, 10_000); assert.equal(result.code, 130, `Cancellation result ${JSON.stringify(result)}: ${i.cli.text.slice(-800)}`);
+    await poll("cancelled owned Compose cleanup", () => !alive(composePid) && !alive(fakePid), 5_000);
+    assert(!existsSync(join(i.runtime, "engine-state.json")));
+    d.exitCode = result.code; d.ownedComposeStopped = true;
   });
   await scenario("cancel-external-startup", async (i, d) => {
-    await i.startEngine(i.config({ worker: false })); const proxy = await delayedSocket(i, i.port + 46023, 10_000);
-    i.start(["--no-engine"], { III_ENGINE_URL: `ws://127.0.0.1:${proxy.port}`, AGENTMEMORY_READY_TIMEOUT_MS: "15000" });
-    await poll("worker connecting before cancellation", () => proxy.accepted() > 0, 5_000);
+    await i.startEngine(i.config({ delayMs: 10_000, earlyPid: true }));
+    await poll("delayed Compose worker process", () => i.wrapperStarts()[0]?.pid, 10_000);
+    i.start(["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "300000" });
+    await sleep(1000);
     i.cli.kill("SIGTERM"); const result = await exited(i.cli, 6_000); assert.equal(result.code, 143, `Cancellation result ${JSON.stringify(result)}: ${i.cli.text.slice(-800)}`);
-    assert(alive(i.engine.pid), "Cancellation stopped an external engine"); d.exitCode = result.code; d.externalEnginePreserved = true;
+    assert(alive(i.composePid), "Cancellation stopped an external Compose project");
+    assert(alive(i.wrapperStarts()[0].pid), "Cancellation killed the Compose-owned delayed worker");
+    d.exitCode = result.code; d.externalComposePreserved = true;
   });
   await scenario("no-engine", async (i, d) => {
-    await i.startEngine(i.config({ worker: false }));
-    const socket = await delayedSocket(i, i.port + 46023, 3_000);
-    const at = Date.now(); i.start(["--no-engine"], { III_ENGINE_URL: `ws://127.0.0.1:${socket.port}`, AGENTMEMORY_READY_TIMEOUT_MS: "10000" });
-    await i.ready(15_000); d.readyMs = Date.now() - at; d.delayedConnections = socket.accepted();
-    assert(d.readyMs >= 3000); assert(d.delayedConnections > 0); assert(alive(i.engine.pid), "External engine stopped during no-engine startup");
-    const worker = i.pid("worker");
+    await i.startEngine(i.config({ delayMs: 3_000, earlyPid: true }));
+    const at = Date.now(); i.start(["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "15000" });
+    await i.ready(20_000); d.readyMs = Date.now() - at;
+    assert(d.readyMs >= 3_000); assert(alive(i.composePid), "External Compose project stopped during no-engine startup");
+    const worker = i.wrapperStarts()[0].pid; assert(alive(worker));
     const duplicate = launch(process.execPath, [cli, "--no-engine", "--port", String(i.port)], i.env(), i.dir, i.logFile);
-    const result = await exited(duplicate, 5_000); assert.notEqual(result.code, 0); assert(duplicate.text.includes("already running"));
-    assert.equal(i.pid("worker"), worker); assert(alive(worker)); assert(alive(i.engine.pid));
-    d.duplicateExitCode = result.code; d.transport = "real native engine and installed worker over delayed TCP proxy";
+    const result = await exited(duplicate, 10_000); assert.equal(result.code, 0, duplicate.text.slice(-1200));
+    assert.equal(i.wrapperStarts().length, 1, "A second --no-engine invocation duplicated the Compose worker");
+    assert.equal(i.pid("worker"), worker); assert(alive(worker)); assert(alive(i.composePid));
+    d.duplicateExitCode = result.code; d.transport = "real external Worker Compose project with delayed packaged worker";
   });
   await scenario("no-engine-timeout", async (i, d) => {
-    await i.startEngine(i.config({ worker: false }));
-    const socket = await delayedSocket(i, i.port + 46023, 5_000);
-    Object.assign(d, await expectFailure(i, ["--no-engine"], { III_ENGINE_URL: `ws://127.0.0.1:${socket.port}`, AGENTMEMORY_READY_TIMEOUT_MS: "300" }, { message: "0.3s" }));
-    assert(alive(i.engine.pid), "Timeout stopped an externally owned engine");
-    assert(!i.pid("worker") || !alive(i.pid("worker")), "Failed in-process worker left a live stale PID");
-    d.externalEnginePreserved = true;
+    await i.startEngine(i.config({ delayMs: 5_000, earlyPid: true }));
+    Object.assign(d, await expectFailure(i, ["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "300" }, { message: "0.3s" }));
+    assert(alive(i.composePid), "Worker readiness timeout stopped an externally owned Compose project");
+    assert(alive(i.wrapperStarts()[0].pid), "Compose supervisor's delayed worker was incorrectly killed by the joining CLI");
+    d.externalComposePreserved = true;
   });
   await scenario("inline-worker-fatal", async (i, d) => {
-    i.config({ worker: false }); mkdirSync(join(i.runtime, "secret"));
-    const child = i.start([], { AGENTMEMORY_READY_TIMEOUT_MS: "10000" });
-    const enginePid = await poll("owned engine PID before worker initialization", () => i.pid("iii"), 3_000); i.ownedPids.add(enginePid);
-    const result = await exited(child, 6_000); assert.equal(result.code, 1); assert(child.text.includes("[agentmemory] Fatal:"), "Fixture did not exercise the worker's fatal initialization path");
-    await poll("fatal initialization engine cleanup", () => !alive(enginePid), 4_000);
-    assert(!i.pid("iii")); assert(!i.pid("worker") || !alive(i.pid("worker")));
-    d.exitCode = result.code; d.ownedEngineStopped = true; d.transport = "real engine and inline installed worker; secret path occupied by a directory causes initialization failure";
+    const workerData = join(i.data, "fatal-worker-data"); mkdirSync(join(workerData, "secret"), { recursive: true });
+    const config = i.config({ workerDataDir: workerData }); await i.startEngine(config);
+    Object.assign(d, await expectFailure(i, ["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "3000" }, { budgetMs: 10_000, message: "3s" }));
+    const workerLogs = readdirSync(join(i.data, "compose-state"), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .flatMap((entry) => { const stateRoot = join(i.data, "compose-state", entry.name); return readdirSync(stateRoot, { withFileTypes: true }).filter((project) => project.isDirectory()).map((project) => join(stateRoot, project.name, "logs", "agentmemory.log")); })
+      .filter(existsSync)
+      .map((file) => readFileSync(file, "utf8"))
+      .join("\n");
+    assert.match(workerLogs, /agentmemory could not create its API secret/i, "Compose did not report the packaged worker's fatal initialization failure");
+    d.workerExitCode = 1; d.transport = "real Worker Compose supervision with packaged worker secret-path initialization failure";
   });
-  await scenario("native-worker-timeout", async (i, d) => {
-    i.config({ delayMs: 5_000, earlyPid: true });
-    Object.assign(d, await expectFailure(i, [], { AGENTMEMORY_READY_TIMEOUT_MS: "300" }, { message: "0.3s" }));
-    await poll("owned engine cleanup", () => (!i.pid("iii") || !alive(i.pid("iii"))) && (!i.pid("worker") || !alive(i.pid("worker"))), 5_000);
-    assert(!(await fetch(i.url, { signal: AbortSignal.timeout(200) }).then(() => true).catch(() => false)), "Failed owned engine still serves REST");
-    d.ownedEngineStopped = true;
+  await scenario("compose-worker-timeout", async (i, d) => {
+    Object.assign(d, await expectFailure(i, [], { AGENTMEMORY_READY_TIMEOUT_MS: "300" }, { budgetMs: 30_000, message: "0.3s" }));
+    await poll("CLI-owned Compose timeout cleanup", () => { try { const state = JSON.parse(readFileSync(join(i.runtime, "engine-state.json"), "utf8")); return !alive(state.composePid) && !alive(state.enginePid); } catch { return true; } }, 10_000);
+    assert(!existsSync(join(i.runtime, "engine-state.json")), "Timed-out owned Compose startup retained lifecycle metadata");
+    assert(!(await fetch(i.url, { signal: AbortSignal.timeout(200) }).then(() => true).catch(() => false)), "Timed-out owned Compose project still serves REST");
+    d.ownedComposeStopped = true;
   });
   await scenario("hung-livez-body", async (i, d) => {
     const f = await fixtureServer(i, (_req, res) => { res.writeHead(200, { "content-type": "application/json" }); res.write('{"viewerPort":'); });
-    Object.assign(d, await expectFailure(i, [], { AGENTMEMORY_READY_TIMEOUT_MS: "300" }, { budgetMs: 2_000, message: "0.3s" }));
-    assert(alive(f.worker.pid)); d.externalWorkerPreserved = true; d.probes = f.probes(); d.transport = "controlled HTTP headers with a stalled response body; external worker PID fixture";
+    const child = i.start(["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "300" });
+    await poll("CLI readiness failure", () => child.result, 5_000);
+    assert.notEqual(child.result.code, 0); assert(child.text.includes("0.3s"), `Missing configured livez timeout: ${child.text.slice(-1000)}`);
+    assert(alive(f.worker.pid)); d.externalWorkerPreserved = true; d.probes = f.probes(); d.transport = "controlled HTTP headers with a stalled response body, CLI-owned engine, and external Compose lifecycle metadata";
   });
   await scenario("malformed-livez", async (i, d) => {
     const invalid = ["not json", JSON.stringify({ viewerPort: -1 }), JSON.stringify({ viewerPort: 0 }), JSON.stringify({ viewerPort: 65536 }), JSON.stringify({ viewerPort: 3000.5 }), JSON.stringify({ viewerSkipped: "true" }), JSON.stringify({ viewerPort: null, viewerSkipped: false })];
     const f = await fixtureServer(i, (_req, res, n) => { res.writeHead(200, { "content-type": "application/json" }); res.end(invalid[n - 1] ?? JSON.stringify({ viewerSkipped: true })); });
-    i.start([], { AGENTMEMORY_READY_TIMEOUT_MS: "6000" });
+    i.start(["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "6000" });
     await poll("CLI readiness hint", () => i.cli.text.includes("REST API"), 7_000);
-    assert(f.probes() >= invalid.length + 2, `Malformed readiness accepted after ${f.probes()} probes`); await i.ready(1_000); d.probes = f.probes(); d.invalidResponses = invalid.length; d.transport = "controlled readiness response fixture";
+    assert(f.probes() >= invalid.length + 2, `Malformed readiness accepted after ${f.probes()} probes`); await i.ready(1_000); d.probes = f.probes(); d.invalidResponses = invalid.length; d.transport = "controlled malformed readiness responses with Compose lifecycle metadata";
   });
   await scenario("env-file-and-precedence", async (i, d) => {
     const f = await fixtureServer(i, (_req, res) => { res.writeHead(503); res.end(); });
-    writeFileSync(join(i.runtime, ".env"), "AGENTMEMORY_READY_TIMEOUT_MS=350\nAGENTMEMORY_ENGINE_READY_TIMEOUT_MS=1000\n");
-    d.fromFile = await expectFailure(i, [], {}, { budgetMs: 2500, message: "0.35s" });
-    d.shellOverride = await expectFailure(i, [], { AGENTMEMORY_READY_TIMEOUT_MS: "150" }, { budgetMs: 2000, message: "0.15s" });
-    assert(alive(f.worker.pid)); d.transport = "controlled unready external worker fixture";
+    writeFileSync(i.envPath, "AGENTMEMORY_READY_TIMEOUT_MS=350\nAGENTMEMORY_ENGINE_READY_TIMEOUT_MS=1000\n");
+    const fromFile = i.start(["--no-engine"], {}); const fileResult = await exited(fromFile, 10_000);
+    assert.notEqual(fileResult.code, 0); assert(fromFile.text.includes("0.35s"), `Fixture .env timeout not applied: ${fromFile.text.slice(-1000)}`);
+    d.fromFile = { exitCode: fileResult.code };
+    const shellOverride = i.start(["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "150" }); const shellResult = await exited(shellOverride, 10_000);
+    assert.notEqual(shellResult.code, 0); assert(shellOverride.text.includes("0.15s"), `Environment override did not win: ${shellOverride.text.slice(-1000)}`);
+    d.shellOverride = { exitCode: shellResult.code };
+    assert(alive(f.worker.pid)); d.transport = "real external Worker Compose engine behind a controlled unready HTTP proxy";
   });
   await scenario("invalid-timeouts", async (i, d) => {
     d.rejected = [];
     for (const key of ["AGENTMEMORY_ENGINE_READY_TIMEOUT_MS", "AGENTMEMORY_READY_TIMEOUT_MS"]) {
       for (const value of ["", "0", "-1", "1.5", "NaN", "Infinity", "500ms", "3600001"]) {
-        const result = await expectFailure(i, ["--no-engine"], { [key]: value }, { budgetMs: 2500, message: key });
+        const result = await expectFailure(i, ["--no-engine"], { [key]: value }, { budgetMs: 10_000, message: key });
         d.rejected.push({ key, value, ...result });
         assert(!existsSync(join(i.runtime, "worker.pid")), "Invalid timeout imported the worker");
       }
     }
-    const ownership = await expectFailure(i, ["--no-engine"], { AGENTMEMORY_ENGINE_MANAGES_WORKER: "yes" }, { budgetMs: 2500, message: "AGENTMEMORY_ENGINE_MANAGES_WORKER" });
+    const ownership = await expectFailure(i, ["--no-engine"], { AGENTMEMORY_ENGINE_MANAGES_WORKER: "yes" }, { budgetMs: 10_000, message: "AGENTMEMORY_ENGINE_MANAGES_WORKER" });
     d.invalidOwnership = ownership;
     const help = await command(process.execPath, [cli, "--help"], i.env({ AGENTMEMORY_READY_TIMEOUT_MS: "invalid" }), i.dir);
     assert(help.includes("Usage:"));
   });
   await scenario("doctor", async (i, d) => {
-    i.config({ delayMs: 2_000, earlyPid: true });
-    writeFileSync(join(i.runtime, ".env"), "LLM_PROVIDER=none\nAGENTMEMORY_READY_TIMEOUT_MS=15000\n");
-    const at = Date.now();
-    const child = i.start(["doctor", "--all"], { EDITOR: "/usr/bin/true", PATH: [join(i.runtime, "bin"), i.env().PATH].join(delimiter) });
-    await poll("doctor worker ready", () => child.text.includes("Engine and agentmemory worker ready"), 30_000);
-    const result = await exited(child, 10_000); assert(result.code === 0 || result.code === 1, `Doctor crashed: ${child.text.slice(-1000)}`); d.doctorExitCode = result.code;
-    await i.ready(10_000, false, true); assert(alive(i.pid("worker")), "Doctor-owned worker stopped when doctor exited"); d.readyMs = Date.now() - at; d.transport = "real native engine, configured delayed worker, installed doctor --all";
-    assert(d.readyMs >= 2000); assert.equal(i.wrapperStarts().length, 1);
+    i.start(); await i.ready(120_000);
+    const composeState = JSON.parse(readFileSync(join(i.runtime, "engine-state.json"), "utf8"));
+    const child = i.start(["doctor", "--all"], { EDITOR: "/usr/bin/true", AGENTMEMORY_ENV_FILE: i.envPath });
+    const result = await exited(child, 30_000); assert(result.code === 0 || result.code === 1, `Doctor crashed: ${child.text.slice(-1000)}`);
+    assert(child.text.includes("Server reachable"), "Doctor did not diagnose the Compose-managed REST service");
+    assert(alive(composeState.composePid), "Doctor stopped a healthy externally running Compose project");
+    await i.ready(5_000, false, true); d.doctorExitCode = result.code; d.composePid = composeState.composePid; d.transport = "real CLI-managed Worker Compose project inspected by doctor --all";
   });
-  await scenario("doctor-invalid-timeout", async (i, d) => {
-    await i.startEngine(i.config({ worker: false }));
-    writeFileSync(join(i.runtime, ".env"), "LLM_PROVIDER=none\nAGENTMEMORY_READY_TIMEOUT_MS=invalid\n");
-    Object.assign(d, await expectFailure(i, ["doctor", "--all"], { EDITOR: "/usr/bin/true", PATH: [join(i.runtime, "bin"), i.env().PATH].join(delimiter) }, { budgetMs: 10_000, message: "AGENTMEMORY_READY_TIMEOUT_MS" }));
-    assert(alive(i.engine.pid), "Invalid doctor startup configuration stopped an existing engine");
-    assert.equal(i.pid("iii"), i.engine.pid, "Invalid doctor configuration changed the external engine PID"); d.externalEnginePreserved = true;
+  await scenario("doctor-compose-recovery", async (i, d) => {
+    const oldState = i.writeComposeState(i.config({ worker: false }), 2_000_000_000);
+    writeFileSync(i.envPath, "LLM_PROVIDER=none\nAGENTMEMORY_READY_TIMEOUT_MS=30000\n");
+    const child = i.start(["doctor", "--all"], { EDITOR: "/usr/bin/true", AGENTMEMORY_ENV_FILE: i.envPath });
+    await poll("doctor Compose recovery ready", () => child.text.includes("Engine and agentmemory worker ready"), 120_000);
+    const result = await exited(child, 30_000); assert(result.code === 0 || result.code === 1, `Doctor crashed: ${child.text.slice(-1000)}`);
+    const state = JSON.parse(readFileSync(join(i.runtime, "engine-state.json"), "utf8"));
+    assert.equal(state.kind, "compose"); assert(alive(state.composePid), "Doctor failed to leave the recovered Compose project running");
+    assert.equal(i.wrapperStarts().length, 0, "Stale metadata repair unexpectedly used a test wrapper instead of the packaged worker");
+    await i.ready(10_000, false, true); assert.notEqual(state.composePid, child.pid, "Doctor did not detach the Compose runtime");
+    d.doctorExitCode = result.code; d.composePid = state.composePid; d.transport = "doctor stale-lifecycle repair starts the standard managed Compose project";
   });
-  await scenario("doctor-cli-worker", async (i, d) => {
-    i.config({ worker: false });
-    writeFileSync(join(i.runtime, ".env"), "LLM_PROVIDER=none\nAGENTMEMORY_READY_TIMEOUT_MS=15000\n");
-    const child = i.start(["doctor", "--all"], { EDITOR: "/usr/bin/true", PATH: [join(i.runtime, "bin"), i.env().PATH].join(delimiter) });
-    await poll("doctor detached worker ready", () => child.text.includes("Engine and agentmemory worker ready"), 30_000);
-    const result = await exited(child, 10_000); assert(result.code === 0 || result.code === 1, `Doctor crashed: ${child.text.slice(-1000)}`);
-    await i.ready(10_000, false, true); assert(alive(i.pid("worker")), "Doctor-owned worker stopped when doctor exited");
-    assert.notEqual(i.pid("worker"), child.pid, "Doctor did not detach the CLI-owned worker");
-    d.doctorExitCode = result.code; d.workerPid = i.pid("worker"); d.transport = "real native engine and installed detached worker created by doctor --all";
+  await scenario("trace-storage-integrity", async (i, d) => {
+    i.start(); await i.ready(120_000);
+    const lifecycle = JSON.parse(readFileSync(join(i.runtime, "engine-state.json"), "utf8"));
+    assert.equal(lifecycle.kind, "compose");
+    const installedFiles = packageFiles();
+    const installedDigest = createHash("sha256").update(JSON.stringify(installedFiles)).digest("hex");
+    const configFile = join(i.data, "compose", "config", "iii-observability.yaml");
+    const entry = parseYaml(readFileSync(configFile, "utf8"));
+    assert.equal(entry.value.trace_storage.directory, join(i.data, "observability", "traces"));
+    assert(existsSync(entry.value.trace_storage.directory), "Trace storage directory was not provisioned in instance data");
+    const stop = await command(process.execPath, [cli, "stop", "--port", String(i.port)], i.env(), i.dir, 30_000);
+    d.stopped = true;
+    await poll("trace runtime shutdown", () => !alive(lifecycle.composePid), 10_000);
+    const finalFiles = packageFiles();
+    const finalDigest = createHash("sha256").update(JSON.stringify(finalFiles)).digest("hex");
+    assert.equal(finalDigest, installedDigest, "Installed package files changed after starting and stopping the managed runtime");
+    assert.deepEqual(finalFiles, installedFiles, "Installed package gained or lost files after starting and stopping the managed runtime");
+    assert.equal(createHash("sha256").update(readFileSync(tarball)).digest("hex"), artifactSha, "Packed artifact changed during the managed runtime smoke");
+    d.installedArtifactUnmodified = true; d.traceDirectory = entry.value.trace_storage.directory;
+    d.stopOutput = stop.slice(-300);
   });
-  await scenario("hung-docker-start", async (i, d) => {
-    const pidFile = dockerFixture(i, "start");
-    Object.assign(d, await expectFailure(i, [], { AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "300" }, { budgetMs: 3000 }));
-    const pid = Number(readFileSync(pidFile, "utf8")); i.ownedPids.add(pid); assert(!alive(pid), "Timed-out Docker start subprocess survived");
-    assert(existsSync(join(i.runtime, "engine-state.json")), "Docker command timeout discarded owned lifecycle metadata");
-    d.transport = "Docker command fixture whose start subprocess ignores SIGTERM; actual installed CLI";
-  });
-  await scenario("hung-docker-inspect", async (i, d) => {
-    const pidFile = dockerFixture(i, "inspect");
-    Object.assign(d, await expectFailure(i, [], { AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "300" }, { budgetMs: 8_000, message: "cannot be verified" }));
-    const pid = Number(readFileSync(pidFile, "utf8")); i.ownedPids.add(pid); assert(!alive(pid), "Timed-out Docker inspect subprocess survived");
-    assert(existsSync(join(i.runtime, "engine-state.json"))); d.transport = "Docker inspect subprocess fixture ignoring SIGTERM; actual installed CLI";
-  });
-  await scenario("docker", async (i, d) => {
-    let dockerBin;
-    try { dockerBin = execFileSync("which", ["docker"], { encoding: "utf8" }).trim(); } catch { d.skipped = "Docker executable unavailable"; return; }
-    let host;
-    try { host = process.env.DOCKER_HOST ?? execFileSync(dockerBin, ["context", "inspect", "--format", '{{(index .Endpoints "docker").Host}}'], { encoding: "utf8" }).trim(); } catch { d.skipped = "Docker context unavailable"; return; }
-    i.dockerBin = dockerBin;
-    i.envExtra = { AGENTMEMORY_USE_DOCKER: "1", DOCKER_HOST: host, DOCKER_CONFIG: process.env.DOCKER_CONFIG ?? join(homedir(), ".docker"), PATH: [dirname(dockerBin), i.env().PATH].join(delimiter) };
-    try { d.serverVersion = (await command(dockerBin, ["info", "--format", "{{.ServerVersion}}"], i.env(), i.dir, 10_000)).trim(); } catch { d.skipped = "Docker daemon unavailable"; return; }
-    let project;
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const candidate = `agentmemory-${i.port}`;
-      const filter = `label=com.docker.compose.project=${candidate}`;
-      const existing = await Promise.all([
-        command(dockerBin, ["ps", "-aq", "--filter", filter], i.env(), i.dir),
-        command(dockerBin, ["network", "ls", "-q", "--filter", filter], i.env(), i.dir),
-        command(dockerBin, ["volume", "ls", "-q", "--filter", filter], i.env(), i.dir),
-      ]);
-      if (existing.every((value) => !value.trim())) { project = candidate; break; }
-      i.port = await portBlock();
-    }
-    assert(project, "Could not reserve an unused Docker project");
-    i.dockerProject = project;
-    const at = Date.now(); i.start([], { AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "30000", AGENTMEMORY_READY_TIMEOUT_MS: "15000" });
-    await i.ready(90_000); d.freshReadyMs = Date.now() - at;
-    const state = JSON.parse(readFileSync(join(i.runtime, "engine-state.json"), "utf8")); assert.equal(state.kind, "docker");
-    const containerId = (await command(dockerBin, ["compose", "-p", i.dockerProject, "-f", join(pkg, "docker-compose.yml"), "ps", "-q", "iii-engine"], i.env(), i.dir)).trim(); assert(containerId);
-    d.containerId = containerId;
-    kill(i.cli.pid); await exited(i.cli, 3_000);
-    await command(dockerBin, ["stop", "--time", "3", containerId], i.env(), i.dir, 15_000);
-    const failedProxy = await delayedSocket(i, i.port + 46023, 10_000);
-    d.stoppedRecoveryTimeout = await expectFailure(i, [], { III_ENGINE_URL: `ws://127.0.0.1:${failedProxy.port}`, AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "30000", AGENTMEMORY_READY_TIMEOUT_MS: "300" }, { budgetMs: 20_000, message: "0.3s" });
-    const stopped = await command(dockerBin, ["inspect", "--format", "{{.State.Running}}", containerId], i.env(), i.dir); assert.equal(stopped.trim(), "false", "Failed recovery did not stop the container it restarted");
-    assert.equal(JSON.parse(readFileSync(join(i.runtime, "engine-state.json"), "utf8")).containerId, containerId, "Failed Docker recovery lost lifecycle ownership");
-    const proxy = await delayedSocket(i, i.port + 46023, 3_000);
-    const restartAt = Date.now(); i.start([], { III_ENGINE_URL: `ws://127.0.0.1:${proxy.port}`, AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "30000", AGENTMEMORY_READY_TIMEOUT_MS: "15000" });
-    await i.ready(30_000); d.recoveryReadyMs = Date.now() - restartAt;
-    assert(d.recoveryReadyMs >= 3000); assert(proxy.accepted() > 0);
-    const restored = JSON.parse(readFileSync(join(i.runtime, "engine-state.json"), "utf8")); assert.equal(restored.containerId, containerId);
-    kill(i.cli.pid); await exited(i.cli, 3_000);
-    const externalProxy = await delayedSocket(i, i.port + 46023, 10_000);
-    d.runningEngineTimeout = await expectFailure(i, [], { III_ENGINE_URL: `ws://127.0.0.1:${externalProxy.port}`, AGENTMEMORY_READY_TIMEOUT_MS: "300" }, { budgetMs: 5_000, message: "0.3s" });
-    const running = await command(dockerBin, ["inspect", "--format", "{{.State.Running}}", containerId], i.env(), i.dir); assert.equal(running.trim(), "true", "Failed attach stopped a preexisting running Docker engine");
-    d.transport = "real Docker Compose pinned iii image; same owned container restarted; installed host worker over delayed TCP proxy";
-  });
+
   await scenario("demo", async (i, d) => {
-    i.config({ delayMs: 2_000, earlyPid: true }); const at = Date.now();
+    const at = Date.now();
     const child = i.start(["demo", "--serve"], { AGENTMEMORY_READY_TIMEOUT_MS: "15000" });
     const result = await exited(child, 35_000); assert.equal(result.code, 0, child.text.slice(-1200)); assert(child.text.includes("demo complete"));
-    d.completedMs = Date.now() - at; d.transport = "real native engine and installed demo command";
+    d.completedMs = Date.now() - at; d.transport = "real Worker Compose runtime and installed demo command";
     assert(!(await fetch(i.url, { signal: AbortSignal.timeout(200) }).then(() => true).catch(() => false)), "Demo-owned engine survived teardown");
   });
 }
@@ -494,9 +533,6 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () =>
     for (const name of ["iii", "worker"]) kill(i.pid(name));
     for (const row of i.wrapperStarts()) kill(row.pid);
     for (const pid of i.ownedPids) kill(pid);
-    if (i.dockerProject && !i.closed) {
-      try { execFileSync(i.dockerBin, ["compose", "-p", i.dockerProject, "-f", join(pkg, "docker-compose.yml"), "down", "--volumes"], { env: i.env(), timeout: 30_000, stdio: "ignore" }); } catch {}
-    }
   }
   for (const child of children) kill(child.pid);
   process.exit(130);
@@ -504,9 +540,11 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"]) process.once(signal, () =>
 let fatal;
 try { await main(); } catch (err) { fatal = err.stack; log(fatal); }
 finally { for (const i of instances) await i.close(); for (const child of children) kill(child.pid); }
-const unchanged = cliSha ? cliSha === sha(cli) && pkgSha === packageDigest() && artifactSha === sha(tarball) : false;
-const summary = { ok: !fatal && unchanged && results.some((r) => r.status === "pass") && results.every((r) => r.status !== "fail"), version: installed?.version, enginePin: installed?.dependencies["iii-sdk"], tarball, tarballSha256: artifactSha, installedCliSha256: cliSha, installedPackageSha256: pkgSha, installedArtifactUnmodified: unchanged, node: process.version, platform: `${platform()}-${arch()}`, durationMs: Date.now() - started, root: options.keep ? root : undefined, scenarios: results, fatal };
+const finalPkgFiles = cliSha ? packageFiles() : [];
+const changedPackageFiles = pkgFiles ? pkgFiles.filter(([name, digest]) => !finalPkgFiles.some(([finalName, finalDigest]) => finalName === name && finalDigest === digest)).map(([name]) => name).concat(finalPkgFiles.filter(([name]) => !pkgFiles.some(([initialName]) => initialName === name)).map(([name]) => name)) : [];
+const unchanged = cliSha ? cliSha === sha(cli) && pkgSha === createHash("sha256").update(JSON.stringify(finalPkgFiles)).digest("hex") && artifactSha === sha(tarball) : false;
+const summary = { ok: !fatal && unchanged && results.some((r) => r.status === "pass") && results.every((r) => r.status !== "fail"), version: installed?.version, enginePin: installed?.dependencies["iii-sdk"], tarball, tarballSha256: artifactSha, installedCliSha256: cliSha, installedPackageSha256: pkgSha, changedPackageFiles, installedArtifactUnmodified: unchanged, node: process.version, platform: `${platform()}-${arch()}`, durationMs: Date.now() - started, root: options.keep ? root : undefined, scenarios: results, fatal };
 writeFileSync(join(out, "summary.json"), JSON.stringify(summary, null, 2) + "\n");
 log(`Summary: ${results.filter((r) => r.status === "pass").length}/${results.length} passed; ${join(out, "summary.json")}`);
-if (!options.keep && !out.startsWith(`${root}/`)) rmSync(root, { recursive: true, force: true });
+if (!options.keep && !out.startsWith(`${root}/`)) rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 process.exit(summary.ok ? 0 : 1);

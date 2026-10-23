@@ -380,10 +380,10 @@ describe("capture status problems", () => {
     const report = evaluateStatus({
       now: new Date(),
       version: "0",
-      engineVersion: "0",
+      enginePinnedVersion: "0",
       uptimeSeconds: 1,
       stateBackend: "file",
-      ports: { rest: 4811, streams: null, viewer: null },
+      ports: { rest: 4811, viewer: null },
       health: null,
       circuitBreaker: null,
       functionMetrics: [],

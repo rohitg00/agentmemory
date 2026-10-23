@@ -5,6 +5,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  renameSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
@@ -15,7 +16,7 @@ import { join } from "node:path";
 const SECRET_KEY = "AGENTMEMORY_SECRET";
 
 export function agentmemoryHomeDir(): string {
-  return join(homedir(), ".agentmemory");
+  return process.env["AGENTMEMORY_DATA_DIR"] || join(homedir(), ".agentmemory");
 }
 
 export function secretFilePath(): string {
@@ -43,7 +44,7 @@ function unquote(value: string): string {
 export function readEnvFileSecret(): string {
   let content: unknown;
   try {
-    content = readFileSync(join(agentmemoryHomeDir(), ".env"), "utf-8");
+    content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
   } catch {
     return "";
   }
@@ -61,12 +62,28 @@ export function readEnvFileSecret(): string {
   return found;
 }
 
-export function readStoredSecret(): string {
+function readSecretFile(path: string): string {
   try {
-    return usable(readFileSync(secretFilePath(), "utf-8"));
+    return usable(readFileSync(path, "utf-8"));
   } catch {
     return "";
   }
+}
+
+function legacyDataDirSecretPaths(env: NodeJS.ProcessEnv = process.env): string[] {
+  const dataDir = env["AGENTMEMORY_DATA_DIR"];
+  if (!dataDir) return [];
+  const paths = [join(dataDir, "secret"), join(dataDir, ".hmac"), join(dataDir, "..", ".hmac")];
+  return [...new Set(paths.filter((path) => path !== secretFilePath()))];
+}
+
+export function readStoredSecret(env: NodeJS.ProcessEnv = process.env): string {
+  const canonicalPath = canonicalSecretPath();
+  const localPath = secretFilePath();
+  const legacyPaths = legacyDataDirSecretPaths(env);
+  return readSecretFile(canonicalPath) ||
+    (localPath === canonicalPath ? "" : readSecretFile(localPath)) ||
+    legacyPaths.map(readSecretFile).find(Boolean) || "";
 }
 
 export function explicitSecret(env: NodeJS.ProcessEnv = process.env): string {
@@ -92,24 +109,37 @@ export function resolveClientSecret(
   if (fromEnv) return fromEnv;
   if (env.AGENTMEMORY_CREDENTIAL_MODE === "explicit") return "";
   if (!isLoopbackUrl(baseUrl)) return "";
-  return readEnvFileSecret() || readStoredSecret();
+  return readEnvFileSecret() || readStoredSecret(env);
 }
 
-export function ensureServerSecret(env: NodeJS.ProcessEnv = process.env): {
-  secret: string;
-  source: "env" | "file" | "generated";
-} {
-  const configured = explicitSecret(env);
-  if (configured) return { secret: configured, source: "env" };
-  const stored = readStoredSecret();
-  if (stored) return { secret: stored, source: "file" };
-  const generated = randomBytes(32).toString("hex");
-  const path = secretFilePath();
-  mkdirSync(agentmemoryHomeDir(), { recursive: true, mode: 0o700 });
+function canonicalSecretPath(): string {
+  return join(homedir(), ".agentmemory", "secret");
+}
+
+function writeSecretFile(path: string, secret: string): void {
+  mkdirSync(join(path, ".."), { recursive: true, mode: 0o700 });
   const staging = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
   const fd = openSync(staging, "wx", 0o600);
   try {
-    writeSync(fd, `${generated}\n`);
+    writeSync(fd, `${secret}\n`);
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    chmodSync(staging, 0o600);
+    renameSync(staging, path);
+    chmodSync(path, 0o600);
+  } finally {
+    try { unlinkSync(staging); } catch {}
+  }
+}
+
+function writeSecretIfAbsent(path: string, secret: string): string {
+  mkdirSync(join(path, ".."), { recursive: true, mode: 0o700 });
+  const staging = `${path}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`;
+  const fd = openSync(staging, "wx", 0o600);
+  try {
+    writeSync(fd, `${secret}\n`);
   } finally {
     closeSync(fd);
   }
@@ -118,15 +148,39 @@ export function ensureServerSecret(env: NodeJS.ProcessEnv = process.env): {
     linkSync(staging, path);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-    const raced = readStoredSecret();
-    if (!raced) throw err;
-    return { secret: raced, source: "file" };
   } finally {
-    try {
-      unlinkSync(staging);
-    } catch {}
+    try { unlinkSync(staging); } catch {}
   }
-  return { secret: generated, source: "generated" };
+  const stored = readSecretFile(path);
+  if (!stored) throw new Error(`Could not read stored API secret at ${path}.`);
+  return stored;
+}
+
+export function ensureServerSecret(env: NodeJS.ProcessEnv = process.env): {
+  secret: string;
+  source: "env" | "file" | "generated";
+} {
+  const configured = explicitSecret(env);
+  if (configured) return { secret: configured, source: "env" };
+
+  const localPath = secretFilePath();
+  const canonicalPath = canonicalSecretPath();
+  const canonical = localPath === canonicalPath ? "" : readSecretFile(canonicalPath);
+  if (canonical) {
+    if (localPath !== canonicalPath && readSecretFile(localPath) !== canonical) {
+      writeSecretFile(localPath, canonical);
+    }
+    return { secret: canonical, source: "file" };
+  }
+
+  const legacy = readSecretFile(localPath) || legacyDataDirSecretPaths(env).map(readSecretFile).find(Boolean) || "";
+  const candidate = legacy || randomBytes(32).toString("hex");
+  const localSecret = writeSecretIfAbsent(localPath, candidate);
+  const secret = localPath === canonicalPath
+    ? localSecret
+    : writeSecretIfAbsent(canonicalPath, localSecret);
+  if (localPath !== canonicalPath && localSecret !== secret) writeSecretFile(localPath, secret);
+  return { secret, source: legacy ? "file" : "generated" };
 }
 
 export function bearerHeaders(

@@ -37,12 +37,12 @@ Protected endpoints require bearer authentication by default, including localhos
 
 - Save returns `201`, reads return `200`, validation errors return `400`.
 - Use documented fields only. A successful response does not prove an unsupported field was applied.
-- The port is configurable with `--port` or `--instance`; streams, viewer, and engine derive from it.
+- The REST port defaults to `3111` and is configurable with `--port` or `--instance`. The viewer defaults to `3113`; the internal engine WebSocket defaults to `49134`.
 
 ## See also
 
 - agentmemory-mcp-tools for the MCP equivalents.
-- agentmemory-config for the port quartet and the secret.
+- agentmemory-config for local configuration and the secret.
 
 ## Reference
 

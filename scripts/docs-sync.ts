@@ -18,6 +18,7 @@ interface Fact {
   nouns: string[];
   before?: string;
   badge?: string;
+  legacyValues?: string[];
 }
 
 function read(path: string): string {
@@ -103,7 +104,10 @@ const FACTS: Fact[] = [
   {
     key: "restEndpoints",
     label: "REST endpoints",
-    value: () => String(countMatches("src/triggers/api.ts", /api_path:\s*["`]/g)),
+    value: () => String(
+      countMatches("src/triggers/api.ts", /api_path:\s*["`]/g) +
+      countMatches("src/triggers/viewer-sse.ts", /api_path:\s*["`]/g),
+    ),
     nouns: [
       "REST endpoints", "REST API endpoints", "endpoints", "endpoint", "Endpunkte", "эндпоинт", "个端点", "個端點", "개 엔드포인트", "개의 엔드포인트", "エンドポイント",
       "uç nokta", "एंडपॉइंट", "endepunkt", "de endpoint", "ендпоінт", "na endpoint", "اینڈ پوائنٹ", "نقطة نهاية", "এন্ডপয়েন্ট", "개",
@@ -135,6 +139,7 @@ const FACTS: Fact[] = [
   {
     key: "tests",
     label: "tests",
+    legacyValues: ["3000+", "3400+"],
     value: () => {
       const n = countTests();
       return n === null ? null : `${floorTo(n, 100)}+`;
@@ -149,6 +154,7 @@ const FACTS: Fact[] = [
   {
     key: "functions",
     label: "iii functions",
+    legacyValues: ["324"],
     value: () => String(sourceFiles().reduce((n, f) => n + (read(f).match(/registerFunction\(/g)?.length ?? 0), 0)),
     nouns: [
       "iii functions", "functions", "funciones", "funções", "fonctions", "Funktionen", "функци", "個函式", "个函数", "개 함수", "개의 함수", "fonksiyon", "funkc",
@@ -159,6 +165,7 @@ const FACTS: Fact[] = [
   {
     key: "sourceFiles",
     label: "source files",
+    legacyValues: ["242"],
     value: () => String(sourceFiles().length),
     nouns: [
       "source files", "fichiers sources", "ficheros de código", "arquivos de código", "archivos fuente", "arquivos-fonte", "arquivos fonte",
@@ -178,6 +185,7 @@ const FACTS: Fact[] = [
   {
     key: "kvScopes",
     label: "KV scopes",
+    legacyValues: ["67"],
     value: () => String(countKvScopes()),
     nouns: [
       "KV scopes", "KV-Scopes", "KV scope", "KV-scope", "scopes KV", "scopes de KV", "escopos KV", "областей KV", "個 KV", "个 KV", "개 KV", "KV スコープ",
@@ -305,7 +313,7 @@ function main(): void {
       failed.push(fact.label);
       continue;
     }
-    const olds = state.facts[fact.key] ?? [];
+    const olds = [...(state.facts[fact.key] ?? []), ...(fact.legacyValues ?? [])];
     if (olds.length === 1 && olds[0] === next) continue;
     for (const [path, text] of files) {
       if (fact.badge && path.endsWith(".svg") && !path.endsWith(fact.badge)) continue;

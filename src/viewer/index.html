@@ -1521,28 +1521,17 @@
     var params = new URLSearchParams(window.location.search);
     var paramPort = params.get('port');
     var locPort = window.location.port;
-    var wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    var REST, WS_URL, WS_DIRECT_URL, wsPort;
+    var REST;
     if (paramPort) {
       var resolvedPort = parseInt(paramPort) === 3111 ? '3113' : paramPort;
       REST = window.location.protocol + '//' + window.location.hostname + ':' + resolvedPort;
-      wsPort = params.get('wsPort') || String(parseInt(resolvedPort) - 1);
-      WS_URL = wsProto + '//' + window.location.hostname + ':' + wsPort;
-      WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';
     } else if (locPort) {
       var resolvedPort = parseInt(locPort) === 3111 ? '3113' : locPort;
       REST = window.location.protocol + '//' + window.location.hostname + ':' + resolvedPort;
-      wsPort = params.get('wsPort') || String(parseInt(resolvedPort) - 1);
-      WS_URL = wsProto + '//' + window.location.hostname + ':' + wsPort;
-      WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';
     } else {
       REST = window.location.origin;
-      wsPort = params.get('wsPort');
-      WS_URL = wsPort
-        ? wsProto + '//' + window.location.hostname + ':' + wsPort
-        : wsProto + '//' + window.location.host;
-      WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';
     }
+    var LIVE_EVENTS_URL = REST + '/agentmemory/viewer/events';
 
     var dateEl = document.getElementById('dateline');
     if (dateEl) dateEl.textContent = new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
@@ -1656,7 +1645,7 @@
       health: { term: 'Health status', text: 'Healthy means everything is normal. Degraded means something needs attention but memory still works. Critical means a core part is failing.' },
       stateBackend: { term: 'State store', text: 'Where the engine keeps every record: file (local files on this machine, the default) or redis (a Redis server set by AGENTMEMORY_STATE_BACKEND and AGENTMEMORY_REDIS_URL). ok means a test write and read just succeeded; the number is how long it took.' },
       engineConnection: { term: 'Engine connection', text: 'Whether the agentmemory worker is connected to the iii engine that stores its data and runs its functions.' },
-      live: { term: 'Live updates', text: 'The viewer keeps one streaming connection open and updates every page the moment data changes. Nothing is refreshed on a timer.' },
+      live: { term: 'Live updates', text: 'The viewer keeps one SSE connection open and updates every page the moment data changes. Nothing is refreshed on a timer.' },
       flags: { term: 'Feature flags', text: 'Optional features that are on or off in this install. Off features leave some pages empty; each one lists the setting that turns it on.' },
       audit: { term: 'Audit log', text: 'A record of every change agentmemory made to stored data: saves, deletes, imports, consolidation runs. Use it to see who changed what and when.' },
       workers: { term: 'Workers', text: 'Processes connected to the iii engine. agentmemory runs as one worker.' },
@@ -1683,7 +1672,6 @@
       replay: { loaded: false, selectedId: '', timeline: null, cursor: 0, playing: false, speed: 1, timer: null, startAt: 0, offsetAt: 0, loadingTimeline: false, loadError: '', importPath: '', importing: false, importOpen: false, importStatus: null },
       flagsOpen: false,
       freshRows: {},
-      ws: null
     };
 
     var store = {
@@ -3748,7 +3736,7 @@
       html += copyBtn('memory_graph_query { "startNodeId": ' + JSON.stringify(id) + ', "maxDepth": 1 }', 'MCP call').replace('>copy<', '>copy MCP call<');
       html += copyBtn(curlGet('graph/node?id=' + encodeURIComponent(id)), 'curl command').replace('>copy<', '>copy curl<');
       html += '</div>';
-      if (d && d.stale) html += '<div class="mem-note">This node changed on the live stream. <button type="button" class="linkish" data-action="graph-refresh-detail" data-node-id="' + esc(id) + '">Reload sources</button></div>';
+      if (d && d.stale) html += '<div class="mem-note">This node changed on the SSE feed. <button type="button" class="linkish" data-action="graph-refresh-detail" data-node-id="' + esc(id) + '">Reload sources</button></div>';
 
       var rels = graphDetailRelations(id);
       var relTotal = data && typeof data.relationsTotal === 'number' ? Math.max(data.relationsTotal, rels.length) : rels.length;
@@ -3873,7 +3861,7 @@
       html += '<div class="empty-step-label" style="margin-top:8px;">Query it from an agent:</div>' + cmdBlock('memory_graph_query { "query": "checkout" }');
       html += '</div>';
       if (g.rebuildResult) html += '<div class="mem-note">' + esc(g.rebuildResult) + '</div>';
-      html += '<div class="go-live">' + (g.patches ? 'Patched ' + fmtNum(g.patches) + ' time' + (g.patches === 1 ? '' : 's') + ' from the live stream, last ' + relTime(new Date(g.lastPatchAt).toISOString()) + '.' : 'Updates arrive on the live stream; nothing refreshes on a timer.') + ' ' + help('live') + '</div>';
+      html += '<div class="go-live">' + (g.patches ? 'Patched ' + fmtNum(g.patches) + ' time' + (g.patches === 1 ? '' : 's') + ' from the SSE feed, last ' + relTime(new Date(g.lastPatchAt).toISOString()) + '.' : 'Updates arrive on the SSE feed; nothing refreshes on a timer.') + ' ' + help('live') + '</div>';
       html += '</div>';
       setViewHtml(host, html);
     }
@@ -4176,7 +4164,7 @@
       try {
         var result = await apiPost('graph/build', {});
         g.rebuildResult = result && result.success
-          ? 'Rebuilt from ' + (result.sessions || 0) + ' sessions: ' + (result.nodes || 0) + ' nodes and ' + (result.edges || 0) + ' relations extracted. New ones arrive on the live stream.'
+          ? 'Rebuilt from ' + (result.sessions || 0) + ' sessions: ' + (result.nodes || 0) + ' nodes and ' + (result.edges || 0) + ' relations extracted. New ones arrive on the SSE feed.'
           : 'The rebuild failed. Check the server log.';
       } finally {
         graphRebuilding = false;
@@ -4584,7 +4572,7 @@
       var mem = store.entities.memory[id];
       if (!mem) {
         if (m.pendingId === id) {
-          setViewHtml(panel, '<div class="detail-panel mem-detail"><div class="mem-detail-head"><span>Saving the new version</span>' + memoryCloseBtn() + '</div><div class="mem-note">Saved. Waiting for the new version to arrive on the live stream…</div>' + skeleton(4) + '</div>');
+          setViewHtml(panel, '<div class="detail-panel mem-detail"><div class="mem-detail-head"><span>Saving the new version</span>' + memoryCloseBtn() + '</div><div class="mem-note">Saved. Waiting for the new version to arrive on the SSE feed…</div>' + skeleton(4) + '</div>');
           return;
         }
         if (!m.fetches[id]) fetchMemoryVersion(id);
@@ -6483,7 +6471,7 @@
       var res = await apiPost('lessons/strengthen', { lessonId: id });
       l.busy = '';
       l.notice = res && res.success !== false
-        ? { id: id, html: 'Recorded one more use. Confidence and uses update here from the live stream.' }
+        ? { id: id, html: 'Recorded one more use. Confidence and uses update here from the SSE feed.' }
         : { id: id, err: true, html: 'Strengthen failed' + (res && res.error ? ': ' + esc(res.error) : '. Check that agentmemory is running.') };
       renderLessons();
     }
@@ -6725,7 +6713,7 @@
       var res = await apiPost('actions/update', { actionId: id, status: status });
       a.busy = '';
       a.notice = res && res.success !== false
-        ? { id: id, html: 'Status set to <b>' + esc(status) + '</b>. Ready markers update from the live stream.' }
+        ? { id: id, html: 'Status set to <b>' + esc(status) + '</b>. Ready markers update from the SSE feed.' }
         : { id: id, err: true, html: 'Update failed' + (res && res.error ? ': ' + esc(res.error) : '. Check that agentmemory is running.') };
       renderActions();
     }
@@ -7221,7 +7209,7 @@
       }
       if (store.lastHealthAt && Date.now() - store.lastHealthAt > HEALTH_STALE_MS) {
         var secs = Math.round((Date.now() - store.lastHealthAt) / 1000);
-        return '<div class="hstale" id="health-live-state"><strong>Stale: no health report for ' + secs + 's.</strong> Reports normally arrive every 30 seconds. The stream is connected, so the worker is busy or the iii engine is paused' + (r && r.service && r.service.stateBackend === 'redis' ? ', or Redis restarted: the engine stops relaying live events after a Redis restart until agentmemory restarts' : '') + '. The numbers below are from ' + esc(last) + '.' +
+        return '<div class="hstale" id="health-live-state"><strong>Stale: no health report for ' + secs + 's.</strong> Reports normally arrive every 30 seconds. The SSE feed is connected, so the worker is busy or the iii engine is paused' + (r && r.service && r.service.stateBackend === 'redis' ? ', or Redis restarted: the engine stops relaying live events after a Redis restart until agentmemory restarts' : '') + '. The numbers below are from ' + esc(last) + '.' +
           '<div style="margin-top:6px;">Fix: wait a minute; if it stays stale, press Re-check now for the full report, check the server log and restart agentmemory.</div></div>';
       }
       return '';
@@ -7247,7 +7235,7 @@
       }
       html += '<div class="verdict"><span class="verdict-badge ' + esc(level) + '">' + esc(badgeText) + '</span><div style="min-width:0;flex:1;">' +
         '<div class="verdict-text">' + esc(text) + '</div>' +
-        '<div class="verdict-meta">' + (r ? 'Report ' + relTime(r.checkedAt) + ' · ' : '') + 'updates every 30 s over the live stream, no refresh needed ' + help('live') + '</div></div></div>';
+        '<div class="verdict-meta">' + (r ? 'Report ' + relTime(r.checkedAt) + ' · ' : '') + 'updates every 30 s over SSE, no refresh needed ' + help('live') + '</div></div></div>';
       html += healthStaleHtml(r);
       if (state.health.error) html += '<div class="mem-note err" style="margin-top:10px;">' + esc(state.health.error) + '</div>';
       if (r && r.problems.length) {
@@ -7269,12 +7257,11 @@
       var streamText = conn.state === 'live' ? 'live' : conn.state;
       return '<div class="card"><div class="card-title">Engine and connection ' + help('engineConnection') + '</div>' +
         hrow('Engine connection', esc(snap.connectionState || 'unknown'), 'engineConnection', 'The worker\'s link to the iii engine, which stores the data and runs the functions.') +
-        ((kv || backend) ? hrow('State store', esc((backend ? backend + (kv ? ' · ' : '') : '') + (kv ? kv.status + (kv.latencyMs !== undefined ? ' · ' + kv.latencyMs + ' ms' : '') + (kv.error ? ' · ' + kv.error : '') : '')), 'stateBackend', backend === 'redis' ? 'Stored in Redis (AGENTMEMORY_STATE_BACKEND=redis). If Redis restarts, restart agentmemory so the live stream resumes.' : 'Stored in the engine\'s local files (the default). Set AGENTMEMORY_STATE_BACKEND=redis to use Redis.') : '') +
-        hrow('Viewer stream', esc(streamText), 'live', 'This page\'s own connection. Offline means the numbers here stop changing.') +
-        (snap.streamRelay ? hrow('Redis event relay', esc(snap.streamRelay), 'live', snap.streamRelay === 'down' ? 'The engine stopped relaying live events through Redis, usually after Redis restarted. Data is still saved. Restart agentmemory to resume live updates.' : 'A test event sent through Redis every 30 seconds came back to the worker.') : '') +
+        ((kv || backend) ? hrow('State store', esc((backend ? backend + (kv ? ' · ' : '') : '') + (kv ? kv.status + (kv.latencyMs !== undefined ? ' · ' + kv.latencyMs + ' ms' : '') + (kv.error ? ' · ' + kv.error : '') : '')), 'stateBackend', backend === 'redis' ? 'Stored in Redis (AGENTMEMORY_STATE_BACKEND=redis). If Redis restarts, restart agentmemory so the SSE feed resumes.' : 'Stored in the engine\'s local files (the default). Set AGENTMEMORY_STATE_BACKEND=redis to use Redis.') : '') +
+        hrow('Viewer feed', esc(streamText), 'live', 'This page\'s own connection. Offline means the numbers here stop changing.') +
         hrow('Uptime', esc(formatUptime(snap.uptimeSeconds)), 'uptime') +
-        hrow('Version', esc('v' + (store.version || (r && r.service.version) || '?') + (r ? ' · engine ' + r.service.engineVersion : ''))) +
-        hrow('Ports', esc('REST ' + (ports.rest || '?') + ' · streams ' + (ports.streams || '?') + ' · viewer ' + (ports.viewer || 'off'))) +
+        hrow('Version', esc('v' + (store.version || (r && r.service.version) || '?') + (r ? ' · engine pinned ' + r.service.enginePinnedVersion : ''))) +
+        hrow('Ports', esc('REST ' + (ports.rest || '?') + ' · viewer ' + (ports.viewer || 'off'))) +
         '</div>';
     }
 
@@ -7544,7 +7531,7 @@
       var snap = store.health || {};
       var idx = store.indexes || {};
       var c = store.counts || {};
-      var html = '<div class="inline-note"><strong>Health</strong> ' + help('health') + ' is the live version of the <a class="empty-link" href="' + esc(REST) + '/agentmemory/status" target="_blank" rel="noopener">/agentmemory/status</a> page: the same checks and verdict, pushed over the stream every 30 seconds. Every problem says what to do. Scroll down for how consolidation works.</div>';
+      var html = '<div class="inline-note"><strong>Health</strong> ' + help('health') + ' is the live version of the <a class="empty-link" href="' + esc(REST) + '/agentmemory/status" target="_blank" rel="noopener">/agentmemory/status</a> page: the same checks and verdict, pushed over SSE every 30 seconds. Every problem says what to do. Scroll down for how consolidation works.</div>';
       html += healthVerdictHtml(r);
       html += '<div class="hgrid">' + engineCardHtml(r, snap) + indexCardHtml(r, idx, c) + captureCardHtml(r) + llmCardHtml(r) + flagsCardHtml(r) + processCardHtml(snap) + recordsCardHtml(c) + '</div>';
       html += consolidationPanelHtml(store.consolidationStatus, c);
@@ -7754,14 +7741,12 @@
 
     var wsReconnectTimer = null;
     var wsRetries = 0;
-    var directFailed = true;
-    var directFailures = 0;
     var wsHasConnected = false;
     var wsOpenedAt = null;
-    var DIRECT_FAILURE_THRESHOLD = 2;
     var OFFLINE_AFTER_RETRIES = 3;
     var HEALTH_STALE_MS = 90000;
     var conn = { state: 'connecting', nextRetryAt: 0, lostAt: 0 };
+    var liveAbortController = null;
 
     function reconnectDelay(attempt) {
       var n = Math.max(1, attempt || 1);
@@ -7847,87 +7832,99 @@
     function reconnectNow() {
       if (wsReconnectTimer) clearTimeout(wsReconnectTimer);
       wsReconnectTimer = null;
-      directFailures = 0;
-      directFailed = true;
       conn.nextRetryAt = 0;
-      var ws = state.ws;
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      if (liveAbortController) {
+        liveAbortController.abort();
+        liveAbortController = null;
+      }
       connectWs();
     }
 
-    var WS_CONNECT_TIMEOUT_MS = 5000;
+    function parseSseFrame(frame) {
+      var id = '';
+      var type = '';
+      var data = [];
+      frame.split(/\r?\n/).forEach(function(line) {
+        if (!line || line.charAt(0) === ':') return;
+        var colon = line.indexOf(':');
+        var field = colon < 0 ? line : line.slice(0, colon);
+        var value = colon < 0 ? '' : line.slice(colon + 1).replace(/^ /, '');
+        if (field === 'id') id = value;
+        else if (field === 'event') type = value;
+        else if (field === 'data') data.push(value);
+      });
+      if (!type || !data.length) return null;
+      try { return { id: id, type: type, data: JSON.parse(data.join('\n')) }; } catch (_) { return null; }
+    }
 
-    function connectWs() {
+    function consumeSseChunk(buffer, chunk) {
+      buffer += chunk;
+      var frames = [];
+      var match;
+      while ((match = /\r?\n\r?\n/.exec(buffer))) {
+        var frame = buffer.slice(0, match.index);
+        buffer = buffer.slice(match.index + match[0].length);
+        var parsed = parseSseFrame(frame);
+        if (parsed) frames.push(parsed);
+      }
+      return { buffer: buffer, frames: frames };
+    }
+
+    async function connectWs() {
       wsReconnectTimer = null;
       conn.nextRetryAt = 0;
-      var useDirect = !directFailed;
-      var ws;
+      var controller = new AbortController();
+      liveAbortController = controller;
       try {
-        ws = new WebSocket(useDirect ? WS_DIRECT_URL : WS_URL);
-        ws.__direct = useDirect;
-      } catch (_) {
-        scheduleReconnect();
-        return;
-      }
-      var connectTimer = setTimeout(function() {
-        if (ws.readyState === WebSocket.CONNECTING) {
-          try { ws.close(); } catch {}
+        var headers = { 'Cache-Control': 'no-cache', Accept: 'text/event-stream' };
+        var viewerToken = getViewerToken();
+        if (viewerToken) headers.Authorization = 'Bearer ' + viewerToken;
+        var response = await fetch(LIVE_EVENTS_URL, { headers: headers, signal: controller.signal });
+        if (!response.ok || !response.body) {
+          if (response.status === 401) showViewerAuthPrompt();
+          throw new Error('SSE request failed: ' + response.status);
         }
-      }, WS_CONNECT_TIMEOUT_MS);
-      ws.onopen = function() {
-        clearTimeout(connectTimer);
-        if (state.ws !== ws) return;
+        hideViewerAuthPrompt();
         wsRetries = 0;
-        if (!ws.__direct) {
-          ws.send(JSON.stringify({
-            type: 'join',
-            data: {
-              subscriptionId: 'viewer-' + Date.now(),
-              streamName: 'mem-live',
-              groupId: 'viewer'
-            }
-          }));
-        }
         var firstConnect = !wsHasConnected;
         wsHasConnected = true;
         wsOpenedAt = Date.now();
         setConnection('live');
         updateFooter();
-        resyncAfterConnect(firstConnect);
-      };
-      ws.onmessage = function(e) {
-        if (state.ws !== ws) return;
-        if (!ws.__usable) {
-          ws.__usable = true;
-          directFailures = 0;
+        await resyncAfterConnect(firstConnect);
+        var reader = response.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+        while (true) {
+          var result = await reader.read();
+          if (result.done) break;
+          buffer += decoder.decode(result.value, { stream: true });
+          var parsed = consumeSseChunk(buffer, '');
+          buffer = parsed.buffer;
+          parsed.frames.forEach(function(frame) {
+            store.lastEventAt = Date.now();
+            if (frame.type === 'raw_observation') {
+              var obs = frame.data && frame.data.data && (frame.data.data.observation || frame.data.data);
+              if (looksLikeObservation(obs)) routeWsMessage({ observation: obs, fresh: true });
+            } else if (frame.type === 'compressed_observation') {
+              var compressed = frame.data && frame.data.data && (frame.data.data.observation || frame.data.data);
+              if (looksLikeObservation(compressed)) routeWsMessage({ observation: compressed, fresh: true });
+            } else {
+              handleLiveEvent(frame.type, frame.data && frame.data.data || {});
+            }
+          });
         }
-        store.lastEventAt = Date.now();
-        try {
-          var msg = JSON.parse(e.data);
-          if (msg.type === 'stream' && msg.event) {
-            handleStreamEvent(msg);
-          } else if (msg.event_type && msg.data) {
-            handleStreamEvent({ event: { type: 'create', data: msg.data, event_type: msg.event_type } });
-          }
-        } catch {}
-      };
-      ws.onclose = function() {
-        clearTimeout(connectTimer);
-        if (state.ws !== ws) return;
-        wsOpenedAt = null;
-        updateFooter();
-        directFailures += 1;
-        if (directFailures >= DIRECT_FAILURE_THRESHOLD) {
-          directFailed = ws.__direct;
-          directFailures = 0;
+        if (!controller.signal.aborted) throw new Error('SSE stream ended');
+      } catch (err) {
+        if (!controller.signal.aborted) console.warn('[viewer] SSE connection failed:', err);
+      } finally {
+        if (liveAbortController === controller) liveAbortController = null;
+        if (!controller.signal.aborted) {
+          wsOpenedAt = null;
+          updateFooter();
+          scheduleReconnect();
         }
-        scheduleReconnect();
-      };
-      ws.onerror = function() {
-        if (state.ws !== ws) return;
-        try { ws.close(); } catch {}
-      };
-      state.ws = ws;
+      }
     }
 
     var resyncing = null;
@@ -7946,6 +7943,7 @@
       resyncing = (async function() {
         try {
           await loadSnapshot();
+          await loadRecentObservations();
           scheduleHealthStaleCheck();
           if (!firstConnect || reloadKinds.length) {
             reloadKinds.forEach(resetLoadedKindForReload);
@@ -7965,6 +7963,24 @@
     }
 
     var LIVE_BUFFER_MAX = 200;
+    var ACTIVITY_SESSIONS = 10;
+    async function loadRecentObservations() {
+      var sessionResult = await apiGet('sessions?limit=' + ACTIVITY_SESSIONS);
+      var sessions = sortByTimeDesc((sessionResult && sessionResult.sessions) || [], ['startedAt']).filter(function(x) { return sessionId(x); }).slice(0, ACTIVITY_SESSIONS);
+      mergeSessionRows(sessions);
+      var results = await Promise.all(sessions.map(function(x) {
+        return apiGet('observations?sessionId=' + encodeURIComponent(sessionId(x)) + '&limit=100');
+      }));
+      var seen = {};
+      results.forEach(function(result) {
+        ((result && result.observations) || []).slice(-LIVE_BUFFER_MAX).forEach(function(observation) {
+          if (!observation || !observation.id || seen[observation.id]) return;
+          seen[observation.id] = true;
+          routeWsMessage({ observation: observation });
+        });
+      });
+    }
+
 
     function looksLikeObservation(obj) {
       return !!(obj && typeof obj === 'object' && obj.id && obj.timestamp);
@@ -8206,15 +8222,6 @@
         if (looksLikeObservation(observation)) {
           routeWsMessage({ observation: observation, fresh: true });
         }
-      } else if (evt.type === 'sync') {
-        var items = Array.isArray(evt.data) ? evt.data.slice(-LIVE_BUFFER_MAX) : [];
-        items.forEach(function(item) {
-          var payload = item.data || item;
-          observation = payload.observation || payload;
-          if (looksLikeObservation(observation)) {
-            routeWsMessage({ observation: observation });
-          }
-        });
       }
     }
 
@@ -8377,7 +8384,7 @@
       var sync = document.getElementById('footer-sync');
       if (sync) {
         var syncText = store.snapshotAt ? 'full sync ' + new Date(store.snapshotAt).toLocaleTimeString() : 'waiting for first sync';
-        if (store.snapshotAt) syncText += wsOpenedAt ? ', streaming since ' + new Date(wsOpenedAt).toLocaleTimeString() : ', stream reconnecting';
+        if (store.snapshotAt) syncText += wsOpenedAt ? ', live via SSE since ' + new Date(wsOpenedAt).toLocaleTimeString() : ', SSE reconnecting';
         sync.textContent = syncText;
       }
       var fbEl = document.getElementById('footer-feedback');
@@ -8474,7 +8481,7 @@
       var modal = document.getElementById('modal');
       var overlay = document.getElementById('modal-overlay');
       var html = '<h3>How to read this viewer</h3>';
-      html += '<p style="margin-bottom:8px;">Everything on these pages updates live over one streaming connection; nothing refreshes on a timer. Click any <span class="help" style="cursor:default;">?</span> for a short explanation, or use the keys below.</p>';
+      html += '<p style="margin-bottom:8px;">Everything on these pages updates live over one SSE connection; nothing refreshes on a timer. Click any <span class="help" style="cursor:default;">?</span> for a short explanation, or use the keys below.</p>';
       html += '<div class="kbd-list">' +
         '<div><kbd>/</kbd> focus search on this page</div>' +
         '<div><kbd>?</kbd> open this help</div>' +
@@ -9045,16 +9052,7 @@
 
     var bootRoute = parseRoute(window.location.hash);
     switchTab(bootRoute.tab, { replaceRoute: true, skipRoute: !!bootRoute.obs && !bootRoute.redirect, id: bootRoute.id, obs: bootRoute.obs });
-    (async function initWs() {
-      try {
-        var live = await api('livez', { signal: AbortSignal.timeout(5000) });
-        if (live && typeof live.streamsPort === 'number' && live.streamsPort > 0) {
-          WS_URL = wsProto + '//' + window.location.hostname + ':' + live.streamsPort;
-          WS_DIRECT_URL = WS_URL + '/stream/mem-live/viewer';
-        }
-      } catch (_) {}
-      connectWs();
-    })();
+    connectWs();
     setTimeout(function() {
       if (wsHasConnected) return;
       openBootGate();
@@ -9064,8 +9062,7 @@
 
     document.addEventListener('visibilitychange', function() {
       if (document.visibilityState !== 'visible') return;
-      var ws = state.ws;
-      if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+      if (liveAbortController) return;
       wsRetries = 0;
       reconnectNow();
     });

@@ -11,21 +11,18 @@ import type {
   TeamConfig,
 } from "./types.js";
 
+// Import-side ceiling for observations in a single session (enforced by mem::import).
+// This is independent of MAX_OBS_PER_SESSION, which controls runtime writes.
+export const MAX_IMPORT_OBS_PER_SESSION = 5_000;
+
 function safeParseInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = parseInt(value, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-// Import-side ceiling for observations in a single session (enforced by
-// mem::import). Deliberately NOT named MAX_OBS_PER_SESSION — that env var is
-// the runtime write cap and the two are independent; loadConfig() warns when
-// the runtime cap is raised past this ceiling, which would let a session grow
-// past the point where export→import round-trips can restore the store.
-export const MAX_IMPORT_OBS_PER_SESSION = 5_000;
-
-const DATA_DIR = join(homedir(), ".agentmemory");
-const ENV_FILE = join(DATA_DIR, ".env");
+const DATA_DIR = process.env["AGENTMEMORY_DATA_DIR"] || join(homedir(), ".agentmemory");
+const ENV_FILE = process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env");
 
 let warnPremiumModelShown = false;
 let providerNoticeShown = false;
@@ -212,50 +209,35 @@ export function loadConfig(): AgentMemoryConfig {
 
   const provider = detectProvider(env);
 
-  // Port quartet: REST is the anchor; streams/engine derive from it
-  // unless individually overridden. Default anchor 3111 yields the
-  // canonical 3112 streams / 49134 engine pair, but `III_REST_PORT=3211`
-  // auto-picks 3212 + 49234 so a second instance doesn't collide.
+  // REST is the anchor; viewer and engine ports derive from it unless individually overridden.
   const restPort = parseInt(env["III_REST_PORT"] || "3111", 10) || 3111;
-  const streamsPort =
-    parseInt(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"] || "", 10) ||
-    restPort + 1;
   const viewerPort =
     parseInt(env["III_VIEWER_PORT"] || "", 10) || restPort + 2;
   const engineUrl =
     env["III_ENGINE_URL"] ||
+    env["III_URL"] ||
     `ws://localhost:${
       parseInt(env["III_ENGINE_PORT"] || "", 10) || restPort + 46023
     }`;
 
-  const maxObservationsPerSession = safeParseInt(
-    env["MAX_OBS_PER_SESSION"],
-    500,
-  );
+  const maxObservationsPerSession = safeParseInt(env["MAX_OBS_PER_SESSION"], 500);
   if (
     !obsCapImportCeilingWarned &&
-    (maxObservationsPerSession === 0 ||
-      maxObservationsPerSession > MAX_IMPORT_OBS_PER_SESSION)
+    (maxObservationsPerSession === 0 || maxObservationsPerSession > MAX_IMPORT_OBS_PER_SESSION)
   ) {
     obsCapImportCeilingWarned = true;
-    const capDesc =
-      maxObservationsPerSession === 0
-        ? "uncapped (0)"
-        : String(maxObservationsPerSession);
+    const capDesc = maxObservationsPerSession === 0 ? "uncapped (0)" : String(maxObservationsPerSession);
     process.stderr.write(
       `[agentmemory] WARNING: MAX_OBS_PER_SESSION is ${capDesc}, above the ` +
-        `${MAX_IMPORT_OBS_PER_SESSION}-per-session import ceiling ` +
-        `(MAX_IMPORT_OBS_PER_SESSION). Sessions past that ceiling make every ` +
-        `mem::export -> mem::import restore fail wholesale. Keep ` +
-        `MAX_OBS_PER_SESSION at or below ${MAX_IMPORT_OBS_PER_SESSION} if you ` +
-        `rely on export/import backups.\n`,
+        `${MAX_IMPORT_OBS_PER_SESSION}-per-session import ceiling (MAX_IMPORT_OBS_PER_SESSION). ` +
+        `Sessions past that ceiling make every mem::export -> mem::import restore fail wholesale. ` +
+        `Keep MAX_OBS_PER_SESSION at or below ${MAX_IMPORT_OBS_PER_SESSION} if you rely on export/import backups.\n`,
     );
   }
 
   return {
     engineUrl,
     restPort,
-    streamsPort,
     viewerPort,
     provider,
     tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
@@ -511,26 +493,6 @@ export function getFollowupWindowSeconds(): number {
   );
 }
 
-const VIEWER_STREAM_MAX_DEFAULT = 500;
-const VIEWER_STREAM_MAX_FLOOR = 200;
-
-function parseExactInt(value: string | undefined, fallback: number): number {
-  if (!value) return fallback;
-  const trimmed = value.trim();
-  if (!/^-?\d+$/.test(trimmed)) return fallback;
-  const parsed = Number(trimmed);
-  return Number.isSafeInteger(parsed) ? parsed : fallback;
-}
-
-export function getViewerStreamMax(): number {
-  const parsed = parseExactInt(
-    getMergedEnv()["AGENTMEMORY_VIEWER_STREAM_MAX"],
-    VIEWER_STREAM_MAX_DEFAULT,
-  );
-  if (parsed < 0) return VIEWER_STREAM_MAX_DEFAULT;
-  return Math.max(parsed, VIEWER_STREAM_MAX_FLOOR);
-}
-
 export function isConsolidationEnabled(): boolean {
   const env = getMergedEnv();
   const explicit = env["CONSOLIDATION_ENABLED"];
@@ -599,9 +561,18 @@ export function getIndexSaveIntervalMs(): number {
   return raw > 0 ? raw : INDEX_SAVE_INTERVAL_DEFAULT_MS;
 }
 
-export function getStateSaveIntervalMs(): number | undefined {
-  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_STATE_SAVE_INTERVAL_MS"], 0);
-  return raw > 0 ? raw : undefined;
+export const STATE_SAVE_INTERVAL_DEFAULT_MS = 2000;
+export const STATE_SAVE_INTERVAL_MIN_MS = 100;
+export const STATE_SAVE_INTERVAL_MAX_MS = 3_600_000;
+
+export function getStateSaveIntervalMs(): number {
+  const value = getMergedEnv()["AGENTMEMORY_STATE_SAVE_INTERVAL_MS"];
+  if (value === undefined || value.trim() === "") return STATE_SAVE_INTERVAL_DEFAULT_MS;
+  if (!/^\d+$/.test(value.trim())) return STATE_SAVE_INTERVAL_DEFAULT_MS;
+  const raw = Number(value);
+  return Number.isSafeInteger(raw) && raw >= STATE_SAVE_INTERVAL_MIN_MS && raw <= STATE_SAVE_INTERVAL_MAX_MS
+    ? raw
+    : STATE_SAVE_INTERVAL_DEFAULT_MS;
 }
 
 export const VECTOR_BUCKET_SIZE_DEFAULT = 500;

@@ -100,7 +100,7 @@ Yêu cầu:
 
 - Node.js 20 hoặc mới hơn kèm npm và npx (`node -v`, `npm -v`, và `npx -v`).
 - Cài đặt iii-engine tự động trên macOS/Linux cũng cần `curl`, một `sh` chuẩn POSIX, và `tar`. Các image tối giản như `node:20-slim` có thể không có sẵn những công cụ này.
-- Windows gốc (native) yêu cầu cài đặt thủ công `iii.exe` của iii-engine v0.22.1 đã được pin. WSL2 hoặc Docker Desktop là các lựa chọn khác được hỗ trợ.
+Windows native cần cài thủ công `iii.exe` của iii v0.24.6 đã pin; WSL2 dùng trình cài tự động cho macOS/Linux
 
 Lệnh cài mới chuẩn (canonical):
 
@@ -112,7 +112,7 @@ Lần chạy đầu tiên là một quy trình cài đặt tương tác: chọn 
 
 Chế độ keyless tắt vector embedding. `memory_recall` (đường dẫn `mem::search`) dùng BM25, trong khi `memory_smart_search` cũng có thể kết hợp (fuse) các kết quả khớp từ graph cấu trúc khi dữ liệu graph đã tồn tại. Để có recall ngữ nghĩa (semantic) miễn phí ngay trên máy (on-device), đặt `EMBEDDING_PROVIDER=local` trong `~/.agentmemory/.env` và khởi động lại. Request embedding đầu tiên sẽ tải `Xenova/all-MiniLM-L6-v2`; sau lần tải model đầu tiên đó, việc suy luận chạy hoàn toàn cục bộ.
 
-Runtime cục bộ dùng bốn port: `3111` cho REST/MCP HTTP, `3112` cho iii streams, `3113` cho viewer, và `49134` cho WebSocket của iii worker. Trạng thái (state) bền vững của iii nằm tại `~/Library/Application Support/agentmemory` trên macOS, `$XDG_DATA_HOME/agentmemory` hoặc `~/.local/share/agentmemory` trên Linux, và `%APPDATA%\agentmemory` trên Windows. Dùng `--data-dir <path>` hoặc `AGENTMEMORY_DATA_DIR` để ghi đè, và dùng lại đúng giá trị đó ở mỗi lần khởi động lại. Để tương thích ngược, một `./data/state_store.db` hoặc `./data/iii-config.yaml` đã tồn tại sẽ được ưu tiên hơn giá trị mặc định của platform cho instance 0; một flag hoặc biến môi trường chỉ định rõ vẫn luôn thắng.
+Runtime CLI cục bộ dùng REST/MCP HTTP trên `3111`, viewer trên `3113` và WebSocket worker iii nội bộ trên `49134`; cập nhật viewer qua SSE tại `GET /agentmemory/viewer/events` trên REST port. Dữ liệu bền vững ở thư mục mặc định theo hệ điều hành. Dùng `--data-dir <path>` hoặc `AGENTMEMORY_DATA_DIR` để đổi; instance 0 dùng lại `./data/state_store.db` nếu có. `--instance N` cô lập runtime, `AGENTMEMORY_ENV_FILE` chọn file `.env` khác
 
 Sau đó hãy xác nhận recall hoạt động và trang bị skill cho agent của bạn:
 
@@ -132,7 +132,7 @@ Kết nối thêm agent bất kỳ lúc nào với `agentmemory connect <agent>`
 <details>
 <summary><strong>Windows</strong></summary>
 
-Đường đi nhanh nhất là WSL2. Thiết lập engine trên Windows gốc yêu cầu tải file ZIP v0.22.1 đã pin và trích xuất `iii.exe` thủ công; CLI không tự động trích xuất file này. Docker Desktop cũng được hỗ trợ. Xem [ghi chú Windows](#windows) để biết các bước chi tiết.
+WSL2 là cách nhanh nhất; Windows native cần cài thủ công binary v0.24.6. Xem các bước trong [ghi chú Windows](#windows)
 
 </details>
 
@@ -157,7 +157,7 @@ npx cache theo từng phiên bản. Buộc dùng bản mới nhất với `npx -
 <details>
 <summary><strong>Đã chạy sẵn iii engine riêng của bạn</strong></summary>
 
-agentmemory pin phiên bản iii-engine v0.22.1 và sẽ không gắn (attach) vào một phiên bản khác (worker không thể nói đúng protocol của một engine khác). Hãy dừng engine khác đó, sau đó chạy `npx -y @agentmemory/agentmemory@latest`. Nó sẽ cài đặt và chạy bản v0.22.1 đã pin trong `~/.agentmemory/bin`, không đụng đến `iii` riêng của bạn.
+Tương thích với iii 0.24.6 và registry worker `state` 0.22.20, `http` 0.22.7
 
 </details>
 
@@ -319,7 +319,7 @@ Bạn giải thích lại cùng một kiến trúc ở mỗi session. Bạn phá
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Theo mặc định, agentmemory lưu trạng thái của iii-engine bên ngoài repository mà bạn khởi chạy nó từ đó: `~/Library/Application Support/agentmemory` trên macOS, `$XDG_DATA_HOME/agentmemory` hoặc `~/.local/share/agentmemory` trên Linux, và `%APPDATA%\agentmemory` trên Windows. Một `./data/state_store.db` hoặc `./data/iii-config.yaml` kiểu cũ (legacy) đã tồn tại sẽ được dùng lại cho instance 0 trước khi áp dụng giá trị mặc định của platform đó. Để chọn vị trí một cách rõ ràng, truyền `--data-dir <path>` hoặc đặt `AGENTMEMORY_DATA_DIR`; cả hai cách chỉ định rõ này đều được ưu tiên hơn việc dò tìm kiểu legacy:
+Theo mặc định, agentmemory lưu state bên ngoài repository dùng để khởi chạy: `~/Library/Application Support/agentmemory` trên macOS, `$XDG_DATA_HOME/agentmemory` hoặc `~/.local/share/agentmemory` trên Linux, và `%APPDATA%\agentmemory` trên Windows. Instance 0 có thể dùng lại `./data/state_store.db` hiện có. Chọn vị trí bằng `--data-dir <path>` hoặc `AGENTMEMORY_DATA_DIR`; `--instance N` tách runtime, `AGENTMEMORY_ENV_FILE` chọn file `.env` khác:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
@@ -476,7 +476,7 @@ Tỷ lệ hit top-5 đạt 100% tại **ngưỡng toán học P@5** cho corpus n
 </tr>
 <tr>
 <td><strong>Dependency bên ngoài</strong></td>
-<td>Không (SQLite + iii-engine)</td>
+<td>Không (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vector DB</td>
 <td>Nhiều</td>
@@ -556,7 +556,7 @@ Không cái nào trong số này tự động capture từ hook của coding age
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Bắt đầu nhanh" height="32" /></picture></h2>
 
-Khả năng tương thích: bản phát hành này nhắm tới `iii-sdk` 0.22.1 và pin iii-engine v0.22.1.
+Tương thích với iii 0.24.6 và registry worker `state` 0.22.20, `http` 0.22.7
 
 ### Thử trong 30 giây
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Panel sẵn sàng lúc khởi động tính đến cả bốn port: REST/MCP HTTP trên 3111, iii streams trên 3112, viewer trên 3113, và WebSocket của iii worker trên 49134. `status` xác nhận tình trạng của agentmemory và provider/chế độ embedding đang hoạt động. Lưu một probe và xác nhận nó có thể tìm kiếm được:
+Runtime dùng REST/MCP HTTP 3111, viewer 3113 và WebSocket nội bộ 49134; live event của viewer truyền qua SSE trên REST. `status` báo `enginePinnedVersion`, tình trạng agentmemory và provider/embedding mode. Hãy lưu probe rồi xác nhận có thể tìm thấy:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ Dùng lệnh bảo trì khi bạn chủ động muốn cập nhật runtime cụ
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Cảnh báo: lệnh này thay đổi workspace/runtime hiện tại. Nó có thể cập nhật các dependency JavaScript và pull image Docker `iiidev/iii:0.22.1` đã được pin. Nó không bao giờ cài một iii engine chưa pin hoặc mới hơn.
+Cảnh báo: lệnh này thay đổi workspace/runtime hiện tại; có thể cập nhật dependency JavaScript và cài binary iii 0.24.6 đã pin.
 
 Chi tiết triển khai nằm trong `src/cli.ts` (xem `runUpgrade` quanh khu vực `src/cli.ts:544-595`).
 
@@ -795,7 +795,7 @@ Entry của agentmemory là **cùng một block MCP server** trên mọi host d�
 | **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | Cùng block `mcpServers`. |
 | **Devin CLI (MCP + hooks)** | `~/.config/devin/config.json` | `agentmemory connect devin` gộp entry MCP; `--with-hooks` thêm sáu hook auto-capture gốc (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) với các tool matcher chữ thường của Devin. Kiểm tra bằng `devin mcp list` và `/hooks` trong devin. |
 | **Devin CLI (plugin đầy đủ)** | `plugin/.devin-plugin/` | `devin plugins install ./plugin` từ một checkout đăng ký toàn bộ 17 skill dưới dạng slash command `/agentmemory:<skill>` cùng với MCP server. Hook plugin của Devin không thể bắn `SessionStart`/`SessionEnd`, nên hãy kết hợp với `connect devin --with-hooks` để capture session đầy đủ. |
-| **Devin (cloud)** | Settings → Connections → MCP servers | Thêm một MCP tùy chỉnh (STDIO): command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` chỉ tới một deployment agentmemory có thể truy cập qua network cùng `AGENTMEMORY_SECRET` (các session cloud không thể chạm tới localhost — xem [`deploy/`](../deploy/)). Lưu secret trong Devin Secrets, sau đó dùng "Test listing tools" để xác nhận cả 54 tool đều xuất hiện. |
+| **Devin (cloud)** | Settings → Connections → MCP servers | Thêm một MCP tùy chỉnh (STDIO): command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` chỉ tới một deployment agentmemory có thể truy cập qua network cùng `AGENTMEMORY_SECRET` (các session cloud không thể chạm tới localhost — xem [`../deploy/`](../deploy/)). Lưu secret trong Devin Secrets, sau đó dùng "Test listing tools" để xác nhận cả 54 tool đều xuất hiện. |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (tự gộp). |
 | **GitHub Copilot CLI (chỉ MCP)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` gộp `mcpServers.agentmemory`; Copilot sẽ nhận ở lần khởi chạy kế tiếp hoặc `/mcp`. |
 | **GitHub Copilot CLI (plugin đầy đủ)** | Copilot plugin install | `copilot plugin install rohitg00/agentmemory:plugin` để lấy plugin từ subdir GitHub. |
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 Ví dụ hoàn chỉnh: [`examples/python/`](../examples/python/) (quickstart + luồng observation/recall). REST trên `:3111` vẫn khả dụng cho các host không có iii runtime.
@@ -853,96 +861,47 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Lệnh này khởi động agentmemory với một `iii-engine` cục bộ nếu binary đã pin được cài sẵn, hoặc dùng Docker Compose khi được chọn. REST, stream, và viewer bind vào `127.0.0.1` theo mặc định. Đường binary tự động trên macOS/Linux cần `curl`, một `sh` chuẩn POSIX, và `tar`.
-
-Cài `iii-engine` thủ công. **agentmemory hiện đang pin `iii-engine` ở `v0.22.1`**, cùng release với dependency `iii-sdk` của nó; worker nói đúng wire protocol của engine đó, và 0.20.0 đã tổ chức lại toàn bộ SDK surface, nên cả hai di chuyển cùng nhau qua các bản phát hành của agentmemory. Ghi đè bằng `AGENTMEMORY_III_VERSION=<version>` nếu bạn chạy engine riêng và biết chắc nó khớp.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** đổi `aarch64-apple-darwin` thành `x86_64-apple-darwin`
-- **Linux x64:** đổi thành `x86_64-unknown-linux-gnu`
-- **Linux arm64:** đổi thành `aarch64-unknown-linux-gnu`
-- **Windows:** tải `iii-x86_64-pc-windows-msvc.zip` từ [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) và giải nén `iii.exe` vào `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Mỗi archive đều có một file `.sha256` tương ứng trên trang release; khi bạn đổi platform, dùng hash của đúng file đó trong lệnh kiểm tra ở trên (trên Windows: `Get-FileHash`). Bộ cài tự động trong `npx @agentmemory/agentmemory` pin các hash này và từ chối một archive không khớp.
-
-Hoặc dùng Docker (`docker-compose.yml` đi kèm pull `iiidev/iii:0.22.1`). Docs đầy đủ: [iii.dev/docs](https://iii.dev/docs).
+`npm start` khởi chạy cùng iii Worker Compose như CLI: iii 0.24.6, `state@0.22.20`, `http@0.22.7`. Trên macOS/Linux, CLI tải engine vào `~/.agentmemory/bin`; cần `curl`, POSIX `sh` và `tar` để cài tự động. REST và viewer cục bộ bind vào `127.0.0.1`; cập nhật viewer dùng SSE trên REST. `/agentmemory/status` báo `enginePinnedVersion`; có thể ghi đè pin bằng `AGENTMEMORY_III_VERSION`
 
 ### Windows
 
-agentmemory chạy trên Windows 10/11, nhưng chỉ riêng package Node.js thì chưa đủ; bạn còn cần runtime iii-engine v0.22.1 đã pin chạy như một process nền. CLI không tự động giải nén file ZIP Windows, nên người dùng Windows gốc phải cài `iii.exe` thủ công, dùng WSL2, hoặc chọn Docker Desktop.
+agentmemory chạy trên Windows 10/11; WSL2 có thể tự cài engine theo quy trình Linux. Windows native cần cài thủ công iii-engine v0.24.6: tải archive từ [trang phát hành iii v0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), xác minh checksum và đặt `iii.exe` trong `PATH`. CLI không tự giải nén ZIP Windows
 
-Việc tự động kết nối MCP trên Windows gốc chỉ hỗ trợ `agentmemory connect copilot-cli`. Với Claude Code, Codex, Cursor, và mọi agent Windows gốc khác, hãy copy block MCP thủ công từ [Các agent khác](#other-agents) vào config Windows của agent đó. Chạy `connect` trong WSL chỉ phù hợp khi agent đích cũng được cài trong cùng môi trường WSL; nó không sửa config của một agent chạy trên Windows host.
+Cấu hình MCP tự động trên Windows native chỉ hỗ trợ `agentmemory connect copilot-cli`; agent khác dùng khối MCP thủ công trong [Other agents](#other-agents). Chỉ chạy `connect` trong WSL nếu agent đích cũng cài trong cùng môi trường WSL
 
-**Phương án A: binary Windows build sẵn (khuyến nghị)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Phương án B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Phương án C: chỉ MCP độc lập (không engine).** Nếu bạn chỉ cần các MCP tool cho agent của mình và không cần REST API, viewer, hay cron job, hãy bỏ qua engine hoàn toàn:
+**Chỉ dùng MCP độc lập, không có engine.** Nếu không cần REST API, viewer hoặc dịch vụ runtime:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Chẩn đoán cho Windows:** nếu `npx -y @agentmemory/agentmemory@latest` lỗi, chạy lại với `--verbose` để xem stderr thật của engine. Các lỗi thường gặp:
-
-| Triệu chứng | Cách khắc phục |
-|---|---|
-| `The engine process started but the REST API never responded.` | Xác nhận cả bốn port suy ra đều trống, kiểm tra `iii.exe` đã pin còn sống, sau đó chạy lại với `--verbose` và xem stderr đã bắt được của engine |
-| `Could not start iii-engine` | Không có `iii.exe` cũng không có Docker được cài. Xem Phương án A hoặc B ở trên |
-| Xung đột port | `netstat -ano \| findstr :3111` để xem cái gì đang chiếm port, sau đó kill nó hoặc dùng `--port <N>` |
-| Docker fallback bị bỏ qua dù Docker đã được cài | Đảm bảo Docker Desktop thực sự đang chạy (icon trên system tray) |
-
-> Lưu ý: iii **engine** là một binary build sẵn, không phải một cargo crate, nên đừng cố `cargo install` nó. (Các iii **SDK** được publish trên crates.io, npm, và PyPI, nhưng agentmemory không cần chúng.) Các cách cài engine được hỗ trợ đều pin ở v0.22.1: binary build sẵn ở trên, đường tự cài macOS/Linux của agentmemory (cần `curl`, `sh` chuẩn POSIX, và `tar`), và image Docker `iiidev/iii:0.22.1`. Một lệnh `install.sh | sh` trần từ upstream sẽ cài engine mới nhất, cái mà agentmemory không hỗ trợ. Hãy dùng `npx -y @agentmemory/agentmemory@latest`; trên macOS/Linux nó sẽ tải engine đã pin vào `~/.agentmemory/bin`.
+**Chẩn đoán:** Khi khởi động lỗi, chạy lại với `--verbose` để xem engine stderr. Kiểm tra các port `3111`, `3113`, `49134` còn trống; dùng `--port <N>` hoặc `--instance N` để tách runtime. CLI không thay thế `iii` trên `PATH`
 
 ---
 
 <h2 id="deploy">Triển khai</h2>
 
-Các template one-click cho các managed host. Mỗi template đi kèm một Dockerfile tự chứa pull `@agentmemory/agentmemory` từ npm và copy binary iii engine vào từ image Docker Hub chính thức `iiidev/iii`; không cần image agentmemory build sẵn. Storage bền vững mount tại `/data`; entrypoint ở lần boot đầu tiên sẽ ghi đè config iii đi kèm trong npm (vốn bind `127.0.0.1`) bằng một config được chỉnh cho deploy, bind `0.0.0.0` và dùng đường dẫn `/data` tuyệt đối, sinh HMAC secret, rồi hạ quyền từ `root` xuống `node` qua `gosu` trước khi exec CLI agentmemory.
+Docker được hỗ trợ để self-host từ repository, không phải chế độ khởi động CLI. [`../deploy/Dockerfile`](../deploy/Dockerfile) và [`../deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml) dùng runtime iii 0.24.6; lưu state, traces và secret trong volume `/data` bền vững. Named volume mặc định là `iii-data`; đặt `AGENTMEMORY_DATA_DIR` thành đường dẫn host để bind mount. File store từ 0.22.1 được đọc trực tiếp tại `/data/state_store.db`, không cần migration. REST CORS mặc định cho phép origin cục bộ; thêm origin tin cậy bằng `REST_ALLOWED_ORIGINS`. Xem [`../deploy/README.md`](../deploy/README.md).
+
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Triển khai lên fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Triển khai lên Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Triển khai lên fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Triển khai lên Railway" /></a>
 </p>
 
-Nút one-click deploy của Render yêu cầu `render.yaml` ở gốc repository, và chúng tôi chủ đích giữ nó sạch. Hãy dùng luồng Render Blueprint được ghi lại trong [`deploy/render/`](.././deploy/render/README.md) để chỉ tới blueprint trong repo một cách thủ công.
+Nút one-click deploy của Render yêu cầu `render.yaml` ở gốc repository, và chúng tôi chủ đích giữ nó sạch. Hãy dùng luồng Render Blueprint được ghi lại trong [`../deploy/render/`](.././deploy/render/README.md) để chỉ tới blueprint trong repo một cách thủ công.
 
-Chi tiết thiết lập đầy đủ (capture HMAC, SSH tunnel cho viewer, xoay, backup, mức chi phí sàn) nằm trong [`deploy/`](.././deploy/README.md):
+Chi tiết thiết lập đầy đủ (capture HMAC, SSH tunnel cho viewer, xoay, backup, mức chi phí sàn) nằm trong [`../deploy/`](.././deploy/README.md):
 
-- [`deploy/fly`](.././deploy/fly/README.md): một máy đơn với
+- [`../deploy/fly`](.././deploy/fly/README.md): một máy đơn với
   `auto_stop_machines = "stop"`; rẻ nhất khi idle.
-- [`deploy/railway`](.././deploy/railway/README.md): phí cố định của Hobby plan,
+- [`../deploy/railway`](.././deploy/railway/README.md): phí cố định của Hobby plan,
   volume trong dashboard.
-- [`deploy/render`](.././deploy/render/README.md): luồng Blueprint,
+- [`../deploy/render`](.././deploy/render/README.md): luồng Blueprint,
   tự động snapshot disk trên các plan trả phí.
-- [`deploy/coolify`](.././deploy/coolify/README.md): self-hosted trên
+- [`../deploy/coolify`](.././deploy/coolify/README.md): self-hosted trên
   VPS riêng của bạn qua [Coolify](https://coolify.io/self-hosted); cùng
   Docker Compose stack, bạn sở hữu cả host và dữ liệu.
 
@@ -950,6 +909,14 @@ Chỉ port `3111` được publish. Viewer trên `3113` vẫn bind vào
 loopback bên trong container; README của mỗi template đều ghi lại
 pattern SSH-tunnel để chạm tới nó.
 
+
+### Di chuyển các cài đặt Docker cũ do CLI quản lý
+
+CLI hiện tại không còn khởi chạy hay quản lý các triển khai Docker. Nếu tìm thấy bản ghi vòng đời Docker cũ, CLI sẽ giữ nguyên metadata và in ra chính xác lệnh `docker stop ...`; hãy chạy lệnh đó trước khi di chuyển. Đừng khởi chạy runtime mới khi volume vẫn còn được gắn vào container cũ.
+
+Giữ lại và sao lưu volume lưu trữ lâu dài cũ (thường là `iii-data`), hoặc sao chép nội dung `/data` sang một bind mount. Worker state đọc trực tiếp tệp `/data/state_store.db` hiện có, không cần xuất hay chuyển đổi. Runtime cũ dùng UID/GID `65532:65532`; image mới thực hiện một lần việc di chuyển quyền sở hữu đệ quy sang `node:node` (`1000:1000`) và ghi `/data/.ownership-migrated-node-v1`. Sau khi di chuyển, đừng gắn volume trở lại runtime cũ.
+
+Runtime cũ cũng lưu bearer secret được tạo ra trong `/data/.hmac`. Image mới giữ nguyên secret này trong quá trình di chuyển; `AGENTMEMORY_SECRET` được đặt tường minh sẽ được ưu tiên. Khởi chạy dự án Compose mới từ thư mục gốc của repository bằng lệnh `docker compose up --build -d`. Nếu tên volume cũ có tiền tố của dự án thay vì là `iii-data`, hãy chủ động dùng lại hoặc đổi tên volume đó—đừng vô tình khởi tạo một volume trống. Kiểm tra `/agentmemory/livez` và xác nhận có thể tìm thấy cả memory cũ lẫn mới. Tránh chạy `docker compose down -v` trừ khi bạn chủ ý xóa dữ liệu.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Tại sao chọn agentmemory" height="32" /></picture></h2>
@@ -1262,9 +1229,9 @@ Viewer server bind vào `127.0.0.1` theo mặc định và gắn kèm server sec
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
 
-Viewer tại `:3113` cho thấy những gì agent của bạn **đã ghi nhớ**. [iii console](https://iii.dev/docs/console) cho thấy những gì agent của bạn **đã làm**: mọi memory op dưới dạng một OpenTelemetry trace, mọi KV entry có thể sửa, mọi function có thể gọi, mọi stream có thể lắng nghe. Hai cửa sổ trên cùng một bộ nhớ: một có hình dạng product, một có hình dạng engine.
+Viewer tại `:3113` cho thấy những gì agent của bạn **đã ghi nhớ**. [iii console](https://iii.dev/docs/console) cho thấy những gì agent của bạn **đã làm**: mọi memory op dưới dạng một OpenTelemetry trace, mọi KV entry có thể sửa, mọi function có thể gọi. Hai cửa sổ trên cùng một bộ nhớ: một có hình dạng product, một có hình dạng engine.
 
-Xem một `memory_smart_search` được bắn ra và theo dõi BM25 scan → embedding lookup → RRF fusion → reranker dưới dạng một waterfall. Sửa một consolidation timer bị kẹt trong KV browser. Replay một hook `PostToolUse` với payload đã chỉnh. Pin WebSocket stream và xem observation đổ vào theo thời gian thực.
+Xem một `memory_smart_search` được bắn ra và theo dõi BM25 scan → embedding lookup → RRF fusion → reranker dưới dạng một waterfall. Sửa một consolidation timer bị kẹt trong KV browser. Replay một hook `PostToolUse` với payload đã chỉnh.
 
 agentmemory có sẵn thứ này miễn phí vì mọi function call và trigger đều bắn qua iii; không có gì custom, không có gì cần instrument.
 
@@ -1282,15 +1249,12 @@ agentmemory có sẵn thứ này miễn phí vì mọi function call và trigger
 agentmemory console
 ```
 
-Lệnh này chạy `iii console` của engine đã pin dựa trên các port mà agentmemory đã resolve (REST, stream, bridge) và phục vụ nó ở một port cao hơn viewer một đơn vị, mặc định là `http://localhost:3114`. `--console-port N` chọn một port khác; `--port` và `--instance` chọn instance agentmemory giống như cách chúng làm với `stop`; mọi flag khác được truyền thẳng qua, ví dụ `--enable-flow` cho trang architecture-graph thử nghiệm.
+Lệnh này chạy `iii console` của engine đã pin dựa trên các port mà agentmemory đã resolve (REST, bridge) và phục vụ nó ở một port cao hơn viewer một đơn vị, mặc định là `http://localhost:3114`. `--console-port N` chọn một port khác; `--port` và `--instance` chọn instance agentmemory giống như cách chúng làm với `stop`; mọi flag khác được truyền thẳng qua, ví dụ `--enable-flow` cho trang architecture-graph thử nghiệm.
 
 Làm tương tự bằng tay, hữu ích khi `agentmemory` không có trong PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **Những gì bạn có thể làm từ console:**
@@ -1301,12 +1265,10 @@ Làm tương tự bằng tay, hữu ích khi `agentmemory` không có trong PATH
 | **Functions** | Gọi trực tiếp bất kỳ function nào của agentmemory bằng một JSON payload; tiện để test `memory.recall`, `memory.consolidate`, `graph.query` mà không cần kết nối một client. |
 | **Triggers** | Replay trigger HTTP, cron, event, và state: bắn cron consolidation thủ công, retry một route HTTP, phát một thay đổi state. |
 | **States** | KV browser với CRUD đầy đủ trên session, memory slot, timer lifecycle, và embedding index; sửa giá trị ngay tại chỗ. |
-| **Streams** | Monitor WebSocket live cho các lần write memory, event hook, và cập nhật observation khi chúng chảy qua iii stream. |
 | **Queues** | Topic queue bền vững + quản lý dead-letter. Replay hoặc drop các job embedding / compression bị lỗi. |
 | **Traces** | Các view waterfall / flame / service-breakdown của OpenTelemetry. Filter theo `trace_id` để xem chính xác những function, lệnh gọi DB, và request embedding mà một `memory.search` đã tạo ra. |
 | **Logs** | Log OTEL có cấu trúc, được filter và liên kết tới trace/span ID. |
 | **Config** | Cấu hình runtime: xem chính xác engine của bạn đang chạy với worker, provider, và port nào. |
-| **Flow** | (Tùy chọn, `--enable-flow`) Đồ thị architecture tương tác của mọi worker, trigger, và stream. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="Chế độ xem waterfall của trace trong iii console, hiển thị thời lượng theo từng span" width="720" />
@@ -1316,9 +1278,8 @@ Làm tương tự bằng tay, hữu ích khi `agentmemory` không có trong PATH
 
 **Trace đã được bật sẵn:**
 
-`iii-config.yaml` đi kèm với worker `iii-observability` đã được bật (`exporter: memory`, `sampling_ratio: 0.1`, metric + log). Không cần config gì thêm; ngay khi agentmemory khởi động, mọi memory operation sẽ phát ra một log có cấu trúc mà console đọc được, và một trong mười lần (`sampling_ratio: 0.1`) cũng sẽ phát ra một trace span.
+**Tracing và log:** Dùng iii console để kiểm tra telemetry runtime. Xem [tài liệu observability của iii](https://iii.dev/docs) về cấu hình exporter và sampling.
 
-Nếu bạn muốn export sang Jaeger/Honeycomb/Grafana Tempo thay vào đó, đổi `exporter: memory` thành `exporter: otlp` và đặt collector endpoint theo docs observability của iii.
 
 > **Lưu ý:** console bản thân nó không ép buộc auth; hãy giữ nó bind vào `127.0.0.1` (mặc định) và không bao giờ expose nó ra công khai.
 
@@ -1326,14 +1287,16 @@ Nếu bạn muốn export sang Jaeger/Honeycomb/Grafana Tempo thay vào đó, đ
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="Powered by iii" height="32" /></picture></h2>
 
-agentmemory **đã sẵn là một instance [iii](https://iii.dev) đang chạy**. Ba primitive (worker, function, trigger) tạo nên runtime; KV state, stream, và OTEL trace đến từ các worker iii-state, iii-stream, và iii-observability đi kèm với iii. Bạn không hề cài Postgres, Redis, Express, pm2, hay Prometheus, vì iii đã thay thế chúng.
+agentmemory là worker trên runtime [iii](https://iii.dev). Worker Compose quản lý engine và chạy registry worker `state`, `http`; feed viewer được phục vụ bằng SSE qua REST.
+
+
+
 
 Điều đó có nghĩa là chỉ cần thêm một lệnh nữa là mở rộng agentmemory với toàn bộ một khả năng mới.
 
 ### Mở rộng agentmemory với nhiều worker hơn
 
-Các builtin mà agentmemory cần đã có sẵn trong `iii-config.yaml` và khởi động cùng nó: `iii-state` (KV), `iii-queue` (retry bền vững cho các subscriber event), `iii-pubsub`, `iii-cron`, `iii-stream`, và `iii-observability` (trace, metric và log OTEL trên mọi function). Bất cứ thứ gì khác từ [iii worker registry](https://workers.iii.dev) đều cắm vào cùng engine: copy `iii-config.yaml` vào `~/.agentmemory/iii-config.yaml` (CLI ưu tiên file đó hơn file đi kèm và vẫn render port cùng data path vào đó), thêm entry, cài worker runtime một lần với `~/.agentmemory/bin/iii update worker`, và khởi động lại agentmemory.
-
+Runtime kết hợp agentmemory với registry worker `state` (KV) và `http`; có thể thêm worker từ [iii registry](https://workers.iii.dev) vào Worker Compose.
 ```yaml
 workers:
   # ...the bundled entries...
@@ -1348,23 +1311,17 @@ workers:
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Code lấy ra từ `memory_recall` chạy trong một VM dùng một lần, không chạy trên shell của bạn |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | Dựng thêm các MCP server cạnh server của agentmemory, chia sẻ cùng engine |
 
-Trên engine 0.22.x, hãy giữ các tên có tiền tố `iii-` cho các builtin ở trên; các entry không có tiền tố `http`, `state`, `queue`, `pubsub` và `cron` là các worker registry độc lập mà agentmemory sẽ chuyển sang khi migration lên 0.23.
 
 Registry đầy đủ: [workers.iii.dev](https://workers.iii.dev). Mọi worker ở đó đều compose qua đúng những primitive mà agentmemory dùng, và agentmemory mà bạn đang có chính là một trong số đó.
 
-### Config engine và bind address
+CLI pin registry package `state@0.22.20` và `http@0.22.7` trong Worker Compose.
+### Runtime CLI và địa chỉ bind
 
-`agentmemory start` đọc config engine từ file đầu tiên tồn tại: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` trong thư mục hiện tại, `~/.agentmemory/iii-config.yaml`, rồi tới `iii-config.yaml` đi kèm. Ở mỗi lần khởi động, nó render file đó (data path, port, state backend) vào `~/.agentmemory/data/iii-config.runtime.yaml` và khởi chạy engine với bản đã render, nên hãy sửa file nguồn, không phải file đã render. Các giá trị `host:` của file nguồn được giữ nguyên như đã viết.
-
-`iii-config.yaml` đi kèm bind `127.0.0.1` một cách có chủ đích, và giá trị mặc định đó cũng áp dụng bên trong container. Một CLI khởi động trong container sẽ lắng nghe trên loopback của container đó, nên các port đã publish không chạm tới gì cả. Để phục vụ một CLI chạy trong container qua các port đã publish, hãy đặt `AGENTMEMORY_III_CONFIG` tới một config bind `0.0.0.0`. `iii-config.docker.yaml` đi kèm sẵn là một ví dụ như vậy: nó bind `iii-http`, `iii-stream` và port engine vào `0.0.0.0` và lưu state dưới `/data`, nên hãy mount một volume ghi được ở đó. Giữ `AGENTMEMORY_SECRET` luôn được đặt, và chỉ publish những port bạn cần, trên `127.0.0.1` hoặc sau một proxy bạn tin tưởng.
-
-`docker-compose.yml` của repo này không đi qua cơ chế dò tìm config của CLI: nó mount `iii-config.docker.yaml` vào `/app/config.yaml`, và container `iii-engine` khởi động với `--config /app/config.yaml`. Các [deploy template](../deploy/) one-click tự viết config `0.0.0.0` riêng của chúng trong entrypoint.
+Chạy `agentmemory` khởi chạy iii Worker Compose với manifest riêng trong data directory đã chọn: iii 0.24.6, `state@0.22.20`, `http@0.22.7`. REST và viewer cục bộ bind vào `127.0.0.1`; WebSocket engine là lưu lượng nội bộ. Docker dùng [`../deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml); xem [`../deploy/README.md`](../deploy/README.md).
 
 ### Storage backend: file (mặc định) so với redis
 
-`iii-state` và `iii-stream` mặc định dùng KV store dựa trên file đi kèm của iii-engine: một file JSON cho mỗi scope, giữ trong memory của process engine và được viết lại ra disk theo timer. Đó là mặc định đúng cho một bản cài cục bộ, một người dùng; một daemon chia sẻ với nhiều writer đồng thời sẽ nhận được các lần write theo từng key thật từ Redis thay vào đó, với chi phí là một round-trip network cho mỗi operation (mỗi lệnh `state::*` vẫn serialize trên một kết nối Redis, nên điều này đổi lock của file store thành một socket, không phải đổi lấy khả năng chạy song song).
-
-Đặt `AGENTMEMORY_STATE_BACKEND=redis` (cùng `AGENTMEMORY_REDIS_URL`) để chuyển cả hai worker sang adapter `redis` tích hợp sẵn của iii-engine, adapter này lưu mỗi key như một hash field Redis (`HSET`) thay vì viết lại cả một scope ở mỗi lần write:
+Worker `state` mặc định dùng KV store dạng file, giữ trong memory và định kỳ ghi xuống disk. Redis dùng được khi nhiều writer chia sẻ runtime nhưng thêm network round trip và không làm một worker connection chạy song song. Đặt `AGENTMEMORY_STATE_BACKEND=redis` và `AGENTMEMORY_REDIS_URL` để dùng Redis adapter của worker `state`, lưu mỗi key thành Redis hash field (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1372,31 +1329,22 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` mặc định là `file`; để trống nó giữ nguyên hành vi hiện tại, và một giá trị không nhận diện được (bất cứ gì khác `file` hoặc `redis`) sẽ là một lỗi khởi động chứ không phải fallback im lặng. `/agentmemory/status` và trang Health của viewer (dòng State store) báo backend nào đang active và nó có trả lời hay không, không bao giờ báo URL.
+`AGENTMEMORY_STATE_BACKEND` mặc định là `file`; giá trị khác `file` hoặc `redis` gây lỗi khởi động. `/agentmemory/status` và Health của viewer báo backend đang dùng và trạng thái phản hồi, không hiển thị URL. Chỉ hỗ trợ `redis://` thuần; dịch vụ TLS-only `rediss://` cần tunnel mã hóa. Kết nối Redis không mã hóa, vì vậy hãy dùng mạng cục bộ/riêng hoặc tunnel. Mã hóa dấu nháy đơn trong password Redis thành `%27`.
 
-**Chỉ `redis://` thuần.** Engine đã pin (0.22.1) build Redis client của nó không có hỗ trợ TLS, nên một URL `rediss://` (hầu hết các dịch vụ Redis được quản lý, như Upstash, Redis Cloud, và ElastiCache có mã hóa in-transit, mặc định chỉ dùng TLS) sẽ không kết nối được. Kết nối không được mã hóa, nên password Redis và mọi memory đã lưu đi qua đường truyền ở dạng clear text: hãy chỉ tới một Redis cục bộ hoặc một Redis trên network riêng mà bạn tin tưởng. Với bất kỳ Redis nào khác, hãy chạy một tunnel được mã hóa (stunnel, SSH, hoặc một VPN) trên host agentmemory, để chặng `redis://` thuần nằm trên host đó và kết nối upstream của tunnel được mã hóa và xác thực. Nếu password Redis chứa một dấu nháy đơn, hãy percent-encode nó (`%27`); engine mở rộng URL vào config YAML của nó trước khi parse.
+**Mỗi instance dùng một Redis database riêng.** Cấp database hoặc server Redis riêng cho mỗi instance chạy đồng thời để tách state.
 
-**Một Redis server cho mỗi `--instance`.** Các prefix key Redis của engine (`state:<scope>`, `stream:<name>:<group>`) là cố định, nên hai instance agentmemory (`--instance 1`, `--instance 2`, ...) cùng chỉ vào một database sẽ ghi đè dữ liệu của nhau. Một database index riêng (`redis://localhost:6379/1`) giữ dữ liệu đã lưu tách biệt, nhưng engine relay các event viewer live qua một channel pub/sub Redis duy nhất (`stream::events`), và Redis pub/sub bỏ qua database index, nên viewer của mỗi instance vẫn sẽ hiển thị event live của instance khác. Hãy cho mỗi instance một Redis server (hoặc port) riêng khi bạn chạy nhiều hơn một.
+**Điểm giống và khác.** Mọi tính năng agentmemory hoạt động với Redis: sessions, observations, memories, search/index, lessons, graph, audit log, export/import, governance deletes, consolidation status, viewer snapshot và live SSE feed, cùng health monitor. Worker `state` lưu mỗi scope thành Redis hash (`HSET`/`HGET`/`HGETALL`) và phát các state trigger như file store. agentmemory xử lý thứ tự record, partial update dưới per-key lock và kiểm tra audit scope cũ.
 
-**Điều gì giữ nguyên, và điều gì khác đi.** Mọi tính năng agentmemory đều hoạt động trên Redis: session, observation, memory (remember, supersede, evolve, forget), search và các bucket index, lesson, graph, audit log cùng các scope theo tháng của nó, export và import, governance delete, trạng thái consolidation, snapshot của viewer và live stream của nó, và health monitor. Engine lưu mỗi scope thành một hash Redis (`HSET`/`HGET`/`HGETALL`) và bắn ra cùng các state trigger như file store. Ba khác biệt của engine được xử lý ngay trong agentmemory:
+Live event của viewer dùng SSE trên REST worker và được broadcast từ process agentmemory đang chạy; không dùng Redis pub/sub hay probe Redis stream định kỳ. Redis ảnh hưởng việc đọc/ghi state, không ảnh hưởng transport viewer. Khi Redis lỗi, status báo state store không phản hồi; scope lớn được đọc toàn bộ bằng `HGETALL`.
 
-- Redis trả về các record của một scope không theo thứ tự cố định. agentmemory sắp xếp chúng theo cũ nhất trước (theo thời gian tạo trong id của record, sau đó theo timestamp) để các list, phân trang và các chunk export trả về đúng thứ tự giống như trên file store.
-- Engine áp các update một phần trên Redis trong một Lua script biến array rỗng thành object rỗng. agentmemory tự áp các update đó (read, change, write dưới một lock theo từng key) trên Redis, nên các field như `tags: []` vẫn giữ là array.
-- Kiểm tra audit log kiểu cũ đọc scope cũ từ Redis thay vì tìm file của file store trên disk.
+**Thiết lập Redis được khuyến nghị.** Snapshot policy mặc định `save 3600 1 300 100 60 10000` có thể làm mất vài phút dữ liệu khi crash. Đặt `appendonly yes` và `maxmemory-policy noeviction`; `allkeys-lru` có thể âm thầm xóa memory khi Redis đầy.
 
-Có một khác biệt cần bạn can thiệp: **sau khi Redis khởi động lại, engine dừng relay các event live** tới viewer cho tới khi agentmemory khởi động lại. Dữ liệu vẫn được lưu và đọc bình thường. Health monitor gửi một event test qua Redis mỗi 30 giây; khi nó không nhận lại được, `/agentmemory/status` và trang Health của viewer sẽ hiện "Live updates are not reaching the viewer" kèm cách khắc phục: khởi động lại agentmemory. Nếu Redis down, báo cáo status sẽ hiện "The state store is not answering" và cách kiểm tra nó (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Liệt kê một scope rất lớn sẽ đọc toàn bộ hash trong một lệnh `HGETALL`, cùng chi phí như khi file store giữ nó trong memory.
-
-**Cấu hình Redis được khuyến nghị.** Chính sách snapshot mặc định `save 3600 1 300 100 60 10000` có thể mất vài phút write khi crash, tệ hơn cửa sổ flush 5 giây của file store. Đặt `appendonly yes` cho bất cứ thứ gì bạn không muốn mất. Đặt `maxmemory-policy noeviction`; `allkeys-lru` hoặc tương tự sẽ lặng lẽ drop memory ngay khi Redis chạm giới hạn memory của nó.
-
-Một lần khởi động native (không Docker), và mọi [deploy template](../deploy/) one-click (chúng ghi đè `iii-config.yaml` đi kèm và khởi động native), đọc `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` và render chúng vào `iii-config` được khởi chạy. URL bản thân nó không bao giờ được viết vào file đã render đó, chỉ có một tham chiếu `${AGENTMEMORY_REDIS_URL}` mà process engine mở rộng từ environment riêng của nó khi boot. Chỉ có đường Docker Compose riêng của repo này (`AGENTMEMORY_USE_DOCKER=1`, hoặc resume một engine đã khởi động theo cách đó) mount `iii-config.docker.yaml` chỉ đọc và không bao giờ render; `agentmemory start` sẽ cảnh báo khi nó phát hiện tổ hợp đó. Hãy đổi file đó bằng tay, theo đúng hình thái `name: redis` / `config: redis_url: ...` được trình bày trong docs worker [iii-state](https://workers.iii.dev/workers/iii-state) và [iii-stream](https://workers.iii.dev/workers/iii-stream), và chỉ `redis_url` tới một Redis mà container chạm tới được. `docker-compose.yml` truyền `AGENTMEMORY_REDIS_URL` vào container engine, nên `redis_url: '${AGENTMEMORY_REDIS_URL}'` hoạt động ở đó và giữ URL ngoài file đã mount.
-
-Config đã render giữ URL ngoài `~/.agentmemory/data/iii-config.runtime.yaml`, nhưng configuration worker của chính engine vẫn persist giá trị *đã mở rộng* vào `~/.agentmemory/config/iii-state.yaml` và `iii-stream.yaml` ngay khi nó boot (việc mở rộng `${VAR}` của iii-engine xảy ra trước khi worker đó lưu seed của nó, và nó lưu giá trị đã resolve, không phải tham chiếu). Hãy coi thư mục đó như đang giữ một credential: `chmod 700 ~/.agentmemory` trên bất kỳ host chia sẻ nào, và ưu tiên một user ACL Redis chỉ có quyền đúng những gì agentmemory cần hơn là dùng credential admin của database.
+Worker Compose do CLI tạo truyền các biến này cho worker `state`. Với Docker self-host, xem [`../deploy/README.md`](../deploy/README.md) và [tài liệu worker state](https://workers.iii.dev/workers/state). Worker config đã lưu có thể chứa Redis URL và credential; giới hạn quyền data directory (`chmod 700 <data-dir>`) và dùng Redis ACL user có quyền tối thiểu.
 
 **Migration không tự động.** Chuyển `AGENTMEMORY_STATE_BACKEND` bắt đầu từ một store trống ở cả hai phía; không có gì tự copy dữ liệu đã có từ file sang Redis hay ngược lại. Export từ backend bạn đang rời khỏi và import vào backend bạn đang chuyển tới. Đoạn này chạy giống nhau trên cả bash và zsh (kể cả `bash -u`). Một array như `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` thì không: zsh giữ header đó như một từ bị hỏng trong khi bash tách nó thành hai, nên cả hai request đều 401 bất cứ khi nào `AGENTMEMORY_SECRET` được đặt:
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1431,13 +1379,13 @@ fi
 | Stack truyền thống | agentmemory dùng |
 |---|---|
 | Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + vector index trong memory |
-| SSE / Socket.io | iii Streams (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | REST endpoint `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | iii engine worker supervision |
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Hệ thống plugin tùy chỉnh | `iii worker add <name>` |
 
-**242 file source · ~55,000 LOC · 3,400+ test · 324 function · 67 KV scope**, tất cả trên ba primitive. Không có `agentmemory plugin install`. Hệ thống plugin chính là iii.
+**246 source files · ~56,000 LOC · 3,800+ tests · 322 functions · 65 KV scopes**, all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -1554,41 +1502,19 @@ Khi `AGENT_ID` chưa được đặt, memory vẫn không có scope (hành vi le
 
 ### Port
 
-agentmemory + iii-engine bind bốn port theo mặc định. Nếu một lần khởi động lại lỗi với `port in use`, bảng này cho bạn biết cần tìm process nào.
+Runtime cục bộ có ba listener. WebSocket engine iii chỉ dùng nội bộ để đăng ký worker, không công khai ra Internet.
 
-| Port | Process | Mục đích | Ghi đè bằng env |
+| Port | Process | Purpose | Env override |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Worker stream nội bộ (được agentmemory + viewer dùng) | `III_STREAM_PORT` (ưu tiên) hoặc tên cũ `III_STREAMS_PORT` |
-| `3113` | agentmemory | Viewer real-time (`http://localhost:3113`) | `III_VIEWER_PORT` hoặc `AGENTMEMORY_VIEWER_URL` cho URL được báo cáo |
-| `49134` | iii-engine | WebSocket; worker đăng ký ở đây, telemetry OTel chảy qua đó | `III_ENGINE_PORT` hoặc `III_ENGINE_URL` |
+| `3111` | registry `http` worker | REST API, MCP HTTP, health và viewer SSE đã xác thực `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | Viewer UI và proxy | `III_VIEWER_PORT` |
+| `49134` | iii engine | WebSocket worker nội bộ | `III_ENGINE_PORT` hoặc `III_ENGINE_URL` |
 
-`--port <N>` đổi anchor REST và suy ra stream `N+1`, viewer `N+2`, và WebSocket engine `N+46023` chỉ ở những nơi port hoặc URL tương ứng ở trên chưa được đặt rõ. Nó không tạo một namespace lifecycle cách biệt. Dùng `--instance 1` cho daemon thứ hai; nó dùng anchor 3211, mặc định là `3211/3212/3213/49234`, và nhận một thư mục data và lifecycle `instance-1` riêng. Các instance từ 1 tới 50 theo đúng pattern đó.
-
-Engine đã pin khởi động với `--no-update-check` (không tra update hay security-advisory từ GitHub lúc boot) và với telemetry sử dụng ẩn danh của iii bị tắt: agentmemory đặt `III_TELEMETRY_ENABLED=false` cho engine mà nó spawn trừ khi bạn tự export biến đó, và compose file đi kèm cũng làm vậy.
-
-Dọn các process còn sót khi port vẫn bị chiếm sau một lần chạy bị crash:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` dọn sạch cả worker và pidfile engine khi shutdown native một cách êm đẹp. Ở chế độ Docker nó flush worker native, dừng đúng container engine đã được validate, và giữ lại cả container cùng mount `/data` của nó để khởi động lại không mất dữ liệu; lần khởi động kế tiếp sẽ validate và resume đúng container đó. Gỡ cài đặt khi dùng Docker cần `agentmemory remove --keep-data`: nó xóa các file do agentmemory quản lý chung trong khi vẫn giữ container đã validate, mount data của nó, và bản ghi lifecycle cần để khôi phục chúng. Việc xóa dữ liệu Docker mang tính phá hủy được chủ đích để lại cho người vận hành tự làm sau khi backup. CLI cũng từ chối nhận hoặc gửi signal tới các process đang chiếm port của Docker hay VM (Docker backend, vpnkit, colima) như là engine native trừ khi `--force` được truyền. Việc dọn thủ công ở trên chỉ dành cho trường hợp sau-crash khi không còn pidfile nào sót lại.
+`--port <N>` đặt REST; mặc định viewer dùng `N+2`, engine dùng `N+46023`. Dùng `--instance N` để cô lập runtime. Self-host mặc định publish `127.0.0.1:3111` và `127.0.0.1:3113`; đổi bằng `AGENTMEMORY_REST_PORT`, `AGENTMEMORY_VIEWER_PORT`. Dùng `REST_ALLOWED_ORIGINS` cho browser origin tin cậy khác.
 
 ### File Config
 
-Đặt config runtime của agentmemory trong `~/.agentmemory/.env` thay vì export biến trong từng shell. Nếu viewer hiện một gợi ý setup như `export ANTHROPIC_API_KEY=...`, hãy copy nó vào file này dưới dạng `ANTHROPIC_API_KEY=...` không có tiền tố `export`, rồi khởi động lại agentmemory.
-
-Biến môi trường của process vẫn hoạt động và được ưu tiên hơn giá trị trong file.
-
-Trên Windows, cùng file đó nằm tại `%USERPROFILE%\.agentmemory\.env`:
+Đặt runtime config trong `~/.agentmemory/.env` thay vì export biến ở mọi shell. Dùng `AGENTMEMORY_ENV_FILE` để chọn env-file khác. Biến môi trường của process được ưu tiên hơn giá trị trong file. Worker Compose do CLI tạo truyền Redis setting tới worker `state`.
 
 ```powershell
 New-Item -ItemType Directory -Force $HOME\.agentmemory
@@ -1676,12 +1602,12 @@ Tạo `~/.agentmemory/.env`:
 # VECTOR_WEIGHT=0.6
 # TOKEN_BUDGET=2000
 
-# Auth (generated into ~/.agentmemory/secret on first start when unset)
+# Auth (generated in the selected data directory on first start when unset)
 # AGENTMEMORY_SECRET=your-secret
 # VIEWER_ALLOWED_ORIGINS=https://memory.example.com
 # AGENTMEMORY_IMPORT_ROOT=~/projects
 
-# Ports (defaults: 3111 API, 3113 viewer)
+# Ports (defaults: 3111 REST API, 3113 viewer)
 # III_REST_PORT=3111
 
 # Engine usage telemetry (iii). Off unless you set it; true opts in.
@@ -1740,8 +1666,7 @@ Tạo `~/.agentmemory/.env`:
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1780,12 +1705,13 @@ Tạo `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoint trên port `3111`. REST API bind vào `127.0.0.1` theo mặc định. Các endpoint được bảo vệ cần `Authorization: Bearer <secret>`, và các endpoint mesh sync cần `AGENTMEMORY_SECRET` được đặt rõ ràng trên cả hai phía.
+144 endpoint trên port `3111`. REST API bind vào `127.0.0.1` theo mặc định. Các endpoint được bảo vệ cần `Authorization: Bearer <secret>`, và các endpoint mesh sync cần `AGENTMEMORY_SECRET` được đặt rõ ràng trên cả hai phía.
 
-**Authentication được bật theo mặc định.** Khi `AGENTMEMORY_SECRET` chưa được đặt (trong shell hay trong `~/.agentmemory/.env`), server sinh một secret ngẫu nhiên ở lần khởi động đầu tiên và lưu nó vào `~/.agentmemory/secret` với mode `0600`. Mọi client đi kèm đọc nó từ đó khi nói chuyện với một server cục bộ: CLI, viewer, các hook dưới `plugin/scripts`, MCP server và shim `@agentmemory/mcp`, các config do `agentmemory connect` viết ra, và các integration OpenCode, Pi, OpenClaw, Hermes và filesystem-watcher đi kèm. Secret đã lưu chỉ được gửi tới các URL loopback (`localhost`, `127.0.0.0/8`, `::1`). Một `AGENTMEMORY_SECRET` rõ ràng luôn thắng, và các client remote vẫn cần đặt nó. Docker và các entrypoint của `deploy/` đã tự sinh và export secret riêng của chúng. Để gọi API bằng tay:
+**Xác thực được bật mặc định.** Nếu chưa đặt `AGENTMEMORY_SECRET` (trong shell hoặc `~/.agentmemory/.env`), CLI tạo secret ngẫu nhiên khi khởi động lần đầu và lưu thành `secret`, mode `0600`, trong data directory đã chọn. Client đi kèm đọc secret tại đó khi kết nối server cục bộ; secret chỉ gửi đến loopback URL. Client từ xa cần secret trong environment của chúng. Docker self-host và `deploy/` tự tạo secret. Để gọi API thủ công:
+
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **Quy tắc request cho các lệnh write.** Các request `POST`, `PUT`, `PATCH` và `DELETE` tới REST API và viewer phải gửi `Content-Type: application/json` (một tham số `charset` thì vẫn ổn) bất cứ khi nào chúng mang theo body, và một header `Origin`, nếu có, phải là một origin loopback cho port REST hoặc viewer đã cấu hình hoặc được liệt kê trong `VIEWER_ALLOWED_ORIGINS` (phân tách bằng dấu phẩy, ví dụ `https://memory.example.com`). Các client không gửi header `Origin` (CLI, hook, MCP, curl, server-to-server) không bị ảnh hưởng. Viewer cũng chấp nhận origin của chính nó.
@@ -1865,7 +1791,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Yêu cầu trước:** Node.js >= 20 kèm npm/npx; [iii-engine](https://iii.dev/docs) v0.22.1 hoặc Docker. Cài engine tự động trên macOS/Linux cũng cần `curl`, một `sh` chuẩn POSIX, và `tar`; Windows gốc dùng `iii.exe` đã pin thủ công, WSL2, hoặc Docker Desktop.
+**Yêu cầu:** Node.js >= 20 kèm npm/npx. Cài engine qua CLI trên macOS/Linux cần `curl`, POSIX `sh` và `tar`; Windows native cần cài thủ công `iii.exe` đã pin hoặc dùng WSL2.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Giấy phép" height="32" /></picture></h2>
 

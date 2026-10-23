@@ -10,6 +10,7 @@ import { registerApiTriggers } from "../src/triggers/api.js";
 import { registerEventTriggers } from "../src/triggers/events.js";
 import { getSearchIndex, setEmbeddingProvider, setVectorIndex } from "../src/functions/search.js";
 import { KV } from "../src/state/schema.js";
+import { requestSummaryRefresh } from "../src/functions/summary-state.js";
 import type { MemoryProvider } from "../src/types.js";
 
 vi.mock("../src/logger.js", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
@@ -68,6 +69,15 @@ function rig(model = provider(), kv = store()) {
   registerSessionSweepFunction(sdk as never, kv as never);
   registerApiTriggers(sdk as never, kv as never);
   registerEventTriggers(sdk as never, kv as never);
+  handlers.set("test::close-session", async ({ sessionId }: { sessionId: string }) => {
+    const session = await kv.get(KV.sessions, sessionId);
+    if (!session) return;
+    await requestSummaryRefresh(kv, sessionId);
+    await kv.update(KV.sessions, sessionId, [
+      { type: "set", path: "endedAt", value: new Date().toISOString() },
+      { type: "set", path: "status", value: "completed" },
+    ]);
+  });
   const call = (id: string, input: any) => handlers.get(id)!(input);
   const observe = (eventId: string, text: string, sessionId = "summary-session") => call("api::observe", { headers: {}, body: {
     sessionId, eventId, project: "summary-project", cwd: "/fixture", hookType: "post_tool_use",
@@ -92,7 +102,7 @@ describe("session summary recovery", () => {
   it("rechecks source coverage before acknowledging a finished repair", async () => {
     const r = rig();
     await r.observe("ack-event-0001", "Original investigation");
-    await r.call("event::session::ended", { sessionId: "summary-session" });
+    await r.call("test::close-session", { sessionId: "summary-session" });
     const get = r.kv.get; let reads = 0;
     r.kv.get = async (scope, id) => {
       if (scope === KV.summaryRepairs && ++reads === 2) {
@@ -132,7 +142,7 @@ describe("session summary recovery", () => {
   it("backs off transient storage errors and normalizes malformed retry counters", async () => {
     const r = rig();
     await r.observe("storage-event-0001", "Original investigation");
-    await r.call("event::session::ended", { sessionId: "summary-session" });
+    await r.call("test::close-session", { sessionId: "summary-session" });
     const queue = await r.kv.get(KV.summaryRepairs, "summary-session");
     await r.kv.set(KV.summaryRepairs, "summary-session", { ...queue, attempts: "bad" });
     const list = r.kv.list; let fail = true;
@@ -157,7 +167,8 @@ describe("session summary recovery", () => {
       .mockImplementation(async (_system, prompt) => summaryXml(prompt.includes("Verified conclusion")));
     const r = rig(model);
     await r.observe("token-event-0001", "Original investigation");
-    await r.call("event::session::ended", { sessionId: "summary-session" });
+    await r.call("test::close-session", { sessionId: "summary-session" });
+    await r.flush();
     const original = await r.kv.get(KV.summaryRepairs, "summary-session");
     await r.call("mem::session-finalize", { now: Date.now() });
     await vi.waitFor(() => expect(model.summarize).toHaveBeenCalledOnce());
@@ -183,12 +194,13 @@ describe("session summary recovery", () => {
     for (let i = 0; i < 4; i++) {
       const sessionId = `bounded-session-${i}`;
       await r.observe(`bounded-event-000${i}`, "Original investigation", sessionId);
-      await r.call("event::session::ended", { sessionId });
+      await r.call("test::close-session", { sessionId });
+      await r.flush();
     }
     await r.call("mem::session-finalize", { now: Date.now() + 300_000 });
     await vi.waitFor(() => expect(model.summarize).toHaveBeenCalledTimes(2));
     await r.call("mem::session-finalize", { now: Date.now() + 600_000 });
-    expect(model.summarize).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(model.summarize).toHaveBeenCalledTimes(2));
     held.resolve(summaryXml(false)); await r.flush();
     await r.call("mem::session-finalize", { now: Date.now() + 600_000 });
     await r.flush();
@@ -203,7 +215,7 @@ describe("session summary recovery", () => {
     vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
     await r.observe("failed-compress-event-0001", "Retained cobalt evidence");
     await r.flush();
-    await r.call("event::session::ended", { sessionId: "summary-session" });
+    await r.call("test::close-session", { sessionId: "summary-session" });
     await r.call("mem::session-finalize", { now: Date.now() });
     await r.flush();
     const calls = vi.mocked(model.compress).mock.calls.length;
@@ -226,7 +238,7 @@ describe("session summary recovery", () => {
     const { source: _source, ...withoutSource } = row;
     await r.kv.set(KV.observations("summary-session"), row.id, { ...withoutSource,
       compression: { status: "failed", attempts: 1, error: "source_unavailable" } });
-    await r.call("event::session::ended", { sessionId: "summary-session" });
+    await r.call("test::close-session", { sessionId: "summary-session" });
     await r.call("mem::session-finalize", { now: Date.now() }); await r.flush();
     const queued = await r.kv.get(KV.summaryRepairs, "summary-session");
     expect(queued).toMatchObject({ lastError: "source_unavailable" });
@@ -238,12 +250,14 @@ describe("session summary recovery", () => {
   it("clears forgotten and empty closed-session repair intent without model work", async () => {
     const r = rig();
     await r.observe("forget-event-0001", "Original investigation");
-    await r.call("event::session::ended", { sessionId: "summary-session" });
+    await r.call("test::close-session", { sessionId: "summary-session" });
     expect(await r.kv.get(KV.summaryRepairs, "summary-session")).not.toBeNull();
     await r.call("mem::forget", { sessionId: "summary-session" });
+    await r.flush();
     expect(await r.kv.get(KV.summaryRepairs, "summary-session")).toBeNull();
+    vi.mocked(r.model.summarize).mockClear();
     await r.kv.set(KV.sessions, "empty", { id: "empty", project: "empty", cwd: "/empty", startedAt: new Date().toISOString(), status: "active", observationCount: 0 });
-    await r.call("event::session::ended", { sessionId: "empty" });
+    await r.call("test::close-session", { sessionId: "empty" });
     await r.call("mem::session-finalize", { now: Date.now() + 300_000 });
     await r.flush();
     expect(await r.kv.get(KV.summaryRepairs, "empty")).toBeNull();
@@ -251,12 +265,14 @@ describe("session summary recovery", () => {
     r.close();
   });
 
-  it.each(["event::session::ended", "mem::session-sweep"])("persists repair before %s closes a session", async (closeFunction) => {
+  it.each(["test::close-session", "mem::session-sweep"])("persists repair before %s closes a session", async (closeFunction) => {
     const r = rig();
     await r.observe("close-path-event-0001", "Original investigation");
     const session = await r.kv.get(KV.sessions, "summary-session");
     await r.kv.set(KV.sessions, session.id, { ...session, updatedAt: "2020-01-01T00:00:00.000Z" });
-    await r.call(closeFunction, { sessionId: session.id });
+    await (closeFunction === "mem::session-sweep"
+      ? r.call(closeFunction, { now: Date.now() + 999_999 })
+      : r.call(closeFunction, { sessionId: session.id }));
     await r.flush();
     expect(await r.kv.get(KV.summaryRepairs, session.id)).toMatchObject({ sessionId: session.id });
     const restarted = rig(provider(), r.kv.restart());
@@ -289,7 +305,7 @@ describe("session summary recovery", () => {
     const model = provider(); model.name = "noop";
     const r = rig(model);
     await r.observe("no-provider-event-0001", "Original investigation");
-    await r.call("api::session::end", { body: { sessionId: "summary-session", final: true } });
+    await r.call("test::close-session", { sessionId: "summary-session" });
     await r.flush();
     await r.call("mem::session-finalize", { now: Date.now() });
     await r.flush();
@@ -326,7 +342,7 @@ describe("session summary recovery", () => {
     const first = await r.call("mem::summarize", { sessionId: "summary-session" });
     expect(first).toMatchObject({ success: true, incomplete: true });
     expect(first.summary.coveredFingerprint).toBeUndefined();
-    await r.call("api::session::end", { body: { sessionId: "summary-session", final: true } });
+    await r.call("test::close-session", { sessionId: "summary-session" });
     await r.flush();
     await r.call("mem::session-finalize", { now: Date.now() + 300_000 });
     await r.flush();
@@ -377,8 +393,8 @@ describe("session summary recovery", () => {
     vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
     await r.observe("restart-event-0001", "Retained original evidence");
     await vi.waitFor(() => expect(model.compress).toHaveBeenCalledOnce());
-    await r.call("api::session::end", { body: { sessionId: "summary-session", final: true } });
-    await vi.waitFor(() => expect(model.summarize).toHaveBeenCalled());
+    await r.call("test::close-session", { sessionId: "summary-session" });
+    expect(await r.kv.get(KV.summaryRepairs, "summary-session")).not.toBeNull();
     await r.call("mem::session-finalize", { now: Date.now() + 300_000 });
     await new Promise((resolve) => setImmediate(resolve));
     expect(await r.kv.get(KV.summaryRepairs, "summary-session")).not.toBeNull();
@@ -401,7 +417,7 @@ describe("session summary recovery", () => {
   it("finalizes late replay without another Stop and leaves duplicate delivery unchanged", async () => {
     const r = rig();
     await r.observe("seed-event-0002", "Original investigation");
-    await r.call("api::session::end", { body: { sessionId: "summary-session", final: true } });
+    await r.call("test::close-session", { sessionId: "summary-session" });
     await r.flush();
     await r.call("mem::session-finalize", { now: Date.now() + 300_000 });
     await r.flush();
@@ -430,8 +446,8 @@ describe("session summary recovery", () => {
     const captured = await r.observe("reply-event-0001", "The final analysis is available");
     expect(captured).toMatchObject({ status_code: 201, body: { state: "completed" } });
     await vi.waitFor(() => expect(model.compress).toHaveBeenCalledOnce());
-    await r.call("api::session::end", { headers: {}, body: { sessionId: "summary-session", final: true } });
-    await vi.waitFor(() => expect(model.summarize).toHaveBeenCalled());
+    await r.call("test::close-session", { sessionId: "summary-session" });
+    expect(await r.kv.get(KV.summaryRepairs, "summary-session")).not.toBeNull();
     held.resolve(finalCompression);
     await r.flush();
     await r.call("mem::session-finalize", { now: Date.now() + 300_000 });

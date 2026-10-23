@@ -73,7 +73,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,600+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -102,7 +102,7 @@
 
 - يتطلب الأمر Node.js الإصدار 20 أو أحدث مع npm وnpx (تحقّق بـ `node -v` و`npm -v` و`npx -v`).
 - يحتاج التثبيت الآلي لـ iii-engine على macOS/Linux أيضًا إلى `curl` وصدفة POSIX من نوع `sh` وأداة `tar`. قد لا تتضمنها الصور الدنيا مثل `node:20-slim`.
-- يتطلب نظام Windows الأصلي تثبيت ملف `iii.exe` الخاص بالإصدار المثبَّت v0.22.1 من iii-engine يدويًا. أما WSL2 أو Docker Desktop فهما المساران المدعومان الآخران.
+- يتطلب Windows الأصلي تثبيت ملف `iii.exe` الخاص بمحرك iii 0.24.6 المثبَّت يدويًا؛ أما WSL2 فيتبع مسار Linux ويمكنه تثبيت المحرك تلقائيًا.
 
 أمر التثبيت الجديد المعياري:
 
@@ -114,7 +114,7 @@ npx -y @agentmemory/agentmemory@latest
 
 يُعطّل وضع عدم استخدام المفاتيح تضمينات المتجهات. تستخدم `memory_recall` (مسار `mem::search`) خوارزمية BM25، في حين يمكن لـ `memory_smart_search` أيضًا دمج تطابقات الرسم البياني البنيوية عندما تتوفر بيانات رسم بياني مسبقًا. للحصول على استرجاع دلالي مجاني على الجهاز نفسه، اضبط `EMBEDDING_PROVIDER=local` في `~/.agentmemory/.env` وأعد التشغيل. يُنزِّل أول طلب تضمين النموذج `Xenova/all-MiniLM-L6-v2`؛ ويعمل الاستدلال محليًا بعد ذلك التنزيل الأولي للنموذج.
 
-تستخدم بيئة التشغيل المحلية أربعة منافذ: `3111` لـ REST/MCP HTTP، و`3112` لتيارات iii، و`3113` للعارض، و`49134` لمقبس WebSocket الخاص بعامل iii. تعيش حالة iii الدائمة في `~/Library/Application Support/agentmemory` على macOS، وفي `$XDG_DATA_HOME/agentmemory` أو `~/.local/share/agentmemory` على Linux، وفي `%APPDATA%\agentmemory` على Windows. استخدم `--data-dir <path>` أو `AGENTMEMORY_DATA_DIR` لتجاوز ذلك المسار، وأعد استخدام القيمة نفسها في كل إعادة تشغيل. للحفاظ على التوافق مع الإصدارات السابقة، يُعطى `./data/state_store.db` أو `./data/iii-config.yaml` الموجودان مسبقًا الأسبقية على المسار الافتراضي للنظام في النسخة 0؛ وتظل الراية الصريحة أو تجاوز متغيرات البيئة هي الأعلى أسبقية.
+يستخدم تشغيل CLI المحلي REST/MCP HTTP على `3111`، والعارض على `3113`، ومقبس WebSocket الداخلي لعمّال iii على `49134`. تصل تحديثات العارض عبر SSE من `GET /agentmemory/viewer/events` على منفذ REST. تُحفَظ الحالة الدائمة افتراضيًا في `~/Library/Application Support/agentmemory` على macOS، أو `$XDG_DATA_HOME/agentmemory` أو `~/.local/share/agentmemory` على Linux، أو `%APPDATA%\agentmemory` على Windows. تجاوز ذلك باستخدام `--data-dir <path>` أو `AGENTMEMORY_DATA_DIR`؛ كما تعيد النسخة 0 استخدام `./data/state_store.db` الموجود مسبقًا. يعزل `--instance N` بيئات التشغيل الإضافية، ويحدد `AGENTMEMORY_ENV_FILE` ملف `.env` غير الافتراضي.
 
 بعد ذلك، تحقَّق من أن الاسترجاع يعمل، وأعطِ وكيلك مهاراته:
 
@@ -134,7 +134,7 @@ npx skills add rohitg00/agentmemory -y   # 17 native skills so your agent knows 
 <details>
 <summary><strong>Windows</strong></summary>
 
-المسار الأسرع هو WSL2. يتطلب إعداد المحرك على Windows الأصلي تنزيل أرشيف ZIP الخاص بالإصدار المثبَّت v0.22.1 واستخراج `iii.exe` يدويًا؛ فالواجهة الطرفية CLI لا تستخرجه تلقائيًا. كما يُدعم Docker Desktop أيضًا. راجع [ملاحظات Windows](#windows) للاطلاع على الخطوات التفصيلية.
+المسار الأسرع هو WSL2. يتطلب Windows الأصلي تنزيل ملف ZIP الخاص بالمحرك المثبَّت 0.24.6 واستخراج `iii.exe` يدويًا. راجع [ملاحظات Windows](#windows) للخطوات.
 
 </details>
 
@@ -159,7 +159,7 @@ npm install -g @agentmemory/agentmemory@latest
 <details>
 <summary><strong>لديك محرك iii خاص بك يعمل مسبقًا</strong></summary>
 
-يُثبّت agentmemory الإصدار v0.22.1 من iii-engine تحديدًا، ولن يرتبط بإصدار مختلف (لأن العامل لا يستطيع التحدث ببروتوكول محرك آخر). أوقف المحرك الآخر، ثم شغّل `npx -y @agentmemory/agentmemory@latest`. سيثبّت ويشغّل الإصدار المثبَّت v0.22.1 في `~/.agentmemory/bin`، تاركًا نسخة `iii` الخاصة بك دون أي تغيير.
+يُثبّت agentmemory محرك iii 0.24.6 تحديدًا، ولن يتصل بإصدار مختلف (لأن العامل لا يستطيع استخدام بروتوكول محرك آخر). أوقف المحرك الآخر، ثم شغّل `npx -y @agentmemory/agentmemory@latest`. يثبّت الأمر الإصدار المثبَّت 0.24.6 ويشغّله في `~/.agentmemory/bin`، دون المساس بنسخة `iii` الخاصة بك.
 
 </details>
 
@@ -321,14 +321,14 @@ npm install -g @agentmemory/agentmemory@latest
 npx -y @agentmemory/agentmemory@latest
 ```
 
-افتراضيًا، يخزّن agentmemory حالة iii-engine خارج المستودع الذي تشغّله منه: في `~/Library/Application Support/agentmemory` على macOS، وفي `$XDG_DATA_HOME/agentmemory` أو `~/.local/share/agentmemory` على Linux، وفي `%APPDATA%\agentmemory` على Windows. ويُعاد استخدام `./data/state_store.db` أو `./data/iii-config.yaml` القديمين إن وُجدا للنسخة 0 قبل الاعتماد على ذلك المسار الافتراضي للنظام. لاختيار موقع محدد صريحًا، مرّر `--data-dir <path>` أو اضبط `AGENTMEMORY_DATA_DIR`؛ وأيٌّ من هذين الضبطين الصريحين يسبق آلية الاكتشاف القديمة في الأولوية:
+افتراضيًا، يخزّن agentmemory حالة iii خارج المستودع الذي تشغّله منه: في `~/Library/Application Support/agentmemory` على macOS، وفي `$XDG_DATA_HOME/agentmemory` أو `~/.local/share/agentmemory` على Linux، وفي `%APPDATA%\agentmemory` على Windows. تُعاد الاستفادة من `./data/state_store.db` الموجود مسبقًا للنسخة 0. لاختيار موقع صريح، مرّر `--data-dir <path>` أو اضبط `AGENTMEMORY_DATA_DIR`:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-تستخدم عمليات التشغيل الأصلية (native) وعبر Docker نفس دليل المضيف المُحلَّل؛ ويربطه Docker (bind-mount) عند `/data`. يُضيف الخيار `--instance 1` اللاحقة `instance-1` إلى الدليل المُحلَّل، ويختار رباعية المنافذ الافتراضية المستقلة `3211/3212/3213/49234`.
+يستخدم التشغيل الأصلي وتشغيل Docker للاستضافة الذاتية الدليل نفسه بعد حله؛ ويربطه Docker إلى `/data`. يضيف `--instance 1` اللاحقة `instance-1` إلى الدليل، ويختار مجموعة المنافذ الافتراضية المعزولة `3211/3213/49234`.
 
 ملاحظات آخر إصدار: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -478,7 +478,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 </tr>
 <tr>
 <td><strong>الاعتماديات الخارجية</strong></td>
-<td>لا يوجد (SQLite + iii-engine)</td>
+<td>لا يوجد (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + قاعدة بيانات متجهية</td>
 <td>متعددة</td>
@@ -558,7 +558,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Quick Start" height="32" /></picture></h2>
 
-التوافق: يستهدف هذا الإصدار `iii-sdk` بالإصدار 0.22.1، ويثبّت iii-engine على الإصدار v0.22.1.
+التوافق: يستخدم هذا الإصدار iii 0.24.6 مع عمّال السجل `state` بالإصدار 0.22.20 و`http` بالإصدار 0.22.7.
 
 ### جرّبه في 30 ثانية
 
@@ -585,7 +585,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-تغطي لوحة الجاهزية عند بدء التشغيل جميع المنافذ الأربعة: REST/MCP HTTP على 3111، وتيارات iii على 3112، والعارض على 3113، ومقبس WebSocket الخاص بعامل iii على 49134. يؤكد أمر `status` سلامة agentmemory ووضع المزوّد/التضمين النشط. احفظ عيّنة اختبار (probe) وتأكّد من إمكانية البحث عنها:
+يستخدم runtime منافذ REST/MCP HTTP على 3111، والعارض على 3113، ومقبس WebSocket الداخلي لعمّال iii على 49134. تصل أحداث العارض الحية عبر SSE على REST. يؤكد `status` سلامة agentmemory وإصدار المحرك المثبّت (`enginePinnedVersion`) ووضع المزوّد/التضمين النشط. احفظ عيّنة اختبار (probe) وتأكّد من إمكانية البحث عنها:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -637,7 +637,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-تحذير: يُغيّر هذا الأمر مساحة العمل/بيئة التشغيل الحالية. فقد يُحدِّث اعتماديات JavaScript ويسحب صورة Docker المثبَّتة `iiidev/iii:0.22.1`. ولن يُثبّت مطلقًا محرك iii غير مثبَّت الإصدار أو أحدث منه.
+تحذير: يغيّر هذا الأمر مساحة العمل/بيئة التشغيل الحالية. قد يحدّث اعتماديات JavaScript ويثبّت الملف التنفيذي لمحرك iii 0.24.6 المحدد.
 
 تفاصيل التنفيذ موجودة في `src/cli.ts` (راجع `runUpgrade` حول نطاق `src/cli.ts:544-595`).
 
@@ -807,7 +807,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **OpenCode (MCP فقط)** | `opencode.json` | بصيغة مختلفة: مفتاح `mcp` على المستوى الأعلى، والأمر كمصفوفة: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (الإضافة الكاملة)** | `plugin/opencode/` | 22 خطاف التقاط تلقائي تغطي دورة حياة الجلسة والرسائل والأدوات والأخطاء. ويُحدَّد المشروع لكل جلسة على حدة، فعملية OpenCode واحدة تمتد عبر عدة مستودعات تُسجِّل كل جلسة تحت مشروعها الخاص بها. أمرا شرطة اثنان (`/recall` و`/remember`). انسخ `plugin/opencode/` إلى مساحة عمل OpenCode الخاصة بك وأضف إدخال الإضافة إلى `opencode.json`. راجع [`plugin/opencode/README.md`](../plugin/opencode/README.md) للحصول على جدول الخطافات الكامل وتحليل الثغرات. |
 | **pi** | `~/.pi/agent/extensions/agentmemory` | يُثبّت `agentmemory connect pi` الإضافة المُضمَّنة في دليل الاكتشاف التلقائي لـ pi (استرجاع عند بدء الوكيل، والتقاط عند انتهائه، وأدوات `memory_search` / `memory_save` / `memory_health`، و`/agentmemory-status`). يلتقطها أمر `/reload` في pi قيد التشغيل. كما أن [`integrations/pi`](../integrations/pi/) حزمة pi أيضًا (`pi install ./integrations/pi` من نسخة محلية). |
-| **وكيل Hermes** | `~/.hermes/config.yaml` | يمنحك `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` مزوّد ذاكرة بستة خطافات (جلب مسبق، والتقاط المداولة، وانتهاء الجلسة، وما قبل الضغط، ومرآة لـ MEMORY.md، وكتلة موجّه النظام). تحقّق باستخدام `hermes plugins doctor` و`hermes memory status`. راجع [`integrations/hermes`](../integrations/hermes/). |
+| **وكيل Hermes** | `~/.hermes/config.yaml` | يمنح `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` مع `memory.provider: agentmemory` مزوّد ذاكرة بستة خطافات (الجلب المسبق، والتقاط الأدوار، وإنهاء الجلسة، وما قبل الضغط، ونسخ MEMORY.md، وكتلة موجّه النظام). تحقّق باستخدام `hermes plugins doctor` و`hermes memory status`. راجع [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | يكتب `agentmemory connect qwen` كتلة `mcpServers` القياسية. حمولة الخطاف متوافقة الحقول مع Claude Code، فتعمل نصوص الخطافات الـ12 الموجودة دون أي تعديل؛ اربطها عبر قسم `hooks` في نفس ملف `settings.json`. |
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | يُثبِّت `agentmemory connect antigravity --with-hooks` خطافات MCP والالتقاط في دليل التخصيص (customization) المشترك. راجع [إعداد Antigravity وحدوده](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | يستخدم `agentmemory connect antigravity-cli --with-hooks` نفس إعدادات MCP والخطافات المستخدمة في إصدارات IDE الحالية. ينبغي للتثبيتات الحالية التحديث باستخدام `--force`؛ راجع [ملاحظات الترقية](../docs/plugins/antigravity.md). |
@@ -835,15 +835,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 مثال عملي: [`examples/python/`](../examples/python/) (بدء سريع + مسار الملاحظة/الاسترجاع). تظل REST على `:3111` متاحة للمضيفين الذين لا تتوفر لديهم بيئة تشغيل iii.
@@ -855,83 +863,33 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-يُشغِّل هذا agentmemory مع `iii-engine` محلي إذا كان الملف التنفيذي المثبَّت مُثبَّتًا مسبقًا، أو يستخدم Docker Compose عند اختياره. ترتبط REST والتيارات والعارض بـ `127.0.0.1` افتراضيًا. ويتطلب مسار الملف التنفيذي الآلي على macOS/Linux وجود `curl` وصدفة POSIX من نوع `sh` وأداة `tar`.
-
-ثبّت `iii-engine` يدويًا. **يُثبّت agentmemory حاليًا `iii-engine` على الإصدار `v0.22.1`**، وهو نفس إصدار اعتمادية `iii-sdk` الخاصة به؛ فالعامل يتحدث بروتوكول الاتصال الخاص بذلك المحرك، وقد أعاد الإصدار 0.20.0 تنظيم سطح SDK، فيتحرك الاثنان معًا في إصدارات agentmemory. تجاوز ذلك باستخدام `AGENTMEMORY_III_VERSION=<version>` إذا كنت تُشغِّل محركك الخاص وتعرف أنه متوافق.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** استبدل `aarch64-apple-darwin` بـ `x86_64-apple-darwin`
-- **Linux x64:** استبدل بـ `x86_64-unknown-linux-gnu`
-- **Linux arm64:** استبدل بـ `aarch64-unknown-linux-gnu`
-- **Windows:** نزِّل `iii-x86_64-pc-windows-msvc.zip` من [إصدارات iii-hq/iii v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) واستخرج `iii.exe` إلى `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-يملك كل أرشيف ملف `.sha256` مطابقًا على صفحة الإصدار؛ وعند تبديل النظام الأساسي، استخدم بصمة ذلك الملف (hash) في عملية التحقق أعلاه (على Windows: `Get-FileHash`). يُثبِّت المُثبِّت الآلي في `npx @agentmemory/agentmemory` هذه البصمات ويرفض أي أرشيف لا يطابقها.
-
-أو استخدم Docker (يسحب ملف `docker-compose.yml` المُضمَّن الصورة `iiidev/iii:0.22.1`). المستندات الكاملة: [iii.dev/docs](https://iii.dev/docs).
+يُشغِّل `npm start` بيئة Worker Compose نفسها التي يستخدمها CLI: iii 0.24.6 مع عمّال السجل `state@0.22.20` و`http@0.22.7`. على macOS/Linux، ينزّل CLI ملف المحرك المثبّت إلى `~/.agentmemory/bin`؛ ويتطلب التثبيت التلقائي `curl` وصدفة POSIX من نوع `sh` و`tar`. ترتبط مستمعات REST والعارض المحلية بـ `127.0.0.1`. تستخدم تحديثات العارض SSE عند `GET /agentmemory/viewer/events` على منفذ REST. يعرض `/agentmemory/status` إصدار المحرك المثبّت تحت `enginePinnedVersion`؛ والإصدار الافتراضي المدعوم هو iii 0.24.6. يتوفر `AGENTMEMORY_III_VERSION` لتجاوز التثبيت عمدًا.
 
 ### Windows
 
-يعمل agentmemory على Windows 10/11، لكن حزمة Node.js وحدها لا تكفي؛ فأنت تحتاج أيضًا إلى بيئة تشغيل iii-engine المثبَّتة v0.22.1 كعملية خلفية. لا تستخرج الواجهة الطرفية CLI أرشيف ZIP الخاص بـ Windows تلقائيًا، فيجب على مستخدمي Windows الأصليين تثبيت `iii.exe` يدويًا، أو استخدام WSL2، أو اختيار Docker Desktop.
+يعمل agentmemory على Windows 10/11. يتبع WSL2 مسار Linux ويمكنه تثبيت المحرك المثبّت تلقائيًا. يتطلب Windows الأصلي تثبيت ملف iii-engine 0.24.6 المثبّت يدويًا؛ نزّل الأرشيف المطابق من [صفحة إصدار iii 0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6)، وتحقق من بصمته، وضع `iii.exe` على `PATH` (مثل `%USERPROFILE%\.local\bin\iii.exe`). لا يستخرج CLI ملف ZIP الخاص بـ Windows تلقائيًا.
 
-لا يدعم الربط الآلي لـ MCP على Windows الأصلي إلا `agentmemory connect copilot-cli`. أما بالنسبة لـ Claude Code وCodex وCursor وكل وكيل Windows أصلي آخر، فانسخ كتلة MCP اليدوية من [وكلاء آخرون](#other-agents) إلى إعدادات Windows لذلك الوكيل. وتشغيل `connect` في WSL مناسب فقط عندما يكون الوكيل المستهدف مثبَّتًا أيضًا في بيئة WSL نفسها؛ فهو لا يُعدِّل إعدادات وكيل يستضيفه Windows.
+لا يدعم الربط الآلي لـ MCP على Windows الأصلي إلا `agentmemory connect copilot-cli`. أما وكلاء Windows الأصليون الآخرون، فاستخدم كتلة MCP اليدوية من [وكلاء آخرون](#other-agents). شغّل `connect` داخل WSL فقط عندما يكون الوكيل المستهدف مثبتًا في بيئة WSL نفسها.
 
-**الخيار أ: ملف تنفيذي جاهز لـ Windows (مُوصى به)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**الخيار ب: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**الخيار ج: MCP قائم بذاته فقط (بلا محرك).** إذا كنت تحتاج فقط إلى أدوات MCP لوكيلك ولا تحتاج إلى REST API أو العارض أو مهام cron، تجاوز المحرك كليًا:
+**MCP القائم بذاته فقط (من دون المحرك).** إذا كنت تحتاج إلى أدوات MCP فقط ولا تحتاج إلى REST API أو العارض أو خدمات runtime:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**تشخيص الأعطال على Windows:** إذا فشل `npx -y @agentmemory/agentmemory@latest`، أعد تشغيله مع `--verbose` لرؤية مخرجات stderr الفعلية للمحرك. أنماط الفشل الشائعة:
-
-| العارض | الإصلاح |
-|---|---|
-| `The engine process started but the REST API never responded.` | تأكّد من أن المنافذ الأربعة المُستمَدَّة كلها خالية، وتحقَّق من بقاء `iii.exe` المثبَّت على قيد العمل، ثم أعد التشغيل مع `--verbose` وافحص stderr المُسجَّل للمحرك |
-| `Could not start iii-engine` | لا `iii.exe` ولا Docker مثبَّتان. راجع الخيار أ أو ب أعلاه |
-| تعارض في المنفذ | استخدم `netstat -ano \| findstr :3111` لمعرفة ما هو مرتبط بالمنفذ، ثم أنهِ تلك العملية أو استخدم `--port <N>` |
-| تجاوز الرجوع إلى Docker رغم تثبيت Docker | تأكّد من أن Docker Desktop يعمل فعليًا (أيقونة في علبة النظام) |
-
-> ملاحظة: **محرك** iii هو ملف تنفيذي جاهز مسبقًا، وليس صندوق (crate) من cargo، فلا تحاول تثبيته بأمر `cargo install`. (تُنشر **حِزم SDK** الخاصة بـ iii على crates.io وnpm وPyPI، لكن agentmemory لا يحتاج إليها.) جميع طرق تثبيت المحرك المدعومة مثبَّتة على الإصدار v0.22.1: الملف التنفيذي الجاهز أعلاه، ومسار التثبيت الآلي لـ agentmemory على macOS/Linux (يتطلب `curl` وصدفة POSIX من نوع `sh` وأداة `tar`)، وصورة Docker `iiidev/iii:0.22.1`. أما تشغيل سكربت المصدر الأساسي العاري `install.sh | sh` فيُثبّت أحدث المحرك، وهو ما لا يدعمه agentmemory. استخدم `npx -y @agentmemory/agentmemory@latest`؛ فهو يجلب المحرك المثبَّت على macOS/Linux إلى `~/.agentmemory/bin`.
+**التشخيص:** إذا فشل بدء التشغيل، أعد التشغيل مع `--verbose` لعرض stderr الخاص بالمحرك. تحقّق من خلو منفذ REST `3111`، ومنفذ العارض `3113`، ومنفذ المحرك `49134`؛ واستخدم `--port <N>` أو `--instance <N>` لبيئة تشغيل معزولة أخرى. يستخدم CLI ملف المحرك المثبّت الخاص به ولا يستبدل ملف `iii` التنفيذي الموجود على `PATH`.
 
 ---
 
 <h2 id="deploy">النشر</h2>
 
-قوالب نشر بنقرة واحدة للمضيفين المُدارين. يشحن كل قالب ملف Dockerfile قائمًا بذاته يسحب `@agentmemory/agentmemory` من npm، وينسخ الملف التنفيذي لمحرك iii من صورة `iiidev/iii` الرسمية على Docker Hub؛ فلا حاجة إلى صورة agentmemory مبنية مسبقًا. يُركَّب التخزين الدائم عند `/data`؛ ويستبدل سكربت الدخول (entrypoint) في أول تشغيل إعدادات iii المُضمَّنة في npm (التي ترتبط بـ `127.0.0.1`) بإعدادات مضبوطة للنشر ترتبط بـ `0.0.0.0` وتستخدم مسارات `/data` المطلقة، وتُولِّد سر HMAC، ثم تتنازل عن الصلاحيات من `root` إلى `node` عبر `gosu` قبل تنفيذ واجهة agentmemory CLI.
+يدعم Docker الاستضافة الذاتية من هذا المستودع، وليس وضع بدء تشغيل CLI. تستخدم القوالب بنقرة واحدة [`deploy/Dockerfile`](../deploy/Dockerfile) و[`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml)، وتثبّت عمّال runtime iii 0.24.6 أنفسهم، وتحفظ الحالة والتتبّعات والسر المُنشأ على وحدة تخزين دائمة عند `/data`. يستخدم Docker Compose وحدة التخزين المسماة الموجودة `iii-data` افتراضيًا؛ اضبط `AGENTMEMORY_DATA_DIR` على مسار مضيف لاستخدام ربط مجلد بدلًا منها. تُقرأ مباشرةً البيانات المخزنة بصيغة 0.22.1 في `/data/state_store.db` دون ترحيل أو تحويل. يسمح REST CORS بمنشأَي REST والعارض المحليين افتراضيًا؛ اضبط `REST_ALLOWED_ORIGINS` على قائمة مفصولة بفواصل من المنشأات الدقيقة عندما يحتاج منشأ متصفح موثوق إلى الوصول. راجع [`deploy/README.md`](../deploy/README.md) لتفاصيل الإعداد والأمان.
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
 </p>
 
 يتطلب زر نشر Render بنقرة واحدة وجود `render.yaml` في جذر المستودع، وهو ما نتركه نظيفًا عمدًا. استخدم مسار Render Blueprint المُوثَّق في [`deploy/render/`](.././deploy/render/README.md) للإشارة يدويًا إلى المخطط الموجود في المستودع.
@@ -948,10 +906,16 @@ npx -y @agentmemory/mcp
   خادمك الخاص عبر [Coolify](https://coolify.io/self-hosted)؛ نفس حزمة Docker
   Compose، وأنت من يملك المضيف والبيانات.
 
-لا يُنشر إلا المنفذ `3111`. ويبقى العارض على `3113`
-مرتبطًا بعنوان loopback داخل الحاوية؛ ويوثِّق ملف README لكل قالب نمط
-نفق SSH للوصول إليه.
+تعمل REST على `3111`؛ ويعمل العارض على `3113` ولا يُنشر إلا عندما يدعم قالب المنصة مسارًا منفصلًا محميًا. تستخدم التحديثات الحية SSE موثّقًا برمز الحامل على نقطة REST `/agentmemory/viewer/events`. ويظل WebSocket المحرك على `49134` داخليًا ويجب عدم نشره. راجع [`deploy/README.md`](../deploy/README.md) لإرشادات الإتاحة وقوائم السماح الخاصة بكل منصة.
 
+
+### ترحيل عمليات تثبيت Docker القديمة التي يديرها CLI
+
+لا يبدأ CLI الحالي عمليات نشر Docker ولا يديرها. إذا عثر على سجل دورة حياة قديم لـ Docker، فسيحافظ على البيانات الوصفية ويطبع الأمر الدقيق `docker stop ...`؛ نفّذ هذا الأمر قبل الترحيل. لا تبدأ بيئة التشغيل الجديدة ما دامت الحاوية القديمة موصولة بوحدة التخزين.
+
+احتفِظ بوحدة التخزين الدائمة القديمة (عادةً `iii-data`) وأنشئ نسخة احتياطية منها، أو انسخ محتويات `/data` إلى نقطة ربط (bind mount). يقرأ عامل state ملف `/data/state_store.db` الموجود مباشرةً، من دون تصدير أو تحويل. استخدمت بيئة التشغيل القديمة UID/GID `65532:65532`؛ وتجري الصورة الجديدة مرة واحدة ترحيلًا تكراريًا لملكية الملفات إلى `node:node` (`1000:1000`) وتكتب `/data/.ownership-migrated-node-v1`. لا تُعِد تركيب وحدة التخزين في بيئة التشغيل القديمة بعد هذا الترحيل.
+
+كانت بيئة التشغيل القديمة تخزّن أيضًا السر الحامل المُنشأ في `/data/.hmac`. وتحافظ الصورة الجديدة على هذا السر أثناء الترحيل؛ وتكون الأولوية لقيمة `AGENTMEMORY_SECRET` إذا تم تعيينها صراحةً. ابدأ مشروع Compose الجديد من جذر المستودع باستخدام `docker compose up --build -d`. إذا كان اسم وحدة التخزين القديمة يتضمن بادئة المشروع بدلًا من `iii-data`، فأعِد استخدامها أو أعد تسميتها صراحةً — ولا تُنشئ وحدة تخزين فارغة عن طريق الخطأ. تحقّق من `/agentmemory/livez` وتأكد من إمكانية العثور على الذكريات القديمة والجديدة. تجنّب `docker compose down -v` ما لم يكن حذف البيانات مقصودًا.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Why agentmemory" height="32" /></picture></h2>
@@ -1105,7 +1069,7 @@ EMBEDDING_PROVIDER=local
 
 54 أداة، و6 موارد، و3 مطالبات، و17 مهارة.
 
-> **وسيط MCP (shim) في مقابل الخادم الكامل:** حزمة `@agentmemory/mcp` المنشورة هي وسيط خفيف (shim). ولا يُظهر سطح الأدوات الكامل البالغ 54 أداة **إلا عندما يستطيع الوصول إلى خادم agentmemory يعمل** عبر `AGENTMEMORY_URL` (وضع الوكيل الوسيط proxy). وإذا تعذّر الوصول إلى أي خادم، يرجع الوسيط إلى مجموعة محلية من 7 أدوات (`memory_save` و`memory_recall` و`memory_smart_search` و`memory_sessions` و`memory_export` و`memory_audit` و`memory_governance_delete`). متغير البيئة `AGENTMEMORY_TOOLS=core|all` هو راية *من جانب الخادم*؛ وضبطه في كتلة `env` الخاصة بالوسيط لا يُحدث أي أثر. إذا رأيت 7 أدوات فقط في Cursor / OpenCode / Gemini CLI، شغّل `npx -y @agentmemory/agentmemory@latest` (أو حزمة Docker) واضبط `AGENTMEMORY_URL=http://localhost:3111`.
+> **وسيط MCP (shim) في مقابل الخادم الكامل:** حزمة `@agentmemory/mcp` المنشورة هي وسيط خفيف (shim). ولا يُظهر سطح الأدوات الكامل البالغ 54 أداة **إلا عندما يستطيع الوصول إلى خادم agentmemory يعمل** عبر `AGENTMEMORY_URL` (وضع الوكيل الوسيط proxy). وإذا تعذّر الوصول إلى أي خادم، يرجع الوسيط إلى مجموعة محلية من 7 أدوات (`memory_save` و`memory_recall` و`memory_smart_search` و`memory_sessions` و`memory_export` و`memory_audit` و`memory_governance_delete`). متغير البيئة `AGENTMEMORY_TOOLS=core|all` هو راية *من جانب الخادم*؛ وضبطه في كتلة `env` الخاصة بالوسيط لا يُحدث أي أثر. إذا رأيت 7 أدوات فقط في Cursor / OpenCode / Gemini CLI، شغّل `npx -y @agentmemory/agentmemory@latest` (أو اتصل بخادم استضافة ذاتية) واضبط `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 54 أداة
 
@@ -1245,7 +1209,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Real-Time Viewer" height="32" /></picture></h2>
 
-يبدأ تلقائيًا على المنفذ `3113`. يحمّل العارض لقطة واحدة (snapshot) عند الاتصال (`GET /agentmemory/viewer/snapshot`)، ثم يطبّق أحداث التيار المباشر: تظهر الذكريات الجديدة، والدروس المستفادة، والملاحظات، وإدخالات التدقيق، وتغييرات الرسم البياني، وتحديثات الحالة الصحية دون أي استقصاء دوري أو إعادة تحميل للصفحة. والطلبات الأخرى الوحيدة هي الإجراءات التي تنقر عليها، وصفحات "تحميل المزيد"، وعمليات البحث. وعند انقطاع التيار، يُظهر العارض مدى قِدَم أرقامه، ويعيد الاتصال بتراجع تدريجي (backoff)، ويعيد المزامنة من لقطة واحدة.
+يبدأ العارض تلقائيًا على المنفذ `3113`. يحمّل لقطة واحدة عند الاتصال (`GET /agentmemory/viewer/snapshot`)، ثم يطبّق الأحداث الحية عبر SSE عند `/agentmemory/viewer/events` على عامل REST: تظهر الذكريات الجديدة والدروس والملاحظات وإدخالات التدقيق وتغييرات الرسم البياني وتحديثات الحالة الصحية دون استقصاء دوري أو إعادة تحميل للصفحة. والطلبات الأخرى الوحيدة هي الإجراءات التي تنقر عليها وصفحات "تحميل المزيد" وعمليات البحث. عند انقطاع التيار، يُظهر العارض مدى قِدَم بياناته، ويعيد الاتصال بتراجع تدريجي (backoff)، ثم يعيد المزامنة من لقطة واحدة.
 
 - **12 تبويبًا في أربع مجموعات** مع عدادات حية، وروابط عميقة (`#memories/<id>`، و`#sessions/<id>?obs=<id>`، و`#graph/<id>`، و`#health/consolidation`)، واختصارات لوحة المفاتيح، وقائمة للهاتف المحمول.
 - **الذكريات:** بحث من جانب الخادم، ومرشِّحات حسب المشروع والوكيل والنوع، ولوحة تفاصيل تضم سلسلة الإصدارات ومقارنة فروق الكلمات (word diff)، وروابط المصدرية، وأزرار نسخ للمعرّف، واستدعاء MCP، وأمر curl، وتعديل (ينشئ إصدارًا جديدًا)، ونسيان مع تأكيد، ونسيان جماعي، وتصدير JSON.
@@ -1258,15 +1222,15 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 open http://localhost:3113
 ```
 
-يرتبط خادم العارض بـ `127.0.0.1` افتراضيًا، ويُرفق سر الخادم عند تمرير الطلبات إلى REST API، فلا يحتاج إلى أي إعداد. وتتبع نقطة النهاية `/agentmemory/viewer` المُقدَّمة عبر REST القواعد العادية لرمز الحامل (bearer token)، وتُعيد توجيه المتصفحات التي لا تحمل رمزًا إلى منفذ العارض. وتستخدم ترويسات CSP قيمة nonce خاصة بالنص البرمجي لكل استجابة، وتُعطِّل سمات المعالج المضمَّنة inline (`script-src-attr 'none'`).
+يرتبط خادم العارض بـ `127.0.0.1` افتراضيًا ويُرفق سر الخادم عند تمرير الطلبات إلى REST API. عند الارتباط بعنوان غير loopback، تظل واجهة HTML متاحة للعامة، لكن كل طلب وكيل يتطلب رمز الحامل؛ ويطلبه العارض ويحفظه في تخزين الجلسة. اضبط قوائم سماح صريحة للمضيفين والمنشأات وTLS قبل إتاحة العارض. وتتبع نقطة النهاية `/agentmemory/viewer` المقدمة عبر REST قواعد رمز الحامل المعتادة، وتعيد توجيه المتصفحات التي لا تحمل رمزًا إلى منفذ العارض. تستخدم ترويسات CSP قيمة nonce خاصة بالنص البرمجي لكل استجابة، وتعطّل سمات المعالج المضمّنة (`script-src-attr 'none'`).
 
 ---
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
 
-يُظهر العارض على `:3113` ما **تذكّره** وكيلك. أما [لوحة تحكم iii](https://iii.dev/docs/console) فتُظهر ما **فعله** وكيلك: كل عملية ذاكرة كتتبع OpenTelemetry، وكل إدخال KV قابل للتعديل، وكل دالة قابلة للاستدعاء، وكل تيار قابل للاستماع إليه. نافذتان على الذاكرة نفسها: واحدة بشكل المنتج، وأخرى بشكل المحرك.
+يُظهر العارض على `:3113` ما **تذكّره** وكيلك. أما [لوحة تحكم iii](https://iii.dev/docs/console) فتُظهر ما **فعله** وكيلك: كل عملية ذاكرة كتتبّع OpenTelemetry، وكل إدخال KV قابل للتعديل، وكل دالة قابلة للاستدعاء، وكل تيار قابل للفحص. نافذتان على الذاكرة نفسها: واحدة بشكل المنتج، وأخرى بشكل المحرك.
 
-شاهد `memory_smart_search` وهو يُطلَق وتابع مسح BM25 ← البحث في التضمينات ← دمج RRF ← إعادة الترتيب (reranker) كشكل شلالي (waterfall). عدِّل مؤقِّت توحيد عالقًا في مستعرض KV. أعد تشغيل خطاف `PostToolUse` بحمولة مُعدَّلة. ثبِّت تيار WebSocket وشاهد الملاحظات وهي تصل لحظيًا.
+شاهد `memory_smart_search` وهو يُطلَق وتابع مسح BM25 ← البحث في التضمينات ← دمج RRF ← إعادة الترتيب (reranker) كشكل شلالي (waterfall). عدِّل مؤقّت توحيد عالقًا في مستعرض KV. أعد تشغيل خطاف `PostToolUse` بحمولة معدّلة. افحص قنوات محرك WebSocket ونشاطها.
 
 يقدّم agentmemory هذا مجانًا لأن كل استدعاء دالة ومحفِّز يمر عبر iii؛ فلا شيء مخصص، ولا شيء يحتاج إلى تثبيت أدوات قياس (instrumentation).
 
@@ -1276,7 +1240,7 @@ open http://localhost:3113
   <em>صفحة العمّال: كل عامل متصل، بما في ذلك agentmemory نفسه، مع PID، وعدد الدوال، وبيئة التشغيل، وآخر ظهور.</em>
 </p>
 
-**مثبَّت مسبقًا.** تُشحن لوحة التحكم مع محرك `iii` المثبَّت (0.22 وما بعده)؛ فلا حاجة إلى تثبيت أي شيء منفصل. يُنزِّل أول تشغيل الملف التنفيذي للوحة التحكم بجانب المحرك.
+**مثبَّت مسبقًا.** تأتي لوحة التحكم مع محرك `iii` 0.24.6 المثبّت؛ فلا حاجة إلى تثبيت منفصل. ينزّل التشغيل الأول الملف التنفيذي للوحة التحكم بجانب المحرك.
 
 **التشغيل جنبًا إلى جنب مع agentmemory:**
 
@@ -1284,15 +1248,12 @@ open http://localhost:3113
 agentmemory console
 ```
 
-يُشغِّل هذا أمر `iii console` الخاص بالمحرك المثبَّت على المنافذ التي حلّلها agentmemory (REST، والتيارات، والجسر)، ويقدّمه على منفذ واحد أعلى من العارض، أي `http://localhost:3114` افتراضيًا. يختار `--console-port N` منفذًا آخر؛ ويختار `--port` و`--instance` نسخة agentmemory بنفس الطريقة التي يفعلانها مع `stop`؛ وتُمرَّر أي راية أخرى كما هي، مثل `--enable-flow` لصفحة الرسم البياني المعماري التجريبية.
+يُشغّل هذا أمر `iii console` الخاص بالمحرك المثبّت على المنافذ التي حلّلها agentmemory (REST وWebSocket الخاص بالعمّال)، ويقدّمه على منفذ واحد أعلى من العارض، أي `http://localhost:3114` افتراضيًا. يختار `--console-port N` منفذًا آخر؛ ويختار `--port` و`--instance` نسخة agentmemory بالطريقة نفسها المستخدمة مع `stop`؛ وتُمرّر أي راية أخرى كما هي، مثل `--enable-flow` لصفحة الرسم البياني المعماري التجريبية.
 
 نفس الأمر يدويًا، وهو مفيد عندما لا يكون `agentmemory` موجودًا في PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **ما يمكنك فعله من لوحة التحكم:**
@@ -1303,12 +1264,10 @@ agentmemory console
 | **الدوال (Functions)** | استدعاء أي من دوال agentmemory مباشرة بحمولة JSON؛ مفيد لاختبار `memory.recall` و`memory.consolidate` و`graph.query` دون ربط عميل. |
 | **المحفِّزات (Triggers)** | إعادة تشغيل محفِّزات HTTP وcron والأحداث والحالة: تفعيل مهمة cron للتوحيد يدويًا، وإعادة محاولة مسار HTTP، وبث تغيّر حالة. |
 | **الحالات (States)** | مستعرض KV بعمليات CRUD كاملة على الجلسات، وفُتحات الذاكرة، ومؤقِّتات دورة الحياة، وفهرس التضمينات؛ وتعديل القيم في مكانها. |
-| **التيارات (Streams)** | مراقب WebSocket مباشر لكتابات الذاكرة، وأحداث الخطافات، وتحديثات الملاحظات أثناء تدفّقها عبر تيارات iii. |
-| **قوائم الانتظار (Queues)** | مواضيع قوائم انتظار دائمة + إدارة الرسائل المتعطّلة (dead-letter). إعادة تشغيل أو إسقاط مهام التضمين/الضغط الفاشلة. |
 | **التتبّعات (Traces)** | عروض شلالية (waterfall) / لهبية (flame) / تفصيلية بالخدمة لـ OpenTelemetry. رشِّح حسب `trace_id` لمعرفة بالضبط أي الدوال، واستدعاءات قاعدة البيانات، وطلبات التضمين التي أنتجها استدعاء واحد لـ `memory.search`. |
 | **السجلات (Logs)** | سجلات OTEL البنيوية مُرشَّحة ومرتبطة بمعرِّفات trace/span. |
 | **الإعدادات (Config)** | إعدادات بيئة التشغيل: رؤية بالضبط أي عمّال ومزوّدين ومنافذ يعمل محركك بها. |
-| **التدفّق (Flow)** | (اختياري، `--enable-flow`) رسم بياني معماري تفاعلي لكل عامل، ومحفِّز، وتيار. |
+| **التدفّق (Flow)** | (اختياري، `--enable-flow`) رسم بياني معماري تفاعلي لكل عامل ومحفّز وتيار. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="عرض شلالي للتتبّعات في لوحة تحكم iii يُظهر مدة كل span" width="720" />
@@ -1316,11 +1275,7 @@ agentmemory console
   <em>التتبّعات: عرض شلالي / لهبي / تفصيلي بالخدمة لكل عملية ذاكرة.</em>
 </p>
 
-**التتبّعات مُفعَّلة مسبقًا:**
-
-يُشحن `iii-config.yaml` مع تفعيل عامل `iii-observability` (`exporter: memory`، و`sampling_ratio: 0.1`، ومقاييس + سجلات). ولا حاجة إلى أي إعداد إضافي؛ فمنذ لحظة تشغيل agentmemory، تُصدِر كل عملية ذاكرة سجلًا بنيويًا يمكن لوحة التحكم قراءته، وتُصدِر واحدة من كل عشر عمليات (`sampling_ratio: 0.1`) مدى تتبّع (trace span) أيضًا.
-
-إذا رغبت في التصدير إلى Jaeger/Honeycomb/Grafana Tempo بدلًا من ذلك، غيّر `exporter: memory` إلى `exporter: otlp` واضبط نقطة نهاية المُجمِّع (collector) وفقًا لمستندات المراقبة في iii.
+**التتبّع والسجلات:** تستطيع لوحة تحكم iii فحص قياسات بيئة التشغيل. لإعداد التصدير وأخذ العينات، اتبع [مستندات المراقبة في iii](https://iii.dev/docs).
 
 > **تنبيه:** لا تُفرَض أي مصادقة على لوحة التحكم نفسها؛ احتفظ بارتباطها بـ `127.0.0.1` (الافتراضي) ولا تُعرِّضها علنًا مطلقًا.
 
@@ -1328,13 +1283,13 @@ agentmemory console
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="Powered by iii" height="32" /></picture></h2>
 
-agentmemory هو **فعليًا نسخة تشغيل من [iii](https://iii.dev)**. تُؤلِّف ثلاث بنى أساسية (العامل، والدالة، والمحفِّز) بيئة التشغيل؛ وتأتي حالة KV، والتيارات، وتتبّعات OTEL من عمّال iii-state وiii-stream وiii-observability المُشحونة مع iii. أنت لم تُثبِّت Postgres أو Redis أو Express أو pm2 أو Prometheus، لأن iii يحل محلها.
+agentmemory عامل على بيئة تشغيل [iii](https://iii.dev). يتولى Worker Compose إدارة المحرك ويبدأ agentmemory مع عاملي السجل `state` و`http`. وتُقدَّم تغذية العارض عبر SSE على نقطة REST.
 
 وهذا يعني أن أمرًا واحدًا إضافيًا يمنح agentmemory قدرة جديدة كاملة.
 
 ### توسيع agentmemory بمزيد من العمّال
 
-العمّال المُضمَّنون (builtins) اللازمون لـ agentmemory موجودون مسبقًا في `iii-config.yaml` ويُقلعون معه: `iii-state` (KV)، و`iii-queue` (إعادة محاولات دائمة لمشتركي الأحداث)، و`iii-pubsub`، و`iii-cron`، و`iii-stream`، و`iii-observability` (تتبّعات OTEL، ومقاييس، وسجلات على كل دالة). وأي شيء آخر من [سجل عمّال iii](https://workers.iii.dev) يتوصّل بالمحرك نفسه: انسخ `iii-config.yaml` إلى `~/.agentmemory/iii-config.yaml` (تُفضِّل الواجهة الطرفية CLI هذا الملف على الملف المُضمَّن، وتظل تُصيِّر المنافذ ومسارات البيانات فيه)، وأضف الإدخال، وثبِّت بيئة تشغيل العامل مرة واحدة بأمر `~/.agentmemory/bin/iii update worker`، وأعد تشغيل agentmemory.
+تجمع بيئة التشغيل عامل السجل `state` (KV) وعامل `http` مع agentmemory. ويمكن إضافة عمّال آخرين من [سجل iii](https://workers.iii.dev) إلى مشروع Worker Compose.
 
 ```yaml
 workers:
@@ -1350,23 +1305,19 @@ workers:
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | تشغيل الشفرة التي تخرج من `memory_recall` داخل جهاز افتراضي مؤقت، لا في صدفتك الخاصة |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | إقامة خوادم MCP إضافية بجانب خادم agentmemory، بمشاركة المحرك نفسه |
 
-على المحرك 0.22.x، احتفظ بالأسماء المُضافة لها بادئة `iii-` للعمّال المُضمَّنين أعلاه؛ أما الإدخالات غير المُسبَّقة بادئةً `http` و`state` و`queue` و`pubsub` و`cron` فهي عمّال السجل المستقلون التي ينتقل إليها agentmemory مع ترحيل 0.23.
+تثبّت بيئة التشغيل حزم السجل `state@0.22.20` و`http@0.22.7` في مشروع Worker Compose الذي ينشئه CLI.
 
 السجل الكامل: [workers.iii.dev](https://workers.iii.dev). ويُؤلَّف كل عامل هناك من خلال البنى الأساسية نفسها التي يستخدمها agentmemory، وagentmemory الذي تملكه مسبقًا هو واحد منها.
 
-### إعدادات المحرك وعنوان الارتباط
+### بيئة تشغيل CLI وعناوين الارتباط
 
-يقرأ `agentmemory start` إعدادات المحرك من أول ملف موجود: `AGENTMEMORY_III_CONFIG`، ثم `./iii-config.yaml` في الدليل الحالي، ثم `~/.agentmemory/iii-config.yaml`، ثم ملف `iii-config.yaml` المُضمَّن. وفي كل تشغيل، يُصيِّر ذلك الملف (مسارات البيانات، والمنافذ، وخلفية الحالة) إلى `~/.agentmemory/data/iii-config.runtime.yaml` ويُشغِّل المحرك بالنسخة المُصيَّرة، فعدِّل ملف المصدر، لا الملف المُصيَّر. وتُحفظ قيم `host:` في ملف المصدر كما كُتبت.
+يبدأ تشغيل `agentmemory` (أو الحزمة دون أمر فرعي) iii Worker Compose بملف manifest معزول داخل دليل البيانات المحدد. ويستخدم iii 0.24.6 و`state@0.22.20` و`http@0.22.7`. ترتبط مستمعات REST والعارض المحلية في CLI بـ `127.0.0.1`؛ أما WebSocket المحرك فهو حركة مرور داخلية لبيئة التشغيل. تستخدم عمليات نشر Docker المعتمدة على المستودع الملف المنفصل [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml)؛ راجع [`deploy/README.md`](../deploy/README.md).
 
-يرتبط `iii-config.yaml` المُضمَّن بـ `127.0.0.1` عمدًا، وينطبق ذلك الافتراضي أيضًا داخل الحاوية. وتستمع الواجهة الطرفية CLI المُشغَّلة داخل حاوية إلى عنوان loopback الخاص بالحاوية، فلا تصل المنافذ المنشورة إلى أي شيء. ولتقديم واجهة طرفية مُحوسَبة في حاويات عبر منافذ منشورة، اضبط `AGENTMEMORY_III_CONFIG` على إعدادات ترتبط بـ `0.0.0.0`. ويُعدّ `iii-config.docker.yaml` المُعبَّأ أحد هذه الإعدادات: فهو يربط `iii-http` و`iii-stream` ومنفذ المحرك بـ `0.0.0.0` ويخزِّن الحالة تحت `/data`، فاربط (mount) حجمًا (volume) قابلًا للكتابة هناك. حافظ على ضبط `AGENTMEMORY_SECRET`، ولا تنشر إلا المنافذ التي تحتاجها، على `127.0.0.1` أو خلف وكيل عكسي تثق به.
+### خلفية التخزين: ملف (افتراضي) في مقابل Redis
 
-لا يمر ملف `docker-compose.yml` الخاص بهذا المستودع عبر آلية بحث الواجهة الطرفية CLI عن الإعدادات: فهو يربط `iii-config.docker.yaml` عند `/app/config.yaml`، وتُشغَّل حاوية `iii-engine` بأمر `--config /app/config.yaml`. أما [قوالب النشر](../deploy/) بنقرة واحدة فتكتب إعداداتها الخاصة بـ `0.0.0.0` في سكربتات دخولها.
+يستخدم عامل `state` افتراضيًا مخزن KV قائمًا على الملفات، يُحتفظ به في الذاكرة ويُكتب دوريًا إلى القرص. يتوفر Redis عندما يتشارك عدة كتّاب بيئة تشغيل واحدة؛ فهو يضيف رحلة ذهاب وعودة عبر الشبكة ولا يجعل اتصال العامل الواحد متوازيًا.
 
-### خلفية التخزين: ملف (افتراضي) في مقابل redis
-
-يفترض `iii-state` و`iii-stream` مخزن KV المستنِد إلى الملفات المُضمَّن في iii-engine: ملف JSON واحد لكل نطاق، محفوظ في ذاكرة عملية المحرك ويُعاد كتابته على القرص بمؤقِّت. وهذا هو الافتراضي الصحيح لتثبيت محلي بمستخدم واحد؛ أما خادم عفريتي (daemon) مشترك بعدة كُتّاب متزامنين فيحصل بدلًا من ذلك على كتابات فعلية لكل مفتاح من Redis، بتكلفة رحلة شبكة ذهابًا وعودة لكل عملية (لا يزال كل استدعاء `state::*` يتسلسل على اتصال Redis واحد، فهذا يستبدل قفل مخزن الملفات بمقبس (socket)، لا بتوازٍ حقيقي).
-
-اضبط `AGENTMEMORY_STATE_BACKEND=redis` (مع `AGENTMEMORY_REDIS_URL`) لتبديل كلا العاملين إلى محوِّل `redis` المدمج في iii-engine، والذي يخزِّن كل مفتاح كحقل تجزئة (hash) في Redis (`HSET`) بدلًا من إعادة كتابة نطاق كامل عند كل كتابة:
+اضبط `AGENTMEMORY_STATE_BACKEND=redis` و`AGENTMEMORY_REDIS_URL` لاستخدام محوّل Redis الخاص بعامل الحالة، الذي يخزّن كل مفتاح كحقل تجزئة Redis (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1374,31 +1325,30 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-يكون `AGENTMEMORY_STATE_BACKEND` بقيمة `file` افتراضيًا؛ وتركه بلا ضبط يحافظ على السلوك الحالي دون تغيير، وأي قيمة غير معروفة (أي شيء غير `file` أو `redis`) تُسبِّب خطأ عند البدء بدلًا من رجوع صامت. يُعلِن `/agentmemory/status` وصفحة الحالة الصحية في العارض (صف مخزن الحالة) عن الخلفية النشطة وهل تستجيب أم لا، ولا يُعلِنان العنوان مطلقًا.
+القيمة الافتراضية لـ `AGENTMEMORY_STATE_BACKEND` هي `file`؛ وتركه دون ضبط يحافظ على السلوك الحالي، أما القيمة غير المعروفة (أي قيمة غير `file` أو `redis`) فتسبب خطأ عند بدء التشغيل بدلًا من الرجوع الصامت. يعرض `/agentmemory/status` وصفحة Health في العارض (صف مخزن الحالة) الخلفية النشطة وما إذا كانت تستجيب، ولا يعرضان عنوان URL مطلقًا.
 
-**`redis://` العادي فقط.** يبني المحرك المثبَّت (0.22.1) عميل Redis الخاص به دون دعم TLS، فيفشل الاتصال بعنوان `rediss://` (تفترض معظم خدمات Redis المُدارة، مثل Upstash وRedis Cloud وElastiCache بتشفير أثناء النقل، استخدام TLS فقط). الاتصال غير مُشفَّر، فتعبر كلمة مرور Redis وكل ذكرى مخزَّنة السلك نصًا صريحًا: وجِّهه إلى Redis محلي أو إلى واحد على شبكة خاصة تثق بها. وبالنسبة لأي Redis آخر، شغِّل نفقًا مُشفَّرًا (stunnel أو SSH أو VPN) على مضيف agentmemory، بحيث تبقى قفزة `redis://` العادية على ذلك المضيف ويكون اتصال النفق الصاعد (upstream) مُشفَّرًا ومُصادَقًا عليه. وإذا كانت كلمة مرور Redis تحتوي على علامة اقتباس مفردة، شفِّرها بترميز النسبة المئوية (`%27`)؛ فالمحرك يُوسِّع العنوان في إعدادات YAML الخاصة به قبل تحليله.
+**`redis://` العادي فقط.** يدعم عامل الحالة المثبّت `redis://` العادي فقط؛ وتحتاج خدمات `rediss://` التي لا تدعم سوى TLS إلى نفق مشفّر. اتصال Redis غير مشفّر، لذا استخدم Redis محليًا أو على شبكة خاصة أو عبر نفق. إذا احتوت كلمة مرور Redis على علامة اقتباس مفردة، فشفّرها بترميز النسبة المئوية (`%27`)؛ يوسّع المحرك عنوان URL إلى إعداد YAML قبل تحليله.
 
-**خادم Redis واحد لكل `--instance`.** بادئات مفاتيح Redis الخاصة بالمحرك (`state:<scope>`، و`stream:<name>:<group>`) ثابتة، فإذا أشارت نسختان من agentmemory (`--instance 1`، و`--instance 2`، ...) إلى قاعدة البيانات نفسها، تتداخل بيانات كل منهما مع الأخرى وتُستبدَل. يُبقي فهرس قاعدة بيانات منفصل (`redis://localhost:6379/1`) البيانات المخزَّنة متفرقة، لكن المحرك يُرحِّل أحداث العارض الحية عبر قناة واحدة من نوع Redis pub/sub (`stream::events`)، ويتجاهل Redis pub/sub فهرس قاعدة البيانات، فسيظل عارض كل نسخة يُظهر الأحداث الحية للنسخة الأخرى. أعطِ كل نسخة خادم Redis خاصًا بها (أو منفذًا خاصًا) عندما تُشغِّل أكثر من نسخة واحدة.
+**قاعدة بيانات Redis واحدة لكل نسخة.** خصّص لكل نسخة متزامنة قاعدة بيانات أو خادم Redis خاصًا بها لعزل الحالة.
 
-**ما يبقى كما هو، وما يختلف.** تعمل كل ميزة في agentmemory على Redis: الجلسات، والملاحظات، والذكريات (الحفظ، والإحلال، والتطور، والنسيان)، والبحث وحُزَم الفهرس، والدروس المستفادة، والرسم البياني، وسجل التدقيق ونطاقاته الشهرية، والتصدير والاستيراد، وعمليات الحذف الإدارية (governance)، وحالة التوحيد، ولقطة العارض وتيارها المباشر، ومراقب الحالة الصحية. ويخزِّن المحرك كل نطاق كتجزئة Redis واحدة (`HSET`/`HGET`/`HGETALL`) ويُطلِق محفِّزات الحالة نفسها التي يُطلقها مخزن الملفات. وتُعالَج ثلاثة اختلافات في المحرك داخل agentmemory:
+**ما يبقى كما هو وما يختلف.** تعمل كل ميزات agentmemory مع Redis: الجلسات والملاحظات والذكريات (الحفظ والإحلال والتطور والنسيان) والبحث وحزم الفهرس والدروس والرسم البياني وسجل التدقيق ونطاقاته الشهرية والتصدير والاستيراد والحذف الإداري وحالة التوحيد ولقطة العارض وتغذيتها الحية لمؤشرات SSE ومراقب الحالة الصحية. يخزّن عامل الحالة كل نطاق كتجزئة Redis (`HSET`/`HGET`/`HGETALL`) ويطلق محفزات الحالة نفسها التي يطلقها مخزن الملفات. وتُعالج ثلاثة اختلافات في التخزين داخل agentmemory:
 
-- يُعيد Redis سجلات النطاق دون ترتيب ثابت. يُرتِّبها agentmemory من الأقدم إلى الأحدث (بحسب وقت الإنشاء في معرّف السجل، ثم طابعه الزمني) بحيث تعود القوائم، والصفحات، وكُتل التصدير بالترتيب نفسه الموجود على مخزن الملفات.
-- يطبِّق المحرك التحديثات الجزئية على Redis بسكربت Lua يُحوِّل المصفوفات الفارغة إلى كائنات فارغة. يطبِّق agentmemory تلك التحديثات بنفسه على Redis (قراءة، وتغيير، وكتابة تحت قفل لكل مفتاح)، فتبقى حقول مثل `tags: []` مصفوفات.
-- يقرأ فحص سجل التدقيق القديم النطاق القديم من Redis بدلًا من البحث عن ملف مخزن الملفات على القرص.
+- يعيد Redis سجلات النطاق دون ترتيب ثابت. يرتبها agentmemory من الأقدم إلى الأحدث (بحسب وقت الإنشاء في معرّف السجل، ثم الطابع الزمني) لتعود القوائم والصفحات ودفعات التصدير بالترتيب نفسه المستخدم في مخزن الملفات.
+- يطبّق المحرك التحديثات الجزئية على Redis عبر سكربت Lua يحوّل المصفوفات الفارغة إلى كائنات فارغة. يطبّق agentmemory هذه التحديثات بنفسه في Redis (قراءة وتعديل وكتابة بقفل لكل مفتاح)، كي تظل حقول مثل `tags: []` مصفوفات.
+- يقرأ فحص سجل التدقيق القديم النطاق القديم من Redis بدل البحث عن ملف مخزن الملفات على القرص.
 
-هناك اختلاف واحد يحتاج تدخّلك: **بعد إعادة تشغيل Redis، يتوقف المحرك عن ترحيل الأحداث الحية** إلى العارض إلى أن يُعاد تشغيل agentmemory. ولا تزال البيانات تُحفظ وتُقرأ بشكل طبيعي. يرسل مراقب الحالة الصحية حدثًا اختباريًا عبر Redis كل 30 ثانية؛ وعندما لا يعود، يُظهر `/agentmemory/status` وصفحة الحالة الصحية في العارض "التحديثات الحية لا تصل إلى العارض" مع الإصلاح: أعِد تشغيل agentmemory. وإذا كان Redis متوقفًا، يُظهر تقرير الحالة "مخزن الحالة لا يستجيب" وكيفية التحقق من ذلك (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). ويقرأ سرد نطاق كبير جدًا التجزئة كاملةً في `HGETALL` واحد، بنفس تكلفة احتفاظ مخزن الملفات به في الذاكرة.
+تستخدم الأحداث الحية للعارض SSE على عامل REST وتُبث من عملية agentmemory العاملة؛ ولا تستخدم Redis pub/sub أو استقصاء دوريًا لتيار Redis. يؤثر توفر Redis في قراءة الحالة وكتابتها، لا في نقل بيانات العارض. إذا تعذّر Redis، يعرض تقرير الحالة «مخزن الحالة لا يستجيب» وطريقة التحقق (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). وتقرأ قوائم النطاقات الكبيرة جدًا التجزئة كاملة في طلب `HGETALL` واحد، وهي الكلفة نفسها لمخزن الملفات الذي يحتفظ بها في الذاكرة.
 
-**إعدادات Redis المُوصى بها.** قد تُفقد سياسة اللقطات الافتراضية `save 3600 1 300 100 60 10000` دقائق من الكتابات عند الانهيار، وهذا أسوأ من نافذة التفريغ البالغة 5 ثوانٍ في مخزن الملفات. اضبط `appendonly yes` لأي شيء يهمك ألا تفقده. واضبط `maxmemory-policy noeviction`؛ فسياسة `allkeys-lru` أو ما شابهها تُسقِط الذكريات بصمت بمجرد أن يصل Redis إلى حد ذاكرته.
+**إعدادات Redis الموصى بها.** قد تفقد سياسة اللقطات الافتراضية `save 3600 1 300 100 60 10000` دقائق من الكتابات عند التعطل. اضبط `appendonly yes` للبيانات التي لا تريد فقدانها. واضبط `maxmemory-policy noeviction`؛ فسياسة `allkeys-lru` أو ما شابهها تسقط الذكريات بصمت عند بلوغ Redis حد الذاكرة.
 
-يقرأ التشغيل الأصلي (غير Docker)، وكل [قالب نشر](../deploy/) بنقرة واحدة (فهي تستبدل `iii-config.yaml` المُضمَّن وتُشغَّل أصليًا)، `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` ويُصيِّرانها في `iii-config` المُشغَّل. ولا يُكتب العنوان نفسه في ذلك الملف المُصيَّر مطلقًا، بل فقط مرجع `${AGENTMEMORY_REDIS_URL}` تُوسِّعه عملية المحرك من بيئتها الخاصة عند الإقلاع. ولا يربط `iii-config.docker.yaml` للقراءة فقط دون تصيير إلا مسار Docker Compose الخاص بهذا المستودع (`AGENTMEMORY_USE_DOCKER=1`، أو استئناف محرك بدأ بتلك الطريقة مسبقًا)؛ ويُحذِّر `agentmemory start` عندما يكتشف هذا المزيج. بدِّل ذلك الملف يدويًا، باتباع نفس شكل `name: redis` / `config: redis_url: ...` الموضَّح في مستندات عمّال [iii-state](https://workers.iii.dev/workers/iii-state) و[iii-stream](https://workers.iii.dev/workers/iii-stream)، ووجِّه `redis_url` إلى Redis يمكن الوصول إليه من الحاوية. ويُمرِّر `docker-compose.yml` متغير `AGENTMEMORY_REDIS_URL` إلى حاوية المحرك، فتعمل `redis_url: '${AGENTMEMORY_REDIS_URL}'` هناك وتُبقي العنوان خارج الملف المربوط.
+يمرّر مشروع Worker Compose الذي ينشئه CLI هذه المتغيرات إلى عامل الحالة. وللاستضافة الذاتية عبر Docker، راجع [`deploy/README.md`](../deploy/README.md) ومستندات [عامل state](https://workers.iii.dev/workers/state).
 
-تُبقي الإعدادات المُصيَّرة العنوان خارج `~/.agentmemory/data/iii-config.runtime.yaml`، لكن عامل الإعدادات الخاص بالمحرك نفسه لا يزال يُثبِّت القيمة *المُوسَّعة* في `~/.agentmemory/config/iii-state.yaml` و`iii-stream.yaml` بمجرد إقلاعه (يحدث توسيع `${VAR}` الخاص بـ iii-engine قبل أن يخزِّن ذلك العامل بذرته، ويخزِّن القيمة المحلولة، لا المرجع). تعامل مع ذلك الدليل بصفته يحمل بيانات اعتماد: استخدم `chmod 700 ~/.agentmemory` على أي مضيف مشترك، وفضِّل مستخدم ACL لـ Redis مُحدَّد النطاق بما يحتاجه agentmemory فقط على بيانات اعتماد مسؤول قاعدة البيانات.
+تعامل مع إعدادات العامل المحفوظة بحذر إذا احتوت على عنوان Redis URL، إذ قد يتضمن بيانات اعتماد. وتعامل مع دليل البيانات المحدد على أنه يحتوي بيانات اعتماد وقيّد صلاحياته (مثل `chmod 700 <data-dir>` على مضيف مشترك). يُفضّل مستخدم ACL في Redis محدود الصلاحيات التي يحتاجها agentmemory على بيانات اعتماد مسؤول قاعدة البيانات.
 
-**الترحيل ليس آليًا.** يبدأ تبديل `AGENTMEMORY_STATE_BACKEND` من مخزن فارغ على أي من الجانبين؛ ولا شيء يُنسِّخ البيانات الموجودة من الملف إلى Redis أو بالعكس. صدِّر من الخلفية التي تتركها واستورد إلى التي تنتقل إليها. يعمل هذا بشكل متطابق تحت bash وzsh (بما في ذلك `bash -u`). أما مصفوفة مثل `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` فلا تعمل بالمثل: يحتفظ zsh بالترويسة كَكلمة واحدة مُشوَّهة حيث يقسِّمها bash إلى كلمتين، فيعيد كل من الطلبين الرمز 401 في كل مرة يكون `AGENTMEMORY_SECRET` مضبوطًا فيها:
+**الترحيل ليس تلقائيًا.** يؤدي تغيير `AGENTMEMORY_STATE_BACKEND` إلى بدء مخزن فارغ على أي من الجانبين؛ ولا تُنسخ البيانات الموجودة من الملفات إلى Redis أو بالعكس. صدّر من الخلفية التي تغادرها واستورد إلى الخلفية الجديدة. يعمل ذلك بالطريقة نفسها في bash وzsh (بما في ذلك `bash -u`). أما مصفوفة مثل `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` فلا تعمل بالطريقة نفسها: يحتفظ zsh بالترويسة كلمة واحدة مشوّهة، بينما يقسمها bash إلى كلمتين، فيعيد كلا الطلبين 401 كلما كانت `AGENTMEMORY_SECRET` مضبوطة:
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1433,14 +1383,13 @@ fi
 | المكدّس التقليدي | ما يستخدمه agentmemory |
 |---|---|
 | Express.js / Fastify | محفِّزات HTTP في iii |
-| SQLite / Postgres + pgvector | حالة KV في iii + فهرس متجهات في الذاكرة |
-| SSE / Socket.io | تيارات iii (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | نقطة REST `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | إشراف المحرك على العمّال في iii |
 | Prometheus / Grafana | OTEL في iii + مراقب الحالة الصحية |
 | أنظمة إضافات مخصصة | `iii worker add <name>` |
 
-**242 ملف مصدري · ~55,000 سطر برمجي · 3,800+ اختبار · 324 دالة · 67 نطاق KV**، كل ذلك على ثلاث بنى أساسية. لا يوجد أمر `agentmemory plugin install`. نظام الإضافات هو iii نفسه.
-
+**246 ملف مصدري · ~56,000 سطر برمجي · 3,800+ اختبار · 322 دالة · 65 نطاق KV**، كل ذلك على ثلاث بنى أساسية. لا يوجد أمر `agentmemory plugin install`. نظام الإضافات هو iii نفسه.
 ---
 
 <h2 id="configuration"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-config.svg"><img src="../assets/tags/section-config.svg" alt="Configuration" height="32" /></picture></h2>
@@ -1556,57 +1505,41 @@ AGENTMEMORY_AGENT_SCOPE=isolated  # optional; default "shared"
 
 ### المنافذ
 
-يرتبط agentmemory + iii-engine بأربعة منافذ افتراضيًا. وإذا فشلت إعادة التشغيل برسالة `port in use`، يُخبرك هذا الجدول عن العملية التي يجب البحث عنها.
+يستخدم runtime المحلي ثلاثة مستمعات. يُخصّص WebSocket لمحرك iii لتسجيل العمّال داخليًا، ويجب عدم تعريضه للشبكة العامة.
 
 | المنفذ | العملية | الغرض | تجاوز متغير البيئة |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | عامل التيارات الداخلي (يستهلكه agentmemory + العارض) | `III_STREAM_PORT` (مُفضَّل) أو `III_STREAMS_PORT` القديم |
-| `3113` | agentmemory | العارض اللحظي (`http://localhost:3113`) | `III_VIEWER_PORT` أو `AGENTMEMORY_VIEWER_URL` للعنوان المُعلَن |
-| `49134` | iii-engine | WebSocket؛ يُسجِّل العمّال هنا، ويتدفّق قياس OTel عبره | `III_ENGINE_PORT` أو `III_ENGINE_URL` |
+| `3111` | عامل السجل `http` | REST API وMCP HTTP والصحة وSSE الموثّق للعارض عند `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | واجهة العارض والوكيل الوسيط للعارض | `III_VIEWER_PORT` |
+| `49134` | محرك iii | WebSocket داخلي للعمّال | `III_ENGINE_PORT` أو `III_ENGINE_URL` |
 
-يُغيِّر `--port <N>` مرساة REST ويستمد منفذ التيارات `N+1`، والعارض `N+2`، وWebSocket المحرك `N+46023`، فقط حيث يكون المنفذ أو العنوان الصريح المقابل أعلاه غير مضبوط. ولا يُنشئ مساحة أسماء دورة حياة معزولة. استخدم `--instance 1` لعفريت (daemon) ثانٍ؛ فهو يستخدم المرساة 3211، وافتراضيًا `3211/3212/3213/49234`، ويحصل على دليل بيانات ودورة حياة منفصل باسم `instance-1`. وتتبع النُّسخ من 1 إلى 50 النمط نفسه.
+يضبط `--port <N>` منفذ REST ويشتق منفذ العارض `N+2` وWebSocket المحرك `N+46023` ما لم تُضبط صراحةً. استخدم `--instance N` لبيئة تشغيل معزولة.
 
-يبدأ المحرك المثبَّت بخيار `--no-update-check` (بلا أي بحث عن تحديثات أو تنبيهات أمنية مقابل GitHub عند الإقلاع) ومع تعطيل قياس الاستخدام المجهول لـ iii: يضبط agentmemory `III_TELEMETRY_ENABLED=false` للمحرك الذي يُولِّده إلا إذا صدَّرت المتغير بنفسك، ويفعل ملف compose المُضمَّن الشيء نفسه.
-
-تنظيف العمليات العالقة عندما تظل المنافذ مربوطة بعد تشغيل منهار:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-يحصد `agentmemory stop` كلًا من ملف pid الخاص بالعامل والمحرك بنظافة عند الإيقاف الأصلي السَّلِس (graceful). وفي وضع Docker، يُفرِّغ العامل الأصلي، ويُوقِف حاوية المحرك المُصادَق عليها تحديدًا، ويحافظ على كلٍّ من الحاوية وربطها بـ `/data` لإعادة تشغيل بلا فقد بيانات؛ ويتحقق التشغيل التالي من تلك الحاوية نفسها ويستأنفها. ويتطلب إلغاء التثبيت المعتمد على Docker أمر `agentmemory remove --keep-data`: فهو يحذف ملفات agentmemory المُشتركة والمُدارة بينما يحافظ على الحاوية المُصادَق عليها، وربط بياناتها، وسجل دورة الحياة اللازم لاستعادتها. ويُترَك حذف بيانات Docker المدمِّر عمدًا للمُشغِّل بعد نسخة احتياطية. وترفض الواجهة الطرفية CLI أيضًا تبنّي أو إرسال إشارة إلى حائزي منافذ Docker أو الأجهزة الافتراضية (خلفية Docker، أو vpnkit، أو colima) باعتبارهم المحرك الأصلي إلا إذا مُرِّرت `--force`. والتنظيف اليدوي أعلاه مخصص فقط لحالة ما بعد الانهيار التي لا يُترَك فيها أي ملف pid.
+تنشر بيئة الاستضافة الذاتية REST والعارض، افتراضيًا على `127.0.0.1:3111` و`127.0.0.1:3113`؛ ويمكن تغيير منافذ المضيف عبر `AGENTMEMORY_REST_PORT` و`AGENTMEMORY_VIEWER_PORT`. يسمح REST CORS افتراضيًا بـ `http://localhost` و`http://127.0.0.1` على منفذي REST والعارض المحددين؛ اضبط `REST_ALLOWED_ORIGINS` في Docker على قائمة مفصولة بفواصل من المنشأات الدقيقة للسماح بمنشأات متصفح موثوقة إضافية.
 
 ### ملف الإعدادات
 
-ضع إعدادات بيئة تشغيل agentmemory في `~/.agentmemory/.env` بدلًا من تصدير المتغيرات في كل صدفة. إذا أظهر العارض تلميح إعداد مثل `export ANTHROPIC_API_KEY=...`، انسخه إلى هذا الملف كـ `ANTHROPIC_API_KEY=...` دون بادئة `export`، ثم أعد تشغيل agentmemory.
+ضع إعدادات runtime الخاصة بـ agentmemory في `~/.agentmemory/.env` بدل تصدير المتغيرات في كل صدفة. إذا عرض العارض تلميح إعداد مثل `export ANTHROPIC_API_KEY=...`، فانسخه إلى هذا الملف كـ `ANTHROPIC_API_KEY=...` دون السابقة `export`، ثم أعد تشغيل agentmemory. اضبط `AGENTMEMORY_ENV_FILE` لاستخدام مسار آخر لملف البيئة.
 
-لا تزال متغيرات بيئة العملية تعمل وتسبق في الأولوية القيم الموجودة في الملف.
+تظل متغيرات بيئة العملية صالحة ولها الأولوية على قيم الملف. يمرّر مشروع Worker Compose الذي ينشئه CLI إعدادات Redis من `AGENTMEMORY_STATE_BACKEND` و`AGENTMEMORY_REDIS_URL` إلى عامل `state`.
 
-على Windows، يعيش الملف نفسه عند `%USERPROFILE%\.agentmemory\.env`:
+على Windows، يوجد الملف نفسه في `%USERPROFILE%\.agentmemory\.env`:
 
 ```powershell
 New-Item -ItemType Directory -Force $HOME\.agentmemory
 notepad $HOME\.agentmemory\.env
 ```
 
-لتجربته باستخدام اشتراك Claude Code Pro/Max بدلًا من مفتاح API، انضم اختياريًا وبشكل صريح:
+لاختبار اشتراك Claude Code Pro/Max بدل مفتاح API، فعّله صراحةً:
 
 ```env
 AGENTMEMORY_ALLOW_AGENT_SDK=true
 AGENTMEMORY_AUTO_COMPRESS=true
 ```
 
-يتطلب ضغط الملاحظات المكتوب بواسطة LLM السطرين معًا: الوصول إلى مزوّد LLM (بما في ذلك هذا الرجوع الصريح للاشتراك) و`AGENTMEMORY_AUTO_COMPRESS=true`. ويترك المزوّد وحده مسار الضغط التركيبي الافتراضي كما هو.
+يتطلب ضغط الملاحظات المكتوب بواسطة LLM السطرين معًا: الوصول إلى مزوّد LLM (بما في ذلك خيار الاشتراك الصريح هذا) و`AGENTMEMORY_AUTO_COMPRESS=true`. لا يغيّر وجود المزوّد وحده مسار الضغط الاصطناعي الافتراضي.
 
-يكون التوحيد (عُقَد الرسم البياني، والدروس المستفادة، والبلورات) مُفعَّلًا افتراضيًا كلما ضُبط مزوّد LLM. استثنِ نفسك صريحًا بـ `CONSOLIDATION_ENABLED=false` إذا أردت تشغيلًا بلا LLM. واستخراج الرسم البياني راية مستقلة:
+يكون التوحيد (عُقد الرسم البياني والدروس والبلورات) مفعّلًا افتراضيًا عند إعداد مزوّد LLM. عطّله صراحةً عبر `CONSOLIDATION_ENABLED=false` إذا أردت التشغيل دون LLM. استخراج الرسم البياني راية منفصلة:
 
 ```env
 GRAPH_EXTRACTION_ENABLED=true
@@ -1742,8 +1675,7 @@ GRAPH_EXTRACTION_ENABLED=true
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1782,12 +1714,12 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
+144 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
 
-**المصادقة مُفعَّلة افتراضيًا.** عندما لا يكون `AGENTMEMORY_SECRET` مضبوطًا (في الصدفة أو في `~/.agentmemory/.env`)، يُولِّد الخادم سرًا عشوائيًا عند أول تشغيل ويخزِّنه في `~/.agentmemory/secret` بوضع صلاحيات `0600`. ويقرؤه كل عميل مُضمَّن من هناك عند التحدث إلى خادم محلي: الواجهة الطرفية CLI، والعارض، والخطافات تحت `plugin/scripts`، وخادم MCP والوسيط `@agentmemory/mcp`، والإعدادات التي يكتبها `agentmemory connect`، وتكاملات OpenCode وPi وOpenClaw وHermes ومراقب نظام الملفات (filesystem-watcher) المُضمَّنة. ولا يُرسَل السر المخزَّن إلا إلى عناوين loopback (`localhost`، و`127.0.0.0/8`، و`::1`). ويتغلّب `AGENTMEMORY_SECRET` الصريح دائمًا، ولا يزال العملاء البعيدون بحاجة إلى ضبطه. وتُولِّد Docker وقوالب [`deploy/`](../deploy/) سرها الخاص وتُصدِّره مسبقًا. ولاستدعاء الواجهة البرمجية يدويًا:
+**المصادقة مُفعّلة افتراضيًا.** عندما لا يكون `AGENTMEMORY_SECRET` مضبوطًا (في الصدفة أو في `~/.agentmemory/.env`)، ينشئ CLI سرًا عشوائيًا عند أول تشغيل ويحفظه باسم `secret` في دليل البيانات المحدد بصلاحية `0600` (يُشرح دليل البيانات الافتراضي الخاص بكل منصة أعلاه). يقرأ كل عميل مضمّن هذا السر عند الاتصال بخادم محلي: CLI والعارض والخطافات تحت `plugin/scripts` وخادم MCP ووسيط `@agentmemory/mcp` والإعدادات التي يكتبها `agentmemory connect` وتكاملات OpenCode وPi وOpenClaw وHermes ومراقب نظام الملفات المضمّنة. لا يُرسل السر المحفوظ إلا إلى عناوين loopback (`localhost` و`127.0.0.0/8` و`::1`). وتكون الأولوية دائمًا لقيمة `AGENTMEMORY_SECRET` الصريحة، كما يجب ضبط السر في بيئة العملاء البعيدين. تنشئ عمليات الاستضافة الذاتية عبر Docker من المستودع ونقاط دخول [`deploy/`](../deploy/) سرها وتصدّره. لاستدعاء API يدويًا:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **قواعد الطلبات للكتابة.** يجب أن تُرسِل طلبات `POST` و`PUT` و`PATCH` و`DELETE` إلى REST API والعارض ترويسة `Content-Type: application/json` (مُعامل `charset` مقبول) كلما حملت جسمًا، وترويسة `Origin`، عند وجودها، يجب أن تكون أصلًا من نوع loopback لمنفذ REST أو العارض المضبوط، أو مُدرَجة في `VIEWER_ALLOWED_ORIGINS` (مفصولة بفواصل، مثل `https://memory.example.com`). أما العملاء الذين لا يُرسلون ترويسة `Origin` (CLI، والخطافات، وMCP، وcurl، ومن خادم إلى خادم) فلا يتأثرون. ويقبل العارض أيضًا أصله الخاص.
@@ -1867,7 +1799,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**المتطلبات الأساسية:** Node.js بإصدار 20 أو أحدث مع npm/npx؛ و[iii-engine](https://iii.dev/docs) بالإصدار v0.22.1 أو Docker. ويتطلب تثبيت المحرك الآلي على macOS/Linux أيضًا `curl` وصدفة POSIX من نوع `sh` وأداة `tar`؛ ويستخدم Windows الأصلي ملف `iii.exe` المثبَّت اليدوي، أو WSL2، أو Docker Desktop.
+**المتطلبات الأساسية:** Node.js بإصدار 20 أو أحدث مع npm/npx. ويتطلب تثبيت محرك CLI على macOS/Linux أيضًا `curl` وصدفة POSIX من نوع `sh` وأداة `tar`؛ أما Windows الأصلي فيتطلب تثبيت `iii.exe` المثبّت يدويًا، أو يمكن استخدام WSL2.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="License" height="32" /></picture></h2>
 

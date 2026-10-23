@@ -53,6 +53,7 @@ import { GraphIndexError } from "../state/graph-retrieval-index.js";
 import { registerGraphIndexApi } from "./graph-index-api.js";
 import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { logger } from "../logger.js";
+import { getLiveEventsStats } from "../viewer/live-events.js";
 import { isValidEventId } from "../capture/event-id.js";
 import { getCaptureController, type CaptureResult } from "../functions/capture.js";
 import { withoutObservationSource } from "../functions/observation-source.js";
@@ -416,12 +417,11 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
     return evaluateStatus({
       now: new Date(),
       version: VERSION,
-      engineVersion: III_PINNED_VERSION,
+      enginePinnedVersion: III_PINNED_VERSION,
       uptimeSeconds: Math.round(process.uptime()),
       stateBackend: kv.backend === "redis" ? "redis" : "file",
       ports: {
         rest: config.restPort ?? null,
-        streams: config.streamsPort ?? null,
         viewer: getViewerSkipped() ? null : (getBoundViewerPort() ?? null),
       },
       health: health
@@ -554,19 +554,13 @@ export function registerApiTriggers(
     },
   );
 
-  // Shared instance metadata for livez and health so the two never
-  // drift. streamsPort lets the viewer resolve its stream WebSocket
-  // target from the server instead of port arithmetic, which broke
-  // whenever the viewer bound a fallback port. Config is boot-static,
-  // so read it once instead of rebuilding the merged env per request.
+  // Config is boot-static, so read it once rather than rebuilding the merged env per request.
   const bootConfig = loadConfig();
-  const bootStreamsPort = bootConfig.streamsPort;
   setRestOriginPorts(() => [bootConfig.restPort, bootConfig.viewerPort, getBoundViewerPort()]);
   const instanceInfo = () => ({
     service: "agentmemory",
     viewerPort: getBoundViewerPort(),
     viewerSkipped: getViewerSkipped(),
-    streamsPort: bootStreamsPort,
   });
 
   sdk.registerFunction("api::liveness",
@@ -610,7 +604,7 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::health", 
-    async (req: HttpRequest): Promise<Response> => {
+    async (): Promise<Response> => {
       const health = await getLatestHealth(kv);
       const functionMetrics = metricsStore ? await metricsStore.getAll() : [];
       const circuitBreaker =
@@ -664,7 +658,7 @@ export function registerApiTriggers(
           body: renderStatusHtml(report, nonce, { viewerUrl: statusViewerUrl(req, report.service.ports.viewer) }),
         };
       }
-      return { status_code: 200, headers: { "Cache-Control": "no-store" }, body: report };
+      return { status_code: 200, headers: { "Cache-Control": "no-store" }, body: { ...report, liveEvents: getLiveEventsStats() } };
     },
   );
   sdk.registerTrigger({
@@ -1211,7 +1205,7 @@ export function registerApiTriggers(
       await clearSessionFinalize(kv, sessionId).catch(() => {});
       // Fan out session-stopped lifecycle (non-blocking).
       try {
-        sdk.trigger({
+        void sdk.trigger({
           function_id: "event::session::stopped",
           payload: { sessionId },
           action: TriggerAction.Void(),

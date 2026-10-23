@@ -87,7 +87,8 @@ function tools(): string {
 
 function rest(): string {
   const text = readFileSync(join(SRC, "triggers", "api.ts"), "utf8");
-  const rows = collectRestEndpoints(text);
+  const viewerSse = readFileSync(join(SRC, "triggers", "viewer-sse.ts"), "utf8");
+  const rows = collectRestEndpoints(text, viewerSse);
   const lines = [
     `The REST API is the primary surface. All paths are under \`http://localhost:3111\` (override with \`--port\`). Send \`Authorization: Bearer <secret>\`: the value of \`AGENTMEMORY_SECRET\`, or the one generated into \`~/.agentmemory/secret\` on first start when it is unset. Writes must use \`Content-Type: application/json\`.`,
     "",

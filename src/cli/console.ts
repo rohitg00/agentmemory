@@ -2,7 +2,6 @@ export interface ConsoleLaunch {
   iiiBin: string;
   consolePort: number;
   restPort: number;
-  streamPort: number;
   enginePort: number;
   extraArgs: string[];
 }
@@ -57,8 +56,6 @@ export function consoleArgs(launch: ConsoleLaunch): string[] {
     String(launch.consolePort),
     "--engine-port",
     String(launch.restPort),
-    "--ws-port",
-    String(launch.streamPort),
     "--bridge-port",
     String(launch.enginePort),
     ...launch.extraArgs,

@@ -62,12 +62,12 @@ AGENTMEMORY_INJECT_CONTEXT=true
 
 ## Ports
 
-REST is the anchor at 3111. Streams = N+1 (3112), viewer = N+2 (3113), engine = N+46023 (49134). Relocate the whole block with `--port <N>` or `--instance <N>`.
+REST defaults to port `3111`, the viewer to `3113`, and the internal engine WebSocket to `49134`. Set `--port <N>` or `--instance <N>` to select another local runtime.
 
 ## See also
 
 - agentmemory-rest-api for how the secret is used.
-- agentmemory-architecture for the port quartet rationale.
+- agentmemory-architecture for the runtime architecture.
 
 ## Reference
 

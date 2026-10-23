@@ -11,7 +11,8 @@ vi.mock("../src/functions/search.js", () => ({
 }));
 
 import { registerCompressFunction } from "../src/functions/compress.js";
-import { KV, STREAM } from "../src/state/schema.js";
+import { KV } from "../src/state/schema.js";
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import type { MemoryProvider, RawObservation } from "../src/types.js";
 
 const VALID_COMPRESS_XML = `<observation><type>command_run</type>
@@ -36,8 +37,8 @@ function mockKV() {
   };
 }
 
-describe("compress no longer writes a per-session mem-live group", () => {
-  it("only targets the viewer group on stream:: calls", async () => {
+describe("compress emits updates over the worker-owned SSE hub", () => {
+  it("broadcasts the compressed observation without a legacy stream worker", async () => {
     const trigger = vi.fn(async () => undefined);
     const kv = mockKV();
 
@@ -79,6 +80,8 @@ describe("compress no longer writes a per-session mem-live group", () => {
       raw: {},
     };
 
+    const events: unknown[] = [];
+    const unsubscribe = onLiveEvent((event) => events.push(event));
     await kv.set(KV.observations(sessionId), raw.id, raw);
     await compressCallback!({
       observationId: "obs_1",
@@ -86,14 +89,12 @@ describe("compress no longer writes a per-session mem-live group", () => {
       raw,
     });
 
-    const streamCalls = trigger.mock.calls
-      .map((c) => c[0] as { function_id: string; payload: { group_id?: string } })
-      .filter((c) => c.function_id.startsWith("stream::"));
-
-    expect(streamCalls.length).toBeGreaterThan(0);
-    for (const call of streamCalls) {
-      expect(call.payload.group_id).not.toBe(sessionId);
-      expect(call.payload.group_id).toBe(STREAM.viewerGroup);
-    }
+    unsubscribe();
+    expect(events).toContainEqual(expect.objectContaining({
+      id: "compressed-obs_1",
+      type: "compressed_observation",
+      data: expect.objectContaining({ type: "compressed", sessionId }),
+    }));
+    expect(trigger.mock.calls.some(([call]) => (call as { function_id: string }).function_id.startsWith("stream::"))).toBe(false);
   });
 });

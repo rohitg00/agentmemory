@@ -100,7 +100,7 @@ Persyaratan:
 
 - Node.js 20 atau lebih baru dengan npm dan npx (`node -v`, `npm -v`, dan `npx -v`).
 - Instalasi otomatis iii-engine di macOS/Linux juga membutuhkan `curl`, `sh` POSIX, dan `tar`. Image minimal seperti `node:20-slim` mungkin tidak menyertakannya.
-- Windows native membutuhkan `iii.exe` iii-engine v0.22.1 yang dipin untuk dipasang secara manual. WSL2 atau Docker Desktop adalah jalur lain yang didukung.
+- Windows native memerlukan instalasi manual `iii.exe` iii-engine v0.24.6 yang dipatok; WSL2 menggunakan jalur Linux untuk memasang engine secara otomatis.
 
 Perintah instalasi awal yang baku:
 
@@ -112,7 +112,7 @@ Jalankan pertama adalah setup interaktif: pilih agen yang ingin disambungkan (Cl
 
 Mode tanpa kunci (keyless) menonaktifkan vector embedding. `memory_recall` (jalur `mem::search`) memakai BM25, sementara `memory_smart_search` juga bisa menggabungkan kecocokan graph struktural saat data graph sudah ada. Untuk recall semantik gratis di perangkat sendiri, set `EMBEDDING_PROVIDER=local` di `~/.agentmemory/.env` lalu restart. Permintaan embedding pertama mengunduh `Xenova/all-MiniLM-L6-v2`; inferensi berjalan lokal setelah unduhan model awal itu.
 
-Runtime lokal memakai empat port: `3111` untuk REST/MCP HTTP, `3112` untuk stream iii, `3113` untuk viewer, dan `49134` untuk WebSocket worker iii. State iii yang persisten disimpan di `~/Library/Application Support/agentmemory` di macOS, `$XDG_DATA_HOME/agentmemory` atau `~/.local/share/agentmemory` di Linux, dan `%APPDATA%\agentmemory` di Windows. Gunakan `--data-dir <path>` atau `AGENTMEMORY_DATA_DIR` untuk menggantinya, dan pakai nilai yang sama setiap kali restart. Untuk kompatibilitas mundur, `./data/state_store.db` atau `./data/iii-config.yaml` yang sudah ada akan diprioritaskan di atas default platform untuk instance 0; flag eksplisit atau override environment tetap menang.
+Runtime CLI lokal menggunakan REST/MCP HTTP pada `3111`, viewer pada `3113`, dan WebSocket worker iii internal pada `49134`. Pembaruan viewer dikirim melalui SSE di `GET /agentmemory/viewer/events` pada port REST. Secara default, state persisten disimpan di `~/Library/Application Support/agentmemory` pada macOS, `$XDG_DATA_HOME/agentmemory` atau `~/.local/share/agentmemory` pada Linux, dan `%APPDATA%\agentmemory` pada Windows. Ubah lokasinya dengan `--data-dir <path>` atau `AGENTMEMORY_DATA_DIR`; instance 0 juga menggunakan kembali `./data/state_store.db` yang sudah ada. `--instance N` mengisolasi runtime tambahan, dan `AGENTMEMORY_ENV_FILE` memilih file `.env` lain.
 
 Lalu buktikan bahwa recall berfungsi dan beri agen Anda skill-nya:
 
@@ -132,7 +132,7 @@ Sambungkan lebih banyak agen kapan saja dengan `agentmemory connect <agent>` —
 <details>
 <summary><strong>Windows</strong></summary>
 
-Jalur tercepat adalah WSL2. Setup engine Windows native membutuhkan ZIP v0.22.1 yang dipin untuk diunduh dan `iii.exe` diekstrak secara manual; CLI tidak mengekstraknya secara otomatis. Docker Desktop juga didukung. Lihat [catatan Windows](#windows) untuk langkah demi langkahnya.
+Jalur termudah adalah WSL2. Pada Windows native, unduh ZIP v0.24.6 yang dipatok lalu ekstrak `iii.exe` secara manual. Lihat [catatan Windows](#windows) untuk langkah-langkahnya.
 
 </details>
 
@@ -157,7 +157,7 @@ npx melakukan cache per versi. Paksakan versi terbaru dengan `npx -y @agentmemor
 <details>
 <summary><strong>Sudah menjalankan iii engine sendiri</strong></summary>
 
-agentmemory mem-pin iii-engine v0.22.1 dan tidak akan menyambung ke versi lain (worker tidak bisa berbicara dengan protokol engine lain). Hentikan engine lain itu, lalu jalankan `npx -y @agentmemory/agentmemory@latest`. Ini akan memasang dan menjalankan v0.22.1 yang dipin di `~/.agentmemory/bin`, tanpa mengganggu `iii` milik Anda sendiri.
+agentmemory mematok iii 0.24.6 dan tidak akan tersambung ke versi lain (worker tidak dapat berbicara dengan protokol engine lain). Hentikan engine lain, lalu jalankan `npx -y @agentmemory/agentmemory@latest`. CLI memasang dan menjalankan engine patokannya sendiri di `~/.agentmemory/bin`, tanpa mengubah `iii` milik Anda.
 
 </details>
 
@@ -319,14 +319,14 @@ Anda menjelaskan arsitektur yang sama setiap sesi. Anda menemukan ulang bug yang
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Secara default, agentmemory menyimpan state iii-engine di luar repository tempat Anda menjalankannya: `~/Library/Application Support/agentmemory` di macOS, `$XDG_DATA_HOME/agentmemory` atau `~/.local/share/agentmemory` di Linux, dan `%APPDATA%\agentmemory` di Windows. `./data/state_store.db` atau `./data/iii-config.yaml` versi lama yang sudah ada akan dipakai ulang untuk instance 0 sebelum default platform tersebut. Untuk memilih lokasi secara eksplisit, gunakan `--data-dir <path>` atau set `AGENTMEMORY_DATA_DIR`; kedua setelan eksplisit ini diprioritaskan di atas penemuan lokasi lama:
+Secara default, agentmemory menyimpan state iii-engine di luar repositori tempat Anda menjalankannya: `~/Library/Application Support/agentmemory` pada macOS, `$XDG_DATA_HOME/agentmemory` atau `~/.local/share/agentmemory` pada Linux, dan `%APPDATA%\agentmemory` pada Windows. `./data/state_store.db` yang sudah ada digunakan kembali untuk instance 0. Untuk memilih lokasi, berikan `--data-dir <path>` atau atur `AGENTMEMORY_DATA_DIR`:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-Peluncuran native dan Docker memakai direktori host hasil resolusi yang sama; Docker bind-mount direktori itu di `/data`. `--instance 1` menambahkan `instance-1` ke direktori hasil resolusi dan memilih kuartet port default yang terpisah `3211/3212/3213/49234`.
+`--instance 1` menambahkan `instance-1` ke direktori data dan menggunakan port `3211` (REST), `3213` (viewer), serta `49234` (engine).
 
 Catatan rilis terbaru: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +476,7 @@ Top-5 hit rate 100% pada **batas matematis P@5** untuk korpus ini (0.240, lihat 
 </tr>
 <tr>
 <td><strong>Dependensi eksternal</strong></td>
-<td>Tidak ada (SQLite + iii-engine)</td>
+<td>Tidak ada (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vector DB</td>
 <td>Multipel</td>
@@ -556,7 +556,7 @@ Tidak satu pun dari ini yang auto-capture dari hook agen coding, menyediakan vie
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Mulai Cepat" height="32" /></picture></h2>
 
-Kompatibilitas: rilis ini menyasar `iii-sdk` 0.22.1 dan mem-pin iii-engine v0.22.1.
+Kompatibilitas: rilis ini memakai iii 0.24.6 bersama worker registry state 0.22.20 dan http 0.22.7.
 
 ### Coba dalam 30 detik
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Panel ready saat startup memperhitungkan keempat port: REST/MCP HTTP di 3111, stream iii di 3112, viewer di 3113, dan WebSocket worker iii di 49134. `status` mengonfirmasi kesehatan agentmemory dan mode provider/embedding yang aktif. Simpan sebuah probe dan konfirmasi bisa dicari:
+Runtime CLI lokal menggunakan REST/MCP HTTP pada `3111`, viewer pada `3113`, dan WebSocket worker iii internal pada `49134`. Pembaruan viewer dikirim melalui SSE di `GET /agentmemory/viewer/events` pada port REST. Secara default, state persisten disimpan di `~/Library/Application Support/agentmemory` pada macOS, `$XDG_DATA_HOME/agentmemory` atau `~/.local/share/agentmemory` pada Linux, dan `%APPDATA%\agentmemory` pada Windows. Ubah lokasinya dengan `--data-dir <path>` atau `AGENTMEMORY_DATA_DIR`; instance 0 juga menggunakan kembali `./data/state_store.db` yang sudah ada. `--instance N` mengisolasi runtime tambahan, dan `AGENTMEMORY_ENV_FILE` memilih file `.env` lain.
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ Gunakan perintah pemeliharaan saat Anda sengaja ingin memperbarui runtime lokal 
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Peringatan: perintah ini mengubah workspace/runtime saat ini. Ia bisa memperbarui dependensi JavaScript dan menarik image Docker `iiidev/iii:0.22.1` yang dipin. Ia tidak akan pernah memasang iii engine yang tidak dipin atau lebih baru.
+Peringatan: perintah ini mengubah workspace/runtime saat ini. Perintah dapat memperbarui dependensi JavaScript dan memasang biner engine iii 0.24.6 yang dipatok.
 
 Detail implementasi ada di `src/cli.ts` (lihat `runUpgrade` di sekitar region `src/cli.ts:544-595`).
 
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 Contoh kerja: [`examples/python/`](../examples/python/) (quickstart + flow observasi/recall). REST di `:3111` tetap tersedia untuk host tanpa runtime iii.
@@ -853,92 +861,33 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Ini menjalankan agentmemory dengan `iii-engine` lokal jika binary yang dipin sudah terpasang, atau memakai Docker Compose saat dipilih. REST, stream, dan viewer terbind ke `127.0.0.1` secara default. Jalur binary otomatis macOS/Linux membutuhkan `curl`, `sh` POSIX, dan `tar`.
-
-Pasang `iii-engine` secara manual. **agentmemory saat ini mem-pin `iii-engine` ke `v0.22.1`**, rilis yang sama dengan dependensi `iii-sdk`-nya; worker berbicara dengan wire protocol engine itu, dan 0.20.0 menata ulang permukaan SDK, sehingga keduanya bergerak bersama di rilis agentmemory. Override dengan `AGENTMEMORY_III_VERSION=<version>` jika Anda menjalankan engine sendiri dan tahu itu cocok.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** ganti `aarch64-apple-darwin` dengan `x86_64-apple-darwin`
-- **Linux x64:** ganti dengan `x86_64-unknown-linux-gnu`
-- **Linux arm64:** ganti dengan `aarch64-unknown-linux-gnu`
-- **Windows:** unduh `iii-x86_64-pc-windows-msvc.zip` dari [rilis iii-hq/iii v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) dan ekstrak `iii.exe` ke `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Setiap arsip punya file `.sha256` yang cocok di halaman rilis; saat Anda mengganti platform, pakai hash dari file itu pada pengecekan di atas (di Windows: `Get-FileHash`). Installer otomatis di `npx @agentmemory/agentmemory` mem-pin hash-hash ini dan menolak arsip yang tidak cocok.
-
-Atau pakai Docker (`docker-compose.yml` bundel menarik `iiidev/iii:0.22.1`). Dokumentasi lengkap: [iii.dev/docs](https://iii.dev/docs).
+`npm start` menjalankan runtime iii Worker Compose yang sama dengan CLI: iii 0.24.6 beserta worker registry state 0.22.20 dan http 0.22.7. Di macOS/Linux, CLI mengunduh biner engine yang dipatok ke `~/.agentmemory/bin`; pemasangan otomatis memerlukan `curl`, `sh` POSIX, dan `tar`. Listener REST dan viewer lokal terikat ke `127.0.0.1`. Pembaruan viewer menggunakan SSE di `GET /agentmemory/viewer/events` pada REST. `/agentmemory/status` melaporkan versi engine patokan sebagai `enginePinnedVersion`; default yang didukung adalah iii 0.24.6. `AGENTMEMORY_III_VERSION` tersedia untuk mengganti patokan secara sengaja.
 
 ### Windows
 
-agentmemory berjalan di Windows 10/11, tapi paket Node.js saja tidak cukup; Anda juga membutuhkan runtime iii-engine v0.22.1 yang dipin sebagai proses background. CLI tidak mengekstrak ZIP Windows secara otomatis, sehingga pengguna Windows native harus memasang `iii.exe` secara manual, memakai WSL2, atau memilih Docker Desktop.
+agentmemory berjalan di Windows 10/11. WSL2 mengikuti jalur Linux dan dapat memasang engine yang dipatok secara otomatis. Pada Windows native, pasang biner iii-engine v0.24.6 yang dipatok secara manual: unduh arsip yang sesuai dari [halaman rilis iii v0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), verifikasi checksum, lalu letakkan `iii.exe` di `PATH` (misalnya `%USERPROFILE%\.local\bin\iii.exe`). CLI tidak mengekstrak ZIP Windows secara otomatis.
 
-Penyambungan MCP otomatis di Windows native hanya mendukung `agentmemory connect copilot-cli`. Untuk Claude Code, Codex, Cursor, dan setiap agen Windows native lainnya, salin blok MCP manual dari [Agen lainnya](#other-agents) ke konfigurasi Windows agen tersebut. Menjalankan `connect` di WSL hanya tepat saat agen target juga terpasang di environment WSL yang sama; itu tidak mengedit konfigurasi agen pada host Windows.
+Wiring MCP otomatis di Windows native hanya mendukung `agentmemory connect copilot-cli`. Untuk agen Windows native lainnya, gunakan blok MCP manual dari [Agen lainnya](#other-agents). Jalankan `connect` di WSL hanya jika agen target juga dipasang di lingkungan WSL yang sama.
 
-**Opsi A: binary Windows prebuilt (disarankan)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Opsi B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Opsi C: hanya MCP standalone (tanpa engine).** Jika Anda hanya butuh tool MCP untuk agen Anda dan tidak membutuhkan REST API, viewer, atau cron job, lewati engine-nya sama sekali:
+**MCP mandiri saja (tanpa engine).** Jika hanya memerlukan tool MCP dan tidak memerlukan REST API, viewer, atau layanan runtime:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Diagnostik untuk Windows:** jika `npx -y @agentmemory/agentmemory@latest` gagal, jalankan ulang dengan `--verbose` untuk melihat stderr engine yang sebenarnya. Mode kegagalan umum:
-
-| Simptom | Perbaikan |
-|---|---|
-| `The engine process started but the REST API never responded.` | Pastikan keempat port hasil derivasi bebas, verifikasi `iii.exe` yang dipin tetap hidup, lalu jalankan ulang dengan `--verbose` dan periksa stderr engine yang tertangkap |
-| `Could not start iii-engine` | Baik `iii.exe` maupun Docker tidak terpasang. Lihat Opsi A atau B di atas |
-| Konflik port | `netstat -ano \| findstr :3111` untuk melihat apa yang terbind, lalu matikan atau pakai `--port <N>` |
-| Fallback Docker dilewati walau Docker terpasang | Pastikan Docker Desktop benar-benar berjalan (ikon system tray) |
-
-> Catatan: **engine** iii adalah binary prebuilt, bukan crate cargo, jadi jangan coba `cargo install`. (**SDK** iii dipublikasikan di crates.io, npm, dan PyPI, tapi agentmemory tidak membutuhkannya.) Metode instalasi engine yang didukung semuanya dipin ke v0.22.1: binary prebuilt di atas, jalur auto-install macOS/Linux milik agentmemory (`curl`, `sh` POSIX, dan `tar` dibutuhkan), dan image Docker `iiidev/iii:0.22.1`. `install.sh | sh` upstream yang polos memasang engine terbaru, yang tidak didukung agentmemory. Gunakan `npx -y @agentmemory/agentmemory@latest`; di macOS/Linux ia mengambil engine yang dipin ke `~/.agentmemory/bin`.
+**Diagnostik:** Jika startup gagal, jalankan ulang dengan `--verbose` untuk melihat stderr engine. Pastikan port REST `3111`, viewer `3113`, dan engine `49134` tidak terpakai; gunakan `--port <N>` atau `--instance <N>` untuk runtime terisolasi lain. CLI menggunakan biner engine patokannya sendiri dan tidak mengganti executable iii di `PATH`.
 
 ---
 
 <h2 id="deploy">Deploy</h2>
 
-Template satu klik untuk host terkelola. Masing-masing menyediakan
-Dockerfile mandiri yang menarik `@agentmemory/agentmemory` dari npm dan
-menyalin binary engine iii dari image Docker Hub resmi `iiidev/iii`;
-tidak perlu image agentmemory prebuilt. Storage persisten
-termount di `/data`; entrypoint first-boot menimpa
-konfigurasi iii bawaan npm (yang terbind ke `127.0.0.1`) dengan
-konfigurasi yang disetel untuk deployment, yang terbind ke `0.0.0.0` dan
-memakai path `/data` absolut, membuat secret HMAC, lalu
-melepas privilese dari `root` ke `node` lewat
-`gosu` sebelum exec ke CLI agentmemory.
+Docker didukung untuk self-hosting dari repositori ini, bukan sebagai mode startup CLI. Template sekali klik menggunakan [`deploy/Dockerfile`](../deploy/Dockerfile) dan [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml), mematok runtime iii 0.24.6, serta menyimpan state, trace, dan secret yang dibuat pada volume `/data` persisten. Secara default Docker Compose menggunakan named volume `iii-data`; set `AGENTMEMORY_DATA_DIR` ke path host untuk bind mount. Store berbasis file yang sudah ada dari 0.22.1 dibaca langsung dari `/data/state_store.db` tanpa migrasi atau konversi. REST CORS secara default mengizinkan origin REST dan viewer lokal; set `REST_ALLOWED_ORIGINS` ke daftar origin persis yang dipisahkan koma untuk mengizinkan origin browser tepercaya. Lihat [`deploy/README.md`](../deploy/README.md) untuk setup dan keamanan.
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy ke fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy ke Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy ke fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy ke Railway" /></a>
 </p>
 
 Tombol deploy satu klik milik Render membutuhkan `render.yaml` di root repository, yang dengan sengaja kami biarkan bersih. Gunakan flow Render Blueprint yang didokumentasikan di [`deploy/render/`](.././deploy/render/README.md) untuk mengarah ke blueprint in-repo secara manual.
@@ -956,10 +905,16 @@ batas bawah biaya) ada di [`deploy/`](.././deploy/README.md):
   VPS Anda sendiri lewat [Coolify](https://coolify.io/self-hosted); stack Docker
   Compose yang sama, Anda memiliki host dan datanya.
 
-Hanya port `3111` yang dipublikasikan. Viewer di `3113` tetap
-terbind ke loopback di dalam kontainer; README setiap template
-mendokumentasikan pola SSH-tunnel untuk menjangkaunya.
+REST berada di `3111`; viewer di `3113` dan hanya dipublikasikan terpisah pada template platform yang menyediakan rute terlindungi. Pembaruan langsung menggunakan SSE bearer-authenticated pada `/agentmemory/viewer/events` di REST. WebSocket engine `49134` bersifat internal dan tidak boleh dipublikasikan. Lihat [`deploy/README.md`](../deploy/README.md) untuk panduan platform.
 
+
+### Migrasi instalasi Docker lama yang dikelola CLI
+
+CLI saat ini tidak memulai atau mengelola deployment Docker. Jika menemukan catatan siklus hidup Docker lama, CLI mempertahankan metadatanya dan menampilkan perintah persis `docker stop ...`; jalankan perintah tersebut sebelum migrasi. Jangan mulai runtime baru selagi kontainer lama masih memasang volume.
+
+Pertahankan dan cadangkan volume persisten lama (biasanya `iii-data`), atau salin isi `/data` ke bind mount. state worker membaca langsung `/data/state_store.db` yang sudah ada, tanpa ekspor atau konversi. Runtime lama menggunakan UID/GID `65532:65532`; image baru melakukan migrasi kepemilikan rekursif satu kali ke `node:node` (`1000:1000`) dan menulis `/data/.ownership-migrated-node-v1`. Setelah migrasi ini, jangan pasang kembali volume tersebut ke runtime lama.
+
+Runtime lama juga menyimpan bearer secret yang dibuatnya di `/data/.hmac`. Image baru mempertahankan secret ini selama migrasi; `AGENTMEMORY_SECRET` yang ditetapkan secara eksplisit akan diutamakan. Mulai proyek Compose baru dari root repositori dengan `docker compose up --build -d`. Jika nama volume lama memiliki awalan nama proyek, bukan `iii-data`, gunakan kembali atau ganti namanya secara eksplisit—jangan sampai tanpa sengaja membuat volume kosong. Periksa `/agentmemory/livez` dan pastikan memori lama maupun baru dapat ditemukan. Hindari `docker compose down -v` kecuali penghapusan data memang disengaja.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Mengapa agentmemory" height="32" /></picture></h2>
@@ -1253,7 +1208,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Viewer Real-Time" height="32" /></picture></h2>
 
-Auto-start di port `3113`. Viewer memuat satu snapshot saat terhubung (`GET /agentmemory/viewer/snapshot`) lalu menerapkan event stream live: memori baru, lesson, observasi, entri audit, perubahan graph, dan update health muncul tanpa polling atau reload halaman. Satu-satunya permintaan lain adalah aksi yang Anda klik, halaman "load more", dan pencarian. Saat stream putus, viewer menunjukkan seberapa basi angkanya, menyambung ulang dengan backoff, dan resync dari satu snapshot.
+Viewer otomatis mulai pada port `3113`. Saat tersambung, viewer memuat satu snapshot (`GET /agentmemory/viewer/snapshot`), lalu menerapkan event langsung melalui SSE pada `/agentmemory/viewer/events` di worker REST: memori, lesson, observasi, entri audit, perubahan graph, dan pembaruan health tampil tanpa polling atau memuat ulang halaman.
 
 - **12 tab dalam empat grup** dengan hitungan live, deep link (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), shortcut keyboard, dan menu mobile.
 - **Memories:** search sisi server, filter berdasarkan proyek, agen, dan tipe, panel detail dengan rantai versi dan word diff, link provenance, tombol copy untuk id, panggilan MCP, dan perintah curl, edit (versi baru), forget dengan konfirmasi, bulk forget, dan ekspor JSON.
@@ -1272,9 +1227,9 @@ Server viewer terbind ke `127.0.0.1` secara default dan melampirkan secret serve
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
 
-Viewer di `:3113` menunjukkan apa yang **diingat** oleh agen Anda. [iii console](https://iii.dev/docs/console) menunjukkan apa yang **dilakukan** agen Anda: setiap operasi memori sebagai trace OpenTelemetry, setiap entri KV bisa diedit, setiap fungsi bisa dipanggil, setiap stream bisa disadap. Dua jendela pada memori yang sama: satu berbentuk produk, satu berbentuk engine.
+Viewer di `:3113` menunjukkan apa yang **diingat** agen Anda. [Konsol iii](https://iii.dev/docs/console) menunjukkan apa yang **dilakukannya**: operasi memori sebagai trace OpenTelemetry, entri KV yang dapat diedit, fungsi yang dapat dipanggil.
 
-Lihat `memory_smart_search` dipicu dan saksikan scan BM25 → lookup embedding → fusi RRF → reranker sebagai waterfall. Edit timer konsolidasi yang stuck di KV browser. Replay hook `PostToolUse` dengan payload yang diubah. Pin stream WebSocket dan saksikan observasi mendarat secara live.
+Lihat `memory_smart_search` dipicu dan saksikan scan BM25 → lookup embedding → fusi RRF → reranker sebagai waterfall. Edit timer konsolidasi yang stuck di KV browser. Replay hook `PostToolUse` dengan payload yang diubah.
 
 agentmemory menyediakan ini secara gratis karena setiap panggilan fungsi dan trigger dipicu lewat iii; tidak ada yang custom, tidak ada yang perlu diinstrumentasi.
 
@@ -1284,7 +1239,7 @@ agentmemory menyediakan ini secara gratis karena setiap panggilan fungsi dan tri
   <em>Halaman Workers: setiap worker yang terhubung, termasuk agentmemory sendiri, dengan PID, jumlah fungsi, runtime, dan last-seen.</em>
 </p>
 
-**Sudah terpasang.** Console dikirim bersama engine `iii` yang dipin (0.22+); tidak ada yang perlu dipasang terpisah. Peluncuran pertama mengunduh binary console di sebelah engine.
+**Sudah terpasang.** Console dikirim bersama engine `iii` yang dipin (0.24.6); tidak ada yang perlu dipasang terpisah. Peluncuran pertama mengunduh binary console di sebelah engine.
 
 **Jalankan bersama agentmemory:**
 
@@ -1292,15 +1247,12 @@ agentmemory menyediakan ini secara gratis karena setiap panggilan fungsi dan tri
 agentmemory console
 ```
 
-Ini menjalankan `iii console` dari engine yang dipin terhadap port hasil resolusi agentmemory (REST, stream, bridge) dan menyajikannya satu port di atas viewer, `http://localhost:3114` secara default. `--console-port N` memilih port lain; `--port` dan `--instance` memilih instance agentmemory dengan cara yang sama seperti untuk `stop`; flag lain apa pun diteruskan, misalnya `--enable-flow` untuk halaman architecture-graph eksperimental.
+Ini menjalankan `iii console` dari engine yang dipin terhadap port hasil resolusi agentmemory (REST, bridge) dan menyajikannya satu port di atas viewer, `http://localhost:3114` secara default. `--console-port N` memilih port lain; `--port` dan `--instance` memilih instance agentmemory dengan cara yang sama seperti untuk `stop`; flag lain apa pun diteruskan, misalnya `--enable-flow` untuk halaman architecture-graph eksperimental.
 
 Hal yang sama secara manual, berguna saat `agentmemory` tidak ada di PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **Apa yang bisa Anda lakukan dari console:**
@@ -1311,12 +1263,10 @@ Hal yang sama secara manual, berguna saat `agentmemory` tidak ada di PATH:
 | **Functions** | Memanggil langsung fungsi apa pun milik agentmemory dengan payload JSON; berguna untuk menguji `memory.recall`, `memory.consolidate`, `graph.query` tanpa menyambungkan klien. |
 | **Triggers** | Me-replay trigger HTTP, cron, event, dan state: memicu cron konsolidasi secara manual, retry rute HTTP, memancarkan perubahan state. |
 | **States** | Browser KV dengan CRUD penuh atas sesi, slot memori, timer lifecycle, dan index embedding; edit nilai di tempat. |
-| **Streams** | Monitor WebSocket live untuk penulisan memori, event hook, dan update observasi saat mengalir lewat stream iii. |
-| **Queues** | Topik queue durable + manajemen dead-letter. Replay atau drop job embedding / kompresi yang gagal. |
+
 | **Traces** | Tampilan waterfall / flame / service-breakdown OpenTelemetry. Filter berdasarkan `trace_id` untuk melihat persis fungsi, panggilan DB, dan permintaan embedding apa yang dihasilkan satu `memory.search`. |
 | **Logs** | Log OTEL terstruktur yang difilter dan dikorelasikan ke trace/span ID. |
 | **Config** | Konfigurasi runtime: lihat persis worker, provider, dan port apa yang dipakai engine Anda. |
-| **Flow** | (Opsional, `--enable-flow`) Graph arsitektur interaktif untuk setiap worker, trigger, dan stream. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="Tampilan waterfall trace iii console menunjukkan durasi per-span" width="720" />
@@ -1326,9 +1276,9 @@ Hal yang sama secara manual, berguna saat `agentmemory` tidak ada di PATH:
 
 **Trace sudah aktif:**
 
-`iii-config.yaml` dikirim dengan worker `iii-observability` sudah aktif (`exporter: memory`, `sampling_ratio: 0.1`, metrics + logs). Tidak perlu konfigurasi tambahan; begitu agentmemory start, setiap operasi memori memancarkan log terstruktur yang bisa dibaca console, dan satu dari sepuluh operasi (`sampling_ratio: 0.1`) juga memancarkan span trace.
+**Tracing dan log:** konsol iii dapat memeriksa telemetri runtime. Untuk konfigurasi exporter dan sampling, lihat [dokumentasi observabilitas iii](https://iii.dev/docs).
 
-Jika Anda ingin mengekspor ke Jaeger/Honeycomb/Grafana Tempo sebagai gantinya, ubah `exporter: memory` jadi `exporter: otlp` dan set endpoint collector sesuai dokumentasi observability iii.
+
 
 > **Perhatian:** tidak ada autentikasi yang diberlakukan pada console itu sendiri; tetap terbind ke `127.0.0.1` (default) dan jangan pernah mengeksposnya secara publik.
 
@@ -1336,13 +1286,13 @@ Jika Anda ingin mengekspor ke Jaeger/Honeycomb/Grafana Tempo sebagai gantinya, u
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="Didukung oleh iii" height="32" /></picture></h2>
 
-agentmemory **sudah menjadi instance [iii](https://iii.dev) yang berjalan**. Tiga primitif (worker, function, trigger) menyusun runtime-nya; state KV, stream, dan trace OTEL datang dari worker iii-state, iii-stream, dan iii-observability yang dikirim bersama iii. Anda tidak memasang Postgres, Redis, Express, pm2, atau Prometheus, karena iii menggantikan semuanya.
+agentmemory adalah worker pada runtime [iii](https://iii.dev). Worker Compose mengelola engine dan menjalankan agentmemory bersama worker registry `state` dan `http`. Feed viewer disajikan sebagai SSE melalui endpoint REST.
 
 Artinya satu perintah lagi memperluas agentmemory dengan kemampuan baru yang sepenuhnya baru.
 
 ### Perluas agentmemory dengan worker lain
 
-Builtin yang dibutuhkan agentmemory sudah ada di `iii-config.yaml` dan boot bersamanya: `iii-state` (KV), `iii-queue` (retry durable untuk event subscriber), `iii-pubsub`, `iii-cron`, `iii-stream`, dan `iii-observability` (trace, metrics, dan logs OTEL pada setiap fungsi). Apa pun yang lain dari [registry worker iii](https://workers.iii.dev) terpasang ke engine yang sama: salin `iii-config.yaml` ke `~/.agentmemory/iii-config.yaml` (CLI memprioritaskan file itu di atas yang bundel dan tetap merender port serta path data ke dalamnya), tambahkan entrinya, pasang runtime worker sekali dengan `~/.agentmemory/bin/iii update worker`, lalu restart agentmemory.
+Runtime menggabungkan worker registry `state` (KV) dan `http` dengan agentmemory. Worker lain dari [registry iii](https://workers.iii.dev) dapat ditambahkan ke proyek Worker Compose.
 
 ```yaml
 workers:
@@ -1358,23 +1308,19 @@ workers:
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Code yang keluar dari `memory_recall` berjalan di dalam VM sekali pakai, bukan di shell Anda |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | Mendirikan server MCP tambahan di sebelah milik agentmemory, berbagi engine yang sama |
 
-Di engine 0.22.x, pertahankan nama berprefiks `iii-` untuk builtin di atas; entri tanpa prefiks `http`, `state`, `queue`, `pubsub`, dan `cron` adalah worker registry standalone yang agentmemory pindah ke sana dengan migrasi 0.23.
+Runtime mematok package registry `state@0.22.20` dan `http@0.22.7` dalam proyek Worker Compose yang dibuat CLI.
 
 Registry lengkap: [workers.iii.dev](https://workers.iii.dev). Setiap worker di sana menyusun lewat primitif yang sama yang dipakai agentmemory, dan agentmemory yang Anda sudah punya adalah salah satunya.
 
-### Konfigurasi engine dan bind address
+### Runtime CLI dan alamat bind
 
-`agentmemory start` membaca konfigurasi engine dari file pertama yang ada: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` di direktori saat ini, `~/.agentmemory/iii-config.yaml`, lalu `iii-config.yaml` bundel. Pada setiap start, ia merender file itu (path data, port, backend state) ke `~/.agentmemory/data/iii-config.runtime.yaml` dan meluncurkan engine dengan salinan hasil render itu, jadi edit file source-nya, bukan yang hasil render. Nilai `host:` pada file source dipertahankan sebagaimana tertulis.
+Menjalankan `agentmemory` (atau paket tanpa subcommand) memulai iii Worker Compose dengan manifest terisolasi di direktori data yang dipilih. Runtime ini memakai iii 0.24.6, `state@0.22.20`, dan `http@0.22.7`. Listener REST dan viewer CLI lokal bind ke `127.0.0.1`; WebSocket engine adalah trafik internal runtime. Deployment Docker berbasis repositori menggunakan [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml) yang terpisah; lihat [`deploy/README.md`](../deploy/README.md).
 
-`iii-config.yaml` bundel sengaja terbind ke `127.0.0.1`, dan default itu juga berlaku di dalam kontainer. CLI yang dijalankan di dalam kontainer listen di loopback milik kontainer itu, sehingga port yang dipublikasikan tidak menjangkau apa pun. Untuk menyajikan CLI yang di-kontainerisasi lewat port yang dipublikasikan, set `AGENTMEMORY_III_CONFIG` ke konfigurasi yang terbind ke `0.0.0.0`. `iii-config.docker.yaml` yang dipaketkan adalah salah satunya: ia membind `iii-http`, `iii-stream`, dan port engine ke `0.0.0.0` dan menyimpan state di bawah `/data`, jadi mount volume yang bisa ditulis di sana. Tetap set `AGENTMEMORY_SECRET`, dan publikasikan hanya port yang Anda butuhkan, di `127.0.0.1` atau di belakang proxy yang Anda percaya.
+### Backend penyimpanan: file (default) vs Redis
 
-`docker-compose.yml` repo ini tidak melewati pencarian konfigurasi CLI: ia mount `iii-config.docker.yaml` di `/app/config.yaml`, dan kontainer `iii-engine` start dengan `--config /app/config.yaml`. Template [deploy](../deploy/) satu-klik menulis konfigurasi `0.0.0.0` mereka sendiri di entrypoint-nya.
+Worker `state` secara default memakai store KV berbasis file, disimpan di memori dan ditulis ke disk secara berkala. Redis tersedia saat beberapa writer berbagi runtime; Redis menambah round trip jaringan dan tidak membuat satu koneksi worker menjadi paralel.
 
-### Storage backend: file (default) vs redis
-
-`iii-state` dan `iii-stream` secara default memakai KV store berbasis file bundel iii-engine: satu file JSON per scope, dipegang di memori proses engine dan ditulis ulang ke disk secara berkala. Itu adalah default yang tepat untuk instalasi lokal satu pengguna; daemon bersama dengan beberapa penulis konkuren mendapat penulisan per-key yang sesungguhnya dari Redis sebagai gantinya, dengan biaya satu network round trip per operasi (setiap panggilan `state::*` tetap diserialisasi pada satu koneksi Redis, sehingga ini menukar lock file store dengan socket, bukan untuk paralelisme).
-
-Set `AGENTMEMORY_STATE_BACKEND=redis` (plus `AGENTMEMORY_REDIS_URL`) untuk mengalihkan kedua worker ke adapter `redis` bawaan iii-engine, yang menyimpan setiap key sebagai field hash Redis (`HSET`) bukan menulis ulang seluruh scope pada setiap penulisan:
+Atur `AGENTMEMORY_STATE_BACKEND=redis` dan `AGENTMEMORY_REDIS_URL` untuk menggunakan adapter Redis worker state, yang menyimpan setiap key sebagai field hash Redis (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1382,27 +1328,23 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` defaultnya `file`; membiarkannya tidak diset menjaga perilaku hari ini tidak berubah, dan nilai yang tidak dikenal (apa pun selain `file` atau `redis`) adalah error saat startup bukan fallback senyap. `/agentmemory/status` dan halaman Health viewer (baris State store) melaporkan backend mana yang aktif dan apakah ia merespons, tidak pernah URL-nya.
+`AGENTMEMORY_STATE_BACKEND` default-nya `file`; membiarkannya unset mempertahankan perilaku saat ini. Nilai selain `file` atau `redis` menyebabkan startup error. `/agentmemory/status` dan halaman Health viewer melaporkan backend yang aktif dan apakah backend merespons, bukan URL-nya.
 
-**Hanya `redis://` polos.** Engine yang dipin (0.22.1) membangun klien Redis-nya tanpa dukungan TLS, sehingga URL `rediss://` (kebanyakan layanan Redis terkelola, seperti Upstash, Redis Cloud, dan ElastiCache dengan enkripsi in-transit, defaultnya TLS-only) gagal terhubung. Koneksinya tidak terenkripsi, sehingga password Redis dan setiap memori yang tersimpan melintasi kabel dalam teks jelas: arahkan ke Redis lokal atau yang berada di network privat yang Anda percaya. Untuk Redis lainnya, jalankan tunnel terenkripsi (stunnel, SSH, atau VPN) di host agentmemory, sehingga hop `redis://` polos itu tetap di host tersebut dan koneksi upstream tunnel-nya terenkripsi dan terautentikasi. Jika password Redis memuat tanda kutip tunggal, percent-encode-lah (`%27`); engine mengekspansi URL ke konfigurasi YAML-nya sebelum mem-parse-nya.
+**Hanya `redis://` biasa.** Worker state yang dipatok hanya mendukung `redis://`; layanan `rediss://` yang hanya mendukung TLS memerlukan tunnel terenkripsi. Koneksi Redis tidak terenkripsi, jadi gunakan jaringan lokal/privat atau tunnel. Encode tanda petik tunggal dalam kata sandi sebagai `%27`.
 
-**Satu server Redis per `--instance`.** Prefiks key Redis milik engine (`state:<scope>`, `stream:<name>:<group>`) sudah tetap, sehingga dua instance agentmemory (`--instance 1`, `--instance 2`, ...) yang mengarah ke database yang sama akan saling menimpa datanya. Index database yang terpisah (`redis://localhost:6379/1`) menjaga data tersimpan terpisah, tapi engine meneruskan event viewer live lewat satu channel pub/sub Redis (`stream::events`), dan pub/sub Redis mengabaikan index database, sehingga viewer setiap instance tetap akan menunjukkan event live milik instance lain. Beri setiap instance server Redis-nya sendiri (atau port-nya sendiri) saat Anda menjalankan lebih dari satu.
+**Satu database Redis per instance.** Berikan tiap instance bersamaan database atau server Redis sendiri agar state tetap terisolasi.
 
-**Apa yang tetap sama, dan apa yang berbeda.** Setiap fitur agentmemory bekerja di Redis: session, observation, memory (remember, supersede, evolve, forget), search dan bucket index-nya, lesson, graph, audit log dan scope bulanannya, export dan import, governance delete, status konsolidasi, snapshot viewer dan stream live-nya, dan health monitor. Engine menyimpan setiap scope sebagai satu hash Redis (`HSET`/`HGET`/`HGETALL`) dan memicu state trigger yang sama seperti file store. Tiga perbedaan engine ditangani di dalam agentmemory:
+**Yang sama dan berbeda.** Semua fitur agentmemory berfungsi dengan Redis. Worker state menyimpan tiap scope sebagai Redis hash dan memicu state trigger yang sama seperti store file. agentmemory mengurutkan hasil Redis dari yang tertua; menerapkan sendiri partial update agar array kosong tetap array; dan membaca scope audit log lama dari Redis.
 
-- Redis mengembalikan record sebuah scope tanpa urutan yang tetap. agentmemory mengurutkannya dari yang paling lama (berdasarkan waktu pembuatan di id record, lalu timestamp-nya) sehingga list, paging, dan chunk export kembali dalam urutan yang sama seperti di file store.
-- Engine menerapkan update parsial di Redis lewat skrip Lua yang mengubah array kosong jadi objek kosong. agentmemory menerapkan update itu sendiri (baca, ubah, tulis di bawah lock per-key) di Redis, sehingga field seperti `tags: []` tetap array.
-- Pengecekan audit log legacy membaca scope lama dari Redis bukan mencari file file store di disk.
+Event langsung viewer menggunakan SSE pada worker REST dan disiarkan oleh proses agentmemory yang berjalan; tidak menggunakan Redis pub/sub atau probe stream Redis berkala. Ketersediaan Redis memengaruhi pembacaan/penulisan state, bukan transport viewer. Jika Redis mati, status melaporkan store state tidak merespons. Membaca scope besar menggunakan `HGETALL` penuh.
 
-Satu perbedaan membutuhkan tindakan Anda: **setelah Redis restart, engine berhenti meneruskan event live** ke viewer sampai agentmemory restart. Data tetap tersimpan dan terbaca normal. Health monitor mengirim event tes lewat Redis setiap 30 detik; saat tidak kembali, `/agentmemory/status` dan halaman Health viewer menunjukkan "Live updates are not reaching the viewer" dengan perbaikannya: restart agentmemory. Jika Redis mati, laporan status menunjukkan "The state store is not answering" dan cara mengeceknya (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Mendaftar scope yang sangat besar membaca seluruh hash dalam satu `HGETALL`, biaya yang sama seperti file store yang menyimpannya di memori.
+**Pengaturan Redis yang disarankan.** Kebijakan snapshot default dapat kehilangan beberapa menit penulisan saat crash. Aktifkan `appendonly yes` untuk data penting dan `maxmemory-policy noeviction` agar memori tidak terhapus diam-diam.
 
-**Setelan Redis yang direkomendasikan.** Policy snapshot default `save 3600 1 300 100 60 10000` bisa kehilangan beberapa menit penulisan saat crash, lebih buruk dari window flush 5 detik milik file store. Set `appendonly yes` untuk apa pun yang Anda sayang kehilangan. Set `maxmemory-policy noeviction`; `allkeys-lru` atau sejenisnya diam-diam membuang memori begitu Redis mencapai batas memorinya.
+Proyek Worker Compose yang dibuat CLI meneruskan variabel ini ke worker state. Untuk Docker self-host, lihat [`deploy/README.md`](../deploy/README.md) dan [dokumen worker state](https://workers.iii.dev/workers/state).
 
-Start native (non-Docker), dan setiap template [deploy](../deploy/) satu-klik (mereka menimpa `iii-config.yaml` bundel dan start secara native), membaca `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` dan merendernya ke `iii-config` yang diluncurkan. URL itu sendiri tidak pernah ditulis ke file hasil render itu, hanya referensi `${AGENTMEMORY_REDIS_URL}` yang diekspansi proses engine dari environment-nya sendiri saat boot. Hanya jalur Docker Compose milik repo ini sendiri (`AGENTMEMORY_USE_DOCKER=1`, atau melanjutkan engine yang sudah distart begitu) yang mount `iii-config.docker.yaml` secara read-only dan tidak pernah merender; `agentmemory start` memperingatkan saat mendeteksi kombinasi itu. Ubah file itu secara manual, mengikuti bentuk `name: redis` / `config: redis_url: ...` yang sama yang ditunjukkan di dokumentasi worker [iii-state](https://workers.iii.dev/workers/iii-state) dan [iii-stream](https://workers.iii.dev/workers/iii-stream), dan arahkan `redis_url` ke Redis yang terjangkau dari kontainer. `docker-compose.yml` meneruskan `AGENTMEMORY_REDIS_URL` ke kontainer engine, sehingga `redis_url: '${AGENTMEMORY_REDIS_URL}'` bekerja di sana dan menjaga URL-nya di luar file yang di-mount.
+Anggap konfigurasi worker tersimpan dan direktori data sebagai informasi sensitif jika memuat URL Redis berisi kredensial. Batasi izinnya (misalnya `chmod 700 <data-dir>` pada host bersama) dan gunakan pengguna ACL Redis yang hanya memiliki akses yang dibutuhkan agentmemory.
 
-Konfigurasi hasil render menjaga URL-nya di luar `~/.agentmemory/data/iii-config.runtime.yaml`, tapi worker konfigurasi milik engine sendiri tetap mempersistenkan nilai yang *terekspansi* ke `~/.agentmemory/config/iii-state.yaml` dan `iii-stream.yaml` begitu ia boot (ekspansi `${VAR}` milik iii-engine terjadi sebelum worker itu menyimpan seed-nya, dan ia menyimpan nilai yang sudah diresolusi, bukan referensinya). Perlakukan direktori itu sebagai penyimpan credential: `chmod 700 ~/.agentmemory` di host bersama mana pun, dan pilih user ACL Redis yang di-scope untuk kebutuhan agentmemory dibanding credential admin database.
-
-**Migrasi tidak otomatis.** Beralih `AGENTMEMORY_STATE_BACKEND` mulai dari store kosong di kedua sisi; tidak ada yang menyalin data yang sudah ada dari file ke Redis atau sebaliknya. Export dari backend yang Anda tinggalkan dan import ke yang Anda tuju. Ini berjalan identik di bash dan zsh (termasuk `bash -u`). Array seperti `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` tidak: zsh menjaga header sebagai satu word yang malformed sementara bash membelahnya jadi dua, sehingga kedua permintaan 401 setiap kali `AGENTMEMORY_SECRET` diset:
+**Migrasi tidak otomatis.** Mengganti `AGENTMEMORY_STATE_BACKEND` memulai store kosong; ekspor dari backend lama lalu impor ke backend baru. Prosedur ini berjalan sama di bash dan zsh (termasuk `bash -u`).
 
 ```bash
 # 0. Use the generated secret when none is exported:
@@ -1441,14 +1383,13 @@ fi
 | Stack tradisional | agentmemory memakai |
 |---|---|
 | Express.js / Fastify | iii HTTP Trigger |
-| SQLite / Postgres + pgvector | iii KV State + index vector in-memory |
-| SSE / Socket.io | iii Stream (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | REST endpoint `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | Supervisi worker engine iii |
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Sistem plugin custom | `iii worker add <name>` |
 
-**242 file sumber · ~55,000 LOC · 3,800+ pengujian · 324 fungsi · 67 scope KV**, semua di atas tiga primitif. Tidak ada `agentmemory plugin install`. Sistem plugin-nya adalah iii itu sendiri.
-
+**246 file sumber · ~56.000 LOC · 3.600+ pengujian · 322 fungsi · 65 scope KV**, semuanya di atas tiga primitif. Tidak ada `agentmemory plugin install`. Sistem plugin-nya adalah iii itu sendiri.
 ---
 
 <h2 id="configuration"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-config.svg"><img src="../assets/tags/section-config.svg" alt="Konfigurasi" height="32" /></picture></h2>
@@ -1564,37 +1505,21 @@ Saat `AGENT_ID` tidak diset, memori tetap unscoped (perilaku legacy, tanpa tag, 
 
 ### Port
 
-agentmemory + iii-engine membind empat port secara default. Jika restart gagal dengan `port in use`, tabel ini memberitahu proses mana yang harus dicari.
+Runtime lokal menggunakan tiga listener. WebSocket engine iii digunakan untuk pendaftaran worker internal dan tidak boleh diekspos ke jaringan publik.
 
-| Port | Proses | Tujuan | Override env |
+| Port | Proses | Fungsi | Override env |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Worker stream internal (dikonsumsi agentmemory + viewer) | `III_STREAM_PORT` (disarankan) atau legacy `III_STREAMS_PORT` |
-| `3113` | agentmemory | Viewer real-time (`http://localhost:3113`) | `III_VIEWER_PORT` atau `AGENTMEMORY_VIEWER_URL` untuk URL yang dilaporkan |
-| `49134` | iii-engine | WebSocket; worker mendaftar di sini, telemetri OTel mengalir lewatnya | `III_ENGINE_PORT` atau `III_ENGINE_URL` |
+| `3111` | worker registry `http` | REST API, MCP HTTP, health, dan SSE viewer terautentikasi di `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | UI viewer dan proxy viewer | `III_VIEWER_PORT` |
+| `49134` | engine iii | WebSocket worker internal | `III_ENGINE_PORT` atau `III_ENGINE_URL` |
 
-`--port <N>` mengubah anchor REST dan menurunkan stream `N+1`, viewer `N+2`, dan WebSocket engine `N+46023` hanya saat port eksplisit atau URL terkait di atas belum diset. Ini tidak membuat namespace lifecycle yang terisolasi. Gunakan `--instance 1` untuk daemon kedua; ia memakai anchor 3211, default ke `3211/3212/3213/49234`, dan menerima direktori data dan lifecycle `instance-1` yang terpisah. Instance 1 hingga 50 mengikuti pola yang sama.
+`--port <N>` menetapkan port REST serta menentukan viewer `N+2` dan WebSocket engine `N+46023` bila belum diatur secara eksplisit. Gunakan `--instance N` untuk runtime terisolasi.
 
-Engine yang dipin start dengan `--no-update-check` (tanpa pengecekan update atau security-advisory ke GitHub saat boot) dan dengan telemetri pemakaian anonim iii nonaktif: agentmemory set `III_TELEMETRY_ENABLED=false` untuk engine yang dimunculkannya kecuali Anda mengekspor variabel itu sendiri, dan file compose bundel melakukan hal yang sama.
-
-Pembersihan proses basi saat port tetap terbind setelah run yang crash:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` membersihkan baik pidfile worker maupun engine secara bersih saat shutdown native yang graceful. Di mode Docker, ia menguras worker native, menghentikan tepat kontainer engine yang tervalidasi, dan mempertahankan baik kontainer maupun mount `/data`-nya untuk restart tanpa kehilangan data; start berikutnya memvalidasi dan melanjutkan kontainer yang sama itu. Uninstall yang didukung Docker membutuhkan `agentmemory remove --keep-data`: ia menghapus file bersama yang dikelola agentmemory sambil mempertahankan kontainer yang tervalidasi, mount datanya, dan record lifecycle yang dibutuhkan untuk memulihkannya. Penghapusan data Docker yang destruktif dengan sengaja dibiarkan ke operator setelah backup. CLI juga menolak mengadopsi atau mengirim sinyal ke pemegang port Docker atau VM (backend Docker, vpnkit, colima) sebagai engine native kecuali `--force` diberikan. Pembersihan manual di atas hanya untuk kasus pasca-crash saat tidak ada pidfile yang tersisa.
+Deployment self-host memublikasikan REST dan viewer, default pada `127.0.0.1:3111` dan `127.0.0.1:3113`; port host dapat diubah dengan `AGENTMEMORY_REST_PORT` dan `AGENTMEMORY_VIEWER_PORT`. REST CORS default mengizinkan `http://localhost` dan `http://127.0.0.1` pada port yang dikonfigurasi; set `REST_ALLOWED_ORIGINS` ke daftar origin persis dipisahkan koma untuk mengizinkan browser tepercaya lainnya.
 
 ### File Konfigurasi
 
-Letakkan konfigurasi runtime agentmemory di `~/.agentmemory/.env` daripada mengekspor variabel di setiap shell. Jika viewer menunjukkan hint setup seperti `export ANTHROPIC_API_KEY=...`, salin itu ke file ini sebagai `ANTHROPIC_API_KEY=...` tanpa prefiks `export`, lalu restart agentmemory.
+Letakkan konfigurasi runtime agentmemory di `~/.agentmemory/.env`, alih-alih mengekspor variabel di setiap shell. Jika viewer menampilkan petunjuk seperti `export ANTHROPIC_API_KEY=...`, salin ke file tanpa awalan `export`, lalu restart agentmemory. Set `AGENTMEMORY_ENV_FILE` untuk menggunakan path file env lain.
 
 Variabel environment proses tetap berfungsi dan diprioritaskan di atas nilai di file itu.
 
@@ -1750,7 +1675,7 @@ Buat `~/.agentmemory/.env`:
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
                                            # A hard kill loses at most this window.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
@@ -1790,7 +1715,7 @@ Buat `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoint di port `3111`. REST API terbind ke `127.0.0.1` secara default. Endpoint yang terlindungi membutuhkan `Authorization: Bearer <secret>`, dan endpoint mesh sync membutuhkan `AGENTMEMORY_SECRET` yang diset secara eksplisit di kedua peer.
+144 endpoint di port `3111`. REST API terbind ke `127.0.0.1` secara default. Endpoint yang terlindungi membutuhkan `Authorization: Bearer <secret>`, dan endpoint mesh sync membutuhkan `AGENTMEMORY_SECRET` yang diset secara eksplisit di kedua peer.
 
 **Autentikasi aktif secara default.** Saat `AGENTMEMORY_SECRET` tidak diset (di shell atau di `~/.agentmemory/.env`), server menghasilkan secret acak pada start pertama dan menyimpannya di `~/.agentmemory/secret` dengan mode `0600`. Setiap klien bundel membacanya dari sana saat berbicara dengan server lokal: CLI, viewer, hook di bawah `plugin/scripts`, server MCP dan shim `@agentmemory/mcp`, konfigurasi yang ditulis `agentmemory connect`, serta integrasi OpenCode, Pi, OpenClaw, Hermes, dan filesystem-watcher bundel. Secret yang tersimpan hanya dikirim ke URL loopback (`localhost`, `127.0.0.0/8`, `::1`). `AGENTMEMORY_SECRET` eksplisit selalu menang, dan klien remote tetap membutuhkannya diset. Docker dan entrypoint `deploy/` sudah menghasilkan dan mengekspor secret-nya sendiri. Untuk memanggil API secara manual:
 
@@ -1875,7 +1800,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Prasyarat:** Node.js >= 20 dengan npm/npx; [iii-engine](https://iii.dev/docs) v0.22.1 atau Docker. Instalasi engine otomatis macOS/Linux juga membutuhkan `curl`, `sh` POSIX, dan `tar`; Windows native memakai `iii.exe` manual yang dipin, WSL2, atau Docker Desktop.
+**Prasyarat:** Node.js >= 20 dengan npm/npx. Instalasi engine macOS/Linux yang dikelola CLI juga memerlukan `curl`, `sh` POSIX, dan `tar`; Windows native perlu memasang `iii.exe` yang dipatok secara manual atau menggunakan WSL2.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Lisensi" height="32" /></picture></h2>
 

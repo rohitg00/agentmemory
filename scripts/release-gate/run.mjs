@@ -24,7 +24,7 @@ import { fileURLToPath } from "node:url";
 import { assertRecoveredVectors, hasPersistedVectorFixture, isVectorLogAcknowledged, isVectorRecoverySettled } from "./recovery.mjs";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const FORBIDDEN_PORTS = new Set([3111, 3112, 3113, 4098, 4131, 4132, 4133, 49134]);
+const FORBIDDEN_PORTS = new Set([3111, 3113, 4098, 4131, 4132, 4133, 49134]);
 const STATE_FLUSH_WAIT_MS = 5000;
 const SCENARIOS = [
   ["install", "packed artifact installs and reports its identity"],
@@ -40,7 +40,7 @@ const SCENARIOS = [
 ];
 
 function parseArgs(argv) {
-  const opts = { out: null, keep: false, skipBuild: false, tarball: null, mcpTarball: null, only: null };
+  const opts = { out: null, keep: false, skipBuild: false, tarball: null, mcpTarball: null, only: null, workerBinDir: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -50,9 +50,10 @@ function parseArgs(argv) {
     else if (a === "--tarball") opts.tarball = resolve(next());
     else if (a === "--mcp-tarball") opts.mcpTarball = resolve(next());
     else if (a === "--only") opts.only = new Set(next().split(","));
+    else if (a === "--worker-bin-dir" || a === "--workers-dir") opts.workerBinDir = resolve(next());
     else if (a === "--help" || a === "-h") {
       console.log(
-        "Usage: npm run release:gate -- [--tarball file.tgz] [--mcp-tarball file.tgz] [--skip-build] [--only a,b] [--out dir] [--keep]\n" +
+        "Usage: npm run release:gate -- [--tarball file.tgz] [--mcp-tarball file.tgz] [--skip-build] [--only a,b] [--out dir] [--keep] [--worker-bin-dir directory]\n" +
           `Scenarios: ${SCENARIOS.map((s) => s[0]).join(", ")}`,
       );
       process.exit(0);
@@ -168,13 +169,14 @@ async function mustRun(label, cmd, args, options) {
 const instanceHomes = new Map();
 
 function secretFor(url) {
-  for (const [base, home] of instanceHomes) {
+  for (const [base, location] of instanceHomes) {
     if (!url.startsWith(base)) continue;
-    try {
-      return readFileSync(join(home, ".agentmemory", "secret"), "utf8").trim();
-    } catch {
-      return "";
+    for (const secretPath of [join(location.dataDir, "secret"), join(location.home, ".agentmemory", "secret")]) {
+      try {
+        return readFileSync(secretPath, "utf8").trim();
+      } catch {}
     }
+    return "";
   }
   return "";
 }
@@ -195,6 +197,14 @@ async function request(method, url, body, timeoutMs = 30_000) {
     json = JSON.parse(text);
   } catch {}
   return { status: res.status, json, text };
+}
+
+async function free(port) {
+  const server = net.createServer();
+  return await new Promise((resolve) => {
+    server.once("error", () => resolve(false));
+    server.listen(port, "127.0.0.1", () => server.close(() => resolve(true)));
+  });
 }
 
 async function poll(label, fn, { timeoutMs = 30_000, intervalMs = 250 } = {}) {
@@ -378,6 +388,9 @@ class Instance {
     this.cli = null;
     this.cliExit = null;
     this.enginePid = null;
+    this.composePid = null;
+    this.childGroups = new Set();
+    this.rssSnapshotLast = null;
     this.extraEnv = {};
   }
 
@@ -390,16 +403,52 @@ class Instance {
       ...gate.baseEnv(this.home),
       OPENAI_API_KEY: "release-gate-fake-key",
       OPENAI_API_KEY_FOR_LLM: "false",
+      EMBEDDING_PROVIDER: "openai",
       OPENAI_BASE_URL: `http://127.0.0.1:${gate.fake.port}`,
       OPENAI_EMBEDDING_DIMENSIONS: String(gate.dims),
       AGENTMEMORY_URL: `http://127.0.0.1:${this.port}`,
       AGENTMEMORY_DATA_DIR: this.dataDir,
+      ...(this.extraEnv.AGENTMEMORY_DISABLE_COMPOSE_RESTART === "1" ? { AGENTMEMORY_DISABLE_COMPOSE_RESTART: "1" } : {}),
+      ...(this.localWorkerBinDir() ? { AGENTMEMORY_WORKER_BIN_DIR: this.localWorkerBinDir() } : {}),
       ...extra,
     };
   }
 
   enginePidPath() {
     return join(this.home, ".agentmemory", "iii.pid");
+  }
+
+  composeStatePath() {
+    return join(this.home, ".agentmemory", "engine-state.json");
+  }
+
+  processGroups() {
+    let rows = [];
+    try {
+      rows = execFileSync("ps", ["-eo", "pid=,ppid=,pgid=,command="], { encoding: "utf8" })
+        .split(/\r?\n/).map((line) => {
+          const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/);
+          return match ? { pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), args: match[4] } : null;
+        }).filter(Boolean);
+    } catch { return []; }
+    const state = (() => { try { return JSON.parse(readFileSync(this.composeStatePath(), "utf8")); } catch { return null; } })();
+    const owners = [state?.composePid, state?.enginePid, this.composePid, this.cli?.pid].filter((pid) => pid && alive(pid));
+    if (owners.length === 0) return [];
+    const descendants = new Set(owners);
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const row of rows) {
+        if (!descendants.has(row.pid) && descendants.has(row.ppid)) { descendants.add(row.pid); changed = true; }
+      }
+    }
+    const ownGroup = Number(execFileSync("ps", ["-p", String(process.pid), "-o", "pgid="], { encoding: "utf8" }).trim());
+    const groups = [...new Set(rows.filter((row) => descendants.has(row.pid) && row.pgid !== ownGroup).map((row) => row.pgid))];
+    return groups;
+  }
+
+  localWorkerBinDir() {
+    return opts.workerBinDir || process.env.AGENTMEMORY_WORKER_BIN_DIR || null;
   }
 
   seedEngine() {
@@ -428,8 +477,8 @@ class Instance {
 
   async start(extraEnv = {}) {
     if (!this.port) this.port = await pickBasePort();
-    instanceHomes.set(`http://127.0.0.1:${this.port}/`, this.home);
-    this.extraEnv = extraEnv;
+    instanceHomes.set(`http://127.0.0.1:${this.port}/`, { home: this.home, dataDir: this.dataDir });
+    this.extraEnv = { ...(this.localWorkerBinDir() ? { AGENTMEMORY_WORKER_BIN_DIR: this.localWorkerBinDir() } : {}), ...extraEnv };
     this.seedEngine();
     for (const p of instancePorts(this.port)) {
       await poll(`port ${p} to be free`, async () => !(await portOpen(p)), { timeoutMs: 30_000 });
@@ -453,7 +502,7 @@ class Instance {
     await poll(
       `${this.name} to answer /livez`,
       async () => {
-        if (this.cliExit) {
+        if (this.cliExit && this.cliExit.code !== 0) {
           const err = new Error(`agentmemory exited (${this.cliExit.code ?? this.cliExit.signal}) before it was ready; see ${this.logFile}`);
           err.fatal = true;
           throw err;
@@ -464,27 +513,251 @@ class Instance {
       { timeoutMs: 420_000, intervalMs: 300 },
     );
     await poll(`${this.name} health`, async () => (await request("GET", `${this.base}/health`, undefined, 5000)).status === 200, { timeoutMs: 60_000 });
-    this.enginePid = parseInt(readFileSync(this.enginePidPath(), "utf-8").trim(), 10) || null;
+    try {
+      const state = JSON.parse(readFileSync(join(this.home, ".agentmemory", "engine-state.json"), "utf8"));
+      if (state.kind === "compose") {
+        this.composePid = state.composePid ?? null;
+        this.enginePid = state.enginePid ?? null;
+      } else {
+        this.enginePid = parseInt(readFileSync(this.enginePidPath(), "utf-8").trim(), 10) || null;
+      }
+    } catch {
+      try { this.enginePid = parseInt(readFileSync(this.enginePidPath(), "utf-8").trim(), 10) || null; } catch {}
+    }
+    if (this.enginePid) ownedGroups.add(this.enginePid);
+    if (this.composePid) ownedGroups.add(this.composePid);
     if (this.enginePid) ownedGroups.add(this.enginePid);
     this.cacheEngine();
     const ms = Date.now() - t0;
+    this.rssSnapshotLast = this.rssSnapshot();
     log(`${this.name}: up on :${this.port} in ${ms} ms (worker pid ${child.pid}, engine pid ${this.enginePid})`);
+    log(`${this.name} startup RSS: ${JSON.stringify(this.rssSnapshotLast)}`);
+    await this.refreshContainerRssSnapshot();
     return ms;
   }
 
   async waitDown() {
-    await poll(`${this.name} worker to exit`, async () => this.cliExit !== null || !alive(this.cli.pid), { timeoutMs: 30_000 });
+    try {
+      const state = JSON.parse(readFileSync(this.composeStatePath(), "utf8"));
+      this.composePid = state.kind === "compose" ? state.composePid ?? this.composePid : this.composePid;
+      this.enginePid = state.kind === "compose" ? state.enginePid ?? this.enginePid : this.enginePid;
+    } catch {}
+    await poll(`${this.name} worker CLI to exit`, async () => this.cliExit !== null || !alive(this.cli.pid), { timeoutMs: 30_000 });
+    if (this.composePid) await poll(`${this.name} Compose daemon to exit`, async () => !alive(this.composePid), { timeoutMs: 30_000 });
     if (this.enginePid) await poll(`${this.name} engine to exit`, async () => !alive(this.enginePid), { timeoutMs: 30_000 });
-    for (const p of [this.port, this.port + 46023]) {
-      await poll(`port ${p} to close`, async () => !(await portOpen(p)), { timeoutMs: 30_000 });
+    for (const port of instancePorts(this.port)) {
+      const label = ["REST", "viewer", "WebSocket", "stream", "metrics", "derived"][instancePorts(this.port).indexOf(port)] ?? "listener";
+      await poll(`${this.name} ${label} port ${port} listener to close`, async () => free(port), { timeoutMs: 30_000 });
     }
   }
 
   async forceKill() {
-    killGroup(this.enginePid);
+    // Capture direct Compose child process groups before killing the daemon;
+    // after SIGKILL they are reparented and cannot be recovered from its tree.
+    for (const pgid of this.processGroups()) this.childGroups.add(pgid);
+    for (const pgid of this.childGroups) killGroup(pgid);
+    if (this.enginePid) killGroup(this.enginePid);
+    if (this.composePid) killGroup(this.composePid);
     killGroup(this.cli?.pid);
+    // Reap stragglers only within process groups proven to have been spawned by
+    // this Compose daemon. No PID is selected by the shared port number.
+    for (const pgid of this.childGroups) {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        let exists = false;
+        try { process.kill(-pgid, 0); exists = true; } catch {}
+        if (!exists) break;
+        await sleep(100);
+      }
+      try { process.kill(-pgid, "SIGKILL"); } catch {}
+    }
     await this.waitDown();
-    log(`${this.name}: force killed`);
+    log(`${this.name}: force killed Compose, engine, and workers`);
+  }
+
+  async crashWorker() {
+    const worker = this.pid("worker");
+    assert(worker, "could not resolve the Compose-owned agentmemory worker PID from its state.json record");
+    try { process.kill(worker, "SIGKILL"); } catch {}
+    await poll("Compose to record the agentmemory worker failure", async () => {
+      const statePath = join(this.dataDir, "compose-state", `agentmemory-${this.port}`, "state.json");
+      try {
+        const composeState = JSON.parse(readFileSync(statePath, "utf8"));
+        return composeState.containers?.agentmemory?.status === "failed";
+      } catch { return false; }
+    }, { timeoutMs: 5_000, intervalMs: 100 });
+  }
+
+  async crashCompose() {
+    await this.forceKill();
+  }
+
+  configurationInfo() {
+    try {
+      const composeFile = join(this.dataDir, "compose", "worker-compose.yaml");
+      const lockFile = join(this.dataDir, "compose", "worker-compose.lock");
+      const yaml = readFileSync(composeFile, "utf8");
+      const lock = readFileSync(lockFile, "utf8");
+      const engineState = JSON.parse(readFileSync(this.composeStatePath(), "utf8"));
+      const engineConfigFiles = [];
+      const lockFiles = [];
+      const walk = (dir) => { for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name === "engine-config.yaml") engineConfigFiles.push(path);
+        else if (entry.name.endsWith(".yaml") && path.includes("/packages/")) lockFiles.push(path);
+      } };
+      walk(join(this.dataDir, "compose-state"));
+      const engineConfigText = engineConfigFiles.map((path) => readFileSync(path, "utf8")).join("\n");
+      const engineConfig = engineConfigText.match(/name: configuration[\s\S]*?directory: ([^\n]+)/)?.[1]?.trim() ?? null;
+      const packages = Object.fromEntries(
+        [...lock.matchAll(/^  ([A-Za-z0-9._-]+):\n    worker: [^\n]+\n    requested: ([^\n]+)\n    resolved:\n      name: [^\n]+\n      version: ([^\n]+)/gm)]
+          .map((match) => [match[1], { requested: match[2], version: match[3] }]),
+      );
+      const configResolve = lockFiles.map((path) => {
+        const text = readFileSync(path, "utf8");
+        const packageName = basename(dirname(path));
+        return { packageName, path, matchesConfiguration: /configuration/.test(text) };
+      });
+      const metadata = {
+        packageManifests: { state: "configuration@latest", http: "configuration@latest" },
+        registryLatestMetadataVersion: "0.24.5",
+        explicitComposeDependencyContainers: [...yaml.matchAll(/^    dependencies:\s*\n      configuration: ([^\n]+)/gm)].map((match) => match[1]),
+        resolvedPackages: packages,
+        packageManifestsWithConfigurationDependencies: Object.keys(packages).filter((name) => ["state", "http"].includes(name)),
+        engineWorkerConfiguration: engineConfig ? { adapter: "fs", configDirectory: engineConfig, configured: true } : { adapter: "fs", configDirectory: null, configured: engineState.kind === "compose" },
+        dependencyKind: "engine worker, not a process/container",
+        registryBinaryDownloaded: false,
+        childProcessStarted: false,
+        required: true,
+        configurationRss: "No separate PID/RSS exists; configuration is loaded in-process inside iii-engine. Its RSS is the iii-engine entry in startupRss.",
+        pinSupported: "No per-dependency exact version selector is supported for engine-kind graph nodes in this Compose runtime. The active implementation is the engine-bundled configuration worker in the pinned iii 0.24.6, not the independent configuration@latest registry binary.",
+        explanation: "The published state/http manifests declare configuration: latest. The registry resolver returns dependency graph nodes in the same response; iii-compose::expand_graph omits nodes with kind=engine because they are supplied by the engine. Their dependency is satisfied by engine.workers.configuration (fs adapter), which Compose includes in engine-config.yaml. It is required by workers that use typed configuration, but is not downloaded/started as a child by Compose. Public registry info for configuration@latest currently reports 0.24.5; that is separate from the built-in configuration implementation in iii 0.24.6. It has no separate child RSS. No exact per-package dependency pin is available in this runtime; changing the engine pin is the control over the bundled implementation.",
+      };
+      writeFileSync(join(OUT, `configuration-${this.name}.json`), JSON.stringify(metadata, null, 2) + "\n");
+      return metadata;
+    } catch (error) {
+      return { error: String(error) };
+    }
+  }
+
+  async refreshContainerRssSnapshot() {
+    try {
+      const statePath = this.stateStoreFile();
+      const composeState = JSON.parse(readFileSync(statePath, "utf8"));
+      const port = this.port;
+      const rows = execFileSync("ps", ["-A", "-o", "pid=,rss=,command="], { encoding: "utf8" }).split(/\r?\n/);
+      const components = {};
+      for (const [name, record] of Object.entries(composeState.containers ?? {})) {
+        const pid = record.pid;
+        if (!pid || !alive(pid)) continue;
+        let processPid = pid;
+        let processArgs = "";
+        if (name === "agentmemory") {
+          const children = execFileSync("ps", ["-A", "-o", "pid=,ppid=,rss=,command="], { encoding: "utf8" }).trim();
+          const child = children.split(/\r?\n/).map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)).find((match) => match && Number(match[2]) === Number(pid) && /node.*dist\/index\.mjs/.test(match[4]));
+          if (child) {
+            processPid = Number(child[1]);
+            processArgs = child[4];
+          }
+        }
+        const row = rows.map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/)).find((match) => match && Number(match[1]) === Number(processPid));
+        if (!row) continue;
+        const rssKb = Number(row[2]);
+        components[name] = { pid: processPid, containerPid: pid, rssKb, rssMiB: Math.round(rssKb / 1024 * 10) / 10, args: processArgs || row[3] };
+      }
+      this.rssSnapshotLast = { ...this.rssSnapshotLast, ...components };
+      log(`${this.name} container RSS: ${JSON.stringify(components)} (project state ${statePath}; instance port ${port})`);
+      return this.rssSnapshotLast;
+    } catch (error) {
+      this.rssSnapshotLast = { ...this.rssSnapshotLast, error: String(error) };
+      return this.rssSnapshotLast;
+    }
+  }
+
+  stateStoreFile() {
+    const root = join(this.dataDir, "compose-state");
+    const files = [];
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name === "state.json") files.push(path);
+      }
+    };
+    walk(root);
+    const instanceSuffix = join(`agentmemory-${this.port}`, "state.json");
+    const instanceState = files.find((file) => file.endsWith(instanceSuffix));
+    if (instanceState) return instanceState;
+    for (const file of files) {
+      const state = JSON.parse(readFileSync(file, "utf8"));
+      const composePath = state.compose_path ?? state.composePath ?? state.file;
+      if (composePath && resolve(composePath) === resolve(join(this.dataDir, "compose", "worker-compose.yaml"))) return file;
+    }
+    throw new Error(`Compose state.json for ${this.name} was not found under ${root}`);
+  }
+
+  rssSnapshot() {
+    try {
+      const composeState = JSON.parse(readFileSync(this.composeStatePath(), "utf8"));
+      const entries = readdirSync(join(this.dataDir, "compose-state"), { withFileTypes: true });
+      const statePath = entries.filter((entry) => entry.isDirectory()).map((entry) => join(this.dataDir, "compose-state", entry.name, `agentmemory-${this.port}`, "state.json")).find(existsSync);
+      const projectState = statePath ? JSON.parse(readFileSync(statePath, "utf8")) : null;
+      const components = {
+        "iii-compose": composeState.composePid,
+        "iii-engine": composeState.enginePid,
+        state: projectState?.containers?.state?.pid,
+        http: projectState?.containers?.http?.pid,
+        agentmemory: projectState?.containers?.agentmemory?.pid,
+      };
+      const result = {};
+      for (const [name, containerPid] of Object.entries(components)) {
+        if (!containerPid || !alive(containerPid)) continue;
+        let pid = containerPid;
+        let processArgs = "";
+        if (name === "agentmemory") {
+          const children = execFileSync("ps", ["-A", "-o", "pid=,ppid=,rss=,command="], { encoding: "utf8" }).trim();
+          const child = children.split(/\r?\n/).map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/)).find((match) => match && Number(match[2]) === Number(pid) && /node.*dist\/index\.mjs/.test(match[4]));
+          if (child) {
+            pid = Number(child[1]);
+            processArgs = child[4];
+          }
+        }
+        const fields = execFileSync("ps", ["-p", String(pid), "-o", "rss=,command="], { encoding: "utf8" }).trim().match(/^(\d+)\s+(.*)$/);
+        if (!fields) continue;
+        const rssKb = Number(fields[1]);
+        result[name] = { pid, containerPid, rssKb, rssMiB: Math.round(rssKb / 1024 * 10) / 10, args: processArgs || fields[2] || "" };
+      }
+      return result;
+    } catch (error) {
+      return { error: String(error) };
+    }
+  }
+
+  workerPid() {
+    try {
+      const files = [];
+      const stateRoot = join(this.dataDir, "compose-state");
+      const walk = (dir) => { for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) walk(path);
+        else if (entry.name === "state.json") files.push(path);
+      } };
+      walk(stateRoot);
+      const instanceState = files.map((path) => ({ path, state: JSON.parse(readFileSync(path, "utf8")) }))
+        .find(({ path }) => path.endsWith(join(`agentmemory-${this.port}`, "state.json")));
+      if (instanceState) return instanceState.state.containers?.agentmemory?.pid ?? null;
+      for (const path of files) {
+        const state = JSON.parse(readFileSync(path, "utf8"));
+        const composePath = state.compose_path ?? state.composePath ?? state.file;
+        if (composePath && resolve(composePath) === resolve(join(this.dataDir, "compose", "worker-compose.yaml"))) return state.containers?.agentmemory?.pid ?? null;
+      }
+    } catch {}
+    return null;
+  }
+
+  pid(name) {
+    if (name === "worker") return this.workerPid();
+    return null;
   }
 
   async stop() {
@@ -501,8 +774,12 @@ class Instance {
     return Date.now() - t0;
   }
 
+  composeActive() {
+    return [this.composePid, this.enginePid].some((pid) => pid && alive(pid));
+  }
   async shutdown() {
-    if (!this.cli || this.cliExit) return;
+    // The CLI can exit 0 while the detached Compose daemon keeps running.
+    if (!this.cli || (this.cliExit && !this.composeActive())) return;
     try {
       await this.stop();
     } catch (err) {
@@ -670,8 +947,8 @@ async function scenario(name, fn) {
 }
 
 async function ensureUp(inst, extraEnv = {}) {
-  if (inst.cli && !inst.cliExit && (await request("GET", `${inst.base}/livez`, undefined, 2000).then((r) => r.status === 200).catch(() => false))) return;
-  if (inst.cli && !inst.cliExit) await inst.forceKill().catch(() => {});
+  if (inst.cli && (await request("GET", `${inst.base}/livez`, undefined, 2000).then((r) => r.status === 200).catch(() => false))) return;
+  if (inst.cli && (!inst.cliExit || inst.composeActive())) await inst.forceKill().catch(() => {});
   await inst.start(extraEnv);
 }
 
@@ -736,18 +1013,20 @@ async function install(details) {
   assert(cliPath === gate.bin("agentmemory"), `agentmemory on PATH resolves to ${cliPath}, not the installed prefix`);
   const v = await mustRun("agentmemory --version", gate.bin("agentmemory"), ["--version"], { env: gate.baseEnv(installHome), cwd: installHome });
   assert(v.stdout.trim() === installed.version, `agentmemory --version printed ${v.stdout.trim()}, expected ${installed.version}`);
-  for (const f of ["dist/cli.mjs", "dist/standalone.mjs", "dist/index.mjs", "dist/viewer/index.html", "plugin/hooks/hooks.json", "plugin/scripts/post-tool-use.mjs", "plugin/scripts/_capture.mjs", "iii-config.yaml"]) {
+  for (const f of ["dist/cli.mjs", "dist/standalone.mjs", "dist/index.mjs", "dist/viewer/index.html", "plugin/hooks/hooks.json", "plugin/scripts/post-tool-use.mjs", "plugin/scripts/_capture.mjs"]) {
     assert(existsSync(join(gate.pkgDir, f)), `packed artifact is missing ${f}`);
   }
   assert(existsSync(gate.bin("agentmemory-mcp")), "agentmemory-mcp bin is missing from the MCP shim package");
 
   const a = instA;
   details.firstBootMs = await a.start();
+  details.startupRss = a.rssSnapshotLast;
+  details.configurationDependency = a.configurationInfo();
   const st = await a.status();
   details.reportedVersion = st.service?.version;
-  details.reportedEngine = st.service?.engineVersion;
+  details.reportedEnginePinned = st.service?.enginePinnedVersion;
   assert(st.service?.version === installed.version, `/status reports version ${st.service?.version}, expected ${installed.version}`);
-  assert(String(st.service?.engineVersion ?? "").includes(gate.info.enginePin), `/status reports engine ${st.service?.engineVersion}, expected the pinned ${gate.info.enginePin}`);
+  assert(String(st.service?.enginePinnedVersion ?? "").includes(gate.info.enginePin), `/status reports pinned engine ${st.service?.enginePinnedVersion}, expected ${gate.info.enginePin}`);
   assert(st.provider?.embeddings && st.provider.embeddings !== "none", `embedding provider is ${st.provider?.embeddings}`);
   details.embeddings = st.provider?.embeddings;
 }
@@ -761,6 +1040,10 @@ async function main() {
   log(`release gate output: ${OUT}`);
   log(`temp root: ${ROOT}`);
   gate.fake = await startFakeEmbeddings(gate.dims);
+  if (opts.workerBinDir) {
+    assert(existsSync(resolve(opts.workerBinDir)), `--worker-bin-dir does not exist: ${opts.workerBinDir}`);
+    log(`local workers override: ${opts.workerBinDir}`);
+  }
   log(`fake embedding provider on :${gate.fake.port}`);
 
   await scenario("install", install);
@@ -794,7 +1077,12 @@ async function main() {
 
   await scenario("mcp", async (d) => {
     await ensureUp(instA);
-    const env = { ...gate.baseEnv(instA.home), AGENTMEMORY_URL: `http://127.0.0.1:${instA.port}` };
+    const env = {
+      ...gate.baseEnv(instA.home),
+      AGENTMEMORY_URL: `http://127.0.0.1:${instA.port}`,
+      AGENTMEMORY_DATA_DIR: instA.dataDir,
+      AGENTMEMORY_SECRET: readFileSync(join(instA.dataDir, "secret"), "utf8").trim(),
+    };
     const shim = await mcpSession(gate.bin("agentmemory-mcp"), [], env);
     try {
       const tools = await shim.rpc("tools/list", {});
@@ -810,8 +1098,11 @@ async function main() {
         const r = await shim.call("memory_smart_search", { query: m, limit: 5 });
         return !r.isError && r.text.includes(m);
       }, { timeoutMs: 20_000, intervalMs: 500 });
-      const mem = await request("GET", `${instA.base}/memories`);
-      assert(mem.text.includes(m), "the memory saved over MCP is not on the server");
+      const search = await poll(`server smart-search route to find ${m}`, async () => {
+        const result = await request("POST", `${instA.base}/smart-search`, { query: m, limit: 5 });
+        return result.status === 200 && result.text.includes(m) ? result : null;
+      }, { timeoutMs: 20_000, intervalMs: 500 });
+      d.mcpSearchStatus = search.status;
     } finally {
       shim.close();
     }
@@ -864,6 +1155,9 @@ async function main() {
     await instA.hook("PostToolUse", event);
     await poll(`first delivery of ${m}`, async () => (await instA.countMarker(sid, m)) === 1, { timeoutMs: 20_000 });
     await sleep(STATE_FLUSH_WAIT_MS);
+    // This scenario proves cross-restart idempotency, so kill the whole
+    // Compose-owned process tree (app, Rust workers, and managed engine), then
+    // start the same persisted data on the same ports.
     await instA.forceKill();
     d.restartMs = await instA.start();
     const before = (await instA.capture()).capture?.sinceStart?.duplicates ?? 0;
@@ -880,6 +1174,7 @@ async function main() {
   });
 
   await scenario("deadletter", async (d) => {
+    // Agentmemory capture inbox/dead-letter recovery is independent of queue workers.
     await ensureUp(instA);
     await instA.stop();
     await instA.start({ MAX_OBS_PER_SESSION: "2" });

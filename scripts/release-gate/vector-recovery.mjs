@@ -27,6 +27,9 @@ for (const dir of [runtime, data, prefix]) mkdirSync(dir, { recursive: true });
 if (options.dependencies) {
   mkdirSync(pkg, { recursive: true });
   execFileSync("tar", ["-xzf", options.tarball, "--strip-components=1", "-C", pkg]);
+  if (!existsSync(join(pkg, "dist/cli.mjs"))) {
+    execFileSync("tar", ["-xzf", options.tarball, "--strip-components=1", "-C", pkg]);
+  }
   for (const entry of readdirSync(options.dependencies, { withFileTypes: true })) {
     if (entry.name.startsWith(".")) continue;
     if (entry.name.startsWith("@")) {
@@ -81,15 +84,50 @@ const fixture = createServer(async (req, res) => {
 });
 await new Promise((resolve, reject) => { fixture.once("error", reject); fixture.listen(0, "127.0.0.1", resolve); });
 const fixturePort = fixture.address().port;
-let config = readFileSync(join(pkg, "iii-config.yaml"), "utf8").split("  - name: iii-exec")[0];
-config = config.replaceAll("3111", String(port)).replaceAll("3112", String(port + 1)).replaceAll("3113", String(port + 2)).replaceAll("./data/", `${data}/`);
-config += `  - name: iii-worker-manager\n    config:\n      port: ${port + 46023}\n      host: 127.0.0.1\n`;
-const configPath = join(root, "iii-config.yaml"); writeFileSync(configPath, config);
+const namespace = `agentmemory-${port}`;
+const configPath = join(root, "worker-compose.yaml");
+const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
+const config = [
+  `namespace: ${namespace}`,
+  "engine:",
+  `  url: ws://127.0.0.1:${port + 46023}`,
+  "  workers:",
+  "    configuration:",
+  "      adapter:",
+  "        name: fs",
+  "        config:",
+  `          directory: ${quote(join(root, "compose-config"))}`,
+  "    iii-worker-manager:",
+  "      host: 127.0.0.1",
+  `      port: ${port + 46023}`,
+  "containers:",
+  "  state:",
+  "    worker: 'package://api.workers.iii.dev/state'",
+  "    version: '0.22.20'",
+  "    config_name: state",
+  "    config_override:",
+  "      adapter:",
+  "        name: kv",
+  "        config:",
+  "          store_method: file_based",
+  `          file_path: ${quote(join(data, "state_store.db"))}`,
+  "          save_interval_ms: 2000",
+  "  http:",
+  "    worker: 'package://api.workers.iii.dev/http'",
+  "    version: '0.22.7'",
+  "    config_name: http",
+  "    config_override:",
+  "      host: 127.0.0.1",
+  `      port: ${port}`,
+  "      default_timeout: 180000",
+  "",
+].join("\n");
+writeFileSync(configPath, config);
 const env = (extra = {}) => ({
   HOME: home, USERPROFILE: home, PATH: [dirname(process.execPath), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(delimiter), TMPDIR: root,
   CI: "1", NO_COLOR: "1", LANG: "C.UTF-8", OTEL_ENABLED: "false", III_TELEMETRY_ENABLED: "false",
-  AGENTMEMORY_DATA_DIR: data, AGENTMEMORY_RUNTIME_DIR: runtime, III_REST_PORT: String(port), III_STREAM_PORT: String(port + 1), III_VIEWER_PORT: String(port + 2),
-  III_ENGINE_PORT: String(port + 46023), III_ENGINE_URL: `ws://127.0.0.1:${port + 46023}`, AGENTMEMORY_METRICS_PORT: String(port + 6353),
+  AGENTMEMORY_DATA_DIR: data, AGENTMEMORY_RUNTIME_DIR: runtime, III_REST_PORT: String(port), III_VIEWER_PORT: String(port + 2),
+  III_ENGINE_PORT: String(port + 46023), III_ENGINE_URL: `ws://127.0.0.1:${port + 46023}`, III_NAMESPACE: namespace, AGENTMEMORY_METRICS_PORT: String(port + 6353),
   LLM_PROVIDER: "none", EMBEDDING_PROVIDER: "openai", OPENAI_EMBEDDING_API_KEY: "local-fixture-only", OPENAI_EMBEDDING_DIMENSIONS: String(dimensions),
   OPENAI_EMBEDDING_BASE_URL: `http://127.0.0.1:${fixture.address().port}/v1`, AGENTMEMORY_VECTOR_BACKFILL_MAX: "2", AGENTMEMORY_GRAPH_WEIGHT: "0",
   AGENTMEMORY_GRAPH_COMPACT_ON_BOOT: "false", AGENTMEMORY_AUTO_COMPRESS: "false", AGENTMEMORY_SESSION_SWEEP_ENABLED: "false", AGENTMEMORY_FINALIZE_IDLE_MS: "0",
@@ -116,7 +154,7 @@ function persisted(scope = "mem:index:bm25") {
   try { return decodeRkyvJsonScope(readFileSync(join(data, "state_store.db", `${encodeURIComponent(scope)}.bin`))); } catch { return {}; }
 }
 async function state(functionId, payload) {
-  const client = registerWorker(`ws://127.0.0.1:${port + 46023}`, { workerName: "vector-recovery-fixture", invocationTimeoutMs: 5_000, enableMetricsReporting: false, otel: { enabled: false } });
+  const client = registerWorker(`ws://127.0.0.1:${port + 46023}`, { workerName: "vector-recovery-fixture", namespace, invocationTimeoutMs: 5_000, enableMetricsReporting: false, otel: { enabled: false } });
   try { return await client.trigger({ function_id: functionId, payload }); }
   finally { await client.shutdown(); }
 }
@@ -131,8 +169,8 @@ async function stop(graceful = false) {
 }
 async function start(name, extra = {}, failure = false) {
   inputs = 0;
-  engineProcess = launch(engine, ["--config", configPath, "--no-update-check"], extra, `${name}-engine`);
-  await poll("native engine", async () => (await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(500) })).status > 0);
+  engineProcess = launch(engine, ["compose", "--namespace", namespace, "--up", "--file", configPath], extra, `${name}-compose`);
+  await poll("Compose REST", async () => (await fetch(`http://127.0.0.1:${port}/`, { signal: AbortSignal.timeout(500) })).status > 0);
   workerProcess = launch(process.execPath, [cli, "--no-engine", "--port", String(port), "--data-dir", data], extra, name);
   if (failure) {
     const result = await Promise.race([workerProcess.done, sleep(10_000).then(() => ({ timeout: true }))]);

@@ -15,7 +15,7 @@ npm run eval:lifecycle
 npm run eval:recall
 ```
 
-The defaults are local and require no model API keys. The HTTP adapter and lifecycle suite require an installed **iii 0.22.1** binary. Set `AGENTMEMORY_EVAL_III` to its absolute path, or use the binary installed by AgentMemory at `~/.agentmemory/bin/iii`.
+The defaults are local and require no model API keys. The HTTP adapter and lifecycle suite require an installed **iii 0.24.6** binary, matching the version pinned by the CLI. Set `AGENTMEMORY_EVAL_III` to its absolute path, or use the binary installed by AgentMemory at `~/.agentmemory/bin/iii`.
 
 Each HTTP case launches the actual built CLI in a new temporary home, state directory, and port block, with an environment that excludes provider credentials. It uses the noop compression provider, with automatic compression, consolidation, and graph extraction disabled. The parent home and existing daemon are not used. Cleanup runs even after a failed query. `AGENTMEMORY_EVAL_KEEP=1` preserves scratch files for diagnosis; the daemon still stops. This sandbox supports macOS/Linux and needs permission to bind local ports.
 

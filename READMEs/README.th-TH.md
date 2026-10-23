@@ -100,7 +100,7 @@
 
 - Node.js 20 หรือใหม่กว่า พร้อม npm และ npx (`node -v`, `npm -v`, และ `npx -v`)
 - การติดตั้ง iii-engine แบบอัตโนมัติบน macOS/Linux ต้องมี `curl`, POSIX `sh`, และ `tar` ด้วย อิมเมจแบบมินิมอล เช่น `node:20-slim` อาจไม่มีสิ่งเหล่านี้ติดมา
-- Windows แบบ native ต้องติดตั้ง `iii.exe` เวอร์ชัน iii-engine v0.22.1 ที่ pin ไว้ด้วยตนเอง ส่วน WSL2 หรือ Docker Desktop เป็นอีกสองทางเลือกที่รองรับ
+- Windows แบบ native ต้องติดตั้ง `iii.exe` เวอร์ชัน iii 0.24.6 ที่ pin ไว้ด้วยตนเอง; WSL2 ใช้ตัวติดตั้งอัตโนมัติแบบ macOS/Linux
 
 คำสั่งติดตั้งใหม่แบบมาตรฐาน:
 
@@ -112,7 +112,7 @@ npx -y @agentmemory/agentmemory@latest
 
 โหมด keyless จะปิดการใช้งาน vector embedding `memory_recall` (เส้นทาง `mem::search`) ใช้ BM25 ในขณะที่ `memory_smart_search` ยังสามารถผสาน structural graph เข้ามาด้วยได้หากมีข้อมูล graph อยู่แล้ว หากต้องการ semantic recall แบบออนดีไวซ์โดยไม่มีค่าใช้จ่าย ให้ตั้งค่า `EMBEDDING_PROVIDER=local` ใน `~/.agentmemory/.env` แล้ว restart คำขอ embedding ครั้งแรกจะดาวน์โหลดโมเดล `Xenova/all-MiniLM-L6-v2` หลังจากดาวน์โหลดครั้งแรกแล้ว การ inference จะทำงานในเครื่องทั้งหมด
 
-runtime ที่รันในเครื่องใช้ 4 พอร์ต ได้แก่ `3111` สำหรับ REST/MCP HTTP, `3112` สำหรับ iii stream, `3113` สำหรับ viewer, และ `49134` สำหรับ iii worker WebSocket สถานะถาวรของ iii จะถูกเก็บไว้ที่ `~/Library/Application Support/agentmemory` บน macOS, `$XDG_DATA_HOME/agentmemory` หรือ `~/.local/share/agentmemory` บน Linux, และ `%APPDATA%\agentmemory` บน Windows ใช้ `--data-dir <path>` หรือ `AGENTMEMORY_DATA_DIR` เพื่อเปลี่ยนตำแหน่งนี้ และใช้ค่าเดิมซ้ำทุกครั้งที่ restart เพื่อความเข้ากันได้กับเวอร์ชันก่อนหน้า หากมี `./data/state_store.db` หรือ `./data/iii-config.yaml` อยู่แล้ว ไฟล์เหล่านี้จะถูกใช้ก่อนค่า default ของแพลตฟอร์มสำหรับ instance 0 ส่วน flag หรือ environment variable ที่ตั้งไว้อย่างชัดเจนยังคงมีสิทธิ์เหนือกว่าเสมอ
+CLI ในเครื่องใช้ REST/MCP HTTP ที่ `3111`, viewer ที่ `3113` และ iii worker WebSocket ภายในที่ `49134`; viewer อัปเดตผ่าน SSE ที่ `GET /agentmemory/viewer/events` บน REST port ข้อมูลถาวรใช้ตำแหน่งเริ่มต้นตามระบบปฏิบัติการ เปลี่ยนตำแหน่งด้วย `--data-dir <path>` หรือ `AGENTMEMORY_DATA_DIR`; instance 0 ใช้ `./data/state_store.db` ที่มีอยู่ได้ `--instance N` แยก runtime เพิ่มเติม และ `AGENTMEMORY_ENV_FILE` เลือกไฟล์ `.env` อื่น
 
 จากนั้นพิสูจน์ว่าการ recall ทำงานได้จริง และให้ agent ของคุณมี skill ไว้ใช้:
 
@@ -132,7 +132,7 @@ npx skills add rohitg00/agentmemory -y   # 17 native skills so your agent knows 
 <details>
 <summary><strong>Windows</strong></summary>
 
-ทางที่เร็วที่สุดคือ WSL2 การตั้งค่า engine บน Windows แบบ native ต้องดาวน์โหลดไฟล์ ZIP ของ v0.22.1 ที่ pin ไว้ และแตกไฟล์ `iii.exe` ด้วยตนเอง CLI จะไม่แตกไฟล์ให้โดยอัตโนมัติ Docker Desktop ก็รองรับเช่นกัน ดูขั้นตอนแบบละเอียดได้ที่ [Windows notes](#windows)
+agentmemory รองรับ Windows 10/11; WSL2 ใช้ขั้นตอน Linux และติดตั้ง engine อัตโนมัติได้ Windows แบบ native ต้องติดตั้งไบนารี iii-engine v0.24.6 ด้วยตนเอง ดาวน์โหลด archive จาก [หน้า release iii v0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), ตรวจ checksum และวาง `iii.exe` บน `PATH` (เช่น `%USERPROFILE%\.local\bin\iii.exe`) CLI ไม่แตก Windows ZIP ให้อัตโนมัติ
 
 </details>
 
@@ -157,7 +157,7 @@ npx จะแคชไว้ตามเวอร์ชัน บังคับ
 <details>
 <summary><strong>Already running your own iii engine</strong></summary>
 
-agentmemory pin iii-engine ไว้ที่ `v0.22.1` และจะไม่เชื่อมต่อกับเวอร์ชันอื่น (worker พูดโปรโตคอลของ engine เวอร์ชันอื่นไม่ได้) ให้หยุด engine ตัวอื่นก่อน แล้วรัน `npx -y @agentmemory/agentmemory@latest` มันจะติดตั้งและรัน v0.22.1 ที่ pin ไว้ใน `~/.agentmemory/bin` โดยไม่แตะต้อง `iii` ของคุณเองเลย
+ความเข้ากันได้: iii 0.24.6 พร้อม registry worker `state` 0.22.20 และ `http` 0.22.7
 
 </details>
 
@@ -319,7 +319,7 @@ agentmemory ใช้งานได้กับ agent ใดก็ตามท�
 npx -y @agentmemory/agentmemory@latest
 ```
 
-โดย default agentmemory จะเก็บสถานะของ iii-engine ไว้นอก repository ที่คุณเริ่มมันขึ้นมา: `~/Library/Application Support/agentmemory` บน macOS, `$XDG_DATA_HOME/agentmemory` หรือ `~/.local/share/agentmemory` บน Linux, และ `%APPDATA%\agentmemory` บน Windows หาก `./data/state_store.db` หรือ `./data/iii-config.yaml` แบบเดิมมีอยู่แล้ว ไฟล์เหล่านั้นจะถูกใช้สำหรับ instance 0 ก่อนค่า default ของแพลตฟอร์ม หากต้องการเลือกตำแหน่งอย่างชัดเจน ใช้ `--data-dir <path>` หรือตั้งค่า `AGENTMEMORY_DATA_DIR`; การตั้งค่าอย่างชัดเจนทั้งสองแบบมีสิทธิ์เหนือกว่าการค้นหาแบบเดิม:
+โดยค่าเริ่มต้น agentmemory เก็บ state นอก repository ที่ใช้เริ่มโปรแกรม: `~/Library/Application Support/agentmemory` บน macOS, `$XDG_DATA_HOME/agentmemory` หรือ `~/.local/share/agentmemory` บน Linux และ `%APPDATA%\agentmemory` บน Windows instance 0 จะใช้ `./data/state_store.db` ที่มีอยู่แล้วได้ เลือกตำแหน่งด้วย `--data-dir <path>` หรือ `AGENTMEMORY_DATA_DIR`; ใช้ `--instance N` เพื่อแยก runtime และ `AGENTMEMORY_ENV_FILE` เพื่อเลือกไฟล์ `.env` อื่น:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
@@ -474,7 +474,7 @@ Top-5 hit rate 100% ที่ **เพดานทางคณิตศาสต
 </tr>
 <tr>
 <td><strong>External deps</strong></td>
-<td>ไม่มี (SQLite + iii-engine)</td>
+<td>ไม่มี (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vector DB</td>
 <td>หลายตัว</td>
@@ -554,7 +554,7 @@ Top-5 hit rate 100% ที่ **เพดานทางคณิตศาสต
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="เริ่มต้นใช้งานอย่างรวดเร็ว" height="32" /></picture></h2>
 
-ความเข้ากันได้: release นี้ตั้งเป้าใช้กับ `iii-sdk` 0.22.1 และ pin iii-engine ไว้ที่ v0.22.1
+ความเข้ากันได้: iii 0.24.6 พร้อม registry worker `state` 0.22.20 และ `http` 0.22.7
 
 ### Try it in 30 seconds
 
@@ -581,7 +581,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-หน้าพร้อมใช้งานตอนเริ่มระบบครอบคลุมทั้ง 4 พอร์ต: REST/MCP HTTP บน 3111, iii stream บน 3112, viewer บน 3113, และ iii worker WebSocket บน 49134 `status` จะยืนยัน health ของ agentmemory และ provider/embedding mode ที่ใช้งานอยู่ บันทึก probe หนึ่งตัวแล้วตรวจว่าค้นหาเจอจริง:
+runtime ใช้ REST/MCP HTTP 3111, viewer 3113 และ iii worker WebSocket ภายใน 49134; live event ใช้ SSE ผ่าน REST `status` รายงาน `enginePinnedVersion` พร้อมสถานะ agentmemory และ provider/embedding mode ที่ใช้งาน บันทึก probe แล้วตรวจว่าค้นหาเจอ:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -633,7 +633,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-คำเตือน: คำสั่งนี้จะแก้ไข workspace/runtime ปัจจุบัน มันสามารถอัปเดต dependency ของ JavaScript และดึง Docker image `iiidev/iii:0.22.1` ที่ pin ไว้ได้ มันจะไม่ติดตั้ง iii engine ที่ไม่ได้ pin หรือเวอร์ชันใหม่กว่าเด็ดขาด
+คำเตือน: คำสั่งนี้เปลี่ยน workspace/runtime ปัจจุบัน และอาจอัปเดต JavaScript dependencies หรือติดตั้งไบนารี iii 0.24.6 ที่ pin ไว้
 
 รายละเอียดการ implement อยู่ใน `src/cli.ts` (ดู `runUpgrade` รอบ ๆ ส่วน `src/cli.ts:544-595`)
 
@@ -793,7 +793,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | ใช้ `mcpServers` block เดียวกัน |
 | **Devin CLI (MCP + hooks)** | `~/.config/devin/config.json` | `agentmemory connect devin` จะ merge รายการ MCP; `--with-hooks` เพิ่ม native auto-capture hook หกตัว (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) ด้วย tool matcher แบบตัวพิมพ์เล็กของ Devin ตรวจสอบด้วย `devin mcp list` และ `/hooks` ภายใน devin |
 | **Devin CLI (full plugin)** | `plugin/.devin-plugin/` | `devin plugins install ./plugin` จาก checkout จะลงทะเบียน skill ทั้ง 17 ตัวเป็นคำสั่ง slash `/agentmemory:<skill>` รวมถึง MCP server ด้วย plugin hook ของ Devin ไม่สามารถยิง `SessionStart`/`SessionEnd` ได้ ดังนั้นให้ใช้คู่กับ `connect devin --with-hooks` เพื่อ capture เซสชันแบบเต็ม |
-| **Devin (cloud)** | Settings → Connections → MCP servers | เพิ่ม custom MCP (STDIO): command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` ชี้ไปยัง agentmemory deployment ที่เข้าถึงได้ทางเครือข่าย พร้อม `AGENTMEMORY_SECRET` (เซสชัน cloud เข้าถึง localhost ไม่ได้ — ดู [`deploy/`](../deploy/)) เก็บ secret ไว้ใน Devin Secrets แล้วใช้ "Test listing tools" เพื่อตรวจว่าเครื่องมือครบทั้ง 54 ตัวปรากฏขึ้น |
+| **Devin (cloud)** | Settings → Connections → MCP servers | เพิ่ม custom MCP (STDIO): command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` ชี้ไปยัง agentmemory deployment ที่เข้าถึงได้ทางเครือข่าย พร้อม `AGENTMEMORY_SECRET` (เซสชัน cloud เข้าถึง localhost ไม่ได้ — ดู [`../deploy/`](../deploy/)) เก็บ secret ไว้ใน Devin Secrets แล้วใช้ "Test listing tools" เพื่อตรวจว่าเครื่องมือครบทั้ง 54 ตัวปรากฏขึ้น |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (merge อัตโนมัติ) |
 | **GitHub Copilot CLI (MCP only)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` จะ merge `mcpServers.agentmemory`; Copilot จะรับค่าในการเปิดครั้งถัดไปหรือ `/mcp` |
 | **GitHub Copilot CLI (full plugin)** | ติดตั้ง plugin ของ Copilot | `copilot plugin install rohitg00/agentmemory:plugin` สำหรับ plugin จาก GitHub subdir |
@@ -831,15 +831,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 ตัวอย่างแบบทำงานได้จริง: [`examples/python/`](../examples/python/) (quickstart + observation/recall flow) REST บน `:3111` ยังใช้งานได้สำหรับ host ที่ไม่มี iii runtime
@@ -851,105 +859,48 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-คำสั่งนี้จะเริ่ม agentmemory ด้วย `iii-engine` ในเครื่อง ถ้า binary ที่ pin ไว้ติดตั้งอยู่แล้ว หรือใช้ Docker Compose เมื่อเลือกไว้ REST, stream, และ viewer จะ bind กับ `127.0.0.1` โดย default เส้นทางติดตั้ง binary แบบอัตโนมัติบน macOS/Linux ต้องมี `curl`, POSIX `sh`, และ `tar`
-
-ติดตั้ง `iii-engine` ด้วยตนเอง **agentmemory ปัจจุบัน pin `iii-engine` ไว้ที่ `v0.22.1`** ซึ่งเป็น release เดียวกับ dependency `iii-sdk` ของมัน worker พูดโปรโตคอล wire ของ engine เวอร์ชันนั้น และ 0.20.0 ได้จัดโครงสร้าง SDK surface ใหม่ ดังนั้นทั้งสองจึงต้องเคลื่อนไปด้วยกันใน release ของ agentmemory override ได้ด้วย `AGENTMEMORY_III_VERSION=<version>` ถ้าคุณรัน engine ของตัวเองและรู้ว่ามันตรงกัน
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** สลับ `aarch64-apple-darwin` เป็น `x86_64-apple-darwin`
-- **Linux x64:** สลับเป็น `x86_64-unknown-linux-gnu`
-- **Linux arm64:** สลับเป็น `aarch64-unknown-linux-gnu`
-- **Windows:** ดาวน์โหลด `iii-x86_64-pc-windows-msvc.zip` จาก [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) แล้วแตก `iii.exe` ไปที่ `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-ทุก archive มีไฟล์ `.sha256` คู่กันอยู่บนหน้า release; เมื่อคุณสลับ platform ให้ใช้ hash จากไฟล์นั้นในการตรวจสอบข้างบน (บน Windows: `Get-FileHash`) ตัวติดตั้งอัตโนมัติใน `npx @agentmemory/agentmemory` pin hash เหล่านี้ไว้ และจะปฏิเสธ archive ที่ไม่ตรงกัน
-
-หรือใช้ Docker (`docker-compose.yml` ที่ bundle มาจะดึง `iiidev/iii:0.22.1`) เอกสารฉบับเต็ม: [iii.dev/docs](https://iii.dev/docs)
+`npm start` เริ่ม iii Worker Compose เช่นเดียวกับ CLI: iii 0.24.6, `state@0.22.20` และ `http@0.22.7` CLI ดาวน์โหลด engine ไป `~/.agentmemory/bin` บน macOS/Linux โดยต้องมี `curl`, POSIX `sh` และ `tar` REST และ viewer bind กับ `127.0.0.1`; viewer ใช้ SSE ที่ `GET /agentmemory/viewer/events` `/agentmemory/status` รายงานเวอร์ชันใน `enginePinnedVersion`; สามารถ override pin ด้วย `AGENTMEMORY_III_VERSION`
 
 ### Windows
 
-agentmemory รันบน Windows 10/11 ได้ แต่แพ็กเกจ Node.js เพียงอย่างเดียวยังไม่พอ คุณต้องมี iii-engine v0.22.1 runtime ที่ pin ไว้รันเป็น background process ด้วย CLI จะไม่แตก ZIP ของ Windows ให้โดยอัตโนมัติ ดังนั้นผู้ใช้ Windows แบบ native ต้องติดตั้ง `iii.exe` ด้วยตนเอง ใช้ WSL2 หรือเลือก Docker Desktop
+agentmemory รองรับ Windows 10/11; WSL2 ใช้ขั้นตอน Linux และติดตั้ง engine อัตโนมัติได้ Windows แบบ native ต้องติดตั้งไบนารี iii-engine v0.24.6 ด้วยตนเอง ดาวน์โหลด archive จาก [หน้า release iii v0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), ตรวจ checksum และวาง `iii.exe` บน `PATH` (เช่น `%USERPROFILE%\.local\bin\iii.exe`) CLI ไม่แตก Windows ZIP ให้อัตโนมัติ
 
-การเชื่อมต่อ MCP แบบอัตโนมัติบน native Windows รองรับเฉพาะ `agentmemory connect copilot-cli` สำหรับ Claude Code, Codex, Cursor, และ agent native ของ Windows ตัวอื่น ๆ ทั้งหมด ให้ copy MCP block แบบ manual จาก [Other agents](#other-agents) ไปวางในไฟล์ config ของ agent นั้นบน Windows การรัน `connect` ใน WSL เหมาะสมก็เฉพาะเมื่อ agent ปลายทางถูกติดตั้งอยู่ใน WSL environment เดียวกันนั้นด้วย มันจะไม่แก้ config ของ agent บน Windows host
+การตั้งค่า MCP อัตโนมัติบน Windows รองรับเฉพาะ `agentmemory connect copilot-cli`; สำหรับ agent อื่นให้ใช้ MCP block ใน [Other agents](#other-agents) เรียก `connect` ใน WSL เมื่อ agent เป้าหมายติดตั้งใน WSL เดียวกันเท่านั้น
 
-**ตัวเลือก A: prebuilt Windows binary (แนะนำ)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**ตัวเลือก B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**ตัวเลือก C: standalone MCP only (ไม่มี engine)** ถ้าคุณต้องการแค่เครื่องมือ MCP สำหรับ agent ของคุณ และไม่ต้องการ REST API, viewer, หรือ cron job ก็ข้าม engine ไปได้เลย:
+**ใช้ MCP แบบ standalone โดยไม่เปิด engine** หากไม่ต้องใช้ REST API, viewer หรือ runtime service:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**การวินิจฉัยปัญหาบน Windows:** ถ้า `npx -y @agentmemory/agentmemory@latest` ล้มเหลว ให้รันซ้ำพร้อม `--verbose` เพื่อดู engine stderr ตัวจริง สาเหตุที่พบบ่อย:
-
-| อาการ | วิธีแก้ |
-|---|---|
-| `The engine process started but the REST API never responded.` | ตรวจสอบว่าพอร์ตที่ derive มาทั้ง 4 ว่างอยู่ ตรวจว่า `iii.exe` ที่ pin ไว้ยังรันอยู่ จากนั้นรันซ้ำพร้อม `--verbose` และตรวจ engine stderr ที่จับไว้ |
-| `Could not start iii-engine` | ไม่มีทั้ง `iii.exe` และ Docker ติดตั้งอยู่ ดูตัวเลือก A หรือ B ด้านบน |
-| Port conflict | `netstat -ano \| findstr :3111` เพื่อดูว่ามีอะไร bind พอร์ตนั้นอยู่ แล้ว kill มัน หรือใช้ `--port <N>` |
-| Docker fallback ถูกข้ามแม้ว่า Docker ติดตั้งอยู่ | ตรวจให้แน่ใจว่า Docker Desktop กำลังรันอยู่จริง (ไอคอนใน system tray) |
-
-> หมายเหตุ: iii **engine** เป็น binary ที่ build มาสำเร็จแล้ว ไม่ใช่ cargo crate ดังนั้นอย่า `cargo install` มัน (iii **SDK** เผยแพร่อยู่บน crates.io, npm, และ PyPI แต่ agentmemory ไม่ต้องใช้มัน) วิธีติดตั้ง engine ที่รองรับทั้งหมด pin ไว้ที่ v0.22.1: prebuilt binary ด้านบน, เส้นทาง auto-install ของ agentmemory บน macOS/Linux (ต้องมี `curl`, POSIX `sh`, และ `tar`), และ Docker image `iiidev/iii:0.22.1` การรัน `install.sh | sh` แบบ upstream เปล่า ๆ จะติดตั้ง engine เวอร์ชันล่าสุด ซึ่ง agentmemory ไม่รองรับ ใช้ `npx -y @agentmemory/agentmemory@latest`; บน macOS/Linux มันจะดึง engine ที่ pin ไว้มาไว้ที่ `~/.agentmemory/bin`
+**การวินิจฉัย:** หากเริ่มไม่สำเร็จ ให้รัน `--verbose` เพื่อดู engine stderr ตรวจว่า REST `3111`, viewer `3113` และ engine `49134` ว่าง ใช้ `--port <N>` หรือ `--instance <N>` เพื่อแยก runtime; CLI ไม่แทนที่ `iii` บน `PATH`
 
 ---
 
 <h2 id="deploy">Deploy</h2>
 
-เทมเพลตแบบ one-click สำหรับ managed host ทุกตัวมาพร้อม
-Dockerfile แบบ self-contained ที่ดึง `@agentmemory/agentmemory` จาก npm และ copy
-iii engine binary มาจาก Docker Hub image `iiidev/iii` อย่างเป็นทางการ
-ไม่ต้องมี agentmemory image ที่ build มาสำเร็จแล้วเลย Persistent storage
-mount อยู่ที่ `/data`; entrypoint ตอน boot ครั้งแรกจะเขียนทับ
-iii config ที่ bundle มากับ npm (ซึ่ง bind `127.0.0.1`) ด้วย
-config ที่ปรับมาสำหรับ deploy ซึ่ง bind `0.0.0.0` และใช้ `/data` path แบบ absolute, สร้าง
-HMAC secret แล้วจึงลด privilege จาก `root` ไปเป็น `node` ผ่าน
-`gosu` ก่อน exec agentmemory CLI
+Docker รองรับสำหรับ self-host จาก repository เท่านั้น ไม่ใช่โหมดเริ่ม CLI ใช้ [`../deploy/Dockerfile`](../deploy/Dockerfile) และ [`../deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml) พร้อม iii 0.24.6; เก็บ state, traces และ secret ใน persistent `/data` volume Compose ใช้ named volume `iii-data`; ตั้ง `AGENTMEMORY_DATA_DIR` เป็น host path เพื่อ bind mount ข้อมูล file store เดิมจาก 0.22.1 อ่านตรงจาก `/data/state_store.db` โดยไม่ต้อง migrate REST CORS อนุญาต origin ในเครื่องเป็นค่าเริ่มต้น; เพิ่ม origin ที่เชื่อถือได้ด้วย `REST_ALLOWED_ORIGINS` ดู [`../deploy/README.md`](../deploy/README.md)
+
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
 </p>
 
-ปุ่ม one-click deploy ของ Render ต้องการ `render.yaml` ที่ root ของ repository ซึ่งเราตั้งใจเก็บให้สะอาดอยู่เสมอ ใช้ Render Blueprint flow ตามที่เขียนไว้ใน [`deploy/render/`](.././deploy/render/README.md) เพื่อชี้ไปยัง blueprint ใน repo ด้วยตนเอง
+ปุ่ม one-click deploy ของ Render ต้องการ `render.yaml` ที่ root ของ repository ซึ่งเราตั้งใจเก็บให้สะอาดอยู่เสมอ ใช้ Render Blueprint flow ตามที่เขียนไว้ใน [`../deploy/render/`](.././deploy/render/README.md) เพื่อชี้ไปยัง blueprint ใน repo ด้วยตนเอง
 
 รายละเอียดการตั้งค่าแบบเต็ม (การ capture HMAC, viewer SSH tunnel, rotation, backup,
-cost floor) อยู่ที่ [`deploy/`](.././deploy/README.md):
+cost floor) อยู่ที่ [`../deploy/`](.././deploy/README.md):
 
-- [`deploy/fly`](.././deploy/fly/README.md): machine เดียว พร้อม
+- [`../deploy/fly`](.././deploy/fly/README.md): machine เดียว พร้อม
   `auto_stop_machines = "stop"`; ค่า idle ถูกที่สุด
-- [`deploy/railway`](.././deploy/railway/README.md): แผน Hobby แบบเหมาจ่าย,
+- [`../deploy/railway`](.././deploy/railway/README.md): แผน Hobby แบบเหมาจ่าย,
   volume อยู่ใน dashboard
-- [`deploy/render`](.././deploy/render/README.md): Blueprint flow,
+- [`../deploy/render`](.././deploy/render/README.md): Blueprint flow,
   disk snapshot อัตโนมัติบนแผนที่เสียเงิน
-- [`deploy/coolify`](.././deploy/coolify/README.md): self-host บน VPS ของ
+- [`../deploy/coolify`](.././deploy/coolify/README.md): self-host บน VPS ของ
   คุณเองผ่าน [Coolify](https://coolify.io/self-hosted); Docker
   Compose stack เดียวกัน คุณเป็นเจ้าของทั้ง host และข้อมูล
 
@@ -957,6 +908,14 @@ cost floor) อยู่ที่ [`deploy/`](.././deploy/README.md):
 loopback ภายใน container; README ของทุกเทมเพลตมีคำอธิบาย
 pattern การทำ SSH-tunnel เพื่อเข้าถึงมัน
 
+
+### การย้ายการติดตั้ง Docker เดิมที่จัดการโดย CLI
+
+CLI ปัจจุบันไม่เริ่มทำงานหรือจัดการการติดตั้ง Docker หากพบระเบียนวงจรชีวิต Docker เดิม จะเก็บข้อมูลเมตาไว้และแสดงคำสั่ง `docker stop ...` ที่แน่นอน ให้เรียกใช้คำสั่งนั้นก่อนย้าย อย่าเริ่ม runtime ใหม่ขณะที่คอนเทนเนอร์เดิมยังเมานต์โวลุ่มอยู่
+
+เก็บโวลุ่มถาวรเดิมไว้และสำรองข้อมูล (โดยปกติคือ `iii-data`) หรือคัดลอกเนื้อหาใน `/data` ไปยัง bind mount. worker state อ่านไฟล์ `/data/state_store.db` ที่มีอยู่โดยตรง โดยไม่ต้องส่งออกหรือแปลงข้อมูล runtime เดิมใช้ UID/GID `65532:65532`; image ใหม่จะย้าย ownership แบบ recursive ไปยัง `node:node` (`1000:1000`) เพียงครั้งเดียว และเขียนไฟล์ `/data/.ownership-migrated-node-v1` หลังย้ายแล้ว อย่าเมานต์โวลุ่มกลับเข้า runtime เดิม
+
+runtime เดิมยังจัดเก็บ bearer secret ที่สร้างขึ้นไว้ใน `/data/.hmac` ด้วย image ใหม่จะเก็บรักษา secret นี้ระหว่างการย้าย; `AGENTMEMORY_SECRET` ที่กำหนดไว้อย่างชัดเจนจะมีลำดับความสำคัญสูงกว่า เริ่มโปรเจ็กต์ Compose ใหม่จาก root ของ repository ด้วย `docker compose up --build -d` หากโวลุ่มเดิมมีชื่อที่ขึ้นต้นด้วยชื่อโปรเจ็กต์แทน `iii-data` ให้ใช้โวลุ่มนั้นซ้ำหรือเปลี่ยนชื่ออย่างชัดเจน อย่าเผลอสร้างโวลุ่มว่าง ตรวจสอบ `/agentmemory/livez` และยืนยันว่าค้นหาความทรงจำทั้งเก่าและใหม่ได้ หลีกเลี่ยง `docker compose down -v` เว้นแต่ตั้งใจลบข้อมูล
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="ทำไมต้อง agentmemory" height="32" /></picture></h2>
@@ -1269,9 +1228,8 @@ viewer server จะ bind กับ `127.0.0.1` โดย default และแ�
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
 
-viewer ที่ `:3113` แสดงสิ่งที่ agent ของคุณ **จำได้** [iii console](https://iii.dev/docs/console) แสดงสิ่งที่ agent ของคุณ **ทำ**: memory op ทุกตัวเป็น OpenTelemetry trace, KV entry ทุกตัวแก้ไขได้, function ทุกตัวเรียกใช้ได้, stream ทุกตัว tap ดูได้ สองหน้าต่างของหน่วยความจำเดียวกัน: หนึ่งในรูปแบบของ product หนึ่งในรูปแบบของ engine
+viewer ที่ `:3113` แสดงสิ่งที่ agent ของคุณ **จำได้** [iii console](https://iii.dev/docs/console) แสดงสิ่งที่ agent ของคุณ **ทำ**: memory op ทุกตัวเป็น OpenTelemetry trace, KV entry ทุกตัวแก้ไขได้, function ทุกตัวเรียกใช้ได้
 
-ดู `memory_smart_search` ยิงออกไปและดู BM25 scan → embedding lookup → RRF fusion → reranker เป็น waterfall แก้ไข consolidation timer ที่ค้างอยู่ใน KV browser Replay hook `PostToolUse` พร้อม payload ที่ปรับแล้ว Pin WebSocket stream และดู observation เข้ามาแบบสด ๆ
 
 agentmemory มอบสิ่งนี้ให้ฟรี เพราะทุก function call และ trigger ยิงผ่าน iii อยู่แล้ว; ไม่มีอะไรต้องสร้างเอง ไม่มีอะไรต้อง instrument เพิ่ม
 
@@ -1289,15 +1247,12 @@ agentmemory มอบสิ่งนี้ให้ฟรี เพราะท�
 agentmemory console
 ```
 
-คำสั่งนี้จะรัน `iii console` ของ engine ที่ pin ไว้ โดยชี้ไปยังพอร์ตที่ agentmemory resolve ไว้ (REST, stream, bridge) และ serve มันที่พอร์ตสูงกว่า viewer หนึ่งพอร์ต คือ `http://localhost:3114` โดย default `--console-port N` เลือกพอร์ตอื่นได้ `--port` และ `--instance` เลือก instance ของ agentmemory แบบเดียวกับที่ใช้กับ `stop`; flag อื่น ๆ ที่เหลือจะถูกส่งผ่านไปตรง ๆ เช่น `--enable-flow` สำหรับหน้า architecture-graph แบบทดลอง
+คำสั่งนี้จะรัน `iii console` ของ engine ที่ pin ไว้ โดยชี้ไปยังพอร์ตที่ agentmemory resolve ไว้ (REST, bridge) และ serve มันที่พอร์ตสูงกว่า viewer หนึ่งพอร์ต คือ `http://localhost:3114` โดย default `--console-port N` เลือกพอร์ตอื่นได้ `--port` และ `--instance` เลือก instance ของ agentmemory แบบเดียวกับที่ใช้กับ `stop`; flag อื่น ๆ ที่เหลือจะถูกส่งผ่านไปตรง ๆ เช่น `--enable-flow` สำหรับหน้า architecture-graph แบบทดลอง
 
 วิธีเดียวกันแบบทำมือ มีประโยชน์เมื่อ `agentmemory` ไม่อยู่ใน PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **สิ่งที่คุณทำได้จาก console:**
@@ -1308,12 +1263,10 @@ agentmemory console
 | **Functions** | เรียก function ของ agentmemory ตัวใดก็ได้ตรง ๆ ด้วย JSON payload; สะดวกสำหรับทดสอบ `memory.recall`, `memory.consolidate`, `graph.query` โดยไม่ต้องเชื่อมต่อ client |
 | **Triggers** | Replay trigger แบบ HTTP, cron, event, และ state: ยิง consolidation cron ด้วยมือ, retry HTTP route, ส่ง state change |
 | **States** | KV browser ที่ CRUD ได้เต็มรูปแบบบน session, memory slot, lifecycle timer, และ embeddings index; แก้ค่าได้ตรง ๆ |
-| **Streams** | monitor WebSocket แบบสดสำหรับ memory write, hook event, และการอัปเดต observation ขณะไหลผ่าน iii stream |
 | **Queues** | durable queue topic + การจัดการ dead-letter Replay หรือ drop embedding / compression job ที่ล้มเหลว |
 | **Traces** | มุมมอง OpenTelemetry waterfall / flame / service-breakdown filter ด้วย `trace_id` เพื่อดูว่า `memory.search` ครั้งเดียวสร้าง function, DB call, และ embedding request ใดบ้าง |
 | **Logs** | OTEL log แบบ structured ที่ filter และเชื่อมโยงกับ trace/span ID |
 | **Config** | การตั้งค่า runtime: ดูว่า worker, provider, และพอร์ตใดที่ engine ของคุณกำลังรันอยู่ |
-| **Flow** | (Optional, `--enable-flow`) กราฟ architecture แบบโต้ตอบของทุก worker, trigger, และ stream |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="มุมมอง trace waterfall ของ iii console แสดง duration ต่อ span" width="720" />
@@ -1323,9 +1276,8 @@ agentmemory console
 
 **Trace ถูกเปิดไว้อยู่แล้ว:**
 
-`iii-config.yaml` ship มาพร้อม worker `iii-observability` ที่เปิดใช้งานไว้ (`exporter: memory`, `sampling_ratio: 0.1`, metrics + logs) ไม่ต้องตั้งค่าเพิ่ม ทันทีที่ agentmemory เริ่มทำงาน memory operation ทุกตัวจะปล่อย structured log ที่ console อ่านได้ และหนึ่งในสิบของมัน (`sampling_ratio: 0.1`) จะปล่อย trace span ด้วย
+**Tracing และ logs:** ใช้ iii console เพื่อตรวจ telemetry ของ runtime สำหรับการตั้งค่า exporter และ sampling ให้ดู [เอกสาร observability ของ iii](https://iii.dev/docs)
 
-ถ้าต้องการ export ไปยัง Jaeger/Honeycomb/Grafana Tempo แทน ให้เปลี่ยน `exporter: memory` เป็น `exporter: otlp` และตั้งค่า collector endpoint ตามเอกสาร observability ของ iii
 
 > **ข้อควรระวัง:** console เองไม่มีการบังคับใช้ auth เลย ให้ bind มันไว้กับ `127.0.0.1` (ค่า default) และอย่าเปิดให้เข้าถึงจากสาธารณะเด็ดขาด
 
@@ -1333,14 +1285,16 @@ agentmemory console
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="ขับเคลื่อนด้วย iii" height="32" /></picture></h2>
 
-agentmemory คือ **instance ของ [iii](https://iii.dev) ที่กำลังรันอยู่แล้ว** primitive สามตัว (worker, function, trigger) ประกอบกันเป็น runtime; KV state, stream, และ OTEL trace มาจาก worker iii-state, iii-stream, และ iii-observability ที่ ship มากับ iii คุณไม่ได้ติดตั้ง Postgres, Redis, Express, pm2, หรือ Prometheus เลย เพราะ iii มาแทนที่สิ่งเหล่านั้นทั้งหมด
+agentmemory เป็น worker บน runtime [iii](https://iii.dev) Worker Compose จัดการ engine และเริ่ม agentmemory พร้อม registry worker `state` และ `http`; viewer feed ส่งผ่าน SSE บน REST
+
+
+
 
 นั่นหมายความว่าแค่อีกคำสั่งเดียวก็ขยาย agentmemory ให้มีความสามารถใหม่ทั้งชุดได้
 
 ### Extend agentmemory with more workers
 
-builtin ที่ agentmemory ต้องใช้มีอยู่ใน `iii-config.yaml` แล้วและ boot มาคู่กัน: `iii-state` (KV), `iii-queue` (durable retry สำหรับ event subscriber), `iii-pubsub`, `iii-cron`, `iii-stream`, และ `iii-observability` (OTEL trace, metric และ log บนทุก function) สิ่งอื่น ๆ จาก [iii worker registry](https://workers.iii.dev) เสียบเข้ากับ engine ตัวเดียวกันนี้ได้: copy `iii-config.yaml` ไปที่ `~/.agentmemory/iii-config.yaml` (CLI จะเลือกไฟล์นี้ก่อนไฟล์ที่ bundle มา และยัง render พอร์ตกับ data path ลงไปในไฟล์นี้เหมือนเดิม) เพิ่มรายการเข้าไป ติดตั้ง worker runtime ครั้งเดียวด้วย `~/.agentmemory/bin/iii update worker` แล้ว restart agentmemory
-
+runtime ใช้ registry worker `state` (KV) และ `http` ร่วมกับ agentmemory; worker อื่นจาก [iii registry](https://workers.iii.dev) เพิ่มใน Worker Compose project ได้
 ```yaml
 workers:
   # ...the bundled entries...
@@ -1355,23 +1309,17 @@ workers:
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | โค้ดที่มาจาก `memory_recall` รันอยู่ใน VM แบบใช้แล้วทิ้ง ไม่ใช่ shell ของคุณ |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | ตั้ง MCP server เพิ่มเติมข้าง ๆ ของ agentmemory ใช้ engine ตัวเดียวกัน |
 
-บน engine 0.22.x ให้คงชื่อที่มี prefix `iii-` ไว้สำหรับ builtin ด้านบน; รายการ `http`, `state`, `queue`, `pubsub` และ `cron` ที่ไม่มี prefix คือ worker จาก registry แบบ standalone ที่ agentmemory จะย้ายไปใช้ตอน migrate เป็น 0.23
 
 Registry แบบเต็ม: [workers.iii.dev](https://workers.iii.dev) worker ทุกตัวที่นั่นประกอบขึ้นผ่าน primitive ตัวเดียวกับที่ agentmemory ใช้ และ agentmemory ที่คุณมีอยู่แล้วก็เป็นหนึ่งในนั้นเอง
 
-### Engine config and bind address
+Worker Compose project ที่ CLI สร้าง pin registry package `state@0.22.20` และ `http@0.22.7`
+### CLI runtime และ bind address
 
-`agentmemory start` จะอ่าน engine config จากไฟล์แรกที่มีอยู่: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` ใน directory ปัจจุบัน, `~/.agentmemory/iii-config.yaml`, จากนั้นจึงเป็น `iii-config.yaml` ที่ bundle มา ทุกครั้งที่เริ่มทำงาน มันจะ render ไฟล์นั้น (data path, พอร์ต, state backend) ลงไปที่ `~/.agentmemory/data/iii-config.runtime.yaml` และเริ่ม engine ด้วยไฟล์ที่ render แล้ว ดังนั้นให้แก้ไฟล์ source ไม่ใช่ไฟล์ที่ render ออกมา ค่า `host:` ของไฟล์ source จะถูกเก็บไว้ตามที่เขียนไว้
+เมื่อรัน `agentmemory` จะเริ่ม iii Worker Compose ด้วย manifest แยกใน data directory ที่เลือก ใช้ iii 0.24.6, `state@0.22.20` และ `http@0.22.7` REST และ viewer ในเครื่อง bind กับ `127.0.0.1`; engine WebSocket เป็น traffic ภายใน Docker self-host จาก repository ใช้ [`../deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml); ดู [`../deploy/README.md`](../deploy/README.md)
 
-`iii-config.yaml` ที่ bundle มาตั้งใจ bind `127.0.0.1` และค่า default นั้นก็ใช้กับภายใน container ด้วย CLI ที่เริ่มในคอนเทนเนอร์จะ listen บน loopback ของคอนเทนเนอร์ ดังนั้นพอร์ตที่ publish ออกมาจะเข้าไม่ถึงอะไรเลย หากต้องการ serve CLI ที่อยู่ใน container ผ่านพอร์ตที่ publish ไว้ ให้ตั้งค่า `AGENTMEMORY_III_CONFIG` ไปที่ config ที่ bind `0.0.0.0` `iii-config.docker.yaml` ที่แพ็กเกจมาให้คือหนึ่งในนั้น: มัน bind `iii-http`, `iii-stream` และพอร์ตของ engine ไว้ที่ `0.0.0.0` และเก็บ state ไว้ใต้ `/data` ดังนั้นให้ mount volume ที่เขียนได้ไว้ที่นั่น ตั้งค่า `AGENTMEMORY_SECRET` ไว้เสมอ และ publish แค่พอร์ตที่คุณต้องการ บน `127.0.0.1` หรืออยู่หลัง proxy ที่คุณเชื่อถือได้
+### Storage backend: file (default) vs Redis
 
-`docker-compose.yml` ของ repo นี้ไม่ผ่าน config lookup ของ CLI: มัน mount `iii-config.docker.yaml` ไว้ที่ `/app/config.yaml` และ container `iii-engine` เริ่มด้วย `--config /app/config.yaml` เทมเพลต [deploy](../deploy/) แบบ one-click เขียน config `0.0.0.0` ของตัวเองไว้ใน entrypoint
-
-### Storage backend: file (default) vs redis
-
-`iii-state` และ `iii-stream` ใช้ KV store แบบไฟล์ของ iii-engine เป็น default: หนึ่งไฟล์ JSON ต่อ scope เก็บไว้ในหน่วยความจำของ engine process และเขียนลงดิสก์ตาม timer นั่นคือค่า default ที่เหมาะกับการติดตั้งแบบ single-user ในเครื่อง ส่วน daemon ที่ใช้ร่วมกันโดยมีผู้เขียนหลายคนพร้อมกันจะได้การเขียนต่อ key จริง ๆ จาก Redis แทน โดยแลกมาด้วย network round trip ต่อ operation (ทุก `state::*` call ก็ยัง serialize บน Redis connection เดียวอยู่ดี ดังนั้นนี่คือการแลก lock ของ file store กับ socket ไม่ใช่การแลกเพื่อ parallelism)
-
-ตั้งค่า `AGENTMEMORY_STATE_BACKEND=redis` (พร้อม `AGENTMEMORY_REDIS_URL`) เพื่อสลับทั้งสอง worker ไปใช้ adapter `redis` ในตัวของ iii-engine ซึ่งเก็บแต่ละ key เป็น Redis hash field (`HSET`) แทนการเขียนทั้ง scope ใหม่ทุกครั้งที่เขียน:
+worker `state` ใช้ KV store แบบไฟล์เป็นค่าเริ่มต้น เก็บในหน่วยความจำและเขียนลงดิสก์เป็นระยะ Redis ใช้ได้เมื่อมี writer หลายรายร่วม runtime แต่เพิ่ม network round trip และไม่ได้ทำให้ worker connection เดียวทำงานขนานกัน ตั้ง `AGENTMEMORY_STATE_BACKEND=redis` และ `AGENTMEMORY_REDIS_URL` เพื่อใช้ Redis adapter ของ worker `state` ซึ่งเก็บ key เป็น Redis hash field (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1379,31 +1327,12 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` ค่า default คือ `file`; ถ้าไม่ตั้งค่าไว้ พฤติกรรมปัจจุบันจะไม่เปลี่ยนแปลง และค่าที่ไม่รู้จัก (อะไรก็ตามที่ไม่ใช่ `file` หรือ `redis`) จะเป็น startup error ไม่ใช่การ fallback แบบเงียบ ๆ `/agentmemory/status` และหน้า Health ของ viewer (แถว State store) จะรายงานว่า backend ตัวใด active อยู่ และตอบสนองหรือไม่ แต่ไม่รายงาน URL
+`AGENTMEMORY_STATE_BACKEND` มีค่าเริ่มต้นเป็น `file`; ค่าอื่นนอกจาก `file` หรือ `redis` ทำให้ startup error `/agentmemory/status` และหน้า Health ของ viewer รายงาน backend และการตอบสนองโดยไม่แสดง URL รองรับเฉพาะ `redis://`; บริการ TLS-only `rediss://` ต้องใช้อุโมงค์เข้ารหัส การเชื่อมต่อ Redis ไม่เข้ารหัส จึงควรใช้เครือข่ายในเครื่อง/ส่วนตัวหรืออุโมงค์ หากรหัสผ่านมี single quote ให้ percent-encode เป็น `%27`
 
-**รองรับแค่ `redis://` ธรรมดาเท่านั้น** engine ที่ pin ไว้ (0.22.1) build Redis client ของมันมาโดยไม่รองรับ TLS ดังนั้น URL แบบ `rediss://` (Redis ที่ managed ส่วนใหญ่ เช่น Upstash, Redis Cloud, และ ElastiCache ที่เข้ารหัสระหว่างส่ง มักจะ default เป็น TLS-only) จะเชื่อมต่อไม่ได้ การเชื่อมต่อนี้ไม่เข้ารหัส ดังนั้น password ของ Redis และ memory ที่เก็บไว้ทุกตัวจะวิ่งผ่านสายแบบ clear text: ให้ชี้ไปที่ Redis ในเครื่องหรือ Redis บน private network ที่คุณเชื่อถือได้ สำหรับ Redis อื่น ๆ ให้รัน encrypted tunnel (stunnel, SSH, หรือ VPN) บน host ของ agentmemory เพื่อให้ hop แบบ `redis://` ธรรมดาอยู่บน host นั้นเอง และ upstream connection ของ tunnel ถูกเข้ารหัสและยืนยันตัวตนแล้ว ถ้า password ของ Redis มี single quote ให้ percent-encode มัน (`%27`); engine จะขยาย URL เข้าไปใน YAML config ของมันก่อน parse
-
-**Redis server หนึ่งตัวต่อหนึ่ง `--instance`** prefix ของ Redis key ของ engine (`state:<scope>`, `stream:<name>:<group>`) ถูกตรึงไว้ ดังนั้น agentmemory สอง instance (`--instance 1`, `--instance 2`, ...) ที่ชี้ไปยัง database เดียวกันจะเขียนทับข้อมูลกันเอง database index ที่แยกกัน (`redis://localhost:6379/1`) จะแยกข้อมูลที่เก็บไว้ แต่ engine จะส่ง live viewer event ผ่าน Redis pub/sub channel เดียว (`stream::events`) และ Redis pub/sub จะไม่สนใจ database index ดังนั้น viewer ของแต่ละ instance จะยังเห็น live event ของอีก instance อยู่ดี ให้แต่ละ instance มี Redis server (หรือพอร์ต) ของตัวเองเมื่อคุณรันมากกว่าหนึ่งตัว
-
-**สิ่งที่เหมือนเดิม และสิ่งที่ต่างไป** ทุกฟีเจอร์ของ agentmemory ทำงานได้บน Redis: session, observation, memory (remember, supersede, evolve, forget), การค้นหาและ index bucket, lesson, graph, audit log และ scope รายเดือนของมัน, export และ import, governance delete, สถานะ consolidation, viewer snapshot กับ live stream ของมัน, และ health monitor engine เก็บแต่ละ scope เป็น Redis hash ตัวเดียว (`HSET`/`HGET`/`HGETALL`) และยิง state trigger ตัวเดียวกับที่ file store ใช้ มีความแตกต่างของ engine 3 อย่างที่ agentmemory จัดการให้ภายใน:
-
-- Redis คืน record ของ scope มาแบบไม่มีลำดับที่แน่นอน agentmemory จะเรียงจากเก่าสุดก่อน (ตามเวลาที่สร้างใน record id แล้วตามด้วย timestamp) เพื่อให้ list, paging และ export chunk กลับมาในลำดับเดียวกับบน file store
-- engine ทำ partial update บน Redis ผ่าน Lua script ที่เปลี่ยน array ว่างเป็น object ว่าง agentmemory จะ apply update เหล่านั้นด้วยตัวเอง (อ่าน, เปลี่ยน, เขียนภายใต้ lock ต่อ key) บน Redis เพื่อให้ field เช่น `tags: []` ยังคงเป็น array
-- การตรวจสอบ audit log แบบเก่าจะอ่าน scope เก่าจาก Redis แทนการมองหาไฟล์ของ file store บนดิสก์
-
-มีความแตกต่างหนึ่งอย่างที่คุณต้องจัดการเอง: **หลัง Redis restart engine จะหยุดส่ง live event** ไปยัง viewer จนกว่า agentmemory จะ restart ข้อมูลยังถูก save และอ่านได้ตามปกติ health monitor จะส่ง test event ผ่าน Redis ทุก 30 วินาที เมื่อมันไม่กลับมา `/agentmemory/status` และหน้า Health ของ viewer จะแสดง "Live updates are not reaching the viewer" พร้อมวิธีแก้: restart agentmemory ถ้า Redis ล้ม status report จะแสดง "The state store is not answering" และวิธีตรวจสอบ (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`) การ list scope ขนาดใหญ่มากจะอ่าน hash ทั้งหมดใน `HGETALL` เดียว ซึ่งมีค่าใช้จ่ายเท่ากับที่ file store เก็บมันไว้ในหน่วยความจำ
-
-**ค่า Redis ที่แนะนำ** นโยบาย snapshot default `save 3600 1 300 100 60 10000` อาจทำให้เสีย write ไปหลายนาทีถ้า crash ซึ่งแย่กว่า window การ flush 5 วินาทีของ file store ตั้งค่า `appendonly yes` สำหรับสิ่งที่คุณไม่อยากเสีย ตั้งค่า `maxmemory-policy noeviction`; `allkeys-lru` หรือคล้ายกันจะลบ memory ทิ้งแบบเงียบ ๆ เมื่อ Redis ถึง memory limit
-
-การเริ่มแบบ native (ไม่ใช่ Docker) และเทมเพลต [deploy](../deploy/) แบบ one-click ทุกตัว (ซึ่งเขียนทับ `iii-config.yaml` ที่ bundle มาและเริ่มแบบ native) จะอ่าน `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` และ render มันลงไปใน `iii-config` ที่เริ่มทำงาน ตัว URL เองไม่ถูกเขียนลงไฟล์ที่ render แล้วเลย มีแต่การอ้างอิง `${AGENTMEMORY_REDIS_URL}` ที่ engine process จะขยายจาก environment ของมันเองตอน boot มีเพียงเส้นทาง Docker Compose ของ repo นี้เอง (`AGENTMEMORY_USE_DOCKER=1` หรือการ resume engine ที่เริ่มด้วยวิธีนั้นไปแล้ว) ที่ mount `iii-config.docker.yaml` แบบ read-only และไม่ render เลย `agentmemory start` จะเตือนเมื่อตรวจพบ combination นั้น สลับไฟล์นั้นด้วยมือ ตามรูปแบบ `name: redis` / `config: redis_url: ...` เดียวกันตามที่แสดงไว้ใน worker doc ของ [iii-state](https://workers.iii.dev/workers/iii-state) และ [iii-stream](https://workers.iii.dev/workers/iii-stream) แล้วชี้ `redis_url` ไปยัง Redis ที่เข้าถึงได้จาก container `docker-compose.yml` ส่ง `AGENTMEMORY_REDIS_URL` เข้าไปใน engine container ดังนั้น `redis_url: '${AGENTMEMORY_REDIS_URL}'` ใช้ได้ที่นั่นและเก็บ URL ไว้ไม่ให้อยู่ในไฟล์ที่ mount
-
-config ที่ render แล้วจะเก็บ URL ไม่ให้อยู่ใน `~/.agentmemory/data/iii-config.runtime.yaml` แต่ configuration worker ของ engine เองยังคง persist ค่าที่ *ขยายแล้ว* ไปที่ `~/.agentmemory/config/iii-state.yaml` และ `iii-stream.yaml` ทันทีที่มัน boot (การขยาย `${VAR}` ของ iii-engine เกิดขึ้นก่อนที่ worker นั้นจะเก็บ seed ของมัน และมันเก็บค่าที่ resolve แล้ว ไม่ใช่ตัวอ้างอิง) ให้ปฏิบัติกับ directory นั้นเหมือนมันเก็บ credential ไว้: `chmod 700 ~/.agentmemory` บน shared host ใด ๆ และเลือกใช้ Redis ACL user ที่ scope ไว้เท่าที่ agentmemory ต้องการ มากกว่า admin credential ของ database
-
-**การ migrate ไม่เกิดขึ้นอัตโนมัติ** การสลับ `AGENTMEMORY_STATE_BACKEND` จะเริ่มจาก store ที่ว่างเปล่าทั้งสองฝั่ง ไม่มีอะไร copy ข้อมูลเดิมจาก file ไป Redis หรือกลับกันให้เลย export จาก backend ที่คุณกำลังออกจาก แล้ว import เข้า backend ที่คุณกำลังจะไป ขั้นตอนนี้ทำงานเหมือนกันทั้งบน bash และ zsh (รวมถึง `bash -u`) array แบบ `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` ทำงานไม่เหมือนกัน: zsh จะเก็บ header เป็นคำเดียวที่ผิดรูป ในขณะที่ bash จะแยกมันเป็นสองคำ ดังนั้นทั้งสองคำขอจะได้ 401 ทุกครั้งที่ตั้งค่า `AGENTMEMORY_SECRET` ไว้:
+**การเปลี่ยน backend ไม่ได้ย้ายข้อมูลให้อัตโนมัติ** เมื่อเปลี่ยน `AGENTMEMORY_STATE_BACKEND` ให้เริ่ม backend ใหม่ด้วย store ว่าง ส่งออกจาก backend เดิมและนำเข้าไปยัง backend ใหม่ก่อนใช้งานต่อ:
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1431,20 +1360,18 @@ else
 fi
 ```
 
-`/agentmemory/export` ยังรับ `?maxSessions=` และ `?offset=` สำหรับแบ่ง corpus ขนาดใหญ่ออกเป็นหลายคำขอ; `strategy` ตอน import คือ `merge` (ปลอดภัยโดย default), `replace`, หรือ `skip`
-
 ### What iii replaces
 
 | Traditional stack | agentmemory ใช้ |
 |---|---|
 | Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + vector index ในหน่วยความจำ |
-| SSE / Socket.io | iii Streams (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | REST endpoint `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | iii engine worker supervision |
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**242 source file · ~55,000 LOC · 3,400+ การทดสอบ · 324 function · 67 KV scope** ทั้งหมดอยู่บน primitive สามตัว ไม่มี `agentmemory plugin install` ระบบ plugin ก็คือ iii เองนั่นแหละ
+**246 source files · ~56,000 LOC · 3,800+ tests · 322 functions · 65 KV scopes**, all on three primitives. No `agentmemory plugin install`. The plugin system is iii itself.
 
 ---
 
@@ -1561,41 +1488,19 @@ AGENTMEMORY_AGENT_SCOPE=isolated  # optional; default "shared"
 
 ### Ports
 
-agentmemory + iii-engine bind พอร์ต 4 ตัวโดย default ถ้า restart ล้มเหลวด้วย `port in use` ตารางนี้จะบอกว่าต้องหา process ตัวไหน
+runtime ในเครื่องมี listener สามรายการ WebSocket ของ iii engine ใช้ลงทะเบียน worker ภายใน ห้ามเปิดสู่เครือข่ายสาธารณะ
 
 | Port | Process | Purpose | Env override |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Internal streams worker (consumed by agentmemory + viewer) | `III_STREAM_PORT` (preferred) or legacy `III_STREAMS_PORT` |
-| `3113` | agentmemory | Real-time viewer (`http://localhost:3113`) | `III_VIEWER_PORT` or `AGENTMEMORY_VIEWER_URL` for the reported URL |
-| `49134` | iii-engine | WebSocket; workers register here, OTel telemetry flows over it | `III_ENGINE_PORT` or `III_ENGINE_URL` |
+| `3111` | registry `http` worker | REST API, MCP HTTP, health และ viewer SSE `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | Viewer UI และ proxy | `III_VIEWER_PORT` |
+| `49134` | iii engine | Worker WebSocket ภายใน | `III_ENGINE_PORT` หรือ `III_ENGINE_URL` |
 
-`--port <N>` จะเปลี่ยน anchor ของ REST และ derive stream เป็น `N+1`, viewer เป็น `N+2`, และ engine WebSocket เป็น `N+46023` เฉพาะตอนที่พอร์ตหรือ URL แบบ explicit ที่ตรงกันด้านบนยังไม่ได้ตั้งค่าไว้ มันไม่ได้สร้าง lifecycle namespace ที่แยกต่างหาก ใช้ `--instance 1` สำหรับ daemon ตัวที่สอง มัน anchor ที่ 3211 ค่า default คือ `3211/3212/3213/49234` และได้ data และ lifecycle directory ชื่อ `instance-1` แยกต่างหาก instance 1 ถึง 50 เป็นไปตาม pattern เดียวกัน
-
-engine ที่ pin ไว้เริ่มด้วย `--no-update-check` (ไม่ lookup update หรือ security-advisory กับ GitHub ตอน boot) และปิด anonymous usage telemetry ของ iii: agentmemory ตั้งค่า `III_TELEMETRY_ENABLED=false` ให้ engine ที่มันสั่งเริ่ม เว้นแต่คุณจะ export ตัวแปรนี้เอง และ compose file ที่ bundle มาก็ทำแบบเดียวกัน
-
-การล้าง stale process เมื่อพอร์ตยัง bind อยู่หลังการรันที่ crash:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` จะเก็บ worker และ engine pidfile ให้สะอาดตอน shutdown แบบ native graceful ในโหมด Docker มันจะ flush native worker, หยุด engine container ที่ validate แล้วตัวที่ถูก และรักษาทั้ง container กับ mount `/data` ไว้สำหรับการ restart แบบไม่เสียข้อมูล การเริ่มครั้งถัดไปจะ validate และ resume container ตัวเดียวกันนั้น การ uninstall ที่รองรับ Docker ต้องใช้ `agentmemory remove --keep-data`: มันลบไฟล์ที่ agentmemory จัดการอยู่ร่วมกัน ขณะรักษา container ที่ validate แล้ว, mount ข้อมูลของมัน, และ lifecycle record ที่จำเป็นสำหรับการกู้คืน การลบข้อมูล Docker แบบทำลายล้างตั้งใจปล่อยให้ operator ทำเองหลัง backup CLI ยังปฏิเสธที่จะ adopt หรือส่ง signal ไปยัง Docker หรือ VM port holder (Docker backend, vpnkit, colima) ให้เป็น native engine เว้นแต่จะส่ง `--force` การล้างด้วยมือข้างบนมีไว้สำหรับกรณี post-crash ที่ไม่มี pidfile เหลืออยู่เลยเท่านั้น
+`--port <N>` กำหนด REST; viewer ใช้ `N+2` และ engine ใช้ `N+46023` หากไม่ได้ override ใช้ `--instance N` เพื่อแยก runtime self-host เผย REST/viewer บน `127.0.0.1:3111` และ `127.0.0.1:3113`; เปลี่ยนด้วย `AGENTMEMORY_REST_PORT` และ `AGENTMEMORY_VIEWER_PORT` ตั้ง `REST_ALLOWED_ORIGINS` เพื่ออนุญาต browser origin เพิ่มเติม
 
 ### Config File
 
-วางการตั้งค่า runtime ของ agentmemory ไว้ใน `~/.agentmemory/.env` แทนการ export ตัวแปรในทุก shell ถ้า viewer แสดง setup hint เช่น `export ANTHROPIC_API_KEY=...` ให้ copy มันลงในไฟล์นี้เป็น `ANTHROPIC_API_KEY=...` โดยไม่มี prefix `export` แล้ว restart agentmemory
-
-Process environment variable ยังทำงานได้เหมือนเดิมและมีสิทธิ์เหนือค่าในไฟล์
-
-บน Windows ไฟล์เดียวกันอยู่ที่ `%USERPROFILE%\.agentmemory\.env`:
+เก็บ runtime config ใน `~/.agentmemory/.env` แทนการ export ตัวแปรในทุก shell ตั้ง `AGENTMEMORY_ENV_FILE` เพื่อเลือกไฟล์ env อื่น ตัวแปร environment ของ process มีลำดับเหนือค่าจากไฟล์ Worker Compose ที่ CLI สร้างจะส่ง Redis settings ไปยัง worker `state`
 
 ```powershell
 New-Item -ItemType Directory -Force $HOME\.agentmemory
@@ -1683,12 +1588,12 @@ GRAPH_EXTRACTION_ENABLED=true
 # VECTOR_WEIGHT=0.6
 # TOKEN_BUDGET=2000
 
-# Auth (generated into ~/.agentmemory/secret on first start when unset)
+# Auth (generated in the selected data directory on first start when unset)
 # AGENTMEMORY_SECRET=your-secret
 # VIEWER_ALLOWED_ORIGINS=https://memory.example.com
 # AGENTMEMORY_IMPORT_ROOT=~/projects
 
-# Ports (defaults: 3111 API, 3113 viewer)
+# Ports (defaults: 3111 REST API, 3113 viewer)
 # III_REST_PORT=3111
 
 # Engine usage telemetry (iii). Off unless you set it; true opts in.
@@ -1747,8 +1652,7 @@ GRAPH_EXTRACTION_ENABLED=true
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1787,12 +1691,13 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
+144 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
 
-**Authentication เปิดอยู่โดย default** เมื่อไม่ได้ตั้งค่า `AGENTMEMORY_SECRET` (ทั้งใน shell หรือใน `~/.agentmemory/.env`) server จะสร้าง secret แบบสุ่มตอนเริ่มครั้งแรก และเก็บไว้ที่ `~/.agentmemory/secret` ด้วย mode `0600` client ที่ bundle มาทุกตัวจะอ่านมันจากที่นั่นเมื่อคุยกับ server ในเครื่อง: CLI, viewer, hook ใต้ `plugin/scripts`, MCP server และ shim `@agentmemory/mcp`, config ที่เขียนโดย `agentmemory connect`, และ integration ของ OpenCode, Pi, OpenClaw, Hermes และ filesystem-watcher ที่ bundle มา secret ที่เก็บไว้จะถูกส่งไปที่ loopback URL เท่านั้น (`localhost`, `127.0.0.0/8`, `::1`) `AGENTMEMORY_SECRET` แบบ explicit จะมีสิทธิ์เหนือเสมอ และ client แบบ remote ยังต้องตั้งค่ามันไว้ Docker และ entrypoint ของ [deploy](../deploy/) สร้างและ export secret ของตัวเองไว้แล้ว เรียก API ด้วยมือ:
+**เปิดการยืนยันตัวตนไว้โดยปริยาย** หากไม่ได้ตั้ง `AGENTMEMORY_SECRET` (ใน shell หรือ `~/.agentmemory/.env`) CLI จะสร้าง secret แบบสุ่มเมื่อเริ่มครั้งแรก และเก็บเป็น `secret` mode `0600` ใน data directory ที่เลือก client ที่ bundle มาอ่าน secret จากที่นี่เมื่อเชื่อมต่อ server ในเครื่อง ส่ง secret ไปยัง loopback URL เท่านั้น (`localhost`, `127.0.0.0/8`, `::1`) client ระยะไกลต้องตั้ง secret ใน environment ของตน Docker self-host และ `deploy/` สร้าง secret ของตนเอง หากเรียก API ด้วยตนเอง:
+
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **กฎของคำขอสำหรับการเขียน** คำขอ `POST`, `PUT`, `PATCH` และ `DELETE` ไปยัง REST API และ viewer ต้องส่ง `Content-Type: application/json` (พารามิเตอร์ `charset` ใส่ได้) เมื่อมี body และ header `Origin` เมื่อมีอยู่ ต้องเป็น loopback origin ของพอร์ต REST หรือ viewer ที่ตั้งค่าไว้ หรืออยู่ใน `VIEWER_ALLOWED_ORIGINS` (คั่นด้วย comma เช่น `https://memory.example.com`) client ที่ไม่ส่ง header `Origin` เลย (CLI, hook, MCP, curl, server-to-server) ไม่ได้รับผลกระทบ viewer เองก็ยอมรับ origin ของตัวเองด้วย
@@ -1872,7 +1777,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**ข้อกำหนดเบื้องต้น:** Node.js >= 20 พร้อม npm/npx; [iii-engine](https://iii.dev/docs) v0.22.1 หรือ Docker การติดตั้ง engine แบบอัตโนมัติบน macOS/Linux ยังต้องมี `curl`, POSIX `sh`, และ `tar` ด้วย; native Windows ใช้ `iii.exe` ที่ pin ไว้แบบ manual, WSL2, หรือ Docker Desktop
+**ข้อกำหนดเบื้องต้น:** Node.js >= 20 พร้อม npm/npx; การติดตั้ง engine ผ่าน CLI บน macOS/Linux ต้องมี `curl`, POSIX `sh` และ `tar`; Windows แบบ native ต้องติดตั้ง `iii.exe` ที่ pin ไว้ด้วยตนเอง หรือใช้ WSL2
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="License" height="32" /></picture></h2>
 

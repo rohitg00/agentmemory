@@ -100,7 +100,7 @@
 
 - Node.js 20 বা তার নতুন সংস্করণ, npm এবং npx সহ (`node -v`, `npm -v`, এবং `npx -v`)।
 - macOS/Linux-এ iii-engine-এর স্বয়ংক্রিয় ইনস্টলেশনের জন্য `curl`, একটি POSIX `sh`, এবং `tar`-ও প্রয়োজন। `node:20-slim`-এর মতো মিনিমাল ইমেজে এগুলো থাকতে পারে না।
-- নেটিভ Windows-এ পিন করা iii-engine v0.22.1 `iii.exe` ম্যানুয়ালি ইনস্টল করতে হয়। WSL2 বা Docker Desktop অন্য সাপোর্টেড পথ।
+- নেটিভ Windows-এর জন্য পিন করা iii 0.24.6 ইঞ্জিনের `iii.exe` ম্যানুয়ালি ইনস্টল করতে হয়; WSL2 Linux পথ অনুসরণ করে এবং ইঞ্জিন স্বয়ংক্রিয়ভাবে ইনস্টল করতে পারে।
 
 ক্যানোনিকাল ফ্রেশ-ইনস্টল কমান্ড:
 
@@ -112,7 +112,7 @@ npx -y @agentmemory/agentmemory@latest
 
 কিলেস মোডে ভেক্টর এমবেডিং বন্ধ থাকে। `memory_recall` (`mem::search` পাথ) BM25 ব্যবহার করে, আর `memory_smart_search` গ্রাফ ডেটা থাকলে স্ট্রাকচারাল গ্রাফ ম্যাচও মিশিয়ে দিতে পারে। ফ্রি অন-ডিভাইস সিম্যান্টিক রিকল পেতে, `~/.agentmemory/.env`-এ `EMBEDDING_PROVIDER=local` সেট করে রিস্টার্ট করুন। প্রথম এমবেডিং রিকোয়েস্ট `Xenova/all-MiniLM-L6-v2` ডাউনলোড করে; সেই প্রাথমিক মডেল ডাউনলোডের পর ইনফারেন্স লোকালি চলে।
 
-লোকাল রানটাইম চারটি পোর্ট ব্যবহার করে: REST/MCP HTTP-র জন্য `3111`, iii স্ট্রিমের জন্য `3112`, ভিউয়ারের জন্য `3113`, এবং iii ওয়ার্কার WebSocket-এর জন্য `49134`। স্থায়ী iii স্টেট থাকে macOS-এ `~/Library/Application Support/agentmemory`-তে, Linux-এ `$XDG_DATA_HOME/agentmemory` বা `~/.local/share/agentmemory`-তে, এবং Windows-এ `%APPDATA%\agentmemory`-তে। এটি ওভাররাইড করতে `--data-dir <path>` বা `AGENTMEMORY_DATA_DIR` ব্যবহার করুন, এবং প্রতি রিস্টার্টে একই ভ্যালু পুনরায় ব্যবহার করুন। ব্যাকওয়ার্ড কম্প্যাটিবিলিটির জন্য, ইনস্ট্যান্স 0-এর জন্য প্ল্যাটফর্মের ডিফল্টের চেয়ে আগে থেকে থাকা `./data/state_store.db` বা `./data/iii-config.yaml`-কে প্রাধান্য দেওয়া হয়; একটি এক্সপ্লিসিট ফ্ল্যাগ বা এনভায়রনমেন্ট ওভাররাইড তখনও জেতে।
+লোকাল CLI রানটাইমে REST/MCP HTTP চলে `3111`-এ, ভিউয়ার `3113`-এ, আর iii worker-এর অভ্যন্তরীণ WebSocket `49134`-এ। ভিউয়ার আপডেট REST পোর্টের `GET /agentmemory/viewer/events`-এ SSE দিয়ে আসে। স্থায়ী স্টেটের ডিফল্ট অবস্থান macOS-এ `~/Library/Application Support/agentmemory`, Linux-এ `$XDG_DATA_HOME/agentmemory` বা `~/.local/share/agentmemory`, এবং Windows-এ `%APPDATA%\agentmemory`। `--data-dir <path>` বা `AGENTMEMORY_DATA_DIR` দিয়ে অবস্থান বদলান; instance 0 আগে থেকে থাকা `./data/state_store.db`-ও পুনরায় ব্যবহার করে। `--instance N` অতিরিক্ত রানটাইম আলাদা রাখে, আর `AGENTMEMORY_ENV_FILE` দিয়ে অন্য `.env` ফাইল বেছে নেওয়া যায়।
 
 তারপর প্রমাণ করুন রিকল কাজ করছে এবং আপনার এজেন্টকে তার স্কিল দিন:
 
@@ -132,7 +132,7 @@ npx skills add rohitg00/agentmemory -y   # 17 native skills so your agent knows 
 <details>
 <summary><strong>Windows</strong></summary>
 
-সবচেয়ে সহজ পথ WSL2। নেটিভ Windows ইঞ্জিন সেটআপের জন্য পিন করা v0.22.1 ZIP ডাউনলোড করে `iii.exe` ম্যানুয়ালি এক্সট্র্যাক্ট করতে হয়; CLI এটি অটো-এক্সট্র্যাক্ট করে না। Docker Desktop-ও সাপোর্টেড। স্টেপ-বাই-স্টেপের জন্য [Windows notes](#windows) দেখুন।
+সবচেয়ে সহজ পথ WSL2। নেটিভ Windows-এর জন্য পিন করা 0.24.6 ইঞ্জিনের ZIP ডাউনলোড করে `iii.exe` ম্যানুয়ালি এক্সট্র্যাক্ট করতে হয়। ধাপগুলোর জন্য [Windows notes](#windows) দেখুন।
 
 </details>
 
@@ -157,7 +157,7 @@ npx প্রতি ভার্সন অনুযায়ী ক্যাশ 
 <details>
 <summary><strong>নিজের iii engine ইতিমধ্যে চলছে</strong></summary>
 
-agentmemory iii-engine v0.22.1 পিন করে এবং অন্য ভার্সনের সাথে অ্যাটাচ করবে না (ওয়ার্কার অন্য ইঞ্জিনের প্রোটোকল বলতে পারে না)। অন্য ইঞ্জিনটি থামান, তারপর `npx -y @agentmemory/agentmemory@latest` চালান। এটি পিন করা v0.22.1 `~/.agentmemory/bin`-এ ইনস্টল ও রান করে, আপনার নিজের `iii` অক্ষতই রাখে।
+agentmemory iii 0.24.6 ইঞ্জিনে পিন করা এবং অন্য সংস্করণের সাথে সংযুক্ত হবে না (worker অন্য ইঞ্জিনের প্রোটোকল ব্যবহার করতে পারে না)। অন্য ইঞ্জিনটি থামিয়ে `npx -y @agentmemory/agentmemory@latest` চালান। এটি পিন করা 0.24.6 `~/.agentmemory/bin`-এ ইনস্টল ও চালায়, আপনার নিজের `iii` অপরিবর্তিত রেখে।
 
 </details>
 
@@ -319,14 +319,14 @@ agentmemory এমন যেকোনো এজেন্টের সাথে �
 npx -y @agentmemory/agentmemory@latest
 ```
 
-ডিফল্টভাবে, agentmemory আপনি যে রেপো থেকে এটি চালু করেছেন তার বাইরে iii-engine স্টেট জমা রাখে: macOS-এ `~/Library/Application Support/agentmemory`, Linux-এ `$XDG_DATA_HOME/agentmemory` বা `~/.local/share/agentmemory`, এবং Windows-এ `%APPDATA%\agentmemory`। একটি পুরোনো `./data/state_store.db` বা `./data/iii-config.yaml` থাকলে, প্ল্যাটফর্ম ডিফল্টের আগে ইনস্ট্যান্স 0-এর জন্য সেটিই পুনরায় ব্যবহার করা হয়। স্পষ্টভাবে একটি লোকেশন বেছে নিতে, `--data-dir <path>` পাস করুন বা `AGENTMEMORY_DATA_DIR` সেট করুন; এই দুটি এক্সপ্লিসিট সেটিংই লিগ্যাসি ডিসকভারির উপর প্রাধান্য পায়:
+ডিফল্টভাবে, agentmemory আপনি যে রেপো থেকে এটি চালু করেছেন তার বাইরে iii স্টেট রাখে: macOS-এ `~/Library/Application Support/agentmemory`, Linux-এ `$XDG_DATA_HOME/agentmemory` বা `~/.local/share/agentmemory`, এবং Windows-এ `%APPDATA%\agentmemory`। আগে থেকে থাকা `./data/state_store.db` instance 0-এর জন্য পুনরায় ব্যবহার করা হয়। নির্দিষ্ট অবস্থান বেছে নিতে `--data-dir <path>` দিন বা `AGENTMEMORY_DATA_DIR` সেট করুন:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-নেটিভ এবং Docker লঞ্চ একই রিজলভড হোস্ট ডিরেক্টরি ব্যবহার করে; Docker এটি `/data`-এ বাইন্ড-মাউন্ট করে। `--instance 1` রিজলভড ডিরেক্টরিতে `instance-1` যুক্ত করে এবং আলাদা ডিফল্ট পোর্ট চতুষ্টয় `3211/3212/3213/49234` বেছে নেয়।
+`--instance 1` সমাধান করা ডেটা ডিরেক্টরিতে `instance-1` যোগ করে এবং `3211` (REST), `3213` (viewer), ও `49234` (engine) পোর্ট বেছে নেয়।
 
 সর্বশেষ রিলিজ নোট: [CHANGELOG.md](../CHANGELOG.md)।
 
@@ -476,7 +476,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 </tr>
 <tr>
 <td><strong>এক্সটার্নাল ডিপেন্ডেন্সি</strong></td>
-<td>নেই (SQLite + iii-engine)</td>
+<td>নেই (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + ভেক্টর DB</td>
 <td>একাধিক</td>
@@ -556,7 +556,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="কুইক স্টার্ট" height="32" /></picture></h2>
 
-কম্প্যাটিবিলিটি: এই রিলিজ `iii-sdk` 0.22.1 টার্গেট করে এবং iii-engine v0.22.1 পিন করে।
+কম্প্যাটিবিলিটি: এই রিলিজ iii 0.24.6-কে টার্গেট করে; registry worker `state` 0.22.20 এবং `http` 0.22.7 ব্যবহার করে।
 
 ### 30 সেকেন্ডে ট্রাই করুন
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-স্টার্টআপ রেডি প্যানেল চারটি পোর্টের হিসাব রাখে: 3111-এ REST/MCP HTTP, 3112-এ iii স্ট্রিম, 3113-এ ভিউয়ার, এবং 49134-এ iii ওয়ার্কার WebSocket। `status` agentmemory-র স্বাস্থ্য এবং অ্যাক্টিভ প্রোভাইডার/এমবেডিং মোড নিশ্চিত করে। একটি প্রোব সেভ করুন এবং নিশ্চিত করুন এটি সার্চযোগ্য:
+রানটাইমে REST/MCP HTTP চলে 3111-এ, ভিউয়ার 3113-এ, এবং iii worker-এর অভ্যন্তরীণ WebSocket 49134-এ। ভিউয়ারের লাইভ ইভেন্ট REST-এ SSE দিয়ে আসে। `status` agentmemory-র স্বাস্থ্য, পিন করা ইঞ্জিন সংস্করণ (`enginePinnedVersion`), এবং সক্রিয় provider/embedding মোড নিশ্চিত করে। একটি প্রোব সেভ করুন এবং নিশ্চিত করুন এটি সার্চযোগ্য:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-সতর্কতা: এই কমান্ড বর্তমান workspace/runtime বদলে দেয়। এটি JavaScript ডিপেন্ডেন্সি আপডেট করতে পারে এবং পিন করা `iiidev/iii:0.22.1` Docker ইমেজ টানতে পারে। এটি কখনো আনপিনড বা নতুন iii engine ইনস্টল করে না।
+সতর্কতা: এই কমান্ড বর্তমান workspace/runtime বদলে দেয়। এটি JavaScript dependency আপডেট করতে পারে এবং পিন করা iii 0.24.6 engine বাইনারি ইনস্টল করতে পারে।
 
 ইমপ্লিমেন্টেশনের ডিটেইল থাকে `src/cli.ts`-এ (দেখুন `src/cli.ts:544-595` অঞ্চলের কাছে `runUpgrade`)।
 
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 একটি কাজ করা উদাহরণ: [`examples/python/`](../examples/python/) (কুইকস্টার্ট + অবজারভেশন/রিকল ফ্লো)। কোনো iii রানটাইম নেই এমন হোস্টের জন্য `:3111`-এ REST তখনও উপলব্ধ।
@@ -853,83 +861,33 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-পিন করা বাইনারি আগে থেকে ইনস্টল করা থাকলে এটি একটি লোকাল `iii-engine` দিয়ে agentmemory চালু করে, বা বেছে নিলে Docker Compose ব্যবহার করে। REST, স্ট্রিম, এবং ভিউয়ার ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড হয়। macOS/Linux-এ স্বয়ংক্রিয় বাইনারি পাথের জন্য `curl`, একটি POSIX `sh`, এবং `tar` প্রয়োজন।
-
-`iii-engine` ম্যানুয়ালি ইনস্টল করুন। **agentmemory বর্তমানে `iii-engine`-কে `v0.22.1`-এ পিন করে**, তার `iii-sdk` ডিপেন্ডেন্সির মতো একই রিলিজ; ওয়ার্কারটি সেই ইঞ্জিনের ওয়্যার প্রোটোকল বলে, এবং 0.20.0 SDK সারফেস পুনর্গঠিত করেছিল, তাই agentmemory-র রিলিজগুলোতে এই দুটো একসাথে চলে। আপনি নিজের ইঞ্জিন চালান এবং জানেন এটা মেলে এমন অবস্থায় `AGENTMEMORY_III_VERSION=<version>` দিয়ে ওভাররাইড করুন।
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** `aarch64-apple-darwin`-এর বদলে `x86_64-apple-darwin` দিন
-- **Linux x64:** `x86_64-unknown-linux-gnu` দিয়ে বদলান
-- **Linux arm64:** `aarch64-unknown-linux-gnu` দিয়ে বদলান
-- **Windows:** [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) থেকে `iii-x86_64-pc-windows-msvc.zip` ডাউনলোড করুন এবং `iii.exe` এক্সট্র্যাক্ট করুন `%USERPROFILE%\.agentmemory\bin\iii.exe`-এ
-
-প্রতিটি আর্কাইভের রিলিজ পেজে একটি ম্যাচিং `.sha256` ফাইল আছে; প্ল্যাটফর্ম বদলালে, উপরের চেকে সেই ফাইলের হ্যাশ ব্যবহার করুন (Windows-এ: `Get-FileHash`)। `npx @agentmemory/agentmemory`-র স্বয়ংক্রিয় ইনস্টলার এই হ্যাশগুলো পিন করে এবং না-মেলা আর্কাইভ রিজেক্ট করে।
-
-বা Docker ব্যবহার করুন (বান্ডলড `docker-compose.yml` `iiidev/iii:0.22.1` টানে)। সম্পূর্ণ ডকুমেন্টেশন: [iii.dev/docs](https://iii.dev/docs)।
+`npm start` CLI-র মতো একই iii Worker Compose runtime চালু করে: iii 0.24.6, registry worker `state@0.22.20`, এবং `http@0.22.7`। macOS/Linux-এ CLI পিন করা engine বাইনারি `~/.agentmemory/bin`-এ ডাউনলোড করে; স্বয়ংক্রিয় ইনস্টলের জন্য `curl`, একটি POSIX `sh`, এবং `tar` লাগে। লোকাল REST ও viewer listener `127.0.0.1`-এ bind করে। viewer আপডেট REST পোর্টের `GET /agentmemory/viewer/events`-এ SSE ব্যবহার করে। `/agentmemory/status` পিন করা engine সংস্করণ `enginePinnedVersion` হিসেবে জানায়; সমর্থিত ডিফল্ট হলো iii 0.24.6। পিন ইচ্ছাকৃতভাবে বদলাতে `AGENTMEMORY_III_VERSION` ব্যবহার করা যায়।
 
 ### Windows
 
-agentmemory Windows 10/11-এ চলে, কিন্তু কেবল Node.js প্যাকেজটাই পর্যাপ্ত নয়; ব্যাকগ্রাউন্ড প্রসেস হিসেবে পিন করা iii-engine v0.22.1 রানটাইমও প্রয়োজন। CLI Windows ZIP অটো-এক্সট্র্যাক্ট করে না, তাই নেটিভ Windows ইউজারদের `iii.exe` ম্যানুয়ালি ইনস্টল করতে হবে, WSL2 ব্যবহার করতে হবে, বা Docker Desktop বেছে নিতে হবে।
+agentmemory Windows 10/11-এ চলে। WSL2 Linux-এর পথ অনুসরণ করে এবং পিন করা engine স্বয়ংক্রিয়ভাবে ইনস্টল করতে পারে। নেটিভ Windows-এর জন্য পিন করা iii-engine 0.24.6 বাইনারি ম্যানুয়ালি ইনস্টল করতে হবে; [iii 0.24.6 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6) থেকে মিলে যাওয়া archive ডাউনলোড করে checksum যাচাই করুন, তারপর `iii.exe` `PATH`-এ রাখুন (যেমন `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP স্বয়ংক্রিয়ভাবে extract করে না।
 
-নেটিভ Windows অটোমেটেড MCP ওয়্যারিং কেবল `agentmemory connect copilot-cli` সাপোর্ট করে। Claude Code, Codex, Cursor, এবং অন্য প্রতিটি নেটিভ Windows এজেন্টের জন্য, [Other agents](#other-agents)-এর ম্যানুয়াল MCP ব্লকটি সেই এজেন্টের Windows কনফিগে কপি করুন। WSL-এ `connect` চালানো তখনই যথাযথ যখন টার্গেট এজেন্টও সেই একই WSL এনভায়রনমেন্টে ইনস্টল করা আছে; এটি Windows-হোস্টেড কোনো এজেন্টের কনফিগ এডিট করে না।
+নেটিভ Windows-এ স্বয়ংক্রিয় MCP wiring কেবল `agentmemory connect copilot-cli` সাপোর্ট করে। অন্য নেটিভ Windows এজেন্টের জন্য [Other agents](#other-agents) থেকে ম্যানুয়াল MCP block ব্যবহার করুন। লক্ষ্য এজেন্টটি একই WSL পরিবেশে ইনস্টল থাকলেই কেবল WSL-এর ভিতরে `connect` চালান।
 
-**অপশন A: প্রিবিল্ট Windows বাইনারি (সুপারিশকৃত)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**অপশন B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**অপশন C: কেবল স্ট্যান্ডঅ্যালোন MCP (কোনো ইঞ্জিন ছাড়াই)।** আপনার এজেন্টের জন্য কেবল MCP টুল প্রয়োজন হলে এবং REST API, ভিউয়ার, বা cron job প্রয়োজন না হলে, ইঞ্জিনটি সম্পূর্ণ স্কিপ করুন:
+**শুধু Standalone MCP (engine ছাড়া)।** আপনার কেবল MCP tools দরকার এবং REST API, viewer, বা runtime service দরকার না হলে:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Windows-এর জন্য ডায়াগনস্টিক:** `npx -y @agentmemory/agentmemory@latest` ফেইল করলে, আসল ইঞ্জিন stderr দেখতে `--verbose` দিয়ে আবার চালান। সাধারণ ফেইলিউর মোড:
-
-| লক্ষণ | সমাধান |
-|---|---|
-| `The engine process started but the REST API never responded.` | চারটি ডিরাইভড পোর্ট ফ্রি আছে কিনা নিশ্চিত করুন, পিন করা `iii.exe` সচল ছিল কিনা যাচাই করুন, তারপর `--verbose` দিয়ে আবার চালান এবং ক্যাপচার করা ইঞ্জিন stderr দেখুন |
-| `Could not start iii-engine` | `iii.exe` বা Docker কোনোটাই ইনস্টল করা নেই। উপরের অপশন A বা B দেখুন |
-| পোর্ট কনফ্লিক্ট | কী বাইন্ড করা আছে দেখতে `netstat -ano \| findstr :3111`, তারপর সেটা কিল করুন বা `--port <N>` ব্যবহার করুন |
-| Docker ইনস্টল থাকলেও Docker ফলব্যাক স্কিপ হচ্ছে | Docker Desktop সত্যিই চলছে কিনা নিশ্চিত করুন (সিস্টেম ট্রে আইকন) |
-
-> নোট: iii **ইঞ্জিন** একটি প্রিবিল্ট বাইনারি, cargo crate নয়, তাই এটি `cargo install` করার চেষ্টা করবেন না। (iii **SDK**গুলো crates.io, npm, এবং PyPI-এ প্রকাশিত, কিন্তু agentmemory-র এগুলো লাগে না।) সাপোর্টেড ইঞ্জিন ইনস্টল পদ্ধতিগুলো সবই v0.22.1-এ পিন করা: উপরের প্রিবিল্ট বাইনারি, agentmemory-র macOS/Linux অটো-ইনস্টল পাথ (`curl`, POSIX `sh`, এবং `tar` প্রয়োজন), এবং Docker ইমেজ `iiidev/iii:0.22.1`। একটি খালি আপস্ট্রিম `install.sh | sh` লেটেস্ট ইঞ্জিন ইনস্টল করে, যা agentmemory সাপোর্ট করে না। `npx -y @agentmemory/agentmemory@latest` ব্যবহার করুন; macOS/Linux-এ এটি পিন করা ইঞ্জিন `~/.agentmemory/bin`-এ নিয়ে আসে।
+**Diagnostics:** startup ব্যর্থ হলে engine stderr দেখতে `--verbose` দিয়ে আবার চালান। REST port `3111`, viewer port `3113`, এবং engine port `49134` ফাঁকা আছে কিনা দেখুন; অন্য isolated runtime-এর জন্য `--port <N>` বা `--instance <N>` ব্যবহার করুন। CLI নিজের পিন করা engine বাইনারি ব্যবহার করে, `PATH`-এর iii executable প্রতিস্থাপন করে না।
 
 ---
 
 <h2 id="deploy">Deploy</h2>
 
-ম্যানেজড হোস্টের জন্য ওয়ান-ক্লিক টেমপ্লেট। প্রতিটিতে একটি সেলফ-কনটেইনড Dockerfile থাকে যা npm থেকে `@agentmemory/agentmemory` টানে এবং অফিশিয়াল `iiidev/iii` Docker Hub ইমেজ থেকে iii engine বাইনারিটি কপি করে; কোনো প্রি-বিল্ট agentmemory ইমেজ লাগে না। স্থায়ী স্টোরেজ `/data`-এ মাউন্ট হয়; ফার্স্ট-বুট এন্ট্রিপয়েন্ট npm-বান্ডলড iii কনফিগ (যা `127.0.0.1`-এ বাইন্ড করে) একটি ডিপ্লয়-টিউনড কনফিগ দিয়ে ওভাররাইট করে যা `0.0.0.0`-এ বাইন্ড করে এবং অ্যাবসোলিউট `/data` পাথ ব্যবহার করে, HMAC সিক্রেট জেনারেট করে, তারপর agentmemory CLI exec করার আগে `gosu`-র মাধ্যমে `root` থেকে `node`-এ প্রিভিলেজ নামিয়ে আনে।
+Docker এই repository থেকে self-hosting-এর জন্য সমর্থিত, CLI startup mode হিসেবে নয়। ওয়ান-ক্লিক template-গুলো [`deploy/Dockerfile`](../deploy/Dockerfile) এবং [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml) ব্যবহার করে, একই iii 0.24.6 runtime worker pin করে, এবং state, trace ও তৈরি secret স্থায়ী `/data` volume-এ রাখে। Docker Compose ডিফল্টভাবে বিদ্যমান `iii-data` named volume ব্যবহার করে; bind mount চাইলে `AGENTMEMORY_DATA_DIR`-কে host path-এ সেট করুন। 0.22.1 ফরম্যাটের বিদ্যমান data `/data/state_store.db` থেকে সরাসরি পড়া হয়, কোনো migration বা conversion ছাড়াই। REST CORS ডিফল্টভাবে local REST ও viewer origin অনুমোদন করে; trusted browser origin-এর জন্য নির্দিষ্ট origin-এর comma-separated তালিকা দিতে `REST_ALLOWED_ORIGINS` সেট করুন। setup ও security বিস্তারিত জানতে [`deploy/README.md`](../deploy/README.md) দেখুন।
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
 </p>
 
 Render-এর ওয়ান-ক্লিক ডিপ্লয় বাটনের জন্য রিপোজিটরি রুটে `render.yaml` লাগে, যা আমরা ইচ্ছাকৃতভাবে পরিষ্কার রাখি। ম্যানুয়ালি রেপোর ভেতরের ব্লুপ্রিন্টের দিকে পয়েন্ট করতে [`deploy/render/`](.././deploy/render/README.md)-এ ডকুমেন্টেড Render Blueprint ফ্লো ব্যবহার করুন।
@@ -946,10 +904,16 @@ Render-এর ওয়ান-ক্লিক ডিপ্লয় বাটন
 - [`deploy/coolify`](.././deploy/coolify/README.md): [Coolify](https://coolify.io/self-hosted)-এর
   মাধ্যমে নিজের VPS-এ সেলফ-হোস্টেড; একই Docker Compose স্ট্যাক, হোস্ট ও ডেটা আপনার নিজের।
 
-কেবল `3111` পোর্টই পাবলিশড। কন্টেইনারের ভেতরে `3113`-এর ভিউয়ার
-লুপব্যাকেই বাঁধা থাকে; প্রতিটি টেমপ্লেটের README সেটায় পৌঁছানোর
-SSH-টানেল প্যাটার্ন ডকুমেন্ট করে।
+REST `3111`-এ; viewer `3113`-এ এবং platform template আলাদা সুরক্ষিত route সমর্থন করলেই publish হয়। Live update REST endpoint `/agentmemory/viewer/events`-এ bearer-authenticated SSE ব্যবহার করে। Engine WebSocket `49134`-এ অভ্যন্তরীণ এবং publish করা যাবে না। Platform অনুযায়ী exposure ও allowlist নির্দেশিকার জন্য [`deploy/README.md`](../deploy/README.md) দেখুন।
 
+
+### CLI-পরিচালিত পুরোনো Docker ইনস্টলেশন স্থানান্তর
+
+বর্তমান CLI Docker deployment চালু বা পরিচালনা করে না। এটি যদি Docker-এর কোনো পুরোনো lifecycle record খুঁজে পায়, তবে metadata অক্ষত রাখে এবং সঠিক `docker stop ...` কমান্ডটি দেখায়; স্থানান্তরের আগে কমান্ডটি চালান। পুরোনো container-এ volume মাউন্ট করা থাকা অবস্থায় নতুন runtime চালু করবেন না।
+
+পুরোনো persistent volume (সাধারণত `iii-data`) রেখে দিন এবং এর backup নিন, অথবা `/data`-এর বিষয়বস্তু bind mount-এ কপি করুন। state worker বিদ্যমান `/data/state_store.db` সরাসরি পড়ে—কোনো export বা conversion ছাড়াই। পুরোনো runtime `65532:65532` UID/GID ব্যবহার করত; নতুন image একবারের জন্য recursive ownership migration করে `node:node` (`1000:1000`) মালিকানা সেট করে এবং `/data/.ownership-migrated-node-v1` লেখে। এই migration-এর পর volume-টি পুরোনো runtime-এ আবার মাউন্ট করবেন না।
+
+পুরোনো runtime `/data/.hmac`-এ তৈরি করা bearer secret-টিও রাখত। নতুন image migration-এর সময় সেই secret অক্ষত রাখে; স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` অগ্রাধিকার পায়। repository root থেকে `docker compose up --build -d` চালিয়ে নতুন Compose project শুরু করুন। পুরোনো volume-এর নামে `iii-data`-এর বদলে project prefix থাকলে, সেটি স্পষ্টভাবে পুনর্ব্যবহার বা rename করুন—ভুল করে খালি volume তৈরি করবেন না। `/agentmemory/livez` পরীক্ষা করুন এবং পুরোনো ও নতুন—দুই ধরনের memory-ই খুঁজে পাওয়া যায় কি না নিশ্চিত করুন। ইচ্ছাকৃতভাবে data মুছতে না চাইলে `docker compose down -v` এড়িয়ে চলুন।
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="কেন agentmemory" height="32" /></picture></h2>
@@ -1243,7 +1207,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="রিয়েল-টাইম ভিউয়ার" height="32" /></picture></h2>
 
-`3113` পোর্টে অটো-স্টার্ট হয়। ভিউয়ার কানেক্ট হওয়ার সময় একটি স্ন্যাপশট লোড করে (`GET /agentmemory/viewer/snapshot`) এবং তারপর লাইভ স্ট্রিম ইভেন্ট অ্যাপ্লাই করে: নতুন মেমরি, লেসন, অবজারভেশন, অডিট এন্ট্রি, গ্রাফ পরিবর্তন, এবং হেলথ আপডেট পোলিং বা পেজ রিলোড ছাড়াই দেখা যায়। অন্য একমাত্র রিকোয়েস্টগুলো হলো আপনি যে অ্যাকশনে ক্লিক করেন, "load more" পেজ, এবং সার্চ। স্ট্রিম বিচ্ছিন্ন হলে, ভিউয়ার দেখায় তার সংখ্যাগুলো কত পুরোনো, ব্যাকঅফ দিয়ে রিকানেক্ট করে এবং একটি স্ন্যাপশট থেকে রিসিঙ্ক করে।
+`3113` পোর্টে viewer স্বয়ংক্রিয়ভাবে চালু হয়। সংযোগের সময় এটি একটি snapshot লোড করে (`GET /agentmemory/viewer/snapshot`), তারপর REST worker-এর `/agentmemory/viewer/events`-এ SSE দিয়ে live event প্রয়োগ করে: নতুন memory, lesson, observation, audit entry, graph পরিবর্তন ও health update polling বা পেজ reload ছাড়াই দেখা যায়। বাকি request কেবল আপনার ক্লিক করা action, "load more" পেজ ও search। stream বিচ্ছিন্ন হলে viewer ডেটার বয়স দেখায়, backoff দিয়ে পুনরায় সংযোগ করে এবং একটি snapshot থেকে resync করে।
 
 - **চারটি গ্রুপে 12টি ট্যাব**, লাইভ কাউন্ট, ডিপ লিংক (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), কিবোর্ড শর্টকাট এবং মোবাইল মেনু সহ।
 - **Memories:** সার্ভার-সাইড সার্চ, প্রজেক্ট, এজেন্ট ও টাইপ অনুযায়ী ফিল্টার, ভার্সন চেইন ও একটি word diff সহ একটি ডিটেল প্যানেল, প্রোভেন্যান্স লিংক, id-র জন্য কপি বাটন, MCP কল এবং একটি curl কমান্ড, এডিট (একটি নতুন ভার্সন), কনফার্মেশন সহ forget, বাল্ক forget, এবং JSON এক্সপোর্ট।
@@ -1256,15 +1220,15 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 open http://localhost:3113
 ```
 
-ভিউয়ার সার্ভার ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে এবং REST API-তে রিকোয়েস্ট ফরওয়ার্ড করার সময় সার্ভার সিক্রেট যুক্ত করে, তাই এর কোনো সেটআপ লাগে না। REST-সার্ভড `/agentmemory/viewer` এন্ডপয়েন্ট নরমাল bearer-token নিয়ম মেনে চলে এবং টোকেন ছাড়া ব্রাউজারগুলোকে ভিউয়ার পোর্টে রিডাইরেক্ট করে। CSP হেডার প্রতি-রেসপন্স script nonce ব্যবহার করে এবং ইনলাইন হ্যান্ডলার অ্যাট্রিবিউট বন্ধ রাখে (`script-src-attr 'none'`)।
+ভিউয়ার সার্ভার ডিফল্টভাবে `127.0.0.1`-এ bind করে এবং REST API-তে request forward করার সময় server secret যুক্ত করে। non-loopback bind-এ HTML shell public থাকে, কিন্তু প্রতিটি proxy request-এর জন্য bearer token লাগে; viewer সেটি চায় এবং session storage-এ রাখে। viewer প্রকাশ করার আগে নির্দিষ্ট host/origin allowlist এবং TLS কনফিগার করুন। REST-এ পরিবেশিত `/agentmemory/viewer` endpoint স্বাভাবিক bearer-token নিয়ম মেনে চলে এবং token ছাড়া browser-কে viewer port-এ redirect করে। CSP header প্রতি response-এ script nonce ব্যবহার করে এবং inline handler attribute বন্ধ করে (`script-src-attr 'none'`)।
 
 ---
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
 
-`:3113`-এর ভিউয়ার দেখায় আপনার এজেন্ট কী **মনে রেখেছে**। [iii console](https://iii.dev/docs/console) দেখায় আপনার এজেন্ট কী **করেছে**: প্রতিটি মেমরি অপারেশন একটি OpenTelemetry ট্রেস হিসেবে, প্রতিটি KV এন্ট্রি এডিটযোগ্য, প্রতিটি ফাংশন ইনভোকেবল, প্রতিটি স্ট্রিম ট্যাপযোগ্য। একই মেমরির উপর দুটি জানালা: একটি প্রোডাক্ট-শেপড, একটি ইঞ্জিন-শেপড।
+`:3113`-এর viewer দেখায় আপনার agent কী **মনে রেখেছে**। [iii console](https://iii.dev/docs/console) দেখায় agent কী **করেছে**: প্রতিটি memory operation OpenTelemetry trace হিসেবে, প্রতিটি KV entry সম্পাদনযোগ্য, প্রতিটি function আহ্বানযোগ্য, অন্যটি engine-কেন্দ্রিক।
 
-একটি `memory_smart_search` ফায়ার হতে দেখুন এবং BM25 স্ক্যান → embedding lookup → RRF ফিউশন → reranker-কে একটি waterfall হিসেবে দেখুন। KV ব্রাউজারে একটি আটকে থাকা কনসোলিডেশন টাইমার এডিট করুন। একটি টুইকড পেলোড দিয়ে `PostToolUse` হুক রিপ্লে করুন। WebSocket স্ট্রিম পিন করুন এবং অবজারভেশনগুলো লাইভ ল্যান্ড করতে দেখুন।
+একটি `memory_smart_search` চালু হতে দেখুন এবং BM25 scan → embedding lookup → RRF fusion → reranker-কে waterfall হিসেবে অনুসরণ করুন। KV browser-এ আটকে থাকা consolidation timer সম্পাদনা করুন। পরিবর্তিত payload দিয়ে `PostToolUse` hook replay করুন। iii engine channel ও activity পরীক্ষা করুন।
 
 agentmemory এটা ফ্রিতে দেয় কারণ প্রতিটি ফাংশন কল ও ট্রিগার iii-এর মধ্য দিয়ে ফায়ার হয়; কিছুই কাস্টম নয়, ইন্সট্রুমেন্ট করার কিছু নেই।
 
@@ -1274,7 +1238,7 @@ agentmemory এটা ফ্রিতে দেয় কারণ প্রত�
   <em>Workers পেজ: প্রতিটি কানেক্টেড ওয়ার্কার, agentmemory নিজেও সহ, PID, ফাংশন কাউন্ট, রানটাইম, এবং last-seen সহ।</em>
 </p>
 
-**আগে থেকেই ইনস্টলড।** কনসোলটি পিন করা `iii` engine (0.22+)-এর সাথে আসে; আলাদা করে ইনস্টল করার কিছু নেই। প্রথম লঞ্চ ইঞ্জিনের পাশে কনসোল বাইনারি ডাউনলোড করে।
+**আগে থেকেই ইনস্টলড।** কনসোলটি পিন করা `iii` 0.24.6 engine-সহ আসে; আলাদা কিছু ইনস্টল করতে হয় না। প্রথম launch-এ engine-এর পাশে console বাইনারি ডাউনলোড হয়।
 
 **agentmemory-র সাথে লঞ্চ করুন:**
 
@@ -1282,15 +1246,12 @@ agentmemory এটা ফ্রিতে দেয় কারণ প্রত�
 agentmemory console
 ```
 
-এটি পিন করা ইঞ্জিনের `iii console`-কে agentmemory রিজলভ করা পোর্টগুলোর (REST, streams, bridge) বিরুদ্ধে চালায় এবং ভিউয়ারের একটা পোর্ট উপরে, ডিফল্টভাবে `http://localhost:3114`-এ সার্ভ করে। `--console-port N` অন্য একটা পোর্ট বেছে নেয়; `--port` এবং `--instance` `stop`-এর জন্য যেভাবে করে ঠিক সেভাবেই agentmemory ইনস্ট্যান্স বেছে নেয়; অন্য যেকোনো ফ্ল্যাগ পাস-থ্রু হয়, যেমন এক্সপেরিমেন্টাল আর্কিটেকচার-গ্রাফ পেজের জন্য `--enable-flow`।
+এটি পিন করা engine-এর `iii console`-কে agentmemory নির্ধারিত পোর্টে (REST ও worker WebSocket) চালায় এবং viewer-এর এক পোর্ট ওপরে, ডিফল্ট `http://localhost:3114`-এ serve করে। `--console-port N` অন্য একটা পোর্ট বেছে নেয়; `--port` এবং `--instance` `stop`-এর জন্য যেভাবে করে ঠিক সেভাবেই agentmemory ইনস্ট্যান্স বেছে নেয়; অন্য যেকোনো ফ্ল্যাগ পাস-থ্রু হয়, যেমন এক্সপেরিমেন্টাল আর্কিটেকচার-গ্রাফ পেজের জন্য `--enable-flow`।
 
 একই কাজ হাতে করে, `agentmemory` PATH-এ না থাকলে কাজে লাগে:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **কনসোল থেকে আপনি যা করতে পারেন:**
@@ -1301,12 +1262,9 @@ agentmemory console
 | **Functions** | একটি JSON পেলোড দিয়ে agentmemory-র যেকোনো ফাংশন সরাসরি ইনভোক করুন; কোনো ক্লায়েন্ট ওয়্যার না করে `memory.recall`, `memory.consolidate`, `graph.query` টেস্ট করার জন্য সুবিধাজনক। |
 | **Triggers** | HTTP, cron, event, এবং state ট্রিগার রিপ্লে করুন: ম্যানুয়ালি কনসোলিডেশন cron ফায়ার করুন, একটি HTTP রুট রিট্রাই করুন, একটি state পরিবর্তন emit করুন। |
 | **States** | সেশন, মেমরি স্লট, লাইফসাইকেল টাইমার, এবং এমবেডিং ইনডেক্সের উপর পূর্ণ CRUD সহ KV ব্রাউজার; ভ্যালু ইন-প্লেস এডিট করুন। |
-| **Streams** | মেমরি রাইট, হুক ইভেন্ট, এবং অবজারভেশন আপডেটের জন্য লাইভ WebSocket মনিটর, এগুলো iii স্ট্রিমের মধ্য দিয়ে প্রবাহিত হওয়ার সাথে সাথে। |
-| **Queues** | ডিউরেবল কিউ টপিক + ডেড-লেটার ম্যানেজমেন্ট। ফেইলড এমবেডিং / কম্প্রেশন জব রিপ্লে বা ড্রপ করুন। |
 | **Traces** | OpenTelemetry waterfall / flame / service-breakdown ভিউ। একটি একক `memory.search` ঠিক কোন ফাংশন, DB কল, এবং এমবেডিং রিকোয়েস্ট তৈরি করেছে তা দেখতে `trace_id` দিয়ে ফিল্টার করুন। |
 | **Logs** | trace/span ID-র সাথে ফিল্টার ও কো-রিলেটেড স্ট্রাকচারড OTEL লগ। |
 | **Config** | রানটাইম কনফিগারেশন: আপনার ইঞ্জিন ঠিক কোন ওয়ার্কার, প্রোভাইডার, এবং পোর্ট নিয়ে চলছে তা দেখুন। |
-| **Flow** | (অপশনাল, `--enable-flow`) প্রতিটি ওয়ার্কার, ট্রিগার, এবং স্ট্রিমের ইন্টারঅ্যাক্টিভ আর্কিটেকচার গ্রাফ। |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="প্রতি-স্প্যান ডিউরেশন দেখানো iii console trace waterfall ভিউ" width="720" />
@@ -1314,11 +1272,7 @@ agentmemory console
   <em>Traces: প্রতিটি মেমরি অপারেশনের জন্য waterfall / flame / service breakdown।</em>
 </p>
 
-**Trace আগে থেকেই চালু:**
-
-`iii-config.yaml` `iii-observability` ওয়ার্কার চালু অবস্থায় আসে (`exporter: memory`, `sampling_ratio: 0.1`, মেট্রিক্স + লগ)। কোনো অতিরিক্ত কনফিগ লাগে না; agentmemory শুরু হওয়ার সাথে সাথে, প্রতিটি মেমরি অপারেশন একটি স্ট্রাকচারড লগ emit করে যা কনসোল পড়তে পারে, এবং তার মধ্যে দশটায় একটা (`sampling_ratio: 0.1`) একটি trace span-ও emit করে।
-
-এর বদলে Jaeger/Honeycomb/Grafana Tempo-তে এক্সপোর্ট করতে চাইলে, `exporter: memory`-কে `exporter: otlp`-এ বদলান এবং iii-র observability ডক্স অনুযায়ী কালেক্টর এন্ডপয়েন্ট সেট করুন।
+**Trace ও log:** iii console runtime telemetry পরীক্ষা করতে পারে। exporter ও sampling কনফিগারেশনের জন্য [iii observability documentation](https://iii.dev/docs) অনুসরণ করুন।
 
 > **খেয়াল রাখুন:** কনসোলের উপর নিজেই কোনো auth এনফোর্সড নেই; এটিকে `127.0.0.1`-এই (ডিফল্ট) বাঁধা রাখুন এবং কখনো পাবলিকলি এক্সপোজ করবেন না।
 
@@ -1326,13 +1280,13 @@ agentmemory console
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="iii দ্বারা চালিত" height="32" /></picture></h2>
 
-agentmemory **ইতিমধ্যেই একটি চলমান [iii](https://iii.dev) ইনস্ট্যান্স**। তিনটি প্রিমিটিভ (worker, function, trigger) রানটাইম কম্পোজ করে; KV state, স্ট্রিম, এবং OTEL ট্রেস আসে iii-র সাথে আসা iii-state, iii-stream, এবং iii-observability ওয়ার্কার থেকে। আপনি Postgres, Redis, Express, pm2, বা Prometheus ইনস্টল করেননি, কারণ iii এগুলো প্রতিস্থাপন করে।
+agentmemory হলো [iii](https://iii.dev) runtime-এর একটি worker। Worker Compose engine পরিচালনা করে এবং registry-র `state` ও `http` worker-সহ agentmemory চালু করে। Viewer feed REST endpoint-এ SSE দিয়ে পরিবেশিত হয়।
 
-তার মানে একটা মাত্র কমান্ড agentmemory-কে একটা সম্পূর্ণ নতুন সক্ষমতা দিয়ে বাড়িয়ে দেয়।
+তার মানে আরেকটি কমান্ড agentmemory-তে সম্পূর্ণ নতুন সক্ষমতা যোগ করে।
 
-### আরও ওয়ার্কার দিয়ে agentmemory বাড়ান
+### আরও worker দিয়ে agentmemory বাড়ান
 
-agentmemory-র প্রয়োজনীয় বিল্টিনগুলো আগে থেকেই `iii-config.yaml`-এ আছে এবং তার সাথেই বুট হয়: `iii-state` (KV), `iii-queue` (ইভেন্ট সাবস্ক্রাইবারদের জন্য ডিউরেবল রিট্রাই), `iii-pubsub`, `iii-cron`, `iii-stream`, এবং `iii-observability` (প্রতিটি ফাংশনে OTEL ট্রেস, মেট্রিক্স, এবং লগ)। [iii worker registry](https://workers.iii.dev)-র বাকি যেকোনো কিছু একই ইঞ্জিনে প্লাগ ইন করে: `iii-config.yaml` কে `~/.agentmemory/iii-config.yaml`-এ কপি করুন (CLI বান্ডলড ফাইলের চেয়ে এই ফাইলটিকে প্রাধান্য দেয় এবং তারপরেও পোর্ট ও ডেটা পাথ এতে রেন্ডার করে), এন্ট্রিটি যুক্ত করুন, `~/.agentmemory/bin/iii update worker` দিয়ে একবার ওয়ার্কার রানটাইম ইনস্টল করুন, এবং agentmemory রিস্টার্ট করুন।
+runtime registry-র `state` (KV) ও `http` worker-কে agentmemory-র সঙ্গে compose করে। [iii registry](https://workers.iii.dev)-র অন্য worker-ও একটি Worker Compose project-এ যোগ করা যায়।
 
 ```yaml
 workers:
@@ -1342,29 +1296,25 @@ workers:
   - name: mcp               # extra MCP servers next to agentmemory's, same engine
 ```
 
-| ওয়ার্কার | agentmemory-র উপরে যা পাবেন |
+| Worker | agentmemory-র সঙ্গে অতিরিক্ত সুবিধা |
 |---|---|
-| [`database`](https://workers.iii.dev/workers/database) | KV ডিফল্ট ছাড়িয়ে গেলে SQL-ব্যাকড state অ্যাডাপ্টার |
-| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall` থেকে আসা কোড আপনার শেলে না চলে একটি থ্রোঅ্যাওয়ে VM-এর ভেতরে চলে |
-| [`mcp`](https://workers.iii.dev/workers/mcp) | agentmemory-র পাশে অতিরিক্ত MCP সার্ভার দাঁড় করান, একই ইঞ্জিন শেয়ার করে |
+| [`database`](https://workers.iii.dev/workers/database) | in-memory KV ডিফল্ট ছাড়িয়ে গেলে SQL-ভিত্তিক state adapter |
+| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall` থেকে আসা code আপনার shell-এ নয়, অস্থায়ী VM-এর ভিতরে চলে |
+| [`mcp`](https://workers.iii.dev/workers/mcp) | একই engine ভাগ করে agentmemory-র পাশে অতিরিক্ত MCP server চালু করুন |
 
-0.22.x ইঞ্জিনে উপরের বিল্টিনগুলোর জন্য `iii-` প্রিফিক্সড নামগুলো রাখুন; প্রিফিক্স ছাড়া `http`, `state`, `queue`, `pubsub`, এবং `cron` এন্ট্রিগুলো সেই স্ট্যান্ডঅ্যালোন রেজিস্ট্রি ওয়ার্কার যেগুলোতে agentmemory 0.23 মাইগ্রেশনের সাথে চলে যাবে।
+runtime CLI-নির্মিত Worker Compose project-এ registry package `state@0.22.20` ও `http@0.22.7` pin করে।
 
-সম্পূর্ণ রেজিস্ট্রি: [workers.iii.dev](https://workers.iii.dev)। সেখানে প্রতিটি ওয়ার্কার agentmemory যে প্রিমিটিভ ব্যবহার করে তার মধ্য দিয়েই কম্পোজ হয়, এবং আপনার কাছে থাকা agentmemory নিজেই তাদের একটি।
+পূর্ণ registry: [workers.iii.dev](https://workers.iii.dev)। সেখানে প্রতিটি worker agentmemory-র ব্যবহৃত একই primitive দিয়ে compose হয়, আর আপনার agentmemory-ও সেগুলোর একটি।
 
-### ইঞ্জিন কনফিগ এবং বাইন্ড অ্যাড্রেস
+### CLI runtime ও bind address
 
-`agentmemory start` প্রথম যে ফাইলটি পায় সেখান থেকে ইঞ্জিন কনফিগ পড়ে: `AGENTMEMORY_III_CONFIG`, বর্তমান ডিরেক্টরির `./iii-config.yaml`, `~/.agentmemory/iii-config.yaml`, তারপর বান্ডলড `iii-config.yaml`। প্রতিবার স্টার্টে এটি সেই ফাইলটি (ডেটা পাথ, পোর্ট, state ব্যাকএন্ড) `~/.agentmemory/data/iii-config.runtime.yaml`-এ রেন্ডার করে এবং রেন্ডার করা কপি দিয়ে ইঞ্জিন লঞ্চ করে, তাই সোর্স ফাইলটি এডিট করুন, রেন্ডার করা ফাইলটি না। সোর্স ফাইলের `host:` ভ্যালুগুলো যেমন লেখা তেমনই রাখা হয়।
+`agentmemory` চালালে (অথবা package-টি subcommand ছাড়া চালালে) নির্বাচিত data directory-র অধীনে বিচ্ছিন্ন manifest-সহ iii Worker Compose শুরু হয়। এটি iii 0.24.6, `state@0.22.20`, ও `http@0.22.7` ব্যবহার করে। CLI-র local REST ও viewer listener `127.0.0.1`-এ bind করে; engine WebSocket অভ্যন্তরীণ runtime traffic। repository-ভিত্তিক Docker deployment আলাদা [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml) ব্যবহার করে; বিস্তারিত [`deploy/README.md`](../deploy/README.md)-এ।
 
-বান্ডলড `iii-config.yaml` ইচ্ছাকৃতভাবে `127.0.0.1`-এ বাইন্ড করে, এবং এই ডিফল্ট কনটেইনারের ভেতরেও প্রযোজ্য। কনটেইনারে শুরু হওয়া একটি CLI কনটেইনারের লুপব্যাকে শোনে, তাই পাবলিশড পোর্ট কিছুতেই পৌঁছায় না। পাবলিশড পোর্টের মাধ্যমে একটি কনটেইনারাইজড CLI সার্ভ করতে, `AGENTMEMORY_III_CONFIG`-কে এমন একটি কনফিগে সেট করুন যা `0.0.0.0`-এ বাইন্ড করে। প্যাকেজড `iii-config.docker.yaml` তেমন একটি: এটি `iii-http`, `iii-stream`, এবং ইঞ্জিন পোর্টকে `0.0.0.0`-এ বাইন্ড করে এবং state `/data`-এর নিচে জমা রাখে, তাই সেখানে একটি রাইটেবল ভলিউম মাউন্ট করুন। `AGENTMEMORY_SECRET` সেট রাখুন, এবং কেবল প্রয়োজনীয় পোর্টগুলোই পাবলিশ করুন, `127.0.0.1`-এ বা আপনার বিশ্বস্ত কোনো প্রক্সির পেছনে।
+### Storage backend: file (ডিফল্ট) বনাম Redis
 
-এই রেপোর `docker-compose.yml` CLI-র কনফিগ লুকআপ দিয়ে যায় না: এটি `iii-config.docker.yaml`-কে `/app/config.yaml`-এ মাউন্ট করে, এবং `iii-engine` কন্টেইনার `--config /app/config.yaml` দিয়ে শুরু হয়। ওয়ান-ক্লিক [deploy templates](../deploy/) তাদের এন্ট্রিপয়েন্টে নিজেদের `0.0.0.0` কনফিগ লেখে।
+`state` worker ডিফল্টভাবে file-based KV store ব্যবহার করে; এটি memory-তে রাখা হয় এবং নির্দিষ্ট বিরতিতে disk-এ লেখা হয়। একাধিক writer একই runtime ভাগ করলে Redis ব্যবহার করা যায়; এতে network round trip যোগ হয়, কিন্তু এক worker connection parallel হয় না।
 
-### স্টোরেজ ব্যাকএন্ড: file (ডিফল্ট) বনাম redis
-
-`iii-state` এবং `iii-stream` ডিফল্টভাবে iii-engine-র বান্ডলড ফাইল-বেসড KV স্টোর ব্যবহার করে: প্রতি স্কোপে একটি JSON ফাইল, ইঞ্জিন প্রসেসের মেমরিতে রাখা এবং একটা টাইমারে ডিস্কে পুনরায় লেখা হয়। একক-ইউজার লোকাল ইনস্টলের জন্য এটাই সঠিক ডিফল্ট; একাধিক কনকারেন্ট রাইটার সহ একটি শেয়ার্ড ডেমন এর পরিবর্তে Redis থেকে আসল প্রতি-কী রাইট পায়, প্রতি অপারেশনে একটি নেটওয়ার্ক রাউন্ড ট্রিপের খরচে (প্রতিটি `state::*` কল তখনও একটি Redis কানেকশনে সিরিয়ালাইজ হয়, তাই এটি ফাইল স্টোরের লক-কে একটি সকেটের বিনিময়ে বদলায়, প্যারালালিজমের বিনিময়ে নয়)।
-
-দুটো ওয়ার্কারকেই iii-engine-র বিল্ট-ইন `redis` অ্যাডাপ্টারে বদলাতে `AGENTMEMORY_STATE_BACKEND=redis` (প্লাস `AGENTMEMORY_REDIS_URL`) সেট করুন, যা প্রতিটি রাইটে পুরো স্কোপ পুনরায় লেখার বদলে প্রতিটি কী-কে একটি Redis হ্যাশ ফিল্ড (`HSET`) হিসেবে জমা রাখে:
+`AGENTMEMORY_STATE_BACKEND=redis` এবং `AGENTMEMORY_REDIS_URL` সেট করে state worker-এর Redis adapter ব্যবহার করুন; এটি প্রতিটি key-কে Redis hash field (`HSET`) হিসেবে রাখে:
 
 ```env
 # ~/.agentmemory/.env
@@ -1372,31 +1322,30 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND`-র ডিফল্ট `file`; এটি আনসেট রাখলে আজকের আচরণ অপরিবর্তিত থাকে, এবং একটি অচেনা ভ্যালু (`file` বা `redis` ছাড়া অন্য কিছু) নিঃশব্দ ফলব্যাকের বদলে একটি স্টার্টআপ এরর। `/agentmemory/status` এবং ভিউয়ারের Health পেজ (State store সারি) রিপোর্ট করে কোন ব্যাকএন্ড অ্যাকটিভ এবং এটি উত্তর দেয় কিনা, কখনো URL দেখায় না।
+`AGENTMEMORY_STATE_BACKEND`-এর ডিফল্ট `file`; এটি unset রাখলে বর্তমান আচরণ অপরিবর্তিত থাকে। অচেনা মান (`file` বা `redis` ছাড়া অন্য কিছু) নীরব fallback না করে startup error দেয়। `/agentmemory/status` এবং viewer-এর Health page (State store row) সক্রিয় backend ও সেটি সাড়া দিচ্ছে কিনা জানায়, URL কখনো দেখায় না।
 
-**শুধু প্লেইন `redis://`।** পিন করা ইঞ্জিন (0.22.1) তার Redis ক্লায়েন্ট TLS সাপোর্ট ছাড়াই বিল্ড করে, তাই একটি `rediss://` URL (বেশিরভাগ ম্যানেজড Redis অফারিং, যেমন Upstash, Redis Cloud, এবং in-transit এনক্রিপশন সহ ElastiCache, ডিফল্টভাবে TLS-only) কানেক্ট করতে ফেইল করে। কানেকশনটি আনএনক্রিপ্টেড, তাই Redis পাসওয়ার্ড এবং প্রতিটি স্টোর করা মেমরি তারের উপর প্লেইন টেক্সটে যায়: একটি লোকাল Redis বা আপনার বিশ্বস্ত কোনো প্রাইভেট নেটওয়ার্কের Redis-এ পয়েন্ট করুন। অন্য কোনো Redis-এর জন্য, agentmemory হোস্টে একটি এনক্রিপ্টেড টানেল (stunnel, SSH, বা VPN) চালান, যাতে প্লেইন `redis://` হপটি সেই হোস্টেই থাকে এবং টানেলের আপস্ট্রিম কানেকশন এনক্রিপ্টেড ও অথেন্টিকেটেড থাকে। একটি Redis পাসওয়ার্ডে সিঙ্গল কোট থাকলে, এটা percent-encode করুন (`%27`); ইঞ্জিন পার্স করার আগে URL-কে তার YAML কনফিগে এক্সপ্যান্ড করে।
+**শুধু plain `redis://`।** পিন করা state worker শুধু plain `redis://` সমর্থন করে; TLS-only `rediss://` service-এর জন্য encrypted tunnel দরকার। Redis connection এনক্রিপ্ট করা নয়, তাই local/private network বা tunnel ব্যবহার করুন। Redis password-এ single quote থাকলে percent-encode করুন (`%27`); parse করার আগে engine URL-টি তার YAML config-এ expand করে।
 
-**প্রতি `--instance`-এ একটি Redis সার্ভার।** ইঞ্জিনের Redis কী প্রিফিক্স (`state:<scope>`, `stream:<name>:<group>`) ফিক্সড, তাই একই ডেটাবেসের দিকে পয়েন্ট করা দুটি agentmemory ইনস্ট্যান্স (`--instance 1`, `--instance 2`, ...) একে অপরের ডেটা ওভাররাইট করে ফেলে। একটি আলাদা ডেটাবেস ইনডেক্স (`redis://localhost:6379/1`) স্টোর করা ডেটা আলাদা রাখে, কিন্তু ইঞ্জিন লাইভ ভিউয়ার ইভেন্ট একটি Redis pub/sub চ্যানেলের (`stream::events`) উপর রিলে করে, এবং Redis pub/sub ডেটাবেস ইনডেক্স উপেক্ষা করে, তাই প্রতিটি ইনস্ট্যান্সের ভিউয়ার তখনও অন্যটির লাইভ ইভেন্ট দেখাবে। একাধিক ইনস্ট্যান্স চালালে প্রতিটিকে তার নিজের Redis সার্ভার (বা পোর্ট) দিন।
+**প্রতি instance-এ আলাদা Redis database।** state আলাদা রাখতে প্রতিটি concurrent instance-কে আলাদা database বা Redis server দিন।
 
-**কী একই থাকে, এবং কী বদলায়।** agentmemory-র প্রতিটি ফিচার Redis-এ কাজ করে: সেশন, অবজারভেশন, মেমরি (remember, supersede, evolve, forget), সার্চ ও ইনডেক্স বাকেট, লেসন, গ্রাফ, অডিট লগ ও তার মাসিক স্কোপ, এক্সপোর্ট ও ইমপোর্ট, গভর্নেন্স ডিলিট, কনসোলিডেশন স্ট্যাটাস, ভিউয়ার স্ন্যাপশট ও তার লাইভ স্ট্রিম, এবং হেলথ মনিটর। ইঞ্জিন প্রতিটি স্কোপকে একটি Redis হ্যাশ (`HSET`/`HGET`/`HGETALL`) হিসেবে জমা রাখে এবং ফাইল স্টোরের মতোই একই state ট্রিগার ফায়ার করে। ইঞ্জিনের তিনটি পার্থক্য agentmemory-র ভেতরে হ্যান্ডল করা হয়:
+**যা একই থাকে, যা বদলায়।** agentmemory-র সব feature Redis-এ কাজ করে: session, observation, memory (remember, supersede, evolve, forget), search ও index bucket, lesson, graph, audit log ও তার monthly scope, export/import, governance delete, consolidation status, viewer snapshot ও live SSE feed, এবং health monitor। state worker প্রতিটি scope Redis hash (`HSET`/`HGET`/`HGETALL`) হিসেবে রাখে এবং file store-এর মতো একই state trigger চালায়। storage-এর তিনটি পার্থক্য agentmemory-র ভিতরে সামলানো হয়:
 
-- Redis কোনো স্কোপের রেকর্ড কোনো ফিক্সড অর্ডারে রিটার্ন করে না। agentmemory সেগুলোকে পুরোনো থেকে সাজায় (রেকর্ড id-তে থাকা তৈরির সময় দিয়ে, তারপর তার টাইমস্ট্যাম্প দিয়ে) যাতে লিস্ট, পেজিং, এবং এক্সপোর্ট চাঙ্ক ফাইল স্টোরের মতো একই অর্ডারে ফিরে আসে।
-- ইঞ্জিন Redis-এ একটি Lua স্ক্রিপ্টে পার্শিয়াল আপডেট প্রয়োগ করে যা খালি অ্যারেকে খালি অবজেক্টে বদলে দেয়। agentmemory নিজেই Redis-এ সেই আপডেটগুলো প্রয়োগ করে (read, change, write, একটি প্রতি-কী লকের অধীনে), তাই `tags: []`-এর মতো ফিল্ড অ্যারে-ই থাকে।
-- লেগ্যাসি অডিট লগ চেক ডিস্কে ফাইল স্টোরের ফাইল খোঁজার বদলে Redis থেকে পুরোনো স্কোপ পড়ে।
+- Redis কোনো scope-এর record নির্দিষ্ট ক্রমে ফেরত দেয় না। agentmemory পুরোনো থেকে সাজায় (record ID-তে থাকা creation time, তারপর timestamp), ফলে list, page এবং export chunk file store-এর মতো একই ক্রমে আসে।
+- engine Redis-এ partial update Lua script দিয়ে প্রয়োগ করে, যা খালি array-কে খালি object বানায়। agentmemory Redis-এ নিজেই update প্রয়োগ করে (প্রতি-key lock-এর অধীনে read, change, write), যাতে `tags: []`-এর মতো field array-ই থাকে।
+- legacy audit-log check file store-এর file disk-এ খোঁজার বদলে Redis থেকে পুরোনো scope পড়ে।
 
-একটা পার্থক্যে আপনার হাত লাগাতে হবে: **Redis রিস্টার্ট হওয়ার পর, agentmemory রিস্টার্ট না হওয়া পর্যন্ত ইঞ্জিন ভিউয়ারে লাইভ ইভেন্ট রিলে করা বন্ধ করে দেয়**। ডেটা তখনও স্বাভাবিকভাবে সেভ ও পড়া হয়। হেলথ মনিটর প্রতি 30 সেকেন্ডে Redis-এর মাধ্যমে একটি টেস্ট ইভেন্ট পাঠায়; সেটা ফিরে না এলে, `/agentmemory/status` এবং ভিউয়ারের Health পেজ "Live updates are not reaching the viewer" দেখায় সমাধান সহ: agentmemory রিস্টার্ট করুন। Redis ডাউন থাকলে, স্ট্যাটাস রিপোর্ট দেখায় "The state store is not answering" এবং এটা যাচাই করার উপায় (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`)। একটা খুব বড় স্কোপ লিস্ট করা একটি `HGETALL`-এ পুরো হ্যাশ পড়ে, ফাইল স্টোর এটাকে মেমরিতে রাখার মতোই একই খরচ।
+Viewer-এর live event REST worker-এ SSE ব্যবহার করে এবং চলমান agentmemory process থেকে broadcast হয়; Redis pub/sub বা পর্যায়ক্রমিক Redis stream probe ব্যবহার করে না। Redis-এর প্রাপ্যতা state read/write-কে প্রভাবিত করে, viewer transport-কে নয়। Redis বন্ধ থাকলে status report "The state store is not answering" দেখায় এবং পরীক্ষা করার উপায় জানায় (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`)। খুব বড় scope list করলে একটি `HGETALL`-এ পুরো hash পড়া হয়—memory-তে file store রাখার মতোই খরচ।
 
-**সুপারিশকৃত Redis সেটিংস।** ডিফল্ট `save 3600 1 300 100 60 10000` স্ন্যাপশট পলিসি একটা ক্র্যাশে মিনিটের রাইট হারাতে পারে, ফাইল স্টোরের 5s ফ্লাশ উইন্ডোর চেয়েও খারাপ। যেটা হারালে আপনার খারাপ লাগবে তার জন্য `appendonly yes` সেট করুন। `maxmemory-policy noeviction` সেট করুন; `allkeys-lru` বা অনুরূপ কিছু Redis তার মেমরি লিমিটে পৌঁছালে নিঃশব্দে মেমরি ড্রপ করে দেয়।
+**প্রস্তাবিত Redis settings।** ডিফল্ট `save 3600 1 300 100 60 10000` snapshot policy crash হলে কয়েক মিনিটের write হারাতে পারে। হারাতে চান না এমন data-র জন্য `appendonly yes` সেট করুন। `maxmemory-policy noeviction` দিন; Redis memory limit-এ পৌঁছালে `allkeys-lru` বা অনুরূপ policy নীরবে memory মুছে দেয়।
 
-একটি নেটিভ (নন-Docker) স্টার্ট, এবং প্রতিটি ওয়ান-ক্লিক [deploy template](../deploy/) (এগুলো বান্ডলড `iii-config.yaml` ওভাররাইট করে এবং নেটিভভাবে শুরু হয়), `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` পড়ে এবং লঞ্চ করা `iii-config`-এ রেন্ডার করে। URL নিজেই সেই রেন্ডার করা ফাইলে কখনো লেখা হয় না, কেবল একটি `${AGENTMEMORY_REDIS_URL}` রেফারেন্স যা ইঞ্জিন প্রসেস বুটের সময় তার নিজের এনভায়রনমেন্ট থেকে এক্সপ্যান্ড করে। কেবল এই রেপোর নিজের Docker Compose পাথ (`AGENTMEMORY_USE_DOCKER=1`, বা সেভাবে শুরু করা একটি ইঞ্জিন রিজিউম করা) `iii-config.docker.yaml`-কে read-only মাউন্ট করে এবং কখনো রেন্ডার করে না; `agentmemory start` এই কম্বিনেশন ডিটেক্ট করলে সতর্ক করে। [iii-state](https://workers.iii.dev/workers/iii-state) এবং [iii-stream](https://workers.iii.dev/workers/iii-stream) ওয়ার্কার ডক্সে দেখানো একই `name: redis` / `config: redis_url: ...` শেপ অনুসরণ করে ফাইলটি হাতে বদলান, এবং কনটেইনার থেকে পৌঁছানো যায় এমন একটি Redis-এ `redis_url` পয়েন্ট করুন। `docker-compose.yml` ইঞ্জিন কন্টেইনারে `AGENTMEMORY_REDIS_URL` পাস করে, তাই `redis_url: '${AGENTMEMORY_REDIS_URL}'` সেখানে কাজ করে এবং মাউন্ট করা ফাইলের বাইরে URL রাখে।
+CLI-নির্মিত Worker Compose project এই variable-গুলো state worker-এ প্রয়োগ করে। Docker self-host deployment-এর জন্য [`deploy/README.md`](../deploy/README.md) এবং [state worker docs](https://workers.iii.dev/workers/state) দেখুন।
 
-রেন্ডার করা কনফিগ `~/.agentmemory/data/iii-config.runtime.yaml`-এর বাইরে URL রাখে, কিন্তু ইঞ্জিনের নিজের কনফিগারেশন ওয়ার্কার বুট হওয়ার পর তখনও *এক্সপ্যান্ডেড* ভ্যালুটা `~/.agentmemory/config/iii-state.yaml` এবং `iii-stream.yaml`-এ পার্সিস্ট করে (সেই ওয়ার্কার তার সিড জমা রাখার আগেই iii-engine-র `${VAR}` এক্সপানশন ঘটে, এবং এটি রিজলভড ভ্যালু জমা রাখে, রেফারেন্স নয়)। সেই ডিরেক্টরিটাকে একটি ক্রেডেনশিয়াল ধরে নিয়ে চলুন: কোনো শেয়ার্ড হোস্টে `chmod 700 ~/.agentmemory` করুন, এবং ডেটাবেসের অ্যাডমিন ক্রেডেনশিয়ালের চেয়ে agentmemory-র প্রয়োজন অনুযায়ী স্কোপড একটি Redis ACL ইউজার বেছে নিন।
+সংরক্ষিত worker config-এ Redis URL থাকলে সেটিকে sensitive ধরুন, কারণ এতে credential থাকতে পারে। নির্বাচিত data directory-তেও credential আছে ধরে নিয়ে permission সীমিত করুন (যেমন shared host-এ `chmod 700 <data-dir>`)। database admin credential-এর বদলে agentmemory-র প্রয়োজনমাফিক সীমাবদ্ধ Redis ACL user ব্যবহার করুন।
 
-**মাইগ্রেশন স্বয়ংক্রিয় নয়।** `AGENTMEMORY_STATE_BACKEND` বদলালে দুই পাশেই একটি খালি স্টোর থেকে শুরু হয়; কিছুই বিদ্যমান ডেটা file থেকে Redis-এ বা উল্টোদিকে কপি করে না। আপনি যে ব্যাকএন্ড ছেড়ে যাচ্ছেন সেখান থেকে এক্সপোর্ট করুন এবং যেখানে যাচ্ছেন সেখানে ইমপোর্ট করুন। এটা bash এবং zsh-এ (`bash -u` সহ) অভিন্নভাবে চলে। `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})`-এর মতো একটি অ্যারে তা করে না: zsh হেডারটাকে একটা বিকৃত শব্দ হিসেবে রাখে যেখানে bash এটাকে দুই ভাগে ভাগ করে, তাই `AGENTMEMORY_SECRET` সেট থাকলেই দুটো রিকোয়েস্টই 401 দেয়:
+**Migration স্বয়ংক্রিয় নয়।** `AGENTMEMORY_STATE_BACKEND` বদলালে দুই পাশেই খালি store দিয়ে শুরু হয়; file থেকে Redis-এ বা উল্টো দিকে data কপি হয় না। যে backend ছাড়ছেন সেখান থেকে export করে নতুনটিতে import করুন। bash ও zsh-এ (`bash -u`-সহ) একইভাবে চলে। কিন্তু `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})`-এর মতো array একইভাবে কাজ করে না: bash header-টিকে দুই শব্দে ভাগ করলেও zsh একটি malformed শব্দ হিসেবে রাখে, তাই `AGENTMEMORY_SECRET` সেট থাকলে দুই request-ই 401 ফেরায়:
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1431,13 +1380,13 @@ fi
 | ট্র্যাডিশনাল স্ট্যাক | agentmemory যা ব্যবহার করে |
 |---|---|
 | Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + ইন-মেমরি ভেক্টর ইনডেক্স |
-| SSE / Socket.io | iii Streams (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | REST endpoint `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | iii engine ওয়ার্কার সুপারভিশন |
 | Prometheus / Grafana | iii OTEL + হেলথ মনিটর |
 | কাস্টম প্লাগইন সিস্টেম | `iii worker add <name>` |
 
-**242 সোর্স ফাইল · ~55,000 LOC · 3,400+ টেস্ট · 324 ফাংশন · 67 KV স্কোপ**, সবকিছু তিনটি প্রিমিটিভের উপর। কোনো `agentmemory plugin install` নেই। প্লাগইন সিস্টেমটাই iii নিজে।
+**246 সোর্স ফাইল · ~56,000 LOC · 3,800+ টেস্ট · 322 ফাংশন · 65 KV স্কোপ**, সবকিছু তিনটি প্রিমিটিভের উপর। কোনো `agentmemory plugin install` নেই। প্লাগইন সিস্টেমটাই iii নিজে।
 
 ---
 
@@ -1554,57 +1503,41 @@ SDK / REST লেয়ারে প্রতি-কল ওভাররাইড
 
 ### পোর্ট
 
-agentmemory + iii-engine ডিফল্টভাবে চারটি পোর্ট বাইন্ড করে। একটি রিস্টার্ট `port in use` দিয়ে ফেইল করলে, এই টেবিলটি আপনাকে বলে দেয় কোন প্রসেস খুঁজতে হবে।
+লোকাল runtime-এ তিনটি listener আছে। iii engine WebSocket অভ্যন্তরীণভাবে worker registration-এর জন্য ব্যবহৃত হয়, এটি public network-এ প্রকাশ করবেন না।
 
-| পোর্ট | প্রসেস | উদ্দেশ্য | এনভ ওভাররাইড |
+| পোর্ট | প্রসেস | কাজ | Env override |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | ইন্টারনাল স্ট্রিম ওয়ার্কার (agentmemory + ভিউয়ার দিয়ে কনজিউমড) | `III_STREAM_PORT` (পছন্দনীয়) বা লেগ্যাসি `III_STREAMS_PORT` |
-| `3113` | agentmemory | রিয়েল-টাইম ভিউয়ার (`http://localhost:3113`) | রিপোর্টেড URL-এর জন্য `III_VIEWER_PORT` বা `AGENTMEMORY_VIEWER_URL` |
-| `49134` | iii-engine | WebSocket; ওয়ার্কাররা এখানে রেজিস্টার করে, OTel টেলিমেট্রি এর উপর দিয়ে প্রবাহিত হয় | `III_ENGINE_PORT` বা `III_ENGINE_URL` |
+| `3111` | registry `http` worker | REST API, MCP HTTP, health, এবং `/agentmemory/viewer/events`-এ authenticated viewer SSE | `III_REST_PORT` |
+| `3113` | agentmemory | viewer UI ও viewer proxy | `III_VIEWER_PORT` |
+| `49134` | iii engine | অভ্যন্তরীণ worker WebSocket | `III_ENGINE_PORT` বা `III_ENGINE_URL` |
 
-`--port <N>` REST অ্যাঙ্কর বদলে দেয় এবং স্ট্রিম `N+1`, ভিউয়ার `N+2`, এবং ইঞ্জিন WebSocket `N+46023` ডিরাইভ করে, কেবল যেখানে উপরের সংশ্লিষ্ট এক্সপ্লিসিট পোর্ট বা URL আনসেট আছে। এটা কোনো আইসোলেটেড লাইফসাইকেল নেমস্পেস তৈরি করে না। দ্বিতীয় ডেমনের জন্য `--instance 1` ব্যবহার করুন; এটা অ্যাঙ্কর 3211 ব্যবহার করে, ডিফল্টভাবে `3211/3212/3213/49234`, এবং একটি আলাদা `instance-1` ডেটা ও লাইফসাইকেল ডিরেক্টরি পায়। ইনস্ট্যান্স 1 থেকে 50 একই প্যাটার্ন অনুসরণ করে।
+`--port <N>` REST port সেট করে; স্পষ্টভাবে সেট না থাকলে viewer port `N+2` এবং engine WebSocket `N+46023` থেকে নির্ধারিত হয়। বিচ্ছিন্ন runtime-এর জন্য `--instance N` ব্যবহার করুন।
 
-পিন করা ইঞ্জিন `--no-update-check` দিয়ে শুরু হয় (বুটে GitHub-এর বিরুদ্ধে কোনো আপডেট বা সিকিউরিটি-অ্যাডভাইজরি লুকআপ নেই) এবং iii-র অ্যানোনিমাস ইউসেজ টেলিমেট্রি বন্ধ রেখে: agentmemory যে ইঞ্জিন স্পন করে তার জন্য `III_TELEMETRY_ENABLED=false` সেট করে যদি না আপনি নিজে ভ্যারিয়েবলটি এক্সপোর্ট করেন, এবং বান্ডলড compose ফাইলও একই কাজ করে।
-
-একটি ক্র্যাশড রান শেষে পোর্টগুলো বাঁধা থেকে গেলে, বাসি প্রসেস ক্লিনআপ:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-গ্রেসফুল নেটিভ শাটডাউনে `agentmemory stop` ওয়ার্কার এবং ইঞ্জিন পিডফাইল দুটোই পরিষ্কারভাবে রিপ করে। Docker মোডে এটা নেটিভ ওয়ার্কার ফ্লাশ করে, ঠিক ভ্যালিডেটেড ইঞ্জিন কন্টেইনারটি থামায়, এবং লসলেস রিস্টার্টের জন্য কন্টেইনার ও তার `/data` মাউন্ট দুটোই রক্ষা করে; পরের স্টার্ট সেই একই কন্টেইনার যাচাই করে পুনরায় শুরু করে। Docker-ব্যাকড আনইনস্টলের জন্য `agentmemory remove --keep-data` লাগে: এটা শেয়ার্ড agentmemory-ম্যানেজড ফাইল সরিয়ে দেয়, ভ্যালিডেটেড কন্টেইনার, তার ডেটা মাউন্ট, এবং সেগুলো রিকভার করতে প্রয়োজনীয় লাইফসাইকেল রেকর্ড রক্ষা করে। ডেস্ট্রাক্টিভ Docker ডেটা ডিলিশন ইচ্ছাকৃতভাবে ব্যাকআপের পর অপারেটরের হাতে ছেড়ে দেওয়া। `--force` পাস না করলে CLI Docker বা VM পোর্ট হোল্ডারদের (Docker backend, vpnkit, colima) নেটিভ ইঞ্জিন হিসেবে গ্রহণ বা সিগন্যাল করতেও অস্বীকার করে। উপরের ম্যানুয়াল ক্লিনআপ শুধু পোস্ট-ক্র্যাশ কেসের জন্য যেখানে কোনো পিডফাইলই বাকি নেই।
+Self-host deployment ডিফল্টভাবে `127.0.0.1:3111` ও `127.0.0.1:3113`-এ REST এবং viewer publish করে; host port `AGENTMEMORY_REST_PORT` ও `AGENTMEMORY_VIEWER_PORT` দিয়ে বদলানো যায়। REST CORS ডিফল্টভাবে কনফিগার করা REST ও viewer port-এ `http://localhost` এবং `http://127.0.0.1` অনুমোদন করে; অতিরিক্ত trusted browser origin অনুমোদনের জন্য Docker-এর `REST_ALLOWED_ORIGINS`-এ নির্দিষ্ট origin-এর comma-separated তালিকা দিন।
 
 ### কনফিগ ফাইল
 
-প্রতিটি শেলে ভ্যারিয়েবল এক্সপোর্ট করার বদলে agentmemory-র রানটাইম কনফিগারেশন `~/.agentmemory/.env`-এ রাখুন। ভিউয়ার `export ANTHROPIC_API_KEY=...`-র মতো একটি সেটআপ হিন্ট দেখালে, `export` প্রিফিক্স ছাড়া `ANTHROPIC_API_KEY=...` হিসেবে এটা এই ফাইলে কপি করুন, তারপর agentmemory রিস্টার্ট করুন।
+প্রতিটি shell-এ variable export না করে agentmemory runtime config `~/.agentmemory/.env`-এ রাখুন। viewer `export ANTHROPIC_API_KEY=...`-এর মতো setup hint দেখালে, `export` prefix বাদ দিয়ে `ANTHROPIC_API_KEY=...` হিসেবে এই ফাইলে কপি করুন, তারপর agentmemory restart করুন। অন্য env-file path ব্যবহার করতে `AGENTMEMORY_ENV_FILE` সেট করুন।
 
-প্রসেস এনভায়রনমেন্ট ভ্যারিয়েবল তখনও কাজ করে এবং ফাইলের ভ্যালুর উপর প্রাধান্য পায়।
+Process environment variable-ও কাজ করে এবং ফাইলের মানের চেয়ে অগ্রাধিকার পায়। CLI-নির্মিত Worker Compose project `AGENTMEMORY_STATE_BACKEND` ও `AGENTMEMORY_REDIS_URL` থেকে Redis settings নিয়ে `state` worker-এ দেয়।
 
-Windows-এ, একই ফাইল থাকে `%USERPROFILE%\.agentmemory\.env`-এ:
+Windows-এ একই ফাইল `%USERPROFILE%\.agentmemory\.env`-এ থাকে:
 
 ```powershell
 New-Item -ItemType Directory -Force $HOME\.agentmemory
 notepad $HOME\.agentmemory\.env
 ```
 
-একটি API কী-র বদলে Claude Code Pro/Max সাবস্ক্রিপশন দিয়ে টেস্ট করতে, স্পষ্টভাবে অপ্ট-ইন করুন:
+API key-এর বদলে Claude Code Pro/Max subscription দিয়ে পরীক্ষা করতে স্পষ্টভাবে opt-in করুন:
 
 ```env
 AGENTMEMORY_ALLOW_AGENT_SDK=true
 AGENTMEMORY_AUTO_COMPRESS=true
 ```
 
-LLM-লিখিত অবজারভেশন কম্প্রেশনের জন্য দুই লাইনই লাগে: একটি LLM প্রোভাইডারে অ্যাক্সেস (এই এক্সপ্লিসিট সাবস্ক্রিপশন ফলব্যাক সহ) এবং `AGENTMEMORY_AUTO_COMPRESS=true`। একটি প্রোভাইডার একা ডিফল্ট সিন্থেটিক কম্প্রেশন পাথ রেখে দেয়।
+LLM-লিখিত observation compression-এর জন্য দুই লাইনই দরকার: LLM provider-এ access (এই স্পষ্ট subscription fallback-সহ) এবং `AGENTMEMORY_AUTO_COMPRESS=true`। শুধু provider থাকলে ডিফল্ট synthetic compression path-ই থাকে।
 
-কনসোলিডেশন (গ্রাফ নোড, লেসন, ক্রিস্টাল) একটি LLM প্রোভাইডার কনফিগার করা থাকলেই ডিফল্টভাবে চালু থাকে। LLM-ফ্রি অপারেশন চাইলে স্পষ্টভাবে `CONSOLIDATION_ENABLED=false` দিয়ে অপ্ট-আউট করুন। গ্রাফ এক্সট্র্যাকশন একটা আলাদা ফ্ল্যাগ:
+LLM provider কনফিগার করা থাকলে consolidation (graph node, lesson, crystal) ডিফল্টভাবে চালু থাকে। LLM ছাড়া চালাতে `CONSOLIDATION_ENABLED=false` দিয়ে opt-out করুন। Graph extraction আলাদা flag:
 
 ```env
 GRAPH_EXTRACTION_ENABLED=true
@@ -1740,8 +1673,7 @@ GRAPH_EXTRACTION_ENABLED=true
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1780,12 +1712,12 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-`3111` পোর্টে 143 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
+`3111` পোর্টে 144 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
 
 **অথেন্টিকেশন ডিফল্টভাবে চালু।** `AGENTMEMORY_SECRET` সেট না থাকলে (শেলে বা `~/.agentmemory/.env`-এ), সার্ভার প্রথম স্টার্টে একটি র‍্যান্ডম সিক্রেট জেনারেট করে এবং `0600` মোডে `~/.agentmemory/secret`-এ জমা রাখে। লোকাল সার্ভারের সাথে কথা বলার সময় প্রতিটি বান্ডলড ক্লায়েন্ট সেখান থেকেই এটা পড়ে: CLI, ভিউয়ার, `plugin/scripts`-এর নিচের হুক, MCP সার্ভার এবং `@agentmemory/mcp` শিম, `agentmemory connect`-এ লেখা কনফিগ, এবং বান্ডলড OpenCode, Pi, OpenClaw, Hermes, এবং filesystem-watcher ইন্টিগ্রেশন। জমা রাখা সিক্রেটটি কেবল লুপব্যাক URL-এ (`localhost`, `127.0.0.0/8`, `::1`) পাঠানো হয়। একটি এক্সপ্লিসিট `AGENTMEMORY_SECRET` সবসময় জেতে, এবং রিমোট ক্লায়েন্টদেরও এটা সেট করা লাগে। Docker এবং `deploy/` এন্ট্রিপয়েন্ট নিজেরাই নিজেদের সিক্রেট জেনারেট ও এক্সপোর্ট করে। হাতে API কল করতে:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **রাইটের জন্য রিকোয়েস্ট নিয়ম।** REST API এবং ভিউয়ারে `POST`, `PUT`, `PATCH`, এবং `DELETE` রিকোয়েস্টে body থাকলে `Content-Type: application/json` পাঠাতে হবে (একটা `charset` প্যারামিটার ঠিক আছে), এবং একটি `Origin` হেডার থাকলে, এটা কনফিগার করা REST বা ভিউয়ার পোর্টের জন্য একটি লুপব্যাক origin হতে হবে বা `VIEWER_ALLOWED_ORIGINS`-এ (কমা-সেপারেটেড, যেমন `https://memory.example.com`) তালিকাভুক্ত থাকতে হবে। যে ক্লায়েন্টগুলো কোনো `Origin` হেডার পাঠায় না (CLI, হুক, MCP, curl, সার্ভার-টু-সার্ভার) তারা প্রভাবিত হয় না। ভিউয়ার তার নিজের origin-ও গ্রহণ করে।
@@ -1865,7 +1797,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**প্রয়োজনীয়তা:** npm/npx সহ Node.js >= 20; [iii-engine](https://iii.dev/docs) v0.22.1 বা Docker। macOS/Linux অটোমেটিক ইঞ্জিন ইনস্টলের জন্য `curl`, একটি POSIX `sh`, এবং `tar`-ও লাগে; নেটিভ Windows ম্যানুয়াল পিন করা `iii.exe`, WSL2, বা Docker Desktop ব্যবহার করে।
+**প্রয়োজনীয়তা:** npm/npx সহ Node.js >= 20। CLI-পরিচালিত macOS/Linux engine ইনস্টলের জন্য `curl`, একটি POSIX `sh`, এবং `tar`-ও লাগে; নেটিভ Windows-এ পিন করা `iii.exe` ম্যানুয়ালি ইনস্টল করতে হয়, অথবা WSL2 ব্যবহার করা যায়।
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="লাইসেন্স" height="32" /></picture></h2>
 

@@ -20,7 +20,7 @@ Memories carry content, concepts, files, importance, and timestamps, grouped int
 
 ## Ports
 
-REST is the anchor at 3111. Streams = N+1 (3112), viewer = N+2 (3113), engine = N+46023 (49134). `--instance N` shifts the whole block by N*100.
+REST defaults to port `3111`, the viewer to `3113`, and the internal engine WebSocket to `49134`. Use `--port <N>` or `--instance <N>` to select another local runtime.
 
 ## Viewer
 

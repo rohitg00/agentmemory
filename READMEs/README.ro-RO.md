@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 de instrumente MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook-uri automate" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 baze de date externe" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ teste trecute" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,600+ teste trecute" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -100,7 +100,7 @@ Cerințe:
 
 - Node.js 20 sau mai nou, cu npm și npx (`node -v`, `npm -v` și `npx -v`).
 - Instalarea automată a iii-engine pe macOS/Linux necesită, de asemenea, `curl`, un `sh` POSIX și `tar`. Imaginile minimale precum `node:20-slim` pot să nu le includă.
-- Windows nativ necesită instalarea manuală a `iii.exe` din iii-engine v0.22.1 (versiunea fixată). WSL2 sau Docker Desktop sunt celelalte căi suportate.
+- Windows nativ necesită instalarea manuală a `iii.exe` din iii-engine v0.24.6 (versiunea fixată); WSL2 folosește instalatorul automat macOS/Linux.
 
 Comanda canonică pentru o instalare nouă:
 
@@ -112,7 +112,7 @@ Prima rulare este o configurare interactivă: alegi agenții pe care vrei să-i 
 
 Modul keyless (fără cheie) dezactivează embedding-urile vectoriale. `memory_recall` (ruta `mem::search`) folosește BM25, în timp ce `memory_smart_search` poate combina și rezultate structurale din graf atunci când datele de graf există deja. Pentru reamintire semantică gratuită, pe dispozitiv, setează `EMBEDDING_PROVIDER=local` în `~/.agentmemory/.env` și repornește. Prima cerere de embedding descarcă `Xenova/all-MiniLM-L6-v2`; după această descărcare inițială a modelului, inferența rulează local.
 
-Runtime-ul local folosește patru porturi: `3111` pentru REST/MCP HTTP, `3112` pentru stream-urile iii, `3113` pentru vizualizator și `49134` pentru WebSocket-ul worker-ului iii. Starea persistentă iii este păstrată în `~/Library/Application Support/agentmemory` pe macOS, `$XDG_DATA_HOME/agentmemory` sau `~/.local/share/agentmemory` pe Linux și `%APPDATA%\agentmemory` pe Windows. Folosește `--data-dir <path>` sau `AGENTMEMORY_DATA_DIR` pentru a o suprascrie și reutilizează aceeași valoare la fiecare repornire. Pentru compatibilitate retroactivă, un `./data/state_store.db` sau `./data/iii-config.yaml` existent are prioritate față de valoarea implicită a platformei pentru instanța 0; o setare explicită prin flag sau variabilă de mediu are însă întotdeauna prioritate.
+Runtime-ul local al CLI-ului folosește REST/MCP HTTP pe `3111`, vizualizatorul pe `3113` și WebSocket-ul intern al worker-ilor iii pe `49134`. Actualizările vizualizatorului folosesc SSE la `GET /agentmemory/viewer/events`, pe portul REST. Starea persistentă folosește implicit `~/Library/Application Support/agentmemory` pe macOS, `$XDG_DATA_HOME/agentmemory` sau `~/.local/share/agentmemory` pe Linux și `%APPDATA%\agentmemory` pe Windows. Suprascrie calea cu `--data-dir <path>` sau `AGENTMEMORY_DATA_DIR`; instanța 0 reutilizează și un `./data/state_store.db` existent. `--instance N` izolează runtime-uri suplimentare, iar `AGENTMEMORY_ENV_FILE` selectează un fișier `.env` care nu este cel implicit.
 
 Apoi demonstrează că reamintirea funcționează și oferă-i agentului tău skill-urile sale:
 
@@ -132,7 +132,7 @@ Conectează oricând mai mulți agenți cu `agentmemory connect <agent>` — 20 
 <details>
 <summary><strong>Windows</strong></summary>
 
-Calea rapidă este WSL2. Configurarea motorului pe Windows nativ necesită descărcarea arhivei ZIP v0.22.1 fixate și extragerea manuală a `iii.exe`; CLI-ul nu o extrage automat. Docker Desktop este, de asemenea, suportat. Vezi [notele pentru Windows](#windows) pentru pașii detaliați.
+Calea rapidă este WSL2. Windows nativ necesită descărcarea manuală a arhivei ZIP v0.24.6 fixate și extragerea `iii.exe`. Vezi [pașii pentru Windows](#windows).
 
 </details>
 
@@ -157,7 +157,7 @@ npx face cache pe versiune. Forțează cea mai recentă versiune cu `npx -y @age
 <details>
 <summary><strong>Rulezi deja propriul tău motor iii</strong></summary>
 
-agentmemory fixează versiunea iii-engine la `v0.22.1` și nu se va conecta la o versiune diferită (worker-ul nu poate vorbi protocolul altui motor). Oprește celălalt motor, apoi rulează `npx -y @agentmemory/agentmemory@latest`. Acesta instalează și rulează versiunea fixată v0.22.1 în `~/.agentmemory/bin`, lăsând neschimbat propriul tău `iii`.
+agentmemory fixează versiunea iii-engine la `v0.24.6` și nu se va conecta la o versiune diferită (worker-ul nu poate vorbi protocolul altui motor). Oprește celălalt motor, apoi rulează `npx -y @agentmemory/agentmemory@latest`. Acesta instalează și rulează versiunea fixată v0.24.6 în `~/.agentmemory/bin`, lăsând neschimbat propriul tău `iii`.
 
 </details>
 
@@ -319,14 +319,14 @@ Explici aceeași arhitectură la fiecare sesiune. Redescoperi aceleași bug-uri.
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Implicit, agentmemory salvează starea iii-engine în afara repository-ului din care este pornit: `~/Library/Application Support/agentmemory` pe macOS, `$XDG_DATA_HOME/agentmemory` sau `~/.local/share/agentmemory` pe Linux și `%APPDATA%\agentmemory` pe Windows. Un `./data/state_store.db` sau `./data/iii-config.yaml` vechi (legacy), dacă există, este reutilizat pentru instanța 0, înaintea valorii implicite a platformei. Pentru a alege explicit o locație, folosește `--data-dir <path>` sau setează `AGENTMEMORY_DATA_DIR`; orice setare explicită are prioritate față de detectarea automată a fișierelor legacy:
+Implicit, agentmemory salvează starea engine-ului iii în afara repository-ului din care este pornit: `~/Library/Application Support/agentmemory` pe macOS, `$XDG_DATA_HOME/agentmemory` sau `~/.local/share/agentmemory` pe Linux și `%APPDATA%\agentmemory` pe Windows. Un `./data/state_store.db` existent este reutilizat pentru instanța 0. Pentru a alege explicit o locație, folosește `--data-dir <path>` sau setează `AGENTMEMORY_DATA_DIR`:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-Pornirile native și cele prin Docker folosesc același director rezolvat pe host; Docker îl montează (bind-mount) la `/data`. `--instance 1` adaugă `instance-1` la directorul rezolvat și selectează cvartetul separat de porturi implicite `3211/3212/3213/49234`.
+`--instance 1` adaugă `instance-1` la directorul de date rezolvat și selectează porturile `3211` (REST), `3213` (vizualizator) și `49234` (engine).
 
 Notele celei mai recente versiuni: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +476,7 @@ Rată de succes Top-5 de 100% la **plafonul matematic P@5** pentru acest corpus 
 </tr>
 <tr>
 <td><strong>Dependențe externe</strong></td>
-<td>Niciuna (SQLite + iii-engine)</td>
+<td>Niciuna (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + bază de date vectorială</td>
 <td>Multiple</td>
@@ -556,7 +556,7 @@ Niciunul dintre acestea nu captează automat din hook-urile agenților de progra
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Început rapid" height="32" /></picture></h2>
 
-Compatibilitate: această versiune are ca țintă `iii-sdk` 0.22.1 și fixează iii-engine la v0.22.1.
+Compatibilitate: această versiune folosește iii 0.24.6 cu worker-ii registry state 0.22.20 și http 0.22.7.
 
 ### Încearcă-l în 30 de secunde
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Panelul de pregătire de la pornire ține cont de toate cele patru porturi: REST/MCP HTTP pe 3111, stream-urile iii pe 3112, vizualizatorul pe 3113 și WebSocket-ul worker-ului iii pe 49134. `status` confirmă starea de sănătate (health) a agentmemory și furnizorul activ / modul de embedding. Salvează o probă și confirmă că este căutabilă:
+Runtime-ul folosește REST/MCP HTTP pe 3111, vizualizatorul pe 3113 și WebSocket-ul intern al worker-ilor iii pe 49134. Evenimentele live ale vizualizatorului folosesc SSE prin REST. `status` confirmă sănătatea agentmemory, versiunea fixată a engine-ului (`enginePinnedVersion`) și furnizorul activ/modul de embedding. Salvează o probă și confirmă că este căutabilă:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ Folosește comanda de întreținere atunci când vrei, în mod intenționat, să
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Atenție: această comandă modifică workspace-ul/runtime-ul curent. Poate actualiza dependențele JavaScript și poate descărca imaginea Docker fixată `iiidev/iii:0.22.1`. Nu instalează niciodată un motor iii nefixat sau mai nou.
+Atenție: această comandă modifică workspace-ul/runtime-ul curent. Poate actualiza dependențele JavaScript și instala binarul engine-ului iii 0.24.6 fixat.
 
 Detaliile de implementare se află în `src/cli.ts` (vezi `runUpgrade`, în jurul zonei `src/cli.ts:544-595`).
 
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 Exemplu funcțional: [`examples/python/`](../examples/python/) (început rapid + flux de observație/reamintire). REST pe `:3111` rămâne disponibil pentru host-urile fără runtime iii.
@@ -853,83 +861,31 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Aceasta pornește agentmemory cu un `iii-engine` local, dacă binarul fixat este deja instalat, sau folosește Docker Compose, când este selectat. REST, stream-urile și vizualizatorul se leagă (bind) implicit la `127.0.0.1`. Calea automată pentru binarul pe macOS/Linux necesită `curl`, un `sh` POSIX și `tar`.
-
-Instalează manual `iii-engine`. **agentmemory fixează momentan `iii-engine` la `v0.22.1`**, aceeași versiune ca dependența sa `iii-sdk`; worker-ul vorbește protocolul de rețea al acelui motor, iar 0.20.0 a reorganizat suprafața SDK-ului, așa că cele două avansează împreună în versiunile agentmemory. Suprascrie cu `AGENTMEMORY_III_VERSION=<version>`, dacă rulezi propriul tău motor și știi că se potrivește.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** înlocuiește `aarch64-apple-darwin` cu `x86_64-apple-darwin`
-- **Linux x64:** înlocuiește cu `x86_64-unknown-linux-gnu`
-- **Linux arm64:** înlocuiește cu `aarch64-unknown-linux-gnu`
-- **Windows:** descarcă `iii-x86_64-pc-windows-msvc.zip` de la [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) și extrage `iii.exe` în `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Fiecare arhivă are un fișier `.sha256` corespunzător pe pagina de release; când schimbi platforma, folosește hash-ul din acel fișier în verificarea de mai sus (pe Windows: `Get-FileHash`). Installer-ul automat din `npx @agentmemory/agentmemory` fixează aceste hash-uri și refuză o arhivă care nu se potrivește.
-
-Sau folosește Docker (`docker-compose.yml`-ul inclus descarcă `iiidev/iii:0.22.1`). Documentație completă: [iii.dev/docs](https://iii.dev/docs).
+`npm start` pornește același runtime iii Worker Compose ca CLI-ul: iii 0.24.6 cu worker-ii registry `state@0.22.20` și `http@0.22.7`. Pe macOS/Linux, CLI-ul descarcă binarul engine-ului fixat în `~/.agentmemory/bin`; instalarea automată necesită `curl`, un `sh` POSIX și `tar`. Listener-ele locale REST și ale vizualizatorului se leagă la `127.0.0.1`. Actualizările vizualizatorului folosesc SSE la `GET /agentmemory/viewer/events`, pe portul REST. `/agentmemory/status` raportează versiunea fixată a engine-ului ca `enginePinnedVersion`; versiunea implicită fixată și suportată este iii 0.24.6. `AGENTMEMORY_III_VERSION` permite suprascrierea deliberată a versiunii fixate.
 
 ### Windows
 
-agentmemory rulează pe Windows 10/11, dar pachetul Node.js, de unul singur, nu este suficient; ai nevoie și de runtime-ul iii-engine v0.22.1 fixat, ca proces în fundal. CLI-ul nu extrage automat arhiva ZIP pentru Windows, așa că utilizatorii Windows nativ trebuie să instaleze manual `iii.exe`, să folosească WSL2 sau să aleagă Docker Desktop.
+agentmemory rulează pe Windows 10/11. WSL2 urmează calea Linux și poate instala automat engine-ul fixat. Windows nativ necesită instalarea manuală a binarului iii-engine v0.24.6 fixat; descarcă arhiva potrivită de pe [pagina de release iii v0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), verifică checksum-ul și pune `iii.exe` în `PATH` (de exemplu `%USERPROFILE%\.local\bin\iii.exe`). CLI-ul nu extrage automat arhiva ZIP pentru Windows.
 
-Conectarea MCP automatizată pe Windows nativ suportă doar `agentmemory connect copilot-cli`. Pentru Claude Code, Codex, Cursor și orice alt agent nativ pe Windows, copiază blocul MCP manual din [Alți agenți](#other-agents) în configurația Windows a acelui agent. Rularea `connect` în WSL este potrivită doar atunci când agentul țintă este instalat și el în același mediu WSL; aceasta nu editează configurația unui agent de pe host-ul Windows.
+Conectarea MCP automatizată pe Windows nativ acceptă doar `agentmemory connect copilot-cli`. Pentru ceilalți agenți nativi Windows, folosește blocul MCP manual din [Alți agenți](#other-agents). Rulează `connect` în WSL doar când agentul țintă este instalat în același mediu WSL.
 
-**Opțiunea A: binar Windows precompilat (recomandat)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Opțiunea B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Opțiunea C: doar MCP independent (fără motor).** Dacă ai nevoie doar de instrumentele MCP pentru agentul tău și nu ai nevoie de API-ul REST, de vizualizator sau de job-uri cron, poți sări complet peste motor:
+**Doar MCP standalone (fără engine).** Dacă ai nevoie doar de instrumentele MCP și nu ai nevoie de REST API, vizualizator sau servicii runtime:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Diagnosticare pentru Windows:** dacă `npx -y @agentmemory/agentmemory@latest` eșuează, rulează-o din nou cu `--verbose` pentru a vedea stderr-ul real al motorului. Moduri de eșec frecvente:
-
-| Simptom | Remediere |
-|---|---|
-| `The engine process started but the REST API never responded.` | Confirmă că toate cele patru porturi derivate sunt libere, verifică dacă `iii.exe`-ul fixat a rămas activ, apoi rulează din nou cu `--verbose` și inspectează stderr-ul capturat al motorului |
-| `Could not start iii-engine` | Nici `iii.exe`, nici Docker nu sunt instalate. Vezi Opțiunea A sau B de mai sus |
-| Conflict de port | `netstat -ano \| findstr :3111` pentru a vedea ce este ocupat, apoi termină procesul sau folosește `--port <N>` |
-| Trecerea la Docker este omisă, deși Docker este instalat | Asigură-te că Docker Desktop rulează efectiv (iconița din system tray) |
-
-> Notă: **motorul** iii este un binar precompilat, nu un cargo crate, așa că nu încerca să îl instalezi cu `cargo install`. (**SDK-urile** iii sunt publicate pe crates.io, npm și PyPI, dar agentmemory nu are nevoie de ele.) Toate metodele suportate de instalare a motorului sunt fixate la v0.22.1: binarul precompilat de mai sus, calea de auto-instalare macOS/Linux a agentmemory (necesită `curl`, `sh` POSIX și `tar`) și imaginea Docker `iiidev/iii:0.22.1`. Un simplu `install.sh | sh` din upstream instalează cel mai recent motor, pe care agentmemory nu îl suportă. Folosește `npx -y @agentmemory/agentmemory@latest`; pe macOS/Linux, aceasta preia motorul fixat în `~/.agentmemory/bin`.
-
+**Diagnosticare:** dacă pornirea eșuează, ruleaz-o din nou cu `--verbose` pentru a vedea stderr-ul engine-ului. Verifică să fie libere porturile REST `3111`, vizualizator `3113` și engine `49134`; folosește `--port <N>` sau `--instance <N>` pentru un alt runtime izolat. CLI-ul folosește propriul binar fixat al engine-ului și nu înlocuiește un executabil iii din `PATH`.
 ---
 
 <h2 id="deploy">Implementare (Deploy)</h2>
 
-Șabloane cu un singur clic pentru hosting administrat. Fiecare șablon include un Dockerfile de sine stătător, care descarcă `@agentmemory/agentmemory` de pe npm și copiază binarul motorului iii din imaginea oficială `iiidev/iii` de pe Docker Hub; nu este necesară o imagine agentmemory precompilată. Stocarea persistentă este montată la `/data`; entrypoint-ul de la prima pornire suprascrie configurația iii inclusă în pachetul npm (care se leagă la `127.0.0.1`) cu una ajustată pentru deployment, care se leagă la `0.0.0.0` și folosește căi `/data` absolute, generează secretul HMAC, apoi reduce privilegiile de la `root` la `node`, prin `gosu`, înainte de a executa (exec) CLI-ul agentmemory.
-
+Docker este suportat pentru self-hosting din acest repository, nu ca mod de pornire al CLI-ului. Șabloanele cu un singur clic folosesc [`deploy/Dockerfile`](../deploy/Dockerfile) și [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml), fixează același runtime iii 0.24.6 și aceiași workeri și stochează starea, trace-urile și secretul generat pe un volum persistent `/data`. Docker Compose folosește implicit volumul numit existent `iii-data`; setează `AGENTMEMORY_DATA_DIR` la o cale de pe host pentru a folosi un bind mount. Magazinul existent bazat pe fișiere din iii 0.22.1 este citit direct din `/data/state_store.db`, fără migrare sau conversie. CORS REST permite implicit origin-urile locale REST și ale vizualizatorului; setează `REST_ALLOWED_ORIGINS` la o listă de origin-uri exacte, separate prin virgule, când un browser de încredere are nevoie de acces. Consultă [`deploy/README.md`](../deploy/README.md) pentru configurare și detalii de securitate.
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Implementare pe fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Implementare pe Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Implementare pe fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Implementare pe Railway" /></a>
 </p>
 
 Butonul de implementare cu un singur clic al Render necesită `render.yaml` în rădăcina repository-ului, pe care îl păstrăm intenționat curat (gol). Folosește fluxul Render Blueprint documentat în [`deploy/render/`](.././deploy/render/README.md) pentru a indica manual blueprint-ul din repository.
@@ -941,8 +897,16 @@ Detaliile complete de configurare (capturarea HMAC, tunel SSH pentru vizualizato
 - [`deploy/render`](.././deploy/render/README.md): flux Blueprint, instantanee (snapshots) automate de disc pe planurile plătite.
 - [`deploy/coolify`](.././deploy/coolify/README.md): auto-hostat pe propriul tău VPS, prin [Coolify](https://coolify.io/self-hosted); aceeași stivă Docker Compose, tu deții host-ul și datele.
 
-Este publicat doar portul `3111`. Vizualizatorul de pe `3113` rămâne legat la loopback în interiorul containerului; README-ul fiecărui șablon documentează modelul de tunel SSH pentru a-l accesa.
+REST este pe `3111`; vizualizatorul este pe `3113` și este publicat doar acolo unde șablonul platformei suportă o rută separată protejată. Actualizările live folosesc SSE autentificat cu bearer la endpoint-ul REST `/agentmemory/viewer/events`. WebSocket-ul engine-ului de pe `49134` este intern și nu trebuie publicat. Consultă [`deploy/README.md`](../deploy/README.md) pentru recomandări privind expunerea și allowlist-urile specifice platformei.
 
+
+### Migrarea instalărilor Docker vechi gestionate de CLI
+
+CLI-ul actual nu pornește și nu gestionează implementări Docker. Dacă găsește o înregistrare veche a ciclului de viață Docker, păstrează metadatele și afișează comanda exactă `docker stop ...`; executați comanda înainte de migrare. Nu porniți noul runtime cât timp containerul vechi are volumul montat.
+
+Păstrați și faceți o copie de rezervă a volumului persistent vechi (de obicei `iii-data`) sau copiați conținutul din `/data` într-un bind mount. Workerul state citește direct fișierul existent `/data/state_store.db`, fără export sau conversie. Vechiul runtime folosea UID/GID `65532:65532`; noua imagine efectuează o singură migrare recursivă a proprietarului la `node:node` (`1000:1000`) și scrie `/data/.ownership-migrated-node-v1`. După această migrare, nu montați din nou volumul în vechiul runtime.
+
+Vechiul runtime stoca și bearer secret-ul generat în `/data/.hmac`. Noua imagine păstrează acest secret în timpul migrării; o valoare `AGENTMEMORY_SECRET` setată explicit are prioritate. Porniți noul proiect Compose din rădăcina depozitului cu `docker compose up --build -d`. Dacă vechiul volum are un nume cu prefixul proiectului în loc de `iii-data`, reutilizați-l sau redenumiți-l explicit — nu inițializați din greșeală un volum gol. Verificați `/agentmemory/livez` și confirmați că pot fi găsite atât memoriile vechi, cât și cele noi. Evitați `docker compose down -v`, cu excepția cazului în care intenționați să ștergeți datele.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="De ce agentmemory" height="32" /></picture></h2>
@@ -1096,7 +1060,7 @@ Instalarea npm normală include runtime-ul opțional `@huggingface/transformers`
 
 54 de instrumente, 6 resurse, 3 prompturi și 17 skill-uri.
 
-> **Shim MCP vs server complet:** pachetul publicat `@agentmemory/mcp` este un shim minimal. Expune suprafața completă de 54 de instrumente **doar atunci când poate accesa un server agentmemory în funcțiune**, prin `AGENTMEMORY_URL` (mod proxy). Când niciun server nu este accesibil, shim-ul trece la un set local de 7 instrumente (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Variabila de mediu `AGENTMEMORY_TOOLS=core|all` este un flag *pe partea de server*; setarea ei în blocul `env` al shim-ului nu are niciun efect. Dacă vezi doar 7 instrumente în Cursor / OpenCode / Gemini CLI, pornește `npx -y @agentmemory/agentmemory@latest` (sau stiva Docker) și setează `AGENTMEMORY_URL=http://localhost:3111`.
+> **Shim MCP vs server complet:** pachetul publicat `@agentmemory/mcp` este un shim minimal. Expune suprafața completă de 54 de instrumente **doar atunci când poate accesa un server agentmemory în funcțiune**, prin `AGENTMEMORY_URL` (mod proxy). Când niciun server nu este accesibil, shim-ul trece la un set local de 7 instrumente (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Variabila de mediu `AGENTMEMORY_TOOLS=core|all` este un flag *pe partea de server*; setarea ei în blocul `env` al shim-ului nu are niciun efect. Dacă vezi doar 7 instrumente în Cursor / OpenCode / Gemini CLI, pornește `npx -y @agentmemory/agentmemory@latest` (sau conectează-te la un server self-hosted) și setează `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 54 de instrumente
 
@@ -1236,7 +1200,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Vizualizator în timp real" height="32" /></picture></h2>
 
-Pornește automat pe portul `3113`. Vizualizatorul încarcă un instantaneu (snapshot) la conectare (`GET /agentmemory/viewer/snapshot`) și apoi aplică evenimentele din stream-ul live: memorii noi, lecții, observații, intrări de audit, modificări ale grafului și actualizări de stare apar fără polling sau reîncărcarea paginii. Singurele alte cereri sunt acțiunile pe care le apeși, paginile de tip „încarcă mai multe” și căutările. Când stream-ul se întrerupe, vizualizatorul arată cât de vechi sunt datele, se reconectează cu backoff și se resincronizează dintr-un instantaneu.
+Pornește automat pe portul `3113`. Vizualizatorul încarcă un snapshot la conectare (`GET /agentmemory/viewer/snapshot`), apoi aplică evenimente live prin SSE la `/agentmemory/viewer/events`, pe worker-ul REST: memorii noi, lecții, observații, intrări de audit, schimbări în graf și actualizări de sănătate apar fără polling sau reîncărcarea paginii. Singurele alte cereri sunt acțiunile pe care dai clic, paginile „încarcă mai multe” și căutările. Când fluxul se întrerupe, vizualizatorul arată cât de vechi sunt numerele, se reconectează cu backoff și resincronizează dintr-un snapshot.
 
 - **12 tab-uri în patru grupuri**, cu numărători live, deep link-uri (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), scurtături de tastatură și un meniu mobil.
 - **Memories:** căutare pe server, filtre după proiect, agent și tip, un panou de detalii cu lanțul de versiuni și un diff pe cuvinte, link-uri de proveniență, butoane de copiere pentru id, apelul MCP și o comandă curl, editare (o versiune nouă), ștergere (forget) cu confirmare, ștergere în masă și export JSON.
@@ -1249,15 +1213,15 @@ Pornește automat pe portul `3113`. Vizualizatorul încarcă un instantaneu (sna
 open http://localhost:3113
 ```
 
-Serverul vizualizatorului se leagă implicit la `127.0.0.1` și atașează secretul serverului atunci când transmite cererile către API-ul REST, așa că nu necesită nicio configurare. Endpoint-ul `/agentmemory/viewer`, servit prin REST, respectă regulile normale de bearer-token și redirecționează browserele fără token către portul vizualizatorului. Header-ele CSP folosesc un nonce de script per răspuns și dezactivează atributele de handler inline (`script-src-attr 'none'`).
+Serverul vizualizatorului se leagă implicit la `127.0.0.1` și atașează secretul serverului când transmite cererile către API-ul REST. Pentru un bind non-loopback, shell-ul HTML rămâne public, dar fiecare cerere proxy necesită bearer; vizualizatorul îl solicită și îl stochează în session storage. Configurează allowlist-uri explicite de host/origini și TLS înainte de a expune un vizualizator. Endpoint-ul `/agentmemory/viewer`, servit prin REST, respectă regulile normale de bearer-token și redirecționează browserele fără token către portul vizualizatorului. Header-ele CSP folosesc un nonce de script per răspuns și dezactivează atributele de handler inline (`script-src-attr 'none'`).
 
 ---
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Consola iii" height="32" /></picture></h2>
 
-Vizualizatorul de pe `:3113` arată ce **și-a amintit** agentul tău. [Consola iii](https://iii.dev/docs/console) arată ce **a făcut** agentul tău: fiecare operație de memorie, ca trasare OpenTelemetry, fiecare intrare KV editabilă, fiecare funcție invocabilă, fiecare stream accesibil (tappable). Două ferestre către aceeași memorie: una modelată ca produs, una modelată ca motor.
+Vizualizatorul de pe `:3113` arată ce **și-a amintit** agentul tău. [Consola iii](https://iii.dev/docs/console) arată ce **a făcut** agentul tău: fiecare operație de memorie, ca trasare OpenTelemetry, fiecare intrare KV editabilă, fiecare funcție invocabilă. Două ferestre către aceeași memorie: una modelată ca produs, una modelată ca motor.
 
-Urmărește un `memory_smart_search` declanșându-se și vezi scanarea BM25 → căutarea embedding-ului → fuziunea RRF → reranker-ul, ca o cascadă (waterfall). Editează un timer de consolidare blocat, în browser-ul de KV. Reluează un hook `PostToolUse` cu un payload ajustat. Fixează (pin) stream-ul WebSocket și urmărește observațiile ajungând în timp real.
+Urmărește un `memory_smart_search` declanșându-se și vezi scanarea BM25 → căutarea embedding-ului → fuziunea RRF → reranker-ul, ca o cascadă (waterfall). Editează un timer de consolidare blocat, în browser-ul de KV. Reluează un hook `PostToolUse` cu un payload ajustat.
 
 agentmemory oferă toate acestea gratuit, pentru că fiecare apel de funcție și fiecare trigger trece prin iii; nimic personalizat, nimic de instrumentat.
 
@@ -1267,7 +1231,7 @@ agentmemory oferă toate acestea gratuit, pentru că fiecare apel de funcție ș
   <em>Pagina Workers: fiecare worker conectat, inclusiv agentmemory însuși, cu PID, numărul de funcții, runtime și ultima activitate (last-seen).</em>
 </p>
 
-**Deja instalată.** Consola vine odată cu motorul `iii` fixat (0.22+); nu este nimic separat de instalat. Prima pornire descarcă binarul consolei alături de motor.
+**Deja instalată.** Consola vine cu engine-ul `iii` 0.24.6 fixat; nu este nimic separat de instalat. Prima pornire descarcă binarul consolei lângă engine.
 
 **Pornește-o alături de agentmemory:**
 
@@ -1275,15 +1239,12 @@ agentmemory oferă toate acestea gratuit, pentru că fiecare apel de funcție ș
 agentmemory console
 ```
 
-Aceasta rulează `iii console` din motorul fixat, pe porturile rezolvate de agentmemory (REST, stream-uri, bridge), și o servește pe un port deasupra vizualizatorului, implicit `http://localhost:3114`. `--console-port N` alege un alt port; `--port` și `--instance` selectează instanța agentmemory, la fel cum fac pentru `stop`; orice alt flag este transmis mai departe, de exemplu `--enable-flow` pentru pagina experimentală de graf al arhitecturii.
+Aceasta rulează `iii console` din motorul fixat, pe porturile rezolvate de agentmemory (REST și WebSocket-ul worker-ilor), și o servește pe un port deasupra vizualizatorului, implicit `http://localhost:3114`. `--console-port N` alege un alt port; `--port` și `--instance` selectează instanța agentmemory, la fel cum fac pentru `stop`; orice alt flag este transmis mai departe, de exemplu `--enable-flow` pentru pagina experimentală de graf al arhitecturii.
 
 Același lucru, manual, util când `agentmemory` nu este în PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **Ce poți face din consolă:**
@@ -1294,12 +1255,9 @@ Același lucru, manual, util când `agentmemory` nu este în PATH:
 | **Functions** | A invoca direct orice funcție a agentmemory, cu un payload JSON; util pentru a testa `memory.recall`, `memory.consolidate`, `graph.query`, fără a conecta un client. |
 | **Triggers** | A relua trigger-e HTTP, cron, de evenimente și de stare: a declanșa manual cron-ul de consolidare, a reîncerca o rută HTTP, a emite o schimbare de stare. |
 | **States** | Un browser KV cu CRUD complet pentru sesiuni, sloturi de memorie, timere de ciclu de viață și indexul de embeddings; editează valorile direct. |
-| **Streams** | Un monitor WebSocket live pentru scrierile de memorie, evenimentele de hook și actualizările de observații, pe măsură ce trec prin stream-urile iii. |
-| **Queues** | Topicuri de coadă durabile + gestionarea dead-letter. Reia sau elimină job-urile de embedding / compresie care au eșuat. |
 | **Traces** | Vizualizări OpenTelemetry de tip waterfall / flame / defalcare pe servicii. Filtrează după `trace_id`, pentru a vedea exact ce funcții, apeluri DB și cereri de embedding a produs o singură `memory.search`. |
 | **Logs** | Log-uri OTEL structurate, filtrate și corelate cu ID-urile de trace/span. |
 | **Config** | Configurația runtime: vezi exact cu ce worker-i, furnizori și porturi rulează motorul tău. |
-| **Flow** | (Opțional, `--enable-flow`) Graf interactiv de arhitectură, cu fiecare worker, trigger și stream. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="Vizualizarea waterfall de trace din consola iii, care arată durata per span" width="720" />
@@ -1307,11 +1265,7 @@ Același lucru, manual, util când `agentmemory` nu este în PATH:
   <em>Traces: waterfall / flame / defalcare pe servicii, pentru fiecare operație de memorie.</em>
 </p>
 
-**Trasarea este deja activă:**
-
-`iii-config.yaml` vine cu worker-ul `iii-observability` activat (`exporter: memory`, `sampling_ratio: 0.1`, metrici + log-uri). Nu este nevoie de nicio configurare suplimentară; în momentul în care agentmemory pornește, fiecare operație de memorie emite un log structurat pe care consola îl poate citi, iar una din zece (`sampling_ratio: 0.1`) emite și un span de trace.
-
-Dacă vrei să exporți către Jaeger/Honeycomb/Grafana Tempo, în schimb, schimbă `exporter: memory` în `exporter: otlp` și setează endpoint-ul colectorului conform documentației de observabilitate a iii.
+**Trasare și log-uri:** consola iii poate inspecta telemetria runtime-ului. Pentru configurarea exportatorului și a eșantionării, consultă [documentația de observabilitate iii](https://iii.dev/docs).
 
 > **Atenție:** consola în sine nu impune autentificare; păstreaz-o legată la `127.0.0.1` (valoarea implicită) și nu o expune niciodată public.
 
@@ -1319,13 +1273,13 @@ Dacă vrei să exporți către Jaeger/Honeycomb/Grafana Tempo, în schimb, schim
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="Susținut de iii" height="32" /></picture></h2>
 
-agentmemory este **deja o instanță [iii](https://iii.dev) în funcțiune**. Trei primitive (worker, funcție, trigger) compun runtime-ul; starea KV, stream-urile și trasele OTEL vin de la worker-ii iii-state, iii-stream și iii-observability, incluși în iii. Nu ai instalat Postgres, Redis, Express, pm2 sau Prometheus, pentru că iii le înlocuiește.
+agentmemory este un worker pe runtime-ul [iii](https://iii.dev). Worker Compose gestionează engine-ul și pornește agentmemory cu worker-ii registry `state` și `http`. Feed-ul vizualizatorului este SSE, servit prin endpoint-ul REST.
 
 Asta înseamnă că o singură comandă suplimentară extinde agentmemory cu o capabilitate complet nouă.
 
 ### Extinde agentmemory cu mai mulți worker-i
 
-Componentele încorporate (builtins) de care are nevoie agentmemory sunt deja în `iii-config.yaml` și pornesc odată cu el: `iii-state` (KV), `iii-queue` (reîncercări durabile pentru abonații la evenimente), `iii-pubsub`, `iii-cron`, `iii-stream` și `iii-observability` (trase OTEL, metrici și log-uri pentru fiecare funcție). Orice altceva din [registrul de worker-i iii](https://workers.iii.dev) se conectează la același motor: copiază `iii-config.yaml` în `~/.agentmemory/iii-config.yaml` (CLI-ul preferă acel fișier în locul celui inclus și îi randează în continuare porturile și căile de date), adaugă intrarea, instalează runtime-ul worker-ului o singură dată, cu `~/.agentmemory/bin/iii update worker`, și repornește agentmemory.
+Runtime-ul compune worker-ii registry `state` (KV) și `http` cu agentmemory. Alți worker-i din [registry-ul iii](https://workers.iii.dev) pot fi adăugați unui proiect Worker Compose.
 
 ```yaml
 workers:
@@ -1341,23 +1295,18 @@ workers:
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Codul rezultat din `memory_recall` rulează într-un VM de unică folosință, nu în shell-ul tău |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | Pornește servere MCP suplimentare, alături de cel al agentmemory, pe același motor |
 
-Pe motorul 0.22.x, păstrează numele cu prefixul `iii-` pentru componentele încorporate de mai sus; intrările fără prefix `http`, `state`, `queue`, `pubsub` și `cron` sunt worker-ii independenți din registru, către care agentmemory trece odată cu migrarea la 0.23.
+Runtime-ul fixează pachetele registry `state@0.22.20` și `http@0.22.7` în proiectul Worker Compose generat de CLI.
 
 Registrul complet: [workers.iii.dev](https://workers.iii.dev). Fiecare worker de acolo se compune prin aceleași primitive pe care le folosește agentmemory, iar agentmemory-ul pe care îl ai deja este unul dintre ei.
 
-### Configurația motorului și adresa de bind
+### Runtime-ul CLI și adresele de bind
 
-`agentmemory start` citește configurația motorului din primul fișier care există: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` în directorul curent, `~/.agentmemory/iii-config.yaml`, apoi `iii-config.yaml`-ul inclus. La fiecare pornire, randează acel fișier (căi de date, porturi, backend de stare) în `~/.agentmemory/data/iii-config.runtime.yaml` și pornește motorul cu copia randată, așa că editează fișierul sursă, nu pe cel randat. Valorile `host:` din fișierul sursă sunt păstrate așa cum sunt scrise.
+Rularea `agentmemory` (sau a pachetului fără subcomandă) pornește iii Worker Compose cu un manifest izolat în directorul de date selectat. Folosește iii 0.24.6, `state@0.22.20` și `http@0.22.7`. Listener-ele REST și ale vizualizatorului CLI-ului local se leagă la `127.0.0.1`; WebSocket-ul engine-ului este trafic intern runtime-ului. Implementările Docker pornite din repository folosesc [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml) separat; consultă [`deploy/README.md`](../deploy/README.md).
+### Backend de stocare: fișier (implicit) vs Redis
 
-`iii-config.yaml`-ul inclus se leagă intenționat la `127.0.0.1`, și această valoare implicită se aplică și în interiorul unui container. Un CLI pornit într-un container ascultă pe loopback-ul containerului, astfel încât porturile publicate nu ajung nicăieri. Pentru a servi un CLI containerizat prin porturi publicate, setează `AGENTMEMORY_III_CONFIG` la o configurație care se leagă la `0.0.0.0`. `iii-config.docker.yaml`-ul inclus în pachet este una dintre acestea: leagă `iii-http`, `iii-stream` și portul motorului la `0.0.0.0` și stochează starea sub `/data`, așa că montează acolo un volum scriibil. Păstrează `AGENTMEMORY_SECRET` setat și publică doar porturile de care ai nevoie, pe `127.0.0.1` sau în spatele unui proxy în care ai încredere.
+Worker-ul `state` folosește implicit un magazin KV bazat pe fișiere, păstrat în memorie și scris periodic pe disc. Redis este disponibil când mai mulți writer-i partajează un runtime; adaugă o călătorie de rețea și nu face paralelă o singură conexiune a worker-ului.
 
-`docker-compose.yml`-ul acestui repository nu trece prin căutarea de configurație a CLI-ului: montează `iii-config.docker.yaml` la `/app/config.yaml`, iar containerul `iii-engine` pornește cu `--config /app/config.yaml`. [Șabloanele de implementare](../deploy/) cu un singur clic își scriu propria configurație `0.0.0.0` în entrypoint-urile lor.
-
-### Backend de stocare: file (implicit) vs redis
-
-`iii-state` și `iii-stream` folosesc implicit magazinul KV bazat pe fișiere, inclus în iii-engine: un fișier JSON per scope, ținut în memoria procesului motorului și rescris pe disc la un interval. Aceasta este valoarea implicită potrivită pentru o instalare locală cu un singur utilizator; un daemon partajat cu mai mulți scriitori concurenți obține, în schimb, scrieri reale per cheie, de la Redis, cu costul unui round-trip de rețea per operație (fiecare apel `state::*` se serializează tot pe o singură conexiune Redis, așa că aceasta schimbă lock-ul magazinului de fișiere cu un socket, nu cu paralelism).
-
-Setează `AGENTMEMORY_STATE_BACKEND=redis` (plus `AGENTMEMORY_REDIS_URL`) pentru a comuta ambii worker-i la adaptorul `redis` încorporat în iii-engine, care stochează fiecare cheie ca un câmp de hash Redis (`HSET`), în loc să rescrie un scope întreg la fiecare scriere:
+Setează `AGENTMEMORY_STATE_BACKEND=redis` și `AGENTMEMORY_REDIS_URL` pentru a folosi adaptorul Redis al worker-ului `state`, care stochează fiecare cheie ca un câmp de hash Redis (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1365,31 +1314,25 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` are implicit valoarea `file`; lăsat nesetat, comportamentul de astăzi rămâne neschimbat, iar o valoare nerecunoscută (orice altceva decât `file` sau `redis`) este o eroare de pornire, nu o trecere silențioasă la o valoare de rezervă. `/agentmemory/status` și pagina Health a vizualizatorului (rândul State store) raportează care backend este activ și dacă răspunde, niciodată URL-ul.
+`AGENTMEMORY_STATE_BACKEND` are implicit valoarea `file`; `/agentmemory/status` și pagina Health a vizualizatorului indică backend-ul activ și dacă răspunde, niciodată URL-ul. `/agentmemory/status` raportează și versiunea fixată a engine-ului în `enginePinnedVersion`.
 
-**Doar `redis://` simplu.** Motorul fixat (0.22.1) își construiește clientul Redis fără suport TLS, așa că un URL `rediss://` (majoritatea ofertelor Redis administrate, precum Upstash, Redis Cloud și ElastiCache cu criptare în tranzit, sunt implicit doar-TLS) nu se poate conecta. Conexiunea este necriptată, așa că parola Redis și fiecare memorie stocată circulă pe fir în text clar: direcționează-te către un Redis local sau unul dintr-o rețea privată în care ai încredere. Pentru orice alt Redis, rulează un tunel criptat (stunnel, SSH sau un VPN) pe host-ul agentmemory, astfel încât saltul `redis://` simplu rămâne pe acel host, iar conexiunea din amonte a tunelului este criptată și autentificată. Dacă o parolă Redis conține un apostrof, codifică-l percent (`%27`); motorul expandează URL-ul în configurația YAML, înainte de a-l analiza (parse).
+**Doar `redis://` simplu.** Worker-ul `state` fixat suportă doar `redis://` simplu; serviciile `rediss://` care impun TLS au nevoie de un tunel criptat. Conexiunea Redis nu este criptată, așa că folosește o rețea locală/privată sau un tunel. Dacă parola Redis conține un apostrof, encodeaz-o procentual (`%27`).
 
-**Un server Redis per `--instance`.** Prefixele de chei Redis ale motorului (`state:<scope>`, `stream:<name>:<group>`) sunt fixe, așa că două instanțe agentmemory (`--instance 1`, `--instance 2`, ...) direcționate către aceeași bază de date își suprascriu reciproc datele. Un index de bază de date separat (`redis://localhost:6379/1`) ține datele stocate separate, dar motorul retransmite evenimentele live ale vizualizatorului pe un singur canal Redis pub/sub (`stream::events`), iar Redis pub/sub ignoră indexul bazei de date, așa că vizualizatorul fiecărei instanțe ar arăta totuși evenimentele live ale celeilalte. Dă fiecărei instanțe propriul server Redis (sau port), atunci când rulezi mai multe.
+**O bază de date Redis per instanță.** Dă fiecărei instanțe concurente propria bază de date sau propriul server Redis pentru a izola starea.
 
-**Ce rămâne la fel și ce diferă.** Fiecare funcționalitate a agentmemory funcționează pe Redis: sesiuni, observații, memorii (remember, supersede, evolve, forget), căutarea și loturile indexului, lecții, graful, log-ul de audit și scope-urile sale lunare, export și import, ștergerile de guvernanță, starea consolidării, instantaneul vizualizatorului și stream-ul său live, și monitorul de sănătate. Motorul stochează fiecare scope ca un singur hash Redis (`HSET`/`HGET`/`HGETALL`) și declanșează aceleași trigger-e de stare ca magazinul de fișiere. Trei diferențe ale motorului sunt gestionate în interiorul agentmemory:
+**Ce rămâne la fel și ce se schimbă.** Toate funcționalitățile agentmemory lucrează cu Redis: sesiuni, observații, memorii (remember, supersede, evolve, forget), căutarea și loturile indexului, lecții, graful, log-ul de audit și scope-urile sale lunare, export și import, ștergeri de guvernanță, starea consolidării, snapshot-ul vizualizatorului și feed-ul SSE live, plus monitorul de sănătate. Worker-ul `state` stochează fiecare scope ca hash Redis (`HSET`/`HGET`/`HGETALL`) și declanșează aceleași state trigger-e ca magazinul de fișiere. Diferențele de stocare sunt gestionate în agentmemory.
 
-- Redis returnează înregistrările unui scope într-o ordine nefixată. agentmemory le sortează de la cele mai vechi (după timpul de creare din id-ul înregistrării, apoi după timestamp-ul ei), astfel încât listele, paginarea și fragmentele de export vin înapoi în aceeași ordine ca pe magazinul de fișiere.
-- Motorul aplică actualizările parțiale pe Redis într-un script Lua care transformă array-urile vide în obiecte vide. agentmemory aplică el însuși aceste actualizări (citire, modificare, scriere, sub un lock per cheie) pe Redis, astfel încât câmpuri precum `tags: []` rămân array-uri.
-- Verificarea veche a log-ului de audit citește scope-ul vechi din Redis, în loc să caute fișierul de pe disc al magazinului de fișiere.
+Evenimentele live ale vizualizatorului folosesc SSE pe worker-ul REST și sunt difuzate de procesul agentmemory aflat în execuție; nu folosesc Redis pub/sub și nici sondarea periodică a unui stream Redis. Disponibilitatea Redis afectează citirile și scrierile de stare, nu transportul vizualizatorului. Dacă Redis nu este disponibil, raportul de stare afișează "The state store is not answering" și cum să îl verifici (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Listarea unui scope foarte mare citește întregul hash printr-un singur `HGETALL`, același cost ca păstrarea lui în memorie în magazinul de fișiere.
 
-O diferență are nevoie de tine: **după ce Redis repornește, motorul oprește retransmiterea evenimentelor live** către vizualizator, până când agentmemory repornește. Datele sunt totuși salvate și citite normal. Monitorul de sănătate trimite un eveniment de test prin Redis la fiecare 30 de secunde; când acesta nu se întoarce, `/agentmemory/status` și pagina Health a vizualizatorului arată „Actualizările live nu ajung la vizualizator”, cu remedierea: repornește agentmemory. Dacă Redis este căzut, raportul de stare arată „Magazinul de stare nu răspunde” și cum să verifici asta (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Listarea unui scope foarte mare citește întregul hash într-un singur `HGETALL`, același cost ca atunci când magazinul de fișiere îl ține în memorie.
+**Setări Redis recomandate.** Politica implicită de snapshot `save 3600 1 300 100 60 10000` poate pierde minute de scrieri la un crash. Setează `appendonly yes` pentru datele pe care nu vrei să le pierzi și `maxmemory-policy noeviction`; `allkeys-lru` sau echivalentul elimină în tăcere memorii când Redis atinge limita de memorie.
 
-**Setări Redis recomandate.** Politica implicită de instantanee `save 3600 1 300 100 60 10000` poate pierde minute de scrieri la un crash, mai rău decât fereastra de 5 secunde de flush a magazinului de fișiere. Setează `appendonly yes` pentru orice ți-ar părea rău să pierzi. Setează `maxmemory-policy noeviction`; `allkeys-lru` sau similare elimină silențios memorii, de îndată ce Redis atinge limita sa de memorie.
+Proiectul Worker Compose generat de CLI aplică aceste variabile worker-ului `state`. Pentru self-hosting cu Docker, consultă [`deploy/README.md`](../deploy/README.md) și [documentația worker-ului state](https://workers.iii.dev/workers/state).
 
-O pornire nativă (non-Docker) și fiecare [șablon de implementare](../deploy/) cu un singur clic (acestea suprascriu `iii-config.yaml`-ul inclus și pornesc nativ) citesc `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` și le randează în `iii-config`-ul lansat. URL-ul în sine nu este niciodată scris în acel fișier randat, doar o referință `${AGENTMEMORY_REDIS_URL}`, pe care procesul motorului o expandează din propriul mediu, la pornire. Doar calea Docker Compose a acestui repository (`AGENTMEMORY_USE_DOCKER=1`, sau reluarea unui motor pornit deja în acest fel) montează `iii-config.docker.yaml` doar-pentru-citire și nu randează niciodată; `agentmemory start` avertizează când detectează această combinație. Schimbă acel fișier manual, urmând aceeași formă `name: redis` / `config: redis_url: ...` arătată în documentația worker-ilor [iii-state](https://workers.iii.dev/workers/iii-state) și [iii-stream](https://workers.iii.dev/workers/iii-stream), și direcționează `redis_url` către un Redis accesibil din container. `docker-compose.yml` transmite `AGENTMEMORY_REDIS_URL` în containerul motorului, așa că `redis_url: '${AGENTMEMORY_REDIS_URL}'` funcționează acolo și ține URL-ul în afara fișierului montat.
-
-Configurația randată ține URL-ul în afara `~/.agentmemory/data/iii-config.runtime.yaml`, dar worker-ul propriu de configurare al motorului persistă totuși valoarea *expandată* în `~/.agentmemory/config/iii-state.yaml` și `iii-stream.yaml`, odată ce pornește (expandarea `${VAR}` a iii-engine se întâmplă înainte ca acel worker să își stocheze seed-ul, iar el stochează valoarea rezolvată, nu referința). Tratează acel director ca ținând o credențială: `chmod 700 ~/.agentmemory` pe orice host partajat și preferă un utilizator ACL Redis cu scope limitat la ce are nevoie agentmemory, în locul credențialelor de administrator ale bazei de date.
-
-**Migrarea nu este automată.** Comutarea `AGENTMEMORY_STATE_BACKEND` începe de la un magazin gol pe fiecare parte; nimic nu copiază datele existente din file în Redis sau invers. Exportă din backend-ul pe care îl lași și importă în cel către care te muți. Acest lucru rulează identic sub bash și zsh (inclusiv `bash -u`). Un array precum `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` nu rulează identic: zsh păstrează header-ul ca un singur cuvânt malformat, unde bash îl împarte în două, așa că ambele cereri primesc 401, de câte ori `AGENTMEMORY_SECRET` este setat:
+Tratează configurația persistentă a worker-ului ca sensibilă dacă include un URL Redis, deoarece poate conține acreditări. Restricționează permisiunile directorului de date (de exemplu, `chmod 700 <data-dir>` pe un host partajat). Preferă un utilizator ACL Redis limitat la ce îi trebuie agentmemory, în locul acreditărilor de administrator ale bazei de date.
+**Migrarea nu este automată.** Schimbarea `AGENTMEMORY_STATE_BACKEND` pornește cu un magazin gol pe fiecare parte; nimic nu copiază automat datele existente între fișiere și Redis. Exportă datele din backend-ul sursă și importă-le în destinație. Înainte de comenzile curl de mai jos, setează `AGENTMEMORY_SECRET` la conținutul fișierului `secret` din directorul de date selectat de server.
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1424,14 +1367,13 @@ fi
 | Stivă tradițională | agentmemory folosește |
 |---|---|
 | Express.js / Fastify | Trigger-e HTTP iii |
-| SQLite / Postgres + pgvector | Stare KV iii + index vectorial în memorie |
-| SSE / Socket.io | Stream-uri iii (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | endpoint-ul REST `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | Supervizarea worker-ilor de către motorul iii |
 | Prometheus / Grafana | iii OTEL + monitor de sănătate |
 | Sisteme de plugin-uri personalizate | `iii worker add <name>` |
 
-**242 de fișiere sursă · ~55,000 LOC · 3,800+ de teste · 324 de funcții · 67 de domenii KV**, toate pe trei primitive. Niciun `agentmemory plugin install`. Sistemul de plugin-uri este chiar iii.
-
+**246 de fișiere sursă · ~56,000 LOC · 3,600+ de teste · 322 de funcții · 65 de domenii KV**, toate pe trei primitive. Niciun `agentmemory plugin install`. Sistemul de plugin-uri este chiar iii.
 ---
 
 <h2 id="configuration"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-config.svg"><img src="../assets/tags/section-config.svg" alt="Configurare" height="32" /></picture></h2>
@@ -1547,39 +1489,23 @@ Când `AGENT_ID` nu este setat, memoria rămâne fără scope (comportament lega
 
 ### Porturi
 
-agentmemory + iii-engine se leagă implicit la patru porturi. Dacă o repornire eșuează cu `port in use`, acest tabel îți spune ce proces să cauți.
+Runtime-ul local folosește trei listener-e. WebSocket-ul engine-ului iii este destinat înregistrării interne a worker-ilor și nu trebuie expus rețelei publice.
 
 | Port | Proces | Scop | Suprascriere prin variabilă de mediu |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | API REST + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Worker intern de stream-uri (consumat de agentmemory + vizualizator) | `III_STREAM_PORT` (preferat) sau `III_STREAMS_PORT` (vechi/legacy) |
-| `3113` | agentmemory | Vizualizator în timp real (`http://localhost:3113`) | `III_VIEWER_PORT` sau `AGENTMEMORY_VIEWER_URL` pentru URL-ul raportat |
-| `49134` | iii-engine | WebSocket; worker-ii se înregistrează aici, telemetria OTel circulă prin el | `III_ENGINE_PORT` sau `III_ENGINE_URL` |
+| `3111` | worker-ul registry `http` | API REST, MCP HTTP, health și SSE autentificat pentru vizualizator la `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | Interfața vizualizatorului și proxy-ul acestuia | `III_VIEWER_PORT` |
+| `49134` | engine iii | WebSocket intern al worker-ilor | `III_ENGINE_PORT` sau `III_ENGINE_URL` |
 
-`--port <N>` schimbă ancora REST și derivă stream-urile `N+1`, vizualizatorul `N+2` și WebSocket-ul motorului `N+46023`, doar unde portul sau URL-ul explicit corespunzător de mai sus nu este setat. Nu creează un namespace de ciclu de viață izolat. Folosește `--instance 1` pentru un al doilea daemon; acesta folosește ancora 3211, implicit `3211/3212/3213/49234`, și primește un director separat de date și ciclu de viață, `instance-1`. Instanțele 1 până la 50 urmează același model.
+`--port <N>` setează portul REST și derivă vizualizatorul la `N+2`, iar WebSocket-ul engine-ului la `N+46023`, când acestea nu sunt definite explicit. Folosește `--instance N` pentru un runtime izolat.
 
-Motorul fixat pornește cu `--no-update-check` (fără verificări de actualizare sau de avertismente de securitate față de GitHub, la pornire) și cu telemetria anonimă de utilizare a iii dezactivată: agentmemory setează `III_TELEMETRY_ENABLED=false` pentru motorul pe care îl lansează, cu excepția cazului în care exporți tu însuți variabila, iar fișierul compose inclus face același lucru.
-
-Curățarea proceselor rămase, când porturile rămân legate după o rulare care s-a prăbușit (crash):
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` încheie curat atât worker-ul, cât și pidfile-ul motorului, la o oprire nativă controlată (graceful). În modul Docker, golește (flush) worker-ul nativ, oprește exact containerul de motor validat și păstrează atât containerul, cât și montarea sa `/data`, pentru o repornire fără pierderi; următoarea pornire validează și reia același container. Dezinstalarea susținută de Docker necesită `agentmemory remove --keep-data`: aceasta elimină fișierele partajate gestionate de agentmemory, păstrând în același timp containerul validat, montarea sa de date și înregistrarea de ciclu de viață necesară pentru a le recupera. Ștergerea distructivă a datelor Docker este lăsată intenționat în sarcina operatorului, după un backup. CLI-ul refuză, de asemenea, să adopte sau să semnaleze deținătorii de porturi Docker sau VM (backend-ul Docker, vpnkit, colima) ca motor nativ, cu excepția cazului în care este transmis `--force`. Curățarea manuală de mai sus este doar pentru cazul post-crash, în care nu rămâne niciun pidfile.
+Implementările self-host publică REST și vizualizatorul, implicit pe `127.0.0.1:3111` și `127.0.0.1:3113`; porturile host-ului pot fi schimbate cu `AGENTMEMORY_REST_PORT` și `AGENTMEMORY_VIEWER_PORT`. CORS REST permite implicit `http://localhost` și `http://127.0.0.1` pe porturile REST și ale vizualizatorului configurate; setează `REST_ALLOWED_ORIGINS` în Docker la o listă separată prin virgule de origini exacte pentru a permite alte origini de browser de încredere.
 
 ### Fișierul de configurare
 
-Pune configurația de runtime a agentmemory în `~/.agentmemory/.env`, în loc să exporți variabile în fiecare shell. Dacă vizualizatorul arată un indiciu de configurare, precum `export ANTHROPIC_API_KEY=...`, copiază-l în acest fișier ca `ANTHROPIC_API_KEY=...`, fără prefixul `export`, apoi repornește agentmemory.
+Pune configurația de runtime a agentmemory în `~/.agentmemory/.env`, în loc să exporți variabile în fiecare shell. Dacă vizualizatorul arată un indiciu precum `export ANTHROPIC_API_KEY=...`, copiază-l în acest fișier ca `ANTHROPIC_API_KEY=...`, fără prefixul `export`, apoi repornește agentmemory. Setează `AGENTMEMORY_ENV_FILE` pentru a folosi altă cale de fișier env.
 
-Variabilele de mediu ale procesului funcționează în continuare și au prioritate față de valorile din fișier.
+Variabilele de mediu ale procesului funcționează în continuare și au prioritate față de valorile din fișier. Proiectul Worker Compose generat de CLI transmite setările Redis din `AGENTMEMORY_STATE_BACKEND` și `AGENTMEMORY_REDIS_URL` către worker-ul `state`.
 
 Pe Windows, același fișier se află la `%USERPROFILE%\.agentmemory\.env`:
 
@@ -1733,8 +1659,8 @@ Creează `~/.agentmemory/.env`:
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
                                            # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1773,12 +1699,12 @@ Creează `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 de endpoint-uri pe portul `3111`. API-ul REST se leagă implicit la `127.0.0.1`. Endpoint-urile protejate necesită `Authorization: Bearer <secret>`, iar endpoint-urile de sincronizare mesh necesită un `AGENTMEMORY_SECRET` setat explicit pe ambii parteneri (peers).
+144 de endpoint-uri pe portul `3111`. API-ul REST se leagă implicit la `127.0.0.1`. Endpoint-urile protejate necesită `Authorization: Bearer <secret>`, iar endpoint-urile de sincronizare mesh necesită un `AGENTMEMORY_SECRET` setat explicit pe ambii parteneri (peers).
 
-**Autentificarea este activată implicit.** Când `AGENTMEMORY_SECRET` nu este setat (în shell sau în `~/.agentmemory/.env`), serverul generează un secret aleatoriu la prima pornire și îl stochează în `~/.agentmemory/secret`, cu modul `0600`. Fiecare client inclus îl citește de acolo, când vorbește cu un server local: CLI-ul, vizualizatorul, hook-urile din `plugin/scripts`, serverul MCP și shim-ul `@agentmemory/mcp`, configurațiile scrise de `agentmemory connect`, și integrările incluse OpenCode, Pi, OpenClaw, Hermes și filesystem-watcher. Secretul stocat este trimis doar către URL-uri loopback (`localhost`, `127.0.0.0/8`, `::1`). Un `AGENTMEMORY_SECRET` explicit are întotdeauna prioritate, iar clienții la distanță au nevoie, în continuare, să îl aibă setat. Docker și entrypoint-urile din `deploy/` își generează și exportă deja propriul secret. Pentru a apela API-ul manual:
+**Autentificarea este activată implicit.** Când `AGENTMEMORY_SECRET` nu este setat (în shell sau în `~/.agentmemory/.env`), CLI-ul generează un secret aleatoriu la prima pornire și îl stochează în directorul de date selectat, sub numele `secret` și cu modul `0600` (locația implicită specifică platformei este descrisă mai sus). Toți clienții incluși îl citesc de acolo când comunică cu un server local: CLI-ul, vizualizatorul, hook-urile din `plugin/scripts`, serverul MCP și shim-ul `@agentmemory/mcp`, configurațiile scrise de `agentmemory connect` și integrările incluse OpenCode, Pi, OpenClaw, Hermes și filesystem-watcher. Secretul stocat este trimis doar către URL-uri loopback (`localhost`, `127.0.0.0/8`, `::1`). Un `AGENTMEMORY_SECRET` explicit are întotdeauna prioritate, iar clienții la distanță trebuie să seteze secretul în mediul lor. Implementările Docker self-host pornite din repository și entrypoint-urile `deploy/` își generează și exportă propriul secret. Pentru a apela API-ul manual:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **Regulile de cerere pentru scrieri.** Cererile `POST`, `PUT`, `PATCH` și `DELETE` către API-ul REST și vizualizator trebuie să trimită `Content-Type: application/json` (un parametru `charset` este acceptabil), de câte ori au un corp, și un header `Origin`, atunci când este prezent, trebuie să fie o origine loopback pentru portul REST sau vizualizator configurat, sau să fie listat în `VIEWER_ALLOWED_ORIGINS` (separate prin virgulă, de ex. `https://memory.example.com`). Clienții care nu trimit niciun header `Origin` (CLI, hook-uri, MCP, curl, server-la-server) nu sunt afectați. Vizualizatorul acceptă și propria sa origine.
@@ -1858,7 +1784,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Cerințe preliminare:** Node.js >= 20, cu npm/npx; [iii-engine](https://iii.dev/docs) v0.22.1 sau Docker. Instalarea automată a motorului pe macOS/Linux necesită, de asemenea, `curl`, un `sh` POSIX și `tar`; Windows nativ folosește `iii.exe`-ul fixat manual, WSL2 sau Docker Desktop.
+**Cerințe preliminare:** Node.js >= 20, cu npm/npx. Instalarea engine-ului gestionată de CLI pe macOS/Linux necesită `curl`, un `sh` POSIX și `tar`; Windows nativ necesită instalarea manuală a `iii.exe` fixat sau poate folosi WSL2.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Licență" height="32" /></picture></h2>
 

@@ -118,7 +118,7 @@ export function llmsFullTxt(): string {
     "- Memories and captured activity are stored in the local data directory on the user's machine (~/Library/Application Support/agentmemory on macOS, $XDG_DATA_HOME/agentmemory or ~/.local/share/agentmemory on Linux, %APPDATA%\\agentmemory on Windows). ~/.agentmemory holds configuration and the generated secret. There is no account, no hosted service and no telemetry.",
     "- Nothing leaves the machine unless the user configures an LLM or embedding provider; then that provider receives the text it needs. Local embeddings send nothing.",
     "- The REST API requires a bearer token by default. A secret is generated into ~/.agentmemory/secret on first start when AGENTMEMORY_SECRET is unset.",
-    "- The bundled engine config binds to 127.0.0.1.",
+    "- The CLI's local REST and viewer listeners bind to 127.0.0.1 by default; the engine WebSocket is internal runtime traffic.",
     `- Report vulnerabilities privately through GitHub Security Advisories, as described in ${REPO_URL}/blob/main/SECURITY.md`,
     "",
     "## FAQ",

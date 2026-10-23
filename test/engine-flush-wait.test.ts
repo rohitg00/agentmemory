@@ -31,14 +31,11 @@ describe("engine flush wait on stop", () => {
   });
 
   it("counts a file store without an explicit interval at the engine default", () => {
-    const stateAndStream = [
+    const stateStore = [
       "  - name: iii-state",
       "        store_method: file_based",
-      "        save_interval_ms: 2000",
-      "  - name: iii-stream",
-      "        store_method: file_based",
     ].join("\n");
-    expect(engineSaveIntervalMs([stateAndStream])).toBe(5000);
+    expect(engineSaveIntervalMs([stateStore])).toBe(5000);
   });
 
   it("does not cut a long configured interval short", () => {

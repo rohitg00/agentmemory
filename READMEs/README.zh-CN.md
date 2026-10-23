@@ -100,7 +100,7 @@
 
 - Node.js 20 或更新版本,并安装 npm 和 npx(`node -v`、`npm -v` 和 `npx -v`)。
 - macOS/Linux 下自动安装 iii-engine 还需要 `curl`、POSIX `sh` 和 `tar`。像 `node:20-slim` 这样的精简镜像可能不包含它们。
-- 原生 Windows 需要手动安装锚定版本 iii-engine v0.22.1 的 `iii.exe`。另外支持的途径是 WSL2 或 Docker Desktop。
+原生 Windows 需要手动安装固定版本的 iii v0.24.6 `iii.exe`；WSL2 使用 macOS/Linux 自动安装程序
 
 标准的全新安装命令:
 
@@ -112,7 +112,7 @@ npx -y @agentmemory/agentmemory@latest
 
 无密钥模式会关闭向量嵌入。`memory_recall`(即 `mem::search` 路径)使用 BM25,而当图数据已经存在时,`memory_smart_search` 还可以融合结构化的图匹配结果。要免费启用本地设备上的语义召回,在 `~/.agentmemory/.env` 中设置 `EMBEDDING_PROVIDER=local` 并重启。首次嵌入请求会下载 `Xenova/all-MiniLM-L6-v2`;完成这次初始模型下载后,推理就会在本地运行。
 
-本地运行时使用四个端口:`3111` 用于 REST/MCP HTTP,`3112` 用于 iii 流,`3113` 用于查看器,`49134` 用于 iii worker 的 WebSocket。持久化的 iii 状态保存位置为:macOS 上的 `~/Library/Application Support/agentmemory`,Linux 上的 `$XDG_DATA_HOME/agentmemory` 或 `~/.local/share/agentmemory`,以及 Windows 上的 `%APPDATA%\agentmemory`。使用 `--data-dir <path>` 或 `AGENTMEMORY_DATA_DIR` 来覆盖这个位置,并在之后每次重启时复用同一个值。出于向后兼容考虑,对于实例 0,已存在的 `./data/state_store.db` 或 `./data/iii-config.yaml` 会优先于平台默认路径;显式的命令行参数或环境变量覆盖始终优先级最高。
+本地 CLI 使用 `3111` 上的 REST/MCP HTTP、`3113` 上的查看器和 `49134` 上的内部 iii worker WebSocket；查看器通过 REST SSE `GET /agentmemory/viewer/events` 接收更新。持久数据默认位于各平台的数据目录。可用 `--data-dir <path>` 或 `AGENTMEMORY_DATA_DIR` 覆盖；instance 0 也会复用已有的 `./data/state_store.db`。`--instance N` 隔离运行时，`AGENTMEMORY_ENV_FILE` 选择其他 `.env` 文件
 
 然后验证召回是否生效,并为你的代理装上它的 skills:
 
@@ -132,7 +132,7 @@ npx skills add rohitg00/agentmemory -y   # 17 native skills so your agent knows 
 <details>
 <summary><strong>Windows</strong></summary>
 
-最省心的路径是 WSL2。原生 Windows 引擎设置需要手动下载锚定版本 v0.22.1 的 ZIP 并解压出 `iii.exe`;CLI 不会自动解压它。也支持 Docker Desktop。具体步骤见 [Windows 说明](#windows)。
+WSL2 是最快的方式；原生 Windows 需要手动安装 v0.24.6 二进制文件。步骤见 [Windows 说明](#windows)
 
 </details>
 
@@ -157,7 +157,7 @@ npx 按版本缓存。用 `npx -y @agentmemory/agentmemory@latest` 强制使用�
 <details>
 <summary><strong>已经在运行自己的 iii 引擎</strong></summary>
 
-agentmemory 锚定 iii-engine v0.22.1,不会连接到其他版本(worker 无法说另一个引擎版本的协议)。先停掉那个引擎,再运行 `npx -y @agentmemory/agentmemory@latest`。它会在 `~/.agentmemory/bin` 中安装并运行锚定的 v0.22.1 版本,不会动你自己的 `iii`。
+兼容性：iii 0.24.6，以及 registry worker `state` 0.22.20 和 `http` 0.22.7
 
 </details>
 
@@ -319,7 +319,7 @@ agentmemory 适用于任何支持 hooks、MCP 或 REST API 的代理。所有代
 npx -y @agentmemory/agentmemory@latest
 ```
 
-默认情况下,agentmemory 会把 iii-engine 状态存储在启动它的仓库之外:macOS 上的 `~/Library/Application Support/agentmemory`,Linux 上的 `$XDG_DATA_HOME/agentmemory` 或 `~/.local/share/agentmemory`,以及 Windows 上的 `%APPDATA%\agentmemory`。对于实例 0,已存在的旧版 `./data/state_store.db` 或 `./data/iii-config.yaml` 会在平台默认路径之前被复用。要显式选择一个位置,传入 `--data-dir <path>` 或设置 `AGENTMEMORY_DATA_DIR`;这两种显式设置都优先于旧版探测逻辑:
+默认情况下，agentmemory 将 state 存储在启动它的仓库之外：macOS 为 `~/Library/Application Support/agentmemory`，Linux 为 `$XDG_DATA_HOME/agentmemory` 或 `~/.local/share/agentmemory`，Windows 为 `%APPDATA%\agentmemory`。instance 0 也会复用已有的 `./data/state_store.db`。使用 `--data-dir <path>` 或 `AGENTMEMORY_DATA_DIR` 选择位置；`--instance N` 隔离运行时，`AGENTMEMORY_ENV_FILE` 选择其他 `.env` 文件：
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
@@ -476,7 +476,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 </tr>
 <tr>
 <td><strong>外部依赖</strong></td>
-<td>无(SQLite + iii-engine)</td>
+<td>无(file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + 向量数据库</td>
 <td>多个</td>
@@ -556,7 +556,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="快速开始" height="32" /></picture></h2>
 
-兼容性:此版本面向 `iii-sdk` 0.22.1,并锚定 iii-engine v0.22.1。
+兼容性：iii 0.24.6，以及 registry worker `state` 0.22.20 和 `http` 0.22.7
 
 ### 30 秒体验
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-启动完成面板会覆盖全部四个端口:3111 上的 REST/MCP HTTP,3112 上的 iii 流,3113 上的查看器,以及 49134 上的 iii worker WebSocket。`status` 会确认 agentmemory 的健康状况以及当前激活的提供者/嵌入模式。保存一条探测记录并确认它可被搜索到:
+运行时使用 3111 上的 REST/MCP HTTP、3113 上的查看器和 49134 上的内部 WebSocket；查看器实时事件通过 REST SSE 传输。`status` 会报告 `enginePinnedVersion`、agentmemory 健康状态及 provider/embedding mode。保存 probe 并确认可搜索：
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-警告:这个命令会改动当前的工作区/运行时。它可能更新 JavaScript 依赖,并拉取锚定的 `iiidev/iii:0.22.1` Docker 镜像。它绝不会安装未锚定或更新的 iii 引擎。
+警告：此命令会更改当前 workspace/runtime，可能更新 JavaScript 依赖并安装固定版本的 iii 0.24.6 engine 二进制文件。
 
 具体实现见 `src/cli.ts`(参见 `runUpgrade`,大致在 `src/cli.ts:544-595` 区域)。
 
@@ -795,7 +795,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Cline / Roo Code / Kilo Code** | Cline MCP 设置(Settings UI → MCP Servers → Edit) | 同样的 `mcpServers` 代码块。 |
 | **Devin CLI(MCP + hooks)** | `~/.config/devin/config.json` | `agentmemory connect devin` 会合并 MCP 条目;`--with-hooks` 会添加六个原生自动捕获 hooks(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、Stop、SessionEnd),并使用 Devin 的小写工具匹配器。用 `devin mcp list` 以及 devin 内部的 `/hooks` 验证。 |
 | **Devin CLI(完整插件)** | `plugin/.devin-plugin/` | 在 checkout 中运行 `devin plugins install ./plugin`,会把全部 17 个 skills 注册为 `/agentmemory:<skill>` 斜杠命令,并加上 MCP 服务器。Devin 的插件 hooks 无法触发 `SessionStart`/`SessionEnd`,所以要配合 `connect devin --with-hooks` 才能实现完整的会话捕获。 |
-| **Devin(云端)** | Settings → Connections → MCP servers | 添加一个自定义 MCP(STDIO):命令 `npx`,参数 `-y @agentmemory/mcp@latest`,环境变量 `AGENTMEMORY_URL` 指向一个网络可达的 agentmemory 部署,再加上 `AGENTMEMORY_SECRET`(云端会话无法访问 localhost —— 见 [`deploy/`](../deploy/))。把密钥存进 Devin Secrets,然后用 "Test listing tools" 验证全部 54 个工具都出现了。 |
+| **Devin(云端)** | Settings → Connections → MCP servers | 添加一个自定义 MCP(STDIO):命令 `npx`,参数 `-y @agentmemory/mcp@latest`,环境变量 `AGENTMEMORY_URL` 指向一个网络可达的 agentmemory 部署,再加上 `AGENTMEMORY_SECRET`(云端会话无法访问 localhost —— 见 [`../deploy/`](../deploy/))。把密钥存进 Devin Secrets,然后用 "Test listing tools" 验证全部 54 个工具都出现了。 |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user`(自动合并)。 |
 | **GitHub Copilot CLI(仅 MCP)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` 会合并 `mcpServers.agentmemory`;Copilot 会在下次启动或执行 `/mcp` 后拾取它。 |
 | **GitHub Copilot CLI(完整插件)** | Copilot 插件安装 | 运行 `copilot plugin install rohitg00/agentmemory:plugin` 安装来自 GitHub 子目录的插件。 |
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 完整示例见:[`examples/python/`](../examples/python/)(快速开始 + 观测/召回流程)。对于没有 iii 运行时的宿主,`:3111` 上的 REST 仍然可用。
@@ -853,110 +861,62 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-如果已经安装了锚定的二进制文件,这会用本地的 `iii-engine` 启动 agentmemory;如果选择了 Docker Compose,则用它启动。REST、流和查看器默认绑定到 `127.0.0.1`。macOS/Linux 的自动二进制安装路径需要 `curl`、POSIX `sh` 和 `tar`。
-
-手动安装 `iii-engine`。**agentmemory 目前把 `iii-engine` 锚定在 `v0.22.1`**,与它依赖的 `iii-sdk` 是同一个发行版;worker 说的是该引擎版本的通信协议,而 0.20.0 重组了 SDK 的接口面,所以这两者在 agentmemory 的发行版中要一起移动。如果你运行自己的引擎并确认它匹配,可以用 `AGENTMEMORY_III_VERSION=<version>` 覆盖。
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** 把 `aarch64-apple-darwin` 换成 `x86_64-apple-darwin`
-- **Linux x64:** 换成 `x86_64-unknown-linux-gnu`
-- **Linux arm64:** 换成 `aarch64-unknown-linux-gnu`
-- **Windows:** 从 [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) 下载 `iii-x86_64-pc-windows-msvc.zip`,并把 `iii.exe` 解压到 `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-发布页面上每个压缩包都有一个对应的 `.sha256` 文件;当你切换平台时,在上面的校验中使用该文件给出的哈希值(Windows 上用 `Get-FileHash`)。`npx @agentmemory/agentmemory` 中的自动安装程序锚定了这些哈希值,并会拒绝不匹配的压缩包。
-
-或者使用 Docker(捆绑的 `docker-compose.yml` 会拉取 `iiidev/iii:0.22.1`)。完整文档:[iii.dev/docs](https://iii.dev/docs)。
+`npm start` 启动与 CLI 相同的 iii Worker Compose：iii 0.24.6、`state@0.22.20` 和 `http@0.22.7`。macOS/Linux 上 CLI 将 engine 下载到 `~/.agentmemory/bin`；自动安装需要 `curl`、POSIX `sh` 和 `tar`。本地 REST/查看器绑定 `127.0.0.1`，更新通过 REST SSE 发送。`/agentmemory/status` 报告 `enginePinnedVersion`；可用 `AGENTMEMORY_III_VERSION` 覆盖 pin
 
 ### Windows
 
-agentmemory 可以在 Windows 10/11 上运行,但光有 Node.js 包是不够的;你还需要让锚定的 iii-engine v0.22.1 运行时作为后台进程运行。CLI 不会自动解压 Windows 的 ZIP,所以原生 Windows 用户必须手动安装 `iii.exe`,或者使用 WSL2,或者选择 Docker Desktop。
+agentmemory 支持 Windows 10/11；WSL2 可按 Linux 流程自动安装 engine。原生 Windows 需手动安装 iii-engine v0.24.6：从 [iii v0.24.6 发布页](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6) 下载对应归档、验证校验和，并将 `iii.exe` 放到 `PATH`。CLI 不会自动解压 ZIP
 
-原生 Windows 上自动化的 MCP 接入只支持 `agentmemory connect copilot-cli`。对于 Claude Code、Codex、Cursor 以及其他所有原生 Windows 代理,把 [其他代理](#other-agents) 中手动的 MCP 代码块复制进该代理的 Windows 配置中。只有当目标代理也安装在同一个 WSL 环境中时,在 WSL 中运行 `connect` 才合适;它不会编辑 Windows 宿主上的代理配置。
+原生 Windows 仅为 `agentmemory connect copilot-cli` 提供自动 MCP 配置；其他 agent 请使用 [Other agents](#other-agents) 中的手动配置。仅当目标 agent 也安装在同一 WSL 环境时，才在 WSL 中运行 `connect`
 
-**方案 A:预编译 Windows 二进制文件(推荐)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**方案 B:Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**方案 C:仅独立 MCP(不需要引擎)。** 如果你的代理只需要 MCP 工具,不需要 REST API、查看器或定时任务,可以完全跳过引擎:
+**仅运行独立 MCP（不启动 engine）。** 如果不需要 REST API、查看器或运行时服务：
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Windows 诊断:** 如果 `npx -y @agentmemory/agentmemory@latest` 失败,加上 `--verbose` 重新运行以查看引擎实际的 stderr。常见的失败模式:
-
-| 症状 | 解决方法 |
-|---|---|
-| `The engine process started but the REST API never responded.` | 确认四个派生端口都是空闲的,验证锚定的 `iii.exe` 是否仍在运行,然后加上 `--verbose` 重新运行并检查捕获到的引擎 stderr |
-| `Could not start iii-engine` | `iii.exe` 和 Docker 都没有安装。见上面的方案 A 或 B |
-| 端口冲突 | 用 `netstat -ano \| findstr :3111` 查看占用情况,然后结束该进程或使用 `--port <N>` |
-| 即使安装了 Docker,也跳过了 Docker 回退 | 确认 Docker Desktop 确实在运行(系统托盘图标) |
-
-> 注意:iii **引擎**是一个预编译的二进制文件,不是 cargo crate,所以不要尝试 `cargo install` 它。(iii **SDK** 发布在 crates.io、npm 和 PyPI 上,但 agentmemory 不需要它们。)受支持的引擎安装方式都锚定在 v0.22.1:上面的预编译二进制文件、agentmemory 的 macOS/Linux 自动安装路径(需要 `curl`、POSIX `sh` 和 `tar`),以及 Docker 镜像 `iiidev/iii:0.22.1`。直接运行上游的 `install.sh | sh` 会安装最新版引擎,agentmemory 不支持这种方式。请使用 `npx -y @agentmemory/agentmemory@latest`;在 macOS/Linux 上,它会把锚定的引擎拉取到 `~/.agentmemory/bin`。
+**诊断：** 启动失败时使用 `--verbose` 查看 engine stderr。确认 `3111`、`3113` 和 `49134` 端口空闲；使用 `--port <N>` 或 `--instance N` 隔离运行时。CLI 不会替换 `PATH` 中的 iii
 
 ---
 
 <h2 id="deploy">部署</h2>
 
-面向托管宿主的一键模板。每一个模板都自带一个独立的
-Dockerfile,从 npm 拉取 `@agentmemory/agentmemory`,再从官方的
-`iiidev/iii` Docker Hub 镜像中复制 iii 引擎二进制文件;不需要预先
-构建好的 agentmemory 镜像。持久化存储挂载在 `/data`;首次启动的
-entrypoint 会用一份针对部署场景调优过的配置覆盖 npm 自带的 iii
-配置(原配置绑定 `127.0.0.1`),新配置绑定 `0.0.0.0` 并使用绝对的
-`/data` 路径,生成 HMAC 密钥,然后在执行 agentmemory CLI 之前通过
-`gosu` 把权限从 `root` 降级到 `node`。
+Docker 支持从此仓库自行托管，不是 CLI 启动模式。使用 [`../deploy/Dockerfile`](../deploy/Dockerfile) 和 [`../deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml) 运行 iii 0.24.6；state、traces 和 secret 保存在持久化 `/data` volume 中。默认 named volume 为 `iii-data`；将 `AGENTMEMORY_DATA_DIR` 设为 host 路径可使用 bind mount。0.22.1 的文件存储可直接从 `/data/state_store.db` 读取，无需迁移。REST CORS 默认允许本地 origin；通过 `REST_ALLOWED_ORIGINS` 添加可信 origin。详情见 [`../deploy/README.md`](../deploy/README.md)。
+
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="部署到 fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="部署到 Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="部署到 fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="部署到 Railway" /></a>
 </p>
 
-Render 的一键部署按钮需要仓库根目录下有 `render.yaml`,而我们刻意保持根目录干净。请使用 [`deploy/render/`](.././deploy/render/README.md) 中记录的 Render Blueprint 流程,手动指向仓库内的 blueprint。
+Render 的一键部署按钮需要仓库根目录下有 `render.yaml`,而我们刻意保持根目录干净。请使用 [`../deploy/render/`](.././deploy/render/README.md) 中记录的 Render Blueprint 流程,手动指向仓库内的 blueprint。
 
 完整的设置细节(HMAC 捕获、查看器 SSH 隧道、密钥轮换、备份、
-最低成本)见 [`deploy/`](.././deploy/README.md):
+最低成本)见 [`../deploy/`](.././deploy/README.md):
 
-- [`deploy/fly`](.././deploy/fly/README.md):单机,
+- [`../deploy/fly`](.././deploy/fly/README.md):单机,
   `auto_stop_machines = "stop"`;空闲时最省钱。
-- [`deploy/railway`](.././deploy/railway/README.md):Hobby 套餐固定费用,
+- [`../deploy/railway`](.././deploy/railway/README.md):Hobby 套餐固定费用,
   在控制面板中配置卷。
-- [`deploy/render`](.././deploy/render/README.md):Blueprint 流程,
+- [`../deploy/render`](.././deploy/render/README.md):Blueprint 流程,
   付费套餐下自动磁盘快照。
-- [`deploy/coolify`](.././deploy/coolify/README.md):通过
+- [`../deploy/coolify`](.././deploy/coolify/README.md):通过
   [Coolify](https://coolify.io/self-hosted) 自托管在你自己的 VPS 上;
   同样的 Docker Compose 技术栈,主机和数据都归你所有。
 
 只会发布 `3111` 端口。容器内 `3113` 上的查看器仍然绑定在
 回环地址上;每个模板的 README 都记录了用于访问它的 SSH 隧道模式。
 
+
+### 迁移由 CLI 管理的旧版 Docker 安装
+
+当前 CLI 不会启动或管理 Docker 部署。如果它发现旧版 Docker 生命周期记录，会保留元数据并打印准确的 `docker stop ...` 命令；迁移前请运行该命令。旧容器仍挂载着该卷时，不要启动新运行时。
+
+保留并备份旧的持久卷（通常为 `iii-data`），或将 `/data` 的内容复制到 bind mount。state worker 会直接读取现有的 `/data/state_store.db`，无需导出或转换。旧运行时使用 UID/GID `65532:65532`；新镜像会一次性递归迁移所有权至 `node:node`（`1000:1000`），并写入 `/data/.ownership-migrated-node-v1`。完成此迁移后，不要再将该卷挂载回旧运行时。
+
+旧运行时还会将生成的 bearer secret 存储在 `/data/.hmac` 中。新镜像会在迁移期间保留此 secret；显式设置的 `AGENTMEMORY_SECRET` 优先。请在仓库根目录运行 `docker compose up --build -d`，启动新的 Compose 项目。如果旧卷的名称带有项目名前缀而不是 `iii-data`，请明确复用或重命名该卷，避免误用新建的空卷。检查 `/agentmemory/livez`，并确认能够找到新旧两类记忆。除非确实要删除数据，否则不要运行 `docker compose down -v`。
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="为什么选择 agentmemory" height="32" /></picture></h2>
@@ -1294,10 +1254,7 @@ agentmemory console
 同样的操作也可以手动完成,在 `agentmemory` 不在 PATH 上时很有用:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **在控制台中可以做什么:**
@@ -1308,7 +1265,6 @@ agentmemory console
 | **Functions** | 直接用 JSON 负载调用 agentmemory 的任意函数;方便测试 `memory.recall`、`memory.consolidate`、`graph.query`,无需接入客户端。 |
 | **Triggers** | 重放 HTTP、cron、事件和状态触发器:手动触发整合用的 cron、重试某个 HTTP 路由、发出一次状态变化。 |
 | **States** | 对会话、记忆槽位、生命周期计时器和嵌入索引进行完整 CRUD 的 KV 浏览器;就地编辑值。 |
-| **Streams** | 实时 WebSocket 监视器,观察记忆写入、hook 事件和观测更新流经 iii 流的过程。 |
 | **Queues** | 持久队列主题 + 死信管理。重放或丢弃失败的嵌入 / 压缩任务。 |
 | **Traces** | OpenTelemetry 瀑布图 / 火焰图 / 服务分解视图。按 `trace_id` 过滤,精确查看一次 `memory.search` 产生了哪些函数、数据库调用和嵌入请求。 |
 | **Logs** | 结构化的 OTEL 日志,按 trace/span ID 过滤并关联。 |
@@ -1323,9 +1279,8 @@ agentmemory console
 
 **Traces 已经默认开启:**
 
-`iii-config.yaml` 出厂就启用了 `iii-observability` worker(`exporter: memory`、`sampling_ratio: 0.1`、指标 + 日志)。不需要额外配置;agentmemory 启动的那一刻,每个记忆操作都会发出一条控制台可读的结构化日志,其中十分之一(`sampling_ratio: 0.1`)还会发出一个 trace span。
+**Tracing 和日志：** 使用 iii console 检查运行时 telemetry。Exporter 和 sampling 配置请参阅 [iii observability 文档](https://iii.dev/docs)。
 
-如果你想改为导出到 Jaeger/Honeycomb/Grafana Tempo,把 `exporter: memory` 改成 `exporter: otlp`,并按照 iii 的可观测性文档设置收集器端点。
 
 > **提醒:** 控制台本身不强制鉴权;保持它绑定在 `127.0.0.1`(默认值)上,永远不要把它对外公开。
 
@@ -1333,14 +1288,16 @@ agentmemory console
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="由 iii 驱动" height="32" /></picture></h2>
 
-agentmemory **本身就是一个正在运行的 [iii](https://iii.dev) 实例**。三种原语(worker、函数、触发器)构成了这个运行时;KV 状态、流和 OTEL trace 来自随 iii 一同发布的 iii-state、iii-stream 和 iii-observability worker。你没有安装 Postgres、Redis、Express、pm2 或 Prometheus,因为 iii 替代了它们。
+agentmemory 是 [iii](https://iii.dev) runtime 上的 worker。Worker Compose 管理 engine，并与 registry `state`、`http` worker 一起启动；查看器 feed 通过 REST SSE 提供。
+
+
+
 
 这意味着只需多一条命令,就能给 agentmemory 扩展出一整套全新能力。
 
 ### 用更多 worker 扩展 agentmemory
 
-agentmemory 需要的内建 worker 已经在 `iii-config.yaml` 中,并随之启动:`iii-state`(KV)、`iii-queue`(事件订阅者的持久重试)、`iii-pubsub`、`iii-cron`、`iii-stream`,以及 `iii-observability`(每个函数的 OTEL trace、指标和日志)。[iii worker 注册表](https://workers.iii.dev) 中的其他任何 worker 都可以接入同一个引擎:把 `iii-config.yaml` 复制到 `~/.agentmemory/iii-config.yaml`(CLI 会优先使用这个文件而不是捆绑的那个,并且仍然会把端口和数据路径渲染进去),加上新条目,用 `~/.agentmemory/bin/iii update worker` 安装一次 worker 运行时,然后重启 agentmemory。
-
+运行时将 agentmemory 与 registry `state`（KV）和 `http` worker 组合；也可向 Worker Compose 项目添加 [iii registry](https://workers.iii.dev) 中的其他 worker。
 ```yaml
 workers:
   # ...the bundled entries...
@@ -1355,23 +1312,17 @@ workers:
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | 从 `memory_recall` 得到的代码在一次性 VM 中运行,而不是在你的 shell 里 |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | 在 agentmemory 旁边架设额外的 MCP 服务器,共享同一个引擎 |
 
-在引擎 0.22.x 上,对于上面这些内建 worker 要保留 `iii-` 前缀的名称;不带前缀的 `http`、`state`、`queue`、`pubsub` 和 `cron` 条目,是 agentmemory 在 0.23 迁移中会切换过去的独立注册表 worker。
 
 完整注册表见:[workers.iii.dev](https://workers.iii.dev)。那里的每个 worker 都通过 agentmemory 所用的同样原语组合而成,而你已经拥有的 agentmemory 本身就是其中之一。
 
-### 引擎配置与绑定地址
+CLI 生成的 Worker Compose 项目固定 registry package `state@0.22.20` 和 `http@0.22.7`。
+### CLI runtime 与绑定地址
 
-`agentmemory start` 会按顺序读取第一个存在的引擎配置文件:`AGENTMEMORY_III_CONFIG`、当前目录下的 `./iii-config.yaml`、`~/.agentmemory/iii-config.yaml`,然后才是捆绑的 `iii-config.yaml`。每次启动时,它都会把这个文件(数据路径、端口、状态后端)渲染进 `~/.agentmemory/data/iii-config.runtime.yaml`,并用渲染后的副本启动引擎,所以要编辑源文件,而不是渲染后的文件。源文件中的 `host:` 值会原样保留。
-
-捆绑的 `iii-config.yaml` 故意绑定在 `127.0.0.1` 上,这个默认设置在容器内部也同样适用。在容器中启动的 CLI 监听的是容器自己的回环地址,所以发布出去的端口什么也访问不到。要让容器化的 CLI 通过发布的端口对外提供服务,把 `AGENTMEMORY_III_CONFIG` 设置为一个绑定 `0.0.0.0` 的配置。打包好的 `iii-config.docker.yaml` 就是这样一个配置:它把 `iii-http`、`iii-stream` 和引擎端口都绑定到 `0.0.0.0`,并把状态存储在 `/data` 下,所以要在那里挂载一个可写的卷。保持 `AGENTMEMORY_SECRET` 已设置,并且只在 `127.0.0.1` 上或在你信任的代理之后,发布你真正需要的端口。
-
-这个仓库的 `docker-compose.yml` 不会经过 CLI 的配置查找逻辑:它把 `iii-config.docker.yaml` 挂载到 `/app/config.yaml`,`iii-engine` 容器以 `--config /app/config.yaml` 启动。一键 [部署模板](../deploy/) 会在它们的 entrypoint 中写入各自的 `0.0.0.0` 配置。
+运行 `agentmemory` 会在所选数据目录中使用独立 manifest 启动 iii Worker Compose：iii 0.24.6、`state@0.22.20`、`http@0.22.7`。本地 REST 和查看器绑定到 `127.0.0.1`；engine WebSocket 是内部流量。仓库 Docker 部署使用 [`../deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml)，见 [`../deploy/README.md`](../deploy/README.md)。
 
 ### 存储后端:file(默认)对比 redis
 
-`iii-state` 和 `iii-stream` 默认使用 iii-engine 自带的基于文件的 KV 存储:每个作用域一个 JSON 文件,保存在引擎进程的内存中,并按计时器写回磁盘。对于单用户的本地安装,这就是正确的默认值;而一个有多个并发写入者的共享守护进程,则可以改用 Redis 获得真正的按键写入,代价是每次操作都要多一次网络往返(每个 `state::*` 调用仍然串行在同一个 Redis 连接上,所以这换来的是把文件存储的锁换成了一个 socket,而不是换来了并行性)。
-
-设置 `AGENTMEMORY_STATE_BACKEND=redis`(再加上 `AGENTMEMORY_REDIS_URL`),可以把两个 worker 都切换到 iii-engine 内置的 `redis` 适配器,它把每个键存储为一个 Redis 哈希字段(`HSET`),而不是在每次写入时重写整个作用域:
+`state` worker 默认使用基于文件的 KV store，保存在内存并定期写入磁盘。多个 writer 共享 runtime 时可使用 Redis，但会增加网络往返，且单一 worker connection 不会并行。设置 `AGENTMEMORY_STATE_BACKEND=redis` 和 `AGENTMEMORY_REDIS_URL` 使用 `state` worker 的 Redis adapter；每个 key 存为 Redis hash field（`HSET`）：
 
 ```env
 # ~/.agentmemory/.env
@@ -1379,31 +1330,22 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` 默认是 `file`;不设置它会保持现有行为不变,而一个无法识别的值(除 `file` 或 `redis` 之外的任何值)会导致启动错误,而不是悄悄回退。`/agentmemory/status` 和查看器 Health 页面上的 State store 这一行,会报告当前激活的是哪个后端、它是否响应,但绝不会报告 URL。
+`AGENTMEMORY_STATE_BACKEND` 默认为 `file`；非 `file` 或 `redis` 的值会导致启动错误。`/agentmemory/status` 和查看器 Health 会报告 backend 及其响应状态，不显示 URL。仅支持普通 `redis://`；TLS-only `rediss://` 服务需要加密隧道。Redis 连接未加密，请使用本地/私有网络或隧道；密码中的单引号需百分号编码为 `%27`。
 
-**只支持普通的 `redis://`。** 锚定的引擎(0.22.1)在构建它的 Redis 客户端时没有加入 TLS 支持,所以一个 `rediss://` URL(大多数托管 Redis 服务,例如 Upstash、Redis Cloud 以及开启传输加密的 ElastiCache,默认都是仅支持 TLS 的)会连接失败。这个连接是未加密的,所以 Redis 密码和每一条存储的记忆都会以明文形式经过网络:请指向一个本地 Redis,或者一个你信任的私有网络上的 Redis。对于其他任何 Redis,在 agentmemory 主机上运行一个加密隧道(stunnel、SSH 或 VPN),这样普通的 `redis://` 这一跳就留在该主机内部,而隧道的上游连接是加密并经过认证的。如果 Redis 密码中包含单引号,要对它做百分号编码(`%27`);引擎会先把 URL 展开进它的 YAML 配置,然后再解析它。
+**每个 instance 使用独立的 Redis database。** 为每个并发 instance 分配单独的 database 或 Redis server，以隔离 state。
 
-**每个 `--instance` 对应一个 Redis 服务器。** 引擎的 Redis 键前缀(`state:<scope>`、`stream:<name>:<group>`)是固定的,所以两个指向同一个数据库的 agentmemory 实例(`--instance 1`、`--instance 2` ……)会互相覆盖对方的数据。一个独立的数据库索引(`redis://localhost:6379/1`)可以把存储的数据分开,但引擎是通过一个 Redis pub/sub 频道(`stream::events`)来转发实时查看器事件的,而 Redis 的 pub/sub 会忽略数据库索引,所以每个实例的查看器仍然会看到对方的实时事件。当你运行多个实例时,给每个实例配一个独立的 Redis 服务器(或端口)。
+**保持不变的部分与差异。** agentmemory 的功能都可在 Redis 上使用：sessions、observations、memories、search/index、lessons、graph、audit log、export/import、governance delete、consolidation status、查看器 snapshot 及实时 SSE feed，以及 health monitor。`state` worker 将 scope 存为 Redis hash（`HSET`/`HGET`/`HGETALL`），并触发与 file store 相同的 state trigger。agentmemory 会处理记录排序、per-key lock 下的 partial update，以及 legacy audit scope 检查。
 
-**哪些保持不变,哪些不同。** agentmemory 的每一项功能在 Redis 上都能工作:会话、观测、记忆(remember、supersede、evolve、forget)、搜索和索引桶、经验教训、图、审计日志及其按月的作用域、导出和导入、治理删除、整合状态、查看器快照及其实时流,以及健康监控。引擎把每个作用域存储为一个 Redis 哈希(`HSET`/`HGET`/`HGETALL`),并触发与文件存储相同的状态触发器。agentmemory 内部处理了三个引擎层面的差异:
+查看器实时事件由运行中的 agentmemory process 通过 REST worker 上的 SSE 广播；不使用 Redis pub/sub 或定期 Redis stream probe。Redis 可用性影响 state 读写，不影响查看器传输。Redis 故障时 status 会报告 state store 无响应；大型 scope 使用 `HGETALL` 读取整个 hash。
 
-- Redis 返回一个作用域的记录时没有固定顺序。agentmemory 会按从旧到新排序(先按记录 id 中的创建时间,再按其时间戳),这样列表、分页和导出分块的顺序就和文件存储上的一致。
-- 引擎在 Redis 上应用部分更新时使用的 Lua 脚本会把空数组变成空对象。agentmemory 会在 Redis 上自己应用这些更新(在按键加锁的情况下读取、修改、写入),所以像 `tags: []` 这样的字段仍然是数组。
-- 旧版审计日志检查会从 Redis 读取旧的作用域,而不是去磁盘上寻找文件存储的文件。
+**推荐的 Redis 设置。** 默认 snapshot 策略 `save 3600 1 300 100 60 10000` 在崩溃时可能丢失数分钟写入。重要数据请设置 `appendonly yes`，并用 `maxmemory-policy noeviction` 防止 Redis 内存用尽时静默删除 memories。
 
-有一个差异需要你自己处理:**Redis 重启后,引擎会停止向查看器转发实时事件**,直到 agentmemory 重启为止。数据仍然正常保存和读取。健康监控每 30 秒会通过 Redis 发送一个测试事件;当它没有收到回应时,`/agentmemory/status` 和查看器的 Health 页面会显示"实时更新没有到达查看器",并给出修复方法:重启 agentmemory。如果 Redis 挂了,状态报告会显示"状态存储没有响应",并说明如何检查(`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`)。列出一个非常大的作用域会用一次 `HGETALL` 读取整个哈希,代价和文件存储把它整个保存在内存中是一样的。
-
-**推荐的 Redis 设置。** 默认的 `save 3600 1 300 100 60 10000` 快照策略在崩溃时可能丢失几分钟的写入,比文件存储的 5 秒刷盘窗口还要糟。对于任何你不想丢失的内容,设置 `appendonly yes`。设置 `maxmemory-policy noeviction`;`allkeys-lru` 或类似的策略会在 Redis 达到内存上限后悄悄丢弃记忆。
-
-原生(非 Docker)启动,以及每一个一键 [部署模板](../deploy/)(它们会覆盖捆绑的 `iii-config.yaml` 并以原生方式启动),都会读取 `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL`,并把它们渲染进启动用的 `iii-config`。URL 本身永远不会写进那个渲染后的文件,只会写入一个 `${AGENTMEMORY_REDIS_URL}` 引用,由引擎进程在启动时从自己的环境中展开。只有这个仓库自己的 Docker Compose 路径(`AGENTMEMORY_USE_DOCKER=1`,或者恢复一个已经用这种方式启动的引擎)会以只读方式挂载 `iii-config.docker.yaml` 并且从不渲染;当 `agentmemory start` 检测到这种组合时会发出警告。要手动切换这个文件,遵循 [iii-state](https://workers.iii.dev/workers/iii-state) 和 [iii-stream](https://workers.iii.dev/workers/iii-stream) worker 文档中展示的同样的 `name: redis` / `config: redis_url: ...` 形状,并把 `redis_url` 指向容器能访问到的 Redis。`docker-compose.yml` 会把 `AGENTMEMORY_REDIS_URL` 传进引擎容器,所以 `redis_url: '${AGENTMEMORY_REDIS_URL}'` 在那里是有效的,并且能让 URL 不出现在挂载的文件里。
-
-渲染后的配置不会把 URL 写进 `~/.agentmemory/data/iii-config.runtime.yaml`,但引擎自己的配置 worker 一旦启动,仍然会把*展开后*的值持久化到 `~/.agentmemory/config/iii-state.yaml` 和 `iii-stream.yaml`(iii-engine 的 `${VAR}` 展开发生在该 worker 存储它的种子数据之前,它存储的是解析后的值,而不是引用)。在任何共享主机上,都要把这个目录当作保存着凭据来对待:执行 `chmod 700 ~/.agentmemory`,并且优先使用一个仅限于 agentmemory 所需权限的 Redis ACL 用户,而不是数据库的管理员凭据。
+CLI 生成的 Worker Compose 项目会将这些变量传给 `state` worker。Docker 自行托管请参见 [`../deploy/README.md`](../deploy/README.md) 和 [state worker 文档](https://workers.iii.dev/workers/state)。持久化 worker config 可能包含带凭据的 Redis URL；限制 data directory 权限（例如 `chmod 700 <data-dir>`），并使用权限受限的 Redis ACL。
 
 **迁移不是自动的。** 切换 `AGENTMEMORY_STATE_BACKEND` 会让两边都从一个空存储开始;不会把已有数据从 file 复制到 Redis,反过来也不会。从你要离开的后端导出,再导入到你要迁移到的后端。下面这段在 bash 和 zsh 下(包括 `bash -u`)运行结果完全一致。而类似 `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` 这样的数组写法则不行:zsh 会把这个头保留成一个格式错误的单词,而 bash 会把它拆成两个,所以只要设置了 `AGENTMEMORY_SECRET`,两边的请求都会 401:
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1438,13 +1380,13 @@ fi
 | 传统技术栈 | agentmemory 使用的方案 |
 |---|---|
 | Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + 内存向量索引 |
-| SSE / Socket.io | iii Streams (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | REST endpoint `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | iii engine worker 监管 |
 | Prometheus / Grafana | iii OTEL + 健康监控 |
 | Custom plugin systems | `iii worker add <name>` |
 
-**242 个源文件 · ~55,000 行代码 · 3,400+ 个测试 · 324 个函数 · 67 个 KV 作用域**,全部基于三种原语。没有 `agentmemory plugin install`。插件系统就是 iii 本身。
+**246 个源文件 · ~56,000 行代码 · 3,800+ 个测试 · 322 个函数 · 65 个 KV 作用域**,全部基于三种原语。没有 `agentmemory plugin install`。插件系统就是 iii 本身。
 
 ---
 
@@ -1561,41 +1503,19 @@ AGENTMEMORY_AGENT_SCOPE=isolated  # optional; default "shared"
 
 ### 端口
 
-agentmemory + iii-engine 默认绑定四个端口。如果重启时失败并提示 `port in use`,下面这张表会告诉你该查找哪个进程。
+本地运行时有三个 listener。iii engine WebSocket 用于内部 worker 注册，不得暴露到公网。
 
-| 端口 | 进程 | 用途 | 环境变量覆盖 |
+| Port | Process | Purpose | Env override |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | 内部流 worker(由 agentmemory + 查看器消费) | `III_STREAM_PORT`(推荐)或旧版的 `III_STREAMS_PORT` |
-| `3113` | agentmemory | 实时查看器(`http://localhost:3113`) | `III_VIEWER_PORT`,或 `AGENTMEMORY_VIEWER_URL` 用于设置报告的 URL |
-| `49134` | iii-engine | WebSocket;worker 在这里注册,OTel 遥测数据经由它流动 | `III_ENGINE_PORT` 或 `III_ENGINE_URL` |
+| `3111` | registry `http` worker | REST API、MCP HTTP、health 和已认证的 viewer SSE `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | Viewer UI 和 proxy | `III_VIEWER_PORT` |
+| `49134` | iii engine | 内部 worker WebSocket | `III_ENGINE_PORT` 或 `III_ENGINE_URL` |
 
-`--port <N>` 会改变 REST 的锚点端口,并在上面对应的显式端口或 URL 未设置的情况下,推导出流端口 `N+1`、查看器端口 `N+2`,以及引擎 WebSocket 端口 `N+46023`。它不会创建一个隔离的生命周期命名空间。要启动第二个守护进程,使用 `--instance 1`;它使用锚点 3211,默认为 `3211/3212/3213/49234`,并获得一个独立的 `instance-1` 数据和生命周期目录。实例 1 到 50 都遵循同样的模式。
-
-锚定的引擎以 `--no-update-check` 启动(启动时不会向 GitHub 查询更新或安全公告),并关闭了 iii 的匿名使用遥测:除非你自己导出了这个变量,agentmemory 会为它派生的引擎设置 `III_TELEMETRY_ENABLED=false`,捆绑的 compose 文件做法相同。
-
-当进程崩溃后端口仍被占用时的清理方法:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` 在优雅的原生关闭过程中,会干净地回收 worker 和引擎的 pidfile。在 Docker 模式下,它会清空原生 worker,停止那个经过验证的确切引擎容器,并保留容器及其 `/data` 挂载,以便实现无损重启;下次启动时会验证并恢复同一个容器。基于 Docker 的卸载需要 `agentmemory remove --keep-data`:它会移除 agentmemory 管理的共享文件,同时保留经过验证的容器、其数据挂载,以及恢复它们所需的生命周期记录。具有破坏性的 Docker 数据删除,有意留给操作者在备份之后自行执行。除非传入 `--force`,CLI 也拒绝把 Docker 或 VM 的端口占用者(Docker backend、vpnkit、colima)当作原生引擎来接管或发信号。上面的手动清理方法只适用于崩溃后两个 pidfile 都不存在的情况。
+`--port <N>` 设置 REST；未单独覆盖时 viewer 为 `N+2`、engine WebSocket 为 `N+46023`。使用 `--instance N` 隔离运行时。自行托管默认发布 `127.0.0.1:3111`、`127.0.0.1:3113`；可更改 host 端口。用 `REST_ALLOWED_ORIGINS` 添加可信浏览器 origin。
 
 ### 配置文件
 
-把 agentmemory 的运行时配置放进 `~/.agentmemory/.env`,而不是在每个 shell 中单独导出变量。如果查看器显示了一个类似 `export ANTHROPIC_API_KEY=...` 的设置提示,把它复制进这个文件,写成 `ANTHROPIC_API_KEY=...`,去掉 `export` 前缀,然后重启 agentmemory。
-
-进程环境变量仍然有效,并且优先于文件中的值。
-
-在 Windows 上,同样的文件位于 `%USERPROFILE%\.agentmemory\.env`:
+将 runtime 配置放在 `~/.agentmemory/.env`，而不是在每个 shell 中导出变量。用 `AGENTMEMORY_ENV_FILE` 选择其他 env-file 路径。进程环境变量优先于文件中的值。CLI 生成的 Worker Compose 项目会将 Redis 设置传给 `state` worker。
 
 ```powershell
 New-Item -ItemType Directory -Force $HOME\.agentmemory
@@ -1683,12 +1603,12 @@ GRAPH_EXTRACTION_ENABLED=true
 # VECTOR_WEIGHT=0.6
 # TOKEN_BUDGET=2000
 
-# Auth (generated into ~/.agentmemory/secret on first start when unset)
+# Auth (generated in the selected data directory on first start when unset)
 # AGENTMEMORY_SECRET=your-secret
 # VIEWER_ALLOWED_ORIGINS=https://memory.example.com
 # AGENTMEMORY_IMPORT_ROOT=~/projects
 
-# Ports (defaults: 3111 API, 3113 viewer)
+# Ports (defaults: 3111 REST API, 3113 viewer)
 # III_REST_PORT=3111
 
 # Engine usage telemetry (iii). Off unless you set it; true opts in.
@@ -1747,8 +1667,7 @@ GRAPH_EXTRACTION_ENABLED=true
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1787,12 +1706,13 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-端口 `3111` 上有 143 个端点。REST API 默认绑定到 `127.0.0.1`。受保护的端点需要 `Authorization: Bearer <secret>`,mesh 同步端点则需要双方都显式设置 `AGENTMEMORY_SECRET`。
+端口 `3111` 上有 144 个端点。REST API 默认绑定到 `127.0.0.1`。受保护的端点需要 `Authorization: Bearer <secret>`,mesh 同步端点则需要双方都显式设置 `AGENTMEMORY_SECRET`。
 
-**身份验证默认是开启的。** 当 `AGENTMEMORY_SECRET`(在 shell 或 `~/.agentmemory/.env` 中)没有设置时,服务器会在首次启动时生成一个随机密钥,并以 `0600` 权限存储在 `~/.agentmemory/secret` 中。每个捆绑的客户端在与本地服务器通信时都会从那里读取它:CLI、查看器、`plugin/scripts` 下的 hooks、MCP 服务器和 `@agentmemory/mcp` shim、由 `agentmemory connect` 写入的配置,以及捆绑的 OpenCode、Pi、OpenClaw、Hermes 和文件系统监视集成。存储的密钥只会发送到回环地址(`localhost`、`127.0.0.0/8`、`::1`)。显式设置的 `AGENTMEMORY_SECRET` 始终优先,远程客户端仍然需要设置它。Docker 和 `deploy/` 的 entrypoint 已经会生成并导出自己的密钥。要手动调用 API:
+**默认启用身份验证。** 未在 shell 或 `~/.agentmemory/.env` 中设置 `AGENTMEMORY_SECRET` 时，CLI 首次启动会生成随机 secret，并以 mode `0600` 保存为所选 data directory 中的 `secret`。内置客户端连接本地 server 时从此处读取；secret 只发送到 loopback URL。远程客户端需在自己的 environment 中设置 secret。Docker 自行托管和 `deploy/` 会生成自己的 secret。手动调用 API：
+
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **写入请求的规则。** 对 REST API 和查看器发出的 `POST`、`PUT`、`PATCH` 和 `DELETE` 请求,只要带有请求体,就必须发送 `Content-Type: application/json`(带 `charset` 参数也可以),而 `Origin` 头(如果存在)必须是配置的 REST 或查看器端口对应的回环源,或者列在 `VIEWER_ALLOWED_ORIGINS` 中(逗号分隔,例如 `https://memory.example.com`)。不发送 `Origin` 头的客户端(CLI、hooks、MCP、curl、服务器到服务器)不受影响。查看器也接受它自己的源。
@@ -1872,7 +1792,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**前置条件:** Node.js >= 20,带 npm/npx;[iii-engine](https://iii.dev/docs) v0.22.1 或 Docker。macOS/Linux 的自动引擎安装还需要 `curl`、POSIX `sh` 和 `tar`;原生 Windows 使用手动安装的锚定 `iii.exe`、WSL2,或 Docker Desktop。
+**前置条件：** Node.js >= 20，需有 npm/npx。macOS/Linux 的 CLI engine 安装需要 `curl`、POSIX `sh` 和 `tar`；原生 Windows 需手动安装固定版本的 `iii.exe` 或使用 WSL2。
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="许可证" height="32" /></picture></h2>
 

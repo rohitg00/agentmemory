@@ -52,7 +52,7 @@ export const AGENTMEMORY: Record<RowKey, Fact> = {
   },
   license: { value: "Apache-2.0", src: `${REPO_URL}/blob/main/LICENSE` },
   deployment: {
-    value: "On your machine, as one process bound to 127.0.0.1. There is no hosted tier.",
+    value: "On your machine, in a local iii Worker Compose runtime. The CLI's REST and viewer listeners bind to 127.0.0.1 by default; there is no hosted tier.",
     src: README,
   },
   storage: {
@@ -196,7 +196,7 @@ export const COMPETITORS: Competitor[] = [
       "Zep is a managed context platform for enterprise agents, built on the Graphiti graph engine. agentmemory is a local memory server for individual developers and their coding agents.",
     differ: [
       "Zep centers on a temporal knowledge graph that combines business data, documents and conversations for many users. agentmemory centers on one developer's coding sessions, captured automatically on their machine.",
-      "Running Graphiti yourself means operating a graph database and an LLM for ingestion. agentmemory needs neither: it runs as one process, and its own graph is built locally and optionally.",
+      "Running Graphiti yourself means operating a graph database and an LLM for ingestion. agentmemory needs neither: its local iii Worker Compose runtime manages the services, and its own graph is built locally and optionally.",
       "Zep's platform adds enterprise controls such as SOC 2 Type II and bring-your-own-cloud. agentmemory avoids that surface by not hosting anything, since data never leaves the machine.",
     ],
     chooseThem: [
@@ -236,7 +236,7 @@ export const COMPETITORS: Competitor[] = [
       "claude-mem and agentmemory solve the same problem the same way: hooks capture coding sessions and context comes back next time. They differ in what runs the compression, what storage they need, and how much of memory they model.",
     differ: [
       "claude-mem compresses observations with Claude through the Claude Agent SDK, so every compression is a model call. agentmemory stores observations as captured and works with no model at all; an LLM is optional and only used for consolidation if you add one.",
-      "claude-mem uses SQLite plus a Chroma vector database. agentmemory runs as one process with its own storage and local embeddings, and adds a knowledge graph and four memory tiers with decay.",
+      "claude-mem uses SQLite plus a Chroma vector database. agentmemory runs on a local iii Worker Compose runtime with file-backed state by default and local embeddings, and adds a knowledge graph and four memory tiers with decay.",
       "Both capture through hooks. agentmemory also ships native plugins for Codex CLI, Cursor, Copilot CLI and others, 54 MCP tools, a REST API, and a release gate that checks crash recovery on every publish.",
     ],
     chooseThem: [
@@ -327,7 +327,7 @@ export const COMPETITORS: Competitor[] = [
       "Cognee builds knowledge graphs from data you feed it, for agents and apps. agentmemory captures coding agent sessions automatically and keeps them on your machine.",
     differ: [
       "Cognee is a pipeline you run over documents and data: add them, then turn them into a graph. agentmemory captures what your coding agent does as it works, through hooks.",
-      "Cognee relies on graph, vector and relational stores, which can share one Postgres. agentmemory needs no database at all and runs as one process.",
+      "Cognee relies on graph, vector and relational stores, which can share one Postgres. agentmemory uses its iii state worker with file-backed key/value storage by default, managed by a local Worker Compose runtime.",
       "Both offer MCP and a Claude Code integration. agentmemory adds native plugins for many coding agents, a live viewer, and four memory tiers with decay.",
     ],
     chooseThem: [

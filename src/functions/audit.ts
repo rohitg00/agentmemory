@@ -1,5 +1,4 @@
 import { stat, readFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import type { AuditEntry, AuditMigrationState, AuditQueryResult } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
@@ -90,7 +89,7 @@ async function auditMigrationDeleteDelayMs(): Promise<number> {
   const dataDir = getEnvVar("AGENTMEMORY_DATA_DIR");
   if (!dataDir) return ENGINE_DEFAULT_SAVE_INTERVAL_MS * AUDIT_MIGRATION_DELETE_WAIT_INTERVALS;
   const configTexts: string[] = [];
-  for (const path of engineStateConfigPaths(join(homedir(), ".agentmemory"), runtimeConfigPath(dataDir))) {
+  for (const path of engineStateConfigPaths(dataDir, runtimeConfigPath(dataDir))) {
     try {
       configTexts.push(await readFile(path, "utf-8"));
     } catch {}

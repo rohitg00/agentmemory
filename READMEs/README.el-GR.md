@@ -100,7 +100,7 @@
 
 - Node.js 20 ή νεότερη έκδοση με npm και npx (`node -v`, `npm -v`, και `npx -v`).
 - Η αυτόματη εγκατάσταση του iii-engine σε macOS/Linux απαιτεί επίσης `curl`, ένα POSIX `sh`, και `tar`. Ελάχιστες εικόνες όπως το `node:20-slim` μπορεί να μην τα περιλαμβάνουν.
-- Το native Windows απαιτεί την καθορισμένη έκδοση iii-engine v0.22.1 `iii.exe` να εγκατασταθεί χειροκίνητα. Τα WSL2 ή το Docker Desktop είναι οι άλλες υποστηριζόμενες διαδρομές.
+- Το native Windows απαιτεί χειροκίνητη εγκατάσταση του `iii.exe` της καθορισμένης έκδοσης iii-engine v0.24.6· το WSL2 χρησιμοποιεί τον αυτόματο installer macOS/Linux.
 
 Η κανονική εντολή εγκατάστασης από την αρχή:
 
@@ -112,7 +112,7 @@ npx -y @agentmemory/agentmemory@latest
 
 Η λειτουργία χωρίς κλειδί απενεργοποιεί τα vector embeddings. Το `memory_recall` (η διαδρομή `mem::search`) χρησιμοποιεί BM25, ενώ το `memory_smart_search` μπορεί επίσης να συγχωνεύσει δομικές αντιστοιχίσεις γράφου όταν υπάρχουν ήδη δεδομένα γράφου. Για δωρεάν σημασιολογική ανάκληση στη συσκευή, ρυθμίστε το `EMBEDDING_PROVIDER=local` στο `~/.agentmemory/.env` και κάντε επανεκκίνηση. Το πρώτο αίτημα embedding κατεβάζει το `Xenova/all-MiniLM-L6-v2`· η εξαγωγή συμπερασμάτων εκτελείται τοπικά μετά από αυτήν την αρχική λήψη μοντέλου.
 
-Το τοπικό runtime χρησιμοποιεί τέσσερις θύρες: `3111` για REST/MCP HTTP, `3112` για τα iii streams, `3113` για το viewer, και `49134` για το WebSocket του iii worker. Η μόνιμη κατάσταση iii βρίσκεται στο `~/Library/Application Support/agentmemory` σε macOS, στο `$XDG_DATA_HOME/agentmemory` ή `~/.local/share/agentmemory` σε Linux, και στο `%APPDATA%\agentmemory` σε Windows. Χρησιμοποιήστε `--data-dir <path>` ή `AGENTMEMORY_DATA_DIR` για να το παρακάμψετε, και επαναχρησιμοποιήστε την ίδια τιμή σε κάθε επανεκκίνηση. Για λόγους συμβατότητας προς τα πίσω, ένα υπάρχον `./data/state_store.db` ή `./data/iii-config.yaml` υπερισχύει της προεπιλογής της πλατφόρμας για το instance 0· μια ρητή σημαία ή παράκαμψη περιβάλλοντος εξακολουθεί να υπερισχύει.
+Το τοπικό CLI runtime χρησιμοποιεί REST/MCP HTTP στη `3111`, το viewer στη `3113`, και το εσωτερικό WebSocket του iii worker στη `49134`. Οι ενημερώσεις του viewer χρησιμοποιούν SSE στο `GET /agentmemory/viewer/events` μέσω της θύρας REST. Η μόνιμη κατάσταση αποθηκεύεται από προεπιλογή στο `~/Library/Application Support/agentmemory` σε macOS, στο `$XDG_DATA_HOME/agentmemory` ή `~/.local/share/agentmemory` σε Linux, και στο `%APPDATA%\agentmemory` σε Windows. Παρακάμψτε την τοποθεσία με `--data-dir <path>` ή `AGENTMEMORY_DATA_DIR`· το instance 0 επαναχρησιμοποιεί επίσης ένα υπάρχον `./data/state_store.db`. Το `--instance N` απομονώνει πρόσθετα runtimes, ενώ το `AGENTMEMORY_ENV_FILE` επιλέγει διαφορετικό αρχείο `.env`.
 
 Στη συνέχεια, επιβεβαιώστε ότι η ανάκληση λειτουργεί και δώστε στον agent σας τα skills του:
 
@@ -132,7 +132,7 @@ npx skills add rohitg00/agentmemory -y   # 17 native skills so your agent knows 
 <details>
 <summary><strong>Windows</strong></summary>
 
-Η πιο γρήγορη διαδρομή είναι το WSL2. Η native ρύθμιση του engine σε Windows απαιτεί τη λήψη του καθορισμένου ZIP v0.22.1 και την χειροκίνητη εξαγωγή του `iii.exe`· το CLI δεν το εξάγει αυτόματα. Υποστηρίζεται επίσης το Docker Desktop. Δείτε τις [σημειώσεις Windows](#windows) για τα βήματα.
+Η πιο γρήγορη διαδρομή είναι το WSL2. Σε native Windows, απαιτείται λήψη του ZIP v0.24.6 και χειροκίνητη εξαγωγή του `iii.exe`. Δείτε τις [σημειώσεις Windows](#windows) για τα βήματα.
 
 </details>
 
@@ -157,7 +157,7 @@ npm install -g @agentmemory/agentmemory@latest
 <details>
 <summary><strong>Έχετε ήδη τον δικό σας iii engine σε εκτέλεση</strong></summary>
 
-Το agentmemory καθορίζει τον iii-engine στην v0.22.1 και δεν θα συνδεθεί σε διαφορετική έκδοση (ο worker δεν μπορεί να μιλήσει το πρωτόκολλο ενός άλλου engine). Σταματήστε τον άλλο engine, και μετά εκτελέστε `npx -y @agentmemory/agentmemory@latest`. Εγκαθιστά και εκτελεί την καθορισμένη v0.22.1 στο `~/.agentmemory/bin`, αφήνοντας τον δικό σας `iii` ανεπηρέαστο.
+Το agentmemory καρφιτσώνει τον iii-engine στην v0.24.6 και δεν συνδέεται σε διαφορετική έκδοση (ο worker δεν μπορεί να μιλήσει το πρωτόκολλο άλλου engine). Σταματήστε τον άλλο engine και εκτελέστε `npx -y @agentmemory/agentmemory@latest`. Εγκαθιστά και εκτελεί την v0.24.6 στο `~/.agentmemory/bin`, αφήνοντας ανέπαφο τον δικό σας `iii`.
 
 </details>
 
@@ -319,14 +319,14 @@ npm install -g @agentmemory/agentmemory@latest
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Από προεπιλογή, το agentmemory αποθηκεύει την κατάσταση του iii-engine έξω από το αποθετήριο από το οποίο το ξεκινάτε: `~/Library/Application Support/agentmemory` σε macOS, `$XDG_DATA_HOME/agentmemory` ή `~/.local/share/agentmemory` σε Linux, και `%APPDATA%\agentmemory` σε Windows. Ένα υπάρχον παλιό `./data/state_store.db` ή `./data/iii-config.yaml` επαναχρησιμοποιείται για το instance 0 πριν από αυτή την προεπιλογή πλατφόρμας. Για να επιλέξετε μια τοποθεσία ρητά, περάστε `--data-dir <path>` ή ρυθμίστε `AGENTMEMORY_DATA_DIR`· κάθε ρητή ρύθμιση υπερισχύει της παλιάς ανακάλυψης:
+Από προεπιλογή, το agentmemory αποθηκεύει την κατάσταση του iii-engine έξω από το αποθετήριο από το οποίο το ξεκινάτε: `~/Library/Application Support/agentmemory` σε macOS, `$XDG_DATA_HOME/agentmemory` ή `~/.local/share/agentmemory` σε Linux, και `%APPDATA%\agentmemory` σε Windows. Ένα υπάρχον `./data/state_store.db` επαναχρησιμοποιείται για το instance 0. Για να επιλέξετε ρητά μια τοποθεσία, περάστε `--data-dir <path>` ή ορίστε `AGENTMEMORY_DATA_DIR`:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-Οι native και Docker εκκινήσεις χρησιμοποιούν τον ίδιο επιλυμένο κατάλογο host· το Docker τον κάνει bind-mount στο `/data`. Το `--instance 1` προσθέτει `instance-1` στον επιλυμένο κατάλογο και επιλέγει το ξεχωριστό προεπιλεγμένο quartet θυρών `3211/3212/3213/49234`.
+Το `--instance 1` προσθέτει `instance-1` στον επιλυμένο κατάλογο δεδομένων και χρησιμοποιεί τις θύρες `3211` (REST), `3213` (viewer), και `49234` (engine).
 
 Τελευταίες σημειώσεις έκδοσης: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +476,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 </tr>
 <tr>
 <td><strong>Εξωτερικές εξαρτήσεις</strong></td>
-<td>Καμία (SQLite + iii-engine)</td>
+<td>Καμία (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vector DB</td>
 <td>Πολλαπλές</td>
@@ -556,7 +556,7 @@ AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemor
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Γρήγορη Εκκίνηση" height="32" /></picture></h2>
 
-Συμβατότητα: αυτή η έκδοση στοχεύει το `iii-sdk` 0.22.1 και καθορίζει τον iii-engine στην v0.22.1.
+Συμβατότητα: αυτή η έκδοση χρησιμοποιεί το iii 0.24.6 με τους workers registry state 0.22.20 και http 0.22.7.
 
 ### Δοκιμάστε το σε 30 δευτερόλεπτα
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Το πάνελ ετοιμότητας εκκίνησης λαμβάνει υπόψη όλες τις τέσσερις θύρες: REST/MCP HTTP στη 3111, τα iii streams στη 3112, το viewer στη 3113, και το WebSocket του iii worker στη 49134. Το `status` επιβεβαιώνει την υγεία του agentmemory και την ενεργή λειτουργία provider/embedding. Αποθηκεύστε μια δοκιμαστική εγγραφή (probe) και επιβεβαιώστε ότι είναι αναζητήσιμη:
+Το runtime χρησιμοποιεί REST/MCP HTTP στη 3111, το viewer στη 3113, και το εσωτερικό WebSocket του iii worker στη 49134. Τα live events του viewer χρησιμοποιούν SSE μέσω REST. Το `status` επιβεβαιώνει την υγεία του agentmemory, την καρφιτσωμένη έκδοση engine (`enginePinnedVersion`) και την ενεργή λειτουργία provider/embedding. Αποθηκεύστε μια δοκιμαστική εγγραφή και επιβεβαιώστε ότι είναι αναζητήσιμη:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Προειδοποίηση: αυτή η εντολή τροποποιεί τον τρέχοντα workspace/runtime. Μπορεί να ενημερώσει τις εξαρτήσεις JavaScript και να κατεβάσει την καθορισμένη εικόνα Docker `iiidev/iii:0.22.1`. Ποτέ δεν εγκαθιστά μη καθορισμένη ή νεότερη έκδοση του iii engine.
+Προειδοποίηση: αυτή η εντολή τροποποιεί τον τρέχοντα χώρο εργασίας/runtime. Μπορεί να ενημερώσει εξαρτήσεις JavaScript και να εγκαταστήσει το καρφιτσωμένο binary engine iii 0.24.6.
 
 Οι λεπτομέρειες υλοποίησης βρίσκονται στο `src/cli.ts` (δείτε το `runUpgrade` γύρω από την περιοχή `src/cli.ts:544-595`).
 
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 Ολοκληρωμένο παράδειγμα: [`examples/python/`](../examples/python/) (quickstart + ροή observation/recall). Το REST στη θύρα `:3111` παραμένει διαθέσιμο για hosts χωρίς iii runtime.
@@ -853,83 +861,33 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Αυτό ξεκινά το agentmemory με τοπικό `iii-engine` αν το καθορισμένο binary είναι ήδη εγκατεστημένο, ή χρησιμοποιεί Docker Compose όταν επιλεγεί. Το REST, τα streams, και το viewer συνδέονται στο `127.0.0.1` από προεπιλογή. Η αυτόματη διαδρομή binary για macOS/Linux απαιτεί `curl`, ένα POSIX `sh`, και `tar`.
-
-Εγκαταστήστε τον `iii-engine` χειροκίνητα. **Το agentmemory προς το παρόν καθορίζει τον `iii-engine` στην `v0.22.1`**, την ίδια έκδοση με την εξάρτηση `iii-sdk` του· ο worker μιλά το wire protocol αυτού του engine, και η έκδοση 0.20.0 αναδιοργάνωσε την επιφάνεια του SDK, οπότε οι δύο κινούνται μαζί στις εκδόσεις του agentmemory. Παρακάμψτε με `AGENTMEMORY_III_VERSION=<version>` αν τρέχετε τον δικό σας engine και γνωρίζετε ότι ταιριάζει.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** αντικαταστήστε το `aarch64-apple-darwin` με `x86_64-apple-darwin`
-- **Linux x64:** αντικαταστήστε με `x86_64-unknown-linux-gnu`
-- **Linux arm64:** αντικαταστήστε με `aarch64-unknown-linux-gnu`
-- **Windows:** κατεβάστε το `iii-x86_64-pc-windows-msvc.zip` από το [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) και εξάγετε το `iii.exe` στο `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Κάθε αρχείο archive έχει ένα αντίστοιχο αρχείο `.sha256` στη σελίδα έκδοσης· όταν αλλάζετε πλατφόρμα, χρησιμοποιήστε το hash αυτού του αρχείου στον παραπάνω έλεγχο (σε Windows: `Get-FileHash`). Ο αυτόματος installer στο `npx @agentmemory/agentmemory` καθορίζει αυτά τα hashes και αρνείται ένα archive που δεν ταιριάζει.
-
-Ή χρησιμοποιήστε Docker (το ενσωματωμένο `docker-compose.yml` κατεβάζει το `iiidev/iii:0.22.1`). Πλήρη docs: [iii.dev/docs](https://iii.dev/docs).
+Το `npm start` εκκινεί το ίδιο runtime iii Worker Compose με το CLI: iii 0.24.6 με τους workers registry `state@0.22.20` και `http@0.22.7`. Σε macOS/Linux το CLI κατεβάζει το καρφιτσωμένο binary του engine στο `~/.agentmemory/bin`· η αυτόματη εγκατάσταση απαιτεί `curl`, POSIX `sh` και `tar`. Οι τοπικοί listeners REST και viewer συνδέονται στο `127.0.0.1`. Οι ενημερώσεις viewer χρησιμοποιούν SSE στο `GET /agentmemory/viewer/events` μέσω της θύρας REST. Το `/agentmemory/status` αναφέρει την καρφιτσωμένη έκδοση engine ως `enginePinnedVersion`· η υποστηριζόμενη προεπιλογή είναι iii 0.24.6. Το `AGENTMEMORY_III_VERSION` επιτρέπει σκόπιμη παράκαμψη της έκδοσης.
 
 ### Windows
 
-Το agentmemory τρέχει σε Windows 10/11, αλλά το πακέτο Node.js από μόνο του δεν αρκεί· χρειάζεστε επίσης το καθορισμένο runtime iii-engine v0.22.1 ως διαδικασία παρασκηνίου. Το CLI δεν εξάγει αυτόματα το Windows ZIP, οπότε οι χρήστες native Windows πρέπει να εγκαταστήσουν το `iii.exe` χειροκίνητα, να χρησιμοποιήσουν WSL2, ή να επιλέξουν Docker Desktop.
+Το agentmemory εκτελείται σε Windows 10/11. Το WSL2 ακολουθεί τη διαδρομή Linux και μπορεί να εγκαταστήσει αυτόματα τον καρφιτσωμένο engine. Σε native Windows απαιτείται χειροκίνητη εγκατάσταση του καρφιτσωμένου binary iii-engine v0.24.6: κατεβάστε το αντίστοιχο archive από τη [σελίδα έκδοσης iii v0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), επαληθεύστε το checksum και τοποθετήστε το `iii.exe` στο `PATH` (για παράδειγμα `%USERPROFILE%\.local\bin\iii.exe`). Το CLI δεν εξάγει αυτόματα το Windows ZIP.
 
-Η αυτοματοποιημένη σύνδεση MCP σε native Windows υποστηρίζει μόνο το `agentmemory connect copilot-cli`. Για το Claude Code, το Codex, το Cursor, και κάθε άλλο native Windows agent, αντιγράψτε το χειροκίνητο block MCP από το [Άλλοι agents](#other-agents) στις ρυθμίσεις Windows αυτού του agent. Η εκτέλεση του `connect` σε WSL είναι κατάλληλη μόνο όταν ο στόχος-agent είναι εγκατεστημένος επίσης στο ίδιο περιβάλλον WSL· δεν επεξεργάζεται τις ρυθμίσεις ενός agent που τρέχει σε Windows host.
+Η αυτοματοποιημένη ρύθμιση MCP σε native Windows υποστηρίζει μόνο το `agentmemory connect copilot-cli`. Για άλλους native Windows agents, χρησιμοποιήστε το χειροκίνητο block MCP από τους [Άλλους agents](#other-agents). Εκτελέστε `connect` μέσα στο WSL μόνο αν ο agent-στόχος είναι εγκατεστημένος στο ίδιο περιβάλλον WSL.
 
-**Επιλογή A: προκατασκευασμένο binary για Windows (προτείνεται)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Επιλογή B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Επιλογή C: μόνο αυτόνομο MCP (χωρίς engine).** Αν χρειάζεστε μόνο τα εργαλεία MCP για τον agent σας και δεν χρειάζεστε το REST API, το viewer, ή τις εργασίες cron, παραλείψτε εντελώς τον engine:
+**Μόνο standalone MCP (χωρίς engine).** Αν χρειάζεστε μόνο εργαλεία MCP και όχι το REST API, το viewer ή υπηρεσίες runtime:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Διαγνωστικά για Windows:** αν το `npx -y @agentmemory/agentmemory@latest` αποτύχει, εκτελέστε το ξανά με `--verbose` για να δείτε το πραγματικό stderr του engine. Συχνοί τρόποι αποτυχίας:
-
-| Σύμπτωμα | Διόρθωση |
-|---|---|
-| `The engine process started but the REST API never responded.` | Επιβεβαιώστε ότι είναι ελεύθερες όλες οι τέσσερις παραγόμενες θύρες, επιβεβαιώστε ότι το καθορισμένο `iii.exe` παρέμεινε ενεργό, και μετά εκτελέστε ξανά με `--verbose` και εξετάστε το καταγεγραμμένο stderr του engine |
-| `Could not start iii-engine` | Δεν είναι εγκατεστημένο ούτε το `iii.exe` ούτε το Docker. Δείτε την Επιλογή A ή B παραπάνω |
-| Σύγκρουση θύρας | `netstat -ano \| findstr :3111` για να δείτε τι είναι δεσμευμένο, και μετά σκοτώστε τη διαδικασία ή χρησιμοποιήστε `--port <N>` |
-| Η εναλλακτική λύση Docker παραλείπεται παρόλο που το Docker είναι εγκατεστημένο | Σιγουρευτείτε ότι το Docker Desktop τρέχει πράγματι (εικονίδιο system tray) |
-
-> Σημείωση: ο **engine** του iii είναι ένα προκατασκευασμένο binary, όχι ένα cargo crate, οπότε μην προσπαθήσετε να το κάνετε `cargo install`. (Τα **SDKs** του iii δημοσιεύονται στα crates.io, npm, και PyPI, αλλά το agentmemory δεν τα χρειάζεται.) Οι υποστηριζόμενες μέθοδοι εγκατάστασης του engine είναι όλες καθορισμένες στην v0.22.1: το προκατασκευασμένο binary παραπάνω, η αυτόματη διαδρομή εγκατάστασης macOS/Linux του agentmemory (απαιτούνται `curl`, POSIX `sh`, και `tar`), και η εικόνα Docker `iiidev/iii:0.22.1`. Ένα απλό upstream `install.sh | sh` εγκαθιστά τον τελευταίο engine, που το agentmemory δεν υποστηρίζει. Χρησιμοποιήστε `npx -y @agentmemory/agentmemory@latest`· σε macOS/Linux κατεβάζει τον καθορισμένο engine στο `~/.agentmemory/bin`.
+**Διαγνωστικά:** Αν αποτύχει η εκκίνηση, εκτελέστε ξανά με `--verbose` για να δείτε το stderr του engine. Ελέγξτε ότι οι θύρες REST `3111`, viewer `3113` και engine `49134` είναι ελεύθερες· χρησιμοποιήστε `--port <N>` ή `--instance <N>` για άλλο απομονωμένο runtime. Το CLI χρησιμοποιεί το δικό του καρφιτσωμένο binary engine και δεν αντικαθιστά ένα εκτελέσιμο iii στο `PATH`.
 
 ---
 
 <h2 id="deploy">Ανάπτυξη</h2>
 
-Πρότυπα ανάπτυξης με ένα κλικ για διαχειριζόμενους hosts. Καθένα διανέμει ένα αυτόνομο Dockerfile που κατεβάζει το `@agentmemory/agentmemory` από το npm και αντιγράφει το binary του iii engine από την επίσημη εικόνα `iiidev/iii` του Docker Hub· δεν απαιτείται προκατασκευασμένη εικόνα agentmemory. Η μόνιμη αποθήκευση γίνεται mount στο `/data`· το entrypoint της πρώτης εκκίνησης αντικαθιστά τις ρυθμίσεις iii που διανέμονται με το npm (οι οποίες συνδέονται στο `127.0.0.1`) με μια προσαρμοσμένη για ανάπτυξη έκδοση που συνδέεται στο `0.0.0.0` και χρησιμοποιεί απόλυτες διαδρομές `/data`, δημιουργεί το HMAC secret, και μετά μειώνει τα δικαιώματα από `root` σε `node` μέσω του `gosu` πριν εκτελέσει (exec) το CLI του agentmemory.
+Το Docker υποστηρίζεται για self-hosting από αυτό το αποθετήριο, όχι ως λειτουργία εκκίνησης του CLI. Τα πρότυπα ανάπτυξης με ένα κλικ χρησιμοποιούν τα [`deploy/Dockerfile`](../deploy/Dockerfile) και [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml), καρφιτσώνουν το ίδιο runtime iii 0.24.6 με τους workers του και αποθηκεύουν state, traces και το παραγόμενο secret σε μόνιμο volume `/data`. Το Docker Compose χρησιμοποιεί από προεπιλογή το υπάρχον named volume `iii-data`· ορίστε το `AGENTMEMORY_DATA_DIR` σε διαδρομή host για να χρησιμοποιήσετε bind mount. Το υπάρχον file-based store από το 0.22.1 διαβάζεται απευθείας στο `/data/state_store.db`, χωρίς migration ή μετατροπή. (Ρητή αναφορά στην απευθείας ανάγνωση της μορφής δεδομένων 0.22.1.) Το REST CORS επιτρέπει από προεπιλογή τις τοπικές προελεύσεις REST και viewer· ορίστε το `REST_ALLOWED_ORIGINS` σε λίστα ακριβών origins διαχωρισμένων με κόμμα, όταν χρειάζεται πρόσβαση από έμπιστη προέλευση browser. Για ρύθμιση και ασφάλεια δείτε το [`deploy/README.md`](../deploy/README.md).
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
 </p>
 
 Το κουμπί ανάπτυξης με ένα κλικ του Render απαιτεί `render.yaml` στη ρίζα του αποθετηρίου, το οποίο σκόπιμα το κρατάμε καθαρό. Χρησιμοποιήστε τη ροή Render Blueprint που τεκμηριώνεται στο [`deploy/render/`](.././deploy/render/README.md) για να δείξετε χειροκίνητα στο blueprint εντός του αποθετηρίου.
@@ -947,10 +905,16 @@ npx -y @agentmemory/mcp
   VPS μέσω του [Coolify](https://coolify.io/self-hosted)· το ίδιο Docker
   Compose stack, εσείς κατέχετε τον host και τα δεδομένα.
 
-Δημοσιεύεται μόνο η θύρα `3111`. Το viewer στη `3113` παραμένει συνδεδεμένο στο
-loopback εντός του container· το README κάθε προτύπου τεκμηριώνει το μοτίβο
-SSH-tunnel για να το προσεγγίσετε.
+Το REST εξυπηρετείται στη `3111`· το viewer στη `3113` δημοσιεύεται μόνο όταν το πρότυπο πλατφόρμας υποστηρίζει ξεχωριστή προστατευμένη διαδρομή. Οι live ενημερώσεις χρησιμοποιούν SSE με bearer authentication στο REST endpoint `/agentmemory/viewer/events`. Το WebSocket του engine στη `49134` είναι εσωτερικό και δεν πρέπει να δημοσιευτεί. Για οδηγίες έκθεσης και allowlist ανά πλατφόρμα, δείτε το [`deploy/README.md`](../deploy/README.md).
 
+
+### Μετεγκατάσταση παλιών εγκαταστάσεων Docker που διαχειρίζεται το CLI
+
+Το τρέχον CLI δεν εκκινεί ούτε διαχειρίζεται αναπτύξεις Docker. Αν εντοπίσει μια παλιά εγγραφή κύκλου ζωής Docker, διατηρεί τα μεταδεδομένα και εμφανίζει την ακριβή εντολή `docker stop ...`· εκτελέστε την πριν από τη μετεγκατάσταση. Μην εκκινήσετε το νέο περιβάλλον εκτέλεσης όσο ο παλιός περιέκτης έχει ακόμη προσαρτημένο τον τόμο.
+
+Κρατήστε τον παλιό μόνιμο τόμο (συνήθως `iii-data`) και δημιουργήστε αντίγραφό του ασφαλείας ή αντιγράψτε τα περιεχόμενα του `/data` σε bind mount. Ο worker state διαβάζει απευθείας το υπάρχον `/data/state_store.db`, χωρίς εξαγωγή ή μετατροπή. Το παλιό περιβάλλον εκτέλεσης χρησιμοποιούσε UID/GID `65532:65532`· το νέο image εκτελεί μία φορά αναδρομική μετεγκατάσταση ιδιοκτησίας σε `node:node` (`1000:1000`) και γράφει το `/data/.ownership-migrated-node-v1`. Μην προσαρτήσετε ξανά τον τόμο στο παλιό περιβάλλον εκτέλεσης μετά τη μετεγκατάσταση.
+
+Το παλιό περιβάλλον εκτέλεσης αποθήκευε επίσης το δημιουργημένο bearer secret στο `/data/.hmac`. Το νέο image διατηρεί αυτό το secret κατά τη μετεγκατάσταση· αν έχει οριστεί ρητά το `AGENTMEMORY_SECRET`, αυτό υπερισχύει. Εκκινήστε το νέο έργο Compose από τη ρίζα του αποθετηρίου με `docker compose up --build -d`. Αν το όνομα του παλιού τόμου έχει πρόθεμα έργου αντί για `iii-data`, χρησιμοποιήστε τον ξανά ή μετονομάστε τον ρητά — μην αρχικοποιήσετε κατά λάθος έναν κενό τόμο. Ελέγξτε το `/agentmemory/livez` και επιβεβαιώστε ότι μπορούν να βρεθούν τόσο οι παλιές όσο και οι νέες μνήμες. Αποφύγετε το `docker compose down -v`, εκτός αν σκοπεύετε να διαγράψετε τα δεδομένα.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Γιατί το agentmemory" height="32" /></picture></h2>
@@ -1104,7 +1068,7 @@ EMBEDDING_PROVIDER=local
 
 54 εργαλεία, 6 πόροι, 3 προτροπές, και 17 skills.
 
-> **MCP shim έναντι πλήρους διακομιστή:** το δημοσιευμένο πακέτο `@agentmemory/mcp` είναι ένα λεπτό shim. Εκθέτει την πλήρη επιφάνεια των 54 εργαλείων **μόνο όταν μπορεί να φτάσει έναν ενεργό διακομιστή agentmemory** μέσω του `AGENTMEMORY_URL` (λειτουργία proxy). Χωρίς προσβάσιμο διακομιστή, το shim επιστρέφει σε ένα τοπικό σύνολο 7 εργαλείων (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Η μεταβλητή περιβάλλοντος `AGENTMEMORY_TOOLS=core|all` είναι μια σημαία *από την πλευρά του διακομιστή*· η ρύθμισή της στο block `env` του shim δεν έχει καμία επίδραση. Αν βλέπετε μόνο 7 εργαλεία στο Cursor / OpenCode / Gemini CLI, ξεκινήστε το `npx -y @agentmemory/agentmemory@latest` (ή το Docker stack) και ρυθμίστε `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP shim έναντι πλήρους διακομιστή:** το δημοσιευμένο πακέτο `@agentmemory/mcp` είναι ένα λεπτό shim. Εκθέτει την πλήρη επιφάνεια των 54 εργαλείων **μόνο όταν μπορεί να φτάσει έναν ενεργό διακομιστή agentmemory** μέσω του `AGENTMEMORY_URL` (λειτουργία proxy). Χωρίς προσβάσιμο διακομιστή, το shim επιστρέφει σε ένα τοπικό σύνολο 7 εργαλείων (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Η μεταβλητή περιβάλλοντος `AGENTMEMORY_TOOLS=core|all` είναι μια σημαία *από την πλευρά του διακομιστή*· η ρύθμισή της στο block `env` του shim δεν έχει καμία επίδραση. Αν βλέπετε μόνο 7 εργαλεία στο Cursor / OpenCode / Gemini CLI, ξεκινήστε το `npx -y @agentmemory/agentmemory@latest` (ή συνδεθείτε σε self-hosted server) και ρυθμίστε `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 54 Εργαλεία
 
@@ -1244,7 +1208,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Viewer σε Πραγματικό Χρόνο" height="32" /></picture></h2>
 
-Ξεκινά αυτόματα στη θύρα `3113`. Το viewer φορτώνει ένα snapshot όταν συνδέεται (`GET /agentmemory/viewer/snapshot`) και μετά εφαρμόζει live stream events: νέες μνήμες, μαθήματα, παρατηρήσεις, καταχωρήσεις audit, αλλαγές γράφου, και ενημερώσεις υγείας εμφανίζονται χωρίς polling ή επαναφόρτωση σελίδας. Τα μόνα άλλα αιτήματα είναι οι ενέργειες που κάνετε κλικ, οι σελίδες "load more" και οι αναζητήσεις. Όταν το stream διακόπτεται, το viewer δείχνει πόσο παλιά είναι οι αριθμοί του, επανασυνδέεται με backoff και επανασυγχρονίζεται από ένα snapshot.
+Ξεκινά αυτόματα στη θύρα `3113`. Κατά τη σύνδεση, το viewer φορτώνει ένα snapshot (`GET /agentmemory/viewer/snapshot`) και έπειτα εφαρμόζει live events μέσω SSE στο `/agentmemory/viewer/events` από τον worker REST: νέες μνήμες, lessons, παρατηρήσεις, εγγραφές audit, αλλαγές γράφου και ενημερώσεις health εμφανίζονται χωρίς polling ή επαναφόρτωση της σελίδας. Τα μόνα άλλα requests προκύπτουν από τις ενέργειες που πατάτε, τις σελίδες «φόρτωσε περισσότερα» και τις αναζητήσεις. Αν διακοπεί η ροή, το viewer δείχνει πόσο παλιά είναι τα δεδομένα, επανασυνδέεται με backoff και συγχρονίζεται ξανά από ένα snapshot.
 
 - **12 καρτέλες σε τέσσερις ομάδες** με ζωντανές μετρήσεις, deep links (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), συντομεύσεις πληκτρολογίου, και ένα μενού για κινητά.
 - **Memories:** αναζήτηση από την πλευρά του server, φίλτρα ανά project, agent, και τύπο, ένα πάνελ λεπτομερειών με την αλυσίδα εκδόσεων και ένα word diff, συνδέσμους προέλευσης, κουμπιά αντιγραφής για το id, την κλήση MCP, και μια εντολή curl, επεξεργασία (νέα έκδοση), forget με επιβεβαίωση, μαζικό forget, και εξαγωγή JSON.
@@ -1257,15 +1221,15 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 open http://localhost:3113
 ```
 
-Ο διακομιστής του viewer συνδέεται στο `127.0.0.1` από προεπιλογή και επισυνάπτει το secret του διακομιστή όταν προωθεί αιτήματα στο REST API, οπότε δεν χρειάζεται καμία ρύθμιση. Το endpoint `/agentmemory/viewer` που εξυπηρετείται από το REST ακολουθεί τους κανονικούς κανόνες bearer-token και ανακατευθύνει τους browsers χωρίς token στη θύρα του viewer. Οι κεφαλίδες CSP χρησιμοποιούν ένα script nonce ανά απάντηση και απενεργοποιούν τα inline handler attributes (`script-src-attr 'none'`).
+Ο διακομιστής viewer συνδέεται στο `127.0.0.1` από προεπιλογή και επισυνάπτει το secret του διακομιστή όταν προωθεί αιτήματα στο REST API. Σε σύνδεση εκτός loopback, το HTML shell παραμένει δημόσιο, αλλά κάθε αίτημα proxy απαιτεί bearer· το viewer το ζητά και το αποθηκεύει στο session storage. Διαμορφώστε ρητές allowlists host/origin και TLS πριν εκθέσετε το viewer. Το endpoint `/agentmemory/viewer` που εξυπηρετείται από το REST ακολουθεί τους κανονικούς κανόνες bearer-token και ανακατευθύνει browsers χωρίς token στη θύρα του viewer. Οι κεφαλίδες CSP χρησιμοποιούν ένα script nonce ανά απάντηση και απενεργοποιούν τα inline handler attributes (`script-src-attr 'none'`).
 
 ---
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
 
-Το viewer στη `:3113` δείχνει τι **θυμήθηκε** ο agent σας. Η [iii console](https://iii.dev/docs/console) δείχνει τι **έκανε** ο agent σας: κάθε λειτουργία μνήμης ως trace OpenTelemetry, κάθε καταχώρηση KV επεξεργάσιμη, κάθε function επικλητή, κάθε stream προσβάσιμο. Δύο παράθυρα στην ίδια μνήμη: ένα σε σχήμα προϊόντος, ένα σε σχήμα engine.
+Το viewer στη `:3113` δείχνει τι **θυμήθηκε** ο agent σας. Η [iii console](https://iii.dev/docs/console) δείχνει τι **έκανε** ο agent σας: κάθε λειτουργία μνήμης ως trace OpenTelemetry, κάθε καταχώρηση KV επεξεργάσιμη, κάθε function επικλητή και κάθε κανάλι επιθεωρήσιμο. Δύο παράθυρα στην ίδια μνήμη: ένα σε σχήμα προϊόντος, ένα σε σχήμα engine.
 
-Παρακολουθήστε ένα `memory_smart_search` να ενεργοποιείται και δείτε το BM25 scan → αναζήτηση embedding → συγχώνευση RRF → reranker ως ένα waterfall. Επεξεργαστείτε ένα κολλημένο timer ενοποίησης στον KV browser. Αναπαράγετε ένα hook `PostToolUse` με ένα τροποποιημένο payload. Καρφιτσώστε (pin) το WebSocket stream και παρακολουθήστε τις παρατηρήσεις να καταφθάνουν ζωντανά.
+Παρακολουθήστε ένα `memory_smart_search` να εκτελείται και δείτε το BM25 scan → αναζήτηση embedding → συγχώνευση RRF → reranker ως waterfall. Επεξεργαστείτε ένα κολλημένο timer ενοποίησης στον KV browser. Αναπαράγετε ένα hook `PostToolUse` με τροποποιημένο payload. Επιθεωρήστε τα κανάλια και τη δραστηριότητα του engine.
 
 Το agentmemory το προσφέρει αυτό δωρεάν επειδή κάθε κλήση function και trigger ενεργοποιείται μέσω του iii· τίποτα προσαρμοσμένο, τίποτα να γίνει instrument.
 
@@ -1275,7 +1239,7 @@ open http://localhost:3113
   <em>Σελίδα Workers: κάθε συνδεδεμένος worker, συμπεριλαμβανομένου του ίδιου του agentmemory, με PID, αριθμό functions, runtime, και last-seen.</em>
 </p>
 
-**Είναι ήδη εγκατεστημένη.** Η console διανέμεται με τον καθορισμένο `iii` engine (0.22+)· δεν χρειάζεται ξεχωριστή εγκατάσταση. Η πρώτη εκκίνηση κατεβάζει το binary της console δίπλα στον engine.
+**Είναι ήδη εγκατεστημένη.** Η console διανέμεται με τον καρφιτσωμένο `iii` engine 0.24.6· δεν χρειάζεται ξεχωριστή εγκατάσταση. Η πρώτη εκκίνηση κατεβάζει το binary της console δίπλα στον engine.
 
 **Εκκίνηση παράλληλα με το agentmemory:**
 
@@ -1283,15 +1247,12 @@ open http://localhost:3113
 agentmemory console
 ```
 
-Αυτό εκτελεί το `iii console` του καθορισμένου engine πάνω στις θύρες που επέλυσε το agentmemory (REST, streams, bridge) και το εξυπηρετεί μία θύρα πάνω από το viewer, `http://localhost:3114` από προεπιλογή. Το `--console-port N` επιλέγει άλλη θύρα· τα `--port` και `--instance` επιλέγουν το instance του agentmemory με τον ίδιο τρόπο όπως για το `stop`· κάθε άλλη σημαία περνάει αυτούσια, για παράδειγμα το `--enable-flow` για την πειραματική σελίδα γράφου αρχιτεκτονικής.
+Αυτό εκτελεί το `iii console` του καρφιτσωμένου engine με τις θύρες που επέλυσε το agentmemory (REST και Worker WebSocket) και το εξυπηρετεί μία θύρα πάνω από το viewer, `http://localhost:3114` από προεπιλογή. Το `--console-port N` επιλέγει άλλη θύρα· τα `--port` και `--instance` επιλέγουν το instance του agentmemory όπως και για το `stop`· κάθε άλλη σημαία περνάει αυτούσια, για παράδειγμα το `--enable-flow` για την πειραματική σελίδα γράφου αρχιτεκτονικής.
 
 Το ίδιο πράγμα χειροκίνητα, χρήσιμο όταν το `agentmemory` δεν είναι στο PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **Τι μπορείτε να κάνετε από την console:**
@@ -1302,12 +1263,9 @@ agentmemory console
 | **Functions** | Να καλέσετε απευθείας οποιαδήποτε από τις functions του agentmemory με ένα JSON payload· χρήσιμο για τη δοκιμή των `memory.recall`, `memory.consolidate`, `graph.query` χωρίς να συνδέσετε έναν client. |
 | **Triggers** | Να αναπαράγετε triggers HTTP, cron, event, και state: να ενεργοποιήσετε το cron ενοποίησης χειροκίνητα, να ξαναδοκιμάσετε μια διαδρομή HTTP, να εκπέμψετε μια αλλαγή κατάστασης. |
 | **States** | Έναν KV browser με πλήρες CRUD πάνω σε sessions, memory slots, χρονόμετρα κύκλου ζωής, και το ευρετήριο embeddings· να επεξεργαστείτε τιμές επί τόπου. |
-| **Streams** | Ζωντανή παρακολούθηση WebSocket για εγγραφές μνήμης, events hooks, και ενημερώσεις παρατηρήσεων καθώς διαρρέουν μέσα από τα iii streams. |
-| **Queues** | Durable θέματα ουράς + διαχείριση dead-letter. Να αναπαράγετε ή να απορρίψετε αποτυχημένες εργασίες embedding / συμπίεσης. |
 | **Traces** | Προβολές waterfall / flame / service-breakdown του OpenTelemetry. Φιλτράρετε κατά `trace_id` για να δείτε ακριβώς ποιες functions, κλήσεις DB, και αιτήματα embedding παρήγαγε ένα μόνο `memory.search`. |
 | **Logs** | Δομημένα logs OTEL φιλτραρισμένα και συσχετισμένα με IDs trace/span. |
 | **Config** | Ρυθμίσεις runtime: δείτε ακριβώς με ποιους workers, providers, και θύρες τρέχει ο engine σας. |
-| **Flow** | (Προαιρετικό, `--enable-flow`) Διαδραστικός γράφος αρχιτεκτονικής κάθε worker, trigger, και stream. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="προβολή waterfall traces της iii console που δείχνει τη διάρκεια ανά span" width="720" />
@@ -1315,11 +1273,7 @@ agentmemory console
   <em>Traces: waterfall / flame / service breakdown για κάθε λειτουργία μνήμης.</em>
 </p>
 
-**Τα traces είναι ήδη ενεργά:**
-
-Το `iii-config.yaml` διανέμεται με ενεργοποιημένο τον worker `iii-observability` (`exporter: memory`, `sampling_ratio: 0.1`, metrics + logs). Δεν χρειάζεται επιπλέον ρύθμιση· τη στιγμή που ξεκινά το agentmemory, κάθε λειτουργία μνήμης εκπέμπει ένα δομημένο log που μπορεί να διαβάσει η console, και μία στις δέκα (`sampling_ratio: 0.1`) εκπέμπει επίσης ένα trace span.
-
-Αν θέλετε να εξάγετε στο Jaeger/Honeycomb/Grafana Tempo αντ' αυτού, αλλάξτε το `exporter: memory` σε `exporter: otlp` και ρυθμίστε το endpoint του collector σύμφωνα με τα docs παρατηρησιμότητας του iii.
+**Tracing και logs:** Η iii console μπορεί να επιθεωρεί την τηλεμετρία runtime. Για ρυθμίσεις exporter και sampling, ακολουθήστε την [τεκμηρίωση observability του iii](https://iii.dev/docs).
 
 > **Σημαντική σημείωση:** δεν επιβάλλεται auth στην ίδια την console· κρατήστε τη συνδεδεμένη στο `127.0.0.1` (η προεπιλογή) και ποτέ μην την εκθέσετε δημόσια.
 
@@ -1327,13 +1281,13 @@ agentmemory console
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="Τροφοδοτείται από το iii" height="32" /></picture></h2>
 
-Το agentmemory είναι **ήδη ένα ενεργό instance του [iii](https://iii.dev)**. Τρία primitives (worker, function, trigger) συνθέτουν το runtime· η κατάσταση KV, τα streams, και τα traces OTEL προέρχονται από τους workers iii-state, iii-stream, και iii-observability που διανέμονται με το iii. Δεν εγκαταστήσατε Postgres, Redis, Express, pm2, ή Prometheus, επειδή το iii τα αντικαθιστά.
+Το agentmemory είναι worker στο runtime του [iii](https://iii.dev). Το Worker Compose διαχειρίζεται τον engine και ξεκινά το agentmemory μαζί με τους workers registry `state` και `http`. Η ροή του viewer παρέχεται ως SSE μέσω του endpoint REST.
 
 Αυτό σημαίνει ότι μία ακόμα εντολή επεκτείνει το agentmemory με μια ολόκληρη νέα δυνατότητα.
 
 ### Επέκταση του agentmemory με περισσότερους workers
 
-Τα builtins που χρειάζεται το agentmemory βρίσκονται ήδη στο `iii-config.yaml` και εκκινούν μαζί του: `iii-state` (KV), `iii-queue` (durable retries για τους συνδρομητές events), `iii-pubsub`, `iii-cron`, `iii-stream`, και `iii-observability` (traces OTEL, metrics, και logs σε κάθε function). Οτιδήποτε άλλο από το [iii worker registry](https://workers.iii.dev) συνδέεται στον ίδιο engine: αντιγράψτε το `iii-config.yaml` στο `~/.agentmemory/iii-config.yaml` (το CLI προτιμά αυτό το αρχείο έναντι του ενσωματωμένου, και συνεχίζει να αποδίδει θύρες και διαδρομές δεδομένων μέσα του), προσθέστε την καταχώρηση, εγκαταστήστε το runtime του worker μία φορά με `~/.agentmemory/bin/iii update worker`, και κάντε επανεκκίνηση του agentmemory.
+Το runtime συνθέτει τους workers registry `state` (KV) και `http` με το agentmemory. Άλλοι workers από το [iii registry](https://workers.iii.dev) μπορούν να προστεθούν σε ένα έργο Worker Compose.
 
 ```yaml
 workers:
@@ -1343,29 +1297,25 @@ workers:
   - name: mcp               # extra MCP servers next to agentmemory's, same engine
 ```
 
-| Worker | Τι αποκτάτε πάνω από το agentmemory |
+| Worker | Τι αποκτάτε επιπλέον του agentmemory |
 |---|---|
-| [`database`](https://workers.iii.dev/workers/database) | Προσαρμογέας κατάστασης βασισμένος σε SQL, όταν ξεπεράσετε τις προεπιλογές in-memory KV |
-| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Κώδικας που προέκυψε από το `memory_recall` τρέχει μέσα σε ένα αναλώσιμο VM, όχι στο shell σας |
-| [`mcp`](https://workers.iii.dev/workers/mcp) | Στήστε επιπλέον διακομιστές MCP δίπλα σε αυτόν του agentmemory, μοιραζόμενοι τον ίδιο engine |
+| [`database`](https://workers.iii.dev/workers/database) | Προσαρμογέα κατάστασης SQL όταν οι προεπιλογές in-memory KV δεν επαρκούν πλέον |
+| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Ο κώδικας από το `memory_recall` εκτελείται σε προσωρινό VM αντί για το shell σας |
+| [`mcp`](https://workers.iii.dev/workers/mcp) | Εκκινήστε επιπλέον διακομιστές MCP δίπλα στο agentmemory και μοιραστείτε τον ίδιο engine |
 
-Στον engine 0.22.x κρατήστε τα ονόματα με πρόθεμα `iii-` για τα builtins παραπάνω· οι καταχωρήσεις χωρίς πρόθεμα `http`, `state`, `queue`, `pubsub`, και `cron` είναι οι αυτόνομοι workers του registry στους οποίους μεταβαίνει το agentmemory με τη μετάβαση στο 0.23.
+Το runtime καρφιτσώνει τα πακέτα registry `state@0.22.20` και `http@0.22.7` στο έργο Worker Compose που δημιουργεί το CLI.
 
-Πλήρες registry: [workers.iii.dev](https://workers.iii.dev). Κάθε worker εκεί συνθέτεται μέσω των ίδιων primitives που χρησιμοποιεί το agentmemory, και το agentmemory που έχετε ήδη είναι ένα από αυτά.
+Πλήρες registry: [workers.iii.dev](https://workers.iii.dev). Κάθε worker εκεί συντίθεται μέσω των ίδιων primitives που χρησιμοποιεί το agentmemory, και το agentmemory που ήδη έχετε είναι ένα από αυτά.
 
-### Ρυθμίσεις Engine και Διεύθυνση Σύνδεσης
+### Runtime CLI και διευθύνσεις σύνδεσης
 
-Το `agentmemory start` διαβάζει τις ρυθμίσεις του engine από το πρώτο αρχείο που υπάρχει: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` στον τρέχοντα κατάλογο, `~/.agentmemory/iii-config.yaml`, και μετά το ενσωματωμένο `iii-config.yaml`. Σε κάθε εκκίνηση αποδίδει αυτό το αρχείο (διαδρομές δεδομένων, θύρες, state backend) στο `~/.agentmemory/data/iii-config.runtime.yaml` και ξεκινά τον engine με το αποδοθέν αντίγραφο, οπότε επεξεργαστείτε το αρχείο-πηγή, όχι το αποδοθέν. Οι τιμές `host:` του αρχείου-πηγή διατηρούνται όπως είναι γραμμένες.
+Η εκτέλεση του `agentmemory` (ή του πακέτου χωρίς υποεντολή) ξεκινά το iii Worker Compose με απομονωμένο manifest στον επιλεγμένο κατάλογο δεδομένων. Χρησιμοποιεί iii 0.24.6, `state@0.22.20` και `http@0.22.7`. Οι τοπικοί listeners REST και viewer του CLI συνδέονται στο `127.0.0.1`· το WebSocket του engine είναι εσωτερική κίνηση runtime. Οι αναπτύξεις Docker από το αποθετήριο χρησιμοποιούν ξεχωριστό το [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml)· δείτε το [`deploy/README.md`](../deploy/README.md).
 
-Το ενσωματωμένο `iii-config.yaml` συνδέεται σκόπιμα στο `127.0.0.1`, και αυτή η προεπιλογή ισχύει και μέσα σε ένα container. Ένα CLI που ξεκινά σε ένα container ακούει στο loopback του container, οπότε οι δημοσιευμένες θύρες δεν φτάνουν πουθενά. Για να εξυπηρετήσετε ένα containerized CLI μέσω δημοσιευμένων θυρών, ρυθμίστε το `AGENTMEMORY_III_CONFIG` σε ρυθμίσεις που συνδέονται στο `0.0.0.0`. Το συνοδευτικό `iii-config.docker.yaml` είναι ένα τέτοιο: συνδέει τα `iii-http`, `iii-stream`, και τη θύρα του engine στο `0.0.0.0` και αποθηκεύει την κατάσταση κάτω από το `/data`, οπότε κάντε mount έναν εγγράψιμο volume εκεί. Κρατήστε ρυθμισμένο το `AGENTMEMORY_SECRET`, και δημοσιεύστε μόνο τις θύρες που χρειάζεστε, στο `127.0.0.1` ή πίσω από ένα proxy που εμπιστεύεστε.
+### Backend αποθήκευσης: file (προεπιλογή) ή Redis
 
-Το `docker-compose.yml` αυτού του αποθετηρίου δεν περνάει από την αναζήτηση ρυθμίσεων του CLI: κάνει mount το `iii-config.docker.yaml` στο `/app/config.yaml`, και το container `iii-engine` ξεκινά με `--config /app/config.yaml`. Τα πρότυπα [ανάπτυξης με ένα κλικ](../deploy/) γράφουν τις δικές τους ρυθμίσεις `0.0.0.0` στα entrypoints τους.
+Ο worker `state` χρησιμοποιεί από προεπιλογή ένα file-based KV store, το οποίο διατηρείται στη μνήμη και γράφεται περιοδικά στον δίσκο. Το Redis είναι διαθέσιμο όταν πολλοί writers μοιράζονται ένα runtime· προσθέτει ένα network round trip και δεν κάνει παράλληλη μία μεμονωμένη σύνδεση worker.
 
-### Backend Αποθήκευσης: file (προεπιλογή) έναντι redis
-
-Τα `iii-state` και `iii-stream` χρησιμοποιούν από προεπιλογή το ενσωματωμένο file-based KV store του iii-engine: ένα αρχείο JSON ανά scope, που κρατείται στη μνήμη της διαδικασίας του engine και ξαναγράφεται στον δίσκο σε χρονομέτρημα. Αυτή είναι η σωστή προεπιλογή για μια τοπική εγκατάσταση ενός χρήστη· ένας κοινός daemon με πολλούς ταυτόχρονους writers παίρνει αντί αυτού πραγματικές εγγραφές ανά κλειδί από το Redis, με το κόστος ενός network round trip ανά λειτουργία (κάθε κλήση `state::*` εξακολουθεί να σειριοποιείται σε μία σύνδεση Redis, οπότε αυτό ανταλλάζει το lock του file store για ένα socket, όχι για παραλληλία).
-
-Ρυθμίστε `AGENTMEMORY_STATE_BACKEND=redis` (μαζί με `AGENTMEMORY_REDIS_URL`) για να αλλάξετε και τους δύο workers στον ενσωματωμένο `redis` adapter του iii-engine, που αποθηκεύει κάθε κλειδί ως πεδίο hash του Redis (`HSET`) αντί να ξαναγράφει ολόκληρο το scope σε κάθε εγγραφή:
+Ορίστε τα `AGENTMEMORY_STATE_BACKEND=redis` και `AGENTMEMORY_REDIS_URL` για να χρησιμοποιήσετε τον Redis adapter του worker state, ο οποίος αποθηκεύει κάθε κλειδί ως πεδίο hash του Redis (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1373,31 +1323,30 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-Το `AGENTMEMORY_STATE_BACKEND` έχει προεπιλογή το `file`· αφήνοντάς το χωρίς ρύθμιση διατηρεί τη σημερινή συμπεριφορά αμετάβλητη, και μια μη αναγνωρισμένη τιμή (οτιδήποτε άλλο εκτός από `file` ή `redis`) είναι σφάλμα εκκίνησης αντί για σιωπηλή επιστροφή σε προεπιλογή. Το `/agentmemory/status` και η σελίδα Health του viewer (η γραμμή State store) αναφέρουν ποιο backend είναι ενεργό και αν αποκρίνεται, ποτέ το URL.
+Το `AGENTMEMORY_STATE_BACKEND` έχει προεπιλογή `file`· αν παραμείνει αόριστο, η σημερινή συμπεριφορά δεν αλλάζει. Μη αναγνωρισμένη τιμή (οτιδήποτε εκτός από `file` ή `redis`) προκαλεί σφάλμα εκκίνησης αντί για σιωπηλή εναλλακτική. Το `/agentmemory/status` και η σελίδα Health του viewer (γραμμή State store) αναφέρουν ποιο backend είναι ενεργό και αν αποκρίνεται, ποτέ όμως το URL.
 
-**Μόνο απλό `redis://`.** Ο καθορισμένος engine (0.22.1) χτίζει τον Redis client του χωρίς υποστήριξη TLS, οπότε ένα URL `rediss://` (οι περισσότερες διαχειριζόμενες προσφορές Redis, όπως οι Upstash, Redis Cloud, και ElastiCache με κρυπτογράφηση in-transit, έχουν προεπιλογή μόνο TLS) αποτυγχάνει να συνδεθεί. Η σύνδεση είναι χωρίς κρυπτογράφηση, οπότε ο κωδικός του Redis και κάθε αποθηκευμένη μνήμη διασχίζουν το δίκτυο σε καθαρό κείμενο: δείξτε σε έναν τοπικό Redis ή σε έναν σε ιδιωτικό δίκτυο που εμπιστεύεστε. Για οποιοδήποτε άλλο Redis, τρέξτε ένα κρυπτογραφημένο tunnel (stunnel, SSH, ή VPN) στον host του agentmemory, ώστε το απλό hop `redis://` να παραμένει σε αυτόν τον host και η upstream σύνδεση του tunnel να είναι κρυπτογραφημένη και αυθεντικοποιημένη. Αν ο κωδικός του Redis περιέχει μονό εισαγωγικό, κάντε percent-encode (`%27`)· ο engine επεκτείνει το URL μέσα στις ρυθμίσεις YAML του πριν το αναλύσει.
+**Μόνο απλό `redis://`.** Ο καρφιτσωμένος worker state υποστηρίζει μόνο `redis://`· υπηρεσίες TLS-only `rediss://` χρειάζονται κρυπτογραφημένο tunnel. Η σύνδεση Redis δεν είναι κρυπτογραφημένη, οπότε χρησιμοποιήστε τοπικό/ιδιωτικό δίκτυο ή tunnel. Αν ο κωδικός πρόσβασης Redis περιέχει απλό εισαγωγικό, κωδικοποιήστε το ως `%27`· ο engine επεκτείνει το URL στη διαμόρφωση YAML πριν το αναλύσει.
 
-**Ένας διακομιστής Redis ανά `--instance`.** Τα προθέματα κλειδιών Redis του engine (`state:<scope>`, `stream:<name>:<group>`) είναι σταθερά, οπότε δύο instances agentmemory (`--instance 1`, `--instance 2`, ...) που δείχνουν στην ίδια βάση δεδομένων αντικαθιστούν τα δεδομένα το ένα του άλλου. Ένα ξεχωριστό database index (`redis://localhost:6379/1`) κρατά τα αποθηκευμένα δεδομένα ξεχωριστά, αλλά ο engine αναμεταδίδει τα live events του viewer μέσω ενός καναλιού pub/sub του Redis (`stream::events`), και το pub/sub του Redis αγνοεί το database index, οπότε ο viewer κάθε instance θα εξακολουθούσε να δείχνει τα live events του άλλου. Δώστε σε κάθε instance τον δικό του διακομιστή Redis (ή θύρα) όταν τρέχετε περισσότερα από ένα.
+**Μία βάση Redis ανά instance.** Δώστε σε κάθε ταυτόχρονο instance τη δική του βάση ή τον δικό του Redis server για να παραμένει απομονωμένη η κατάστασή του.
 
-**Τι παραμένει το ίδιο, και τι διαφέρει.** Κάθε δυνατότητα του agentmemory λειτουργεί στο Redis: sessions, παρατηρήσεις, μνήμες (remember, supersede, evolve, forget), αναζήτηση και τα buckets ευρετηρίου, μαθήματα, ο γράφος, το audit log και τα μηνιαία scopes του, εξαγωγή και εισαγωγή, διαγραφές governance, κατάσταση ενοποίησης, το snapshot του viewer και το live stream του, και ο health monitor. Ο engine αποθηκεύει κάθε scope ως ένα hash Redis (`HSET`/`HGET`/`HGETALL`) και ενεργοποιεί τα ίδια state triggers με το file store. Τρεις διαφορές του engine διαχειρίζονται εντός του agentmemory:
+**Τι παραμένει ίδιο και τι διαφέρει.** Όλες οι λειτουργίες agentmemory δουλεύουν με Redis: συνεδρίες, παρατηρήσεις, μνήμες (remember, supersede, evolve, forget), αναζήτηση και buckets ευρετηρίου, lessons, γράφος, αρχείο audit και τα μηνιαία scopes του, export και import, διαγραφές governance, κατάσταση ενοποίησης, snapshot viewer και live SSE feed, καθώς και health monitor. Ο worker state αποθηκεύει κάθε scope ως Redis hash (`HSET`/`HGET`/`HGETALL`) και ενεργοποιεί τα ίδια state triggers όπως το file store. Τρεις διαφορές αποθήκευσης αντιμετωπίζονται μέσα στο agentmemory:
 
-- Το Redis επιστρέφει τις εγγραφές ενός scope χωρίς σταθερή σειρά. Το agentmemory τις ταξινομεί από την παλαιότερη (κατά τον χρόνο δημιουργίας στο id της εγγραφής, και μετά το timestamp της) ώστε οι λίστες, το paging, και τα κομμάτια εξαγωγής να επιστρέφουν με την ίδια σειρά όπως στο file store.
-- Ο engine εφαρμόζει μερικές ενημερώσεις στο Redis μέσα σε ένα script Lua που μετατρέπει τα κενά arrays σε κενά objects. Το agentmemory εφαρμόζει αυτές τις ενημερώσεις μόνο του (ανάγνωση, αλλαγή, εγγραφή υπό ένα lock ανά κλειδί) στο Redis, ώστε πεδία όπως το `tags: []` να παραμένουν arrays.
-- Ο παλαιός έλεγχος audit log διαβάζει το παλιό scope από το Redis αντί να ψάχνει για το αρχείο του file store στον δίσκο.
+- Το Redis δεν επιστρέφει τις εγγραφές ενός scope με σταθερή σειρά. Το agentmemory τις ταξινομεί από τις παλαιότερες προς τις νεότερες (πρώτα βάσει χρόνου δημιουργίας στο ID της εγγραφής και μετά βάσει timestamp), ώστε λίστες, σελιδοποίηση και τμήματα export να έχουν την ίδια σειρά με το file store.
+- Ο engine εφαρμόζει μερικές ενημερώσεις στο Redis με Lua script που μετατρέπει κενές λίστες σε κενά αντικείμενα. Το agentmemory εφαρμόζει μόνο του αυτές τις ενημερώσεις (ανάγνωση, αλλαγή και εγγραφή με κλείδωμα ανά κλειδί), ώστε πεδία όπως το `tags: []` να παραμένουν λίστες.
+- Ο έλεγχος του παλιού audit log διαβάζει το προηγούμενο scope από το Redis αντί να αναζητά το αρχείο του file store στον δίσκο.
 
-Μία διαφορά απαιτεί τη δική σας ενέργεια: **μετά από επανεκκίνηση του Redis, ο engine σταματά να αναμεταδίδει live events** στον viewer μέχρι να γίνει επανεκκίνηση του agentmemory. Τα δεδομένα συνεχίζουν να αποθηκεύονται και να διαβάζονται κανονικά. Ο health monitor στέλνει ένα δοκιμαστικό event μέσω Redis κάθε 30 δευτερόλεπτα· όταν δεν επιστρέφει, το `/agentmemory/status` και η σελίδα Health του viewer δείχνουν "Live updates are not reaching the viewer" με τη διόρθωση: επανεκκίνηση του agentmemory. Αν το Redis είναι εκτός λειτουργίας, η αναφορά κατάστασης δείχνει "The state store is not answering" και πώς να το ελέγξετε (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Η λίστα ενός πολύ μεγάλου scope διαβάζει ολόκληρο το hash σε ένα `HGETALL`, το ίδιο κόστος με το να το κρατά το file store στη μνήμη.
+Τα live events του viewer χρησιμοποιούν SSE μέσω του worker REST και εκπέμπονται από τη διεργασία agentmemory που εκτελείται· δεν χρησιμοποιούν Redis pub/sub ή περιοδικό έλεγχο Redis stream. Η διαθεσιμότητα του Redis επηρεάζει τις αναγνώσεις και εγγραφές state, όχι τη μεταφορά του viewer. Αν το Redis δεν λειτουργεί, η αναφορά status εμφανίζει «Το state store δεν αποκρίνεται» και οδηγίες ελέγχου (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Η καταχώριση ενός πολύ μεγάλου scope διαβάζει ολόκληρο το hash με ένα `HGETALL`, κόστος αντίστοιχο με τη διατήρησή του στη μνήμη από το file store.
 
-**Προτεινόμενες ρυθμίσεις Redis.** Η προεπιλεγμένη πολιτική snapshot `save 3600 1 300 100 60 10000` μπορεί να χάσει λεπτά εγγραφών σε ένα crash, χειρότερο από το παράθυρο flush των 5 δευτερολέπτων του file store. Ρυθμίστε `appendonly yes` για οτιδήποτε θα σας ενοχλούσε να χάσετε. Ρυθμίστε `maxmemory-policy noeviction`· το `allkeys-lru` ή κάτι αντίστοιχο απορρίπτει σιωπηλά μνήμες μόλις το Redis φτάσει το όριο μνήμης του.
+**Προτεινόμενες ρυθμίσεις Redis.** Η προεπιλεγμένη πολιτική snapshot `save 3600 1 300 100 60 10000` μπορεί να χάσει λεπτά εγγραφών σε περίπτωση crash. Ορίστε `appendonly yes` για δεδομένα που δεν θέλετε να χάσετε. Ορίστε `maxmemory-policy noeviction`· το `allkeys-lru` ή κάτι παρόμοιο απορρίπτει σιωπηλά μνήμες όταν το Redis φτάσει το όριο μνήμης.
 
-Μια native (μη-Docker) εκκίνηση, και κάθε πρότυπο [ανάπτυξης](../deploy/) με ένα κλικ (αντικαθιστούν το ενσωματωμένο `iii-config.yaml` και ξεκινούν native), διαβάζουν τα `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` και τα αποδίδουν στο `iii-config` που εκκινείται. Το ίδιο το URL δεν γράφεται ποτέ σε αυτό το αποδοθέν αρχείο, μόνο μια αναφορά `${AGENTMEMORY_REDIS_URL}` που η διαδικασία του engine επεκτείνει από το δικό της περιβάλλον κατά την εκκίνηση. Μόνο η δική του διαδρομή Docker Compose αυτού του αποθετηρίου (`AGENTMEMORY_USE_DOCKER=1`, ή η συνέχιση ενός engine που ξεκίνησε ήδη με αυτόν τον τρόπο) κάνει mount το `iii-config.docker.yaml` ως read-only και ποτέ δεν το αποδίδει· το `agentmemory start` προειδοποιεί όταν εντοπίζει αυτόν τον συνδυασμό. Αλλάξτε αυτό το αρχείο χειροκίνητα, ακολουθώντας την ίδια μορφή `name: redis` / `config: redis_url: ...` που φαίνεται στα docs των workers [iii-state](https://workers.iii.dev/workers/iii-state) και [iii-stream](https://workers.iii.dev/workers/iii-stream), και δείξτε το `redis_url` σε ένα Redis προσβάσιμο από το container. Το `docker-compose.yml` περνάει το `AGENTMEMORY_REDIS_URL` μέσα στο container του engine, οπότε το `redis_url: '${AGENTMEMORY_REDIS_URL}'` λειτουργεί εκεί και κρατά το URL έξω από το αρχείο που είναι mounted.
+Το έργο Worker Compose που δημιουργεί το CLI περνά αυτές τις μεταβλητές στον worker state. Για self-hosted Docker, δείτε το [`deploy/README.md`](../deploy/README.md) και τα [docs του state worker](https://workers.iii.dev/workers/state).
 
-Η αποδοθείσα ρύθμιση κρατά το URL έξω από το `~/.agentmemory/data/iii-config.runtime.yaml`, αλλά ο ίδιος ο worker ρυθμίσεων του engine εξακολουθεί να αποθηκεύει μόνιμα την *επεκταμένη* τιμή στα `~/.agentmemory/config/iii-state.yaml` και `iii-stream.yaml` μόλις εκκινήσει (η επέκταση `${VAR}` του iii-engine συμβαίνει πριν αυτός ο worker αποθηκεύσει το seed του, και αποθηκεύει την επιλυμένη τιμή, όχι την αναφορά). Αντιμετωπίστε αυτόν τον κατάλογο ως κάτι που κρατά διαπιστευτήρια: `chmod 700 ~/.agentmemory` σε κάθε κοινό host, και προτιμήστε έναν χρήστη Redis ACL με εμβέλεια σε ό,τι χρειάζεται το agentmemory αντί για τα admin διαπιστευτήρια της βάσης δεδομένων.
+Αν η persisted διαμόρφωση worker περιέχει URL Redis με credentials, χειριστείτε την ως ευαίσθητη. Προστατέψτε τον επιλεγμένο κατάλογο δεδομένων (για παράδειγμα, με `chmod 700 <data-dir>` σε κοινόχρηστο host). Προτιμήστε χρήστη Redis ACL περιορισμένο στις ανάγκες του agentmemory αντί για τα admin credentials της βάσης.
 
-**Η μετάβαση δεν είναι αυτόματη.** Η αλλαγή του `AGENTMEMORY_STATE_BACKEND` ξεκινά από ένα άδειο store και στις δύο πλευρές· τίποτα δεν αντιγράφει υπάρχοντα δεδομένα από το file στο Redis ή αντίστροφα. Κάντε export από το backend που αφήνετε και import σε αυτό στο οποίο μεταβαίνετε. Αυτό τρέχει ταυτόσημα σε bash και zsh (συμπεριλαμβανομένου του `bash -u`). Ένα array όπως το `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` δεν τρέχει το ίδιο: το zsh κρατά την κεφαλίδα ως μία κακοσχηματισμένη λέξη ενώ το bash τη χωρίζει σε δύο, οπότε και τα δύο αιτήματα επιστρέφουν 401 όποτε έχει ρυθμιστεί το `AGENTMEMORY_SECRET`:
+**Η μετεγκατάσταση δεν γίνεται αυτόματα.** Η αλλαγή του `AGENTMEMORY_STATE_BACKEND` ξεκινά με κενό store και στις δύο πλευρές· δεν αντιγράφονται δεδομένα από file σε Redis ή αντίστροφα. Κάντε export από το backend που εγκαταλείπετε και import στο νέο. Αυτό λειτουργεί με τον ίδιο τρόπο σε bash και zsh (και με `bash -u`). Ένας πίνακας όπως `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` δεν λειτουργεί: το zsh κρατά την κεφαλίδα ως μία κακοσχηματισμένη λέξη, ενώ το bash τη χωρίζει σε δύο· έτσι και τα δύο requests επιστρέφουν 401 όταν έχει οριστεί το `AGENTMEMORY_SECRET`:
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1425,20 +1374,20 @@ else
 fi
 ```
 
-Το `/agentmemory/export` δέχεται επίσης `?maxSessions=` και `?offset=` για τον διαμερισμό ενός μεγάλου corpus σε πολλές κλήσεις· το `strategy` κατά το import είναι `merge` (ασφαλής προεπιλογή), `replace`, ή `skip`.
+Το `/agentmemory/export` δέχεται επίσης `?maxSessions=` και `?offset=` για τμηματοποίηση μεγάλου corpus σε πολλές κλήσεις, `?collectionLimit=` και `?collectionOffset=` για σελιδοποίηση μνημών, γράφου και άλλων συλλογών, και `?collections=` για επιστροφή μόνο των επιλεγμένων· το `strategy` στο import είναι `merge` (ασφαλής προεπιλογή), `replace` ή `skip`, ενώ το `replace` απορρίπτει τμηματοποιημένο ή επιλεγμένο export.
 
 ### Τι Αντικαθιστά το iii
 
 | Παραδοσιακό stack | Το agentmemory χρησιμοποιεί |
 |---|---|
 | Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + ευρετήριο vector in-memory |
-| SSE / Socket.io | iii Streams (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | SSE μέσω του endpoint REST |
 | pm2 / systemd | επιτήρηση workers του iii engine |
 | Prometheus / Grafana | iii OTEL + monitor υγείας |
 | Προσαρμοσμένα συστήματα plugin | `iii worker add <name>` |
 
-**242 αρχεία πηγαίου κώδικα · ~55,000 LOC · 3,400+ δοκιμές · 324 functions · 67 KV scopes**, όλα πάνω σε τρία primitives. Δεν υπάρχει `agentmemory plugin install`. Το σύστημα plugin είναι το ίδιο το iii.
+**246 αρχεία πηγαίου κώδικα · ~56,000 LOC · 3,600+ δοκιμές · 322 functions · 65 KV scopes**, όλα πάνω σε τρία primitives. Δεν υπάρχει `agentmemory plugin install`. Το σύστημα plugin είναι το ίδιο το iii.
 
 ---
 
@@ -1555,39 +1504,23 @@ AGENTMEMORY_AGENT_SCOPE=isolated  # optional; default "shared"
 
 ### Θύρες
 
-Το agentmemory + iii-engine συνδέονται σε τέσσερις θύρες από προεπιλογή. Αν μια επανεκκίνηση αποτύχει με `port in use`, αυτός ο πίνακας σας λέει ποια διαδικασία να αναζητήσετε.
+Το τοπικό runtime χρησιμοποιεί τρεις listeners. Το WebSocket του iii engine εξυπηρετεί την εσωτερική εγγραφή workers και δεν πρέπει να εκτεθεί στο δημόσιο δίκτυο.
 
 | Θύρα | Διαδικασία | Σκοπός | Παράκαμψη περιβάλλοντος |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Εσωτερικός worker streams (καταναλώνεται από το agentmemory + viewer) | `III_STREAM_PORT` (προτεινόμενο) ή το παλαιό `III_STREAMS_PORT` |
-| `3113` | agentmemory | Viewer σε πραγματικό χρόνο (`http://localhost:3113`) | `III_VIEWER_PORT` ή `AGENTMEMORY_VIEWER_URL` για το αναφερόμενο URL |
-| `49134` | iii-engine | WebSocket· οι workers καταχωρούνται εδώ, η τηλεμετρία OTel ρέει μέσω αυτού | `III_ENGINE_PORT` ή `III_ENGINE_URL` |
+| `3111` | worker registry `http` | REST API, MCP HTTP, health και αυθεντικοποιημένο SSE viewer στο `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | UI viewer και proxy viewer | `III_VIEWER_PORT` |
+| `49134` | iii engine | Εσωτερικό WebSocket workers | `III_ENGINE_PORT` ή `III_ENGINE_URL` |
 
-Το `--port <N>` αλλάζει την άγκυρα REST και παράγει τα streams στο `N+1`, το viewer στο `N+2`, και το WebSocket του engine στο `N+46023` μόνο όπου η αντίστοιχη ρητή θύρα ή URL παραπάνω δεν έχει ρυθμιστεί. Δεν δημιουργεί ένα απομονωμένο namespace κύκλου ζωής. Χρησιμοποιήστε `--instance 1` για έναν δεύτερο daemon· χρησιμοποιεί άγκυρα 3211, με προεπιλογή `3211/3212/3213/49234`, και λαμβάνει έναν ξεχωριστό κατάλογο δεδομένων και κύκλου ζωής `instance-1`. Τα instances 1 έως 50 ακολουθούν το ίδιο μοτίβο.
+Το `--port <N>` ορίζει τη θύρα REST και παράγει τη θύρα viewer `N+2` και το WebSocket engine `N+46023`, αν δεν έχουν οριστεί ρητά. Χρησιμοποιήστε `--instance N` για απομονωμένο runtime.
 
-Ο καθορισμένος engine ξεκινά με `--no-update-check` (χωρίς αναζητήσεις ενημέρωσης ή security-advisory προς το GitHub κατά την εκκίνηση) και με την ανώνυμη τηλεμετρία χρήσης του iii απενεργοποιημένη: το agentmemory ρυθμίζει το `III_TELEMETRY_ENABLED=false` για τον engine που δημιουργεί, εκτός αν εξάγετε εσείς τη μεταβλητή, και το ενσωματωμένο αρχείο compose κάνει το ίδιο.
-
-Καθαρισμός παλιωμένων διαδικασιών όταν οι θύρες παραμένουν δεσμευμένες μετά από μια εκτέλεση που κατέρρευσε:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-Το `agentmemory stop` τερματίζει καθαρά τόσο τον worker όσο και το pidfile του engine σε ομαλή native τερματισμό. Σε λειτουργία Docker, αδειάζει τον native worker, σταματά το ακριβές επικυρωμένο container του engine, και διατηρεί τόσο το container όσο και το mount `/data` του για μια επανεκκίνηση χωρίς απώλειες· η επόμενη εκκίνηση επικυρώνει και συνεχίζει το ίδιο container. Η απεγκατάσταση με Docker απαιτεί `agentmemory remove --keep-data`: αφαιρεί τα κοινά αρχεία που διαχειρίζεται το agentmemory, διατηρώντας το επικυρωμένο container, το data mount του, και την εγγραφή κύκλου ζωής που χρειάζεται για την ανάκτησή τους. Η καταστροφική διαγραφή δεδομένων Docker αφήνεται σκόπιμα στον χειριστή μετά από ένα backup. Το CLI αρνείται επίσης να υιοθετήσει ή να στείλει σήμα σε κατόχους θυρών Docker ή VM (Docker backend, vpnkit, colima) ως τον native engine εκτός αν περαστεί το `--force`. Ο χειροκίνητος καθαρισμός παραπάνω είναι μόνο για την περίπτωση μετά από crash όπου δεν έχει απομείνει κανένα pidfile.
+Η self-hosted ανάπτυξη δημοσιεύει REST και viewer, με προεπιλογές `127.0.0.1:3111` και `127.0.0.1:3113`· οι θύρες host αλλάζουν με τα `AGENTMEMORY_REST_PORT` και `AGENTMEMORY_VIEWER_PORT`. Το REST CORS επιτρέπει από προεπιλογή `http://localhost` και `http://127.0.0.1` στις ρυθμισμένες θύρες REST και viewer. Στο Docker, ορίστε το `REST_ALLOWED_ORIGINS` σε λίστα ακριβών origins διαχωρισμένων με κόμμα, για να επιτρέψετε πρόσθετες έμπιστες προελεύσεις browser.
 
 ### Αρχείο Ρυθμίσεων
 
-Βάλτε τις ρυθμίσεις runtime του agentmemory στο `~/.agentmemory/.env` αντί να εξάγετε μεταβλητές σε κάθε shell. Αν το viewer δείξει μια υπόδειξη ρύθμισης όπως `export ANTHROPIC_API_KEY=...`, αντιγράψτε την σε αυτό το αρχείο ως `ANTHROPIC_API_KEY=...` χωρίς το πρόθεμα `export`, και μετά κάντε επανεκκίνηση του agentmemory.
+Βάλτε τις ρυθμίσεις runtime του agentmemory στο `~/.agentmemory/.env` αντί να εξάγετε μεταβλητές σε κάθε shell. Αν το viewer δείξει υπόδειξη όπως `export ANTHROPIC_API_KEY=...`, αντιγράψτε την εδώ ως `ANTHROPIC_API_KEY=...` χωρίς το πρόθεμα `export` και επανεκκινήστε το agentmemory. Ορίστε το `AGENTMEMORY_ENV_FILE` για να χρησιμοποιήσετε διαφορετική διαδρομή αρχείου env.
 
-Οι μεταβλητές περιβάλλοντος της διαδικασίας εξακολουθούν να λειτουργούν και υπερισχύουν των τιμών στο αρχείο.
+Οι μεταβλητές περιβάλλοντος της διαδικασίας εξακολουθούν να λειτουργούν και υπερισχύουν των τιμών στο αρχείο. Το έργο Worker Compose που δημιουργεί το CLI περνά τις ρυθμίσεις Redis από τα `AGENTMEMORY_STATE_BACKEND` και `AGENTMEMORY_REDIS_URL` στον worker `state`.
 
 Σε Windows, το ίδιο αρχείο βρίσκεται στο `%USERPROFILE%\.agentmemory\.env`:
 
@@ -1741,8 +1674,7 @@ GRAPH_EXTRACTION_ENABLED=true
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1781,7 +1713,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoints στη θύρα `3111`. Το REST API συνδέεται στο `127.0.0.1` από προεπιλογή. Τα προστατευμένα endpoints απαιτούν `Authorization: Bearer <secret>`, και τα endpoints mesh sync απαιτούν ένα ρητά ρυθμισμένο `AGENTMEMORY_SECRET` και στους δύο peers.
+144 endpoints στη θύρα `3111`. Το REST API συνδέεται στο `127.0.0.1` από προεπιλογή. Τα προστατευμένα endpoints απαιτούν `Authorization: Bearer <secret>`, και τα endpoints mesh sync απαιτούν ένα ρητά ρυθμισμένο `AGENTMEMORY_SECRET` και στους δύο peers.
 
 **Η πιστοποίηση είναι ενεργή από προεπιλογή.** Όταν το `AGENTMEMORY_SECRET` δεν έχει ρυθμιστεί (στο shell ή στο `~/.agentmemory/.env`), ο διακομιστής δημιουργεί ένα τυχαίο secret στην πρώτη εκκίνηση και το αποθηκεύει στο `~/.agentmemory/secret` με mode `0600`. Κάθε ενσωματωμένος client το διαβάζει από εκεί όταν μιλά με έναν τοπικό διακομιστή: το CLI, το viewer, τα hooks κάτω από το `plugin/scripts`, ο διακομιστής MCP και το shim `@agentmemory/mcp`, οι ρυθμίσεις που γράφει το `agentmemory connect`, και οι ενσωματωμένες ενσωματώσεις OpenCode, Pi, OpenClaw, Hermes, και filesystem-watcher. Το αποθηκευμένο secret αποστέλλεται μόνο σε loopback URLs (`localhost`, `127.0.0.0/8`, `::1`). Ένα ρητό `AGENTMEMORY_SECRET` υπερισχύει πάντα, και οι απομακρυσμένοι clients εξακολουθούν να το χρειάζονται ρυθμισμένο. Το Docker και τα entrypoints του `deploy/` δημιουργούν και εξάγουν ήδη το δικό τους secret. Για να καλέσετε το API χειροκίνητα:
 
@@ -1836,7 +1768,7 @@ curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:31
 | `400` / `422` | `rejected` | Μη έγκυρο payload, ή η αποθήκευση απέτυχε οριστικά (το event κρατιέται ως dead letter). |
 | `503` | `rejected` (`retryable: true`) | Το inbox είναι γεμάτο (`AGENTMEMORY_CAPTURE_INBOX_MAX`). Τα hooks κάνουν spool το event και το στέλνουν αργότερα. |
 
-Τα αποτυχημένα events ξαναδοκιμάζονται κάθε `AGENTMEMORY_CAPTURE_RETRY_INTERVAL_MS` (10 δευτ.) με διπλασιαζόμενο backoff, έως `AGENTMEMORY_CAPTURE_MAX_ATTEMPTS` (5). Τα events που συνεχίζουν να αποτυγχάνουν παραμένουν στο inbox ως dead letters, αναφέρονται στο `/agentmemory/status` και στη σελίδα Health του viewer, και μπορούν να ξαναδοκιμαστούν με `POST /agentmemory/capture/retry` (`{"eventId": "..."}` ή `{"all": true}`). Τα αποδεκτά event ids θυμούνται για `AGENTMEMORY_CAPTURE_DEDUP_HOURS` (168 ώρες, το πολύ `AGENTMEMORY_CAPTURE_EVENTS_MAX` ids), οπότε ένα hook που αναπαράγεται μετά από timeout ή επανεκκίνηση αποθηκεύεται μία φορά, ενώ δύο ξεχωριστές κλήσεις εργαλείων με τα δικά τους host ids αποθηκεύονται δύο φορές ακόμα κι αν το περιεχόμενό τους είναι ταυτόσημο. Όταν μια παρατήρηση διαγράφεται (forget, διαγραφή συνεδρίας, εκδίωξη, αυτόματη διαγραφή, ή ένα import που αντικαθιστά το store), το event της σημαίνεται ως διαγραμμένο πριν αφαιρεθεί η παρατήρηση, οπότε μια αναπαραγωγή αυτού του event εντός του ίδιου παραθύρου απαντιέται ως duplicate και δεν αποθηκεύει τίποτα. Το state store γράφει στον δίσκο κάθε 2 δευτερόλεπτα, οπότε ένα event που έχει απαντηθεί μπορεί ακόμα να βρίσκεται μόνο στη μνήμη για μια στιγμή. Για να το καλύψει αυτό, κάθε απάντηση `2xx` φέρει επίσης το `bootId` του διακομιστή (νέο σε κάθε εκκίνηση), το `acceptedAt`, και το `durableAfterMs` (το διάστημα αποθήκευσης συν 1.5 δευτ. στο file store, 1.5 δευτ. στο redis, όπου η μονιμότητα είναι ρύθμιση του χειριστή). Τα hooks κρατούν το event στο τοπικό spool μέχρι να περάσει αυτό το παράθυρο και το διαγράφουν σε μια επόμενη κλήση χωρίς άλλο αίτημα. Αν το `bootId` έχει αλλάξει μέχρι τότε, ο διακομιστής επανεκκινήθηκε, οπότε το hook στέλνει ξανά το event με το ίδιο `eventId`· ένα event που είχε φτάσει στον δίσκο δεν αποθηκεύεται δύο φορές. Ο διακομιστής στέλνει επίσης τέτοια events ο ίδιος κατά την εκκίνηση και σε κάθε διάστημα retry, οπότε μια επανεκκίνηση δεν χάνει τίποτα ακόμα και όταν δεν τρέξει κανένα hook μετά. Τα παλαιότερα hooks αγνοούν τα επιπλέον πεδία, και τα νέα hooks έναντι ενός παλαιότερου διακομιστή απορρίπτουν το event στο `2xx` όπως πριν.
+Τα αποτυχημένα events ξαναδοκιμάζονται κάθε `AGENTMEMORY_CAPTURE_RETRY_INTERVAL_MS` (10 δευτ.) με διπλασιαζόμενο backoff, έως `AGENTMEMORY_CAPTURE_MAX_ATTEMPTS` (5). Τα events που συνεχίζουν να αποτυγχάνουν παραμένουν στο inbox ως dead letters, αναφέρονται στο `/agentmemory/status` και στη σελίδα Health του viewer, και μπορούν να ξαναδοκιμαστούν με `POST /agentmemory/capture/retry` (`{"eventId": "..."}` ή `{"all": true}`). Τα αποδεκτά event ids θυμούνται για `AGENTMEMORY_CAPTURE_DEDUP_HOURS` (168 ώρες, το πολύ `AGENTMEMORY_CAPTURE_EVENTS_MAX` ids), οπότε ένα hook που αναπαράγεται μετά από timeout ή επανεκκίνηση αποθηκεύεται μία φορά, ενώ δύο ξεχωριστές κλήσεις εργαλείων με τα δικά τους host ids αποθηκεύονται δύο φορές ακόμα κι αν το περιεχόμενό τους είναι ταυτόσημο. Όταν μια παρατήρηση διαγράφεται (forget, διαγραφή συνεδρίας, εκδίωξη, αυτόματη διαγραφή, ή ένα import που αντικαθιστά το store), το event της σημαίνεται ως διαγραμμένο πριν αφαιρεθεί η παρατήρηση, οπότε μια αναπαραγωγή αυτού του event εντός του ίδιου παραθύρου απαντιέται ως duplicate και δεν αποθηκεύει τίποτα. Το state store γράφει στον δίσκο περιοδικά, οπότε ένα event που έχει απαντηθεί μπορεί ακόμα να βρίσκεται μόνο στη μνήμη για μια στιγμή. Για να το καλύψει αυτό, κάθε απάντηση `2xx` φέρει επίσης το `bootId` του διακομιστή (νέο σε κάθε εκκίνηση), το `acceptedAt`, και το `durableAfterMs` (το διάστημα αποθήκευσης συν 1.5 δευτ. στο file store, 1.5 δευτ. στο redis, όπου η μονιμότητα είναι ρύθμιση του χειριστή). Τα hooks κρατούν το event στο τοπικό spool μέχρι να περάσει αυτό το παράθυρο και το διαγράφουν σε μια επόμενη κλήση χωρίς άλλο αίτημα. Αν το `bootId` έχει αλλάξει μέχρι τότε, ο διακομιστής επανεκκινήθηκε, οπότε το hook στέλνει ξανά το event με το ίδιο `eventId`· ένα event που είχε φτάσει στον δίσκο δεν αποθηκεύεται δύο φορές. Ο διακομιστής στέλνει επίσης τέτοια events ο ίδιος κατά την εκκίνηση και σε κάθε διάστημα retry, οπότε μια επανεκκίνηση δεν χάνει τίποτα ακόμα και όταν δεν τρέξει κανένα hook μετά. Τα παλαιότερα hooks αγνοούν τα επιπλέον πεδία, και τα νέα hooks έναντι ενός παλαιότερου διακομιστή απορρίπτουν το event στο `2xx` όπως πριν.
 
 Όταν ο διακομιστής είναι εκτός λειτουργίας, δεν απαντά εγκαίρως, ή επιστρέφει 5xx, το hook προσθέτει την παρατήρηση σε ένα τοπικό αρχείο spool, `<data dir>/capture-spool/<host>-<port>.jsonl` (παρακάμψτε τον φάκελο με `AGENTMEMORY_CAPTURE_SPOOL_DIR`). Το αρχείο είναι ιδιωτικό για τον χρήστη σας (mode 600), τα μυστικά αποκρύπτονται με τον ίδιο τρόπο που τα αποκρύπτει ο διακομιστής, κρατά το πολύ `AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES` (5 MiB) και αφαιρεί καταχωρήσεις παλαιότερες από `AGENTMEMORY_CAPTURE_SPOOL_MAX_AGE_HOURS` (168). Όταν είναι γεμάτο, οι νέες καταχωρήσεις αφαιρούνται και μετρούνται, και το `/agentmemory/status` το αναφέρει. Το hook συνεχίζει να κάνει exit 0 εντός του χρονικού ορίου του και δεν προσθέτει κανένα αίτημα όταν ο διακομιστής είναι υγιής. Το spool αποστέλλεται στην επόμενη εκκίνηση και από το πρώτο hook που φτάνει ξανά στον διακομιστή, σε μια διαδικασία παρασκηνίου ώστε ο agent να μην περιμένει. Τα event ids το κάνουν ασφαλές: μια παρατήρηση που είχε φτάσει πριν από ένα timeout δεν αποθηκεύεται δύο φορές. Το `npx @agentmemory/agentmemory capture` δείχνει το spool και το inbox του διακομιστή, το `--drain` στέλνει το spool τώρα, και το `GET /agentmemory/capture` επιστρέφει το ίδιο ως JSON. Ρυθμίστε `AGENTMEMORY_CAPTURE_SPOOL=false` για να απενεργοποιήσετε το spool.
 
@@ -1866,7 +1798,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Προαπαιτούμενα:** Node.js >= 20 με npm/npx· [iii-engine](https://iii.dev/docs) v0.22.1 ή Docker. Η αυτόματη εγκατάσταση του engine σε macOS/Linux απαιτεί επίσης `curl`, ένα POSIX `sh`, και `tar`· το native Windows χρησιμοποιεί το χειροκίνητο καθορισμένο `iii.exe`, WSL2, ή Docker Desktop.
+**Προαπαιτούμενα:** Node.js >= 20 με npm/npx. Η εγκατάσταση engine που διαχειρίζεται το CLI σε macOS/Linux απαιτεί επίσης `curl`, POSIX `sh` και `tar`· σε native Windows απαιτείται χειροκίνητη εγκατάσταση του καρφιτσωμένου `iii.exe`, ή μπορείτε να χρησιμοποιήσετε WSL2.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Άδεια Χρήσης" height="32" /></picture></h2>
 

@@ -1,24 +1,29 @@
 services:
   agentmemory:
     build:
-      context: .
-      dockerfile: Dockerfile
-      args:
-        AGENTMEMORY_VERSION: "0.9.30"
-        III_VERSION: "0.22.1"
-        III_SDK_VERSION: "0.22.1"
+      context: ../..
+      dockerfile: deploy/Dockerfile
     restart: unless-stopped
     environment:
-      SERVICE_FQDN_AGENTMEMORY_3111: ${SERVICE_FQDN_AGENTMEMORY_3111}
+      AGENTMEMORY_DATA_DIR: /data
+      HOME: /data/home
+      III_COMPOSE_STATE_DIR: /data/compose-state
+      III_TELEMETRY_ENABLED: "false"
+      AGENTMEMORY_VIEWER_HOST: 0.0.0.0
+      SERVICE_FQDN_AGENTMEMORY_3111: "${SERVICE_FQDN_AGENTMEMORY_3111:-}"
+      SERVICE_FQDN_AGENTMEMORY_3113: "${SERVICE_FQDN_AGENTMEMORY_3113:-}"
+      VIEWER_ALLOWED_HOSTS: "${VIEWER_ALLOWED_HOSTS:-localhost:3113,127.0.0.1:3113,[::1]:3113}"
+      VIEWER_ALLOWED_ORIGINS: "${VIEWER_ALLOWED_ORIGINS:-http://localhost:3113,http://127.0.0.1:3113}"
     expose:
       - "3111"
+      - "3113"
     volumes:
       - agentmemory-data:/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3111/agentmemory/livez || exit 1"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3111/agentmemory/livez').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
-      start_period: 30s
+      start_period: 60s
       retries: 3
     logging:
       driver: json-file

@@ -100,7 +100,7 @@ Requisitos:
 
 - Node.js 20 ou mais recente, com npm e npx (`node -v`, `npm -v` e `npx -v`).
 - A instalação automática do iii-engine no macOS/Linux também precisa de `curl`, de um `sh` POSIX e de `tar`. Imagens minimalistas como `node:20-slim` podem não os incluir.
-- O Windows nativo exige que o `iii.exe` do iii-engine fixado na v0.22.1 seja instalado manualmente. O WSL2 ou o Docker Desktop são os outros caminhos suportados.
+- O Windows nativo exige que o `iii.exe` do iii-engine fixado na v0.24.6 seja instalado manualmente; o WSL2 usa o instalador automático de macOS/Linux.
 
 Comando canónico para uma instalação limpa:
 
@@ -112,7 +112,7 @@ A primeira execução é uma configuração interativa: escolha os agentes a lig
 
 O modo sem chave desativa os embeddings vetoriais. O `memory_recall` (o caminho `mem::search`) usa BM25, enquanto o `memory_smart_search` também pode combinar correspondências estruturais do grafo quando já existem dados de grafo. Para obter recall semântico local e gratuito, defina `EMBEDDING_PROVIDER=local` em `~/.agentmemory/.env` e reinicie. O primeiro pedido de embedding faz o download de `Xenova/all-MiniLM-L6-v2`; a inferência corre localmente depois desse download inicial do modelo.
 
-O runtime local usa quatro portas: `3111` para REST/MCP HTTP, `3112` para os streams do iii, `3113` para o visualizador e `49134` para o WebSocket do worker iii. O estado persistente do iii vive em `~/Library/Application Support/agentmemory` no macOS, em `$XDG_DATA_HOME/agentmemory` ou `~/.local/share/agentmemory` no Linux, e em `%APPDATA%\agentmemory` no Windows. Use `--data-dir <path>` ou `AGENTMEMORY_DATA_DIR` para o substituir, e reutilize o mesmo valor em cada reinício. Por compatibilidade com versões anteriores, um `./data/state_store.db` ou `./data/iii-config.yaml` já existentes têm precedência sobre a predefinição da plataforma para a instância 0; uma flag explícita ou uma variável de ambiente continuam a ganhar.
+O runtime local do CLI usa REST/MCP HTTP na porta `3111`, o visualizador na `3113` e o WebSocket interno dos workers iii na `49134`. As atualizações do visualizador usam SSE em `GET /agentmemory/viewer/events` na porta REST. O estado persistente usa por predefinição `~/Library/Application Support/agentmemory` no macOS, `$XDG_DATA_HOME/agentmemory` ou `~/.local/share/agentmemory` no Linux e `%APPDATA%\agentmemory` no Windows. Substitua o caminho com `--data-dir <path>` ou `AGENTMEMORY_DATA_DIR`; a instância 0 também reutiliza um `./data/state_store.db` existente. `--instance N` isola runtimes adicionais e `AGENTMEMORY_ENV_FILE` seleciona um ficheiro `.env` não predefinido.
 
 Depois, prove que o recall funciona e dê ao seu agente as suas skills:
 
@@ -132,7 +132,7 @@ Ligue mais agentes em qualquer momento com `agentmemory connect <agent>` — 20 
 <details>
 <summary><strong>Windows</strong></summary>
 
-O caminho mais rápido é o WSL2. A configuração do engine no Windows nativo exige o download manual do ZIP fixado na v0.22.1 e a extração manual do `iii.exe`; o CLI não o extrai automaticamente. O Docker Desktop também é suportado. Veja as [notas de Windows](#windows) para o passo a passo.
+O caminho mais rápido é o WSL2. O Windows nativo exige o download manual do ZIP fixado na v0.24.6 e a extração do `iii.exe`. Veja os [passos para Windows](#windows).
 
 </details>
 
@@ -157,7 +157,7 @@ O npx faz cache por versão. Force a mais recente com `npx -y @agentmemory/agent
 <details>
 <summary><strong>Já tem o seu próprio iii engine em execução</strong></summary>
 
-O agentmemory fixa o iii-engine na v0.22.1 e não se liga a uma versão diferente (o worker não fala o protocolo de outro engine). Pare o outro engine e execute `npx -y @agentmemory/agentmemory@latest`. Este instala e executa a v0.22.1 fixada em `~/.agentmemory/bin`, deixando o seu próprio `iii` intacto.
+O agentmemory fixa o iii-engine na v0.24.6 e não se liga a uma versão diferente (o worker não fala o protocolo de outro engine). Pare o outro engine e execute `npx -y @agentmemory/agentmemory@latest`. Este instala e executa a v0.24.6 fixada em `~/.agentmemory/bin`, deixando o seu próprio `iii` intacto.
 
 </details>
 
@@ -319,14 +319,14 @@ Explica a mesma arquitetura em cada sessão. Redescobre os mesmos bugs. Volta a 
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Por predefinição, o agentmemory guarda o estado do iii-engine fora do repositório a partir do qual é iniciado: `~/Library/Application Support/agentmemory` no macOS, `$XDG_DATA_HOME/agentmemory` ou `~/.local/share/agentmemory` no Linux, e `%APPDATA%\agentmemory` no Windows. Um `./data/state_store.db` ou `./data/iii-config.yaml` legados já existentes são reutilizados para a instância 0 antes dessa predefinição da plataforma. Para escolher uma localização explicitamente, passe `--data-dir <path>` ou defina `AGENTMEMORY_DATA_DIR`; qualquer uma destas definições explícitas tem precedência sobre a deteção legada:
+Por predefinição, o agentmemory guarda o estado do engine iii fora do repositório a partir do qual é iniciado: `~/Library/Application Support/agentmemory` no macOS, `$XDG_DATA_HOME/agentmemory` ou `~/.local/share/agentmemory` no Linux, e `%APPDATA%\agentmemory` no Windows. Um `./data/state_store.db` existente é reutilizado para a instância 0. Para escolher uma localização explicitamente, passe `--data-dir <path>` ou defina `AGENTMEMORY_DATA_DIR`:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-As execuções nativas e em Docker usam este mesmo diretório do anfitrião já resolvido; o Docker monta-o com bind em `/data`. O `--instance 1` acrescenta `instance-1` ao diretório resolvido e seleciona o quarteto de portas predefinido separado `3211/3212/3213/49234`.
+O `--instance 1` acrescenta `instance-1` ao diretório de dados resolvido e seleciona as portas `3211` (REST), `3213` (visualizador) e `49234` (engine).
 
 Notas da versão mais recente: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +476,7 @@ Taxa de acerto top-5 de 100% no **teto matemático do P@5** para este corpus (0.
 </tr>
 <tr>
 <td><strong>Dependências externas</strong></td>
-<td>Nenhuma (SQLite + iii-engine)</td>
+<td>Nenhuma (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + BD vetorial</td>
 <td>Várias</td>
@@ -556,7 +556,7 @@ Nenhum destes faz captura automática a partir de hooks de agentes de codificaç
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Início Rápido" height="32" /></picture></h2>
 
-Compatibilidade: esta versão visa o `iii-sdk` 0.22.1 e fixa o iii-engine na v0.22.1.
+Compatibilidade: esta versão usa iii 0.24.6 com os workers do registry state 0.22.20 e http 0.22.7.
 
 ### Experimente em 30 Segundos
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-O painel de arranque pronto (ready) tem em conta as quatro portas: REST/MCP HTTP na 3111, streams do iii na 3112, o visualizador na 3113 e o WebSocket do worker iii na 49134. O `status` confirma a saúde do agentmemory e o modo ativo de fornecedor/embedding. Guarde uma sonda e confirme que é pesquisável:
+O runtime usa REST/MCP HTTP na 3111, o visualizador na 3113 e o WebSocket interno dos workers iii na 49134. Os eventos em direto do visualizador usam SSE no REST. `status` confirma a saúde do agentmemory, a versão fixada do engine (`enginePinnedVersion`) e o modo ativo de fornecedor/embedding. Guarde uma sonda e confirme que é pesquisável:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ Use o comando de manutenção quando quiser, de forma intencional, atualizar o s
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Aviso: este comando altera o workspace/runtime atual. Pode atualizar dependências JavaScript e descarregar a imagem Docker fixada `iiidev/iii:0.22.1`. Nunca instala um iii engine sem fixação de versão ou mais recente.
+Aviso: este comando altera o workspace/runtime atual. Pode atualizar dependências JavaScript e instalar o binário fixado do engine iii 0.24.6.
 
 Os detalhes de implementação estão em `src/cli.ts` (ver `runUpgrade` na zona `src/cli.ts:544-595`).
 
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 Exemplo prático: [`examples/python/`](../examples/python/) (fluxo de arranque rápido + observação/recall). O REST na `:3111` continua disponível para anfitriões sem um runtime iii.
@@ -853,91 +861,31 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Isto inicia o agentmemory com um `iii-engine` local, se o binário fixado já estiver instalado, ou usa o Docker Compose quando selecionado. O REST, os streams e o visualizador fazem bind em `127.0.0.1` por predefinição. O caminho automático do binário para macOS/Linux exige `curl`, um `sh` POSIX e `tar`.
-
-Instale o `iii-engine` manualmente. **O agentmemory atualmente fixa o `iii-engine` na `v0.22.1`**, o mesmo lançamento da sua dependência `iii-sdk`; o worker fala o protocolo de ligação (wire protocol) desse engine, e a 0.20.0 reorganizou a superfície do SDK, por isso os dois avançam juntos nos lançamentos do agentmemory. Substitua com `AGENTMEMORY_III_VERSION=<version>` se executar o seu próprio engine e souber que corresponde.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** troque `aarch64-apple-darwin` por `x86_64-apple-darwin`
-- **Linux x64:** troque por `x86_64-unknown-linux-gnu`
-- **Linux arm64:** troque por `aarch64-unknown-linux-gnu`
-- **Windows:** descarregue `iii-x86_64-pc-windows-msvc.zip` de [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) e extraia `iii.exe` para `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Cada arquivo tem um ficheiro `.sha256` correspondente na página de lançamento; quando trocar a plataforma, use o hash desse ficheiro na verificação acima (no Windows: `Get-FileHash`). O instalador automático em `npx @agentmemory/agentmemory` fixa estes hashes e rejeita um arquivo que não corresponda.
-
-Ou use Docker (o `docker-compose.yml` incluído descarrega `iiidev/iii:0.22.1`). Documentação completa: [iii.dev/docs](https://iii.dev/docs).
+O `npm start` inicia o mesmo runtime iii Worker Compose que o CLI: iii 0.24.6 com os workers do registry `state@0.22.20` e `http@0.22.7`. No macOS/Linux, o CLI descarrega o binário fixado do engine para `~/.agentmemory/bin`; a instalação automática exige `curl`, um `sh` POSIX e `tar`. Os listeners REST e do visualizador locais fazem bind em `127.0.0.1`. As atualizações do visualizador usam SSE em `GET /agentmemory/viewer/events` na porta REST. `/agentmemory/status` indica a versão fixada do engine em `enginePinnedVersion`; a versão fixada predefinida suportada é iii 0.24.6. `AGENTMEMORY_III_VERSION` permite substituir deliberadamente a versão fixada.
 
 ### Windows
 
-O agentmemory funciona no Windows 10/11, mas o pacote Node.js por si só não basta; também precisa do runtime do iii-engine fixado na v0.22.1 como processo em segundo plano. O CLI não extrai automaticamente o ZIP do Windows, por isso os utilizadores do Windows nativo têm de instalar o `iii.exe` manualmente, usar o WSL2 ou optar pelo Docker Desktop.
+O agentmemory funciona no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar automaticamente o engine fixado. O Windows nativo exige que o binário iii-engine v0.24.6 fixado seja instalado manualmente; descarregue o arquivo correspondente na [página de lançamento iii v0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), verifique o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai automaticamente o ZIP do Windows.
 
-A ligação automática de MCP no Windows nativo só suporta `agentmemory connect copilot-cli`. Para o Claude Code, o Codex, o Cursor, e qualquer outro agente nativo do Windows, copie o bloco MCP manual de [Outros agentes](#other-agents) para a configuração do Windows desse agente. Executar o `connect` no WSL só é apropriado quando o agente de destino também está instalado nesse mesmo ambiente WSL; não edita a configuração de um agente que corre no anfitrião Windows.
+A ligação MCP automatizada no Windows nativo só suporta `agentmemory connect copilot-cli`. Para os restantes agentes nativos do Windows, use o bloco MCP manual de [Outros agentes](#other-agents). Execute `connect` no WSL apenas quando o agente de destino também estiver instalado nesse mesmo ambiente WSL.
 
-**Opção A: binário pré-compilado para Windows (recomendado)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Opção B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Opção C: apenas MCP standalone (sem engine).** Se só precisar das ferramentas MCP para o seu agente e não precisar da REST API, do visualizador ou das tarefas cron, ignore completamente o engine:
+**Apenas MCP standalone (sem engine).** Se só precisar das ferramentas MCP e não precisar da REST API, do visualizador ou dos serviços de runtime:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Diagnóstico para Windows:** se `npx -y @agentmemory/agentmemory@latest` falhar, execute-o novamente com `--verbose` para ver o stderr real do engine. Modos de falha comuns:
-
-| Sintoma | Correção |
-|---|---|
-| `The engine process started but the REST API never responded.` | Confirme que as quatro portas derivadas estão livres, verifique se o `iii.exe` fixado continuou ativo, e depois execute novamente com `--verbose` e inspecione o stderr do engine capturado |
-| `Could not start iii-engine` | Nem o `iii.exe` nem o Docker estão instalados. Veja a Opção A ou B acima |
-| Conflito de porta | `netstat -ano \| findstr :3111` para ver o que está vinculado, depois termine o processo ou use `--port <N>` |
-| O fallback para Docker é ignorado mesmo com o Docker instalado | Confirme que o Docker Desktop está realmente em execução (ícone na bandeja do sistema) |
-
-> Nota: o **engine** do iii é um binário pré-compilado, não uma cargo crate, por isso não tente fazer `cargo install` dele. (Os **SDKs** do iii são publicados em crates.io, npm e PyPI, mas o agentmemory não precisa deles.) Todos os métodos de instalação do engine suportados estão fixados na v0.22.1: o binário pré-compilado acima, o caminho de auto-instalação do agentmemory para macOS/Linux (exige `curl`, `sh` POSIX e `tar`), e a imagem Docker `iiidev/iii:0.22.1`. Um `install.sh | sh` simples do upstream instala o engine mais recente, que o agentmemory não suporta. Use `npx -y @agentmemory/agentmemory@latest`; no macOS/Linux, este obtém o engine fixado para `~/.agentmemory/bin`.
-
+**Diagnóstico:** se o arranque falhar, execute novamente com `--verbose` para ver o stderr do engine. Confirme que as portas REST `3111`, visualizador `3113` e engine `49134` estão livres; use `--port <N>` ou `--instance <N>` para outro runtime isolado. O CLI usa o seu próprio binário fixado do engine e não substitui um executável iii no `PATH`.
 ---
 
 <h2 id="deploy">Deploy</h2>
 
-Modelos de um clique para anfitriões geridos. Cada um distribui um
-Dockerfile autocontido que obtém o `@agentmemory/agentmemory` do npm e copia
-o binário do iii engine a partir da imagem oficial `iiidev/iii` no Docker Hub;
-não é necessária nenhuma imagem pré-construída do agentmemory. O armazenamento persistente
-é montado em `/data`; o entrypoint do primeiro arranque substitui a
-configuração do iii incluída no npm (que faz bind em `127.0.0.1`) por uma
-ajustada para implementação, que faz bind em `0.0.0.0` e usa caminhos absolutos em `/data`,
-gera o segredo HMAC, e depois reduz os privilégios de `root` para `node` através do
-`gosu` antes de executar o CLI do agentmemory.
-
+O Docker é suportado para alojamento próprio a partir deste repositório, não como modo de arranque do CLI. Os modelos de um clique usam [`deploy/Dockerfile`](../deploy/Dockerfile) e [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml), fixam o mesmo runtime iii 0.24.6 e os mesmos workers, e guardam o estado, os traces e o segredo gerado num volume persistente `/data`. O Docker Compose usa por predefinição o volume nomeado existente `iii-data`; defina `AGENTMEMORY_DATA_DIR` para um caminho do anfitrião para usar um bind mount. O armazenamento baseado em ficheiros existente do iii 0.22.1 é lido diretamente em `/data/state_store.db`, sem migração nem conversão. O CORS REST permite por predefinição as origens locais REST e do visualizador; defina `REST_ALLOWED_ORIGINS` com uma lista separada por vírgulas de origens exatas quando um browser de confiança precisar de acesso. Consulte [`deploy/README.md`](../deploy/README.md) para configuração e segurança.
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Deploy to fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy to Railway" /></a>
 </p>
 
 O botão de implementação de um clique do Render exige um `render.yaml` na raiz do repositório, que mantemos deliberadamente limpa. Use o fluxo Render Blueprint documentado em [`deploy/render/`](.././deploy/render/README.md) para apontar manualmente para o blueprint existente no repositório.
@@ -955,10 +903,16 @@ custos mínimos) estão em [`deploy/`](.././deploy/README.md):
   próprio VPS através do [Coolify](https://coolify.io/self-hosted); a mesma stack
   Docker Compose, o anfitrião e os dados são seus.
 
-Apenas a porta `3111` é publicada. O visualizador na `3113` continua
-vinculado ao loopback dentro do contentor; o README de cada modelo documenta o
-padrão de túnel SSH para o alcançar.
+REST usa a porta `3111`; o visualizador usa `3113` e só é publicado quando o modelo da plataforma suporta uma rota protegida separada. As atualizações em direto usam SSE autenticado por bearer no endpoint REST `/agentmemory/viewer/events`. O WebSocket do engine na `49134` é interno e não deve ser publicado. Consulte [`deploy/README.md`](../deploy/README.md) para orientações específicas de exposição e listas de permissões por plataforma.
 
+
+### Migrar instalações Docker antigas geridas pela CLI
+
+A CLI actual não inicia nem gere implementações Docker. Se encontrar um registo antigo do ciclo de vida Docker, conserva os metadados e apresenta o comando exacto `docker stop ...`; execute esse comando antes de migrar. Não inicie o novo runtime enquanto o contentor antigo ainda tiver o volume montado.
+
+Mantenha e salvaguarde o antigo volume persistente (normalmente `iii-data`) ou copie o conteúdo de `/data` para um bind mount. O worker state lê directamente o ficheiro existente `/data/state_store.db`, sem exportação nem conversão. O runtime antigo utilizava UID/GID `65532:65532`; a nova imagem efectua uma migração recursiva única da propriedade para `node:node` (`1000:1000`) e escreve `/data/.ownership-migrated-node-v1`. Após esta migração, não volte a montar o volume no runtime antigo.
+
+O runtime antigo também guardava o bearer secret gerado em `/data/.hmac`. A nova imagem preserva esse segredo durante a migração; um `AGENTMEMORY_SECRET` definido explicitamente tem precedência. Inicie o novo projecto Compose a partir da raiz do repositório com `docker compose up --build -d`. Se o volume antigo tiver um nome com prefixo do projecto em vez de `iii-data`, reutilize-o ou mude-lhe o nome explicitamente — não inicialize inadvertidamente um volume vazio. Verifique `/agentmemory/livez` e confirme que é possível encontrar as memórias antigas e as novas. Evite `docker compose down -v`, salvo se a eliminação dos dados for intencional.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Porque usar o agentmemory" height="32" /></picture></h2>
@@ -1112,7 +1066,7 @@ A instalação normal via npm inclui o runtime opcional `@huggingface/transforme
 
 54 ferramentas, 6 recursos, 3 prompts e 17 skills.
 
-> **Shim MCP vs servidor completo:** o pacote publicado `@agentmemory/mcp` é um shim fino. Expõe a superfície completa de 54 ferramentas **apenas quando consegue alcançar um servidor agentmemory em execução** através de `AGENTMEMORY_URL` (modo proxy). Sem nenhum servidor acessível, o shim recua para um conjunto local de 7 ferramentas (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). A variável de ambiente `AGENTMEMORY_TOOLS=core|all` é uma flag *do lado do servidor*; defini-la no bloco `env` do shim não tem efeito. Se só vir 7 ferramentas no Cursor / OpenCode / Gemini CLI, inicie `npx -y @agentmemory/agentmemory@latest` (ou a stack Docker) e defina `AGENTMEMORY_URL=http://localhost:3111`.
+> **Shim MCP vs servidor completo:** o pacote publicado `@agentmemory/mcp` é um shim fino. Expõe a superfície completa de 54 ferramentas **apenas quando consegue alcançar um servidor agentmemory em execução** através de `AGENTMEMORY_URL` (modo proxy). Sem nenhum servidor acessível, o shim recua para um conjunto local de 7 ferramentas (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). A variável de ambiente `AGENTMEMORY_TOOLS=core|all` é uma flag *do lado do servidor*; defini-la no bloco `env` do shim não tem efeito. Se só vir 7 ferramentas no Cursor / OpenCode / Gemini CLI, inicie `npx -y @agentmemory/agentmemory@latest` (ou ligue-se a um servidor self-hosted) e defina `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 54 Ferramentas
 
@@ -1252,7 +1206,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Visualizador em Tempo Real" height="32" /></picture></h2>
 
-Inicia-se automaticamente na porta `3113`. O visualizador carrega um snapshot quando se liga (`GET /agentmemory/viewer/snapshot`) e depois aplica eventos de stream em direto: novas memórias, lessons, observações, entradas de auditoria, alterações no grafo e atualizações de saúde aparecem sem polling ou recarregamentos de página. Os únicos outros pedidos são as ações em que clica, as páginas "carregar mais" e as pesquisas. Quando o stream cai, o visualizador mostra há quanto tempo os seus números estão desatualizados, volta a ligar-se com backoff e volta a sincronizar a partir de um snapshot.
+Inicia-se automaticamente na porta `3113`. O visualizador carrega um snapshot quando se liga (`GET /agentmemory/viewer/snapshot`) e depois aplica eventos em direto por SSE em `/agentmemory/viewer/events` no worker REST: novas memórias, lessons, observações, entradas de auditoria, alterações no grafo e atualizações de saúde aparecem sem polling ou recarregamentos de página. Os únicos outros pedidos são as ações em que clica, as páginas "carregar mais" e as pesquisas. Quando o stream cai, o visualizador mostra há quanto tempo os seus números estão desatualizados, volta a ligar-se com backoff e volta a sincronizar a partir de um snapshot.
 
 - **12 separadores em quatro grupos**, com contagens em direto, deep links (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), atalhos de teclado e um menu para dispositivos móveis.
 - **Memories:** pesquisa do lado do servidor, filtros por projeto, agente e tipo, um painel de detalhe com a cadeia de versões e um diff por palavras, ligações de proveniência, botões para copiar o id, a chamada MCP e um comando curl, edição (uma nova versão), esquecer com confirmação, esquecer em massa e exportação JSON.
@@ -1265,15 +1219,15 @@ Inicia-se automaticamente na porta `3113`. O visualizador carrega um snapshot qu
 open http://localhost:3113
 ```
 
-O servidor do visualizador faz bind em `127.0.0.1` por predefinição e junta o segredo do servidor quando reencaminha pedidos para a REST API, por isso não precisa de nenhuma configuração. O endpoint `/agentmemory/viewer`, servido pelo REST, segue as regras normais de bearer-token e redireciona os browsers sem token para a porta do visualizador. Os cabeçalhos CSP usam um nonce de script por resposta e desativam atributos de handler inline (`script-src-attr 'none'`).
+O servidor do visualizador faz bind em `127.0.0.1` por predefinição e junta o segredo do servidor quando reencaminha pedidos para a REST API. Num bind que não seja loopback, a shell HTML continua pública, mas cada pedido proxy exige bearer; o visualizador pede-o e guarda-o no session storage. Configure allowlists explícitas de anfitriões/origens e TLS antes de expor um visualizador. O endpoint `/agentmemory/viewer`, servido pelo REST, segue as regras normais de bearer-token e redireciona os browsers sem token para a porta do visualizador. Os cabeçalhos CSP usam um nonce de script por resposta e desativam atributos de handler inline (`script-src-attr 'none'`).
 
 ---
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
 
-O visualizador na `:3113` mostra o que o seu agente **se lembrou**. A [iii console](https://iii.dev/docs/console) mostra o que o seu agente **fez**: cada operação de memória como um trace OpenTelemetry, cada entrada KV editável, cada função invocável, cada stream acessível. Duas janelas sobre a mesma memória: uma moldada como produto, outra moldada como engine.
+O visualizador na `:3113` mostra o que o seu agente **se lembrou**. A [iii console](https://iii.dev/docs/console) mostra o que o seu agente **fez**: cada operação de memória como um trace OpenTelemetry, cada entrada KV editável, cada função invocável. Duas janelas sobre a mesma memória: uma moldada como produto, outra moldada como engine.
 
-Veja um `memory_smart_search` a disparar e observe a varredura BM25 → consulta de embedding → fusão RRF → reranker como uma waterfall. Edite um temporizador de consolidação bloqueado no navegador de KV. Reproduza um hook `PostToolUse` com um payload ajustado. Fixe o stream WebSocket e veja as observações a chegar em direto.
+Veja um `memory_smart_search` a disparar e observe a varredura BM25 → consulta de embedding → fusão RRF → reranker como uma waterfall. Edite um temporizador de consolidação bloqueado no navegador de KV. Reproduza um hook `PostToolUse` com um payload ajustado.
 
 O agentmemory oferece isto de graça, porque cada chamada de função e cada trigger disparam através do iii; nada personalizado, nada para instrumentar.
 
@@ -1283,7 +1237,7 @@ O agentmemory oferece isto de graça, porque cada chamada de função e cada tri
   <em>Página Workers: cada worker conectado, incluindo o próprio agentmemory, com PID, contagem de funções, runtime e última atividade (last-seen).</em>
 </p>
 
-**Já vem instalada.** A console é distribuída com o engine `iii` fixado (0.22+); não há nada separado para instalar. O primeiro arranque faz o download do binário da console junto ao engine.
+**Já vem instalada.** A console é distribuída com o engine `iii` 0.24.6 fixado; não há nada separado para instalar. O primeiro arranque faz o download do binário da console junto ao engine.
 
 **Iniciar junto com o agentmemory:**
 
@@ -1291,15 +1245,12 @@ O agentmemory oferece isto de graça, porque cada chamada de função e cada tri
 agentmemory console
 ```
 
-Isto executa o `iii console` do engine fixado contra as portas que o agentmemory resolveu (REST, streams, bridge) e serve-a uma porta acima do visualizador, `http://localhost:3114` por predefinição. `--console-port N` escolhe outra porta; `--port` e `--instance` selecionam a instância do agentmemory da mesma forma que fazem para o `stop`; qualquer outra flag é passada adiante, por exemplo `--enable-flow` para a página experimental de grafo de arquitetura.
+Isto executa o `iii console` do engine fixado contra as portas que o agentmemory resolveu (REST e WebSocket dos workers) e serve-a uma porta acima do visualizador, `http://localhost:3114` por predefinição. `--console-port N` escolhe outra porta; `--port` e `--instance` selecionam a instância do agentmemory da mesma forma que fazem para o `stop`; qualquer outra flag é passada adiante, por exemplo `--enable-flow` para a página experimental de grafo de arquitetura.
 
 O mesmo à mão, útil quando o `agentmemory` não está no PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **O que pode fazer a partir da console:**
@@ -1310,12 +1261,9 @@ O mesmo à mão, útil quando o `agentmemory` não está no PATH:
 | **Functions** | Invocar diretamente qualquer função do agentmemory com um payload JSON; útil para testar `memory.recall`, `memory.consolidate`, `graph.query` sem ligar um cliente. |
 | **Triggers** | Reproduzir triggers de HTTP, cron, event e state: disparar manualmente o cron de consolidação, repetir uma rota HTTP, emitir uma alteração de estado. |
 | **States** | Navegador de KV com CRUD completo sobre sessões, slots de memória, temporizadores de ciclo de vida e o índice de embeddings; edite valores no próprio local. |
-| **Streams** | Monitor de WebSocket em direto para escritas de memória, eventos de hook e atualizações de observações, a fluir pelos streams do iii. |
-| **Queues** | Tópicos de fila duráveis + gestão de dead-letter. Reproduza ou descarte jobs falhados de embedding / compressão. |
 | **Traces** | Vistas waterfall / flame / por serviço do OpenTelemetry. Filtre por `trace_id` para ver exatamente que funções, chamadas à BD e pedidos de embedding um único `memory.search` produziu. |
 | **Logs** | Logs OTEL estruturados, filtrados e correlacionados com IDs de trace/span. |
 | **Config** | Configuração de runtime: veja exatamente com que workers, fornecedores e portas o seu engine está a correr. |
-| **Flow** | (Opcional, `--enable-flow`) Grafo de arquitetura interativo de cada worker, trigger e stream. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="Vista waterfall de traces da iii console, mostrando a duração por span" width="720" />
@@ -1323,11 +1271,7 @@ O mesmo à mão, útil quando o `agentmemory` não está no PATH:
   <em>Traces: waterfall / flame / por serviço para cada operação de memória.</em>
 </p>
 
-**Os traces já estão ativos:**
-
-O `iii-config.yaml` já vem com o worker `iii-observability` ativado (`exporter: memory`, `sampling_ratio: 0.1`, métricas + logs). Não precisa de configuração extra; no momento em que o agentmemory inicia, toda a operação de memória emite um log estruturado que a console consegue ler, e uma em cada dez (`sampling_ratio: 0.1`) também emite um span de trace.
-
-Se preferir exportar para Jaeger/Honeycomb/Grafana Tempo, mude `exporter: memory` para `exporter: otlp` e defina o endpoint do collector de acordo com a documentação de observabilidade do iii.
+**Tracing e logs:** a console iii permite inspecionar a telemetria do runtime. Para configurar exportadores e amostragem, consulte a [documentação de observabilidade do iii](https://iii.dev/docs).
 
 > **Atenção:** a console em si não impõe autenticação; mantenha-a vinculada a `127.0.0.1` (a predefinição) e nunca a exponha publicamente.
 
@@ -1335,13 +1279,13 @@ Se preferir exportar para Jaeger/Honeycomb/Grafana Tempo, mude `exporter: memory
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="Desenvolvido com o iii" height="32" /></picture></h2>
 
-O agentmemory **já é uma instância [iii](https://iii.dev) em execução**. Três primitivos (worker, function, trigger) compõem o runtime; o estado KV, os streams e os traces OTEL vêm dos workers iii-state, iii-stream e iii-observability que acompanham o iii. Não instalou Postgres, Redis, Express, pm2 ou Prometheus, porque o iii os substitui.
+O agentmemory é um worker no runtime [iii](https://iii.dev). O Worker Compose gere o engine e inicia o agentmemory com os workers `state` e `http` do registry. O feed do visualizador é SSE servido pelo endpoint REST.
 
 Isso significa que mais um comando estende o agentmemory com uma capacidade completamente nova.
 
 ### Estender o agentmemory com Mais Workers
 
-Os builtins de que o agentmemory precisa já estão em `iii-config.yaml` e arrancam com ele: `iii-state` (KV), `iii-queue` (retries duráveis para os subscritores de eventos), `iii-pubsub`, `iii-cron`, `iii-stream`, e `iii-observability` (traces, métricas e logs OTEL em cada função). Qualquer outra coisa do [registo de workers do iii](https://workers.iii.dev) encaixa-se no mesmo engine: copie `iii-config.yaml` para `~/.agentmemory/iii-config.yaml` (o CLI prefere esse ficheiro em vez do incluído, e continua a renderizar portas e caminhos de dados nele), adicione a entrada, instale o runtime do worker uma vez com `~/.agentmemory/bin/iii update worker`, e reinicie o agentmemory.
+O runtime compõe os workers `state` (KV) e `http` do registry com o agentmemory. Podem ser adicionados outros workers do [registry iii](https://workers.iii.dev) a um projeto Worker Compose.
 
 ```yaml
 workers:
@@ -1357,23 +1301,18 @@ workers:
 | [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | O código que saiu do `memory_recall` corre dentro de uma VM descartável, não na sua shell |
 | [`mcp`](https://workers.iii.dev/workers/mcp) | Monte servidores MCP adicionais ao lado do do agentmemory, partilhando o mesmo engine |
 
-No engine 0.22.x mantenha os nomes com o prefixo `iii-` para os builtins acima; as entradas sem prefixo `http`, `state`, `queue`, `pubsub` e `cron` são os workers standalone do registo para os quais o agentmemory migra com a atualização para 0.23.
+O runtime fixa os pacotes do registry `state@0.22.20` e `http@0.22.7` no projeto Worker Compose gerado pelo CLI.
 
 Registo completo: [workers.iii.dev](https://workers.iii.dev). Todos os workers aí compõem-se através dos mesmos primitivos que o agentmemory usa, e o agentmemory que já tem é um deles.
 
-### Configuração do Engine e Endereço de Bind
+### Runtime do CLI e endereços de bind
 
-O `agentmemory start` lê a configuração do engine a partir do primeiro ficheiro que existir: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` no diretório atual, `~/.agentmemory/iii-config.yaml`, e depois o `iii-config.yaml` incluído. A cada arranque, renderiza esse ficheiro (caminhos de dados, portas, state backend) para `~/.agentmemory/data/iii-config.runtime.yaml` e lança o engine com a cópia renderizada, por isso edite o ficheiro de origem, não o renderizado. Os valores `host:` do ficheiro de origem são mantidos tal como foram escritos.
+Executar `agentmemory` (ou o pacote sem subcomando) inicia o iii Worker Compose com um manifesto isolado no diretório de dados selecionado. Usa iii 0.24.6, `state@0.22.20` e `http@0.22.7`. Os listeners REST e do visualizador do CLI local fazem bind em `127.0.0.1`; o WebSocket do engine é tráfego interno do runtime. As implementações Docker a partir do repositório usam o [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml) separado; consulte [`deploy/README.md`](../deploy/README.md).
+### Backend de armazenamento: ficheiro (predefinição) vs Redis
 
-O `iii-config.yaml` incluído faz bind em `127.0.0.1` de propósito, e essa predefinição também se aplica dentro de um contentor. Um CLI iniciado num contentor escuta no loopback do contentor, por isso as portas publicadas não alcançam nada. Para servir um CLI em contentor através de portas publicadas, defina `AGENTMEMORY_III_CONFIG` para uma configuração que faça bind em `0.0.0.0`. O `iii-config.docker.yaml` empacotado é uma delas: faz bind do `iii-http`, do `iii-stream` e da porta do engine em `0.0.0.0` e guarda o estado em `/data`, por isso monte aí um volume com permissão de escrita. Mantenha `AGENTMEMORY_SECRET` definida, e publique apenas as portas de que precisa, em `127.0.0.1` ou por trás de um proxy de confiança.
+O worker `state` usa por predefinição um armazenamento KV baseado em ficheiros, mantido em memória e escrito periodicamente em disco. O Redis está disponível quando vários escritores partilham um runtime; acrescenta uma viagem de rede e não torna paralela uma única ligação do worker.
 
-O `docker-compose.yml` deste repositório não passa pela procura de configuração do CLI: monta `iii-config.docker.yaml` em `/app/config.yaml`, e o contentor `iii-engine` arranca com `--config /app/config.yaml`. Os [modelos de implementação](../deploy/) de um clique escrevem a sua própria configuração `0.0.0.0` nos respetivos entrypoints.
-
-### Backend de Armazenamento: Ficheiro (predefinição) vs Redis
-
-Por predefinição, o `iii-state` e o `iii-stream` usam o armazenamento KV baseado em ficheiro incluído no iii-engine: um ficheiro JSON por âmbito, mantido na memória do processo do engine e reescrito em disco periodicamente. Essa é a predefinição certa para uma instalação local de um só utilizador; um daemon partilhado com vários escritores concorrentes obtém, em vez disso, escritas reais por chave a partir do Redis, ao custo de uma viagem de rede por operação (cada chamada `state::*` continua a serializar numa única ligação Redis, por isso isto troca o lock do armazenamento de ficheiro por um socket, não por paralelismo).
-
-Defina `AGENTMEMORY_STATE_BACKEND=redis` (mais `AGENTMEMORY_REDIS_URL`) para mudar ambos os workers para o adaptador `redis` incluído no iii-engine, que guarda cada chave como um campo de hash Redis (`HSET`) em vez de reescrever um âmbito inteiro a cada escrita:
+Defina `AGENTMEMORY_STATE_BACKEND=redis` e `AGENTMEMORY_REDIS_URL` para usar o adaptador Redis do worker `state`, que guarda cada chave como um campo de hash Redis (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1381,31 +1320,26 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-O `AGENTMEMORY_STATE_BACKEND` assume `file` por predefinição; deixá-lo sem definir mantém o comportamento atual inalterado, e um valor não reconhecido (qualquer coisa que não seja `file` ou `redis`) é um erro de arranque, em vez de um fallback silencioso. O `/agentmemory/status` e a página Health do visualizador (a linha State store) reportam qual o backend ativo e se responde, nunca o URL.
+`AGENTMEMORY_STATE_BACKEND` assume `file`; o endpoint `/agentmemory/status` e a página Health do visualizador indicam o backend ativo e se responde, nunca o URL.
 
-**Apenas `redis://` simples.** O engine fixado (0.22.1) constrói o seu cliente Redis sem suporte para TLS, por isso um URL `rediss://` (a maioria das ofertas Redis geridas, como Upstash, Redis Cloud, e ElastiCache com encriptação em trânsito, assumem TLS por predefinição) falha a ligação. A ligação não é encriptada, por isso a password do Redis e cada memória guardada atravessam a rede em texto simples: aponte para um Redis local ou um numa rede privada de confiança. Para qualquer outro Redis, corra um túnel encriptado (stunnel, SSH ou uma VPN) no anfitrião do agentmemory, para que o salto `redis://` simples fique nesse anfitrião e a ligação a montante do túnel seja encriptada e autenticada. Se uma password do Redis contiver um apóstrofo, codifique-o em percentagem (`%27`); o engine expande o URL para dentro da sua configuração YAML antes de o analisar.
+**Apenas `redis://` simples.** O worker `state` fixado só suporta `redis://` simples; os serviços `rediss://` que exigem TLS precisam de um túnel encriptado. A ligação Redis não é encriptada, por isso use uma rede local/privada ou um túnel. Se a palavra-passe Redis contiver um apóstrofo, codifique-o em percentagem (`%27`).
 
-**Um servidor Redis por `--instance`.** Os prefixos de chave Redis do engine (`state:<scope>`, `stream:<name>:<group>`) são fixos, por isso duas instâncias do agentmemory (`--instance 1`, `--instance 2`, ...) a apontar para a mesma base de dados sobrescrevem os dados uma da outra. Um índice de base de dados separado (`redis://localhost:6379/1`) mantém os dados guardados separados, mas o engine retransmite os eventos do visualizador em direto através de um único canal Redis pub/sub (`stream::events`), e o pub/sub do Redis ignora o índice de base de dados, por isso o visualizador de cada instância continuaria a mostrar os eventos em direto da outra. Dê a cada instância o seu próprio servidor Redis (ou porta) quando executar mais do que uma.
+**Uma base de dados Redis por instância.** Dê a cada instância concorrente a sua própria base de dados ou servidor Redis para manter o estado isolado.
 
-**O que fica igual, e o que é diferente.** Todas as funcionalidades do agentmemory funcionam sobre Redis: sessões, observações, memórias (remember, supersede, evolve, forget), pesquisa e os blocos do índice, lessons, o grafo, o registo de auditoria e os seus âmbitos mensais, exportação e importação, governance deletes, estado de consolidação, o snapshot do visualizador e o seu stream em direto, e o monitor de saúde. O engine guarda cada âmbito como um único hash Redis (`HSET`/`HGET`/`HGETALL`) e dispara os mesmos state triggers que o armazenamento de ficheiro. Três diferenças do engine são tratadas dentro do agentmemory:
+**O que se mantém e o que muda.** Todas as funcionalidades do agentmemory funcionam com Redis: sessões, observações, memórias (remember, supersede, evolve, forget), pesquisa e os blocos do índice, lessons, o grafo, o registo de auditoria e os seus âmbitos mensais, exportação e importação, eliminações de governance, estado de consolidação, o snapshot do visualizador e o feed SSE em direto, e o monitor de saúde. O worker `state` guarda cada âmbito como um hash Redis (`HSET`/`HGET`/`HGETALL`) e dispara os mesmos state triggers que o armazenamento de ficheiros. As diferenças de armazenamento são tratadas pelo agentmemory.
 
-- O Redis devolve os registos de um âmbito sem ordem fixa. O agentmemory ordena-os do mais antigo para o mais recente (pela data de criação no id do registo, depois pelo seu timestamp), para que listas, paginação e blocos de exportação voltem na mesma ordem que no armazenamento de ficheiro.
-- O engine aplica atualizações parciais no Redis através de um script Lua que transforma arrays vazios em objetos vazios. O agentmemory aplica essas atualizações ele próprio (ler, alterar, escrever sob um lock por chave) no Redis, para que campos como `tags: []` permaneçam arrays.
-- A verificação do registo de auditoria legado lê o âmbito antigo a partir do Redis, em vez de procurar o ficheiro do armazenamento de ficheiro em disco.
+Os eventos em direto do visualizador usam SSE no worker REST e são difundidos pelo processo agentmemory em execução; não usam Redis pub/sub nem uma sondagem periódica do stream Redis. A disponibilidade do Redis afeta leituras e escritas de estado, não o transporte do visualizador. Se o Redis estiver indisponível, o relatório de estado mostra "The state store is not answering" e como o verificar (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Listar um âmbito muito grande lê o hash inteiro com um único `HGETALL`, o mesmo custo de o manter em memória no armazenamento de ficheiros.
 
-Uma diferença precisa da sua intervenção: **depois de o Redis reiniciar, o engine deixa de retransmitir eventos em direto** para o visualizador até o agentmemory reiniciar. Os dados continuam a ser guardados e lidos normalmente. O monitor de saúde envia um evento de teste através do Redis a cada 30 segundos; quando este não volta, o `/agentmemory/status` e a página Health do visualizador mostram "Live updates are not reaching the viewer", com a correção: reinicie o agentmemory. Se o Redis estiver em baixo, o relatório de estado mostra "The state store is not answering" e como verificá-lo (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Listar um âmbito muito grande lê o hash inteiro num único `HGETALL`, o mesmo custo de o armazenamento de ficheiro o manter em memória.
+**Definições Redis recomendadas.** A política de snapshots predefinida `save 3600 1 300 100 60 10000` pode perder minutos de escritas num crash. Defina `appendonly yes` para os dados que não queira perder e `maxmemory-policy noeviction`; `allkeys-lru` ou semelhante elimina memórias silenciosamente quando o Redis atinge o limite de memória.
 
-**Definições Redis recomendadas.** A política de snapshot predefinida `save 3600 1 300 100 60 10000` pode perder minutos de escritas num crash, pior do que a janela de 5s de flush do armazenamento de ficheiro. Defina `appendonly yes` para tudo o que não queira perder. Defina `maxmemory-policy noeviction`; `allkeys-lru` ou semelhante descarta memórias silenciosamente quando o Redis atinge o seu limite de memória.
+O projeto Worker Compose gerado pelo CLI aplica estas variáveis ao worker `state`. Para alojamento próprio com Docker, consulte [`deploy/README.md`](../deploy/README.md) e a [documentação do worker state](https://workers.iii.dev/workers/state).
 
-Um arranque nativo (sem Docker), e todos os [modelos de implementação](../deploy/) de um clique (que sobrescrevem o `iii-config.yaml` incluído e arrancam nativamente), leem `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` e renderizam-nos no `iii-config` lançado. O URL em si nunca é escrito nesse ficheiro renderizado, apenas uma referência `${AGENTMEMORY_REDIS_URL}` que o processo do engine expande a partir do seu próprio ambiente no arranque. Só o caminho de Docker Compose deste repositório (`AGENTMEMORY_USE_DOCKER=1`, ou retomar um engine já iniciado dessa forma) monta `iii-config.docker.yaml` em modo só de leitura e nunca renderiza; o `agentmemory start` avisa quando deteta essa combinação. Troque esse ficheiro à mão, seguindo o mesmo formato `name: redis` / `config: redis_url: ...` mostrado na documentação dos workers [iii-state](https://workers.iii.dev/workers/iii-state) e [iii-stream](https://workers.iii.dev/workers/iii-stream), e aponte `redis_url` para um Redis acessível a partir do contentor. O `docker-compose.yml` passa `AGENTMEMORY_REDIS_URL` para o contentor do engine, por isso `redis_url: '${AGENTMEMORY_REDIS_URL}'` funciona aí e mantém o URL fora do ficheiro montado.
+Trate a configuração persistida do worker como sensível se contiver um URL Redis, pois pode incluir credenciais. Restrinja as permissões do diretório de dados (por exemplo, `chmod 700 <data-dir>` num anfitrião partilhado). Prefira um utilizador Redis ACL limitado ao que o agentmemory precisa, em vez das credenciais de administrador da base de dados.
 
-A configuração renderizada mantém o URL fora de `~/.agentmemory/data/iii-config.runtime.yaml`, mas o próprio worker de configuração do engine ainda persiste o valor *expandido* em `~/.agentmemory/config/iii-state.yaml` e `iii-stream.yaml` depois de arrancar (a expansão `${VAR}` do iii-engine acontece antes de esse worker guardar a sua seed, e guarda o valor resolvido, não a referência). Trate esse diretório como contendo uma credencial: `chmod 700 ~/.agentmemory` em qualquer anfitrião partilhado, e prefira um utilizador Redis ACL limitado ao que o agentmemory precisa, em vez das credenciais de administrador da base de dados.
-
-**A migração não é automática.** Mudar `AGENTMEMORY_STATE_BACKEND` parte de um armazenamento vazio em qualquer um dos lados; nada copia os dados existentes de ficheiro para Redis ou vice-versa. Exporte a partir do backend que está a deixar e importe para aquele para o qual está a mudar. Isto corre de forma idêntica em bash e zsh (incluindo `bash -u`). Um array como `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` não corre: o zsh mantém o header como uma única palavra malformada, onde o bash o divide em duas, por isso ambos os pedidos recebem 401 sempre que `AGENTMEMORY_SECRET` está definida:
+**A migração não é automática.** Mudar `AGENTMEMORY_STATE_BACKEND` começa com um armazenamento vazio em ambos os lados; nada copia automaticamente dados existentes entre ficheiros e Redis. Exporte os dados do backend de origem e importe-os no destino. Antes de executar os comandos curl abaixo, defina `AGENTMEMORY_SECRET` com o conteúdo do ficheiro `secret` no diretório de dados selecionado pelo servidor.
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1440,13 +1374,13 @@ O `/agentmemory/export` também aceita `?maxSessions=` e `?offset=` para dividir
 | Stack tradicional | O agentmemory usa |
 |---|---|
 | Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + índice vetorial em memória |
-| SSE / Socket.io | iii Streams (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | endpoint REST `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | supervisão de workers do iii engine |
 | Prometheus / Grafana | iii OTEL + monitor de saúde |
 | Sistemas de plugins personalizados | `iii worker add <name>` |
 
-**242 ficheiros de código-fonte · ~55,000 LOC · 3,400+ testes · 324 funções · 67 âmbitos de KV**, tudo sobre três primitivos. Sem `agentmemory plugin install`. O sistema de plugins é o próprio iii.
+**246 ficheiros de código-fonte · ~56,000 LOC · 3,600+ testes · 322 funções · 65 âmbitos de KV**, tudo sobre três primitivos. Sem `agentmemory plugin install`. O sistema de plugins é o próprio iii.
 
 ---
 
@@ -1563,39 +1497,23 @@ Quando `AGENT_ID` não está definida, a memória permanece sem âmbito (comport
 
 ### Portas
 
-O agentmemory + iii-engine fazem bind em quatro portas por predefinição. Se um reinício falhar com `port in use`, esta tabela diz-lhe que processo procurar.
+O runtime local usa três listeners. O WebSocket do engine iii serve ao registo interno de workers e não deve ser exposto à rede pública.
 
 | Porta | Processo | Finalidade | Substituição por env |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Worker interno de streams (consumido pelo agentmemory + visualizador) | `III_STREAM_PORT` (preferido) ou o legado `III_STREAMS_PORT` |
-| `3113` | agentmemory | Visualizador em tempo real (`http://localhost:3113`) | `III_VIEWER_PORT` ou `AGENTMEMORY_VIEWER_URL` para o URL reportado |
-| `49134` | iii-engine | WebSocket; os workers registam-se aqui, a telemetria OTel flui por aqui | `III_ENGINE_PORT` ou `III_ENGINE_URL` |
+| `3111` | worker `http` do registry | API REST, MCP HTTP, saúde e SSE autenticado do visualizador em `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | Interface do visualizador e proxy do visualizador | `III_VIEWER_PORT` |
+| `49134` | engine iii | WebSocket interno dos workers | `III_ENGINE_PORT` ou `III_ENGINE_URL` |
 
-`--port <N>` altera a âncora REST e deriva os streams para `N+1`, o visualizador para `N+2`, e o WebSocket do engine para `N+46023`, apenas onde a porta ou o URL explícitos correspondentes acima não estiverem definidos. Não cria um namespace de ciclo de vida isolado. Use `--instance 1` para um segundo daemon; este usa a âncora 3211, com predefinição `3211/3212/3213/49234`, e recebe um diretório de dados e de ciclo de vida `instance-1` separado. As instâncias 1 a 50 seguem o mesmo padrão.
+`--port <N>` define a porta REST e deriva o visualizador para `N+2` e o WebSocket do engine para `N+46023` quando não forem definidos explicitamente. Use `--instance N` para um runtime isolado.
 
-O engine fixado arranca com `--no-update-check` (sem verificações de atualização ou de avisos de segurança contra o GitHub no arranque) e com a telemetria de uso anónima do iii desativada: o agentmemory define `III_TELEMETRY_ENABLED=false` para o engine que cria, a menos que exporte a variável você mesmo, e o ficheiro compose incluído faz o mesmo.
-
-Limpeza de processos obsoletos, quando as portas continuam vinculadas depois de uma execução que terminou em crash:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-O `agentmemory stop` recolhe de forma limpa tanto o worker como o pidfile do engine, num encerramento nativo gracioso. Em modo Docker, esvazia o worker nativo, para exatamente o contentor do engine validado, e preserva tanto o contentor como o seu mount `/data` para um reinício sem perdas; o arranque seguinte valida e retoma esse mesmo contentor. A desinstalação apoiada em Docker exige `agentmemory remove --keep-data`: remove os ficheiros partilhados geridos pelo agentmemory, preservando o contentor validado, o seu mount de dados, e o registo de ciclo de vida necessário para os recuperar. A eliminação destrutiva de dados do Docker é deixada intencionalmente ao operador, depois de uma cópia de segurança. O CLI também se recusa a adotar ou sinalizar detentores de portas do Docker ou de VM (backend do Docker, vpnkit, colima) como o engine nativo, a menos que `--force` seja passado. A limpeza manual acima é apenas para o caso pós-crash em que nenhum dos dois pidfiles ficou para trás.
+As implementações self-host publicam REST e visualizador, por predefinição em `127.0.0.1:3111` e `127.0.0.1:3113`; as portas do anfitrião podem ser alteradas com `AGENTMEMORY_REST_PORT` e `AGENTMEMORY_VIEWER_PORT`. O CORS REST permite por predefinição `http://localhost` e `http://127.0.0.1` nas portas REST e do visualizador configuradas; defina `REST_ALLOWED_ORIGINS` do Docker com uma lista separada por vírgulas de origens exatas para permitir outras origens de browser de confiança.
 
 ### Ficheiro de Configuração
 
-Coloque a configuração de runtime do agentmemory em `~/.agentmemory/.env`, em vez de exportar variáveis em todas as shells. Se o visualizador mostrar uma dica de configuração como `export ANTHROPIC_API_KEY=...`, copie-a para este ficheiro como `ANTHROPIC_API_KEY=...`, sem o prefixo `export`, e depois reinicie o agentmemory.
+Coloque a configuração de runtime do agentmemory em `~/.agentmemory/.env`, em vez de exportar variáveis em todas as shells. Se o visualizador mostrar uma dica como `export ANTHROPIC_API_KEY=...`, copie-a para este ficheiro como `ANTHROPIC_API_KEY=...`, sem o prefixo `export`, e reinicie o agentmemory. Defina `AGENTMEMORY_ENV_FILE` para usar outro caminho de ficheiro env.
 
-As variáveis de ambiente do processo continuam a funcionar e têm precedência sobre os valores no ficheiro.
+As variáveis de ambiente do processo continuam a funcionar e têm precedência sobre os valores no ficheiro. O projeto Worker Compose gerado pelo CLI passa as definições Redis de `AGENTMEMORY_STATE_BACKEND` e `AGENTMEMORY_REDIS_URL` ao worker `state`.
 
 No Windows, o mesmo ficheiro vive em `%USERPROFILE%\.agentmemory\.env`:
 
@@ -1749,8 +1667,7 @@ Crie `~/.agentmemory/.env`:
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1789,12 +1706,12 @@ Crie `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoints na porta `3111`. A REST API faz bind em `127.0.0.1` por predefinição. Os endpoints protegidos exigem `Authorization: Bearer <secret>`, e os endpoints de sincronização mesh exigem uma `AGENTMEMORY_SECRET` explicitamente definida em ambos os pares.
+144 endpoints na porta `3111`. A REST API faz bind em `127.0.0.1` por predefinição. Os endpoints protegidos exigem `Authorization: Bearer <secret>`, e os endpoints de sincronização mesh exigem uma `AGENTMEMORY_SECRET` explicitamente definida em ambos os pares.
 
-**A autenticação está ativa por predefinição.** Quando `AGENTMEMORY_SECRET` não está definida (na shell ou em `~/.agentmemory/.env`), o servidor gera um segredo aleatório no primeiro arranque e guarda-o em `~/.agentmemory/secret` com o modo `0600`. Todo o cliente incluído lê-o a partir daí quando fala com um servidor local: o CLI, o visualizador, os hooks em `plugin/scripts`, o servidor MCP e o shim `@agentmemory/mcp`, as configurações escritas por `agentmemory connect`, e as integrações incluídas do OpenCode, Pi, OpenClaw, Hermes e do filesystem-watcher. O segredo guardado só é enviado para URLs de loopback (`localhost`, `127.0.0.0/8`, `::1`). Uma `AGENTMEMORY_SECRET` explícita vence sempre, e os clientes remotos continuam a precisar de a ter definida. O Docker e os entrypoints de `deploy/` já geram e exportam o seu próprio segredo. Para chamar a API manualmente:
+**A autenticação está ativa por predefinição.** Quando `AGENTMEMORY_SECRET` não está definida (na shell ou em `~/.agentmemory/.env`), o CLI gera um segredo aleatório no primeiro arranque e guarda-o no diretório de dados selecionado, com o nome `secret` e o modo `0600` (a localização predefinida específica da plataforma está descrita acima). Todos os clientes incluídos o leem daí quando comunicam com um servidor local: o CLI, o visualizador, os hooks em `plugin/scripts`, o servidor MCP e o shim `@agentmemory/mcp`, as configurações escritas por `agentmemory connect`, e as integrações incluídas de OpenCode, Pi, OpenClaw, Hermes e filesystem-watcher. O segredo guardado só é enviado para URLs de loopback (`localhost`, `127.0.0.0/8`, `::1`). Uma `AGENTMEMORY_SECRET` explícita prevalece sempre, e os clientes remotos precisam de ter o segredo definido no seu ambiente. As implementações Docker self-host a partir do repositório e os entrypoints de `deploy/` geram e exportam o seu próprio segredo. Para chamar a API manualmente:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **Regras de pedidos para escritas.** Os pedidos `POST`, `PUT`, `PATCH` e `DELETE` para a REST API e o visualizador têm de enviar `Content-Type: application/json` (um parâmetro `charset` é aceitável) sempre que transportem um corpo, e um cabeçalho `Origin`, quando presente, tem de ser uma origem de loopback para a porta REST ou do visualizador configurada, ou estar listado em `VIEWER_ALLOWED_ORIGINS` (separado por vírgulas, por exemplo `https://memory.example.com`). Os clientes que não enviam nenhum cabeçalho `Origin` (CLI, hooks, MCP, curl, servidor-a-servidor) não são afetados. O visualizador também aceita a sua própria origem.
@@ -1874,7 +1791,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Pré-requisitos:** Node.js >= 20 com npm/npx; [iii-engine](https://iii.dev/docs) v0.22.1 ou Docker. A instalação automática do engine no macOS/Linux também exige `curl`, um `sh` POSIX e `tar`; o Windows nativo usa o `iii.exe` fixado manualmente, o WSL2, ou o Docker Desktop.
+**Pré-requisitos:** Node.js >= 20 com npm/npx. A instalação do engine gerida pelo CLI no macOS/Linux também exige `curl`, um `sh` POSIX e `tar`; o Windows nativo exige instalar manualmente o `iii.exe` fixado ou pode usar o WSL2.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Licença" height="32" /></picture></h2>
 

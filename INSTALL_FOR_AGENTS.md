@@ -4,9 +4,9 @@ You are a coding agent. Follow this runbook top to bottom to install agentmemory
 
 ## What you are installing
 
-agentmemory is a local memory server for coding agents. It exposes a REST API and MCP HTTP routes on port 3111, streams on 3112, a viewer on 3113, and connects its worker to iii-engine on 49134. It is built on the iii engine, which agentmemory manages as a pinned v0.22.1 binary under `~/.agentmemory/bin` on macOS/Linux or `%USERPROFILE%\.agentmemory\bin` on Windows.
+agentmemory is a local memory server for coding agents. Its CLI starts an iii Worker Compose runtime using the pinned iii 0.24.6 engine and registry workers `state@0.22.20` and `http@0.22.7`. The default listeners are REST/MCP HTTP on port 3111, the viewer on 3113, and the internal engine WebSocket on 49134. The viewer receives live updates as SSE through `GET /agentmemory/viewer/events` on the REST port.
 
-Configuration and the managed iii binary live under `~/.agentmemory`. Persistent iii state uses the platform data directory: `~/Library/Application Support/agentmemory` on macOS, `$XDG_DATA_HOME/agentmemory` or `~/.local/share/agentmemory` on Linux, and `%APPDATA%\agentmemory` on Windows. Override it with `--data-dir <path>` or `AGENTMEMORY_DATA_DIR`; use the same override on every restart. For instance 0, an existing `./data/state_store.db` or `./data/iii-config.yaml` takes precedence over the platform default, while an explicit flag or environment override still wins. Native and Docker starts use the same resolved host data directory.
+The CLI downloads the pinned engine into `~/.agentmemory/bin` on macOS/Linux. Native Windows needs a manually installed pinned `iii.exe`; WSL2 follows the Linux path. Persistent state defaults to `~/Library/Application Support/agentmemory` on macOS, `$XDG_DATA_HOME/agentmemory` or `~/.local/share/agentmemory` on Linux, and `%APPDATA%\agentmemory` on Windows. Override the directory with `--data-dir <path>` or `AGENTMEMORY_DATA_DIR`, and reuse the same override on every restart. `AGENTMEMORY_ENV_FILE` selects a non-default env file. Instance 0 reuses an existing `./data/state_store.db` when present. `--instance N` creates an isolated directory and port set for another runtime.
 
 Default keyless mode needs no API key or cloud account and disables vector embeddings. `memory_recall` (`mem::search`) uses BM25, while `memory_smart_search` can also fuse structural graph matches when graph data exists. Semantic vector recall is an explicit opt-in: set `EMBEDDING_PROVIDER=local` for on-device `Xenova/all-MiniLM-L6-v2`, or configure a supported remote embedding provider. Local inference is free, but the first embedding request downloads the model and therefore needs network access and extra startup time. An LLM provider is separate; LLM-written observation compression requires both a provider and `AGENTMEMORY_AUTO_COMPRESS=true`.
 
@@ -14,8 +14,8 @@ Default keyless mode needs no API key or cloud account and disables vector embed
 
 - Node.js >= 20 with npm and npx. Check with `node -v`, `npm -v`, and `npx -v`.
 - macOS/Linux automatic iii installation also requires `curl`, a POSIX `sh`, and `tar`. Check with `command -v curl sh tar`. Minimal images such as `node:20-slim` may not include them.
-- Windows: WSL2 follows the Linux path above. Native Windows requires a manually downloaded, pinned iii-engine v0.22.1 `iii.exe`, or Docker Desktop; the CLI does not auto-extract the Windows ZIP. Native automated `connect` supports only `copilot-cli`. Other Windows agents need manual MCP configuration; WSL `connect` applies only to agents installed in that same WSL environment.
-- Ports 3111 (REST), 3112 (streams), 3113 (viewer), and 49134 (engine) free. If any are taken, stop whatever is using them before starting (see Troubleshooting).
+- Windows: WSL2 follows the Linux path. Native Windows requires the pinned iii-engine v0.24.6 binary installed manually. Native automated `connect` supports only `copilot-cli`; configure other Windows agents manually. WSL `connect` applies only to agents installed in that same WSL environment.
+- Default ports 3111 (REST), 3113 (viewer), and 49134 (engine) must be free. Viewer events are carried over REST.
 
 ## Running non-interactively
 
@@ -37,13 +37,13 @@ Expect: Node prints v20 or newer, npm succeeds, and macOS/Linux prints a path fo
 For native Windows, install the engine before continuing:
 
 ```powershell
-# Download the archive that matches your CPU from the pinned release:
-# https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1
-# Extract iii.exe to $HOME\.agentmemory\bin\iii.exe, then verify the pin:
-& "$HOME\.agentmemory\bin\iii.exe" --version
+# Download the matching archive from the pinned release:
+# https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6
+# Extract iii.exe to a directory on PATH, such as $HOME\.local\bin, then verify:
+iii.exe --version
 ```
 
-Expect: exactly `0.22.1`. Do not install the latest unpinned iii release. Alternatively, use WSL2 or start Docker Desktop and choose the Docker path when agentmemory starts.
+Expect: exactly `0.24.6`. Verify the archive against its matching SHA-256 asset before extracting it. Do not install an unpinned iii release.
 
 ## 2. Start the server
 
@@ -53,35 +53,34 @@ The canonical command downloads the npm package and, on macOS/Linux, auto-instal
 npx -y @agentmemory/agentmemory@latest
 ```
 
-To prefer Docker even when a compatible native binary is present, set `AGENTMEMORY_USE_DOCKER=1` for the same command. To choose persistent storage, pass an absolute path and reuse it on every start:
+To choose persistent storage, pass an absolute path and reuse it on every start:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir /absolute/path/to/agentmemory-data
 ```
 
-Docker bind-mounts that same resolved host directory at `/data`. For a second isolated daemon, add `--instance 1`; it stores data and lifecycle metadata under `instance-1` and defaults to ports 3211, 3212, 3213, and 49234. Do not use `--port` alone for concurrent daemons: it changes the ports but keeps instance 0's canonical lifecycle ownership. Use `--instance` for isolation.
+For a second isolated runtime, add `--instance 1`; it stores data under `instance-1` and defaults to ports 3211 (REST), 3213 (viewer), and 49234 (engine). `--instance N` supports N from 0 to 50. Do not use `--port` alone for concurrent daemons: it changes ports but preserves instance 0's canonical lifecycle ownership. Use `--instance` for isolation.
 
-Expect: iii-engine v0.22.1 starts, the agentmemory worker registers with iii, and the ready panel lists REST, viewer, streams, and engine addresses. First boot can take longer while the engine binary is downloaded.
+Expect: iii 0.24.6 starts, the agentmemory worker registers with iii, and the ready panel lists REST, viewer, and engine addresses. First boot can take longer while the engine binary and registry workers are installed.
 
-## 3. Validate the server and all four ports
+## 3. Validate the server and runtime ports
 
 | Port | Owner | Validation |
 |---|---|---|
-| 3111 | agentmemory REST/MCP | `/agentmemory/livez` and `/agentmemory/health` return 200 |
-| 3112 | iii streams | listed in the ready panel; must be free at startup |
+| 3111 | registry `http` worker | `/agentmemory/livez` returns 200; viewer SSE is at `/agentmemory/viewer/events` |
 | 3113 | agentmemory viewer | opening the URL returns the viewer |
-| 49134 | iii engine WebSocket | listed in the ready panel and worker registration succeeds |
+| 49134 | iii engine | internal worker WebSocket; worker registration succeeds |
 
 From a second terminal, run:
 
 ```bash
 curl -fsS http://localhost:3111/agentmemory/livez
-curl -fsS http://localhost:3111/agentmemory/health
+curl -fsS http://localhost:3111/agentmemory/livez
 curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Expect: both REST checks return JSON, the viewer request succeeds, the startup ready panel has listed all four addresses, and `status` reports healthy agentmemory state. In keyless mode, status should report vectors disabled or `bm25-only`; `mem::search` uses BM25, while smart search may also include existing graph matches. Native PowerShell users can use `Invoke-RestMethod` instead of `curl`.
+Expect: the REST liveness check returns JSON, the viewer request succeeds, the startup ready panel lists the three endpoints, and `status` reports healthy agentmemory state. `/agentmemory/status` reports the pinned engine version as `enginePinnedVersion`. In keyless mode, status should report vectors disabled or `bm25-only`; `mem::search` uses BM25, while smart search may also include existing graph matches. Native PowerShell users can use `Invoke-RestMethod` instead of `curl`.
 
 ## 4. Exercise default recall and optional local semantics
 
@@ -107,7 +106,7 @@ Detect which agent is running this runbook, then wire its MCP config. On native 
 npx -y @agentmemory/agentmemory@latest connect <agent>
 ```
 
-`connect` merges agentmemory into that agent's MCP config and preserves any existing servers. Supported agent names:
+Supported agent names:
 
 `claude-code`, `copilot-cli`, `codex`, `cursor`, `gemini-cli`, `opencode`, `cline`, `continue`, `droid`, `hermes`, `openclaw`, `openhuman`, `pi`, `qwen`, `warp`, `zed`, `antigravity`, `kiro`.
 
@@ -127,10 +126,10 @@ Expect: the skills are installed for the detected agent.
 
 ## 7. Verify save, recall, and restart persistence
 
-Confirm health first:
+Confirm the server is alive first:
 
 ```bash
-curl -fsS http://localhost:3111/agentmemory/health
+curl -fsS http://localhost:3111/agentmemory/livez
 ```
 
 Expect: a JSON body with an ok status.
@@ -149,16 +148,16 @@ curl -X POST http://localhost:3111/agentmemory/smart-search \
 
 Expect: the first call returns `201`, the second returns `200` with results that include the probe memory you just saved.
 
-If `AGENTMEMORY_SECRET` is set in the environment, the REST API requires it. Add `-H "Authorization: Bearer $AGENTMEMORY_SECRET"` to both calls. By default no secret is set and localhost is open.
+If `AGENTMEMORY_SECRET` is set, protected REST routes require it. Otherwise the CLI generates a secret on first start and stores it at `<data dir>/secret`; for a manual local REST request, read that secret and add `-H "Authorization: Bearer <secret>"`. The CLI, viewer, and MCP shim read the local secret automatically.
 
-Now stop and restart the processes, using the same `--data-dir` value if you set one:
+Now stop and restart the processes. If you selected a custom `--data-dir`, add that same option and value to both commands:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest stop
 npx -y @agentmemory/agentmemory@latest
 ```
 
-After `/agentmemory/livez` returns 200 again, repeat the `smart-search` request above. Expect: the saved probe is still returned. This restart check proves the selected platform data directory is persistent rather than only proving the in-memory index.
+After `/agentmemory/livez` returns 200 again, repeat the `smart-search` request above. Expect: the saved probe is still returned. This restart check proves the selected data directory is persistent rather than only proving the in-memory index.
 
 ## Optional: install a global command
 
@@ -185,9 +184,9 @@ The MCP server exposes 54 tools by default (`--tools all`). Use `--tools core` (
 
 ## Lifecycle commands
 
-- `npx -y @agentmemory/agentmemory@latest status` shows server health, viewer, provider, and embedding state.
+- `npx -y @agentmemory/agentmemory@latest status` shows server health, viewer, provider, embedding state, and pinned engine version.
 - `npx -y @agentmemory/agentmemory@latest doctor` runs diagnostics and reports what is misconfigured.
-- `npx -y @agentmemory/agentmemory@latest stop` stops the engine this CLI started. Docker mode validates and preserves the exact container and `/data` mount for the next restart; `stop --force` applies only to native ownership checks.
+- `npx -y @agentmemory/agentmemory@latest stop` stops the engine this CLI started. If an older install was started with Docker, the CLI prints a command for stopping that existing container; it never starts or manages Docker containers.
 - `npx -y @agentmemory/agentmemory@latest upgrade` upgrades agentmemory and the iii runtime, best effort.
 - `npx -y @agentmemory/agentmemory@latest --reset` wipes onboarding preferences and re-runs the wizard.
 - `npx -y @agentmemory/agentmemory@latest import-jsonl <file>` imports prior Claude Code session logs as memories.
@@ -195,16 +194,15 @@ The MCP server exposes 54 tools by default (`--tools all`). Use `--tools core` (
 ## Troubleshooting
 
 - `command not found: agentmemory`: the optional global bin is not on `PATH`. Use `npx -y @agentmemory/agentmemory@latest`.
-- Automatic iii install fails on macOS/Linux: verify `command -v curl sh tar`; install the missing prerequisite or use Docker.
+- Automatic iii install fails on macOS/Linux: verify `command -v curl sh tar`; install the missing prerequisite, then retry.
 - Stale npx version: include both `-y` and `@latest` as shown throughout this runbook.
-- Port already in use: another process holds 3111, 3112, 3113, or 49134. Stop that process, then re-run.
-- Custom REST port: `--port <N>` derives streams as `N+1`, viewer as `N+2`, and the iii worker WebSocket as `N+46023` only when their explicit port/URL variables are unset (`III_STREAM_PORT` or legacy `III_STREAMS_PORT`, `III_VIEWER_PORT` or `AGENTMEMORY_VIEWER_URL`, and `III_ENGINE_PORT` or `III_ENGINE_URL`).
+- Port already in use: another process holds 3111 (REST), 3113 (viewer), or 49134 (engine). Stop that process, then re-run.
+- Custom REST port: `--port <N>` derives the viewer port as `N+2` and the iii worker WebSocket as `N+46023` unless `III_VIEWER_PORT`, `III_ENGINE_PORT`, or `III_ENGINE_URL` explicitly overrides the corresponding value. `--instance N` selects an isolated runtime and data directory.
 - Server starts but `livez` never returns 200: re-run with `npx -y @agentmemory/agentmemory@latest --verbose` to see engine stderr.
-- `The engine process started but the REST API never responded.`: inspect all four derived ports, confirm the pinned iii process stayed alive, and use `--verbose` for captured engine stderr.
-- Engine version warning on start: harmless. agentmemory uses its own pinned engine in `~/.agentmemory/bin` regardless of any `iii` on `PATH`. Set `AGENTMEMORY_III_VERSION` only to override deliberately.
-- "engine conflict" / another iii engine already running: if a different iii version is already serving the port, agentmemory will not adopt it. Stop that engine (`npx -y @agentmemory/agentmemory@latest stop --force`, or however you started it), then rerun the canonical command. Its private v0.22.1 binary does not replace a user-managed `iii` on `PATH`.
+- `The engine process started but the REST API never responded.`: inspect the REST, viewer, and engine ports, confirm the pinned iii process stayed alive, and use `--verbose` for captured engine stderr.
+- Engine version conflict / another iii engine already running: if an unmanaged engine is already listening on the engine port, agentmemory will not adopt it. Stop that engine or choose another `--instance` or `--port`. The CLI keeps its private pinned binary separate from a user-managed `iii` on `PATH`.
 - Only 7 tools visible in the agent: the MCP shim is in local fallback because it could not reach a server. Start `npx -y @agentmemory/agentmemory@latest`, ensure `AGENTMEMORY_URL` points at it (default `http://localhost:3111`), then reload MCP.
-- Native Windows: the CLI does not auto-extract the ZIP. Install the pinned v0.22.1 `iii.exe` manually, use WSL2, or run with Docker Desktop and `AGENTMEMORY_USE_DOCKER=1`. Automated `connect` supports only `copilot-cli`; configure other native agents manually.
+- Native Windows: install the pinned v0.24.6 `iii.exe` manually or use WSL2. Automated `connect` supports only `copilot-cli`; configure other native agents manually.
 - Semantic demo query returns zero hits: this is expected with vectors disabled in default keyless mode. Set `EMBEDDING_PROVIDER=local`, restart, allow the first model download to complete, and rerun the demo.
 
 ## Report success
@@ -212,7 +210,7 @@ The MCP server exposes 54 tools by default (`--tools all`). Use `--tools core` (
 Report back to the user:
 
 - agentmemory installed, version, and the server running on port 3111
-- iii-engine v0.22.1 running, the selected platform data directory, and all four ports accounted for
+- iii-engine v0.24.6 running, the selected platform data directory, REST/viewer/engine ports, and the status `enginePinnedVersion`
 - which agent was wired via `agentmemory connect`, and the tool count the agent now sees
 - the save and recall round-trip returned the probe memory after a full stop/start
 - the viewer is available at `http://localhost:3113`

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { IndexPersistence } from "../src/state/index-persistence.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import { evaluateStatus, renderStatusHtml, type StatusInputs } from "../src/functions/status.js";
+import { III_PINNED_VERSION } from "../src/version.js";
 
 const META_KEY = "vectors:meta";
 
@@ -250,9 +251,9 @@ function statusInputs(overrides: Partial<StatusInputs> = {}): StatusInputs {
   return {
     now: new Date("2026-09-25T12:00:00.000Z"),
     version: "0.9.29",
-    engineVersion: "0.22.1",
+    enginePinnedVersion: III_PINNED_VERSION,
     uptimeSeconds: 100,
-    ports: { rest: 3111, streams: 3112, viewer: 3113 },
+    ports: { rest: 3111, viewer: 3113 },
     health: { status: "healthy", alerts: [], notes: [], connectionState: "connected" },
     circuitBreaker: null,
     functionMetrics: [],

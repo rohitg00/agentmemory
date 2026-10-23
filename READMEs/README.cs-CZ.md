@@ -100,7 +100,7 @@ Požadavky:
 
 - Node.js 20 nebo novější s npm a npx (`node -v`, `npm -v` a `npx -v`).
 - Automatická instalace iii-engine na macOS/Linuxu vyžaduje také `curl`, POSIX `sh` a `tar`. Minimální image, jako je `node:20-slim`, je nemusí obsahovat.
-- Nativní Windows vyžaduje manuální instalaci pinned verze iii-engine v0.22.1 `iii.exe`. Dalšími podporovanými cestami jsou WSL2 nebo Docker Desktop.
+- Nativní Windows vyžaduje manuální instalaci pinned iii-engine v0.24.6 `iii.exe`; WSL2 používá automatický instalátor pro macOS/Linux.
 
 Kanonický příkaz pro čistou instalaci:
 
@@ -112,7 +112,7 @@ První spuštění je interaktivní nastavení: vyberete agenty, které chcete p
 
 Režim bez klíče (keyless) vypíná vektorová embeddingy. `memory_recall` (cesta `mem::search`) používá BM25, zatímco `memory_smart_search` může navíc kombinovat strukturální shody ze znalostního grafu, pokud už grafová data existují. Pro bezplatné sémantické vyhledávání přímo na zařízení nastavte `EMBEDDING_PROVIDER=local` v `~/.agentmemory/.env` a restartujte. První požadavek na embedding stáhne `Xenova/all-MiniLM-L6-v2`; po tomto prvním stažení modelu běží inference lokálně.
 
-Lokální runtime používá čtyři porty: `3111` pro REST/MCP HTTP, `3112` pro iii streamy, `3113` pro viewer a `49134` pro WebSocket iii workeru. Trvalý stav iii žije v `~/Library/Application Support/agentmemory` na macOS, v `$XDG_DATA_HOME/agentmemory` nebo `~/.local/share/agentmemory` na Linuxu a v `%APPDATA%\agentmemory` na Windows. Pro jeho přepsání použijte `--data-dir <path>` nebo `AGENTMEMORY_DATA_DIR` a při každém restartu použijte stejnou hodnotu. Z důvodu zpětné kompatibility má existující `./data/state_store.db` nebo `./data/iii-config.yaml` pro instanci 0 přednost před výchozí hodnotou dané platformy; explicitní přepínač nebo proměnná prostředí má přednost i nad tím.
+Lokální runtime CLI používá REST/MCP HTTP na portu `3111`, viewer na `3113` a interní WebSocket iii workeru na `49134`. Aktualizace vieweru používají SSE přes `GET /agentmemory/viewer/events` na REST portu. Trvalý stav se standardně ukládá do `~/Library/Application Support/agentmemory` na macOS, `$XDG_DATA_HOME/agentmemory` nebo `~/.local/share/agentmemory` na Linuxu a `%APPDATA%\agentmemory` na Windows. Umístění změňte pomocí `--data-dir <path>` nebo `AGENTMEMORY_DATA_DIR`; instance 0 také znovu použije existující `./data/state_store.db`. `--instance N` izoluje další runtime a `AGENTMEMORY_ENV_FILE` vybere jiný soubor `.env`.
 
 Pak ověřte, že vyhledávání funguje, a dejte svému agentovi jeho skills:
 
@@ -132,7 +132,7 @@ Další agenty můžete kdykoli propojit pomocí `agentmemory connect <agent>` �
 <details>
 <summary><strong>Windows</strong></summary>
 
-Nejrychlejší cestou je WSL2. Nativní nastavení enginu na Windows vyžaduje manuální stažení pinned ZIP v0.22.1 a manuální extrakci `iii.exe`; CLI ho automaticky nerozbaluje. Podporován je i Docker Desktop. Postup krok za krokem najdete v [poznámkách k Windows](#windows).
+Nejrychlejší cestou je WSL2. Nativní Windows vyžaduje ruční stažení pinned ZIP v0.24.6 a extrakci `iii.exe`. Postup najdete v [poznámkách k Windows](#windows).
 
 </details>
 
@@ -157,7 +157,7 @@ npx cachuje podle verze. Vynuťte nejnovější verzi pomocí `npx -y @agentmemo
 <details>
 <summary><strong>Už mám běžící vlastní iii engine</strong></summary>
 
-agentmemory je pinned na iii-engine v0.22.1 a nepřipojí se k jiné verzi (worker neumí mluvit protokolem jiného enginu). Zastavte jiný engine a pak spusťte `npx -y @agentmemory/agentmemory@latest`. Nainstaluje a spustí pinned v0.22.1 v `~/.agentmemory/bin`, aniž by se dotkl vašeho vlastního `iii`.
+agentmemory používá iii-engine v0.24.6 a nepřipojí se k jiné verzi (worker neumí mluvit protokolem jiného enginu). Zastavte jiný engine a pak spusťte `npx -y @agentmemory/agentmemory@latest`. Nainstaluje a spustí pinned v0.24.6 v `~/.agentmemory/bin`, aniž by se dotkl vašeho vlastního `iii`.
 
 </details>
 
@@ -319,14 +319,14 @@ Stejnou architekturu vysvětlujete při každé session. Znovu objevujete stejn�
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Ve výchozím nastavení agentmemory ukládá stav iii-engine mimo repozitář, ze kterého jej spouštíte: `~/Library/Application Support/agentmemory` na macOS, `$XDG_DATA_HOME/agentmemory` nebo `~/.local/share/agentmemory` na Linuxu a `%APPDATA%\agentmemory` na Windows. Existující starší `./data/state_store.db` nebo `./data/iii-config.yaml` se pro instanci 0 použije ještě před touto výchozí hodnotou platformy. Pro explicitní volbu umístění použijte `--data-dir <path>` nebo nastavte `AGENTMEMORY_DATA_DIR`; kterékoli z explicitních nastavení má přednost před starším vyhledáváním:
+Ve výchozím nastavení agentmemory ukládá stav iii-engine mimo repozitář, ze kterého jej spouštíte: `~/Library/Application Support/agentmemory` na macOS, `$XDG_DATA_HOME/agentmemory` nebo `~/.local/share/agentmemory` na Linuxu a `%APPDATA%\agentmemory` na Windows. Existující `./data/state_store.db` se znovu použije pro instanci 0. Umístění lze výslovně určit pomocí `--data-dir <path>` nebo `AGENTMEMORY_DATA_DIR`:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
 AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
 ```
 
-Nativní i Docker spouštění používají stejný vyřešený hostitelský adresář; Docker ho připojí (bind-mount) jako `/data`. `--instance 1` připojí k vyřešenému adresáři `instance-1` a zvolí samostatnou výchozí čtveřici portů `3211/3212/3213/49234`.
+`--instance 1` připojí k vyřešenému adresáři s daty `instance-1` a použije porty `3211` (REST), `3213` (viewer) a `49234` (engine).
 
 Nejnovější poznámky k vydání: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +476,7 @@ Nejnovější poznámky k vydání: [CHANGELOG.md](../CHANGELOG.md).
 </tr>
 <tr>
 <td><strong>Externí závislosti</strong></td>
-<td>Žádné (SQLite + iii-engine)</td>
+<td>Žádné (file-based KV state + iii-engine)</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vektorová DB</td>
 <td>Více</td>
@@ -556,7 +556,7 @@ Nic z toho automaticky nezachytává data z hooks kódovacího agenta, nedodáv�
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Rychlý start" height="32" /></picture></h2>
 
-Kompatibilita: toto vydání cílí na `iii-sdk` 0.22.1 a je pinned na iii-engine v0.22.1.
+Kompatibilita: toto vydání používá iii 0.24.6 s registry workery `state@0.22.20` a `http@0.22.7`.
 
 ### Vyzkoušejte to za 30 sekund
 
@@ -583,7 +583,7 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Startovní panel připravenosti pokrývá všechny čtyři porty: REST/MCP HTTP na 3111, iii streamy na 3112, viewer na 3113 a WebSocket iii workeru na 49134. `status` potvrzuje zdraví agentmemory a aktivní režim poskytovatele/embeddingů. Uložte sondu a ověřte, že je vyhledatelná:
+Runtime používá REST/MCP HTTP na 3111, viewer na 3113 a interní WebSocket iii workeru na 49134. Živé události vieweru používají SSE přes REST. `status` potvrzuje zdraví agentmemory, pinned verzi enginu (`enginePinnedVersion`) a aktivního poskytovatele/režim embeddingů. Uložte sondu a ověřte, že je vyhledatelná:
 
 ```bash
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
@@ -635,7 +635,7 @@ Příkaz pro údržbu použijte, když chcete úmyslně aktualizovat svůj loká
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Varování: tento příkaz mění aktuální workspace/runtime. Může aktualizovat JavaScript závislosti a stáhnout pinned Docker image `iiidev/iii:0.22.1`. Nikdy nenainstaluje nepinned nebo novější iii engine.
+Varování: tento příkaz mění aktuální workspace/runtime. Může aktualizovat JavaScriptové závislosti a nainstalovat pinned binárku enginu iii 0.24.6.
 
 Detaily implementace jsou v `src/cli.ts` (viz `runUpgrade` kolem oblasti `src/cli.ts:544-595`).
 
@@ -833,15 +833,23 @@ npm  install iii-sdk        # Node
 ```
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+# Native CLI: namespace is agentmemory-<REST port>, e.g. agentmemory-3111.
+# Docker runtime: deploy/runtime/worker-compose.yaml uses namespace "agentmemory".
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
+try:
+    hits = iii.trigger({
+        "function_id": "mem::smart-search",
+        "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
+    })
+    print(hits)
+finally:
+    iii.shutdown()
 ```
 
 Hotový příklad: [`examples/python/`](../examples/python/) (quickstart + průběh observation/recall). REST na `:3111` zůstává dostupné pro hostitele bez runtime iii.
@@ -853,91 +861,33 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Tím se spustí agentmemory s lokálním `iii-engine`, pokud je pinned binárka už nainstalována, nebo se použije Docker Compose, pokud je zvolen. REST, streamy a viewer se ve výchozím stavu váží na `127.0.0.1`. Automatická cesta binárky pro macOS/Linux vyžaduje `curl`, POSIX `sh` a `tar`.
-
-Nainstalujte `iii-engine` manuálně. **agentmemory je momentálně pinned na `iii-engine` ve verzi `v0.22.1`**, stejné vydání jako jeho závislost `iii-sdk`; worker mluví protokolem tohoto enginu a 0.20.0 přeorganizovalo povrch SDK, takže se obě verze ve vydáních agentmemory pohybují společně. Přepište pomocí `AGENTMEMORY_III_VERSION=<version>`, pokud provozujete vlastní engine a víte, že sedí.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** nahraďte `aarch64-apple-darwin` za `x86_64-apple-darwin`
-- **Linux x64:** nahraďte za `x86_64-unknown-linux-gnu`
-- **Linux arm64:** nahraďte za `aarch64-unknown-linux-gnu`
-- **Windows:** stáhněte `iii-x86_64-pc-windows-msvc.zip` z [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) a rozbalte `iii.exe` do `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Každý archiv má na stránce vydání odpovídající soubor `.sha256`; při výměně platformy použijte hash z tohoto souboru ve výše uvedené kontrole (na Windows: `Get-FileHash`). Automatický instalátor v `npx @agentmemory/agentmemory` má tyto hashe pevně dané a odmítne archiv, který nesedí.
-
-Nebo použijte Docker (zabalený `docker-compose.yml` stahuje `iiidev/iii:0.22.1`). Úplná dokumentace: [iii.dev/docs](https://iii.dev/docs).
+`npm start` spouští stejné prostředí iii Worker Compose jako CLI: iii 0.24.6 s registry workery `state@0.22.20` a `http@0.22.7`. Na macOS/Linux CLI stáhne pinned binárku enginu do `~/.agentmemory/bin`; automatická instalace vyžaduje `curl`, POSIX `sh` a `tar`. Lokální REST a viewer naslouchají na `127.0.0.1`. Aktualizace vieweru používají SSE přes `GET /agentmemory/viewer/events` na REST portu. `/agentmemory/status` uvádí pinned verzi enginu jako `enginePinnedVersion`; podporovaná výchozí verze je iii 0.24.6. `AGENTMEMORY_III_VERSION` umožňuje záměrně změnit pin.
 
 ### Windows
 
-agentmemory běží na Windows 10/11, ale samotný balíček Node.js nestačí; potřebujete také pinned runtime iii-engine v0.22.1 jako proces na pozadí. CLI nerozbaluje Windows ZIP automaticky, takže uživatelé nativního Windows musí `iii.exe` nainstalovat manuálně, použít WSL2, nebo zvolit Docker Desktop.
+agentmemory běží na Windows 10/11. WSL2 používá cestu pro Linux a může pinned engine nainstalovat automaticky. Nativní Windows vyžaduje ručně nainstalovanou binárku iii-engine v0.24.6; stáhněte odpovídající archiv ze [stránky vydání iii v0.24.6](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.24.6), ověřte kontrolní součet a umístěte `iii.exe` do `PATH` (například `%USERPROFILE%\.local\bin\iii.exe`). CLI ZIP pro Windows automaticky nerozbaluje.
 
-Automatizované zapojení MCP na nativním Windows podporuje pouze `agentmemory connect copilot-cli`. Pro Claude Code, Codex, Cursor a každého dalšího nativního agenta na Windows zkopírujte manuální blok MCP ze sekce [Další agenti](#other-agents) do konfigurace daného agenta na Windows. Spouštění `connect` ve WSL je vhodné pouze tehdy, když je cílový agent nainstalován ve stejném prostředí WSL; nijak neupravuje konfiguraci agenta na hostiteli Windows.
+Automatizované zapojení MCP na nativním Windows podporuje pouze `agentmemory connect copilot-cli`. U ostatních nativních agentů použijte manuální blok MCP ze sekce [Další agenti](#other-agents). `connect` ve WSL spouštějte pouze tehdy, pokud je cílový agent nainstalován ve stejném prostředí WSL.
 
-**Varianta A: předpřipravená binárka pro Windows (doporučeno)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Varianta B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Varianta C: pouze samostatné MCP (bez enginu).** Pokud pro svého agenta potřebujete jen nástroje MCP a nepotřebujete REST API, viewer ani cron úlohy, engine úplně vynechte:
+**Pouze samostatné MCP (bez enginu).** Pokud potřebujete jen nástroje MCP a nikoli REST API, viewer nebo služby runtime:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Diagnostika pro Windows:** pokud `npx -y @agentmemory/agentmemory@latest` selže, spusťte ho znovu s `--verbose`, abyste viděli skutečný stderr enginu. Běžné způsoby selhání:
-
-| Příznak | Oprava |
-|---|---|
-| `The engine process started but the REST API never responded.` | Ověřte, že všechny čtyři odvozené porty jsou volné, zkontrolujte, že pinned `iii.exe` zůstal naživu, pak spusťte znovu s `--verbose` a prozkoumejte zachycený stderr enginu |
-| `Could not start iii-engine` | Není nainstalován ani `iii.exe`, ani Docker. Viz varianta A nebo B výše |
-| Konflikt portů | `netstat -ano \| findstr :3111` ukáže, co je obsazeno, pak to ukončete nebo použijte `--port <N>` |
-| Záložní řešení přes Docker se vynechá, i když je Docker nainstalován | Ujistěte se, že Docker Desktop skutečně běží (ikona v system tray) |
-
-> Poznámka: iii **engine** je předpřipravená binárka, ne cargo crate, takže se ji nesnažte instalovat pomocí `cargo install`. (iii **SDK** jsou publikována na crates.io, npm a PyPI, ale agentmemory je nepotřebuje.) Všechny podporované metody instalace enginu jsou pinned na v0.22.1: výše uvedená předpřipravená binárka, automatická instalační cesta agentmemory pro macOS/Linux (vyžaduje `curl`, POSIX `sh` a `tar`) a Docker image `iiidev/iii:0.22.1`. Holé `install.sh | sh` z upstreamu nainstaluje nejnovější engine, který agentmemory nepodporuje. Použijte `npx -y @agentmemory/agentmemory@latest`; na macOS/Linuxu si stáhne pinned engine do `~/.agentmemory/bin`.
+**Diagnostika:** Pokud se spuštění nezdaří, spusťte jej znovu s `--verbose` a prohlédněte si stderr enginu. Ověřte, že porty REST `3111`, vieweru `3113` a enginu `49134` jsou volné; pro jiný izolovaný runtime použijte `--port <N>` nebo `--instance <N>`. CLI používá vlastní pinned binárku enginu a nenahrazuje spustitelný soubor iii v `PATH`.
 
 ---
 
 <h2 id="deploy">Nasazení</h2>
 
-Šablony pro nasazení na jedno kliknutí u správovaných hostitelů. Každá z nich dodává samostatný
-Dockerfile, který stáhne `@agentmemory/agentmemory` z npm a zkopíruje
-binárku iii enginu z oficiálního Docker Hub image
-`iiidev/iii`; žádný předpřipravený image agentmemory není potřeba. Trvalé úložiště
-se připojuje na `/data`; entrypoint při prvním startu přepíše
-konfiguraci iii zabalenou v npm (která se váže na `127.0.0.1`) tou
-upravenou pro nasazení, která se váže na `0.0.0.0` a používá absolutní cesty `/data`, vygeneruje
-HMAC secret a pak sníží oprávnění z `root` na `node` pomocí
-`gosu` před spuštěním CLI agentmemory.
+Docker je podporován pro self-hosting z tohoto repozitáře, nikoli jako režim spouštění CLI. Šablony pro nasazení na jedno kliknutí používají `deploy/Dockerfile` a `deploy/runtime/worker-compose.yaml`, připínají stejný runtime iii 0.24.6 a workery a ukládají stav, traces i vygenerovaný secret na trvalý svazek `/data`. Docker Compose standardně používá existující pojmenovaný svazek `iii-data`; pro bind mount nastavte `AGENTMEMORY_DATA_DIR` na cestu hostitele. Starší souborové úložiště z verze 0.22.1 se čte přímo z `/data/state_store.db`, bez migrace nebo konverze. REST CORS ve výchozím stavu povoluje lokální původ REST a vieweru; pokud potřebuje přístup důvěryhodný původ prohlížeče, nastavte `REST_ALLOWED_ORIGINS` na seznam přesných původů oddělených čárkami. Podrobnosti nastavení a zabezpečení jsou v [`deploy/README.md`](../deploy/README.md).
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Nasadit na fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Nasadit na Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Nasadit na fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Nasadit na Railway" /></a>
 </p>
 
 Tlačítko pro nasazení na jedno kliknutí od Renderu vyžaduje `render.yaml` v kořeni repozitáře, který záměrně udržujeme čistý. Pro manuální nasměrování na blueprint v repozitáři použijte postup Render Blueprint popsaný v [`deploy/render/`](.././deploy/render/README.md).
@@ -955,10 +905,16 @@ spodní hranice nákladů) jsou v [`deploy/`](.././deploy/README.md):
   VPS přes [Coolify](https://coolify.io/self-hosted); stejný Docker
   Compose stack, host i data vlastníte vy.
 
-Publikován je pouze port `3111`. Viewer na `3113` zůstává uvnitř kontejneru
-vázán na loopback; postup SSH tunelu pro jeho dosažení je zdokumentován
-v README každé šablony.
+REST používá port `3111`; viewer běží na portu `3113` a zveřejňuje se pouze tam, kde šablona platformy podporuje samostatnou chráněnou trasu. Živé aktualizace používají SSE s bearer autentizací na REST endpointu `/agentmemory/viewer/events`. WebSocket enginu na `49134` je interní a nesmí se zveřejňovat. Pokyny k vystavení a povoleným originům pro jednotlivé platformy najdete v [`deploy/README.md`](../deploy/README.md).
 
+
+### Migrace starších instalací Dockeru spravovaných CLI
+
+Současné CLI nespouští ani nespravuje nasazení Dockeru. Pokud najde starý záznam životního cyklu Dockeru, zachová metadata a vypíše přesný příkaz `docker stop ...`; před migrací tento příkaz spusťte. Nové běhové prostředí nespouštějte, dokud má starý kontejner stále připojený svazek.
+
+Starý trvalý svazek (obvykle `iii-data`) si ponechte a zálohujte, nebo zkopírujte obsah `/data` do připojeného svazku (bind mount). Worker state čte existující soubor `/data/state_store.db` přímo, bez exportu či převodu. Staré běhové prostředí používalo UID/GID `65532:65532`; nový image jednorázově rekurzivně změní vlastníka na `node:node` (`1000:1000`) a zapíše `/data/.ownership-migrated-node-v1`. Po této migraci svazek znovu nepřipojujte ke starému běhovému prostředí.
+
+Staré běhové prostředí ukládalo také vygenerovaný bearer secret v `/data/.hmac`. Nový image tento secret během migrace zachová; výslovně nastavená hodnota `AGENTMEMORY_SECRET` má přednost. Nový projekt Compose spusťte z kořene repozitáře příkazem `docker compose up --build -d`. Pokud má starý svazek místo názvu `iii-data` název s prefixem projektu, výslovně jej znovu použijte nebo přejmenujte — omylem neinicializujte prázdný svazek. Ověřte `/agentmemory/livez` a potvrďte, že lze najít staré i nové vzpomínky. Příkazu `docker compose down -v` se vyhněte, pokud není záměrem data smazat.
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Proč agentmemory" height="32" /></picture></h2>
@@ -1112,7 +1068,7 @@ Běžná instalace npm obsahuje volitelný runtime `@huggingface/transformers`. 
 
 54 nástrojů, 6 resources, 3 prompty a 17 skills.
 
-> **Shim MCP vs plný server:** publikovaný balíček `@agentmemory/mcp` je tenký shim. Celý povrch 54 nástrojů zpřístupní **pouze když se dostane k běžícímu serveru agentmemory** přes `AGENTMEMORY_URL` (proxy režim). Když žádný server není dostupný, shim se vrátí na lokální sadu 7 nástrojů (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Proměnná prostředí `AGENTMEMORY_TOOLS=core|all` je příznak *na straně serveru*; nastavení v bloku `env` shimu nemá žádný efekt. Pokud v Cursor / OpenCode / Gemini CLI vidíte jen 7 nástrojů, spusťte `npx -y @agentmemory/agentmemory@latest` (nebo Docker stack) a nastavte `AGENTMEMORY_URL=http://localhost:3111`.
+> **Shim MCP vs plný server:** publikovaný balíček `@agentmemory/mcp` je tenký shim. Celý povrch 54 nástrojů zpřístupní **pouze když se dostane k běžícímu serveru agentmemory** přes `AGENTMEMORY_URL` (proxy režim). Když žádný server není dostupný, shim se vrátí na lokální sadu 7 nástrojů (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). Proměnná prostředí `AGENTMEMORY_TOOLS=core|all` je příznak *na straně serveru*; nastavení v bloku `env` shimu nemá žádný efekt. Pokud v Cursor / OpenCode / Gemini CLI vidíte jen 7 nástrojů, spusťte `npx -y @agentmemory/agentmemory@latest` nebo se připojte k self-hostovanému serveru a nastavte `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 54 nástrojů
 
@@ -1252,7 +1208,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Viewer v reálném čase" height="32" /></picture></h2>
 
-Automaticky se spouští na portu `3113`. Viewer při připojení načte jeden snapshot (`GET /agentmemory/viewer/snapshot`) a pak aplikuje živé streamové události: nové paměti, lessons, pozorování, audit záznamy, změny grafu a aktualizace zdraví se objevují bez pollingu nebo obnovení stránky. Jediné další požadavky jsou akce, na které kliknete, stránky „load more" a vyhledávání. Když stream vypadne, viewer ukáže, jak staré jsou jeho čísla, znovu se připojí s odstupňovaným zpomalením a znovu se sesynchronizuje z jednoho snapshotu.
+Automaticky se spouští na portu `3113`. Viewer při připojení načte jeden snapshot (`GET /agentmemory/viewer/snapshot`) a pak aplikuje živé události přes SSE na `/agentmemory/viewer/events` workeru REST: nové paměti, lessons, pozorování, audit záznamy, změny grafu a aktualizace zdraví se zobrazují bez pollingu nebo obnovení stránky. Další požadavky vznikají jen při akcích, které provedete, načtení dalších stránek nebo vyhledávání. Při výpadku streamu viewer ukáže stáří údajů, znovu se připojí s odstupňovaným prodlením a synchronizuje se z nového snapshotu.
 
 - **12 záložek ve čtyřech skupinách** s živými počty, deep linky (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), klávesovými zkratkami a mobilním menu.
 - **Memories:** vyhledávání na straně serveru, filtry podle projektu, agenta a typu, detailní panel s řetězcem verzí a diffem slov, odkazy na původ, tlačítka pro kopírování id, volání MCP a příkazu curl, úprava (nová verze), forget s potvrzením, hromadný forget a export JSON.
@@ -1265,15 +1221,15 @@ Automaticky se spouští na portu `3113`. Viewer při připojení načte jeden s
 open http://localhost:3113
 ```
 
-Server vieweru se ve výchozím stavu váže na `127.0.0.1` a při předávání požadavků na REST API přikládá server secret, takže nevyžaduje žádné nastavení. Endpoint `/agentmemory/viewer` zpřístupněný přes REST se řídí běžnými pravidly bearer tokenu a prohlížeče bez tokenu přesměruje na port vieweru. Hlavičky CSP používají nonce skriptu pro každou odpověď a vypínají inline handler atributy (`script-src-attr 'none'`).
+Server vieweru se ve výchozím stavu váže na `127.0.0.1` a při předávání požadavků na REST API přikládá server secret. Při bindu mimo loopback zůstává HTML shell veřejný, ale každý proxy požadavek vyžaduje bearer token; viewer si o něj řekne a uloží jej do session storage. Před vystavením vieweru nakonfigurujte výslovné povolené hostitele/originy a TLS. REST endpoint `/agentmemory/viewer` podléhá běžným pravidlům bearer tokenu a prohlížeče bez tokenu přesměruje na port vieweru. Hlavičky CSP používají nonce skriptu pro každou odpověď a zakazují inline atributy handlerů (`script-src-attr 'none'`).
 
 ---
 
 <h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
 
-Viewer na `:3113` ukazuje, co si váš agent **zapamatoval**. [iii console](https://iii.dev/docs/console) ukazuje, co váš agent **udělal**: každá operace s pamětí jako trace OpenTelemetry, každá položka KV editovatelná, každá funkce vyvolatelná, každý stream napojitelný. Dvě okna na stejnou paměť: jedno ve tvaru produktu, druhé ve tvaru enginu.
+Viewer na `:3113` ukazuje, co si váš agent **zapamatoval**. [iii console](https://iii.dev/docs/console) ukazuje, co váš agent **udělal**: každou operaci s pamětí jako trace OpenTelemetry, každou položku KV upravitelnou, každou funkci přímo vyvolatelnou a aktivitu runtime. Dvě okna na stejnou paměť: jedno ve tvaru produktu, druhé ve tvaru enginu.
 
-Sledujte, jak se vyvolá `memory_smart_search`, a uvidíte skenování BM25 → vyhledání embeddingu → fúzi RRF → reranker jako waterfall. Upravte zaseknutý časovač konsolidace v prohlížeči KV. Přehrajte hook `PostToolUse` s upraveným payloadem. Připněte si WebSocket stream a sledujte, jak pozorování přicházejí živě.
+Sledujte, jak se vyvolá `memory_smart_search`, a uvidíte skenování BM25 → vyhledání embeddingu → fúzi RRF → reranker jako waterfall. Upravte zaseknutý časovač konsolidace v prohlížeči KV. Přehrajte hook `PostToolUse` s upraveným payloadem.
 
 agentmemory tohle dodává zadarmo, protože každé volání funkce a trigger se vyvolává přes iii; nic na míru, nic k instrumentaci.
 
@@ -1283,7 +1239,7 @@ agentmemory tohle dodává zadarmo, protože každé volání funkce a trigger s
   <em>Stránka Workers: každý připojený worker, včetně samotného agentmemory, s PID, počtem funkcí, runtime a časem posledního výskytu.</em>
 </p>
 
-**Už je nainstalováno.** Console se dodává s pinned enginem `iii` (0.22+); není třeba nic instalovat zvlášť. Při prvním spuštění se binárka console stáhne vedle enginu.
+**Už je nainstalováno.** Console se dodává s pinned enginem `iii` 0.24.6; není třeba nic instalovat zvlášť. Při prvním spuštění se binárka console stáhne vedle enginu.
 
 **Spuštění společně s agentmemory:**
 
@@ -1291,15 +1247,12 @@ agentmemory tohle dodává zadarmo, protože každé volání funkce a trigger s
 agentmemory console
 ```
 
-Tím se spustí `iii console` pinned enginu proti portům, které agentmemory vyřešil (REST, streamy, bridge), a obslouží se o jeden port nad viewerem, výchozí `http://localhost:3114`. `--console-port N` zvolí jiný port; `--port` a `--instance` volí instanci agentmemory stejně jako u `stop`; jakýkoli jiný přepínač se předá dál, například `--enable-flow` pro experimentální stránku architekturního grafu.
+`--console-port N` zvolí jiný port; `--port` a `--instance` volí instanci agentmemory stejně jako u `stop`; jakýkoli jiný přepínač se předá dál, například `--enable-flow` pro experimentální stránku architekturního grafu.
 
 Totéž manuálně, užitečné, když `agentmemory` není v PATH:
 
 ```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
+~/.agentmemory/bin/iii console --port 3114 --engine-port 3111 --bridge-port 49134
 ```
 
 **Co lze z console dělat:**
@@ -1310,12 +1263,9 @@ Totéž manuálně, užitečné, když `agentmemory` není v PATH:
 | **Functions** | vyvolá přímo jakoukoli funkci agentmemory s payloadem JSON; vhodné pro testování `memory.recall`, `memory.consolidate`, `graph.query` bez zapojování klienta. |
 | **Triggers** | přehraje triggery HTTP, cron, event a state: manuálně vyvolá cron konsolidace, zopakuje HTTP route, vyšle změnu stavu. |
 | **States** | prohlížeč KV s plným CRUD nad sessions, sloty paměti, časovači životního cyklu a indexem embeddingů; hodnoty lze upravovat na místě. |
-| **Streams** | živý monitor WebSocket pro zápisy paměti, události hooks a aktualizace pozorování, jak proudí přes iii streamy. |
-| **Queues** | trvalá témata queue + správa dead-letter. Přehrání nebo zahození neúspěšných úloh embeddingu / komprese. |
-| **Traces** | pohledy waterfall / flame / rozpad podle služby v OpenTelemetry. Filtrování podle `trace_id` ukáže přesně, které funkce, volání DB a požadavky na embedding jedno `memory.search` vyprodukovalo. |
+| **Traces** | pohledy waterfall / flame / rozpad podle služby v OpenTelemetry. Filtrování podle `trace_id` ukáže, které funkce, volání DB a požadavky na embedding provedlo jedno `memory.search`. |
 | **Logs** | strukturované logy OTEL filtrované a korelované na ID trace/span. |
 | **Config** | runtime konfigurace: přesně vidíte, s jakými workery, poskytovateli a porty váš engine běží. |
-| **Flow** | (volitelné, `--enable-flow`) interaktivní architekturní graf každého workeru, triggeru a streamu. |
 
 <p align="center">
   <img src="../assets/iii-console/traces-waterfall.png" alt="Pohled waterfall na trace v iii console zobrazující dobu trvání jednotlivých spanů" width="720" />
@@ -1323,11 +1273,7 @@ Totéž manuálně, užitečné, když `agentmemory` není v PATH:
   <em>Traces: waterfall / flame / rozpad podle služby pro každou operaci s pamětí.</em>
 </p>
 
-**Traces jsou už zapnuté:**
-
-`iii-config.yaml` se dodává se zapnutým workerem `iii-observability` (`exporter: memory`, `sampling_ratio: 0.1`, metriky + logy). Žádná další konfigurace není potřeba; ve chvíli, kdy agentmemory nastartuje, každá operace s pamětí vyšle strukturovaný log, který console umí číst, a jedna z deseti operací (`sampling_ratio: 0.1`) vyšle i trace span.
-
-Pokud chcete exportovat místo toho do Jaeger/Honeycomb/Grafana Tempo, změňte `exporter: memory` na `exporter: otlp` a nastavte endpoint kolektoru podle dokumentace observability iii.
+**Tracing a logy:** Console iii umí prohlížet telemetrii runtime. Informace o konfiguraci exportéru a vzorkování najdete v [dokumentaci observability iii](https://iii.dev/docs).
 
 > **Upozornění:** na samotné console není vynucena žádná autentizace; udržujte ji vázanou na `127.0.0.1` (výchozí stav) a nikdy ji nevystavujte veřejně.
 
@@ -1335,13 +1281,13 @@ Pokud chcete exportovat místo toho do Jaeger/Honeycomb/Grafana Tempo, změňte 
 
 <h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="Založeno na iii" height="32" /></picture></h2>
 
-agentmemory je **už běžící instance [iii](https://iii.dev)**. Runtime skládají tři primitiva (worker, function, trigger); stav KV, streamy a trace OTEL pochází z workerů iii-state, iii-stream a iii-observability, které se dodávají s iii. Neinstalovali jste Postgres, Redis, Express, pm2 ani Prometheus, protože iii je nahrazuje.
+agentmemory je worker na runtime [iii](https://iii.dev). Worker Compose spravuje engine a spouští agentmemory spolu s registry workery `state` a `http`. Viewer přijímá události přes SSE obsluhované REST endpointem.
 
-To znamená, že jeden další příkaz rozšíří agentmemory o celou novou schopnost.
+To znamená, že jeden další příkaz může agentmemory rozšířit o novou schopnost.
 
 ### Rozšiřte agentmemory dalšími workery
 
-Vestavěné (builtin) workery, které agentmemory potřebuje, jsou už v `iii-config.yaml` a startují s ním: `iii-state` (KV), `iii-queue` (trvalé opakování pro odběratele událostí), `iii-pubsub`, `iii-cron`, `iii-stream` a `iii-observability` (OTEL trace, metriky a logy u každé funkce). Cokoli dalšího z [registru workerů iii](https://workers.iii.dev) se zapojí do stejného enginu: zkopírujte `iii-config.yaml` do `~/.agentmemory/iii-config.yaml` (CLI tento soubor preferuje před zabaleným a pořád do něj vykresluje porty a cesty k datům), přidejte položku, jednou nainstalujte runtime workeru pomocí `~/.agentmemory/bin/iii update worker` a agentmemory restartujte.
+Runtime skládá registry workery `state` (KV) a `http` s agentmemory. Do projektu Worker Compose lze přidat i další workery z [registru workerů iii](https://workers.iii.dev).
 
 ```yaml
 workers:
@@ -1354,26 +1300,22 @@ workers:
 | Worker | Co navíc získáte oproti agentmemory |
 |---|---|
 | [`database`](https://workers.iii.dev/workers/database) | adaptér stavu nad SQL, když vám výchozí KV nestačí |
-| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | kód, který vyšel z `memory_recall`, běží uvnitř jednorázového VM, ne ve vašem shellu |
-| [`mcp`](https://workers.iii.dev/workers/mcp) | postavte další servery MCP vedle toho od agentmemory, se stejným enginem |
+| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | kód z `memory_recall` běží v jednorázovém VM, nikoli ve vašem shellu |
+| [`mcp`](https://workers.iii.dev/workers/mcp) | další servery MCP vedle agentmemory ve stejném enginu |
 
-Na enginu 0.22.x zachovejte pro výše uvedené builtin workery názvy s prefixem `iii-`; nepreixované položky `http`, `state`, `queue`, `pubsub` a `cron` jsou samostatné workery z registru, na které se agentmemory přesune s migrací na 0.23.
+Runtime připíná registry balíčky `state@0.22.20` a `http@0.22.7` v projektu Worker Compose generovaném CLI.
 
-Úplný registr: [workers.iii.dev](https://workers.iii.dev). Každý worker tam skládá přes stejná primitiva, která používá agentmemory, a agentmemory, které už máte, je jedním z nich.
+Úplný registr: [workers.iii.dev](https://workers.iii.dev). Každý worker tam skládá stejné primitivy jako agentmemory a agentmemory, které už používáte, je jedním z nich.
 
-### Konfigurace enginu a bind adresa
+### Runtime CLI a adresy bindu
 
-`agentmemory start` čte konfiguraci enginu z prvního souboru, který existuje: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` v aktuálním adresáři, `~/.agentmemory/iii-config.yaml`, pak zabalený `iii-config.yaml`. Při každém startu tento soubor vykreslí (cesty k datům, porty, backend stavu) do `~/.agentmemory/data/iii-config.runtime.yaml` a engine spustí s vykresleným souborem, takže upravujte zdrojový soubor, ne ten vykreslený. Hodnoty `host:` ze zdrojového souboru se zachovávají tak, jak jsou napsané.
-
-Zabalený `iii-config.yaml` se váže na `127.0.0.1` zcela úmyslně, a tato výchozí hodnota platí i uvnitř kontejneru. CLI spuštěné v kontejneru poslouchá na loopbacku kontejneru, takže publikované porty se nikam nedostanou. Aby bylo kontejnerizované CLI dosažitelné přes publikované porty, nastavte `AGENTMEMORY_III_CONFIG` na konfiguraci, která se váže na `0.0.0.0`. Zabalený `iii-config.docker.yaml` je taková konfigurace: váže `iii-http`, `iii-stream` a port enginu na `0.0.0.0` a ukládá stav pod `/data`, takže tam připojte zapisovatelný volume. Mějte nastavené `AGENTMEMORY_SECRET` a publikujte jen porty, které potřebujete, na `127.0.0.1` nebo za proxy, které důvěřujete.
-
-`docker-compose.yml` z tohoto repozitáře nejde přes vyhledávání konfigurace v CLI: připojí `iii-config.docker.yaml` jako `/app/config.yaml` a kontejner `iii-engine` se spustí s `--config /app/config.yaml`. Šablony pro [nasazení na jedno kliknutí](../deploy/) si zapisují svou vlastní konfiguraci `0.0.0.0` ve svých entrypointech.
+Spuštění `agentmemory` (nebo balíčku bez podřízeného příkazu) spustí iii Worker Compose s izolovaným manifestem ve vybraném datovém adresáři. Používá iii 0.24.6 a workery `state@0.22.20` a `http@0.22.7`. REST a viewer místního CLI naslouchají na `127.0.0.1`; WebSocket enginu slouží internímu provozu runtime. Docker nasazení z tohoto repozitáře používají oddělený [`deploy/runtime/worker-compose.yaml`](../deploy/runtime/worker-compose.yaml); viz [`deploy/README.md`](../deploy/README.md).
 
 ### Úložný backend: file (výchozí) vs redis
 
-`iii-state` a `iii-stream` ve výchozím stavu používají zabalené souborové úložiště KV iii-engine: jeden JSON soubor na scope, držený v paměti procesu enginu a periodicky přepisovaný na disk. To je správná výchozí hodnota pro lokální instalaci jednoho uživatele; sdílený daemon s více souběžnými writery dostane místo toho skutečné zápisy po jednotlivých klíčích z Redis, za cenu síťového round-tripu na každou operaci (každé volání `state::*` se stejně serializuje na jednom spojení Redis, takže se tím vyměňuje zámek souborového úložiště za socket, ne za paralelismus).
+Worker `state` standardně používá souborové KV úložiště, které je drženo v paměti a pravidelně zapisováno na disk. Redis lze použít, když runtime sdílí více zapisujících; přidává síťový round-trip a nezpůsobuje paralelní připojení jediného workeru.
 
-Nastavte `AGENTMEMORY_STATE_BACKEND=redis` (plus `AGENTMEMORY_REDIS_URL`), abyste přepnuli oba workery na vestavěný adaptér `redis` iii-engine, který ukládá každý klíč jako pole hash Redis (`HSET`) místo přepisování celého scope při každém zápisu:
+Nastavte `AGENTMEMORY_STATE_BACKEND=redis` a `AGENTMEMORY_REDIS_URL`, chcete-li použít Redis adaptér workeru `state`, který ukládá každý klíč jako pole hash Redis (`HSET`):
 
 ```env
 # ~/.agentmemory/.env
@@ -1381,31 +1323,30 @@ AGENTMEMORY_STATE_BACKEND=redis
 AGENTMEMORY_REDIS_URL=redis://localhost:6379
 ```
 
-`AGENTMEMORY_STATE_BACKEND` má výchozí hodnotu `file`; když ho nenastavíte, dnešní chování se nezmění, a nerozpoznaná hodnota (cokoli jiného než `file` nebo `redis`) je chyba při startu, ne tichý fallback. `/agentmemory/status` a stránka Health ve viewer (řádek State store) hlásí, který backend je aktivní a zda odpovídá, nikdy ne URL.
+`AGENTMEMORY_STATE_BACKEND` má výchozí hodnotu `file`; nerozpoznaná hodnota (cokoli jiného než `file` nebo `redis`) způsobí chybu při startu, ne tichý fallback. `/agentmemory/status` a stránka Health ve viewer (řádek State store) uvádějí aktivní backend a jeho dostupnost, nikdy však URL.
 
-**Pouze čisté `redis://`.** Pinned engine (0.22.1) sestavuje svého klienta Redis bez podpory TLS, takže URL `rediss://` (většina správovaných nabídek Redis, jako Upstash, Redis Cloud a ElastiCache se šifrováním při přenosu, má ve výchozím stavu jen TLS) se nepřipojí. Spojení je nešifrované, takže heslo Redis i každá uložená paměť cestují po síti v čistém textu: nasměrujte na lokální Redis nebo na Redis v privátní síti, které důvěřujete. Pro jakýkoli jiný Redis spusťte šifrovaný tunel (stunnel, SSH nebo VPN) na hostiteli agentmemory, aby čistý skok `redis://` zůstal na tomto hostiteli a upstream spojení tunelu bylo šifrované a autentizované. Pokud heslo Redis obsahuje jednoduchou uvozovku, percent-encode ji (`%27`); engine URL rozvine do své konfigurace YAML ještě před parsováním.
+**Pouze čisté `redis://`.** Pinned worker `state` podporuje pouze obyčejné `redis://`; služby vyžadující TLS přes `rediss://` potřebují šifrovaný tunel. Připojení Redis není šifrované, proto použijte místní Redis, důvěryhodnou privátní síť nebo tunel. Pokud heslo Redis obsahuje jednoduchou uvozovku, zakódujte ji procentově (`%27`); engine rozvine URL do konfigurace YAML před jejím parsováním.
 
-**Jeden server Redis na jeden `--instance`.** Prefixy klíčů Redis v enginu (`state:<scope>`, `stream:<name>:<group>`) jsou pevné, takže dvě instance agentmemory (`--instance 1`, `--instance 2`, ...) nasměrované na stejnou databázi si přepíší data navzájem. Samostatný index databáze (`redis://localhost:6379/1`) udrží uložená data odděleně, ale engine přenáší živé události vieweru přes jeden pub/sub kanál Redis (`stream::events`), a pub/sub Redis ignoruje index databáze, takže viewer každé instance by i tak zobrazoval živé události té druhé. Pokud provozujete více než jednu instanci, dejte každé vlastní server (nebo port) Redis.
+**Samostatná databáze Redis pro každou instanci.** Každá souběžná instance má používat vlastní databázi nebo Redis server, aby zůstal stav izolovaný.
 
-**Co zůstává stejné a co se liší.** Na Redis funguje každá funkce agentmemory: sessions, pozorování, paměti (remember, supersede, evolve, forget), vyhledávání a indexové dávky, lessons, graf, audit log a jeho měsíční scopy, export a import, governance delete, stav konsolidace, snapshot vieweru a jeho živý stream, i health monitor. Engine ukládá každý scope jako jeden hash Redis (`HSET`/`HGET`/`HGETALL`) a vyvolává stejné state triggery jako souborové úložiště. Uvnitř agentmemory se ošetřují tři rozdíly enginu:
+**Co zůstává stejné a co se liší.** Všechny funkce agentmemory fungují s Redis: sessions, pozorování, paměti (remember, supersede, evolve, forget), vyhledávání a indexové dávky, lessons, graf, audit log a jeho měsíční scopy, export a import, governance delete, stav konsolidace, snapshot vieweru i živý SSE feed a health monitor. Worker `state` ukládá každý scope jako hash Redis (`HSET`/`HGET`/`HGETALL`) a spouští stejné state triggery jako souborové úložiště. Tři rozdíly úložiště ošetřuje agentmemory:
 
-- Redis vrací záznamy scope v žádném pevném pořadí. agentmemory je seřadí od nejstarších (podle času vytvoření v id záznamu, pak podle jeho timestampu), takže seznamy, stránkování a dávky exportu se vrátí ve stejném pořadí jako na souborovém úložišti.
-- Engine aplikuje částečné aktualizace na Redis ve skriptu Lua, který prázdná pole mění na prázdné objekty. agentmemory aplikuje tyto aktualizace sám (čti, změň, zapiš pod zámkem na klíč) na Redis, takže pole jako `tags: []` zůstanou poli.
-- Starší kontrola audit logu čte starý scope z Redis, místo hledání souboru souborového úložiště na disku.
+- Redis nevrací záznamy scope v pevném pořadí. agentmemory je řadí od nejstarších (podle času vytvoření v ID záznamu a poté timestampu), takže seznamy, stránkování a dávky exportu mají stejné pořadí jako v souborovém úložišti.
+- Engine aplikuje částečné aktualizace v Redis pomocí skriptu Lua, který prázdná pole převádí na prázdné objekty. agentmemory tyto aktualizace provádí samo (čtení, změna a zápis pod zámkem pro daný klíč), aby pole jako `tags: []` zůstala poli.
+- Kontrola staršího audit logu čte starý scope z Redis namísto hledání souboru na disku.
 
-Jeden rozdíl vyžaduje vaši pozornost: **po restartu Redis engine přestane předávat živé události** vieweru, dokud se agentmemory nerestartuje. Data se stále normálně ukládají a čtou. Health monitor posílá testovací událost přes Redis každých 30 sekund; když se nevrátí, `/agentmemory/status` a stránka Health ve viewer zobrazí „Live updates are not reaching the viewer" s opravou: restartujte agentmemory. Pokud Redis neběží, status report zobrazí „The state store is not answering" a jak to ověřit (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Výpis velmi velkého scope čte celý hash v jednom `HGETALL`, se stejnými náklady, jako kdyby ho v paměti drželo souborové úložiště.
+Živé události vieweru používají SSE na workeru REST a vysílá je běžící proces agentmemory; nepoužívají Redis pub/sub ani pravidelnou kontrolu Redis streamu. Dostupnost Redis ovlivňuje čtení a zápisy stavu, nikoli transport vieweru. Když Redis není dostupný, status uvádí „The state store is not answering“ a způsob kontroly (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Výpis velmi velkého scope přečte celý hash jediným `HGETALL`, se stejnými náklady jako u souborového úložiště drženého v paměti.
 
-**Doporučená nastavení Redis.** Výchozí snapshotová politika `save 3600 1 300 100 60 10000` může při pádu ztratit minuty zápisů, hůř než 5sekundové okno flush souborového úložiště. Nastavte `appendonly yes` pro cokoli, o co byste nerádi přišli. Nastavte `maxmemory-policy noeviction`; `allkeys-lru` nebo podobné tiše odhazují paměti, jakmile Redis narazí na svůj limit paměti.
+**Doporučená nastavení Redis.** Výchozí politika snapshotů `save 3600 1 300 100 60 10000` může při pádu ztratit několik minut zápisů. Nastavte `appendonly yes` pro data, o která nechcete přijít. Nastavte `maxmemory-policy noeviction`; `allkeys-lru` a podobné politiky tiše zahazují paměti po dosažení limitu paměti Redis.
 
-Nativní (nekontejnerový) start a každá šablona pro [nasazení na jedno kliknutí](../deploy/) (přepisují zabalený `iii-config.yaml` a startují nativně) čtou `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` a vykreslují je do spuštěné `iii-config`. Samotná URL se do tohoto vykresleného souboru nikdy nezapisuje, pouze odkaz `${AGENTMEMORY_REDIS_URL}`, který proces enginu rozvine ze svého vlastního prostředí při startu. Jen vlastní cesta Docker Compose tohoto repozitáře (`AGENTMEMORY_USE_DOCKER=1`, nebo navázání na engine už takto spuštěný) připojuje `iii-config.docker.yaml` jako read-only a nikdy nevykresluje; `agentmemory start` na tuto kombinaci varuje. Tento soubor přepněte manuálně, podle stejného tvaru `name: redis` / `config: redis_url: ...` uvedeného v dokumentaci workerů [iii-state](https://workers.iii.dev/workers/iii-state) a [iii-stream](https://workers.iii.dev/workers/iii-stream), a nasměrujte `redis_url` na Redis dostupný z kontejneru. `docker-compose.yml` předává `AGENTMEMORY_REDIS_URL` do kontejneru enginu, takže tam funguje `redis_url: '${AGENTMEMORY_REDIS_URL}'` a URL se tím nedostane do připojeného souboru.
+Projekt Worker Compose generovaný CLI předává tyto proměnné workeru `state`. Informace o self-host nasazení Dockeru jsou v [`deploy/README.md`](../deploy/README.md) a [dokumentaci workeru state](https://workers.iii.dev/workers/state).
 
-Vykreslená konfigurace udržuje URL mimo `~/.agentmemory/data/iii-config.runtime.yaml`, ale vlastní konfigurační worker enginu stejně po startu uloží *rozvinutou* hodnotu do `~/.agentmemory/config/iii-state.yaml` a `iii-stream.yaml` (expanze `${VAR}` v iii-engine proběhne dřív, než tento worker uloží svůj seed, a uloží se vyřešená hodnota, ne odkaz). Zacházejte s tímto adresářem, jako by obsahoval přihlašovací údaj: na jakémkoli sdíleném hostiteli udělejte `chmod 700 ~/.agentmemory` a dejte přednost uživateli ACL Redis omezenému na to, co agentmemory potřebuje, před administrátorskými údaji databáze.
+Pokud uložená konfigurace workeru obsahuje URL Redis, může obsahovat přihlašovací údaje, a proto je citlivá. Chraňte oprávnění vybraného datového adresáře (například `chmod 700 <data-dir>` na sdíleném hostiteli). Před administrátorskými údaji databáze dejte přednost Redis ACL uživateli omezenému na potřebné operace.
 
-**Migrace není automatická.** Přepnutí `AGENTMEMORY_STATE_BACKEND` začíná na obou stranách od prázdného úložiště; nic nekopíruje existující data z file do Redis nebo zpět. Exportujte z backendu, který opouštíte, a importujte do toho, na který přecházíte. Toto běží identicky v bash i zsh (včetně `bash -u`). Pole jako `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` tak nefunguje: zsh zachová hlavičku jako jedno poškozené slovo, kde bash ji rozdělí na dvě, takže oba požadavky vrátí 401 pokaždé, když je `AGENTMEMORY_SECRET` nastaveno:
+**Migrace není automatická.** Přepnutí `AGENTMEMORY_STATE_BACKEND` začíná na obou stranách prázdným úložištěm; existující data se mezi souborovým úložištěm a Redis nekopírují. Exportujte data ze starého backendu a importujte je do nového. Následující postup funguje stejně v bash i zsh (včetně `bash -u`). Pole jako `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` nefunguje: zsh zachová hlavičku jako jedno chybně utvořené slovo, zatímco bash ji rozdělí na dvě, takže oba požadavky při nastaveném `AGENTMEMORY_SECRET` vrátí 401:
 
 ```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
+# Set AGENTMEMORY_SECRET to the content of the `secret` file in the server's selected data directory before running these curl commands.
 
 # 1. On the old backend, while agentmemory is still running on it:
 if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
@@ -1433,20 +1374,22 @@ else
 fi
 ```
 
-`/agentmemory/export` také přijímá `?maxSessions=` a `?offset=` pro rozdělení velkého korpusu do více volání; `strategy` při importu je `merge` (bezpečná výchozí hodnota), `replace` nebo `skip`.
+---
+
+`/agentmemory/export` také přijímá `?maxSessions=` a `?offset=` pro rozdělení velkého korpusu do více volání, `?collectionLimit=` a `?collectionOffset=` pro stránkování pamětí, grafu a dalších kolekcí a `?collections=` pro vrácení pouze pojmenovaných kolekcí; `strategy` při importu je `merge` (bezpečná výchozí hodnota), `replace` nebo `skip`, přičemž `replace` odmítne stránkovaný nebo vybraný export.
 
 ### Co iii nahrazuje
 
 | Tradiční stack | agentmemory používá |
 |---|---|
 | Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + in-memory vektorový index |
-| SSE / Socket.io | iii Streams (WebSocket) |
+| SQLite / Postgres + pgvector | iii state worker (file-based KV) + in-memory vector index |
+| SSE / Socket.io | REST endpoint `GET /agentmemory/viewer/events` (SSE) |
 | pm2 / systemd | dohled nad workery iii engine |
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Vlastní systémy pluginů | `iii worker add <name>` |
 
-**242 zdrojových souborů · ~55,000 řádků kódu · 3,400+ testů · 324 funkcí · 67 KV scopes**, vše na třech primitivech. Žádné `agentmemory plugin install`. Systém pluginů je samo iii.
+**246 zdrojových souborů · ~56,000 řádků kódu · 3,600+ testů · 322 funkcí · 65 KV scopes**, vše na třech primitivech. Žádné `agentmemory plugin install`. Systém pluginů je samo iii.
 
 ---
 
@@ -1563,39 +1506,23 @@ Když `AGENT_ID` není nastaveno, paměť zůstává bez rozsahu (starší chov�
 
 ### Porty
 
-agentmemory + iii-engine se ve výchozím stavu váží na čtyři porty. Pokud restart selže s `port in use`, tato tabulka vám řekne, jaký proces hledat.
+Místní runtime používá tři listenery. WebSocket enginu iii slouží interní registraci workerů a nesmí být vystaven veřejné síti.
 
 | Port | Proces | Účel | Přepis přes env |
 |------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | interní worker streamů (využívá ho agentmemory + viewer) | `III_STREAM_PORT` (preferováno) nebo starší `III_STREAMS_PORT` |
-| `3113` | agentmemory | viewer v reálném čase (`http://localhost:3113`) | `III_VIEWER_PORT` nebo `AGENTMEMORY_VIEWER_URL` pro hlášenou URL |
-| `49134` | iii-engine | WebSocket; zde se registrují workery, protéká tím telemetrie OTel | `III_ENGINE_PORT` nebo `III_ENGINE_URL` |
+| `3111` | registry worker `http` | REST API, MCP HTTP, health a autentizované SSE vieweru na `/agentmemory/viewer/events` | `III_REST_PORT` |
+| `3113` | agentmemory | UI vieweru a proxy vieweru | `III_VIEWER_PORT` |
+| `49134` | engine iii | interní WebSocket workerů | `III_ENGINE_PORT` nebo `III_ENGINE_URL` |
 
-`--port <N>` změní kotvu REST a odvodí streamy `N+1`, viewer `N+2` a WebSocket enginu `N+46023`, jen pokud odpovídající explicitní port nebo URL výše není nastaven. Nevytváří izolovaný namespace životního cyklu. Pro druhý daemon použijte `--instance 1`; používá kotvu 3211, výchozí `3211/3212/3213/49234`, a dostane samostatný adresář dat a životního cyklu `instance-1`. Instance 1 až 50 se řídí stejným vzorem.
+`--port <N>` nastavuje REST port a odvozuje port vieweru `N+2` a WebSocket enginu `N+46023`, pokud nejsou výslovně určeny. Pro izolovaný runtime použijte `--instance N`.
 
-Pinned engine startuje s `--no-update-check` (žádné vyhledávání aktualizací nebo bezpečnostních upozornění proti GitHubu při startu) a s vypnutou anonymní telemetrií používání iii: agentmemory nastaví `III_TELEMETRY_ENABLED=false` pro engine, který spouští, pokud si tuto proměnnou nevyexportujete sami, a zabalený soubor compose dělá totéž.
-
-Vyčištění zaseknutých procesů, když porty zůstanou obsazené po zhavarovaném běhu:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` čistě sklidí pidfile workeru i enginu při korektním nativním vypnutí. V režimu Docker vypláchne nativní worker, zastaví přesně validovaný kontejner enginu a zachová jak kontejner, tak jeho mount `/data` pro bezeztrátový restart; další start validuje a obnoví tentýž kontejner. Odinstalace postavená na Dockeru vyžaduje `agentmemory remove --keep-data`: odstraní sdílené soubory správované agentmemory, přičemž zachová validovaný kontejner, jeho datový mount a záznam životního cyklu potřebný k jejich obnovení. Destruktivní smazání dat Dockeru je záměrně ponecháno na operátorovi po zálohování. CLI také odmítá přijmout nebo signalizovat držitele portů Docker nebo VM (Docker backend, vpnkit, colima) jako nativní engine, pokud není předán `--force`. Výše uvedené manuální čištění je jen pro případ po havárii, kdy nezůstal žádný pidfile.
+Self-host nasazení publikuje REST a viewer, standardně `127.0.0.1:3111` a `127.0.0.1:3113`; hostitelské porty lze změnit pomocí `AGENTMEMORY_REST_PORT` a `AGENTMEMORY_VIEWER_PORT`. REST CORS ve výchozím nastavení povoluje `http://localhost` a `http://127.0.0.1` na nakonfigurovaných portech REST i vieweru. Další důvěryhodné originy prohlížeče povolte seznamem přesných originů oddělených čárkami v Docker proměnné `REST_ALLOWED_ORIGINS`.
 
 ### Konfigurační soubor
 
-Dejte runtime konfiguraci agentmemory do `~/.agentmemory/.env`, místo exportování proměnných v každém shellu. Pokud viewer zobrazí instalační nápovědu jako `export ANTHROPIC_API_KEY=...`, zkopírujte ji do tohoto souboru jako `ANTHROPIC_API_KEY=...` bez prefixu `export`, pak agentmemory restartujte.
+Dejte runtime konfiguraci agentmemory do `~/.agentmemory/.env`, místo exportování proměnných v každém shellu. Pokud viewer zobrazí instalační nápovědu jako `export ANTHROPIC_API_KEY=...`, zkopírujte ji do tohoto souboru jako `ANTHROPIC_API_KEY=...` bez prefixu `export`, pak agentmemory restartujte. Pro výběr jiného souboru env nastavte `AGENTMEMORY_ENV_FILE`.
 
-Proměnné prostředí procesu stále fungují a mají přednost před hodnotami v souboru.
+Proměnné prostředí procesu stále fungují a mají přednost před hodnotami v souboru. Projekt Worker Compose generovaný CLI předává nastavení Redis z proměnných `AGENTMEMORY_STATE_BACKEND` a `AGENTMEMORY_REDIS_URL` workeru `state`.
 
 Na Windows žije stejný soubor na `%USERPROFILE%\.agentmemory\.env`:
 
@@ -1749,8 +1676,7 @@ Vytvořte `~/.agentmemory/.env`:
 # Storage and durability
 # AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
 # AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
+# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # Default file-state save interval: 2000 ms.
 # AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
                                              # shutdown and deletes still save at once.
 # AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
@@ -1789,12 +1715,12 @@ Vytvořte `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpointů na portu `3111`. REST API se ve výchozím stavu váže na `127.0.0.1`. Chráněné endpointy vyžadují `Authorization: Bearer <secret>`, a endpointy pro mesh sync vyžadují explicitně nastavené `AGENTMEMORY_SECRET` na obou stranách.
+144 endpointů na portu `3111`. REST API se ve výchozím stavu váže na `127.0.0.1`. Chráněné endpointy vyžadují `Authorization: Bearer <secret>`, a endpointy pro mesh sync vyžadují explicitně nastavené `AGENTMEMORY_SECRET` na obou stranách.
 
-**Autentizace je ve výchozím stavu zapnutá.** Když `AGENTMEMORY_SECRET` není nastaveno (v shellu ani v `~/.agentmemory/.env`), server při prvním startu vygeneruje náhodný secret a uloží ho do `~/.agentmemory/secret` s režimem `0600`. Každý zabalený klient ho odtud čte, když mluví s lokálním serverem: CLI, viewer, hooks pod `plugin/scripts`, server MCP a shim `@agentmemory/mcp`, konfigurace zapsané příkazem `agentmemory connect` a zabalené integrace OpenCode, Pi, OpenClaw, Hermes a filesystem-watcher. Uložený secret se posílá jen na loopback URL (`localhost`, `127.0.0.0/8`, `::1`). Explicitní `AGENTMEMORY_SECRET` má vždy přednost, a vzdálení klienti ho stejně potřebují nastavený. Docker a entrypointy v `deploy/` už svůj vlastní secret generují a exportují. Pro manuální volání API:
+**Autentizace je ve výchozím stavu zapnutá.** Pokud není nastavena `AGENTMEMORY_SECRET` (v shellu ani v `~/.agentmemory/.env`), CLI při prvním spuštění vygeneruje náhodný secret a uloží jej do vybraného datového adresáře jako `secret` s režimem `0600` (výchozí umístění podle platformy je popsáno výše). Všichni zabalení klienti jej načítají odtud při komunikaci s lokálním serverem: CLI, viewer, hooks v `plugin/scripts`, server MCP a shim `@agentmemory/mcp`, konfigurace zapsané pomocí `agentmemory connect` a zabalené integrace OpenCode, Pi, OpenClaw, Hermes a filesystem-watcher. Uložený secret se odesílá pouze na loopback URL (`localhost`, `127.0.0.0/8`, `::1`). Výslovně nastavená `AGENTMEMORY_SECRET` má vždy přednost a vzdálení klienti ji musí mít ve svém prostředí. Self-host nasazení Dockeru z repozitáře a entrypointy `deploy/` generují a exportují vlastní secret. Pro ruční volání API:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **Pravidla požadavků pro zápisy.** Požadavky `POST`, `PUT`, `PATCH` a `DELETE` na REST API a viewer musí poslat `Content-Type: application/json` (parametr `charset` je v pořádku), kdykoli nesou tělo, a hlavička `Origin`, pokud je přítomná, musí být loopback origin pro nakonfigurovaný port REST nebo vieweru, nebo musí být uvedena v `VIEWER_ALLOWED_ORIGINS` (odděleno čárkami, např. `https://memory.example.com`). Klienty, které žádnou hlavičku `Origin` neposílají (CLI, hooks, MCP, curl, server-server), se to nijak nedotýká. Viewer navíc akceptuje svůj vlastní origin.
@@ -1874,7 +1800,7 @@ npm test                  # 3,800+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Požadavky:** Node.js >= 20 s npm/npx; [iii-engine](https://iii.dev/docs) v0.22.1 nebo Docker. Automatická instalace enginu na macOS/Linuxu navíc vyžaduje `curl`, POSIX `sh` a `tar`; nativní Windows používá manuálně pinned `iii.exe`, WSL2 nebo Docker Desktop.
+**Požadavky:** Node.js >= 20 s npm/npx. Instalace enginu spravovaná CLI na macOS/Linuxu vyžaduje také `curl`, POSIX `sh` a `tar`; nativní Windows vyžaduje ručně nainstalovanou pinned binárku `iii.exe` nebo lze použít WSL2.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Licence" height="32" /></picture></h2>
 
