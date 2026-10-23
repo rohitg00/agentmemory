@@ -1,10 +1,13 @@
 {
-  "name": "agentmemory-pi-extension",
+  "name": "@agentmemory/pi",
   "version": "0.1.0",
-  "private": true,
   "description": "agentmemory extension for the pi coding agent: memory recall on agent start, capture on agent end, memory_search / memory_save / memory_health tools, /agentmemory-status command",
   "type": "module",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/rohitg00/agentmemory/tree/main/integrations/pi",
   "keywords": [
     "pi-package",
     "agentmemory",
@@ -18,7 +21,8 @@
   "files": [
     "index.ts",
     "security.ts",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "pi": {
     "extensions": [

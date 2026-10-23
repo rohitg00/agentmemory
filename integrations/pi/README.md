@@ -1,42 +1,30 @@
-<p align="center">
-  <img src="../../assets/banner.png" alt="agentmemory" width="640" />
-</p>
+# agentmemory for pi
 
-<h1 align="center">
-  &nbsp;agentmemory for pi
-</h1>
-
-<p align="center">
-  <strong>Your pi sessions remember everything. No more re-explaining.</strong><br/>
-  <sub>Persistent cross-session memory via <a href="https://github.com/rohitg00/agentmemory">agentmemory</a> — shared with Claude Code, Codex CLI, Gemini CLI, Hermes, OpenClaw, and more.</sub>
-</p>
-
----
+Persistent cross-session memory via [agentmemory](https://github.com/rohitg00/agentmemory), shared with Claude Code, Codex CLI, Gemini CLI, Hermes, OpenClaw, and more.
 
 ## Quick setup
 
 Start the agentmemory server in a separate terminal:
 
 ```bash
-npx @agentmemory/agentmemory
+npx -y @agentmemory/agentmemory@latest
 ```
 
-Copy this folder into pi's global extensions directory:
+Install the package from an agentmemory checkout:
 
 ```bash
-mkdir -p ~/.pi/agent/extensions/agentmemory
-cp integrations/pi/index.ts ~/.pi/agent/extensions/agentmemory/index.ts
+pi install ./integrations/pi
 ```
 
-Then enable it in `~/.pi/agent/settings.json` if you prefer explicit loading:
+After the first npm publication, install without a checkout:
 
-```json
-{
-  "extensions": ["~/.pi/agent/extensions/agentmemory"]
-}
+```bash
+pi install npm:@agentmemory/pi
 ```
 
-If you place it under `~/.pi/agent/extensions/agentmemory/`, pi will also auto-discover it and `/reload` can hot-reload it.
+Run `/reload` in pi, then `/agentmemory-status`. Keep the agentmemory server running while using the extension.
+
+Alternatively, `npx -y @agentmemory/agentmemory@latest connect pi` copies the bundled extension into `~/.pi/agent/extensions/agentmemory/`. Use one installation method. Before switching to a pi package, move any existing copied extension outside pi's extensions directory and remove explicit settings entries for that copy to avoid loading it twice.
 
 ## What it adds
 
@@ -52,7 +40,7 @@ If you place it under `~/.pi/agent/extensions/agentmemory/`, pi will also auto-d
 | Variable | Default | Description |
 |---|---|---|
 | `AGENTMEMORY_URL` | `http://localhost:3111` | agentmemory server URL |
-| `AGENTMEMORY_SECRET` | (none) | Bearer token for protected instances |
+| `AGENTMEMORY_SECRET` | Local server credential | Explicit bearer token for protected instances. For loopback URLs, falls back to `~/.agentmemory/.env`, then `~/.agentmemory/secret`. Set it when connecting to a remote server. |
 | `AGENTMEMORY_REQUIRE_HTTPS` | (off) | When set to `1`, refuse to send a bearer token over plaintext HTTP to a non-loopback host. Sends the token only when `AGENTMEMORY_URL` is `https://...` or points at `localhost`/`127.0.0.1`/`::1`. With this off, the plugin warns once but still sends. |
 
 ## Smoke test
@@ -63,7 +51,17 @@ Run pi and ask it to use the `memory_health` tool, or call the command directly:
 /agentmemory-status
 ```
 
-You should see `agentmemory healthy` and a footer status like `🧠 agentmemory`.
+You should see `agentmemory healthy`.
+
+## Package archive
+
+From an agentmemory checkout, build an archive containing the extension and its local helper:
+
+```bash
+npm run plugin:pack:pi
+```
+
+The archive is written to `dist/plugins/`. No build or repository dependencies are needed to pack this TypeScript extension; pi provides its runtime dependencies.
 
 ## Notes
 
@@ -72,6 +70,6 @@ You should see `agentmemory healthy` and a footer status like `🧠 agentmemory`
 
 ## See also
 
-- [agentmemory main README](../../README.md)
-- [Hermes integration](../hermes/README.md)
-- [OpenClaw integration](../openclaw/README.md)
+- [agentmemory main README](https://github.com/rohitg00/agentmemory#readme)
+- [Hermes integration](https://github.com/rohitg00/agentmemory/tree/main/integrations/hermes)
+- [OpenClaw integration](https://github.com/rohitg00/agentmemory/tree/main/integrations/openclaw)
