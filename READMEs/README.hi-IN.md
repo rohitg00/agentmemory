@@ -1449,7 +1449,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**242 source files · ~55,000 LOC · 3,400+ tests · 324 functions · 67 KV scopes**, सब कुछ तीन primitives पर। कोई `agentmemory plugin install` नहीं। Plugin system iii स्वयं है।
+**242 source files · ~55,000 LOC · 3,400+ tests · 325 functions · 67 KV scopes**, सब कुछ तीन primitives पर। कोई `agentmemory plugin install` नहीं। Plugin system iii स्वयं है।
 
 ---
 
@@ -1792,7 +1792,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-Port `3111` पर 143 endpoints। REST API default रूप से `127.0.0.1` से bind होता है। Protected endpoints `Authorization: Bearer <secret>` की आवश्यकता रखते हैं, और mesh sync endpoints दोनों peers पर एक explicitly set `AGENTMEMORY_SECRET` की आवश्यकता रखते हैं।
+Port `3111` पर 144 endpoints। REST API default रूप से `127.0.0.1` से bind होता है। Protected endpoints `Authorization: Bearer <secret>` की आवश्यकता रखते हैं, और mesh sync endpoints दोनों peers पर एक explicitly set `AGENTMEMORY_SECRET` की आवश्यकता रखते हैं।
 
 **Authentication डिफ़ॉल्ट रूप से on है।** जब `AGENTMEMORY_SECRET` set नहीं है (shell में या `~/.agentmemory/.env` में), server पहले start पर एक random secret generate करता है और इसे mode `0600` के साथ `~/.agentmemory/secret` में store करता है। हर bundled client किसी local server से बात करते समय इसे वहाँ से पढ़ता है: CLI, viewer, `plugin/scripts` के अंतर्गत hooks, MCP server और `@agentmemory/mcp` shim, `agentmemory connect` द्वारा लिखी गई configs, और bundled OpenCode, Pi, OpenClaw, Hermes, और filesystem-watcher integrations। Stored secret केवल loopback URLs (`localhost`, `127.0.0.0/8`, `::1`) पर भेजा जाता है। एक explicit `AGENTMEMORY_SECRET` हमेशा जीतता है, और remote clients को फिर भी इसे set करना होता है। Docker और `deploy/` entrypoints पहले से अपना स्वयं का secret generate और export करते हैं। API को हाथ से call करने के लिए:
 

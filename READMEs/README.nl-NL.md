@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin-systemen | `iii worker add <name>` |
 
-**242 bronbestanden · ~55,000 LOC · 3,400+ tests · 324 functies · 67 KV-scopes**, allemaal op drie primitieven. Geen `agentmemory plugin install`. Het pluginsysteem is iii zelf.
+**242 bronbestanden · ~55,000 LOC · 3,400+ tests · 325 functies · 67 KV-scopes**, allemaal op drie primitieven. Geen `agentmemory plugin install`. Het pluginsysteem is iii zelf.
 
 ---
 
@@ -1789,7 +1789,7 @@ Maak `~/.agentmemory/.env` aan:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoints op poort `3111`. De REST API bindt standaard aan `127.0.0.1`. Beschermde endpoints vereisen `Authorization: Bearer <secret>`, en mesh-sync-endpoints vereisen een expliciet ingestelde `AGENTMEMORY_SECRET` op beide peers.
+144 endpoints op poort `3111`. De REST API bindt standaard aan `127.0.0.1`. Beschermde endpoints vereisen `Authorization: Bearer <secret>`, en mesh-sync-endpoints vereisen een expliciet ingestelde `AGENTMEMORY_SECRET` op beide peers.
 
 **Authenticatie staat standaard aan.** Wanneer `AGENTMEMORY_SECRET` niet is ingesteld (in de shell of in `~/.agentmemory/.env`), genereert de server bij de eerste start een willekeurig secret en bewaart dit in `~/.agentmemory/secret` met modus `0600`. Elke gebundelde client leest dit vandaar wanneer hij met een lokale server praat: de CLI, de viewer, de hooks onder `plugin/scripts`, de MCP-server en de `@agentmemory/mcp`-shim, de configs geschreven door `agentmemory connect`, en de gebundelde OpenCode-, Pi-, OpenClaw-, Hermes- en filesystem-watcher-integraties. Het opgeslagen secret wordt alleen verstuurd naar loopback-URL's (`localhost`, `127.0.0.0/8`, `::1`). Een expliciete `AGENTMEMORY_SECRET` wint altijd, en remote clients moeten deze nog steeds instellen. Docker en de `deploy/`-entrypoints genereren en exporteren al hun eigen secret. Om de API handmatig aan te roepen:
 
