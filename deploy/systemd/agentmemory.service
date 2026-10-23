@@ -1,0 +1,85 @@
+# agentmemory — systemd system service
+#
+# Runs the agentmemory server (REST API on :3111, viewer on :3113,
+# streams on :3112) as a supervised, boot-persistent system service.
+#
+# This unit supervises the top-level `agentmemory` process. In the
+# default configuration that process also starts and supervises its own
+# iii engine (a local `iii` binary if installed, otherwise Docker
+# Compose). If you run the iii engine separately — e.g. via the bundled
+# docker-compose.yml with `restart: unless-stopped` — append
+# `--no-engine` to ExecStart so this unit only manages the worker and
+# connects to the already-running engine (see deploy/systemd/README.md,
+# "Variant B").
+#
+# Install:
+#   sudo useradd --system --create-home --home-dir /var/lib/agentmemory \
+#     --shell /usr/sbin/nologin agentmemory
+#   sudo install -m 644 agentmemory.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now agentmemory
+# Verify:
+#   curl -s http://localhost:3111/agentmemory/livez   # {"status":"ok"}
+#   systemctl status agentmemory
+
+[Unit]
+Description=agentmemory — persistent memory for AI coding agents
+Documentation=https://github.com/rohitg00/agentmemory
+# network-online so the worker can reach the engine / pull provider APIs.
+After=network-online.target
+Wants=network-online.target
+# If you run the engine via Docker (Variant B), also gate on Docker so
+# the worker doesn't spin on a missing engine at boot. Harmless if
+# docker.service is absent; uncomment to enable.
+#After=docker.service
+#Wants=docker.service
+
+[Service]
+Type=simple
+User=agentmemory
+Group=agentmemory
+
+# Operator config: AGENTMEMORY_SECRET (recommended — see README), plus
+# any provider keys, AGENTMEMORY_URL, AGENTMEMORY_III_VERSION, etc.
+# The leading "-" makes the file optional.
+EnvironmentFile=-/etc/agentmemory/agentmemory.env
+
+# Resolve the globally-installed `agentmemory` from a standard npm prefix.
+# Adjust PATH if `which agentmemory` reports a different location
+# (e.g. nvm, Volta, or a custom --prefix).
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+
+# FHS-correct state location. systemd creates /var/lib/agentmemory and
+# chowns it to User=/Group=. The CLI's data dir is hardcoded to
+# `$HOME/.agentmemory`, so pointing HOME at the StateDirectory lands all
+# durable state (memories, BM25 index, snapshots) under
+# /var/lib/agentmemory/.agentmemory. The self-managed iii engine writes
+# its KV + stream stores to ./data relative to WorkingDirectory, i.e.
+# /var/lib/agentmemory/data.
+StateDirectory=agentmemory
+WorkingDirectory=/var/lib/agentmemory
+Environment=HOME=/var/lib/agentmemory
+
+ExecStart=/usr/bin/env agentmemory
+# `agentmemory stop` tears down the iii engine this unit started
+# (including a docker-compose engine, via `docker compose down`); systemd
+# then SIGTERMs the worker. Harmless no-op in Variant B (--no-engine).
+ExecStop=/usr/bin/env agentmemory stop
+
+Restart=always
+RestartSec=5
+# Cold start = engine boot (~3s) + worker registration (~2s) with margin.
+TimeoutStartSec=90
+
+# Conservative hardening, tuned for the default (self-managed engine)
+# mode. If you run the engine via Docker (Variant B), the service user
+# must be in the `docker` group and you may need to relax
+# NoNewPrivileges depending on your Docker setup — see the README.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+
+[Install]
+WantedBy=multi-user.target
