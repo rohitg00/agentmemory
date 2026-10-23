@@ -2,7 +2,7 @@
 import { execSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
+import { captureObservation, isDrainChild, runDrainChild, stripPrivateData, withEventId } from "./_capture.mjs";
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -61,9 +61,10 @@ async function main() {
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
-	const agentId = data.agent_id || data.agentName;
-	const agentType = data.agent_type || data.agentDisplayName || data.agentName;
-	const lastMsg = typeof data.last_assistant_message === "string" ? data.last_assistant_message.slice(0, 4e3) : "";
+	const agentId = data.agent_id || data.agentId || data.agentName;
+	const agentType = data.agent_type || data.agentType || data.agentDisplayName || data.agentName;
+	const reply = data.last_assistant_message ?? data.response;
+	const lastMsg = typeof reply === "string" ? stripPrivateData(reply).slice(0, 4e3) : "";
 	const cwd = hookCwd(data) || process.cwd();
 	const body = {
 		hookType: "subagent_stop",
@@ -80,7 +81,7 @@ async function main() {
 	captureObservation(withEventId(body, {}, {
 		...body.data,
 		stop_hook_active: data.stop_hook_active === true
-	}, { stable: Boolean(data.agent_id) }), OBSERVE_TIMEOUT_MS);
+	}, { stable: Boolean(data.agent_id || data.agentId) }), OBSERVE_TIMEOUT_MS);
 	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 main().catch(() => process.exit(0));
