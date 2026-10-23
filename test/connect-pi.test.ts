@@ -113,6 +113,8 @@ describe("connect: pi", () => {
 describe("integrations/pi is a valid pi package", () => {
   it("package.json declares the pi manifest, keyword, and peer deps", () => {
     const pkg = JSON.parse(readFileSync("integrations/pi/package.json", "utf-8"));
+    expect(pkg.name).toBe("@agentmemory/pi");
+    expect(pkg.publishConfig.access).toBe("public");
     expect(pkg.keywords).toContain("pi-package");
     expect(pkg.pi.extensions).toEqual(["./index.ts"]);
     expect(pkg.peerDependencies["@earendil-works/pi-coding-agent"]).toBe("*");
@@ -139,6 +141,10 @@ describe("integrations/pi is a valid pi package", () => {
         "LICENSE", "README.md", "index.ts", "package.json", "security.ts",
       ]);
       const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf-8"));
+      expect(packed.name).toBe("@agentmemory/pi");
+      expect(packed.filename).toBe(`agentmemory-pi-${pkg.version}.tgz`);
+      expect(pkg.name).toBe("@agentmemory/pi");
+      expect(pkg.publishConfig.access).toBe("public");
       expect(readFileSync(join(packageDir, pkg.pi.extensions[0]), "utf-8"))
         .toBe(readFileSync("integrations/pi/index.ts", "utf-8"));
       expect(readFileSync(join(packageDir, "security.ts"), "utf-8"))

@@ -19,7 +19,7 @@ pi install ./integrations/pi
 After the first npm publication, install without a checkout:
 
 ```bash
-pi install npm:agentmemory-pi-extension
+pi install npm:@agentmemory/pi
 ```
 
 Run `/reload` in pi, then `/agentmemory-status`. Keep the agentmemory server running while using the extension.
