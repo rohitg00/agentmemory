@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 
 // pi adapter: copies the bundled integrations/pi extension into
 // ~/.pi/agent/extensions/agentmemory/, which pi auto-discovers via its
@@ -116,8 +117,38 @@ describe("integrations/pi is a valid pi package", () => {
     expect(pkg.pi.extensions).toEqual(["./index.ts"]);
     expect(pkg.peerDependencies["@earendil-works/pi-coding-agent"]).toBe("*");
     expect(pkg.peerDependencies["typebox"]).toBe("*");
-    // Local pi package only — never published to npm.
-    expect(pkg.private).toBe(true);
+    expect(pkg.private).not.toBe(true);
+  });
+
+  it("packs a self-contained extension with its helper and license", () => {
+    const dir = mkdtempSync(join(tmpdir(), "am-pi-pack-"));
+    try {
+      const npmCli = process.env.npm_execpath;
+      const output = execFileSync(npmCli ? process.execPath : "npm", [
+        ...(npmCli ? [npmCli] : []),
+        "pack", "./integrations/pi", "--ignore-scripts", "--offline",
+        "--json", "--pack-destination", dir,
+      ], {
+        encoding: "utf-8",
+        env: { ...process.env, npm_config_cache: join(dir, "cache") },
+      });
+      const [packed] = JSON.parse(output);
+      execFileSync("tar", ["-xzf", join(dir, packed.filename), "-C", dir]);
+      const packageDir = join(dir, "package");
+      expect(readdirSync(packageDir).sort()).toEqual([
+        "LICENSE", "README.md", "index.ts", "package.json", "security.ts",
+      ]);
+      const pkg = JSON.parse(readFileSync(join(packageDir, "package.json"), "utf-8"));
+      expect(readFileSync(join(packageDir, pkg.pi.extensions[0]), "utf-8"))
+        .toBe(readFileSync("integrations/pi/index.ts", "utf-8"));
+      expect(readFileSync(join(packageDir, "security.ts"), "utf-8"))
+        .toBe(readFileSync("integrations/pi/security.ts", "utf-8"));
+      expect(readFileSync(join(packageDir, "LICENSE"), "utf-8"))
+        .toBe(readFileSync("LICENSE", "utf-8"));
+      expect(pkg.dependencies).toBeUndefined();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("the npm package ships integrations/pi", () => {
