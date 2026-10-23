@@ -2,7 +2,7 @@
   "name": "agentmemory-pi-extension",
   "version": "0.1.0",
   "private": true,
-  "description": "agentmemory extension for the pi coding agent: memory recall on agent start, capture on agent end, memory_search / memory_save / memory_health tools, /agentmemory-status command",
+  "description": "agentmemory extension for the pi coding agent: memory recall on agent start, capture on agent end, memory_search / memory_get_lesson / memory_save / memory_health tools, /agentmemory-status command",
   "type": "module",
   "license": "Apache-2.0",
   "keywords": [

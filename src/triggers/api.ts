@@ -2,7 +2,7 @@ import { InvocationError, TriggerAction, type IIIClient } from "iii-sdk";
 import { DEDUP_WINDOW_MS, getDedupSkippedCount } from "../functions/dedup.js";
 import type { HttpRequest } from "@iii-dev/helpers/http";
 import { randomBytes } from "node:crypto";
-import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary, HealthSnapshot, AuditQueryResult, AuditMigrationState } from "../types.js";
+import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary, HealthSnapshot, AuditQueryResult, AuditMigrationState, Lesson } from "../types.js";
 import { AUDIT_MIGRATION_STATE_KEY } from "../functions/audit.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
@@ -4072,6 +4072,20 @@ export function registerApiTriggers(
     return { status_code: 200, body: result };
   });
   sdk.registerTrigger({ type: "http", function_id: "api::lesson-search", config: { api_path: "/agentmemory/lessons/search", http_method: "POST" } });
+
+  sdk.registerFunction("api::lesson-get", async (req: HttpRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    const body = req.body as Record<string, unknown>;
+    const lessonId = typeof body?.lessonId === "string" ? body.lessonId.trim() : "";
+    if (!lessonId) return { status_code: 400, body: { error: "lessonId is required" } };
+    const lesson = await kv.get<Lesson>(KV.lessons, lessonId);
+    if (!lesson || lesson.deleted || (body.project && lesson.project !== body.project)) {
+      return { status_code: 404, body: { error: "lesson not found" } };
+    }
+    return { status_code: 200, body: { success: true, lesson } };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::lesson-get", config: { api_path: "/agentmemory/lessons/get", http_method: "POST" } });
 
   sdk.registerFunction("api::lesson-strengthen",  async (req: HttpRequest) => {
     const denied = checkAuth(req, secret);

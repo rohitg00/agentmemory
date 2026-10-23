@@ -1437,7 +1437,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Hệ thống plugin tùy chỉnh | `iii worker add <name>` |
 
-**242 file source · ~55,000 LOC · 3,400+ test · 324 function · 67 KV scope**, tất cả trên ba primitive. Không có `agentmemory plugin install`. Hệ thống plugin chính là iii.
+**242 file source · ~55,000 LOC · 3,400+ test · 325 function · 67 KV scope**, tất cả trên ba primitive. Không có `agentmemory plugin install`. Hệ thống plugin chính là iii.
 
 ---
 
@@ -1780,7 +1780,7 @@ Tạo `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoint trên port `3111`. REST API bind vào `127.0.0.1` theo mặc định. Các endpoint được bảo vệ cần `Authorization: Bearer <secret>`, và các endpoint mesh sync cần `AGENTMEMORY_SECRET` được đặt rõ ràng trên cả hai phía.
+144 endpoint trên port `3111`. REST API bind vào `127.0.0.1` theo mặc định. Các endpoint được bảo vệ cần `Authorization: Bearer <secret>`, và các endpoint mesh sync cần `AGENTMEMORY_SECRET` được đặt rõ ràng trên cả hai phía.
 
 **Authentication được bật theo mặc định.** Khi `AGENTMEMORY_SECRET` chưa được đặt (trong shell hay trong `~/.agentmemory/.env`), server sinh một secret ngẫu nhiên ở lần khởi động đầu tiên và lưu nó vào `~/.agentmemory/secret` với mode `0600`. Mọi client đi kèm đọc nó từ đó khi nói chuyện với một server cục bộ: CLI, viewer, các hook dưới `plugin/scripts`, MCP server và shim `@agentmemory/mcp`, các config do `agentmemory connect` viết ra, và các integration OpenCode, Pi, OpenClaw, Hermes và filesystem-watcher đi kèm. Secret đã lưu chỉ được gửi tới các URL loopback (`localhost`, `127.0.0.0/8`, `::1`). Một `AGENTMEMORY_SECRET` rõ ràng luôn thắng, và các client remote vẫn cần đặt nó. Docker và các entrypoint của `deploy/` đã tự sinh và export secret riêng của chúng. Để gọi API bằng tay:
 

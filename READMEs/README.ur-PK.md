@@ -1432,7 +1432,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | کسٹم plugin سسٹمز | `iii worker add <name>` |
 
-**242 سورس فائلز · ~55,000 لائنز کوڈ · 3,800+ ٹیسٹس · 324 فنکشنز · 67 KV اسکوپس**، سب تین primitives پر۔ کوئی `agentmemory plugin install` نہیں۔ plugin سسٹم خود iii ہی ہے۔
+**242 سورس فائلز · ~55,000 لائنز کوڈ · 3,800+ ٹیسٹس · 325 فنکشنز · 67 KV اسکوپس**، سب تین primitives پر۔ کوئی `agentmemory plugin install` نہیں۔ plugin سسٹم خود iii ہی ہے۔
 
 ---
 
@@ -1773,7 +1773,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-پورٹ `3111` پر 143 اینڈ پوائنٹس۔ REST API ڈیفالٹ کے طور پر `127.0.0.1` سے bind ہوتا ہے۔ محفوظ اینڈ پوائنٹس کو `Authorization: Bearer <secret>` درکار ہے، اور mesh sync اینڈ پوائنٹس کو دونوں peers پر واضح طور پر سیٹ کیا گیا `AGENTMEMORY_SECRET` درکار ہے۔
+پورٹ `3111` پر 144 اینڈ پوائنٹس۔ REST API ڈیفالٹ کے طور پر `127.0.0.1` سے bind ہوتا ہے۔ محفوظ اینڈ پوائنٹس کو `Authorization: Bearer <secret>` درکار ہے، اور mesh sync اینڈ پوائنٹس کو دونوں peers پر واضح طور پر سیٹ کیا گیا `AGENTMEMORY_SECRET` درکار ہے۔
 
 **Authentication ڈیفالٹ کے طور پر آن ہے۔** جب `AGENTMEMORY_SECRET` سیٹ نہ ہو (shell میں یا `~/.agentmemory/.env` میں)، سرور پہلے اسٹارٹ پر ایک random secret تیار کرتا ہے اور اسے `0600` موڈ کے ساتھ `~/.agentmemory/secret` میں محفوظ کرتا ہے۔ ہر bundled کلائنٹ جب کسی مقامی سرور سے بات کرتا ہے تو اسے وہاں سے پڑھتا ہے: CLI، ویور، `plugin/scripts` کے تحت ہکس، MCP سرور اور `@agentmemory/mcp` shim، `agentmemory connect` کی لکھی گئی configs، اور bundled OpenCode، Pi، OpenClaw، Hermes اور filesystem-watcher integrations۔ محفوظ شدہ secret صرف loopback URLs (`localhost`، `127.0.0.0/8`، `::1`) کو بھیجا جاتا ہے۔ ایک واضح `AGENTMEMORY_SECRET` ہمیشہ جیتتا ہے، اور ریموٹ کلائنٹس کو بھی اسے سیٹ کرنا ضروری ہے۔ Docker اور `deploy/` entrypoints پہلے سے اپنا secret تیار اور export کرتے ہیں۔ API کو دستی طور پر کال کرنے کے لیے:
 

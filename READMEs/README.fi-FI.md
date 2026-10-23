@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + terveysmonitori |
 | Mukautetut plugin-järjestelmät | `iii worker add <name>` |
 
-**242 lähdetiedostoa · ~55,000 LOC · 3,400+ testiä · 324 funktiota · 67 KV-scopea**, kaikki kolmen primitiivin päällä. Ei `agentmemory plugin install` -komentoa. Plugin-järjestelmä on iii itse.
+**242 lähdetiedostoa · ~55,000 LOC · 3,400+ testiä · 325 funktiota · 67 KV-scopea**, kaikki kolmen primitiivin päällä. Ei `agentmemory plugin install` -komentoa. Plugin-järjestelmä on iii itse.
 
 ---
 
@@ -1789,7 +1789,7 @@ Luo `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpointia portissa `3111`. REST-rajapinta sitoutuu oletuksena osoitteeseen `127.0.0.1`. Suojatut endpointit vaativat `Authorization: Bearer <secret>`, ja mesh-synkronointiendpointit vaativat nimenomaisesti asetetun `AGENTMEMORY_SECRET`-arvon molemmilla vertaisilla.
+144 endpointia portissa `3111`. REST-rajapinta sitoutuu oletuksena osoitteeseen `127.0.0.1`. Suojatut endpointit vaativat `Authorization: Bearer <secret>`, ja mesh-synkronointiendpointit vaativat nimenomaisesti asetetun `AGENTMEMORY_SECRET`-arvon molemmilla vertaisilla.
 
 **Autentikointi on oletuksena päällä.** Kun `AGENTMEMORY_SECRET` ei ole asetettu (shellissä tai tiedostossa `~/.agentmemory/.env`), palvelin generoi satunnaisen salaisuuden ensimmäisellä käynnistyksellä ja tallentaa sen polkuun `~/.agentmemory/secret` oikeuksilla `0600`. Joka mukana tuleva asiakas lukee sen sieltä puhuessaan paikalliselle palvelimelle: CLI, katseluohjelma, hookit kansiossa `plugin/scripts`, MCP-palvelin ja `@agentmemory/mcp`-shim, `agentmemory connect`-komennon kirjoittamat asetukset, ja mukana tulevat OpenCode-, Pi-, OpenClaw-, Hermes- ja tiedostojärjestelmän tarkkailijaintegraatiot. Tallennettu salaisuus lähetetään vain loopback-URL-osoitteisiin (`localhost`, `127.0.0.0/8`, `::1`). Nimenomainen `AGENTMEMORY_SECRET` voittaa aina, ja etäasiakkaat tarvitsevat sen yhä asetettuna. Docker ja `deploy/`-entrypointit generoivat ja vievät jo omansa. Kutsuaksesi rajapintaa käsin:
 
