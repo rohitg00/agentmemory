@@ -78,18 +78,28 @@ function hasBlock(content: string, marker: string): boolean {
 
 function upsertBlock(content: string, marker: string, block: string): string {
   const { doc, operations } = parsePatch(content);
-  for (let i = operations.items.length - 1; i >= 0; i--) {
+  const addition = parsePatch(block).operations;
+  const replacement = addition.getIn([0, "insert", 0], true);
+  let replaced = false;
+  for (let i = 0; i < operations.items.length; i++) {
     const operation = operations.items[i];
     if (!isMap(operation)) continue;
     const entries = operation.get("insert", true);
     if (!isSeq(entries)) continue;
-    for (let j = entries.items.length - 1; j >= 0; j--) {
-      if (isManaged(entries.items[j], marker)) entries.delete(j);
+    let removed = false;
+    for (let j = 0; j < entries.items.length; j++) {
+      if (!isManaged(entries.items[j], marker)) continue;
+      if (!replaced) {
+        entries.set(j, replacement);
+        replaced = true;
+      } else {
+        entries.delete(j--);
+        removed = true;
+      }
     }
-    if (entries.items.length === 0) operations.delete(i);
+    if (removed && entries.items.length === 0) operations.delete(i--);
   }
-  const addition = parseDocument(block);
-  if (isSeq(addition.contents)) operations.items.push(...addition.contents.items);
+  if (!replaced) operations.items.push(...addition.items);
   operations.flow = false;
   return doc.toString();
 }

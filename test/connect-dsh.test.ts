@@ -219,6 +219,49 @@ describe("connect: DeepSeek Harness", () => {
     expect(patch).toContain("# Keep my formatter");
     expect(patch).toContain("before: assistant");
     expect(patch.match(/serverName: agentmemory/g)).toHaveLength(1);
+    const rows = parseDocument(patch).toJS();
+    expect(rows).toHaveLength(1);
+    expect(rows[0].insert.map((entry: { id: string }) => entry.id)).toEqual(["agentmemory", "formatter"]);
+  });
+
+  it.each([
+    { id: "agentmemory", name: "@deepseek-ai/dsh-mcp-client", config: { serverName: "agentmemory", command: "old-command" } },
+    { id: "agentmemory-hooks", name: "@deepseek-ai/dsh-hooks-claude-code", config: { configPath: "old-hooks.json" } },
+  ])("--force preserves the sole $id entry's operation and position", async (entry) => {
+    const dir = join(home, ".dsh");
+    mkdirSync(dir, { recursive: true });
+    const configPath = join(dir, "cordis.patch.yml");
+    const operation = { insert: [entry], before: "assistant", root: "workspace" };
+    writeFileSync(configPath, JSON.stringify([operation, { id: "hmr", disabled: true }]));
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+
+    for (let i = 0; i < 2; i++) {
+      await adapter.install({ dryRun: false, force: true, withHooks: entry.id === "agentmemory-hooks" });
+      const doc = parseDocument(readFileSync(configPath, "utf-8"));
+      expect(doc.errors).toEqual([]);
+      const rows = doc.toJS();
+      expect(rows[0]).toMatchObject({ before: "assistant", root: "workspace", insert: [{ id: entry.id, name: entry.name }] });
+      expect(rows[0].insert).toHaveLength(1);
+      expect(rows[0].insert[0].config).not.toEqual(entry.config);
+      expect(rows[1]).toEqual({ id: "hmr", disabled: true });
+    }
+  });
+
+  it("removes duplicate managed entries without deleting unrelated empty operations", async () => {
+    const dir = join(home, ".dsh");
+    mkdirSync(dir, { recursive: true });
+    const configPath = join(dir, "cordis.patch.yml");
+    const entry = { name: "@deepseek-ai/dsh-mcp-client", config: { serverName: "agentmemory" } };
+    const emptyOperation = { insert: [], before: "untouched" };
+    writeFileSync(configPath, JSON.stringify([emptyOperation, { insert: [entry, entry], before: "assistant" }, { insert: [entry] }]));
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: true });
+    const rows = parseDocument(readFileSync(configPath, "utf-8")).toJS();
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toEqual(emptyOperation);
+    expect(rows[1].before).toBe("assistant");
+    expect(rows[1].insert).toHaveLength(1);
+    expect(rows[1].insert[0].config.command).toBe("npx");
   });
 
   it("dry-run mutates nothing", async () => {
