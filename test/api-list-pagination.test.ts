@@ -198,6 +198,24 @@ describe("paginated and filtered list endpoints", () => {
     expect((search.body.sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(["s2"]);
   });
 
+  it("applies session time bounds before paging and rejects invalid ones", async () => {
+    const sessions: Record<string, unknown> = {};
+    for (let i = 0; i < 5; i++) {
+      sessions[`s${i}`] = { id: `s${i}`, startedAt: `2026-09-0${i + 1}T00:00:00Z` };
+    }
+    const { handlers } = setup({ [KV.sessions]: sessions });
+    const bounds = { startedAfter: "2026-09-02", startedBefore: "2026-09-05", limit: "2" };
+
+    const page = await call(handlers, "api::sessions", bounds);
+    expect((page.body.sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(["s3", "s2"]);
+    const next = await call(handlers, "api::sessions", { ...bounds, cursor: page.body.nextCursor as string });
+    expect((next.body.sessions as Array<{ id: string }>).map((s) => s.id)).toEqual(["s1"]);
+    expect(next.body.nextCursor).toBeNull();
+
+    expect((await call(handlers, "api::sessions", { startedAfter: "2026-02-30" })).status_code).toBe(400);
+    expect((await call(handlers, "api::sessions", { endedBefore: "" })).status_code).toBe(400);
+  });
+
   it("filters and pages observations inside a session", async () => {
     const observations: Record<string, unknown> = {};
     for (let i = 0; i < 5; i++) {
