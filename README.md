@@ -1449,7 +1449,7 @@ agentmemory auto-detects providers from your environment. A provider makes LLM-b
 |----------|--------|-------|
 | **No-op (default)** | No config needed | LLM-backed compress/summarize is disabled. Synthetic compression and BM25 recall still work. See `AGENTMEMORY_ALLOW_AGENT_SDK` below if you used to rely on the Claude-subscription fallback. |
 | Anthropic API | `ANTHROPIC_API_KEY` | Per-token billing |
-| MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
+| MiniMax | `MINIMAX_API_KEY` | Defaults to `MiniMax-M3.1-Flash`; set `MINIMAX_MODEL=MiniMax-M3` for M3. Explicit saved/custom model overrides are preserved. |
 | Gemini | `GEMINI_API_KEY` | Also enables embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Any model |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
