@@ -176,6 +176,15 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       maxTokens,
     };
   }
+  if (hasRealValue(env["CHEAPER_INFERENCE_API_KEY"])) {
+    const model = env["CHEAPER_INFERENCE_MODEL"] || "gpt-5.4-mini";
+    warnIfPremiumModel(env, "CHEAPER_INFERENCE_MODEL", model);
+    return {
+      provider: "cheaperinference",
+      model,
+      maxTokens,
+    };
+  }
 
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
@@ -340,6 +349,7 @@ export function detectLlmProviderKind(
     hasRealValue(env["GEMINI_API_KEY"]) ||
     hasRealValue(env["GOOGLE_API_KEY"]) ||
     hasRealValue(env["OPENROUTER_API_KEY"]) ||
+    hasRealValue(env["CHEAPER_INFERENCE_API_KEY"]) ||
     hasRealValue(env["MINIMAX_API_KEY"]) ||
     (hasRealValue(env["OPENAI_API_KEY"]) &&
       env["OPENAI_API_KEY_FOR_LLM"] !== "false") ||
@@ -638,6 +648,7 @@ const VALID_PROVIDERS = new Set([
   "anthropic",
   "gemini",
   "openrouter",
+  "cheaperinference",
   "agent-sdk",
   "minimax",
   "openai",
