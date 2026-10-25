@@ -1,4 +1,4 @@
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { runtimeMetadataPath } from "../src/runtime-paths.js";
 
@@ -9,7 +9,7 @@ describe("runtime metadata paths", () => {
         env: { AGENTMEMORY_RUNTIME_DIR: "/var/lib/agentmemory/instance-2" },
         home: "/home/test",
       }),
-    ).toBe(join("/var/lib/agentmemory/instance-2", "engine-state.json"));
+    ).toBe(join(resolve("/var/lib/agentmemory/instance-2"), "engine-state.json"));
   });
 
   it("keeps instance-zero lifecycle state canonical across data-dir changes", () => {
