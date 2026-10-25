@@ -25,7 +25,9 @@ agentmemory connect dsh --with-hooks
 
 Restart Harness after setup. The plugin captures user prompts, assistant replies, tool results and failures, permission prompts, and compaction summaries. It starts and ends memory sessions and supplies saved context as reference data before the first model request. Images and synthetic user messages are excluded from capture. Tool capture honors `AGENTMEMORY_CAPTURE_ALLOW`, `AGENTMEMORY_CAPTURE_DENY`, and `AGENTMEMORY_CAPTURE_OUTPUT_MAX` (8,000 characters by default). Failed observation deliveries use AgentMemory's bounded local capture spool and retry while Harness runs or when it next starts.
 
-The patch points to `dist/integrations/dsh.mjs` inside your AgentMemory installation. Keep that installation available; after upgrading or moving it, run `agentmemory connect dsh --with-hooks --force`. This also replaces the old Claude Code bridge entry while preserving other plugins and operation placement. Existing hook manifest files are left untouched. No separate DSH plugin package is required.
+The patch points to `dist/integrations/dsh.mjs` inside your AgentMemory installation. Keep that installation available; after upgrading or moving it, run `agentmemory connect dsh --with-hooks` to repair the path while preserving custom MCP settings, other plugins and operation placement.
+
+If setup detects the old Claude Code bridge, it asks you to run `agentmemory connect dsh --with-hooks --force` to replace it with the native plugin. This also refreshes the AgentMemory MCP entry; existing hook manifest files are left untouched. No separate DSH plugin package is required.
 
 ## Custom server and authentication
 

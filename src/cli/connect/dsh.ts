@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
-import { isMap, isSeq, parseDocument } from "yaml";
+import { isMap, isSeq, parseDocument, type YAMLMap } from "yaml";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   backupFile,
@@ -46,7 +46,7 @@ function parsePatch(content: string) {
   return { doc, operations: doc.contents };
 }
 
-function isManaged(entry: unknown, marker: string): boolean {
+function isManaged(entry: unknown, marker: string): entry is YAMLMap {
   if (!isMap(entry)) return false;
   return marker === MCP_MARKER
     ? entry.get("name") === "@deepseek-ai/dsh-mcp-client" && entry.getIn(["config", "serverName"]) === "agentmemory"
@@ -54,11 +54,15 @@ function isManaged(entry: unknown, marker: string): boolean {
       (entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code" || /[\\/]dist[\\/]integrations[\\/]dsh\.mjs$/.test(String(entry.get("name"))));
 }
 
-function hasBlock(content: string, marker: string): boolean {
-  return parsePatch(content).operations.items.some((operation) => {
+function managedEntries(content: string, marker: string): YAMLMap[] {
+  return parsePatch(content).operations.items.flatMap((operation) => {
     const entries = isMap(operation) ? operation.get("insert", true) : null;
-    return isSeq(entries) && entries.items.some((entry) => isManaged(entry, marker));
+    return isSeq(entries) ? entries.items.filter((entry) => isManaged(entry, marker)) : [];
   });
+}
+
+function hasBlock(content: string, marker: string): boolean {
+  return managedEntries(content, marker).length > 0;
 }
 
 function upsertBlock(content: string, marker: string, block: string): string {
@@ -108,21 +112,26 @@ export const adapter: ConnectAdapter = {
 
     const wantHooks = opts.withHooks === true;
     const hasMcp = hasBlock(existing, MCP_MARKER);
-    const hasHooks = hasBlock(existing, HOOKS_MARKER);
+    const hooks = managedEntries(existing, HOOKS_MARKER);
+    const pluginPath = wantHooks ? join(dirname(findPluginRoot()), "dist", "integrations", "dsh.mjs") : "";
+    const hooksReady = hooks.length === 1 && hooks[0].get("name") === pluginPath && existsSync(pluginPath);
 
-    if (hasMcp && (!wantHooks || hasHooks) && !opts.force) {
+    if (wantHooks && !opts.force && hooks.some(entry => entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code")) {
+      throw new Error("Legacy DSH hooks bridge found. Run agentmemory connect dsh --with-hooks --force to replace it with the bundled native plugin. Existing manifest files will be preserved.");
+    }
+
+    if (hasMcp && (!wantHooks || hooksReady) && !opts.force) {
       logAlreadyWired(this.displayName, configPath);
       return { kind: "already-wired", mutatedPath: configPath };
     }
 
     if (opts.dryRun) {
       p.log.info(
-        `[dry-run] Would append the agentmemory mcp-client row${wantHooks ? " and the bundled capture plugin" : ""} to ${configPath}`,
+        `[dry-run] Would update the agentmemory mcp-client row${wantHooks ? " and the bundled capture plugin" : ""} in ${configPath}`,
       );
       return { kind: "installed", mutatedPath: configPath };
     }
 
-    const pluginPath = join(dirname(findPluginRoot()), "dist", "integrations", "dsh.mjs");
     if (wantHooks && !existsSync(pluginPath)) {
       throw new Error("Bundled DSH plugin is missing. Reinstall AgentMemory, or run npm run build in a source checkout.");
     }
@@ -137,7 +146,7 @@ export const adapter: ConnectAdapter = {
 
     let next = hasMcp && !opts.force ? existing : upsertBlock(existing, MCP_MARKER, MCP_BLOCK);
 
-    if (wantHooks && (!hasHooks || opts.force)) {
+    if (wantHooks && (!hooksReady || opts.force)) {
       next = upsertBlock(next, HOOKS_MARKER, hooksBlock(pluginPath));
     }
 
