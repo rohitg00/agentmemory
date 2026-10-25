@@ -9,9 +9,10 @@ import { artifactDigest, assertGatedArtifacts, prepareArtifacts, releaseIdentity
 const identity = { repository: "rohitg00/agentmemory", workflow: ".github/workflows/publish.yml", ref: "refs/tags/v0.9.31", sha: "a".repeat(40) };
 const bytes = Buffer.from("gated tarball");
 const artifact = { key: "agentmemory", name: "@agentmemory/agentmemory", version: "0.9.31", integrity: `sha512-${createHash("sha512").update(bytes).digest("base64")}`, sha512: createHash("sha512").update(bytes).digest("hex") };
-const metadata = () => ({ name: artifact.name, version: artifact.version, dist: { integrity: artifact.integrity, attestations: { url: "https://registry.npmjs.org/-/npm/v1/attestations/test" } } });
-function attestations(edit = (_: any) => {}) {
-  const statement = {
+type RegistryMetadata = { name: string; version: string; dist: { integrity: string; attestations?: { url: string } } };
+const metadata = (): RegistryMetadata => ({ name: artifact.name, version: artifact.version, dist: { integrity: artifact.integrity, attestations: { url: "https://registry.npmjs.org/-/npm/v1/attestations/test" } } });
+function provenanceStatement() {
+  return {
     _type: "https://in-toto.io/Statement/v1", predicateType: "https://slsa.dev/provenance/v1",
     subject: [{ name: "pkg:npm/%40agentmemory/agentmemory@0.9.31", digest: { sha512: artifact.sha512 } }],
     predicate: { buildDefinition: {
@@ -20,6 +21,9 @@ function attestations(edit = (_: any) => {}) {
       resolvedDependencies: [{ uri: `git+https://github.com/${identity.repository}@${identity.ref}`, digest: { gitCommit: identity.sha } }],
     }, runDetails: { builder: { id: "https://github.com/actions/runner/github-hosted" } } },
   };
+}
+function attestations(edit: (statement: ReturnType<typeof provenanceStatement>) => void = () => {}) {
+  const statement = provenanceStatement();
   edit(statement);
   return { attestations: [{ predicateType: statement.predicateType, bundle: { dsseEnvelope: { payloadType: "application/vnd.in-toto+json", payload: Buffer.from(JSON.stringify(statement)).toString("base64") } } }] };
 }
@@ -68,7 +72,7 @@ describe("verified release publication", () => {
 
   it("rejects missing provenance even when registry signatures or publish attestations exist", async () => {
     const noProvenance = metadata();
-    delete (noProvenance.dist as any).attestations;
+    delete noProvenance.dist.attestations;
     await expect(verifyPublished(artifact, identity, { ...options, fetch: fetcher(json(noProvenance)) })).rejects.toThrow("provenance");
     await expect(verifyPublished(artifact, identity, { ...options, fetch: fetcher(json(metadata()), json({ attestations: [{ predicateType: "publish" }] })) })).rejects.toThrow("provenance");
   });
@@ -88,11 +92,11 @@ describe("verified release publication", () => {
   });
 
   it.each([
-    ["subject", (s: any) => { s.subject[0].digest.sha512 = "b".repeat(128); }],
-    ["commit", (s: any) => { s.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit = "b".repeat(40); }],
-    ["workflow", (s: any) => { s.predicate.buildDefinition.externalParameters.workflow.path = ".github/workflows/other.yml"; }],
-    ["repository", (s: any) => { s.predicate.buildDefinition.externalParameters.workflow.repository = "https://github.com/attacker/repo"; }],
-    ["ref", (s: any) => { s.predicate.buildDefinition.externalParameters.workflow.ref = "refs/heads/main"; }],
+    ["subject", (s: ReturnType<typeof provenanceStatement>) => { s.subject[0].digest.sha512 = "b".repeat(128); }],
+    ["commit", (s: ReturnType<typeof provenanceStatement>) => { s.predicate.buildDefinition.resolvedDependencies[0].digest.gitCommit = "b".repeat(40); }],
+    ["workflow", (s: ReturnType<typeof provenanceStatement>) => { s.predicate.buildDefinition.externalParameters.workflow.path = ".github/workflows/other.yml"; }],
+    ["repository", (s: ReturnType<typeof provenanceStatement>) => { s.predicate.buildDefinition.externalParameters.workflow.repository = "https://github.com/attacker/repo"; }],
+    ["ref", (s: ReturnType<typeof provenanceStatement>) => { s.predicate.buildDefinition.externalParameters.workflow.ref = "refs/heads/main"; }],
   ])("rejects signed provenance with a different %s", async (_, edit) => {
     await expect(verifyPublished(artifact, identity, { ...options, fetch: fetcher(json(metadata()), json(attestations(edit))) })).rejects.toThrow();
   });
@@ -103,7 +107,7 @@ describe("verified release publication", () => {
 
   it("does not follow an attestation URL to another origin", async () => {
     const redirected = metadata();
-    redirected.dist.attestations.url = "https://attacker.example/attestation";
+    redirected.dist.attestations!.url = "https://attacker.example/attestation";
     const fetch = fetcher(json(redirected));
     await expect(verifyPublished(artifact, identity, { ...options, fetch })).rejects.toThrow("attestation URL");
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -117,7 +121,7 @@ describe("verified release publication", () => {
 
   it("verifies propagation after publication and tolerates delayed provenance", async () => {
     const noProvenance = metadata();
-    delete (noProvenance.dist as any).attestations;
+    delete noProvenance.dist.attestations;
     const publish = vi.fn(async () => {});
     await publishSelected([artifact], identity, { ...options, publish, fetch: fetcher(json({}, 404), json({}, 404), json(noProvenance), json(metadata()), json(attestations())) });
     expect(publish).toHaveBeenCalledExactlyOnceWith(artifact);
@@ -180,7 +184,7 @@ describe("exact packaged release artifacts", () => {
     const out = output();
     const command = commands();
     const manifest = prepareArtifacts({ out, selected: ["fs-watcher"], identity, command });
-    expect(manifest.artifacts.map((entry: any) => entry.key)).toEqual(["fs-watcher"]);
+    expect(manifest.artifacts.map((entry: typeof artifact) => entry.key)).toEqual(["fs-watcher"]);
     expect(command.mock.calls.find(([cmd]) => cmd !== "npm")![1][0]).toContain("filesystem-watcher.mjs");
     const before = readFileSync(join(out, "manifest.json"), "utf8");
     expect(() => prepareArtifacts({ out, selected: ["fs-watcher"], identity, command })).toThrow();
