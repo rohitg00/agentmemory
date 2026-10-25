@@ -5,7 +5,7 @@ type Handler = (req: unknown) => Promise<{ status_code: number; body: Record<str
 
 function setup() {
   const kv = {
-    get: vi.fn(async () => null),
+    get: vi.fn(async (): Promise<unknown> => null),
     set: vi.fn(async (_scope: string, _key: string, value: unknown) => value),
     delete: vi.fn(async () => {}),
     list: vi.fn(async () => []),
@@ -24,8 +24,27 @@ function setup() {
   registerApiTriggers(sdk as never, kv as never);
   const call = (id: string, req: { body?: unknown; query_params?: Record<string, string> }) =>
     handlers.get(id)!({ headers: {}, query_params: {}, body: {}, ...req });
-  return { call, trigger };
+  return { call, trigger, kv };
 }
+
+describe("POST /agentmemory/lessons/get", () => {
+  it("returns a full lesson by ID within its project", async () => {
+    const { call, kv } = setup();
+    const lesson = { id: "lsn_1", project: "app", content: "A".repeat(350) };
+    kv.get.mockResolvedValueOnce(lesson);
+    const res = await call("api::lesson-get", { body: { lessonId: "lsn_1", project: "app" } });
+    expect(res).toEqual({ status_code: 200, body: { success: true, lesson } });
+    expect(kv.get).toHaveBeenCalledWith("mem:lessons", "lsn_1");
+  });
+
+  it("does not return deleted or other-project lessons", async () => {
+    const { call, kv } = setup();
+    kv.get.mockResolvedValueOnce({ id: "lsn_1", project: "other", content: "private" });
+    expect((await call("api::lesson-get", { body: { lessonId: "lsn_1", project: "app" } })).status_code).toBe(404);
+    kv.get.mockResolvedValueOnce({ id: "lsn_1", project: "app", deleted: true });
+    expect((await call("api::lesson-get", { body: { lessonId: "lsn_1", project: "app" } })).status_code).toBe(404);
+  });
+});
 
 describe("POST /agentmemory/lessons sourceIds", () => {
   it("stores validated sourceIds so a lesson can link to sessions and memories", async () => {

@@ -1437,7 +1437,7 @@ fi
 | Prometheus / Grafana | iii OTEL + হেলথ মনিটর |
 | কাস্টম প্লাগইন সিস্টেম | `iii worker add <name>` |
 
-**242 সোর্স ফাইল · ~55,000 LOC · 3,400+ টেস্ট · 324 ফাংশন · 67 KV স্কোপ**, সবকিছু তিনটি প্রিমিটিভের উপর। কোনো `agentmemory plugin install` নেই। প্লাগইন সিস্টেমটাই iii নিজে।
+**242 সোর্স ফাইল · ~55,000 LOC · 3,400+ টেস্ট · 325 ফাংশন · 67 KV স্কোপ**, সবকিছু তিনটি প্রিমিটিভের উপর। কোনো `agentmemory plugin install` নেই। প্লাগইন সিস্টেমটাই iii নিজে।
 
 ---
 
@@ -1780,7 +1780,7 @@ GRAPH_EXTRACTION_ENABLED=true
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-`3111` পোর্টে 143 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
+`3111` পোর্টে 144 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
 
 **অথেন্টিকেশন ডিফল্টভাবে চালু।** `AGENTMEMORY_SECRET` সেট না থাকলে (শেলে বা `~/.agentmemory/.env`-এ), সার্ভার প্রথম স্টার্টে একটি র‍্যান্ডম সিক্রেট জেনারেট করে এবং `0600` মোডে `~/.agentmemory/secret`-এ জমা রাখে। লোকাল সার্ভারের সাথে কথা বলার সময় প্রতিটি বান্ডলড ক্লায়েন্ট সেখান থেকেই এটা পড়ে: CLI, ভিউয়ার, `plugin/scripts`-এর নিচের হুক, MCP সার্ভার এবং `@agentmemory/mcp` শিম, `agentmemory connect`-এ লেখা কনফিগ, এবং বান্ডলড OpenCode, Pi, OpenClaw, Hermes, এবং filesystem-watcher ইন্টিগ্রেশন। জমা রাখা সিক্রেটটি কেবল লুপব্যাক URL-এ (`localhost`, `127.0.0.0/8`, `::1`) পাঠানো হয়। একটি এক্সপ্লিসিট `AGENTMEMORY_SECRET` সবসময় জেতে, এবং রিমোট ক্লায়েন্টদেরও এটা সেট করা লাগে। Docker এবং `deploy/` এন্ট্রিপয়েন্ট নিজেরাই নিজেদের সিক্রেট জেনারেট ও এক্সপোর্ট করে। হাতে API কল করতে:
 

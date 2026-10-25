@@ -1446,7 +1446,7 @@ Tinatanggap din ng `/agentmemory/export` ang `?maxSessions=` at `?offset=` para 
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom na plugin system | `iii worker add <name>` |
 
-**242 na source file · ~55,000 LOC · 3,400+ na test · 324 na function · 67 na KV scope**, lahat sa tatlong primitive. Walang `agentmemory plugin install`. Ang plugin system mismo ay ang iii.
+**242 na source file · ~55,000 LOC · 3,400+ na test · 325 na function · 67 na KV scope**, lahat sa tatlong primitive. Walang `agentmemory plugin install`. Ang plugin system mismo ay ang iii.
 
 ---
 
@@ -1789,7 +1789,7 @@ Gawin ang `~/.agentmemory/.env`:
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 na endpoint sa port `3111`. Nagbibind ang REST API sa `127.0.0.1` bilang default. Kinakailangan ng mga protected endpoint ang `Authorization: Bearer <secret>`, at kinakailangan ng mga mesh sync endpoint ang tahasang naka-set na `AGENTMEMORY_SECRET` sa dalawang peer.
+144 na endpoint sa port `3111`. Nagbibind ang REST API sa `127.0.0.1` bilang default. Kinakailangan ng mga protected endpoint ang `Authorization: Bearer <secret>`, at kinakailangan ng mga mesh sync endpoint ang tahasang naka-set na `AGENTMEMORY_SECRET` sa dalawang peer.
 
 **Naka-on ang Authentication bilang default.** Kapag hindi naka-set ang `AGENTMEMORY_SECRET` (sa shell o sa `~/.agentmemory/.env`), gumagawa ang server ng random na secret sa unang start at itinatago ito sa `~/.agentmemory/secret` na may mode `0600`. Babasahin ito mula roon ng bawat bundled na client kapag nakikipag-usap ito sa isang local server: ang CLI, ang viewer, ang hooks sa ilalim ng `plugin/scripts`, ang MCP server at ang `@agentmemory/mcp` shim, ang mga config na isinulat ng `agentmemory connect`, at ang bundled na OpenCode, Pi, OpenClaw, Hermes, at filesystem-watcher integrations. Ipinapadala lamang ang itinagong secret sa mga loopback URL (`localhost`, `127.0.0.0/8`, `::1`). Palaging mananaig ang isang tahasang `AGENTMEMORY_SECRET`, at kailangan pa rin itong naka-set para sa mga remote client. Gumagawa at nag-export na ng sariling secret ang Docker at ang mga entrypoint ng `deploy/`. Para tawagin ang API nang manu-mano:
 

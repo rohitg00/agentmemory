@@ -42,6 +42,7 @@ If you place it under `~/.pi/agent/extensions/agentmemory/`, pi will also auto-d
 
 - `memory_health` — confirm the shared memory server is reachable
 - `memory_search` — search prior decisions, bugs, workflows, and preferences
+- `memory_get_lesson` — read a full lesson by the ID shown in search results
 - `memory_save` — write durable facts back to long-term memory
 - `/agentmemory-status` — check health from inside pi
 - `before_agent_start` recall — injects relevant memories into the prompt
