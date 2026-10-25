@@ -751,7 +751,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 This is **complementary** to `agentmemory connect <agent>`:
 
 - `agentmemory connect <agent>` normally writes the MCP server config. Hermes, OpenClaw, Pi and Oh My Pi install their native integration and bundled skills by default; MCP is opt-in with `--with-mcp`.
-- `npx skills add rohitg00/agentmemory` installs the skills so the agent knows when to call them.
+- `npx skills add rohitg00/agentmemory` installs skills for agents without native bundled skills. Skip this step for Hermes, OpenClaw, Pi and Oh My Pi; their native connectors already install the skills.
 
 For the few agents the skills CLI doesn't cover yet (Zed v1.3.x and below), drop the 17 SKILL.md files under the agent's native skill directory yourself; the same format works everywhere.
 

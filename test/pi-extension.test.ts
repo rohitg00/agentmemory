@@ -113,11 +113,14 @@ describe("Pi extension", () => {
   });
   it("bounds stalled shutdown and disables redirects on every request", async () => {
     const { handlers, ctx } = extension(); await handlers.get("session_start")!({}, ctx);
+    const seen: (RequestInit | undefined)[] = [];
     vi.mocked(fetch).mockImplementation((_url, options) => new Promise((_resolve, reject) => {
-      expect(options?.redirect).toBe("error"); expect(options?.signal).toBeDefined();
-      options!.signal!.addEventListener("abort", () => reject(options!.signal!.reason));
+      seen.push(options);
+      options?.signal?.addEventListener("abort", () => reject(options.signal!.reason));
     }));
     const start = Date.now(); await handlers.get("session_shutdown")!({ reason: "quit" }); expect(Date.now() - start).toBeLessThan(1900);
+    expect(seen.length).toBeGreaterThan(0);
+    for (const options of seen) { expect(options?.redirect).toBe("error"); expect(options?.signal).toBeDefined(); }
   });
   it("uses stored credentials only on loopback unless explicit-only mode is set", () => {
     mkdirSync(join(home, ".agentmemory")); writeFileSync(join(home, ".agentmemory/secret"), "local-fixture");

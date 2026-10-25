@@ -49,9 +49,10 @@ describe("OMP capture recovery", () => {
     expect(capture.status().records).toBe(0);
   });
   it("redacts private blocks and structured secrets before serialization, including JSON tool output", () => {
-    const raw = { password: "short", nested: { api_key: "private-key", content: "hello <private>personal</private>" } };
+    const keys = ["secret_key", "private_key", "accessKey", "aws_secret_access_key", "passwd", "secret-key"];
+    const raw = { password: "short", nested: { api_key: "private-key", content: "hello <private>personal</private>", credentials: [Object.fromEntries(keys.map(key => [key, "opaque-value"]))] } };
     const cleaned = JSON.stringify(cleanCapture({ input: raw, output: JSON.stringify(raw) }));
-    for (const value of ["short", "private-key", "personal"]) expect(cleaned).not.toContain(value);
+    for (const value of ["short", "private-key", "personal", "opaque-value"]) expect(cleaned).not.toContain(value);
     expect(cleaned).toContain("hello"); expect(cleaned).toContain("REDACTED");
   });
 });

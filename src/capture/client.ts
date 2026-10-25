@@ -7,7 +7,7 @@ export function cleanCapture(value: unknown): unknown {
   }
   if (Array.isArray(value)) return value.map(cleanCapture);
   if (value && typeof value === "object") return scrubRecord(Object.fromEntries(Object.entries(value).map(([key, item]) => [key,
-    /(?:password|secret|token|credential|authorization|apikey)$/i.test(key.replace(/[_-]/g, "")) ? "[REDACTED_SECRET]" : cleanCapture(item),
+    /(?:password|passwd|secret|token|credential|authorization|apikey|secretkey|privatekey|accesskey)$/i.test(key.replace(/[_-]/g, "")) ? "[REDACTED_SECRET]" : cleanCapture(item),
   ])), { scrubKeys: true });
   return value;
 }
