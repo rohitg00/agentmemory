@@ -552,6 +552,39 @@ describe("OpenAIProvider thinking-model fallback", () => {
     expect(out).toBe("older shape");
   });
 
+  const emptyReasoningReplies = [null, ""].flatMap((content) =>
+    (["reasoning", "reasoning_content"] as const).map((field) => ({ content, field })),
+  );
+
+  it.each(
+    emptyReasoningReplies.flatMap((reply) => (["compress", "summarize"] as const).map((method) => ({ ...reply, method }))),
+  )("$method rejects a reply cut at max_tokens with content $content and only $field", async ({ content, field, method }) => {
+    mockOpenAIResponse({
+      choices: [{ finish_reason: "length", message: { content, [field]: "The user is asking me to reply with" } }],
+    });
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 16);
+    await expect(provider[method]("system", "user")).rejects.toThrow(/max_tokens \(16\)/);
+  });
+
+  it.each(emptyReasoningReplies)(
+    "keeps the $field fallback when the reply finished normally with content $content",
+    async ({ content, field }) => {
+      mockOpenAIResponse({
+        choices: [{ finish_reason: "stop", message: { content, [field]: "complete answer" } }],
+      });
+      const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
+      expect(await provider.summarize("system", "user")).toBe("complete answer");
+    },
+  );
+
+  it("returns nonempty content even when the reply hit max_tokens", async () => {
+    mockOpenAIResponse({
+      choices: [{ finish_reason: "length", message: { content: "partial but real", reasoning: "ignore" } }],
+    });
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 16);
+    expect(await provider.compress("system", "user")).toBe("partial but real");
+  });
+
   it("content wins over both reasoning fields when present", async () => {
     mockOpenAIResponse({
       choices: [

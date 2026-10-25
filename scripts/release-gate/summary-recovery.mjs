@@ -41,6 +41,8 @@ const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("he
 let port, modelPort, modelServer, secret, installed, packageBefore, boot = 0;
 let heldCompression = null, failSummary = false, phase = "setup";
 const markers = { BASE: "RECOVERED_BASE_COBALT", FINAL: "RECOVERED_FINAL_JUNIPER", LATE: "RECOVERED_LATE_QUARTZ" };
+// A reasoning model cut at max_tokens returns only partial reasoning; this fixture makes that reasoning parse as valid XML.
+const truncation = { session: "truncated-reasoning-session", accepted: "TRUNCATION_ACCEPTED_SAGE", marker: "TRUNCATED_REASONING_ONYX" };
 function log(message) {
   const line = `[${((Date.now() - began) / 1000).toFixed(1)}s] ${message}`;
   console.log(line); appendFileSync(join(out, "gate.log"), `${line}\n`);
@@ -155,7 +157,19 @@ async function startModel() {
       const item = { phase, boot, operation: compress ? "compression" : "summary", prompt };
       modelRequests.push(item);
       let content;
-      if (compress) {
+      const truncatedCompression = compress && prompt.includes("GATE_INPUT_TRUNCATED");
+      if (truncatedCompression || (summarize && phase === "truncated-reasoning-is-rejected")) {
+        const partial = compress
+          ? `Draft: <observation><type>decision</type><title>${truncation.marker}</title><facts><fact>${truncation.marker}</fact></facts><narrative>The draft names ${truncation.marker} before the budget ran out.</narrative><concepts><concept>truncation</concept></concepts><files><file>fixture.txt</file></files><importance>8</importance></observation>`
+          : `Draft: <summary><title>${truncation.marker}</title><narrative>The draft names ${truncation.marker} before the budget ran out.</narrative><decisions><decision>${truncation.marker}</decision></decisions><files><file>fixture.txt</file></files><concepts><concept>truncation</concept></concepts></summary>`;
+        item.outcome = "truncated-reasoning"; item.response = partial;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ finish_reason: "length", message: { role: "assistant", content: null, reasoning: partial } }] }));
+        return;
+      }
+      if (compress && prompt.includes("GATE_INPUT_ACCEPTED")) {
+        content = `<observation><type>decision</type><title>${truncation.accepted}</title><facts><fact>The verified result is ${truncation.accepted}.</fact></facts><narrative>The local fixture completed processing and verified ${truncation.accepted}.</narrative><concepts><concept>truncation</concept></concepts><files><file>fixture.txt</file></files><importance>8</importance></observation>`;
+      } else if (compress) {
         const token = prompt.match(/GATE_INPUT_(BASE|FINAL|LATE)\b/)?.[1];
         assert(token, "Compression request lost the retained raw fixture");
         item.token = token;
@@ -221,14 +235,14 @@ async function crashDaemon() {
   await poll("crashed daemon ports closed", async () => (await Promise.all(daemonPorts().map(portFree))).every(Boolean), 15_000);
   modelServer.closeAllConnections(); ownedPids.clear(); log(`Native CLI boot ${boot} terminated`);
 }
-function event(token) {
-  return { hookType: "post_tool_use", sessionId, project, cwd: root, timestamp: new Date().toISOString(), eventId: `summary-gate-${token.toLowerCase()}`, data: { tool_name: "Bash", tool_input: { command: `printf GATE_INPUT_${token}` }, tool_response: `GATE_INPUT_${token}: tool completed` } };
+function event(token, session = sessionId) {
+  return { hookType: "post_tool_use", sessionId: session, project, cwd: root, timestamp: new Date().toISOString(), eventId: `summary-gate-${token.toLowerCase()}`, data: { tool_name: "Bash", tool_input: { command: `printf GATE_INPUT_${token}` }, tool_response: `GATE_INPUT_${token}: tool completed` } };
 }
 async function snapshot(name) {
   const data = await rest("/export", undefined, { record: false });
   writeFileSync(join(out, `${name}.json`), JSON.stringify(data, null, 2) + "\n"); return data;
 }
-const observations = (data) => data.observations?.[sessionId] ?? [];
+const observations = (data, session = sessionId) => data.observations?.[session] ?? [];
 const summaryFor = (data) => data.summaries?.find((summary) => summary.sessionId === sessionId);
 async function waitSummary(expected) {
   return poll(`summary contains ${expected.join(", ")}`, async () => {
@@ -293,6 +307,28 @@ async function main() {
     assert.equal(wire.filter((entry) => entry.path === "/summarize").length, 1, "Only the initial baseline may explicitly summarize");
     assert(!wire.some((entry) => /retry|repair/.test(entry.path)), "Recovery must use the autonomous runtime path");
     assert(!modelRequests.some((entry) => entry.error), "The fixture rejected an unexpected model request");
+  });
+  await scenario("truncated-reasoning-is-rejected", async () => {
+    const session = truncation.session;
+    const exported = () => rest("/export", undefined, { record: false });
+    await rest("/session/start", { sessionId: session, project, cwd: root });
+    await rest("/observe", event("ACCEPTED", session));
+    await poll("accepted compression", async () => observations(await exported(), session).some((row) => row.title === truncation.accepted && row.compression?.status === "complete"));
+    // Summarize before the truncated compression so two provider errors stay below the circuit breaker threshold.
+    const summary = await rest("/summarize", { sessionId: session });
+    assert.equal(summary.success, false, "A summary reply cut at max_tokens must not succeed");
+    assert.match(summary.error, /max_tokens/);
+    await rest("/observe", event("TRUNCATED", session));
+    const failed = await poll("truncated compression rejected", async () => {
+      const row = observations(await exported(), session).find((item) => JSON.stringify(item.source ?? "").includes("GATE_INPUT_TRUNCATED"));
+      return row?.compression?.status === "failed" ? row : false;
+    });
+    assert.equal(failed.compression.error, "compression_failed");
+    const truncatedCalls = modelRequests.filter((request) => request.phase === phase && request.outcome === "truncated-reasoning");
+    assert(truncatedCalls.some((request) => request.operation === "summary"), "The summary request must reach the truncating fixture");
+    assert(truncatedCalls.some((request) => request.operation === "compression"), "The compression request must reach the truncating fixture");
+    const after = await snapshot("after-truncated-reasoning");
+    assert(!JSON.stringify(after).includes(truncation.marker), "Truncated reasoning must never be stored as model output");
   });
   await scenario("installed-package-unchanged", async () => {
     assert.deepEqual(packageManifest(), packageBefore); assert.equal(sha(artifact.tarball), artifact.tarballSha256);
