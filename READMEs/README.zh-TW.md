@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 個 MCP 工具" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 個自動 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 個外部資料庫" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ 測試通過" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,900+ 測試通過" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -815,7 +815,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Continue.dev** | `~/.continue/config.yaml`(建議)或 `config.json`(舊版) | 當兩者都不存在時,`agentmemory connect continue` 會從零建立 `config.yaml`;若已有 `config.json`,則會修改既有檔案。**若你已經有 `config.yaml`**,轉接器會印出可直接貼在 `mcpServers:` 下的確切區塊;它不會靜默改寫你的 yaml,因為要安全保留註解與錨點需要一個套件未隨附的 YAML 解析器。Continue 的 `mcpServers` 使用陣列格式(而非物件)。 |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` 會寫入 `context_servers`(Zed 自己的鍵,**不是** `mcpServers`)。遠端 MCP 伺服器可改用 `{"url": "..."}` 接上。 |
 | **Droid(Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` 會寫入標準的 `mcpServers` 區塊。專案層級的覆寫請放在 `<repo>/.factory/mcp.json`。傳入 `--with-hooks` 以取得原生自動擷取。 |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` 會在每個 Harness profile 都會載入的家目錄層級 patch layer 中,附加一列 `@deepseek-ai/dsh-mcp-client`;工具會以 `mcp__agentmemory__*` 註冊。傳入 `--with-hooks` 也接上自動擷取:捆綁的 Claude Code hook 腳本會透過 Harness 官方的 `@deepseek-ai/dsh-hooks-claude-code` 橋接器(SessionStart、UserPromptSubmit、PreToolUse、PostToolUse、Stop)執行,透過寫入 `$DSH_HOME/agentmemory.hooks.json` 的清單檔運作。未設定 `DSH_HOME` 時預設為 `~/.dsh`。 |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` 啟用 MCP 工具。加入 `--with-hooks` 可載入 AgentMemory 內建的原生擷取外掛程式，無需額外的外掛套件。 [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP 設定介面 | 同樣的 `mcpServers` 區塊;使用 `goose configure` → Add Extension → MCP。也支援直接編輯 `~/.config/goose/config.yaml`,但其格式使用 `extensions:` + `cmd`(而非 `mcpServers:` + `command`)。 |
 | **Aider** | 不適用 | 直接呼叫 REST API:`curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`。 |
 | **任何代理(32+)** | 不適用 | `npx skillkit install agentmemory` 會自動偵測宿主並合併設定。 |
@@ -1430,7 +1430,7 @@ fi
 | Prometheus / Grafana | iii OTEL + 健康監控 |
 | 自訂外掛系統 | `iii worker add <name>` |
 
-**242 個原始檔 · ~55,000 行程式碼 · 3,400+ 測試 · 324 個函式 · 67 個 KV 範圍**,全部基於三種原語。沒有 `agentmemory plugin install`。外掛系統就是 iii 本身。
+**245 個原始檔 · ~55,000 行程式碼 · 3,400+ 測試 · 324 個函式 · 67 個 KV 範圍**,全部基於三種原語。沒有 `agentmemory plugin install`。外掛系統就是 iii 本身。
 
 ---
 
@@ -1854,7 +1854,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 3,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

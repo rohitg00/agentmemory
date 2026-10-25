@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,900+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -815,7 +815,7 @@ De agentmemory-entry is hetzelfde **MCP-serverblok** op elke host die de `mcpSer
 | **Continue.dev** | `~/.continue/config.yaml` (voorkeur) of `config.json` (legacy) | `agentmemory connect continue` maakt `config.yaml` helemaal opnieuw aan wanneer geen van beide bestaat, of past een bestaande `config.json` aan. **Als je al een `config.yaml` hebt**, print de adapter het exacte blok om onder `mcpServers:` te plakken; hij herschrijft je yaml niet stilletjes, omdat het veilig behouden van comments en anchors een YAML-parser vereist die het package niet meelevert. Continue gebruikt de array-vorm (geen object) voor `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` schrijft onder `context_servers` (de key van Zed, NIET `mcpServers`). Remote MCP-servers kunnen in plaats daarvan gekoppeld worden via `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` schrijft het standaard `mcpServers`-blok. Project-scoped overrides komen in `<repo>/.factory/mcp.json`. Geef `--with-hooks` door voor native auto-capture. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` voegt een `@deepseek-ai/dsh-mcp-client`-rij toe aan de patch-laag op home-niveau die elk Harness-profiel laadt; tools registreren als `mcp__agentmemory__*`. Geef `--with-hooks` door om ook auto-capture te koppelen: de gebundelde Claude Code-hookscripts draaien via de first-party `@deepseek-ai/dsh-hooks-claude-code`-bridge van Harness (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) via een manifest geschreven naar `$DSH_HOME/agentmemory.hooks.json`. Standaard `~/.dsh` wanneer `DSH_HOME` niet is ingesteld. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` activeert MCP-tools. Voeg `--with-hooks` toe voor de native registratieplugin die bij AgentMemory wordt geleverd. Er is geen apart pluginpakket nodig. [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP-instellingen-UI | Hetzelfde `mcpServers`-blok; gebruik `goose configure` → Add Extension → MCP. Direct bewerken van de YAML op `~/.config/goose/config.yaml` wordt ondersteund, maar het schema gebruikt `extensions:` + `cmd` (niet `mcpServers:` + `command`). |
 | **Aider** | n/a | Praat rechtstreeks met de REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Elke agent (32+)** | n/a | `npx skillkit install agentmemory` detecteert automatisch de host en voegt samen. |
@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin-systemen | `iii worker add <name>` |
 
-**242 bronbestanden · ~55,000 LOC · 3,400+ tests · 324 functies · 67 KV-scopes**, allemaal op drie primitieven. Geen `agentmemory plugin install`. Het pluginsysteem is iii zelf.
+**245 bronbestanden · ~55,000 LOC · 3,400+ tests · 324 functies · 67 KV-scopes**, allemaal op drie primitieven. Geen `agentmemory plugin install`. Het pluginsysteem is iii zelf.
 
 ---
 
@@ -1870,7 +1870,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 3,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

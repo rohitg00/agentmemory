@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP টুল" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 অটো হুক" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 এক্সটার্নাল ডিবি" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ টেস্ট পাস" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,900+ টেস্ট পাস" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -815,7 +815,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Continue.dev** | `~/.continue/config.yaml` (পছন্দনীয়) বা `config.json` (লেগ্যাসি) | দুটোরই অস্তিত্ব না থাকলে `agentmemory connect continue` শূন্য থেকে `config.yaml` তৈরি করে, বা বিদ্যমান `config.json` পরিবর্তন করে। **আপনার আগে থেকে `config.yaml` থাকলে** অ্যাডাপ্টারটি `mcpServers:`-এর নিচে পেস্ট করার জন্য ঠিক ব্লকটি প্রিন্ট করে; এটি নিঃশব্দে আপনার yaml পুনরায় লেখে না কারণ কমেন্ট ও অ্যাঙ্কর নিরাপদে রক্ষা করতে একটি YAML পার্সার লাগে যা প্যাকেজটি বহন করে না। Continue `mcpServers`-এর জন্য (অবজেক্ট না) অ্যারে ফর্ম ব্যবহার করে। |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` `context_servers`-এর নিচে লেখে (Zed-র কি, `mcpServers` নয়)। রিমোট MCP সার্ভার এর বদলে `{"url": "..."}` দিয়েও ওয়্যার করা যায়। |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। প্রজেক্ট-স্কোপড ওভাররাইড যায় `<repo>/.factory/mcp.json`-এ। নেটিভ অটো-ক্যাপচারের জন্য `--with-hooks` পাস করুন। |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` প্রতিটি Harness প্রোফাইল লোড করা হোম-লেভেল প্যাচ লেয়ারে একটি `@deepseek-ai/dsh-mcp-client` সারি যুক্ত করে; টুলগুলো `mcp__agentmemory__*` হিসেবে রেজিস্টার হয়। অটো-ক্যাপচারও ওয়্যার করতে `--with-hooks` পাস করুন: বান্ডলড Claude Code হুক স্ক্রিপ্টগুলো Harness-র ফার্স্ট-পার্টি `@deepseek-ai/dsh-hooks-claude-code` ব্রিজের (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) মাধ্যমে চলে, `$DSH_HOME/agentmemory.hooks.json`-এ লেখা একটি ম্যানিফেস্টের মাধ্যমে। `DSH_HOME` আনসেট থাকলে ডিফল্ট `~/.dsh`। |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` MCP টুল চালু করে। AgentMemory-এর সঙ্গে থাকা নেটিভ ক্যাপচার প্লাগইন চালু করতে `--with-hooks` যোগ করুন। আলাদা প্লাগইন প্যাকেজ প্রয়োজন নেই। [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP সেটিংস UI | একই `mcpServers` ব্লক; `goose configure` → Add Extension → MCP ব্যবহার করুন। `~/.config/goose/config.yaml`-এ সরাসরি YAML এডিট সাপোর্টেড, কিন্তু স্কিমা `extensions:` + `cmd` ব্যবহার করে (`mcpServers:` + `command` নয়)। |
 | **Aider** | n/a | সরাসরি REST API-র সাথে কথা বলুন: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`। |
 | **যেকোনো এজেন্ট (32+)** | n/a | `npx skillkit install agentmemory` হোস্ট অটো-ডিটেক্ট করে মার্জ করে। |
@@ -1437,7 +1437,7 @@ fi
 | Prometheus / Grafana | iii OTEL + হেলথ মনিটর |
 | কাস্টম প্লাগইন সিস্টেম | `iii worker add <name>` |
 
-**242 সোর্স ফাইল · ~55,000 LOC · 3,400+ টেস্ট · 324 ফাংশন · 67 KV স্কোপ**, সবকিছু তিনটি প্রিমিটিভের উপর। কোনো `agentmemory plugin install` নেই। প্লাগইন সিস্টেমটাই iii নিজে।
+**245 সোর্স ফাইল · ~55,000 LOC · 3,400+ টেস্ট · 324 ফাংশন · 67 KV স্কোপ**, সবকিছু তিনটি প্রিমিটিভের উপর। কোনো `agentmemory plugin install` নেই। প্লাগইন সিস্টেমটাই iii নিজে।
 
 ---
 
@@ -1861,7 +1861,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 3,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

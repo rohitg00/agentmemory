@@ -31,6 +31,8 @@ If it's a feature: describe the user problem before the implementation. "I could
 4. `npm test` — the full test suite must pass. The one integration test under `test/integration.test.ts` needs a live server on `:3111` and is fine to skip locally.
 5. Commit with sign-off. Rebase over tiny fixup commits so the history stays readable.
 
+Run `npm run build` before focused DSH connector tests too: `npm test -- test/connect-dsh.test.ts` loads the generated `dist/integrations/dsh.mjs` bundle.
+
 ## Pull request flow
 
 - Keep PRs small and focused. One logical change per PR.

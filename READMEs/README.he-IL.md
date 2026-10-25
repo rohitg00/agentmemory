@@ -73,7 +73,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 כלי MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks אוטומטיים" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 מסדי נתונים חיצוניים" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ בדיקות עוברות" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,900+ בדיקות עוברות" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -817,7 +817,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Continue.dev** | `~/.continue/config.yaml` (מועדף) או `config.json` (legacy) | `agentmemory connect continue` יוצר `config.yaml` מאפס כששניהם לא קיימים, או משנה `config.json` קיים. **אם יש לכם כבר `config.yaml`** המתאם מדפיס את הבלוק המדויק להדבקה תחת `mcpServers:`; הוא לא כותב מחדש בשקט את ה-yaml שלכם כי שמירה בטוחה על comments ועוגנים (anchors) מחייבת YAML parser שהחבילה לא מגיעה איתו. Continue משתמש בצורת מערך (לא object) עבור `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` כותב תחת `context_servers` (המפתח של Zed, לא `mcpServers`). שרתי MCP מרוחקים אפשר לחווט במקום זאת דרך `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` כותב את בלוק ה-`mcpServers` הסטנדרטי. override-ים בתחום פרויקט נכנסים ב-`<repo>/.factory/mcp.json`. העבירו `--with-hooks` ללכידה אוטומטית מובנית. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` מוסיף שורת `@deepseek-ai/dsh-mcp-client` לשכבת ה-patch בשכבת ה-home שכל פרופיל Harness טוען; הכלים נרשמים כ-`mcp__agentmemory__*`. העבירו `--with-hooks` כדי לחווט גם לכידה אוטומטית: סקריפטי ה-hook המצורפים של Claude Code רצים דרך הגשר ה-first-party של Harness, `@deepseek-ai/dsh-hooks-claude-code` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop), באמצעות manifest שנכתב ל-`$DSH_HOME/agentmemory.hooks.json`. ברירת המחדל היא `~/.dsh` כש-`DSH_HOME` לא מוגדר. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` מפעיל את כלי MCP. הוסיפו `--with-hooks` כדי לטעון את תוסף הלכידה המובנה ב-AgentMemory. אין צורך בחבילת תוסף נפרדת. [DSH](../docs/dsh.md). |
 | **Goose** | ממשק הגדרות MCP של Goose | אותו בלוק `mcpServers`; השתמשו ב-`goose configure` → Add Extension → MCP. עריכה ישירה של YAML ב-`~/.config/goose/config.yaml` נתמכת אבל ה-schema משתמש ב-`extensions:` + `cmd` (לא `mcpServers:` + `command`). |
 | **Aider** | n/a | פנו ל-REST API ישירות: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **כל סוכן (32+)** | n/a | `npx skillkit install agentmemory` מגלה אוטומטית את ה-host וממזג. |
@@ -1439,7 +1439,7 @@ fi
 | Prometheus / Grafana | iii OTEL + מוניטור health |
 | מערכות plugin מותאמות אישית | `iii worker add <name>` |
 
-**242 קבצי מקור · ~55,000 LOC · 3,400+ בדיקות · 324 פונקציות · 67 תחומי KV**, הכול על שלושה primitives. אין `agentmemory plugin install`. מערכת ה-plugin היא iii עצמו.
+**245 קבצי מקור · ~55,000 LOC · 3,400+ בדיקות · 324 פונקציות · 67 תחומי KV**, הכול על שלושה primitives. אין `agentmemory plugin install`. מערכת ה-plugin היא iii עצמו.
 
 ---
 
@@ -1863,7 +1863,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 3,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

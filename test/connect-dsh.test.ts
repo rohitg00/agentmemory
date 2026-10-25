@@ -8,7 +8,7 @@ import {
   existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { parseDocument } from "yaml";
 
 // DeepSeek Harness adapter: appends an @deepseek-ai/dsh-mcp-client row to
@@ -33,6 +33,7 @@ describe("connect: DeepSeek Harness", () => {
     delete process.env["DSH_HOME"];
   });
   afterEach(() => {
+    vi.restoreAllMocks();
     if (ORIG_HOME === undefined) delete process.env["HOME"];
     else process.env["HOME"] = ORIG_HOME;
     if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
@@ -47,10 +48,10 @@ describe("connect: DeepSeek Harness", () => {
     expect(adapter.detect()).toBe(false);
   });
 
-  it("honors DSH_HOME over ~/.dsh", async () => {
-    const custom = join(home, "custom-dsh");
+  it.each(["absolute", "relative", "~/custom-dsh", "~\\custom-dsh", "~", "   "])("resolves DSH_HOME like Harness: %s", async override => {
+    const custom = override === "~" ? home : join(home, override.trim() ? "custom-dsh" : ".dsh");
     mkdirSync(custom, { recursive: true });
-    process.env["DSH_HOME"] = custom;
+    process.env["DSH_HOME"] = override === "absolute" ? custom : override === "relative" ? relative(process.cwd(), custom) : override;
     const { adapter } = await import("../src/cli/connect/dsh.js");
     expect(adapter.detect()).toBe(true);
     await adapter.install({ dryRun: false, force: false });
@@ -240,9 +241,10 @@ describe("connect: DeepSeek Harness", () => {
       const doc = parseDocument(readFileSync(configPath, "utf-8"));
       expect(doc.errors).toEqual([]);
       const rows = doc.toJS();
-      expect(rows[0]).toMatchObject({ before: "assistant", root: "workspace", insert: [{ id: entry.id, name: entry.name }] });
+      expect(rows[0]).toMatchObject({ before: "assistant", root: "workspace", insert: [{ id: entry.id }] });
       expect(rows[0].insert).toHaveLength(1);
-      expect(rows[0].insert[0].config).not.toEqual(entry.config);
+      if (entry.id === "agentmemory-hooks") expect(rows[0].insert[0].name).toMatch(/[\\/]dist[\\/]integrations[\\/]dsh\.mjs$/);
+      else expect(rows[0].insert[0].config).not.toEqual(entry.config);
       expect(rows[1]).toEqual({ id: "hmr", disabled: true });
     }
   });
@@ -272,33 +274,84 @@ describe("connect: DeepSeek Harness", () => {
     expect(existsSync(join(home, ".dsh", "cordis.patch.yml"))).toBe(false);
   });
 
-  it("--with-hooks writes the manifest and the hooks-claude-code row", async () => {
-    mkdirSync(join(home, ".dsh"), { recursive: true });
+  it("--with-hooks loads the bundled plugin without a separate package or manifest", async () => {
     const { adapter } = await import("../src/cli/connect/dsh.js");
-    const result = await adapter.install({
-      dryRun: false,
-      force: false,
-      withHooks: true,
-    });
-    expect(result.kind).toBe("installed");
-
-    const hooksPath = join(home, ".dsh", "agentmemory.hooks.json");
-    expect(existsSync(hooksPath)).toBe(true);
-    const manifest = JSON.parse(readFileSync(hooksPath, "utf-8"));
-    // Bridge-supported events from the bundled Claude Code shaped manifest.
-    for (const ev of ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"]) {
-      expect(manifest.hooks[ev]).toBeDefined();
-    }
-    // Commands are resolved to absolute paths, no env placeholders left.
-    const flat = JSON.stringify(manifest);
-    expect(flat).not.toContain("${CLAUDE_PLUGIN_ROOT}");
-
+    await adapter.install({ dryRun: false, force: false, withHooks: true });
     const patch = readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8");
-    expect(patch).toContain("id: agentmemory-hooks");
-    expect(patch).toContain("name: '@deepseek-ai/dsh-hooks-claude-code'");
-    expect(parseDocument(patch).toJS()[1].insert[0].config.configPath).toBe(hooksPath);
-    // MCP row still present alongside.
+    const entry = parseDocument(patch).toJS()[1].insert[0];
+    expect(entry.id).toBe("agentmemory-hooks");
+    expect(isAbsolute(entry.name)).toBe(true);
+    expect(existsSync(entry.name)).toBe(true);
+    expect(typeof (await import(entry.name)).apply).toBe("function");
+    expect(existsSync(join(home, ".dsh", "agentmemory.hooks.json"))).toBe(false);
+    expect(patch).not.toContain("@agentmemory/dsh");
+    expect(patch).not.toContain("dsh-hooks-claude-code");
     expect(patch).toContain("serverName: agentmemory");
+  });
+
+  it.each([true, false])("requires explicit migration of a legacy bridge, with MCP installed: %s", async (withMcp) => {
+    const dir = join(home, ".dsh");
+    mkdirSync(dir, { recursive: true });
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    if (withMcp) await adapter.install({ dryRun: false, force: false });
+    const configPath = join(dir, "cordis.patch.yml");
+    const legacy = "- insert:\n    - id: agentmemory-hooks\n      name: '@deepseek-ai/dsh-hooks-claude-code'\n      config: { configPath: custom.json }\n";
+    const existing = (withMcp ? readFileSync(configPath, "utf-8") : "") + legacy;
+    writeFileSync(configPath, existing);
+    writeFileSync(join(dir, "agentmemory.hooks.json"), "custom manifest");
+    await expect(adapter.install({ dryRun: false, force: false, withHooks: true }))
+      .rejects.toThrow("connect dsh --with-hooks --force");
+    expect(readFileSync(configPath, "utf-8")).toBe(existing);
+    await adapter.install({ dryRun: false, force: true, withHooks: true });
+    expect(readFileSync(configPath, "utf-8")).not.toContain("dsh-hooks-claude-code");
+    expect(readFileSync(join(dir, "agentmemory.hooks.json"), "utf-8")).toBe("custom manifest");
+  });
+
+  it.each([true, false])("repairs an old bundled plugin path without replacing custom MCP settings, old file exists: %s", async (oldExists) => {
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: false, withHooks: true });
+    const configPath = join(home, ".dsh", "cordis.patch.yml");
+    const rows = parseDocument(readFileSync(configPath, "utf-8")).toJS();
+    const currentPath = rows[1].insert[0].name;
+    const oldPath = join(home, "old-install", "dist", "integrations", "dsh.mjs");
+    if (oldExists) {
+      mkdirSync(join(home, "old-install", "dist", "integrations"), { recursive: true });
+      writeFileSync(oldPath, "export function apply() {}\n");
+    }
+    rows[0].insert[0].config.command = "custom-mcp";
+    rows[1].insert[0].name = oldPath;
+    rows[1].insert.push({ id: "formatter", name: "my-formatter" });
+    rows[1].before = "assistant";
+    rows[1].root = "workspace";
+    const existing = JSON.stringify(rows);
+    writeFileSync(configPath, existing);
+
+    await adapter.install({ dryRun: true, force: false, withHooks: true });
+    expect(readFileSync(configPath, "utf-8")).toBe(existing);
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
+    expect(readFileSync(configPath, "utf-8")).toBe(existing);
+
+    expect((await adapter.install({ dryRun: false, force: false, withHooks: true })).kind).toBe("installed");
+    rows[1].insert[0].name = currentPath;
+    const repaired = readFileSync(configPath, "utf-8");
+    expect(parseDocument(repaired).toJS()).toEqual(rows);
+    expect((await adapter.install({ dryRun: false, force: false, withHooks: true })).kind).toBe("already-wired");
+    expect(readFileSync(configPath, "utf-8")).toBe(repaired);
+  });
+
+  it("rejects a missing current bundle without reporting success or changing the patch", async () => {
+    const hooks = await import("../src/cli/connect/codex-hooks.js");
+    vi.spyOn(hooks, "findPluginRoot").mockReturnValue(join(home, "install", "plugin"));
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: false });
+    const configPath = join(home, ".dsh", "cordis.patch.yml");
+    const rows = parseDocument(readFileSync(configPath, "utf-8")).toJS();
+    rows.push({ insert: [{ id: "agentmemory-hooks", name: join(home, "install", "dist", "integrations", "dsh.mjs") }] });
+    const existing = JSON.stringify(rows);
+    writeFileSync(configPath, existing);
+    await expect(adapter.install({ dryRun: false, force: false, withHooks: true }))
+      .rejects.toThrow("Bundled DSH plugin is missing");
+    expect(readFileSync(configPath, "utf-8")).toBe(existing);
   });
 
   it("MCP-only install after --with-hooks keeps the hooks row intact", async () => {

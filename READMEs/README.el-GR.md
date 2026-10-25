@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 εργαλεία MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 αυτόματα hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 εξωτερικές βάσεις δεδομένων" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ επιτυχημένες δοκιμές" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,900+ επιτυχημένες δοκιμές" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -815,7 +815,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Continue.dev** | `~/.continue/config.yaml` (προτιμώμενο) ή `config.json` (παλαιό) | Το `agentmemory connect continue` δημιουργεί το `config.yaml` από την αρχή όταν δεν υπάρχει κανένα από τα δύο, ή τροποποιεί το υπάρχον `config.json`. **Αν έχετε ήδη `config.yaml`**, ο adapter εκτυπώνει το ακριβές block για επικόλληση κάτω από το `mcpServers:`· δεν ξαναγράφει σιωπηλά το yaml σας, επειδή η ασφαλής διατήρηση σχολίων και anchors απαιτεί έναν YAML parser που το πακέτο δεν διαθέτει. Το Continue χρησιμοποιεί μορφή array (όχι object) για το `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | Το `agentmemory connect zed` γράφει κάτω από το `context_servers` (το κλειδί του Zed, ΟΧΙ `mcpServers`). Απομακρυσμένοι διακομιστές MCP μπορούν να συνδεθούν εναλλακτικά μέσω `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | Το `agentmemory connect droid` γράφει το τυπικό block `mcpServers`. Οι παρακάμψεις σε επίπεδο project μπαίνουν στο `<repo>/.factory/mcp.json`. Περάστε `--with-hooks` για εγγενή αυτόματη καταγραφή. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | Το `agentmemory connect dsh` προσθέτει μια γραμμή `@deepseek-ai/dsh-mcp-client` στο επίπεδο patch home που φορτώνει κάθε προφίλ Harness· τα εργαλεία καταχωρούνται ως `mcp__agentmemory__*`. Περάστε `--with-hooks` για να συνδέσετε επίσης την αυτόματη καταγραφή: τα ενσωματωμένα scripts hooks του Claude Code εκτελούνται μέσω της πρωτογενούς γέφυρας `@deepseek-ai/dsh-hooks-claude-code` του Harness (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) μέσω ενός manifest που γράφεται στο `$DSH_HOME/agentmemory.hooks.json`. Προεπιλέγει στο `~/.dsh` όταν το `DSH_HOME` δεν έχει ρυθμιστεί. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | Το `agentmemory connect dsh` ενεργοποιεί τα εργαλεία MCP. Προσθέστε `--with-hooks` για το εγγενές πρόσθετο καταγραφής που περιλαμβάνεται στο AgentMemory. Δεν χρειάζεται ξεχωριστό πακέτο. [DSH](../docs/dsh.md). |
 | **Goose** | Settings UI MCP του Goose | Το ίδιο block `mcpServers`· χρησιμοποιήστε `goose configure` → Add Extension → MCP. Υποστηρίζεται άμεση επεξεργασία YAML στο `~/.config/goose/config.yaml`, αλλά το σχήμα χρησιμοποιεί `extensions:` + `cmd` (όχι `mcpServers:` + `command`). |
 | **Aider** | n/a | Επικοινωνήστε απευθείας με το REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Οποιοσδήποτε agent (32+)** | n/a | Το `npx skillkit install agentmemory` ανιχνεύει αυτόματα τον host και συγχωνεύει. |
@@ -1438,7 +1438,7 @@ fi
 | Prometheus / Grafana | iii OTEL + monitor υγείας |
 | Προσαρμοσμένα συστήματα plugin | `iii worker add <name>` |
 
-**242 αρχεία πηγαίου κώδικα · ~55,000 LOC · 3,400+ δοκιμές · 324 functions · 67 KV scopes**, όλα πάνω σε τρία primitives. Δεν υπάρχει `agentmemory plugin install`. Το σύστημα plugin είναι το ίδιο το iii.
+**245 αρχεία πηγαίου κώδικα · ~55,000 LOC · 3,400+ δοκιμές · 324 functions · 67 KV scopes**, όλα πάνω σε τρία primitives. Δεν υπάρχει `agentmemory plugin install`. Το σύστημα plugin είναι το ίδιο το iii.
 
 ---
 
@@ -1862,7 +1862,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 3,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

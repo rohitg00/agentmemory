@@ -1,31 +1,17 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
-import { isMap, isSeq, parseDocument } from "yaml";
+import { isMap, isSeq, parseDocument, type YAMLMap } from "yaml";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   backupFile,
+  resolveDshHome,
   logAlreadyWired,
   logBackup,
   logInstalled,
-  readJsonSafe,
-  writeJsonAtomic,
   writeTextAtomic,
 } from "./util.js";
-import {
-  buildMergedHooks,
-  findPluginRoot,
-  type HookManifest,
-} from "./codex-hooks.js";
-
-// Rows land in the home-level cordis.patch.yml, the patch layer every
-// Harness profile loads; the hooks row reuses the bundled Claude Code
-// hook scripts through Harness's own bridge plugin.
-
-function dshHome(): string {
-  return process.env["DSH_HOME"] || join(homedir(), ".dsh");
-}
+import { findPluginRoot } from "./codex-hooks.js";
 
 // Harness evaluates !!js before scrubbing secrets from the MCP child env.
 const MCP_BLOCK = `- insert:
@@ -44,12 +30,10 @@ const MCP_BLOCK = `- insert:
 const MCP_MARKER = "serverName: agentmemory";
 const HOOKS_MARKER = "id: agentmemory-hooks";
 
-function hooksBlock(hooksConfigPath: string): string {
+function hooksBlock(pluginPath: string): string {
   return `- insert:
     - id: agentmemory-hooks
-      name: '@deepseek-ai/dsh-hooks-claude-code'
-      config:
-        configPath: ${JSON.stringify(hooksConfigPath)}
+      name: ${JSON.stringify(pluginPath)}
 `;
 }
 
@@ -62,18 +46,23 @@ function parsePatch(content: string) {
   return { doc, operations: doc.contents };
 }
 
-function isManaged(entry: unknown, marker: string): boolean {
+function isManaged(entry: unknown, marker: string): entry is YAMLMap {
   if (!isMap(entry)) return false;
   return marker === MCP_MARKER
     ? entry.get("name") === "@deepseek-ai/dsh-mcp-client" && entry.getIn(["config", "serverName"]) === "agentmemory"
-    : entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code" && entry.get("id") === "agentmemory-hooks";
+    : entry.get("id") === "agentmemory-hooks" && typeof entry.get("name") === "string" &&
+      (entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code" || /[\\/]dist[\\/]integrations[\\/]dsh\.mjs$/.test(String(entry.get("name"))));
+}
+
+function managedEntries(content: string, marker: string): YAMLMap[] {
+  return parsePatch(content).operations.items.flatMap((operation) => {
+    const entries = isMap(operation) ? operation.get("insert", true) : null;
+    return isSeq(entries) ? entries.items.filter((entry) => isManaged(entry, marker)) : [];
+  });
 }
 
 function hasBlock(content: string, marker: string): boolean {
-  return parsePatch(content).operations.items.some((operation) => {
-    const entries = isMap(operation) ? operation.get("insert", true) : null;
-    return isSeq(entries) && entries.items.some((entry) => isManaged(entry, marker));
-  });
+  return managedEntries(content, marker).length > 0;
 }
 
 function upsertBlock(content: string, marker: string, block: string): string {
@@ -104,49 +93,47 @@ function upsertBlock(content: string, marker: string, block: string): string {
   return doc.toString();
 }
 
-function installHooksFile(home: string): string {
-  const hooksPath = join(home, "agentmemory.hooks.json");
-  const pluginRoot = findPluginRoot();
-  const existing = readJsonSafe<HookManifest>(hooksPath);
-  const merged = buildMergedHooks(existing, pluginRoot, "hooks.codex.json");
-  writeJsonAtomic(hooksPath, merged);
-  return hooksPath;
-}
-
 export const adapter: ConnectAdapter = {
   name: "dsh",
   displayName: "DeepSeek Harness",
   docs: "https://github.com/rohitg00/agentmemory/blob/main/docs/dsh.md",
   protocolNote:
-    "→ Using MCP via $DSH_HOME/cordis.patch.yml (the home-level patch layer every profile loads). Tools appear as mcp__agentmemory__*. Pass --with-hooks to also wire auto-capture through Harness's Claude Code hook bridge.",
+    "→ Using MCP via $DSH_HOME/cordis.patch.yml (the home-level patch layer every profile loads). Tools appear as mcp__agentmemory__*. Pass --with-hooks to also wire auto-capture with the bundled native DSH plugin.",
   category: "native",
   detect(): boolean {
-    return existsSync(dshHome());
+    return existsSync(resolveDshHome());
   },
   async install(opts: ConnectOptions): Promise<ConnectResult> {
-    const home = dshHome();
+    const home = resolveDshHome();
     const configPath = join(home, "cordis.patch.yml");
     const existing = existsSync(configPath)
       ? readFileSync(configPath, "utf-8")
       : "";
 
     const wantHooks = opts.withHooks === true;
-    if (wantHooks) {
-      p.log.info(`Hooks require @deepseek-ai/dsh-hooks-claude-code and @deepseek-ai/dsh-hook-protocol in each profile, plus locally discoverable credentials. Setup: ${this.docs}`);
-    }
     const hasMcp = hasBlock(existing, MCP_MARKER);
-    const hasHooks = hasBlock(existing, HOOKS_MARKER);
+    const hooks = managedEntries(existing, HOOKS_MARKER);
+    const pluginPath = wantHooks ? join(dirname(findPluginRoot()), "dist", "integrations", "dsh.mjs") : "";
+    const hooksReady = hooks.length === 1 && hooks[0].get("name") === pluginPath && existsSync(pluginPath);
 
-    if (hasMcp && (!wantHooks || hasHooks) && !opts.force) {
+    if (wantHooks && !opts.force && hooks.some(entry => entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code")) {
+      throw new Error("Legacy DSH hooks bridge found. Run agentmemory connect dsh --with-hooks --force to replace it with the bundled native plugin. Existing manifest files will be preserved.");
+    }
+
+    if (hasMcp && (!wantHooks || hooksReady) && !opts.force) {
       logAlreadyWired(this.displayName, configPath);
       return { kind: "already-wired", mutatedPath: configPath };
     }
 
     if (opts.dryRun) {
       p.log.info(
-        `[dry-run] Would append the agentmemory mcp-client row${wantHooks ? " and the hooks-claude-code row" : ""} to ${configPath}`,
+        `[dry-run] Would update the agentmemory mcp-client row${wantHooks ? " and the bundled capture plugin" : ""} in ${configPath}`,
       );
       return { kind: "installed", mutatedPath: configPath };
+    }
+
+    if (wantHooks && !existsSync(pluginPath)) {
+      throw new Error("Bundled DSH plugin is missing. Reinstall AgentMemory, or run npm run build in a source checkout.");
     }
 
     let backupPath: string | undefined;
@@ -159,10 +146,8 @@ export const adapter: ConnectAdapter = {
 
     let next = hasMcp && !opts.force ? existing : upsertBlock(existing, MCP_MARKER, MCP_BLOCK);
 
-    if (wantHooks && (!hasHooks || opts.force)) {
-      const hooksPath = installHooksFile(home);
-      next = upsertBlock(next, HOOKS_MARKER, hooksBlock(hooksPath));
-      p.log.info(`Hook manifest: ${hooksPath}`);
+    if (wantHooks && (!hooksReady || opts.force)) {
+      next = upsertBlock(next, HOOKS_MARKER, hooksBlock(pluginPath));
     }
 
     writeTextAtomic(configPath, next);

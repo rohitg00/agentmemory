@@ -1,0 +1,13 @@
+{
+  "name": "agentmemory-omp-extension",
+  "private": true,
+  "type": "module",
+  "version": "0.9.30",
+  "omp": {
+    "name": "agentmemory",
+    "description": "Persistent cross-session memory for omp \u2014 captures sessions, tools, approvals, and compaction; injects smart-search recall.",
+    "extensions": [
+      "./dist/index.mjs"
+    ]
+  }
+}

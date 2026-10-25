@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tool" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 awtomatikong hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 panlabas na DB" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ pumapasang test" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,900+ pumapasang test" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -815,7 +815,7 @@ Ang entry ng agentmemory ay ang **parehong MCP server block** sa bawat host na g
 | **Continue.dev** | `~/.continue/config.yaml` (preferred) o `config.json` (legacy) | Gumagawa ang `agentmemory connect continue` ng `config.yaml` mula sa simula kapag walang alinman, o binabago ang umiiral na `config.json`. **Kung may `config.yaml` ka na** ipi-print ng adapter ang eksaktong block na i-paste sa ilalim ng `mcpServers:`; hindi nito tahimik na isusulat ulit ang yaml mo dahil ang pagpapanatili ng comments at anchors nang ligtas ay nangangailangan ng YAML parser na hindi dala ng package. Gumagamit ang Continue ng array form (hindi object) para sa `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | Isinusulat ng `agentmemory connect zed` sa ilalim ng `context_servers` (ang key ng Zed, HINDI `mcpServers`). Maaaring i-wire ang remote MCP server gamit ang `{"url": "..."}` sa halip. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | Isinusulat ng `agentmemory connect droid` ang standard na `mcpServers` block. Ang project-scoped override ay sa `<repo>/.factory/mcp.json`. Ipasa ang `--with-hooks` para sa native auto-capture. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | Idinadagdag ng `agentmemory connect dsh` ang isang `@deepseek-ai/dsh-mcp-client` row sa home-level patch layer na nilo-load ng bawat Harness profile; nagrerehistro ang mga tool bilang `mcp__agentmemory__*`. Ipasa ang `--with-hooks` para i-wire din ang auto-capture: tumatakbo ang bundled Claude Code hook scripts sa first-party na `@deepseek-ai/dsh-hooks-claude-code` bridge ng Harness (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) gamit ang manifest na isinulat sa `$DSH_HOME/agentmemory.hooks.json`. Default sa `~/.dsh` kapag walang `DSH_HOME`. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | Ina-activate ng `agentmemory connect dsh` ang mga MCP tool. Idagdag ang `--with-hooks` para i-load ang native capture plugin na kasama sa AgentMemory. Hindi kailangan ng hiwalay na plugin package. [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP settings UI | Parehong `mcpServers` block; gamitin ang `goose configure` → Add Extension → MCP. Suportado ang direktang YAML edit sa `~/.config/goose/config.yaml` pero ang schema ay gumagamit ng `extensions:` + `cmd` (hindi `mcpServers:` + `command`). |
 | **Aider** | n/a | Kausapin ang REST API nang direkta: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Anumang agent (32+)** | n/a | Awtomatikong tinutuklas at pinagsasama ng `npx skillkit install agentmemory` ang host. |
@@ -1446,7 +1446,7 @@ Tinatanggap din ng `/agentmemory/export` ang `?maxSessions=` at `?offset=` para 
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom na plugin system | `iii worker add <name>` |
 
-**242 na source file · ~55,000 LOC · 3,400+ na test · 324 na function · 67 na KV scope**, lahat sa tatlong primitive. Walang `agentmemory plugin install`. Ang plugin system mismo ay ang iii.
+**245 na source file · ~55,000 LOC · 3,400+ na test · 324 na function · 67 na KV scope**, lahat sa tatlong primitive. Walang `agentmemory plugin install`. Ang plugin system mismo ay ang iii.
 
 ---
 
@@ -1870,7 +1870,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 3,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

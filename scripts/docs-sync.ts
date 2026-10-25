@@ -288,6 +288,11 @@ function main(): void {
   const failed: string[] = [];
 
   const version = (JSON.parse(read("package.json")) as { version: string }).version;
+  const ompPath = "integrations/omp/package.json";
+  const ompManifest = files.get(ompPath);
+  if (ompManifest) {
+    files.set(ompPath, ompManifest.replace(/("version":\s*")[^"]+(")/, `$1${version}$2`));
+  }
   if (version !== state.version) {
     for (const extra of ["src/types.ts", "src/functions/export-import.ts", "CHANGELOG.md"]) {
       if (!files.has(extra)) files.set(extra, read(extra));

@@ -73,7 +73,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP ٹولز" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 خودکار ہکس" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 خارجی ڈیٹابیسز" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ ٹیسٹس پاس ہو رہے ہیں" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,900+ ٹیسٹس پاس ہو رہے ہیں" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -817,7 +817,7 @@ agentmemory کا entry ہر اس host پر **ایک ہی MCP سرور بلاک**
 | **Continue.dev** | `~/.continue/config.yaml` (ترجیحی) یا `config.json` (legacy) | جب دونوں میں سے کوئی موجود نہ ہو تو `agentmemory connect continue` نئے سرے سے `config.yaml` بناتا ہے، یا موجودہ `config.json` میں ترمیم کرتا ہے۔ **اگر آپ کے پاس پہلے سے `config.yaml` ہے** تو adapter `mcpServers:` کے نیچے پیسٹ کرنے کے لیے عین وہی بلاک پرنٹ کرتا ہے؛ یہ خاموشی سے آپ کی yaml کو دوبارہ نہیں لکھتا کیونکہ comments اور anchors کو محفوظ طریقے سے برقرار رکھنے کے لیے ایک YAML parser درکار ہے جو یہ پیکیج شپ نہیں کرتا۔ Continue `mcpServers` کے لیے array شکل (object نہیں) استعمال کرتا ہے۔ |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` `context_servers` کے تحت لکھتا ہے (Zed کی اپنی key، `mcpServers` نہیں)۔ ریموٹ MCP سرورز کو بجائے `{"url": "..."}` کے ذریعے جوڑا جا سکتا ہے۔ |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` معیاری `mcpServers` بلاک لکھتا ہے۔ Project-scoped overrides `<repo>/.factory/mcp.json` میں جاتے ہیں۔ نیٹیو auto-capture کے لیے `--with-hooks` پاس کریں۔ |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` home-level patch layer میں ایک `@deepseek-ai/dsh-mcp-client` row شامل کرتا ہے جسے ہر Harness profile لوڈ کرتا ہے؛ tools `mcp__agentmemory__*` کے طور پر رجسٹر ہوتے ہیں۔ auto-capture بھی جوڑنے کے لیے `--with-hooks` پاس کریں: bundled Claude Code hook اسکرپٹس Harness کے first-party `@deepseek-ai/dsh-hooks-claude-code` bridge (SessionStart، UserPromptSubmit، PreToolUse، PostToolUse، Stop) کے ذریعے `$DSH_HOME/agentmemory.hooks.json` میں لکھے گئے ایک manifest سے چلتے ہیں۔ جب `DSH_HOME` سیٹ نہ ہو تو ڈیفالٹ `~/.dsh` ہے۔ |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` سے MCP ٹول فعال ہوتے ہیں۔ AgentMemory میں شامل مقامی کیپچر پلگ ان لوڈ کرنے کے لیے `--with-hooks` شامل کریں۔ الگ پلگ ان پیکیج کی ضرورت نہیں ہے۔ [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP settings UI | وہی `mcpServers` بلاک؛ `goose configure` → Add Extension → MCP استعمال کریں۔ `~/.config/goose/config.yaml` پر براہِ راست YAML ترمیم معاون ہے لیکن schema `extensions:` + `cmd` استعمال کرتا ہے (`mcpServers:` + `command` نہیں)۔ |
 | **Aider** | n/a | براہِ راست REST API سے بات کریں: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`۔ |
 | **کوئی بھی ایجنٹ (32+)** | n/a | `npx skillkit install agentmemory` host کو خودکار طور پر detect کرتا ہے اور ضم کرتا ہے۔ |
@@ -1432,7 +1432,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | کسٹم plugin سسٹمز | `iii worker add <name>` |
 
-**242 سورس فائلز · ~55,000 لائنز کوڈ · 3,800+ ٹیسٹس · 324 فنکشنز · 67 KV اسکوپس**، سب تین primitives پر۔ کوئی `agentmemory plugin install` نہیں۔ plugin سسٹم خود iii ہی ہے۔
+**245 سورس فائلز · ~55,000 لائنز کوڈ · 3,900+ ٹیسٹس · 324 فنکشنز · 67 KV اسکوپس**، سب تین primitives پر۔ کوئی `agentmemory plugin install` نہیں۔ plugin سسٹم خود iii ہی ہے۔
 
 ---
 
@@ -1854,7 +1854,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 3,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

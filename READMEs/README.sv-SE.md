@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-verktyg" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiska hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externa databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ godkända tester" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,900+ godkända tester" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -815,7 +815,7 @@ agentmemory-posten är **samma MCP-serverblock** på alla värdar som använder 
 | **Continue.dev** | `~/.continue/config.yaml` (att föredra) eller `config.json` (äldre) | `agentmemory connect continue` skapar `config.yaml` från grunden när ingen av dem finns, eller ändrar befintlig `config.json`. **Om du redan har `config.yaml`** skriver adaptern ut exakt det block som ska klistras in under `mcpServers:`; den skriver inte om din yaml i det tysta, eftersom att bevara kommentarer och ankare på ett säkert sätt kräver en YAML-parser som paketet inte levererar. Continue använder array-form (inte objekt) för `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` skriver under `context_servers` (Zeds nyckel, INTE `mcpServers`). Fjärranslutna MCP-servrar kan istället kopplas in via `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` skriver det vanliga `mcpServers`-blocket. Projektbegränsade överskrivningar läggs i `<repo>/.factory/mcp.json`. Ange `--with-hooks` för inbyggd auto-infångning. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` lägger till en rad `@deepseek-ai/dsh-mcp-client` i patch-lagret på hemkatalognivå som varje Harness-profil laddar; verktyg registreras som `mcp__agentmemory__*`. Ange `--with-hooks` för att även koppla in auto-infångning: de medföljande Claude Code-hook-skripten körs genom Harness förstapartsbrygga `@deepseek-ai/dsh-hooks-claude-code` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) via ett manifest skrivet till `$DSH_HOME/agentmemory.hooks.json`. Standardvärdet är `~/.dsh` när `DSH_HOME` inte är satt. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` aktiverar MCP-verktyg. Lägg till `--with-hooks` för att läsa in det inbyggda registreringstillägget som följer med AgentMemory. Inget separat tilläggspaket behövs. [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP-inställningsgränssnitt | Samma `mcpServers`-block; använd `goose configure` → Add Extension → MCP. Direkt YAML-redigering i `~/.config/goose/config.yaml` stöds, men schemat använder `extensions:` + `cmd` (inte `mcpServers:` + `command`). |
 | **Aider** | n/a | Kommunicera direkt med REST API:et: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Alla agenter (32+)** | n/a | `npx skillkit install agentmemory` upptäcker värden automatiskt och slår samman. |
@@ -1437,7 +1437,7 @@ fi
 | Prometheus / Grafana | iii OTEL + hälsoövervakare |
 | Anpassade pluginsystem | `iii worker add <name>` |
 
-**242 källkodsfiler · ~55,000 LOC · 3,400+ tester · 324 funktioner · 67 KV-scopes**, allt på tre primitiv. Inget `agentmemory plugin install`. Pluginsystemet är iii självt.
+**245 källkodsfiler · ~55,000 LOC · 3,400+ tester · 324 funktioner · 67 KV-scopes**, allt på tre primitiv. Inget `agentmemory plugin install`. Pluginsystemet är iii självt.
 
 ---
 
@@ -1861,7 +1861,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 3,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

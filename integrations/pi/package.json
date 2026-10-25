@@ -19,18 +19,24 @@
     "directory": "integrations/pi"
   },
   "files": [
-    "index.ts",
-    "security.ts",
+    "dist",
+    "skills",
     "README.md",
     "LICENSE"
   ],
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./dist/index.mjs"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
+  },
+  "scripts": {
+    "prepack": "node -e \"const fs=require('node:fs'); for(const p of ['dist/index.mjs','skills/remember/SKILL.md','LICENSE']) if(!fs.existsSync(p)) throw new Error('Run npm run plugin:pack:pi from the repository root first')\""
   }
 }

@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-værktøjer" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiske hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 eksterne databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ beståede tests" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,900+ beståede tests" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -815,7 +815,7 @@ agentmemory-indgangen er den **samme MCP-serverblok** på alle hosts, der bruger
 | **Continue.dev** | `~/.continue/config.yaml` (foretrukket) eller `config.json` (legacy) | `agentmemory connect continue` opretter `config.yaml` fra bunden, når ingen af dem findes, eller ændrer en eksisterende `config.json`. **Hvis du allerede har `config.yaml`**, printer adapteren den nøjagtige blok, du skal indsætte under `mcpServers:`; den omskriver ikke stille og roligt din yaml, fordi sikker bevarelse af kommentarer og anchors kræver en YAML-parser, som pakken ikke leverer. Continue bruger array-form (ikke objekt) til `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` skriver under `context_servers` (Zeds nøgle, IKKE `mcpServers`). Eksterne MCP-servere kan i stedet forbindes via `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` skriver standard-`mcpServers`-blokken. Projekt-scopede overrides placeres i `<repo>/.factory/mcp.json`. Angiv `--with-hooks` for native auto-capture. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` tilføjer en `@deepseek-ai/dsh-mcp-client`-række til det home-niveau patch-lag, som hver Harness-profil indlæser; tools registreres som `mcp__agentmemory__*`. Angiv `--with-hooks` for også at forbinde auto-capture: de medfølgende Claude Code-hook-scripts køres gennem Harness' egen `@deepseek-ai/dsh-hooks-claude-code`-bridge (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) via et manifest skrevet til `$DSH_HOME/agentmemory.hooks.json`. Standard er `~/.dsh`, når `DSH_HOME` ikke er sat. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` aktiverer MCP-værktøjer. Tilføj `--with-hooks` for at indlæse det native registreringsplugin, der følger med AgentMemory. Ingen separat pluginpakke er nødvendig. [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP-indstillings-UI | Samme `mcpServers`-blok; brug `goose configure` → Add Extension → MCP. Direkte YAML-redigering i `~/.config/goose/config.yaml` understøttes, men skemaet bruger `extensions:` + `cmd` (ikke `mcpServers:` + `command`). |
 | **Aider** | n/a | Tal direkte med REST API'et: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Enhver agent (32+)** | n/a | `npx skillkit install agentmemory` opdager automatisk hosten og sammenføjer. |
@@ -1436,7 +1436,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin-systemer | `iii worker add <name>` |
 
-**242 kildefiler · ~55,000 LOC · 3,400+ tests · 324 funktioner · 67 KV-scopes**, alt på tre primitiver. Intet `agentmemory plugin install`. Plugin-systemet er iii selv.
+**245 kildefiler · ~55,000 LOC · 3,400+ tests · 324 funktioner · 67 KV-scopes**, alt på tre primitiver. Intet `agentmemory plugin install`. Plugin-systemet er iii selv.
 
 ---
 
@@ -1860,7 +1860,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 3,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -75,6 +75,31 @@ export default defineConfig([
     clean: false,
     sourcemap: false,
   },
+  {
+    name: "pi-extension",
+    entry: ["integrations/pi/index.ts"],
+    outDir: "integrations/pi/dist",
+    ...shared,
+    deps: { neverBundle: ["typebox"] },
+    dts: false,
+    clean: true,
+    sourcemap: false,
+  },
+  {
+    entry: ["integrations/omp/index.ts"],
+    outDir: "integrations/omp/dist",
+    ...shared,
+    dts: false,
+    clean: true,
+    sourcemap: false,
+  },
+  {
+    entry: ["src/integrations/dsh.ts"],
+    outDir: "dist/integrations",
+    ...shared,
+    clean: false,
+    sourcemap: false,
+  },
   // One entry per config block prevents tsdown from hoisting shared
   // helpers into hashed chunks across hooks.
   {

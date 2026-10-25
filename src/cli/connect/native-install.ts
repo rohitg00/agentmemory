@@ -42,7 +42,7 @@ function rejectSymlink(path: string): void {
 
 export type NativeBundle = { target: string; label: string; files: Map<string, Buffer>; previous: Record<string, string>; changed: boolean };
 
-export function prepareNativeBundle(source: string, target: string, label: string, required: string[], force: boolean, skillsSource?: string): NativeBundle {
+export function prepareNativeBundle(source: string, target: string, label: string, required: string[], force: boolean, skillsSource?: string, extraFiles: Record<string, string> = {}): NativeBundle {
   if (!required.every((name) => existsSync(join(source, name)))) throw new Error(`Bundled ${label} files are missing; reinstall AgentMemory before connecting.`);
   rejectSymlink(target);
   const files = filesUnder(source);
@@ -50,6 +50,7 @@ export function prepareNativeBundle(source: string, target: string, label: strin
     if (!["remember/SKILL.md", "recall/SKILL.md"].every((name) => existsSync(join(skillsSource, name)))) throw new Error("Bundled skills are missing; reinstall AgentMemory before connecting.");
     for (const [name, content] of filesUnder(skillsSource)) files.set(join("skills", name), content);
   }
+  for (const [name, content] of Object.entries(extraFiles)) files.set(name, Buffer.from(content));
   let previous: Record<string, string> = {};
   if (existsSync(join(target, MANIFEST))) {
     let stored: unknown;
