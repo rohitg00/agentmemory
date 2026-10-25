@@ -36,7 +36,7 @@ Hermes and OpenClaw use their native integrations and lifecycle contracts. Follo
 
 ## Important
 
-- The plugin hooks capture by default without an LLM. Summary generation (`AGENTMEMORY_AUTO_COMPRESS`) and hook context injection (`AGENTMEMORY_INJECT_CONTEXT`) are separate options. Native integrations have their own recall/capture settings; inspect the host configuration instead of assuming these flags control every plugin.
+- The plugin hooks capture by default without an LLM. Per-observation LLM compression (`AGENTMEMORY_AUTO_COMPRESS`) and hook context injection (`AGENTMEMORY_INJECT_CONTEXT`) are separate options. Session summaries can use a configured LLM provider independently of automatic observation compression. Native integrations have their own recall/capture settings; inspect the host configuration instead of assuming these flags control every plugin.
 - If observations are missing, confirm the plugin is enabled and the server is running. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## See also

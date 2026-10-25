@@ -34,7 +34,7 @@ const backendHome = join(root, "backend-home");
 const secret = randomBytes(24).toString("hex");
 const hash = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
 const hashes = Object.fromEntries([cli, join(pkg, "dist/standalone.mjs"), join(plugin, "plugin.mjs"), join(plugin, "openclaw.plugin.json")].map((path) => [path, hash(path)]));
-const baseEnv = (home) => ({ HOME: home, USERPROFILE: home, PATH: `${dirname(options.node)}:/usr/bin:/bin:/opt/homebrew/bin`, TMPDIR: join(root, "tmp"), NO_COLOR: "1", CI: "1" });
+const baseEnv = (home) => ({ HOME: home, USERPROFILE: home, PATH: `${dirname(options.node)}:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin`, TMPDIR: join(root, "tmp"), NO_COLOR: "1", CI: "1" });
 mkdirSync(join(root, "tmp"), { recursive: true });
 async function run(args, env, cwd, name, timeoutMs = 90_000) {
   const result = await runCommand(options.node, args, { env, cwd, children, timeoutMs });

@@ -1,5 +1,5 @@
 name: agentmemory
-version: 0.9.30
+version: 0.9.31
 description: "Persistent cross-session memory for OpenClaw via agentmemory."
 author: "Rohit Ghumare"
 homepage: "https://github.com/rohitg00/agentmemory"

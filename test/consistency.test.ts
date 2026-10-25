@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { parse } from "yaml";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -42,6 +43,11 @@ describe("Consistency checks", () => {
     const pkg = JSON.parse(readText("package.json"));
     const mcp = JSON.parse(readText("packages/mcp/package.json"));
     expect(mcp.version).toBe(pkg.version);
+  });
+
+  it.each(["hermes", "openclaw"])("%s YAML plugin version matches the release", (integration) => {
+    const plugin = parse(readText(`integrations/${integration}/plugin.yaml`));
+    expect(plugin.version).toBe(VERSION);
   });
 
   it("export-import.ts supports current version", () => {

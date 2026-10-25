@@ -254,7 +254,6 @@ function replaceFact(text: string, fact: Fact, olds: string[], next: string): st
 
 const VERSION_FILES: Array<{ file: RegExp; pattern: (v: string) => RegExp; replace: (v: string) => string }> = [
   { file: /(^|\/)(package|plugin|openclaw\.plugin)\.json$/, pattern: (v) => new RegExp(`("version":\\s*")${escapeRegex(v)}(")`), replace: (v) => `$1${v}$2` },
-  { file: /^integrations\/hermes\/plugin\.yaml$/, pattern: (v) => new RegExp(`^(version:\\s*)${escapeRegex(v)}$`, "m"), replace: (v) => `$1${v}` },
   { file: /^deploy\/.*(Dockerfile|\.ya?ml)$/, pattern: (v) => new RegExp(`(AGENTMEMORY_VERSION[=:]\\s*"?|value:\\s*")${escapeRegex(v)}\\b`, "g"), replace: (v) => `$1${v}` },
   { file: /^src\/version\.ts$/, pattern: (v) => new RegExp(`(VERSION = ")${escapeRegex(v)}(")`), replace: (v) => `$1${v}$2` },
   { file: /^AGENTS\.md$/, pattern: (v) => new RegExp(`(## Current Stats \\(v)${escapeRegex(v)}(\\))`), replace: (v) => `$1${v}$2` },
@@ -321,6 +320,10 @@ function main(): void {
   const ompManifest = files.get(ompPath);
   if (ompManifest) {
     files.set(ompPath, ompManifest.replace(/("version":\s*")[^"]+(")/, `$1${version}$2`));
+  }
+  for (const path of ["integrations/hermes/plugin.yaml", "integrations/openclaw/plugin.yaml"]) {
+    const pluginManifest = files.get(path);
+    if (pluginManifest) files.set(path, pluginManifest.replace(/^(version:\s*)[^\r\n]+$/m, `$1${version}`));
   }
   if (version !== state.version) {
     for (const extra of ["src/types.ts", "src/functions/export-import.ts", "CHANGELOG.md"]) {

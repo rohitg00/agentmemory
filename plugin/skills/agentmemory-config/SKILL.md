@@ -53,7 +53,7 @@ AGENTMEMORY_INJECT_CONTEXT=true
 - Basic keyword recall requires no API key. Local embeddings are optional and
   need explicit configuration and model downloads; do not promise vector search
   until it is enabled.
-- LLM summaries (`AGENTMEMORY_AUTO_COMPRESS=true`) and Claude-style hook injection (`AGENTMEMORY_INJECT_CONTEXT=true`) are opt-in. Native integrations have independent recall settings: Pi and OMP recall before prompts by default, and use `AGENTMEMORY_INJECT_CONTEXT=1` in the host launch environment for optional file enrichment. Do not apply daemon `.env` settings to every host implicitly.
+- Per-observation LLM compression (`AGENTMEMORY_AUTO_COMPRESS=true`) and Claude-style hook injection (`AGENTMEMORY_INJECT_CONTEXT=true`) are opt-in. Session summaries can use a configured LLM provider even when automatic observation compression is off. Native integrations have independent recall settings: Pi and OMP recall before prompts by default, and use `AGENTMEMORY_INJECT_CONTEXT=1` in the host launch environment for optional file enrichment. Do not apply daemon `.env` settings to every host implicitly.
 - Consolidation is enabled when an LLM provider is configured unless explicitly disabled or `AGENTMEMORY_PROVIDER=noop`. Set `CONSOLIDATION_ENABLED=false` to disable it. Structured slots require `AGENTMEMORY_SLOTS=true`; slot reflection also requires `AGENTMEMORY_REFLECT=true`.
 - Tool visibility: set `AGENTMEMORY_TOOLS=all` (default) or `core` on the daemon,
   then restart it and reconnect MCP so the host refreshes its tool list.
