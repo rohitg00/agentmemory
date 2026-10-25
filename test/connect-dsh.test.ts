@@ -8,7 +8,7 @@ import {
   existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { parseDocument } from "yaml";
 
 // DeepSeek Harness adapter: appends an @deepseek-ai/dsh-mcp-client row to
@@ -47,10 +47,10 @@ describe("connect: DeepSeek Harness", () => {
     expect(adapter.detect()).toBe(false);
   });
 
-  it("honors DSH_HOME over ~/.dsh", async () => {
-    const custom = join(home, "custom-dsh");
+  it.each(["absolute", "relative", "~/custom-dsh", "~\\custom-dsh", "~", "   "])("resolves DSH_HOME like Harness: %s", async override => {
+    const custom = override === "~" ? home : join(home, override.trim() ? "custom-dsh" : ".dsh");
     mkdirSync(custom, { recursive: true });
-    process.env["DSH_HOME"] = custom;
+    process.env["DSH_HOME"] = override === "absolute" ? custom : override === "relative" ? relative(process.cwd(), custom) : override;
     const { adapter } = await import("../src/cli/connect/dsh.js");
     expect(adapter.detect()).toBe(true);
     await adapter.install({ dryRun: false, force: false });

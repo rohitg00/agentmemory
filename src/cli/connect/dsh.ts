@@ -1,21 +1,17 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
 import { isMap, isSeq, parseDocument } from "yaml";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   backupFile,
+  resolveDshHome,
   logAlreadyWired,
   logBackup,
   logInstalled,
   writeTextAtomic,
 } from "./util.js";
 import { findPluginRoot } from "./codex-hooks.js";
-
-function dshHome(): string {
-  return process.env["DSH_HOME"] || join(homedir(), ".dsh");
-}
 
 // Harness evaluates !!js before scrubbing secrets from the MCP child env.
 const MCP_BLOCK = `- insert:
@@ -101,10 +97,10 @@ export const adapter: ConnectAdapter = {
     "→ Using MCP via $DSH_HOME/cordis.patch.yml (the home-level patch layer every profile loads). Tools appear as mcp__agentmemory__*. Pass --with-hooks to also wire auto-capture with the bundled native DSH plugin.",
   category: "native",
   detect(): boolean {
-    return existsSync(dshHome());
+    return existsSync(resolveDshHome());
   },
   async install(opts: ConnectOptions): Promise<ConnectResult> {
-    const home = dshHome();
+    const home = resolveDshHome();
     const configPath = join(home, "cordis.patch.yml");
     const existing = existsSync(configPath)
       ? readFileSync(configPath, "utf-8")

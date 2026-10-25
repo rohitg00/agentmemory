@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { writeGuideline, guidelineTargets } from "../src/cli/connect/guidelines.js";
 
 let home: string;
@@ -56,9 +56,10 @@ describe("writeGuideline", () => {
     expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
   });
 
-  it.each([false, true])("writes DSH memory instructions in the selected home (override: %s)", override => {
-    const dshHome = join(home, override ? "custom-dsh" : ".dsh");
-    vi.stubEnv("DSH_HOME", override ? dshHome : "");
+  it.each(["", "   ", "~", "~/custom-dsh", "~//custom-dsh", "~\\custom-dsh", "absolute", "relative"])("writes DSH memory instructions in the selected home (override: %s)", override => {
+    const dshHome = override === "~" ? home : join(home, override.trim() ? "custom-dsh" : ".dsh");
+    const value = override === "absolute" ? dshHome : override === "relative" ? relative(process.cwd(), dshHome) : override;
+    vi.stubEnv("DSH_HOME", value);
     mkdirSync(dshHome, { recursive: true });
     const path = join(dshHome, "AGENTS.md");
     writeFileSync(path, "Keep my instructions.\n");
