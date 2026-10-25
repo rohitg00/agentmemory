@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { cpSync, mkdtempSync, mkdirSync, rmSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, statSync, cpSync, mkdtempSync, mkdirSync, rmSync, readFileSync, readdirSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -60,6 +60,13 @@ describe("connect: pi", () => {
     expect(json(path).mcpServers.agentmemory.args[0]).not.toContain("previous-version");
     const custom = json(path); custom.mcpServers.agentmemory.env.CUSTOM = "preserve"; writeFileSync(path, JSON.stringify(custom));
     await adapter.install({ ...options, withMcp: true, force: true }); expect(json(path)).toEqual(custom);
+  });
+  it.skipIf(process.platform === "win32")("preserves private permissions when adding MCP beside other credentials", async () => {
+    mkdirSync(dir(), { recursive: true }); const path = join(dir(), "mcp.json");
+    const other = { url: "https://other.example", headers: { Authorization: "Bearer fixture-only" } };
+    writeFileSync(path, JSON.stringify({ mcpServers: { other } })); chmodSync(path, 0o600);
+    const { adapter } = await import("../src/cli/connect/pi.js"); expect((await adapter.install({ ...options, withMcp: true })).kind).toBe("installed");
+    expect(statSync(path).mode & 0o777).toBe(0o600); expect(json(path).mcpServers.other).toEqual(other);
   });
   it("preserves user-owned MCP settings even with force", async () => {
     mkdirSync(dir(), { recursive: true }); const mcp = { mcpServers: { other: { command: "other" }, agentmemory: { url: "https://custom.example/mcp" } } };

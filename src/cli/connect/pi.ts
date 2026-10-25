@@ -5,7 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter } from "./types.js";
 import { installNativeBundles, nativeMcpEntry, nativePackageRoot, nativeUserPath, prepareNativeBundle, record } from "./native-install.js";
-import { backupFile, logAlreadyWired, logBackup, logInstalled, writeTextAtomic } from "./util.js";
+import { logAlreadyWired, logBackup, logInstalled } from "./util.js";
 
 const agentDir = () => process.env.PI_CODING_AGENT_DIR ? nativeUserPath(process.env.PI_CODING_AGENT_DIR, homedir()) : join(homedir(), ".pi/agent");
 
@@ -91,15 +91,14 @@ export const adapter: ConnectAdapter = {
       const mcpChanged = mcpText !== mcpRaw;
       let backupPath: string | undefined;
       if (mcpChanged) {
-        if (mcpRaw !== undefined) backupPath = backupFile(mcpPath, "pi-mcp");
-        writeTextAtomic(mcpPath, mcpText!);
+        backupPath = installNativeBundles([], mcpPath, mcpText!);
       }
       try {
         if (configChanged) backupPath = installNativeBundles([bundle!], configPath, text) ?? backupPath;
       } catch (error) {
         if (mcpChanged) {
           if (mcpRaw === undefined) rmSync(mcpPath, { force: true });
-          else writeTextAtomic(mcpPath, mcpRaw);
+          else installNativeBundles([], mcpPath, mcpRaw);
         }
         throw error;
       }
