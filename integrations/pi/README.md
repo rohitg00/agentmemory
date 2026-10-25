@@ -16,6 +16,8 @@ Install the package from an agentmemory checkout:
 pi install ./integrations/pi
 ```
 
+Pi loads this package directly from the checkout. Keep the checkout in place, or use the npm package or `connect pi` below for an installation independent of it.
+
 After the first npm publication, install without a checkout:
 
 ```bash
