@@ -61,6 +61,17 @@ describe("connect: pi", () => {
     const custom = json(path); custom.mcpServers.agentmemory.env.CUSTOM = "preserve"; writeFileSync(path, JSON.stringify(custom));
     await adapter.install({ ...options, withMcp: true, force: true }); expect(json(path)).toEqual(custom);
   });
+  it("keeps both original configs when backups share the same timestamp", async () => {
+    mkdirSync(dir(), { recursive: true });
+    const settings = JSON.stringify({ theme: "light" });
+    const mcp = JSON.stringify({ mcpServers: { other: { command: "other-server" } } });
+    writeFileSync(join(dir(), "settings.json"), settings); writeFileSync(join(dir(), "mcp.json"), mcp);
+    vi.spyOn(Date.prototype, "toISOString").mockReturnValue("2026-10-25T00:00:00.000Z");
+    const { adapter } = await import("../src/cli/connect/pi.js"); expect((await adapter.install({ ...options, withMcp: true })).kind).toBe("installed");
+    const backups = join(home, ".agentmemory/backups");
+    const originals = readdirSync(backups).filter(name => name.endsWith(".config")).map(name => readFileSync(join(backups, name), "utf8"));
+    expect(originals).toHaveLength(2); expect(originals).toContain(settings); expect(originals).toContain(mcp);
+  });
   it.skipIf(process.platform === "win32")("preserves private permissions when adding MCP beside other credentials", async () => {
     mkdirSync(dir(), { recursive: true }); const path = join(dir(), "mcp.json");
     const other = { url: "https://other.example", headers: { Authorization: "Bearer fixture-only" } };

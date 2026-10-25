@@ -103,7 +103,7 @@ export function installNativeBundles(bundles: NativeBundle[], configPath: string
       }
     }
     const configChanged = !existsSync(configPath) || readFileSync(configPath, "utf8") !== configText;
-    if (configChanged && existsSync(configPath)) backupPath = backupFile(configPath, "native-config", "config");
+    if (configChanged && existsSync(configPath)) backupPath = backupFile(configPath, `native-config-${transaction}`, "config");
     if (configChanged) {
       mkdirSync(dirname(configPath), { recursive: true });
       writeFileSync(configStage, configText, { mode: existsSync(configPath) ? lstatSync(configPath).mode & 0o777 : 0o600 });
