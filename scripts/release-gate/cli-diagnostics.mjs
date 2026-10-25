@@ -35,8 +35,11 @@ const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("he
 
 const CASES = [
   { name: "provider description", flags: { embeddingProvider: "openrouter (1536 dims)" }, label: "openrouter (1536 dims)" },
+  { name: "padded provider", flags: { embeddingProvider: "  local (384 dims)  " }, label: "local (384 dims)" },
   { name: "none", flags: { embeddingProvider: "none" }, label: null },
+  { name: "padded none", flags: { embeddingProvider: "  none  " }, label: null },
   { name: "empty", flags: { embeddingProvider: "" }, label: null },
+  { name: "whitespace", flags: { embeddingProvider: "  \t  " }, label: null },
   { name: "missing", flags: {}, label: null },
   { name: "non-string", flags: { embeddingProvider: 1536 }, label: null },
 ];
@@ -126,7 +129,7 @@ try {
   server.closeAllConnections?.();
   if (server.listening) await new Promise((done) => server.close(done));
   const passed = results.length === CASES.length && results.every((result) => result.status === "pass");
-  writeFileSync(join(out, "summary.json"), JSON.stringify({ passed, artifact, node: process.version, platform: `${platform()}-${arch()}`, scope: "Fresh npm archive, cached dependency symlinks, loopback flags endpoint. No engine or model.", results, runtimeRetained: options.keep ? root : null }, null, 2) + "\n");
+  writeFileSync(join(out, "summary.json"), JSON.stringify({ passed, artifact, node: process.version, platform: `${platform()}-${arch()}`, scope: "Packed CLI rendering of synthetic loopback flags responses with cached dependency symlinks. Does not validate provider creation or API reporting. No engine or model.", results, runtimeRetained: options.keep ? root : null }, null, 2) + "\n");
   if (!options.keep) rmSync(root, { recursive: true, force: true });
   console.log(`${passed ? "PASS" : "FAIL"}: receipts ${out}`);
   if (!passed) process.exitCode = 1;

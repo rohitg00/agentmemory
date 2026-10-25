@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
+
+const PYTHON = execFileSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" }).trim();
 
 const expectedHermesHooks = [
   "on_turn_start",
@@ -66,7 +68,7 @@ describe("Hermes plugin manifest", () => {
   });
 
   it("satisfies native provider runtime and credential contracts", () => {
-    const result = spawnSync("python3", ["test/hermes-provider-contracts.py", "-v"], {
+    const result = spawnSync(PYTHON, ["test/hermes-provider-contracts.py", "-v"], {
       encoding: "utf8",
       timeout: 60_000,
       env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: "1" },

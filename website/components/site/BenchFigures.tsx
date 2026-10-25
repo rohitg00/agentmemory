@@ -93,7 +93,7 @@ export function QuestionDots() {
                   const lit = inView && i < on;
                   const delay = dotDelay(i, lit, before, prevK === null);
                   return (
-                    <span key={i} className={s.dot} data-on={lit || undefined}>
+                    <span key={i} className={s.dot} data-on={lit || undefined} data-hit={i < on || undefined}>
                       <span className={s.fill} style={{ "--d": `${delay}ms` } as CSSProperties} />
                     </span>
                   );

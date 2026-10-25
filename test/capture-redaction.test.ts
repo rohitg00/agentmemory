@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { appendSpool, retainSent, type SpoolRecord } from "../src/capture/spool.js";
 import { registerObserveFunction } from "../src/functions/observe.js";
 import { KV } from "../src/state/schema.js";
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import type { CompressedObservation, RawObservation } from "../src/types.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
 
@@ -164,9 +165,9 @@ describe("direct observation redaction", () => {
   it.each(CASES)("preserves structure while scrubbing $name", async ({ data, expected }) => {
     const sdk = mockSdk({ looseTrigger: true });
     const kv = mockKV();
-    const stream = vi.fn(async (_data: unknown) => null);
+    const events: unknown[] = [];
+    const unsubscribe = onLiveEvent((event) => events.push(event));
     const compress = vi.fn(async (_data: unknown) => null);
-    sdk.registerFunction("stream::send", stream);
     sdk.registerFunction("mem::compress", compress);
     registerObserveFunction(sdk as never, kv as never);
     const input = payload(data);
@@ -176,7 +177,8 @@ describe("direct observation redaction", () => {
 
     expect(result.observationId).toBeTruthy();
     const stored = await kv.get<CompressedObservation>(KV.observations(input.sessionId), result.observationId);
-    const streamed = (stream.mock.calls[0]![0] as { data: { observation: RawObservation } }).data.observation;
+    unsubscribe();
+    const streamed = (events.find((event) => (event as { type: string }).type === "raw_observation") as { data: { observation: RawObservation } }).data.observation;
     expect(streamed.raw).toEqual(expected);
     expect(stored?.source?.toolName).toBe(streamed.toolName);
     expect(stored?.source?.toolInput).toEqual(streamed.toolInput);

@@ -4,10 +4,9 @@
 
 <p align="center">
   <strong>
-    A kódolóágensed mindenre emlékszik. Nem kell többé újra elmagyaráznod.
-    A <a href="https://github.com/iii-hq/iii">iii engine</a>-re épül
+    Tartós memória kódolási munkamenetek és ágensek között.
   </strong><br/>
-  Állandó memória a Claude Code, GitHub Copilot CLI, Cursor, Gemini CLI, Codex CLI, Hermes, OpenClaw, pi, OpenCode és bármely MCP kliens számára.
+  Állandó memória a Claude Code, GitHub Copilot CLI, Cursor, Gemini CLI, Codex CLI, Hermes, OpenClaw, pi, Oh My Pi, DeepSeek Harness, OpenCode és bármely MCP kliens számára.
 </p>
 
 <p align="center">
@@ -63,6 +62,7 @@
   <a href="https://github.com/rohitg00/agentmemory/actions"><img src="https://img.shields.io/github/actions/workflow/status/rohitg00/agentmemory/ci.yml?label=tests&style=for-the-badge&logo=github" alt="CI" /></a>
   <a href="https://github.com/rohitg00/agentmemory/blob/main/LICENSE"><img src="https://img.shields.io/github/license/rohitg00/agentmemory?color=blue&style=for-the-badge" alt="Licenc" /></a>
   <a href="https://github.com/rohitg00/agentmemory/stargazers"><img src="https://img.shields.io/github/stars/rohitg00/agentmemory?style=for-the-badge&color=yellow&logo=github" alt="Csillagok" /></a>
+  <a href="https://skills.sh/rohitg00/agentmemory"><img src="https://skills.sh/b/rohitg00/agentmemory?style=for-the-badge" alt="skills.sh installs" /></a>
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP eszköz" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatikus hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 külső adatbázis" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ sikeres teszt" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ sikeres teszt" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -87,20 +87,21 @@
   <a href="#how-it-works">Hogyan működik</a> &bull;
   <a href="#mcp-server">MCP</a> &bull;
   <a href="#real-time-viewer">Megjelenítő</a> &bull;
-  <a href="#powered-by-iii">iii által hajtva</a> &bull;
   <a href="#configuration">Konfiguráció</a> &bull;
   <a href="#api">API</a>
 </p>
 
 ---
 
+Az AgentMemory rögzíti a támogatott munkamenet-eseményeket, és kereshetővé teszi a döntéseket, javításokat és tanulságokat az ágensek között. A nézőfelületen megtekintheted, szerkesztheted, exportálhatod és törölheted az emlékeket. A kulcsszavas keresés API-kulcs nélkül működik; az embeddingek szemantikus keresést adnak.
+
 ## Install
 
 Követelmények:
 
 - Node.js 20 vagy újabb, npm-mel és npx-szel (`node -v`, `npm -v`, és `npx -v`).
-- A macOS/Linux alatti automatikus iii-engine telepítéshez `curl`, egy POSIX `sh`, és `tar` is szükséges. A minimális image-ek, mint a `node:20-slim`, esetleg nem tartalmazzák ezeket.
-- A natív Windows a pinnelt iii-engine v0.22.1 `iii.exe` manuális telepítését igényli. A WSL2 vagy a Docker Desktop a másik két támogatott út.
+- macOS/Linux alatt az automatikus környezetbeállításhoz `curl`, POSIX `sh` és `tar` is szükséges.
+- Windowson használj WSL2-t vagy kövesd a [natív Windows útmutatót](#windows).
 
 A kanonikus friss telepítési parancs:
 
@@ -108,11 +109,11 @@ A kanonikus friss telepítési parancs:
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Az első futás egy interaktív beállítás: válaszd ki a bekötendő ágenseket (Claude Code, Cursor, Codex, Gemini CLI, OpenCode, ...), válassz egy LLM-szolgáltatót vagy maradj kulcs nélkül, majd létrehozza a konfigurációt, elindítja a memóriaszervert és a hozzá pinnelt iii engine-t, végül felajánlja a globális telepítést, hogy ezután mindenhol működjön a sima `agentmemory` parancs. A `-y` elfogadja az npx csomag-promptját, a `@latest` pedig elkerüli az elavult gyorsítótárazott kiadást. Egy szolgáltató elérhetővé teszi az LLM-funkciókat, de az LLM által írt megfigyelés-tömörítés csak akkor indul el, ha az `AGENTMEMORY_AUTO_COMPRESS=true` is be van állítva.
+Válaszd ki az ágenseket és egy szolgáltatót vagy a kulcs nélküli módot. A varázsló elmenti a beállításokat, elindítja a memóriaszervert és felajánlja az `agentmemory` parancs globális telepítését. A `-y` elfogadja az npm kérdését; a `@latest` az aktuális kiadást választja. Az LLM-tömörítéshez szolgáltató és `AGENTMEMORY_AUTO_COMPRESS=true` kell.
 
 A kulcs nélküli mód letiltja a vektor-embeddingeket. A `memory_recall` (a `mem::search` útvonal) BM25-öt használ, míg a `memory_smart_search` strukturális gráfegyezéseket is összevonhat, ha már létezik gráfadat. Az ingyenes, eszközön futó szemantikus felidézéshez állítsd be az `EMBEDDING_PROVIDER=local` értéket a `~/.agentmemory/.env` fájlban, majd indítsd újra. Az első embedding-kérés letölti a `Xenova/all-MiniLM-L6-v2` modellt; az azt követő következtetés már lokálisan fut.
 
-A lokális futtatási környezet négy portot használ: `3111`-et a REST/MCP HTTP-hez, `3112`-t az iii stream-ekhez, `3113`-at a megjelenítőhöz, és `49134`-et az iii worker WebSockethez. A tartós iii állapot macOS-en a `~/Library/Application Support/agentmemory` mappában, Linuxon a `$XDG_DATA_HOME/agentmemory` vagy `~/.local/share/agentmemory` mappában, Windowson pedig a `%APPDATA%\agentmemory` mappában él. A `--data-dir <path>` kapcsolóval vagy az `AGENTMEMORY_DATA_DIR` változóval írhatod felül; minden újraindításnál ugyanazt az értéket használd. A visszafelé kompatibilitás miatt egy már létező `./data/state_store.db` vagy `./data/iii-config.yaml` elsőbbséget kap a platform alapértelmezésével szemben a 0. instance esetén; egy explicit kapcsoló vagy környezeti felülírás továbbra is elsőbbséget kap.
+Az API a `http://localhost:3111`, a nézőfelület a `http://localhost:3113` címen érhető el. Alapból mindkettő csak helyben figyel. A beállítások a `~/.agentmemory/.env` fájlban vannak; a könyvtárakat és külön példányokat az [adattárolás](#data-storage) ismerteti.
 
 Ezután bizonyítsd be, hogy a felidézés működik, és add meg az ágensednek a saját skilljeit:
 
@@ -127,14 +128,7 @@ Inkább hagynád, hogy egy kódolóágens végezze el az egészet? Add neki egye
 
 > Retrieve and follow the instructions at: https://raw.githubusercontent.com/rohitg00/agentmemory/main/INSTALL_FOR_AGENTS.md
 
-Bármikor bekötsz további ágenseket az `agentmemory connect <agent>` paranccsal — 20 adapter van felsorolva a [Működik minden ágenssel](#works-with-every-agent) részben. A teljes parancsreferencia a [Gyors indítás](#quick-start) alatt található.
-
-<details>
-<summary><strong>Windows</strong></summary>
-
-A gyors útvonal a WSL2. A natív Windows engine beállításhoz a pinnelt v0.22.1 ZIP letöltése és az `iii.exe` manuális kibontása szükséges; a CLI nem bontja ki automatikusan. A Docker Desktop is támogatott. Lásd a [Windows megjegyzéseket](#windows) a lépésről lépésre útmutatóért.
-
-</details>
+Másik ágenst az `agentmemory connect <agent>` paranccsal kapcsolhatsz be. Lásd az [integrációkat](#works-with-every-agent) és a [napi parancsokat](#everyday-commands).
 
 <details>
 <summary><strong>Globális telepítés / EACCES</strong></summary>
@@ -151,13 +145,6 @@ A fenti npx parancs marad a kanonikus friss telepítési útvonal, és elkerüli
 <summary><strong>Az npx egy régi verziót szolgál ki</strong></summary>
 
 Az npx verziónként gyorsítótáraz. Kényszerítsd a legújabbat az `npx -y @agentmemory/agentmemory@latest` paranccsal, vagy töröld egyszer a gyorsítótárat a `rm -rf ~/.npm/_npx` paranccsal (macOS/Linux; Windows alatt töröld a `%LOCALAPPDATA%\npm-cache\_npx` mappát).
-
-</details>
-
-<details>
-<summary><strong>Már fut egy saját iii engine</strong></summary>
-
-Az agentmemory a iii-engine v0.22.1-et pinneli, és nem kapcsolódik más verzióhoz (a worker nem tud egy másik engine protokolljával beszélni). Állítsd le a másik engine-t, majd futtasd az `npx -y @agentmemory/agentmemory@latest` parancsot. Ez telepíti és futtatja a pinnelt v0.22.1-et a `~/.agentmemory/bin` mappában, érintetlenül hagyva a saját `iii`-edet.
 
 </details>
 
@@ -187,7 +174,7 @@ Az agentmemory bármelyik olyan ágenssel működik, amely támogatja a hookokat
 <td align="center" width="20%">
 <a href="https://cursor.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://svgl.app/library/cursor_dark.svg"><img src="https://svgl.app/library/cursor_light.svg" alt="Cursor" width="48" height="48" /></picture></a><br/>
 <strong>Cursor</strong><br/>
-<sub>natív plugin + 7 hook + MCP</sub>
+<sub>natív plugin + életciklus-hookok + MCP</sub>
 </td>
 <td align="center" width="20%">
 <a href="../plugin/opencode/"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/opencode.png" alt="OpenCode" width="48" height="48" /></a><br/>
@@ -214,7 +201,7 @@ Az agentmemory bármelyik olyan ágenssel működik, amely támogatja a hookokat
 <td align="center" width="20%">
 <a href="../integrations/pi/"><img src="../assets/agents/pi.svg" alt="pi" width="48" height="48" /></a><br/>
 <strong>pi</strong><br/>
-<sub>natív plugin + MCP</sub>
+<sub>natív visszakeresés + rögzítés + skillek</sub>
 </td>
 <td align="center" width="20%">
 <a href="https://github.com/tinyhumansai/openhuman"><img src="https://github.com/tinyhumansai.png?size=120" alt="OpenHuman" width="48" height="48" /></a><br/>
@@ -280,7 +267,7 @@ Az agentmemory bármelyik olyan ágenssel működik, amely támogatja a hookokat
 <td align="center" width="20%">
 <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://svgl.app/library/deepseek.svg" alt="DeepSeek Harness" width="48" height="48" /></a><br/>
 <strong>DeepSeek Harness</strong><br/>
-<sub>MCP szerver</sub>
+<sub>natív rögzítés + MCP</sub>
 </td>
 <td align="center" width="20%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -303,6 +290,12 @@ Az agentmemory bármelyik olyan ágenssel működik, amely támogatja a hookokat
 <sub>REST API</sub>
 </td>
 </tr>
+<tr>
+<td align="center" colspan="5">
+<a href="../integrations/omp/"><strong>Oh My Pi</strong></a><br/>
+<sub>natív visszakeresés + rögzítés + skillek + opcionális MCP</sub>
+</td>
+</tr>
 </table>
 
 <p align="center">
@@ -311,22 +304,26 @@ Az agentmemory bármelyik olyan ágenssel működik, amely támogatja a hookokat
 
 ---
 
-Minden alkalommal elmagyarázod ugyanazt az architektúrát. Mindig ugyanazokat a hibákat fedezed fel újra. Mindig ugyanazokat a preferenciákat tanítod be újra. A beépített memória (CLAUDE.md, .cursorrules) 200 sornál korlátozódik, és elavulttá válik. Az agentmemory ezt megoldja. Némán rögzíti, mit csinál az ágensed, kereshető memóriává tömöríti, és a megfelelő kontextust befecskendezi, amikor elindul a következő session. Egyetlen parancs. Ágensek között is működik.
+<a id="data-storage"></a>
 
-**Mi változik:** Az 1. sessionben beállítod a JWT hitelesítést. A 2. sessionben rate limitinget kérsz. Az ágens már tudja, hogy a hitelesítésed a jose middleware-t használja a `src/middleware/auth.ts` fájlban, a tesztjeid lefedik a token-validálást, és a jose-t választottad a jsonwebtoken helyett az Edge-kompatibilitás miatt — nincs újramagyarázás, nincs copy-paste.
+### Adattárolás
+
+Az emlékek alapból a repozitóriumon kívül maradnak:
+
+| Platform | Adatkönyvtár |
+|---|---|
+| macOS | `~/Library/Application Support/agentmemory` |
+| Linux | `$XDG_DATA_HOME/agentmemory` / `~/.local/share/agentmemory` |
+| Windows | `%APPDATA%\agentmemory` |
+
+A 0. példány újrahasználja a meglévő `./data/state_store.db` tárolót. Másik könyvtárat a `--data-dir <path>` vagy `AGENTMEMORY_DATA_DIR` ad meg. Újraindításkor és frissítéskor tartsd meg ugyanazt a könyvtárat.
 
 ```bash
-npx -y @agentmemory/agentmemory@latest
+agentmemory --data-dir ~/.agentmemory-projects/main
+agentmemory --instance 1
 ```
 
-Alapértelmezés szerint az agentmemory a repón kívül tárolja az iii-engine állapotát, amelyből elindítottad: macOS-en a `~/Library/Application Support/agentmemory`, Linuxon a `$XDG_DATA_HOME/agentmemory` vagy `~/.local/share/agentmemory`, Windowson pedig a `%APPDATA%\agentmemory` mappában. Egy már létező, örökölt `./data/state_store.db` vagy `./data/iii-config.yaml` fájlt a rendszer a 0. instance esetén a platform alapértelmezése előtt újrahasznosít. Egy explicit hely megadásához add meg a `--data-dir <path>` kapcsolót, vagy állítsd be az `AGENTMEMORY_DATA_DIR` változót; mindkét explicit beállítás elsőbbséget kap az örökölt felismeréssel szemben:
-
-```bash
-npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
-AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
-```
-
-A natív és a Docker-alapú indítás ugyanazt a feloldott host-mappát használja; a Docker a `/data` alá bind-mounteli. A `--instance 1` hozzáfűzi az `instance-1` nevet a feloldott mappához, és a különálló alapértelmezett port-négyest választja: `3211/3212/3213/49234`.
+A `--instance 1` az `instance-1` alkönyvtárat, a `3211` API-portot és a `3213` nézőfelület-portot használja. A Redis és a költöztetés az [adattárolási és mentési útmutatóban](../docs/reliability/state-storage.md) szerepel.
 
 A legfrissebb kiadási megjegyzések: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +473,7 @@ A legfrissebb kiadási megjegyzések: [CHANGELOG.md](../CHANGELOG.md).
 </tr>
 <tr>
 <td><strong>Külső függőségek</strong></td>
-<td>Nincs (SQLite + iii-engine)</td>
+<td>Nem szükséges külön adatbázis-szolgáltatás</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vektor DB</td>
 <td>Több</td>
@@ -550,13 +547,11 @@ A legfrissebb kiadási megjegyzések: [CHANGELOG.md](../CHANGELOG.md).
 | Zep / Graphiti | 30K | Temporális tudásgráf; a legerősebb publikált időbeli lekérdezési eredmények (LongMemEval 63.8%), de a gráf aszinkron módon épül, így a friss tények lemaradhatnak |
 | Cognee | 30K | Dokumentum-tudásgráf feldolgozás, csak Python, strukturált entitáskinyerésre épül, nem session-rögzítésre |
 
-Ezek közül semelyik nem rögzít automatikusan kódolóágens-hookokból, nem szállít local-first megjelenítőt, és nem futtatható kulcs nélkül — ez a kombináció az, amire az agentmemory épül.
+Az AgentMemory egyesíti a munkamenetek rögzítését, a kereshető projektelőzményeket és a helyi nézőfelületet, az első indítástól kulcs nélküli működéssel.
 
 ---
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Gyors indítás" height="32" /></picture></h2>
-
-Kompatibilitás: ez a kiadás az `iii-sdk` 0.22.1-et célozza, és a iii-engine v0.22.1-et pinneli.
 
 ### Próbáld ki 30 másodperc alatt
 
@@ -572,9 +567,11 @@ A `demo` 3 reális sessiont hoz létre (JWT hitelesítés, N+1 lekérdezés jav�
 
 Nyisd meg a `http://localhost:3113` címet, hogy élőben lásd a memória épülését.
 
+<a id="validate-a-fresh-install-and-restart-persistence"></a>
+
 ### Egy friss telepítés és az újraindítás utáni perzisztencia ellenőrzése
 
-A szerver futása közben ellenőrizd a REST-et, az egészségjelzést, a megjelenítőt és az iii-alapú futtatókörnyezet státuszát:
+A futó szerveren ellenőrizd az állapotot és a nézőfelületet:
 
 ```bash
 curl -fsS http://localhost:3111/agentmemory/livez
@@ -583,19 +580,26 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Az indulási állapotpanel mind a négy portot számba veszi: a REST/MCP HTTP-t a 3111-en, az iii stream-eket a 3112-n, a megjelenítőt a 3113-on, és az iii worker WebSocketet a 49134-en. A `status` megerősíti az agentmemory egészségi állapotát és az aktív szolgáltatót/embedding-módot. Mentsd el egy próbamemóriát, és erősítsd meg, hogy kereshető:
+A `status` megmutatja a szerver állapotát, a szolgáltatókat, az embeddingmódot, a megfigyelések kézbesítését és a helyreállítást. A védett REST-kérésekhez a szerver titka kell. Használd a saját `AGENTMEMORY_SECRET` értékét, ha beállítottad; különben olvasd be a generált helyi titkot:
 
 ```bash
+# Default generated local secret. For an explicit AGENTMEMORY_SECRET, use that value instead.
+read -r AGENTMEMORY_SECRET < "$HOME/.agentmemory/secret"
+
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
+  -H "Authorization: Bearer $AGENTMEMORY_SECRET" \
   -H 'Content-Type: application/json' \
   -d '{"content":"agentmemory restart persistence probe","concepts":["install-check"]}'
 
 curl -fsS -X POST http://localhost:3111/agentmemory/smart-search \
+  -H "Authorization: Bearer $AGENTMEMORY_SECRET" \
   -H 'Content-Type: application/json' \
   -d '{"query":"restart persistence probe","limit":5}'
 ```
 
 Ezután futtasd az `npx -y @agentmemory/agentmemory@latest stop` parancsot, indítsd el újra a kanonikus parancsot az 1. terminálban, várd meg a `/agentmemory/livez`-t, és ismételd meg a keresést. A próbamemóriát továbbra is vissza kell adnia. Ha egyéni `--data-dir`-t választottál, add meg ugyanazt a mappát az újraindításnál is.
+
+<a id="everyday-commands"></a>
 
 ### Napi parancsok
 
@@ -604,6 +608,9 @@ A telepítés és a beállítás a fenti [Telepítés](#install) részben él (a
 ```bash
 agentmemory                    # start the server
 agentmemory stop               # stop it cleanly
+agentmemory status
+agentmemory capture
+agentmemory capture --drain
 agentmemory connect <agent>    # wire another agent
 agentmemory doctor             # interactive diagnostics + fix prompts
 agentmemory remove             # uninstall everything we created
@@ -623,7 +630,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl
 npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-project/abc123.jsonl
 ```
 
-Az importált sessionök a natívok mellett jelennek meg a Replay választóban. A háttérben minden bejegyzés a `mem::replay::load`, a `mem::replay::sessions` és a `mem::replay::import-jsonl` iii funkciókon megy keresztül, mellékszerverek nélkül. Minden importált transcript indexelve van kereséshez, `import` eredetcsatornával van megjelölve, és session-kristály és tanulságok kinyeréséhez van feldolgozva.
+Az importált munkamenetek a Replay nézetben jelennek meg a natívak mellett. Az átiratok keresési indexet és `import` eredetjelölést kapnak; a feldolgozás munkamenet-kristályokat és tanulságokat is készíthet.
 
 > **Figyelem, ha az `import-jsonl`-re támaszkodsz elsődleges rögzítési útvonalként:** a Claude Code `cleanupPeriodDays` beállítása (a `~/.claude/settings.json`-ban, alapértelmezetten **30**) automatikusan törli az ennél régebbi JSONL-transcripteket a `~/.claude/projects/`-ból. Ha az agentmemoryt egy több hónapos Claude Code előzményre telepíted frissen, minden, ami 30 napnál régebbi, már eltűnt az első import előtt. Vagy futtasd az `import-jsonl`-t cronon, vagy emeld fel a `cleanupPeriodDays`-t valami magasabbra, vagy kösd be az automatikus rögzítő hookokat (az alapértelmezett plugin-telepítési útvonal), hogy minden kör az agentmemorybe kerüljön, amíg a session él, és a JSONL-takarítás ne számítson többé.
 
@@ -635,14 +642,12 @@ Használd a karbantartási parancsot, amikor szándékosan frissíteni akarod a 
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Figyelmeztetés: ez a parancs megváltoztatja a jelenlegi workspace-t/futtatókörnyezetet. Frissíthet JavaScript-függőségeket, és lehúzhatja a pinnelt `iiidev/iii:0.22.1` Docker image-et. Soha nem telepít pinnelés nélküli vagy újabb iii engine-t.
-
-Az implementációs részletek a `src/cli.ts`-ben élnek (lásd a `runUpgrade`-et a `src/cli.ts:544-595` környékén).
+A parancs frissíti a helyi környezetet, és módosíthatja az aktuális munkaterület JavaScript-függőségeit. Mentsd az adatokat, és olvasd el a [frissítési útmutatót](../docs/upgrades/iii-0.25.md).
 
 ### Claude Code (egyetlen blokk, illeszd be)
 
 ```text
-Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server and its pinned iii engine. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113. Keyless mode disables vectors: `memory_recall` uses BM25, and `memory_smart_search` can also use existing structural graph data. Set `EMBEDDING_PROVIDER=local` in `~/.agentmemory/.env` and restart to opt into on-device semantic recall.
+Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113. Keyless mode disables vectors: `memory_recall` uses BM25, and `memory_smart_search` can also use existing structural graph data. Set `EMBEDDING_PROVIDER=local` in `~/.agentmemory/.env` and restart to opt into on-device semantic recall.
 ```
 
 #### Claude Code a plugin telepítése nélkül (önálló MCP útvonal)
@@ -703,6 +708,30 @@ copilot plugin install rohitg00/agentmemory:plugin
 
 Az `agentmemory connect copilot-cli` beolvasztja a `mcpServers.agentmemory`-t a `~/.copilot/mcp-config.json`-ba (vagy a `$COPILOT_HOME/mcp-config.json`-ba, ha a `COPILOT_HOME` be van állítva), és megtartja a meglévő szervereket. Natív Windowson ez az egyetlen automatizált `connect` adapter; minden más natív Windows-ágenst manuálisan kell konfigurálni. A WSL `connect` csak akkor támogatott, ha a célágens ugyanabban a WSL-környezetben van telepítve. A Copilot a következő indításkor vagy a `/mcp` után veszi fel az MCP szervert. Telepítsd a plugint is, ha a teljes hook/skill élményt szeretnéd.
 
+### Cursor
+
+```bash
+agentmemory connect cursor
+```
+
+Ezután a **Settings → Plugins → Add marketplace** menüben válaszd ki a `.cursor-plugin/plugin.json` fájlt tartalmazó agentmemory könyvtárat, engedélyezd az **agentmemory** plugint és töltsd újra az ablakot. A plugin életciklus-rögzítést, munkaterület-alapú projektazonosítást, skilleket és MCP-t ad. A plugin hookjait vagy a `~/.cursor/hooks.json` kézi hookjait használd, hogy elkerüld a dupla rögzítést.
+
+[Cursor](../integrations/cursor/)
+
+### Pi, Oh My Pi, DeepSeek Harness
+
+```bash
+agentmemory connect pi --with-mcp
+agentmemory connect omp --with-mcp
+agentmemory connect dsh --with-hooks
+```
+
+Válaszd ki a használt kliens parancsát. A Pi és az OMP natív visszakeresést, rögzítést, offline újraküldést és skilleket telepít; a `--with-mcp` hozzáadja a teljes eszközkészletet. Pi alatt futtasd a `/reload` parancsot, az OMP-t indítsd újra, majd ellenőrizd az `/agentmemory-status` eredményét. A DSH MCP-t és a mellékelt rögzítőplugint telepíti; csatlakoztatás után indítsd újra a DSH-t.
+
+A Pi a telepíthető `@agentmemory/pi` csomagot is támogatja. A helyi telepítést és az npm-elérhetőséget a [Pi útmutató](../integrations/pi/) írja le. Kliensenként egy telepítési módot használj.
+
+[Pi](../integrations/pi/) · [Oh My Pi](../integrations/omp/) · [DSH](../docs/dsh.md)
+
 <details>
 <summary><b>OpenClaw (illeszd be ezt a promptot)</b></summary>
 
@@ -749,6 +778,8 @@ Teljes útmutató: [`integrations/hermes/`](../integrations/hermes/)
 
 </details>
 
+<a id="other-agents"></a>
+
 ### Egyéb ágensek
 
 Indítsd el a memóriaszervert: `npx -y @agentmemory/agentmemory@latest`
@@ -765,8 +796,8 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 
 Ez **kiegészíti** az `agentmemory connect <agent>`-et:
 
-- az `agentmemory connect <agent>` beírja az MCP szerver konfigurációt, hogy az eszközök elérhetők legyenek.
-- az `npx skills add rohitg00/agentmemory` telepíti a skilleket, hogy az ágens tudja, mikor hívja őket.
+- Az `agentmemory connect <agent>` általában MCP-konfigurációt ír. A Hermes, OpenClaw, Pi és Oh My Pi alapból a natív integrációt és skilleket telepíti; az MCP a `--with-mcp` kapcsolóval kérhető.
+- Az `npx skills add rohitg00/agentmemory` a mellékelt natív skillek nélküli ágenseknek telepít skilleket. Hermes, OpenClaw, Pi és Oh My Pi esetén ezt hagyd ki; a csatlakoztatójuk már telepíti a skilleket.
 
 Azoknál a kevés ágensnél, amelyeket a skills CLI még nem fed le (Zed v1.3.x és régebbi), másold be saját kezűleg a 17 SKILL.md fájlt az ágens natív skill-mappájába; ugyanaz a formátum mindenhol működik.
 
@@ -790,7 +821,7 @@ Az agentmemory bejegyzés **ugyanaz az MCP szerver blokk** minden olyan hoszton,
 | Ágens | Konfigurációs fájl | Megjegyzések |
 |---|---|---|
 | **Cursor (csak MCP)** | `~/.cursor/mcp.json` | Olvasztd be a `mcpServers`-be, vagy `agentmemory connect cursor`. Egykattintásos deeplink is elérhető a weboldalon. |
-| **Cursor (teljes plugin)** | `.cursor-plugin/` | Cursor Marketplace listázás (a beküldés felülvizsgálat alatt) vagy Cursor Settings → Plugins → lokális checkout. Regisztrál 7 automatikus rögzítő hookot (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skillt + az MCP szervert, az `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` kezelésével a Cursor plugin-dashboardján. Működik a Cursor IDE-ben és a `cursor-agent` CLI-ben; a CLI print-módú promptjai a session-transcriptből kerülnek visszapótlásra a session végén. |
+| **Cursor (teljes plugin)** | `.cursor-plugin/` | A plugin életciklus-hookokat, munkaterület-felismerést, skilleket és MCP-t ad a Cursor IDE és a `cursor-agent` számára. Lásd a [Cursor beállítását](#cursor). |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | Olvasszd be a `mcpServers`-be. Indítsd újra a Claude Desktopot a szerkesztés után. |
 | **Cline / Roo Code / Kilo Code** | Cline MCP beállítások (Settings UI → MCP Servers → Edit) | Ugyanaz a `mcpServers` blokk. |
 | **Devin CLI (MCP + hookok)** | `~/.config/devin/config.json` | Az `agentmemory connect devin` beolvasztja az MCP bejegyzést; a `--with-hooks` hozzáad hat natív automatikus rögzítő hookot (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) a Devin kisbetűs tool-matchereivel. Ellenőrizd a `devin mcp list` és a `/hooks` paranccsal a devinen belül. |
@@ -804,7 +835,8 @@ Az agentmemory bejegyzés **ugyanaz az MCP szerver blokk** minden olyan hoszton,
 | **Codex CLI (teljes plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory`, majd `codex plugin add agentmemory@agentmemory`. Regisztrálja az MCP-t + 6 életciklus-hookot + 17 skillt. Bízz meg a hookokban, és ellenőrizd a rögzítést a hosztodon; lásd a [Codex beállítása és ellenőrzése](../docs/plugins/codex-local.md) útmutatót. |
 | **OpenCode (csak MCP)** | `opencode.json` | Más formátum: felső szintű `mcp` kulcs, a parancs tömbként: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (teljes plugin)** | `plugin/opencode/` | 22 automatikus rögzítő hook, amely lefedi a session-életciklust, az üzeneteket, a toolokat és a hibákat. A projekt-attribúció sessiononkénti, így egyetlen, több repón átnyúló OpenCode-folyamat minden sessiont a saját projektje alá fájloz. Két slash parancs (`/recall`, `/remember`). Másold a `plugin/opencode/`-ot az OpenCode workspace-edbe, és add hozzá a plugin-bejegyzést az `opencode.json`-hoz. Lásd a [`plugin/opencode/README.md`](../plugin/opencode/README.md) fájlt a teljes hook-táblázatért + hiányanalízisért. |
-| **pi** | `~/.pi/agent/extensions/agentmemory` | Az `agentmemory connect pi` telepíti a becsomagolt extension-t a pi automatikus felismerő mappájába (felidézés az ágens indulásakor, rögzítés az ágens végén, `memory_search` / `memory_save` / `memory_health` eszközök, `/agentmemory-status`). A `/reload` egy futó piben felveszi. [`integrations/pi`](../integrations/pi/) egyben egy pi-csomag is (`pi install ./integrations/pi` egy checkoutból). |
+| **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi --with-mcp`. natív visszakeresés + rögzítés + skillek. `/reload`, `/agentmemory-status`. [Pi](../integrations/pi/). |
+| **Oh My Pi** | `~/.omp/agent` | `agentmemory connect omp --with-mcp`. natív visszakeresés + rögzítés + skillek. [Oh My Pi](../integrations/omp/). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | A `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` adja a 6-hookos memóriaszolgáltatót (prefetch, kör-rögzítés, session-vég, pre-compress, MEMORY.md-tükrözés, system prompt blokk). Validáld a `hermes plugins doctor` és a `hermes memory status` paranccsal. Lásd [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | Az `agentmemory connect qwen` beírja a standard `mcpServers` blokkot. A hook-payload mezőkompatibilis a Claude Code-dal, így a meglévő 12-hookos szkriptek módosítás nélkül működnek; kösd be őket a `hooks` szekcióban, ugyanabban a `settings.json`-ban. |
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | Az `agentmemory connect antigravity --with-hooks` telepíti az MCP-t és a rögzítő hookokat a megosztott testreszabási mappába. Lásd az [Antigravity beállítása és korlátai](../docs/plugins/antigravity.md) útmutatót. |
@@ -812,39 +844,19 @@ Az agentmemory bejegyzés **ugyanaz az MCP szerver blokk** minden olyan hoszton,
 | **Kiro** | `~/.kiro/settings/mcp.json` | Az `agentmemory connect kiro` beírja a felhasználói szintű konfigurációt. A workspace-szintű felülírások a `.kiro/settings/mcp.json`-ba kerülnek, a kódod mellé. |
 | **Warp** | `~/.warp/.mcp.json` | Az `agentmemory connect warp` beírja a standard `mcpServers` blokkot. A Warp a skilleket is automatikusan felismeri a `.claude/skills/`-ből; a Claude Code plugin telepítése után a 8 agentmemory skill (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) natívan megjelenik a Warp slash-parancs palettáján. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | Az `agentmemory connect cline` beírja a standard `mcpServers` blokkot. VS Code extension felhasználóknak: illeszd be ugyanazt a blokkot a Cline Settings → MCP Servers → Edit JSON útján. |
-| **Continue.dev** | `~/.continue/config.yaml` (előnyben részesített) vagy `config.json` (örökölt) | Az `agentmemory connect continue` létrehoz egy `config.yaml`-t a semmiből, ha egyik sem létezik, vagy módosítja a meglévő `config.json`-t. **Ha már van `config.yaml`-od**, az adapter kiírja a pontos, a `mcpServers:` alá illesztendő blokkot; nem írja át némán a yaml-odat, mert a kommentek és a horgok biztonságos megtartásához egy YAML-parserre lenne szükség, amit a csomag nem szállít. A Continue tömb formátumot (nem objektumot) használ a `mcpServers`-hez. |
+| **Continue.dev** | `~/.continue/config.yaml` (előnyben részesített) vagy `config.json` (örökölt) | Az `agentmemory connect continue` létrehozza a hiányzó `config.yaml` fájlt, vagy módosítja a meglévő `config.json` fájlt. Meglévő YAML esetén kiírja az `mcpServers:` alá illeszthető blokkot, megőrizve a megjegyzéseket és horgonyokat. A Continue tömböt használ, nem objektumot. |
 | **Zed** | `~/.config/zed/settings.json` | Az `agentmemory connect zed` a `context_servers` alá ír (a Zed saját kulcsa, NEM a `mcpServers`). A távoli MCP szerverek egy `{"url": "..."}`-vel is bekötődhetnek. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | Az `agentmemory connect droid` beírja a standard `mcpServers` blokkot. A projekt-szintű felülírások a `<repo>/.factory/mcp.json`-ba kerülnek. Add meg a `--with-hooks`-ot a natív automatikus rögzítéshez. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | Az `agentmemory connect dsh` hozzáfűz egy `@deepseek-ai/dsh-mcp-client` sort a home-szintű patch-réteghez, amelyet minden Harness-profil betölt; az eszközök `mcp__agentmemory__*`-ként regisztrálódnak. Add meg a `--with-hooks`-ot az automatikus rögzítés bekötéséhez is: a becsomagolt Claude Code hook-szkriptek a Harness első féltől származó `@deepseek-ai/dsh-hooks-claude-code` hídján keresztül futnak (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop), egy a `$DSH_HOME/agentmemory.hooks.json`-ba írt manifeszt révén. Alapértelmezés szerint `~/.dsh`-ra áll, ha a `DSH_HOME` nincs beállítva. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | Az `agentmemory connect dsh` bekapcsolja az MCP-eszközöket. A `--with-hooks` betölti az AgentMemoryhoz mellékelt natív rögzítőbővítményt. Külön bővítménycsomag nem szükséges. [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP beállítások felhasználói felülete | Ugyanaz a `mcpServers` blokk; használd a `goose configure` → Add Extension → MCP menüt. A közvetlen YAML-szerkesztés a `~/.config/goose/config.yaml`-ban is támogatott, de a séma `extensions:` + `cmd`-t használ (nem `mcpServers:` + `command`-ot). |
-| **Aider** | n/a | Beszélj közvetlenül a REST API-val: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
-| **Bármely ágens (32+)** | n/a | Az `npx skillkit install agentmemory` automatikusan felismeri a hosztot, és beolvaszt. |
+| **Aider** | n/a | Szkriptekből a [hitelesített REST-példákkal](#validate-a-fresh-install-and-restart-persistence) tárolhatsz és kereshetsz. |
+| **Támogatott ágensek** | Csak skillek | `npx skills add rohitg00/agentmemory`; válassza ki a telepítendő skilleket és a célágenseket. |
 
 **Sandboxolt MCP kliensek** (Flatpak / Snap / korlátozó konténerek), amelyek nem érik el a hoszt `localhost`-ját: állítsd be a `"AGENTMEMORY_FORCE_PROXY": "1"`-et is az `env` blokkban, és az `AGENTMEMORY_URL`-t irányítsd egy olyan útvonalra, amit a sandbox valóban elér (pl. a LAN-IP-d).
 
 ### Programozott hozzáférés (Python / Rust / Node)
 
-Az agentmemory iii funkciókként regisztrálja a fő műveleteit (`mem::remember`, `mem::observe`, `mem::context`, `mem::smart-search`, `mem::forget`). Bármely nyelv, amelyhez van iii SDK, közvetlenül hívhatja ezeket a `ws://localhost:49134` felett, nyelvenkénti külön REST kliens nélkül.
-
-```bash
-pip install iii-sdk         # Python
-cargo add iii-sdk           # Rust
-npm  install iii-sdk        # Node
-```
-
-```python
-from iii import register_worker
-
-iii = register_worker("ws://localhost:49134")
-iii.connect()
-
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
-```
-
-Kidolgozott példa: [`examples/python/`](../examples/python/) (gyors indítás + megfigyelés/felidézés folyamat). A REST a `:3111`-en elérhető marad azokhoz a hosztokhoz, amelyeknek nincs iii futtatókörnyezetük.
+Bármely nyelvből használhatod a [REST API-t](#api), ágensből pedig az [MCP-eszközöket](#mcp-server). A REST JSON-t és bearer-hitelesítést használ; lásd a [tárolási és keresési példát](#validate-a-fresh-install-and-restart-persistence). A közvetlen környezetintegrációhoz lásd a [Python-példákat](../examples/python/).
 
 ### Forrásból
 
@@ -853,91 +865,33 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Ez elindítja az agentmemoryt egy lokális `iii-engine`-nel, ha a pinnelt binárist már telepítetted, vagy Docker Compose-t használ, ha azt választod. A REST, a stream-ek és a megjelenítő alapértelmezetten a `127.0.0.1`-hez kötődnek. Az automatikus macOS/Linux binárisútvonal `curl`-t, egy POSIX `sh`-t és `tar`-t igényel.
-
-Telepítsd az `iii-engine`-t manuálisan. **Az agentmemory jelenleg a `v0.22.1`-re pinneli az `iii-engine`-t**, ugyanarra a kiadásra, mint az `iii-sdk` függősége; a worker ennek az engine-nek a wire-protokollját beszéli, és a 0.20.0 átszervezte az SDK felületét, így a kettő az agentmemory kiadásaiban együtt mozog. Írd felül az `AGENTMEMORY_III_VERSION=<version>` segítségével, ha saját engine-t futtatsz, és tudod, hogy megegyezik.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** cseréld ki az `aarch64-apple-darwin`-t `x86_64-apple-darwin`-ra
-- **Linux x64:** cseréld ki `x86_64-unknown-linux-gnu`-ra
-- **Linux arm64:** cseréld ki `aarch64-unknown-linux-gnu`-ra
-- **Windows:** töltsd le az `iii-x86_64-pc-windows-msvc.zip`-et az [iii-hq/iii kiadások v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) oldalról, és bontsd ki az `iii.exe`-t a `%USERPROFILE%\.agentmemory\bin\iii.exe` helyre
-
-Minden archívumhoz tartozik egy illő `.sha256` fájl a kiadási oldalon; ha platformot cserélsz, használd azt a fájl hash-ét a fenti ellenőrzésben (Windowson: `Get-FileHash`). Az `npx @agentmemory/agentmemory`-ban lévő automatikus telepítő pinneli ezeket a hash-eket, és visszautasít minden archívumot, amely nem egyezik.
-
-Vagy használj Dockert (a becsomagolt `docker-compose.yml` lehúzza az `iiidev/iii:0.22.1`-et). Teljes dokumentáció: [iii.dev/docs](https://iii.dev/docs).
+Az `npm start` ugyanazt a helyi szervert indítja, mint a telepített CLI. A követelmények a [telepítésnél](#install) szerepelnek; az API és a nézőfelület a `127.0.0.1` címen figyel.
 
 ### Windows
 
-Az agentmemory Windows 10/11-en fut, de maga a Node.js-csomag nem elég; a pinnelt iii-engine v0.22.1 futtatókörnyezetre is szükség van háttérfolyamatként. A CLI nem bontja ki automatikusan a Windows ZIP-et, így a natív Windows-felhasználóknak manuálisan kell telepíteniük az `iii.exe`-t, vagy a WSL2-t, vagy a Docker Desktopot kell választaniuk.
+Az agentmemory Windows 10/11 rendszeren fut. A WSL2 a Linux útvonalat követi, és automatikusan telepítheti a rögzített motort. Natív Windowson kézzel telepítse a rögzített iii-engine v0.25.0 binárist: töltse le a megfelelő archívumot az [iii v0.25.0 kiadási oldaláról](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), ellenőrizze az ellenőrzőösszeget, majd helyezze az `iii.exe` fájlt a `PATH`-ra (például `%USERPROFILE%\.local\bin\iii.exe`). A CLI nem bontja ki automatikusan a Windows ZIP-et.
 
-A natív Windows automatizált MCP-bekötés csak az `agentmemory connect copilot-cli`-t támogatja. A Claude Code, a Codex, a Cursor és minden más natív Windows-ágens esetén másold be a manuális MCP blokkot az [Egyéb ágensek](#other-agents) részből az adott ágens Windows-konfigurációjába. A `connect` futtatása WSL-ben csak akkor megfelelő, ha a célágens is ugyanabban a WSL-környezetben van telepítve; nem szerkeszti egy Windows-hoszton futó ágens konfigurációját.
+A natív Windows automatizált MCP-kapcsolat csak az `agentmemory connect copilot-cli` parancsot támogatja. Más natív Windows-ügynökökhöz használja az [Egyéb ügynökök](#other-agents) kézi MCP-blokkját. A `connect` parancsot csak akkor futtassa WSL-ben, ha a célügynök is ugyanabban a WSL-környezetben van telepítve.
 
-**A opció: előre lefordított Windows binárist (ajánlott)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**B opció: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**C opció: csak önálló MCP (engine nélkül).** Ha csak az MCP eszközökre van szükséged az ágensedhez, és nincs szükséged a REST API-ra, a megjelenítőre vagy a cron-feladatokra, hagyd ki teljesen az engine-t:
+**Csak önálló MCP (motor nélkül).** Ha csak MCP-eszközökre van szüksége, REST API, megjelenítő vagy runtime-szolgáltatások nélkül:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Diagnosztika Windowshoz:** ha az `npx -y @agentmemory/agentmemory@latest` elbukik, futtasd újra `--verbose`-szal, hogy lásd a valódi engine stderr-t. Gyakori hibamódok:
-
-| Jelenség | Megoldás |
-|---|---|
-| `The engine process started but the REST API never responded.` | Erősítsd meg, hogy mind a négy levezetett port szabad, ellenőrizd, hogy a pinnelt `iii.exe` életben maradt, majd futtasd újra `--verbose`-szal, és vizsgáld meg a rögzített engine stderr-t |
-| `Could not start iii-engine` | Sem az `iii.exe`, sem a Docker nincs telepítve. Lásd a fenti A vagy B opciót |
-| Port-konfliktus | `netstat -ano \| findstr :3111`, hogy lásd, mi van hozzákötve, majd öld ki, vagy használj `--port <N>`-t |
-| A Docker-fallback kimarad, bár a Docker telepítve van | Győződj meg róla, hogy a Docker Desktop valóban fut (a tálca ikonja) |
-
-> Megjegyzés: az iii **engine** egy előre lefordított bináris, nem egy cargo crate, ezért ne próbáld `cargo install`-lal telepíteni. (Az iii **SDK-k** publikálva vannak a crates.io-n, az npm-en és a PyPI-n, de az agentmemorynak nincs szüksége rájuk.) A támogatott engine-telepítési módok mind a v0.22.1-re vannak pinnelve: a fenti előre lefordított bináris, az agentmemory macOS/Linux automatikus telepítési útvonala (`curl`, POSIX `sh`, és `tar` szükséges), és az `iiidev/iii:0.22.1` Docker image. A sima, upstream `install.sh | sh` a legújabb engine-t telepíti, amit az agentmemory nem támogat. Használd az `npx -y @agentmemory/agentmemory@latest`-et; macOS/Linuxon ez lehúzza a pinnelt engine-t a `~/.agentmemory/bin`-be.
+Futtasd az `agentmemory doctor` parancsot, vagy indíts újra `--verbose` kapcsolóval. Foglalt portoknál használj `--port <N>` vagy `--instance <N>` beállítást. A kompatibilitás és helyreállítás a [frissítési útmutatóban](../docs/upgrades/iii-0.25.md) szerepel.
 
 ---
 
 <h2 id="deploy">Telepítés (Deploy)</h2>
 
-Egykattintásos sablonok felügyelt hosztokhoz. Mindegyik egy önálló
-Dockerfile-t szállít, amely lehúzza az `@agentmemory/agentmemory`-t az npm-ről, és
-bemásolja az iii engine binárist a hivatalos `iiidev/iii` Docker Hub
-image-ből; nincs szükség előre épített agentmemory image-re. A tartós tár
-a `/data`-ra csatlakozik; az első indításkor az entrypoint felülírja
-az npm-be csomagolt iii konfigurációt (amely a `127.0.0.1`-hez kötődik) egy
-telepítésre hangolttal, amely a `0.0.0.0`-hoz kötődik, és abszolút `/data` útvonalakat használ,
-legenerálja a HMAC secretet, majd leadja a jogosultságokat `root`-ról `node`-ra a
-`gosu`-n keresztül, mielőtt exec-elné az agentmemory CLI-t.
+Önálló üzemeltetéshez Docker Compose-t vagy az alábbi sablonokat használd. A memória és a hitelesítő adatok a `/data` köteten vannak; frissítéskor mentsd és használd újra. A hitelesítést, hálózatot, mentést és költöztetést a [telepítési útmutató](../deploy/README.md) ismerteti.
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Telepítés a fly.io-ra" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Telepítés a Railway-re" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Telepítés a fly.io-ra" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Telepítés a Railway-re" /></a>
 </p>
 
 A Render egykattintásos telepítés gombja a repó gyökerében lévő `render.yaml`-t igényli, amit szándékosan tisztán tartunk. Használd a [`deploy/render/`](.././deploy/render/README.md)-ben dokumentált Render Blueprint folyamatot, hogy manuálisan a repón belüli blueprintre mutass.
@@ -955,29 +909,13 @@ költségküszöbök) a [`deploy/`](.././deploy/README.md)-ben élnek:
   VPS-eden, a [Coolify](https://coolify.io/self-hosted) révén; ugyanaz a Docker
   Compose stack, te birtoklod a hosztot és az adatot.
 
-Csak a `3111`-es port van publikálva. A `3113`-as megjelenítő
-a konténeren belül a loopbackhez marad kötve; minden sablon README-je dokumentálja
-az SSH-tunnel mintát az eléréséhez.
+A REST portja `3111`, a nézőfelületé `3113`. Tartsd őket privát hálózaton, vagy védd hitelesítéssel és TLS-sel. A platformbeállítások és a [régi Docker költöztetése](../deploy/README.md#migrating-from-the-legacy-cli-docker-mode) a telepítési útmutatóban szerepelnek.
 
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Miért agentmemory" height="32" /></picture></h2>
 
-Minden kódolóágens elfelejt mindent, amikor a session véget ér, és minden új session azzal kezdődik, hogy újra elmagyarázod a stacket. Az agentmemory a háttérben fut, és megszünteti ezt a lépést.
-
-```text
-Session 1: "Add auth to the API"
-  Agent writes code, runs tests, fixes bugs
-  agentmemory silently captures every tool use
-  Session ends -> observations compressed into structured memory
-
-Session 2: "Now add rate limiting"
-  Agent already knows:
-    - Auth uses JWT middleware in src/middleware/auth.ts
-    - Tests in test/auth.test.ts cover token validation
-    - You chose jose over jsonwebtoken for Edge compatibility
-  Zero re-explaining. Starts working immediately.
-```
+A projektismeretek beszélgetések és instrukciófájlok között szóródnak szét. Az AgentMemory kereshetővé teszi a korábbi döntéseket, javításokat és tanulságokat az éppen használt ágensből.
 
 ### A beépített ágensmemóriával szemben
 
@@ -985,7 +923,7 @@ Minden AI kódolóágens beépített memóriával érkezik: a Claude Code-nak `M
 
 | | Beépített (CLAUDE.md) | agentmemory |
 |---|---|---|
-| Méretezés | 200 soros korlát | Korlátlan |
+| Karbantartás | Kézzel gondozott instrukciók | Indexelt munkamenet-előzmények és emlékek |
 | Keresés | Mindent betölt a kontextusba | BM25 + vektor + gráf (csak top-K) |
 | Token-költség | 22K+ 240 megfigyelésnél | ~1,900 token (92%-kal kevesebb) |
 | Ágensek közötti | Ágensenkénti fájlok | MCP + REST (bármely ágens) |
@@ -1011,13 +949,13 @@ PostToolUse hook fires
 Stop / SessionEnd hook fires
   -> Summarize session
   -> Knowledge graph extraction (if GRAPH_EXTRACTION_ENABLED=true)
-  -> Slot reflection (if SLOT_REFLECT_ENABLED=true)
+  -> Slot reflection (if AGENTMEMORY_SLOTS=true and AGENTMEMORY_REFLECT=true)
 
 SessionStart hook fires
   -> Load project profile (top concepts, files, patterns)
   -> Hybrid search (BM25 + vector + graph)
   -> Token budget (default: 2000 tokens)
-  -> Inject into conversation
+  -> Inject context when enabled by the integration
 ```
 
 ### 4 szintű memória-konszolidáció
@@ -1035,6 +973,8 @@ A memóriák idővel lecsengenek (Ebbinghaus-görbe). A gyakran elért memóriá
 
 ### Mi kerül rögzítésre
 
+A táblázat a Claude Code hookjait írja le. Más integrációk a kliens által biztosított eseményeket rögzítik. A közös hookok automatikus kontextusbeillesztése külön engedélyezhető: `AGENTMEMORY_INJECT_CONTEXT=true`.
+
 | Hook | Rögzíti |
 |------|----------|
 | `SessionStart` | Projekt-útvonal, session-ID |
@@ -1051,7 +991,7 @@ A memóriák idővel lecsengenek (Ebbinghaus-görbe). A gyakran elért memóriá
 
 | Képesség | Leírás |
 |---|---|
-| **Automatikus rögzítés** | Minden toolhasználat hookokon keresztül rögzítve, manuális munka nélkül |
+| **Automatikus rögzítés** | A natív integrációk által rögzített támogatott munkamenet- és eszközesemények |
 | **Szemantikus keresés** | BM25 + vektor + tudásgráf RRF-fúzióval |
 | **Memória-evolúció** | Verziózás, felülírás, kapcsolati gráfok |
 | **Felidézési higiénia** | A felülírt memória-verziók elhagyják a keresési indexeket; a KV-ben lévő verziólánc megtartja a teljes előzményt |
@@ -1252,7 +1192,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Valós idejű megjelenítő" height="32" /></picture></h2>
 
-Automatikusan elindul a `3113`-as porton. A megjelenítő egy pillanatképet tölt be, amikor csatlakozik (`GET /agentmemory/viewer/snapshot`), majd élő stream-eseményeket alkalmaz: új memóriák, tanulságok, megfigyelések, audit-bejegyzések, gráfváltozások és egészségfrissítések jelennek meg polling vagy oldal-újratöltés nélkül. Az egyetlen más kérés az, amire kattintasz: "load more" lapok és keresések. Ha a stream megszakad, a megjelenítő megmutatja, mennyire elavultak a számai, backoff-fal újracsatlakozik, és egy pillanatképből újraszinkronizál.
+A viewer automatikusan elindul a `3113` porton. Csatlakozáskor egy snapshotot tölt be (`GET /agentmemory/viewer/snapshot`), majd a REST worker `/agentmemory/viewer/events` útvonalán érkező SSE-vel alkalmazza az élő eseményeket: az új memóriák, leckék, megfigyelések, auditbejegyzések, gráfváltozások és health-frissítések lekérdezés és oldal-újratöltés nélkül jelennek meg.
 
 - **12 fül, négy csoportban**, élő számlálókkal, deep linkekkel (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), billentyűparancsokkal és egy mobilmenüvel.
 - **Memories:** szerveroldali keresés, szűrők projekt, ágens és típus szerint, egy részletpanel a verziólánccal és egy szó-szintű diff-fel, eredetre mutató linkek, másolás gombok az id-hez, az MCP-híváshoz és egy curl parancshoz, szerkesztés (új verzió), elfelejtés megerősítéssel, tömeges elfelejtés és JSON-export.
@@ -1266,187 +1206,6 @@ open http://localhost:3113
 ```
 
 A megjelenítő szervere alapértelmezetten a `127.0.0.1`-hez kötődik, és csatolja a szerver secretjét, amikor továbbküldi a kéréseket a REST API-nak, így nincs szükség beállításra. A REST-en kiszolgált `/agentmemory/viewer` végpont a normál bearer-token szabályokat követi, és a token nélküli böngészőket a megjelenítő portjára irányítja át. A CSP-fejlécek válaszonkénti script-nonce-t használnak, és letiltják az inline handler-attribútumokat (`script-src-attr 'none'`).
-
----
-
-<h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii konzol" height="32" /></picture></h2>
-
-A megjelenítő a `:3113`-on azt mutatja, mire **emlékezett** az ágensed. A [iii console](https://iii.dev/docs/console) azt mutatja, mit **csinált** az ágensed: minden memória-műveletet OpenTelemetry trace-ként, minden KV-bejegyzést szerkeszthetően, minden funkciót meghívhatóan, minden stream-et csatlakoztathatóan. Két ablak ugyanarra a memóriára: egy termékalakú, egy engine-alakú.
-
-Figyeld meg, ahogy egy `memory_smart_search` elsül, és nézd meg a BM25-pásztázást → embedding-keresést → RRF-fúziót → rerankert egy vízeséses nézetben. Szerkessz egy elakadt konszolidáció-timert a KV-böngészőben. Játssz vissza egy `PostToolUse` hookot egy módosított payloaddal. Pinneld ki a WebSocket-stream-et, és nézd, ahogy a megfigyelések élőben landolnak.
-
-Az agentmemory ezt ingyen szállítja, mert minden funkcióhívás és trigger az iii-n keresztül sül el; semmi egyéni, semmit nem kell instrumentálni.
-
-<p align="center">
-  <img src="../assets/iii-console/workers.png" alt="iii console Workers oldal: csatlakoztatott workerek, köztük agentmemory-instance-ok, élő funkciószámokkal és futtatókörnyezet-metaadatokkal" width="720" />
-  <br/>
-  <em>Workers oldal: minden csatlakoztatott worker, az agentmemory-t magát is beleértve, PID-del, funkciószámmal, futtatókörnyezettel és a legutóbbi láthatósággal.</em>
-</p>
-
-**Már telepítve van.** A konzol a pinnelt `iii` engine-nel (0.22+) érkezik; nincs külön mit telepíteni. Az első indítás letölti a konzol binárist az engine mellé.
-
-**Indítsd el az agentmemory mellett:**
-
-```bash
-agentmemory console
-```
-
-Ez a pinnelt engine `iii console`-ját futtatja az agentmemory által feloldott portok ellen (REST, stream-ek, híd), és egy porttal a megjelenítő fölött szolgálja ki, alapértelmezetten a `http://localhost:3114`-en. A `--console-port N` egy másik portot választ; a `--port` és az `--instance` ugyanúgy választja ki az agentmemory-instance-t, mint a `stop`-nál; minden más kapcsoló átadásra kerül, például a `--enable-flow` a kísérleti architektúra-gráf oldalhoz.
-
-Ugyanaz kézzel, hasznos, ha az `agentmemory` nincs a PATH-on:
-
-```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
-```
-
-**Mit tehetsz a konzolból:**
-
-| Oldal | Mire használd |
-|------|-----------|
-| **Workers** | Lásd minden csatlakoztatott workert és élő metrikáit, az agentmemory workert is beleértve. |
-| **Functions** | Hívj meg közvetlenül bármelyik agentmemory-funkciót egy JSON-payloaddal; hasznos a `memory.recall`, `memory.consolidate`, `graph.query` teszteléséhez, kliens bekötése nélkül. |
-| **Triggers** | Játssz vissza HTTP-, cron-, event- és state-triggereket: süsd el manuálisan a konszolidáció-cront, próbálj újra egy HTTP-route-ot, bocsáss ki egy állapotváltozást. |
-| **States** | KV-böngésző teljes CRUD-dal a sessionök, memória-slotok, életciklus-timerek és az embedding-index felett; szerkeszd az értékeket a helyükön. |
-| **Streams** | Élő WebSocket-monitor a memória-írásokhoz, hook-eseményekhez és megfigyelés-frissítésekhez, ahogy áthaladnak az iii stream-eken. |
-| **Queues** | Tartós queue-topicok + dead-letter kezelés. Játssz vissza vagy dobj el elbukott embedding- / tömörítési feladatokat. |
-| **Traces** | OpenTelemetry vízesés / flame / szolgáltatás-bontás nézetek. Szűrj `trace_id` szerint, hogy pontosan lásd, mely funkciók, DB-hívások és embedding-kérések adtak ki egy adott `memory.search`-t. |
-| **Logs** | Strukturált OTEL-logok, trace/span ID-khez szűrve és korrelálva. |
-| **Config** | Futásidejű konfiguráció: lásd pontosan, mely workerekkel, szolgáltatókkal és portokkal fut az engine-ed. |
-| **Flow** | (Opcionális, `--enable-flow`) Interaktív architektúra-gráf minden workerről, triggerről és stream-ről. |
-
-<p align="center">
-  <img src="../assets/iii-console/traces-waterfall.png" alt="iii console trace vízesés nézet, amely a per-span időtartamot mutatja" width="720" />
-  <br/>
-  <em>Traces: vízesés / flame / szolgáltatás-bontás minden memória-művelethez.</em>
-</p>
-
-**A trace-ek már be vannak kapcsolva:**
-
-Az `iii-config.yaml` az `iii-observability` workerrel engedélyezve érkezik (`exporter: memory`, `sampling_ratio: 0.1`, metrikák + logok). Nincs szükség extra konfigurációra; abban a pillanatban, hogy az agentmemory elindul, minden memória-művelet egy strukturált logot bocsát ki, amit a konzol tud olvasni, és minden tizedik (`sampling_ratio: 0.1`) emellett egy trace-span-t is kibocsát.
-
-Ha Jaeger/Honeycomb/Grafana Tempo-ba akarsz exportálni helyette, változtasd meg az `exporter: memory`-t `exporter: otlp`-re, és állítsd be a collector-végpontot az iii observability-dokumentációja szerint.
-
-> **Figyelem:** a konzolon magán nincs kikényszerítve hitelesítés; tartsd a `127.0.0.1`-hez kötve (ez az alapértelmezett), és soha ne tedd nyilvánosan elérhetővé.
-
----
-
-<h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="iii által hajtva" height="32" /></picture></h2>
-
-Az agentmemory **már egy futó [iii](https://iii.dev) instance**. Három primitívből (worker, function, trigger) épül fel a futtatókörnyezet; a KV-állapot, a stream-ek és az OTEL-trace-ek az iii-vel érkező iii-state, iii-stream és iii-observability workerekből jönnek. Nem telepítettél Postgrest, Redist, Expresst, pm2-t vagy Prometheust, mert az iii lecseréli őket.
-
-Ez azt jelenti, hogy egyetlen további paranccsal egy teljesen új képességgel bővítheted az agentmemoryt.
-
-### Bővítsd az agentmemoryt több workerrel
-
-Az agentmemoryhoz szükséges beépített workerek már ott vannak az `iii-config.yaml`-ban, és vele együtt indulnak: `iii-state` (KV), `iii-queue` (tartós újrapróbálkozás az event-feliratkozóknak), `iii-pubsub`, `iii-cron`, `iii-stream`, és `iii-observability` (OTEL-trace-ek, metrikák és logok minden funkcióhoz). Bármi más a [iii worker regiszterből](https://workers.iii.dev) beilleszthető ugyanabba az engine-be: másold az `iii-config.yaml`-t a `~/.agentmemory/iii-config.yaml`-ba (a CLI előnyben részesíti ezt a fájlt a becsomagolttal szemben, és a portokat és adat-útvonalakat is belerendereli), add hozzá a bejegyzést, telepítsd a worker futtatókörnyezetet egyszer a `~/.agentmemory/bin/iii update worker` paranccsal, és indítsd újra az agentmemoryt.
-
-```yaml
-workers:
-  # ...the bundled entries...
-  - name: database          # SQL-backed state adapter when you outgrow the KV defaults
-  - name: iii-sandbox       # run code that came out of memory_recall inside a throwaway VM
-  - name: mcp               # extra MCP servers next to agentmemory's, same engine
-```
-
-| Worker | Mit kapsz hozzá az agentmemoryhoz |
-|---|---|
-| [`database`](https://workers.iii.dev/workers/database) | SQL-alapú állapot-adapter, ha kinövöd a memóriabeli KV-alapértelmezéseket |
-| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | A `memory_recall`-ból kikerült kód egy eldobható VM-ben fut, nem a shelledben |
-| [`mcp`](https://workers.iii.dev/workers/mcp) | Állíts fel extra MCP szervereket az agentmemoryé mellett, osszátok meg ugyanazt az engine-t |
-
-A 0.22.x engine-en tartsd meg az `iii-` prefixes neveket a fenti beépített workerekhez; a prefix nélküli `http`, `state`, `queue`, `pubsub` és `cron` bejegyzések azok az önálló regiszter-workerek, amelyekre az agentmemory a 0.23-as migrációval áttér.
-
-Teljes regiszter: [workers.iii.dev](https://workers.iii.dev). Minden ottani worker ugyanazokon a primitíveken épül fel, amelyeket az agentmemory is használ, és a már meglévő agentmemoryod is egy közülük.
-
-### Engine-konfiguráció és bind-cím
-
-Az `agentmemory start` az engine-konfigurációt az első létező fájlból olvassa: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` a jelenlegi mappában, `~/.agentmemory/iii-config.yaml`, majd a becsomagolt `iii-config.yaml`. Minden indításkor ezt a fájlt (adat-útvonalak, portok, állapot-backend) a `~/.agentmemory/data/iii-config.runtime.yaml`-ba rendereli, és a renderelt másolattal indítja el az engine-t, így a forrásfájlt szerkeszd, ne a renderelt másolatot. A forrásfájl `host:` értékei úgy maradnak, ahogyan írva vannak.
-
-A becsomagolt `iii-config.yaml` szándékosan a `127.0.0.1`-hez kötődik, és ez az alapértelmezés egy konténeren belül is érvényes. Egy konténerben indított CLI a konténer saját loopbackjén figyel, így a publikált portok semmit nem érnek el. Ahhoz, hogy egy konténerizált CLI-t a publikált portokon keresztül szolgálj ki, állítsd az `AGENTMEMORY_III_CONFIG`-ot egy olyan konfigurációra, amely a `0.0.0.0`-hoz kötődik. A csomagolt `iii-config.docker.yaml` egy ilyen: a `iii-http`-t, az `iii-stream`-et és az engine-portot a `0.0.0.0`-hoz köti, és az állapotot a `/data` alatt tárolja, így csatolj ott egy írható volume-ot. Tartsd beállítva az `AGENTMEMORY_SECRET`-et, és csak azokat a portokat publikáld, amelyekre szükséged van, a `127.0.0.1`-en vagy egy megbízható proxy mögött.
-
-Ennek a repónak a `docker-compose.yml`-je nem megy át a CLI konfiguráció-keresésén: a `/app/config.yaml`-ra csatolja az `iii-config.docker.yaml`-t, és az `iii-engine` konténer a `--config /app/config.yaml`-lal indul. Az egykattintásos [telepítési sablonok](../deploy/) a saját `0.0.0.0` konfigurációjukat írják meg az entrypointjaikban.
-
-### Tárolási backend: fájl (alapértelmezett) vs. redis
-
-Az `iii-state` és az `iii-stream` alapértelmezetten az iii-engine beépített, fájl-alapú KV-tárát használja: egy JSON-fájl hatókörönként, az engine-folyamat memóriájában tartva, és egy időzítő szerint visszaírva a diszkre. Ez a helyes alapértelmezés egy egyfelhasználós lokális telepítéshez; egy több egyidejű íróval rendelkező megosztott daemon valódi, kulcsonkénti írásokat kap Redis révén helyette, a művelet-onkénti hálózati fordulat árán (minden `state::*` hívás továbbra is egyetlen Redis-kapcsolaton szerializál, így ez a fájl-tár zárolását egy socketre cseréli, nem párhuzamosságra).
-
-Állítsd be az `AGENTMEMORY_STATE_BACKEND=redis`-t (plusz az `AGENTMEMORY_REDIS_URL`-t), hogy mindkét workert az iii-engine beépített `redis` adapterére váltsd, amely minden kulcsot egy Redis hash-mezőként tárol (`HSET`) egy teljes hatókör minden íráskori felülírása helyett:
-
-```env
-# ~/.agentmemory/.env
-AGENTMEMORY_STATE_BACKEND=redis
-AGENTMEMORY_REDIS_URL=redis://localhost:6379
-```
-
-Az `AGENTMEMORY_STATE_BACKEND` alapértelmezetten `file`; ha nem állítod be, a mai viselkedés nem változik, és egy nem felismert érték (bármi, ami nem `file` vagy `redis`) indítási hiba, nem néma visszaesés. A `/agentmemory/status` és a megjelenítő Health oldala (a State store sor) jelzi, melyik backend aktív, és hogy válaszol-e, az URL-t soha.
-
-**Csak sima `redis://`.** A pinnelt engine (0.22.1) TLS-támogatás nélkül építi fel a Redis-kliensét, így egy `rediss://` URL (a legtöbb felügyelt Redis-ajánlat, mint az Upstash, a Redis Cloud és az átvitel közbeni titkosítással rendelkező ElastiCache alapértelmezetten csak TLS-t enged) nem tud csatlakozni. A kapcsolat titkosítás nélküli, így a Redis-jelszó és minden tárolt memória nyílt szövegben megy át a vonalon: egy lokális Redisre, vagy egy olyan privát hálózaton lévő Redisre célozz, amelyben bízol. Bármely más Redishez futtass egy titkosított tunnelt (stunnel, SSH, vagy VPN) az agentmemory-hoszton, így a sima `redis://` szakasz azon a hoszton marad, és a tunnel upstream-kapcsolata titkosított és hitelesített. Ha egy Redis-jelszó egyetlen aposztrófot tartalmaz, percent-encode-old (`%27`); az engine kibontja az URL-t a saját YAML-konfigurációjába, mielőtt feldolgozná.
-
-**Egy Redis-szerver minden `--instance`-hez.** Az engine Redis-kulcs-prefixei (`state:<scope>`, `stream:<name>:<group>`) fixek, így két, ugyanarra az adatbázisra mutató agentmemory-instance (`--instance 1`, `--instance 2`, ...) felülírja egymás adatait. Egy külön adatbázis-index (`redis://localhost:6379/1`) külön tartja a tárolt adatot, de az engine egyetlen Redis pub/sub csatornán (`stream::events`) továbbítja az élő megjelenítő-eseményeket, és a Redis pub/sub nem veszi figyelembe az adatbázis-indexet, így minden instance megjelenítője továbbra is a másik élő eseményeit mutatná. Adj minden instance-nek saját Redis-szervert (vagy portot), ha egynél többet futtatsz.
-
-**Mi marad ugyanaz, és mi különbözik.** Minden agentmemory-funkció működik Redisen: sessionök, megfigyelések, memóriák (remember, supersede, evolve, forget), keresés és az index-csomagok, tanulságok, a gráf, az audit-log és annak havi hatókörei, export és import, governance-törlések, konszolidáció-státusz, a megjelenítő pillanatképe és élő stream-je, és az egészségfigyelő. Az engine minden hatókört egyetlen Redis hash-ként tárol (`HSET`/`HGET`/`HGETALL`), és ugyanazokat az állapot-triggereket süti el, mint a fájl-tár. Három engine-különbséget az agentmemory oldja meg belsőleg:
-
-- A Redis fix sorrend nélkül adja vissza egy hatókör rekordjait. Az agentmemory a legrégebbitől rendezi őket (a rekord id-jében lévő létrehozási idő, majd az időbélyeg szerint), hogy a listák, a lapozás és az export-chunk-ok ugyanabban a sorrendben jöjjenek, mint a fájl-táron.
-- Az engine egy Lua-szkriptben alkalmazza a részleges frissítéseket Redisen, amely az üres tömböket üres objektumokká alakítja. Az agentmemory saját maga alkalmazza ezeket a frissítéseket (olvasás, módosítás, írás egy kulcsonkénti zár alatt) Redisen, hogy a `tags: []`-hez hasonló mezők tömbök maradjanak.
-- Az örökölt audit-log-ellenőrzés a régi hatókört Redisből olvassa, nem a fájl-tár fájlját keresi a diszken.
-
-Egy különbség rád vár: **a Redis újraindítása után az engine leállítja az élő események továbbítását** a megjelenítőhöz, amíg az agentmemory nem indul újra. Az adat normálisan mentve és olvasva marad. Az egészségfigyelő 30 másodpercenként küld egy teszt-eseményt a Rediszen keresztül; ha nem jön vissza, a `/agentmemory/status` és a megjelenítő Health oldala azt mutatja: "Az élő frissítések nem érik el a megjelenítőt", a megoldással: indítsd újra az agentmemoryt. Ha a Redis nem fut, az állapotjelentés azt mutatja: "Az állapottár nem válaszol", és hogyan ellenőrizd (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Egy nagyon nagy hatókör listázása egyetlen `HGETALL`-ban olvassa az egész hash-t, ugyanolyan költséggel, mint amikor a fájl-tár memóriában tartja.
-
-**Ajánlott Redis-beállítások.** Az alapértelmezett `save 3600 1 300 100 60 10000` pillanatkép-politika percekig tartó írásveszteséget szenvedhet egy összeomláskor, rosszabbul, mint a fájl-tár 5 másodperces flush-ablaka. Állítsd be az `appendonly yes`-t mindenhez, amit nem szeretnél elveszíteni. Állítsd be a `maxmemory-policy noeviction`-t; az `allkeys-lru` vagy hasonló némán elkezd memóriákat elejteni, amint a Redis eléri a memóriakorlátját.
-
-Egy natív (nem Docker) indítás, és minden egykattintásos [telepítési sablon](../deploy/) (ezek felülírják a becsomagolt `iii-config.yaml`-t, és natívan indulnak) olvassa az `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL`-t, és belerendereli az elindított `iii-config`-ba. Az URL maga soha nem íródik bele abba a renderelt fájlba, csak egy `${AGENTMEMORY_REDIS_URL}` hivatkozás, amelyet az engine-folyamat a saját környezetéből bont ki indításkor. Csak ennek a repónak a saját Docker Compose útvonala (`AGENTMEMORY_USE_DOCKER=1`, vagy egy már így elindított engine folytatása) csatolja az `iii-config.docker.yaml`-t írásvédetten, és soha nem renderel; az `agentmemory start` figyelmeztet, amikor ezt a kombinációt észleli. Cseréld ki azt a fájlt kézzel, követve ugyanazt a `name: redis` / `config: redis_url: ...` formátumot, amelyet az [iii-state](https://workers.iii.dev/workers/iii-state) és az [iii-stream](https://workers.iii.dev/workers/iii-stream) worker-dokumentáció mutat, és irányítsd a `redis_url`-t egy a konténerből elérhető Redisre. A `docker-compose.yml` átadja az `AGENTMEMORY_REDIS_URL`-t az engine-konténernek, így a `redis_url: '${AGENTMEMORY_REDIS_URL}'` ott működik, és kint tartja az URL-t a csatolt fájlból.
-
-A renderelt konfiguráció kint tartja az URL-t a `~/.agentmemory/data/iii-config.runtime.yaml`-ból, de az engine saját konfiguráció-workere a *kibontott* értéket mégis elmenti a `~/.agentmemory/config/iii-state.yaml`-ba és az `iii-stream.yaml`-ba, amint elindul (az iii-engine `${VAR}`-kibontása azelőtt történik, hogy ez a worker elmentené a saját seedjét, és a feloldott értéket tárolja, nem a hivatkozást). Kezeld azt a mappát úgy, mintha egy hitelesítő adatot tartalmazna: `chmod 700 ~/.agentmemory` bármely megosztott hoszton, és részesítsd előnyben egy, az agentmemory szükségleteire korlátozott Redis ACL-felhasználót az adatbázis admin hitelesítő adataival szemben.
-
-**A migráció nem automatikus.** Az `AGENTMEMORY_STATE_BACKEND` váltása mindkét oldalon üres tárból indul; semmi nem másolja át a meglévő adatot fájlból Redisbe vagy vissza. Exportálj abból a backendből, amelyet elhagysz, és importálj abba, amelybe átmész. Ez azonosan fut bash és zsh alatt (a `bash -u`-t is beleértve). Egy olyan tömb, mint az `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})`, nem: a zsh egy rosszul formázott szóként tartja a headert, ahol a bash kettőre bontja, így mindkét kérés 401-et kap, amikor az `AGENTMEMORY_SECRET` beállított:
-
-```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
-
-# 1. On the old backend, while agentmemory is still running on it:
-if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
-  curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" http://localhost:3111/agentmemory/export > backup.json
-else
-  curl -fsS http://localhost:3111/agentmemory/export > backup.json
-fi
-
-# 2. Confirm backup.json is a usable export before switching backends:
-jq -e '.version and .exportedAt' backup.json > /dev/null || {
-  echo "backup.json is not a valid export; do not switch backends" >&2
-  exit 1
-}
-
-# 3. Switch AGENTMEMORY_STATE_BACKEND (and AGENTMEMORY_REDIS_URL if needed),
-#    restart agentmemory against the new backend, then:
-if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
-  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
-    curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" -X POST http://localhost:3111/agentmemory/import \
-      -H 'Content-Type: application/json' -d @-
-else
-  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
-    curl -fsS -X POST http://localhost:3111/agentmemory/import \
-      -H 'Content-Type: application/json' -d @-
-fi
-```
-
-A `/agentmemory/export` emellett elfogadja a `?maxSessions=`-t és a `?offset=`-et egy nagy korpusz több hívásra bontásához; a `strategy` importnál `merge` (alapértelmezett, biztonságos), `replace`, vagy `skip`.
-
-### Mit helyettesít az iii
-
-| Hagyományos stack | Az agentmemory ezt használja |
-|---|---|
-| Express.js / Fastify | iii HTTP Triggerek |
-| SQLite / Postgres + pgvector | iii KV State + memóriabeli vektorindex |
-| SSE / Socket.io | iii Streams (WebSocket) |
-| pm2 / systemd | iii engine worker-felügyelet |
-| Prometheus / Grafana | iii OTEL + egészségfigyelő |
-| Egyéni plugin-rendszerek | `iii worker add <name>` |
-
-**243 forrásfájl · ~55,000 LOC · 3,400+ teszt · 324 funkció · 67 KV-hatókör**, mindez három primitíven. Nincs `agentmemory plugin install`. A plugin-rendszer maga az iii.
 
 ---
 
@@ -1466,6 +1225,8 @@ Az agentmemory automatikusan felismeri a szolgáltatókat a környezetedből. Eg
 | OpenAI API | `OPENAI_API_KEY` | Alapértelmezett `gpt-5.6-luna`, felülírható az `OPENAI_MODEL`-lel |
 | **Lokális (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) vagy `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Bármi, ami OpenAI-API-kompatibilis. Nulla költség, a saját hardvereden fut. Lásd a [Lokális modellek](#local-models-ollama--lm-studio--vllm) részt alább. |
 | Claude-előfizetéses fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Csak opt-in. A `@anthropic-ai/claude-agent-sdk` sessionöket indít; korábban korlátlan Stop-hook-rekurziót okozott, így nem alapértelmezett többé. |
+
+<a id="local-models-ollama--lm-studio--vllm"></a>
 
 ### Lokális modellek (Ollama / LM Studio / vLLM)
 
@@ -1516,24 +1277,7 @@ A lokális embeddingek opcionális függőségként érkeznek, de nem alapértel
 
 ### Költségtudatos modellválasztás
 
-Amikor az LLM által írt háttér-tömörítés engedélyezve van, mind egy szolgáltatóval, mind az `AGENTMEMORY_AUTO_COMPRESS=true`-val, akkor minden megfigyelésnél lefut, így a modellválasztás érdemben megváltoztatja a havi kiadást. Rögzített terhelési adat: 635 kérés / 888K token / 35 óra aktív használat, három OpenRouter-modellen futtatva, 2026-05-23-i árazással.
-
-| Szint | Modell | Input / 1M | Output / 1M | Költség a rögzített 35 órára | Megjegyzések |
-|------|-------|------------|-------------|---------------------------|-------|
-| Ajánlott | `deepseek/deepseek-v4-flash-0731` | $0.07 | $0.14 | ~$0.07 (becs.) | A legújabb DeepSeek; a legolcsóbb ajánlott választás tömörítési terhelésekhez. |
-| Ajánlott | `deepseek/deepseek-v4-pro` | $0.435 | $0.87 | ~$0.46 | Szilárd tömörítési + összefoglalási minőség, ~10×-szer alacsonyabb költséggel, mint a Sonnet. |
-| Ajánlott | `qwen/qwen3-coder` | $0.45 | $1.80 | ~$0.55 | Erős kódreasoning, ha a sessionjeid erősen kód-alakúak. |
-| Prémium | `anthropic/claude-sonnet-5` | $3.00 | $15.00 | ~$5.02 (becs.) | Ugyanaz a listaár, mint a mért Sonnet 4.6 futás; $2/$10 bevezető árazás 2026-08-31-ig. |
-| Prémium | `openai/gpt-5.6-sol` | $5.00 | $30.00 | ~$9 (becs.) | Zászlóshajó szint; költséges az állandóan futó háttérmunkára. |
-| Kerülendő | `anthropic/claude-opus-5` | $5.00 | $25.00 | ~$8.40 (becs.) | Zászlóshajó-osztályú modell; túlköltekezés tömörítésre. |
-
-A mért sorok a rögzített futásból származnak; a (becs.) sorok ugyanazt a token-mixet skálázzák az adott modell listaára szerint.
-
-Az agentmemory futásidejű figyelmeztetést ír ki, amikor az `OPENROUTER_MODEL` egy prémium-szintű mintára illik. Állítsd be az `AGENTMEMORY_SUPPRESS_COST_WARNING=1`-et, hogy elnémítsd, ha már megtetted a tájékozott választást.
-
-Minőség vs. költség kompromisszum memóriamunkához: a tömörítés egy összefoglalási feladat, viszonylag laza minőségi küszöbökkel (az ágens olvassa vissza az összefoglalót, nem a felhasználó). A DeepSeek V4 Flash / V4 Pro / Qwen3-Coder a Sonnethez mérten kerekítési hibahatáron belül landol ennél a feladatnál, miközben 10-70×-szer kevesebbet kerül. Tartsd meg a prémium-szintű modelleket azokra a lekérdezésekre, amiket közvetlenül olvasol.
-
-Források: [OpenRouter árazás a Claude Sonnet 5-höz](https://openrouter.ai/anthropic/claude-sonnet-5), [DeepSeek V4 Flash](https://openrouter.ai/deepseek/deepseek-v4-flash-0731), [DeepSeek árazási megjegyzések](https://api-docs.deepseek.com/quick_start/pricing/).
+Kezdj kulcs nélkül a rögzítéshez és kulcsszavas kereséshez. Az `EMBEDDING_PROVIDER=local` a modell letöltése után helyi szemantikus keresést ad. Az LLM-tömörítéshez szolgáltató és `AGENTMEMORY_AUTO_COMPRESS=true` kell; minden megfigyelés kérést indíthat, ezért ellenőrizd az aktuális árakat. Az aktív szolgáltatókat a nézőfelület és az `agentmemory status` mutatja.
 
 ### Több ágenses memória (`AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE`)
 
@@ -1563,39 +1307,22 @@ Amikor az `AGENT_ID` nincs beállítva, a memória hatókör nélkül marad (ör
 
 ### Portok
 
-Az agentmemory + iii-engine alapértelmezetten négy portot köt le. Ha egy újraindítás `port in use`-szal bukik el, ez a táblázat megmondja, melyik folyamatot keresd.
+| Port | Cél | Környezeti változó |
+|---|---|---|
+| `3111` | REST API, MCP HTTP és élő nézőfelület-események | `III_REST_PORT` |
+| `3113` | Nézőfelület | `III_VIEWER_PORT` |
 
-| Port | Folyamat | Cél | Env felülírás |
-|------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Belső stream-worker (az agentmemory + a megjelenítő fogyasztja) | `III_STREAM_PORT` (előnyben részesítve) vagy az örökölt `III_STREAMS_PORT` |
-| `3113` | agentmemory | Valós idejű megjelenítő (`http://localhost:3113`) | `III_VIEWER_PORT` vagy `AGENTMEMORY_VIEWER_URL` a jelentett URL-hez |
-| `49134` | iii-engine | WebSocket; itt regisztrálnak a workerek, és itt áramlik az OTel-telemetria | `III_ENGINE_PORT` vagy `III_ENGINE_URL` |
+A `--port <N>` állítja a REST-portot, a nézőfelület alapértéke `N+2`. A `--instance N` külön környezetet hoz létre. A belső portok maradjanak privátak; távoli elérés előtt olvasd el a [telepítési útmutatót](../deploy/README.md).
 
-A `--port <N>` megváltoztatja a REST-horgonyt, és levezeti a stream-eket (`N+1`), a megjelenítőt (`N+2`) és az engine WebSocketet (`N+46023`), de csak ott, ahol a fenti megfelelő explicit port vagy URL nincs beállítva. Nem hoz létre izolált életciklus-névteret. Használd a `--instance 1`-et egy második daemonhoz; ez a 3211 horgonyt használja, alapértelmezetten `3211/3212/3213/49234`, és egy külön `instance-1` adat- és életciklus-mappát kap. Az 1-től 50-ig terjedő instance-ok ugyanezt a mintát követik.
+### Tárolás: fájl vagy Redis
 
-A pinnelt engine `--no-update-check`-kel indul (nincs frissítés- vagy biztonsági-tanács-lekérdezés a GitHub ellen indításkor), és az iii anonim használati telemetriája kikapcsolva: az agentmemory beállítja az `III_TELEMETRY_ENABLED=false`-t az általa indított engine-hez, hacsak nem exportálod magad a változót, és a becsomagolt compose-fájl ugyanezt teszi.
-
-Elavult folyamatok takarítása, ha a portok lekötve maradnak egy összeomlott futás után:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-Az `agentmemory stop` tisztán learatja a workert és az engine pidfile-t egy sikeres natív leállításnál. Docker-módban kiírja a natív workert, leállítja a pontosan validált engine-konténert, és megőrzi mind a konténert, mind a `/data` csatolását egy veszteség nélküli újraindításhoz; a következő indítás validálja és folytatja ugyanazt a konténert. A Docker-alapú eltávolítás az `agentmemory remove --keep-data`-t igényli: eltávolítja a megosztott, agentmemory-kezelt fájlokat, de megőrzi a validált konténert, az adat-csatolását és a visszaállításukhoz szükséges életciklus-rekordot. A destruktív Docker-adattörlés szándékosan az üzemeltetőre van hagyva, egy mentés után. A CLI emellett visszautasítja, hogy natív engine-ként örökbe fogadjon vagy jelezzen Docker- vagy VM-port-tulajdonosokat (Docker backend, vpnkit, colima), hacsak nincs átadva a `--force`. A fenti manuális takarítás csak az összeomlás utáni esetre vonatkozik, amikor semelyik pidfile sem maradt meg.
+Az alapértelmezett fájltároló nem igényel külön adatbázist. A Redis opcionális az `AGENTMEMORY_STATE_BACKEND=redis` és `AGENTMEMORY_REDIS_URL` beállításokkal. A backendváltás nem másolja át a memóriát. A tartósság, a Redis korlátai és a hitelesített export/import a [tárolási útmutatóban](../docs/reliability/state-storage.md) szerepelnek.
 
 ### Konfigurációs fájl
 
-Az agentmemory futásidejű konfigurációját tedd a `~/.agentmemory/.env`-be, ne exportálj változókat minden shellben. Ha a megjelenítő egy olyan beállítási tippet mutat, mint az `export ANTHROPIC_API_KEY=...`, másold be ebbe a fájlba `ANTHROPIC_API_KEY=...`-ként, az `export` prefix nélkül, majd indítsd újra az agentmemoryt.
+Az agentmemory runtime-beállításait a `~/.agentmemory/.env` fájlba tegye ahelyett, hogy minden shellben változókat exportálna. Ha a viewer például `export ANTHROPIC_API_KEY=...` beállítási tippet mutat, másolja a fájlba az `export` előtag nélkül, majd indítsa újra az agentmemoryt. Másik env-fájlútvonalhoz állítsa be az `AGENTMEMORY_ENV_FILE` változót.
 
-A folyamat-szintű környezeti változók továbbra is működnek, és elsőbbséget kapnak a fájlban lévő értékekkel szemben.
+A folyamat környezeti változói megelőzik a fájl értékeit. Beállításmódosítás után indítsd újra a szervert.
 
 Windowson ugyanez a fájl a `%USERPROFILE%\.agentmemory\.env`-ben él:
 
@@ -1622,176 +1349,27 @@ GRAPH_EXTRACTION_ENABLED=true
 
 ### Környezeti változók
 
-Hozd létre a `~/.agentmemory/.env`-et:
+Gyakori beállítások a `~/.agentmemory/.env` fájlban. A kontextusbeillesztés és tömörítés opcionális; a tömörítéshez szolgáltató is kell. A `core` mód szűkíti a látható MCP-eszközöket:
 
 ```env
-# LLM provider (pick one — default is the no-op provider: no LLM calls)
-# ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
-# GEMINI_API_KEY=...
-# OPENROUTER_API_KEY=...
-# MINIMAX_API_KEY=...
-# OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
-#                                          # OpenAI LLM provider (here) AND the OpenAI
-#                                          # embedding provider (further below). Set
-#                                          # OPENAI_API_KEY_FOR_LLM=false to scope it
-#                                          # to embeddings only.
-# OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
-#                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
-#                                          # Auto-detected from `.openai.azure.com` hostname; uses
-#                                          # api-key header + api-version query param.
-# OPENAI_API_VERSION=2024-08-01-preview    # Optional: Azure api-version query param
-# OPENAI_MODEL=gpt-5.6-luna                # Optional: default model
-# OPENAI_TIMEOUT_MS=60000                  # Optional: OpenAI-scoped alias for the outbound fetch
-#                                          # timeout. Takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
-#                                          # for back-compat with v0.9.17. New configs should
-#                                          # prefer the global AGENTMEMORY_LLM_TIMEOUT_MS below.
-# OPENAI_REASONING_EFFORT=none             # Optional: "low" | "medium" | "high" | "none"
-#                                          # Honored only by OpenAI's reasoning models (o1, o3,
-#                                          # gpt-*-reasoning) and providers that mirror that
-#                                          # schema (Ollama Cloud thinking models). Standard
-#                                          # chat models reject this field with 400. Set to
-#                                          # "none" for thinking models that return reasoning
-#                                          # but no content.
-# OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
-#                                          # for LLM (useful if you only want OpenAI for embeddings)
-# Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
-# leave OFF unless you understand the Stop-hook recursion risk:
-# AGENTMEMORY_ALLOW_AGENT_SDK=true
-
-# Embedding provider (BM25-only when unset; local is an explicit opt-in)
-# EMBEDDING_PROVIDER=local
-# VOYAGE_API_KEY=...
-# OPENAI_API_KEY=sk-...
-# OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
-# OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-# OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
-# OPENAI_EMBEDDING_BASE_URL=https://...   # Embeddings only; falls back to OPENAI_BASE_URL
-# OPENAI_EMBEDDING_API_KEY=sk-...         # Embeddings only; wins over OPENAI_API_KEY when set
-
-# Outbound LLM / embedding timeout
-# AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every
-                                          # raw-fetch provider (Gemini, OpenRouter, MiniMax,
-                                          # OpenAI LLM, OpenAI/Cohere/Voyage/OpenRouter
-                                          # embedding). For the OpenAI LLM path, the
-                                          # OpenAI-scoped OPENAI_TIMEOUT_MS alias (above)
-                                          # takes precedence when set, for back-compat
-                                          # with v0.9.17.
-                                          # Increase for slow networks or large batch calls;
-                                          # decrease to fail-fast on rate-limit holds.
-
-# Search tuning
-# BM25_WEIGHT=0.4
-# VECTOR_WEIGHT=0.6
-# TOKEN_BUDGET=2000
-
-# Auth (generated into ~/.agentmemory/secret on first start when unset)
-# AGENTMEMORY_SECRET=your-secret
-# VIEWER_ALLOWED_ORIGINS=https://memory.example.com
-# AGENTMEMORY_IMPORT_ROOT=~/projects
-
-# Ports (defaults: 3111 API, 3113 viewer)
-# III_REST_PORT=3111
-
-# Engine usage telemetry (iii). Off unless you set it; true opts in.
-# III_TELEMETRY_ENABLED=false
-
-# Features
-# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default. Requires an LLM
-                                   # provider as well. When both are on,
-                                   # every PostToolUse hook calls your
-                                   # LLM provider to compress the
-                                   # observation — expect significant
-                                   # token spend on active sessions.
-# AGENTMEMORY_SLOTS=false          # OFF by default. Editable pinned
-                                   # memory slots — persona,
-                                   # user_preferences, tool_guidelines,
-                                   # project_context, guidance,
-                                   # pending_items, session_patterns,
-                                   # self_notes. Size-limited; agent
-                                   # edits via memory_slot_* tools.
-                                   # Pinned slots addressable for
-                                   # SessionStart injection.
-# AGENTMEMORY_REFLECT=false        # OFF by default. Requires SLOTS=on.
-                                   # Stop hook fires mem::slot-reflect:
-                                   # scans recent observations, auto-
-                                   # appends TODOs to pending_items,
-                                   # counts patterns in
-                                   # session_patterns, records touched
-                                   # files in project_context. Fire-
-                                   # and-forget; does not block.
-# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default. When on:
-                                   # - SessionStart may inject ~1-2K
-                                   #   chars of project context into
-                                   #   the first turn of each session
-                                   #   (this is what actually reaches
-                                   #   the model — Claude Code treats
-                                   #   SessionStart stdout as context)
-                                   # - PreToolUse fires /agentmemory/enrich
-                                   #   on every file-touching tool call
-                                   #   (resource cleanup, not a token
-                                   #   fix — PreToolUse stdout is debug
-                                   #   log only per Claude Code docs)
-                                   # Observations are still captured via
-                                   # PostToolUse regardless of this flag.
-# GRAPH_EXTRACTION_ENABLED=false
-# AGENTMEMORY_LLM_NOTHINK=1        # Local reasoning models only: ask the
-                                   # model to skip its hidden thinking pass
-                                   # during graph extraction. Faster runs;
-                                   # relation quality can drop slightly.
-# CONSOLIDATION_ENABLED=false   # on by default when an LLM provider is configured
-# LESSON_DECAY_ENABLED=true
-# OBSIDIAN_AUTO_EXPORT=false
-# AGENTMEMORY_EXPORT_ROOT=~/.agentmemory
-# CLAUDE_MEMORY_BRIDGE=false
-# SNAPSHOT_ENABLED=false
-
-# Storage and durability
-# AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
-# AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
-# AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
-                                             # shutdown and deletes still save at once.
-# AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
-                                           # provenance; false skips it
-
-# Sessions
-# AGENTMEMORY_SESSION_SWEEP_ENABLED=true   # Hourly sweep marks sessions left active past
-                                           # the threshold as abandoned. Deletes nothing;
-                                           # new activity makes the session active again.
-# AGENTMEMORY_SESSION_SWEEP_STALE_HOURS=24
-
-# Capture filters (hooks)
-# AGENTMEMORY_CAPTURE_ALLOW=               # Comma or space list of tool names or globs;
-                                           # when set, only these tools are captured
-# AGENTMEMORY_CAPTURE_DENY=                # Extra names or globs to skip, added to the
-                                           # defaults: memory_*, toolsearch,
-                                           # listmcpresources, fetchmcpresource
-# AGENTMEMORY_CAPTURE_OUTPUT_MAX=8000      # Max characters of tool output per observation
-# AGENTMEMORY_PRE_COMPACT_BUDGET=1500      # Token budget for PreCompact context; 0 disables
-
-# Audit log
-# AGENTMEMORY_AUDIT_RETENTION_MONTHS=0     # Drop month scopes older than N months; 0 keeps all
-# AGENTMEMORY_AUDIT_INDEX_PERSIST=false    # 1 or true records index migration and cleanup
-                                           # rows (debugging only)
-
-# Team
-# TEAM_ID=
-# USER_ID=
-# TEAM_MODE=private
-
-# Tool visibility: "all" (54 tools, default) or "core" (8 tools, lean)
+EMBEDDING_PROVIDER=local
+# AGENTMEMORY_INJECT_CONTEXT=true
+# AGENTMEMORY_AUTO_COMPRESS=true
 # AGENTMEMORY_TOOLS=core
+# AUTO_FORGET_ENABLED=false
+# LESSON_DECAY_ENABLED=false
+# INSIGHT_DECAY_ENABLED=false
 ```
+
+A teljes [`.env.example`](../.env.example) leírja a szolgáltatókat, rögzítési szűrőket, megőrzést, tárolást, csapatokat és opcionális funkciókat. Az `AGENTMEMORY_ENV_FILE` másik fájlt választ. Kitöltött `.env` fájlt vagy bearer-titkot soha ne commitolj.
 
 ---
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoint a `3111`-es porton. A REST API alapértelmezetten a `127.0.0.1`-hez kötődik. A védett végpontok `Authorization: Bearer <secret>`-et igényelnek, és a mesh-sync végpontok mindkét oldalon explicit módon beállított `AGENTMEMORY_SECRET`-et igényelnek.
+146 endpoint a `3111`-es porton. A REST API alapértelmezetten a `127.0.0.1`-hez kötődik. A védett végpontok `Authorization: Bearer <secret>`-et igényelnek, és a mesh-sync végpontok mindkét oldalon explicit módon beállított `AGENTMEMORY_SECRET`-et igényelnek.
 
-**A hitelesítés alapértelmezetten be van kapcsolva.** Amikor az `AGENTMEMORY_SECRET` nincs beállítva (sem a shellben, sem a `~/.agentmemory/.env`-ben), a szerver az első indításkor egy véletlen secretet generál, és `0600` móddal tárolja a `~/.agentmemory/secret`-ben. Minden becsomagolt kliens onnan olvassa, amikor egy lokális szerverrel beszél: a CLI, a megjelenítő, a `plugin/scripts` alatti hookok, az MCP szerver és a `@agentmemory/mcp` shim, az `agentmemory connect` által írt konfigurációk, és a becsomagolt OpenCode, Pi, OpenClaw, Hermes és fájlrendszer-figyelő integrációk. A tárolt secret csak loopback URL-eknek kerül elküldésre (`localhost`, `127.0.0.0/8`, `::1`). Egy explicit `AGENTMEMORY_SECRET` mindig elsőbbséget kap, és a távoli klienseknek továbbra is be kell állítaniuk. A Docker és a `deploy/` entrypointok már generálnak és exportálnak egy saját secretet. Az API kézi hívásához:
+**A hitelesítés alapértelmezetten be van kapcsolva.** Ha az `AGENTMEMORY_SECRET` nincs beállítva, a CLI első indításkor véletlen titkot hoz létre a `~/.agentmemory/secret` fájlban `0600` jogosultsággal, és a kiválasztott adatkönyvtárba is átmásolja. Minden becsomagolt kliens onnan olvassa, amikor egy lokális szerverrel beszél: a CLI, a megjelenítő, a `plugin/scripts` alatti hookok, az MCP szerver és a `@agentmemory/mcp` shim, az `agentmemory connect` által írt konfigurációk, és a becsomagolt OpenCode, Pi, OpenClaw, Hermes és fájlrendszer-figyelő integrációk. A tárolt secret csak loopback URL-eknek kerül elküldésre (`localhost`, `127.0.0.0/8`, `::1`). Egy explicit `AGENTMEMORY_SECRET` mindig elsőbbséget kap, és a távoli klienseknek továbbra is be kell állítaniuk. A Docker és a `deploy/` entrypointok már generálnak és exportálnak egy saját secretet. Az API kézi hívásához:
 
 ```bash
 curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
@@ -1830,7 +1408,7 @@ curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:31
 | `POST` | `/agentmemory/team/share` | Megosztás csapattal |
 | `GET` | `/agentmemory/audit` | Audit-nyomvonal |
 
-Teljes végpontlista: [`src/triggers/api.ts`](../src/triggers/api.ts)
+Teljes végpontlista: [Generált REST-referencia](../plugin/skills/agentmemory-rest-api/REFERENCE.md)
 
 </details>
 
@@ -1848,19 +1426,19 @@ Az elbukott eseményeket a rendszer minden `AGENTMEMORY_CAPTURE_RETRY_INTERVAL_M
 
 Amikor a szerver nem fut, nem válaszol időben, vagy 5xx-et ad vissza, a hook hozzáfűzi a megfigyelést egy lokális spool-fájlhoz, `<data dir>/capture-spool/<host>-<port>.jsonl` (a mappa felülírható az `AGENTMEMORY_CAPTURE_SPOOL_DIR`-ral). A fájl csak a saját felhasználód számára elérhető (mód 600), a secreteket a rendszer ugyanúgy elfedi, ahogy a szerver teszi, legfeljebb `AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES`-ot (5 MiB) tárol, és eldobja az `AGENTMEMORY_CAPTURE_SPOOL_MAX_AGE_HOURS`-nál (168) régebbi bejegyzéseket. Amikor betelik, az új bejegyzések elvetésre és megszámlálásra kerülnek, és a `/agentmemory/status` jelenti. A hook továbbra is 0-val lép ki az időkorlátján belül, és nem ad hozzá kérést, amikor a szerver egészséges. A spool a következő indításkor, és az első olyan hooknál kerül elküldésre, amely ismét eléri a szervert, egy háttérfolyamatban, hogy az ágens ne várjon. Az esemény-id-k ezt biztonságossá teszik: egy megfigyelés, amely már megérkezett egy timeout előtt, nem kerül kétszer tárolásra. Az `npx @agentmemory/agentmemory capture` megmutatja a spoolt és a szerver inboxát, a `--drain` elküldi a spoolt most, és a `GET /agentmemory/capture` ugyanezt adja vissza JSON-ként. Állítsd be az `AGENTMEMORY_CAPTURE_SPOOL=false`-t, hogy kikapcsold a spoolt.
 
-**A gráf-eredet tömörítése.** Minden tudásgráf-csomópont és -él megtartja a legújabb 32 megfigyelés id-jét, amelyekből származott. Az ennél a korlátnál korábban írt tárak csomópontonként akár több ezer id-t is tarthatnak egy forró csomóponton, ami lelassítja a gráfkeresést és a megjelenítőt, vagy elakasztja a workert. Az agentmemory ezt saját maga javítja: a frissítés utáni első indításkor a háttérben ritkít minden csomópontot, élt, felülírt élt (a temporális gráf-előzmény) és a gyorsítótárazott pillanatképet a korlátra, kis szeletekben, köztük szünettel, hogy a keresés, a rögzítés és a megjelenítő tovább működjön. Elmenti a haladását, folytatja egy újraindítás után, és soha nem fut újra, ha egyszer végzett. A `/agentmemory/status` és a megjelenítő Health oldala függőben lévőként, futóként (az aktuális hatókörrel és pozícióval), befejezettként vagy sikertelenként mutatja. Állítsd az `AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false`-ra, hogy kikapcsold.
+**A gráf-eredet tömörítése.** A régi eredetadatok tömörítése induláskor elhalasztódik, mert teljes régi scope-okat olvas be. Az `/agentmemory/status` értéke `deferred`, vagy `off`, ha `AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false`. Az alábbi kézi tömörítést karbantartás közben futtasd. A keresési index migrációja külön művelet: használd az `agentmemory graph-index migrate --allow-legacy-scan` parancsot a [karbantartási útmutató](../docs/reliability/graph-index-migration.md) szerint.
 
 Hogy kézzel futtasd, hívd meg a `POST /agentmemory/graph/compact`-ot. A név- és él-kulcs-indexeken sétál végig, nem listáz minden csomópontot és élt, és biztonságosan újrafuttatható. Amikor id-ket ritkít, egy `graph_compact` audit-bejegyzést ír.
 
 ```bash
-curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: application/json" -d '{}'
+curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" -d '{}'
 ```
 
 Egy nagy táron, vagy amikor a hívás 504-et ad vissza, futtasd szeletekben. Küldd el a `scope`-ot (`nodes`, `edges` vagy `history`), az `offset`-et és a `limit`-et, majd hívd újra a visszaadott `nextOffset`-tel, amíg az `null` nem lesz. Tedd ezt a `nodes`, az `edges` és a `history` esetén, és fejezd be egy `{"scope":"snapshot"}` hívással, mert egy szeletelt futás nem érinti a gyorsítótárazott pillanatképet.
 
 ```bash
-curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: application/json" -d '{"scope":"nodes","offset":0,"limit":200}'
-curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: application/json" -d '{"scope":"snapshot"}'
+curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" -d '{"scope":"nodes","offset":0,"limit":200}'
+curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" -d '{"scope":"snapshot"}'
 ```
 
 ---
@@ -1870,11 +1448,11 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 4,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Előfeltételek:** Node.js >= 20 npm/npx-szel; [iii-engine](https://iii.dev/docs) v0.22.1 vagy Docker. A macOS/Linux automatikus engine-telepítés `curl`-t, egy POSIX `sh`-t és `tar`-t is igényel; a natív Windows a manuális, pinnelt `iii.exe`-t, a WSL2-t vagy a Docker Desktopot használja.
+A követelmények a [telepítésnél](#install) szerepelnek. A hozzájárulási szabályok és kiadásellenőrzések a [CONTRIBUTING.md](../CONTRIBUTING.md) fájlban találhatók.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Licenc" height="32" /></picture></h2>
 

@@ -99,9 +99,21 @@
   border-top: 1px solid var(--line);
   font-size: var(--t-12);
   color: var(--ink);
+  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
+}
+
+:global(.js) .verdict {
   opacity: 0;
   transform: translateY(4px);
-  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
+}
+
+:global(html:not(.js)) .row {
+  opacity: 1;
+}
+
+:global(html:not(.js)) .status,
+:global(html:not(.js)) .head > span:last-child {
+  visibility: hidden;
 }
 
 .verdict[data-on] {

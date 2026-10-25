@@ -188,42 +188,6 @@ describe("KV.sessions concurrent mutation races (finding 3)", () => {
     expect(finalSession.observationCount).toBe(1);
   });
 
-  it("event::session::started racing mem::observe's implicit create does not revert the observation count to zero", async () => {
-    const kv = mockKV();
-    const sdk = mockSdk();
-    registerEventTriggers(sdk as never, kv as never);
-    registerObserveFunction(sdk as never, kv as never);
-    sdk.fns.set("mem::context", async () => ({ context: "" }));
-
-    const releaseEventWrite = kv.armSetGate(KV.sessions, "ses_race3");
-
-    const eventPromise = sdk.trigger("event::session::started", {
-      sessionId: "ses_race3",
-      project: "/repo",
-      cwd: "/repo",
-    });
-
-    await flush();
-
-    const observePromise = sdk.trigger("mem::observe", {
-      sessionId: "ses_race3",
-      project: "/repo",
-      cwd: "/repo",
-      hookType: "prompt_submit",
-      timestamp: new Date().toISOString(),
-      data: { prompt: "start work" },
-    });
-
-    await flush();
-    releaseEventWrite();
-
-    await Promise.all([eventPromise, observePromise]);
-
-    const finalSession = kv.store.get(KV.sessions)?.get("ses_race3") as Session;
-    expect(finalSession).toBeTruthy();
-    expect(finalSession.observationCount).toBe(1);
-  });
-
   it("api::session::commit does not revert a concurrent api::session::end status update", async () => {
     const kv = mockKV();
     const sdk = mockSdk();

@@ -44,6 +44,14 @@ jobs:
           node-version: 22
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - run: npm run release:gate -- --out "${{ runner.temp }}/release-gate"
+      - name: Verify live workers and plugins on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          engine_pin=$(node --import tsx --input-type=module -e 'import { III_PINNED_VERSION } from "./src/version.ts"; console.log(III_PINNED_VERSION)')
+          engine_bin="$HOME/.cache/agentmemory-release-gate/iii-${engine_pin}-linux-x64"
+          test -x "$engine_bin"
+          AGENTMEMORY_TEST_III="$engine_bin" AGENTMEMORY_REQUIRE_LIVE_TESTS=1 npx vitest run test/compose-supervision-integration.test.ts test/codex-live-daemon.test.ts
       - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
       - name: Test packaged vector recovery
         shell: bash
@@ -74,6 +82,7 @@ jobs:
             ${{ runner.temp }}/startup-gate
             ${{ runner.temp }}/vector-recovery-gate
             ${{ runner.temp }}/summary-recovery-gate
+            ${{ runner.temp }}/cli-diagnostics-gate
             ${{ runner.temp }}/graph-index-gate
           if-no-files-found: ignore
           retention-days: 14

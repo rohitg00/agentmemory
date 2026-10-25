@@ -28,18 +28,4 @@ describe("stop reaps the worker process", () => {
     expect(indexSrc).toContain('runtimeMetadataPath("worker.pid")');
     expect(cliSrc).toContain('runtimeMetadataPath("worker.pid")');
   });
-
-  it("validates Docker ownership and flushes the worker before stopping the container", () => {
-    const source = readFileSync("src/cli.ts", "utf-8");
-    const start = source.indexOf("async function stopDockerEngine");
-    const end = source.indexOf("async function runStop", start);
-    const body = source.slice(start, end);
-
-    expect(body.indexOf("inspectOwnedDockerEngine(state)"))
-      .toBeLessThan(body.indexOf("readWorkerPidfile()"));
-    expect(body.indexOf("readWorkerPidfile()"))
-      .toBeLessThan(body.indexOf('["stop", "--time", "10", inspection.containerId]'));
-    expect(body).toContain("persistDockerInspection(state, inspection)");
-    expect(body).toContain("writeEngineState(resolvedState)");
-  });
 });

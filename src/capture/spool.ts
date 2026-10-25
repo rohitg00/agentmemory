@@ -112,7 +112,8 @@ const IMAGE_PLACEHOLDER = "[image dropped from capture spool]";
 const BOOT_ID_RE = /^[A-Za-z0-9]{8,64}$/;
 const SENT_FILE_RE = /^([A-Za-z0-9]{8,64})-(\d+)\.jsonl$/;
 const SENT_BUCKET_MS = 1000;
-const MAX_DURABLE_AFTER_MS = 10 * 60_000;
+// Cover the maximum one-hour state flush interval plus its safety margin.
+const MAX_DURABLE_AFTER_MS = 61 * 60_000;
 
 function emptyStats(): SpoolStats {
   return { spooled: 0, dropped: 0, droppedBytes: 0, expired: 0, delivered: 0, duplicates: 0, rejected: 0 };

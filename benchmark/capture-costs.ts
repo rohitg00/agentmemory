@@ -158,7 +158,7 @@ function loadConfig(): Config {
     return p;
   });
   const [outputMin, outputMax] = intList(process.env["BENCH_OUTPUT_BYTES"], [400, 4000]);
-  const restPort = intEnv("BENCH_PORT", 4900);
+  const restPort = intEnv("BENCH_REST_PORT", intEnv("BENCH_PORT", 4900));
   const provider = (process.env["BENCH_PROVIDER"] || "fake") as ProviderMode;
   if (provider !== "fake" && provider !== "ollama") throw new Error(`unknown BENCH_PROVIDER ${provider}; valid: fake, ollama`);
   const stateBackend = (process.env["BENCH_STATE_BACKEND"] || "file") as StateBackend;
@@ -548,6 +548,7 @@ interface ProcRow {
   rssKiB: number;
   cpuSec: number;
   comm: string;
+  args: string;
 }
 
 function parseCpu(raw: string): number {
@@ -560,12 +561,12 @@ function parseCpu(raw: string): number {
 }
 
 async function psRows(): Promise<ProcRow[]> {
-  const { stdout } = await execFileAsync("ps", ["-A", "-o", "pid=,ppid=,rss=,time=,comm="], { timeout: 10000, maxBuffer: 8 * 1024 * 1024 });
+  const { stdout } = await execFileAsync("ps", ["-A", "-o", "pid=,ppid=,rss=,time=,comm=,args="], { timeout: 10000, maxBuffer: 8 * 1024 * 1024 });
   const rows: ProcRow[] = [];
   for (const line of stdout.split("\n")) {
-    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/);
+    const m = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s+(\S+)\s*(.*)$/);
     if (!m) continue;
-    rows.push({ pid: +m[1]!, ppid: +m[2]!, rssKiB: +m[3]!, cpuSec: parseCpu(m[4]!), comm: m[5]! });
+    rows.push({ pid: +m[1]!, ppid: +m[2]!, rssKiB: +m[3]!, cpuSec: parseCpu(m[4]!), comm: m[5]!, args: m[6]! });
   }
   return rows;
 }
@@ -590,8 +591,17 @@ function treeOf(rows: ProcRow[], roots: number[]): ProcRow[] {
   return out;
 }
 
-function roleOf(r: ProcRow): "engine" | "worker" | "other" {
+type ProcessRole = "compose" | "engine" | "state" | "http" | "agentmemory" | "worker" | "other";
+
+function roleOf(r: ProcRow): ProcessRole {
   const name = basename(r.comm);
+  const args = r.args;
+  if (/\bcompose\s+--namespace\b/.test(args)) return "compose";
+  if (/^iii:e:/.test(name) || (/--config\s/.test(args) && /engine-config\.yaml/.test(args))) return "engine";
+  if (name === "state" || name === "iii-state" || /(?:^|\/)state(?:\s|$)/.test(args) || /\/state-\d[^/]*\/state(?:\s|$)/.test(args)) return "state";
+  if (name === "http" || name === "iii-http" || /(?:^|\/)http(?:\s|$)/.test(args) || /\/http-\d[^/]*\/http(?:\s|$)/.test(args)) return "http";
+  if ((name === "MainThread" || name === "node" || name === "sh") && /dist\/index\.mjs/.test(args)) return "agentmemory";
+  if (/^iii:c:/.test(name) || /\bcompose\s+--namespace\b/.test(args)) return "compose";
   if (name === "iii" || name.startsWith("iii")) return "engine";
   if (name === "node" || name.includes("node")) return "worker";
   return "other";
@@ -601,18 +611,21 @@ interface TreeSample {
   totalKiB: number;
   engineKiB: number;
   workerKiB: number;
+  processKiB: Record<ProcessRole, number>;
   cpuSec: number;
   pids: number[];
 }
 
 function summarizeTree(tree: ProcRow[]): TreeSample {
-  const s: TreeSample = { totalKiB: 0, engineKiB: 0, workerKiB: 0, cpuSec: 0, pids: tree.map((r) => r.pid) };
+  const processKiB: Record<ProcessRole, number> = { compose: 0, engine: 0, state: 0, http: 0, agentmemory: 0, worker: 0, other: 0 };
+  const s: TreeSample = { totalKiB: 0, engineKiB: 0, workerKiB: 0, processKiB, cpuSec: 0, pids: tree.map((r) => r.pid) };
   for (const r of tree) {
     s.totalKiB += r.rssKiB;
     s.cpuSec += r.cpuSec;
     const role = roleOf(r);
+    s.processKiB[role] += r.rssKiB;
     if (role === "engine") s.engineKiB += r.rssKiB;
-    else if (role === "worker") s.workerKiB += r.rssKiB;
+    else if (role === "state" || role === "http" || role === "agentmemory" || role === "worker") s.workerKiB += r.rssKiB;
   }
   return s;
 }
@@ -622,6 +635,7 @@ interface RssWindow {
   peakTotalKiB: number;
   peakEngineKiB: number;
   peakWorkerKiB: number;
+  peakProcessKiB: Record<ProcessRole, number>;
   meanTotalKiB: number;
   cpuSecStart: number;
   cpuSecEnd: number;
@@ -647,6 +661,7 @@ class RssSampler {
       peakTotalKiB: first.totalKiB,
       peakEngineKiB: first.engineKiB,
       peakWorkerKiB: first.workerKiB,
+      peakProcessKiB: { ...first.processKiB },
       meanTotalKiB: first.totalKiB,
       cpuSecStart: first.cpuSec,
       cpuSecEnd: first.cpuSec,
@@ -666,6 +681,9 @@ class RssSampler {
       w.peakTotalKiB = Math.max(w.peakTotalKiB, s.totalKiB);
       w.peakEngineKiB = Math.max(w.peakEngineKiB, s.engineKiB);
       w.peakWorkerKiB = Math.max(w.peakWorkerKiB, s.workerKiB);
+      for (const [role, value] of Object.entries(s.processKiB) as Array<[ProcessRole, number]>) {
+        w.peakProcessKiB[role] = Math.max(w.peakProcessKiB[role], value);
+      }
       w.cpuSecEnd = Math.max(w.cpuSecEnd, s.cpuSec);
     } catch {
     } finally {
@@ -976,7 +994,7 @@ class Harness {
   }
 
   async start(label: string): Promise<{ readyMs: number; indexReadyMs: number | null; boot: BootLog }> {
-    for (const port of [this.cfg.restPort, this.cfg.restPort + 1, this.cfg.restPort + 2, this.cfg.enginePort]) {
+    for (const port of [this.cfg.restPort, this.cfg.restPort + 2, this.cfg.restPort + 6353, this.cfg.enginePort]) {
       if (await portOpen(port)) throw new Error(`port ${port} is in use before ${label}; refusing to share it`);
     }
     const logPath = join(this.runDir, `cli-${label}.log`);
@@ -1006,18 +1024,45 @@ class Harness {
     if (readyMs < 0) throw new Error(`instance not ready within ${this.cfg.readyTimeoutMs} ms (${label}); see ${logPath}`);
     let indexReadyMs: number | null = null;
     while (performance.now() - t0 < this.cfg.readyTimeoutMs) {
-      if (/Rebuilt BM25 index from stored content/.test(readFileSync(logPath, "utf8"))) {
+      const logs = `${readFileSync(logPath, "utf8")}\n${this.composeWorkerLogText()}`;
+      if (/Rebuilt BM25 index from stored content/.test(logs)) {
         indexReadyMs = performance.now() - t0;
         break;
       }
+      try {
+        const status = await http(this.base, "GET", "/status", undefined, 2000);
+        if (status.status === 200) {
+          indexReadyMs = performance.now() - t0;
+          break;
+        }
+      } catch {}
       await sleep(100);
     }
     await this.adoptTree();
-    return { readyMs: Math.round(readyMs), indexReadyMs: indexReadyMs === null ? null : Math.round(indexReadyMs), boot: parseBootLog(readFileSync(logPath, "utf8")) };
+    return { readyMs: Math.round(readyMs), indexReadyMs: indexReadyMs === null ? null : Math.round(indexReadyMs), boot: parseBootLog(`${readFileSync(logPath, "utf8")}\n${this.composeWorkerLogText()}`) };
   }
 
   bootLog(): BootLog | null {
-    return this.lastLogPath && existsSync(this.lastLogPath) ? parseBootLog(readFileSync(this.lastLogPath, "utf8")) : null;
+    return this.lastLogPath && existsSync(this.lastLogPath) ? parseBootLog(`${readFileSync(this.lastLogPath, "utf8")}\n${this.composeWorkerLogText()}`) : null;
+  }
+
+  private composeWorkerLogText(): string {
+    const root = join(this.dataDir, "compose-state");
+    const logs: string[] = [];
+    const visit = (dir: string) => {
+      if (!existsSync(dir)) return;
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) visit(path);
+        else if (entry.name === "agentmemory.log") {
+          try {
+            logs.push(readFileSync(path, "utf8").split(/\r?\n/).map((line) => line.replace(/^(?:stdout|stderr)\t/, "")).join("\n"));
+          } catch {}
+        }
+      }
+    };
+    visit(root);
+    return logs.join("\n");
   }
 
   private spoolFiles(): string[] {
@@ -1071,7 +1116,7 @@ class Harness {
   private async waitPortsFree(timeoutMs: number): Promise<void> {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      const busy = await Promise.all([this.cfg.restPort, this.cfg.restPort + 1, this.cfg.enginePort].map(portOpen));
+      const busy = await Promise.all([this.cfg.restPort, this.cfg.restPort + 2, this.cfg.restPort + 6353, this.cfg.enginePort].map(portOpen));
       if (!busy.some(Boolean)) return;
       await sleep(250);
     }
@@ -1493,7 +1538,7 @@ async function runOne(cfg: Config, profile: Profile, n: number, fake: FakeProvid
     const cold = await h.start("cold");
     const baseline = await settledDisk(h.dataDir, 3000, 30000);
     const idleEmpty = await h.sampler.sampleOnce();
-    out["coldStart"] = { ...cold, rssKiB: { total: idleEmpty.totalKiB, engine: idleEmpty.engineKiB, worker: idleEmpty.workerKiB } };
+    out["coldStart"] = { ...cold, rssKiB: { total: idleEmpty.totalKiB, engine: idleEmpty.engineKiB, worker: idleEmpty.workerKiB, processes: idleEmpty.processKiB } };
     out["diskFixed"] = baseline;
 
     const rng = mulberry32(cfg.seed);
@@ -1561,7 +1606,7 @@ async function runOne(cfg: Config, profile: Profile, n: number, fake: FakeProvid
       observeErrors,
       observeErrorSamples: errorSamples,
       deduplicatedResponses: deduplicated,
-      rss: { peakTotalKiB: kib(captureRss.peakTotalKiB), peakEngineKiB: kib(captureRss.peakEngineKiB), peakWorkerKiB: kib(captureRss.peakWorkerKiB), meanTotalKiB: captureRss.meanTotalKiB, samples: captureRss.samples },
+      rss: { peakTotalKiB: kib(captureRss.peakTotalKiB), peakEngineKiB: kib(captureRss.peakEngineKiB), peakWorkerKiB: kib(captureRss.peakWorkerKiB), peakProcessKiB: captureRss.peakProcessKiB, meanTotalKiB: captureRss.meanTotalKiB, samples: captureRss.samples },
       cpuSec: captureRss.cpuSec,
       provider: diffCounters(before, afterCapture),
     };
@@ -1569,7 +1614,7 @@ async function runOne(cfg: Config, profile: Profile, n: number, fake: FakeProvid
     log("idle");
     await sleep(5000);
     const idle = await h.sampler.sampleOnce();
-    out["idle"] = { rssKiB: { total: idle.totalKiB, engine: idle.engineKiB, worker: idle.workerKiB } };
+    out["idle"] = { rssKiB: { total: idle.totalKiB, engine: idle.engineKiB, worker: idle.workerKiB, processes: idle.processKiB } };
     out["diskAfterCapture"] = q.disk;
     out["diskGrowth"] = diskDelta(baseline, q.disk);
     out["diskGrowthPerObservationBytes"] = n > 0 ? Math.round(diskDelta(baseline, q.disk).totalBytes / n) : null;
@@ -1602,7 +1647,7 @@ async function runOne(cfg: Config, profile: Profile, n: number, fake: FakeProvid
       reEmbedRequests: recProvider.embedRequests,
       reEmbeddedInputs: recProvider.embedInputs,
       provider: recProvider,
-      rss: { peakTotalKiB: recRss.peakTotalKiB, idleTotalKiB: recIdle.totalKiB, idleEngineKiB: recIdle.engineKiB, idleWorkerKiB: recIdle.workerKiB },
+      rss: { peakTotalKiB: recRss.peakTotalKiB, idleTotalKiB: recIdle.totalKiB, idleEngineKiB: recIdle.engineKiB, idleWorkerKiB: recIdle.workerKiB, peakProcessKiB: recRss.peakProcessKiB, idleProcessKiB: recIdle.processKiB },
       cpuSec: recRss.cpuSec,
       disk: rq.disk,
     };
@@ -1615,7 +1660,7 @@ async function runOne(cfg: Config, profile: Profile, n: number, fake: FakeProvid
     const warm = await h.start("warm");
     await quiesce(h, fake, Math.min(cfg.quiesceTimeoutMs, 120000));
     const warmIdle = await h.sampler.sampleOnce();
-    out["warmStart"] = { ...warm, provider: diffCounters(warmBefore, fake.snapshot()), rssKiB: { total: warmIdle.totalKiB, engine: warmIdle.engineKiB, worker: warmIdle.workerKiB } };
+    out["warmStart"] = { ...warm, provider: diffCounters(warmBefore, fake.snapshot()), rssKiB: { total: warmIdle.totalKiB, engine: warmIdle.engineKiB, worker: warmIdle.workerKiB, processes: warmIdle.processKiB } };
     await h.stop();
     out["diskFinal"] = await settledDisk(h.dataDir, 2000, 20000);
   } catch (err) {
@@ -1669,11 +1714,12 @@ function markdown(report: Record<string, unknown>): string {
     const g = (k: string) => fmtBytes(get(r, `diskAfterCapture.byCategory.${k}`));
     lines.push(`| ${r["profile"]} | ${r["observations"]} | ${get(r, "evidenceBeforeKill.logicalObservations") ?? "n/a"} | ${fmtBytes(get(r, "diskFixed.totalBytes"))} | ${fmtBytes(get(r, "diskAfterCapture.totalBytes"))} | ${fmtBytes(r["diskGrowthPerObservationBytes"])} | ${g("source")} | ${g("summary")} | ${g("index")} | ${g("diagnostic")} | ${g("config")} | ${g("stream")} | ${g("queue")} | ${g("failed_delivery")} |`);
   }
-  lines.push("", "### Resident memory and CPU (engine + worker process tree)", "");
-  lines.push("| profile | N | empty idle | capture peak | engine peak | worker peak | idle after capture | after recovery | capture CPU s | recovery CPU s |");
-  lines.push("|---|---|---|---|---|---|---|---|---|---|");
+  lines.push("", "### Resident memory and CPU (iii Compose process tree)", "");
+  lines.push("| profile | N | empty idle | capture peak | engine peak | Compose | state | http | agentmemory | worker peak | idle after capture | after recovery | capture CPU s | recovery CPU s |");
+  lines.push("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|");
   for (const r of runs) {
-    lines.push(`| ${r["profile"]} | ${r["observations"]} | ${fmtKiB(get(r, "coldStart.rssKiB.total"))} | ${fmtKiB(get(r, "capture.rss.peakTotalKiB"))} | ${fmtKiB(get(r, "capture.rss.peakEngineKiB"))} | ${fmtKiB(get(r, "capture.rss.peakWorkerKiB"))} | ${fmtKiB(get(r, "idle.rssKiB.total"))} | ${fmtKiB(get(r, "recovery.rss.idleTotalKiB"))} | ${get(r, "capture.cpuSec") ?? "n/a"} | ${get(r, "recovery.cpuSec") ?? "n/a"} |`);
+    const role = (name: ProcessRole) => fmtKiB(get(r, `capture.rss.peakProcessKiB.${name}`));
+    lines.push(`| ${r["profile"]} | ${r["observations"]} | ${fmtKiB(get(r, "coldStart.rssKiB.total"))} | ${fmtKiB(get(r, "capture.rss.peakTotalKiB"))} | ${fmtKiB(get(r, "capture.rss.peakEngineKiB"))} | ${role("compose")} | ${role("state")} | ${role("http")} | ${role("agentmemory")} | ${fmtKiB(get(r, "capture.rss.peakWorkerKiB"))} | ${fmtKiB(get(r, "idle.rssKiB.total"))} | ${fmtKiB(get(r, "recovery.rss.idleTotalKiB"))} | ${get(r, "capture.cpuSec") ?? "n/a"} | ${get(r, "recovery.cpuSec") ?? "n/a"} |`);
   }
   lines.push("", "### Capture latency", "");
   lines.push("| profile | N | hook p50 ms | hook p95 ms | hook stdout B | observe p50 ms | observe p95 ms | observe p99 ms | errors | capture wall ms | quiesce ms |");
@@ -1829,7 +1875,7 @@ async function main(): Promise<void> {
       scenario: cfg.scenario,
       provider: cfg.provider === "fake" ? { mode: "fake" } : { mode: cfg.provider, url: cfg.upstreamUrl, embeddingModel: cfg.embedModel, chatModel: cfg.chatModel },
       ...(cfg.scenario === "crash-offline" ? { killAfterMs: cfg.killAfterMs, killSettleMs: cfg.killSettleMs } : {}),
-      ports: { rest: cfg.restPort, streams: cfg.restPort + 1, viewer: cfg.restPort + 2, metrics: cfg.restPort + 3, engine: cfg.enginePort, fakeProvider: cfg.fakePort },
+      ports: { rest: cfg.restPort, viewer: cfg.restPort + 2, metrics: cfg.restPort + 6353, engine: cfg.enginePort, fakeProvider: cfg.fakePort },
     },
     runs,
   };

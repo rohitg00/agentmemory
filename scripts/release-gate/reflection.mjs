@@ -70,7 +70,7 @@ function cleanEnv(targetHome = home) {
     TMPDIR: tmpdir(), CI: "1", NO_COLOR: "1", LANG: "C.UTF-8", III_TELEMETRY_ENABLED: "false",
     EMBEDDING_PROVIDER: "none", AGENTMEMORY_AUTO_COMPRESS: "false", AGENTMEMORY_SESSION_SWEEP_ENABLED: "false",
     AGENTMEMORY_DATA_DIR: dataDir, AGENTMEMORY_RUNTIME_DIR: runtime,
-    III_REST_PORT: String(port), III_STREAM_PORT: String(port + 1), III_VIEWER_PORT: String(port + 2),
+    III_REST_PORT: String(port), III_VIEWER_PORT: String(port + 2),
     III_ENGINE_PORT: String(port + 46023), AGENTMEMORY_METRICS_PORT: String(port + 6353),
     AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
     OPENAI_API_KEY: "reflection-gate-synthetic-key", OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}`,

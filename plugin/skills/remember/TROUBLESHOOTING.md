@@ -12,7 +12,9 @@ explicitly reduced tool surface. Walk these in order:
 1. Identify the host. In Claude Code, inspect `/plugin list` and `/mcp`.
    In Hermes, inspect the configured memory provider and `mcp_servers` separately.
    In OpenClaw, validate the host configuration and inspect its MCP servers and
-   native plugins separately. Do not run another host's setup commands.
+   native plugins separately. In Pi or OMP, inspect `/agentmemory-status` and the
+   MCP inventory separately; native save/search does not prove the broader tools
+   are connected. Do not run another host's setup commands.
 2. Restart or reload the affected host connection after configuration changes.
 3. Inspect the connected tool inventory. Hermes may namespace MCP tools; invoke
    the actual advertised names and schemas. A native memory provider is not
@@ -24,10 +26,11 @@ explicitly reduced tool surface. Walk these in order:
 5. If `agentmemory connect codex` and the Codex plugin are both enabled, choose
    one MCP connection. Check `/hooks` before adding global hook fallbacks.
 
-Skills are installed separately from the native provider. Check the host's skill
-inventory and open this file from the installed skill directory. Test automatic
-capture with a real turn and a recorded observation; tool connectivity alone
-does not establish lifecycle capture.
+Hermes, OpenClaw, Pi and OMP connector installations bundle skills; other hosts
+may install them separately. Check the host's skill inventory and open this file
+from the installed skill directory. Test automatic capture with a real turn and
+a recorded observation; tool connectivity alone does not establish lifecycle
+capture.
 
 An outage or timeout is not an empty search result. Report the failure. A write
 may have committed before the response was lost; inspect state before retrying.
@@ -42,9 +45,11 @@ API directly:
    `AGENTMEMORY_SECRET`; for loopback URLs only, fall back to the secret in
    `~/.agentmemory/.env` and then `~/.agentmemory/secret`. Load the value locally
    without displaying it. Never send a local-file secret to a remote URL.
+   If `AGENTMEMORY_CREDENTIAL_MODE=explicit`, require the explicit host credential
+   and do not read local credential files.
    Authenticated REST fallback requests require HTTPS for non-loopback
    URLs; HTTP is allowed for loopback URLs (`localhost`, `127.0.0.0/8`, or `[::1]`).
-   Do not print or save the secret.
+   Reject redirects on authenticated requests. Do not print or save the secret.
 
 Endpoint map by skill:
 

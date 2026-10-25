@@ -481,10 +481,8 @@
   color: var(--muted);
 }
 
-.night::before {
-  content: "";
+.night :global(.flow-arrow) {
   width: 56px;
-  border-top: 1px dashed var(--line-2);
 }
 
 .lesson {
@@ -668,19 +666,18 @@
   .hub::before {
     left: 50%;
     right: auto;
-    top: 0;
-    bottom: 0;
+    top: -16px;
+    bottom: -16px;
     border-top: 0;
     border-left: 1px dashed var(--line-2);
   }
   .packet {
     display: none;
   }
-  .night::before {
-    width: 0;
-    height: 28px;
-    border-top: 0;
-    border-left: 1px dashed var(--line-2);
+  .night :global(.flow-arrow) {
+    width: 28px;
+    margin: 10px 0;
+    transform: rotate(90deg);
   }
 }
 

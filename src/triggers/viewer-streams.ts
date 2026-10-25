@@ -37,6 +37,7 @@ import {
   type ViewerCounts,
 } from "../state/viewer-counts.js";
 import { detectLlmProviderKind, loadConfig } from "../config.js";
+import { getLiveEventsStats } from "../viewer/live-events.js";
 import { getBoundViewerPort, getViewerSkipped } from "../viewer/server.js";
 import { buildConfigFlags, checkAuth, createConsolidationStatusReader, createStatusReporter } from "./api.js";
 import { isStateDelete, sendViewerEvent } from "./events.js";
@@ -99,6 +100,7 @@ export function registerViewerStreamTriggers(
     return {
       status: snapshot?.status ?? "healthy",
       health: snapshot,
+      liveEvents: getLiveEventsStats(),
       circuitBreaker: circuitBreaker(),
       functionMetrics: markLlmFunctions(functionMetrics, detectLlmProviderKind()),
       counts,
@@ -284,7 +286,7 @@ export function registerViewerStreamTriggers(
     config: { scope: KV.health },
   });
 
-  const { streamsPort, restPort } = loadConfig();
+  const { restPort } = loadConfig();
 
   sdk.registerFunction("api::viewer-snapshot",
     async (req: HttpRequest): Promise<Response> => {
@@ -302,7 +304,6 @@ export function registerViewerStreamTriggers(
           service: "agentmemory",
           viewerPort: getBoundViewerPort(),
           viewerSkipped: getViewerSkipped(),
-          streamsPort,
           restPort,
           provider: detectLlmProviderKind(),
           embeddingProvider: getEmbeddingProvider()?.name ?? "none",

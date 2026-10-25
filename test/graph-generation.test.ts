@@ -1,3 +1,4 @@
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { indexObservationSession } from "../src/state/obs-index.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -43,12 +44,12 @@ async function setup(provider = { name: "noop", compress: vi.fn(async () => xml)
   const store = new Map<string, Map<string, unknown>>();
   const handlers = new Map<string, (data?: any) => Promise<any>>();
   const sent: any[] = [];
+  const unsubscribeEvents = onLiveEvent((event) => sent.push({ type: event.type, data: structuredClone(event.data) }));
   let intercept: ((id: string, payload: any) => Promise<void>) | undefined;
   const sdk = {
     registerFunction: (id: string, fn: (data?: any) => Promise<any>) => handlers.set(id, fn),
     registerTrigger: vi.fn(),
     trigger: async ({ function_id: id, payload }: { function_id: string; payload: any }): Promise<any> => {
-      if (id === "stream::send") { sent.push(structuredClone(payload)); return {}; }
       if (!id.startsWith("state::")) return handlers.get(id)!(payload);
       await intercept?.(id, payload);
       const rows = store.get(payload.scope) ?? new Map<string, unknown>();
@@ -71,7 +72,7 @@ async function setup(provider = { name: "noop", compress: vi.fn(async () => xml)
   registerMeshFunction(sdk as never, kv);
   registerReflectFunctions(sdk as never, kv, provider as never);
   const call = (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload });
-  return { kv, sdk, call, store, sent, provider, intercept: (fn?: typeof intercept) => { intercept = fn; } };
+  return { kv, sdk, call, store, sent, unsubscribeEvents, provider, intercept: (fn?: typeof intercept) => { intercept = fn; } };
 }
 
 async function seed(kv: StateKV) {

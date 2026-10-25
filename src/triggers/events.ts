@@ -1,9 +1,8 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
-import type { CompressedObservation, HookPayload, Memory, Session } from "../types.js";
-import { KV, STREAM } from "../state/schema.js";
+import type { CompressedObservation, Memory, Session } from "../types.js";
+import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
-import { addSessionToProjectIndex } from "../state/session-index.js";
-import { withKeyedLock } from "../state/keyed-mutex.js";
+import { emitLiveEvent } from "../viewer/live-events.js";
 import { isReflectEnabled } from "../functions/slots.js";
 import {
   detectLlmProviderKind,
@@ -13,7 +12,6 @@ import {
   isConsolidationEnabled,
 } from "../config.js";
 import { logger } from "../logger.js";
-import { requestSummaryRefresh } from "../functions/summary-state.js";
 import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 
 // Global marker recording when corpus consolidation last ran, used to debounce
@@ -47,79 +45,6 @@ function consolidationDue(kv: StateKV): Promise<boolean> {
 }
 
 export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
-  sdk.registerFunction(
-    "event::session::started",
-    async (data: {
-      sessionId: string;
-      project: string;
-      cwd: string;
-      agentId?: string;
-    }) => {
-      const requestAgentId =
-        typeof data.agentId === "string" && data.agentId.trim().length > 0
-          ? data.agentId.trim().slice(0, 128)
-          : undefined;
-      const agentId = requestAgentId ?? getAgentId();
-      const freshSession: Session = {
-        id: data.sessionId,
-        project: data.project,
-        cwd: data.cwd,
-        startedAt: new Date().toISOString(),
-        status: "active",
-        observationCount: 0,
-        ...(agentId ? { agentId } : {}),
-      };
-      const session = await withKeyedLock(`obs:${data.sessionId}`, async () => {
-        const existing = await kv.get<Session>(KV.sessions, data.sessionId);
-        const merged: Session = {
-          ...freshSession,
-          observationCount: existing?.observationCount ?? freshSession.observationCount,
-          firstPrompt: existing?.firstPrompt,
-          summary: existing?.summary,
-          commitShas: existing?.commitShas,
-        };
-        await kv.set(KV.sessions, data.sessionId, merged);
-        return merged;
-      });
-      await addSessionToProjectIndex(kv, session.project, {
-        id: session.id,
-        startedAt: session.startedAt,
-        ...(session.agentId ? { agentId: session.agentId } : {}),
-      }).catch((err) => {
-        logger.warn("session index update failed", {
-          sessionId: session.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-      const contextResult = await sdk.trigger<
-        { sessionId: string; project: string; agentId?: string },
-        { context: string }
-      >({
-        function_id: "mem::context",
-        payload: {
-          sessionId: data.sessionId,
-          project: data.project,
-          ...(agentId ? { agentId } : {}),
-        },
-      });
-      return { session, context: contextResult.context };
-    },
-  );
-  sdk.registerTrigger({
-    type: "durable:subscriber",
-    function_id: "event::session::started",
-    config: { topic: "agentmemory.session.started" },
-  });
-
-  sdk.registerFunction("event::observation", async (data: HookPayload) =>
-    sdk.trigger({ function_id: "mem::observe", payload: data }),
-  );
-  sdk.registerTrigger({
-    type: "durable:subscriber",
-    function_id: "event::observation",
-    config: { topic: "agentmemory.observation" },
-  });
-
   sdk.registerFunction("event::session::stopped", async (data: { sessionId: string; skipConsolidation?: boolean }) => {
     const summary = await sdk.trigger<typeof data, { unchanged?: boolean } | undefined>({
       function_id: "mem::summarize",
@@ -180,42 +105,6 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
     }
     return summary;
   });
-  sdk.registerTrigger({
-    type: "durable:subscriber",
-    function_id: "event::session::stopped",
-    config: { topic: "agentmemory.session.stopped" },
-  });
-
-  sdk.registerFunction(
-    "event::session::ended",
-    async (data: { sessionId: string }) => {
-      const sessionId = data?.sessionId;
-      if (typeof sessionId !== "string" || sessionId.length === 0) {
-        return { success: true, ended: false, reason: "not_found" as const };
-      }
-      const endResult = await withKeyedLock(`obs:${sessionId}`, async () => {
-        const session = await kv.get<Session>(KV.sessions, sessionId);
-        if (!session || session.id !== sessionId) return "not_found" as const;
-        if (session.status === "completed") return "already_completed" as const;
-        await requestSummaryRefresh(kv, sessionId);
-        await kv.update(KV.sessions, sessionId, [
-          { type: "set", path: "endedAt", value: new Date().toISOString() },
-          { type: "set", path: "status", value: "completed" },
-        ]);
-        return "ended" as const;
-      });
-      if (endResult !== "ended") {
-        return { success: true, ended: false, reason: endResult };
-      }
-      return { success: true, ended: true };
-    },
-  );
-  sdk.registerTrigger({
-    type: "durable:subscriber",
-    function_id: "event::session::ended",
-    config: { topic: "agentmemory.session.ended" },
-  });
-
   // React to observation count changes and emit a lightweight live event for dashboards/viewer.
   sdk.registerFunction(
     "event::session::observation-count-changed",
@@ -312,14 +201,10 @@ export function isOutOfAgentScope(record: { agentId?: string } | undefined): boo
 }
 
 export async function sendViewerEvent(
-  sdk: IIIClient,
+  _sdk: IIIClient,
   id: string,
   type: string,
   data: Record<string, unknown>,
 ): Promise<void> {
-  await sdk.trigger({
-    function_id: "stream::send",
-    payload: { stream_name: STREAM.name, group_id: STREAM.viewerGroup, id, type, data },
-    action: TriggerAction.Void(),
-  });
+  emitLiveEvent({ id, type, data });
 }

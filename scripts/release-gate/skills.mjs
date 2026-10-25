@@ -24,7 +24,7 @@ const cwd = join(root, "project");
 for (const dir of [home, cwd, join(home, ".agentmemory/bin"), join(root, "tmp")]) mkdirSync(dir, { recursive: true });
 copyFileSync(options.engine, join(home, ".agentmemory/bin/iii"));
 chmodSync(join(home, ".agentmemory/bin/iii"), 0o755);
-const baseEnv = (userHome) => ({ HOME: userHome, USERPROFILE: userHome, PATH: `${dirname(options.node)}:/usr/bin:/bin:/opt/homebrew/bin`, XDG_CONFIG_HOME: join(userHome, ".config"), XDG_CACHE_HOME: join(userHome, ".cache"), TMPDIR: join(root, "tmp"), CI: "1", NO_COLOR: "1", DO_NOT_TRACK: "1", III_TELEMETRY_ENABLED: "false" });
+const baseEnv = (userHome) => ({ HOME: userHome, USERPROFILE: userHome, PATH: `${dirname(options.node)}:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin`, XDG_CONFIG_HOME: join(userHome, ".config"), XDG_CACHE_HOME: join(userHome, ".cache"), TMPDIR: join(root, "tmp"), CI: "1", NO_COLOR: "1", DO_NOT_TRACK: "1", III_TELEMETRY_ENABLED: "false" });
 const env = { ...baseEnv(home), AGENTMEMORY_TOOLS: "all", AGENTMEMORY_AUTO_COMPRESS: "false", AGENTMEMORY_INJECT_CONTEXT: "false", AGENTMEMORY_READY_TIMEOUT_MS: "60000", AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "60000" };
 const receipts = [];
 const children = new Set();
@@ -105,7 +105,7 @@ try {
   daemon = spawn(options.node, [cli, "--port", String(port), "--data-dir", join(root, "state")], { cwd, env, detached: true, stdio: ["ignore", fd, fd] });
   closeSync(fd); children.add(daemon.pid);
   await waitFor(async () => {
-    assert(daemon.exitCode === null, `Daemon exited ${daemon.exitCode}`);
+    assert(daemon.signalCode === null && (daemon.exitCode === null || daemon.exitCode === 0), `Daemon launcher exited ${daemon.signalCode ?? daemon.exitCode}`);
     try {
       secret = readFileSync(join(home, ".agentmemory/secret"), "utf8").trim();
       return secret.length > 0 && (await rest("/health")).status === 200;

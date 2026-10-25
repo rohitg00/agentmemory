@@ -10,8 +10,8 @@ dist/
 .DS_Store
 .claude/
 
-plugin/scripts/*.map
-plugin/scripts/*.d.mts
+plugin/scripts/**/*.map
+plugin/scripts/**/*.d.mts
 data/
 !eval/data/
 !eval/data/**
@@ -35,3 +35,6 @@ benchmark/results/capture-costs-*
 # Generated native package resources
 integrations/openclaw/skills/
 integrations/openclaw/LICENSE
+integrations/omp/skills/
+integrations/omp/LICENSE
+integrations/pi/skills/

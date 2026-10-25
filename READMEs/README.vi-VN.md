@@ -4,10 +4,9 @@
 
 <p align="center">
   <strong>
-    Coding agent của bạn ghi nhớ mọi thứ. Không còn phải giải thích lại từ đầu.
-    Được xây dựng trên <a href="https://github.com/iii-hq/iii">iii engine</a>
+    Bộ nhớ bền vững xuyên suốt các phiên lập trình và agent.
   </strong><br/>
-  Bộ nhớ bền vững cho Claude Code, GitHub Copilot CLI, Cursor, Gemini CLI, Codex CLI, Hermes, OpenClaw, pi, OpenCode và bất kỳ MCP client nào.
+  Bộ nhớ bền vững cho Claude Code, GitHub Copilot CLI, Cursor, Gemini CLI, Codex CLI, Hermes, OpenClaw, pi, Oh My Pi, DeepSeek Harness, OpenCode và bất kỳ MCP client nào.
 </p>
 
 <p align="center">
@@ -63,6 +62,7 @@
   <a href="https://github.com/rohitg00/agentmemory/actions"><img src="https://img.shields.io/github/actions/workflow/status/rohitg00/agentmemory/ci.yml?label=tests&style=for-the-badge&logo=github" alt="CI" /></a>
   <a href="https://github.com/rohitg00/agentmemory/blob/main/LICENSE"><img src="https://img.shields.io/github/license/rohitg00/agentmemory?color=blue&style=for-the-badge" alt="License" /></a>
   <a href="https://github.com/rohitg00/agentmemory/stargazers"><img src="https://img.shields.io/github/stars/rohitg00/agentmemory?style=for-the-badge&color=yellow&logo=github" alt="Stars" /></a>
+  <a href="https://skills.sh/rohitg00/agentmemory"><img src="https://skills.sh/b/rohitg00/agentmemory?style=for-the-badge" alt="skills.sh installs" /></a>
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -87,20 +87,23 @@
   <a href="#how-it-works">Cách hoạt động</a> &bull;
   <a href="#mcp-server">MCP</a> &bull;
   <a href="#real-time-viewer">Viewer</a> &bull;
-  <a href="#powered-by-iii">Powered by iii</a> &bull;
   <a href="#configuration">Cấu hình</a> &bull;
   <a href="#api">API</a>
 </p>
 
 ---
 
+AgentMemory ghi lại phiên lập trình để bạn tìm lại các quyết định và cách sửa lỗi. Dùng chung một kho bộ nhớ giữa các công cụ, kiểm tra nội dung đã lưu và chọn lượng ngữ cảnh đưa vào mô hình.
+
+<a id="install"></a>
+
 ## Cài đặt
 
 Yêu cầu:
 
 - Node.js 20 hoặc mới hơn kèm npm và npx (`node -v`, `npm -v`, và `npx -v`).
-- Cài đặt iii-engine tự động trên macOS/Linux cũng cần `curl`, một `sh` chuẩn POSIX, và `tar`. Các image tối giản như `node:20-slim` có thể không có sẵn những công cụ này.
-- Windows gốc (native) yêu cầu cài đặt thủ công `iii.exe` của iii-engine v0.22.1 đã được pin. WSL2 hoặc Docker Desktop là các lựa chọn khác được hỗ trợ.
+- Thiết lập tự động trên macOS/Linux cần `curl`, POSIX `sh` và `tar`.
+Windows native cần cài thủ công `iii.exe` của iii v0.25.0 đã pin; WSL2 dùng trình cài tự động cho macOS/Linux
 
 Lệnh cài mới chuẩn (canonical):
 
@@ -108,11 +111,11 @@ Lệnh cài mới chuẩn (canonical):
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Lần chạy đầu tiên là một quy trình cài đặt tương tác: chọn các agent cần kết nối (Claude Code, Cursor, Codex, Gemini CLI, OpenCode, ...), chọn một LLM provider hoặc tiếp tục ở chế độ keyless, rồi nó khởi tạo config, chạy memory server cùng iii engine đã pin, và đề nghị cài đặt toàn cục để từ đó lệnh `agentmemory` trần dùng được ở mọi nơi. `-y` để xác nhận prompt gói của npx và `@latest` giúp tránh một bản release cũ bị cache. Một provider giúp các tính năng LLM khả dụng, nhưng việc nén (compression) observation do LLM viết chỉ bắt đầu khi `AGENTMEMORY_AUTO_COMPRESS=true` cũng được thiết lập.
+Chọn agent và nhà cung cấp hoặc chế độ không cần khóa. Thiết lập lưu cấu hình, khởi động máy chủ bộ nhớ và đề nghị cài đặt toàn cục. `-y` chấp nhận xác nhận npm; `@latest` chọn bản mới nhất. Nén bằng LLM cần cả nhà cung cấp và `AGENTMEMORY_AUTO_COMPRESS=true`.
 
 Chế độ keyless tắt vector embedding. `memory_recall` (đường dẫn `mem::search`) dùng BM25, trong khi `memory_smart_search` cũng có thể kết hợp (fuse) các kết quả khớp từ graph cấu trúc khi dữ liệu graph đã tồn tại. Để có recall ngữ nghĩa (semantic) miễn phí ngay trên máy (on-device), đặt `EMBEDDING_PROVIDER=local` trong `~/.agentmemory/.env` và khởi động lại. Request embedding đầu tiên sẽ tải `Xenova/all-MiniLM-L6-v2`; sau lần tải model đầu tiên đó, việc suy luận chạy hoàn toàn cục bộ.
 
-Runtime cục bộ dùng bốn port: `3111` cho REST/MCP HTTP, `3112` cho iii streams, `3113` cho viewer, và `49134` cho WebSocket của iii worker. Trạng thái (state) bền vững của iii nằm tại `~/Library/Application Support/agentmemory` trên macOS, `$XDG_DATA_HOME/agentmemory` hoặc `~/.local/share/agentmemory` trên Linux, và `%APPDATA%\agentmemory` trên Windows. Dùng `--data-dir <path>` hoặc `AGENTMEMORY_DATA_DIR` để ghi đè, và dùng lại đúng giá trị đó ở mỗi lần khởi động lại. Để tương thích ngược, một `./data/state_store.db` hoặc `./data/iii-config.yaml` đã tồn tại sẽ được ưu tiên hơn giá trị mặc định của platform cho instance 0; một flag hoặc biến môi trường chỉ định rõ vẫn luôn thắng.
+API ở `http://localhost:3111`, trình xem trực tiếp ở `http://localhost:3113`. Cả hai mặc định chỉ lắng nghe trên loopback. Cấu hình nằm trong `~/.agentmemory/.env`. [Lưu trữ dữ liệu](#data-storage).
 
 Sau đó hãy xác nhận recall hoạt động và trang bị skill cho agent của bạn:
 
@@ -127,14 +130,7 @@ Muốn để một coding agent tự làm hết mọi việc? Hãy đưa cho nó
 
 > Retrieve and follow the instructions at: https://raw.githubusercontent.com/rohitg00/agentmemory/main/INSTALL_FOR_AGENTS.md
 
-Kết nối thêm agent bất kỳ lúc nào với `agentmemory connect <agent>` — 20 adapter được liệt kê tại [Hoạt động với mọi agent](#works-with-every-agent). Tham chiếu lệnh đầy đủ tại [Bắt đầu nhanh](#quick-start).
-
-<details>
-<summary><strong>Windows</strong></summary>
-
-Đường đi nhanh nhất là WSL2. Thiết lập engine trên Windows gốc yêu cầu tải file ZIP v0.22.1 đã pin và trích xuất `iii.exe` thủ công; CLI không tự động trích xuất file này. Docker Desktop cũng được hỗ trợ. Xem [ghi chú Windows](#windows) để biết các bước chi tiết.
-
-</details>
+Thêm agent bằng `agentmemory connect <agent>`. Xem [các tích hợp](#works-with-every-agent) và [lệnh thường dùng](#everyday-commands).
 
 <details>
 <summary><strong>Cài đặt toàn cục / EACCES</strong></summary>
@@ -151,13 +147,6 @@ Lệnh npx ở trên vẫn là cách cài mới chuẩn và tránh được các
 <summary><strong>npx trả về phiên bản cũ</strong></summary>
 
 npx cache theo từng phiên bản. Buộc dùng bản mới nhất với `npx -y @agentmemory/agentmemory@latest`, hoặc xóa cache một lần với `rm -rf ~/.npm/_npx` (macOS/Linux; trên Windows, xóa `%LOCALAPPDATA%\npm-cache\_npx`).
-
-</details>
-
-<details>
-<summary><strong>Đã chạy sẵn iii engine riêng của bạn</strong></summary>
-
-agentmemory pin phiên bản iii-engine v0.22.1 và sẽ không gắn (attach) vào một phiên bản khác (worker không thể nói đúng protocol của một engine khác). Hãy dừng engine khác đó, sau đó chạy `npx -y @agentmemory/agentmemory@latest`. Nó sẽ cài đặt và chạy bản v0.22.1 đã pin trong `~/.agentmemory/bin`, không đụng đến `iii` riêng của bạn.
 
 </details>
 
@@ -187,7 +176,7 @@ agentmemory hoạt động với bất kỳ agent nào hỗ trợ hooks, MCP, ho
 <td align="center" width="20%">
 <a href="https://cursor.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://svgl.app/library/cursor_dark.svg"><img src="https://svgl.app/library/cursor_light.svg" alt="Cursor" width="48" height="48" /></picture></a><br/>
 <strong>Cursor</strong><br/>
-<sub>native plugin + 7 hooks + MCP</sub>
+<sub>plugin native + hook vòng đời + MCP</sub>
 </td>
 <td align="center" width="20%">
 <a href="../plugin/opencode/"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/opencode.png" alt="OpenCode" width="48" height="48" /></a><br/>
@@ -214,7 +203,7 @@ agentmemory hoạt động với bất kỳ agent nào hỗ trợ hooks, MCP, ho
 <td align="center" width="20%">
 <a href="../integrations/pi/"><img src="../assets/agents/pi.svg" alt="pi" width="48" height="48" /></a><br/>
 <strong>pi</strong><br/>
-<sub>native plugin + MCP</sub>
+<sub>recall native + capture + skill</sub>
 </td>
 <td align="center" width="20%">
 <a href="https://github.com/tinyhumansai/openhuman"><img src="https://github.com/tinyhumansai.png?size=120" alt="OpenHuman" width="48" height="48" /></a><br/>
@@ -280,7 +269,7 @@ agentmemory hoạt động với bất kỳ agent nào hỗ trợ hooks, MCP, ho
 <td align="center" width="20%">
 <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://svgl.app/library/deepseek.svg" alt="DeepSeek Harness" width="48" height="48" /></a><br/>
 <strong>DeepSeek Harness</strong><br/>
-<sub>MCP server</sub>
+<sub>capture native + MCP</sub>
 </td>
 <td align="center" width="20%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -303,6 +292,12 @@ agentmemory hoạt động với bất kỳ agent nào hỗ trợ hooks, MCP, ho
 <sub>REST API</sub>
 </td>
 </tr>
+<tr>
+<td align="center" colspan="5">
+<a href="../integrations/omp/"><strong>Oh My Pi</strong></a><br/>
+<sub>recall native + capture + skill + MCP tùy chọn</sub>
+</td>
+</tr>
 </table>
 
 <p align="center">
@@ -311,22 +306,24 @@ agentmemory hoạt động với bất kỳ agent nào hỗ trợ hooks, MCP, ho
 
 ---
 
-Bạn giải thích lại cùng một kiến trúc ở mỗi session. Bạn phát hiện lại đúng những bug cũ. Bạn dạy lại đúng những sở thích cũ. Bộ nhớ tích hợp sẵn (CLAUDE.md, .cursorrules) bị giới hạn ở 200 dòng và nhanh trở nên lỗi thời. agentmemory khắc phục điều này. Nó âm thầm ghi lại những gì agent của bạn làm, nén lại thành bộ nhớ có thể tìm kiếm, và tiêm (inject) đúng context vào khi session kế tiếp bắt đầu. Một lệnh duy nhất. Hoạt động trên nhiều agent.
+<a id="data-storage"></a>
 
-**Điều gì thay đổi:** Ở session 1 bạn thiết lập JWT auth. Ở session 2 bạn yêu cầu thêm rate limiting. Agent đã biết sẵn rằng auth của bạn dùng middleware jose trong `src/middleware/auth.ts`, test của bạn phủ (cover) việc validate token, và bạn chọn jose thay vì jsonwebtoken để tương thích với Edge, không cần giải thích lại, không cần copy-paste lại.
+### Lưu trữ dữ liệu
+
+Bộ nhớ mặc định nằm ngoài kho mã. Instance 0 dùng lại `./data/state_store.db` có sẵn. Chọn thư mục bằng `--data-dir <path>` hoặc `AGENTMEMORY_DATA_DIR` và giữ nguyên khi khởi động lại hay nâng cấp.
+
+| Nền tảng | Thư mục dữ liệu |
+|---|---|
+| macOS | `~/Library/Application Support/agentmemory` |
+| Linux | `$XDG_DATA_HOME/agentmemory` / `~/.local/share/agentmemory` |
+| Windows | `%APPDATA%\agentmemory` |
 
 ```bash
-npx -y @agentmemory/agentmemory@latest
+agentmemory --data-dir ~/.agentmemory-projects/main
+agentmemory --instance 1
 ```
 
-Theo mặc định, agentmemory lưu trạng thái của iii-engine bên ngoài repository mà bạn khởi chạy nó từ đó: `~/Library/Application Support/agentmemory` trên macOS, `$XDG_DATA_HOME/agentmemory` hoặc `~/.local/share/agentmemory` trên Linux, và `%APPDATA%\agentmemory` trên Windows. Một `./data/state_store.db` hoặc `./data/iii-config.yaml` kiểu cũ (legacy) đã tồn tại sẽ được dùng lại cho instance 0 trước khi áp dụng giá trị mặc định của platform đó. Để chọn vị trí một cách rõ ràng, truyền `--data-dir <path>` hoặc đặt `AGENTMEMORY_DATA_DIR`; cả hai cách chỉ định rõ này đều được ưu tiên hơn việc dò tìm kiểu legacy:
-
-```bash
-npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
-AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
-```
-
-Các lần khởi chạy native và Docker đều dùng chung thư mục host đã được resolve này; Docker bind-mount nó vào `/data`. `--instance 1` sẽ gắn thêm `instance-1` vào thư mục đã resolve và chọn bộ bốn port mặc định riêng `3211/3212/3213/49234`.
+`--instance 1` dùng thư mục con `instance-1`, cổng API `3211` và trình xem `3213`. Xem [lưu trữ và sao lưu](../docs/reliability/state-storage.md) để dùng Redis hoặc chuyển backend.
 
 Ghi chú phát hành mới nhất: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +473,7 @@ Tỷ lệ hit top-5 đạt 100% tại **ngưỡng toán học P@5** cho corpus n
 </tr>
 <tr>
 <td><strong>Dependency bên ngoài</strong></td>
-<td>Không (SQLite + iii-engine)</td>
+<td>Không cần dịch vụ cơ sở dữ liệu riêng</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vector DB</td>
 <td>Nhiều</td>
@@ -550,13 +547,11 @@ Tỷ lệ hit top-5 đạt 100% tại **ngưỡng toán học P@5** cho corpus n
 | Zep / Graphiti | 30K | Knowledge graph theo thời gian (temporal); kết quả truy vấn temporal công bố mạnh nhất (LongMemEval 63.8%), nhưng graph được xây dựng bất đồng bộ nên các fact mới có thể bị trễ |
 | Cognee | 30K | Nạp từ tài liệu sang knowledge graph, chỉ hỗ trợ Python, được xây dựng để trích xuất entity có cấu trúc hơn là để capture session |
 
-Không cái nào trong số này tự động capture từ hook của coding agent, có sẵn viewer local-first, hoặc chạy được ở chế độ keyless — đây chính là tổ hợp mà agentmemory được xây dựng xung quanh.
+AgentMemory kết hợp ghi nhận phiên, lịch sử dự án có thể tìm kiếm và trình xem cục bộ, với chế độ không cần khóa ngay từ lần đầu.
 
 ---
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Bắt đầu nhanh" height="32" /></picture></h2>
-
-Khả năng tương thích: bản phát hành này nhắm tới `iii-sdk` 0.22.1 và pin iii-engine v0.22.1.
 
 ### Thử trong 30 giây
 
@@ -572,9 +567,11 @@ npx -y @agentmemory/agentmemory@latest demo
 
 Mở `http://localhost:3113` để xem bộ nhớ được xây dựng theo thời gian thực.
 
+<a id="validate-a-fresh-install-and-restart-persistence"></a>
+
 ### Kiểm tra một bản cài mới và độ bền sau khi khởi động lại
 
-Khi server đang chạy, hãy kiểm tra REST, health, viewer, và trạng thái runtime dựa trên iii:
+Khi máy chủ đang chạy, kiểm tra sức khỏe, trình xem và trạng thái.
 
 ```bash
 curl -fsS http://localhost:3111/agentmemory/livez
@@ -583,19 +580,26 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Panel sẵn sàng lúc khởi động tính đến cả bốn port: REST/MCP HTTP trên 3111, iii streams trên 3112, viewer trên 3113, và WebSocket của iii worker trên 49134. `status` xác nhận tình trạng của agentmemory và provider/chế độ embedding đang hoạt động. Lưu một probe và xác nhận nó có thể tìm kiếm được:
+`status` hiển thị sức khỏe máy chủ, nhà cung cấp, chế độ embedding, chuyển giao capture và phục hồi. REST được bảo vệ cần bí mật của máy chủ. Dùng `AGENTMEMORY_SECRET` đã cấu hình hoặc đọc bí mật cục bộ được tạo nếu chưa đặt.
 
 ```bash
+# Default generated local secret. For an explicit AGENTMEMORY_SECRET, use that value instead.
+read -r AGENTMEMORY_SECRET < "$HOME/.agentmemory/secret"
+
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
+  -H "Authorization: Bearer $AGENTMEMORY_SECRET" \
   -H 'Content-Type: application/json' \
   -d '{"content":"agentmemory restart persistence probe","concepts":["install-check"]}'
 
 curl -fsS -X POST http://localhost:3111/agentmemory/smart-search \
+  -H "Authorization: Bearer $AGENTMEMORY_SECRET" \
   -H 'Content-Type: application/json' \
   -d '{"query":"restart persistence probe","limit":5}'
 ```
 
 Sau đó chạy `npx -y @agentmemory/agentmemory@latest stop`, khởi động lại lệnh canonical ở Terminal 1, chờ `/agentmemory/livez`, và lặp lại tìm kiếm. Probe đó vẫn phải được trả về. Nếu bạn đã chọn một `--data-dir` tùy chỉnh, hãy truyền cùng thư mục đó khi khởi động lại.
+
+<a id="everyday-commands"></a>
 
 ### Các lệnh dùng hàng ngày
 
@@ -604,7 +608,10 @@ Cài đặt và thiết lập nằm ở phần [Cài đặt](#install) ở trên
 ```bash
 agentmemory                    # start the server
 agentmemory stop               # stop it cleanly
-agentmemory connect <agent>    # wire another agent
+agentmemory status             # health, providers and recovery state
+agentmemory capture            # inspect capture inbox and offline spool
+agentmemory capture --drain    # replay queued observations
+agentmemory connect <agent>    # connect another agent
 agentmemory doctor             # interactive diagnostics + fix prompts
 agentmemory remove             # uninstall everything we created
 ```
@@ -623,7 +630,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl
 npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-project/abc123.jsonl
 ```
 
-Các session đã import sẽ xuất hiện trong bộ chọn Replay cùng với các session gốc (native). Bên dưới, mỗi entry đi qua các iii function `mem::replay::load`, `mem::replay::sessions`, và `mem::replay::import-jsonl`, không cần server kênh phụ (side-channel) nào. Mỗi transcript được import sẽ được index để tìm kiếm, đánh dấu với origin channel là `import`, và được khai thác để tạo session crystal và lesson.
+Phiên nhập hiện cùng phiên native trong Replay, được lập chỉ mục tìm kiếm và đánh dấu kênh nguồn `import`. Xử lý phiên cũng có thể tạo crystal và bài học.
 
 > **Lưu ý nếu bạn dựa vào `import-jsonl` như đường capture chính:** `cleanupPeriodDays` của Claude Code (trong `~/.claude/settings.json`, mặc định **30**) tự động xóa các transcript JSONL cũ hơn khoảng thời gian đó khỏi `~/.claude/projects/`. Nếu bạn cài agentmemory mới trên một lịch sử Claude Code đã vài tháng tuổi, bất cứ thứ gì cũ hơn 30 ngày đã mất trước lần import đầu tiên. Hãy chạy `import-jsonl` theo cron, tăng `cleanupPeriodDays` lên một giá trị cao hơn, hoặc kết nối các hook auto-capture (đường cài plugin mặc định) để mỗi turn đi vào agentmemory ngay khi session còn sống, và việc dọn JSONL không còn quan trọng nữa.
 
@@ -635,14 +642,12 @@ Dùng lệnh bảo trì khi bạn chủ động muốn cập nhật runtime cụ
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Cảnh báo: lệnh này thay đổi workspace/runtime hiện tại. Nó có thể cập nhật các dependency JavaScript và pull image Docker `iiidev/iii:0.22.1` đã được pin. Nó không bao giờ cài một iii engine chưa pin hoặc mới hơn.
-
-Chi tiết triển khai nằm trong `src/cli.ts` (xem `runUpgrade` quanh khu vực `src/cli.ts:544-595`).
+Lệnh cập nhật runtime cục bộ và có thể cập nhật phụ thuộc JavaScript trong thư mục làm việc. Sao lưu dữ liệu và đọc [hướng dẫn nâng cấp](../docs/upgrades/iii-0.25.md) trước khi cập nhật bản cài hiện có.
 
 ### Claude Code (một block, dán vào)
 
 ```text
-Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server and its pinned iii engine. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113. Keyless mode disables vectors: `memory_recall` uses BM25, and `memory_smart_search` can also use existing structural graph data. Set `EMBEDDING_PROVIDER=local` in `~/.agentmemory/.env` and restart to opt into on-device semantic recall.
+Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113. Keyless mode disables vectors: `memory_recall` uses BM25, and `memory_smart_search` can also use existing structural graph data. Set `EMBEDDING_PROVIDER=local` in `~/.agentmemory/.env` and restart to opt into on-device semantic recall.
 ```
 
 #### Claude Code không cài plugin (đường MCP độc lập)
@@ -703,6 +708,26 @@ copilot plugin install rohitg00/agentmemory:plugin
 
 `agentmemory connect copilot-cli` gộp `mcpServers.agentmemory` vào `~/.copilot/mcp-config.json` (hoặc `$COPILOT_HOME/mcp-config.json` khi `COPILOT_HOME` được đặt) và giữ lại các server đã có. Trên Windows gốc, đây là adapter `connect` tự động duy nhất; mọi agent Windows gốc khác phải cấu hình thủ công. `connect` trong WSL chỉ được hỗ trợ khi agent đích cũng được cài trong cùng môi trường WSL đó. Copilot sẽ nhận MCP server ở lần khởi chạy kế tiếp hoặc sau `/mcp`. Cài thêm plugin nếu bạn muốn có đầy đủ trải nghiệm hook/skill.
 
+### Cursor
+
+Cấu hình MCP bằng `agentmemory connect cursor`. Trong **Settings → Plugins → Add marketplace**, chọn checkout chứa `.cursor-plugin/plugin.json`, bật agentmemory và tải lại. Plugin cung cấp capture vòng đời, xác định workspace, skill và MCP. Chỉ bật hook của plugin hoặc hook thủ công trong `~/.cursor/hooks.json` để tránh ghi nhận trùng.
+
+[Cursor](../integrations/cursor/)
+
+### Pi / Oh My Pi / DeepSeek Harness
+
+```bash
+agentmemory connect pi --with-mcp
+agentmemory connect omp --with-mcp
+agentmemory connect dsh --with-hooks
+```
+
+Chọn lệnh cho host của bạn. Pi và OMP cài recall/capture native, phát lại ngoại tuyến và 17 skill; `--with-mcp` thêm toàn bộ công cụ. Chạy `/reload` trong Pi hoặc khởi động lại OMP, rồi kiểm tra `/agentmemory-status`. DSH cài MCP và plugin capture đi kèm; hãy khởi động lại sau khi kết nối.
+
+Pi cũng hỗ trợ gói `@agentmemory/pi`. Xem [hướng dẫn Pi](../integrations/pi/) về cài đặt cục bộ và tình trạng phát hành npm. Mỗi host chỉ dùng một cách cài đặt.
+
+[Pi](../integrations/pi/) · [Oh My Pi](../integrations/omp/) · [DSH](../docs/dsh.md)
+
 <details>
 <summary><b>OpenClaw (dán prompt này)</b></summary>
 
@@ -749,6 +774,8 @@ Hướng dẫn đầy đủ: [`integrations/hermes/`](../integrations/hermes/)
 
 </details>
 
+<a id="other-agents"></a>
+
 ### Các agent khác
 
 Khởi động memory server: `npx -y @agentmemory/agentmemory@latest`
@@ -765,8 +792,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 
 Điều này **bổ sung** cho `agentmemory connect <agent>`:
 
-- `agentmemory connect <agent>` viết config MCP server để các tool khả dụng.
-- `npx skills add rohitg00/agentmemory` cài các skill để agent biết khi nào cần gọi chúng.
+Connector Hermes, OpenClaw, Pi và Oh My Pi mặc định cài tích hợp native cùng skill; MCP là tùy chọn qua `--with-mcp`. Với host khác, cài skill bằng `npx skills add rohitg00/agentmemory`.
 
 Với một số ít agent mà CLI skills chưa hỗ trợ (Zed v1.3.x và thấp hơn), hãy tự đặt 17 file SKILL.md vào thư mục skill gốc của agent đó; cùng một định dạng hoạt động ở mọi nơi.
 
@@ -790,12 +816,12 @@ Entry của agentmemory là **cùng một block MCP server** trên mọi host d�
 | Agent | File config | Ghi chú |
 |---|---|---|
 | **Cursor (chỉ MCP)** | `~/.cursor/mcp.json` | Gộp vào `mcpServers`, hoặc dùng `agentmemory connect cursor`. Cũng có deeplink one-click trên website. |
-| **Cursor (plugin đầy đủ)** | `.cursor-plugin/` | Listing trên Cursor Marketplace (submission đang chờ duyệt) hoặc Cursor Settings → Plugins → local checkout. Đăng ký 7 hook auto-capture (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 skill + MCP server, với `AGENTMEMORY_URL` / `AGENTMEMORY_SECRET` được quản lý trong dashboard plugin của Cursor. Hoạt động trong Cursor IDE và CLI `cursor-agent`; các prompt ở print-mode của CLI được điền lại từ transcript session khi session kết thúc. |
+| **Cursor (plugin đầy đủ)** | `.cursor-plugin/` | Cài qua Cursor Marketplace hoặc Settings → Plugins → checkout cục bộ. Adapter mỏng gọi các script chung `plugin/scripts/*.mjs` để đăng ký hook vòng đời, cùng skill và MCP. Adapter xác định workspace mà Cursor không luôn báo chính xác. Xem [Cursor](#cursor). Hoạt động trong Cursor IDE và CLI `cursor-agent`. |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | Gộp vào `mcpServers`. Khởi động lại Claude Desktop sau khi sửa. |
 | **Cline / Roo Code / Kilo Code** | Cline MCP settings (Settings UI → MCP Servers → Edit) | Cùng block `mcpServers`. |
 | **Devin CLI (MCP + hooks)** | `~/.config/devin/config.json` | `agentmemory connect devin` gộp entry MCP; `--with-hooks` thêm sáu hook auto-capture gốc (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) với các tool matcher chữ thường của Devin. Kiểm tra bằng `devin mcp list` và `/hooks` trong devin. |
 | **Devin CLI (plugin đầy đủ)** | `plugin/.devin-plugin/` | `devin plugins install ./plugin` từ một checkout đăng ký toàn bộ 17 skill dưới dạng slash command `/agentmemory:<skill>` cùng với MCP server. Hook plugin của Devin không thể bắn `SessionStart`/`SessionEnd`, nên hãy kết hợp với `connect devin --with-hooks` để capture session đầy đủ. |
-| **Devin (cloud)** | Settings → Connections → MCP servers | Thêm một MCP tùy chỉnh (STDIO): command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` chỉ tới một deployment agentmemory có thể truy cập qua network cùng `AGENTMEMORY_SECRET` (các session cloud không thể chạm tới localhost — xem [`deploy/`](../deploy/)). Lưu secret trong Devin Secrets, sau đó dùng "Test listing tools" để xác nhận cả 54 tool đều xuất hiện. |
+| **Devin (cloud)** | Settings → Connections → MCP servers | Thêm một MCP tùy chỉnh (STDIO): command `npx`, args `-y @agentmemory/mcp@latest`, env `AGENTMEMORY_URL` chỉ tới một deployment agentmemory có thể truy cập qua network cùng `AGENTMEMORY_SECRET` (các session cloud không thể chạm tới localhost — xem [`../deploy/`](../deploy/)). Lưu secret trong Devin Secrets, sau đó dùng "Test listing tools" để xác nhận cả 54 tool đều xuất hiện. |
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (tự gộp). |
 | **GitHub Copilot CLI (chỉ MCP)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` gộp `mcpServers.agentmemory`; Copilot sẽ nhận ở lần khởi chạy kế tiếp hoặc `/mcp`. |
 | **GitHub Copilot CLI (plugin đầy đủ)** | Copilot plugin install | `copilot plugin install rohitg00/agentmemory:plugin` để lấy plugin từ subdir GitHub. |
@@ -804,7 +830,8 @@ Entry của agentmemory là **cùng một block MCP server** trên mọi host d�
 | **Codex CLI (plugin đầy đủ)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` sau đó `codex plugin add agentmemory@agentmemory`. Đăng ký MCP + 6 hook lifecycle + 17 skill. Hãy trust các hook và verify việc capture trên host của bạn; xem [hướng dẫn setup và validation Codex](../docs/plugins/codex-local.md). |
 | **OpenCode (chỉ MCP)** | `opencode.json` | Hình thái khác: key `mcp` ở cấp cao nhất, command là một array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (plugin đầy đủ)** | `plugin/opencode/` | 22 hook auto-capture bao phủ lifecycle session, message, tool, lỗi. Attribution project theo từng session, nên một process OpenCode trải trên nhiều repository sẽ ghi mỗi session dưới đúng project của nó. Hai slash command (`/recall`, `/remember`). Copy `plugin/opencode/` vào workspace OpenCode của bạn và thêm entry plugin vào `opencode.json`. Xem [`plugin/opencode/README.md`](../plugin/opencode/README.md) để biết bảng hook đầy đủ + phân tích phần còn thiếu. |
-| **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` cài extension đi kèm vào thư mục auto-discovery của pi (recall khi agent khởi động, capture khi agent kết thúc, các tool `memory_search` / `memory_save` / `memory_health`, `/agentmemory-status`). `/reload` trong một pi đang chạy sẽ nhận nó. [`integrations/pi`](../integrations/pi/) cũng là một package pi (`pi install ./integrations/pi` từ một checkout). |
+| **pi** | `~/.pi/agent` | `agentmemory connect pi --with-mcp` · recall native + capture + skill. [Pi](../integrations/pi/) |
+| **Oh My Pi (OMP)** | `~/.omp/agent/config.yml` | `agentmemory connect omp --with-mcp` · recall native + capture + skill. [Oh My Pi](../integrations/omp/) |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` cho bạn memory provider 6-hook (prefetch, turn capture, session end, pre-compress, mirror MEMORY.md, system prompt block). Kiểm tra bằng `hermes plugins doctor` và `hermes memory status`. Xem [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` viết block `mcpServers` chuẩn. Payload hook tương thích field với Claude Code, nên các script 12-hook hiện có hoạt động không cần sửa đổi; kết nối chúng qua phần `hooks` trong cùng `settings.json`. |
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` cài MCP và capture hook vào thư mục customization chung. Xem [thiết lập và giới hạn của Antigravity](../docs/plugins/antigravity.md). |
@@ -812,39 +839,19 @@ Entry của agentmemory là **cùng một block MCP server** trên mọi host d�
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` viết config ở cấp user. Các override ở cấp workspace nằm trong `.kiro/settings/mcp.json` cạnh code của bạn. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` viết block `mcpServers` chuẩn. Warp cũng tự phát hiện skill từ `.claude/skills/`; khi plugin Claude Code được cài, 8 skill agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) sẽ xuất hiện một cách tự nhiên trong bảng slash-command của Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` viết block `mcpServers` chuẩn. Người dùng extension VS Code: dán cùng block này qua Cline Settings → MCP Servers → Edit JSON. |
-| **Continue.dev** | `~/.continue/config.yaml` (ưu tiên) hoặc `config.json` (legacy) | `agentmemory connect continue` tạo mới `config.yaml` từ đầu khi không có file nào tồn tại, hoặc sửa `config.json` đã có. **Nếu bạn đã có `config.yaml`** adapter sẽ in ra đúng block để dán vào dưới `mcpServers:`; nó sẽ không lặng lẽ viết lại yaml của bạn vì việc giữ comment và anchor an toàn cần một YAML parser mà package này không đi kèm. Continue dùng dạng array (không phải object) cho `mcpServers`. |
+| **Continue.dev** | `~/.continue/config.yaml` (ưu tiên) hoặc `config.json` (legacy) | `agentmemory connect continue` tạo `config.yaml` nếu chưa có cấu hình hoặc cập nhật `config.json` hiện có. YAML có sẵn được giữ nguyên để bảo toàn chú thích và anchor; lệnh in khối để dán dưới `mcpServers:`. Continue dùng dạng mảng cho `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` viết dưới `context_servers` (key riêng của Zed, KHÔNG phải `mcpServers`). Các MCP server remote có thể được kết nối qua `{"url": "..."}` thay thế. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` viết block `mcpServers` chuẩn. Các override theo project nằm trong `<repo>/.factory/mcp.json`. Truyền `--with-hooks` để có auto-capture gốc. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` thêm một dòng `@deepseek-ai/dsh-mcp-client` vào patch layer ở cấp home mà mọi Harness profile đều nạp; các tool đăng ký dưới dạng `mcp__agentmemory__*`. Truyền `--with-hooks` để kết nối thêm auto-capture: các hook script Claude Code đi kèm chạy qua bridge chính chủ `@deepseek-ai/dsh-hooks-claude-code` của Harness (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) qua một manifest được viết vào `$DSH_HOME/agentmemory.hooks.json`. Mặc định là `~/.dsh` khi `DSH_HOME` chưa được đặt. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` bật các công cụ MCP. Thêm `--with-hooks` để tải plugin ghi nhận sự kiện gốc đi kèm AgentMemory. Không cần gói plugin riêng. [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP settings UI | Cùng block `mcpServers`; dùng `goose configure` → Add Extension → MCP. Sửa YAML trực tiếp tại `~/.config/goose/config.yaml` cũng được hỗ trợ nhưng schema dùng `extensions:` + `cmd` (không phải `mcpServers:` + `command`). |
-| **Aider** | n/a | Gọi trực tiếp REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
-| **Bất kỳ agent nào (32+)** | n/a | `npx skillkit install agentmemory` tự phát hiện host và gộp. |
+| **Aider** | n/a | [REST API](#validate-a-fresh-install-and-restart-persistence) |
+| **Các agent được hỗ trợ** | Chỉ cài skills | `npx skills add rohitg00/agentmemory`; chọn skills cần cài và các agent đích. |
 
 **Các MCP client chạy trong sandbox** (Flatpak / Snap / container hạn chế) không thể chạm tới `localhost` của host: hãy đặt thêm `"AGENTMEMORY_FORCE_PROXY": "1"` trong block `env`, và chỉ `AGENTMEMORY_URL` tới một route mà sandbox thực sự chạm tới được (ví dụ IP LAN của bạn).
 
-### Truy cập theo chương trình (Python / Rust / Node)
+### Truy cập theo chương trình
 
-agentmemory đăng ký các operation lõi của nó dưới dạng iii function (`mem::remember`, `mem::observe`, `mem::context`, `mem::smart-search`, `mem::forget`). Bất kỳ ngôn ngữ nào có iii SDK đều có thể gọi chúng trực tiếp qua `ws://localhost:49134`, không cần một REST client riêng cho từng ngôn ngữ.
-
-```bash
-pip install iii-sdk         # Python
-cargo add iii-sdk           # Rust
-npm  install iii-sdk        # Node
-```
-
-```python
-from iii import register_worker
-
-iii = register_worker("ws://localhost:49134")
-iii.connect()
-
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
-```
-
-Ví dụ hoàn chỉnh: [`examples/python/`](../examples/python/) (quickstart + luồng observation/recall). REST trên `:3111` vẫn khả dụng cho các host không có iii runtime.
+Dùng [REST API](#api) từ bất kỳ ngôn ngữ nào hoặc [công cụ MCP](#mcp-server) từ agent. REST dùng JSON và xác thực Bearer; xem [ví dụ lưu và tìm kiếm](#validate-a-fresh-install-and-restart-persistence). Tích hợp trực tiếp với runtime có trong [ví dụ Python](../examples/python/).
 
 ### Từ source
 
@@ -853,121 +860,69 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Lệnh này khởi động agentmemory với một `iii-engine` cục bộ nếu binary đã pin được cài sẵn, hoặc dùng Docker Compose khi được chọn. REST, stream, và viewer bind vào `127.0.0.1` theo mặc định. Đường binary tự động trên macOS/Linux cần `curl`, một `sh` chuẩn POSIX, và `tar`.
-
-Cài `iii-engine` thủ công. **agentmemory hiện đang pin `iii-engine` ở `v0.22.1`**, cùng release với dependency `iii-sdk` của nó; worker nói đúng wire protocol của engine đó, và 0.20.0 đã tổ chức lại toàn bộ SDK surface, nên cả hai di chuyển cùng nhau qua các bản phát hành của agentmemory. Ghi đè bằng `AGENTMEMORY_III_VERSION=<version>` nếu bạn chạy engine riêng và biết chắc nó khớp.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** đổi `aarch64-apple-darwin` thành `x86_64-apple-darwin`
-- **Linux x64:** đổi thành `x86_64-unknown-linux-gnu`
-- **Linux arm64:** đổi thành `aarch64-unknown-linux-gnu`
-- **Windows:** tải `iii-x86_64-pc-windows-msvc.zip` từ [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) và giải nén `iii.exe` vào `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Mỗi archive đều có một file `.sha256` tương ứng trên trang release; khi bạn đổi platform, dùng hash của đúng file đó trong lệnh kiểm tra ở trên (trên Windows: `Get-FileHash`). Bộ cài tự động trong `npx @agentmemory/agentmemory` pin các hash này và từ chối một archive không khớp.
-
-Hoặc dùng Docker (`docker-compose.yml` đi kèm pull `iiidev/iii:0.22.1`). Docs đầy đủ: [iii.dev/docs](https://iii.dev/docs).
+`npm start` chạy cùng máy chủ cục bộ như CLI đã cài. Yêu cầu nằm ở [Cài đặt](#install); API và trình xem lắng nghe trên `127.0.0.1`.
 
 ### Windows
 
-agentmemory chạy trên Windows 10/11, nhưng chỉ riêng package Node.js thì chưa đủ; bạn còn cần runtime iii-engine v0.22.1 đã pin chạy như một process nền. CLI không tự động giải nén file ZIP Windows, nên người dùng Windows gốc phải cài `iii.exe` thủ công, dùng WSL2, hoặc chọn Docker Desktop.
+agentmemory chạy trên Windows 10/11; WSL2 có thể tự cài engine theo quy trình Linux. Windows native cần cài thủ công iii-engine v0.25.0: tải archive từ [trang phát hành iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), xác minh checksum và đặt `iii.exe` trong `PATH`. CLI không tự giải nén ZIP Windows
 
-Việc tự động kết nối MCP trên Windows gốc chỉ hỗ trợ `agentmemory connect copilot-cli`. Với Claude Code, Codex, Cursor, và mọi agent Windows gốc khác, hãy copy block MCP thủ công từ [Các agent khác](#other-agents) vào config Windows của agent đó. Chạy `connect` trong WSL chỉ phù hợp khi agent đích cũng được cài trong cùng môi trường WSL; nó không sửa config của một agent chạy trên Windows host.
+Cấu hình MCP tự động trên Windows native chỉ hỗ trợ `agentmemory connect copilot-cli`; agent khác dùng khối MCP thủ công trong [Other agents](#other-agents). Chỉ chạy `connect` trong WSL nếu agent đích cũng cài trong cùng môi trường WSL
 
-**Phương án A: binary Windows build sẵn (khuyến nghị)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Phương án B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Phương án C: chỉ MCP độc lập (không engine).** Nếu bạn chỉ cần các MCP tool cho agent của mình và không cần REST API, viewer, hay cron job, hãy bỏ qua engine hoàn toàn:
+**Chỉ dùng MCP độc lập, không có engine.** Nếu không cần REST API, viewer hoặc dịch vụ runtime:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# or
 npx -y @agentmemory/mcp
 ```
 
-**Chẩn đoán cho Windows:** nếu `npx -y @agentmemory/agentmemory@latest` lỗi, chạy lại với `--verbose` để xem stderr thật của engine. Các lỗi thường gặp:
-
-| Triệu chứng | Cách khắc phục |
-|---|---|
-| `The engine process started but the REST API never responded.` | Xác nhận cả bốn port suy ra đều trống, kiểm tra `iii.exe` đã pin còn sống, sau đó chạy lại với `--verbose` và xem stderr đã bắt được của engine |
-| `Could not start iii-engine` | Không có `iii.exe` cũng không có Docker được cài. Xem Phương án A hoặc B ở trên |
-| Xung đột port | `netstat -ano \| findstr :3111` để xem cái gì đang chiếm port, sau đó kill nó hoặc dùng `--port <N>` |
-| Docker fallback bị bỏ qua dù Docker đã được cài | Đảm bảo Docker Desktop thực sự đang chạy (icon trên system tray) |
-
-> Lưu ý: iii **engine** là một binary build sẵn, không phải một cargo crate, nên đừng cố `cargo install` nó. (Các iii **SDK** được publish trên crates.io, npm, và PyPI, nhưng agentmemory không cần chúng.) Các cách cài engine được hỗ trợ đều pin ở v0.22.1: binary build sẵn ở trên, đường tự cài macOS/Linux của agentmemory (cần `curl`, `sh` chuẩn POSIX, và `tar`), và image Docker `iiidev/iii:0.22.1`. Một lệnh `install.sh | sh` trần từ upstream sẽ cài engine mới nhất, cái mà agentmemory không hỗ trợ. Hãy dùng `npx -y @agentmemory/agentmemory@latest`; trên macOS/Linux nó sẽ tải engine đã pin vào `~/.agentmemory/bin`.
+Chạy `agentmemory doctor` hoặc khởi động lại với `--verbose`. Nếu cổng mặc định đang được dùng, chọn `--port <N>` hoặc `--instance <N>`. Xem [hướng dẫn nâng cấp](../docs/upgrades/iii-0.25.md) về tương thích và phục hồi.
 
 ---
 
 <h2 id="deploy">Triển khai</h2>
 
-Các template one-click cho các managed host. Mỗi template đi kèm một Dockerfile tự chứa pull `@agentmemory/agentmemory` từ npm và copy binary iii engine vào từ image Docker Hub chính thức `iiidev/iii`; không cần image agentmemory build sẵn. Storage bền vững mount tại `/data`; entrypoint ở lần boot đầu tiên sẽ ghi đè config iii đi kèm trong npm (vốn bind `127.0.0.1`) bằng một config được chỉnh cho deploy, bind `0.0.0.0` và dùng đường dẫn `/data` tuyệt đối, sinh HMAC secret, rồi hạ quyền từ `root` xuống `node` qua `gosu` trước khi exec CLI agentmemory.
+Tự triển khai bằng Docker Compose hoặc mẫu nền tảng bên dưới. Bộ nhớ và thông tin xác thực nằm trên volume `/data`. Sao lưu và dùng lại volume khi nâng cấp. Xem [hướng dẫn triển khai](../deploy/README.md) về xác thực, mạng và di chuyển dữ liệu.
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Triển khai lên fly.io" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Triển khai lên Railway" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Triển khai lên fly.io" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Triển khai lên Railway" /></a>
 </p>
 
-Nút one-click deploy của Render yêu cầu `render.yaml` ở gốc repository, và chúng tôi chủ đích giữ nó sạch. Hãy dùng luồng Render Blueprint được ghi lại trong [`deploy/render/`](.././deploy/render/README.md) để chỉ tới blueprint trong repo một cách thủ công.
+Nút one-click deploy của Render yêu cầu `render.yaml` ở gốc repository, và chúng tôi chủ đích giữ nó sạch. Hãy dùng luồng Render Blueprint được ghi lại trong [`../deploy/render/`](.././deploy/render/README.md) để chỉ tới blueprint trong repo một cách thủ công.
 
-Chi tiết thiết lập đầy đủ (capture HMAC, SSH tunnel cho viewer, xoay, backup, mức chi phí sàn) nằm trong [`deploy/`](.././deploy/README.md):
+Chi tiết thiết lập đầy đủ (capture HMAC, SSH tunnel cho viewer, xoay, backup, mức chi phí sàn) nằm trong [`../deploy/`](.././deploy/README.md):
 
-- [`deploy/fly`](.././deploy/fly/README.md): một máy đơn với
+- [`../deploy/fly`](.././deploy/fly/README.md): một máy đơn với
   `auto_stop_machines = "stop"`; rẻ nhất khi idle.
-- [`deploy/railway`](.././deploy/railway/README.md): phí cố định của Hobby plan,
+- [`../deploy/railway`](.././deploy/railway/README.md): phí cố định của Hobby plan,
   volume trong dashboard.
-- [`deploy/render`](.././deploy/render/README.md): luồng Blueprint,
+- [`../deploy/render`](.././deploy/render/README.md): luồng Blueprint,
   tự động snapshot disk trên các plan trả phí.
-- [`deploy/coolify`](.././deploy/coolify/README.md): self-hosted trên
+- [`../deploy/coolify`](.././deploy/coolify/README.md): self-hosted trên
   VPS riêng của bạn qua [Coolify](https://coolify.io/self-hosted); cùng
   Docker Compose stack, bạn sở hữu cả host và dữ liệu.
 
-Chỉ port `3111` được publish. Viewer trên `3113` vẫn bind vào
-loopback bên trong container; README của mỗi template đều ghi lại
-pattern SSH-tunnel để chạm tới nó.
+REST dùng cổng `3111`; trình xem dùng `3113`. Giữ truy cập riêng tư hoặc bảo vệ bằng xác thực và TLS. Xem cấu hình truy cập của từng nền tảng và [chuyển từ Docker cũ](../deploy/README.md#migrating-from-the-legacy-cli-docker-mode) trong hướng dẫn triển khai.
 
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Tại sao chọn agentmemory" height="32" /></picture></h2>
 
-Mọi coding agent đều quên hết mọi thứ khi session kết thúc, và mỗi session mới lại bắt đầu bằng việc bạn giải thích lại stack của mình. agentmemory chạy ngầm và loại bỏ hẳn bước đó.
+Kiến thức dự án thường nằm rải rác trong hội thoại và tệp chỉ dẫn. AgentMemory giúp agent bạn đang dùng tìm lại các quyết định, cách sửa lỗi và bài học trước đây.
 
 ```text
 Session 1: "Add auth to the API"
   Agent writes code, runs tests, fixes bugs
-  agentmemory silently captures every tool use
-  Session ends -> observations compressed into structured memory
+  Connected hooks capture supported tool events
+  Observations become searchable project history
 
 Session 2: "Now add rate limiting"
-  Agent already knows:
+  Agent recalls:
     - Auth uses JWT middleware in src/middleware/auth.ts
     - Tests in test/auth.test.ts cover token validation
     - You chose jose over jsonwebtoken for Edge compatibility
-  Zero re-explaining. Starts working immediately.
+  Continues with the earlier decisions in context.
 ```
 
 ### So với bộ nhớ tích hợp sẵn của agent
@@ -976,7 +931,7 @@ Mọi AI coding agent đều đi kèm bộ nhớ tích hợp sẵn: Claude Code 
 
 | | Tích hợp sẵn (CLAUDE.md) | agentmemory |
 |---|---|---|
-| Quy mô | Giới hạn 200 dòng | Không giới hạn |
+| Bảo trì | Chỉ dẫn được quản lý thủ công | Lịch sử phiên và bộ nhớ đã lập chỉ mục |
 | Tìm kiếm | Nạp tất cả vào context | BM25 + vector + graph (chỉ top-K) |
 | Chi phí token | 22K+ ở 240 observation | ~1,900 token (giảm 92%) |
 | Đa agent | File theo từng agent | MCP + REST (mọi agent) |
@@ -1002,13 +957,13 @@ PostToolUse hook fires
 Stop / SessionEnd hook fires
   -> Summarize session
   -> Knowledge graph extraction (if GRAPH_EXTRACTION_ENABLED=true)
-  -> Slot reflection (if SLOT_REFLECT_ENABLED=true)
+  -> Slot reflection (if AGENTMEMORY_SLOTS=true and AGENTMEMORY_REFLECT=true)
 
 SessionStart hook fires
   -> Load project profile (top concepts, files, patterns)
   -> Hybrid search (BM25 + vector + graph)
   -> Token budget (default: 2000 tokens)
-  -> Inject into conversation
+  -> Inject context when enabled by the integration
 ```
 
 ### Hợp nhất bộ nhớ 4 tầng
@@ -1026,6 +981,8 @@ Bộ nhớ suy giảm theo thời gian (đường cong Ebbinghaus). Bộ nhớ �
 
 ### Những gì được capture
 
+Bảng dưới mô tả hook của Claude Code. Các tích hợp khác ghi nhận sự kiện mà host cung cấp. Chèn ngữ cảnh tự động qua hook dùng chung là tùy chọn với `AGENTMEMORY_INJECT_CONTEXT=true`.
+
 | Hook | Capture gì |
 |------|----------|
 | `SessionStart` | Đường dẫn project, session ID |
@@ -1042,7 +999,7 @@ Bộ nhớ suy giảm theo thời gian (đường cong Ebbinghaus). Bộ nhớ �
 
 | Khả năng | Mô tả |
 |---|---|
-| **Capture tự động** | Mọi lần dùng tool đều được ghi lại qua hook, không cần thao tác thủ công |
+| **Capture tự động** | Tích hợp native ghi nhận các sự kiện phiên và công cụ được hỗ trợ |
 | **Tìm kiếm ngữ nghĩa** | BM25 + vector + knowledge graph với RRF fusion |
 | **Tiến hóa bộ nhớ** | Versioning, supersession, relationship graph |
 | **Vệ sinh recall** | Các phiên bản bộ nhớ đã bị supersede rời khỏi search index; chuỗi version trong KV giữ lại toàn bộ lịch sử |
@@ -1260,187 +1217,6 @@ Viewer server bind vào `127.0.0.1` theo mặc định và gắn kèm server sec
 
 ---
 
-<h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii Console" height="32" /></picture></h2>
-
-Viewer tại `:3113` cho thấy những gì agent của bạn **đã ghi nhớ**. [iii console](https://iii.dev/docs/console) cho thấy những gì agent của bạn **đã làm**: mọi memory op dưới dạng một OpenTelemetry trace, mọi KV entry có thể sửa, mọi function có thể gọi, mọi stream có thể lắng nghe. Hai cửa sổ trên cùng một bộ nhớ: một có hình dạng product, một có hình dạng engine.
-
-Xem một `memory_smart_search` được bắn ra và theo dõi BM25 scan → embedding lookup → RRF fusion → reranker dưới dạng một waterfall. Sửa một consolidation timer bị kẹt trong KV browser. Replay một hook `PostToolUse` với payload đã chỉnh. Pin WebSocket stream và xem observation đổ vào theo thời gian thực.
-
-agentmemory có sẵn thứ này miễn phí vì mọi function call và trigger đều bắn qua iii; không có gì custom, không có gì cần instrument.
-
-<p align="center">
-  <img src="../assets/iii-console/workers.png" alt="Trang Workers của iii console: các worker đã kết nối bao gồm các instance agentmemory với số lượng function live và metadata runtime" width="720" />
-  <br/>
-  <em>Trang Workers: mọi worker đã kết nối, kể cả agentmemory, với PID, số function, runtime, và lần thấy cuối.</em>
-</p>
-
-**Đã được cài sẵn.** Console đi kèm với `iii` engine đã pin (0.22+); không có gì riêng cần cài thêm. Lần khởi chạy đầu tiên sẽ tải binary console nằm cạnh engine.
-
-**Khởi chạy cùng với agentmemory:**
-
-```bash
-agentmemory console
-```
-
-Lệnh này chạy `iii console` của engine đã pin dựa trên các port mà agentmemory đã resolve (REST, stream, bridge) và phục vụ nó ở một port cao hơn viewer một đơn vị, mặc định là `http://localhost:3114`. `--console-port N` chọn một port khác; `--port` và `--instance` chọn instance agentmemory giống như cách chúng làm với `stop`; mọi flag khác được truyền thẳng qua, ví dụ `--enable-flow` cho trang architecture-graph thử nghiệm.
-
-Làm tương tự bằng tay, hữu ích khi `agentmemory` không có trong PATH:
-
-```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
-```
-
-**Những gì bạn có thể làm từ console:**
-
-| Trang | Dùng để |
-|------|-----------|
-| **Workers** | Xem mọi worker đã kết nối và metric live của nó, kể cả worker agentmemory. |
-| **Functions** | Gọi trực tiếp bất kỳ function nào của agentmemory bằng một JSON payload; tiện để test `memory.recall`, `memory.consolidate`, `graph.query` mà không cần kết nối một client. |
-| **Triggers** | Replay trigger HTTP, cron, event, và state: bắn cron consolidation thủ công, retry một route HTTP, phát một thay đổi state. |
-| **States** | KV browser với CRUD đầy đủ trên session, memory slot, timer lifecycle, và embedding index; sửa giá trị ngay tại chỗ. |
-| **Streams** | Monitor WebSocket live cho các lần write memory, event hook, và cập nhật observation khi chúng chảy qua iii stream. |
-| **Queues** | Topic queue bền vững + quản lý dead-letter. Replay hoặc drop các job embedding / compression bị lỗi. |
-| **Traces** | Các view waterfall / flame / service-breakdown của OpenTelemetry. Filter theo `trace_id` để xem chính xác những function, lệnh gọi DB, và request embedding mà một `memory.search` đã tạo ra. |
-| **Logs** | Log OTEL có cấu trúc, được filter và liên kết tới trace/span ID. |
-| **Config** | Cấu hình runtime: xem chính xác engine của bạn đang chạy với worker, provider, và port nào. |
-| **Flow** | (Tùy chọn, `--enable-flow`) Đồ thị architecture tương tác của mọi worker, trigger, và stream. |
-
-<p align="center">
-  <img src="../assets/iii-console/traces-waterfall.png" alt="Chế độ xem waterfall của trace trong iii console, hiển thị thời lượng theo từng span" width="720" />
-  <br/>
-  <em>Traces: waterfall / flame / service breakdown cho mọi memory operation.</em>
-</p>
-
-**Trace đã được bật sẵn:**
-
-`iii-config.yaml` đi kèm với worker `iii-observability` đã được bật (`exporter: memory`, `sampling_ratio: 0.1`, metric + log). Không cần config gì thêm; ngay khi agentmemory khởi động, mọi memory operation sẽ phát ra một log có cấu trúc mà console đọc được, và một trong mười lần (`sampling_ratio: 0.1`) cũng sẽ phát ra một trace span.
-
-Nếu bạn muốn export sang Jaeger/Honeycomb/Grafana Tempo thay vào đó, đổi `exporter: memory` thành `exporter: otlp` và đặt collector endpoint theo docs observability của iii.
-
-> **Lưu ý:** console bản thân nó không ép buộc auth; hãy giữ nó bind vào `127.0.0.1` (mặc định) và không bao giờ expose nó ra công khai.
-
----
-
-<h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="Powered by iii" height="32" /></picture></h2>
-
-agentmemory **đã sẵn là một instance [iii](https://iii.dev) đang chạy**. Ba primitive (worker, function, trigger) tạo nên runtime; KV state, stream, và OTEL trace đến từ các worker iii-state, iii-stream, và iii-observability đi kèm với iii. Bạn không hề cài Postgres, Redis, Express, pm2, hay Prometheus, vì iii đã thay thế chúng.
-
-Điều đó có nghĩa là chỉ cần thêm một lệnh nữa là mở rộng agentmemory với toàn bộ một khả năng mới.
-
-### Mở rộng agentmemory với nhiều worker hơn
-
-Các builtin mà agentmemory cần đã có sẵn trong `iii-config.yaml` và khởi động cùng nó: `iii-state` (KV), `iii-queue` (retry bền vững cho các subscriber event), `iii-pubsub`, `iii-cron`, `iii-stream`, và `iii-observability` (trace, metric và log OTEL trên mọi function). Bất cứ thứ gì khác từ [iii worker registry](https://workers.iii.dev) đều cắm vào cùng engine: copy `iii-config.yaml` vào `~/.agentmemory/iii-config.yaml` (CLI ưu tiên file đó hơn file đi kèm và vẫn render port cùng data path vào đó), thêm entry, cài worker runtime một lần với `~/.agentmemory/bin/iii update worker`, và khởi động lại agentmemory.
-
-```yaml
-workers:
-  # ...the bundled entries...
-  - name: database          # SQL-backed state adapter when you outgrow the KV defaults
-  - name: iii-sandbox       # run code that came out of memory_recall inside a throwaway VM
-  - name: mcp               # extra MCP servers next to agentmemory's, same engine
-```
-
-| Worker | Bạn có thêm gì trên nền agentmemory |
-|---|---|
-| [`database`](https://workers.iii.dev/workers/database) | Adapter state dựa trên SQL khi bạn vượt quá giới hạn của KV mặc định |
-| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | Code lấy ra từ `memory_recall` chạy trong một VM dùng một lần, không chạy trên shell của bạn |
-| [`mcp`](https://workers.iii.dev/workers/mcp) | Dựng thêm các MCP server cạnh server của agentmemory, chia sẻ cùng engine |
-
-Trên engine 0.22.x, hãy giữ các tên có tiền tố `iii-` cho các builtin ở trên; các entry không có tiền tố `http`, `state`, `queue`, `pubsub` và `cron` là các worker registry độc lập mà agentmemory sẽ chuyển sang khi migration lên 0.23.
-
-Registry đầy đủ: [workers.iii.dev](https://workers.iii.dev). Mọi worker ở đó đều compose qua đúng những primitive mà agentmemory dùng, và agentmemory mà bạn đang có chính là một trong số đó.
-
-### Config engine và bind address
-
-`agentmemory start` đọc config engine từ file đầu tiên tồn tại: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` trong thư mục hiện tại, `~/.agentmemory/iii-config.yaml`, rồi tới `iii-config.yaml` đi kèm. Ở mỗi lần khởi động, nó render file đó (data path, port, state backend) vào `~/.agentmemory/data/iii-config.runtime.yaml` và khởi chạy engine với bản đã render, nên hãy sửa file nguồn, không phải file đã render. Các giá trị `host:` của file nguồn được giữ nguyên như đã viết.
-
-`iii-config.yaml` đi kèm bind `127.0.0.1` một cách có chủ đích, và giá trị mặc định đó cũng áp dụng bên trong container. Một CLI khởi động trong container sẽ lắng nghe trên loopback của container đó, nên các port đã publish không chạm tới gì cả. Để phục vụ một CLI chạy trong container qua các port đã publish, hãy đặt `AGENTMEMORY_III_CONFIG` tới một config bind `0.0.0.0`. `iii-config.docker.yaml` đi kèm sẵn là một ví dụ như vậy: nó bind `iii-http`, `iii-stream` và port engine vào `0.0.0.0` và lưu state dưới `/data`, nên hãy mount một volume ghi được ở đó. Giữ `AGENTMEMORY_SECRET` luôn được đặt, và chỉ publish những port bạn cần, trên `127.0.0.1` hoặc sau một proxy bạn tin tưởng.
-
-`docker-compose.yml` của repo này không đi qua cơ chế dò tìm config của CLI: nó mount `iii-config.docker.yaml` vào `/app/config.yaml`, và container `iii-engine` khởi động với `--config /app/config.yaml`. Các [deploy template](../deploy/) one-click tự viết config `0.0.0.0` riêng của chúng trong entrypoint.
-
-### Storage backend: file (mặc định) so với redis
-
-`iii-state` và `iii-stream` mặc định dùng KV store dựa trên file đi kèm của iii-engine: một file JSON cho mỗi scope, giữ trong memory của process engine và được viết lại ra disk theo timer. Đó là mặc định đúng cho một bản cài cục bộ, một người dùng; một daemon chia sẻ với nhiều writer đồng thời sẽ nhận được các lần write theo từng key thật từ Redis thay vào đó, với chi phí là một round-trip network cho mỗi operation (mỗi lệnh `state::*` vẫn serialize trên một kết nối Redis, nên điều này đổi lock của file store thành một socket, không phải đổi lấy khả năng chạy song song).
-
-Đặt `AGENTMEMORY_STATE_BACKEND=redis` (cùng `AGENTMEMORY_REDIS_URL`) để chuyển cả hai worker sang adapter `redis` tích hợp sẵn của iii-engine, adapter này lưu mỗi key như một hash field Redis (`HSET`) thay vì viết lại cả một scope ở mỗi lần write:
-
-```env
-# ~/.agentmemory/.env
-AGENTMEMORY_STATE_BACKEND=redis
-AGENTMEMORY_REDIS_URL=redis://localhost:6379
-```
-
-`AGENTMEMORY_STATE_BACKEND` mặc định là `file`; để trống nó giữ nguyên hành vi hiện tại, và một giá trị không nhận diện được (bất cứ gì khác `file` hoặc `redis`) sẽ là một lỗi khởi động chứ không phải fallback im lặng. `/agentmemory/status` và trang Health của viewer (dòng State store) báo backend nào đang active và nó có trả lời hay không, không bao giờ báo URL.
-
-**Chỉ `redis://` thuần.** Engine đã pin (0.22.1) build Redis client của nó không có hỗ trợ TLS, nên một URL `rediss://` (hầu hết các dịch vụ Redis được quản lý, như Upstash, Redis Cloud, và ElastiCache có mã hóa in-transit, mặc định chỉ dùng TLS) sẽ không kết nối được. Kết nối không được mã hóa, nên password Redis và mọi memory đã lưu đi qua đường truyền ở dạng clear text: hãy chỉ tới một Redis cục bộ hoặc một Redis trên network riêng mà bạn tin tưởng. Với bất kỳ Redis nào khác, hãy chạy một tunnel được mã hóa (stunnel, SSH, hoặc một VPN) trên host agentmemory, để chặng `redis://` thuần nằm trên host đó và kết nối upstream của tunnel được mã hóa và xác thực. Nếu password Redis chứa một dấu nháy đơn, hãy percent-encode nó (`%27`); engine mở rộng URL vào config YAML của nó trước khi parse.
-
-**Một Redis server cho mỗi `--instance`.** Các prefix key Redis của engine (`state:<scope>`, `stream:<name>:<group>`) là cố định, nên hai instance agentmemory (`--instance 1`, `--instance 2`, ...) cùng chỉ vào một database sẽ ghi đè dữ liệu của nhau. Một database index riêng (`redis://localhost:6379/1`) giữ dữ liệu đã lưu tách biệt, nhưng engine relay các event viewer live qua một channel pub/sub Redis duy nhất (`stream::events`), và Redis pub/sub bỏ qua database index, nên viewer của mỗi instance vẫn sẽ hiển thị event live của instance khác. Hãy cho mỗi instance một Redis server (hoặc port) riêng khi bạn chạy nhiều hơn một.
-
-**Điều gì giữ nguyên, và điều gì khác đi.** Mọi tính năng agentmemory đều hoạt động trên Redis: session, observation, memory (remember, supersede, evolve, forget), search và các bucket index, lesson, graph, audit log cùng các scope theo tháng của nó, export và import, governance delete, trạng thái consolidation, snapshot của viewer và live stream của nó, và health monitor. Engine lưu mỗi scope thành một hash Redis (`HSET`/`HGET`/`HGETALL`) và bắn ra cùng các state trigger như file store. Ba khác biệt của engine được xử lý ngay trong agentmemory:
-
-- Redis trả về các record của một scope không theo thứ tự cố định. agentmemory sắp xếp chúng theo cũ nhất trước (theo thời gian tạo trong id của record, sau đó theo timestamp) để các list, phân trang và các chunk export trả về đúng thứ tự giống như trên file store.
-- Engine áp các update một phần trên Redis trong một Lua script biến array rỗng thành object rỗng. agentmemory tự áp các update đó (read, change, write dưới một lock theo từng key) trên Redis, nên các field như `tags: []` vẫn giữ là array.
-- Kiểm tra audit log kiểu cũ đọc scope cũ từ Redis thay vì tìm file của file store trên disk.
-
-Có một khác biệt cần bạn can thiệp: **sau khi Redis khởi động lại, engine dừng relay các event live** tới viewer cho tới khi agentmemory khởi động lại. Dữ liệu vẫn được lưu và đọc bình thường. Health monitor gửi một event test qua Redis mỗi 30 giây; khi nó không nhận lại được, `/agentmemory/status` và trang Health của viewer sẽ hiện "Live updates are not reaching the viewer" kèm cách khắc phục: khởi động lại agentmemory. Nếu Redis down, báo cáo status sẽ hiện "The state store is not answering" và cách kiểm tra nó (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Liệt kê một scope rất lớn sẽ đọc toàn bộ hash trong một lệnh `HGETALL`, cùng chi phí như khi file store giữ nó trong memory.
-
-**Cấu hình Redis được khuyến nghị.** Chính sách snapshot mặc định `save 3600 1 300 100 60 10000` có thể mất vài phút write khi crash, tệ hơn cửa sổ flush 5 giây của file store. Đặt `appendonly yes` cho bất cứ thứ gì bạn không muốn mất. Đặt `maxmemory-policy noeviction`; `allkeys-lru` hoặc tương tự sẽ lặng lẽ drop memory ngay khi Redis chạm giới hạn memory của nó.
-
-Một lần khởi động native (không Docker), và mọi [deploy template](../deploy/) one-click (chúng ghi đè `iii-config.yaml` đi kèm và khởi động native), đọc `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` và render chúng vào `iii-config` được khởi chạy. URL bản thân nó không bao giờ được viết vào file đã render đó, chỉ có một tham chiếu `${AGENTMEMORY_REDIS_URL}` mà process engine mở rộng từ environment riêng của nó khi boot. Chỉ có đường Docker Compose riêng của repo này (`AGENTMEMORY_USE_DOCKER=1`, hoặc resume một engine đã khởi động theo cách đó) mount `iii-config.docker.yaml` chỉ đọc và không bao giờ render; `agentmemory start` sẽ cảnh báo khi nó phát hiện tổ hợp đó. Hãy đổi file đó bằng tay, theo đúng hình thái `name: redis` / `config: redis_url: ...` được trình bày trong docs worker [iii-state](https://workers.iii.dev/workers/iii-state) và [iii-stream](https://workers.iii.dev/workers/iii-stream), và chỉ `redis_url` tới một Redis mà container chạm tới được. `docker-compose.yml` truyền `AGENTMEMORY_REDIS_URL` vào container engine, nên `redis_url: '${AGENTMEMORY_REDIS_URL}'` hoạt động ở đó và giữ URL ngoài file đã mount.
-
-Config đã render giữ URL ngoài `~/.agentmemory/data/iii-config.runtime.yaml`, nhưng configuration worker của chính engine vẫn persist giá trị *đã mở rộng* vào `~/.agentmemory/config/iii-state.yaml` và `iii-stream.yaml` ngay khi nó boot (việc mở rộng `${VAR}` của iii-engine xảy ra trước khi worker đó lưu seed của nó, và nó lưu giá trị đã resolve, không phải tham chiếu). Hãy coi thư mục đó như đang giữ một credential: `chmod 700 ~/.agentmemory` trên bất kỳ host chia sẻ nào, và ưu tiên một user ACL Redis chỉ có quyền đúng những gì agentmemory cần hơn là dùng credential admin của database.
-
-**Migration không tự động.** Chuyển `AGENTMEMORY_STATE_BACKEND` bắt đầu từ một store trống ở cả hai phía; không có gì tự copy dữ liệu đã có từ file sang Redis hay ngược lại. Export từ backend bạn đang rời khỏi và import vào backend bạn đang chuyển tới. Đoạn này chạy giống nhau trên cả bash và zsh (kể cả `bash -u`). Một array như `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` thì không: zsh giữ header đó như một từ bị hỏng trong khi bash tách nó thành hai, nên cả hai request đều 401 bất cứ khi nào `AGENTMEMORY_SECRET` được đặt:
-
-```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
-
-# 1. On the old backend, while agentmemory is still running on it:
-if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
-  curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" http://localhost:3111/agentmemory/export > backup.json
-else
-  curl -fsS http://localhost:3111/agentmemory/export > backup.json
-fi
-
-# 2. Confirm backup.json is a usable export before switching backends:
-jq -e '.version and .exportedAt' backup.json > /dev/null || {
-  echo "backup.json is not a valid export; do not switch backends" >&2
-  exit 1
-}
-
-# 3. Switch AGENTMEMORY_STATE_BACKEND (and AGENTMEMORY_REDIS_URL if needed),
-#    restart agentmemory against the new backend, then:
-if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
-  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
-    curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" -X POST http://localhost:3111/agentmemory/import \
-      -H 'Content-Type: application/json' -d @-
-else
-  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
-    curl -fsS -X POST http://localhost:3111/agentmemory/import \
-      -H 'Content-Type: application/json' -d @-
-fi
-```
-
-`/agentmemory/export` cũng nhận `?maxSessions=` và `?offset=` để chia nhỏ một corpus lớn qua nhiều lệnh gọi; `strategy` khi import là `merge` (an toàn theo mặc định), `replace`, hoặc `skip`.
-
-### iii thay thế cho những gì
-
-| Stack truyền thống | agentmemory dùng |
-|---|---|
-| Express.js / Fastify | iii HTTP Triggers |
-| SQLite / Postgres + pgvector | iii KV State + vector index trong memory |
-| SSE / Socket.io | iii Streams (WebSocket) |
-| pm2 / systemd | iii engine worker supervision |
-| Prometheus / Grafana | iii OTEL + health monitor |
-| Hệ thống plugin tùy chỉnh | `iii worker add <name>` |
-
-**243 file source · ~55,000 LOC · 3,400+ test · 324 function · 67 KV scope**, tất cả trên ba primitive. Không có `agentmemory plugin install`. Hệ thống plugin chính là iii.
-
----
-
 <h2 id="configuration"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-config.svg"><img src="../assets/tags/section-config.svg" alt="Cấu hình" height="32" /></picture></h2>
 
 ### LLM Provider
@@ -1457,6 +1233,8 @@ agentmemory tự phát hiện provider từ environment của bạn. Một provi
 | OpenAI API | `OPENAI_API_KEY` | Mặc định `gpt-5.6-luna`, ghi đè bằng `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) hoặc `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Bất cứ gì tương thích OpenAI-API. Không tốn phí, chạy trên hardware của bạn. Xem [Model cục bộ](#local-models-ollama--lm-studio--vllm) dưới đây. |
 | Fallback Claude subscription | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Chỉ opt-in. Spawn các session `@anthropic-ai/claude-agent-sdk`; trước đây nó từng gây ra đệ quy Stop-hook không giới hạn, nên nó không còn là mặc định. |
+
+<a id="local-models-ollama--lm-studio--vllm"></a>
 
 ### Model cục bộ (Ollama / LM Studio / vLLM)
 
@@ -1507,24 +1285,9 @@ Embedding cục bộ đi kèm như một dependency tùy chọn nhưng không đ
 
 ### Chọn model theo chi phí
 
-Khi compression nền do LLM viết được bật với cả provider và `AGENTMEMORY_AUTO_COMPRESS=true`, nó chạy trên mọi observation, nên việc chọn model thay đổi đáng kể chi phí hàng tháng. Dữ liệu workload đã ghi lại: 635 request / 888K token / 35 giờ sử dụng active, chạy trên ba model OpenRouter theo giá ngày 2026-05-23.
+Bắt đầu không cần khóa để ghi nhận và tìm theo từ khóa. `EMBEDDING_PROVIDER=local` cung cấp tìm kiếm ngữ nghĩa trên máy sau lần tải mô hình đầu tiên. Nén LLM cần nhà cung cấp và `AGENTMEMORY_AUTO_COMPRESS=true`, có thể gửi yêu cầu cho từng quan sát; hãy kiểm tra giá hiện hành.
 
-| Tier | Model | Input / 1M | Output / 1M | Chi phí cho 35h đã ghi lại | Ghi chú |
-|------|-------|------------|-------------|---------------------------|-------|
-| Khuyến nghị | `deepseek/deepseek-v4-flash-0731` | $0.07 | $0.14 | ~$0.07 (ước tính) | DeepSeek mới nhất; lựa chọn rẻ nhất được khuyến nghị cho workload compression. |
-| Khuyến nghị | `deepseek/deepseek-v4-pro` | $0.435 | $0.87 | ~$0.46 | Chất lượng compression + summarization tốt với chi phí thấp hơn Sonnet ~10 lần. |
-| Khuyến nghị | `qwen/qwen3-coder` | $0.45 | $1.80 | ~$0.55 | Reasoning về code mạnh nếu session của bạn nặng về code. |
-| Cao cấp | `anthropic/claude-sonnet-5` | $3.00 | $15.00 | ~$5.02 (ước tính) | Giá niêm yết giống với lần chạy Sonnet 4.6 đã đo; giá giới thiệu $2/$10 cho tới 2026-08-31. |
-| Cao cấp | `openai/gpt-5.6-sol` | $5.00 | $30.00 | ~$9 (ước tính) | Tier flagship; đắt cho công việc nền chạy liên tục. |
-| Nên tránh | `anthropic/claude-opus-5` | $5.00 | $25.00 | ~$8.40 (ước tính) | Model lớp flagship; vượt chi phí cho compression. |
-
-Các dòng đã đo đến từ lần chạy đã ghi lại; các dòng (ước tính) scale cùng tỷ lệ token theo giá niêm yết của từng model.
-
-agentmemory in ra một cảnh báo runtime khi `OPENROUTER_MODEL` khớp với pattern tier cao cấp. Đặt `AGENTMEMORY_SUPPRESS_COST_WARNING=1` để tắt tiếng khi bạn đã đưa ra lựa chọn có hiểu biết.
-
-Đánh đổi chất lượng so với chi phí cho công việc memory: compression là một task summarization với ngưỡng chất lượng tương đối thoải mái (agent đọc lại summary, không phải người dùng). DeepSeek V4 Flash / V4 Pro / Qwen3-Coder gần như ngang Sonnet trên task này (chỉ lệch trong sai số làm tròn) trong khi tốn ít hơn 10-70 lần. Hãy dành các model tier cao cấp cho những truy vấn bạn tự đọc trực tiếp.
-
-Nguồn: [giá OpenRouter cho Claude Sonnet 5](https://openrouter.ai/anthropic/claude-sonnet-5), [DeepSeek V4 Flash](https://openrouter.ai/deepseek/deepseek-v4-flash-0731), [ghi chú giá DeepSeek](https://api-docs.deepseek.com/quick_start/pricing/).
+`agentmemory status` / http://localhost:3113
 
 ### Bộ nhớ đa agent (`AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE`)
 
@@ -1554,41 +1317,22 @@ Khi `AGENT_ID` chưa được đặt, memory vẫn không có scope (hành vi le
 
 ### Port
 
-agentmemory + iii-engine bind bốn port theo mặc định. Nếu một lần khởi động lại lỗi với `port in use`, bảng này cho bạn biết cần tìm process nào.
+API và trình xem mặc định chỉ lắng nghe trên loopback.
 
-| Port | Process | Mục đích | Ghi đè bằng env |
-|------|---------|---------|--------------|
-| `3111` | agentmemory | REST API + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Worker stream nội bộ (được agentmemory + viewer dùng) | `III_STREAM_PORT` (ưu tiên) hoặc tên cũ `III_STREAMS_PORT` |
-| `3113` | agentmemory | Viewer real-time (`http://localhost:3113`) | `III_VIEWER_PORT` hoặc `AGENTMEMORY_VIEWER_URL` cho URL được báo cáo |
-| `49134` | iii-engine | WebSocket; worker đăng ký ở đây, telemetry OTel chảy qua đó | `III_ENGINE_PORT` hoặc `III_ENGINE_URL` |
+| Port | API / Trình xem | Env |
+|---|---|---|
+| `3111` | REST / MCP / SSE | `III_REST_PORT` |
+| `3113` | Trình xem | `III_VIEWER_PORT` |
 
-`--port <N>` đổi anchor REST và suy ra stream `N+1`, viewer `N+2`, và WebSocket engine `N+46023` chỉ ở những nơi port hoặc URL tương ứng ở trên chưa được đặt rõ. Nó không tạo một namespace lifecycle cách biệt. Dùng `--instance 1` cho daemon thứ hai; nó dùng anchor 3211, mặc định là `3211/3212/3213/49234`, và nhận một thư mục data và lifecycle `instance-1` riêng. Các instance từ 1 tới 50 theo đúng pattern đó.
+`--port <N>` đặt cổng API; trình xem mặc định dùng `N+2`. Dùng `--instance N` cho instance riêng. Giữ các listener nội bộ riêng tư; xem hướng dẫn triển khai để truy cập từ xa và [chuyển từ Docker cũ](../deploy/README.md#migrating-from-the-legacy-cli-docker-mode).
 
-Engine đã pin khởi động với `--no-update-check` (không tra update hay security-advisory từ GitHub lúc boot) và với telemetry sử dụng ẩn danh của iii bị tắt: agentmemory đặt `III_TELEMETRY_ENABLED=false` cho engine mà nó spawn trừ khi bạn tự export biến đó, và compose file đi kèm cũng làm vậy.
+### Storage backend: file (mặc định) so với redis
 
-Dọn các process còn sót khi port vẫn bị chiếm sau một lần chạy bị crash:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` dọn sạch cả worker và pidfile engine khi shutdown native một cách êm đẹp. Ở chế độ Docker nó flush worker native, dừng đúng container engine đã được validate, và giữ lại cả container cùng mount `/data` của nó để khởi động lại không mất dữ liệu; lần khởi động kế tiếp sẽ validate và resume đúng container đó. Gỡ cài đặt khi dùng Docker cần `agentmemory remove --keep-data`: nó xóa các file do agentmemory quản lý chung trong khi vẫn giữ container đã validate, mount data của nó, và bản ghi lifecycle cần để khôi phục chúng. Việc xóa dữ liệu Docker mang tính phá hủy được chủ đích để lại cho người vận hành tự làm sau khi backup. CLI cũng từ chối nhận hoặc gửi signal tới các process đang chiếm port của Docker hay VM (Docker backend, vpnkit, colima) như là engine native trừ khi `--force` được truyền. Việc dọn thủ công ở trên chỉ dành cho trường hợp sau-crash khi không còn pidfile nào sót lại.
+Không cần dịch vụ cơ sở dữ liệu riêng. Redis: `AGENTMEMORY_STATE_BACKEND=redis` + `AGENTMEMORY_REDIS_URL`. Đổi backend không tự sao chép bộ nhớ hiện có. [Lưu trữ dữ liệu](../docs/reliability/state-storage.md).
 
 ### File Config
 
-Đặt config runtime của agentmemory trong `~/.agentmemory/.env` thay vì export biến trong từng shell. Nếu viewer hiện một gợi ý setup như `export ANTHROPIC_API_KEY=...`, hãy copy nó vào file này dưới dạng `ANTHROPIC_API_KEY=...` không có tiền tố `export`, rồi khởi động lại agentmemory.
-
-Biến môi trường của process vẫn hoạt động và được ưu tiên hơn giá trị trong file.
-
-Trên Windows, cùng file đó nằm tại `%USERPROFILE%\.agentmemory\.env`:
+Đặt runtime config trong `~/.agentmemory/.env` thay vì export biến ở mọi shell. Dùng `AGENTMEMORY_ENV_FILE` để chọn env-file khác. Biến môi trường của process được ưu tiên hơn giá trị trong file. Worker Compose do CLI tạo truyền Redis setting tới worker `state`.
 
 ```powershell
 New-Item -ItemType Directory -Force $HOME\.agentmemory
@@ -1613,179 +1357,34 @@ GRAPH_EXTRACTION_ENABLED=true
 
 ### Biến Môi trường
 
-Tạo `~/.agentmemory/.env`:
+`~/.agentmemory/.env`:
 
 ```env
-# LLM provider (pick one — default is the no-op provider: no LLM calls)
-# ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
-# GEMINI_API_KEY=...
-# OPENROUTER_API_KEY=...
-# MINIMAX_API_KEY=...
-# OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
-#                                          # OpenAI LLM provider (here) AND the OpenAI
-#                                          # embedding provider (further below). Set
-#                                          # OPENAI_API_KEY_FOR_LLM=false to scope it
-#                                          # to embeddings only.
-# OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
-#                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
-#                                          # Auto-detected from `.openai.azure.com` hostname; uses
-#                                          # api-key header + api-version query param.
-# OPENAI_API_VERSION=2024-08-01-preview    # Optional: Azure api-version query param
-# OPENAI_MODEL=gpt-5.6-luna                # Optional: default model
-# OPENAI_TIMEOUT_MS=60000                  # Optional: OpenAI-scoped alias for the outbound fetch
-#                                          # timeout. Takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
-#                                          # for back-compat with v0.9.17. New configs should
-#                                          # prefer the global AGENTMEMORY_LLM_TIMEOUT_MS below.
-# OPENAI_REASONING_EFFORT=none             # Optional: "low" | "medium" | "high" | "none"
-#                                          # Honored only by OpenAI's reasoning models (o1, o3,
-#                                          # gpt-*-reasoning) and providers that mirror that
-#                                          # schema (Ollama Cloud thinking models). Standard
-#                                          # chat models reject this field with 400. Set to
-#                                          # "none" for thinking models that return reasoning
-#                                          # but no content.
-# OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
-#                                          # for LLM (useful if you only want OpenAI for embeddings)
-# Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
-# leave OFF unless you understand the Stop-hook recursion risk:
-# AGENTMEMORY_ALLOW_AGENT_SDK=true
+EMBEDDING_PROVIDER=local
 
-# Embedding provider (BM25-only when unset; local is an explicit opt-in)
-# EMBEDDING_PROVIDER=local
-# VOYAGE_API_KEY=...
-# OPENAI_API_KEY=sk-...
-# OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
-# OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-# OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
-# OPENAI_EMBEDDING_BASE_URL=https://...   # Embeddings only; falls back to OPENAI_BASE_URL
-# OPENAI_EMBEDDING_API_KEY=sk-...         # Embeddings only; wins over OPENAI_API_KEY when set
+# AGENTMEMORY_INJECT_CONTEXT=true
 
-# Outbound LLM / embedding timeout
-# AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every
-                                          # raw-fetch provider (Gemini, OpenRouter, MiniMax,
-                                          # OpenAI LLM, OpenAI/Cohere/Voyage/OpenRouter
-                                          # embedding). For the OpenAI LLM path, the
-                                          # OpenAI-scoped OPENAI_TIMEOUT_MS alias (above)
-                                          # takes precedence when set, for back-compat
-                                          # with v0.9.17.
-                                          # Increase for slow networks or large batch calls;
-                                          # decrease to fail-fast on rate-limit holds.
+# AGENTMEMORY_AUTO_COMPRESS=true
 
-# Search tuning
-# BM25_WEIGHT=0.4
-# VECTOR_WEIGHT=0.6
-# TOKEN_BUDGET=2000
-
-# Auth (generated into ~/.agentmemory/secret on first start when unset)
-# AGENTMEMORY_SECRET=your-secret
-# VIEWER_ALLOWED_ORIGINS=https://memory.example.com
-# AGENTMEMORY_IMPORT_ROOT=~/projects
-
-# Ports (defaults: 3111 API, 3113 viewer)
-# III_REST_PORT=3111
-
-# Engine usage telemetry (iii). Off unless you set it; true opts in.
-# III_TELEMETRY_ENABLED=false
-
-# Features
-# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default. Requires an LLM
-                                   # provider as well. When both are on,
-                                   # every PostToolUse hook calls your
-                                   # LLM provider to compress the
-                                   # observation — expect significant
-                                   # token spend on active sessions.
-# AGENTMEMORY_SLOTS=false          # OFF by default. Editable pinned
-                                   # memory slots — persona,
-                                   # user_preferences, tool_guidelines,
-                                   # project_context, guidance,
-                                   # pending_items, session_patterns,
-                                   # self_notes. Size-limited; agent
-                                   # edits via memory_slot_* tools.
-                                   # Pinned slots addressable for
-                                   # SessionStart injection.
-# AGENTMEMORY_REFLECT=false        # OFF by default. Requires SLOTS=on.
-                                   # Stop hook fires mem::slot-reflect:
-                                   # scans recent observations, auto-
-                                   # appends TODOs to pending_items,
-                                   # counts patterns in
-                                   # session_patterns, records touched
-                                   # files in project_context. Fire-
-                                   # and-forget; does not block.
-# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default. When on:
-                                   # - SessionStart may inject ~1-2K
-                                   #   chars of project context into
-                                   #   the first turn of each session
-                                   #   (this is what actually reaches
-                                   #   the model — Claude Code treats
-                                   #   SessionStart stdout as context)
-                                   # - PreToolUse fires /agentmemory/enrich
-                                   #   on every file-touching tool call
-                                   #   (resource cleanup, not a token
-                                   #   fix — PreToolUse stdout is debug
-                                   #   log only per Claude Code docs)
-                                   # Observations are still captured via
-                                   # PostToolUse regardless of this flag.
-# GRAPH_EXTRACTION_ENABLED=false
-# AGENTMEMORY_LLM_NOTHINK=1        # Local reasoning models only: ask the
-                                   # model to skip its hidden thinking pass
-                                   # during graph extraction. Faster runs;
-                                   # relation quality can drop slightly.
-# CONSOLIDATION_ENABLED=false   # on by default when an LLM provider is configured
-# LESSON_DECAY_ENABLED=true
-# OBSIDIAN_AUTO_EXPORT=false
-# AGENTMEMORY_EXPORT_ROOT=~/.agentmemory
-# CLAUDE_MEMORY_BRIDGE=false
-# SNAPSHOT_ENABLED=false
-
-# Storage and durability
-# AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
-# AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
-# AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
-                                             # shutdown and deletes still save at once.
-# AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
-                                           # provenance; false skips it
-
-# Sessions
-# AGENTMEMORY_SESSION_SWEEP_ENABLED=true   # Hourly sweep marks sessions left active past
-                                           # the threshold as abandoned. Deletes nothing;
-                                           # new activity makes the session active again.
-# AGENTMEMORY_SESSION_SWEEP_STALE_HOURS=24
-
-# Capture filters (hooks)
-# AGENTMEMORY_CAPTURE_ALLOW=               # Comma or space list of tool names or globs;
-                                           # when set, only these tools are captured
-# AGENTMEMORY_CAPTURE_DENY=                # Extra names or globs to skip, added to the
-                                           # defaults: memory_*, toolsearch,
-                                           # listmcpresources, fetchmcpresource
-# AGENTMEMORY_CAPTURE_OUTPUT_MAX=8000      # Max characters of tool output per observation
-# AGENTMEMORY_PRE_COMPACT_BUDGET=1500      # Token budget for PreCompact context; 0 disables
-
-# Audit log
-# AGENTMEMORY_AUDIT_RETENTION_MONTHS=0     # Drop month scopes older than N months; 0 keeps all
-# AGENTMEMORY_AUDIT_INDEX_PERSIST=false    # 1 or true records index migration and cleanup
-                                           # rows (debugging only)
-
-# Team
-# TEAM_ID=
-# USER_ID=
-# TEAM_MODE=private
-
-# Tool visibility: "all" (54 tools, default) or "core" (8 tools, lean)
 # AGENTMEMORY_TOOLS=core
+
+# AUTO_FORGET_ENABLED=false
+# LESSON_DECAY_ENABLED=false
+# INSIGHT_DECAY_ENABLED=false
 ```
+
+Tham chiếu đầy đủ ở [`.env.example`](../.env.example), gồm nhà cung cấp, bộ lọc capture, lưu giữ, kho lưu trữ và phạm vi nhóm. `AGENTMEMORY_ENV_FILE` chọn tệp khác. Khởi động lại sau khi thay đổi cấu hình. Không commit `.env` đã điền giá trị thật hay bí mật Bearer.
 
 ---
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpoint trên port `3111`. REST API bind vào `127.0.0.1` theo mặc định. Các endpoint được bảo vệ cần `Authorization: Bearer <secret>`, và các endpoint mesh sync cần `AGENTMEMORY_SECRET` được đặt rõ ràng trên cả hai phía.
+146 endpoint trên port `3111`. REST API bind vào `127.0.0.1` theo mặc định. Các endpoint được bảo vệ cần `Authorization: Bearer <secret>`, và các endpoint mesh sync cần `AGENTMEMORY_SECRET` được đặt rõ ràng trên cả hai phía.
 
-**Authentication được bật theo mặc định.** Khi `AGENTMEMORY_SECRET` chưa được đặt (trong shell hay trong `~/.agentmemory/.env`), server sinh một secret ngẫu nhiên ở lần khởi động đầu tiên và lưu nó vào `~/.agentmemory/secret` với mode `0600`. Mọi client đi kèm đọc nó từ đó khi nói chuyện với một server cục bộ: CLI, viewer, các hook dưới `plugin/scripts`, MCP server và shim `@agentmemory/mcp`, các config do `agentmemory connect` viết ra, và các integration OpenCode, Pi, OpenClaw, Hermes và filesystem-watcher đi kèm. Secret đã lưu chỉ được gửi tới các URL loopback (`localhost`, `127.0.0.0/8`, `::1`). Một `AGENTMEMORY_SECRET` rõ ràng luôn thắng, và các client remote vẫn cần đặt nó. Docker và các entrypoint của `deploy/` đã tự sinh và export secret riêng của chúng. Để gọi API bằng tay:
+Xác thực bật mặc định. Nếu chưa đặt `AGENTMEMORY_SECRET`, CLI tạo bí mật ngẫu nhiên lần đầu tại `~/.agentmemory/secret` và sao chép vào `secret` trong thư mục dữ liệu đã chọn, với quyền `0600`. Client đi kèm ưu tiên tệp chính này khi kết nối cục bộ và chỉ gửi bí mật đã lưu đến URL loopback. `AGENTMEMORY_SECRET` đặt tường minh luôn được ưu tiên; client từ xa phải đặt qua biến môi trường. Triển khai Docker tạo bí mật riêng.
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **Quy tắc request cho các lệnh write.** Các request `POST`, `PUT`, `PATCH` và `DELETE` tới REST API và viewer phải gửi `Content-Type: application/json` (một tham số `charset` thì vẫn ổn) bất cứ khi nào chúng mang theo body, và một header `Origin`, nếu có, phải là một origin loopback cho port REST hoặc viewer đã cấu hình hoặc được liệt kê trong `VIEWER_ALLOWED_ORIGINS` (phân tách bằng dấu phẩy, ví dụ `https://memory.example.com`). Các client không gửi header `Origin` (CLI, hook, MCP, curl, server-to-server) không bị ảnh hưởng. Viewer cũng chấp nhận origin của chính nó.
@@ -1821,7 +1420,7 @@ curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:31
 | `POST` | `/agentmemory/team/share` | Chia sẻ với team |
 | `GET` | `/agentmemory/audit` | Audit trail |
 
-Danh sách endpoint đầy đủ: [`src/triggers/api.ts`](../src/triggers/api.ts)
+Danh sách endpoint đầy đủ: [REST API](../plugin/skills/agentmemory-rest-api/REFERENCE.md)
 
 </details>
 
@@ -1839,19 +1438,19 @@ Các event thất bại được retry mỗi `AGENTMEMORY_CAPTURE_RETRY_INTERVAL
 
 Khi server down, không trả lời kịp hoặc trả về 5xx, hook sẽ append observation vào một file spool cục bộ, `<data dir>/capture-spool/<host>-<port>.jsonl` (ghi đè thư mục bằng `AGENTMEMORY_CAPTURE_SPOOL_DIR`). File này riêng tư cho user của bạn (mode 600), secret được redact theo đúng cách server redact chúng, nó giữ tối đa `AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES` (5 MiB) và drop các entry cũ hơn `AGENTMEMORY_CAPTURE_SPOOL_MAX_AGE_HOURS` (168). Khi nó đầy, các entry mới bị drop và được đếm, và `/agentmemory/status` sẽ báo cáo điều đó. Hook vẫn exit 0 trong giới hạn thời gian của nó và không thêm request nào khi server khỏe mạnh. Spool được gửi ở lần khởi động kế tiếp và bởi hook đầu tiên chạm tới server trở lại, trong một process nền để agent không phải chờ. Event id làm cho điều này an toàn: một observation đã đến trước một timeout không bị lưu hai lần. `npx @agentmemory/agentmemory capture` hiển thị spool và inbox của server, `--drain` gửi spool ngay, và `GET /agentmemory/capture` trả về cùng dữ liệu đó dưới dạng JSON. Đặt `AGENTMEMORY_CAPTURE_SPOOL=false` để tắt spool.
 
-**Compact provenance của graph.** Mỗi node và edge của knowledge graph giữ id của 32 observation mới nhất mà nó bắt nguồn từ đó. Các store được viết trước giới hạn đó có thể giữ hàng nghìn id cho mỗi node hot, khiến graph search và viewer chậm hoặc làm worker crash. agentmemory tự sửa điều này: ở lần khởi động đầu tiên sau khi nâng cấp, nó cắt gọn mọi node, edge, edge đã bị supersede (lịch sử graph temporal) và snapshot đã cache xuống đúng giới hạn ở nền, theo từng slice nhỏ có khoảng nghỉ giữa chúng, để search, capture và viewer vẫn hoạt động. Nó lưu tiến độ, resume sau một lần restart và không bao giờ chạy lại khi đã hoàn tất. `/agentmemory/status` và trang Health của viewer hiển thị nó là pending, running (kèm scope và vị trí hiện tại), done hoặc failed. Đặt `AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false` để tắt nó.
+**Compact provenance của graph.** Việc compact provenance cũ được hoãn khi khởi động vì phải đọc toàn bộ các scope cũ. `/agentmemory/status` báo `deferred`, hoặc `off` khi đặt `AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false`. Chạy compact thủ công bên dưới trong thời gian bảo trì. Di chuyển chỉ mục truy xuất là thao tác riêng: dùng `agentmemory graph-index migrate --allow-legacy-scan` theo [hướng dẫn bảo trì](../docs/reliability/graph-index-migration.md).
 
 Để chạy nó bằng tay, gọi `POST /agentmemory/graph/compact`. Nó duyệt qua các index tên và edge-key thay vì liệt kê mọi node và edge, và an toàn để chạy lại. Khi nó cắt gọn id, nó viết một audit entry `graph_compact`.
 
 ```bash
-curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: application/json" -d '{}'
+curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" -d '{}'
 ```
 
 Trên một store lớn, hoặc khi lệnh gọi trả về 504, hãy chạy nó theo slice. Gửi `scope` (`nodes`, `edges` hoặc `history`), `offset` và `limit`, rồi gọi lại với `nextOffset` được trả về cho tới khi nó là `null`. Làm điều này cho `nodes`, `edges` và `history`, và kết thúc với một lệnh gọi `{"scope":"snapshot"}`, vì một lần chạy theo slice không chạm tới snapshot đã cache.
 
 ```bash
-curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: application/json" -d '{"scope":"nodes","offset":0,"limit":200}'
-curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: application/json" -d '{"scope":"snapshot"}'
+curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" -d '{"scope":"nodes","offset":0,"limit":200}'
+curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" -d '{"scope":"snapshot"}'
 ```
 
 ---
@@ -1861,11 +1460,11 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 4,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Yêu cầu trước:** Node.js >= 20 kèm npm/npx; [iii-engine](https://iii.dev/docs) v0.22.1 hoặc Docker. Cài engine tự động trên macOS/Linux cũng cần `curl`, một `sh` chuẩn POSIX, và `tar`; Windows gốc dùng `iii.exe` đã pin thủ công, WSL2, hoặc Docker Desktop.
+Xem [Cài đặt](#install) về yêu cầu và [CONTRIBUTING.md](../CONTRIBUTING.md) về quy tắc đóng góp cùng kiểm tra phát hành.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Giấy phép" height="32" /></picture></h2>
 

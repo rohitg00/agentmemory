@@ -32,7 +32,7 @@ export function Interfaces() {
         <div className="section-head">
           <span className="eyebrow">Interfaces</span>
           <h2 id="interfaces-title">See your agent&apos;s memory.</h2>
-          <p>Nothing is a black box. Every observation, memory and function call is visible from your browser, served from your machine.</p>
+          <p>Browse captured observations, memories and sessions from your browser, served from your machine.</p>
         </div>
 
         <div className={s.tabs} role="tablist" aria-label="agentmemory interfaces" onKeyDown={onKey}>

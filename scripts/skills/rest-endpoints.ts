@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import ts from "typescript";
 
 function property(object: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
@@ -10,9 +12,9 @@ function literal(value: ts.Node | undefined): string | undefined {
   return value && ts.isStringLiteralLike(value) ? value.text : undefined;
 }
 
-export function collectRestEndpoints(text: string): { path: string; method: string }[] {
+export function collectRestEndpoints(...texts: string[]): { path: string; method: string }[] {
   const rows = new Map<string, { path: string; method: string }>();
-  const source = ts.createSourceFile("api.ts", text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS);
+  const sources = texts.map((text, index) => ts.createSourceFile(`source-${index}.ts`, text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS));
   function visit(node: ts.Node): void {
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "registerTrigger") {
       const registration = node.arguments[0];
@@ -27,6 +29,12 @@ export function collectRestEndpoints(text: string): { path: string; method: stri
     }
     ts.forEachChild(node, visit);
   }
-  visit(source);
+  for (const source of sources) visit(source);
   return [...rows.values()].sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+}
+
+export function collectRestEndpointsInDirectory(directory: string): { path: string; method: string }[] {
+  return collectRestEndpoints(...readdirSync(directory)
+    .filter((file) => file.endsWith(".ts"))
+    .map((file) => readFileSync(join(directory, file), "utf8")));
 }

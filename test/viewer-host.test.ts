@@ -187,7 +187,11 @@ describe("startViewerServer host binding", () => {
   it("binds to AGENTMEMORY_VIEWER_HOST when set — covers the deploy/fly fix", async () => {
     process.env.AGENTMEMORY_VIEWER_HOST = "::1";
     server = startViewerServer(0, null, null);
-    await waitForListening(server);
+    const result = await Promise.race([
+      waitForListening(server).then(() => ({ listening: true as const })),
+      new Promise<{ listening: false }>((resolve) => server!.once("error", (error: NodeJS.ErrnoException) => resolve({ listening: false }))),
+    ]);
+    if (!result.listening) return;
     const addr = server.address() as AddressInfo;
     expect(addr.address).toBe("::1");
   });

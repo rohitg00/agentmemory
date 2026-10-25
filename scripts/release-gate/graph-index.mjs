@@ -105,10 +105,45 @@ async function profile(name, instance = 0, sharedHome) {
   assert(port, "No free port block");
   const p = { name, instance, dir, home, runtime, data, port, ports: [0, 1, 2, 3, 6353, 46023].map((n) => port + n), secret: "", trace: [], traceSummary: new Map(), phase: "startup", sockets: new Set(), holdManifestAt: 0, manifestReads: 0, held: false };
   profiles.push(p);
-  let config = readFileSync(join(pkg, "iii-config.yaml"), "utf8").split("  - name: iii-exec")[0];
-  config = config.replaceAll("3111", String(port)).replaceAll("3112", String(port + 1)).replaceAll("3113", String(port + 2)).replaceAll("./data/", `${data}/`);
-  config += `  - name: iii-worker-manager\n    config:\n      port: ${port + 46023}\n      host: 127.0.0.1\n`;
-  p.config = join(dir, "iii-config.yaml"); writeFileSync(p.config, config);
+  const workerCompose = join(dir, "worker-compose.yaml");
+  const quote = (value) => `'${String(value).replaceAll("'", "''")}'`;
+  const namespace = `agentmemory-${port}`;
+  const composeText = [
+    `namespace: ${namespace}`,
+    "engine:",
+    `  url: ws://127.0.0.1:${port + 46023}`,
+    "  workers:",
+    "    configuration:",
+    "      adapter:",
+    "        name: fs",
+    "        config:",
+    `          directory: ${quote(join(data, "compose-config"))}`,
+    "    iii-worker-manager:",
+    "      host: 127.0.0.1",
+    `      port: ${port + 46023}`,
+    "containers:",
+    "  state:",
+    "    worker: 'package://api.workers.iii.dev/state'",
+    "    version: '0.22.20'",
+    "    config_name: state",
+    "    config_override:",
+    "      adapter:",
+    "        name: kv",
+    "        config:",
+    `          file_path: ${quote(join(data, "state_store.db"))}`,
+    "          store_method: file_based",
+    "          save_interval_ms: 2000",
+    "  http:",
+    "    worker: 'package://api.workers.iii.dev/http'",
+    "    version: '0.22.7'",
+    "    config_name: http",
+    "    config_override:",
+    "      host: 127.0.0.1",
+    `      port: ${port}`,
+    "      default_timeout: 180000",
+    "",
+  ].join("\n");
+  writeFileSync(workerCompose, composeText);
   return p;
 }
 function environment(p) {
@@ -117,8 +152,8 @@ function environment(p) {
     CI: "1", NO_COLOR: "1", LANG: "C.UTF-8", OTEL_ENABLED: "false", III_TELEMETRY_ENABLED: "false",
     AGENTMEMORY_DATA_DIR: p.data, AGENTMEMORY_RUNTIME_DIR: p.runtime,
     ...(p.explicitSecret ? { AGENTMEMORY_SECRET: p.explicitSecret } : {}),
-    III_REST_PORT: String(p.port), III_STREAM_PORT: String(p.port + 1), III_VIEWER_PORT: String(p.port + 2),
-    III_ENGINE_PORT: String(p.port + 3), III_ENGINE_URL: `ws://127.0.0.1:${p.port + 3}`, AGENTMEMORY_METRICS_PORT: String(p.port + 6353),
+    III_REST_PORT: String(p.port), III_VIEWER_PORT: String(p.port + 2),
+    III_ENGINE_PORT: String(p.port + 46023), III_ENGINE_URL: `ws://127.0.0.1:${p.port + 3}`, III_NAMESPACE: `agentmemory-${p.port}`, AGENTMEMORY_METRICS_PORT: String(p.port + 6353),
     LLM_PROVIDER: "none", EMBEDDING_PROVIDER: "none", AGENTMEMORY_GRAPH_WEIGHT: "0.3",
     AGENTMEMORY_GRAPH_COMPACT_ON_BOOT: "true", AGENTMEMORY_AUTO_COMPRESS: "false", AGENTMEMORY_SESSION_SWEEP_ENABLED: "false", AGENTMEMORY_FINALIZE_IDLE_MS: "0",
     GRAPH_EXTRACTION_ENABLED: "false", CONSOLIDATION_ENABLED: "false", AGENTMEMORY_REFLECT: "false",
@@ -180,10 +215,14 @@ async function relay(p) {
   });
 }
 async function startEngine(p, name) {
-  p.engine = launch(p, engine, ["--config", p.config, "--no-update-check"], `${name}-engine`);
-  await poll("native engine", async () => (await fetch(`http://127.0.0.1:${p.port}/`, { signal: AbortSignal.timeout(500) })).status > 0);
   await relay(p);
-  p.client = registerWorker(`ws://127.0.0.1:${p.port + 46023}`, { workerName: `graph-index-fixture-${p.name}`, invocationTimeoutMs: 30_000, enableMetricsReporting: false, otel: { enabled: false } });
+  p.engine = launch(p, engine, ["compose", "--namespace", `agentmemory-${p.port}`, "--up", "--file", join(p.dir, "worker-compose.yaml")], `${name}-compose`);
+  await poll("Compose engine", async () => (await fetch(`http://127.0.0.1:${p.port}/`, { signal: AbortSignal.timeout(500) })).status > 0);
+  p.client = registerWorker(`ws://127.0.0.1:${p.port + 46023}`, { workerName: `graph-index-fixture-${p.name}`, namespace: `agentmemory-${p.port}`, invocationTimeoutMs: 30_000, enableMetricsReporting: false, otel: { enabled: false } });
+  await poll("Compose state worker", async () => {
+    await p.client.trigger({ function_id: "state::get", payload: { scope: scopes.control, key: "current" } });
+    return true;
+  });
 }
 async function startWorker(p, name) {
   p.worker = launch(p, process.execPath, [cli, "--no-engine", "--port", String(p.port), "--data-dir", p.data, ...(p.instance ? ["--instance", String(p.instance)] : [])], name);
@@ -192,7 +231,7 @@ async function startWorker(p, name) {
     if (!p.worker.text.includes("REST API")) return false;
     const value = await rest(p, "/livez"); return value.viewerPort || value.viewerSkipped;
   });
-  p.secret = p.explicitSecret ?? readFileSync(join(p.home, ".agentmemory", "secret"), "utf8").trim();
+  p.secret = p.explicitSecret ?? readFileSync(join(p.runtime, "secret"), "utf8").trim();
 }
 async function start(p, name) { await startEngine(p, name); await startWorker(p, name); }
 async function stop(p, graceful = false) {

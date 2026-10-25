@@ -8,6 +8,7 @@ import {
   probeWorker,
   startWorkerAndWait,
   startupDeadline,
+  managedComposeReadinessUrl,
   startupTimeoutMessage,
   startupTimeouts,
   waitForReadiness,
@@ -73,7 +74,7 @@ describe("startup configuration", () => {
   });
 });
 
-describe("configured worker ownership", () => {
+describe("legacy native-engine worker ownership detection", () => {
   const config = (command: string) => `workers:\n  - name: iii-exec\n    config:\n      exec:\n        - ${command}\n  - name: iii-http\n    config:\n      port: 3111\n`;
   let engineCwd: string;
   let emptyCwd: string;
@@ -155,7 +156,7 @@ describe("configured worker ownership", () => {
   });
 });
 
-describe("readiness deadlines", () => {
+describe("readiness deadlines and legacy native-engine compatibility", () => {
   it("aborts a hung probe at the remaining budget, without a trailing retry sleep", async () => {
     fakeTime();
     let signal: AbortSignal | undefined;
@@ -168,11 +169,46 @@ describe("readiness deadlines", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it("bounds an HTTP probe that ignores the abort signal and retries before the outer startup deadline", async () => {
+    fakeTime();
+    let calls = 0;
+    const neverSettles = new Promise<Response>(() => {});
+    vi.stubGlobal("fetch", vi.fn(() => { calls++; return neverSettles; }));
+    const pending = waitForReadiness(startupDeadline(2500), (signal) => probeWorker("http://local", signal));
+    expect(await advance(pending, 2500)).toBe(false);
+    expect(calls).toBeGreaterThan(1);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("limits each stalled fetch probe so the readiness loop can re-evaluate promptly", async () => {
+    fakeTime();
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn(() => { calls++; return forever<Response>(); }));
+    const pending = waitForReadiness(startupDeadline(5000), (signal) => probeEngine("http://127.0.0.1:3111", signal), { intervalMs: 250, probeTimeoutMs: 750 });
+    expect(await advance(pending, 5000)).toBe(false);
+    expect(calls).toBeGreaterThanOrEqual(5);
+    expect(calls).toBeLessThanOrEqual(6);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("does not route managed Compose readiness through a remote client endpoint", () => {
+    const explicitClientUrl = "http://[::1]:17414";
+    const readyProbeUrl = managedComposeReadinessUrl(17414);
+    expect(readyProbeUrl).not.toBe(explicitClientUrl);
+    expect(readyProbeUrl).toBe("http://127.0.0.1:17414");
+  });
+
+  it("uses the own managed Compose REST endpoint rather than an explicit client URL", () => {
+    expect(managedComposeReadinessUrl(17414)).toBe("http://127.0.0.1:17414");
+    expect(() => managedComposeReadinessUrl(0)).toThrow("Invalid managed Compose REST port");
+    expect(() => managedComposeReadinessUrl(65536)).toThrow("Invalid managed Compose REST port");
+  });
+
   it("caps individual probes and keeps retries within the total budget", async () => {
     fakeTime();
     const probe = vi.fn(() => forever<boolean>());
     expect(await advance(waitForReadiness(startupDeadline(3000), probe), 3000)).toBe(false);
-    expect(probe).toHaveBeenCalledTimes(2);
+    expect(probe).toHaveBeenCalledTimes(3);
     expect(performance.now()).toBe(3000);
     expect(vi.getTimerCount()).toBe(0);
   });
@@ -317,5 +353,12 @@ describe("worker startup ownership", () => {
     fakeTime();
     await expect(startWorkerAndWait(workerOptions({ startWorker: async () => { throw new Error("bad import"); } }))).rejects.toThrow("bad import");
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("managed Compose readiness endpoint", () => {
+  it("does not route startup through a remote URL-client override", () => {
+    expect(managedComposeReadinessUrl(17414)).toBe("http://127.0.0.1:17414");
+    expect(managedComposeReadinessUrl(17414)).not.toBe("http://[::1]:17414");
   });
 });

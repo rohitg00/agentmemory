@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
@@ -61,7 +61,7 @@ function cleanEnv() {
     HOME: home, USERPROFILE: home, PATH: [dirname(process.execPath), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(delimiter),
     TMPDIR: tmpdir(), CI: "1", NO_COLOR: "1", LANG: "C.UTF-8", III_TELEMETRY_ENABLED: "false",
     AGENTMEMORY_DATA_DIR: dataDir, AGENTMEMORY_RUNTIME_DIR: runtime,
-    III_REST_PORT: String(port), III_STREAM_PORT: String(port + 1), III_VIEWER_PORT: String(port + 2),
+    III_REST_PORT: String(port), III_VIEWER_PORT: String(port + 2),
     III_ENGINE_PORT: String(port + 46023), AGENTMEMORY_METRICS_PORT: String(port + 6353), AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
     EMBEDDING_PROVIDER: "none", AGENTMEMORY_AUTO_COMPRESS: "true", AGENTMEMORY_FINALIZE_IDLE_MS: "0",
     AGENTMEMORY_SESSION_SWEEP_ENABLED: "false", GRAPH_EXTRACTION_ENABLED: "false", CONSOLIDATION_ENABLED: "false", AGENTMEMORY_REFLECT: "false",
@@ -199,6 +199,17 @@ function rememberPids() {
       if (Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid) ownedPids.add(pid);
     } catch {}
   }
+  // Process loss takes the whole runtime: Compose, engine and workers. Killing only the
+  // recorded pids left the daemon ports open on macOS CI, so collect the tree explicitly.
+  try {
+    const state = JSON.parse(readFileSync(join(runtime, "engine-state.json"), "utf8"));
+    for (const pid of [state.composePid, state.enginePid]) if (Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid) ownedPids.add(pid);
+  } catch {}
+  try {
+    const rows = execFileSync("ps", ["-eo", "pid=,ppid="], { encoding: "utf8" }).split(/\r?\n/).map((row) => row.trim().split(/\s+/).map(Number)).filter((row) => row.length === 2 && row.every(Number.isFinite));
+    let changed = true;
+    while (changed) { changed = false; for (const [child, parent] of rows) if (ownedPids.has(parent) && !ownedPids.has(child) && child !== process.pid) { ownedPids.add(child); changed = true; } }
+  } catch {}
 }
 async function startDaemon() {
   boot++;

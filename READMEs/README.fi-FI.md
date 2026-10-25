@@ -4,10 +4,9 @@
 
 <p align="center">
   <strong>
-    Koodausagenttisi muistaa kaiken. Ei enää tarvetta selittää asioita uudelleen.
-    Perustuu <a href="https://github.com/iii-hq/iii">iii-moottoriin</a>
+    Pysyvä muisti koodausistuntojen ja agenttien välillä.
   </strong><br/>
-  Pysyvä muisti seuraaville: Claude Code, GitHub Copilot CLI, Cursor, Gemini CLI, Codex CLI, Hermes, OpenClaw, pi, OpenCode ja mikä tahansa MCP-asiakas.
+  Pysyvä muisti seuraaville: Claude Code, GitHub Copilot CLI, Cursor, Gemini CLI, Codex CLI, Hermes, OpenClaw, pi, Oh My Pi, DeepSeek Harness, OpenCode ja mikä tahansa MCP-asiakas.
 </p>
 
 <p align="center">
@@ -63,6 +62,7 @@
   <a href="https://github.com/rohitg00/agentmemory/actions"><img src="https://img.shields.io/github/actions/workflow/status/rohitg00/agentmemory/ci.yml?label=tests&style=for-the-badge&logo=github" alt="CI" /></a>
   <a href="https://github.com/rohitg00/agentmemory/blob/main/LICENSE"><img src="https://img.shields.io/github/license/rohitg00/agentmemory?color=blue&style=for-the-badge" alt="License" /></a>
   <a href="https://github.com/rohitg00/agentmemory/stargazers"><img src="https://img.shields.io/github/stars/rohitg00/agentmemory?style=for-the-badge&color=yellow&logo=github" alt="Stars" /></a>
+  <a href="https://skills.sh/rohitg00/agentmemory"><img src="https://skills.sh/b/rohitg00/agentmemory?style=for-the-badge" alt="skills.sh installs" /></a>
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-työkalua" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automaattista hookia" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 ulkoista tietokantaa" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="3,800+ testiä läpäisty" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ testiä läpäisty" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -87,20 +87,23 @@
   <a href="#how-it-works">Miten se toimii</a> &bull;
   <a href="#mcp-server">MCP</a> &bull;
   <a href="#real-time-viewer">Katseluohjelma</a> &bull;
-  <a href="#powered-by-iii">iii:n voimalla</a> &bull;
   <a href="#configuration">Asetukset</a> &bull;
   <a href="#api">API</a>
 </p>
 
 ---
 
+AgentMemory tallentaa tuetut istuntotapahtumat ja tekee päätöksistä, korjauksista ja opeista haettavia eri agenteille. Viewerissa voit tarkastella, muokata, viedä ja poistaa muistoja. Avainsanahaku toimii ilman API-avainta; upotukset lisäävät semanttisen haun.
+
+<a id="install"></a>
+
 ## Asennus
 
 Vaatimukset:
 
 - Node.js 20 tai uudempi, mukana npm ja npx (`node -v`, `npm -v` ja `npx -v`).
-- macOS/Linux-automaattiasennus iii-moottorille vaatii lisäksi `curl`:n, POSIX-yhteensopivan `sh`:n ja `tar`:n. Minimaaliset levykuvat kuten `node:20-slim` eivät välttämättä sisällä niitä.
-- Natiivi Windows vaatii kiinnitetyn iii-engine v0.22.1 -version `iii.exe`-tiedoston asentamista käsin. WSL2 tai Docker Desktop ovat muut tuetut reitit.
+- macOS/Linux tarvitsevat myös `curl`-, POSIX `sh`- ja `tar`-työkalut ympäristön automaattiseen asennukseen.
+- Käytä Windowsissa WSL2:ta tai [natiivin Windowsin ohjetta](#windows).
 
 Kanoninen tuore asennuskomento:
 
@@ -108,11 +111,11 @@ Kanoninen tuore asennuskomento:
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Ensimmäinen käynnistys on vuorovaikutteinen asetusvaihe: valitse kytkettävät agentit (Claude Code, Cursor, Codex, Gemini CLI, OpenCode, ...), valitse LLM-tarjoaja tai pysy avaimettomana, ja se alustaa asetukset, käynnistää muistipalvelimen ja sen kiinnitetyn iii-moottorin, ja tarjoutuu asentamaan itsensä globaalisti, jotta paljas `agentmemory`-komento toimii myöhemmin kaikkialla. `-y` hyväksyy npx:n pakettikehotteen ja `@latest` välttää vanhentuneen välimuistiin jääneen julkaisun. Tarjoaja tekee LLM-ominaisuudet käytettäväksi, mutta LLM:n kirjoittama havaintojen pakkaus käynnistyy vain, kun myös `AGENTMEMORY_AUTO_COMPRESS=true` on asetettu.
+Valitse agentit ja palveluntarjoaja tai avaimeton tila. Ohjattu asennus tallentaa asetukset, käynnistää muistipalvelimen ja tarjoaa `agentmemory`-komennon globaalin asennuksen. `-y` hyväksyy npm-kehotteen; `@latest` valitsee nykyisen julkaisun. LLM-pakkaus edellyttää palveluntarjoajaa ja asetusta `AGENTMEMORY_AUTO_COMPRESS=true`.
 
 Avaimeton tila poistaa vektoriupotukset käytöstä. `memory_recall` (`mem::search`-reitti) käyttää BM25:tä, kun taas `memory_smart_search` voi myös yhdistää rakenteellisia graafiosumia, kun graafidataa on jo olemassa. Saadaksesi ilmaisen, laitteella toimivan semanttisen muistinhaun, aseta `EMBEDDING_PROVIDER=local` tiedostoon `~/.agentmemory/.env` ja käynnistä uudelleen. Ensimmäinen upotuspyyntö lataa mallin `Xenova/all-MiniLM-L6-v2`; päättely toimii sen jälkeen paikallisesti.
 
-Paikallinen ajonaikainen ympäristö käyttää neljää porttia: `3111` REST/MCP HTTP:lle, `3112` iii-streameille, `3113` katseluohjelmalle ja `49134` iii-workerin WebSocketille. Pysyvä iii-tila sijaitsee polussa `~/Library/Application Support/agentmemory` macOS:llä, `$XDG_DATA_HOME/agentmemory` tai `~/.local/share/agentmemory` Linuxilla ja `%APPDATA%\agentmemory` Windowsilla. Käytä `--data-dir <polku>` -valitsinta tai `AGENTMEMORY_DATA_DIR`-muuttujaa ylikirjoittaaksesi tämän, ja käytä samaa arvoa jokaisella uudelleenkäynnistyksellä. Taustayhteensopivuuden vuoksi olemassa oleva `./data/state_store.db` tai `./data/iii-config.yaml` ajaa instanssin 0 kohdalla alustan oletuksen edelle; nimenomainen lippu tai ympäristömuuttuja voittaa edelleen.
+API toimii osoitteessa `http://localhost:3111` ja viewer osoitteessa `http://localhost:3113`. Molemmat kuuntelevat oletuksena vain paikallisesti. Asetukset ovat tiedostossa `~/.agentmemory/.env`; [tietojen tallennus](#data-storage) kuvaa hakemistot ja erilliset instanssit.
 
 Todista sitten, että muistin palauttaminen toimii, ja anna agentillesi sen taidot:
 
@@ -127,14 +130,7 @@ Haluatko antaa koodausagentin hoitaa koko homman? Anna sille yksi ohje:
 
 > Retrieve and follow the instructions at: https://raw.githubusercontent.com/rohitg00/agentmemory/main/INSTALL_FOR_AGENTS.md
 
-Kytke lisää agentteja milloin tahansa komennolla `agentmemory connect <agent>` — 20 sovitinta listattuna kohdassa [Toimii jokaisen agentin kanssa](#works-with-every-agent). Täysi komentoviite kohdassa [Pika-aloitus](#quick-start).
-
-<details>
-<summary><strong>Windows</strong></summary>
-
-Nopein reitti on WSL2. Natiivi Windows-moottorin asennus vaatii kiinnitetyn v0.22.1-ZIP-paketin latauksen ja `iii.exe`:n purkamisen käsin; CLI ei pura sitä automaattisesti. Docker Desktop on myös tuettu. Katso [Windows-huomautukset](#windows) vaihe vaiheelta.
-
-</details>
+Yhdistä toinen agentti komennolla `agentmemory connect <agent>`. Katso [integraatiot](#works-with-every-agent) ja [päivittäiset komennot](#everyday-commands).
 
 <details>
 <summary><strong>Globaali asennus / EACCES</strong></summary>
@@ -151,13 +147,6 @@ Yllä oleva npx-komento pysyy kanonisena tuoreena asennusreittinä ja välttää
 <summary><strong>npx tarjoaa vanhan version</strong></summary>
 
 npx käyttää välimuistia versioittain. Pakota uusin versio komennolla `npx -y @agentmemory/agentmemory@latest`, tai tyhjennä välimuisti kerran komennolla `rm -rf ~/.npm/_npx` (macOS/Linux; Windowsilla poista `%LOCALAPPDATA%\npm-cache\_npx`).
-
-</details>
-
-<details>
-<summary><strong>Oma iii-moottori on jo käynnissä</strong></summary>
-
-agentmemory kiinnittää iii-engine-version v0.22.1:een ja ei liity eri versioon (worker ei osaa puhua toisen moottorin protokollaa). Pysäytä toinen moottori ja aja sitten `npx -y @agentmemory/agentmemory@latest`. Se asentaa ja ajaa kiinnitetyn v0.22.1-version polussa `~/.agentmemory/bin`, jättäen oman `iii`-asennuksesi koskemattomaksi.
 
 </details>
 
@@ -187,7 +176,7 @@ agentmemory toimii jokaisen agentin kanssa, joka tukee hookeja, MCP:tä tai REST
 <td align="center" width="20%">
 <a href="https://cursor.com"><picture><source media="(prefers-color-scheme: dark)" srcset="https://svgl.app/library/cursor_dark.svg"><img src="https://svgl.app/library/cursor_light.svg" alt="Cursor" width="48" height="48" /></picture></a><br/>
 <strong>Cursor</strong><br/>
-<sub>natiivi plugin + 7 hookia + MCP</sub>
+<sub>natiivi plugin + elinkaarihookit + MCP</sub>
 </td>
 <td align="center" width="20%">
 <a href="../plugin/opencode/"><img src="https://raw.githubusercontent.com/rohitg00/agentmemory/main/website/public/opencode.png" alt="OpenCode" width="48" height="48" /></a><br/>
@@ -214,7 +203,7 @@ agentmemory toimii jokaisen agentin kanssa, joka tukee hookeja, MCP:tä tai REST
 <td align="center" width="20%">
 <a href="../integrations/pi/"><img src="../assets/agents/pi.svg" alt="pi" width="48" height="48" /></a><br/>
 <strong>pi</strong><br/>
-<sub>natiivi plugin + MCP</sub>
+<sub>natiivi muistihaku + tallennus + taidot</sub>
 </td>
 <td align="center" width="20%">
 <a href="https://github.com/tinyhumansai/openhuman"><img src="https://github.com/tinyhumansai.png?size=120" alt="OpenHuman" width="48" height="48" /></a><br/>
@@ -280,7 +269,7 @@ agentmemory toimii jokaisen agentin kanssa, joka tukee hookeja, MCP:tä tai REST
 <td align="center" width="20%">
 <a href="https://github.com/deepseek-ai/deepseek-harness"><img src="https://svgl.app/library/deepseek.svg" alt="DeepSeek Harness" width="48" height="48" /></a><br/>
 <strong>DeepSeek Harness</strong><br/>
-<sub>MCP-palvelin</sub>
+<sub>natiivi tallennus + MCP</sub>
 </td>
 <td align="center" width="20%">
 <a href="https://github.com/RooCodeInc/Roo-Code"><img src="https://github.com/RooCodeInc.png?size=120" alt="Roo Code" width="48" height="48" /></a><br/>
@@ -303,6 +292,12 @@ agentmemory toimii jokaisen agentin kanssa, joka tukee hookeja, MCP:tä tai REST
 <sub>REST-rajapinta</sub>
 </td>
 </tr>
+<tr>
+<td align="center" colspan="5">
+<a href="../integrations/omp/"><strong>Oh My Pi</strong></a><br/>
+<sub>natiivi muistihaku + tallennus + taidot + valinnainen MCP</sub>
+</td>
+</tr>
 </table>
 
 <p align="center">
@@ -311,22 +306,26 @@ agentmemory toimii jokaisen agentin kanssa, joka tukee hookeja, MCP:tä tai REST
 
 ---
 
-Selität saman arkkitehtuurin joka istunnossa. Löydät uudelleen samat bugit. Opetat uudelleen samat mieltymykset. Sisäänrakennettu muisti (CLAUDE.md, .cursorrules) tukkeutuu 200 riviin ja vanhenee. agentmemory korjaa tämän. Se tallentaa huomaamattomasti, mitä agenttisi tekee, pakkaa sen hakukelpoiseksi muistiksi ja syöttää oikean kontekstin, kun seuraava istunto alkaa. Yksi komento. Toimii agenttien välillä.
+<a id="data-storage"></a>
 
-**Mikä muuttuu:** Istunnossa 1 otat käyttöön JWT-autentikoinnin. Istunnossa 2 pyydät rate limitingiä. Agentti tietää jo, että autentikointisi käyttää jose-middlewarea tiedostossa `src/middleware/auth.ts`, että testisi kattavat tokenin validoinnin, ja että valitsit josen jsonwebtokenin sijaan Edge-yhteensopivuuden vuoksi — ei tarvetta selittää uudelleen eikä kopioi-liitä-työtä.
+### Tietojen tallennus
+
+Muistot tallennetaan oletuksena repositorion ulkopuolelle:
+
+| Alusta | Datahakemisto |
+|---|---|
+| macOS | `~/Library/Application Support/agentmemory` |
+| Linux | `$XDG_DATA_HOME/agentmemory` / `~/.local/share/agentmemory` |
+| Windows | `%APPDATA%\agentmemory` |
+
+Instanssi 0 käyttää olemassa olevaa `./data/state_store.db`-tallennusta. Valitse toinen hakemisto valinnalla `--data-dir <path>` tai muuttujalla `AGENTMEMORY_DATA_DIR`. Säilytä sama hakemisto uudelleenkäynnistyksissä ja päivityksissä.
 
 ```bash
-npx -y @agentmemory/agentmemory@latest
+agentmemory --data-dir ~/.agentmemory-projects/main
+agentmemory --instance 1
 ```
 
-Oletuksena agentmemory tallentaa iii-moottorin tilan sen repositorion ulkopuolelle, josta se käynnistetään: `~/Library/Application Support/agentmemory` macOS:llä, `$XDG_DATA_HOME/agentmemory` tai `~/.local/share/agentmemory` Linuxilla ja `%APPDATA%\agentmemory` Windowsilla. Olemassa oleva vanha `./data/state_store.db` tai `./data/iii-config.yaml` käytetään uudelleen instanssille 0 ennen tätä alustan oletusta. Valitaksesi sijainnin nimenomaisesti, välitä `--data-dir <polku>` tai aseta `AGENTMEMORY_DATA_DIR`; kumpi tahansa nimenomainen asetus ajaa vanhan tunnistuksen edelle:
-
-```bash
-npx -y @agentmemory/agentmemory@latest --data-dir ~/.agentmemory-projects/main
-AGENTMEMORY_DATA_DIR=~/.agentmemory-projects/main npx -y @agentmemory/agentmemory@latest
-```
-
-Natiivi- ja Docker-käynnistykset käyttävät samaa ratkaistua isäntähakemistoa; Docker liittää sen pisteeseen `/data`. `--instance 1` liittää `instance-1`-hakemiston ratkaistuun hakemistoon ja valitsee erillisen oletusporttineljännyksen `3211/3212/3213/49234`.
+`--instance 1` käyttää alihakemistoa `instance-1`, API-porttia `3211` ja viewer-porttia `3213`. Redis ja siirrot kuvataan [tallennus- ja varmuuskopiointioppaassa](../docs/reliability/state-storage.md).
 
 Uusimmat julkaisutiedot: [CHANGELOG.md](../CHANGELOG.md).
 
@@ -476,7 +475,7 @@ Uusimmat julkaisutiedot: [CHANGELOG.md](../CHANGELOG.md).
 </tr>
 <tr>
 <td><strong>Ulkoiset riippuvuudet</strong></td>
-<td>Ei mitään (SQLite + iii-engine)</td>
+<td>Erillistä tietokantapalvelua ei tarvita</td>
 <td>Qdrant / pgvector</td>
 <td>Postgres + vektoritietokanta</td>
 <td>Useita</td>
@@ -550,13 +549,11 @@ Uusimmat julkaisutiedot: [CHANGELOG.md](../CHANGELOG.md).
 | Zep / Graphiti | 30K | Temporaalinen tietograafi; vahvimmat julkaistut temporaalikyselytulokset (LongMemEval 63.8%), mutta graafi rakentuu asynkronisesti, jolloin tuoreet faktat voivat viivästyä |
 | Cognee | 30K | Dokumentista tietograafiksi -tuonti, vain Python, rakennettu rakenteelliseen entiteettipoimintaan istuntotallennuksen sijaan |
 
-Mikään näistä ei tallenna automaattisesti koodausagenttien hookeista, toimita paikallista katseluohjelmaa tai toimi avaimetta — yhdistelmä, jonka ympärille agentmemory on rakennettu.
+AgentMemory yhdistää istuntojen tallennuksen, haettavan projektihistorian ja paikallisen viewerin; avaimeton käyttö toimii ensimmäisestä käynnistyksestä.
 
 ---
 
 <h2 id="quick-start"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-quickstart.svg"><img src="../assets/tags/section-quickstart.svg" alt="Pika-aloitus" height="32" /></picture></h2>
-
-Yhteensopivuus: tämä julkaisu kohdistuu `iii-sdk`-versioon 0.22.1 ja kiinnittää iii-engine-version v0.22.1.
 
 ### Kokeile 30 sekunnissa
 
@@ -572,9 +569,11 @@ npx -y @agentmemory/agentmemory@latest demo
 
 Avaa `http://localhost:3113` nähdäksesi muistin rakentuvan reaaliajassa.
 
+<a id="validate-a-fresh-install-and-restart-persistence"></a>
+
 ### Vahvista tuore asennus ja uudelleenkäynnistyksen pysyvyys
 
-Kun palvelin on käynnissä, vahvista REST, health, katseluohjelma ja iii-pohjaisen ajonaikaisen ympäristön tila:
+Tarkista käynnissä olevan palvelimen terveys, viewer ja tila:
 
 ```bash
 curl -fsS http://localhost:3111/agentmemory/livez
@@ -583,19 +582,26 @@ curl -fsS -o /dev/null http://localhost:3113/
 npx -y @agentmemory/agentmemory@latest status
 ```
 
-Käynnistyksen valmiuspaneeli huomioi kaikki neljä porttia: REST/MCP HTTP portissa 3111, iii-streamit portissa 3112, katseluohjelma portissa 3113 ja iii-workerin WebSocket portissa 49134. `status` vahvistaa agentmemoryn terveyden ja aktiivisen tarjoaja-/upotustilan. Tallenna koetin ja vahvista, että se on hakukelpoinen:
+`status` näyttää palvelimen tilan, palveluntarjoajat, upotustilan, havaintojen toimituksen ja palautumisen. Suojatut REST-pyynnöt tarvitsevat palvelimen salaisuuden. Käytä omaa `AGENTMEMORY_SECRET`-arvoa, jos se on asetettu; muutoin lue luotu paikallinen salaisuus:
 
 ```bash
+# Default generated local secret. For an explicit AGENTMEMORY_SECRET, use that value instead.
+read -r AGENTMEMORY_SECRET < "$HOME/.agentmemory/secret"
+
 curl -fsS -X POST http://localhost:3111/agentmemory/remember \
+  -H "Authorization: Bearer $AGENTMEMORY_SECRET" \
   -H 'Content-Type: application/json' \
   -d '{"content":"agentmemory restart persistence probe","concepts":["install-check"]}'
 
 curl -fsS -X POST http://localhost:3111/agentmemory/smart-search \
+  -H "Authorization: Bearer $AGENTMEMORY_SECRET" \
   -H 'Content-Type: application/json' \
   -d '{"query":"restart persistence probe","limit":5}'
 ```
 
 Aja sitten `npx -y @agentmemory/agentmemory@latest stop`, käynnistä kanoninen komento uudelleen Terminaalissa 1, odota `/agentmemory/livez`-vastausta ja toista haku. Koettimen on edelleen tultava takaisin. Jos valitsit mukautetun `--data-dir`-arvon, välitä sama hakemisto uudelleenkäynnistyksessä.
+
+<a id="everyday-commands"></a>
 
 ### Päivittäiset komennot
 
@@ -604,6 +610,9 @@ Asennus ja käyttöönotto löytyvät yllä kohdasta [Asennus](#install) (ensimm
 ```bash
 agentmemory                    # start the server
 agentmemory stop               # stop it cleanly
+agentmemory status
+agentmemory capture
+agentmemory capture --drain
 agentmemory connect <agent>    # wire another agent
 agentmemory doctor             # interactive diagnostics + fix prompts
 agentmemory remove             # uninstall everything we created
@@ -623,7 +632,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl
 npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-project/abc123.jsonl
 ```
 
-Tuodut istunnot näkyvät Replay-valitsimessa natiivien istuntojen rinnalla. Konepellin alla kukin merkintä kulkee funktioiden `mem::replay::load`, `mem::replay::sessions` ja `mem::replay::import-jsonl` läpi, ei sivukanavapalvelimia. Jokainen tuotu transkriptio indeksoidään hakua varten, leimataan alkuperäkanavalla `import` ja louhitaan istuntokristalliksi ja opetuksiksi.
+Tuodut istunnot näkyvät Replay-näkymässä natiivien rinnalla. Litteroinnit indeksoidaan ja merkitään alkuperäkanavalla `import`; käsittely voi tuottaa myös istuntokiteitä ja oppeja.
 
 > **Huomio, jos nojaat `import-jsonl`-komentoon ensisijaisena tallennusreittinä:** Claude Coden `cleanupPeriodDays` (tiedostossa `~/.claude/settings.json`, oletus **30**) poistaa automaattisesti JSONL-transkriptiot, jotka ovat vanhempia kuin tämä ikkuna, kansiosta `~/.claude/projects/`. Jos asennat agentmemoryn tuoreena useita kuukausia vanhan Claude Code -historian päälle, kaikki 30 päivää vanhempi on jo poissa ennen ensimmäistä tuontia. Aja `import-jsonl` cron-ajastettuna, nosta `cleanupPeriodDays`-arvoa korkeammaksi, tai kytke automaattitallennushookit (oletusarvoinen plugin-asennusreitti), jotta jokainen vuoro päätyy agentmemoryyn istunnon ollessa käynnissä ja JSONL-siivous lakkaa merkitsemästä.
 
@@ -635,14 +644,12 @@ Käytä ylläpitokomentoa, kun haluat tarkoituksella päivittää paikallisen aj
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Varoitus: tämä komento muuttaa nykyistä työtilaa/ajonaikaista ympäristöä. Se voi päivittää JavaScript-riippuvuuksia ja hakea kiinnitetyn `iiidev/iii:0.22.1`-Docker-imagen. Se ei koskaan asenna kiinnittämätöntä tai uudempaa iii-moottoria.
-
-Toteutuksen yksityiskohdat löytyvät tiedostosta `src/cli.ts` (katso `runUpgrade` alueen `src/cli.ts:544-595` kohdalla).
+Komento päivittää paikallisen ympäristön ja voi muuttaa työtilan JavaScript-riippuvuuksia. Varmuuskopioi tiedot ja lue [päivitysopas](../docs/upgrades/iii-0.25.md).
 
 ### Claude Code (yksi lohko, liitä se)
 
 ```text
-Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server and its pinned iii engine. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113. Keyless mode disables vectors: `memory_recall` uses BM25, and `memory_smart_search` can also use existing structural graph data. Set `EMBEDDING_PROVIDER=local` in `~/.agentmemory/.env` and restart to opt into on-device semantic recall.
+Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server. Then run `/plugin marketplace add rohitg00/agentmemory` and `/plugin install agentmemory` — the plugin registers all 12 hooks, 17 skills, AND auto-wires the `@agentmemory/mcp` stdio server via its `.mcp.json`, so you get 54 MCP tools (memory_smart_search, memory_save, memory_sessions, memory_governance_delete, etc.) without any extra config step. Verify with `curl http://localhost:3111/agentmemory/health`. The real-time viewer is at http://localhost:3113. Keyless mode disables vectors: `memory_recall` uses BM25, and `memory_smart_search` can also use existing structural graph data. Set `EMBEDDING_PROVIDER=local` in `~/.agentmemory/.env` and restart to opt into on-device semantic recall.
 ```
 
 #### Claude Code ilman pluginin asennusta (itsenäinen MCP-reitti)
@@ -703,11 +710,35 @@ copilot plugin install rohitg00/agentmemory:plugin
 
 `agentmemory connect copilot-cli` yhdistää `mcpServers.agentmemory`-merkinnän tiedostoon `~/.copilot/mcp-config.json` (tai `$COPILOT_HOME/mcp-config.json`, kun `COPILOT_HOME` on asetettu) ja säilyttää olemassa olevat palvelimet. Natiivilla Windowsilla tämä on ainoa automatisoitu `connect`-sovitin; määritä kaikki muut natiivit Windows-agentit käsin. WSL `connect` on soveltuva vain, kun kohdeagentti on asennettu samaan WSL-ympäristöön. Copilot ottaa MCP-palvelimen käyttöön seuraavalla käynnistyksellä tai `/mcp`-komennon jälkeen. Asenna myös plugin, kun haluat täyden hook-/taito-kokemuksen.
 
+### Cursor
+
+```bash
+agentmemory connect cursor
+```
+
+Valitse sitten **Settings → Plugins → Add marketplace** -kohdassa agentmemory-hakemisto, joka sisältää `.cursor-plugin/plugin.json`-tiedoston. Ota **agentmemory**-plugin käyttöön ja lataa ikkuna uudelleen. Plugin tarjoaa elinkaaren tallennuksen, työtilaan perustuvan projektin tunnistuksen, taidot ja MCP:n. Käytä joko pluginin hookeja tai manuaalisia hookeja tiedostossa `~/.cursor/hooks.json`, jotta tapahtumat eivät tallennu kahdesti.
+
+[Cursor](../integrations/cursor/)
+
+### Pi, Oh My Pi, DeepSeek Harness
+
+```bash
+agentmemory connect pi --with-mcp
+agentmemory connect omp --with-mcp
+agentmemory connect dsh --with-hooks
+```
+
+Valitse oman ohjelmasi komento. Pi ja OMP asentavat natiivin muistihaun, tallennuksen, offline-uudelleenlähetyksen ja taidot; `--with-mcp` lisää kaikki työkalut. Suorita Pi:ssä `/reload` tai käynnistä OMP uudelleen ja tarkista `/agentmemory-status`. DSH asentaa MCP:n ja mukana toimitetun tallennuspluginin; käynnistä DSH uudelleen yhdistämisen jälkeen.
+
+Pi tukee myös asennettavaa `@agentmemory/pi`-pakettia. Paikallinen asennus ja npm-saatavuus kuvataan [Pi-oppaassa](../integrations/pi/). Käytä ohjelmaa kohti vain yhtä asennustapaa.
+
+[Pi](../integrations/pi/) · [Oh My Pi](../integrations/omp/) · [DSH](../docs/dsh.md)
+
 <details>
 <summary><b>OpenClaw (liitä tämä kehote)</b></summary>
 
 ```text
-Install agentmemory for OpenClaw. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 54 memory tools:
+Asenna agentmemory OpenClawille. Käynnistä muistipalvelin portissa localhost:3111 suorittamalla komento `npx -y @agentmemory/agentmemory@latest` erillisessä terminaalissa. Lisää sitten tämä OpenClawin MCP-asetuksiin, jotta kaikki agentmemoryn 54 muistityökalua ovat käytettävissä:
 
 {
   "mcpServers": {
@@ -721,7 +752,7 @@ Install agentmemory for OpenClaw. Run `npx -y @agentmemory/agentmemory@latest` i
   }
 }
 
-Restart OpenClaw. Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper memory-slot integration, copy `integrations/openclaw` to `~/.openclaw/extensions/agentmemory` and enable `plugins.slots.memory = "agentmemory"` in `~/.openclaw/openclaw.json`.
+Käynnistä OpenClaw uudelleen. Vahvista toiminta komennolla `curl http://localhost:3111/agentmemory/health`. Avaa reaaliaikainen katseluohjelma osoitteessa http://localhost:3113. Syvempää muistipaikkaintegraatiota varten kopioi `integrations/openclaw` polkuun `~/.openclaw/extensions/agentmemory` ja ota käyttöön `plugins.slots.memory = "agentmemory"` tiedostossa `~/.openclaw/openclaw.json`.
 ```
 
 Täysi opas: [`integrations/openclaw/`](../integrations/openclaw/)
@@ -732,7 +763,7 @@ Täysi opas: [`integrations/openclaw/`](../integrations/openclaw/)
 <summary><b>Hermes Agent (liitä tämä kehote)</b></summary>
 
 ```text
-Install agentmemory for Hermes. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 54 memory tools:
+Asenna agentmemory Hermesille. Käynnistä muistipalvelin portissa localhost:3111 suorittamalla komento `npx -y @agentmemory/agentmemory@latest` erillisessä terminaalissa. Lisää sitten tämä tiedostoon ~/.hermes/config.yaml, jotta Hermes voi käyttää agentmemorya MCP-palvelimena ja sen 54 muistityökalua:
 
 mcp_servers:
   agentmemory:
@@ -742,12 +773,14 @@ mcp_servers:
 memory:
   provider: agentmemory
 
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+Vahvista toiminta komennolla `curl http://localhost:3111/agentmemory/health`. Avaa reaaliaikainen katseluohjelma osoitteessa http://localhost:3113. Syvempää kuuden hookin muistitarjoajaintegraatiota varten (kontekstin lisäys ennen LLM:ää, vuoron tallennus, MEMORY.md-peilaus ja järjestelmäkehotteen lohko) kopioi integrations/hermes agentmemory-repositoriosta polkuun ~/.hermes/plugins/agentmemory.
 ```
 
 Täysi opas: [`integrations/hermes/`](../integrations/hermes/)
 
 </details>
+
+<a id="other-agents"></a>
 
 ### Muut agentit
 
@@ -763,10 +796,10 @@ npx skills add rohitg00/agentmemory -y -a warp  # explicit agent
 npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed agent
 ```
 
-Tämä on **täydentävä** komennolle `agentmemory connect <agent>`:
+Tämä täydentää komentoa `agentmemory connect <agent>`:
 
-- `agentmemory connect <agent>` kirjoittaa MCP-palvelimen asetukset, jotta työkalut ovat käytettävissä.
-- `npx skills add rohitg00/agentmemory` asentaa taidot, jotta agentti tietää, milloin kutsua niitä.
+- `agentmemory connect <agent>` kirjoittaa tavallisesti MCP-asetukset. Hermes, OpenClaw, Pi ja Oh My Pi asentavat oletuksena natiivin integraation ja taidot; MCP otetaan käyttöön valinnalla `--with-mcp`.
+- `npx skills add rohitg00/agentmemory` asentaa taidot agenteille, joilla ei ole mukana tulevia natiiveja taitoja. Ohita tämä vaihe Hermesin, OpenClaw’n, Pi:n ja Oh My Pi:n kohdalla; niiden liittimet asentavat taidot jo.
 
 Niille harvoille agenteille, joita skills-CLI ei vielä kata (Zed v1.3.x ja vanhemmat), pudota 17 SKILL.md-tiedostoa agentin natiiviin taitohakemistoon itse; sama formaatti toimii kaikkialla.
 
@@ -790,7 +823,7 @@ agentmemory-merkintä on **sama MCP-palvelinlohko** jokaisessa isännässä, jok
 | Agentti | Asetustiedosto | Huomautuksia |
 |---|---|---|
 | **Cursor (vain MCP)** | `~/.cursor/mcp.json` | Yhdistä `mcpServers`-objektiin, tai `agentmemory connect cursor`. Yhden klikkauksen deeplink saatavilla myös sivustolla. |
-| **Cursor (täysi plugin)** | `.cursor-plugin/` | Cursor Marketplace -listaus (hakemus katselmoinnissa) tai Cursor Settings → Plugins → paikallinen checkout. Rekisteröi 7 automaattitallennushookia (sessionStart, beforeSubmitPrompt, preToolUse, postToolUse, postToolUseFailure, stop, sessionEnd) + 17 taitoa + MCP-palvelimen, ja `AGENTMEMORY_URL`/`AGENTMEMORY_SECRET` hallitaan Cursorin plugin-kojelaudalla. Toimii Cursor IDE:ssä ja `cursor-agent`-CLI:ssä; CLI:n print-tilan kehotteet täydennetään jälkikäteen istunnon transkriptiosta istunnon päättyessä. |
+| **Cursor (täysi plugin)** | `.cursor-plugin/` | Plugin tarjoaa elinkaarihookit, työtilan tunnistuksen, taidot ja MCP:n Cursor IDE:ssä ja `cursor-agent`-ohjelmassa. Katso [Cursorin asennus](#cursor). |
 | **Claude Desktop** | `claude_desktop_config.json` (Application Support) | Yhdistä `mcpServers`-objektiin. Käynnistä Claude Desktop uudelleen muokkauksen jälkeen. |
 | **Cline / Roo Code / Kilo Code** | Clinen MCP-asetukset (Settings-käyttöliittymä → MCP Servers → Edit) | Sama `mcpServers`-lohko. |
 | **Devin CLI (MCP + hookit)** | `~/.config/devin/config.json` | `agentmemory connect devin` yhdistää MCP-merkinnän; `--with-hooks` lisää kuusi natiivia automaattitallennushookia (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop, SessionEnd) Devinin pienaakkosisilla työkalusovittimilla. Vahvista komennolla `devin mcp list` ja `/hooks` devinin sisällä. |
@@ -804,7 +837,8 @@ agentmemory-merkintä on **sama MCP-palvelinlohko** jokaisessa isännässä, jok
 | **Codex CLI (täysi plugin)** | Codexin plugin-markkinapaikka | `codex plugin marketplace add rohitg00/agentmemory`, sitten `codex plugin add agentmemory@agentmemory`. Rekisteröi MCP + 6 elinkaarihookia + 17 taitoa. Luota hookeihin ja varmista tallennus isännässäsi; katso [Codexin asennus ja validointi](../docs/plugins/codex-local.md). |
 | **OpenCode (vain MCP)** | `opencode.json` | Eri muoto: ylätason `mcp`-avain, komento taulukkona: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (täysi plugin)** | `plugin/opencode/` | 22 automaattitallennushookia kattaen istunnon elinkaaren, viestit, työkalut ja virheet. Projektiattribuutio on istuntokohtainen, niin yksi OpenCode-prosessi, joka kattaa useita repositorioita, tallentaa jokaisen istunnon oman projektinsa alle. Kaksi pikakomentoa (`/recall`, `/remember`). Kopioi `plugin/opencode/` OpenCode-työtilaasi ja lisää plugin-merkintä tiedostoon `opencode.json`. Katso [`plugin/opencode/README.md`](../plugin/opencode/README.md) täydelle hook-taulukolle + puuteanalyysille. |
-| **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi` asentaa mukana tulevan laajennuksen pi:n automaattisen tunnistuksen hakemistoon (palautus agentin käynnistyessä, tallennus agentin päättyessä, `memory_search`/`memory_save`/`memory_health`-työkalut, `/agentmemory-status`). `/reload` käynnissä olevassa pi:ssä ottaa sen käyttöön. [`integrations/pi`](../integrations/pi/) on myös pi-paketti (`pi install ./integrations/pi` checkoutista). |
+| **pi** | `~/.pi/agent/extensions/agentmemory` | `agentmemory connect pi --with-mcp`. natiivi muistihaku + tallennus + taidot. `/reload`, `/agentmemory-status`. [Pi](../integrations/pi/). |
+| **Oh My Pi** | `~/.omp/agent` | `agentmemory connect omp --with-mcp`. natiivi muistihaku + tallennus + taidot. [Oh My Pi](../integrations/omp/). |
 | **Hermes Agent** | `~/.hermes/config.yaml` | `cp -r integrations/hermes ~/.hermes/plugins/agentmemory` + `memory.provider: agentmemory` antaa 6-hookisen muistitarjoajan (esihaku, vuoron tallennus, istunnon päättyminen, esipakkaus, MEMORY.md-peilaus, system prompt -lohko). Vahvista komennoilla `hermes plugins doctor` ja `hermes memory status`. Katso [`integrations/hermes`](../integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` kirjoittaa standardin `mcpServers`-lohkon. Hook-hyötykuorma on kenttätasolla yhteensopiva Claude Coden kanssa, niin olemassa olevat 12-hookin skriptit toimivat muokkaamatta; kytke ne `hooks`-osiossa samassa `settings.json`-tiedostossa. |
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` asentaa MCP:n ja tallennushookit jaettuun mukautushakemistoon. Katso [Antigravityn asennus ja rajoitukset](../docs/plugins/antigravity.md). |
@@ -812,39 +846,19 @@ agentmemory-merkintä on **sama MCP-palvelinlohko** jokaisessa isännässä, jok
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` kirjoittaa käyttäjätason asetukset. Työtilakohtaiset ylikirjoitukset menevät tiedostoon `.kiro/settings/mcp.json` koodisi vierelle. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` kirjoittaa standardin `mcpServers`-lohkon. Warp myös tunnistaa automaattisesti taidot kansiosta `.claude/skills/`; kun Claude Code -plugin on asennettu, 8 agentmemory-taitoa (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) näkyvät natiivisti Warpin pikakomentopaletissa. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` kirjoittaa standardin `mcpServers`-lohkon. VS Code -laajennuksen käyttäjät: liitä sama lohko Cline Settings → MCP Servers → Edit JSON -kautta. |
-| **Continue.dev** | `~/.continue/config.yaml` (suositeltu) tai `config.json` (vanha) | `agentmemory connect continue` luo tiedoston `config.yaml` tyhjästä, kun kumpaakaan ei ole, tai muokkaa olemassa olevaa `config.json`-tiedostoa. **Jos sinulla on jo `config.yaml`**, sovitin tulostaa tarkan lohkon liitettäväksi `mcpServers:`-kohtaan; se ei hiljaa uudelleenkirjoita yamliasi, koska kommenttien ja ankkureiden turvallinen säilyttäminen vaatisi YAML-jäsentimen, jota paketti ei toimita. Continue käyttää taulukkomuotoa (ei objektia) `mcpServers`-kentälle. |
+| **Continue.dev** | `~/.continue/config.yaml` (suositeltu) tai `config.json` (vanha) | `agentmemory connect continue` luo `config.yaml`-tiedoston, jos asetuksia ei ole, tai muokkaa olemassa olevaa `config.json`-tiedostoa. Olemassa olevan YAML:n tapauksessa se tulostaa lisättävän `mcpServers:`-lohkon säilyttääkseen kommentit ja ankkurit. Continue käyttää taulukkoa, ei objektia. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` kirjoittaa avaimen `context_servers` alle (Zedin avain, EI `mcpServers`). Etä-MCP-palvelimet voidaan kytkeä myös muodolla `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` kirjoittaa standardin `mcpServers`-lohkon. Projektikohtaiset ylikirjoitukset menevät tiedostoon `<repo>/.factory/mcp.json`. Välitä `--with-hooks` natiivia automaattitallennusta varten. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` lisää `@deepseek-ai/dsh-mcp-client`-rivin kotihakemistotason patch-kerrokseen, jonka joka Harness-profiili lataa; työkalut rekisteröityvät muodossa `mcp__agentmemory__*`. Välitä `--with-hooks` kytkeäksesi myös automaattitallennuksen: mukana tulevat Claude Code -hook-skriptit kulkevat Harnessin ensiosapuolen `@deepseek-ai/dsh-hooks-claude-code`-sillan läpi (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) manifestin kautta, joka kirjoitetaan tiedostoon `$DSH_HOME/agentmemory.hooks.json`. Oletusarvo on `~/.dsh`, kun `DSH_HOME` on asettamatta. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` ottaa MCP-työkalut käyttöön. Lisää `--with-hooks` ladataksesi AgentMemoryn mukana tulevan natiivin tallennuslisäosan. Erillistä lisäosapakettia ei tarvita. [DSH](../docs/dsh.md). |
 | **Goose** | Goosen MCP-asetuskäyttöliittymä | Sama `mcpServers`-lohko; käytä `goose configure` → Add Extension → MCP. Suora YAML-muokkaus polussa `~/.config/goose/config.yaml` on tuettu, mutta skeema käyttää `extensions:` + `cmd` (ei `mcpServers:` + `command`). |
-| **Aider** | ei saatavilla | Puhu suoraan REST-rajapinnalle: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
-| **Mikä tahansa agentti (32+)** | ei saatavilla | `npx skillkit install agentmemory` tunnistaa isännän automaattisesti ja yhdistää. |
+| **Aider** | ei saatavilla | Käytä [autentikoituja REST-esimerkkejä](#validate-a-fresh-install-and-restart-persistence) tallentamiseen ja hakemiseen skripteistä. |
+| **Tuetut agentit** | Vain taidot | `npx skills add rohitg00/agentmemory`; valitse asennettavat taidot ja kohdeagentit. |
 
 **Hiekkalaatikoidut MCP-asiakkaat** (Flatpak / Snap / rajoittavat kontit), jotka eivät tavoita isännän `localhost`-osoitetta: aseta lisäksi `"AGENTMEMORY_FORCE_PROXY": "1"` `env`-lohkoon, ja osoita `AGENTMEMORY_URL` reitille, jonka hiekkalaatikko oikeasti tavoittaa (esim. LAN-IP-osoitteesi).
 
 ### Ohjelmallinen pääsy (Python / Rust / Node)
 
-agentmemory rekisteröi sen ydintoiminnot iii-funktioina (`mem::remember`, `mem::observe`, `mem::context`, `mem::smart-search`, `mem::forget`). Mikä tahansa kieli, jolla on iii-SDK, voi kutsua niitä suoraan osoitteen `ws://localhost:49134` kautta, ei erillistä REST-asiakasta per kieli.
-
-```bash
-pip install iii-sdk         # Python
-cargo add iii-sdk           # Rust
-npm  install iii-sdk        # Node
-```
-
-```python
-from iii import register_worker
-
-iii = register_worker("ws://localhost:49134")
-iii.connect()
-
-iii.trigger({
-    "function_id": "mem::smart-search",
-    "payload": {"project": "demo", "query": "how do tokens refresh"},
-})
-```
-
-Toimiva esimerkki: [`examples/python/`](../examples/python/) (pika-aloitus + havainnointi-/palautusvirta). REST portissa `:3111` pysyy saatavilla isännille, joilla ei ole iii-ajonaikaista ympäristöä.
+Käytä [REST API:a](#api) mistä tahansa kielestä tai [MCP-työkaluja](#mcp-server) agentista. REST käyttää JSONia ja bearer-autentikointia; katso [tallennus- ja hakuesimerkki](#validate-a-fresh-install-and-restart-persistence). Suora ympäristöintegraatio kuvataan [Python-esimerkeissä](../examples/python/).
 
 ### Lähdekoodista
 
@@ -853,91 +867,33 @@ git clone https://github.com/rohitg00/agentmemory.git && cd agentmemory
 npm install && npm run build && npm start
 ```
 
-Tämä käynnistää agentmemoryn paikallisella `iii-engine`-moottorilla, jos kiinnitetty binääri on jo asennettu, tai käyttää Docker Composea, kun se on valittu. REST, streamit ja katseluohjelma sitoutuvat oletuksena osoitteeseen `127.0.0.1`. Automaattinen macOS/Linux-binääripolku vaatii `curl`:n, POSIX-yhteensopivan `sh`:n ja `tar`:n.
-
-Asenna `iii-engine` käsin. **agentmemory kiinnittää tällä hetkellä `iii-engine`-versioon `v0.22.1`**, samaan julkaisuun kuin sen `iii-sdk`-riippuvuus; worker puhuu kyseisen moottorin lankaprotokollaa, ja 0.20.0 järjesti SDK-pinnan uudelleen, niin molemmat liikkuvat yhdessä agentmemoryn julkaisuissa. Ylikirjoita arvolla `AGENTMEMORY_III_VERSION=<version>`, jos ajat omaa moottoriasi ja tiedät, että se täsmää.
-
-- **macOS arm64:** `mkdir -p ~/.local/bin && curl -fsSLo iii.tar.gz https://github.com/iii-hq/iii/releases/download/iii/v0.22.1/iii-aarch64-apple-darwin.tar.gz && echo "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4  iii.tar.gz" | shasum -a 256 -c - && tar -xzf iii.tar.gz -C ~/.local/bin && chmod +x ~/.local/bin/iii`
-- **macOS x64:** vaihda `aarch64-apple-darwin` tilalle `x86_64-apple-darwin`
-- **Linux x64:** vaihda tilalle `x86_64-unknown-linux-gnu`
-- **Linux arm64:** vaihda tilalle `aarch64-unknown-linux-gnu`
-- **Windows:** lataa `iii-x86_64-pc-windows-msvc.zip` osoitteesta [iii-hq/iii releases v0.22.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1) ja pura `iii.exe` polkuun `%USERPROFILE%\.agentmemory\bin\iii.exe`
-
-Joka arkistolla on vastaava `.sha256`-tiedosto julkaisusivulla; kun vaihdat alustaa, käytä kyseisen tiedoston tiivistettä yllä olevassa tarkistuksessa (Windowsilla: `Get-FileHash`). `npx @agentmemory/agentmemory`-komennon automaattinen asentaja kiinnittää näihin tiivisteisiin ja hylkää arkiston, joka ei täsmää.
-
-Tai käytä Dockeria (mukana tuleva `docker-compose.yml` hakee imagen `iiidev/iii:0.22.1`). Täysi dokumentaatio: [iii.dev/docs](https://iii.dev/docs).
+`npm start` käynnistää saman paikallisen palvelimen kuin asennettu CLI. Vaatimukset ovat [asennusohjeessa](#install); API ja viewer kuuntelevat osoitetta `127.0.0.1`.
 
 ### Windows
 
-agentmemory toimii Windows 10/11:llä, mutta Node.js-paketti yksinään ei riitä; tarvitset myös kiinnitetyn iii-engine v0.22.1 -ajonaikaisen ympäristön taustaprosessina. CLI ei pura Windows-ZIP-pakettia automaattisesti, niin natiivien Windows-käyttäjien on asennettava `iii.exe` käsin, käytettävä WSL2:ta tai valittava Docker Desktop.
+agentmemory toimii Windows 10/11:ssä. WSL2 noudattaa Linuxin polkua ja voi asentaa kiinnitetyn moottorin automaattisesti. Natiivi Windows vaatii iii-engine v0.25.0:n kiinnitetyn binäärin asentamisen käsin; lataa sopiva paketti [iii v0.25.0 -julkaisusivulta](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), tarkista sen tarkistussumma ja sijoita `iii.exe` `PATH`-polkuun (esimerkiksi `%USERPROFILE%\.local\bin\iii.exe`). CLI ei pura Windows-ZIP-pakettia automaattisesti.
 
-Natiivi Windows-automaattinen MCP-kytkentä tukee vain komentoa `agentmemory connect copilot-cli`. Claude Codea, Codexia, Cursoria ja kaikkia muita natiiveja Windows-agentteja varten kopioi manuaalinen MCP-lohko kohdasta [Muut agentit](#other-agents) kyseisen agentin Windows-asetuksiin. `connect`-komennon ajaminen WSL:ssä on sopivaa vain, kun kohdeagentti on asennettu myös samaan WSL-ympäristöön; se ei muokkaa Windows-isännän agentin asetuksia.
+Natiivin Windowsin automaattinen MCP-kytkentä tukee vain komentoa `agentmemory connect copilot-cli`. Muiden natiivien Windows-agenttien kanssa käytä manuaalista MCP-lohkoa kohdasta [Muut agentit](#other-agents). Suorita `connect` WSL:ssä vain, kun kohdeagentti on asennettu samaan WSL-ympäristöön.
 
-**Vaihtoehto A: valmiiksi käännetty Windows-binääri (suositeltu)**
-
-```powershell
-# 1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.22.1 in your browser
-#    (agentmemory pins the engine to the same release as its iii-sdk;
-#     v0.22.1 is the current pair)
-# 2. Download iii-x86_64-pc-windows-msvc.zip
-#    (or iii-aarch64-pc-windows-msvc.zip if you're on an ARM machine)
-# 3. Extract iii.exe to agentmemory's private engine directory:
-New-Item -ItemType Directory -Force "$HOME\.agentmemory\bin"
-# Copy iii.exe to $HOME\.agentmemory\bin\iii.exe
-# 4. Verify:
-& "$HOME\.agentmemory\bin\iii.exe" --version
-# Should print: 0.22.1
-
-# 5. Then run agentmemory as usual:
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Vaihtoehto B: Docker Desktop**
-
-```powershell
-# 1. Install Docker Desktop for Windows
-# 2. Start Docker Desktop and make sure the engine is running
-# 3. Select Docker explicitly and run agentmemory:
-$env:AGENTMEMORY_USE_DOCKER = "1"
-npx -y @agentmemory/agentmemory@latest
-```
-
-**Vaihtoehto C: vain itsenäinen MCP (ei moottoria).** Jos tarvitset vain MCP-työkalut agentillesi ja et tarvitse REST-rajapintaa, katseluohjelmaa tai cron-tehtäviä, ohita moottori kokonaan:
+**Vain itsenäinen MCP (ei moottoria).** Jos tarvitset vain MCP-työkaluja etkä REST-rajapintaa, katseluohjelmaa tai ajonaikaisia palveluita:
 
 ```powershell
 npx -y @agentmemory/agentmemory@latest mcp
-# or via the shim package:
+# tai
 npx -y @agentmemory/mcp
 ```
 
-**Diagnostiikka Windowsilla:** jos `npx -y @agentmemory/agentmemory@latest` epäonnistuu, aja se uudelleen lipulla `--verbose` nähdäksesi moottorin todellisen stderr-tulosteen. Yleiset vikatilat:
-
-| Oire | Korjaus |
-|---|---|
-| `The engine process started but the REST API never responded.` | Vahvista, että kaikki neljä johdettua porttia ovat vapaat, varmista, että kiinnitetty `iii.exe` pysyi käynnissä, ja aja sitten uudelleen lipulla `--verbose` ja tarkista tallennettu moottorin stderr |
-| `Could not start iii-engine` | Ei `iii.exe`:tä eikä Dockeria ole asennettu. Katso Vaihtoehto A tai B yllä |
-| Porttiristiriita | `netstat -ano \| findstr :3111` nähdäksesi, mihin on sidottu, sammuta se tai käytä lippua `--port <N>` |
-| Docker-varajärjestelmä ohitetaan, vaikka Docker on asennettu | Varmista, että Docker Desktop on oikeasti käynnissä (järjestelmäpalkin kuvake) |
-
-> Huomio: iii-**moottori** on valmiiksi käännetty binääri, ei cargo-pakki, niin sitä ei kannata yrittää asentaa komennolla `cargo install`. (iii-**SDK:t** on julkaistu crates.io:ssa, npm:ssä ja PyPI:ssä, mutta agentmemory ei tarvitse niitä.) Tuetut moottorin asennustavat on kaikki kiinnitetty versioon v0.22.1: yllä oleva valmiiksi käännetty binääri, agentmemoryn macOS/Linux-automaattiasennusreitti (`curl`, POSIX `sh` ja `tar` vaadittu) ja Docker-image `iiidev/iii:0.22.1`. Paljas ylävirran `install.sh | sh` asentaa uusimman moottorin, jota agentmemory ei tue. Käytä komentoa `npx -y @agentmemory/agentmemory@latest`; macOS/Linuxilla se hakee kiinnitetyn moottorin polkuun `~/.agentmemory/bin`.
+Suorita `agentmemory doctor` tai käynnistä uudelleen valinnalla `--verbose`. Jos portit ovat varattuja, käytä `--port <N>` tai `--instance <N>`. Yhteensopivuus ja palautuminen kuvataan [päivitysoppaassa](../docs/upgrades/iii-0.25.md).
 
 ---
 
 <h2 id="deploy">Käyttöönotto</h2>
 
-Yhden klikkauksen mallipohjat hallinnoiduille isännille. Joka pohja toimittaa
-itsenäisen Dockerfile-tiedoston, joka hakee paketin `@agentmemory/agentmemory`
-npm:stä ja kopioi iii-moottorin binäärin viralliselta `iiidev/iii`-Docker Hub
--imagelta; valmiiksi rakennettua agentmemory-imagea ei tarvita. Pysyvä tallennustila
-liitetään pisteeseen `/data`; ensimmäisen käynnistyksen entrypoint korvaa
-npm:n mukana tulevan iii-asetuksen (joka sitoutuu `127.0.0.1`-osoitteeseen) käyttöönottoa
-varten viritetyllä asetuksella, joka sitoutuu `0.0.0.0`-osoitteeseen ja käyttää absoluuttisia
-`/data`-polkuja, generoi HMAC-salaisuuden, ja luopuu sitten oikeuksista
-`root`-käyttäjästä `node`-käyttäjään `gosu`:n kautta ennen agentmemory-CLI:n exec-komentoa.
+Käytä itse ylläpidettyyn palveluun Docker Composea tai alla olevia malleja. Muisti ja tunnistetiedot ovat `/data`-volyymissa; varmuuskopioi ja käytä sitä uudelleen päivityksissä. Autentikointi, verkko, varmuuskopiot ja siirrot kuvataan [käyttöönotto-oppaassa](../deploy/README.md).
 
 <p>
-  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory&path=deploy/fly"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Ota käyttöön fly.io:ssa" /></a>
-  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory&rootDirectory=deploy%2Frailway"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Ota käyttöön Railwayssa" /></a>
+  <a href="https://fly.io/launch?repo=https://github.com/rohitg00/agentmemory"><img src="https://img.shields.io/badge/Deploy%20to-fly.io-8b5cf6?style=for-the-badge&logo=fly.io&logoColor=white" alt="Ota käyttöön fly.io:ssa" /></a>
+  <a href="https://railway.com/new/template?template=https%3A%2F%2Fgithub.com%2Frohitg00%2Fagentmemory"><img src="https://img.shields.io/badge/Deploy%20to-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Ota käyttöön Railwayssa" /></a>
 </p>
 
 Renderin yhden klikkauksen käyttöönottopainike vaatii `render.yaml`-tiedoston repositorion juuressa, jonka pidämme tarkoituksella siistinä. Käytä [`deploy/render/`](.././deploy/render/README.md)-kansiossa dokumentoitua Render Blueprint -virtaa osoittaaksesi repositorion sisäiseen blueprintiin käsin.
@@ -955,29 +911,13 @@ kustannuslattia) löytyvät kansiosta [`deploy/`](.././deploy/README.md):
   VPS:lläsi [Coolifyn](https://coolify.io/self-hosted) kautta; sama Docker
   Compose -pino, omistat itse isännän ja datan.
 
-Vain portti `3111` julkaistaan. Katseluohjelma portissa `3113` pysyy sidottuna
-loopbackiin kontin sisällä; joka mallipohjan README dokumentoi
-SSH-tunnelimallin sen saavuttamiseksi.
+REST käyttää porttia `3111` ja viewer porttia `3113`. Pidä ne yksityisinä tai suojaa autentikoinnilla ja TLS:llä. Alustakohtaiset asetukset ja [vanhan Docker-asennuksen siirto](../deploy/README.md#migrating-from-the-legacy-cli-docker-mode) ovat käyttöönotto-oppaassa.
 
 ---
 
 <h2 id="why-agentmemory"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-why.svg"><img src="../assets/tags/section-why.svg" alt="Miksi agentmemory" height="32" /></picture></h2>
 
-Jokainen koodausagentti unohtaa kaiken, kun istunto päättyy, ja joka uusi istunto alkaa sinun selittäessä pinoasi uudelleen. agentmemory toimii taustalla ja poistaa tämän vaiheen.
-
-```text
-Session 1: "Add auth to the API"
-  Agent writes code, runs tests, fixes bugs
-  agentmemory silently captures every tool use
-  Session ends -> observations compressed into structured memory
-
-Session 2: "Now add rate limiting"
-  Agent already knows:
-    - Auth uses JWT middleware in src/middleware/auth.ts
-    - Tests in test/auth.test.ts cover token validation
-    - You chose jose over jsonwebtoken for Edge compatibility
-  Zero re-explaining. Starts working immediately.
-```
+Projektitieto hajautuu keskusteluihin ja ohjetiedostoihin. AgentMemory tuo aiemmat päätökset, korjaukset ja opit haettaviksi nykyisestä agentista.
 
 ### vs. sisäänrakennettu agenttimuisti
 
@@ -985,7 +925,7 @@ Jokainen tekoälypohjainen koodausagentti toimitetaan sisäänrakennetulla muist
 
 | | Sisäänrakennettu (CLAUDE.md) | agentmemory |
 |---|---|---|
-| Skaala | 200 rivin katto | Rajattomasti |
+| Ylläpito | Käsin ylläpidetyt ohjeet | Indeksoitu istuntohistoria ja muistot |
 | Haku | Lataa kaiken kontekstiin | BM25 + vektori + graafi (vain top-K) |
 | Tokenkustannus | 22K+ 240 havainnolla | ~1 900 tokenia (92 % vähemmän) |
 | Agenttien välillä | Agenttikohtaiset tiedostot | MCP + REST (mikä tahansa agentti) |
@@ -1011,13 +951,13 @@ PostToolUse hook fires
 Stop / SessionEnd hook fires
   -> Summarize session
   -> Knowledge graph extraction (if GRAPH_EXTRACTION_ENABLED=true)
-  -> Slot reflection (if SLOT_REFLECT_ENABLED=true)
+  -> Slot reflection (if AGENTMEMORY_SLOTS=true and AGENTMEMORY_REFLECT=true)
 
 SessionStart hook fires
   -> Load project profile (top concepts, files, patterns)
   -> Hybrid search (BM25 + vector + graph)
   -> Token budget (default: 2000 tokens)
-  -> Inject into conversation
+  -> Inject context when enabled by the integration
 ```
 
 ### 4-tasoinen muistin konsolidointi
@@ -1035,6 +975,8 @@ Muistot vanhenevat ajan myötä (Ebbinghausin käyrä). Usein käytetyt muistot 
 
 ### Mitä tallennetaan
 
+Taulukko kuvaa Claude Coden hookit. Muut integraatiot tallentavat ohjelmansa tarjoamat tapahtumat. Automaattinen kontekstin lisäys yhteisten hookien kautta otetaan erikseen käyttöön: `AGENTMEMORY_INJECT_CONTEXT=true`.
+
 | Hook | Tallentaa |
 |------|----------|
 | `SessionStart` | Projektin polku, istunnon ID |
@@ -1051,7 +993,7 @@ Muistot vanhenevat ajan myötä (Ebbinghausin käyrä). Usein käytetyt muistot 
 
 | Ominaisuus | Kuvaus |
 |---|---|
-| **Automaattinen tallennus** | Joka työkalun käyttö tallennetaan hookien kautta, ei manuaalista työtä |
+| **Automaattinen tallennus** | Natiivien integraatioiden tallentamat tuetut istunto- ja työkalutapahtumat |
 | **Semanttinen haku** | BM25 + vektori + tietograafi RRF-fuusiolla |
 | **Muistin kehitys** | Versiointi, korvaaminen, suhdegraafit |
 | **Palautushygienia** | Korvatut muistiversiot poistuvat hakuindekseistä; versioketju KV:ssä säilyttää täyden historian |
@@ -1112,7 +1054,7 @@ Normaali npm-asennus sisältää valinnaisen `@huggingface/transformers`-ajonaik
 
 54 työkalua, 6 resurssia, 3 kehotetta ja 17 taitoa.
 
-> **MCP-shim vs. täysi palvelin:** julkaistu `@agentmemory/mcp`-paketti on ohut shim. Se paljastaa täyden 54 työkalun pinnan **vain kun se tavoittaa käynnissä olevan agentmemory-palvelimen** `AGENTMEMORY_URL`:n kautta (proxy-tila). Kun palvelinta ei tavoiteta, shim palaa 7 työkalun paikalliseen settiin (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). `AGENTMEMORY_TOOLS=core|all`-ympäristömuuttuja on *palvelinpuolen* lippu; sen asettaminen shimin `env`-lohkossa ei vaikuta mihinkään. Jos näet vain 7 työkalua Cursorissa / OpenCodessa / Gemini CLI:ssä, käynnistä `npx -y @agentmemory/agentmemory@latest` (tai Docker-pino) ja aseta `AGENTMEMORY_URL=http://localhost:3111`.
+> **MCP-shim vs. täysi palvelin:** julkaistu `@agentmemory/mcp`-paketti on ohut shim. Se paljastaa täyden 54 työkalun pinnan **vain kun se tavoittaa käynnissä olevan agentmemory-palvelimen** `AGENTMEMORY_URL`:n kautta (proxy-tila). Kun palvelinta ei tavoiteta, shim palaa 7 työkalun paikalliseen settiin (`memory_save`, `memory_recall`, `memory_smart_search`, `memory_sessions`, `memory_export`, `memory_audit`, `memory_governance_delete`). `AGENTMEMORY_TOOLS=core|all`-ympäristömuuttuja on *palvelinpuolen* lippu; sen asettaminen shimin `env`-lohkossa ei vaikuta mihinkään. Jos näet vain 7 työkalua Cursorissa / OpenCodessa / Gemini CLI:ssä, käynnistä `npx -y @agentmemory/agentmemory@latest` (tai muodosta yhteys itse ylläpitämääsi palvelimeen) ja aseta `AGENTMEMORY_URL=http://localhost:3111`.
 
 ### 54 työkalua
 
@@ -1252,7 +1194,7 @@ cp plugin/opencode/commands/*.md ~/.config/opencode/commands/
 
 <h2 id="real-time-viewer"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="Reaaliaikainen katseluohjelma" height="32" /></picture></h2>
 
-Käynnistyy automaattisesti portissa `3113`. Katseluohjelma lataa yhden tilannevedoksen yhdistyessään (`GET /agentmemory/viewer/snapshot`) ja soveltaa sitten live-streamitapahtumia: uudet muistot, opetukset, havainnot, auditointimerkinnät, graafimuutokset ja terveyspäivitykset ilmestyvät ilman pollausta tai sivun uudelleenlatausta. Ainoat muut pyynnöt ovat toiminnot, joita klikkaat, "lataa lisää" -sivut ja haut. Kun stream katkeaa, katseluohjelma näyttää, kuinka vanhoja sen luvut ovat, yhdistää uudelleen takaisinvedolla ja synkronoi uudelleen yhdestä tilannevedoksesta.
+Käynnistyy automaattisesti portissa `3113`. Katseluohjelma lataa yhdistyessään yhden tilannevedoksen (`GET /agentmemory/viewer/snapshot`) ja käsittelee sen jälkeen reaaliaikaisia tapahtumia SSE:n kautta REST-workerissä osoitteessa `/agentmemory/viewer/events`: uudet muistot, opetukset, havainnot, auditointimerkinnät, graafimuutokset ja terveystiedot näkyvät ilman kyselyitä tai sivun uudelleenlatausta. Muut pyynnöt liittyvät vain napsauttamiisi toimintoihin, "lataa lisää" -sivuihin ja hakuihin. Jos virta katkeaa, katseluohjelma kertoo tietojen iän, yhdistää uudelleen takaisinviiveellä ja synkronoi tiedot yhdestä tilannevedoksesta.
 
 - **12 välilehteä neljässä ryhmässä** live-laskureilla, syvälinkeillä (`#memories/<id>`, `#sessions/<id>?obs=<id>`, `#graph/<id>`, `#health/consolidation`), pikanäppäimillä ja mobiilivalikolla.
 - **Muistot:** palvelinpuolen haku, suodattimet projektin, agentin ja tyypin mukaan, yksityiskohtapaneeli versioketjulla ja sanadiffillä, alkuperälinkit, kopiointipainikkeet id:lle, MCP-kutsulle ja curl-komennolle, muokkaus (uusi versio), unohtaminen vahvistuksella, joukkounohtaminen ja JSON-vienti.
@@ -1265,188 +1207,7 @@ Käynnistyy automaattisesti portissa `3113`. Katseluohjelma lataa yhden tilannev
 open http://localhost:3113
 ```
 
-Katseluohjelman palvelin sitoutuu oletuksena osoitteeseen `127.0.0.1` ja liittää palvelimen salaisuuden välittäessään pyyntöjä REST-rajapinnalle, niin se ei vaadi asetuksia. REST-rajapinnan tarjoama `/agentmemory/viewer`-päätepiste noudattaa normaaleja bearer-tokenisääntöjä ja ohjaa selaimet, joilla ei ole tokenia, katseluohjelman porttiin. CSP-otsikot käyttävät vastauskohtaista script-noncea ja poistavat käytöstä inline-käsittelijäattribuutit (`script-src-attr 'none'`).
-
----
-
-<h2 id="iii-console"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-viewer.svg"><img src="../assets/tags/section-viewer.svg" alt="iii-konsoli" height="32" /></picture></h2>
-
-Katseluohjelma portissa `:3113` näyttää, mitä agenttisi **muisti**. [iii-konsoli](https://iii.dev/docs/console) näyttää, mitä agenttisi **teki**: joka muistioperaatio OpenTelemetry-jäljityksenä, joka KV-merkintä muokattavana, joka funktio kutsuttavana, joka stream napautettavana. Kaksi ikkunaa samaan muistiin: yksi tuoteksikin, yksi moottoriksikin muotoiltu.
-
-Katso `memory_smart_search`-kutsun laukeavan ja näe BM25-skannaus → upotushaku → RRF-fuusio → uudelleenluokittelu vesiputousnäkymänä. Muokkaa jumittunutta konsolidointiajastinta KV-selaimessa. Toista `PostToolUse`-hook muokatulla hyötykuormalla. Pinnaa WebSocket-stream ja katso havaintojen saapuvan live.
-
-agentmemory toimittaa tämän ilmaiseksi, koska joka funktiokutsu ja triggeri laukeaa iii:n läpi; ei mitään mukautettua, ei mitään instrumentoitavaa.
-
-<p align="center">
-  <img src="../assets/iii-console/workers.png" alt="iii-konsolin Workers-sivu: yhdistetyt workerit mukaan lukien agentmemory-instanssit live-funktiolaskureilla ja ajonaikaisella metadatalla" width="720" />
-  <br/>
-  <em>Workers-sivu: joka yhdistetty worker, mukaan lukien agentmemory itse, PID:llä, funktiomäärällä, ajonaikaisella ympäristöllä ja viimeisimmällä näkymisajalla.</em>
-</p>
-
-**Jo asennettu.** Konsoli toimitetaan kiinnitetyn `iii`-moottorin (0.22+) mukana; ei mitään erillistä asennettavaa. Ensimmäinen käynnistys lataa konsolin binäärin moottorin viereen.
-
-**Käynnistä agentmemoryn rinnalla:**
-
-```bash
-agentmemory console
-```
-
-Tämä ajaa kiinnitetyn moottorin `iii console`-komennon porteja vastaan, jotka agentmemory ratkaisi (REST, streamit, silta), ja tarjoilee sen yhden portin katseluohjelman yläpuolella, oletuksena `http://localhost:3114`. `--console-port N` valitsee toisen portin; `--port` ja `--instance` valitsevat agentmemory-instanssin samalla tavalla kuin `stop`-komennolle; mikä tahansa muu lippu välitetään läpi, esimerkiksi `--enable-flow` kokeelliselle arkkitehtuurigraafi-sivulle.
-
-Sama asia käsin, hyödyllinen kun `agentmemory` ei ole PATH:ssa:
-
-```bash
-~/.agentmemory/bin/iii console --port 3114 \
-  --engine-port 3111 \
-  --ws-port 3112 \
-  --bridge-port 49134
-```
-
-**Mitä voit tehdä konsolista:**
-
-| Sivu | Käytä tätä |
-|------|-----------|
-| **Workers** | Näe joka yhdistetty worker ja sen live-mittarit, mukaan lukien agentmemory-worker itse. |
-| **Functions** | Kutsu mitä tahansa agentmemoryn funktiota suoraan JSON-hyötykuormalla; kätevä testaamaan `memory.recall`, `memory.consolidate`, `graph.query` kytkemättä asiakasta. |
-| **Triggers** | Toista HTTP-, cron-, tapahtuma- ja tilatriggereitä: laukaise konsolidointi-cron käsin, yritä HTTP-reittiä uudelleen, lähetä tilamuutos. |
-| **States** | KV-selain täydellä CRUD:lla istuntoihin, muistipaikkoihin, elinkaariajastimiin ja upotusindeksiin; muokkaa arvoja paikan päällä. |
-| **Streams** | Live-WebSocket-monitori muistikirjoituksille, hook-tapahtumille ja havaintopäivityksille niiden virratessa iii-streamien läpi. |
-| **Queues** | Pysyvät jono-aiheet + dead-letter-hallinta. Toista tai hylkää epäonnistuneet upotus-/pakkaustehtävät. |
-| **Traces** | OpenTelemetry-vesiputous-/liekki-/palvelujaotellut näkymät. Suodata `trace_id`:llä nähdäksesi tarkalleen, mitkä funktiot, tietokantakutsut ja upotuspyynnöt yksi `memory.search` tuotti. |
-| **Logs** | Rakenteelliset OTEL-lokit suodatettuna ja korreloituna trace-/span-ID:ihin. |
-| **Config** | Ajonaikainen konfiguraatio: näe tarkalleen, millä workereilla, tarjoajilla ja porteilla moottorisi käy. |
-| **Flow** | (Valinnainen, `--enable-flow`) Interaktiivinen arkkitehtuurigraafi joka workerista, triggeristä ja streamista. |
-
-<p align="center">
-  <img src="../assets/iii-console/traces-waterfall.png" alt="iii-konsolin jäljitysvesiputousnäkymä, joka näyttää keston per span" width="720" />
-  <br/>
-  <em>Traces: vesiputous-/liekki-/palvelujaottelu joka muistioperaatiolle.</em>
-</p>
-
-**Jäljitykset ovat jo päällä:**
-
-`iii-config.yaml` toimitetaan `iii-observability`-worker käytössä (`exporter: memory`, `sampling_ratio: 0.1`, metriikat + lokit). Ei mitään lisäasetuksia tarvita; sillä hetkellä, kun agentmemory käynnistyy, joka muistioperaatio lähettää rakenteellisen lokin, jonka konsoli voi lukea, ja yksi kymmenestä niistä (`sampling_ratio: 0.1`) lähettää myös trace-spanin.
-
-Jos haluat viedä datan Jaegeriin/Honeycombiin/Grafana Tempoon sen sijaan, vaihda `exporter: memory` arvoon `exporter: otlp` ja aseta kerääjän päätepiste iii:n observability-dokumentaation mukaan.
-
-> **Huomio:** konsolissa itsessään ei ole pakotettua autentikointia; pidä se sidottuna osoitteeseen `127.0.0.1` (oletus) ja älä koskaan paljasta sitä julkisesti.
-
----
-
-<h2 id="powered-by-iii"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-architecture.svg"><img src="../assets/tags/section-architecture.svg" alt="iii:n voimalla" height="32" /></picture></h2>
-
-agentmemory on **jo käynnissä oleva [iii](https://iii.dev)-instanssi**. Kolme primitiiviä (worker, funktio, triggeri) muodostavat ajonaikaisen ympäristön; KV-tila, streamit ja OTEL-jäljitykset tulevat iii-state-, iii-stream- ja iii-observability-workereilta, jotka toimitetaan iii:n mukana. Et asentanut Postgresia, Redistä, Expressiä, pm2:ta tai Prometheusta, koska iii korvaa ne.
-
-Se tarkoittaa, että yksi komento lisää laajentaa agentmemoryn kokonaan uudella kyvykkyydellä.
-
-### Laajenna agentmemorya lisäworkereilla
-
-Sisäänrakennetut workerit, joita agentmemory tarvitsee, ovat jo tiedostossa `iii-config.yaml` ja käynnistyvät sen mukana: `iii-state` (KV), `iii-queue` (pysyvät uudelleenyritykset tapahtumatilaajille), `iii-pubsub`, `iii-cron`, `iii-stream` ja `iii-observability` (OTEL-jäljitykset, metriikat ja lokit joka funktiolle). Kaikki muu [iii-workerrekisteristä](https://workers.iii.dev) kytkeytyy samaan moottoriin: kopioi `iii-config.yaml` tiedostoon `~/.agentmemory/iii-config.yaml` (CLI suosii tätä tiedostoa mukana tulevan sijaan ja renderöi siihen edelleen portit ja datapolut), lisää merkintä, asenna workerin ajonaikainen ympäristö kerran komennolla `~/.agentmemory/bin/iii update worker`, ja käynnistä agentmemory uudelleen.
-
-```yaml
-workers:
-  # ...the bundled entries...
-  - name: database          # SQL-backed state adapter when you outgrow the KV defaults
-  - name: iii-sandbox       # run code that came out of memory_recall inside a throwaway VM
-  - name: mcp               # extra MCP servers next to agentmemory's, same engine
-```
-
-| Worker | Mitä saat agentmemoryn päälle |
-|---|---|
-| [`database`](https://workers.iii.dev/workers/database) | SQL-pohjainen tila-adapteri, kun kasvat ulos muistinvaraisista KV-oletuksista |
-| [`iii-sandbox`](https://workers.iii.dev/workers/iii-sandbox) | `memory_recall`:sta tullut koodi ajetaan kertakäyttöisessä VM:ssä, ei shellissäsi |
-| [`mcp`](https://workers.iii.dev/workers/mcp) | Pystytä lisää MCP-palvelimia agentmemoryn rinnalle, jaa sama moottori |
-
-Moottorin 0.22.x-versiossa pidä `iii-`-etuliitteelliset nimet yllä olevilla sisäänrakennetuilla; etuliitteettömät `http`-, `state`-, `queue`-, `pubsub`- ja `cron`-merkinnät ovat itsenäisen rekisterin workerit, joihin agentmemory siirtyy 0.23-migraation mukana.
-
-Täysi rekisteri: [workers.iii.dev](https://workers.iii.dev). Joka worker sillä sivulla muodostuu samoista primitiiveistä, joita agentmemory käyttää, ja agentmemory, joka sinulla on jo, on yksi niistä.
-
-### Moottorin asetukset ja sidontaosoite
-
-`agentmemory start` lukee moottorin asetukset ensimmäisestä tiedostosta, joka on olemassa: `AGENTMEMORY_III_CONFIG`, `./iii-config.yaml` nykyisessä hakemistossa, `~/.agentmemory/iii-config.yaml`, sitten mukana tuleva `iii-config.yaml`. Joka käynnistyksellä se renderöi kyseisen tiedoston (datapolut, portit, tilan taustaosa) tiedostoon `~/.agentmemory/data/iii-config.runtime.yaml` ja käynnistää moottorin renderöidyllä kopiolla, niin muokkaa lähdetiedostoa, ei renderöityä. Lähdetiedoston `host:`-arvot säilytetään kirjoitetussa muodossa.
-
-Mukana tuleva `iii-config.yaml` sitoutuu tarkoituksella osoitteeseen `127.0.0.1`, ja tämä oletus pätee myös kontin sisällä. Kontissa käynnistetty CLI kuuntelee kontin loopbackia, niin julkaistut portit eivät tavoita mitään. Tarjoillaksesi konteriutuneen CLI:n julkaistujen porttien kautta, aseta `AGENTMEMORY_III_CONFIG` osoittamaan asetukseen, joka sitoutuu osoitteeseen `0.0.0.0`. Pakattu `iii-config.docker.yaml` on yksi tällainen: se sitoo `iii-http`:n, `iii-stream`:n ja moottorin portin osoitteeseen `0.0.0.0` ja tallentaa tilan polkuun `/data`, niin liitä kirjoitettava volyymi siihen. Pidä `AGENTMEMORY_SECRET` asetettuna, ja julkaise vain tarvitsemasi portit, osoitteessa `127.0.0.1` tai luotettavan proxyn takana.
-
-Tämän repositorion `docker-compose.yml` ei kulje CLI:n asetushaun läpi: se liittää `iii-config.docker.yaml`:n pisteeseen `/app/config.yaml`, ja `iii-engine`-kontti käynnistyy lipulla `--config /app/config.yaml`. Yhden klikkauksen [käyttöönottomallipohjat](../deploy/) kirjoittavat omat `0.0.0.0`-asetuksensa niiden entrypointeihin.
-
-### Tallennuksen taustaosa: file (oletus) vs. redis
-
-`iii-state` ja `iii-stream` käyttävät oletuksena iii-moottorin mukana tulevaa tiedostopohjaista KV-varastoa: yksi JSON-tiedosto per scope, pidettynä moottoriprosessin muistissa ja uudelleenkirjoitettuna levylle ajastimella. Se on oikea oletus yhden käyttäjän paikalliselle asennukselle; jaettu daemon, jossa on useita samanaikaisia kirjoittajia, saa oikeat avainkohtaiset kirjoitukset Redisiltä sen sijaan, verkkokierroksen hinnalla per operaatio (joka `state::*`-kutsu sarjallistuu edelleen yhdelle Redis-yhteydelle, niin tämä vaihtaa tiedostovaraston lukituksen soklaan, ei rinnakkaisuuteen).
-
-Aseta `AGENTMEMORY_STATE_BACKEND=redis` (plus `AGENTMEMORY_REDIS_URL`) vaihtaaksesi molemmat workerit iii-moottorin sisäänrakennettuun `redis`-adapteriin, joka tallentaa joka avaimen Redis-hash-kenttänä (`HSET`) sen sijaan, että uudelleenkirjoittaisi koko scopen jokaisella kirjoituksella:
-
-```env
-# ~/.agentmemory/.env
-AGENTMEMORY_STATE_BACKEND=redis
-AGENTMEMORY_REDIS_URL=redis://localhost:6379
-```
-
-`AGENTMEMORY_STATE_BACKEND` on oletuksena `file`; sen asettamatta jättäminen pitää tämänpäiväisen käytöksen muuttumattomana, ja tunnistamaton arvo (mikä tahansa muu kuin `file` tai `redis`) on käynnistysvirhe, ei hiljainen varajärjestelmä. `/agentmemory/status` ja katseluohjelman Health-sivu (State store -rivi) ilmoittavat, mikä taustaosa on aktiivinen ja vastaako se, ei koskaan URL-osoitetta.
-
-**Vain pelkkä `redis://`.** Kiinnitetty moottori (0.22.1) rakentaa Redis-asiakkaansa ilman TLS-tukea, niin `rediss://`-URL (useimmat hallitut Redis-tarjoomat, kuten Upstash, Redis Cloud ja ElastiCache siirron aikaisella salauksella, ovat oletuksena vain-TLS) ei muodosta yhteyttä. Yhteys on salaamaton, niin Redis-salasana ja joka tallennettu muisto kulkevat langalla selkokielisenä: osoita paikalliseen Redisiin tai luotettavassa yksityisessä verkossa olevaan. Mille tahansa muulle Redisille, aja salattu tunneli (stunnel, SSH tai VPN) agentmemory-isännällä, niin pelkkä `redis://`-hyppy pysyy kyseisellä isännällä ja tunnelin ylävirran yhteys on salattu ja todennettu. Jos Redis-salasana sisältää heittomerkin, prosenttikoodaa se (`%27`); moottori laajentaa URL:n YAML-asetukseksi ennen jäsentämistä.
-
-**Yksi Redis-palvelin per `--instance`.** Moottorin Redis-avainetuliitteet (`state:<scope>`, `stream:<name>:<group>`) on kiinnitetty, niin kaksi agentmemory-instanssia (`--instance 1`, `--instance 2`, ...) osoitettuna samaan tietokantaan ylikirjoittavat toistensa datan. Erillinen tietokantaindeksi (`redis://localhost:6379/1`) pitää tallennetun datan erillään, mutta moottori välittää live-katseluohjelman tapahtumat yhden Redis-pub/sub-kanavan (`stream::events`) yli, ja Redis-pub/sub ohittaa tietokantaindeksin, niin joka instanssin katseluohjelma näyttäisi edelleen toisen live-tapahtumat. Anna joka instanssille omansa Redis-palvelin (tai portti), kun ajat useampaa kuin yhtä.
-
-**Mikä pysyy samana, ja mikä eroaa.** Joka agentmemory-ominaisuus toimii Redisillä: istunnot, havainnot, muistot (muista, korvaa, kehitä, unohda), haku ja indeksierät, opetukset, graafi, auditointiloki ja sen kuukausittaiset scopet, vienti ja tuonti, hallintapoistot, konsolidoinnin tila, katseluohjelman tilannevedos ja sen live-stream, ja terveysmonitori. Moottori tallentaa joka scopen yhtenä Redis-hashina (`HSET`/`HGET`/`HGETALL`) ja laukaisee samat tilatriggerit kuin tiedostovarasto. Kolme moottorieroa käsitellään agentmemoryn sisällä:
-
-- Redis palauttaa scopen tietueet ei-kiinnitetyssä järjestyksessä. agentmemory lajittelee ne vanhimmasta alkaen (tietueen ID:ssä olevan luomisajan, sitten sen aikaleiman mukaan), niin listat, sivutus ja vientierät palautuvat samassa järjestyksessä kuin tiedostovarastolla.
-- Moottori soveltaa osittaisia päivityksiä Redisillä Lua-skriptissä, joka muuttaa tyhjät taulukot tyhjiksi objekteiksi. agentmemory soveltaa näitä päivityksiä itse (lue, muuta, kirjoita avainkohtaisen lukon alla) Redisillä, niin kentät kuten `tags: []` pysyvät taulukkoina.
-- Vanhentunut auditointilokitarkistus lukee vanhan scopen Redisistä sen sijaan, että etsisi tiedostovaraston tiedostoa levyltä.
-
-Yksi ero vaatii sinulta toimia: **Redis-uudelleenkäynnistyksen jälkeen moottori lakkaa välittämästä live-tapahtumia** katseluohjelmalle, kunnes agentmemory käynnistyy uudelleen. Data tallennetaan ja luetaan yhä normaalisti. Terveysmonitori lähettää testitapahtuman Redisin läpi 30 sekunnin välein; kun se ei palaa, `/agentmemory/status` ja katseluohjelman Health-sivu näyttävät "Live updates are not reaching the viewer" korjauksen kanssa: käynnistä agentmemory uudelleen. Jos Redis on alhaalla, tilaraportti näyttää "The state store is not answering" ja kuinka tarkistaa se (`redis-cli -u "$AGENTMEMORY_REDIS_URL" ping`). Erittäin suuren scopen listaaminen lukee koko hashin yhdellä `HGETALL`:lla, samalla kustannuksella kuin tiedostovaraston pitäminen muistissa.
-
-**Suositellut Redis-asetukset.** Oletusarvoinen `save 3600 1 300 100 60 10000` -tilannevedospolitiikka voi menettää minuutteja kirjoituksia kaatumisessa, pahemmin kuin tiedostovaraston 5s flush-ikkuna. Aseta `appendonly yes` kaikelle, mistä välittäisit, jos menettäisit sen. Aseta `maxmemory-policy noeviction`; `allkeys-lru` tai vastaava pudottaa hiljaa muistoja, kun Redis osuu muistirajaansa.
-
-Natiivi (ei-Docker) käynnistys, ja joka yhden klikkauksen [käyttöönottomallipohja](../deploy/) (ne ylikirjoittavat mukana tulevan `iii-config.yaml`:n ja käynnistyvät natiivisti), lukevat `AGENTMEMORY_STATE_BACKEND`/`AGENTMEMORY_REDIS_URL` ja renderöivät ne käynnistettyyn `iii-config`:iin. URL itsessään ei koskaan kirjoiteta tähän renderöityyn tiedostoon, vain `${AGENTMEMORY_REDIS_URL}`-viittaus, jonka moottoriprosessi laajentaa omasta ympäristöstään käynnistyshetkellä. Vain tämän repositorion oma Docker Compose -reitti (`AGENTMEMORY_USE_DOCKER=1`, tai sillä tavalla aiemmin käynnistetyn moottorin jatkaminen) liittää `iii-config.docker.yaml`:n kirjoitussuojattuna ja ei koskaan renderöi; `agentmemory start` varoittaa, kun se havaitsee tämän yhdistelmän. Vaihda tämä tiedosto käsin, seuraten samaa `name: redis` / `config: redis_url: ...` -muotoa, joka näkyy [iii-state](https://workers.iii.dev/workers/iii-state)- ja [iii-stream](https://workers.iii.dev/workers/iii-stream)-workereiden dokumentaatiossa, ja osoita `redis_url` kontista tavoitettavaan Redisiin. `docker-compose.yml` välittää `AGENTMEMORY_REDIS_URL`:n moottorikonttiin, niin `redis_url: '${AGENTMEMORY_REDIS_URL}'` toimii siellä ja pitää URL:n pois liitetystä tiedostosta.
-
-Renderöity asetus pitää URL:n pois tiedostosta `~/.agentmemory/data/iii-config.runtime.yaml`, mutta moottorin oma konfiguraatioworker tallentaa yhä *laajennetun* arvon pysyvästi tiedostoihin `~/.agentmemory/config/iii-state.yaml` ja `iii-stream.yaml`, kun se käynnistyy (iii-moottorin `${VAR}`-laajennus tapahtuu ennen kuin tämä worker tallentaa siemenensä, ja se tallentaa ratkaistun arvon, ei viittausta). Kohtele tätä hakemistoa tunnuksena: `chmod 700 ~/.agentmemory` millä tahansa jaetulla isännällä, ja suosi Redis-ACL-käyttäjää, joka on rajattu siihen, mitä agentmemory tarvitsee, tietokannan admin-tunnusten sijaan.
-
-**Migraatio ei ole automaattinen.** `AGENTMEMORY_STATE_BACKEND`:n vaihtaminen aloittaa tyhjästä varastosta molemmilla puolilla; mikään ei kopioi olemassa olevaa dataa tiedostosta Redisiin tai takaisin. Vie data taustaosasta, jota jätät, ja tuo siihen, jota siirryt käyttämään. Tämä toimii identtisesti bashissa ja zshissä (mukaan lukien `bash -u`). Taulukko kuten `AUTH=(${AGENTMEMORY_SECRET:+-H "Authorization: Bearer $AGENTMEMORY_SECRET"})` ei toimi: zsh pitää otsikon yhtenä virheellisenä sanana, kun bash jakaa sen kahdeksi, niin molemmat pyynnöt saavat 401-vastauksen aina kun `AGENTMEMORY_SECRET` on asetettu:
-
-```bash
-# 0. Use the generated secret when none is exported:
-AGENTMEMORY_SECRET="${AGENTMEMORY_SECRET:-$(cat ~/.agentmemory/secret 2>/dev/null)}"
-
-# 1. On the old backend, while agentmemory is still running on it:
-if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
-  curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" http://localhost:3111/agentmemory/export > backup.json
-else
-  curl -fsS http://localhost:3111/agentmemory/export > backup.json
-fi
-
-# 2. Confirm backup.json is a usable export before switching backends:
-jq -e '.version and .exportedAt' backup.json > /dev/null || {
-  echo "backup.json is not a valid export; do not switch backends" >&2
-  exit 1
-}
-
-# 3. Switch AGENTMEMORY_STATE_BACKEND (and AGENTMEMORY_REDIS_URL if needed),
-#    restart agentmemory against the new backend, then:
-if [ -n "${AGENTMEMORY_SECRET:-}" ]; then
-  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
-    curl -fsS -H "Authorization: Bearer $AGENTMEMORY_SECRET" -X POST http://localhost:3111/agentmemory/import \
-      -H 'Content-Type: application/json' -d @-
-else
-  jq -n --slurpfile d backup.json '{exportData: $d[0], strategy: "merge"}' | \
-    curl -fsS -X POST http://localhost:3111/agentmemory/import \
-      -H 'Content-Type: application/json' -d @-
-fi
-```
-
-`/agentmemory/export` hyväksyy myös `?maxSessions=`- ja `?offset=`-parametrit suuren korpuksen paloittelemiseksi useiden kutsujen yli; `strategy` tuonnissa on `merge` (oletusturvallinen), `replace` tai `skip`.
-
-### Mitä iii korvaa
-
-| Perinteinen pino | agentmemory käyttää |
-|---|---|
-| Express.js / Fastify | iii HTTP-triggerit |
-| SQLite / Postgres + pgvector | iii KV-tila + muistinvarainen vektori-indeksi |
-| SSE / Socket.io | iii-streamit (WebSocket) |
-| pm2 / systemd | iii-moottorin workerien valvonta |
-| Prometheus / Grafana | iii OTEL + terveysmonitori |
-| Mukautetut plugin-järjestelmät | `iii worker add <name>` |
-
-**243 lähdetiedostoa · ~55,000 LOC · 3,400+ testiä · 324 funktiota · 67 KV-scopea**, kaikki kolmen primitiivin päällä. Ei `agentmemory plugin install` -komentoa. Plugin-järjestelmä on iii itse.
+Katseluohjelman palvelin sitoutuu oletuksena osoitteeseen `127.0.0.1` ja liittää palvelimen salaisuuden välittäessään pyyntöjä REST-rajapinnalle. Muuhun kuin loopback-osoitteeseen sidottaessa HTML-runko pysyy julkisena, mutta jokainen proxypyyntö vaatii bearer-tunnuksen; katseluohjelma pyytää sitä ja tallentaa sen istuntokohtaiseen tallennustilaan. Määritä eksplisiittiset host/origin-sallittujen listat ja TLS ennen katseluohjelman avaamista. REST-rajapinnan `/agentmemory/viewer`-päätepiste noudattaa normaaleja bearer-token-sääntöjä ja ohjaa selaimet ilman tokenia katseluohjelman porttiin. CSP-otsakkeet käyttävät vastauskohtaista script-noncea ja poistavat käytöstä inline-käsittelijäattribuutit (`script-src-attr 'none'`).
 
 ---
 
@@ -1466,6 +1227,8 @@ agentmemory tunnistaa tarjoajat automaattisesti ympäristöstäsi. Tarjoaja teke
 | OpenAI API | `OPENAI_API_KEY` | Oletus `gpt-5.6-luna`, ylikirjoita `OPENAI_MODEL`:lla |
 | **Paikallinen (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) tai `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<malli>` | Mikä tahansa OpenAI-API-yhteensopiva. Nolla kustannuksia, toimii omalla laitteistollasi. Katso [Paikalliset mallit](#local-models-ollama--lm-studio--vllm) alla. |
 | Claude-tilauksen varajärjestelmä | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Vain opt-in. Käynnistää `@anthropic-ai/claude-agent-sdk`-istuntoja; se aiheutti aiemmin rajoittamattoman Stop-hook-rekursion, niin se ei ole enää oletus. |
+
+<a id="local-models-ollama--lm-studio--vllm"></a>
 
 ### Paikalliset mallit (Ollama / LM Studio / vLLM)
 
@@ -1516,24 +1279,7 @@ Paikalliset upotukset toimitetaan valinnaisena riippuvuutena, mutta ne eivät ol
 
 ### Kustannustietoinen mallin valinta
 
-Kun LLM:n kirjoittama taustapakkaus on otettu käyttöön molemmilla, tarjoajalla ja `AGENTMEMORY_AUTO_COMPRESS=true`, se ajetaan joka havainnolle, niin mallinvalinta muuttaa kuukausikuluja merkittävästi. Tallennettu työkuormadata: 635 pyyntöä / 888K tokenia / 35 tuntia aktiivista käyttöä, ajettuna kolmea OpenRouter-mallia vastaan 2026-05-23-hinnoittelulla.
-
-| Taso | Malli | Syöte / 1M | Tuloste / 1M | Kustannus tallennetulle 35h:lle | Huomautuksia |
-|------|-------|------------|-------------|---------------------------|-------|
-| Suositeltu | `deepseek/deepseek-v4-flash-0731` | 0,07 $ | 0,14 $ | ~0,07 $ (arvio) | Uusin DeepSeek; halvin suositeltu valinta pakkaustyökuormille. |
-| Suositeltu | `deepseek/deepseek-v4-pro` | 0,435 $ | 0,87 $ | ~0,46 $ | Vahva pakkaus- ja yhteenvetolaatu ~10x alemmilla kustannuksilla kuin Sonnet. |
-| Suositeltu | `qwen/qwen3-coder` | 0,45 $ | 1,80 $ | ~0,55 $ | Vahva koodipäättely, jos istuntosi ovat voimakkaasti koodimuotoisia. |
-| Premium | `anthropic/claude-sonnet-5` | 3,00 $ | 15,00 $ | ~5,02 $ (arvio) | Sama listahinta kuin mitattu Sonnet 4.6 -ajo; 2 $/10 $ -esittelyhinnoittelu 31.8.2026 asti. |
-| Premium | `openai/gpt-5.6-sol` | 5,00 $ | 30,00 $ | ~9 $ (arvio) | Lippulaivataso; kallis jatkuvasti päällä olevalle taustatyölle. |
-| Vältä | `anthropic/claude-opus-5` | 5,00 $ | 25,00 $ | ~8,40 $ (arvio) | Lippulaivaluokan malli; ylikulutus pakkaukseen. |
-
-Mitatut rivit tulevat tallennetusta ajosta; (arvio)-rivit skaalaavat samaa tokensekoitusta joka mallin listahinnalla.
-
-agentmemory tulostaa ajonaikaisen varoituksen, kun `OPENROUTER_MODEL` täsmää premium-tason malliin. Aseta `AGENTMEMORY_SUPPRESS_COST_WARNING=1` hiljentääksesi sen, kun olet tehnyt tietoisen valinnan.
-
-Laadun vs. kustannuksen kompromissi muistityöhön: pakkaus on yhteenvetotehtävä, jossa on suhteellisen väljät laatuvaatimukset (agentti lukee yhteenvedon uudelleen, ei käyttäjä). DeepSeek V4 Flash / V4 Pro / Qwen3-Coder jäävät pyöristysvirheen sisään Sonnetista tässä tehtävässä kustantaen 10–70x vähemmän. Säästä premium-tason mallit kyselyihin, jotka luet suoraan.
-
-Lähteet: [OpenRouter-hinnoittelu Claude Sonnet 5:lle](https://openrouter.ai/anthropic/claude-sonnet-5), [DeepSeek V4 Flash](https://openrouter.ai/deepseek/deepseek-v4-flash-0731), [DeepSeekin hinnoitteluhuomautukset](https://api-docs.deepseek.com/quick_start/pricing/).
+Aloita ilman avainta tallennusta ja avainsanahakua varten. `EMBEDDING_PROVIDER=local` lisää paikallisen semanttisen haun mallin lataamisen jälkeen. LLM-pakkaus vaatii palveluntarjoajan ja asetuksen `AGENTMEMORY_AUTO_COMPRESS=true`; jokainen havainto voi aiheuttaa pyynnön, joten tarkista nykyiset hinnat. Viewer ja `agentmemory status` näyttävät aktiiviset palveluntarjoajat.
 
 ### Moniagenttinen muisti (`AGENT_ID` + `AGENTMEMORY_AGENT_SCOPE`)
 
@@ -1563,39 +1309,22 @@ Kun `AGENT_ID` on asettamatta, muisti pysyy rajaamattomana (vanha käytös, ei t
 
 ### Portit
 
-agentmemory + iii-engine sitovat neljä porttia oletuksena. Jos uudelleenkäynnistys epäonnistuu virheellä `port in use`, tämä taulukko kertoo, mitä prosessia etsiä.
+| Port | Tarkoitus | Ympäristömuuttuja |
+|---|---|---|
+| `3111` | REST API, MCP HTTP ja viewerin reaaliaikaiset tapahtumat | `III_REST_PORT` |
+| `3113` | Viewerin käyttöliittymä | `III_VIEWER_PORT` |
 
-| Portti | Prosessi | Tarkoitus | Env-ylikirjoitus |
-|------|---------|---------|--------------|
-| `3111` | agentmemory | REST-rajapinta + MCP HTTP + `/agentmemory/health` + `/agentmemory/livez` | `III_REST_PORT` |
-| `3112` | iii-engine | Sisäinen streams-worker (agentmemoryn + katseluohjelman kuluttama) | `III_STREAM_PORT` (suositeltu) tai vanha `III_STREAMS_PORT` |
-| `3113` | agentmemory | Reaaliaikainen katseluohjelma (`http://localhost:3113`) | `III_VIEWER_PORT` tai `AGENTMEMORY_VIEWER_URL` ilmoitetulle URL-osoitteelle |
-| `49134` | iii-engine | WebSocket; workerit rekisteröityvät tähän, OTel-telemetria kulkee sen yli | `III_ENGINE_PORT` tai `III_ENGINE_URL` |
+`--port <N>` asettaa REST-portin ja viewerin oletusportiksi `N+2`. `--instance N` luo erillisen ympäristön. Sisäisten porttien on pysyttävä yksityisinä; lue [käyttöönotto-opas](../deploy/README.md) ennen etäkäyttöä.
 
-`--port <N>` muuttaa REST-ankkurin ja johtaa streamit `N+1`, katseluohjelman `N+2` ja moottorin WebSocketin `N+46023`, vain siltä osin kuin vastaava eksplisiittinen portti tai URL yllä on asettamatta. Se ei luo eristettyä elinkaarinimiavaruutta. Käytä `--instance 1` toiselle daemonille; se käyttää ankkuria 3211, oletuksena `3211/3212/3213/49234`, ja saa erillisen `instance-1`-data- ja elinkaarihakemiston. Instanssit 1–50 noudattavat samaa mallia.
+### Tallennus: tiedosto tai Redis
 
-Kiinnitetty moottori käynnistyy lipulla `--no-update-check` (ei päivitys- tai turvallisuusneuvontahakuja GitHubista käynnistyksessä) ja iii:n anonyymi käyttötelemetria pois päältä: agentmemory asettaa `III_TELEMETRY_ENABLED=false` moottorille, jonka se käynnistää, ellet itse vie muuttujaa, ja mukana tuleva compose-tiedosto tekee samoin.
-
-Vanhentuneiden prosessien siivous, kun portit pysyvät sidottuina kaatuneen ajon jälkeen:
-
-```bash
-# macOS / Linux — find whatever is on each port and kill it
-lsof -i :3111,3112,3113,49134
-pkill -f agentmemory || true
-pkill -f 'iii ' || true
-
-# Windows
-netstat -ano | findstr ":3111 :3112 :3113 :49134"
-taskkill /F /PID <pid>
-```
-
-`agentmemory stop` kerää siististi sekä workerin että moottorin pidfile:n normaalissa natiivissa sammutuksessa. Docker-tilassa se huuhtelee natiivin workerin, pysäyttää tarkan validoidun moottorikontin, ja säilyttää molemmat, kontin ja sen `/data`-liitoksen, häviöttömälle uudelleenkäynnistykselle. Seuraava käynnistys validoi ja jatkaa samaa konttia. Docker-pohjainen poisto vaatii `agentmemory remove --keep-data`-komennon: se poistaa jaetut agentmemory-hallinnoimat tiedostot säilyttäen validoidun kontin, sen datan liitoksen ja elinkaaritietueen, jota tarvitaan niiden palauttamiseen. Tuhoisa Docker-datan poisto on tarkoituksella jätetty operaattorille varmuuskopion jälkeen. CLI myös kieltäytyy ottamasta haltuun tai signaalittamasta Docker- tai VM-porttien haltijoita (Docker-backend, vpnkit, colima) natiivina moottorina, ellei `--force`-lippua anneta. Yllä oleva manuaalinen siivous on vain kaatumisen jälkeiselle tapaukselle, jossa kumpaakaan pidfileä ei jäänyt.
+Oletusarvoinen tiedostotallennus ei tarvitse erillistä tietokantaa. Redis on valinnainen asetuksilla `AGENTMEMORY_STATE_BACKEND=redis` ja `AGENTMEMORY_REDIS_URL`. Taustajärjestelmän vaihto ei kopioi muistia. Pysyvyys, Redisin rajoitukset ja autentikoitu vienti/tuonti kuvataan [tallennusoppaassa](../docs/reliability/state-storage.md).
 
 ### Asetustiedosto
 
-Laita agentmemoryn ajonaikaiset asetukset tiedostoon `~/.agentmemory/.env` sen sijaan, että vietäisit muuttujia joka shellissä. Jos katseluohjelma näyttää asetusvihjeen kuten `export ANTHROPIC_API_KEY=...`, kopioi se tähän tiedostoon muodossa `ANTHROPIC_API_KEY=...` ilman `export`-etuliitettä, ja käynnistä sitten agentmemory uudelleen.
+Laita agentmemoryn ajonaikaiset asetukset tiedostoon `~/.agentmemory/.env` sen sijaan, että veisit muuttujia joka shellissä. Jos katseluohjelma näyttää asetusvihjeen, kuten `export ANTHROPIC_API_KEY=...`, kopioi se tähän tiedostoon muodossa `ANTHROPIC_API_KEY=...` ilman `export`-etuliitettä ja käynnistä agentmemory uudelleen. Aseta `AGENTMEMORY_ENV_FILE`, jos haluat käyttää muuta ympäristötiedoston polkua.
 
-Prosessin ympäristömuuttujat toimivat yhä ja voittavat tiedoston arvot.
+Prosessin ympäristömuuttujat ohittavat tiedoston arvot. Käynnistä palvelin uudelleen asetusten muuttamisen jälkeen.
 
 Windowsilla sama tiedosto sijaitsee polussa `%USERPROFILE%\.agentmemory\.env`:
 
@@ -1622,179 +1351,30 @@ GRAPH_EXTRACTION_ENABLED=true
 
 ### Ympäristömuuttujat
 
-Luo `~/.agentmemory/.env`:
+Tavalliset asetukset tiedostoon `~/.agentmemory/.env`. Kontekstin lisäys ja pakkaus ovat valinnaisia; pakkaus tarvitsee myös palveluntarjoajan. `core` rajaa näkyviä MCP-työkaluja:
 
 ```env
-# LLM provider (pick one — default is the no-op provider: no LLM calls)
-# ANTHROPIC_API_KEY=sk-ant-...
-# ANTHROPIC_BASE_URL=...              # Optional: Anthropic-compatible proxy / Azure
-# GEMINI_API_KEY=...
-# OPENROUTER_API_KEY=...
-# MINIMAX_API_KEY=...
-# OPENAI_API_KEY=***                       # NOTE: this same key auto-activates BOTH the
-#                                          # OpenAI LLM provider (here) AND the OpenAI
-#                                          # embedding provider (further below). Set
-#                                          # OPENAI_API_KEY_FOR_LLM=false to scope it
-#                                          # to embeddings only.
-# OPENAI_BASE_URL=https://api.openai.com   # Optional: override for Azure / vLLM / LM Studio / proxies
-#                                          # Azure: https://<resource>.openai.azure.com/openai/deployments/<deployment>
-#                                          # Auto-detected from `.openai.azure.com` hostname; uses
-#                                          # api-key header + api-version query param.
-# OPENAI_API_VERSION=2024-08-01-preview    # Optional: Azure api-version query param
-# OPENAI_MODEL=gpt-5.6-luna                # Optional: default model
-# OPENAI_TIMEOUT_MS=60000                  # Optional: OpenAI-scoped alias for the outbound fetch
-#                                          # timeout. Takes precedence over AGENTMEMORY_LLM_TIMEOUT_MS
-#                                          # for back-compat with v0.9.17. New configs should
-#                                          # prefer the global AGENTMEMORY_LLM_TIMEOUT_MS below.
-# OPENAI_REASONING_EFFORT=none             # Optional: "low" | "medium" | "high" | "none"
-#                                          # Honored only by OpenAI's reasoning models (o1, o3,
-#                                          # gpt-*-reasoning) and providers that mirror that
-#                                          # schema (Ollama Cloud thinking models). Standard
-#                                          # chat models reject this field with 400. Set to
-#                                          # "none" for thinking models that return reasoning
-#                                          # but no content.
-# OPENAI_API_KEY_FOR_LLM=false             # Optional: set to false to skip OpenAI auto-detection
-#                                          # for LLM (useful if you only want OpenAI for embeddings)
-# Opt-in Claude-subscription fallback (spawns @anthropic-ai/claude-agent-sdk);
-# leave OFF unless you understand the Stop-hook recursion risk:
-# AGENTMEMORY_ALLOW_AGENT_SDK=true
-
-# Embedding provider (BM25-only when unset; local is an explicit opt-in)
-# EMBEDDING_PROVIDER=local
-# VOYAGE_API_KEY=...
-# OPENAI_API_KEY=sk-...
-# OPENAI_BASE_URL=https://api.openai.com   # Override for Azure / vLLM / LM Studio / proxies
-# OPENAI_EMBEDDING_MODEL=text-embedding-3-small
-# OPENAI_EMBEDDING_DIMENSIONS=1536        # Required when the model is not in the known-models table
-# OPENAI_EMBEDDING_BASE_URL=https://...   # Embeddings only; falls back to OPENAI_BASE_URL
-# OPENAI_EMBEDDING_API_KEY=sk-...         # Embeddings only; wins over OPENAI_API_KEY when set
-
-# Outbound LLM / embedding timeout
-# AGENTMEMORY_LLM_TIMEOUT_MS=60000       # Default: 60 000 ms (60 s). Applies to every
-                                          # raw-fetch provider (Gemini, OpenRouter, MiniMax,
-                                          # OpenAI LLM, OpenAI/Cohere/Voyage/OpenRouter
-                                          # embedding). For the OpenAI LLM path, the
-                                          # OpenAI-scoped OPENAI_TIMEOUT_MS alias (above)
-                                          # takes precedence when set, for back-compat
-                                          # with v0.9.17.
-                                          # Increase for slow networks or large batch calls;
-                                          # decrease to fail-fast on rate-limit holds.
-
-# Search tuning
-# BM25_WEIGHT=0.4
-# VECTOR_WEIGHT=0.6
-# TOKEN_BUDGET=2000
-
-# Auth (generated into ~/.agentmemory/secret on first start when unset)
-# AGENTMEMORY_SECRET=your-secret
-# VIEWER_ALLOWED_ORIGINS=https://memory.example.com
-# AGENTMEMORY_IMPORT_ROOT=~/projects
-
-# Ports (defaults: 3111 API, 3113 viewer)
-# III_REST_PORT=3111
-
-# Engine usage telemetry (iii). Off unless you set it; true opts in.
-# III_TELEMETRY_ENABLED=false
-
-# Features
-# AGENTMEMORY_AUTO_COMPRESS=false  # OFF by default. Requires an LLM
-                                   # provider as well. When both are on,
-                                   # every PostToolUse hook calls your
-                                   # LLM provider to compress the
-                                   # observation — expect significant
-                                   # token spend on active sessions.
-# AGENTMEMORY_SLOTS=false          # OFF by default. Editable pinned
-                                   # memory slots — persona,
-                                   # user_preferences, tool_guidelines,
-                                   # project_context, guidance,
-                                   # pending_items, session_patterns,
-                                   # self_notes. Size-limited; agent
-                                   # edits via memory_slot_* tools.
-                                   # Pinned slots addressable for
-                                   # SessionStart injection.
-# AGENTMEMORY_REFLECT=false        # OFF by default. Requires SLOTS=on.
-                                   # Stop hook fires mem::slot-reflect:
-                                   # scans recent observations, auto-
-                                   # appends TODOs to pending_items,
-                                   # counts patterns in
-                                   # session_patterns, records touched
-                                   # files in project_context. Fire-
-                                   # and-forget; does not block.
-# AGENTMEMORY_INJECT_CONTEXT=false # OFF by default. When on:
-                                   # - SessionStart may inject ~1-2K
-                                   #   chars of project context into
-                                   #   the first turn of each session
-                                   #   (this is what actually reaches
-                                   #   the model — Claude Code treats
-                                   #   SessionStart stdout as context)
-                                   # - PreToolUse fires /agentmemory/enrich
-                                   #   on every file-touching tool call
-                                   #   (resource cleanup, not a token
-                                   #   fix — PreToolUse stdout is debug
-                                   #   log only per Claude Code docs)
-                                   # Observations are still captured via
-                                   # PostToolUse regardless of this flag.
-# GRAPH_EXTRACTION_ENABLED=false
-# AGENTMEMORY_LLM_NOTHINK=1        # Local reasoning models only: ask the
-                                   # model to skip its hidden thinking pass
-                                   # during graph extraction. Faster runs;
-                                   # relation quality can drop slightly.
-# CONSOLIDATION_ENABLED=false   # on by default when an LLM provider is configured
-# LESSON_DECAY_ENABLED=true
-# OBSIDIAN_AUTO_EXPORT=false
-# AGENTMEMORY_EXPORT_ROOT=~/.agentmemory
-# CLAUDE_MEMORY_BRIDGE=false
-# SNAPSHOT_ENABLED=false
-
-# Storage and durability
-# AGENTMEMORY_STATE_BACKEND=file           # file (default) or redis; see "Storage backend" below
-# AGENTMEMORY_REDIS_URL=redis://localhost:6379   # Required with redis, plain redis:// only
-# AGENTMEMORY_STATE_SAVE_INTERVAL_MS=2000  # How often the engine writes file state to disk.
-                                           # A hard kill loses at most this window.
-# AGENTMEMORY_INDEX_SAVE_INTERVAL_MS=600000  # Minimum time between search index saves;
-                                             # shutdown and deletes still save at once.
-# AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=true   # One-time background trim of oversized graph
-                                           # provenance; false skips it
-
-# Sessions
-# AGENTMEMORY_SESSION_SWEEP_ENABLED=true   # Hourly sweep marks sessions left active past
-                                           # the threshold as abandoned. Deletes nothing;
-                                           # new activity makes the session active again.
-# AGENTMEMORY_SESSION_SWEEP_STALE_HOURS=24
-
-# Capture filters (hooks)
-# AGENTMEMORY_CAPTURE_ALLOW=               # Comma or space list of tool names or globs;
-                                           # when set, only these tools are captured
-# AGENTMEMORY_CAPTURE_DENY=                # Extra names or globs to skip, added to the
-                                           # defaults: memory_*, toolsearch,
-                                           # listmcpresources, fetchmcpresource
-# AGENTMEMORY_CAPTURE_OUTPUT_MAX=8000      # Max characters of tool output per observation
-# AGENTMEMORY_PRE_COMPACT_BUDGET=1500      # Token budget for PreCompact context; 0 disables
-
-# Audit log
-# AGENTMEMORY_AUDIT_RETENTION_MONTHS=0     # Drop month scopes older than N months; 0 keeps all
-# AGENTMEMORY_AUDIT_INDEX_PERSIST=false    # 1 or true records index migration and cleanup
-                                           # rows (debugging only)
-
-# Team
-# TEAM_ID=
-# USER_ID=
-# TEAM_MODE=private
-
-# Tool visibility: "all" (54 tools, default) or "core" (8 tools, lean)
+EMBEDDING_PROVIDER=local
+# AGENTMEMORY_INJECT_CONTEXT=true
+# AGENTMEMORY_AUTO_COMPRESS=true
 # AGENTMEMORY_TOOLS=core
+# AUTO_FORGET_ENABLED=false
+# LESSON_DECAY_ENABLED=false
+# INSIGHT_DECAY_ENABLED=false
 ```
+
+Täydellinen [`.env.example`](../.env.example) kattaa palveluntarjoajat, tallennussuodattimet, säilytyksen, tallennusratkaisut, tiimit ja valinnaiset ominaisuudet. `AGENTMEMORY_ENV_FILE` valitsee toisen tiedoston. Älä koskaan commitoi täytettyä `.env`-tiedostoa tai bearer-salaisuutta.
 
 ---
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-143 endpointia portissa `3111`. REST-rajapinta sitoutuu oletuksena osoitteeseen `127.0.0.1`. Suojatut endpointit vaativat `Authorization: Bearer <secret>`, ja mesh-synkronointiendpointit vaativat nimenomaisesti asetetun `AGENTMEMORY_SECRET`-arvon molemmilla vertaisilla.
+146 endpointia portissa `3111`. REST-rajapinta sitoutuu oletuksena osoitteeseen `127.0.0.1`. Suojatut endpointit vaativat `Authorization: Bearer <secret>`, ja mesh-synkronointiendpointit vaativat nimenomaisesti asetetun `AGENTMEMORY_SECRET`-arvon molemmilla vertaisilla.
 
-**Autentikointi on oletuksena päällä.** Kun `AGENTMEMORY_SECRET` ei ole asetettu (shellissä tai tiedostossa `~/.agentmemory/.env`), palvelin generoi satunnaisen salaisuuden ensimmäisellä käynnistyksellä ja tallentaa sen polkuun `~/.agentmemory/secret` oikeuksilla `0600`. Joka mukana tuleva asiakas lukee sen sieltä puhuessaan paikalliselle palvelimelle: CLI, katseluohjelma, hookit kansiossa `plugin/scripts`, MCP-palvelin ja `@agentmemory/mcp`-shim, `agentmemory connect`-komennon kirjoittamat asetukset, ja mukana tulevat OpenCode-, Pi-, OpenClaw-, Hermes- ja tiedostojärjestelmän tarkkailijaintegraatiot. Tallennettu salaisuus lähetetään vain loopback-URL-osoitteisiin (`localhost`, `127.0.0.0/8`, `::1`). Nimenomainen `AGENTMEMORY_SECRET` voittaa aina, ja etäasiakkaat tarvitsevat sen yhä asetettuna. Docker ja `deploy/`-entrypointit generoivat ja vievät jo omansa. Kutsuaksesi rajapintaa käsin:
+**Autentikointi on oletuksena päällä.** Jos `AGENTMEMORY_SECRET` puuttuu, CLI luo ensimmäisellä käynnistyksellä satunnaisen salaisuuden tiedostoon `~/.agentmemory/secret` oikeuksilla `0600` ja kopioi sen myös valittuun datahakemistoon. Kaikki mukana toimitetut asiakkaat lukevat salaisuuden sieltä käyttäessään paikallista palvelinta: CLI, katseluohjelma, `plugin/scripts`-hakemiston hookit, MCP-palvelin ja `@agentmemory/mcp`-shim, `agentmemory connect` -komennon luomat asetukset sekä mukana toimitetut OpenCode-, Pi-, OpenClaw-, Hermes- ja filesystem-watcher-integraatiot. Tallennettu salaisuus lähetetään vain loopback-osoitteisiin (`localhost`, `127.0.0.0/8`, `::1`). Nimenomainen `AGENTMEMORY_SECRET` voittaa aina, ja etäasiakkaiden on asetettava salaisuus ympäristöönsä. Repositorion Docker-itseylläpitokäyttöönotot ja `deploy/`-entrypointit luovat ja vievät oman salaisuutensa. Rajapinnan manuaalinen kutsu:
 
 ```bash
-curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:3111/agentmemory/health
+curl -H "Authorization: Bearer <secret-from-data-dir>" http://localhost:3111/agentmemory/health
 ```
 
 **Kirjoitusten pyyntösäännöt.** `POST`-, `PUT`-, `PATCH`- ja `DELETE`-pyyntöjen REST-rajapinnalle ja katseluohjelmalle on lähetettävä `Content-Type: application/json` (`charset`-parametri on OK) aina, kun niillä on runko, ja `Origin`-otsikon, kun se on läsnä, on oltava loopback-alkuperä määritetylle REST- tai katseluohjelmaportille tai listattu `VIEWER_ALLOWED_ORIGINS`-muuttujassa (pilkulla eroteltu, esim. `https://memory.example.com`). Asiakkaat, jotka eivät lähetä `Origin`-otsikkoa (CLI, hookit, MCP, curl, palvelin-palvelin-liikenne), eivät kärsi tästä. Katseluohjelma hyväksyy myös oman alkuperänsä.
@@ -1830,7 +1410,7 @@ curl -H "Authorization: Bearer $(cat ~/.agentmemory/secret)" http://localhost:31
 | `POST` | `/agentmemory/team/share` | Jaa tiimin kanssa |
 | `GET` | `/agentmemory/audit` | Auditointijälki |
 
-Täysi endpoint-lista: [`src/triggers/api.ts`](../src/triggers/api.ts)
+Täysi endpoint-lista: [Generoitu REST-viite](../plugin/skills/agentmemory-rest-api/REFERENCE.md)
 
 </details>
 
@@ -1848,19 +1428,19 @@ Epäonnistuneita tapahtumia yritetään uudelleen `AGENTMEMORY_CAPTURE_RETRY_INT
 
 Kun palvelin on alhaalla, ei vastaa ajoissa tai palauttaa 5xx:n, hook liittää havainnon paikalliseen spool-tiedostoon, `<data dir>/capture-spool/<host>-<port>.jsonl` (ylikirjoita kansio `AGENTMEMORY_CAPTURE_SPOOL_DIR`:llä). Tiedosto on yksityinen käyttäjällesi (oikeudet 600), salaisuudet peitetään samalla tavalla kuin palvelin peittää ne, se pitää enintään `AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES` (5 MiB) ja pudottaa merkinnät, jotka ovat vanhempia kuin `AGENTMEMORY_CAPTURE_SPOOL_MAX_AGE_HOURS` (168). Kun se on täynnä, uudet merkinnät pudotetaan ja lasketaan, ja `/agentmemory/status` raportoi sen. Hook poistuu yhä koodilla 0 aikarajansa sisällä ja lisää ei yhtään pyyntöä, kun palvelin on terve. Spool lähetetään seuraavassa käynnistyksessä ja ensimmäisellä hookilla, joka tavoittaa palvelimen uudelleen, taustaprosessissa, niin agentti ei odota. Tapahtuma-ID:t tekevät tämän turvalliseksi: havainto, joka saapui ennen aikakatkaisua, ei tallenneta kahdesti. `npx @agentmemory/agentmemory capture` näyttää spoolin ja palvelimen saapuvat, `--drain` lähettää spoolin nyt, ja `GET /agentmemory/capture` palauttaa saman JSON:na. Aseta `AGENTMEMORY_CAPTURE_SPOOL=false` kytkeäksesi spoolin pois.
 
-**Graafin alkuperän tiivistäminen.** Joka tietograafin solmu ja reuna pitää 32 uusimman havainnon ID:t, joista se tuli. Varastot, jotka kirjoitettiin ennen tätä kattoa, voivat pitää tuhansia ID:itä per kuuma solmu, mikä tekee graafihausta ja katseluohjelmasta hitaan tai kaataa workerin. agentmemory korjaa tämän itse: ensimmäisellä käynnistyksellä päivityksen jälkeen se tiivistää joka solmun, reunan, korvatun reunan (temporaalinen graafihistoria) ja välimuistitetun tilannevedoksen kattoon taustalla, pienissä viipaleissa tauolla niiden välissä, niin haku, tallennus ja katseluohjelma pysyvät toiminnassa. Se tallentaa edistymisensä, jatkaa uudelleenkäynnistyksen jälkeen ja ei koskaan aja uudelleen, kun se on valmistunut. `/agentmemory/status` ja katseluohjelman Health-sivu näyttävät sen odottavana, käynnissä (nykyisellä scopella ja sijainnilla), valmiina tai epäonnistuneena. Aseta `AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false` kytkeäksesi sen pois.
+**Graafin alkuperän tiivistäminen.** Vanhojen alkuperätietojen tiivistäminen lykätään käynnistyksessä, koska se lukee vanhat scopet kokonaan. `/agentmemory/status` näyttää tilan `deferred`, tai `off`, kun `AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false`. Suorita alla kuvattu manuaalinen tiivistäminen huollon aikana. Hakuindeksin migraatio on erillinen: käytä komentoa `agentmemory graph-index migrate --allow-legacy-scan` [huolto-ohjeen](../docs/reliability/graph-index-migration.md) mukaisesti.
 
 Ajaaksesi sen käsin, kutsu `POST /agentmemory/graph/compact`. Se kävelee nimi- ja reuna-avainindeksit sen sijaan, että listaisi joka solmun ja reunan, ja sen voi turvallisesti ajaa uudelleen. Kun se tiivistää ID:itä, se kirjoittaa `graph_compact`-auditointimerkinnän.
 
 ```bash
-curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: application/json" -d '{}'
+curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" -d '{}'
 ```
 
 Suurella varastolla, tai kun kutsu palauttaa 504:n, aja se viipaleissa. Lähetä `scope` (`nodes`, `edges` tai `history`), `offset` ja `limit`, ja kutsu sitten uudelleen palautetulla `nextOffset`:lla, kunnes se on `null`. Tee tämä `nodes`:lle, `edges`:lle ja `history`:lle, ja lopeta yhdellä `{"scope":"snapshot"}`-kutsulla, koska viipaloitu ajo ei koske välimuistitettua tilannevedosta.
 
 ```bash
-curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: application/json" -d '{"scope":"nodes","offset":0,"limit":200}'
-curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: application/json" -d '{"scope":"snapshot"}'
+curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" -d '{"scope":"nodes","offset":0,"limit":200}'
+curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: Bearer <secret>" -H "Content-Type: application/json" -d '{"scope":"snapshot"}'
 ```
 
 ---
@@ -1870,11 +1450,11 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Content-Type: a
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 3,800+ tests
+npm test                  # 4,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
-**Edellytykset:** Node.js >= 20 npm/npx:llä; [iii-engine](https://iii.dev/docs) v0.22.1 tai Docker. macOS/Linux-automaattinen moottorin asennus vaatii myös `curl`:n, POSIX-yhteensopivan `sh`:n ja `tar`:n; natiivi Windows käyttää manuaalista kiinnitettyä `iii.exe`:tä, WSL2:ta tai Docker Desktopia.
+Vaatimukset ovat [asennusohjeessa](#install). Osallistumisohjeet ja julkaisutarkistukset ovat [CONTRIBUTING.md](../CONTRIBUTING.md)-tiedostossa.
 
 <h2 id="license"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-license.svg"><img src="../assets/tags/section-license.svg" alt="Lisenssi" height="32" /></picture></h2>
 

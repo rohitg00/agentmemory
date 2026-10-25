@@ -76,10 +76,10 @@ if (!version) {
   );
 }
 
-const restEndpoints = safeCountMatches(
-  join(repoRoot, "src", "triggers", "api.ts"),
-  /config:\s*\{\s*api_path:\s*"/g,
-);
+const restEndpoints =
+  safeCountMatches(join(repoRoot, "src", "triggers", "api.ts"), /api_path:\s*["`]/g) +
+  safeCountMatches(join(repoRoot, "src", "triggers", "viewer-sse.ts"), /api_path:\s*["`]/g) +
+  safeCountMatches(join(repoRoot, "src", "triggers", "viewer-streams.ts"), /api_path:\s*["`]/g);
 const mcpTools = safeCountMatches(
   join(repoRoot, "src", "mcp", "tools-registry.ts"),
   /name:\s*"memory_/g,

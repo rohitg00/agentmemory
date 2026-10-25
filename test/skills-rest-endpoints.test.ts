@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { collectRestEndpoints } from "../scripts/skills/rest-endpoints.js";
+import { collectRestEndpoints, collectRestEndpointsInDirectory } from "../scripts/skills/rest-endpoints.js";
 
 describe("generated REST endpoint methods", () => {
   it("associates adjacent status and mutation routes with their own methods", () => {
@@ -10,6 +11,18 @@ describe("generated REST endpoint methods", () => {
       { path: "/agentmemory/graph/index/migrate", method: "POST" },
       { path: "/agentmemory/graph/index/resume", method: "POST" },
     ]);
+  });
+
+  it("documents HTTP routes from every trigger module", () => {
+    const rows = collectRestEndpointsInDirectory(fileURLToPath(new URL("../src/triggers", import.meta.url)));
+    expect(rows).toHaveLength(146);
+    expect(rows).toEqual(expect.arrayContaining([
+      { path: "/agentmemory/viewer/events", method: "GET" },
+      { path: "/agentmemory/viewer/snapshot", method: "GET" },
+      { path: "/agentmemory/counts", method: "GET" },
+      { path: "/agentmemory/compression", method: "GET" },
+      { path: "/agentmemory/compression/retry", method: "POST" },
+    ]));
   });
 
   it("handles either property order and ignores neighboring methods, comments and strings", () => {

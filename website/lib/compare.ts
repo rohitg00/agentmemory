@@ -52,7 +52,7 @@ export const AGENTMEMORY: Record<RowKey, Fact> = {
   },
   license: { value: "Apache-2.0", src: `${REPO_URL}/blob/main/LICENSE` },
   deployment: {
-    value: "On your machine, as one process bound to 127.0.0.1. There is no hosted tier.",
+    value: "On your machine, in a local iii Worker Compose runtime. The CLI's REST and viewer listeners bind to 127.0.0.1 by default; there is no hosted tier.",
     src: README,
   },
   storage: {
@@ -113,7 +113,7 @@ export const COMPETITORS: Competitor[] = [
       "Mem0 is a memory API you build into your own application. agentmemory is a memory server for coding agents that captures sessions on its own and runs entirely on your machine.",
     differ: [
       "Mem0 is called by your code: you decide what to send with memory.add(), and an LLM turns it into memories. That suits products where you own the agent loop. agentmemory sits beside agents you already use, like Claude Code or Cursor, and captures their sessions through hooks without code changes.",
-      "Mem0 needs an LLM to extract memories and a vector store to hold them, or its managed platform. agentmemory runs as one local process with no external database, and works without any API key on BM25 search.",
+      "Mem0 needs an LLM to extract memories and a vector store to hold them, or its managed platform. agentmemory runs as a local service with supervised workers and no external database, and works without any API key on BM25 search.",
       "Some Mem0 capabilities, such as graph memory, on-prem deployment and audit logs, sit on paid plans. agentmemory has no paid tier, so every feature ships in the open source build.",
     ],
     chooseThem: [
@@ -196,7 +196,7 @@ export const COMPETITORS: Competitor[] = [
       "Zep is a managed context platform for enterprise agents, built on the Graphiti graph engine. agentmemory is a local memory server for individual developers and their coding agents.",
     differ: [
       "Zep centers on a temporal knowledge graph that combines business data, documents and conversations for many users. agentmemory centers on one developer's coding sessions, captured automatically on their machine.",
-      "Running Graphiti yourself means operating a graph database and an LLM for ingestion. agentmemory needs neither: it runs as one process, and its own graph is built locally and optionally.",
+      "Running Graphiti yourself means operating a graph database and an LLM for ingestion. agentmemory needs neither: its local iii Worker Compose runtime manages the services, and its own graph is built locally and optionally.",
       "Zep's platform adds enterprise controls such as SOC 2 Type II and bring-your-own-cloud. agentmemory avoids that surface by not hosting anything, since data never leaves the machine.",
     ],
     chooseThem: [
@@ -236,7 +236,7 @@ export const COMPETITORS: Competitor[] = [
       "claude-mem and agentmemory solve the same problem the same way: hooks capture coding sessions and context comes back next time. They differ in what runs the compression, what storage they need, and how much of memory they model.",
     differ: [
       "claude-mem compresses observations with Claude through the Claude Agent SDK, so every compression is a model call. agentmemory stores observations as captured and works with no model at all; an LLM is optional and only used for consolidation if you add one.",
-      "claude-mem uses SQLite plus a Chroma vector database. agentmemory runs as one process with its own storage and local embeddings, and adds a knowledge graph and four memory tiers with decay.",
+      "claude-mem uses SQLite plus a Chroma vector database. agentmemory runs on a local iii Worker Compose runtime with file-backed state by default and local embeddings, and adds a knowledge graph and four memory tiers with decay.",
       "Both capture through hooks. agentmemory also ships native plugins for Codex CLI, Cursor, Copilot CLI and others, 54 MCP tools, a REST API, and a release gate that checks crash recovery on every publish.",
     ],
     chooseThem: [
@@ -288,7 +288,7 @@ export const COMPETITORS: Competitor[] = [
     differ: [
       "With Letta you create agents on its platform, and each agent edits its memory blocks through tools. With agentmemory you keep your current coding agent, and memory is captured around it by hooks.",
       "Letta memory belongs to Letta agents. agentmemory memory is shared by every connected agent, so Claude Code, Cursor and Codex all read from one store.",
-      "Letta runs as Letta Cloud or a Letta server. agentmemory runs as one local process with nothing else to deploy.",
+      "Letta runs as Letta Cloud or a Letta server. agentmemory runs locally through Worker Compose, which manages its engine and workers.",
     ],
     chooseThem: [
       "You are building your own long-running agents and want a full runtime.",
@@ -298,7 +298,7 @@ export const COMPETITORS: Competitor[] = [
     chooseUs: [
       "You want memory for the coding agents you already use.",
       "You want capture to be automatic instead of agent-decided.",
-      "You want a single local process with no platform to run.",
+      "You want a local service with automatic worker supervision.",
     ],
   },
   {
@@ -327,7 +327,7 @@ export const COMPETITORS: Competitor[] = [
       "Cognee builds knowledge graphs from data you feed it, for agents and apps. agentmemory captures coding agent sessions automatically and keeps them on your machine.",
     differ: [
       "Cognee is a pipeline you run over documents and data: add them, then turn them into a graph. agentmemory captures what your coding agent does as it works, through hooks.",
-      "Cognee relies on graph, vector and relational stores, which can share one Postgres. agentmemory needs no database at all and runs as one process.",
+      "Cognee relies on graph, vector and relational stores, which can share one Postgres. agentmemory uses its iii state worker with file-backed key/value storage by default, managed by a local Worker Compose runtime.",
       "Both offer MCP and a Claude Code integration. agentmemory adds native plugins for many coding agents, a live viewer, and four memory tiers with decay.",
     ],
     chooseThem: [

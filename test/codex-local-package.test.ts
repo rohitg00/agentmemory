@@ -14,6 +14,7 @@ const requests: Array<{ path: string; method: string; body: any }> = [];
 let server: Server;
 let url: string;
 let extracted: string;
+let pluginOut = "";
 let mode: "ok" | "unauthorized" | "invalid-json" | "redirect" = "ok";
 let child: ChildProcessWithoutNullStreams;
 let request: (method: string, params?: Record<string, unknown>) => Promise<any>;
@@ -67,10 +68,11 @@ beforeAll(async () => {
     if (!config) throw new Error("Missing plugin bridge build configuration");
     await build({ ...config, config: false });
   `], { cwd: root });
-  execFileSync(process.execPath, ["scripts/plugins/package-codex.mjs"], { cwd: root });
+  pluginOut = mkdtempSync(join(tmpdir(), "agentmemory-codex-package-"));
+  execFileSync(process.execPath, ["scripts/plugins/package-codex.mjs"], { cwd: root, env: { ...process.env, AGENTMEMORY_PLUGIN_OUT_DIR: pluginOut } });
   const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
   extracted = mkdtempSync(join(tmpdir(), "agentmemory plugin with spaces "));
-  execFileSync("unzip", ["-q", join(root, `dist/plugins/agentmemory-codex-local-${version}.zip`), "-d", extracted]);
+  execFileSync("unzip", ["-q", join(pluginOut, `agentmemory-codex-local-${version}.zip`), "-d", extracted]);
   server = createServer(async (req, res) => {
     let text = "";
     for await (const chunk of req) text += chunk;
@@ -103,6 +105,7 @@ beforeAll(async () => {
 }, 20_000);
 
 afterAll(async () => {
+  if (pluginOut) rmSync(pluginOut, { recursive: true, force: true });
   child?.kill();
   if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
   if (extracted) rmSync(extracted, { recursive: true, force: true });
@@ -248,7 +251,7 @@ describe("Codex release packaging", () => {
 
   it("excludes lifecycle hooks from the review ZIP but retains MCP and skills", () => {
     const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-    const archive = join(root, `dist/plugins/agentmemory-codex-review-${version}.zip`);
+    const archive = join(pluginOut, `agentmemory-codex-review-${version}.zip`);
     const listing = execFileSync("unzip", ["-Z1", archive], { encoding: "utf8" });
     expect(listing).not.toMatch(/^hooks\//m);
     expect(listing).not.toContain("scripts/session-start.mjs");
@@ -262,7 +265,7 @@ describe("Codex release packaging", () => {
 
   it("builds a skills-only ZIP with no MCP server, hooks, or scripts for the directory's skills path", () => {
     const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
-    const archive = join(root, `dist/plugins/agentmemory-codex-skills-${version}.zip`);
+    const archive = join(pluginOut, `agentmemory-codex-skills-${version}.zip`);
     const listing = execFileSync("unzip", ["-Z1", archive], { encoding: "utf8" });
     expect(listing).not.toContain(".mcp.json");
     expect(listing).not.toMatch(/^(hooks|scripts)\//m);

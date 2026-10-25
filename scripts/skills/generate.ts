@@ -3,7 +3,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAllTools, ESSENTIAL_TOOLS } from "../../src/mcp/tools-registry.js";
 import { ADAPTERS } from "../../src/cli/connect/index.js";
-import { collectRestEndpoints } from "./rest-endpoints.js";
+import { collectRestEndpointsInDirectory } from "./rest-endpoints.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -86,8 +86,7 @@ function tools(): string {
 }
 
 function rest(): string {
-  const text = readFileSync(join(SRC, "triggers", "api.ts"), "utf8");
-  const rows = collectRestEndpoints(text);
+  const rows = collectRestEndpointsInDirectory(join(SRC, "triggers"));
   const lines = [
     `The REST API is the primary surface. All paths are under \`http://localhost:3111\` (override with \`--port\`). Send \`Authorization: Bearer <secret>\`: the value of \`AGENTMEMORY_SECRET\`, or the one generated into \`~/.agentmemory/secret\` on first start when it is unset. Writes must use \`Content-Type: application/json\`.`,
     "",
