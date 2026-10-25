@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-type HookHandler = { type: string; command: string };
+type HookHandler = { type: string; command?: string; [key: string]: unknown };
 type HookEntry = { matcher?: string; hooks: HookHandler[] };
 export type HookManifest = { hooks: Record<string, HookEntry[]> };
 
@@ -34,13 +34,14 @@ export function findPluginRoot(startUrl: string = import.meta.url): string {
 /**
  * Build the merged hooks.json content.
  *
- *   1. Strip any entry from `existing` whose first hook command points
- *      under `<pluginRoot>/scripts/`. This lets us re-install idempotently
- *      without leaving stale references.
+ *   1. Strip every handler in `existing` whose command points under
+ *      `<pluginRoot>/scripts/`, and an entry only once nothing else is left
+ *      in it. This lets us re-install idempotently without leaving stale
+ *      references or dropping the user's own handlers.
  *   2. Append fresh entries from the bundled Codex manifest with
  *      `${CLAUDE_PLUGIN_ROOT}` rewritten to the absolute plugin path.
- *      Matcher values from the bundled manifest are preserved so PreToolUse
- *      event routing keeps working.
+ *      Matchers and the other handler fields from the bundled manifest are
+ *      preserved so PreToolUse event routing keeps working.
  */
 export function buildMergedHooks(
   existing: HookManifest | null,
@@ -55,7 +56,13 @@ export function buildMergedHooks(
 
   if (existing?.hooks) {
     for (const [event, entries] of Object.entries(existing.hooks)) {
-      const kept = entries.filter((entry) => !isAgentmemoryEntry(entry, scriptsDir));
+      const kept = entries.flatMap((entry) => {
+        const hooks = entry.hooks.filter(
+          (handler) => !isAgentmemoryHandler(handler, scriptsDir),
+        );
+        if (hooks.length === entry.hooks.length) return [entry];
+        return hooks.length > 0 ? [{ ...entry, hooks }] : [];
+      });
       if (kept.length > 0) out.hooks[event] = kept;
     }
   }
@@ -64,8 +71,11 @@ export function buildMergedHooks(
     const resolvedEntries: HookEntry[] = entries.map((entry) => {
       const next: HookEntry = {
         hooks: entry.hooks.map((handler) => ({
-          type: handler.type,
-          command: handler.command.replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, pluginRoot),
+          ...handler,
+          command: handler.command?.replace(
+            /\$\{CLAUDE_PLUGIN_ROOT\}/g,
+            () => pluginRoot,
+          ),
         })),
       };
       if (entry.matcher !== undefined) next.matcher = entry.matcher;
@@ -77,10 +87,12 @@ export function buildMergedHooks(
   return out;
 }
 
-function isAgentmemoryEntry(entry: HookEntry, scriptsDir: string): boolean {
-  const normalizedScriptsDir = normalizePathForCommandMatch(scriptsDir);
-  return entry.hooks.some((handler) =>
-    normalizePathForCommandMatch(handler.command).includes(normalizedScriptsDir),
+function isAgentmemoryHandler(handler: HookHandler, scriptsDir: string): boolean {
+  return (
+    typeof handler.command === "string" &&
+    normalizePathForCommandMatch(handler.command).includes(
+      normalizePathForCommandMatch(scriptsDir),
+    )
   );
 }
 

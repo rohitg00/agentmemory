@@ -209,6 +209,7 @@ describe("rebuildKeywordIndex", () => {
       process.env.AGENTMEMORY_VECTOR_BACKFILL_MAX = "2";
       const capped = await rebuildKeywordIndex(kv as never, null);
       expect(capped.vectorJobs.length).toBe(2);
+      expect(capped.fullBackfillPending).toBe(2);
     } finally {
       delete process.env.AGENTMEMORY_VECTOR_BACKFILL;
       delete process.env.AGENTMEMORY_VECTOR_BACKFILL_MAX;

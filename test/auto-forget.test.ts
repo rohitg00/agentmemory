@@ -10,7 +10,7 @@ import {
   setIndexPersistence,
 } from "../src/functions/search.js";
 import { memoryToObservation } from "../src/state/memory-utils.js";
-import type { Memory, CompressedObservation, Session } from "../src/types.js";
+import type { Memory, CompressedObservation, Session, Facet } from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -93,6 +93,40 @@ describe("Auto-Forget Function", () => {
     expect(result.ttlExpired).toContain("mem_expired");
     const deleted = await kv.get("mem:memories", "mem_expired");
     expect(deleted).toBeNull();
+  });
+
+  it("removes facets pointing at a TTL-expired memory", async () => {
+    const expired = makeMemory({
+      id: "mem_expired",
+      forgetAfter: "2020-01-01T00:00:00Z",
+    });
+    const kept = makeMemory({ id: "mem_kept" });
+    await kv.set("mem:memories", "mem_expired", expired);
+    await kv.set("mem:memories", "mem_kept", kept);
+    await kv.set("mem:facets", "fct_1", {
+      id: "fct_1",
+      targetId: "mem_expired",
+      targetType: "memory",
+      dimension: "probe",
+      value: "value",
+      createdAt: "2020-01-01T00:00:00Z",
+    });
+    await kv.set("mem:facets", "fct_2", {
+      id: "fct_2",
+      targetId: "mem_kept",
+      targetType: "memory",
+      dimension: "probe",
+      value: "value",
+      createdAt: "2020-01-01T00:00:00Z",
+    });
+
+    const result = (await sdk.trigger("mem::auto-forget", {})) as {
+      ttlExpired: string[];
+    };
+
+    expect(result.ttlExpired).toContain("mem_expired");
+    const remaining = await kv.list<Facet>("mem:facets");
+    expect(remaining.map((f) => f.id)).toEqual(["fct_2"]);
   });
 
   it("detects contradiction between very similar memories", async () => {

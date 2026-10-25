@@ -4,6 +4,7 @@ import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit, safeAudit, queryAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { deleteFacetsForTargets } from "./facets.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
 
@@ -58,6 +59,11 @@ export function registerGovernanceFunction(sdk: IIIClient, kv: StateKV): void {
           failures.push({ id, error: "delete_failed" });
         }
       }
+
+      // Sweeping notFound ids too lets a retried delete clean up after a
+      // partial failure or an older version; the helper itself skips ids that
+      // still resolve in either memory scope.
+      await deleteFacetsForTargets(kv, [...deletedIds, ...notFound]);
 
       const deleted = deletedIds.length;
       if (deleted > 0) await flushIndexSave();
@@ -192,6 +198,8 @@ export function registerGovernanceFunction(sdk: IIIClient, kv: StateKV): void {
           }
         });
       }
+
+      await deleteFacetsForTargets(kv, [...successfulIds, ...notFound]);
 
       if (successfulIds.length > 0) await flushIndexSave();
 

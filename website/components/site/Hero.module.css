@@ -185,15 +185,32 @@
   min-height: 44px;
   font-size: var(--t-14);
   color: var(--ink-2);
+  transition: color var(--dur-1) ease;
+}
+
+.docsText {
   text-decoration: underline;
   text-decoration-color: var(--line-2);
   text-underline-offset: 4px;
-  transition: color var(--dur-1) ease, text-decoration-color var(--dur-1) ease;
+  transition: text-decoration-color var(--dur-1) ease;
+}
+
+.docsArrow {
+  transition: transform var(--dur-1) var(--ease-out);
 }
 
 .docs:hover {
   color: var(--ink);
+}
+
+.docs:hover .docsText {
   text-decoration-color: var(--accent);
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .docs:hover .docsArrow {
+    transform: translateX(2px);
+  }
 }
 
 .star svg {

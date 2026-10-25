@@ -14,6 +14,8 @@ import {
   type SpoolRecord,
 } from "../capture/spool.js";
 
+export { stripPrivateData } from "../functions/privacy.js";
+
 export const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = resolveClientSecret(REST_URL);
 const DRAIN_CHILD_ENV = "AGENTMEMORY_CAPTURE_DRAIN_CHILD";

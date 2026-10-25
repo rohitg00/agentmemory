@@ -13,6 +13,7 @@ import {
   isConsolidationEnabled,
 } from "../config.js";
 import { logger } from "../logger.js";
+import { requestSummaryRefresh } from "../functions/summary-state.js";
 import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 
 // Global marker recording when corpus consolidation last ran, used to debounce
@@ -196,6 +197,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
         const session = await kv.get<Session>(KV.sessions, sessionId);
         if (!session || session.id !== sessionId) return "not_found" as const;
         if (session.status === "completed") return "already_completed" as const;
+        await requestSummaryRefresh(kv, sessionId);
         await kv.update(KV.sessions, sessionId, [
           { type: "set", path: "endedAt", value: new Date().toISOString() },
           { type: "set", path: "status", value: "completed" },

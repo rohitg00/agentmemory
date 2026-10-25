@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveDataDir } from "../cli-data-dir.js";
-import { stripPrivateData } from "../functions/privacy.js";
+import { scrubRecord } from "../functions/privacy.js";
 
 export interface SpoolRecord {
   v: 1;
@@ -239,14 +239,6 @@ function fileSize(path: string): number {
   }
 }
 
-function sanitizeBody(body: Record<string, unknown>): Record<string, unknown> {
-  try {
-    return JSON.parse(stripPrivateData(JSON.stringify(body))) as Record<string, unknown>;
-  } catch {
-    return body;
-  }
-}
-
 function withoutImage(body: Record<string, unknown>): Record<string, unknown> {
   const data = body["data"];
   if (!data || typeof data !== "object" || Array.isArray(data)) return body;
@@ -334,7 +326,7 @@ export function appendSpool(
       spooledAt: new Date().toISOString(),
       reason,
       attempts: options.attempts ?? 0,
-      body: sanitizeBody(body),
+      body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true }),
     };
     let line = JSON.stringify(record) + "\n";
     if (Buffer.byteLength(line) > policy.maxRecordBytes) {
@@ -441,7 +433,7 @@ export function retainSent(
       spooledAt: new Date(now).toISOString(),
       reason: "sent",
       attempts: 0,
-      body: sanitizeBody(body),
+      body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true }),
       bootId: mark.bootId,
     };
     let line = JSON.stringify(record) + "\n";

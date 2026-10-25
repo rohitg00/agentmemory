@@ -584,11 +584,11 @@ async function runKeywordRebuild(
   ): void => {
     if (!backfillEligible || vi?.has(id)) return
     if (!Number.isNaN(cutoff) && !(Date.parse(timestamp ?? '') > cutoff)) return
-    if (backfillGated) {
+    if (backfillGated || (wholeStoreBackfill && vectorJobs.length >= backfillCap)) {
       fullBackfillPending++
       return
     }
-    if (!backfillActive || (wholeStoreBackfill && vectorJobs.length >= backfillCap)) return
+    if (!backfillActive) return
     vectorJobs.push({ id, sessionId, text, revision: idx.watchRevision(id), context: { kind, logId: id } })
   }
 
@@ -652,17 +652,20 @@ async function embedBackfillJobs(
   remainingAfter: number,
 ): Promise<{ ok: number; fail: number; skipped: number }> {
   const batchSize = getRebuildEmbedBatchSize()
+  const initialVector = vectorIndex
+  const initialProvider = currentEmbeddingProvider
   let ok = 0
   let fail = 0
   let skipped = 0
   let batchesSinceSave = 0
   setPendingVectorBackfillCount(remainingAfter + jobs.length)
   for (let offset = 0; offset < jobs.length; offset += batchSize) {
+    if (vectorIndex !== initialVector || currentEmbeddingProvider !== initialProvider) break
     const result = await vectorIndexAddBatchGuarded(jobs.slice(offset, offset + batchSize))
     ok += result.ok
     fail += result.fail
     skipped += result.skipped
-    setPendingVectorBackfillCount(remainingAfter + jobs.length - Math.min(jobs.length, offset + batchSize))
+    setPendingVectorBackfillCount(remainingAfter + fail + jobs.length - Math.min(jobs.length, offset + batchSize))
     batchesSinceSave++
     if (batchesSinceSave >= BACKFILL_SAVE_EVERY_BATCHES) {
       await flushIndexSave()
@@ -681,15 +684,27 @@ export type VectorBacklogResult = { added: number; failed: number; remaining: nu
 
 export async function backfillVectorBacklog(
   jobs: VectorBackfillJob[],
-  options: { batchSize?: number; pauseMs?: number } = {},
+  options: { batchSize?: number; pauseMs?: number; remainingAfter?: number; remainingCount?: () => number } = {},
 ): Promise<VectorBacklogResult> {
   const batchSize = options.batchSize && options.batchSize > 0 ? options.batchSize : getVectorBackfillMax()
   const pauseMs = options.pauseMs ?? VECTOR_BACKLOG_PAUSE_MS
+  const deferred = options.remainingAfter ?? 0
+  const initialVector = vectorIndex
+  const initialProvider = currentEmbeddingProvider
+  const replaced = () => vectorIndex !== initialVector || currentEmbeddingProvider !== initialProvider
+  const countRemaining = () => options.remainingCount?.() ?? deferred + jobs.filter((job) =>
+    !vectorIndex?.has(job.id) && (!job.revision || getSearchIndex().has(job.id))).length
+  const interrupted = (): VectorBacklogResult => {
+    const remaining = countRemaining()
+    setPendingVectorBackfillCount(remaining)
+    return { added, failed, remaining, complete: false }
+  }
   let added = 0
   let failed = 0
   for (let offset = 0; offset < jobs.length; offset += batchSize) {
     if (offset > 0 && pauseMs > 0) await delay(pauseMs)
-    const after = Math.max(0, jobs.length - offset - batchSize)
+    if (replaced()) return interrupted()
+    const after = deferred + failed + Math.max(0, jobs.length - offset - batchSize)
     const batch = jobs.slice(offset, offset + batchSize).filter((job) => !vectorIndex?.has(job.id) && (!job.revision || job.revision.isCurrent()))
     if (batch.length === 0) {
       setPendingVectorBackfillCount(after)
@@ -698,14 +713,16 @@ export async function backfillVectorBacklog(
     const result = await embedBackfillJobs(batch, after)
     added += result.ok
     failed += result.fail
+    if (replaced()) return interrupted()
     if (result.ok === 0 && (result.fail > 0 || result.skipped === 0)) {
-      const remaining = after + failed + (result.fail === 0 ? batch.length : 0)
+      const remaining = countRemaining()
       setPendingVectorBackfillCount(remaining)
       return { added, failed, remaining, complete: false }
     }
   }
-  setPendingVectorBackfillCount(failed)
-  return { added, failed, remaining: failed, complete: failed === 0 }
+  const remaining = countRemaining()
+  setPendingVectorBackfillCount(remaining)
+  return { added, failed, remaining, complete: remaining === 0 }
 }
 
 export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {

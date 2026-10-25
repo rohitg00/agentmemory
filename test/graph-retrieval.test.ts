@@ -138,13 +138,15 @@ describe("GraphRetrieval", () => {
   });
 
   it("does not duplicate already-seen observations in expansion", async () => {
-    const nodes = [makeNode("n1", "file.ts", "file", ["obs_1", "obs_2"])];
-    const kv = await mockKV(nodes, []);
+    const nodes = [
+      makeNode("n1", "file.ts", "file", ["obs_1"]),
+      makeNode("n2", "jwt", "concept", ["obs_1", "obs_2"]),
+    ];
+    const kv = await mockKV(nodes, [makeEdge("e1", "n1", "n2", "uses")]);
     const retrieval = new GraphRetrieval(kv as never);
 
     const results = await retrieval.expandFromChunks(["obs_1"]);
-    const obsIds = results.map((r) => r.obsId);
-    expect(obsIds).not.toContain("obs_1");
+    expect(results.map((r) => r.obsId)).toEqual(["obs_2"]);
   });
 
   it("performs temporal query - current state", async () => {
@@ -269,6 +271,118 @@ describe("GraphRetrieval", () => {
     expect(root).toBeDefined();
     expect(root!.score).toBe(1.0);
     expect(root!.pathLength).toBe(0);
+  });
+
+  it.each([
+    { first: "Alpha", second: "Zeta" },
+    { first: "Zeta", second: "Alpha" },
+  ])("keeps the best score for an observation $first and $second both reach", async ({ first, second }) => {
+    const weak = `${first.toLowerCase()}_weak`;
+    const strong = `${second.toLowerCase()}_strong`;
+    const nodes = [
+      makeNode(weak, first, "concept", ["obs_weak"]),
+      makeNode(strong, second, "concept", ["obs_strong"]),
+      makeNode("mid", "Mid", "concept", ["obs_mid"]),
+      makeNode("target", "Target", "concept", ["obs_target"]),
+    ];
+    const edges = [
+      makeEdge("e1", weak, "mid", "related_to", 0.2),
+      makeEdge("e2", "mid", "target", "related_to", 0.2),
+      makeEdge("e3", strong, "target", "related_to", 0.9),
+    ];
+    const retrieval = new GraphRetrieval((await mockKV(nodes, edges)) as never);
+    const hit = (results: Awaited<ReturnType<typeof retrieval.searchByEntities>>) =>
+      results.find((r) => r.obsId === "obs_target");
+
+    const viaWeak = hit(await retrieval.searchByEntities([first], 2))!;
+    const viaStrong = hit(await retrieval.searchByEntities([second], 2))!;
+    expect(viaStrong.score).toBeGreaterThan(viaWeak.score);
+
+    const both = await retrieval.searchByEntities([first, second], 2);
+    expect(both.filter((r) => r.obsId === "obs_target")).toHaveLength(1);
+    expect(hit(both)).toMatchObject({ score: viaStrong.score, pathLength: viaStrong.pathLength });
+  });
+
+  it.each([
+    { far: "a_far", near: "b_near" },
+    { far: "b_far", near: "a_near" },
+  ])("keeps the closest chunk-expansion score whichever of $far and $near runs first", async ({ far, near }) => {
+    const nodes = [
+      makeNode(far, far, "concept", ["seed"]),
+      makeNode(near, near, "concept", ["seed"]),
+      makeNode("mid", "mid", "concept", ["obs_mid"]),
+      makeNode("target", "target", "concept", ["obs_target"]),
+      makeNode("sibling", "sibling", "concept", ["obs_sibling"]),
+    ];
+    const edges = [
+      makeEdge("e1", far, "mid", "related_to", 0.8),
+      makeEdge("e2", "mid", "target", "related_to", 0.8),
+      makeEdge("e3", near, "target", "related_to", 0.8),
+      makeEdge("e4", near, "sibling", "related_to", 0.8),
+    ];
+    const kv = await mockKV(nodes, edges);
+    const results = await new GraphRetrieval(kv as never).expandFromChunks(["seed"], 2, 10);
+
+    const target = results.find((r) => r.obsId === "obs_target");
+    const sibling = results.find((r) => r.obsId === "obs_sibling");
+    expect(results.filter((r) => r.obsId === "obs_target")).toHaveLength(1);
+    expect(target).toMatchObject({ score: sibling!.score, pathLength: sibling!.pathLength });
+  });
+
+  it("ranks a re-scored observation after the ones that reached its score first", async () => {
+    const nodes = [
+      makeNode("start", "Quasar", "concept", ["obs_start"]),
+      makeNode("hub", "Hub", "concept", ["obs_hub"]),
+      makeNode("weak", "Weak", "concept", ["obs_b"]),
+      makeNode("x_first", "First", "concept", ["obs_a"]),
+      makeNode("y_second", "Second", "concept", ["obs_b"]),
+    ];
+    const edges = [
+      makeEdge("e1", "start", "hub", "related_to", 0.9),
+      makeEdge("e2", "start", "weak", "related_to", 0.5),
+      makeEdge("e3", "hub", "x_first", "related_to", 0.9),
+      makeEdge("e4", "hub", "y_second", "related_to", 0.9),
+    ];
+    const kv = await mockKV(nodes, edges);
+    const results = await new GraphRetrieval(kv as never).searchByEntities(["Quasar"], 2);
+
+    const a = results.findIndex((r) => r.obsId === "obs_a");
+    const b = results.findIndex((r) => r.obsId === "obs_b");
+    expect(results[b].score).toBe(results[a].score);
+    expect(b).toBeGreaterThan(a);
+  });
+
+  it("keeps the first record when a later start node ties on score", async () => {
+    const nodes = [
+      makeNode("aaa", "Aaa", "concept", ["obs_aaa"]),
+      makeNode("bbb", "Bbb", "concept", ["obs_bbb"]),
+      makeNode("target", "Target", "concept", ["obs_target"]),
+      makeNode("other", "Other", "concept", ["obs_other"]),
+    ];
+    const edges = [
+      makeEdge("e1", "aaa", "target", "related_to", 0.6),
+      makeEdge("e2", "aaa", "other", "related_to", 0.6),
+      makeEdge("e3", "bbb", "target", "related_to", 0.6),
+    ];
+    const kv = await mockKV(nodes, edges);
+    const results = await new GraphRetrieval(kv as never).searchByEntities(["Aaa", "Bbb"], 1);
+
+    const target = results.findIndex((r) => r.obsId === "obs_target");
+    const other = results.findIndex((r) => r.obsId === "obs_other");
+    expect(results[target].score).toBe(results[other].score);
+    expect(target).toBeLessThan(other);
+  });
+
+  it("keeps a start node's own observation at 1.0 when an oversized weight scores a path higher", async () => {
+    const nodes = [
+      makeNode("alpha", "Alpha", "concept", ["obs_alpha"]),
+      makeNode("beta", "Beta", "concept", ["obs_beta"]),
+    ];
+    const kv = await mockKV(nodes, [makeEdge("e1", "alpha", "beta", "related_to", 3)]);
+    const results = await new GraphRetrieval(kv as never).searchByEntities(["Alpha", "Beta"], 2);
+
+    expect(results).toHaveLength(2);
+    for (const result of results) expect(result).toMatchObject({ score: 1, pathLength: 0 });
   });
 
   it("respects maxDepth bound (Dijkstra stops at edge-count depth)", async () => {

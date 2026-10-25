@@ -37,21 +37,25 @@ async function main() {
 
   const cwd = hookCwd(data) || process.cwd();
 
+  const promptId = [data.prompt_id, data.promptId].find((v) => typeof v === "string" && v.length > 0);
+  const body = {
+    hookType: "notification",
+    sessionId,
+    project: resolveProject(cwd),
+    cwd,
+    timestamp: new Date().toISOString(),
+    data: {
+      notification_type: notificationType,
+      title: data.title,
+      message: data.message,
+    },
+  };
   void captureObservation(
     withEventId(
-      {
-        hookType: "notification",
-        sessionId,
-        project: resolveProject(cwd),
-        cwd,
-        timestamp: new Date().toISOString(),
-        data: {
-          notification_type: notificationType,
-          title: data.title,
-          message: data.message,
-        },
-      },
-      data,
+      body,
+      {},
+      { ...body.data, prompt_id: promptId, agent_id: data.agent_id },
+      { stable: promptId !== undefined },
     ),
     OBSERVE_TIMEOUT_MS,
   );

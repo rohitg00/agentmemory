@@ -1676,7 +1676,7 @@
       audit: { opFilter: '', selectedIdx: null, from: '', to: '', q: '', query: null, loadingMore: false, exhausted: {}, fresh: {} },
       activity: { loaded: false, observations: [], sessionCount: 0, typeFilter: '', fileFilter: '', day: '' },
       lessons: { search: '', selectedId: null, projectFilter: '', notice: null, busy: '' },
-      actions: { frontier: [], statusFilter: '', search: '', selectedId: null, notice: null, busy: '' },
+      actions: { frontier: [], statusFilter: '', search: '', selectedId: null, notice: null, busy: '', detailLoading: '', detailAttemptedId: '', detailRequestFailedId: '', loadError: false },
       crystals: { search: '', selectedId: null },
       profile: { loaded: false, selectedProject: '', data: null, dataProject: '', userPicked: false, notice: null },
       health: { error: null, checking: false, consolidating: false, reveal: '' },
@@ -1714,7 +1714,7 @@
       memory: { path: 'memories?latest=true&limit=100&facets=true', key: 'memories' },
       session: { path: 'sessions?limit=100&facets=true', key: 'sessions' },
       lesson: { path: 'lessons', key: 'lessons' },
-      action: { path: 'actions', key: 'actions' },
+      action: { path: 'actions', key: 'actions', allPages: true },
       crystal: { path: 'crystals', key: 'crystals' },
       semantic: { path: 'semantic', key: 'facts', fallbackKey: 'semantic' },
       procedural: { path: 'procedural', key: 'procedures', fallbackKey: 'procedural' },
@@ -2314,6 +2314,20 @@
       store.entities[kind] = bucket;
     }
 
+    async function loadAllPages(spec, apiGet) {
+      var rows = [];
+      var cursor = null;
+      var result;
+      do {
+        var path = spec.path + '?limit=500' + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+        result = await apiGet(path);
+        if (result === null) return null;
+        rows.push.apply(rows, listOr([], result, spec.key, spec.fallbackKey));
+        cursor = result.nextCursor || null;
+      } while (cursor);
+      return Object.assign({}, result, { [spec.key]: rows });
+    }
+
     async function ensureLoaded(kind) {
       if (store.loaded[kind]) return;
       if (store.loading[kind]) return store.loading[kind];
@@ -2323,8 +2337,16 @@
         try {
           await bootGate;
           var seqAtStart = eventSeq;
-          var result = await apiGet(spec.path);
-          if (result === null) return;
+          var result;
+          if (spec.allPages) {
+            result = await loadAllPages(spec, apiGet);
+          } else {
+            result = await apiGet(spec.path);
+          }
+          if (result === null) {
+            if (kind === 'action') state.actions.loadError = true;
+            return;
+          }
           replaceBucket(kind, listOr([], result, spec.key, spec.fallbackKey));
           if (kind === 'memory') {
             state.memories.nextCursor = result.nextCursor || null;
@@ -2343,6 +2365,9 @@
           }
           replayEventsSince(seqAtStart, kind);
           store.loaded[kind] = true;
+          if (kind === 'action') state.actions.loadError = false;
+        } catch {
+          if (kind === 'action') state.actions.loadError = true;
         } finally {
           store.loading[kind] = null;
         }
@@ -6551,12 +6576,15 @@
     function renderActions() {
       var el = document.getElementById('view-actions');
       var a = state.actions;
-      if (!store.loaded.action) {
+      var all = entityList('action');
+      if (!store.loaded.action && !all.length) {
         listDetailShell(el, 'actions', '');
-        setViewHtml(document.getElementById('actions-list'), skeleton(8));
+        setViewHtml(document.getElementById('actions-list'), a.loadError
+          ? '<div class="empty-state compact"><div class="empty-title">Could not load actions</div><div class="empty-what">Check that agentmemory is running, then try again.</div><button type="button" class="btn" data-action="action-list-retry">Retry</button></div>'
+          : skeleton(8));
+        renderActionDetail({});
         return;
       }
-      var all = entityList('action');
       var rows = actionRows();
       var frontierIds = {};
       (a.frontier || []).forEach(function(f) {
@@ -6614,22 +6642,80 @@
         html += '</tbody></table></div>';
         if (all.length < 8) html += usageCard('action');
       }
+      if (a.loadError) {
+        html = '<div class="inline-note"><strong>Could not refresh actions.</strong> Showing previously loaded actions. <button type="button" class="btn" data-action="action-list-retry">Retry</button></div>' + html;
+      }
       setViewHtml(document.getElementById('actions-list'), html);
+      renderActionDetail(frontierIds);
+    }
+
+    function renderActionDetail(frontierIds) {
+      var a = state.actions;
       var detail = document.getElementById('actions-detail');
       var sel = a.selectedId ? store.entities.action[a.selectedId] : null;
       if (a.selectedId && !sel) {
-        setViewHtml(detail, '<div id="action-detail" class="detail-panel mem-detail"><div class="mem-detail-head"><span>Action</span><button type="button" class="icon-btn icon-close" data-action="action-close" aria-label="Close action details">close</button></div>' + emptyState({
+        ensureActionById(a.selectedId);
+        var loadingAction = a.detailLoading === a.selectedId;
+        var actionBody = loadingAction ? '<div class="empty-state compact"><div class="empty-title">Loading action…</div></div>' : a.detailRequestFailedId === a.selectedId
+          ? '<div class="empty-state compact"><div class="empty-title">Could not load action</div><div class="empty-what">Check that agentmemory is running, then try again.</div><button type="button" class="btn" data-action="action-retry">Retry</button></div>'
+          : emptyState({
           compact: true,
           icon: '&#128269;',
           title: 'Action not found',
           what: 'Action links anywhere in the viewer open this panel by id.',
           why: 'No action has the id <code>' + esc(a.selectedId) + '</code>. It was removed, or the link comes from another install.',
           steps: [{ label: 'Check from a terminal:', cmd: curlGet('actions/get?actionId=' + encodeURIComponent(a.selectedId)) }]
-        }) + '</div>');
+        });
+        setViewHtml(detail, '<div id="action-detail" class="detail-panel mem-detail"><div class="mem-detail-head"><span>Action</span><button type="button" class="icon-btn icon-close" data-action="action-close" aria-label="Close action details">close</button></div>' + actionBody + '</div>');
       } else {
         setViewHtml(detail, sel ? actionDetailHtml(sel, !!frontierIds[sel.id]) : '');
       }
       document.getElementById('actions-layout').classList.toggle('has-detail', !!detail.firstElementChild);
+    }
+
+    async function ensureActionById(id) {
+      var a = state.actions;
+      if (!id || store.entities.action[id] || a.detailLoading === id || a.detailAttemptedId === id) return;
+      a.detailAttemptedId = id;
+      a.detailLoading = id;
+      try {
+        var result = await apiGet('actions/get?actionId=' + encodeURIComponent(id));
+        if (result && result.success && result.action && result.action.id) {
+          store.entities.action[result.action.id] = result.action;
+          a.detailRequestFailedId = '';
+          renderActions();
+        } else if (result === null) {
+          a.detailRequestFailedId = id;
+        }
+      } catch (_) {
+        a.detailRequestFailedId = id;
+      } finally {
+        if (a.detailLoading === id) {
+          a.detailLoading = '';
+          if (!store.entities.action[id]) renderActions();
+        }
+      }
+    }
+
+    function retryActionById(id) {
+      var a = state.actions;
+      if (a.detailLoading === id) return;
+      a.detailAttemptedId = '';
+      a.detailRequestFailedId = '';
+      return ensureActionById(id);
+    }
+
+    async function retryActionList() {
+      if (store.loading.action) return store.loading.action;
+      state.actions.loadError = false;
+      store.loaded.action = false;
+      renderActions();
+      await ensureLoaded('action');
+      if (state.actions.selectedId && !store.entities.action[state.actions.selectedId]) {
+        state.actions.detailAttemptedId = '';
+        state.actions.detailRequestFailedId = '';
+      }
+      renderActions();
     }
 
     async function setActionStatus(id, status) {
@@ -6733,6 +6819,8 @@
         return true;
       }
       if (action === 'action-close') { state.actions.selectedId = null; setRouteEntity('actions', ''); renderActions(); return true; }
+      if (action === 'action-retry') { retryActionById(state.actions.selectedId); return true; }
+      if (action === 'action-list-retry') { retryActionList(); return true; }
       if (action === 'action-set-status') { setActionStatus(target.getAttribute('data-action-id'), target.getAttribute('data-status')); return true; }
       if (action === 'action-clear-filters') { state.actions.search = ''; state.actions.statusFilter = ''; var ai = document.getElementById('actions-search'); if (ai) ai.value = ''; renderActions(); return true; }
       if (action === 'activity-type' || action === 'activity-file' || action === 'activity-day' || action === 'activity-clear') { handleActivityAction(action, target); return true; }
@@ -7843,6 +7931,14 @@
     }
 
     var resyncing = null;
+    function resetLoadedKindForReload(kind) {
+      store.loaded[kind] = false;
+      if (kind === 'action') {
+        state.actions.detailAttemptedId = '';
+        state.actions.detailRequestFailedId = '';
+      }
+    }
+
     async function resyncAfterConnect(firstConnect) {
       openBootGate();
       if (resyncing) return resyncing;
@@ -7852,7 +7948,7 @@
           await loadSnapshot();
           scheduleHealthStaleCheck();
           if (!firstConnect || reloadKinds.length) {
-            reloadKinds.forEach(function(k) { store.loaded[k] = false; });
+            reloadKinds.forEach(resetLoadedKindForReload);
             await Promise.all(reloadKinds.map(ensureLoaded));
             state.graph.dirty = state.graph.loaded;
             state.activity.loaded = false;

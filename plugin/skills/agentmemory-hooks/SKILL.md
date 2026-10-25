@@ -4,7 +4,7 @@ description: The agentmemory plugin hooks that capture observations automaticall
 user-invocable: false
 ---
 
-The Claude Code plugin registers lifecycle hooks so memory is captured automatically. You do not have to call `memory_save` for routine work; the hooks observe tool use, prompts, and session boundaries and write observations for you.
+The agentmemory plugin registers lifecycle hooks so memory is captured automatically. You do not have to call `memory_save` for routine work; the hooks observe tool use, prompts, and session boundaries and write observations for you.
 
 ## Quick start
 
@@ -14,6 +14,14 @@ For Claude Code, install its plugin:
 /plugin marketplace add rohitg00/agentmemory
 /plugin install agentmemory
 ```
+
+For Devin CLI and Devin Desktop, install the plugin and start a new session:
+
+```bash
+devin plugins install rohitg00/agentmemory#plugin
+```
+
+Run `/hooks` inside Devin to confirm the agentmemory hooks are loaded. Plugin hooks run only in local Devin sessions, not in cloud sessions.
 
 Hermes and OpenClaw use their native integrations and lifecycle contracts. Follow the matching integration setup instructions and verify a real turn creates an observation. Installing shared skills or connecting MCP alone does not enable automatic capture. Watch recorded observations in the viewer at `http://localhost:3113` when using the default port.
 
@@ -26,7 +34,7 @@ Hermes and OpenClaw use their native integrations and lifecycle contracts. Follo
 
 ## Important
 
-- The Claude Code hooks capture by default without an LLM. Summary generation (`AGENTMEMORY_AUTO_COMPRESS`) and hook context injection (`AGENTMEMORY_INJECT_CONTEXT`) are separate options. Native integrations have their own recall/capture settings; inspect the host configuration instead of assuming these flags control every plugin.
+- The plugin hooks capture by default without an LLM. Summary generation (`AGENTMEMORY_AUTO_COMPRESS`) and hook context injection (`AGENTMEMORY_INJECT_CONTEXT`) are separate options. Native integrations have their own recall/capture settings; inspect the host configuration instead of assuming these flags control every plugin.
 - If observations are missing, confirm the plugin is enabled and the server is running. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## See also

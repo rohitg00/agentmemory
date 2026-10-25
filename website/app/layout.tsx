@@ -53,7 +53,7 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-const themeScript = `try{var t=localStorage.getItem("am-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
+const themeScript = `document.documentElement.classList.add("js");try{var t=localStorage.getItem("am-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t}catch(e){}`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

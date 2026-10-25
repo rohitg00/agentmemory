@@ -1,10 +1,10 @@
 import { AGENTS, src } from "@/lib/site";
-import { compact, getProjectMeta } from "@/lib/meta";
+import { compact, getLiveProjectMeta } from "@/lib/meta";
 import { Reveal } from "./client";
 import s from "./Proof.module.css";
 
-export function Proof() {
-  const m = getProjectMeta();
+export async function Proof() {
+  const m = await getLiveProjectMeta();
   const items = [
     { value: compact(m.stars), label: "GitHub stars", href: src.stars },
     { value: compact(m.npmAllTime), label: "npm installs, all time", href: src.npm },

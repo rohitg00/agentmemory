@@ -104,7 +104,7 @@ describe("viewer streams instead of polling", () => {
   it("fetches the snapshot once per connection and replays events that arrived during a list load", () => {
     const resync = extractFunction("resyncAfterConnect");
     expect(resync).toMatch(/await loadSnapshot\(\);/);
-    expect(resync).toMatch(/reloadKinds\.forEach\(function\(k\) \{ store\.loaded\[k\] = false; \}\);/);
+    expect(resync).toMatch(/reloadKinds\.forEach\(resetLoadedKindForReload\);/);
     expect(extractFunction("loadSnapshot")).toMatch(/apiGet\('viewer\/snapshot'\)/);
     const ensure = extractFunction("ensureLoaded");
     expect(ensure).toMatch(/var seqAtStart = eventSeq;/);

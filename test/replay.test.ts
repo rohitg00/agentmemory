@@ -167,3 +167,37 @@ describe("rawFromCompressed", () => {
   });
 });
 
+
+describe("parseJsonlText metadata lines and re-import", () => {
+  const jsonl = [
+    { type: "last-prompt" },
+    { type: "user", sessionId: "s1", timestamp: "2026-10-09T09:12:38Z", message: { role: "user", content: "hi" } },
+    { type: "assistant", sessionId: "s1", timestamp: "2026-10-09T09:54:34Z", message: { role: "assistant", content: "hello" } },
+    { type: "cost-state" },
+  ].map((e) => JSON.stringify(e)).join("\n");
+
+  it("ignores timestampless entries for startedAt/endedAt", () => {
+    const out = parseJsonlText(jsonl);
+    expect(out.startedAt).toBe("2026-10-09T09:12:38Z");
+    expect(out.endedAt).toBe("2026-10-09T09:54:34Z");
+  });
+
+  it("derives the same ids on re-parse and distinct ids for files sharing a session", () => {
+    const entry = (uuid: string, text: string) => JSON.stringify({
+      type: "user", uuid, sessionId: "s1", timestamp: "2026-10-09T09:12:38Z", message: { role: "user", content: text },
+    });
+    const a = `${entry("a0", "one")}\n${entry("a1", "two")}`;
+    const b = `${entry("b0", "three")}\n${entry("b1", "four")}`;
+    const ids = (t: string) => parseJsonlText(t).observations.map((o) => o.id);
+    expect(ids(a)).toEqual(ids(a));
+    expect(new Set([...ids(a), ...ids(b)]).size).toBe(4);
+  });
+
+  it("gives a timestampless entry the previous entry's time", () => {
+    const out = parseJsonlText([
+      JSON.stringify({ type: "user", sessionId: "s1", timestamp: "2026-10-09T09:12:38Z", message: { role: "user", content: "a" } }),
+      JSON.stringify({ type: "assistant", sessionId: "s1", message: { role: "assistant", content: "b" } }),
+    ].join("\n"));
+    expect(out.observations.map((o) => o.timestamp)).toEqual(["2026-10-09T09:12:38Z", "2026-10-09T09:12:38Z"]);
+  });
+});

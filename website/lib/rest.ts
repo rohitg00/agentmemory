@@ -20,6 +20,7 @@ export const LOGO_OVERRIDES: Record<string, string> = {
 };
 
 export const FEATURED_LOGOS: Record<string, { src: string; wide?: boolean }> = {
+  OpenUK: { src: "/featured/openuk-logo.png", wide: true },
   AlphaSignal: { src: "https://avatars.githubusercontent.com/u/64016073?s=96&v=4" },
   "Agentic AI Foundation": { src: "/featured/aaif-logo.png", wide: true },
   Trendshift: { src: "https://trendshift.io/favicon.ico" },

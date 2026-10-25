@@ -246,6 +246,29 @@ function stripPrivateData(input) {
 	}
 	return result;
 }
+function scrubRecord(value, options = {}) {
+	if (typeof value === "string") return stripPrivateData(value);
+	if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options));
+	if (value !== null && typeof value === "object") {
+		const proto = Object.getPrototypeOf(value);
+		if (proto !== Object.prototype && proto !== null) return value;
+		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? stripPrivateData(key) : key, item]);
+		const reserved = new Set(entries.map(([key]) => key));
+		const used = /* @__PURE__ */ new Set();
+		return Object.fromEntries(entries.map(([key, item]) => {
+			let unique = key;
+			if (used.has(unique)) {
+				let suffix = 2;
+				do
+					unique = `${key}_${suffix++}`;
+				while (reserved.has(unique) || used.has(unique));
+			}
+			used.add(unique);
+			return [unique, scrubRecord(item, options)];
+		}));
+	}
+	return value;
+}
 //#endregion
 //#region src/capture/spool.ts
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
@@ -391,13 +414,6 @@ function fileSize(path) {
 		return 0;
 	}
 }
-function sanitizeBody(body) {
-	try {
-		return JSON.parse(stripPrivateData(JSON.stringify(body)));
-	} catch {
-		return body;
-	}
-}
 function withoutImage(body) {
 	const data = body["data"];
 	if (!data || typeof data !== "object" || Array.isArray(data)) return body;
@@ -483,7 +499,7 @@ function appendSpool(url, eventId, body, reason, options = {}) {
 			spooledAt: (/* @__PURE__ */ new Date()).toISOString(),
 			reason,
 			attempts: options.attempts ?? 0,
-			body: sanitizeBody(body)
+			body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true })
 		};
 		let line = JSON.stringify(record) + "\n";
 		if (Buffer.byteLength(line) > policy.maxRecordBytes) {
@@ -583,7 +599,7 @@ function retainSent(url, eventId, body, mark, options = {}) {
 			spooledAt: new Date(now).toISOString(),
 			reason: "sent",
 			attempts: 0,
-			body: sanitizeBody(body),
+			body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true }),
 			bootId: mark.bootId
 		};
 		let line = JSON.stringify(record) + "\n";
@@ -904,6 +920,6 @@ async function runDrainChild() {
 	}).catch(() => void 0);
 }
 //#endregion
-export { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId };
+export { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, stripPrivateData, withEventId };
 
 //# sourceMappingURL=_capture.mjs.map

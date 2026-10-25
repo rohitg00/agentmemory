@@ -2,6 +2,7 @@ import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { pageAfterCursor, sortByKeyDesc } from "../state/list-query.js";
 import type { Action, ActionEdge } from "../types.js";
 import { recordAudit } from "./audit.js";
 
@@ -208,6 +209,7 @@ export function registerActionsFunction(sdk: IIIClient, kv: StateKV): void {
       parentId?: string;
       tags?: string[];
       limit?: number;
+      cursor?: string;
     }) => {
       let actions = await kv.list<Action>(KV.actions);
 
@@ -226,13 +228,18 @@ export function registerActionsFunction(sdk: IIIClient, kv: StateKV): void {
         );
       }
 
-      actions.sort(
-        (a, b) =>
-          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
-      );
+      const actionSortKey = (action: Action) => action.updatedAt || action.createdAt || "";
+      sortByKeyDesc(actions, actionSortKey, (action) => action.id);
 
-      const limit = data.limit || 50;
-      return { success: true, actions: actions.slice(0, limit) };
+      const limit = Math.max(1, data.limit || 50);
+      const paged = pageAfterCursor(
+        actions,
+        actionSortKey,
+        (action) => action.id,
+        data.cursor,
+        limit,
+      );
+      return { success: true, actions: paged.page, nextCursor: paged.nextCursor };
     },
   );
 

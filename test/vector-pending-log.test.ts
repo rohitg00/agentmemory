@@ -427,7 +427,7 @@ describe("durable vector backlog", () => {
       expect(second.vector.size).toBe(12);
       expect(resumedCalls.n).toBe(2);
       await second.persistence.clearBackfillMarker();
-      expect(await second.persistence.readBackfillMarker()).toBeNull();
+      expect(await second.persistence.readBackfillMarker()).toBeUndefined();
     } finally {
       delete process.env.REBUILD_EMBED_BATCH_SIZE;
     }

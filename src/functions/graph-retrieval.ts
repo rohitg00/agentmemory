@@ -162,15 +162,17 @@ export class GraphQuery {
   }
 
   private async append(
-    reader: GraphIndexReader, node: GraphNode, results: GraphRetrievalResult[], seen: Set<string>,
+    reader: GraphIndexReader, node: GraphNode, results: Map<string, GraphRetrievalResult>, excluded: Set<string>,
     score: number, pathLength: number, layer: SearchLayer,
   ): Promise<void> {
     for (const id of node.sourceObservationIds ?? []) {
-      if (seen.has(id)) continue;
+      if (excluded.has(id)) continue;
+      const kept = results.get(id);
+      if (kept && kept.score >= score) continue;
       const evidence = await this.source(reader, id);
       if (!evidence || !matchesSearchLayer(id, evidence.observation.sessionId, layer, evidence.layer)) continue;
-      seen.add(id);
-      results.push({ obsId: id, sessionId: evidence.observation.sessionId, score, pathLength,
+      results.delete(id);
+      results.set(id, { obsId: id, sessionId: evidence.observation.sessionId, score, pathLength,
         graphContext: `[graph evidence] ${evidence.observation.title.slice(0, 512)}` });
     }
   }
@@ -232,18 +234,19 @@ export class GraphQuery {
       }
       const nodes = [...selected.values()].sort((a, b) =>
         Number(nodeNames(b).some((n) => exactNames.has(n))) - Number(nodeNames(a).some((n) => exactNames.has(n))) || compareText(normalizeGraphIndexText(a.name), normalizeGraphIndexText(b.name)) || compareText(a.id, b.id));
-      const results: GraphRetrievalResult[] = [];
-      const seen = new Set<string>();
-      for (const node of nodes) await this.append(reader, node, results, seen, 1, 0, targetLayer);
+      const results = new Map<string, GraphRetrievalResult>();
+      const excluded = new Set<string>();
+      for (const node of nodes) await this.append(reader, node, results, excluded, 1, 0, targetLayer);
+      for (const id of results.keys()) excluded.add(id);
       for (const node of nodes) {
         for (const path of await this.traverse(reader, node, maxDepth)) {
           const weights = path.slice(1).map((step) => step.edge!.weight);
           const score = weights.reduce((sum, weight) => sum + weight, 0) / weights.length / path.length;
-          await this.append(reader, path[path.length - 1].node, results, seen, score, path.length, targetLayer);
+          await this.append(reader, path[path.length - 1].node, results, excluded, score, path.length, targetLayer);
         }
       }
-      results.sort((a, b) => b.score - a.score);
-      return this.finish(reader, results.slice(0, maxResults));
+      const ranked = [...results.values()].sort((a, b) => b.score - a.score);
+      return this.finish(reader, ranked.slice(0, maxResults));
     });
   }
 
@@ -265,15 +268,15 @@ export class GraphQuery {
         }
         if (nodes.size >= MAX_START_NODES) break;
       }
-      const results: GraphRetrievalResult[] = [];
-      const seen = new Set(ids);
+      const results = new Map<string, GraphRetrievalResult>();
+      const excluded = new Set(ids);
       for (const node of [...nodes.values()].sort((a, b) => compareText(a.id, b.id))) {
         for (const path of await this.traverse(reader, node, maxDepth)) {
-          await this.append(reader, path[path.length - 1].node, results, seen, 0.5 / (path.length + 1), path.length, targetLayer);
+          await this.append(reader, path[path.length - 1].node, results, excluded, 0.5 / (path.length + 1), path.length, targetLayer);
         }
       }
-      results.sort((a, b) => b.score - a.score);
-      return this.finish(reader, results.slice(0, maxResults));
+      const ranked = [...results.values()].sort((a, b) => b.score - a.score);
+      return this.finish(reader, ranked.slice(0, maxResults));
     });
   }
 

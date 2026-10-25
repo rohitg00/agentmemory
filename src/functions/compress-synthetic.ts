@@ -73,6 +73,15 @@ function truncate(s: string, n: number): string {
   return s.slice(0, end) + "\u2026";
 }
 
+function keepEnds(s: string, n: number): string {
+  if (s.length <= n) return s;
+  let head = Math.ceil((n - 1) / 2);
+  let tail = s.length - (n - 1 - head);
+  if (/[\uD800-\uDBFF]/.test(s[head - 1])) head--;
+  if (/[\uDC00-\uDFFF]/.test(s[tail])) tail++;
+  return s.slice(0, head) + "\u2026" + s.slice(tail);
+}
+
 export function buildSyntheticCompression(
   raw: RawObservation,
 ): CompressedObservation {
@@ -80,9 +89,10 @@ export function buildSyntheticCompression(
   const inputStr = stringifyForNarrative(raw.toolInput);
   const outputStr = stringifyForNarrative(raw.toolOutput);
   const promptStr = raw.userPrompt ?? "";
+  const responseStr = keepEnds(raw.assistantResponse ?? "", 400);
   const source = createObservationSource(raw);
 
-  const narrativeParts = [promptStr, inputStr, outputStr].filter(
+  const narrativeParts = [promptStr, inputStr, outputStr, responseStr].filter(
     (s) => s.length > 0,
   );
   const payload = source.payload;
