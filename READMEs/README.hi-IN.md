@@ -815,7 +815,7 @@ agentmemory entry, `mcpServers` shape का उपयोग करने वा
 | **Continue.dev** | `~/.continue/config.yaml` (preferred) या `config.json` (legacy) | जब दोनों में से कोई मौजूद नहीं होती तो `agentmemory connect continue` `config.yaml` शुरू से बनाता है, या मौजूदा `config.json` को modify करता है। **अगर आपके पास पहले से `config.yaml` है** तो adapter `mcpServers:` के अंतर्गत paste करने के लिए exact block print करता है; यह आपकी yaml को चुपचाप rewrite नहीं करेगा क्योंकि comments और anchors को safely preserve करने के लिए एक YAML parser चाहिए जो package ship नहीं करता। Continue `mcpServers` के लिए array form (object नहीं) का उपयोग करता है। |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` `context_servers` (Zed की key, `mcpServers` नहीं) के अंतर्गत लिखता है। Remote MCP servers इसके बजाय `{"url": "..."}` के माध्यम से wired हो सकते हैं। |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` standard `mcpServers` block लिखता है। Project-scoped overrides `<repo>/.factory/mcp.json` में जाते हैं। Native auto-capture के लिए `--with-hooks` pass करें। |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` उस home-level patch layer में एक `@deepseek-ai/dsh-mcp-client` row append करता है जिसे हर Harness profile load करती है; tools `mcp__agentmemory__*` के रूप में register होते हैं। Auto-capture भी wire करने के लिए `--with-hooks` pass करें: bundled Claude Code hook scripts Harness के first-party `@deepseek-ai/dsh-hooks-claude-code` bridge (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) के माध्यम से चलते हैं, `$DSH_HOME/agentmemory.hooks.json` में लिखे गए एक manifest के ज़रिए। `DSH_HOME` unset होने पर default `~/.dsh` है। |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` MCP टूल चालू करता है। AgentMemory में शामिल नेटिव कैप्चर प्लगइन लोड करने के लिए `--with-hooks` जोड़ें। अलग प्लगइन पैकेज की ज़रूरत नहीं है। [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP settings UI | वही `mcpServers` block; `goose configure` → Add Extension → MCP का उपयोग करें। `~/.config/goose/config.yaml` पर direct YAML edit supported है लेकिन schema `extensions:` + `cmd` का उपयोग करता है (`mcpServers:` + `command` नहीं)। |
 | **Aider** | n/a | REST API से सीधे बात करें: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`। |
 | **कोई भी एजेंट (32+)** | n/a | `npx skillkit install agentmemory` host को auto-detect करता है और merge करता है। |
@@ -1449,7 +1449,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**242 source files · ~55,000 LOC · 3,400+ tests · 324 functions · 67 KV scopes**, सब कुछ तीन primitives पर। कोई `agentmemory plugin install` नहीं। Plugin system iii स्वयं है।
+**243 source files · ~55,000 LOC · 3,400+ tests · 324 functions · 67 KV scopes**, सब कुछ तीन primitives पर। कोई `agentmemory plugin install` नहीं। Plugin system iii स्वयं है।
 
 ---
 

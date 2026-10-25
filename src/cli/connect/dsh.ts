@@ -9,19 +9,9 @@ import {
   logAlreadyWired,
   logBackup,
   logInstalled,
-  readJsonSafe,
-  writeJsonAtomic,
   writeTextAtomic,
 } from "./util.js";
-import {
-  buildMergedHooks,
-  findPluginRoot,
-  type HookManifest,
-} from "./codex-hooks.js";
-
-// Rows land in the home-level cordis.patch.yml, the patch layer every
-// Harness profile loads; the hooks row reuses the bundled Claude Code
-// hook scripts through Harness's own bridge plugin.
+import { findPluginRoot } from "./codex-hooks.js";
 
 function dshHome(): string {
   return process.env["DSH_HOME"] || join(homedir(), ".dsh");
@@ -44,12 +34,10 @@ const MCP_BLOCK = `- insert:
 const MCP_MARKER = "serverName: agentmemory";
 const HOOKS_MARKER = "id: agentmemory-hooks";
 
-function hooksBlock(hooksConfigPath: string): string {
+function hooksBlock(pluginPath: string): string {
   return `- insert:
     - id: agentmemory-hooks
-      name: '@deepseek-ai/dsh-hooks-claude-code'
-      config:
-        configPath: ${JSON.stringify(hooksConfigPath)}
+      name: ${JSON.stringify(pluginPath)}
 `;
 }
 
@@ -66,7 +54,8 @@ function isManaged(entry: unknown, marker: string): boolean {
   if (!isMap(entry)) return false;
   return marker === MCP_MARKER
     ? entry.get("name") === "@deepseek-ai/dsh-mcp-client" && entry.getIn(["config", "serverName"]) === "agentmemory"
-    : entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code" && entry.get("id") === "agentmemory-hooks";
+    : entry.get("id") === "agentmemory-hooks" && typeof entry.get("name") === "string" &&
+      (entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code" || /[\\/]dist[\\/]integrations[\\/]dsh\.mjs$/.test(String(entry.get("name"))));
 }
 
 function hasBlock(content: string, marker: string): boolean {
@@ -104,21 +93,12 @@ function upsertBlock(content: string, marker: string, block: string): string {
   return doc.toString();
 }
 
-function installHooksFile(home: string): string {
-  const hooksPath = join(home, "agentmemory.hooks.json");
-  const pluginRoot = findPluginRoot();
-  const existing = readJsonSafe<HookManifest>(hooksPath);
-  const merged = buildMergedHooks(existing, pluginRoot, "hooks.codex.json");
-  writeJsonAtomic(hooksPath, merged);
-  return hooksPath;
-}
-
 export const adapter: ConnectAdapter = {
   name: "dsh",
   displayName: "DeepSeek Harness",
   docs: "https://github.com/rohitg00/agentmemory/blob/main/docs/dsh.md",
   protocolNote:
-    "→ Using MCP via $DSH_HOME/cordis.patch.yml (the home-level patch layer every profile loads). Tools appear as mcp__agentmemory__*. Pass --with-hooks to also wire auto-capture through Harness's Claude Code hook bridge.",
+    "→ Using MCP via $DSH_HOME/cordis.patch.yml (the home-level patch layer every profile loads). Tools appear as mcp__agentmemory__*. Pass --with-hooks to also wire auto-capture with the bundled native DSH plugin.",
   category: "native",
   detect(): boolean {
     return existsSync(dshHome());
@@ -131,9 +111,6 @@ export const adapter: ConnectAdapter = {
       : "";
 
     const wantHooks = opts.withHooks === true;
-    if (wantHooks) {
-      p.log.info(`Hooks require @deepseek-ai/dsh-hooks-claude-code and @deepseek-ai/dsh-hook-protocol in each profile, plus locally discoverable credentials. Setup: ${this.docs}`);
-    }
     const hasMcp = hasBlock(existing, MCP_MARKER);
     const hasHooks = hasBlock(existing, HOOKS_MARKER);
 
@@ -144,9 +121,14 @@ export const adapter: ConnectAdapter = {
 
     if (opts.dryRun) {
       p.log.info(
-        `[dry-run] Would append the agentmemory mcp-client row${wantHooks ? " and the hooks-claude-code row" : ""} to ${configPath}`,
+        `[dry-run] Would append the agentmemory mcp-client row${wantHooks ? " and the bundled capture plugin" : ""} to ${configPath}`,
       );
       return { kind: "installed", mutatedPath: configPath };
+    }
+
+    const pluginPath = join(dirname(findPluginRoot()), "dist", "integrations", "dsh.mjs");
+    if (wantHooks && !existsSync(pluginPath)) {
+      throw new Error("Bundled DSH plugin is missing. Reinstall AgentMemory, or run npm run build in a source checkout.");
     }
 
     let backupPath: string | undefined;
@@ -160,9 +142,7 @@ export const adapter: ConnectAdapter = {
     let next = hasMcp && !opts.force ? existing : upsertBlock(existing, MCP_MARKER, MCP_BLOCK);
 
     if (wantHooks && (!hasHooks || opts.force)) {
-      const hooksPath = installHooksFile(home);
-      next = upsertBlock(next, HOOKS_MARKER, hooksBlock(hooksPath));
-      p.log.info(`Hook manifest: ${hooksPath}`);
+      next = upsertBlock(next, HOOKS_MARKER, hooksBlock(pluginPath));
     }
 
     writeTextAtomic(configPath, next);

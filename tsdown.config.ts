@@ -75,6 +75,13 @@ export default defineConfig([
     clean: false,
     sourcemap: false,
   },
+  {
+    entry: ["src/integrations/dsh.ts"],
+    outDir: "dist/integrations",
+    ...shared,
+    clean: false,
+    sourcemap: false,
+  },
   // One entry per config block prevents tsdown from hoisting shared
   // helpers into hashed chunks across hooks.
   {

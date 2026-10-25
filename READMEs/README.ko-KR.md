@@ -815,7 +815,7 @@ agentmemory 항목은 `mcpServers` 형태를 사용하는 모든 호스트(Curso
 | **Continue.dev** | `~/.continue/config.yaml` (권장) 또는 `config.json` (레거시) | `agentmemory connect continue`는 둘 다 없으면 `config.yaml`을 새로 생성하고, 기존 `config.json`이 있으면 이를 수정합니다. **이미 `config.yaml`이 있다면** 어댑터는 `mcpServers:` 아래에 붙여넣을 정확한 블록을 출력합니다. 주석과 anchor를 안전하게 보존하려면 패키지가 포함하지 않은 YAML 파서가 필요하므로, yaml을 조용히 재작성하지는 않습니다. Continue는 `mcpServers`에 객체가 아닌 배열 형태를 사용합니다. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed`는 `context_servers`(Zed의 키이며 `mcpServers`가 아닙니다) 아래에 작성합니다. 원격 MCP 서버는 대신 `{"url": "..."}`로 연결할 수 있습니다. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid`는 표준 `mcpServers` 블록을 작성합니다. 프로젝트 범위 재정의는 `<repo>/.factory/mcp.json`에 둡니다. 네이티브 자동 캡처를 위해서는 `--with-hooks`를 전달하십시오. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh`는 모든 Harness 프로필이 로드하는 홈 수준 patch 레이어에 `@deepseek-ai/dsh-mcp-client` 행을 추가합니다. 도구는 `mcp__agentmemory__*`로 등록됩니다. 자동 캡처까지 연결하려면 `--with-hooks`를 전달하십시오: 번들된 Claude Code hook 스크립트는 Harness의 퍼스트파티 `@deepseek-ai/dsh-hooks-claude-code` 브리지(SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop)를 통해, `$DSH_HOME/agentmemory.hooks.json`에 작성된 매니페스트를 거쳐 실행됩니다. `DSH_HOME`이 설정되지 않으면 기본값은 `~/.dsh`입니다. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh`는 MCP 도구를 활성화합니다. `--with-hooks`를 추가하면 AgentMemory에 포함된 네이티브 캡처 플러그인을 불러옵니다. 별도 플러그인 패키지는 필요하지 않습니다. [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP 설정 UI | 동일한 `mcpServers` 블록. `goose configure` → Add Extension → MCP를 사용하십시오. `~/.config/goose/config.yaml`에서 직접 YAML을 편집할 수도 있지만, 스키마는 `mcpServers:` + `command`가 아니라 `extensions:` + `cmd`를 사용합니다. |
 | **Aider** | 해당 없음 | REST API에 직접 요청하십시오: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **모든 에이전트 (32+)** | 해당 없음 | `npx skillkit install agentmemory`가 호스트를 자동으로 감지해 병합합니다. |
@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health 모니터 |
 | 커스텀 플러그인 시스템 | `iii worker add <name>` |
 
-**소스 파일 242개 · LOC ~55,000줄 · 테스트 3,400+개 · 함수 324개 · KV 스코프 67개**, 모두 세 가지 프리미티브 위에서 동작합니다. `agentmemory plugin install` 같은 것은 없습니다. 플러그인 시스템은 곧 iii 자체입니다.
+**소스 파일 243개 · LOC ~55,000줄 · 테스트 3,400+개 · 함수 324개 · KV 스코프 67개**, 모두 세 가지 프리미티브 위에서 동작합니다. `agentmemory plugin install` 같은 것은 없습니다. 플러그인 시스템은 곧 iii 자체입니다.
 
 ---
 

@@ -815,7 +815,7 @@ Entry của agentmemory là **cùng một block MCP server** trên mọi host d�
 | **Continue.dev** | `~/.continue/config.yaml` (ưu tiên) hoặc `config.json` (legacy) | `agentmemory connect continue` tạo mới `config.yaml` từ đầu khi không có file nào tồn tại, hoặc sửa `config.json` đã có. **Nếu bạn đã có `config.yaml`** adapter sẽ in ra đúng block để dán vào dưới `mcpServers:`; nó sẽ không lặng lẽ viết lại yaml của bạn vì việc giữ comment và anchor an toàn cần một YAML parser mà package này không đi kèm. Continue dùng dạng array (không phải object) cho `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` viết dưới `context_servers` (key riêng của Zed, KHÔNG phải `mcpServers`). Các MCP server remote có thể được kết nối qua `{"url": "..."}` thay thế. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` viết block `mcpServers` chuẩn. Các override theo project nằm trong `<repo>/.factory/mcp.json`. Truyền `--with-hooks` để có auto-capture gốc. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` thêm một dòng `@deepseek-ai/dsh-mcp-client` vào patch layer ở cấp home mà mọi Harness profile đều nạp; các tool đăng ký dưới dạng `mcp__agentmemory__*`. Truyền `--with-hooks` để kết nối thêm auto-capture: các hook script Claude Code đi kèm chạy qua bridge chính chủ `@deepseek-ai/dsh-hooks-claude-code` của Harness (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) qua một manifest được viết vào `$DSH_HOME/agentmemory.hooks.json`. Mặc định là `~/.dsh` khi `DSH_HOME` chưa được đặt. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` bật các công cụ MCP. Thêm `--with-hooks` để tải plugin ghi nhận sự kiện gốc đi kèm AgentMemory. Không cần gói plugin riêng. [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP settings UI | Cùng block `mcpServers`; dùng `goose configure` → Add Extension → MCP. Sửa YAML trực tiếp tại `~/.config/goose/config.yaml` cũng được hỗ trợ nhưng schema dùng `extensions:` + `cmd` (không phải `mcpServers:` + `command`). |
 | **Aider** | n/a | Gọi trực tiếp REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Bất kỳ agent nào (32+)** | n/a | `npx skillkit install agentmemory` tự phát hiện host và gộp. |
@@ -1437,7 +1437,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Hệ thống plugin tùy chỉnh | `iii worker add <name>` |
 
-**242 file source · ~55,000 LOC · 3,400+ test · 324 function · 67 KV scope**, tất cả trên ba primitive. Không có `agentmemory plugin install`. Hệ thống plugin chính là iii.
+**243 file source · ~55,000 LOC · 3,400+ test · 324 function · 67 KV scope**, tất cả trên ba primitive. Không có `agentmemory plugin install`. Hệ thống plugin chính là iii.
 
 ---
 

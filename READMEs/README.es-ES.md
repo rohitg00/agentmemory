@@ -815,7 +815,7 @@ La entrada de agentmemory es el **mismo bloque de servidor MCP** en todos los ho
 | **Continue.dev** | `~/.continue/config.yaml` (preferido) o `config.json` (legacy) | `agentmemory connect continue` crea `config.yaml` desde cero cuando no existe ninguno, o modifica el `config.json` existente. **Si ya tienes `config.yaml`** el adaptador imprime el bloque exacto para pegar bajo `mcpServers:`; no reescribe tu yaml silenciosamente porque preservar comentarios y anchors de forma segura necesita un parser YAML que el paquete no incluye. Continue usa forma de array (no de objeto) para `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` escribe bajo `context_servers` (la clave de Zed, NO `mcpServers`). Los servidores MCP remotos se pueden conectar en su lugar vía `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` escribe el bloque `mcpServers` estándar. Los overrides con scope de proyecto van en `<repo>/.factory/mcp.json`. Pasa `--with-hooks` para captura automática nativa. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` añade una fila `@deepseek-ai/dsh-mcp-client` a la capa de patch de nivel home que carga cada perfil de Harness; las tools se registran como `mcp__agentmemory__*`. Pasa `--with-hooks` para conectar también la captura automática: los scripts de hook de Claude Code empaquetados corren a través del bridge first-party de Harness `@deepseek-ai/dsh-hooks-claude-code` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) vía un manifest escrito en `$DSH_HOME/agentmemory.hooks.json`. Por defecto `~/.dsh` cuando `DSH_HOME` no está definido. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` activa las herramientas MCP. Añade `--with-hooks` para cargar el complemento nativo de captura incluido en AgentMemory. No requiere un paquete adicional. [DSH](../docs/dsh.md). |
 | **Goose** | UI de ajustes MCP de Goose | El mismo bloque `mcpServers`; usa `goose configure` → Add Extension → MCP. La edición directa del YAML en `~/.config/goose/config.yaml` está soportada, pero el schema usa `extensions:` + `cmd` (no `mcpServers:` + `command`). |
 | **Aider** | n/a | Habla directamente con la REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Cualquier agente (32+)** | n/a | `npx skillkit install agentmemory` autodetecta el host y fusiona. |
@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + monitor de salud |
 | Sistemas de plugins propios | `iii worker add <name>` |
 
-**242 ficheros de código · ~55,000 LOC · 3,400+ tests · 324 funciones · 67 scopes KV**, todo sobre tres primitivos. No hay `agentmemory plugin install`. El sistema de plugins es iii mismo.
+**243 ficheros de código · ~55,000 LOC · 3,400+ tests · 324 funciones · 67 scopes KV**, todo sobre tres primitivos. No hay `agentmemory plugin install`. El sistema de plugins es iii mismo.
 
 ---
 

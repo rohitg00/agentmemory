@@ -17,7 +17,7 @@ Generated from `src/cli/connect/index.ts`. Do not edit the block below by hand; 
 | Cursor | `cursor` | Using MCP (the only protocol Cursor speaks). Memory bridge runs at :3111 underneath. |
 | Devin CLI | `devin` | Using MCP via the user config. Devin CLI migrates mcpServers into mcp_config.json on newer builds. Pass --with-hooks for native auto-capture. |
 | Droid (Factory.ai) | `droid` | Using MCP via ~/.factory/mcp.json. The `/mcp` slash command inside droid lists configured servers. Pass --with-hooks to also install the native ~/.factory/hooks.json auto-capture hooks. |
-| DeepSeek Harness | `dsh` | Using MCP via $DSH_HOME/cordis.patch.yml (the home-level patch layer every profile loads). Tools appear as mcp__agentmemory__*. Pass --with-hooks to also wire auto-capture through Harness's Claude Code hook bridge. |
+| DeepSeek Harness | `dsh` | Using MCP via $DSH_HOME/cordis.patch.yml (the home-level patch layer every profile loads). Tools appear as mcp__agentmemory__*. Pass --with-hooks to also wire auto-capture with the bundled native DSH plugin. |
 | Gemini CLI | `gemini-cli` | Using MCP (the only protocol Gemini CLI speaks). Memory bridge runs at :3111 underneath. |
 | Hermes Agent | `hermes` | Installs the native memory provider and bundled skills into the active Hermes profile. Credentials stay managed by Hermes. |
 | Kiro | `kiro` | Using MCP via ~/.kiro/settings/mcp.json (user-level). Workspace overrides live in .kiro/settings/mcp.json. |

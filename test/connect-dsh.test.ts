@@ -8,7 +8,7 @@ import {
   existsSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { parseDocument } from "yaml";
 
 // DeepSeek Harness adapter: appends an @deepseek-ai/dsh-mcp-client row to
@@ -240,9 +240,10 @@ describe("connect: DeepSeek Harness", () => {
       const doc = parseDocument(readFileSync(configPath, "utf-8"));
       expect(doc.errors).toEqual([]);
       const rows = doc.toJS();
-      expect(rows[0]).toMatchObject({ before: "assistant", root: "workspace", insert: [{ id: entry.id, name: entry.name }] });
+      expect(rows[0]).toMatchObject({ before: "assistant", root: "workspace", insert: [{ id: entry.id }] });
       expect(rows[0].insert).toHaveLength(1);
-      expect(rows[0].insert[0].config).not.toEqual(entry.config);
+      if (entry.id === "agentmemory-hooks") expect(rows[0].insert[0].name).toMatch(/[\\/]dist[\\/]integrations[\\/]dsh\.mjs$/);
+      else expect(rows[0].insert[0].config).not.toEqual(entry.config);
       expect(rows[1]).toEqual({ id: "hmr", disabled: true });
     }
   });
@@ -272,33 +273,35 @@ describe("connect: DeepSeek Harness", () => {
     expect(existsSync(join(home, ".dsh", "cordis.patch.yml"))).toBe(false);
   });
 
-  it("--with-hooks writes the manifest and the hooks-claude-code row", async () => {
-    mkdirSync(join(home, ".dsh"), { recursive: true });
+  it("--with-hooks loads the bundled plugin without a separate package or manifest", async () => {
     const { adapter } = await import("../src/cli/connect/dsh.js");
-    const result = await adapter.install({
-      dryRun: false,
-      force: false,
-      withHooks: true,
-    });
-    expect(result.kind).toBe("installed");
-
-    const hooksPath = join(home, ".dsh", "agentmemory.hooks.json");
-    expect(existsSync(hooksPath)).toBe(true);
-    const manifest = JSON.parse(readFileSync(hooksPath, "utf-8"));
-    // Bridge-supported events from the bundled Claude Code shaped manifest.
-    for (const ev of ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop"]) {
-      expect(manifest.hooks[ev]).toBeDefined();
-    }
-    // Commands are resolved to absolute paths, no env placeholders left.
-    const flat = JSON.stringify(manifest);
-    expect(flat).not.toContain("${CLAUDE_PLUGIN_ROOT}");
-
+    await adapter.install({ dryRun: false, force: false, withHooks: true });
     const patch = readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8");
-    expect(patch).toContain("id: agentmemory-hooks");
-    expect(patch).toContain("name: '@deepseek-ai/dsh-hooks-claude-code'");
-    expect(parseDocument(patch).toJS()[1].insert[0].config.configPath).toBe(hooksPath);
-    // MCP row still present alongside.
+    const entry = parseDocument(patch).toJS()[1].insert[0];
+    expect(entry.id).toBe("agentmemory-hooks");
+    expect(isAbsolute(entry.name)).toBe(true);
+    expect(existsSync(entry.name)).toBe(true);
+    expect(typeof (await import(entry.name)).apply).toBe("function");
+    expect(existsSync(join(home, ".dsh", "agentmemory.hooks.json"))).toBe(false);
+    expect(patch).not.toContain("@agentmemory/dsh");
+    expect(patch).not.toContain("dsh-hooks-claude-code");
     expect(patch).toContain("serverName: agentmemory");
+  });
+
+  it("leaves a legacy manifest and custom bridge untouched until forced", async () => {
+    const dir = join(home, ".dsh");
+    mkdirSync(dir, { recursive: true });
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: false });
+    const configPath = join(dir, "cordis.patch.yml");
+    const legacy = "- insert:\n    - id: agentmemory-hooks\n      name: '@deepseek-ai/dsh-hooks-claude-code'\n      config: { configPath: custom.json }\n";
+    writeFileSync(configPath, readFileSync(configPath, "utf-8") + legacy);
+    writeFileSync(join(dir, "agentmemory.hooks.json"), "custom manifest");
+    expect((await adapter.install({ dryRun: false, force: false, withHooks: true })).kind).toBe("already-wired");
+    expect(readFileSync(configPath, "utf-8")).toContain("custom.json");
+    await adapter.install({ dryRun: false, force: true, withHooks: true });
+    expect(readFileSync(configPath, "utf-8")).not.toContain("dsh-hooks-claude-code");
+    expect(readFileSync(join(dir, "agentmemory.hooks.json"), "utf-8")).toBe("custom manifest");
   });
 
   it("MCP-only install after --with-hooks keeps the hooks row intact", async () => {

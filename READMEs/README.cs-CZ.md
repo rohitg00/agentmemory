@@ -815,7 +815,7 @@ Položka agentmemory je **stejný blok serveru MCP** na všech hostitelích, kte
 | **Continue.dev** | `~/.continue/config.yaml` (preferované) nebo `config.json` (starší) | `agentmemory connect continue` vytvoří `config.yaml` od nuly, pokud žádný z nich neexistuje, nebo upraví existující `config.json`. **Pokud už máte `config.yaml`**, adaptér vypíše přesný blok k vložení pod `mcpServers:`; váš yaml tiše nepřepíše, protože bezpečné zachování komentářů a kotev vyžaduje parser YAML, který balíček nedodává. Continue používá pro `mcpServers` formu pole (ne objektu). |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` zapíše pod `context_servers` (klíč Zed, NE `mcpServers`). Vzdálené servery MCP lze zapojit místo toho přes `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` zapíše standardní blok `mcpServers`. Přepisy na úrovni projektu patří do `<repo>/.factory/mcp.json`. Pro nativní automatické zachycení přidejte `--with-hooks`. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` připojí řádek `@deepseek-ai/dsh-mcp-client` do vrstvy patchů na úrovni home, kterou načítá každý profil Harness; nástroje se registrují jako `mcp__agentmemory__*`. Pro zapojení i automatického zachycení přidejte `--with-hooks`: zabalené skripty hooks pro Claude Code běží přes vlastní most Harness `@deepseek-ai/dsh-hooks-claude-code` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) pomocí manifestu zapsaného do `$DSH_HOME/agentmemory.hooks.json`. Pokud `DSH_HOME` není nastaveno, výchozí je `~/.dsh`. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` zapne nástroje MCP. Přidejte `--with-hooks` pro nativní zachytávání zahrnuté v AgentMemory. Samostatný balíček pluginu není potřeba. [DSH](../docs/dsh.md). |
 | **Goose** | UI nastavení MCP v Goose | Stejný blok `mcpServers`; použijte `goose configure` → Add Extension → MCP. Přímá úprava YAML v `~/.config/goose/config.yaml` je podporována, ale schéma používá `extensions:` + `cmd` (ne `mcpServers:` + `command`). |
 | **Aider** | n/a | Mluvte přímo s REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Jakýkoli agent (32+)** | n/a | `npx skillkit install agentmemory` automaticky detekuje hostitele a sloučí konfiguraci. |
@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Vlastní systémy pluginů | `iii worker add <name>` |
 
-**242 zdrojových souborů · ~55,000 řádků kódu · 3,400+ testů · 324 funkcí · 67 KV scopes**, vše na třech primitivech. Žádné `agentmemory plugin install`. Systém pluginů je samo iii.
+**243 zdrojových souborů · ~55,000 řádků kódu · 3,400+ testů · 324 funkcí · 67 KV scopes**, vše na třech primitivech. Žádné `agentmemory plugin install`. Systém pluginů je samo iii.
 
 ---
 

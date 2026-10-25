@@ -815,7 +815,7 @@ Az agentmemory bejegyzés **ugyanaz az MCP szerver blokk** minden olyan hoszton,
 | **Continue.dev** | `~/.continue/config.yaml` (előnyben részesített) vagy `config.json` (örökölt) | Az `agentmemory connect continue` létrehoz egy `config.yaml`-t a semmiből, ha egyik sem létezik, vagy módosítja a meglévő `config.json`-t. **Ha már van `config.yaml`-od**, az adapter kiírja a pontos, a `mcpServers:` alá illesztendő blokkot; nem írja át némán a yaml-odat, mert a kommentek és a horgok biztonságos megtartásához egy YAML-parserre lenne szükség, amit a csomag nem szállít. A Continue tömb formátumot (nem objektumot) használ a `mcpServers`-hez. |
 | **Zed** | `~/.config/zed/settings.json` | Az `agentmemory connect zed` a `context_servers` alá ír (a Zed saját kulcsa, NEM a `mcpServers`). A távoli MCP szerverek egy `{"url": "..."}`-vel is bekötődhetnek. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | Az `agentmemory connect droid` beírja a standard `mcpServers` blokkot. A projekt-szintű felülírások a `<repo>/.factory/mcp.json`-ba kerülnek. Add meg a `--with-hooks`-ot a natív automatikus rögzítéshez. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | Az `agentmemory connect dsh` hozzáfűz egy `@deepseek-ai/dsh-mcp-client` sort a home-szintű patch-réteghez, amelyet minden Harness-profil betölt; az eszközök `mcp__agentmemory__*`-ként regisztrálódnak. Add meg a `--with-hooks`-ot az automatikus rögzítés bekötéséhez is: a becsomagolt Claude Code hook-szkriptek a Harness első féltől származó `@deepseek-ai/dsh-hooks-claude-code` hídján keresztül futnak (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop), egy a `$DSH_HOME/agentmemory.hooks.json`-ba írt manifeszt révén. Alapértelmezés szerint `~/.dsh`-ra áll, ha a `DSH_HOME` nincs beállítva. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | Az `agentmemory connect dsh` bekapcsolja az MCP-eszközöket. A `--with-hooks` betölti az AgentMemoryhoz mellékelt natív rögzítőbővítményt. Külön bővítménycsomag nem szükséges. [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP beállítások felhasználói felülete | Ugyanaz a `mcpServers` blokk; használd a `goose configure` → Add Extension → MCP menüt. A közvetlen YAML-szerkesztés a `~/.config/goose/config.yaml`-ban is támogatott, de a séma `extensions:` + `cmd`-t használ (nem `mcpServers:` + `command`-ot). |
 | **Aider** | n/a | Beszélj közvetlenül a REST API-val: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Bármely ágens (32+)** | n/a | Az `npx skillkit install agentmemory` automatikusan felismeri a hosztot, és beolvaszt. |
@@ -1446,7 +1446,7 @@ A `/agentmemory/export` emellett elfogadja a `?maxSessions=`-t és a `?offset=`-
 | Prometheus / Grafana | iii OTEL + egészségfigyelő |
 | Egyéni plugin-rendszerek | `iii worker add <name>` |
 
-**242 forrásfájl · ~55,000 LOC · 3,400+ teszt · 324 funkció · 67 KV-hatókör**, mindez három primitíven. Nincs `agentmemory plugin install`. A plugin-rendszer maga az iii.
+**243 forrásfájl · ~55,000 LOC · 3,400+ teszt · 324 funkció · 67 KV-hatókör**, mindez három primitíven. Nincs `agentmemory plugin install`. A plugin-rendszer maga az iii.
 
 ---
 

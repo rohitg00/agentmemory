@@ -815,7 +815,7 @@ agentmemory-merkintä on **sama MCP-palvelinlohko** jokaisessa isännässä, jok
 | **Continue.dev** | `~/.continue/config.yaml` (suositeltu) tai `config.json` (vanha) | `agentmemory connect continue` luo tiedoston `config.yaml` tyhjästä, kun kumpaakaan ei ole, tai muokkaa olemassa olevaa `config.json`-tiedostoa. **Jos sinulla on jo `config.yaml`**, sovitin tulostaa tarkan lohkon liitettäväksi `mcpServers:`-kohtaan; se ei hiljaa uudelleenkirjoita yamliasi, koska kommenttien ja ankkureiden turvallinen säilyttäminen vaatisi YAML-jäsentimen, jota paketti ei toimita. Continue käyttää taulukkomuotoa (ei objektia) `mcpServers`-kentälle. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` kirjoittaa avaimen `context_servers` alle (Zedin avain, EI `mcpServers`). Etä-MCP-palvelimet voidaan kytkeä myös muodolla `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` kirjoittaa standardin `mcpServers`-lohkon. Projektikohtaiset ylikirjoitukset menevät tiedostoon `<repo>/.factory/mcp.json`. Välitä `--with-hooks` natiivia automaattitallennusta varten. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` lisää `@deepseek-ai/dsh-mcp-client`-rivin kotihakemistotason patch-kerrokseen, jonka joka Harness-profiili lataa; työkalut rekisteröityvät muodossa `mcp__agentmemory__*`. Välitä `--with-hooks` kytkeäksesi myös automaattitallennuksen: mukana tulevat Claude Code -hook-skriptit kulkevat Harnessin ensiosapuolen `@deepseek-ai/dsh-hooks-claude-code`-sillan läpi (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) manifestin kautta, joka kirjoitetaan tiedostoon `$DSH_HOME/agentmemory.hooks.json`. Oletusarvo on `~/.dsh`, kun `DSH_HOME` on asettamatta. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` ottaa MCP-työkalut käyttöön. Lisää `--with-hooks` ladataksesi AgentMemoryn mukana tulevan natiivin tallennuslisäosan. Erillistä lisäosapakettia ei tarvita. [DSH](../docs/dsh.md). |
 | **Goose** | Goosen MCP-asetuskäyttöliittymä | Sama `mcpServers`-lohko; käytä `goose configure` → Add Extension → MCP. Suora YAML-muokkaus polussa `~/.config/goose/config.yaml` on tuettu, mutta skeema käyttää `extensions:` + `cmd` (ei `mcpServers:` + `command`). |
 | **Aider** | ei saatavilla | Puhu suoraan REST-rajapinnalle: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Mikä tahansa agentti (32+)** | ei saatavilla | `npx skillkit install agentmemory` tunnistaa isännän automaattisesti ja yhdistää. |
@@ -1446,7 +1446,7 @@ fi
 | Prometheus / Grafana | iii OTEL + terveysmonitori |
 | Mukautetut plugin-järjestelmät | `iii worker add <name>` |
 
-**242 lähdetiedostoa · ~55,000 LOC · 3,400+ testiä · 324 funktiota · 67 KV-scopea**, kaikki kolmen primitiivin päällä. Ei `agentmemory plugin install` -komentoa. Plugin-järjestelmä on iii itse.
+**243 lähdetiedostoa · ~55,000 LOC · 3,400+ testiä · 324 funktiota · 67 KV-scopea**, kaikki kolmen primitiivin päällä. Ei `agentmemory plugin install` -komentoa. Plugin-järjestelmä on iii itse.
 
 ---
 

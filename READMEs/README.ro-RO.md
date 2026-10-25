@@ -815,7 +815,7 @@ Intrarea agentmemory este **același bloc de server MCP** pe fiecare host care f
 | **Continue.dev** | `~/.continue/config.yaml` (preferat) sau `config.json` (vechi/legacy) | `agentmemory connect continue` creează `config.yaml` de la zero când niciunul dintre cele două nu există, sau modifică `config.json`-ul existent. **Dacă ai deja `config.yaml`**, adaptorul afișează exact blocul de lipit sub `mcpServers:`; nu îți rescrie silențios yaml-ul, pentru că păstrarea sigură a comentariilor și a ancorelor necesită un parser YAML pe care pachetul nu îl include. Continue folosește forma de array (nu obiect) pentru `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` scrie sub `context_servers` (cheia specifică Zed, NU `mcpServers`). Serverele MCP la distanță pot fi conectate, în schimb, prin `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` scrie blocul standard `mcpServers`. Suprascrierile la nivel de proiect se pun în `<repo>/.factory/mcp.json`. Transmite `--with-hooks` pentru captare automată nativă. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` adaugă un rând `@deepseek-ai/dsh-mcp-client` în stratul de patch la nivel de home, pe care îl încarcă fiecare profil Harness; instrumentele se înregistrează ca `mcp__agentmemory__*`. Transmite `--with-hooks` pentru a conecta și captarea automată: scripturile de hook Claude Code incluse rulează prin bridge-ul oficial `@deepseek-ai/dsh-hooks-claude-code` al lui Harness (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop), printr-un manifest scris în `$DSH_HOME/agentmemory.hooks.json`. Implicit `~/.dsh`, când `DSH_HOME` nu este setat. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` activează instrumentele MCP. Adăugați `--with-hooks` pentru pluginul nativ de captură inclus în AgentMemory. Nu este necesar un pachet separat. [DSH](../docs/dsh.md). |
 | **Goose** | Interfața de setări MCP din Goose | Același bloc `mcpServers`; folosește `goose configure` → Add Extension → MCP. Editarea directă a YAML-ului la `~/.config/goose/config.yaml` este suportată, dar schema folosește `extensions:` + `cmd` (nu `mcpServers:` + `command`). |
 | **Aider** | n/a | Vorbește direct cu API-ul REST: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Orice agent (32+)** | n/a | `npx skillkit install agentmemory` detectează automat host-ul și îmbină configurația. |
@@ -1430,7 +1430,7 @@ fi
 | Prometheus / Grafana | iii OTEL + monitor de sănătate |
 | Sisteme de plugin-uri personalizate | `iii worker add <name>` |
 
-**242 de fișiere sursă · ~55,000 LOC · 3,800+ de teste · 324 de funcții · 67 de domenii KV**, toate pe trei primitive. Niciun `agentmemory plugin install`. Sistemul de plugin-uri este chiar iii.
+**243 de fișiere sursă · ~55,000 LOC · 3,800+ de teste · 324 de funcții · 67 de domenii KV**, toate pe trei primitive. Niciun `agentmemory plugin install`. Sistemul de plugin-uri este chiar iii.
 
 ---
 

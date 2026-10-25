@@ -813,7 +813,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Continue.dev** | `~/.continue/config.yaml` (แนะนำ) หรือ `config.json` (รุ่นเก่า) | `agentmemory connect continue` จะสร้าง `config.yaml` ใหม่ทั้งหมดเมื่อยังไม่มีไฟล์ใดเลย หรือแก้ `config.json` ที่มีอยู่ **ถ้าคุณมี `config.yaml` อยู่แล้ว** adapter จะพิมพ์ block ที่ต้อง paste ใต้ `mcpServers:` ออกมาให้ตรง ๆ มันจะไม่เขียนทับไฟล์ yaml ของคุณแบบเงียบ ๆ เพราะการรักษา comment และ anchor ให้ปลอดภัยต้องใช้ YAML parser ที่แพ็กเกจนี้ไม่ได้ ship มาด้วย Continue ใช้ array (ไม่ใช่ object) สำหรับ `mcpServers` |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` เขียนไว้ใต้ `context_servers` (key ของ Zed ไม่ใช่ `mcpServers`) MCP server แบบ remote เชื่อมต่อผ่าน `{"url": "..."}` ได้เช่นกัน |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` เขียน `mcpServers` block แบบมาตรฐาน การ override ระดับ project ไปอยู่ที่ `<repo>/.factory/mcp.json` ใส่ `--with-hooks` เพื่อ auto-capture แบบ native |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` จะต่อแถว `@deepseek-ai/dsh-mcp-client` เข้าไปใน patch layer ระดับ home ที่ทุก Harness profile โหลด; เครื่องมือจะลงทะเบียนเป็น `mcp__agentmemory__*` ใส่ `--with-hooks` เพื่อเชื่อมต่อ auto-capture ด้วย: hook script ของ Claude Code ที่ bundle มาจะรันผ่าน bridge first-party `@deepseek-ai/dsh-hooks-claude-code` ของ Harness (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) ผ่าน manifest ที่เขียนไว้ที่ `$DSH_HOME/agentmemory.hooks.json` ค่า default คือ `~/.dsh` เมื่อไม่ได้ตั้งค่า `DSH_HOME` |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` เปิดใช้งานเครื่องมือ MCP เพิ่ม `--with-hooks` เพื่อโหลดปลั๊กอินบันทึกแบบเนทีฟที่รวมอยู่ใน AgentMemory โดยไม่ต้องติดตั้งแพ็กเกจปลั๊กอินแยกต่างหาก [DSH](../docs/dsh.md). |
 | **Goose** | Goose MCP settings UI | ใช้ `mcpServers` block เดียวกัน; ใช้ `goose configure` → Add Extension → MCP การแก้ YAML ตรง ๆ ที่ `~/.config/goose/config.yaml` ก็รองรับ แต่ schema ใช้ `extensions:` + `cmd` (ไม่ใช่ `mcpServers:` + `command`) |
 | **Aider** | n/a | คุยกับ REST API ตรง ๆ: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'` |
 | **Any agent (32+)** | n/a | `npx skillkit install agentmemory` จะตรวจจับ host อัตโนมัติและ merge ให้ |
@@ -1444,7 +1444,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Custom plugin systems | `iii worker add <name>` |
 
-**242 source file · ~55,000 LOC · 3,400+ การทดสอบ · 324 function · 67 KV scope** ทั้งหมดอยู่บน primitive สามตัว ไม่มี `agentmemory plugin install` ระบบ plugin ก็คือ iii เองนั่นแหละ
+**243 source file · ~55,000 LOC · 3,400+ การทดสอบ · 324 function · 67 KV scope** ทั้งหมดอยู่บน primitive สามตัว ไม่มี `agentmemory plugin install` ระบบ plugin ก็คือ iii เองนั่นแหละ
 
 ---
 

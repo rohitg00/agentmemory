@@ -815,7 +815,7 @@ Entri agentmemory adalah **blok server MCP yang sama** di setiap host yang memak
 | **Continue.dev** | `~/.continue/config.yaml` (disarankan) atau `config.json` (legacy) | `agentmemory connect continue` membuat `config.yaml` dari awal saat keduanya belum ada, atau memodifikasi `config.json` yang sudah ada. **Jika Anda sudah punya `config.yaml`**, adapter ini mencetak blok persis untuk ditempel di bawah `mcpServers:`; ia tidak akan diam-diam menulis ulang yaml Anda karena mempertahankan komentar dan anchor dengan aman membutuhkan parser YAML yang tidak disertakan paket ini. Continue memakai bentuk array (bukan objek) untuk `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` menulis di bawah `context_servers` (key milik Zed, BUKAN `mcpServers`). Server MCP remote bisa disambungkan lewat `{"url": "..."}` sebagai gantinya. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` menulis blok `mcpServers` standar. Override berbasis proyek masuk di `<repo>/.factory/mcp.json`. Tambahkan `--with-hooks` untuk auto-capture native. |
-| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` menambahkan baris `@deepseek-ai/dsh-mcp-client` ke layer patch tingkat home yang dimuat setiap profil Harness; tool terdaftar sebagai `mcp__agentmemory__*`. Tambahkan `--with-hooks` untuk juga menyambungkan auto-capture: script hook Claude Code bundel berjalan lewat bridge first-party Harness `@deepseek-ai/dsh-hooks-claude-code` (SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, Stop) lewat manifest yang ditulis ke `$DSH_HOME/agentmemory.hooks.json`. Default ke `~/.dsh` saat `DSH_HOME` tidak diset. |
+| **DeepSeek Harness** | `$DSH_HOME/cordis.patch.yml` | `agentmemory connect dsh` mengaktifkan alat MCP. Tambahkan `--with-hooks` untuk memuat plugin perekaman native yang disertakan dalam AgentMemory. Tidak perlu paket plugin terpisah. [DSH](../docs/dsh.md). |
 | **Goose** | Settings UI MCP Goose | Blok `mcpServers` yang sama; gunakan `goose configure` → Add Extension → MCP. Edit YAML langsung di `~/.config/goose/config.yaml` juga didukung tapi skemanya memakai `extensions:` + `cmd` (bukan `mcpServers:` + `command`). |
 | **Aider** | n/a | Bicara langsung dengan REST API: `curl -X POST http://localhost:3111/agentmemory/smart-search -d '{"query": "auth"}'`. |
 | **Agen apa pun (32+)** | n/a | `npx skillkit install agentmemory` auto-detect host dan menggabungkannya. |
@@ -1447,7 +1447,7 @@ fi
 | Prometheus / Grafana | iii OTEL + health monitor |
 | Sistem plugin custom | `iii worker add <name>` |
 
-**242 file sumber · ~55,000 LOC · 3,800+ pengujian · 324 fungsi · 67 scope KV**, semua di atas tiga primitif. Tidak ada `agentmemory plugin install`. Sistem plugin-nya adalah iii itu sendiri.
+**243 file sumber · ~55,000 LOC · 3,800+ pengujian · 324 fungsi · 67 scope KV**, semua di atas tiga primitif. Tidak ada `agentmemory plugin install`. Sistem plugin-nya adalah iii itu sendiri.
 
 ---
 
