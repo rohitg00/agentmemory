@@ -12,6 +12,8 @@ npx @agentmemory/agentmemory connect dsh
 
 The adapter writes the home-level `$DSH_HOME/cordis.patch.yml`, shared by all Harness profiles. `DSH_HOME` defaults to `~/.dsh`. Existing plugins are preserved. Use `--force` to refresh an existing AgentMemory entry after upgrading.
 
+Setup also adds memory tool guidance to `$DSH_HOME/AGENTS.md`, preserving existing instructions. Harness loads it on the first request. Pass `--no-guidelines` to skip this file.
+
 ## Automatic capture
 
 Install AgentMemory in a stable location, then enable its bundled native DSH plugin:
@@ -21,7 +23,7 @@ npm install -g @agentmemory/agentmemory
 agentmemory connect dsh --with-hooks
 ```
 
-Restart Harness after setup. The plugin captures user prompts, tool results and failures, permission prompts, and compaction summaries. It starts and ends memory sessions and supplies saved context as reference data before the first model request. Images and synthetic user messages are excluded from capture. Tool capture honors `AGENTMEMORY_CAPTURE_ALLOW`, `AGENTMEMORY_CAPTURE_DENY`, and `AGENTMEMORY_CAPTURE_OUTPUT_MAX` (8,000 characters by default). Failed observation deliveries use AgentMemory's bounded local capture spool and retry while Harness runs or when it next starts.
+Restart Harness after setup. The plugin captures user prompts, assistant replies, tool results and failures, permission prompts, and compaction summaries. It starts and ends memory sessions and supplies saved context as reference data before the first model request. Images and synthetic user messages are excluded from capture. Tool capture honors `AGENTMEMORY_CAPTURE_ALLOW`, `AGENTMEMORY_CAPTURE_DENY`, and `AGENTMEMORY_CAPTURE_OUTPUT_MAX` (8,000 characters by default). Failed observation deliveries use AgentMemory's bounded local capture spool and retry while Harness runs or when it next starts.
 
 The patch points to `dist/integrations/dsh.mjs` inside your AgentMemory installation. Keep that installation available; after upgrading or moving it, run `agentmemory connect dsh --with-hooks --force`. This also replaces the old Claude Code bridge entry while preserving other plugins and operation placement. Existing hook manifest files are left untouched. No separate DSH plugin package is required.
 

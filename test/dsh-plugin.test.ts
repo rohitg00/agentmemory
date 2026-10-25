@@ -67,16 +67,19 @@ describe("bundled DSH plugin", () => {
     h.emit("user/message", 1, { content: "duplicate" });
     h.emit("tool/call", 2, { callId: "read", name: "read", arguments: '{"path":"a.ts"}' });
     h.emit("tool/result", 3, { message: { toolCallId: "read", content: [{ type: "text", text: "contents" }] } });
+    h.emit("assistant/message", 4, { message: { role: "assistant", content: [{ type: "text", text: "Final plan" }] } });
+    h.emit("assistant/message", 4, { message: { content: "duplicate" } });
     h.listeners.get("session/disposed")!(h.session);
     await h.stop();
-    expect(requests.map(r => r.path)).toEqual(["/session/start", "/observe", "/observe", "/session/end"]);
+    expect(requests.map(r => r.path)).toEqual(["/session/start", "/observe", "/observe", "/observe", "/session/end"]);
     expect(observations()).toMatchObject([
       { hookType: "prompt_submit", project: "dsh-test", cwd: home, sessionId: h.session.id, data: { prompt: "remember this" } },
       { hookType: "post_tool_use", data: { tool_name: "read", tool_input: '{"path":"a.ts"}', tool_output: "contents" } },
+      { hookType: "stop", data: { last_assistant_message: "Final plan" } },
     ]);
     expect(observations()[0].eventId).not.toBe(observations()[1].eventId);
-    h.emit("user/message", 4, { content: "late event" });
-    expect(requests).toHaveLength(4);
+    h.emit("user/message", 5, { content: "late event" });
+    expect(requests).toHaveLength(5);
   });
 
   it("handles interleaved sessions and matches out-of-order tool results by call ID", async () => {
@@ -106,10 +109,13 @@ describe("bundled DSH plugin", () => {
     h.emit("tool/result", 6, { message: { toolCallId: "read", isError: true, content: [{ type: "image", data: "image-secret" }, { type: "text", text: "<private>" + "private-value".repeat(1000) + "</private> useful" }] } });
     h.emit("compaction/summary", 7, { summary: [{ type: "text", text: "summary" }], rawOutput: "raw-secret" });
     h.emit("approval/asked", 8, { toolName: "bash", callId: "c", reason: "permission", raw: "raw-secret" });
+    h.emit("assistant/message", 9, { message: { content: [{ type: "thinking", text: "reasoning-secret" }, { type: "image", data: "image-secret" }, { type: "tool-call", name: "read" }] } });
+    h.emit("assistant/message", 10, { message: { content: [{ type: "text", text: "<private>private-value</private> public reply" }] } });
     await h.stop();
-    expect(observations().map(r => r.hookType)).toEqual(["post_tool_failure", "pre_compact", "notification"]);
+    expect(observations().map(r => r.hookType)).toEqual(["post_tool_failure", "pre_compact", "notification", "stop"]);
+    expect(observations()[3].data.last_assistant_message).toBe("[REDACTED] public reply");
     const captured = JSON.stringify(observations());
-    for (const secret of ["synthetic", "image-secret", "short-secret", "hidden", "private-value", "raw-secret"]) expect(captured).not.toContain(secret);
+    for (const secret of ["synthetic", "image-secret", "short-secret", "hidden", "private-value", "raw-secret", "reasoning-secret"]) expect(captured).not.toContain(secret);
     expect(observations()[0].data.tool_output).toBe("[REDACTED] useful");
     expect(observations()[0].data.tool_input).toContain("a.ts");
   });
@@ -122,8 +128,10 @@ describe("bundled DSH plugin", () => {
     h.emit("tool/result", 2, { message: { toolCallId: "denied", content: "private output" } });
     h.emit("tool/call", 3, { callId: "large", name: "read", arguments: "file" });
     h.emit("tool/result", 4, { message: { toolCallId: "large", content: "x".repeat(17000) } });
+    h.emit("assistant/message", 5, { message: { content: "y".repeat(17000) } });
     await h.stop();
-    expect(observations()).toHaveLength(1);
+    expect(observations()).toHaveLength(2);
+    expect(observations()[1].data.last_assistant_message).toHaveLength(16000);
     expect(observations()[0].data.tool_output).toHaveLength(16000);
     expect(observations()[0].data.tool_output).toMatch(/\[\.\.\.truncated\]$/);
   });
@@ -196,16 +204,16 @@ describe("bundled DSH plugin", () => {
     reply = async () => { throw new Error("offline"); };
     const h = harness();
     h.emit("user/message", 1, { content: "offline fact <private>hidden</private>" });
+    h.emit("assistant/message", 2, { message: { content: "offline reply <private>hidden</private>" } });
     await h.stop();
-    const original = observations()[0];
-    expect(spoolSummary(url).records).toBe(1);
+    const original = observations();
+    expect(spoolSummary(url).records).toBe(2);
     expect(readFileSync(spoolSummary(url).path, "utf8")).not.toContain("hidden");
     reply = async () => Response.json({}, { status: 201 });
     const recovered = harness();
     await recovered.stop();
     expect(spoolSummary(url).records).toBe(0);
-    expect(observations()[1].eventId).toBe(original.eventId);
-    expect(observations()[1].data).toEqual(original.data);
+    expect(observations().slice(2)).toEqual(original);
   });
 
   it.each([400, 401, 403])("does not retry permanent HTTP %s failures", async status => {

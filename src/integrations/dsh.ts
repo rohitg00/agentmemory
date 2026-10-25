@@ -149,6 +149,9 @@ export function apply(ctx: Context, config: { url?: string; secret?: string } = 
       const source = record(data.source).kind;
       const prompt = safe(data.content);
       if ((!source || source === "user") && prompt.trim()) observe(session, state, event, "prompt_submit", { prompt });
+    } else if (event.type === "assistant/message") {
+      const reply = safe(record(data.message).content, captureOutputMax());
+      if (reply.trim()) observe(session, state, event, "stop", { last_assistant_message: reply });
     } else if (event.type === "tool/call") {
       if (typeof data.callId === "string" && typeof data.name === "string" && shouldCaptureTool(data.name)) {
         state.calls.set(data.callId, { name: data.name, input: safe(data.arguments) });
