@@ -27,6 +27,7 @@ interface State {
   tail: Promise<void>;
   ready: Promise<void>;
   context: string;
+  nextContextAttempt: number;
   injected: boolean;
   closing: boolean;
   sequence: number;
@@ -47,7 +48,7 @@ function safe(value: unknown, limit = 8000): string {
   let content = text(value);
   try {
     content = JSON.stringify(JSON.parse(content, (key, item) =>
-      /^(?:password|passwd|secret|token|api[_-]?key|authorization|credential|access[_-]?token|refresh[_-]?token)$/i.test(key)
+      /(?:^|[_-])(?:password|passwd|secret|token|api[_-]?key|private[_-]?key|authorization|credential)(?:$|[_-])/i.test(key)
         ? "[REDACTED_SECRET]" : item));
   } catch {}
   return String(truncateCaptureOutput(stripPrivateData(content), limit));
@@ -69,7 +70,8 @@ export function apply(ctx: Context, config: { url?: string; secret?: string } = 
   };
 
   async function post(path: string, body: Record<string, unknown>, signal?: AbortSignal) {
-    if (shutdown.signal.aborted) return { status: 0, body: {} as Record<string, unknown> };
+    const finalizing = path === "/session/end";
+    if (shutdown.signal.aborted && !finalizing) return { status: 0, body: {} as Record<string, unknown> };
     try {
       const target = new URL(url);
       const secret = config.secret || resolveClientSecret(url);
@@ -78,7 +80,7 @@ export function apply(ctx: Context, config: { url?: string; secret?: string } = 
       const response = await fetch(`${url}/agentmemory${path}`, {
         method: "POST", redirect: "error",
         headers: { "Content-Type": "application/json", ...(secret ? { Authorization: `Bearer ${secret}` } : {}) },
-        body: JSON.stringify(body), signal: AbortSignal.any([shutdown.signal, AbortSignal.timeout(1500), ...(signal ? [signal] : [])]),
+        body: JSON.stringify(body), signal: AbortSignal.any([AbortSignal.timeout(1500), ...(finalizing ? [] : [shutdown.signal]), ...(signal ? [signal] : [])]),
       });
       if (!response.ok) warn();
       else warned = false;
@@ -111,7 +113,7 @@ export function apply(ctx: Context, config: { url?: string; secret?: string } = 
     let state = states.get(session.id);
     if (!state) {
       const cwd = session.header?.cwd || process.cwd();
-      state = { cwd, project: resolveProject(cwd), tail: Promise.resolve(), ready: Promise.resolve(), context: "", injected: false, closing: false, sequence: -1, calls: new Map() };
+      state = { cwd, project: resolveProject(cwd), tail: Promise.resolve(), ready: Promise.resolve(), context: "", nextContextAttempt: 0, injected: false, closing: false, sequence: -1, calls: new Map() };
       states.set(session.id, state);
       const current = state;
       enqueue(current, async () => {
@@ -182,8 +184,10 @@ export function apply(ctx: Context, config: { url?: string; secret?: string } = 
     await state.ready;
     if (signal.aborted || state.closing || closing) return decision;
     if (!state.context) {
+      if (Date.now() < state.nextContextAttempt) return decision;
       const result = await post("/context", { sessionId: agent.session.id, project: state.project }, signal);
       state.context = safe(result.body.context);
+      if (!state.context) state.nextContextAttempt = Date.now() + 10_000;
     }
     if (signal.aborted || state.closing || closing || state.injected || !state.context) return decision;
     state.injected = true;
@@ -207,7 +211,7 @@ export function apply(ctx: Context, config: { url?: string; secret?: string } = 
   ctx.effect(() => async () => {
     closing = true;
     clearInterval(timer);
-    const deadline = setTimeout(() => shutdown.abort(), 5000);
+    const deadline = setTimeout(() => shutdown.abort(), 3500);
     try {
       await draining;
       await Promise.all([...states].map(([id, state]) => finish(id, state)));

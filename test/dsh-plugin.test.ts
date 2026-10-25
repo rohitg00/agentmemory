@@ -105,7 +105,7 @@ describe("bundled DSH plugin", () => {
     h.emit("user/message", 2, { content: [{ type: "image", data: "image-secret" }] });
     h.emit("tool/call", 3, { callId: "self", name: "mcp__agentmemory__memory_save", arguments: "self" });
     h.emit("tool/result", 4, { message: { toolCallId: "self", content: "self" } });
-    h.emit("tool/call", 5, { callId: "read", name: "read", arguments: JSON.stringify({ token: "short-secret", nested: { password: "hidden" }, path: "a.ts" }) });
+    h.emit("tool/call", 5, { callId: "read", name: "read", arguments: JSON.stringify({ token: "short-secret", nested: { password: "hidden", client_secret: "client-value", private_key: "private-value", aws_secret_access_key: "aws-value", auth_token: "auth-value", max_tokens: 4096 }, path: "a.ts" }) });
     h.emit("tool/result", 6, { message: { toolCallId: "read", isError: true, content: [{ type: "image", data: "image-secret" }, { type: "text", text: "<private>" + "private-value".repeat(1000) + "</private> useful" }] } });
     h.emit("compaction/summary", 7, { summary: [{ type: "text", text: "summary" }], rawOutput: "raw-secret" });
     h.emit("approval/asked", 8, { toolName: "bash", callId: "c", reason: "permission", raw: "raw-secret" });
@@ -115,9 +115,10 @@ describe("bundled DSH plugin", () => {
     expect(observations().map(r => r.hookType)).toEqual(["post_tool_failure", "pre_compact", "notification", "stop"]);
     expect(observations()[3].data.last_assistant_message).toBe("[REDACTED] public reply");
     const captured = JSON.stringify(observations());
-    for (const secret of ["synthetic", "image-secret", "short-secret", "hidden", "private-value", "raw-secret", "reasoning-secret"]) expect(captured).not.toContain(secret);
+    for (const secret of ["synthetic", "image-secret", "short-secret", "hidden", "private-value", "raw-secret", "reasoning-secret", "client-value", "aws-value", "auth-value"]) expect(captured).not.toContain(secret);
     expect(observations()[0].data.tool_output).toBe("[REDACTED] useful");
     expect(observations()[0].data.tool_input).toContain("a.ts");
+    expect(JSON.parse(String(observations()[0].data.tool_input)).nested.max_tokens).toBe(4096);
   });
 
   it("honors shared capture filters and the configured output limit", async () => {
@@ -170,6 +171,24 @@ describe("bundled DSH plugin", () => {
     expect(result.messages[1].content[0].text).toContain("late memory");
     release();
     await h.stop();
+  });
+
+  it.each([200, 503])("backs off empty context after HTTP %s and retries later in the same session", async status => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
+    try {
+      reply = async path => Response.json({}, { status: path === "/context" ? status : 200 });
+      const h = harness();
+      expect((await h.step()).messages).toHaveLength(1);
+      expect((await h.step()).messages).toHaveLength(1);
+      expect(requests.filter(r => r.path === "/context")).toHaveLength(1);
+      clock.mockReturnValue(11_001);
+      reply = async () => Response.json({ context: "new memory" });
+      expect((await h.step()).messages[1].content[0].text).toContain("new memory");
+      expect(requests.filter(r => r.path === "/context")).toHaveLength(2);
+      await h.stop();
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   it("uses saved local credentials and refreshes them between requests", async () => {
@@ -235,5 +254,6 @@ describe("bundled DSH plugin", () => {
     await h.stop();
     expect(Date.now() - started).toBeLessThan(6500);
     expect(spoolSummary(url).records).toBe(8);
+    expect(requests.at(-1)?.path).toBe("/session/end");
   }, 10_000);
 });
