@@ -56,6 +56,14 @@ describe("mem::file-context with repository-relative paths", () => {
     expect(await lookup({ files: ["/repos/repo-c/src/a.ts"] })).toEqual(["repo-c"]);
   });
 
+  it("treats a UNC query as absolute", async () => {
+    expect(await lookup({ files: ["\\\\server\\share\\repo-c\\src\\a.ts"] })).toEqual([]);
+  });
+
+  it("treats a blank project as no project", async () => {
+    expect(await lookup({ files: ["/repos/repo-c/src/a.ts"], project: "  " })).toEqual(["repo-c"]);
+  });
+
   it("matches relative entries of the scoped project only", async () => {
     expect(await lookup({ files: ["/repos/repo-a/src/a.ts"], project: "repo-a" })).toEqual(["repo-a"]);
   });

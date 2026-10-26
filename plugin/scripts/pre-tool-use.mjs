@@ -91,6 +91,9 @@ function canonicalSecretPath() {
 }
 //#endregion
 //#region src/hooks/_project.ts
+function relativePathsEnabled() {
+	return process.env["AGENTMEMORY_RELATIVE_PATHS"]?.trim().toLowerCase() === "true";
+}
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
 	if (explicit && explicit.trim()) return explicit.trim();
@@ -126,13 +129,6 @@ function hookCwd(data) {
 	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
 	if (projectDir && projectDir.trim()) return projectDir;
 }
-//#endregion
-//#region src/hooks/_relative-paths.ts
-function relativePathsEnabled() {
-	return process.env["AGENTMEMORY_RELATIVE_PATHS"]?.trim().toLowerCase() === "true";
-}
-const NAME = `[^\\\\/\\s"'\`:;,)\\]}>]+`;
-`${NAME}${NAME}${NAME}`;
 //#endregion
 //#region src/hooks/pre-tool-use.ts
 function isSdkChildContext(payload) {

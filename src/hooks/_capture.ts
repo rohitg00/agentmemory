@@ -13,7 +13,8 @@ import {
   type SentMark,
   type SpoolRecord,
 } from "../capture/spool.js";
-import { relativePathsEnabled, relativizePaths, repositoryRoots } from "./_relative-paths.js";
+import { relativePathsEnabled } from "./_project.js";
+import { relativizePaths, repositoryRoots } from "./_relative-paths.js";
 
 export { stripPrivateData } from "../functions/privacy.js";
 

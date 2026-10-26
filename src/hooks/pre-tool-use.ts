@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { resolveClientSecret } from "../secret-store.js";
-import { hookCwd, resolveProject } from "./_project.js";
-import { relativePathsEnabled } from "./_relative-paths.js";
+import { hookCwd, relativePathsEnabled, resolveProject } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;

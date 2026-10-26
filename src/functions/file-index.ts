@@ -26,7 +26,8 @@ function forwardSlashes(path: string): string {
 }
 
 function isAbsolutePath(path: string): boolean {
-  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+  const slashed = forwardSlashes(path);
+  return slashed.startsWith("/") || /^[A-Za-z]:\//.test(slashed);
 }
 
 export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
@@ -37,7 +38,7 @@ export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
       const sessionId =
         data && typeof data.sessionId === "string" ? data.sessionId.trim() : "";
       const normalizedProject =
-        typeof data?.project === "string" ? data.project.trim() : undefined;
+        typeof data?.project === "string" && data.project.trim() ? data.project.trim() : undefined;
       const files = Array.isArray(data?.files)
         ? data!.files
             .map((file) => (typeof file === "string" ? file.trim() : ""))

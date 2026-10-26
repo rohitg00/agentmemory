@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { relativizePaths, repositoryRoots } from "../src/hooks/_relative-paths.js";
@@ -49,10 +49,18 @@ describe("relativizePaths", () => {
     expect(relativizePaths("type C:\\work\\app\\x.ts", aliases, true)).toBe("type x.ts");
   });
 
-  it("follows a Windows path through directories with spaces, and stops at the next path", () => {
+  it("converts a Windows path field in full, spaces and punctuation included", () => {
     const aliases = [{ from: "C:\\work\\app", to: "" }];
-    expect(relativizePaths("C:\\work\\app\\my dir\\sub\\a.ts", aliases, true)).toBe("my dir/sub/a.ts");
+    expect(relativizePaths({ file_path: "C:\\work\\app\\my dir\\lib(test)\\a.ts" }, aliases, true)).toEqual({
+      file_path: "my dir/lib(test)/a.ts",
+    });
+  });
+
+  it("converts Windows free text only up to the next space", () => {
+    const aliases = [{ from: "C:\\work\\app", to: "" }];
+    expect(relativizePaths("C:\\work\\app\\a.ts and docs\\guide.md", aliases, true)).toBe("a.ts and docs\\guide.md");
     expect(relativizePaths("C:\\work\\app\\a.ts C:\\work\\app\\b.ts", aliases, true)).toBe("a.ts b.ts");
+    expect(relativizePaths("see C:\\work\\app\\src\\lib(test)\\x.ts", aliases, true)).toBe("see src/lib(test)/x.ts");
   });
 
   it("keeps a POSIX path's case and backslashes", () => {
@@ -72,6 +80,7 @@ describe("repositoryRoots", () => {
   let linkDir: string;
   let subLinkDir: string;
   let worktreeSrcLinkDir: string;
+  let outsideSubLinkDir: string;
   let newlineWorktreeDir: string;
   const froms = (cwd: string) => repositoryRoots(cwd).map((alias) => alias.from).filter((from) => from !== newlineWorktreeDir);
 
@@ -93,6 +102,9 @@ describe("repositoryRoots", () => {
     mkdirSync(join(worktreeDir, "src"), { recursive: true });
     worktreeSrcLinkDir = join(tmpRoot, "worktree-src-link");
     symlinkSync(join(worktreeDir, "src"), worktreeSrcLinkDir);
+    mkdirSync(join(tmpRoot, "elsewhere", "packages"), { recursive: true });
+    outsideSubLinkDir = join(tmpRoot, "elsewhere", "packages", "sub");
+    symlinkSync(join(repoDir, "packages", "sub"), outsideSubLinkDir);
     newlineWorktreeDir = join(tmpRoot, "odd\nname");
     git("worktree", "add", "--quiet", "-b", "odd", newlineWorktreeDir);
   });
@@ -115,6 +127,12 @@ describe("repositoryRoots", () => {
 
   it("maps a symlink to a subdirectory onto that subdirectory", () => {
     expect(repositoryRoots(subLinkDir)).toContainEqual({ from: subLinkDir, to: join("packages", "sub") });
+  });
+
+  it("does not alias a symlink's parent that is not the repository", () => {
+    const aliases = repositoryRoots(outsideSubLinkDir);
+    expect(aliases).toContainEqual({ from: outsideSubLinkDir, to: join("packages", "sub") });
+    expect(aliases.map((alias) => alias.from)).not.toContain(join(tmpRoot, "elsewhere"));
   });
 
   it("maps a symlink into a nested worktree onto that worktree, not the main checkout", () => {
@@ -242,5 +260,10 @@ describe("pre-tool-use with AGENTMEMORY_RELATIVE_PATHS", () => {
 
   it("leaves enrichment unscoped by default", async () => {
     expect(await enrichProject("")).toBeUndefined();
+  });
+
+  it("ships without the path matcher", () => {
+    const bundle = readFileSync(join(import.meta.dirname, "..", "plugin", "scripts", "pre-tool-use.mjs"), "utf8");
+    expect(bundle).not.toMatch(/PATH_REST|PATH_END|function relativizePaths/);
   });
 });

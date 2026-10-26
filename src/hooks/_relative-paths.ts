@@ -7,10 +7,6 @@ export interface PathAlias {
   to: string;
 }
 
-export function relativePathsEnabled(): boolean {
-  return process.env["AGENTMEMORY_RELATIVE_PATHS"]?.trim().toLowerCase() === "true";
-}
-
 function gitWorktreeListing(cwd: string): string[] {
   const run = (args: string[]) =>
     execFileSync("git", ["worktree", "list", "--porcelain", ...args], {
@@ -47,9 +43,8 @@ function cwdAliases(cwd: string, roots: readonly string[]): PathAlias[] {
   const root = roots.find((candidate) => isInsideRoot(candidate, physical));
   if (root === undefined) return [];
   const inside = physical.slice(root.length);
-  if (inside && cwd.endsWith(inside)) {
-    return [{ from: cwd.slice(0, cwd.length - inside.length), to: "" }];
-  }
+  const prefix = inside && cwd.endsWith(inside) ? cwd.slice(0, cwd.length - inside.length) : undefined;
+  if (prefix && tryRealpath(prefix) === root) return [{ from: prefix, to: "" }];
   return [{ from: cwd, to: relative(root, physical).replace(/\\/g, "/") }];
 }
 
@@ -79,12 +74,13 @@ function escapeRegExp(text: string): string {
 }
 
 const PATH_END = `$|[\\s"'\`:;,)\\]}>]`;
-const NAME = `[^\\\\/\\s"'\`:;,)\\]}>]+`;
-const PATH_REST = `(?:${NAME}(?: ${NAME})*[\\\\/])*(?:${NAME})?`;
+const PATH_REST = `[^\\s"'\`]*`;
+const PATH_KEYS = new Set(["file_path", "filePath", "filepath", "notebook_path", "path", "file"]);
 
 // A root counts only where a path starts and ends, so `/mnt/repo/x` and `repo-old/` are left alone.
-// Windows paths compare case-insensitively and come out with forward slashes, like the file index;
-// a space continues a Windows path only while another separator follows.
+// Windows paths compare case-insensitively and come out with forward slashes, like the file index.
+// Free text cannot say where a path ends, so it is converted only up to the next space; a path
+// field is one path, so it is converted in full.
 function aliasPattern(aliases: readonly PathAlias[], windows: boolean): RegExp | null {
   if (aliases.length === 0) return null;
   const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");
@@ -109,11 +105,16 @@ export function relativizePaths(
     const tail = String(groups[aliases.length + 1] ?? "").replace(/\\/g, "/");
     return to ? `${to}/${tail}` : tail;
   };
-  const walk = (node: unknown): unknown => {
-    if (typeof node === "string") return node.replace(pattern, rewrite);
-    if (Array.isArray(node)) return node.map(walk);
+  const walk = (node: unknown, key?: string): unknown => {
+    if (typeof node === "string") {
+      const rewritten = node.replace(pattern, rewrite);
+      return windows && rewritten !== node && key !== undefined && PATH_KEYS.has(key)
+        ? rewritten.replace(/\\/g, "/")
+        : rewritten;
+    }
+    if (Array.isArray(node)) return node.map((child) => walk(child));
     if (node && typeof node === "object" && Object.getPrototypeOf(node) === Object.prototype) {
-      return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, walk(child)]));
+      return Object.fromEntries(Object.entries(node).map(([k, child]) => [k, walk(child, k)]));
     }
     return node;
   };

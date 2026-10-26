@@ -828,10 +828,12 @@ async function drainSpool(url, send, options = {}) {
 	}
 }
 //#endregion
-//#region src/hooks/_relative-paths.ts
+//#region src/hooks/_project.ts
 function relativePathsEnabled() {
 	return process.env["AGENTMEMORY_RELATIVE_PATHS"]?.trim().toLowerCase() === "true";
 }
+//#endregion
+//#region src/hooks/_relative-paths.ts
 function gitWorktreeListing(cwd) {
 	const run = (args) => execFileSync("git", [
 		"worktree",
@@ -872,8 +874,9 @@ function cwdAliases(cwd, roots) {
 	const root = roots.find((candidate) => isInsideRoot(candidate, physical));
 	if (root === void 0) return [];
 	const inside = physical.slice(root.length);
-	if (inside && cwd.endsWith(inside)) return [{
-		from: cwd.slice(0, cwd.length - inside.length),
+	const prefix = inside && cwd.endsWith(inside) ? cwd.slice(0, cwd.length - inside.length) : void 0;
+	if (prefix && tryRealpath(prefix) === root) return [{
+		from: prefix,
 		to: ""
 	}];
 	return [{
@@ -905,8 +908,15 @@ function escapeRegExp(text) {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 const PATH_END = `$|[\\s"'\`:;,)\\]}>]`;
-const NAME = `[^\\\\/\\s"'\`:;,)\\]}>]+`;
-const PATH_REST = `(?:${NAME}(?: ${NAME})*[\\\\/])*(?:${NAME})?`;
+const PATH_REST = `[^\\s"'\`]*`;
+const PATH_KEYS = new Set([
+	"file_path",
+	"filePath",
+	"filepath",
+	"notebook_path",
+	"path",
+	"file"
+]);
 function aliasPattern(aliases, windows) {
 	if (aliases.length === 0) return null;
 	const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");
@@ -921,10 +931,13 @@ function relativizePaths(value, aliases, windows = process.platform === "win32")
 		const tail = String(groups[aliases.length + 1] ?? "").replace(/\\/g, "/");
 		return to ? `${to}/${tail}` : tail;
 	};
-	const walk = (node) => {
-		if (typeof node === "string") return node.replace(pattern, rewrite);
-		if (Array.isArray(node)) return node.map(walk);
-		if (node && typeof node === "object" && Object.getPrototypeOf(node) === Object.prototype) return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, walk(child)]));
+	const walk = (node, key) => {
+		if (typeof node === "string") {
+			const rewritten = node.replace(pattern, rewrite);
+			return windows && rewritten !== node && key !== void 0 && PATH_KEYS.has(key) ? rewritten.replace(/\\/g, "/") : rewritten;
+		}
+		if (Array.isArray(node)) return node.map((child) => walk(child));
+		if (node && typeof node === "object" && Object.getPrototypeOf(node) === Object.prototype) return Object.fromEntries(Object.entries(node).map(([k, child]) => [k, walk(child, k)]));
 		return node;
 	};
 	return walk(value);
