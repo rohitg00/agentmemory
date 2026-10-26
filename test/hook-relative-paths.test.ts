@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -48,6 +49,12 @@ describe("relativizePaths", () => {
     expect(relativizePaths("type C:\\work\\app\\x.ts", aliases, true)).toBe("type x.ts");
   });
 
+  it("follows a Windows path through directories with spaces, and stops at the next path", () => {
+    const aliases = [{ from: "C:\\work\\app", to: "" }];
+    expect(relativizePaths("C:\\work\\app\\my dir\\sub\\a.ts", aliases, true)).toBe("my dir/sub/a.ts");
+    expect(relativizePaths("C:\\work\\app\\a.ts C:\\work\\app\\b.ts", aliases, true)).toBe("a.ts b.ts");
+  });
+
   it("keeps a POSIX path's case and backslashes", () => {
     expect(relativizePaths("/work/app/my\\ file.ts /Work/App/x", roots, false)).toBe("my\\ file.ts /Work/App/x");
   });
@@ -64,6 +71,7 @@ describe("repositoryRoots", () => {
   let worktreeDir: string;
   let linkDir: string;
   let subLinkDir: string;
+  let worktreeSrcLinkDir: string;
   let newlineWorktreeDir: string;
   const froms = (cwd: string) => repositoryRoots(cwd).map((alias) => alias.from).filter((from) => from !== newlineWorktreeDir);
 
@@ -82,6 +90,9 @@ describe("repositoryRoots", () => {
     mkdirSync(join(repoDir, "packages", "sub"), { recursive: true });
     subLinkDir = join(tmpRoot, "sub-link");
     symlinkSync(join(repoDir, "packages", "sub"), subLinkDir);
+    mkdirSync(join(worktreeDir, "src"), { recursive: true });
+    worktreeSrcLinkDir = join(tmpRoot, "worktree-src-link");
+    symlinkSync(join(worktreeDir, "src"), worktreeSrcLinkDir);
     newlineWorktreeDir = join(tmpRoot, "odd\nname");
     git("worktree", "add", "--quiet", "-b", "odd", newlineWorktreeDir);
   });
@@ -104,6 +115,10 @@ describe("repositoryRoots", () => {
 
   it("maps a symlink to a subdirectory onto that subdirectory", () => {
     expect(repositoryRoots(subLinkDir)).toContainEqual({ from: subLinkDir, to: join("packages", "sub") });
+  });
+
+  it("maps a symlink into a nested worktree onto that worktree, not the main checkout", () => {
+    expect(repositoryRoots(worktreeSrcLinkDir)).toContainEqual({ from: worktreeSrcLinkDir, to: "src" });
   });
 
   it("reads a worktree path that contains a newline", () => {
@@ -173,5 +188,59 @@ describe("captureObservation with AGENTMEMORY_RELATIVE_PATHS", () => {
   it("sends absolute paths by default", async () => {
     const body = await sentBody(undefined);
     expect(body.data).toEqual({ tool_name: "Read", tool_input: { file_path: join(repoDir, "src", "a.ts") } });
+  });
+});
+
+describe("pre-tool-use with AGENTMEMORY_RELATIVE_PATHS", () => {
+  let tmpRoot: string;
+  let repoDir: string;
+
+  beforeAll(() => {
+    tmpRoot = realpathSync(mkdtempSync(join(tmpdir(), "amem-pretool-")));
+    repoDir = join(tmpRoot, "repo");
+    mkdirSync(repoDir, { recursive: true });
+    execFileSync("git", ["init", "--quiet"], { cwd: repoDir, stdio: "ignore" });
+  });
+
+  afterAll(() => {
+    rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  async function enrichProject(relative: string): Promise<unknown> {
+    const bodies: Array<Record<string, unknown>> = [];
+    const server = createServer((req, res) => {
+      let raw = "";
+      req.on("data", (chunk) => (raw += chunk));
+      req.on("end", () => {
+        bodies.push(JSON.parse(raw));
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end("{}");
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const child = spawn(process.execPath, [join(import.meta.dirname, "..", "plugin", "scripts", "pre-tool-use.mjs")], {
+      env: {
+        PATH: process.env["PATH"] ?? "",
+        HOME: tmpRoot,
+        AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
+        AGENTMEMORY_INJECT_CONTEXT: "true",
+        AGENTMEMORY_RELATIVE_PATHS: relative,
+      },
+      stdio: ["pipe", "ignore", "ignore"],
+    });
+    child.stdin.end(JSON.stringify({ session_id: "ses_pre", cwd: repoDir, tool_name: "Read", tool_input: { file_path: join(repoDir, "a.ts") } }));
+    await new Promise((resolve) => child.on("close", resolve));
+    server.close();
+    return bodies[0]?.["project"];
+  }
+
+  it("scopes enrichment to the repository's project when the hook payload has none", async () => {
+    expect(await enrichProject("true")).toBe("repo");
+  });
+
+  it("leaves enrichment unscoped by default", async () => {
+    expect(await enrichProject("")).toBeUndefined();
   });
 });

@@ -39,8 +39,9 @@ describe("mem::file-context with repository-relative paths", () => {
 
   const lookup = async (payload: Record<string, unknown>) => {
     const { context } = (await sdk.trigger("mem::file-context", payload)) as { context: string };
-    return ["repo-a", "repo-b", "repo-c"].filter((project) => context.includes(`in ${project}`));
+    return ["repo-a", "repo-b", "repo-c", "repo-w"].filter((project) => context.includes(`in ${project}`));
   };
+  const lookupFor = (files: string[], project: string) => lookup({ files, project });
 
   beforeEach(async () => {
     sdk = mockSdk({ looseTrigger: true });
@@ -57,6 +58,15 @@ describe("mem::file-context with repository-relative paths", () => {
 
   it("matches relative entries of the scoped project only", async () => {
     expect(await lookup({ files: ["/repos/repo-a/src/a.ts"], project: "repo-a" })).toEqual(["repo-a"]);
+  });
+
+  it("matches a Windows query against a forward-slash entry", async () => {
+    expect(await lookup({ files: ["C:\\repos\\repo-a\\src\\a.ts"], project: "repo-a" })).toEqual(["repo-a"]);
+  });
+
+  it("matches a stored Windows entry against a forward-slash query", async () => {
+    await seed(kv, "ses_win", "repo-w", "src\\w.ts");
+    expect(await lookupFor(["src/w.ts"], "repo-w")).toContain("repo-w");
   });
 
   it("still matches a relative query against relative entries", async () => {

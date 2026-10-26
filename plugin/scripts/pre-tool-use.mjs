@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
+import { execSync } from "node:child_process";
 //#region src/secret-store.ts
 const SECRET_KEY = "AGENTMEMORY_SECRET";
 function agentmemoryHomeDir() {
@@ -89,6 +90,50 @@ function canonicalSecretPath() {
 	return join(homedir(), ".agentmemory", "secret");
 }
 //#endregion
+//#region src/hooks/_project.ts
+function resolveProject(cwd) {
+	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
+	if (explicit && explicit.trim()) return explicit.trim();
+	const dir = cwd && cwd.trim() ? cwd : process.cwd();
+	try {
+		const [top, gitDir, commonDir] = execSync("git rev-parse --show-toplevel --git-dir --git-common-dir", {
+			cwd: dir,
+			stdio: [
+				"ignore",
+				"pipe",
+				"ignore"
+			],
+			timeout: 500
+		}).toString().trim().split(/\r?\n/);
+		if (top) return basename(repositoryRoot(dir, top, gitDir, commonDir));
+	} catch {}
+	return basename(dir);
+}
+function repositoryRoot(dir, top, gitDir, commonDir) {
+	if (!gitDir || !commonDir) return top;
+	const physical = realpathSync(dir);
+	const common = resolve(physical, commonDir);
+	if (resolve(physical, gitDir) === common || basename(common) !== ".git") return top;
+	return dirname(common);
+}
+function hookCwd(data) {
+	if (!data || typeof data !== "object") return void 0;
+	if (typeof data.cwd === "string" && data.cwd.trim()) return data.cwd;
+	const roots = data.workspace_roots;
+	if (Array.isArray(roots)) {
+		for (const root of roots) if (typeof root === "string" && root.trim()) return root;
+	}
+	const projectDir = process.env["DEVIN_PROJECT_DIR"] || process.env["CLAUDE_PROJECT_DIR"];
+	if (projectDir && projectDir.trim()) return projectDir;
+}
+//#endregion
+//#region src/hooks/_relative-paths.ts
+function relativePathsEnabled() {
+	return process.env["AGENTMEMORY_RELATIVE_PATHS"]?.trim().toLowerCase() === "true";
+}
+const NAME = `[^\\\\/\\s"'\`:;,)\\]}>]+`;
+`${NAME}${NAME}${NAME}`;
+//#endregion
 //#region src/hooks/pre-tool-use.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -148,7 +193,7 @@ async function main() {
 	}
 	const rawSessionId = data.session_id || data.sessionId || data.conversation_id;
 	const sessionId = typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : "unknown";
-	const project = typeof data.project === "string" && data.project.trim().length > 0 ? data.project.trim() : void 0;
+	const project = typeof data.project === "string" && data.project.trim().length > 0 ? data.project.trim() : relativePathsEnabled() ? resolveProject(hookCwd(data) || process.cwd()) : void 0;
 	try {
 		const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
 			method: "POST",

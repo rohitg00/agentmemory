@@ -863,22 +863,23 @@ function tryRealpath(path) {
 		return;
 	}
 }
+function isInsideRoot(root, path) {
+	return path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}\\`);
+}
 function cwdAliases(cwd, roots) {
 	const physical = tryRealpath(cwd);
 	if (!physical || physical === cwd) return [];
-	for (const root of roots) {
-		if (physical !== root && !physical.startsWith(`${root}/`)) continue;
-		const inside = physical.slice(root.length);
-		if (inside && cwd.endsWith(inside)) return [{
-			from: cwd.slice(0, cwd.length - inside.length),
-			to: ""
-		}];
-		return [{
-			from: cwd,
-			to: relative(root, physical)
-		}];
-	}
-	return [];
+	const root = roots.find((candidate) => isInsideRoot(candidate, physical));
+	if (root === void 0) return [];
+	const inside = physical.slice(root.length);
+	if (inside && cwd.endsWith(inside)) return [{
+		from: cwd.slice(0, cwd.length - inside.length),
+		to: ""
+	}];
+	return [{
+		from: cwd,
+		to: relative(root, physical).replace(/\\/g, "/")
+	}];
 }
 function repositoryRoots(cwd) {
 	const recorded = gitWorktreeListing(cwd).filter((line) => line.startsWith("worktree ")).map((line) => line.slice(9)).filter(Boolean);
@@ -888,11 +889,12 @@ function repositoryRoots(cwd) {
 		const physical = tryRealpath(root);
 		if (physical) roots.add(physical);
 	}
-	const aliases = [...roots].map((from) => ({
+	const longestFirst = [...roots].sort((a, b) => b.length - a.length);
+	const aliases = longestFirst.map((from) => ({
 		from,
 		to: ""
 	}));
-	aliases.push(...cwdAliases(cwd, [...roots]));
+	aliases.push(...cwdAliases(cwd, longestFirst));
 	if (process.platform === "win32") for (const alias of [...aliases]) aliases.push({
 		...alias,
 		from: alias.from.replace(/\//g, "\\")
@@ -903,7 +905,8 @@ function escapeRegExp(text) {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 const PATH_END = `$|[\\s"'\`:;,)\\]}>]`;
-const PATH_REST = `[^\\s"'\`:;,)\\]}>]*`;
+const NAME = `[^\\\\/\\s"'\`:;,)\\]}>]+`;
+const PATH_REST = `(?:${NAME}(?: ${NAME})*[\\\\/])*(?:${NAME})?`;
 function aliasPattern(aliases, windows) {
 	if (aliases.length === 0) return null;
 	const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");

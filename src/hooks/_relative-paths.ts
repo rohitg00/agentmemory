@@ -36,18 +36,21 @@ function tryRealpath(path: string): string | undefined {
   }
 }
 
-function cwdAliases(cwd: string, roots: string[]): PathAlias[] {
+function isInsideRoot(root: string, path: string): boolean {
+  return path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}\\`);
+}
+
+// `roots` must be longest first, so a cwd inside a nested worktree maps onto that worktree.
+function cwdAliases(cwd: string, roots: readonly string[]): PathAlias[] {
   const physical = tryRealpath(cwd);
   if (!physical || physical === cwd) return [];
-  for (const root of roots) {
-    if (physical !== root && !physical.startsWith(`${root}/`)) continue;
-    const inside = physical.slice(root.length);
-    if (inside && cwd.endsWith(inside)) {
-      return [{ from: cwd.slice(0, cwd.length - inside.length), to: "" }];
-    }
-    return [{ from: cwd, to: relative(root, physical) }];
+  const root = roots.find((candidate) => isInsideRoot(candidate, physical));
+  if (root === undefined) return [];
+  const inside = physical.slice(root.length);
+  if (inside && cwd.endsWith(inside)) {
+    return [{ from: cwd.slice(0, cwd.length - inside.length), to: "" }];
   }
-  return [];
+  return [{ from: cwd, to: relative(root, physical).replace(/\\/g, "/") }];
 }
 
 // Longest first: a worktree nested inside the main checkout must be stripped before it.
@@ -62,8 +65,9 @@ export function repositoryRoots(cwd: string): PathAlias[] {
     const physical = tryRealpath(root);
     if (physical) roots.add(physical);
   }
-  const aliases = [...roots].map((from) => ({ from, to: "" }));
-  aliases.push(...cwdAliases(cwd, [...roots]));
+  const longestFirst = [...roots].sort((a, b) => b.length - a.length);
+  const aliases = longestFirst.map((from) => ({ from, to: "" }));
+  aliases.push(...cwdAliases(cwd, longestFirst));
   if (process.platform === "win32") {
     for (const alias of [...aliases]) aliases.push({ ...alias, from: alias.from.replace(/\//g, "\\") });
   }
@@ -75,10 +79,12 @@ function escapeRegExp(text: string): string {
 }
 
 const PATH_END = `$|[\\s"'\`:;,)\\]}>]`;
-const PATH_REST = `[^\\s"'\`:;,)\\]}>]*`;
+const NAME = `[^\\\\/\\s"'\`:;,)\\]}>]+`;
+const PATH_REST = `(?:${NAME}(?: ${NAME})*[\\\\/])*(?:${NAME})?`;
 
 // A root counts only where a path starts and ends, so `/mnt/repo/x` and `repo-old/` are left alone.
-// Windows paths compare case-insensitively and come out with forward slashes, like the file index.
+// Windows paths compare case-insensitively and come out with forward slashes, like the file index;
+// a space continues a Windows path only while another separator follows.
 function aliasPattern(aliases: readonly PathAlias[], windows: boolean): RegExp | null {
   if (aliases.length === 0) return null;
   const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");

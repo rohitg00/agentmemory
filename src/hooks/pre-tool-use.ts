@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { resolveClientSecret } from "../secret-store.js";
+import { hookCwd, resolveProject } from "./_project.js";
+import { relativePathsEnabled } from "./_relative-paths.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -84,7 +86,9 @@ async function main() {
   const project =
     typeof data.project === "string" && data.project.trim().length > 0
       ? data.project.trim()
-      : undefined;
+      : relativePathsEnabled()
+        ? resolveProject(hookCwd(data) || process.cwd())
+        : undefined;
 
   try {
     const res = await fetch(`${REST_URL}/agentmemory/enrich`, {

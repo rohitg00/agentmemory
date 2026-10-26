@@ -21,6 +21,10 @@ interface FileHistory {
 
 // A repository-relative path names a file only within its project, so an absolute query
 // may match one only when the lookup is scoped to a project.
+function forwardSlashes(path: string): string {
+  return path.replace(/\\/g, "/");
+}
+
 function isAbsolutePath(path: string): boolean {
   return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
 }
@@ -74,7 +78,7 @@ export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
 
       for (const file of files) {
         const history: FileHistory = { file, observations: [] };
-        const normalizedFile = file.replace(/^\.\//, "");
+        const normalizedFile = forwardSlashes(file).replace(/^\.\//, "");
         const queryIsAbsolute = isAbsolutePath(file);
 
         for (const session of otherSessions) {
@@ -82,14 +86,16 @@ export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
 
           for (const obs of observations) {
             if (!obs.files || !obs.title) continue;
-            const matches = obs.files.some(
-              (f) =>
-                f === file ||
+            const matches = obs.files.some((stored) => {
+              const f = forwardSlashes(stored);
+              return (
+                stored === file ||
                 f === normalizedFile ||
                 f.endsWith(`/${normalizedFile}`) ||
                 (normalizedFile.endsWith(`/${f}`) &&
-                  (normalizedProject !== undefined || !queryIsAbsolute || isAbsolutePath(f))),
-            );
+                  (normalizedProject !== undefined || !queryIsAbsolute || isAbsolutePath(f)))
+              );
+            });
             if (matches && obs.importance >= 4) {
               history.observations.push({
                 sessionId: session.id,
