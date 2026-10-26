@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir, platform } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -828,6 +828,78 @@ async function drainSpool(url, send, options = {}) {
 	}
 }
 //#endregion
+//#region src/hooks/_relative-paths.ts
+function relativePathsEnabled() {
+	return process.env["AGENTMEMORY_RELATIVE_PATHS"]?.trim().toLowerCase() === "true";
+}
+function repositoryRoots(cwd) {
+	let listing;
+	try {
+		listing = execFileSync("git", [
+			"worktree",
+			"list",
+			"--porcelain"
+		], {
+			cwd,
+			stdio: [
+				"ignore",
+				"pipe",
+				"ignore"
+			],
+			timeout: 500
+		}).toString();
+	} catch {
+		return [];
+	}
+	const recorded = listing.split(/\r?\n/).filter((line) => line.startsWith("worktree ")).map((line) => line.slice(9)).filter(Boolean);
+	const roots = /* @__PURE__ */ new Set();
+	for (const root of recorded) {
+		roots.add(root);
+		const physical = tryRealpath(root);
+		if (physical) roots.add(physical);
+	}
+	const logical = logicalRoot(cwd, [...roots]);
+	if (logical) roots.add(logical);
+	if (process.platform === "win32") for (const root of [...roots]) roots.add(root.replace(/\//g, "\\"));
+	return [...roots].sort((a, b) => b.length - a.length);
+}
+function tryRealpath(path) {
+	try {
+		return realpathSync(path);
+	} catch {
+		return;
+	}
+}
+function logicalRoot(cwd, roots) {
+	const physical = tryRealpath(cwd);
+	if (!physical || physical === cwd) return void 0;
+	for (const root of roots) {
+		if (physical === root) return cwd;
+		if (!physical.startsWith(`${root}/`)) continue;
+		const inside = physical.slice(root.length);
+		if (cwd.endsWith(inside)) return cwd.slice(0, cwd.length - inside.length);
+	}
+}
+function escapeRegExp(text) {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function rootPattern(roots) {
+	if (roots.length === 0) return null;
+	const alternatives = roots.map(escapeRegExp).join("|");
+	return new RegExp(`(?<![\\w.~/\\\\-])(?:${alternatives})(?:[\\\\/]|(?=$|[\\s"'\`:;,)\\]}>]))`, "g");
+}
+function relativizePaths(value, roots) {
+	const pattern = rootPattern(roots);
+	if (!pattern) return value;
+	const walk = (node) => {
+		if (typeof node === "string") return node.replace(pattern, (match) => /[\\/]$/.test(match) ? "" : ".");
+		if (Array.isArray(node)) return node.map(walk);
+		if (node && typeof node === "object" && Object.getPrototypeOf(node) === Object.prototype) return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, walk(child)]));
+		return node;
+	};
+	return walk(value);
+}
+//#endregion
 //#region src/hooks/_capture.ts
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = resolveClientSecret(REST_URL);
@@ -904,8 +976,10 @@ function startDrainChild() {
 }
 async function captureObservation(body, timeoutMs) {
 	const eventId = body.eventId ?? deriveEventId(body.hookType, body.sessionId, null, body.data);
+	const data = relativePathsEnabled() ? relativizePaths(body.data, repositoryRoots(body.cwd)) : body.data;
 	const payload = {
 		...body,
+		data,
 		eventId
 	};
 	let reason;
