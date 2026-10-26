@@ -832,36 +832,29 @@ async function drainSpool(url, send, options = {}) {
 function relativePathsEnabled() {
 	return process.env["AGENTMEMORY_RELATIVE_PATHS"]?.trim().toLowerCase() === "true";
 }
-function repositoryRoots(cwd) {
-	let listing;
+function gitWorktreeListing(cwd) {
+	const run = (args) => execFileSync("git", [
+		"worktree",
+		"list",
+		"--porcelain",
+		...args
+	], {
+		cwd,
+		stdio: [
+			"ignore",
+			"pipe",
+			"ignore"
+		],
+		timeout: 500
+	}).toString();
 	try {
-		listing = execFileSync("git", [
-			"worktree",
-			"list",
-			"--porcelain"
-		], {
-			cwd,
-			stdio: [
-				"ignore",
-				"pipe",
-				"ignore"
-			],
-			timeout: 500
-		}).toString();
+		return run(["-z"]).split("\0");
+	} catch {}
+	try {
+		return run([]).split(/\r?\n/);
 	} catch {
 		return [];
 	}
-	const recorded = listing.split(/\r?\n/).filter((line) => line.startsWith("worktree ")).map((line) => line.slice(9)).filter(Boolean);
-	const roots = /* @__PURE__ */ new Set();
-	for (const root of recorded) {
-		roots.add(root);
-		const physical = tryRealpath(root);
-		if (physical) roots.add(physical);
-	}
-	const logical = logicalRoot(cwd, [...roots]);
-	if (logical) roots.add(logical);
-	if (process.platform === "win32") for (const root of [...roots]) roots.add(root.replace(/\//g, "\\"));
-	return [...roots].sort((a, b) => b.length - a.length);
 }
 function tryRealpath(path) {
 	try {
@@ -870,29 +863,63 @@ function tryRealpath(path) {
 		return;
 	}
 }
-function logicalRoot(cwd, roots) {
+function cwdAliases(cwd, roots) {
 	const physical = tryRealpath(cwd);
-	if (!physical || physical === cwd) return void 0;
+	if (!physical || physical === cwd) return [];
 	for (const root of roots) {
-		if (physical === root) return cwd;
-		if (!physical.startsWith(`${root}/`)) continue;
+		if (physical !== root && !physical.startsWith(`${root}/`)) continue;
 		const inside = physical.slice(root.length);
-		if (cwd.endsWith(inside)) return cwd.slice(0, cwd.length - inside.length);
+		if (inside && cwd.endsWith(inside)) return [{
+			from: cwd.slice(0, cwd.length - inside.length),
+			to: ""
+		}];
+		return [{
+			from: cwd,
+			to: relative(root, physical)
+		}];
 	}
+	return [];
+}
+function repositoryRoots(cwd) {
+	const recorded = gitWorktreeListing(cwd).filter((line) => line.startsWith("worktree ")).map((line) => line.slice(9)).filter(Boolean);
+	const roots = /* @__PURE__ */ new Set();
+	for (const root of recorded) {
+		roots.add(root);
+		const physical = tryRealpath(root);
+		if (physical) roots.add(physical);
+	}
+	const aliases = [...roots].map((from) => ({
+		from,
+		to: ""
+	}));
+	aliases.push(...cwdAliases(cwd, [...roots]));
+	if (process.platform === "win32") for (const alias of [...aliases]) aliases.push({
+		...alias,
+		from: alias.from.replace(/\//g, "\\")
+	});
+	return aliases.sort((a, b) => b.from.length - a.from.length);
 }
 function escapeRegExp(text) {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-function rootPattern(roots) {
-	if (roots.length === 0) return null;
-	const alternatives = roots.map(escapeRegExp).join("|");
-	return new RegExp(`(?<![\\w.~/\\\\-])(?:${alternatives})(?:[\\\\/]|(?=$|[\\s"'\`:;,)\\]}>]))`, "g");
+const PATH_END = `$|[\\s"'\`:;,)\\]}>]`;
+const PATH_REST = `[^\\s"'\`:;,)\\]}>]*`;
+function aliasPattern(aliases, windows) {
+	if (aliases.length === 0) return null;
+	const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");
+	return new RegExp(`(?<![\\w.~/\\\\-])(?:${alternatives})(?:([\\\\/])(${windows ? PATH_REST : ""})|(?=${PATH_END}))`, windows ? "gi" : "g");
 }
-function relativizePaths(value, roots) {
-	const pattern = rootPattern(roots);
+function relativizePaths(value, aliases, windows = process.platform === "win32") {
+	const pattern = aliasPattern(aliases, windows);
 	if (!pattern) return value;
+	const rewrite = (_match, ...groups) => {
+		const to = aliases[groups.findIndex((group) => typeof group === "string")]?.to ?? "";
+		if (typeof groups[aliases.length] !== "string") return to || ".";
+		const tail = String(groups[aliases.length + 1] ?? "").replace(/\\/g, "/");
+		return to ? `${to}/${tail}` : tail;
+	};
 	const walk = (node) => {
-		if (typeof node === "string") return node.replace(pattern, (match) => /[\\/]$/.test(match) ? "" : ".");
+		if (typeof node === "string") return node.replace(pattern, rewrite);
 		if (Array.isArray(node)) return node.map(walk);
 		if (node && typeof node === "object" && Object.getPrototypeOf(node) === Object.prototype) return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, walk(child)]));
 		return node;

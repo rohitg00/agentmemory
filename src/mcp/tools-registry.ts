@@ -112,6 +112,10 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Current session ID to exclude",
         },
+        project: {
+          type: "string",
+          description: "Project to search; required to match repository-relative paths",
+        },
       },
       required: ["files"],
     },

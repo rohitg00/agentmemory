@@ -6,7 +6,10 @@ import { dirname, join } from "node:path";
 import { relativizePaths, repositoryRoots } from "../src/hooks/_relative-paths.js";
 
 describe("relativizePaths", () => {
-  const roots = ["/work/app/.claude/worktrees/fix", "/work/app"];
+  const roots = [
+    { from: "/work/app/.claude/worktrees/fix", to: "" },
+    { from: "/work/app", to: "" },
+  ];
 
   it("strips the root from a file path", () => {
     expect(relativizePaths({ file_path: "/work/app/src/a.ts" }, roots)).toEqual({ file_path: "src/a.ts" });
@@ -34,6 +37,21 @@ describe("relativizePaths", () => {
     ).toEqual({ edits: [{ path: "x.ts", line: 3 }], ok: true, none: null });
   });
 
+  it("maps an alias onto its path inside the repository", () => {
+    const aliases = [{ from: "/links/sub", to: "packages/sub" }];
+    expect(relativizePaths("cat /links/sub/a.ts /links/sub", aliases)).toBe("cat packages/sub/a.ts packages/sub");
+  });
+
+  it("matches Windows roots in any case and writes forward slashes", () => {
+    const aliases = [{ from: "C:\\work\\app", to: "" }];
+    expect(relativizePaths("c:\\Work\\App\\src\\a.ts", aliases, true)).toBe("src/a.ts");
+    expect(relativizePaths("type C:\\work\\app\\x.ts", aliases, true)).toBe("type x.ts");
+  });
+
+  it("keeps a POSIX path's case and backslashes", () => {
+    expect(relativizePaths("/work/app/my\\ file.ts /Work/App/x", roots, false)).toBe("my\\ file.ts /Work/App/x");
+  });
+
   it("returns the value untouched when there are no roots", () => {
     const value = { file_path: "/work/app/src/a.ts" };
     expect(relativizePaths(value, [])).toBe(value);
@@ -45,6 +63,9 @@ describe("repositoryRoots", () => {
   let repoDir: string;
   let worktreeDir: string;
   let linkDir: string;
+  let subLinkDir: string;
+  let newlineWorktreeDir: string;
+  const froms = (cwd: string) => repositoryRoots(cwd).map((alias) => alias.from).filter((from) => from !== newlineWorktreeDir);
 
   beforeAll(() => {
     tmpRoot = realpathSync(mkdtempSync(join(tmpdir(), "amem-roots-")));
@@ -58,6 +79,11 @@ describe("repositoryRoots", () => {
     mkdirSync(dirname(worktreeDir), { recursive: true });
     git("worktree", "add", "--quiet", "-b", "fix", worktreeDir);
     symlinkSync(repoDir, linkDir);
+    mkdirSync(join(repoDir, "packages", "sub"), { recursive: true });
+    subLinkDir = join(tmpRoot, "sub-link");
+    symlinkSync(join(repoDir, "packages", "sub"), subLinkDir);
+    newlineWorktreeDir = join(tmpRoot, "odd\nname");
+    git("worktree", "add", "--quiet", "-b", "odd", newlineWorktreeDir);
   });
 
   afterAll(() => {
@@ -65,15 +91,23 @@ describe("repositoryRoots", () => {
   });
 
   it("lists every worktree, longest first, from inside the main checkout", () => {
-    expect(repositoryRoots(repoDir)).toEqual([worktreeDir, repoDir]);
+    expect(froms(repoDir)).toEqual([worktreeDir, repoDir]);
   });
 
   it("lists the same roots from inside a worktree", () => {
-    expect(repositoryRoots(join(worktreeDir))).toEqual([worktreeDir, repoDir]);
+    expect(froms(worktreeDir)).toEqual([worktreeDir, repoDir]);
   });
 
   it("adds the symlinked spelling cwd was reached through", () => {
-    expect(repositoryRoots(linkDir)).toContain(linkDir);
+    expect(repositoryRoots(linkDir)).toContainEqual({ from: linkDir, to: "" });
+  });
+
+  it("maps a symlink to a subdirectory onto that subdirectory", () => {
+    expect(repositoryRoots(subLinkDir)).toContainEqual({ from: subLinkDir, to: join("packages", "sub") });
+  });
+
+  it("reads a worktree path that contains a newline", () => {
+    expect(repositoryRoots(repoDir)).toContainEqual({ from: newlineWorktreeDir, to: "" });
   });
 
   it("returns nothing outside a repository", () => {
@@ -110,7 +144,7 @@ describe("captureObservation with AGENTMEMORY_RELATIVE_PATHS", () => {
   });
 
   async function sentBody(flag: string | undefined): Promise<Record<string, unknown>> {
-    if (flag !== undefined) vi.stubEnv("AGENTMEMORY_RELATIVE_PATHS", flag);
+    vi.stubEnv("AGENTMEMORY_RELATIVE_PATHS", flag);
     vi.stubEnv("AGENTMEMORY_CAPTURE_SPOOL_DIR", join(tmpRoot, "spool"));
     const fetchMock = vi.fn(async () => new Response("{}", { status: 201 }));
     vi.stubGlobal("fetch", fetchMock);

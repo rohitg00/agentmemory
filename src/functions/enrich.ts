@@ -25,11 +25,12 @@ export function registerEnrichFunction(sdk: IIIClient, kv: StateKV): void {
       const parts: string[] = [];
 
       const fileContextPromise = sdk
-        .trigger<{ sessionId: string; files: string[] }, { context: string }>({
+        .trigger<{ sessionId: string; files: string[]; project?: string }, { context: string }>({
           function_id: "mem::file-context",
           payload: {
             sessionId: data.sessionId,
             files: data.files,
+            ...(project !== undefined && { project }),
           },
         })
         .catch(() => ({ context: "" }));

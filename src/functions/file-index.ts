@@ -19,6 +19,12 @@ interface FileHistory {
   }>;
 }
 
+// A repository-relative path names a file only within its project, so an absolute query
+// may match one only when the lookup is scoped to a project.
+function isAbsolutePath(path: string): boolean {
+  return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path);
+}
+
 export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::file-context", 
     async (
@@ -69,6 +75,7 @@ export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
       for (const file of files) {
         const history: FileHistory = { file, observations: [] };
         const normalizedFile = file.replace(/^\.\//, "");
+        const queryIsAbsolute = isAbsolutePath(file);
 
         for (const session of otherSessions) {
           const observations = obsCache.get(session.id) || [];
@@ -80,7 +87,8 @@ export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
                 f === file ||
                 f === normalizedFile ||
                 f.endsWith(`/${normalizedFile}`) ||
-                normalizedFile.endsWith(`/${f}`),
+                (normalizedFile.endsWith(`/${f}`) &&
+                  (normalizedProject !== undefined || !queryIsAbsolute || isAbsolutePath(f))),
             );
             if (matches && obs.importance >= 4) {
               history.observations.push({

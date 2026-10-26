@@ -6,10 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-
-- **Repository-relative paths in captures.** With `AGENTMEMORY_RELATIVE_PATHS=true` on the machine running the hooks, every path under the current repository, or under any of its worktrees, reaches the daemon relative to that worktree's root (`src/a.ts`, not `/Users/me/dev/app/src/a.ts`). Machines that clone the same repository to different places, and worktrees of one checkout, then share file nodes, file history and recall in one daemon. `cwd` is still sent as it is. Off by default.
-
 ## [0.9.31] — 2026-10-25
 ### Upgrade notes
 
