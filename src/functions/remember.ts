@@ -27,6 +27,17 @@ export function memoryTitleFromContent(content: string): string {
   return safeSlice(content, 80);
 }
 
+// A saved title is a display label, not a second copy of the body. Keep it
+// within the same 80 UTF-16 units the derived title uses so every consumer
+// (viewer columns, search result rows, MCP output) stays within the same
+// budget, and drop a whitespace-only value so callers that pass an empty
+// string fall back to the derived title instead of saving a blank one.
+function explicitTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? safeSlice(trimmed, 80) : undefined;
+}
+
 export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
@@ -38,6 +49,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       sourceObservationIds?: string[];
       agentId?: string;
       project?: string;
+      title?: string;
     }) => {
       if (
         !data.content ||
@@ -159,7 +171,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           createdAt: now,
           updatedAt: now,
           type: memType,
-          title: memoryTitleFromContent(data.content),
+          title: explicitTitle(data.title) ?? memoryTitleFromContent(data.content),
           content: data.content,
           concepts: data.concepts || [],
           files: data.files || [],

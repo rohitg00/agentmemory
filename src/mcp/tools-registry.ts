@@ -70,6 +70,14 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "The insight or decision to remember",
         },
+        title: {
+          type: "string",
+          description:
+            "Short display label for this memory, at most 80 characters. Use it so " +
+            "the memory reads as a named entry instead of a truncated copy of " +
+            "content. Omit to derive the title from the first 80 characters of " +
+            "content.",
+        },
         type: {
           type: "string",
           description:

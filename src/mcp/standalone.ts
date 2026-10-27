@@ -116,6 +116,7 @@ function isAuthenticationError(error: unknown): boolean {
 interface Validated {
   tool: string;
   content?: string;
+  title?: string;
   type?: string;
   concepts?: string[];
   files?: string[];
@@ -152,6 +153,9 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       v.type = (args["type"] as string) || "fact";
       v.concepts = normalizeList(args["concepts"]);
       v.files = normalizeList(args["files"]);
+      if (typeof args["title"] === "string" && args["title"].trim()) {
+        v.title = args["title"].trim();
+      }
       // The tool schema exposes project (and now agentId); dropping them
       // here silently broke project/agent scoping through the stdio
       // package specifically.
