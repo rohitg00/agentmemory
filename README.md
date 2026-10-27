@@ -1337,6 +1337,12 @@ When several machines share one server, each clone records its files under its o
 - Paths already stored stay absolute. A relative lookup still finds one when it is that file under its session's repository root, the nearest directory at or above the session's `cwd` named after the project.
 - `cwd` is still sent as it is.
 
+Known limits:
+
+- Windows is best effort and has no CI. A path field is converted in full, and free text up to the next space or list separator. A root written with mixed `\` and `/`, or relative paths that differ only in case, are not matched.
+- An older absolute entry from a worktree in a sibling directory (`repo-feature/` next to `repo/`) is not found by a relative lookup, because its session's repository root cannot be worked out from its `cwd`. New captures are relative and are found.
+- The project name comes from `git rev-parse` output, which cannot represent a newline in a repository path.
+
 ### Ports
 
 The API and viewer bind to loopback by default.

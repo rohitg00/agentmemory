@@ -240,11 +240,15 @@ function ignoresCase(path) {
 }
 function aliasPattern(aliases, platform, caseInsensitive) {
 	if (aliases.length === 0) return null;
-	const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");
-	return new RegExp(`(?<![\\w.~/\\\\:-])(?:${alternatives})(?:([\\\\/]+)(?!${PATH_END})(${platform === "win32" ? WINDOWS_TAIL : ""})|[\\\\/]*(?=${PATH_END}))`, caseInsensitive ? "gi" : "g");
+	const anyCase = (text) => text.replace(/[a-z]/gi, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
+	const alternatives = aliases.map((alias) => {
+		const escaped = escapeRegExp(alias.from);
+		return `(${caseInsensitive(alias.from) ? anyCase(escaped) : escaped})`;
+	}).join("|");
+	return new RegExp(`(?<![\\w.~/\\\\:-])(?:${alternatives})(?:([\\\\/]+)(?!${PATH_END})(${platform === "win32" ? WINDOWS_TAIL : ""})|[\\\\/]*(?=${PATH_END}))`, "g");
 }
-function relativizePaths(value, aliases, platform = process.platform, caseInsensitive = platform === "win32" || platform === "darwin" && aliases.length > 0 && aliases.every((alias) => ignoresCase(alias.from))) {
-	const pattern = aliasPattern(aliases, platform, caseInsensitive);
+function relativizePaths(value, aliases, platform = process.platform, caseInsensitive = (root) => platform === "win32" || platform === "darwin" && ignoresCase(root)) {
+	const pattern = aliasPattern(aliases, platform, typeof caseInsensitive === "function" ? caseInsensitive : () => caseInsensitive);
 	if (!pattern) return value;
 	const windows = platform === "win32";
 	const rewrite = (_match, ...groups) => {

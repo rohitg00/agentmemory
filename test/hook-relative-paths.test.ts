@@ -94,6 +94,14 @@ describe("relativizePaths", () => {
     expect(relativizePaths("/Work/App/x.ts", roots, "linux")).toBe("/Work/App/x.ts");
   });
 
+  it("decides case for each root, so one case-sensitive worktree does not change the others", () => {
+    const aliases = [{ from: "/vol2/wt", to: "" }, { from: "/work/app", to: "" }];
+    const onlyApp = (root: string) => root === "/work/app";
+    expect(relativizePaths("/WORK/APP/x.ts /VOL2/WT/y.ts /vol2/wt/z.ts", aliases, "darwin", onlyApp)).toBe(
+      "x.ts /VOL2/WT/y.ts z.ts",
+    );
+  });
+
   it("asks the file system whether a macOS root ignores case", () => {
     const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "amem-case-"))), "CaseRoot");
     mkdirSync(dir);

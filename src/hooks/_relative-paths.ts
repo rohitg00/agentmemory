@@ -104,17 +104,28 @@ export function ignoresCase(path: string): boolean {
 
 // A root counts only where a path starts (not after a word character, `/`, `-`, `.`, `~` or a
 // `host:` prefix) and where it ends, so `/mnt/repo/x`, `repo-old/` and `build:/repo` stay as they
-// are. Roots match in any case on Windows, and on macOS when the volume ignores case. Windows
-// paths come out with forward slashes, like the file index: free text cannot say where a path
-// ends, so it is converted up to the next space or list separator, while a path field is one
+// are. A root matches in any case on Windows, and on macOS when its own volume ignores case, so
+// each root decides for itself; Node 20 has no inline case flag, so its letters become `[aA]`.
+// Windows paths come out with forward slashes, like the file index: free text cannot say where a
+// path ends, so it is converted up to the next space or list separator, while a path field is one
 // path and is converted in full.
-function aliasPattern(aliases: readonly PathAlias[], platform: NodeJS.Platform, caseInsensitive: boolean): RegExp | null {
+function aliasPattern(
+  aliases: readonly PathAlias[],
+  platform: NodeJS.Platform,
+  caseInsensitive: (root: string) => boolean,
+): RegExp | null {
   if (aliases.length === 0) return null;
-  const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");
+  const anyCase = (text: string) => text.replace(/[a-z]/gi, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
+  const alternatives = aliases
+    .map((alias) => {
+      const escaped = escapeRegExp(alias.from);
+      return `(${caseInsensitive(alias.from) ? anyCase(escaped) : escaped})`;
+    })
+    .join("|");
   const tail = platform === "win32" ? WINDOWS_TAIL : "";
   return new RegExp(
     `(?<![\\w.~/\\\\:-])(?:${alternatives})(?:([\\\\/]+)(?!${PATH_END})(${tail})|[\\\\/]*(?=${PATH_END}))`,
-    caseInsensitive ? "gi" : "g",
+    "g",
   );
 }
 
@@ -122,10 +133,14 @@ export function relativizePaths(
   value: unknown,
   aliases: readonly PathAlias[],
   platform: NodeJS.Platform = process.platform,
-  caseInsensitive = platform === "win32" ||
-    (platform === "darwin" && aliases.length > 0 && aliases.every((alias) => ignoresCase(alias.from))),
+  caseInsensitive: boolean | ((root: string) => boolean) = (root) =>
+    platform === "win32" || (platform === "darwin" && ignoresCase(root)),
 ): unknown {
-  const pattern = aliasPattern(aliases, platform, caseInsensitive);
+  const pattern = aliasPattern(
+    aliases,
+    platform,
+    typeof caseInsensitive === "function" ? caseInsensitive : () => caseInsensitive,
+  );
   if (!pattern) return value;
   const windows = platform === "win32";
   const rewrite = (_match: string, ...groups: unknown[]): string => {
