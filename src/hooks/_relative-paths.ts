@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import { relative } from "node:path";
 
 export interface PathAlias {
@@ -84,23 +84,37 @@ function escapeRegExp(text: string): string {
 }
 
 const PATH_END = `$|[\\s"'\`:;,)\\]}>|&]`;
-const WINDOWS_TAIL = `[^\\s"'\`,;|<>]*`;
+const WINDOWS_TAIL = `[^\\s"'\`,;|&<>]*`;
 const PATH_KEYS = new Set(["file_path", "filePath", "filepath", "notebook_path", "path", "file"]);
 const SKIPPED_KEYS = new Set(["image_data", "imageData"]);
 
+// Whether the file system holding `path` ignores case: the same path with its letters' case swapped
+// names the same file. macOS volumes usually do, but can be case-sensitive.
+export function ignoresCase(path: string): boolean {
+  const swapped = path.replace(/[a-z]/gi, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+  if (swapped === path) return false;
+  try {
+    const original = statSync(path);
+    const other = statSync(swapped);
+    return original.ino === other.ino && original.dev === other.dev;
+  } catch {
+    return false;
+  }
+}
+
 // A root counts only where a path starts (not after a word character, `/`, `-`, `.`, `~` or a
 // `host:` prefix) and where it ends, so `/mnt/repo/x`, `repo-old/` and `build:/repo` stay as they
-// are. Windows and macOS file systems ignore case, so their roots match in any case. Windows
+// are. Roots match in any case on Windows, and on macOS when the volume ignores case. Windows
 // paths come out with forward slashes, like the file index: free text cannot say where a path
 // ends, so it is converted up to the next space or list separator, while a path field is one
 // path and is converted in full.
-function aliasPattern(aliases: readonly PathAlias[], platform: NodeJS.Platform): RegExp | null {
+function aliasPattern(aliases: readonly PathAlias[], platform: NodeJS.Platform, caseInsensitive: boolean): RegExp | null {
   if (aliases.length === 0) return null;
   const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");
   const tail = platform === "win32" ? WINDOWS_TAIL : "";
   return new RegExp(
     `(?<![\\w.~/\\\\:-])(?:${alternatives})(?:([\\\\/]+)(?!${PATH_END})(${tail})|[\\\\/]*(?=${PATH_END}))`,
-    platform === "win32" || platform === "darwin" ? "gi" : "g",
+    caseInsensitive ? "gi" : "g",
   );
 }
 
@@ -108,8 +122,10 @@ export function relativizePaths(
   value: unknown,
   aliases: readonly PathAlias[],
   platform: NodeJS.Platform = process.platform,
+  caseInsensitive = platform === "win32" ||
+    (platform === "darwin" && aliases.length > 0 && aliases.every((alias) => ignoresCase(alias.from))),
 ): unknown {
-  const pattern = aliasPattern(aliases, platform);
+  const pattern = aliasPattern(aliases, platform, caseInsensitive);
   if (!pattern) return value;
   const windows = platform === "win32";
   const rewrite = (_match: string, ...groups: unknown[]): string => {

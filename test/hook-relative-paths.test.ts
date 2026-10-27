@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from "vitest";
 import { execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { relativizeFilePath, relativizePaths, repositoryRoots } from "../src/hooks/_relative-paths.js";
+import { ignoresCase, relativizeFilePath, relativizePaths, repositoryRoots } from "../src/hooks/_relative-paths.js";
 
 describe("relativizePaths", () => {
   const roots = [
@@ -85,11 +85,26 @@ describe("relativizePaths", () => {
   it("stops Windows free text at a list separator", () => {
     const aliases = [{ from: "C:\\work\\app", to: "" }];
     expect(relativizePaths("C:\\work\\app\\a.ts,C:\\other\\b.ts", aliases, "win32")).toBe("a.ts,C:\\other\\b.ts");
+    expect(relativizePaths("type C:\\work\\app\\a.ts&C:\\other\\b.ts", aliases, "win32")).toBe("type a.ts&C:\\other\\b.ts");
   });
 
-  it("matches roots in any case on macOS only", () => {
-    expect(relativizePaths("/Work/App/x.ts", roots, "darwin")).toBe("x.ts");
+  it("matches roots in any case only when told the file system ignores case", () => {
+    expect(relativizePaths("/Work/App/x.ts", roots, "darwin", true)).toBe("x.ts");
+    expect(relativizePaths("/Work/App/x.ts", roots, "darwin", false)).toBe("/Work/App/x.ts");
     expect(relativizePaths("/Work/App/x.ts", roots, "linux")).toBe("/Work/App/x.ts");
+  });
+
+  it("asks the file system whether a macOS root ignores case", () => {
+    const dir = join(realpathSync(mkdtempSync(join(tmpdir(), "amem-case-"))), "CaseRoot");
+    mkdirSync(dir);
+    try {
+      const insensitive = existsSync(join(dirname(dir), "caseroot"));
+      const lower = join(dirname(dir), "caseroot", "a.ts");
+      expect(ignoresCase(dir)).toBe(insensitive);
+      expect(relativizePaths(lower, [{ from: dir, to: "" }], "darwin")).toBe(insensitive ? "a.ts" : lower);
+    } finally {
+      rmSync(dirname(dir), { recursive: true, force: true });
+    }
   });
 
   it("returns the value untouched when there are no roots", () => {

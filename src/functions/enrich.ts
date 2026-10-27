@@ -4,7 +4,7 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
 import { escapeXml } from "../prompts/xml.js";
-import { pathsOverlap } from "./file-index.js";
+import { bugFileMatches } from "./file-index.js";
 
 const MAX_CONTEXT_LENGTH = 4000;
 
@@ -74,7 +74,7 @@ export function registerEnrichFunction(sdk: IIIClient, kv: StateKV): void {
                 (!project || !m.project || m.project === project) &&
                 m.files.some((f) =>
                   data.files.some((df) =>
-                    data.relativeFiles === true ? pathsOverlap(f, df) : f.includes(df) || df.includes(f),
+                    data.relativeFiles === true ? bugFileMatches(f, df) : f.includes(df) || df.includes(f),
                   ),
                 ),
             )

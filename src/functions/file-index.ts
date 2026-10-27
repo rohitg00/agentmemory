@@ -29,12 +29,23 @@ function isAbsolutePath(path: string): boolean {
   return slashed.startsWith("/") || /^[a-z]:\//.test(slashed);
 }
 
+// Windows file systems ignore case, so a path with a drive letter or a UNC prefix compares in any case.
+function foldWindowsCase(a: string, b: string): [string, string] {
+  const windows = (path: string) => /^[a-z]:\//.test(path) || path.startsWith("//");
+  return windows(a) || windows(b) ? [a.toLowerCase(), b.toLowerCase()] : [a, b];
+}
+
+function samePath(a: string, b: string): boolean {
+  const [left, right] = foldWindowsCase(a, b);
+  return left === right;
+}
+
 // The project is the repository's directory name, so a session's repository root is the nearest
 // directory at or above its cwd with that name; a renamed project falls back to the cwd.
 function sessionRoot(cwd: string, project: string): string {
   const dir = normalizePath(cwd);
   for (let candidate = dir; candidate.includes("/"); candidate = candidate.slice(0, candidate.lastIndexOf("/"))) {
-    if (candidate.slice(candidate.lastIndexOf("/") + 1) === project) return candidate;
+    if (samePath(candidate, `${candidate.slice(0, candidate.lastIndexOf("/") + 1)}${project}`)) return candidate;
   }
   return dir;
 }
@@ -45,12 +56,16 @@ function sessionRoot(cwd: string, project: string): string {
 function matchesRelativeQuery(query: string, stored: string, session: Session): boolean {
   const entry = normalizePath(stored);
   if (!isAbsolutePath(entry)) return entry === query;
-  return Boolean(session.cwd) && entry === `${sessionRoot(session.cwd, session.project)}/${query}`;
+  return Boolean(session.cwd) && samePath(entry, `${sessionRoot(session.cwd, session.project)}/${query}`);
 }
 
-export function pathsOverlap(a: string, b: string): boolean {
-  const left = normalizePath(a);
-  const right = normalizePath(b);
+// A bug memory has no session to place an older absolute entry, so that entry matches by its ending
+// at a path boundary; two relative paths must be equal.
+export function bugFileMatches(stored: string, requested: string): boolean {
+  const entry = normalizePath(stored);
+  const query = normalizePath(requested);
+  if (!isAbsolutePath(entry) && !isAbsolutePath(query)) return entry === query;
+  const [left, right] = foldWindowsCase(entry, query);
   return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
 }
 

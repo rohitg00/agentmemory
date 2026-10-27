@@ -920,7 +920,7 @@ function escapeRegExp(text) {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 const PATH_END = `$|[\\s"'\`:;,)\\]}>|&]`;
-const WINDOWS_TAIL = `[^\\s"'\`,;|<>]*`;
+const WINDOWS_TAIL = `[^\\s"'\`,;|&<>]*`;
 const PATH_KEYS = new Set([
 	"file_path",
 	"filePath",
@@ -930,13 +930,24 @@ const PATH_KEYS = new Set([
 	"file"
 ]);
 const SKIPPED_KEYS = new Set(["image_data", "imageData"]);
-function aliasPattern(aliases, platform) {
+function ignoresCase(path) {
+	const swapped = path.replace(/[a-z]/gi, (c) => c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase());
+	if (swapped === path) return false;
+	try {
+		const original = statSync(path);
+		const other = statSync(swapped);
+		return original.ino === other.ino && original.dev === other.dev;
+	} catch {
+		return false;
+	}
+}
+function aliasPattern(aliases, platform, caseInsensitive) {
 	if (aliases.length === 0) return null;
 	const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");
-	return new RegExp(`(?<![\\w.~/\\\\:-])(?:${alternatives})(?:([\\\\/]+)(?!${PATH_END})(${platform === "win32" ? WINDOWS_TAIL : ""})|[\\\\/]*(?=${PATH_END}))`, platform === "win32" || platform === "darwin" ? "gi" : "g");
+	return new RegExp(`(?<![\\w.~/\\\\:-])(?:${alternatives})(?:([\\\\/]+)(?!${PATH_END})(${platform === "win32" ? WINDOWS_TAIL : ""})|[\\\\/]*(?=${PATH_END}))`, caseInsensitive ? "gi" : "g");
 }
-function relativizePaths(value, aliases, platform = process.platform) {
-	const pattern = aliasPattern(aliases, platform);
+function relativizePaths(value, aliases, platform = process.platform, caseInsensitive = platform === "win32" || platform === "darwin" && aliases.length > 0 && aliases.every((alias) => ignoresCase(alias.from))) {
+	const pattern = aliasPattern(aliases, platform, caseInsensitive);
 	if (!pattern) return value;
 	const windows = platform === "win32";
 	const rewrite = (_match, ...groups) => {

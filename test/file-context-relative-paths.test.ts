@@ -97,9 +97,11 @@ describe("mem::file-context", () => {
       expect([outside.includes("outside b.ts"), outside.includes("top b.ts")]).toEqual([false, false]);
     });
 
-    it("compares Windows drive letters in any case", async () => {
+    it("compares Windows paths in any case", async () => {
       await seed(kv, "ses_drive", "repo-w", "C:\\r\\repo-w\\src\\d.ts", "drive d.ts", "c:\\r\\repo-w");
+      await seed(kv, "ses_dirs", "repo-w", "c:\\r\\repo-w\\src\\e.ts", "dirs e.ts", "C:\\R\\Repo-W");
       expect(await lookup({ files: ["src/d.ts"], project: "repo-w", relativeFiles: true })).toContain("drive d.ts");
+      expect(await lookup({ files: ["src/e.ts"], project: "repo-w", relativeFiles: true })).toContain("dirs e.ts");
     });
 
     it("matches a stored Windows entry", async () => {
@@ -136,7 +138,7 @@ describe("mem::enrich", () => {
   });
 
   it("matches bug memories at path boundaries for a relative request, and as before otherwise", async () => {
-    const pastErrors = async (relativeFiles: boolean) => {
+    const pastErrors = async (relativeFiles: boolean, memoryFile = "/x/data.ts", requested = "a.ts") => {
       const sdk = mockSdk({ looseTrigger: true });
       const kv = mockKV();
       registerEnrichFunction(sdk as never, kv as never);
@@ -144,15 +146,17 @@ describe("mem::enrich", () => {
       sdk.registerFunction("mem::search", async () => ({ results: [] }));
       const now = new Date().toISOString();
       await kv.set(KV.memories, "mem_bug", {
-        id: "mem_bug", type: "bug", isLatest: true, title: "data bug", content: "broke", files: ["/x/data.ts"],
+        id: "mem_bug", type: "bug", isLatest: true, title: "data bug", content: "broke", files: [memoryFile],
         createdAt: now, updatedAt: now,
       });
-      const { context } = (await sdk.trigger("mem::enrich", { sessionId: "s", files: ["a.ts"], ...(relativeFiles && { relativeFiles }) })) as {
+      const { context } = (await sdk.trigger("mem::enrich", { sessionId: "s", files: [requested], ...(relativeFiles && { relativeFiles }) })) as {
         context: string;
       };
       return context.includes("data bug");
     };
     expect(await pastErrors(true)).toBe(false);
     expect(await pastErrors(false)).toBe(true);
+    expect(await pastErrors(true, "bar.ts", "foo/bar.ts")).toBe(false);
+    expect(await pastErrors(true, "/x/foo/bar.ts", "foo/bar.ts")).toBe(true);
   });
 });
