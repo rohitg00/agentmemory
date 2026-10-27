@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { resolveClientSecret } from "../secret-store.js";
 import { hookCwd, relativePathsEnabled, resolveProject } from "./_project.js";
+import { relativizeFilePath, repositoryRoots } from "./_relative-paths.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -82,12 +83,16 @@ async function main() {
     typeof rawSessionId === "string" && rawSessionId.length > 0
       ? rawSessionId
       : "unknown";
+  const relativeFiles = relativePathsEnabled();
+  const cwd = hookCwd(data) || process.cwd();
   const project =
     typeof data.project === "string" && data.project.trim().length > 0
       ? data.project.trim()
-      : relativePathsEnabled()
-        ? resolveProject(hookCwd(data) || process.cwd())
+      : relativeFiles
+        ? resolveProject(cwd) || undefined
         : undefined;
+  const aliases = relativeFiles ? repositoryRoots(cwd) : [];
+  const queryFiles = relativeFiles ? files.map((file) => relativizeFilePath(file, aliases)) : files;
 
   try {
     const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
@@ -95,10 +100,11 @@ async function main() {
       headers: authHeaders(),
       body: JSON.stringify({
         sessionId,
-        files,
+        files: queryFiles,
         terms,
         toolName,
         ...(project !== undefined && { project }),
+        ...(relativeFiles && { relativeFiles: true }),
       }),
       signal: AbortSignal.timeout(2000),
     });

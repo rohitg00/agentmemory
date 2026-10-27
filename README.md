@@ -1326,6 +1326,17 @@ Per-call override at the SDK / REST layer: every mutating endpoint (`/session/st
 
 When `AGENT_ID` is unset, memory remains unscoped (legacy behavior, no tags, no filters).
 
+### Repository-relative paths (`AGENTMEMORY_RELATIVE_PATHS`)
+
+When several machines share one server, each clone records its files under its own absolute path (`/Users/me/dev/app/src/a.ts`, `/home/me/dev/app/src/a.ts`), and so does each worktree. File history then does not carry from one to the other. With `AGENTMEMORY_RELATIVE_PATHS=true`, the hooks send every path under the current repository, or under any of its worktrees, relative to that worktree's root (`src/a.ts`), and look up file history with those relative paths in the current project.
+
+- Set it where the hooks run, on every machine. For Claude Code, that is the `env` block of `~/.claude/settings.json`. The hooks do not read it from `~/.agentmemory/.env`.
+- The project is the repository's directory name. If the clones have different directory names, or two different repositories have the same name, set `AGENTMEMORY_PROJECT_NAME` on each machine as well.
+- It applies to the Claude Code plugin hooks and to the integrations that run them. Anything that posts to `/agentmemory/observe` itself (OpenCode, Pi, OMP, Hermes, OpenClaw, the filesystem watcher, `agentmemory capture`) still sends absolute paths.
+- A path a tool was given relative to a subdirectory (a Grep `path` of `src` run from `packages/x`) is stored as it was given.
+- Paths already stored stay absolute. A relative lookup still finds one when it is that file under its session's repository root, the nearest directory at or above the session's `cwd` named after the project.
+- `cwd` is still sent as it is.
+
 ### Ports
 
 The API and viewer bind to loopback by default.

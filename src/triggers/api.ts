@@ -1550,11 +1550,20 @@ export function registerApiTriggers(
 
   sdk.registerFunction("api::file-context", 
     async (
-      req: HttpRequest<{ sessionId: string; files: string[] }>,
+      req: HttpRequest<{ sessionId?: string; files: string[]; project?: string; relativeFiles?: boolean }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const result = await sdk.trigger({ function_id: "mem::file-context", payload: req.body });
+      const body = req.body ?? { files: [] };
+      const result = await sdk.trigger({
+        function_id: "mem::file-context",
+        payload: {
+          sessionId: body.sessionId,
+          files: body.files,
+          ...(typeof body.project === "string" && { project: body.project }),
+          ...(body.relativeFiles === true && { relativeFiles: true }),
+        },
+      });
       return { status_code: 200, body: result };
     },
   );
@@ -1572,6 +1581,7 @@ export function registerApiTriggers(
         terms?: string[];
         toolName?: string;
         project?: string;
+        relativeFiles?: boolean;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
@@ -1617,6 +1627,7 @@ export function registerApiTriggers(
           ...(req.body.terms !== undefined && { terms: req.body.terms }),
           ...(req.body.toolName !== undefined && { toolName: req.body.toolName }),
           ...(req.body.project !== undefined && { project: req.body.project }),
+          ...(req.body.relativeFiles === true && { relativeFiles: true }),
         },
       });
       return { status_code: 200, body: result };

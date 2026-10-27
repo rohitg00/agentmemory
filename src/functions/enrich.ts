@@ -4,6 +4,7 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
 import { escapeXml } from "../prompts/xml.js";
+import { pathsOverlap } from "./file-index.js";
 
 const MAX_CONTEXT_LENGTH = 4000;
 
@@ -16,6 +17,7 @@ export function registerEnrichFunction(sdk: IIIClient, kv: StateKV): void {
       terms?: string[];
       toolName?: string;
       project?: string;
+      relativeFiles?: boolean;
     }) => {
       const project =
         typeof data.project === "string" && data.project.trim().length > 0
@@ -25,12 +27,15 @@ export function registerEnrichFunction(sdk: IIIClient, kv: StateKV): void {
       const parts: string[] = [];
 
       const fileContextPromise = sdk
-        .trigger<{ sessionId: string; files: string[]; project?: string }, { context: string }>({
+        .trigger<
+          { sessionId: string; files: string[]; project?: string; relativeFiles?: boolean },
+          { context: string }
+        >({
           function_id: "mem::file-context",
           payload: {
             sessionId: data.sessionId,
             files: data.files,
-            ...(project !== undefined && { project }),
+            ...(data.relativeFiles === true && { relativeFiles: true, ...(project !== undefined && { project }) }),
           },
         })
         .catch(() => ({ context: "" }));
@@ -68,7 +73,9 @@ export function registerEnrichFunction(sdk: IIIClient, kv: StateKV): void {
                 // Guard only when both sides have an explicit project; unscoped memories pass through.
                 (!project || !m.project || m.project === project) &&
                 m.files.some((f) =>
-                  data.files.some((df) => f.includes(df) || df.includes(f)),
+                  data.files.some((df) =>
+                    data.relativeFiles === true ? pathsOverlap(f, df) : f.includes(df) || df.includes(f),
+                  ),
                 ),
             )
             .sort(

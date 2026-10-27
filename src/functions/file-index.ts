@@ -19,26 +19,52 @@ interface FileHistory {
   }>;
 }
 
-// A repository-relative path names a file only within its project, so an absolute query
-// may match one only when the lookup is scoped to a project.
-function forwardSlashes(path: string): string {
-  return path.replace(/\\/g, "/");
+function normalizePath(path: string): string {
+  const slashed = path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/(.)\/+$/, "$1");
+  return /^[A-Za-z]:\//.test(slashed) ? slashed.charAt(0).toLowerCase() + slashed.slice(1) : slashed;
 }
 
 function isAbsolutePath(path: string): boolean {
-  const slashed = forwardSlashes(path);
-  return slashed.startsWith("/") || /^[A-Za-z]:\//.test(slashed);
+  const slashed = normalizePath(path);
+  return slashed.startsWith("/") || /^[a-z]:\//.test(slashed);
+}
+
+// The project is the repository's directory name, so a session's repository root is the nearest
+// directory at or above its cwd with that name; a renamed project falls back to the cwd.
+function sessionRoot(cwd: string, project: string): string {
+  const dir = normalizePath(cwd);
+  for (let candidate = dir; candidate.includes("/"); candidate = candidate.slice(0, candidate.lastIndexOf("/"))) {
+    if (candidate.slice(candidate.lastIndexOf("/") + 1) === project) return candidate;
+  }
+  return dir;
+}
+
+// A repository-relative query names one file exactly, so a bare `package.json` is the root one,
+// not every `package.json` below it. A relative entry must equal it; an absolute entry from before
+// relative capture must be that file under its session's repository root.
+function matchesRelativeQuery(query: string, stored: string, session: Session): boolean {
+  const entry = normalizePath(stored);
+  if (!isAbsolutePath(entry)) return entry === query;
+  return Boolean(session.cwd) && entry === `${sessionRoot(session.cwd, session.project)}/${query}`;
+}
+
+export function pathsOverlap(a: string, b: string): boolean {
+  const left = normalizePath(a);
+  const right = normalizePath(b);
+  return left === right || left.endsWith(`/${right}`) || right.endsWith(`/${left}`);
 }
 
 export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::file-context", 
     async (
-      data: { sessionId?: string; files?: string[]; project?: string } | undefined,
+      data:
+        | { sessionId?: string; files?: string[]; project?: string; relativeFiles?: boolean }
+        | undefined,
     ) => {
       const sessionId =
         data && typeof data.sessionId === "string" ? data.sessionId.trim() : "";
       const normalizedProject =
-        typeof data?.project === "string" && data.project.trim() ? data.project.trim() : undefined;
+        typeof data?.project === "string" ? data.project.trim() : undefined;
       const files = Array.isArray(data?.files)
         ? data!.files
             .map((file) => (typeof file === "string" ? file.trim() : ""))
@@ -79,24 +105,25 @@ export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
 
       for (const file of files) {
         const history: FileHistory = { file, observations: [] };
-        const normalizedFile = forwardSlashes(file).replace(/^\.\//, "");
-        const queryIsAbsolute = isAbsolutePath(file);
+        const normalizedFile = file.replace(/^\.\//, "");
+        const relativeQuery =
+          data?.relativeFiles === true && !isAbsolutePath(file)
+            ? normalizePath(normalizedFile)
+            : undefined;
 
         for (const session of otherSessions) {
           const observations = obsCache.get(session.id) || [];
 
           for (const obs of observations) {
             if (!obs.files || !obs.title) continue;
-            const matches = obs.files.some((stored) => {
-              const f = forwardSlashes(stored);
-              return (
-                stored === file ||
-                f === normalizedFile ||
-                f.endsWith(`/${normalizedFile}`) ||
-                (normalizedFile.endsWith(`/${f}`) &&
-                  (normalizedProject !== undefined || !queryIsAbsolute || isAbsolutePath(f)))
-              );
-            });
+            const matches = obs.files.some((f) =>
+              relativeQuery !== undefined
+                ? matchesRelativeQuery(relativeQuery, f, session)
+                : f === file ||
+                  f === normalizedFile ||
+                  f.endsWith(`/${normalizedFile}`) ||
+                  normalizedFile.endsWith(`/${f}`),
+            );
             if (matches && obs.importance >= 4) {
               history.observations.push({
                 sessionId: session.id,

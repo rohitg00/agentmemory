@@ -842,16 +842,23 @@ function gitWorktreeListing(cwd) {
 		...args
 	], {
 		cwd,
+		env: {
+			...process.env,
+			LC_ALL: "C"
+		},
 		stdio: [
 			"ignore",
 			"pipe",
-			"ignore"
+			"pipe"
 		],
 		timeout: 500
 	}).toString();
 	try {
 		return run(["-z"]).split("\0");
-	} catch {}
+	} catch (err) {
+		const stderr = String(err.stderr ?? "");
+		if (!/unknown switch|usage:/i.test(stderr)) return [];
+	}
 	try {
 		return run([]).split(/\r?\n/);
 	} catch {
@@ -860,22 +867,27 @@ function gitWorktreeListing(cwd) {
 }
 function tryRealpath(path) {
 	try {
-		return realpathSync(path);
+		return realpathSync.native(path);
 	} catch {
 		return;
 	}
 }
-function isInsideRoot(root, path) {
-	return path === root || path.startsWith(`${root}/`) || path.startsWith(`${root}\\`);
+function slashed(path) {
+	return path.replace(/\\/g, "/");
 }
-function cwdAliases(cwd, roots) {
+function isInsideRoot(root, path) {
+	return slashed(path) === slashed(root) || slashed(path).startsWith(`${slashed(root)}/`);
+}
+function cwdAliases(rawCwd, roots) {
+	const cwd = rawCwd.replace(/(.)[\\/]+$/, "$1");
 	const physical = tryRealpath(cwd);
 	if (!physical || physical === cwd) return [];
 	const root = roots.find((candidate) => isInsideRoot(candidate, physical));
 	if (root === void 0) return [];
-	const inside = physical.slice(root.length);
-	const prefix = inside && cwd.endsWith(inside) ? cwd.slice(0, cwd.length - inside.length) : void 0;
-	if (prefix && tryRealpath(prefix) === root) return [{
+	const inside = slashed(physical.slice(root.length));
+	const prefix = inside && slashed(cwd).endsWith(inside) ? cwd.slice(0, cwd.length - inside.length) : void 0;
+	const prefixPhysical = prefix ? tryRealpath(prefix) : void 0;
+	if (prefix && prefixPhysical && slashed(prefixPhysical) === slashed(root)) return [{
 		from: prefix,
 		to: ""
 	}];
@@ -907,8 +919,8 @@ function repositoryRoots(cwd) {
 function escapeRegExp(text) {
 	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
-const PATH_END = `$|[\\s"'\`:;,)\\]}>]`;
-const PATH_REST = `[^\\s"'\`]*`;
+const PATH_END = `$|[\\s"'\`:;,)\\]}>|&]`;
+const WINDOWS_TAIL = `[^\\s"'\`,;|<>]*`;
 const PATH_KEYS = new Set([
 	"file_path",
 	"filePath",
@@ -917,14 +929,16 @@ const PATH_KEYS = new Set([
 	"path",
 	"file"
 ]);
-function aliasPattern(aliases, windows) {
+const SKIPPED_KEYS = new Set(["image_data", "imageData"]);
+function aliasPattern(aliases, platform) {
 	if (aliases.length === 0) return null;
 	const alternatives = aliases.map((alias) => `(${escapeRegExp(alias.from)})`).join("|");
-	return new RegExp(`(?<![\\w.~/\\\\-])(?:${alternatives})(?:([\\\\/])(${windows ? PATH_REST : ""})|(?=${PATH_END}))`, windows ? "gi" : "g");
+	return new RegExp(`(?<![\\w.~/\\\\:-])(?:${alternatives})(?:([\\\\/]+)(?!${PATH_END})(${platform === "win32" ? WINDOWS_TAIL : ""})|[\\\\/]*(?=${PATH_END}))`, platform === "win32" || platform === "darwin" ? "gi" : "g");
 }
-function relativizePaths(value, aliases, windows = process.platform === "win32") {
-	const pattern = aliasPattern(aliases, windows);
+function relativizePaths(value, aliases, platform = process.platform) {
+	const pattern = aliasPattern(aliases, platform);
 	if (!pattern) return value;
+	const windows = platform === "win32";
 	const rewrite = (_match, ...groups) => {
 		const to = aliases[groups.findIndex((group) => typeof group === "string")]?.to ?? "";
 		if (typeof groups[aliases.length] !== "string") return to || ".";
@@ -936,8 +950,8 @@ function relativizePaths(value, aliases, windows = process.platform === "win32")
 			const rewritten = node.replace(pattern, rewrite);
 			return windows && rewritten !== node && key !== void 0 && PATH_KEYS.has(key) ? rewritten.replace(/\\/g, "/") : rewritten;
 		}
-		if (Array.isArray(node)) return node.map((child) => walk(child));
-		if (node && typeof node === "object" && Object.getPrototypeOf(node) === Object.prototype) return Object.fromEntries(Object.entries(node).map(([k, child]) => [k, walk(child, k)]));
+		if (Array.isArray(node)) return node.map((child) => walk(child, key));
+		if (node && typeof node === "object" && Object.getPrototypeOf(node) === Object.prototype) return Object.fromEntries(Object.entries(node).map(([k, child]) => [k, SKIPPED_KEYS.has(k) ? child : walk(child, k)]));
 		return node;
 	};
 	return walk(value);

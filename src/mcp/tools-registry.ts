@@ -114,7 +114,7 @@ export const CORE_TOOLS: McpToolDef[] = [
         },
         project: {
           type: "string",
-          description: "Project to search; required to match repository-relative paths",
+          description: "Only search sessions of this project",
         },
       },
       required: ["files"],
