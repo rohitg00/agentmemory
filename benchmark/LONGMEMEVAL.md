@@ -74,6 +74,6 @@ hf_hub_download(repo_id='xiaowu0162/longmemeval-cleaned', filename='longmemeval_
 # Run BM25-only
 npx tsx benchmark/longmemeval-bench.ts bm25
 
-# Run BM25+Vector hybrid (requires @xenova/transformers)
+# Run BM25+Vector hybrid (requires @huggingface/transformers)
 npx tsx benchmark/longmemeval-bench.ts hybrid
 ```

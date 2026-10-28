@@ -72,7 +72,7 @@ Supply-chain monitoring we already do:
 
 - Dependabot opens PRs for every minor/patch bump on the production dep list (visible in the open PRs).
 - Every PR runs the full test suite on ubuntu-latest + macos-latest, Node 20 + 22, before any merge.
-- `optionalDependencies` (`@xenova/transformers`, `onnxruntime-node`, etc.) are guarded by `try { await import("...") } catch` so a missing or compromised optional dep cannot break the core runtime path.
+- `optionalDependencies` (`@huggingface/transformers`, transitively `onnxruntime-node`, etc.) are guarded by `try { await import("...") } catch` so a missing or compromised optional dep cannot break the core runtime path.
 
 If you find a malicious package in our dep tree, file via the GHSA flow at the top of this document — that's the fastest path to a fixed release on npm.
 

@@ -6,119 +6,59 @@ on:
   workflow_dispatch:
     inputs:
       packages:
-        description: "Packages to publish (comma-separated: agentmemory,mcp,fs-watcher)"
+        description: "Packages to publish: agentmemory,mcp; add fs-watcher only for its independent release"
         required: false
-        default: "agentmemory,mcp,fs-watcher"
+        default: "agentmemory,mcp"
 
-# Workflow-level permissions stay minimal — only `contents: read`
-# is required to check out the repo. `id-token: write` is granted on
-# the publish job for npm's --provenance Sigstore OIDC mint.
 permissions:
   contents: read
+
+concurrency:
+  group: npm-publication
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       id-token: write
     steps:
       - uses: actions/checkout@v6
         with:
-          # Don't persist the GITHUB_TOKEN to .git/config — the
-          # publish steps don't push back to the repo, so the token
-          # only needs to live in memory for this checkout.
           persist-credentials: false
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
 
-      # Two-step install: generate a lockfile in-runner with
-      # --package-lock-only, then install from it with `npm ci`. Gives a
-      # single deterministic dep graph across build / test / publish
-      # within one job — important because publish uses `--provenance`.
-      # Lockfiles are gitignored at the repo level.
-      - run: npm install --package-lock-only --legacy-peer-deps --no-audit --no-fund
-      - run: npm ci --legacy-peer-deps --no-audit --no-fund
+      - run: npm install --global npm@11.17.0 --ignore-scripts --no-audit --no-fund
+      - run: npm install --package-lock-only --ignore-scripts --legacy-peer-deps --no-audit --no-fund
+      - run: npm ci --ignore-scripts --legacy-peer-deps --no-audit --no-fund
       - run: npm run build
+      - run: npm run skills:check
+      - run: npm run docs:check
       - run: npm test
 
-      - name: Publish @agentmemory/agentmemory
-        run: |
-          if npm view "@agentmemory/agentmemory@$(node -p "require('./package.json').version")" version >/dev/null 2>&1; then
-            echo "Version already published, skipping"
-          else
-            npm publish --provenance --access public
-          fi
+      - name: Pack once and test the release artifacts
+        run: npm run release:prepare -- --out "$RELEASE_OUT" --packages "$RELEASE_PACKAGES"
         env:
+          RELEASE_OUT: ${{ runner.temp }}/npm-release
+          RELEASE_PACKAGES: ${{ github.event_name == 'release' && 'agentmemory,mcp' || inputs.packages }}
+
+      - name: Publish gated artifacts and verify registry provenance
+        run: npm run release:publish -- --manifest "$RELEASE_OUT/manifest.json"
+        env:
+          RELEASE_OUT: ${{ runner.temp }}/npm-release
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Wait for npm registry propagation
-        run: |
-          VERSION=$(node -p "require('./package.json').version")
-          for i in $(seq 1 24); do
-            if npm view "@agentmemory/agentmemory@$VERSION" version >/dev/null 2>&1; then
-              echo "Registry propagated after ${i} attempt(s)"
-              exit 0
-            fi
-            echo "Attempt $i: not yet available, sleeping 5s..."
-            sleep 5
-          done
-          echo "ERROR: registry never propagated after 2 minutes" >&2
-          exit 1
-
-      - name: Publish @agentmemory/mcp shim
-        working-directory: packages/mcp
-        run: |
-          SHIM_VERSION=$(node -p "require('./package.json').version")
-          if npm view "@agentmemory/mcp@$SHIM_VERSION" version >/dev/null 2>&1; then
-            echo "Shim version already published, skipping"
-          else
-            npm publish --provenance --access public
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Wait for @agentmemory/mcp registry propagation
-        working-directory: packages/mcp
-        run: |
-          SHIM_VERSION=$(node -p "require('./package.json').version")
-          for i in $(seq 1 24); do
-            if npm view "@agentmemory/mcp@$SHIM_VERSION" version >/dev/null 2>&1; then
-              echo "Shim propagated after ${i} attempt(s)"
-              exit 0
-            fi
-            echo "Attempt $i: not yet available, sleeping 5s..."
-            sleep 5
-          done
-          echo "ERROR: shim never propagated after 2 minutes" >&2
-          exit 1
-
-      - name: Publish @agentmemory/fs-watcher connector
-        working-directory: integrations/filesystem-watcher
-        run: |
-          FSW_VERSION=$(node -p "require('./package.json').version")
-          if npm view "@agentmemory/fs-watcher@$FSW_VERSION" version >/dev/null 2>&1; then
-            echo "fs-watcher version already published, skipping"
-          else
-            npm publish --provenance --access public
-          fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - name: Wait for @agentmemory/fs-watcher registry propagation
-        working-directory: integrations/filesystem-watcher
-        run: |
-          FSW_VERSION=$(node -p "require('./package.json').version")
-          for i in $(seq 1 24); do
-            if npm view "@agentmemory/fs-watcher@$FSW_VERSION" version >/dev/null 2>&1; then
-              echo "fs-watcher propagated after ${i} attempt(s)"
-              exit 0
-            fi
-            echo "Attempt $i: not yet available, sleeping 5s..."
-            sleep 5
-          done
-          echo "ERROR: fs-watcher never propagated after 2 minutes" >&2
-          exit 1
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/npm-release
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { writeFileSync, readFileSync, mkdirSync, rmSync } from "node:fs";
+import {
+  copyFileSync,
+  writeFileSync,
+  readFileSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+} from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -36,6 +43,29 @@ describe("buildMergedHooks", () => {
     expect(preToolUse).toBeDefined();
     expect(preToolUse!.length).toBeGreaterThan(0);
     expect(preToolUse![0].matcher).toBe("Edit|Write|Read|Glob|Grep");
+  });
+
+  it("keeps handler fields other than the command, such as statusMessage", () => {
+    const merged = buildMergedHooks(null, PLUGIN_ROOT);
+    expect(merged.hooks["SessionStart"]![0]!.hooks[0]!.statusMessage).toBe(
+      "agentmemory: loading session context",
+    );
+  });
+
+  it("keeps a pluginRoot containing $-replacement patterns literal", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "am-codex-hooks-"));
+    try {
+      const oddRoot = join(tmp, "plug$&$$in");
+      mkdirSync(join(oddRoot, "hooks"), { recursive: true });
+      copyFileSync(
+        join(PLUGIN_ROOT, "hooks", "hooks.codex.json"),
+        join(oddRoot, "hooks", "hooks.codex.json"),
+      );
+      const command = buildMergedHooks(null, oddRoot).hooks["Stop"]![0]!.hooks[0]!.command;
+      expect(command).toContain(`${oddRoot}/scripts/`);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it("includes all six expected lifecycle events", () => {

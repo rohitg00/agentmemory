@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 vi.mock("../src/logger.js", () => ({
@@ -9,7 +9,7 @@ vi.mock("../src/logger.js", () => ({
 import { getAllTools, ESSENTIAL_TOOLS } from "../src/mcp/tools-registry.js";
 
 const ROOT = join(import.meta.dirname, "..");
-const EXPECTED_TOOL_COUNT = 53;
+const EXPECTED_TOOL_COUNT = 54;
 
 function readText(relativePath: string): string {
   return readFileSync(join(ROOT, relativePath), "utf-8");
@@ -39,5 +39,25 @@ describe("Tool count consistency", () => {
     const readme = readText("README.md");
     expect(readme).toContain(`${EXPECTED_TOOL_COUNT} MCP tools`);
     expect(readme).not.toContain("51 MCP tools");
+  });
+
+  it("skill count claims match the plugin/skills directory", () => {
+    const skillCount = readdirSync(join(ROOT, "plugin", "skills"), {
+      withFileTypes: true,
+    }).filter((e) => e.isDirectory() && e.name !== "_shared").length;
+    expect(readText("src/cli/connect/index.ts")).toContain(`${skillCount} skills`);
+    expect(readText("README.md")).toContain(`${skillCount} skills`);
+    expect(readText("AGENTS.md")).toContain(`12 hooks, ${skillCount} skills`);
+    expect(readText("plugin/plugin.json")).toContain(`${skillCount} skills`);
+  });
+
+  it("INSTALL_FOR_AGENTS.md names the real core tool set", () => {
+    const names = [...ESSENTIAL_TOOLS].map((t) =>
+      t.replace(/^memory_/, "").replace(/_/g, " "),
+    );
+    const sentence = `The ${names.length} core tools cover ${names
+      .slice(0, -1)
+      .join(", ")}, and ${names[names.length - 1]}.`;
+    expect(readText("INSTALL_FOR_AGENTS.md")).toContain(sentence);
   });
 });

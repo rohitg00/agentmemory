@@ -130,7 +130,7 @@ async function seedTwoAgents(kv: ReturnType<typeof makeMockKV>) {
   idx.add(obsB);
 }
 
-describe("mem::search agent-scope isolation (#817 follow-up)", () => {
+describe("mem::search agent-scope isolation", () => {
   let sdk: ReturnType<typeof makeMockSdk>;
   let kv: ReturnType<typeof makeMockKV>;
 

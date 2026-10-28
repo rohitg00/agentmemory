@@ -55,7 +55,7 @@ describe("processLine — request path", () => {
   });
 });
 
-describe("processLine — notification path (#129)", () => {
+describe("processLine — notification path", () => {
   it("does NOT emit a response for a notification (no id field)", async () => {
     const c = collector();
     const handlerCalled = vi.fn(async () => ({ shouldNotEscape: true }));

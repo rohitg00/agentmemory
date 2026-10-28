@@ -6,7 +6,7 @@ vi.mock("../src/logger.js", () => ({
 
 // AGENT_ID scope for multi-agent memory isolation.
 
-describe("loadAgentScope (#554)", () => {
+describe("loadAgentScope", () => {
   const ORIG = process.env["AGENT_ID"];
   beforeEach(() => {
     vi.resetModules();
@@ -43,7 +43,7 @@ describe("loadAgentScope (#554)", () => {
   });
 });
 
-describe("mem::remember stamps agentId on the Memory (#554)", () => {
+describe("mem::remember stamps agentId on the Memory", () => {
   const ORIG = process.env["AGENT_ID"];
   beforeEach(() => {
     vi.resetModules();
@@ -214,7 +214,7 @@ describe("mem::remember stamps agentId on the Memory (#554)", () => {
   });
 });
 
-describe("AGENTMEMORY_AGENT_SCOPE mode (#554)", () => {
+describe("AGENTMEMORY_AGENT_SCOPE mode", () => {
   const ORIG_ID = process.env["AGENT_ID"];
   const ORIG_MODE = process.env["AGENTMEMORY_AGENT_SCOPE"];
   beforeEach(() => {

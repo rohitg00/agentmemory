@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseJsonlText } from "../src/replay/jsonl-parser.js";
 import { projectTimeline } from "../src/replay/timeline.js";
+import { rawFromCompressed } from "../src/functions/replay.js";
 
 const fx = (name: string) =>
   readFileSync(join(__dirname, "fixtures/jsonl", name), "utf-8");
@@ -143,3 +144,60 @@ describe("projectTimeline", () => {
   });
 });
 
+describe("rawFromCompressed", () => {
+  const base = { sessionId: "ses_1", facts: [], concepts: [], files: [], importance: 5 };
+
+  it("replays hook-captured sessions with prompts, tool names, inputs and outputs", () => {
+    const timeline = projectTimeline([
+      rawFromCompressed({ ...base, id: "o1", timestamp: "2026-09-01T00:00:00Z", type: "conversation", title: "prompt_submit", narrative: "Fix the checkout total" } as never),
+      rawFromCompressed({ ...base, id: "o2", timestamp: "2026-09-01T00:00:05Z", type: "file_read", title: "Read", narrative: '{"file_path":"src/a.ts"} | export const a = 1' } as never),
+      rawFromCompressed({ ...base, id: "o3", timestamp: "2026-09-01T00:00:09Z", type: "error", title: "Bash", narrative: '{"command":"npm test"} | exit 1' } as never),
+      rawFromCompressed({ ...base, id: "o4", timestamp: "2026-09-01T00:00:12Z", type: "decision", title: "Chose jose", narrative: "The API validates JWTs with jose." } as never),
+    ]);
+    expect(timeline.events.map((e) => [e.kind, e.label])).toEqual([
+      ["prompt", "Fix the checkout total"],
+      ["tool_result", "Read ▸ result"],
+      ["tool_error", "Bash ▸ error"],
+      ["tool_result", "Chose jose ▸ result"],
+    ]);
+    expect(timeline.events[0].body).toBe("Fix the checkout total");
+    expect(timeline.events[1].toolInput).toEqual({ file_path: "src/a.ts" });
+    expect(timeline.events[1].toolOutput).toBe("export const a = 1");
+    expect(timeline.events[3].toolOutput).toBe("The API validates JWTs with jose.");
+  });
+});
+
+
+describe("parseJsonlText metadata lines and re-import", () => {
+  const jsonl = [
+    { type: "last-prompt" },
+    { type: "user", sessionId: "s1", timestamp: "2026-10-09T09:12:38Z", message: { role: "user", content: "hi" } },
+    { type: "assistant", sessionId: "s1", timestamp: "2026-10-09T09:54:34Z", message: { role: "assistant", content: "hello" } },
+    { type: "cost-state" },
+  ].map((e) => JSON.stringify(e)).join("\n");
+
+  it("ignores timestampless entries for startedAt/endedAt", () => {
+    const out = parseJsonlText(jsonl);
+    expect(out.startedAt).toBe("2026-10-09T09:12:38Z");
+    expect(out.endedAt).toBe("2026-10-09T09:54:34Z");
+  });
+
+  it("derives the same ids on re-parse and distinct ids for files sharing a session", () => {
+    const entry = (uuid: string, text: string) => JSON.stringify({
+      type: "user", uuid, sessionId: "s1", timestamp: "2026-10-09T09:12:38Z", message: { role: "user", content: text },
+    });
+    const a = `${entry("a0", "one")}\n${entry("a1", "two")}`;
+    const b = `${entry("b0", "three")}\n${entry("b1", "four")}`;
+    const ids = (t: string) => parseJsonlText(t).observations.map((o) => o.id);
+    expect(ids(a)).toEqual(ids(a));
+    expect(new Set([...ids(a), ...ids(b)]).size).toBe(4);
+  });
+
+  it("gives a timestampless entry the previous entry's time", () => {
+    const out = parseJsonlText([
+      JSON.stringify({ type: "user", sessionId: "s1", timestamp: "2026-10-09T09:12:38Z", message: { role: "user", content: "a" } }),
+      JSON.stringify({ type: "assistant", sessionId: "s1", message: { role: "assistant", content: "b" } }),
+    ].join("\n"));
+    expect(out.observations.map((o) => o.timestamp)).toEqual(["2026-10-09T09:12:38Z", "2026-10-09T09:12:38Z"]);
+  });
+});

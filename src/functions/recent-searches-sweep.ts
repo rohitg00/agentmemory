@@ -1,18 +1,14 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { logger } from "../logger.js";
 import { getFollowupStats, type RecentSearch } from "./smart-search.js";
 import { getFollowupWindowSeconds } from "../config.js";
 
-// #771: TTL sweep for the followup-rate diagnostic scope. `recentSearches`
-// only needs the most recent entry per session, but stale rows accumulate
-// when sessions go idle. Hourly sweep deletes rows whose last update is
-// older than the retention window.
 const RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export function registerRecentSearchesSweepFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
 ): void {
   sdk.registerFunction(
@@ -48,8 +44,6 @@ export function registerRecentSearchesSweepFunction(
     },
   );
 
-  // #771: read-back surface for `agentmemory status` and external
-  // dashboards that don't go through the OTEL collector.
   sdk.registerFunction(
     "mem::diagnostic::followup-stats",
     async (): Promise<{

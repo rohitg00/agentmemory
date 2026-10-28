@@ -1,11 +1,62 @@
-import type { ISdk } from "iii-sdk";
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { dirname } from "node:path";
+import type { IIIClient } from "iii-sdk";
+import {
+  closeSync, constants, existsSync, fstatSync, linkSync, lstatSync,
+  mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync,
+} from "node:fs";
+import { randomUUID } from "node:crypto";
+import { dirname, join } from "node:path";
 import type { Memory, ClaudeBridgeConfig } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { resolveProject } from "../hooks/_project.js";
+
+function hasIdenticalContent(path: string, content: string): boolean {
+  let fd: number | undefined;
+  try {
+    if (!lstatSync(path).isFile()) return false;
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const opened = fstatSync(fd);
+    if (!opened.isFile()) return false;
+    const identical = readFileSync(fd, "utf-8") === content;
+    const current = lstatSync(path);
+    return identical && current.isFile() && current.dev === opened.dev && current.ino === opened.ino;
+  } catch {
+    return false;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+function publishMemoryFile(path: string, content: string): "created" | "unchanged" {
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true });
+  const temporaryPath = join(dir, `.agentmemory-${randomUUID()}.tmp`);
+  const fd = openSync(temporaryPath, "wx", 0o600);
+  try {
+    try {
+      writeFileSync(fd, content, "utf-8");
+    } finally {
+      closeSync(fd);
+    }
+    try {
+      // Publishing a complete inode with link never replaces a file created
+      // or edited by another process while the bridge was loading state.
+      linkSync(temporaryPath, path);
+      return "created";
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      if (hasIdenticalContent(path, content)) return "unchanged";
+      throw new Error(
+        `Refusing to replace existing Claude memory file "${path}". ` +
+        "Existing files, including generated files, are preserved. Move or remove it deliberately before regenerating.",
+      );
+    }
+  } finally {
+    unlinkSync(temporaryPath);
+  }
+}
 
 function parseMemoryMd(content: string): {
   sections: Map<string, string>;
@@ -39,7 +90,7 @@ function serializeToMemoryMd(
   lineBudget: number,
 ): string {
   const lines: string[] = [];
-  lines.push("# Agent Memory (auto-synced by agentmemory)");
+  lines.push("# Agent Memory (exported by agentmemory)");
   lines.push("");
 
   if (projectSummary) {
@@ -70,7 +121,7 @@ function serializeToMemoryMd(
 }
 
 export function registerClaudeBridgeFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   config: ClaudeBridgeConfig,
 ): void {
@@ -113,45 +164,47 @@ export function registerClaudeBridgeFunction(
 
   sdk.registerFunction("mem::claude-bridge-sync", 
     async () => {
-      if (!config.enabled || !config.memoryFilePath) {
+      if (!config.enabled || !config.memoryFilePath || !config.projectPath.trim()) {
         return { success: false, error: "Claude bridge not configured" };
       }
 
       try {
+        const project = resolveProject(config.projectPath);
         const memories = await kv.list<Memory>(KV.memories);
-        const latestMemories = memories.filter((m) => m.isLatest);
+        const latestMemories = memories.filter(
+          (m) => m.isLatest && (m.project === project || m.project === config.projectPath),
+        );
 
-        let projectSummary = "";
-        if (config.projectPath) {
-          const profile = await kv
-            .get<{ summary?: string }>(KV.profiles, config.projectPath)
-            .catch(() => null);
-          projectSummary = profile?.summary || "";
+        let profile = await kv
+          .get<{ summary?: string }>(KV.profiles, config.projectPath)
+          .catch(() => null);
+        if (!profile && project !== config.projectPath) {
+          profile = await kv.get<{ summary?: string }>(KV.profiles, project).catch(() => null);
         }
 
         const md = serializeToMemoryMd(
           latestMemories,
-          projectSummary,
+          profile?.summary || "",
           config.lineBudget,
         );
+        const lines = md.split("\n").length;
 
-        const dir = dirname(config.memoryFilePath);
-        if (!existsSync(dir)) {
-          mkdirSync(dir, { recursive: true });
+        const action = publishMemoryFile(config.memoryFilePath, md);
+        if (action === "unchanged") {
+          return { success: true, path: config.memoryFilePath, lines, changed: false };
         }
-        writeFileSync(config.memoryFilePath, md, "utf-8");
 
         await recordAudit(kv, "export", "mem::claude-bridge-sync", [], {
           path: config.memoryFilePath,
           memoryCount: latestMemories.length,
-          lines: md.split("\n").length,
+          lines,
         });
 
         logger.info("Claude bridge: synced to MEMORY.md", {
           path: config.memoryFilePath,
           memories: latestMemories.length,
         });
-        return { success: true, path: config.memoryFilePath, lines: md.split("\n").length };
+        return { success: true, path: config.memoryFilePath, lines, changed: true };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         logger.error("Claude bridge sync failed", { error: msg });

@@ -10,11 +10,12 @@ The user wants to resume work. Optional cwd override: $ARGUMENTS
 ## Quick start
 
 ```json
-memory_sessions { "limit": 20 }
+memory_sessions { "project": "<current-project-id>", "limit": 20 }
 ```
 
 Pick the most recent session whose `cwd` matches this project, then:
-`memory_recall { "query": "<session top concepts>", "limit": 10 }`.
+`memory_recall { "query": "<session top concepts>", "project": "<current-project-id>", "limit": 10 }`.
+When an agent is requested, pass the same `agentId` to both calls.
 
 Expected output:
 
@@ -33,15 +34,21 @@ gets mistaken for this one. Never invent observations for an empty session.
 
 1. Resolve the project path: if `$ARGUMENTS` is given, normalize it to absolute
    (`path.resolve(process.cwd(), $ARGUMENTS)`); else use the cwd.
-2. Call `memory_sessions`. Pick the most recent session whose normalized `cwd`
+2. Call `memory_sessions` with the exact project identifier when known, and
+   `agentId` when requested. Otherwise follow `nextCursor` until the matching
+   directory is found or pagination ends. Preserve filters between pages.
+   Pick the most recent session whose normalized `cwd`
    matches by directory boundary: equality, OR `cwd.startsWith(projectPath + sep)`,
    OR `projectPath.startsWith(cwd + sep)`. Prefer `completed` over `abandoned`.
-   No match: fall back to the single most recent session overall.
+   No match: report that this project has no matching session and stop. Do not
+   substitute a different project's session.
 3. If the session ended on an unanswered user-facing question, surface it FIRST.
    Look in `summary` or recent `conversation` observations whose `narrative`
    ends in `?`.
 4. Summarize: title/summary, key files, key decisions or errors, using
-   `memory_recall` on the top concepts, limit 10.
+   `memory_recall` on the top concepts, limit 10, preserving the chosen project
+   and agent scope. Check each result's session or
+   project provenance before including it; a query alone does not enforce scope.
 5. End with one concrete "next step?" pointer.
 
 ## Anti-patterns
@@ -65,4 +72,4 @@ a directory-boundary check that cannot cross sibling repos.
 
 ## Troubleshooting
 
-See ../_shared/TROUBLESHOOTING.md if `memory_sessions` or `memory_recall` is not available.
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if `memory_sessions` or `memory_recall` is not available.

@@ -98,8 +98,23 @@ describe("FilesystemWatcher", { retry: 2 }, () => {
   });
 
   it("throws if no watched roots could be attached", () => {
+    // Regression: on Linux with Node 24+, fs.watch on a nonexistent path no
+    // longer throws synchronously, so the watcher must stat roots itself or a
+    // missing root silently counts as attached (caught by the Node 24/26 CI
+    // matrix rows).
     const w = new FilesystemWatcher({
       roots: ["/definitely/does/not/exist/xyz123"],
+      baseUrl: "http://localhost:3111",
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+    expect(() => w.start()).toThrow(/could not watch any of the configured roots/);
+  });
+
+  it("rejects a root that is a file, not a directory", () => {
+    const filePath = join(root, "not-a-dir.txt");
+    writeFileSync(filePath, "plain file");
+    const w = new FilesystemWatcher({
+      roots: [filePath],
       baseUrl: "http://localhost:3111",
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });

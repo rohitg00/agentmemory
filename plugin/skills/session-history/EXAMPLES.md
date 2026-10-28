@@ -7,7 +7,7 @@ User: "Show me the session history."
 Invocation:
 
 ```json
-memory_sessions { "limit": 20 }
+memory_sessions { "project": "app", "limit": 20 }
 ```
 
 Response:
@@ -44,7 +44,7 @@ If a returned session has `observationCount: 0`, list it but say so:
 User: "What did we do last time?"
 
 ```json
-memory_sessions { "limit": 20 }
+memory_sessions { "project": "app", "limit": 20 }
 ```
 
 Response:

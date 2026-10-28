@@ -1,0 +1,151 @@
+.inline {
+  color: var(--ink);
+  border-bottom: 1px solid var(--line-2);
+  transition: border-color var(--dur-1) ease;
+}
+
+.head,
+.paper {
+  display: grid;
+  grid-template-columns: 8.5rem minmax(0, 1.15fr) minmax(0, 1fr);
+  column-gap: var(--s-7);
+}
+
+.head {
+  padding-bottom: var(--s-3);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--t-12);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.papers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line-2);
+}
+
+.paper {
+  align-items: start;
+  padding: var(--s-6) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.meta {
+  display: grid;
+  gap: 2px;
+  padding-top: 5px;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.meta span:first-child {
+  color: var(--ink-2);
+}
+
+.work {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.work h3 {
+  font-size: var(--t-20);
+  font-weight: 540;
+  line-height: 1.32;
+  letter-spacing: -0.012em;
+}
+
+.work h3 a {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+  text-decoration-color: transparent;
+  transition: text-decoration-color var(--dur-1) ease;
+}
+
+.work h3 a::after {
+  content: "\2009\2197";
+  color: var(--faint);
+  transition: color var(--dur-1) ease;
+}
+
+.authors {
+  font-size: var(--t-14);
+  color: var(--muted);
+}
+
+.said {
+  margin: 0;
+  display: grid;
+  gap: var(--s-3);
+  padding-left: var(--s-4);
+  border-left: 2px solid var(--accent);
+}
+
+.said blockquote {
+  margin: 0;
+}
+
+.said blockquote p,
+.note {
+  font-size: var(--t-16);
+  line-height: 1.55;
+}
+
+.said blockquote p {
+  color: var(--ink);
+  text-indent: -0.42em;
+}
+
+.said blockquote p::before {
+  content: "\201C";
+}
+
+.said blockquote p::after {
+  content: "\201D";
+}
+
+.note {
+  color: var(--ink-2);
+}
+
+.said figcaption {
+  font-size: var(--t-12);
+  color: var(--accent-ink);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inline:hover {
+    border-color: var(--accent);
+  }
+  .work h3 a:hover {
+    text-decoration-color: var(--accent);
+  }
+  .work h3 a:hover::after {
+    color: var(--accent-ink);
+  }
+}
+
+@media (max-width: 900px) {
+  .head {
+    display: none;
+  }
+  .paper {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--s-3);
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px var(--s-3);
+    padding-top: 0;
+  }
+  .said {
+    margin-top: var(--s-2);
+  }
+  .work h3 {
+    font-size: var(--t-16);
+  }
+}

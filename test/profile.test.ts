@@ -14,6 +14,7 @@ import type {
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
   return {
+    store,
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
     },
@@ -130,6 +131,46 @@ describe("Profile Function", () => {
     expect(result.profile.topFiles[0].frequency).toBe(2);
   });
 
+  it("counts concepts from the project's latest memories", async () => {
+    await kv.set("mem:memories", "mem_1", {
+      id: "mem_1",
+      project: "my-project",
+      concepts: ["caching", "typescript"],
+      isLatest: true,
+    });
+    await kv.set("mem:memories", "mem_2", {
+      id: "mem_2",
+      project: "my-project",
+      concepts: ["caching"],
+      isLatest: false,
+    });
+    await kv.set("mem:memories", "mem_3", {
+      id: "mem_3",
+      project: "other-project",
+      concepts: ["caching"],
+      isLatest: true,
+    });
+
+    const result = (await sdk.trigger("mem::profile", {
+      project: "my-project",
+    })) as { profile: ProjectProfile };
+
+    const concepts = Object.fromEntries(
+      result.profile.topConcepts.map((c) => [c.concept, c.frequency]),
+    );
+    expect(concepts["typescript"]).toBe(3);
+    expect(concepts["caching"]).toBe(1);
+  });
+
+  it("does not write an audit entry when it builds a profile", async () => {
+    await sdk.trigger("mem::profile", { project: "my-project", refresh: true });
+
+    const auditScopes = Array.from(kv.store.keys()).filter((scope) =>
+      scope.startsWith("mem:audit"),
+    );
+    expect(auditScopes).toEqual([]);
+  });
+
   it("extracts conventions from file patterns", async () => {
     const result = (await sdk.trigger("mem::profile", {
       project: "my-project",
@@ -149,6 +190,59 @@ describe("Profile Function", () => {
     })) as { profile: ProjectProfile; cached: boolean };
 
     expect(result.cached).toBe(true);
+  });
+
+  it("drops search paths and patterns that older observations recorded as files", async () => {
+    await kv.set("mem:obs:ses_1", "obs_4", {
+      id: "obs_4",
+      sessionId: "ses_1",
+      timestamp: "2026-02-01T13:00:00Z",
+      type: "search",
+      title: "Grep",
+      facts: [],
+      narrative: "search",
+      concepts: [],
+      files: ["/tmp/my-project", "/tmp/my-project/", "computeTotal", "web-app", "src/**/*.ts", "/project/src/components", "Dockerfile", "/project/.env"],
+      importance: 3,
+    });
+
+    const result = (await sdk.trigger("mem::profile", {
+      project: "my-project",
+      refresh: true,
+    })) as { profile: ProjectProfile };
+
+    expect(result.profile.topFiles.map((f) => f.file).sort()).toEqual([
+      "/project/.env",
+      "/project/src/auth.ts",
+      "/project/src/db.ts",
+      "/project/src/middleware.ts",
+      "Dockerfile",
+    ]);
+  });
+
+  it("cleans a cached profile built before search paths were filtered", async () => {
+    await kv.set("mem:profiles", "my-project", {
+      project: "my-project",
+      updatedAt: new Date().toISOString(),
+      topConcepts: [],
+      topFiles: [
+        { file: "web-app", frequency: 5 },
+        { file: "computeTotal", frequency: 5 },
+        { file: "src/api/orders.ts", frequency: 4 },
+      ],
+      conventions: ["TypeScript project"],
+      commonErrors: [],
+      recentActivity: [],
+      sessionCount: 1,
+      totalObservations: 3,
+    });
+
+    const result = (await sdk.trigger("mem::profile", {
+      project: "my-project",
+    })) as { profile: ProjectProfile; cached: boolean };
+
+    expect(result.cached).toBe(true);
+    expect(result.profile.topFiles).toEqual([{ file: "src/api/orders.ts", frequency: 4 }]);
   });
 
   it("returns null profile for unknown project", async () => {

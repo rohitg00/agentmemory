@@ -1,11 +1,13 @@
-import type { ISdk } from "iii-sdk";
+import { getHeapStatistics } from "node:v8";
+import type { IIIClient } from "iii-sdk";
 import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { evaluateHealth } from "./thresholds.js";
+import { getLiveEventsStats } from "../viewer/live-events.js";
 
 export function registerHealthMonitor(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
 ): { stop: () => void } {
   let connectionState = "connected";
@@ -65,10 +67,12 @@ export function registerHealthMonitor(
 
     const snapshot: HealthSnapshot = {
       connectionState,
+      liveEvents: getLiveEventsStats(),
       workers,
       memory: {
         heapUsed: mem.heapUsed,
         heapTotal: mem.heapTotal,
+        heapLimit: getHeapStatistics().heap_size_limit,
         rss: mem.rss,
         external: mem.external,
       },
@@ -100,7 +104,9 @@ export function registerHealthMonitor(
   interval.unref();
 
   return {
-    stop: () => clearInterval(interval),
+    stop: () => {
+      clearInterval(interval);
+    },
   };
 }
 

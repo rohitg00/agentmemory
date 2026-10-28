@@ -1,28 +1,3 @@
-/**
- * Load harness — seeds N synthetic memories against a local agentmemory
- * daemon, then drives a matrix of (N, concurrency, endpoint) cells and
- * records p50 / p90 / p99 latency + throughput per cell.
- *
- * Spec: GitHub issue #346.
- *
- * Runs against an already-running daemon at `http://localhost:3111` by
- * default. Set `AGENTMEMORY_BENCH_AUTOSTART=1` to spawn one via
- * `node dist/cli.js start` for the duration of the run.
- *
- * Env knobs:
- *   AGENTMEMORY_BENCH_AUTOSTART   "1" to spawn the daemon (default: assume up)
- *   AGENTMEMORY_URL               base URL of the daemon (default: http://localhost:3111)
- *   BENCH_N                       comma-separated N sizes (default: 1000,10000,100000)
- *   BENCH_C                       comma-separated concurrency levels (default: 1,10,100)
- *   BENCH_OPS                     ops per cell during measurement (default: 200)
- *   BENCH_SEED                    seed for the mulberry32 RNG (default: 0xC0FFEE)
- *   BENCH_OUT_DIR                 results dir (default: benchmark/results)
- *
- * The harness writes one JSON file per run named
- * `load-100k-<short-git-sha>.json`. The git sha is best-effort — falls
- * back to a timestamp when run outside a checkout.
- */
-
 import { spawn, type ChildProcess } from "node:child_process";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
@@ -30,44 +5,7 @@ import { join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 
 import { pXX } from "./lib/percentiles.js";
-
-/** Seedable PRNG. Mulberry32 — 32-bit state, uniform output in [0, 1). */
-function mulberry32(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const NOUNS = [
-  "cache", "queue", "router", "stream", "shard", "lock", "buffer", "worker",
-  "engine", "trigger", "function", "memory", "index", "graph", "vector",
-  "session", "observation", "summary", "embedding", "tokenizer", "scheduler",
-  "consumer", "producer", "channel", "actor", "pipeline", "watcher", "pool",
-];
-const VERBS = [
-  "flushes", "rotates", "compacts", "rebalances", "drains", "warms",
-  "expires", "deduplicates", "snapshots", "replays", "promotes", "demotes",
-  "merges", "splits", "indexes", "scans", "compresses", "uploads",
-];
-const CONCEPTS = [
-  "throughput", "latency", "backpressure", "consistency", "isolation",
-  "durability", "idempotency", "fan-out", "cardinality", "skew",
-  "hot-path", "cold-start", "tail-latency", "saturation", "quiescence",
-];
-
-function buildContent(rng: () => number, i: number): string {
-  const n = NOUNS[Math.floor(rng() * NOUNS.length)]!;
-  const v = VERBS[Math.floor(rng() * VERBS.length)]!;
-  const c1 = CONCEPTS[Math.floor(rng() * CONCEPTS.length)]!;
-  const c2 = CONCEPTS[Math.floor(rng() * CONCEPTS.length)]!;
-  const k = Math.floor(rng() * 9999);
-  return `seed-${i} the ${n} ${v} ${c1} under ${c2} pressure (k=${k})`;
-}
+import { buildContent, mulberry32 } from "./lib/corpus.js";
 
 interface RunConfig {
   baseUrl: string;

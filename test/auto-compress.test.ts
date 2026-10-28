@@ -72,7 +72,7 @@ function validPayload(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
-describe("mem::observe auto-compress gate (#138)", () => {
+describe("mem::observe auto-compress gate", () => {
   beforeEach(() => {
     // Reset module cache so observe.js re-imports config.js with the
     // fresh AGENTMEMORY_AUTO_COMPRESS env state. Without this, a later
@@ -207,9 +207,49 @@ describe("buildSyntheticCompression", () => {
       toolInput: { file_path: "/app/src/bar.ts", pattern: "foo" },
       raw: {},
     });
-    expect(synth.files).toContain("/app/src/bar.ts");
-    expect(synth.files).toContain("foo");
+    expect(synth.files).toEqual(["/app/src/bar.ts"]);
     expect(synth.type).toBe("file_edit");
+  });
+
+  it("does not record search paths or patterns as files", async () => {
+    const { buildSyntheticCompression } = await import(
+      "../src/functions/compress-synthetic.js"
+    );
+    const base = {
+      sessionId: "ses_1",
+      timestamp: new Date().toISOString(),
+      hookType: "post_tool_use" as const,
+      raw: {},
+    };
+    const grep = buildSyntheticCompression({
+      ...base,
+      id: "obs_grep",
+      toolName: "Grep",
+      toolInput: { path: "infra", pattern: "computeTotal" },
+    });
+    const glob = buildSyntheticCompression({
+      ...base,
+      id: "obs_glob",
+      toolName: "Glob",
+      toolInput: { path: "src", pattern: "**/*.ts" },
+    });
+    const read = buildSyntheticCompression({
+      ...base,
+      id: "obs_read",
+      toolName: "read_file",
+      toolInput: { path: "/app/src/foo.ts" },
+    });
+    const notebook = buildSyntheticCompression({
+      ...base,
+      id: "obs_nb",
+      toolName: "NotebookEdit",
+      toolInput: { notebook_path: "/app/analysis.ipynb" },
+    });
+
+    expect(grep.files).toEqual([]);
+    expect(glob.files).toEqual([]);
+    expect(read.files).toEqual(["/app/src/foo.ts"]);
+    expect(notebook.files).toEqual(["/app/analysis.ipynb"]);
   });
 
   it("truncates long narratives so it can't blow up the index", async () => {
@@ -230,6 +270,36 @@ describe("buildSyntheticCompression", () => {
     expect(synth.narrative.length).toBeLessThanOrEqual(400);
   });
 
+  it("puts the assistant reply of a stop observation into the narrative", async () => {
+    const { buildSyntheticCompression } = await import(
+      "../src/functions/compress-synthetic.js"
+    );
+    const synth = buildSyntheticCompression({
+      id: "obs_5",
+      sessionId: "ses_1",
+      timestamp: new Date().toISOString(),
+      hookType: "stop",
+      assistantResponse: "We decided to use bge-m3 for Spanish embeddings.",
+      raw: {},
+    });
+    expect(synth.narrative).toBe("We decided to use bge-m3 for Spanish embeddings.");
+  });
+
+  it("keeps the opening and the end of a long reply without splitting a character", async () => {
+    const { buildSyntheticCompression } = await import(
+      "../src/functions/compress-synthetic.js"
+    );
+    const synth = buildSyntheticCompression({
+      id: "obs_6",
+      sessionId: "ses_1",
+      timestamp: new Date().toISOString(),
+      hookType: "stop",
+      assistantResponse: "a".repeat(199) + "😀" + "b".repeat(3000) + "😀" + "c".repeat(198),
+      raw: {},
+    });
+    expect(synth.narrative).toBe("a".repeat(199) + "…" + "c".repeat(198));
+  });
+
   it("maps post_tool_failure to the error type even with no tool name", async () => {
     const { buildSyntheticCompression } = await import(
       "../src/functions/compress-synthetic.js"
@@ -242,5 +312,17 @@ describe("buildSyntheticCompression", () => {
       raw: {},
     });
     expect(synth.type).toBe("error");
+  });
+});
+
+describe("buildCompressionPrompt", () => {
+  it("gives the model the assistant reply of a stop observation", async () => {
+    const { buildCompressionPrompt } = await import("../src/prompts/compression.js");
+    const prompt = buildCompressionPrompt({
+      hookType: "stop",
+      assistantResponse: "We decided to use bge-m3 for Spanish embeddings.",
+      timestamp: "2026-10-03T15:23:24.000Z",
+    });
+    expect(prompt).toContain("Assistant response:\nWe decided to use bge-m3 for Spanish embeddings.");
   });
 });

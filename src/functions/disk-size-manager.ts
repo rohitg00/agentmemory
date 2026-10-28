@@ -1,4 +1,4 @@
-import { TriggerAction, type ISdk } from "iii-sdk";
+import { TriggerAction, type IIIClient } from "iii-sdk";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { getMaxBytes } from "../utils/image-store.js";
@@ -8,7 +8,7 @@ import type { StateScope, StateScopeKey } from "../types.js";
 
 const DISK_SIZE_KEY: StateScopeKey = "system:currentDiskSize";
 
-export function registerDiskSizeManager(sdk: ISdk, kv: StateKV): void {
+export function registerDiskSizeManager(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     "mem::disk-size-delta",
     async (data: { deltaBytes: number }) => {
