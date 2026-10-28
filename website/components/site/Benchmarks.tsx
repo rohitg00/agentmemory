@@ -1,20 +1,24 @@
 import Link from "next/link";
 import { src } from "@/lib/site";
-import { REPRODUCE } from "@/lib/bench";
+import { EVALUATION, REPRODUCE, percent } from "@/lib/bench";
 import { CopyButton, Reveal } from "./client";
 import { QuestionDots } from "./BenchFigures";
 import s from "./Benchmarks.module.css";
 
 export function Benchmarks() {
+  const bm25 = EVALUATION.longmemeval.byAdapter["agentmemory-bm25-component"];
+  const baseline = EVALUATION.longmemeval.byAdapter.grep;
+  const improvement = ((bm25.recallAll - baseline.recallAll) * 100).toFixed(1);
   return (
     <section id="benchmarks" className="section" aria-labelledby="benchmarks-title">
       <div className="wrap">
         <div className="section-head">
           <span className="eyebrow">Benchmarks</span>
-          <h2 id="benchmarks-title">Every required source, counted explicitly.</h2>
+          <h2 id="benchmarks-title">Useful recall. No model API required.</h2>
           <p>
-            The 2026-10-28 run compares the production BM25 component with a lexical baseline on the same
-            LongMemEval-S sessions. No model API, embeddings or answer generator.
+            Keyless BM25 finds every required source for {percent(bm25.recallAll)} of answerable LongMemEval-S questions,
+            {" "}{improvement} percentage points above the lexical baseline on the same inputs.
+            At least one relevant source is found for {percent(bm25.hit / bm25.scored)}. No embedding model or paid API.
           </p>
         </div>
 
@@ -38,8 +42,7 @@ export function Benchmarks() {
               <a className="src" href={src.dataset} target="_blank" rel="noreferrer">
                 Hugging Face
               </a>
-              , then run the same evaluation. The pinned dataset and checksum are in the report. See the
-              the{" "}
+              , then run the same evaluation. The pinned dataset and checksum are in the report. See the{" "}
               <a className="src" href={src.paper} target="_blank" rel="noreferrer">
                 LongMemEval paper
               </a>

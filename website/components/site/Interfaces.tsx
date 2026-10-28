@@ -1,102 +1,47 @@
-"use client";
-
-import { useRef, useState, type KeyboardEvent } from "react";
-import { INTERFACES } from "@/lib/rest";
+import { VIEWER } from "@/lib/rest";
 import s from "./Interfaces.module.css";
 
 export function Interfaces() {
-  const [active, setActive] = useState(0);
-  const [seen, setSeen] = useState<Set<number>>(() => new Set([0]));
-  const tabs = useRef<Array<HTMLButtonElement | null>>([]);
-  const panel = INTERFACES[active];
-
-  const select = (i: number, focus = false) => {
-    setActive(i);
-    setSeen((prev) => (prev.has(i) ? prev : new Set(prev).add(i)));
-    if (focus) tabs.current[i]?.focus();
-  };
-
-  const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    const n = INTERFACES.length;
-    if (e.key === "ArrowRight") select((active + 1) % n, true);
-    else if (e.key === "ArrowLeft") select((active - 1 + n) % n, true);
-    else if (e.key === "Home") select(0, true);
-    else if (e.key === "End") select(n - 1, true);
-    else return;
-    e.preventDefault();
-  };
-
   return (
-    <section id="interfaces" className="section" aria-labelledby="interfaces-title">
+    <section id="interfaces" className={`section ${s.section}`} aria-labelledby="interfaces-title">
       <div className="wrap">
-        <div className="section-head">
-          <span className="eyebrow">Interfaces</span>
-          <h2 id="interfaces-title">See your agent&apos;s memory.</h2>
-          <p>Browse captured observations, memories and sessions from your browser, served from your machine.</p>
-        </div>
-
-        <div className={s.tabs} role="tablist" aria-label="agentmemory interfaces" onKeyDown={onKey}>
-          {INTERFACES.map((it, i) => (
-            <button
-              key={it.id}
-              ref={(el) => {
-                tabs.current[i] = el;
-              }}
-              type="button"
-              role="tab"
-              id={`tab-${it.id}`}
-              aria-selected={i === active}
-              aria-controls={`panel-${it.id}`}
-              tabIndex={i === active ? 0 : -1}
-              className={s.tab}
-              onClick={() => select(i)}
-            >
-              <span>{it.label}</span>
-              <span className="mono">{it.port}</span>
-            </button>
-          ))}
-        </div>
-
-        <div className={s.body}>
-          <div className={s.text} role="tabpanel" id={`panel-${panel.id}`} aria-labelledby={`tab-${panel.id}`} key={panel.id}>
-            <h3>{panel.title}</h3>
-            <p>{panel.body}</p>
-            <ul>
-              {panel.points.map((p) => (
-                <li key={p}>{p}</li>
-              ))}
-            </ul>
-            <code className={s.launch}>
-              <span aria-hidden="true">$ </span>
-              {panel.launch}
-            </code>
+        <div className={s.heading}>
+          <div>
+            <span className="eyebrow">The AgentMemory viewer</span>
+            <h2 id="interfaces-title">See what your agents remember.</h2>
           </div>
+          <p>
+            Follow a session, explore connected memories and trace a lesson back to its source.
+            Included with AgentMemory, right on your machine.
+          </p>
+        </div>
+
+        <figure className={s.tour}>
           <div className={s.frame}>
-            <div className={s.chrome} aria-hidden="true">
-              <span />
-              <span />
-              <span />
-              <span className="mono">localhost{panel.port}</span>
+            <div className={s.chrome}>
+              <div className={s.dots} aria-hidden="true"><span /><span /><span /></div>
+              <span className={s.address}>localhost:3113</span>
+              <span className={s.recording}>Recorded tour</span>
             </div>
-            <div className={s.shots} style={{ aspectRatio: "16 / 9.1" }}>
-              {INTERFACES.map((it, i) =>
-                seen.has(i) ? (
-                  <img
-                    key={it.id}
-                    src={it.img}
-                    alt={it.alt}
-                    width={it.width}
-                    height={it.height}
-                    className={s.shot}
-                    data-on={i === active || undefined}
-                    loading={i === 0 ? "lazy" : "eager"}
-                    decoding="async"
-                  />
-                ) : null,
-              )}
-            </div>
+            <img
+              src={VIEWER.img}
+              alt={VIEWER.alt}
+              width={VIEWER.width}
+              height={VIEWER.height}
+              className={s.shot}
+              loading="lazy"
+              decoding="async"
+            />
           </div>
-        </div>
+          <figcaption className={s.caption}>
+            <ul aria-label="Viewer features">
+              {VIEWER.features.map((feature) => <li key={feature}>{feature}</li>)}
+            </ul>
+            <a className={s.expand} href={VIEWER.img} target="_blank" rel="noreferrer">
+              Open full-size tour <span aria-hidden="true">↗</span>
+            </a>
+          </figcaption>
+        </figure>
       </div>
     </section>
   );

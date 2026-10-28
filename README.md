@@ -343,24 +343,24 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-benchmarks.svg"><img src="assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-Measured on 2026-10-28 with the 0.9.31 codebase. **Strict recall-all@5** requires every relevant source session in the first five results.
+**Useful recall without a model API.** On LongMemEval-S, AgentMemory's keyless BM25 component found at least one relevant source for **96.2%** of answerable questions and **every required source for 84.7%**.
 
-| Dataset | BM25 component | grep baseline | Coverage |
-|---|---:|---:|---|
-| LongMemEval-S | **84.7% (398/470)** | 72.1% (339/470) | 500 questions per adapter; 30 unanswerable excluded from retrieval metrics |
-| coding-agent-life-v1 | 93.3% (14/15) | **100% (15/15)** | All 15 questions per adapter |
+| LongMemEval-S, top 5 distinct sessions | AgentMemory BM25 | Lexical baseline |
+|---|---:|---:|
+| Every required source found (strict recall-all@5) | **84.7%** | 72.1% |
+| At least one relevant source found (any-hit@5) | **96.2%** | 88.7% |
 
-All 1,030 attempts completed without execution failures. This tests supplied-session retrieval without a daemon, embeddings, compression or an answer-generating model. It does not measure full-system answer accuracy, release-to-release speedup or competitor performance.
+That is **12.6 percentage points higher complete-source retrieval** than the lexical baseline on the same inputs, with no embedding model or paid API. Measured on 2026-10-28: 500 questions per adapter, 470 answerable, 30 excluded from retrieval scoring, zero execution failures.
 
-[Methodology, per-question receipts and reproduction](docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [Run the evaluations](eval/README.md).
-
-Historical [hybrid retrieval](benchmark/LONGMEMEVAL.md), [token use](benchmark/REAL-EMBEDDINGS.md) and [coding-session](docs/benchmarks/2026-05-20-coding-agent-life-v1.md) experiments use older versions or different metrics. Their scores are not current-release guarantees.
+This component test measures retrieval from supplied sessions. Full-system answer quality, hybrid retrieval and competitor rankings require separate evaluations. [Read the complete results, including the smaller coding fixture, limitations and reproduction steps](docs/benchmarks/2026-10-28-retrieval-evaluation.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-competitors.svg"><img src="assets/tags/section-competitors.svg" alt="vs Competitors" height="32" /></picture></h2>
 
-Choose by workload and deployment. These projects have evolved beyond a simple local-versus-cloud split.
+**AgentMemory is built for the coding workflow you already have.** Capture supported agent activity automatically, share project history across tools, retrieve scoped memories, and inspect the original sources in a local viewer. Lessons, actions, versioned memories and import/export ship in the Apache-2.0 project; keyword recall needs no account or model API key.
+
+Choose by workload and deployment. Other products also offer local deployment or agent plugins, so those alone are not useful differentiators.
 
 | Project | Best starting point for |
 |---|---|

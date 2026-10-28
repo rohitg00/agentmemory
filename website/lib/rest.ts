@@ -27,18 +27,10 @@ export const FEATURED_LOGOS: Record<string, { src: string; wide?: boolean }> = {
   "Product Hunt": { src: "https://cdn.simpleicons.org/producthunt" },
 };
 
-export const INTERFACES = [
-  {
-    id: "viewer",
-    label: "Viewer",
-    port: ":3113",
-    title: "The viewer ships with the server",
-    body: "agentmemory starts a real-time viewer on port 3113 with no extra install. Watch observations arrive as hooks fire, replay any past session, browse memories and the knowledge graph, and check health on one page.",
-    points: ["Live observation stream", "Session replay", "Memory and graph browser", "Health and status page"],
-    img: "/demo.gif",
-    width: 720,
-    height: 405,
-    alt: "agentmemory viewer showing a live stream of captured observations",
-    launch: "open http://localhost:3113",
-  },
-];
+export const VIEWER = {
+  features: ["Memories", "Session replay", "Lessons", "Knowledge graph", "Health"],
+  img: "/demo.gif",
+  width: 1080,
+  height: 610,
+  alt: "Recorded tour of the AgentMemory viewer with sample project data",
+};
