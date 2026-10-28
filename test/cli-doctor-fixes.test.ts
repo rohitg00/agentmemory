@@ -5,7 +5,7 @@
 // formatting. The full interactive prompt loop lives in src/cli.ts and is
 // driven by clack — exercising it would require a TTY and is out of scope.
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { III_PINNED_VERSION } from "../src/version.js";
 import {
   buildDiagnostics,
@@ -41,6 +41,7 @@ function stubEffects(overrides: Partial<DoctorEffects> = {}): DoctorEffects {
     findIiiBinary: () => "/Users/test/.local/bin/iii",
     localBinIiiPath: () => "/Users/test/.local/bin/iii",
     iiiBinaryVersion: () => III_PINNED_VERSION,
+    externalEngineRunning: async () => false,
     viewerReachable: async () => true,
     runInit: async () => ({ ok: true, message: "wrote .env" }),
     openEditor: async () => ({ ok: true, message: "saved" }),
@@ -366,7 +367,7 @@ describe("doctor v2 diagnostic catalog", () => {
     const versionCheck = diagnostics.find((d) => d.id === "engine-version-mismatch")!;
     const versionStatus = await versionCheck.check(stubCtx());
     expect(versionStatus.ok).toBe(true);
-    expect(versionStatus.detail).toContain("private install wins at runtime");
+    expect(versionStatus.detail).toContain("pinned private install is available for startup");
     const pathCheck = diagnostics.find((d) => d.id === "iii-on-path-not-local-bin")!;
     const pathStatus = await pathCheck.check(stubCtx());
     expect(pathStatus.ok).toBe(true);
@@ -394,6 +395,29 @@ describe("doctor v2 diagnostic catalog", () => {
     expect(fixResult.ok).toBe(true);
     const after = await check.check(stubCtx());
     expect(after.ok).toBe(true);
+  });
+
+  it("does not infer an external engine version from a pinned private install", async () => {
+    const install = vi.fn(async () => ({ ok: true }));
+    const stop = vi.fn(async () => ({ ok: true }));
+    const start = vi.fn(async () => ({ ok: true }));
+    const diagnostics = buildDiagnostics(stubEffects({
+      externalEngineRunning: async () => true,
+      runIiiInstaller: install,
+      runStop: stop,
+      runStart: start,
+    }));
+    const check = diagnostics.find((d) => d.id === "engine-version-mismatch")!;
+    const status = await check.check(stubCtx());
+    expect(status.ok).toBe(false);
+    expect(status.detail).toBe("external engine version is unknown");
+    expect(canAutoFix(check, status)).toBe(false);
+    expect(dryRunPlan(stubCtx(), [{ diagnostic: check, status }]).join("\n"))
+      .toContain(`manual fix: ${status.manualFix}`);
+    expect((await check.fix(stubCtx())).ok).toBe(false);
+    expect(install).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
   });
 
   it("canAutoFix is false for manualOnly diagnostics and true otherwise", () => {
@@ -441,6 +465,14 @@ describe("doctor v2 diagnostic catalog", () => {
     const lines = dryRunPlan(stubCtx(), results);
     expect(lines.length).toBe(1);
     expect(lines[0]).toContain("All checks passing");
+  });
+
+  it("dryRunPlan labels manual-only diagnostics without promising automatic fixes", () => {
+    const diagnostic = buildDiagnostics(stubEffects())
+      .find((d) => d.id === "iii-on-path-not-local-bin")!;
+    const plan = dryRunPlan(stubCtx(), [{ diagnostic, status: { ok: false } }]).join("\n");
+    expect(plan).toContain(`manual fix: ${diagnostic.fixPreview}`);
+    expect(plan).not.toContain("would fix:");
   });
 });
 

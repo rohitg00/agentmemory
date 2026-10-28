@@ -22,6 +22,7 @@ export type DiagnosticStatus = {
   ok: boolean;
   /** Short status detail (one line). Shown alongside the check name. */
   detail?: string;
+  manualFix?: string;
 };
 
 export type DiagnosticFixResult = {
@@ -61,9 +62,8 @@ export type Diagnostic = {
   manualOnly?: boolean;
 };
 
-/** True when doctor may apply this diagnostic's fix without user involvement. */
-export function canAutoFix(d: Diagnostic): boolean {
-  return !d.manualOnly;
+export function canAutoFix(d: Diagnostic, status?: DiagnosticStatus): boolean {
+  return !d.manualOnly && !status?.manualFix;
 }
 
 // Diagnostic ids are stable for testing and machine-readable doctor output.
@@ -150,6 +150,7 @@ export type DoctorEffects = {
   localBinIiiPath: () => string;
   /** Run `iii --version`; null if it fails. */
   iiiBinaryVersion: (binPath: string) => string | null;
+  externalEngineRunning: () => Promise<boolean>;
   /** Probe the viewer URL; true if it returns OK within timeoutMs. */
   viewerReachable: (timeoutMs?: number) => Promise<boolean>;
   /** Run init logic (copies .env.example). */
@@ -236,13 +237,20 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         "reconnect loops and empty search results. Before an instance is configured, " +
         "a matching private install at ~/.agentmemory/bin/iii can satisfy the pin.",
       check: async (ctx) => {
+        if (await effects.externalEngineRunning()) {
+          return {
+            ok: false,
+            detail: "external engine version is unknown",
+            manualFix: "Verify the external engine version, or stop it before starting a managed instance.",
+          };
+        }
         const privateVersion = effects.iiiBinaryVersion(effects.localBinIiiPath());
         const bin = effects.findIiiBinary();
         const pathVersion = bin ? effects.iiiBinaryVersion(bin) : null;
         if (privateVersion === ctx.pinnedVersion) {
           const note =
             pathVersion && pathVersion !== ctx.pinnedVersion
-              ? `; PATH iii is ${pathVersion} but the private install wins at runtime`
+              ? `; PATH iii is ${pathVersion}; the pinned private install is available for startup`
               : "";
           return {
             ok: true,
@@ -261,6 +269,9 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         };
       },
       fix: async () => {
+        if (await effects.externalEngineRunning()) {
+          return { ok: false, message: "Verify or stop the external engine manually." };
+        }
         const r = await effects.runIiiInstaller();
         if (!r.ok) return r;
         // Best-effort restart: stop then start.
@@ -402,7 +413,7 @@ export function dryRunPlan(
     if (status.ok) continue;
     n++;
     lines.push(`${n}. [${diagnostic.id}] ${diagnostic.message}`);
-    lines.push(`   would fix: ${diagnostic.fixPreview}`);
+    lines.push(`   ${canAutoFix(diagnostic, status) ? "would fix" : "manual fix"}: ${status.manualFix ?? diagnostic.fixPreview}`);
     if (status.detail) lines.push(`   detail: ${status.detail}`);
   }
   if (lines.length === 0) {
