@@ -156,8 +156,8 @@
   object-position: top left;
   opacity: 0;
   transform: scale(1.01);
-  filter: grayscale(1);
-  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out), filter 600ms ease;
+  filter: none;
+  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
 }
 
 .shot[data-on] {

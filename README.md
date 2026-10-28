@@ -75,7 +75,9 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="agentmemory demo" width="720" />
+  <a href="assets/demo.gif">
+    <img src="assets/demo.gif" alt="AgentMemory viewer: memories, knowledge graph, sessions and replay in dark and light themes" width="960" />
+  </a>
 </p>
 
 <p align="center">
