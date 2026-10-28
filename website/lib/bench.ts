@@ -18,6 +18,32 @@ export function totalHits(adapter: Adapter): number {
 export function percent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }
+
+export function evaluationProse(data = EVALUATION) {
+  const completion = (rows: Array<{ n: number; completed: number; failed: number }>) => {
+    const totals = rows.reduce((sum, row) => ({
+      n: sum.n + row.n,
+      completed: sum.completed + row.completed,
+      failed: sum.failed + row.failed,
+    }), { n: 0, completed: 0, failed: 0 });
+    return `${totals.completed.toLocaleString("en-US")} of ${totals.n.toLocaleString("en-US")} adapter attempts completed, with ${totals.failed} execution ${totals.failed === 1 ? "failure" : "failures"}.`;
+  };
+  const strictSuccesses = (result: { recallAll: number; scored: number }) =>
+    `${Math.round(result.recallAll * result.scored)}/${result.scored}`;
+  const long = data.longmemeval.byAdapter;
+  const multi = data.longmemeval.byType["multi-session"]["agentmemory-bm25-component"];
+  const coding = data.coding.byAdapter;
+  return {
+    longmemeval: `LongMemEval-S: ${completion(Object.values(long))} ${ADAPTERS.map((key) =>
+      `${ADAPTER_LABELS[key]}: ${long[key].answerable.attempted} answerable and ${long[key].unanswerable} unanswerable questions`
+    ).join("; ")}.`,
+    multiSession: `Multi-session BM25 strict successes: ${strictSuccesses(multi)} (${percent(multi.recallAll)}).`,
+    coding: `Coding-agent-life-v1 strict successes: ${ADAPTERS.map((key) =>
+      `${ADAPTER_LABELS[key]} ${strictSuccesses(coding[key])}`
+    ).join("; ")}. ${completion(Object.values(coding))}`,
+  };
+}
+
 export const REPRODUCE = {
   download: "mkdir -p benchmark/data\ncurl -fL https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/98d7416c24c778c2fee6e6f3006e7a073259d48f/longmemeval_s_cleaned.json -o benchmark/data/longmemeval_s_cleaned.json\nshasum -a 256 benchmark/data/longmemeval_s_cleaned.json",
   retrieval: "npm run eval:longmemeval -- --data benchmark/data/longmemeval_s_cleaned.json --adapters grep,bm25",

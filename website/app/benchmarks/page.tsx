@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { DocPage, Prose } from "@/components/site/Doc";
 import { QuestionDots } from "@/components/site/BenchFigures";
 import { REPO_URL, src } from "@/lib/site";
-import { ADAPTERS, ADAPTER_LABELS, EVALUATION, REPRODUCE, percent } from "@/lib/bench";
+import { ADAPTERS, ADAPTER_LABELS, EVALUATION, REPRODUCE, evaluationProse, percent } from "@/lib/bench";
 import s from "./page.module.css";
 
 export const metadata: Metadata = {
@@ -12,6 +12,7 @@ export const metadata: Metadata = {
 };
 
 export default function BenchmarksPage() {
+  const summary = evaluationProse();
   return <DocPage eyebrow="Benchmarks" title="Complete evidence, measured in the open."
     lede="AgentMemory 0.9.31 development checkout, measured on 2026-10-28. Every result has a dataset fingerprint and per-question receipts.">
     <div className={s.figure}><QuestionDots /></div>
@@ -19,8 +20,8 @@ export default function BenchmarksPage() {
       <h2>What the scores mean</h2>
       <p>Strict recall-all@5 requires every gold source session in the first five distinct results. Fractional recall measures how much of the required evidence was found. Any-hit needs just one source.</p>
       <p>Each question builds a fresh index over its supplied sessions. This run tests the production BM25 SearchIndex and a token-overlap grep baseline. It does not run the daemon, capture hooks, compression, vectors, graph or an answer-generating model.</p>
-      <p>All 1,000 LongMemEval adapter attempts completed with zero execution failures. Each adapter saw 470 answerable and 30 unanswerable questions. Unanswerable questions count toward coverage, but have no retrieval score; abstention quality is not measured.</p>
-      <p>Multi-session questions remain the weakest BM25 category: 86/121 strict successes (71.1%). Finding one relevant session can still leave an answer without all its evidence.</p>
+      <p>{summary.longmemeval} Unanswerable questions count toward coverage, but have no retrieval score; abstention quality is not measured.</p>
+      <p>{summary.multiSession} Finding one relevant session can still leave an answer without all its evidence.</p>
       <p><a href={src.longmemeval}>Full report, per-type results, manifests and compressed per-question receipts</a>.</p>
 
       <h2>Coding-session regression fixture</h2>
@@ -31,7 +32,7 @@ export default function BenchmarksPage() {
           return <tr key={adapter}><td>{ADAPTER_LABELS[adapter]}</td><td>{percent(r.recallAll)}</td><td>{r.completed}/{r.n}</td><td>{r.failed}</td></tr>;
         })}</tbody>
       </table></div>
-      <p>The coding-agent-life-v1 fixture has only 15 questions. Grep scores 15/15 and BM25 14/15. This is useful regression coverage, not evidence that a system wins across coding workloads.</p>
+      <p>{summary.coding} This small fixture is useful regression coverage, not evidence that a system wins across coding workloads.</p>
 
       <h2>Reproduce</h2>
       <p>From the repository root with dependencies installed, download the pinned public dataset:</p>

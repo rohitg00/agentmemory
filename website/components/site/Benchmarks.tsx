@@ -30,7 +30,8 @@ export function Benchmarks() {
             Results and per-question receipts
           </a>
           <span>
-            500 questions per adapter, zero execution failures. 30 unanswerable questions excluded from retrieval metrics.
+            {bm25.n} questions per adapter, {EVALUATION.longmemeval.failed} execution failures.
+            {" "}{bm25.unanswerable} unanswerable questions excluded from retrieval metrics.
           </span>
         </p>
 

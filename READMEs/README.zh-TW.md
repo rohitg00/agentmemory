@@ -627,7 +627,7 @@ Hermes、OpenClaw、Pi 和 Oh My Pi 的連接器預設安裝原生整合和 skil
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` 會在共用的自訂目錄中安裝 MCP 和擷取 hooks。參見[Antigravity 設定與限制](../docs/plugins/antigravity.md)。 |
 | **Antigravity CLI**(`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` 使用與目前 IDE 版本相同的 MCP 和 hook 設定。既有安裝應使用 `--force` 刷新;參見[升級說明](../docs/plugins/antigravity.md)。 |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` 會寫入使用者層級的設定。工作區層級的覆寫請放在你程式碼旁的 `.kiro/settings/mcp.json`。 |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` 會寫入標準的 `mcpServers` 區塊。Warp 也會自動從 `.claude/skills/` 探索 skills;一旦安裝了 Claude Code 外掛,9 個 agentmemory skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`commit-context`、`commit-history`、`session-history`)就會原生出現在 Warp 的斜線指令選單中。 |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` 會寫入標準的 `mcpServers` 區塊。Warp 也會自動從 `.claude/skills/` 探索 skills;一旦安裝了 Claude Code 外掛,9 個 agentmemory skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`lesson`、`commit-context`、`commit-history`、`session-history`)就會原生出現在 Warp 的斜線指令選單中。 |
 | **Cline(CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` 會寫入標準的 `mcpServers` 區塊。VS Code 擴充功能使用者:透過 Cline Settings → MCP Servers → Edit JSON 貼上同一個區塊。 |
 | **Continue.dev** | `~/.continue/config.yaml`(建議)或 `config.json`(舊版) | `agentmemory connect continue` 在沒有設定時建立 `config.yaml`，或更新既有 `config.json`。既有 YAML 會保留不動，以保護註解和錨點；指令會印出應貼到 `mcpServers:` 下的設定區塊。Continue 的 `mcpServers` 使用陣列。 |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` 會寫入 `context_servers`(Zed 自己的鍵,**不是** `mcpServers`)。遠端 MCP 伺服器可改用 `{"url": "..."}` 接上。 |

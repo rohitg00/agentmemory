@@ -58,7 +58,7 @@ export const AGENTS: Agent[] = [
   { name: "Oh My Pi", logo: "https://raw.githubusercontent.com/rohitg00/agentmemory/main/assets/agents/pi.svg", href: `${REPO_URL}/tree/main/integrations/omp`, support: "plugin", detail: "capture, recall, skills, optional MCP", connect: "omp" },
   { name: "OpenHuman", logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png", href: "https://github.com/tinyhumansai/openhuman", support: "plugin", detail: "native Memory backend", connect: "openhuman" },
   { name: "Gemini CLI", logo: "https://github.com/google-gemini.png", href: "https://github.com/google-gemini/gemini-cli", support: "mcp", detail: "MCP server", connect: "gemini-cli" },
-  { name: "Antigravity", logo: "https://svgl.app/library/antigravity.svg", href: "https://antigravity.google", support: "plugin", detail: "MCP, hooks", connect: "antigravity" },
+  { name: "Antigravity", logo: "https://svgl.app/library/antigravity.svg", href: "https://antigravity.google", support: "plugin", detail: "MCP, hooks", connect: "antigravity --with-hooks" },
   { name: "Claude Desktop", logo: "https://github.com/anthropics.png", href: "https://claude.ai/download", support: "mcp", detail: "MCP server" },
   { name: "Warp", logo: "https://svgl.app/library/warp.svg", href: "https://www.warp.dev", support: "mcp", detail: "MCP server", connect: "warp" },
   { name: "Zed", logo: "https://svgl.app/library/zed-logo_dark.svg", href: "https://zed.dev", support: "mcp", detail: "MCP server", connect: "zed" },
@@ -67,7 +67,7 @@ export const AGENTS: Agent[] = [
   { name: "Droid", logo: "https://www.factory.ai/favicon.svg", href: "https://docs.factory.ai/cli", support: "mcp", detail: "MCP server", connect: "droid" },
   { name: "Kiro", logo: "https://kiro.dev/favicon.ico", href: "https://kiro.dev", support: "mcp", detail: "MCP server", connect: "kiro" },
   { name: "Qwen Code", logo: "https://svgl.app/library/qwen_dark.svg", href: "https://github.com/QwenLM/qwen-code", support: "mcp", detail: "MCP server", connect: "qwen" },
-  { name: "DeepSeek Harness", logo: "https://svgl.app/library/deepseek.svg", href: "https://github.com/deepseek-ai/deepseek-harness", support: "plugin", detail: "native capture and recall, MCP", connect: "dsh" },
+  { name: "DeepSeek Harness", logo: "https://svgl.app/library/deepseek.svg", href: "https://github.com/deepseek-ai/deepseek-harness", support: "plugin", detail: "native capture and recall, MCP", connect: "dsh --with-hooks" },
   { name: "Roo Code", logo: "https://github.com/RooCodeInc.png", href: "https://github.com/RooCodeInc/Roo-Code", support: "mcp", detail: "MCP server" },
   { name: "Kilo Code", logo: "https://github.com/Kilo-Org.png", href: "https://github.com/Kilo-Org/kilocode", support: "mcp", detail: "MCP server" },
   { name: "Goose", logo: "https://github.com/block.png", href: "https://github.com/block/goose", support: "mcp", detail: "MCP server" },
@@ -205,11 +205,11 @@ export const RESEARCH: Paper[] = [
 export const FAQ = [
   {
     q: "What does agentmemory actually store?",
-    a: "Observations from your agent's sessions: the prompts you typed, the tools it called and a bounded copy of their output, and the session summaries built from them. Consolidation turns related observations into memories, lessons and graph facts. Everything lives in a data folder on your machine, for example ~/Library/Application Support/agentmemory on macOS.",
+    a: "Observations from your agent's sessions: the prompts you typed, the tools it called and a bounded copy of their output, and the session summaries built from them. Consolidation turns related observations into memories, lessons and graph facts. By default, records live in a data folder on your machine, for example ~/Library/Application Support/agentmemory on macOS.",
   },
   {
     q: "Does anything leave my machine?",
-    a: "Memory text stays local with keyless search or local models. Installation, updates and the first local model download need network access. Configured remote LLM or embedding services receive the text they process. AgentMemory starts its runtime with usage telemetry disabled.",
+    a: "Memory text stays local when you use local storage and keyless search or local models. Keyless search does not guarantee local storage: a configured remote Redis backend stores memory records remotely. Installation, updates and the first local model download need network access. Configured remote LLM or embedding services receive the text they process. AgentMemory starts its runtime with usage telemetry disabled.",
   },
   {
     q: "Do I need an API key?",

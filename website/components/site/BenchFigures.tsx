@@ -50,7 +50,7 @@ export function QuestionDots() {
   return (
     <div ref={ref} className={s.dotsFigure}>
       <div className={s.figHead}>
-        <span className="mono">LongMemEval-S · 470 answerable questions</span>
+        <span className="mono">LongMemEval-S · {EVALUATION.longmemeval.byAdapter[adapter].scored} answerable questions</span>
         <div className={s.toggle} role="group" aria-label="Retrieval adapter">
           {ADAPTERS.map((v) => (
             <button key={v} type="button" aria-pressed={adapter === v} onClick={() => choose(v)}>
@@ -108,7 +108,7 @@ export function QuestionDots() {
         <table className={s.ledger}>
           <thead>
             <tr>
-              <th scope="col">recall mode</th>
+              <th scope="col">Adapter</th>
               <th scope="col">Strict recall-all@5</th>
               <th scope="col">Fractional recall@5</th>
               <th scope="col">Any-hit@5</th>

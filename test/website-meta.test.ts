@@ -3,8 +3,38 @@ import { execFileSync } from "node:child_process";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EVALUATION, evaluationProse } from "../website/lib/bench.js";
 
 describe("website metadata", () => {
+  it("updates benchmark prose for changed coverage, failures and strict scores", () => {
+    const data = structuredClone(EVALUATION);
+    Object.assign(data.longmemeval.byAdapter["agentmemory-bm25-component"], {
+      n: 10, completed: 9, failed: 1, scored: 7,
+      answerable: { attempted: 8, completed: 7, failed: 1 }, unanswerable: 2,
+    });
+    Object.assign(data.longmemeval.byAdapter.grep, {
+      n: 11, completed: 10, failed: 1, scored: 9,
+      answerable: { attempted: 9, completed: 9, failed: 0 }, unanswerable: 2,
+    });
+    Object.assign(data.longmemeval.byType["multi-session"]["agentmemory-bm25-component"], {
+      n: 5, scored: 3, recallAll: 2 / 3, hit: 3,
+    });
+    Object.assign(data.coding.byAdapter["agentmemory-bm25-component"], {
+      n: 4, completed: 3, failed: 1, scored: 3, recallAll: 2 / 3,
+    });
+    Object.assign(data.coding.byAdapter.grep, {
+      n: 4, completed: 4, failed: 0, scored: 4, recallAll: 1,
+    });
+
+    const summary = evaluationProse(data);
+    expect(summary.longmemeval).toContain("19 of 21 adapter attempts completed, with 2 execution failures");
+    expect(summary.longmemeval).toContain("BM25 component: 8 answerable and 2 unanswerable");
+    expect(summary.longmemeval).toContain("grep baseline: 9 answerable and 2 unanswerable");
+    expect(summary.multiSession).toContain("2/3 (66.7%)");
+    expect(summary.coding).toContain("BM25 component 2/3; grep baseline 4/4");
+    expect(summary.coding).toContain("7 of 8 adapter attempts completed, with 1 execution failure.");
+  });
+
   it("derives source counts and refuses stale metadata or incomplete evaluation receipts", () => {
     const root = mkdtempSync(join(tmpdir(), "agentmemory-website-meta-"));
     try {
