@@ -1005,8 +1005,8 @@
     .cb-open { border-color: var(--accent); color: var(--accent); }
     .cb-half-open { border-color: var(--yellow); color: var(--yellow); }
 
-    .worker-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; font-family: var(--font-ui); }
-    .worker-dot { width: 8px; height: 8px; }
+    .worker-row { display: flex; align-items: center; flex-wrap: wrap; overflow-wrap: anywhere; gap: 8px; padding: 4px 0; font-size: 12px; font-family: var(--font-ui); }
+    .worker-dot { width: 8px; height: 8px; flex-shrink: 0; background: var(--ink-faint); }
     .worker-dot.running { background: var(--green); }
     .worker-dot.stopped { background: var(--accent); }
     .worker-dot.starting { background: var(--yellow); }
@@ -1648,7 +1648,7 @@
       live: { term: 'Live updates', text: 'The viewer keeps one SSE connection open and updates every page the moment data changes. Nothing is refreshed on a timer.' },
       flags: { term: 'Feature flags', text: 'Optional features that are on or off in this install. Off features leave some pages empty; each one lists the setting that turns it on.' },
       audit: { term: 'Audit log', text: 'A record of every change agentmemory made to stored data: saves, deletes, imports, consolidation runs. Use it to see who changed what and when.' },
-      workers: { term: 'Workers', text: 'Processes connected to the iii engine. agentmemory runs as one worker.' },
+      workers: { term: 'Workers', text: 'Application workers provide memory, storage and HTTP. Engine details lists the coordinator and internal runtime services; available means a service is registered, not that an optional feature is enabled.' },
       latency: { term: 'Average latency', text: 'Average time one call of the function took to finish.' },
       failureRate: { term: 'Failure rate', text: 'Share of calls that failed. Functions that need an LLM show as off, not failing, when no LLM provider is set.' },
       replay: { term: 'Replay', text: 'Plays back a past session step by step: prompts, responses and tool calls in the order they happened, with their real timing. Works for any session agentmemory recorded, from any connected agent.' },
@@ -1668,7 +1668,7 @@
       actions: { frontier: [], statusFilter: '', search: '', selectedId: null, notice: null, busy: '', detailLoading: '', detailAttemptedId: '', detailRequestFailedId: '', loadError: false },
       crystals: { search: '', selectedId: null },
       profile: { loaded: false, selectedProject: '', data: null, dataProject: '', userPicked: false, notice: null },
-      health: { error: null, checking: false, consolidating: false, reveal: '' },
+      health: { error: null, checking: false, consolidating: false, reveal: '', engineDetailsOpen: false },
       replay: { loaded: false, selectedId: '', timeline: null, cursor: 0, playing: false, speed: 1, timer: null, startAt: 0, offsetAt: 0, loadingTimeline: false, loadError: '', importPath: '', importing: false, importOpen: false, importStatus: null },
       flagsOpen: false,
       freshRows: {},
@@ -2628,7 +2628,7 @@
 
       html += renderMemoryLayers(store.consolidationStatus, entityList('semantic'), entityList('procedural'));
 
-      html += '<details class="card" style="margin-top:16px;"><summary class="card-title" style="cursor:pointer;margin-bottom:0;border-bottom:none;">Function metrics and workers ' + help('functionCalls') + '</summary>';
+      html += '<details class="card" style="margin-top:16px;"><summary class="card-title" style="cursor:pointer;margin-bottom:0;border-bottom:none;">Function metrics ' + help('functionCalls') + '</summary>';
       if (fMetrics.length > 0) {
         var sorted = fMetrics.slice().sort(function(a, b) { return (b.totalCalls || 0) - (a.totalCalls || 0); });
         html += '<div class="table-wrap" style="margin-top:10px;"><table class="metric-table"><tr><th>Function</th><th style="text-align:right">Calls</th><th style="text-align:right">Failed</th><th style="text-align:right">Avg latency ' + help('latency') + '</th></tr>';
@@ -2643,14 +2643,7 @@
       } else {
         html += '<p style="font-size:12px;color:var(--ink-muted);margin-top:10px;">No function has run since the worker started. Calls appear here as agents observe, search and save.</p>';
       }
-      var workers = snap.workers || [];
-      if (workers.length > 0) {
-        html += '<div style="margin-top:12px;font-family:var(--font-ui);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--ink-muted);font-weight:700;">Workers ' + help('workers') + '</div>';
-        workers.forEach(function(w) {
-          var statusClass = w.status === 'running' ? 'running' : w.status === 'starting' ? 'starting' : 'stopped';
-          html += '<div class="worker-row"><span class="worker-dot ' + statusClass + '"></span><span style="color:var(--ink);font-weight:600;">' + esc(w.name) + '</span><span class="badge ' + (w.status === 'running' ? 'badge-green' : 'badge-muted') + '">' + esc(w.status) + '</span></div>';
-        });
-      }
+      html += '<p class="hnote"><a href="#health">Worker status and engine details &rarr;</a></p>';
       html += '</details>';
 
       setViewHtml(el, html);
@@ -7250,6 +7243,32 @@
       return html + '</div>';
     }
 
+    function workerRowHtml(w) {
+      var status = w.status || 'unknown';
+      var statusClass = status === 'running' || status === 'connected' ? 'running' :
+        status === 'starting' || status === 'reconnecting' ? 'starting' :
+        ['stopped', 'disconnected', 'failed', 'error'].indexOf(status) !== -1 ? 'stopped' : 'unknown';
+      var badge = statusClass === 'running' ? 'badge-green' : statusClass === 'starting' ? 'badge-yellow' : statusClass === 'stopped' ? 'badge-red' : 'badge-muted';
+      return '<div class="worker-row"><span class="worker-dot ' + statusClass + '" aria-hidden="true"></span><strong>' + esc(w.name || w.id || 'Unnamed worker') + '</strong><span class="badge ' + badge + '">' + esc(status) + '</span></div>';
+    }
+
+    function workersHtml(workers, expanded) {
+      if (!workers || !workers.length) return '';
+      var application = [], internal = [];
+      workers.forEach(function(w) {
+        var engine = w.runtime === 'engine' || w.isolation === 'in-process' || w.name === 'compose';
+        (engine ? internal : application).push(w);
+      });
+      var html = '<div style="margin-top:16px;"><div class="card-title">Workers ' + help('workers') + '</div>';
+      html += application.map(workerRowHtml).join('');
+      if (internal.length) {
+        html += '<details id="health-engine-details"' + (expanded ? ' open' : '') + ' style="margin-top:12px;"><summary style="cursor:pointer;">Engine details (' + internal.length + ')</summary>' +
+          '<p class="hnote">Runtime coordination and internal services. Available means registered; it does not indicate whether an optional feature such as telemetry is enabled.</p>' +
+          internal.map(workerRowHtml).join('') + '</details>';
+      }
+      return html + '</div>';
+    }
+
     function engineCardHtml(r, snap) {
       var ports = (r && r.service && r.service.ports) || {};
       var kv = snap.kvConnectivity;
@@ -7262,7 +7281,7 @@
         hrow('Uptime', esc(formatUptime(snap.uptimeSeconds)), 'uptime') +
         hrow('Version', esc('v' + (store.version || (r && r.service.version) || '?') + (r ? ' · engine pinned ' + r.service.enginePinnedVersion : ''))) +
         hrow('Ports', esc('REST ' + (ports.rest || '?') + ' · viewer ' + (ports.viewer || 'off'))) +
-        '</div>';
+        workersHtml(snap.workers, state.health.engineDetailsOpen) + '</div>';
     }
 
     function legText(leg) {
@@ -7537,6 +7556,8 @@
       html += consolidationPanelHtml(store.consolidationStatus, c);
       html += functionsCardHtml(r);
       setViewHtml(el, html);
+      var details = document.getElementById('health-engine-details');
+      if (details) details.ontoggle = function() { state.health.engineDetailsOpen = details.open; };
       var reveal = state.health.reveal && document.getElementById('health-' + state.health.reveal);
       if (reveal) {
         state.health.reveal = '';
