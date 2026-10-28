@@ -12,11 +12,6 @@
   white-space: nowrap;
 }
 
-.rank {
-  color: var(--accent-ink);
-  text-decoration: none;
-}
-
 .slot {
   display: inline-grid;
   vertical-align: bottom;

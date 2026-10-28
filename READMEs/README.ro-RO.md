@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% regăsire R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% mai puțini tokeni" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 de instrumente MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook-uri automate" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 baze de date externe" height="38" /></picture>
@@ -333,223 +331,17 @@ Notele celei mai recente versiuni: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmark-uri" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Rezultatele actuale ale căutării, definițiile metricilor și pașii de reproducere:
 
-### Acuratețea regăsirii
-
-**coding-agent-life-v1** (corpus intern, reproductibil în sandbox)
-
-| Adaptor | P@5 | R@5 | Rata de succes Top-5 | Latență p50 |
-|---|---|---|---|---|
-| **agentmemory hibrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep (referință) | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-Rată de succes Top-5 de 100% la **plafonul matematic P@5** pentru acest corpus (0.240, vezi scorecard-ul). Modul hibrid regăsește fiecare sesiune de referință (gold); grep ratează 1 din 2 sesiuni de referință la interogarea temporală pe mai multe sesiuni. Avantajul este pe **recall + temporal**, nu pe precizia agregată. Acest benchmark este mic și are puține exemple de referință; LongMemEval-S, mai amplu, de mai jos diferențiază mai bine. Detalierea completă pe tipuri + nota de corecție: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 de întrebări)
-
-| Sistem | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| Doar BM25 (fallback) | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Economii de tokeni
-
-| Abordare | Tokeni/an | Cost/an |
-|---|---|---|
-| Lipire context complet | 19.5M+ | Imposibil (depășește fereastra de context) |
-| Rezumat de LLM | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + embeddings locale | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Model de embedding: `all-MiniLM-L6-v2` (local, gratuit, fără cheie API). Rapoarte complete: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Comparație cu competitorii: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md), care acoperă agentmemory vs mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**Reproduce local:** [`eval/README.md`](../eval/README.md), un harness cu adaptoare interschimbabile pentru LongMemEval `_s` (500 de întrebări publice) + `coding-agent-life-v1` (corpus intern de 15 sesiuni). Adaptoarele grep / vector / agentmemory sunt scorate în paralel, cu output NDJSON; scorecard-urile publicate ajung în [`docs/benchmarks/`](../docs/benchmarks/).
-
-**Se combină bine cu [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything) și [Graphify](https://github.com/safishamsi/graphify).** Indexare code-graph, pipeline-uri de build multi-agent și grafuri de cunoștințe mai ample pe documente / PDF-uri / imagini / videoclipuri. agentmemory reține munca; aceste trei proiecte iluminează restul stratului de context. Rețete + tabel de direcționare a întrebărilor: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="vs Competitori" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Încorporat (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Tip</strong></td>
-<td>Motor de memorie + server MCP</td>
-<td>API strat de memorie</td>
-<td>Runtime complet de agent</td>
-<td>AI personal</td>
-<td>API de memorie + aplicație</td>
-<td>Hub de memorie de echipă (proxy LLM)</td>
-<td>Memorie vectorială (OSS)</td>
-<td>Motor de memorie (Oracle DB)</td>
-<td>Sistem de memorie</td>
-<td>Fișier static</td>
-</tr>
-<tr>
-<td><strong>Regăsire R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Auto-raportat</td>
-<td>PersonaMem 76% (auto-raportat)</td>
-<td>~96.6% (auto-raportat)</td>
-<td>94.4% (auto-raportat)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Captare automată</strong></td>
-<td>12 hook-uri (fără efort manual)</td>
-<td>Apeluri manuale <code>add()</code></td>
-<td>Auto-editare de către agent</td>
-<td>Manual</td>
-<td>Extracție pe partea de API</td>
-<td>Interceptare prin proxy (schimbare base-URL)</td>
-<td>Manual</td>
-<td>Extracție API</td>
-<td>Manual</td>
-<td>Editare manuală</td>
-</tr>
-<tr>
-<td><strong>Căutare</strong></td>
-<td>BM25 + Vector + Graf (fuziune RRF)</td>
-<td>Vector + Graf</td>
-<td>Vector (arhivă)</td>
-<td>Semantică</td>
-<td>Vector + RAG</td>
-<td>4 tipuri de active (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Doar vector</td>
-<td>Vector + semantică</td>
-<td>Ponderată prin declin (decay)</td>
-<td>Încarcă totul în context</td>
-</tr>
-<tr>
-<td><strong>Multi-agent</strong></td>
-<td>MCP + REST + lease-uri + semnale</td>
-<td>API (fără coordonare)</td>
-<td>Doar în interiorul runtime-ului Letta</td>
-<td>Nu</td>
-<td>Nu</td>
-<td>Roluri de echipă + active partajate</td>
-<td>Nu</td>
-<td>Doar cu scope limitat</td>
-<td>Partajat multi-agent</td>
-<td>Fișiere per agent</td>
-</tr>
-<tr>
-<td><strong>Dependență de framework</strong></td>
-<td>Niciuna (orice client MCP)</td>
-<td>Niciuna</td>
-<td>Ridicată (trebuie folosit Letta)</td>
-<td>Independent (standalone)</td>
-<td>Niciuna</td>
-<td>Proxy-ul intermediază fiecare apel de model</td>
-<td>Niciuna</td>
-<td>Oracle Database</td>
-<td>Niciuna</td>
-<td>Format per agent</td>
-</tr>
-<tr>
-<td><strong>Dependențe externe</strong></td>
-<td>Nu necesită un serviciu de baze de date separat</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + bază de date vectorială</td>
-<td>Multiple</td>
-<td>Cloud administrat</td>
-<td>Stivă Docker (Core + Hub + Proxy)</td>
-<td>Magazin vectorial</td>
-<td>Oracle AI Database</td>
-<td>Niciuna</td>
-<td>Niciuna</td>
-</tr>
-<tr>
-<td><strong>Ciclul de viață al memoriei</strong></td>
-<td>Consolidare pe 4 niveluri + declin + uitare automată</td>
-<td>Extracție pasivă</td>
-<td>Gestionat de agent</td>
-<td>Manual</td>
-<td>Uitare automată</td>
-<td>Revizuire manuală; direcționare automată în lucru</td>
-<td>Niciuna</td>
-<td>Nespecificat</td>
-<td>Declin + consolidare</td>
-<td>Curățare manuală</td>
-</tr>
-<tr>
-<td><strong>Eficiența tokenilor</strong></td>
-<td>~1,900 tokeni/sesiune ($10/an)</td>
-<td>Variază în funcție de integrare</td>
-<td>Memorie de bază (core) în context</td>
-<td>Variază</td>
-<td>Preț cloud</td>
-<td>Nespecificat</td>
-<td>Fără buget de tokeni</td>
-<td>Susținut de LLM (variază)</td>
-<td>Variază</td>
-<td>22K+ tokeni la 240 observații</td>
-</tr>
-<tr>
-<td><strong>Vizualizator în timp real</strong></td>
-<td>Da (port 3113)</td>
-<td>Dashboard cloud</td>
-<td>Dashboard cloud</td>
-<td>Interfață web</td>
-<td>Dashboard cloud</td>
-<td>Interfață web Hub</td>
-<td>Nu</td>
-<td>Nu</td>
-<td>Nu</td>
-<td>Nu</td>
-</tr>
-<tr>
-<td><strong>Auto-hostat</strong></td>
-<td>Da (implicit)</td>
-<td>Opțional</td>
-<td>Opțional</td>
-<td>Da</td>
-<td>Nu (doar cloud)</td>
-<td>Da (Docker)</td>
-<td>Da</td>
-<td>Da (Oracle DB)</td>
-<td>Da</td>
-<td>Da</td>
-</tr>
-</table>
+Comparație actualizată a produselor și opțiunilor de implementare, cu surse:
 
-<sub>Notă despre benchmark: doar R@5 pentru agentmemory este un rezultat măsurat de noi înșine (LongMemEval-S, reproductibil din <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). Cifrele pentru mem0 și Letta sunt numerele lor publicate pe LoCoMo (un set de date diferit); cifrele pentru MemPalace, supermemory, TencentDB (PersonaMem) și oracleagentmemory sunt afirmații auto-raportate de furnizori, pe care nu le-am reprodus independent (rularea oracleagentmemory a folosit GPT-5.5 împotriva unei Oracle AI Database). Prezentate una lângă alta doar orientativ, nu ca o comparație directă pe date identice. Numărul de stele este aproximativ și variază în timp.</sub>
-
-**Jucători mai noi** merită cunoscuți, comparați în detaliu în [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| Sistem | ⭐ | Unghi |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Graf de cunoștințe temporal; cele mai bune rezultate publicate pentru interogări temporale (LongMemEval 63.8%), dar graful se construiește asincron, așa că faptele noi pot întârzia |
-| Cognee | 30K | Ingestie document-în-graf-de-cunoștințe, doar Python, construit pentru extracție structurată de entități, nu pentru captarea sesiunilor |
-
-AgentMemory combină captura sesiunilor, istoricul căutabil al proiectului și un viewer local, cu funcționare fără cheie de la prima pornire.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -786,7 +578,7 @@ Ghid complet: [`integrations/hermes/`](../integrations/hermes/)
 
 Pornește serverul de memorie: `npx -y @agentmemory/agentmemory@latest`
 
-#### Skill-uri native prin `npx skills add` (50+ agenți)
+#### Skill-uri native prin `npx skills add`
 
 agentmemory vine cu 17 skill-uri în formatul `<dir>/SKILL.md`, în stilul Claude Code: 9 skill-uri de acțiune invocabile (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) și 8 skill-uri de referință pe care agentul le încarcă la cerere (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Skill-urile de referință conțin tabele de date generate din sursă, așa că nu devin niciodată desincronizate. CLI-ul [`skills`](https://npmjs.com/package/skills) de la vercel-labs le instalează automat în directorul nativ de skill-uri al agentului apelant, pe 50+ agenți (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf și altele):
 
@@ -844,7 +636,7 @@ Intrarea agentmemory este **același bloc de server MCP** pe fiecare host care f
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` instalează MCP și hook-urile de captare în directorul partajat de personalizare. Vezi [configurarea și limitele Antigravity](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` folosește aceeași configurație MCP și de hook-uri ca versiunile IDE actuale. Instalările existente ar trebui să se reîmprospăteze cu `--force`; vezi [notele de actualizare](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` scrie configurația la nivel de utilizator. Suprascrierile la nivel de workspace se pun în `.kiro/settings/mcp.json`, alături de codul tău. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` scrie blocul standard `mcpServers`. Warp detectează automat și skill-urile din `.claude/skills/`; odată instalat plugin-ul Claude Code, cele 8 skill-uri agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) apar nativ în paleta de comenzi slash a Warp. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` scrie blocul standard `mcpServers`. Warp detectează automat și skill-urile din `.claude/skills/`; odată instalat plugin-ul Claude Code, cele 9 skill-uri agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) apar nativ în paleta de comenzi slash a Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` scrie blocul standard `mcpServers`. Utilizatorii extensiei VS Code: lipește același bloc prin Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferat) sau `config.json` (vechi/legacy) | `agentmemory connect continue` creează `config.yaml` când lipsește configurarea sau modifică `config.json` existent. Pentru YAML existent afișează blocul de adăugat la `mcpServers:`, păstrând comentariile și ancorele. Continue folosește o listă, nu un obiect. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` scrie sub `context_servers` (cheia specifică Zed, NU `mcpServers`). Serverele MCP la distanță pot fi conectate, în schimb, prin `{"url": "..."}`. |
@@ -921,7 +713,6 @@ Fiecare agent de programare AI vine cu memorie încorporată: Claude Code are `M
 |---|---|---|
 | Întreținere | Instrucțiuni administrate manual | Istoric de sesiuni și memorie indexate |
 | Căutare | Încarcă totul în context | BM25 + vector + graf (doar top-K) |
-| Cost în tokeni | 22K+ la 240 de observații | ~1,900 tokeni (92% mai puțin) |
 | Între agenți | Fișiere per agent | MCP + REST (orice agent) |
 | Coordonare | Niciuna | Lease-uri, semnale, acțiuni, rutine |
 | Observabilitate | Citire manuală a fișierelor | Vizualizator în timp real pe :3113 |
@@ -934,7 +725,7 @@ Fiecare agent de programare AI vine cu memorie încorporată: Claude Code are `M
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1019,7 +810,7 @@ Fuzionate prin Reciprocal Rank Fusion (RRF, k=60) și diversificate pe sesiune (
 
 Când indexul vectorial este populat, `mem::search` (din spatele lui `memory_recall`) folosește clasificatorul hibrid BM25 + vector. Fără embeddings, folosește BM25. `smart-search` poate fuziona, în plus, potriviri structurale din graf, atunci când există date de graf, inclusiv în modul keyless. Reamintirea lecțiilor rulează pe un index BM25 dedicat, în memorie, în loc să scaneze întregul corpus la fiecare interogare. Versiunile de memorie suprascrise sunt excluse din fiecare rută de reamintire; lanțul de versiuni le păstrează istoricul.
 
-Vectorii supraviețuiesc unui crash sau unei terminări forțate (force-kill). Indexul vectorial este salvat pe loturi (buckets) cel mult o dată la fiecare `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 minute). Fiecare vector adăugat sau eliminat între timp este scris imediat și într-un mic jurnal de așteptare (pending log) din state store, iar următoarea pornire îl reaplică fără a apela furnizorul de embedding. Fiecare salvare reușită golește jurnalul. Documentele care încă nu au un vector după reaplicare sunt reîncorporate (re-embedded) în fundal, pe loturi de `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500), până când nu mai rămâne niciunul, iar o reumplere (backfill) întreruptă continuă la următoarea pornire. `/agentmemory/status` și vizualizatorul arată dimensiunea jurnalului de așteptare și starea reumplerii. Instalările keyless nu scriu nimic.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 tokenizează, din oficiu, greaca, chirilica, ebraica, araba și latina cu diacritice. Pentru memorii în chineză / japoneză / coreeană, instalează segmentatoarele opționale (`npm install @node-rs/jieba tiny-segmenter`) pentru a împărți secvențele CJK în tokeni la nivel de cuvânt; fără ele, agentmemory trece ușor la tokenizarea întregii secvențe și afișează o singură dată un indiciu pe stderr.
 
@@ -1035,9 +826,9 @@ Instalarea npm normală include runtime-ul opțional `@huggingface/transformers`
 
 | Furnizor | Model | Cost | Note |
 |---|---|---|---|
-| **Local (opțiune recomandată)** | `all-MiniLM-L6-v2` | Gratuit | Pe dispozitiv, după prima descărcare a modelului; +8pp recall față de doar-BM25 |
+| **Local (opțiune recomandată)** | `all-MiniLM-L6-v2` | Gratuit | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Nivel gratuit | 100+ limbi, 768/1536/3072 dimensiuni (MRL), input de 2048 de tokeni. Înlocuiește `text-embedding-004` ([depreciat, dezactivat 14 ian. 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Cea mai bună calitate |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | Plătit | Optimizat pentru cod |
 | Cohere | `embed-english-v3.0` | Perioadă de probă gratuită | Scop general |
 | OpenRouter | Orice model | Variabil | Proxy multi-model |

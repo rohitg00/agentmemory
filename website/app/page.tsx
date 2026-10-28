@@ -25,6 +25,16 @@ export default function Page() {
         <Hero />
         <Proof />
         <Featured />
+        <section className="section" aria-labelledby="release-title">
+          <div className="wrap section-head">
+            <span className="eyebrow">New in 0.9.31</span>
+            <h2 id="release-title">More focused recall. Less repeated work.</h2>
+            <p>Scope saved-memory recall by project and agent, set a context budget, and expand the original source.
+              Incremental summaries skip unchanged observations. Native Pi, OMP and DeepSeek Harness integrations
+              join improved Cursor capture, paged exports and recovery fixes.</p>
+            <a className="src" href="/changelog">Read the release notes</a>
+          </div>
+        </section>
         <UseCases />
         <ContextFunnel />
         <InfraTiles />

@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95,2 % hakutarkkuus R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92 % vähemmän tokeneita" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-työkalua" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automaattista hookia" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 ulkoista tietokantaa" height="38" /></picture>
@@ -333,223 +331,17 @@ Uusimmat julkaisutiedot: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarkit" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Ajantasaiset hakutulokset, mittarien määritelmät ja toisto-ohjeet:
 
-### Hakutarkkuus
-
-**coding-agent-life-v1** (talon sisäinen korpus, hiekkalaatikossa toistettavissa)
-
-| Sovitin | P@5 | R@5 | Top-5-osumasuhde | p50-latenssi |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep-perustaso | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-100 % top-5-osumasuhde **P@5-matemaattisessa kattossa** tälle korpukselle (0.240, katso scorecard). Hybrid hakee jokaisen kultaisen istunnon. grep jättää huomiotta 1/2 kultaisesta moni-istuntoisessa temporaalikyselyssä. Hyöty on **muistaminen + temporaalisuus**, ei kokonaistarkkuus. Tämä benchmark on pieni ja kultadataltaan harva; isompi LongMemEval-S alla erottelee paremmin. Täysi tyyppikohtainen erittely + korjaushuomautus: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 kysymystä)
-
-| Järjestelmä | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| vain BM25 -varmistusreitti | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Tokenisäästöt
-
-| Lähestymistapa | Tokenia/vuosi | Kustannus/vuosi |
-|---|---|---|
-| Liitä koko konteksti | 19.5M+ | Mahdotonta (ylittää ikkunan) |
-| LLM-tiivistetty | ~650K | ~500 $ |
-| **agentmemory** | **~170K** | **~10 $** |
-| agentmemory + paikalliset upotukset | ~170K | **0 $** |
-
-</td>
-</tr>
-</table>
-
-> Upotusmalli: `all-MiniLM-L6-v2` (paikallinen, ilmainen, ei API-avainta). Täydet raportit: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Kilpailijavertailu: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md), joka kattaa agentmemoryn vs. mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**Toista paikallisesti:** [`eval/README.md`](../eval/README.md), sovitinpohjainen testipenkki LongMemEvalille `_s` (julkinen 500 kysymystä) + `coding-agent-life-v1` (talon sisäinen 15 istunnon korpus). Grep-, vektori- ja agentmemory-sovittimet pisteytetään rinnakkain, NDJSON-tulostus, julkaistut scorecardit löytyvät kansiosta [`docs/benchmarks/`](../docs/benchmarks/).
-
-**Toimii yhdessä [codegraphin](https://github.com/colbymchenry/codegraph), [Understand Anythingin](https://github.com/Lum1104/Understand-Anything) ja [Graphifyn](https://github.com/safishamsi/graphify) kanssa.** Koodigraafi-indeksointi, moniagenttiset build-putket ja laajemmat tietograafit dokumenttien / PDF:ien / kuvien / videoiden yli. agentmemory muistaa työn; nämä kolme projektia valaisevat kontekstikerroksen muun osan. Reseptit + kysymysten reititystaulukko: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="vs. kilpailijat" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Sisäänrakennettu (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Tyyppi</strong></td>
-<td>Muistimoottori + MCP-palvelin</td>
-<td>Muistikerros-API</td>
-<td>Täysi agentti-ajonaikainen ympäristö</td>
-<td>Henkilökohtainen AI</td>
-<td>Muisti-API + sovellus</td>
-<td>Tiimimuistikeskus (LLM-proxy)</td>
-<td>Vektorimuisti (avoin lähdekoodi)</td>
-<td>Muistimoottori (Oracle-tietokanta)</td>
-<td>Muistijärjestelmä</td>
-<td>Staattinen tiedosto</td>
-</tr>
-<tr>
-<td><strong>Hakutarkkuus R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>Ei saatavilla</td>
-<td>Itse ilmoitettu</td>
-<td>PersonaMem 76% (itse ilmoitettu)</td>
-<td>~96.6% (itse ilmoitettu)</td>
-<td>94.4% (itse ilmoitettu)</td>
-<td>Ei saatavilla</td>
-<td>Ei saatavilla (grep)</td>
-</tr>
-<tr>
-<td><strong>Automaattinen tallennus</strong></td>
-<td>12 hookia (ei manuaalista työtä)</td>
-<td>Manuaaliset <code>add()</code>-kutsut</td>
-<td>Agentti muokkaa itseään</td>
-<td>Manuaalinen</td>
-<td>API-puolen poiminta</td>
-<td>Proxy-sieppaus (base-URL-vaihto)</td>
-<td>Manuaalinen</td>
-<td>API-poiminta</td>
-<td>Manuaalinen</td>
-<td>Manuaalinen muokkaus</td>
-</tr>
-<tr>
-<td><strong>Haku</strong></td>
-<td>BM25 + vektori + graafi (RRF-fuusio)</td>
-<td>Vektori + graafi</td>
-<td>Vektori (arkisto)</td>
-<td>Semanttinen</td>
-<td>Vektori + RAG</td>
-<td>4 omaisuustyyppiä (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Vain vektori</td>
-<td>Vektori + semanttinen</td>
-<td>Vanhenemispainotettu</td>
-<td>Lataa kaiken kontekstiin</td>
-</tr>
-<tr>
-<td><strong>Moniagenttisuus</strong></td>
-<td>MCP + REST + leaset + signaalit</td>
-<td>API (ei koordinaatiota)</td>
-<td>Vain Lettan ajonaikaisessa ympäristössä</td>
-<td>Ei</td>
-<td>Ei</td>
-<td>Tiimiroolit + jaetut omaisuudet</td>
-<td>Ei</td>
-<td>Vain rajattu</td>
-<td>Jaettu moniagenttisuus</td>
-<td>Agenttikohtaiset tiedostot</td>
-</tr>
-<tr>
-<td><strong>Kehyksestä riippuvuus</strong></td>
-<td>Ei lainkaan (mikä tahansa MCP-asiakas)</td>
-<td>Ei lainkaan</td>
-<td>Korkea (pakko käyttää Lettaa)</td>
-<td>Itsenäinen</td>
-<td>Ei lainkaan</td>
-<td>Proxy edessä joka mallikutsussa</td>
-<td>Ei lainkaan</td>
-<td>Oracle Database</td>
-<td>Ei lainkaan</td>
-<td>Agenttikohtainen formaatti</td>
-</tr>
-<tr>
-<td><strong>Ulkoiset riippuvuudet</strong></td>
-<td>Erillistä tietokantapalvelua ei tarvita</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vektoritietokanta</td>
-<td>Useita</td>
-<td>Hallittu pilvi</td>
-<td>Docker-pino (Core + Hub + Proxy)</td>
-<td>Vektorivarasto</td>
-<td>Oracle AI Database</td>
-<td>Ei mitään</td>
-<td>Ei mitään</td>
-</tr>
-<tr>
-<td><strong>Muistin elinkaari</strong></td>
-<td>4-tasoinen konsolidointi + vanheneminen + automaattinen unohtaminen</td>
-<td>Passiivinen poiminta</td>
-<td>Agentin hallinnoima</td>
-<td>Manuaalinen</td>
-<td>Automaattinen unohtaminen</td>
-<td>Manuaalinen katselmointi; automaattireititys kehitteillä</td>
-<td>Ei mitään</td>
-<td>Ei ilmoitettu</td>
-<td>Vanheneminen + konsolidointi</td>
-<td>Manuaalinen karsinta</td>
-</tr>
-<tr>
-<td><strong>Tokentehokkuus</strong></td>
-<td>~1 900 tokenia/istunto (10 $/vuosi)</td>
-<td>Vaihtelee integraation mukaan</td>
-<td>Ydinmuisti kontekstissa</td>
-<td>Vaihtelee</td>
-<td>Pilvihinnoittelu</td>
-<td>Ei ilmoitettu</td>
-<td>Ei tokenbudjettia</td>
-<td>LLM-pohjainen (vaihtelee)</td>
-<td>Vaihtelee</td>
-<td>22K+ tokenia 240 havainnolla</td>
-</tr>
-<tr>
-<td><strong>Reaaliaikainen katseluohjelma</strong></td>
-<td>Kyllä (portti 3113)</td>
-<td>Pilvikojelauta</td>
-<td>Pilvikojelauta</td>
-<td>Web-käyttöliittymä</td>
-<td>Pilvikojelauta</td>
-<td>Hub-web-käyttöliittymä</td>
-<td>Ei</td>
-<td>Ei</td>
-<td>Ei</td>
-<td>Ei</td>
-</tr>
-<tr>
-<td><strong>Itseisännöity</strong></td>
-<td>Kyllä (oletus)</td>
-<td>Valinnainen</td>
-<td>Valinnainen</td>
-<td>Kyllä</td>
-<td>Ei (vain pilvi)</td>
-<td>Kyllä (Docker)</td>
-<td>Kyllä</td>
-<td>Kyllä (Oracle-tietokanta)</td>
-<td>Kyllä</td>
-<td>Kyllä</td>
-</tr>
-</table>
+Päivitetty tuotteiden ja käyttöönottovaihtoehtojen vertailu lähteineen:
 
-<sub>Benchmark-huomautus: vain agentmemoryn R@5 on omaa mitattua tulostamme (LongMemEval-S, toistettavissa tiedostosta <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). mem0- ja Letta-luvut ovat niiden julkaisemia LoCoMo-lukuja (eri aineisto); MemPalace-, supermemory-, TencentDB (PersonaMem) - ja oracleagentmemory-luvut ovat valmistajien itse ilmoittamia väitteitä, joita emme ole itsenäisesti toistaneet (oracleagentmemoryn ajo käytti GPT-5.5:tä Oracle AI Databasea vastaan). Esitetty rinnakkain vain suuntaa antavana, ei pää-pää-vertailuna samalla datalla. Tähtimäärät ovat likimääräisiä ja muuttuvat ajan myötä.</sub>
-
-**Uudemmat tulokkaat**, hyvä tietää, syvemmin vertailtuna kohdassa [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| Järjestelmä | ⭐ | Näkökulma |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Temporaalinen tietograafi; vahvimmat julkaistut temporaalikyselytulokset (LongMemEval 63.8%), mutta graafi rakentuu asynkronisesti, jolloin tuoreet faktat voivat viivästyä |
-| Cognee | 30K | Dokumentista tietograafiksi -tuonti, vain Python, rakennettu rakenteelliseen entiteettipoimintaan istuntotallennuksen sijaan |
-
-AgentMemory yhdistää istuntojen tallennuksen, haettavan projektihistorian ja paikallisen viewerin; avaimeton käyttö toimii ensimmäisestä käynnistyksestä.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -786,7 +578,7 @@ Täysi opas: [`integrations/hermes/`](../integrations/hermes/)
 
 Käynnistä muistipalvelin: `npx -y @agentmemory/agentmemory@latest`
 
-#### Natiivit taidot komennolla `npx skills add` (50+ agenttia)
+#### Natiivit taidot komennolla `npx skills add`
 
 agentmemory toimittaa 17 taitoa Claude-Code-tyylisessä `<dir>/SKILL.md`-formaatissa: 9 kutsuttavaa toimintotaitoa (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) ja 8 viitetaitoa, jotka agentti lataa tarpeen mukaan (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Viitetaidot kuljettavat lähdekoodista generoituja datataulukoita, niin ne eivät koskaan ajaudu pois synkasta. vercel-labsin [`skills`](https://npmjs.com/package/skills)-CLI asentaa ne automaattisesti kutsuvan agentin natiiviin taitohakemistoon yli 50 agentin yli (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf ja monet muut):
 
@@ -844,7 +636,7 @@ agentmemory-merkintä on **sama MCP-palvelinlohko** jokaisessa isännässä, jok
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` asentaa MCP:n ja tallennushookit jaettuun mukautushakemistoon. Katso [Antigravityn asennus ja rajoitukset](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` käyttää samaa MCP- ja hook-määritystä kuin nykyiset IDE-versiot. Olemassa olevat asennukset tulisi päivittää `--force`-valitsimella; katso [päivitysohjeet](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` kirjoittaa käyttäjätason asetukset. Työtilakohtaiset ylikirjoitukset menevät tiedostoon `.kiro/settings/mcp.json` koodisi vierelle. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` kirjoittaa standardin `mcpServers`-lohkon. Warp myös tunnistaa automaattisesti taidot kansiosta `.claude/skills/`; kun Claude Code -plugin on asennettu, 8 agentmemory-taitoa (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) näkyvät natiivisti Warpin pikakomentopaletissa. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` kirjoittaa standardin `mcpServers`-lohkon. Warp myös tunnistaa automaattisesti taidot kansiosta `.claude/skills/`; kun Claude Code -plugin on asennettu, 9 agentmemory-taitoa (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) näkyvät natiivisti Warpin pikakomentopaletissa. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` kirjoittaa standardin `mcpServers`-lohkon. VS Code -laajennuksen käyttäjät: liitä sama lohko Cline Settings → MCP Servers → Edit JSON -kautta. |
 | **Continue.dev** | `~/.continue/config.yaml` (suositeltu) tai `config.json` (vanha) | `agentmemory connect continue` luo `config.yaml`-tiedoston, jos asetuksia ei ole, tai muokkaa olemassa olevaa `config.json`-tiedostoa. Olemassa olevan YAML:n tapauksessa se tulostaa lisättävän `mcpServers:`-lohkon säilyttääkseen kommentit ja ankkurit. Continue käyttää taulukkoa, ei objektia. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` kirjoittaa avaimen `context_servers` alle (Zedin avain, EI `mcpServers`). Etä-MCP-palvelimet voidaan kytkeä myös muodolla `{"url": "..."}`. |
@@ -927,7 +719,6 @@ Jokainen tekoälypohjainen koodausagentti toimitetaan sisäänrakennetulla muist
 |---|---|---|
 | Ylläpito | Käsin ylläpidetyt ohjeet | Indeksoitu istuntohistoria ja muistot |
 | Haku | Lataa kaiken kontekstiin | BM25 + vektori + graafi (vain top-K) |
-| Tokenkustannus | 22K+ 240 havainnolla | ~1 900 tokenia (92 % vähemmän) |
 | Agenttien välillä | Agenttikohtaiset tiedostot | MCP + REST (mikä tahansa agentti) |
 | Koordinointi | Ei mitään | Leaset, signaalit, toiminnot, rutiinit |
 | Havainnoitavuus | Lue tiedostoja käsin | Reaaliaikainen katseluohjelma portissa :3113 |
@@ -940,7 +731,7 @@ Jokainen tekoälypohjainen koodausagentti toimitetaan sisäänrakennetulla muist
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1025,7 +816,7 @@ Yhdistetty Reciprocal Rank Fusionilla (RRF, k=60) ja istuntokohtaisesti monipuol
 
 Kun vektori-indeksi on täytetty, `mem::search` (`memory_recall`-työkalun takana) käyttää hybridiä BM25 + vektori -luokittelijaa. Ilman upotuksia se käyttää BM25:tä. `smart-search` voi lisäksi yhdistää rakenteellisia graafiosumia, kun graafidataa on olemassa, myös avaimettomassa tilassa. Opetusten palautus käyttää erillistä muistinvaraista BM25-indeksiä sen sijaan, että se skannaisi koko korpuksen jokaisella kyselyllä. Korvatut muistiversiot on suljettu pois jokaisesta palautusreitistä; versioketju säilyttää niiden historian.
 
-Vektorit selviävät kaatumisesta tai pakkosammutuksesta. Vektori-indeksi tallennetaan erissä enintään `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS`-ajan välein (10 minuuttia). Joka vektori, joka lisätään tai poistetaan tällä välillä, kirjoitetaan myös heti pieneen odottavaan lokiin tilavarastossa, ja seuraava käynnistys toistaa sen kutsumatta upotustarjoajaa. Joka onnistunut tallennus tyhjentää lokin. Dokumentit, joilla ei vielä ole vektoria toiston jälkeen, upotetaan uudelleen taustalla erissä kooltaan `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500), kunnes yhtäkään ei jää jäljelle, ja pysäytetty täydennys jatkuu seuraavassa käynnistyksessä. `/agentmemory/status` ja katseluohjelma näyttävät odottavan lokin koon ja täydennyksen tilan. Avaimettomat asennukset eivät kirjoita mitään.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 tokenisoi kreikan, kyrilliset kirjaimet, hebrean, arabian ja aksentoidun latinan oletuksena. Kiinan-, japanin- ja koreankielisiä muistoja varten asenna valinnaiset segmentoijat (`npm install @node-rs/jieba tiny-segmenter`) jakaaksesi CJK-jaksot sananlaajuisiksi tokeneiksi; ilman niitä agentmemory lankeaa pehmeästi koko jakson tokenisointiin ja tulostaa kertaluonteisen vihjeen stderriin.
 
@@ -1041,9 +832,9 @@ Normaali npm-asennus sisältää valinnaisen `@huggingface/transformers`-ajonaik
 
 | Tarjoaja | Malli | Kustannus | Huomautuksia |
 |---|---|---|---|
-| **Paikallinen (suositeltu opt-in)** | `all-MiniLM-L6-v2` | Ilmainen | Laitteella ensimmäisen mallilatauksen jälkeen, +8pp palautustarkkuutta vain-BM25:een verrattuna |
+| **Paikallinen (suositeltu opt-in)** | `all-MiniLM-L6-v2` | Ilmainen | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Ilmainen taso | 100+ kieltä, 768/1536/3072-ulotteinen (MRL), 2048-tokenin syöte. Korvaa `text-embedding-004`:n ([poistettu käytöstä, sammutetaan 14.1.2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | 0,02 $/1M | Korkein laatu |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | Maksullinen | Optimoitu koodille |
 | Cohere | `embed-english-v3.0` | Ilmainen kokeilu | Yleiskäyttöinen |
 | OpenRouter | Mikä tahansa malli | Vaihtelee | Multi-model-proxy |

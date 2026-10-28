@@ -1,4 +1,4 @@
-import { AGENT_INSTALL_PROMPT, INSTALL_CMD, LONGMEMEVAL, REPO_URL, src } from "@/lib/site";
+import { AGENT_INSTALL_PROMPT, INSTALL_CMD, REPO_URL, src } from "@/lib/site";
 import { compact, getLiveProjectMeta } from "@/lib/meta";
 import { CopyButton } from "./client";
 import { MemoryField } from "./MemoryField";
@@ -22,9 +22,9 @@ export async function Hero() {
             <span className={s.sep} />
             <span>Open source, Apache-2.0</span>
           </a>
-          <HeroTitle rankHref="https://trendshift.io/repositories/25123" />
+          <HeroTitle />
           <p className={s.lede}>
-            Your coding agent starts every session from zero. agentmemory captures what it did, keeps it on your machine,
+            Keep project decisions across sessions and agents. agentmemory captures supported activity, stores it on your machine,
             and hands the right context back next time. No account, no API key, no cloud.
           </p>
 
@@ -71,18 +71,18 @@ export async function Hero() {
 
           <dl className={s.facts}>
             <div>
-              <dt className="mono">LongMemEval-S recall@5</dt>
+              <dt className="mono">MCP tools</dt>
               <dd>
-                {LONGMEMEVAL.hybrid.r5}%{" "}
-                <a className="src" href={src.longmemeval} target="_blank" rel="noreferrer">
+                {meta.mcpTools}{" "}
+                <a className="src" href={`${REPO_URL}#mcp-server`} target="_blank" rel="noreferrer">
                   source
                 </a>
               </dd>
             </div>
             <div>
-              <dt className="mono">Leaves your machine</dt>
+              <dt className="mono">Memory storage</dt>
               <dd>
-                Nothing, by default{" "}
+                Local by default{" "}
                 <a className="src" href="/security">
                   how
                 </a>

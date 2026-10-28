@@ -68,8 +68,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% שיעור שליפה R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% פחות טוקנים" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 כלי MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks אוטומטיים" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 מסדי נתונים חיצוניים" height="38" /></picture>
@@ -335,223 +333,17 @@ agentmemory --instance 1
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="מבחני ביצועים" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+תוצאות האחזור העדכניות, הגדרות המדדים ושלבי השחזור:
 
-### דיוק שליפה
-
-**coding-agent-life-v1** (קורפוס פנימי, שניתן לשכפול ב-sandbox)
-
-| מתאם | P@5 | R@5 | שיעור פגיעה ב-Top-5 | latency p50 |
-|---|---|---|---|---|
-| **agentmemory היברידי** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep (קו בסיס) | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-שיעור פגיעה של 100% ב-top-5 בתקרה המתמטית של **P@5** עבור הקורפוס הזה (0.240, ראו scorecard). המצב ההיברידי שולף כל session זהב (gold); ל-grep חסר 1 מתוך 2 פריטי gold בשאילתה הטמפורלית המשתרעת על כמה sessions. השיפור הוא ב-**recall + טמפורליות**, לא בדיוק מצרפי. ה-benchmark הזה קטן ומעוט gold; LongMemEval-S הגדול יותר שלהלן מבדיל טוב יותר. פירוט מלא לפי טיפוס + הערת תיקון: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 שאלות)
-
-| מערכת | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| חלופת BM25 בלבד | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### חיסכון בטוקנים
-
-| גישה | טוקנים/שנה | עלות/שנה |
-|---|---|---|
-| הדבקת הקשר מלא | 19.5M+ | בלתי אפשרי (חורג מהחלון) |
-| סיכום על ידי LLM | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + embeddings מקומיים | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> מודל embedding: `all-MiniLM-L6-v2` (מקומי, חינמי, בלי מפתח API). דוחות מלאים: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). השוואת מתחרים: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) המכסה את agentmemory לעומת mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**שכפול מקומי:** [`eval/README.md`](../eval/README.md), harness עם adapters נתיקים עבור LongMemEval `_s` (500 שאלות ציבוריות) + `coding-agent-life-v1` (קורפוס פנימי של 15 sessions). מתאמי Grep / וקטור / agentmemory מקבלים ניקוד אחד לצד השני, פלט NDJSON, וה-scorecards המתפרסמים נוחתים ב-[`docs/benchmarks/`](../docs/benchmarks/).
-
-**משתלב עם [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything), ו-[Graphify](https://github.com/safishamsi/graphify).** אינדוקס code-graph, pipelines לבנייה מרובת-סוכנים, וגרפי ידע רחבים יותר על פני docs / PDF / תמונות / וידאו. agentmemory זוכר את העבודה; שלושת הפרויקטים האלה מדליקים את שאר שכבת ההקשר. מתכונים + טבלת ניתוב שאלות: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="לעומת מתחרים" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Built-in (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>סוג</strong></td>
-<td>מנוע זיכרון + שרת MCP</td>
-<td>API של שכבת זיכרון</td>
-<td>runtime מלא לסוכן</td>
-<td>AI אישי</td>
-<td>API זיכרון + אפליקציה</td>
-<td>hub זיכרון לצוות (proxy ל-LLM)</td>
-<td>זיכרון וקטורי (קוד פתוח)</td>
-<td>מנוע זיכרון (Oracle DB)</td>
-<td>מערכת זיכרון</td>
-<td>קובץ סטטי</td>
-</tr>
-<tr>
-<td><strong>שליפה R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>דיווח עצמי</td>
-<td>PersonaMem 76% (דיווח עצמי)</td>
-<td>~96.6% (דיווח עצמי)</td>
-<td>94.4% (דיווח עצמי)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>לכידה אוטומטית</strong></td>
-<td>12 hooks (ללא מאמץ ידני)</td>
-<td>קריאות <code>add()</code> ידניות</td>
-<td>עריכות עצמיות של הסוכן</td>
-<td>ידני</td>
-<td>חילוץ בצד ה-API</td>
-<td>יירוט proxy (החלפת base-URL)</td>
-<td>ידני</td>
-<td>חילוץ API</td>
-<td>ידני</td>
-<td>עריכה ידנית</td>
-</tr>
-<tr>
-<td><strong>חיפוש</strong></td>
-<td>BM25 + וקטור + גרף (fusion מסוג RRF)</td>
-<td>וקטור + גרף</td>
-<td>וקטור (ארכיוני)</td>
-<td>סמנטי</td>
-<td>וקטור + RAG</td>
-<td>4 סוגי נכסים (Chat / Skill / Wiki / CodeGraph)</td>
-<td>וקטור בלבד</td>
-<td>וקטור + סמנטי</td>
-<td>משוקלל decay</td>
-<td>טוען הכול להקשר</td>
-</tr>
-<tr>
-<td><strong>ריבוי-סוכנים</strong></td>
-<td>MCP + REST + leases + signals</td>
-<td>API (בלי תיאום)</td>
-<td>רק בתוך runtime של Letta</td>
-<td>לא</td>
-<td>לא</td>
-<td>תפקידי צוות + נכסים משותפים</td>
-<td>לא</td>
-<td>מוגבל לתחום בלבד</td>
-<td>משותף בין סוכנים מרובים</td>
-<td>קבצים לפי סוכן</td>
-</tr>
-<tr>
-<td><strong>נעילה ל-framework</strong></td>
-<td>אין (כל לקוח MCP)</td>
-<td>אין</td>
-<td>גבוהה (חייבים להשתמש ב-Letta)</td>
-<td>עצמאי (standalone)</td>
-<td>אין</td>
-<td>Proxy חוצץ בפני כל קריאת מודל</td>
-<td>אין</td>
-<td>Oracle Database</td>
-<td>אין</td>
-<td>פורמט לפי סוכן</td>
-</tr>
-<tr>
-<td><strong>תלויות חיצוניות</strong></td>
-<td>אין צורך בשירות מסד נתונים נפרד</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + מסד נתונים וקטורי</td>
-<td>מרובות</td>
-<td>cloud מנוהל</td>
-<td>ערימת Docker (Core + Hub + Proxy)</td>
-<td>מאגר וקטורי</td>
-<td>Oracle AI Database</td>
-<td>אין</td>
-<td>אין</td>
-</tr>
-<tr>
-<td><strong>מחזור חיים של הזיכרון</strong></td>
-<td>קונסולידציה ב-4 שכבות + decay + שכחה אוטומטית</td>
-<td>חילוץ פסיבי</td>
-<td>מנוהל על ידי הסוכן</td>
-<td>ידני</td>
-<td>שכחה אוטומטית</td>
-<td>בדיקה ידנית; ניתוב אוטומטי בפיתוח</td>
-<td>אין</td>
-<td>לא מצוין</td>
-<td>decay + קונסולידציה</td>
-<td>גיזום ידני</td>
-</tr>
-<tr>
-<td><strong>יעילות טוקנים</strong></td>
-<td>~1,900 טוקנים/session ($10/שנה)</td>
-<td>משתנה לפי אינטגרציה</td>
-<td>זיכרון core בתוך ההקשר</td>
-<td>משתנה</td>
-<td>תמחור cloud</td>
-<td>לא מצוין</td>
-<td>אין תקציב טוקנים</td>
-<td>מגובה LLM (משתנה)</td>
-<td>משתנה</td>
-<td>22K+ טוקנים ב-240 תצפיות</td>
-</tr>
-<tr>
-<td><strong>מציג בזמן אמת</strong></td>
-<td>כן (פורט 3113)</td>
-<td>dashboard ב-cloud</td>
-<td>dashboard ב-cloud</td>
-<td>UI מבוסס web</td>
-<td>dashboard ב-cloud</td>
-<td>UI web של ה-hub</td>
-<td>לא</td>
-<td>לא</td>
-<td>לא</td>
-<td>לא</td>
-</tr>
-<tr>
-<td><strong>אירוח עצמי</strong></td>
-<td>כן (ברירת מחדל)</td>
-<td>אופציונלי</td>
-<td>אופציונלי</td>
-<td>כן</td>
-<td>לא (cloud בלבד)</td>
-<td>כן (Docker)</td>
-<td>כן</td>
-<td>כן (Oracle DB)</td>
-<td>כן</td>
-<td>כן</td>
-</tr>
-</table>
+השוואה מעודכנת של מוצרים ואפשרויות פריסה, עם מקורות:
 
-<sub>הערת benchmark: רק ה-R@5 של agentmemory הוא תוצאת מדידה שלנו (LongMemEval-S, ניתנת לשכפול מ-<a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). המספרים של mem0 ו-Letta הם המספרים המתפרסמים שלהם מ-LoCoMo (dataset שונה); המספרים של MemPalace, supermemory, TencentDB (PersonaMem), ו-oracleagentmemory הם טענות שדווחו על ידי היצרן ולא שכפלנו אותן באופן עצמאי (ההרצה של oracleagentmemory השתמשה ב-GPT-5.5 מול Oracle AI Database). מוצגים זה לצד זה להערכה כללית בלבד, לא כהשוואת ראש-בראש על אותם נתונים. ספירות הכוכבים הן משוערות ומשתנות עם הזמן.</sub>
-
-**שחקנים חדשים יותר** שכדאי להכיר, מושווים בהרחבה ב-[`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| מערכת | ⭐ | זווית |
-|--------|---|-------|
-| Zep / Graphiti | 30K | גרף ידע טמפורלי; תוצאות השאילתה הטמפורלית הפרסומיות החזקות ביותר (LongMemEval 63.8%), אבל הגרף נבנה באופן אסינכרוני כך שעובדות חדשות יכולות להתעכב |
-| Cognee | 30K | בליעת מסמכים לגרף ידע (document-to-knowledge-graph), Python בלבד, נבנה לחילוץ ישויות מבני ולא ללכידת sessions |
-
-AgentMemory משלב תיעוד סשנים, היסטוריית פרויקט שניתן לחפש בה וממשק צפייה מקומי, עם עבודה ללא מפתח כבר מההפעלה הראשונה.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -788,7 +580,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 הפעילו את שרת הזיכרון: `npx -y @agentmemory/agentmemory@latest`
 
-#### Skills מובנים דרך `npx skills add` (50+ סוכנים)
+#### Skills מובנים דרך `npx skills add`
 
 agentmemory שולח 17 skills בפורמט `<dir>/SKILL.md` בסטייל Claude Code: 9 skills של פעולה שניתן להפעיל (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) ו-8 skills של עיון שהסוכן טוען לפי הצורך (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). ה-skills של העיון נושאים טבלאות נתונים שנוצרות מהמקור, כך שהן לעולם לא נסחפות (drift). ה-CLI [`skills`](https://npmjs.com/package/skills) של vercel-labs מתקין אותם אוטומטית לתוך תיקיית ה-skills המובנית של הסוכן הקורא על פני 50+ סוכנים (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, ועוד):
 
@@ -846,7 +638,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` מתקין MCP ו-hooks של לכידה בתיקיית ההתאמה האישית המשותפת. ראו [הגדרה ומגבלות של Antigravity](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` משתמש באותה תצורת MCP ו-hooks כמו גרסאות ה-IDE הנוכחיות. התקנות קיימות צריכות לרפרש עם `--force`; ראו את [הערות השדרוג](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` כותב את התצורה בשכבת המשתמש. override-ים בשכבת ה-workspace נכנסים ב-`.kiro/settings/mcp.json` לצד הקוד שלכם. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` כותב את בלוק ה-`mcpServers` הסטנדרטי. Warp גם מגלה אוטומטית skills מ-`.claude/skills/`; כשה-plugin של Claude Code מותקן, 8 ה-skills של agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) מופיעים באופן מובנה בפלטת פקודות ה-slash של Warp. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` כותב את בלוק ה-`mcpServers` הסטנדרטי. Warp גם מגלה אוטומטית skills מ-`.claude/skills/`; כשה-plugin של Claude Code מותקן, 9 ה-skills של agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) מופיעים באופן מובנה בפלטת פקודות ה-slash של Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` כותב את בלוק ה-`mcpServers` הסטנדרטי. למשתמשי ה-extension של VS Code: הדביקו את אותו בלוק דרך Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (מועדף) או `config.json` (legacy) | `agentmemory connect continue` יוצר `config.yaml` כשאין הגדרות, או מעדכן `config.json` קיים. עבור YAML קיים הוא מציג בלוק להוספה תחת `mcpServers:`, כדי לשמור הערות ועוגנים. Continue משתמש במערך ולא באובייקט. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` כותב תחת `context_servers` (המפתח של Zed, לא `mcpServers`). שרתי MCP מרוחקים אפשר לחווט במקום זאת דרך `{"url": "..."}`. |
@@ -928,7 +720,6 @@ REST משתמש ב-`3111` וממשק הצפייה ב-`3113`. השאירו אות
 |---|---|---|
 | תחזוקה | הוראות שנערכות ידנית | היסטוריית סשנים וזיכרונות עם אינדקס |
 | חיפוש | טוען הכול להקשר | BM25 + וקטור + גרף (top-K בלבד) |
-| עלות טוקנים | 22K+ ב-240 תצפיות | ~1,900 טוקנים (92% פחות) |
 | בין-סוכנים | קבצים לפי סוכן | MCP + REST (כל סוכן) |
 | תיאום | אין | leases, signals, actions, routines |
 | Observability | קריאת קבצים ידנית | מציג בזמן אמת בפורט :3113 |
@@ -941,7 +732,7 @@ REST משתמש ב-`3111` וממשק הצפייה ב-`3113`. השאירו אות
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1026,7 +817,7 @@ SessionStart hook fires
 
 כשאינדקס וקטורי מאוכלס, `mem::search` (מאחורי `memory_recall`) משתמש ב-ranker ההיברידי של BM25 + וקטור. בלי embeddings הוא משתמש ב-BM25. `smart-search` יכול גם למזג התאמות מבניות מהגרף כשנתוני גרף קיימים, גם במצב keyless. שליפת lessons רצה על אינדקס BM25 ייעודי בזיכרון במקום לסקור את כל הקורפוס בכל שאילתה. גרסאות זיכרון שהוחלפו (superseded) מוחרגות מכל נתיב שליפה; שרשרת הגרסאות שומרת את ההיסטוריה שלהן.
 
-וקטורים שורדים קריסה או force-kill. אינדקס הווקטורים נשמר ב-buckets לכל היותר כל `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 דקות). כל וקטור שנוסף או הוסר בינתיים גם נכתב מיידית ל-log קטן של pending ב-state store, וההפעלה הבאה משדרת אותו (replay) מחדש בלי לקרוא לספק ה-embedding. כל שמירה מוצלחת מרוקנת את ה-log. מסמכים שעדיין אין להם וקטור אחרי ה-replay מוטבעים (re-embedded) מחדש ברקע ב-batches של `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) עד שלא נשאר אף אחד, ו-backfill שנעצר ממשיך בהפעלה הבאה. `/agentmemory/status` והמציג מציגים את גודל ה-log הממתין ואת מצב ה-backfill. התקנות keyless לא כותבות שום דבר.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 מבצע tokenization ליוונית, קירילית, עברית, ערבית, ולטינית עם סימני הטעמה ישר מהקופסה. לזיכרונות בסינית / יפנית / קוריאנית, התקינו את ה-segmenters האופציונליים (`npm install @node-rs/jieba tiny-segmenter`) כדי לפצל רצפי CJK ל-tokens בגובה-מילה; בלעדיהם, agentmemory נופל בעדינות ל-tokenization של הרצף השלם ומדפיס רמז חד-פעמי ל-stderr.
 
@@ -1042,9 +833,9 @@ EMBEDDING_PROVIDER=local
 
 | ספק | מודל | עלות | הערות |
 |---|---|---|---|
-| **מקומי (opt-in מומלץ)** | `all-MiniLM-L6-v2` | חינמי | במכשיר עצמו אחרי הורדת המודל הראשונה, +8pp ל-recall לעומת BM25 בלבד |
+| **מקומי (opt-in מומלץ)** | `all-MiniLM-L6-v2` | חינמי | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | שכבה חינמית | 100+ שפות, 768/1536/3072 מימדים (MRL), קלט של 2048 טוקנים. מחליף את `text-embedding-004` ([הוצא משימוש, כיבוי ב-14 בינואר 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | האיכות הגבוהה ביותר |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | בתשלום | מותאם לקוד |
 | Cohere | `embed-english-v3.0` | ניסיון חינמי | כללי |
 | OpenRouter | כל מודל | משתנה | proxy מרובה-מודלים |

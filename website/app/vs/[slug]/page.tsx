@@ -72,8 +72,7 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
           </table>
         </div>
         <p className={s.note}>
-          Benchmark figures are each project&apos;s own published results. Different benchmarks, metrics and harnesses are
-          not directly comparable.
+          No competitor was run in our current evaluation. Product capabilities are sourced separately; compare scores only with matched datasets, metrics and configurations.
         </p>
 
         <h2>How they differ</h2>

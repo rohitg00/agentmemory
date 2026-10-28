@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
@@ -331,223 +329,17 @@ Ghi chú phát hành mới nhất: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmark" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Kết quả truy xuất hiện tại, định nghĩa chỉ số và các bước tái lập:
 
-### Độ chính xác Retrieval
-
-**coding-agent-life-v1** (corpus nội bộ, có thể tái lập trong sandbox)
-
-| Adapter | P@5 | R@5 | Tỷ lệ hit top-5 | Độ trễ p50 |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep baseline | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-Tỷ lệ hit top-5 đạt 100% tại **ngưỡng toán học P@5** cho corpus này (0.240, xem scorecard). Hybrid lấy được mọi gold session; grep bỏ lỡ 1 trong 2 gold ở câu truy vấn temporal đa session. Mức cải thiện nằm ở **recall + temporal**, không phải precision tổng hợp. Benchmark này nhỏ và thưa gold; LongMemEval-S lớn hơn ở dưới phân biệt tốt hơn. Phân tích chi tiết theo từng loại + ghi chú đính chính đầy đủ: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 câu hỏi)
-
-| Hệ thống | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| BM25-only fallback | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Tiết kiệm Token
-
-| Cách tiếp cận | Token/năm | Chi phí/năm |
-|---|---|---|
-| Dán toàn bộ context | 19.5M+ | Không thể (vượt window) |
-| Tóm tắt bằng LLM | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + embedding cục bộ | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Embedding model: `all-MiniLM-L6-v2` (cục bộ, miễn phí, không cần API key). Báo cáo đầy đủ: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). So sánh đối thủ: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) bao gồm agentmemory so với mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**Tái lập cục bộ:** [`eval/README.md`](../eval/README.md), một harness có thể cắm (pluggable) adapter cho LongMemEval `_s` (500 câu hỏi công khai) + `coding-agent-life-v1` (corpus nội bộ 15 session). Các adapter grep / vector / agentmemory được chấm điểm song song, xuất NDJSON, các scorecard đã công bố nằm tại [`docs/benchmarks/`](../docs/benchmarks/).
-
-**Kết hợp tốt với [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything), và [Graphify](https://github.com/safishamsi/graphify).** Index hóa code-graph, pipeline build đa agent, và các knowledge graph rộng hơn trên docs / PDF / ảnh / video. agentmemory ghi nhớ phần công việc; ba dự án này làm sáng rõ phần còn lại của context layer. Công thức + bảng định tuyến câu hỏi: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="So sánh đối thủ" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Tích hợp sẵn (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Loại</strong></td>
-<td>Engine bộ nhớ + MCP server</td>
-<td>API lớp bộ nhớ</td>
-<td>Runtime agent đầy đủ</td>
-<td>AI cá nhân</td>
-<td>API bộ nhớ + app</td>
-<td>Hub bộ nhớ nhóm (LLM proxy)</td>
-<td>Bộ nhớ vector (OSS)</td>
-<td>Engine bộ nhớ (Oracle DB)</td>
-<td>Hệ thống bộ nhớ</td>
-<td>File tĩnh</td>
-</tr>
-<tr>
-<td><strong>Retrieval R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Tự công bố</td>
-<td>PersonaMem 76% (tự công bố)</td>
-<td>~96.6% (tự công bố)</td>
-<td>94.4% (tự công bố)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Auto-capture</strong></td>
-<td>12 hooks (không cần thao tác thủ công)</td>
-<td>Gọi <code>add()</code> thủ công</td>
-<td>Agent tự sửa</td>
-<td>Thủ công</td>
-<td>Trích xuất phía API</td>
-<td>Chặn qua proxy (đổi base-URL)</td>
-<td>Thủ công</td>
-<td>Trích xuất qua API</td>
-<td>Thủ công</td>
-<td>Chỉnh sửa thủ công</td>
-</tr>
-<tr>
-<td><strong>Tìm kiếm</strong></td>
-<td>BM25 + Vector + Graph (RRF fusion)</td>
-<td>Vector + Graph</td>
-<td>Vector (lưu trữ archival)</td>
-<td>Ngữ nghĩa (semantic)</td>
-<td>Vector + RAG</td>
-<td>4 loại asset (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Chỉ Vector</td>
-<td>Vector + ngữ nghĩa</td>
-<td>Có trọng số suy giảm (decay)</td>
-<td>Nạp tất cả vào context</td>
-</tr>
-<tr>
-<td><strong>Đa agent</strong></td>
-<td>MCP + REST + lease + signal</td>
-<td>API (không điều phối)</td>
-<td>Chỉ trong runtime Letta</td>
-<td>Không</td>
-<td>Không</td>
-<td>Vai trò nhóm + asset chia sẻ</td>
-<td>Không</td>
-<td>Chỉ theo scope</td>
-<td>Chia sẻ đa agent</td>
-<td>File theo từng agent</td>
-</tr>
-<tr>
-<td><strong>Lệ thuộc framework</strong></td>
-<td>Không (bất kỳ MCP client nào)</td>
-<td>Không</td>
-<td>Cao (phải dùng Letta)</td>
-<td>Độc lập (standalone)</td>
-<td>Không</td>
-<td>Proxy chặn trước mọi lệnh gọi model</td>
-<td>Không</td>
-<td>Oracle Database</td>
-<td>Không</td>
-<td>Định dạng theo từng agent</td>
-</tr>
-<tr>
-<td><strong>Dependency bên ngoài</strong></td>
-<td>Không cần dịch vụ cơ sở dữ liệu riêng</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vector DB</td>
-<td>Nhiều</td>
-<td>Cloud được quản lý</td>
-<td>Docker stack (Core + Hub + Proxy)</td>
-<td>Vector store</td>
-<td>Oracle AI Database</td>
-<td>Không</td>
-<td>Không</td>
-</tr>
-<tr>
-<td><strong>Lifecycle bộ nhớ</strong></td>
-<td>Hợp nhất 4 tầng + suy giảm + tự quên</td>
-<td>Trích xuất bị động</td>
-<td>Do agent quản lý</td>
-<td>Thủ công</td>
-<td>Tự quên (auto-forget)</td>
-<td>Review thủ công; auto-routing đang phát triển</td>
-<td>Không</td>
-<td>Không công bố</td>
-<td>Suy giảm + hợp nhất</td>
-<td>Cắt bỏ thủ công</td>
-</tr>
-<tr>
-<td><strong>Hiệu quả token</strong></td>
-<td>~1,900 token/session ($10/năm)</td>
-<td>Thay đổi theo tích hợp</td>
-<td>Bộ nhớ lõi (core memory) nằm trong context</td>
-<td>Thay đổi</td>
-<td>Theo giá cloud</td>
-<td>Không công bố</td>
-<td>Không có ngân sách token</td>
-<td>Dựa trên LLM (thay đổi)</td>
-<td>Thay đổi</td>
-<td>22K+ token ở 240 observation</td>
-</tr>
-<tr>
-<td><strong>Viewer real-time</strong></td>
-<td>Có (port 3113)</td>
-<td>Cloud dashboard</td>
-<td>Cloud dashboard</td>
-<td>Web UI</td>
-<td>Cloud dashboard</td>
-<td>Hub web UI</td>
-<td>Không</td>
-<td>Không</td>
-<td>Không</td>
-<td>Không</td>
-</tr>
-<tr>
-<td><strong>Self-hosted</strong></td>
-<td>Có (mặc định)</td>
-<td>Tùy chọn</td>
-<td>Tùy chọn</td>
-<td>Có</td>
-<td>Không (chỉ cloud)</td>
-<td>Có (Docker)</td>
-<td>Có</td>
-<td>Có (Oracle DB)</td>
-<td>Có</td>
-<td>Có</td>
-</tr>
-</table>
+So sánh cập nhật về sản phẩm và phương án triển khai, kèm nguồn:
 
-<sub>Ghi chú benchmark: chỉ con số R@5 của agentmemory là kết quả đo đạc của chính chúng tôi (LongMemEval-S, có thể tái lập từ <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). Các số liệu của mem0 và Letta là số LoCoMo họ đã công bố (một dataset khác); các số liệu của MemPalace, supermemory, TencentDB (PersonaMem), và oracleagentmemory là các tuyên bố tự công bố từ nhà cung cấp mà chúng tôi chưa tái lập độc lập (lần chạy của oracleagentmemory dùng GPT-5.5 trên một Oracle AI Database). Chỉ hiển thị song song để ước lượng, không phải so sánh trực tiếp (head-to-head) trên cùng dữ liệu. Số lượng star chỉ là gần đúng và thay đổi theo thời gian.</sub>
-
-**Những cái tên mới** đáng để biết, được so sánh chi tiết trong [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| Hệ thống | ⭐ | Hướng tiếp cận |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Knowledge graph theo thời gian (temporal); kết quả truy vấn temporal công bố mạnh nhất (LongMemEval 63.8%), nhưng graph được xây dựng bất đồng bộ nên các fact mới có thể bị trễ |
-| Cognee | 30K | Nạp từ tài liệu sang knowledge graph, chỉ hỗ trợ Python, được xây dựng để trích xuất entity có cấu trúc hơn là để capture session |
-
-AgentMemory kết hợp ghi nhận phiên, lịch sử dự án có thể tìm kiếm và trình xem cục bộ, với chế độ không cần khóa ngay từ lần đầu.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -780,7 +572,7 @@ Hướng dẫn đầy đủ: [`integrations/hermes/`](../integrations/hermes/)
 
 Khởi động memory server: `npx -y @agentmemory/agentmemory@latest`
 
-#### Skill gốc qua `npx skills add` (50+ agent)
+#### Skill gốc qua `npx skills add`
 
 agentmemory đi kèm 17 skill theo định dạng `<dir>/SKILL.md` kiểu Claude Code: 9 skill hành động có thể gọi (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) và 8 skill tham chiếu mà agent nạp theo nhu cầu (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Các skill tham chiếu mang theo bảng dữ liệu được sinh ra từ source, nên chúng không bao giờ lệch (drift). CLI [`skills`](https://npmjs.com/package/skills) của vercel-labs tự cài chúng vào thư mục skill gốc của agent gọi nó, trên hơn 50 agent (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, và nhiều hơn nữa):
 
@@ -837,7 +629,7 @@ Entry của agentmemory là **cùng một block MCP server** trên mọi host d�
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` cài MCP và capture hook vào thư mục customization chung. Xem [thiết lập và giới hạn của Antigravity](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` dùng cùng cấu hình MCP và hook như các phiên bản IDE hiện tại. Các bản cài đặt sẵn có nên refresh bằng `--force`; xem [ghi chú upgrade](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` viết config ở cấp user. Các override ở cấp workspace nằm trong `.kiro/settings/mcp.json` cạnh code của bạn. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` viết block `mcpServers` chuẩn. Warp cũng tự phát hiện skill từ `.claude/skills/`; khi plugin Claude Code được cài, 8 skill agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) sẽ xuất hiện một cách tự nhiên trong bảng slash-command của Warp. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` viết block `mcpServers` chuẩn. Warp cũng tự phát hiện skill từ `.claude/skills/`; khi plugin Claude Code được cài, 9 skill agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) sẽ xuất hiện một cách tự nhiên trong bảng slash-command của Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` viết block `mcpServers` chuẩn. Người dùng extension VS Code: dán cùng block này qua Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (ưu tiên) hoặc `config.json` (legacy) | `agentmemory connect continue` tạo `config.yaml` nếu chưa có cấu hình hoặc cập nhật `config.json` hiện có. YAML có sẵn được giữ nguyên để bảo toàn chú thích và anchor; lệnh in khối để dán dưới `mcpServers:`. Continue dùng dạng mảng cho `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` viết dưới `context_servers` (key riêng của Zed, KHÔNG phải `mcpServers`). Các MCP server remote có thể được kết nối qua `{"url": "..."}` thay thế. |
@@ -933,7 +725,6 @@ Mọi AI coding agent đều đi kèm bộ nhớ tích hợp sẵn: Claude Code 
 |---|---|---|
 | Bảo trì | Chỉ dẫn được quản lý thủ công | Lịch sử phiên và bộ nhớ đã lập chỉ mục |
 | Tìm kiếm | Nạp tất cả vào context | BM25 + vector + graph (chỉ top-K) |
-| Chi phí token | 22K+ ở 240 observation | ~1,900 token (giảm 92%) |
 | Đa agent | File theo từng agent | MCP + REST (mọi agent) |
 | Điều phối | Không có | Lease, signal, action, routine |
 | Observability | Đọc file thủ công | Viewer real-time trên :3113 |
@@ -946,7 +737,7 @@ Mọi AI coding agent đều đi kèm bộ nhớ tích hợp sẵn: Claude Code 
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1031,7 +822,7 @@ Retrieval ba luồng (triple-stream) kết hợp ba tín hiệu:
 
 Khi vector index đã có dữ liệu, `mem::search` (đứng sau `memory_recall`) dùng ranker hybrid BM25 + vector. Khi không có embedding, nó dùng BM25. `smart-search` còn có thể fuse thêm các kết quả khớp từ graph cấu trúc khi dữ liệu graph tồn tại, kể cả ở chế độ keyless. Recall cho lesson chạy trên một BM25 index riêng trong memory thay vì quét toàn bộ corpus cho mỗi truy vấn. Các phiên bản memory đã bị supersede bị loại khỏi mọi đường recall; chuỗi version vẫn giữ lại lịch sử của chúng.
 
-Vector sống sót qua một lần crash hoặc force-kill. Vector index được lưu theo bucket, nhiều nhất là mỗi `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 phút). Mỗi vector được thêm hoặc xóa ở giữa cũng được ghi ngay vào một pending log nhỏ trong state store, và lần khởi động kế tiếp sẽ replay nó mà không cần gọi embedding provider. Mỗi lần save thành công sẽ làm trống log đó. Các document vẫn chưa có vector sau khi replay sẽ được re-embed ở nền theo từng batch `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) cho tới khi không còn document nào, và một backfill bị dừng sẽ tiếp tục ở lần khởi động kế tiếp. `/agentmemory/status` và viewer hiển thị kích thước pending log và trạng thái backfill. Bản cài keyless không ghi gì cả.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 tokenize được tiếng Hy Lạp, Cyrillic, Hebrew, Ả Rập, và Latin có dấu ngay từ đầu. Với bộ nhớ tiếng Trung / Nhật / Hàn, hãy cài thêm các segmenter tùy chọn (`npm install @node-rs/jieba tiny-segmenter`) để chia các đoạn CJK thành token ở mức từ; nếu không có chúng, agentmemory sẽ lùi nhẹ về tokenize theo cả đoạn và in ra một gợi ý một lần trên stderr.
 
@@ -1047,9 +838,9 @@ Lần cài npm thông thường đã bao gồm runtime tùy chọn `@huggingface
 
 | Provider | Model | Chi phí | Ghi chú |
 |---|---|---|---|
-| **Local (khuyến nghị opt-in)** | `all-MiniLM-L6-v2` | Miễn phí | Chạy trên máy sau lần tải model đầu tiên, +8pp recall so với chỉ dùng BM25 |
+| **Local (khuyến nghị opt-in)** | `all-MiniLM-L6-v2` | Miễn phí | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Free tier | 100+ ngôn ngữ, 768/1536/3072 chiều (MRL), input 2048 token. Thay thế `text-embedding-004` ([đã deprecated, shutdown 14/01/2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Chất lượng cao nhất |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | Trả phí | Tối ưu cho code |
 | Cohere | `embed-english-v3.0` | Free trial | Dùng chung (general purpose) |
 | OpenRouter | Bất kỳ model nào | Thay đổi | Proxy đa model |

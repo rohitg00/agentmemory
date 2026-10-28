@@ -68,8 +68,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% ریٹریول R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% کم ٹوکنز" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP ٹولز" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 خودکار ہکس" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 خارجی ڈیٹابیسز" height="38" /></picture>
@@ -333,223 +331,17 @@ agentmemory --instance 1
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="بینچ مارکس" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+موجودہ بازیافت کے نتائج، پیمانوں کی تعریفیں اور دوبارہ جانچ کے مراحل:
 
-### ریٹریول کی درستگی
-
-**coding-agent-life-v1** (اندرونی corpus، sandbox میں دوبارہ قابلِ تولید)
-
-| Adapter | P@5 | R@5 | ٹاپ-5 ہِٹ ریٹ | p50 لیٹینسی |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep بیس لائن | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-اس corpus کے لیے **P@5 ریاضیاتی حد (ceiling)** پر 100% ٹاپ-5 ہِٹ ریٹ (0.240، scorecard دیکھیں)۔ Hybrid ہر gold سیشن کو ریٹریو کرتا ہے؛ grep multi-session temporal کوئری پر 2 میں سے 1 gold مِس کرتا ہے۔ فائدہ **recall + temporal** کا ہے، مجموعی precision کا نہیں۔ یہ بینچ مارک چھوٹا اور gold-sparse ہے؛ نیچے دیا گیا بڑا LongMemEval-S بہتر فرق دکھاتا ہے۔ مکمل فی-ٹائپ بریک ڈاؤن + تصحیحی نوٹ: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md)۔
-
-**LongMemEval-S** (ICLR 2025، 500 سوالات)
-
-| سسٹم | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| BM25-only فال بیک | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### ٹوکن کی بچت
-
-| طریقہ کار | ٹوکنز/سال | لاگت/سال |
-|---|---|---|
-| مکمل context پیسٹ کرنا | 19.5M+ | ناممکن (window سے تجاوز) |
-| LLM-summarized | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + مقامی embeddings | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Embedding ماڈل: `all-MiniLM-L6-v2` (مقامی، مفت، کوئی API key نہیں)۔ مکمل رپورٹس: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md)، [`benchmark/QUALITY.md`](../benchmark/QUALITY.md)، [`benchmark/SCALE.md`](../benchmark/SCALE.md)۔ حریف موازنہ: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) جو agentmemory کا mem0، Letta، Khoj، supermemory، TencentDB Agent Memory، MemPalace، Zep/Graphiti، Cognee، Hippo سے موازنہ کرتا ہے۔
-
-**مقامی طور پر دہرائیں:** [`eval/README.md`](../eval/README.md)، LongMemEval `_s` (عوامی 500-سوالات) + `coding-agent-life-v1` (اندرونی 15-سیشن corpus) کے لیے ایک adapter-pluggable ہارنس۔ Grep / vector / agentmemory adapters ساتھ ساتھ اسکور کرتے ہیں، NDJSON آؤٹ پٹ، شائع شدہ scorecards [`docs/benchmarks/`](../docs/benchmarks/) میں آتے ہیں۔
-
-**[codegraph](https://github.com/colbymchenry/codegraph)، [Understand Anything](https://github.com/Lum1104/Understand-Anything)، اور [Graphify](https://github.com/safishamsi/graphify) کے ساتھ جوڑی بناتا ہے۔** Code-graph انڈیکسنگ، multi-agent build pipelines، اور docs / PDFs / images / videos میں وسیع نالج گرافس۔ agentmemory کام کو یاد رکھتا ہے؛ یہ تین پراجیکٹس باقی context layer کو روشن کرتے ہیں۔ Recipes + سوال-روٹنگ ٹیبل: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md)۔
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="حریفوں کے مقابلے میں" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>بلٹ-اِن (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>قسم</strong></td>
-<td>میموری انجن + MCP سرور</td>
-<td>میموری لیئر API</td>
-<td>مکمل ایجنٹ رن ٹائم</td>
-<td>ذاتی AI</td>
-<td>میموری API + ایپ</td>
-<td>ٹیم میموری ہب (LLM پراکسی)</td>
-<td>ویکٹر میموری (OSS)</td>
-<td>میموری انجن (Oracle DB)</td>
-<td>میموری سسٹم</td>
-<td>سٹیٹک فائل</td>
-</tr>
-<tr>
-<td><strong>ریٹریول R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>خود رپورٹ شدہ</td>
-<td>PersonaMem 76% (خود رپورٹ شدہ)</td>
-<td>~96.6% (خود رپورٹ شدہ)</td>
-<td>94.4% (خود رپورٹ شدہ)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>خودکار کیپچر</strong></td>
-<td>12 ہکس (کوئی دستی کام نہیں)</td>
-<td>دستی `add()` کالز</td>
-<td>ایجنٹ خود ترمیم کرتا ہے</td>
-<td>دستی</td>
-<td>API کی جانب سے استخراج</td>
-<td>پراکسی انٹرسیپشن (base-URL سویپ)</td>
-<td>دستی</td>
-<td>API استخراج</td>
-<td>دستی</td>
-<td>دستی ترمیم</td>
-</tr>
-<tr>
-<td><strong>سرچ</strong></td>
-<td>BM25 + ویکٹر + گراف (RRF فیوژن)</td>
-<td>ویکٹر + گراف</td>
-<td>ویکٹر (آرکائیول)</td>
-<td>سیمینٹک</td>
-<td>ویکٹر + RAG</td>
-<td>4 asset اقسام (Chat / Skill / Wiki / CodeGraph)</td>
-<td>صرف ویکٹر</td>
-<td>ویکٹر + سیمینٹک</td>
-<td>زوال پر مبنی وزن</td>
-<td>سب کچھ context میں لوڈ کرتا ہے</td>
-</tr>
-<tr>
-<td><strong>ملٹی-ایجنٹ</strong></td>
-<td>MCP + REST + لیز + سگنلز</td>
-<td>API (کوئی ربط نہیں)</td>
-<td>صرف Letta رن ٹائم کے اندر</td>
-<td>نہیں</td>
-<td>نہیں</td>
-<td>ٹیم کردار + مشترک asset</td>
-<td>نہیں</td>
-<td>صرف محدود دائرہ کار میں</td>
-<td>ملٹی-ایجنٹ مشترک</td>
-<td>فی-ایجنٹ فائلیں</td>
-</tr>
-<tr>
-<td><strong>فریم ورک لاک-اِن</strong></td>
-<td>کوئی نہیں (کوئی بھی MCP کلائنٹ)</td>
-<td>کوئی نہیں</td>
-<td>زیادہ (لازمی طور پر Letta استعمال کرنا ہوگا)</td>
-<td>اسٹینڈ الون</td>
-<td>کوئی نہیں</td>
-<td>ہر model کال کے سامنے پراکسی ہوتی ہے</td>
-<td>کوئی نہیں</td>
-<td>Oracle Database</td>
-<td>کوئی نہیں</td>
-<td>فی-ایجنٹ فارمیٹ</td>
-</tr>
-<tr>
-<td><strong>خارجی انحصار</strong></td>
-<td>الگ ڈیٹابیس سروس درکار نہیں</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + ویکٹر DB</td>
-<td>متعدد</td>
-<td>مینیجڈ کلاؤڈ</td>
-<td>Docker اسٹیک (Core + Hub + Proxy)</td>
-<td>ویکٹر اسٹور</td>
-<td>Oracle AI Database</td>
-<td>کوئی نہیں</td>
-<td>کوئی نہیں</td>
-</tr>
-<tr>
-<td><strong>میموری لائف سائیکل</strong></td>
-<td>4-درجاتی استحکام + زوال + خودکار فراموشی</td>
-<td>غیر فعال استخراج</td>
-<td>ایجنٹ کے زیرِ انتظام</td>
-<td>دستی</td>
-<td>خودکار فراموشی</td>
-<td>دستی جائزہ؛ auto-routing زیرِ تکمیل</td>
-<td>کوئی نہیں</td>
-<td>واضح نہیں</td>
-<td>زوال + استحکام</td>
-<td>دستی تراش</td>
-</tr>
-<tr>
-<td><strong>ٹوکن کارکردگی</strong></td>
-<td>~1,900 ٹوکنز/سیشن ($10/سال)</td>
-<td>integration کے لحاظ سے مختلف</td>
-<td>بنیادی میموری context میں</td>
-<td>مختلف ہوتا ہے</td>
-<td>کلاؤڈ قیمتیں</td>
-<td>واضح نہیں</td>
-<td>کوئی token بجٹ نہیں</td>
-<td>LLM پر مبنی (مختلف ہوتا ہے)</td>
-<td>مختلف ہوتا ہے</td>
-<td>240 obs پر 22K+ ٹوکنز</td>
-</tr>
-<tr>
-<td><strong>ریئل-ٹائم ویور</strong></td>
-<td>ہاں (پورٹ 3113)</td>
-<td>کلاؤڈ ڈیش بورڈ</td>
-<td>کلاؤڈ ڈیش بورڈ</td>
-<td>ویب UI</td>
-<td>کلاؤڈ ڈیش بورڈ</td>
-<td>ہب ویب UI</td>
-<td>نہیں</td>
-<td>نہیں</td>
-<td>نہیں</td>
-<td>نہیں</td>
-</tr>
-<tr>
-<td><strong>سیلف-ہوسٹڈ</strong></td>
-<td>ہاں (ڈیفالٹ)</td>
-<td>اختیاری</td>
-<td>اختیاری</td>
-<td>ہاں</td>
-<td>نہیں (صرف کلاؤڈ)</td>
-<td>ہاں (Docker)</td>
-<td>ہاں</td>
-<td>ہاں (Oracle DB)</td>
-<td>ہاں</td>
-<td>ہاں</td>
-</tr>
-</table>
+مصنوعات اور تنصیب کے طریقوں کا تازہ موازنہ، حوالوں کے ساتھ:
 
-<sub>بینچ مارک نوٹ: صرف agentmemory کا R@5 ہمارا اپنا پیمائش شدہ نتیجہ ہے (LongMemEval-S، <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a> سے دوبارہ قابلِ تولید)۔ mem0 اور Letta کے اعداد و شمار ان کے شائع شدہ LoCoMo نمبرز ہیں (ایک مختلف dataset)؛ MemPalace، supermemory، TencentDB (PersonaMem)، اور oracleagentmemory کے اعداد vendor کے خود رپورٹ شدہ دعوے ہیں جنہیں ہم نے آزادانہ طور پر دوبارہ تولید نہیں کیا (oracleagentmemory کا رن Oracle AI Database کے خلاف GPT-5.5 استعمال کرتا تھا)۔ محض اندازاً موازنے کے لیے ساتھ ساتھ دکھایا گیا ہے، ایک جیسے ڈیٹا پر براہِ راست مقابلہ نہیں۔ Star کی تعداد تخمینی ہے اور وقت کے ساتھ بدلتی رہتی ہے۔</sub>
-
-**نئے داخل ہونے والے** جن کے بارے میں جاننا مفید ہے، تفصیلی موازنہ [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) میں:
-
-| سسٹم | ⭐ | زاویہ |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Temporal نالج گراف؛ شائع شدہ temporal-query نتائج میں سب سے مضبوط (LongMemEval 63.8%)، لیکن گراف asynchronously بنتا ہے لہٰذا تازہ facts تاخیر سے آ سکتے ہیں |
-| Cognee | 30K | Document-to-knowledge-graph ingestion، صرف Python، structured entity extraction کے لیے بنایا گیا ہے، سیشن کیپچر کے لیے نہیں |
-
-AgentMemory سیشن capture، قابل تلاش منصوبے کی تاریخ اور مقامی ویوئر اکٹھے فراہم کرتا ہے، اور پہلی بار سے بغیر کلید کام کر سکتا ہے۔
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -782,7 +574,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 میموری سرور شروع کریں: `npx -y @agentmemory/agentmemory@latest`
 
-#### `npx skills add` کے ذریعے نیٹیو اسکلز (50+ ایجنٹس)
+#### `npx skills add` کے ذریعے نیٹیو اسکلز
 
 agentmemory 17 اسکلز کو Claude-Code طرز کے `<dir>/SKILL.md` فارمیٹ میں شپ کرتا ہے: 9 invocable ایکشن اسکلز (`remember`، `recall`، `recap`، `handoff`، `forget`، `lesson`، `commit-context`، `commit-history`، `session-history`) اور 8 reference اسکلز جنہیں ایجنٹ ضرورت پڑنے پر لوڈ کرتا ہے (`memory-discipline`، `agentmemory-mcp-tools`، `agentmemory-rest-api`، `agentmemory-config`، `agentmemory-agents`، `agentmemory-hooks`، `agentmemory-architecture`، `write-agentmemory-skill`)۔ reference اسکلز سورس سے تیار کردہ data tables رکھتی ہیں، لہٰذا یہ کبھی drift نہیں کرتیں۔ vercel-labs کا [`skills`](https://npmjs.com/package/skills) CLI انہیں calling ایجنٹ کی نیٹیو اسکل ڈائرکٹری میں 50+ ایجنٹس (Claude Code، Cursor، Cline، Continue، Droid، Warp، Codex، Antigravity، Kiro، OpenCode، Goose، Roo، Trae، Windsurf، اور مزید) میں خودکار طور پر انسٹال کرتا ہے:
 
@@ -839,7 +631,7 @@ agentmemory کا entry ہر اس host پر **ایک ہی MCP سرور بلاک**
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` مشترکہ customization ڈائرکٹری میں MCP اور capture hooks انسٹال کرتا ہے۔ دیکھیں [Antigravity سیٹ اپ اور حدود](../docs/plugins/antigravity.md)۔ |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` موجودہ IDE ورژنز جیسی ہی MCP اور hook configuration استعمال کرتا ہے۔ موجودہ انسٹالیشنز کو `--force` کے ساتھ ریفریش کرنا چاہیے؛ دیکھیں [اپ گریڈ نوٹس](../docs/plugins/antigravity.md)۔ |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` user-level کنفیگ لکھتا ہے۔ Workspace overrides آپ کے کوڈ کے ساتھ `.kiro/settings/mcp.json` میں جاتے ہیں۔ |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` معیاری `mcpServers` بلاک لکھتا ہے۔ Warp `.claude/skills/` سے اسکلز کو بھی خودکار طور پر دریافت کرتا ہے؛ ایک بار Claude Code plugin انسٹال ہونے پر 8 agentmemory اسکلز (`remember`، `recall`، `recap`، `handoff`، `forget`، `commit-context`، `commit-history`، `session-history`) Warp کے slash-command palette میں نیٹیو طور پر ظاہر ہوتی ہیں۔ |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` معیاری `mcpServers` بلاک لکھتا ہے۔ Warp `.claude/skills/` سے اسکلز کو بھی خودکار طور پر دریافت کرتا ہے؛ ایک بار Claude Code plugin انسٹال ہونے پر 9 agentmemory اسکلز (`remember`، `recall`، `recap`، `handoff`، `forget`، `commit-context`، `commit-history`، `session-history`) Warp کے slash-command palette میں نیٹیو طور پر ظاہر ہوتی ہیں۔ |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` معیاری `mcpServers` بلاک لکھتا ہے۔ VS Code extension صارفین: وہی بلاک Cline Settings → MCP Servers → Edit JSON کے ذریعے پیسٹ کریں۔ |
 | **Continue.dev** | `~/.continue/config.yaml` (ترجیحی) یا `config.json` (legacy) | `agentmemory connect continue` ترتیب نہ ہونے پر `config.yaml` بناتا ہے یا موجودہ `config.json` اپ ڈیٹ کرتا ہے۔ موجودہ YAML کے comments اور anchors محفوظ رکھنے کے لیے اسے تبدیل نہیں کرتا، بلکہ `mcpServers:` کے نیچے چسپاں کرنے کا بلاک دکھاتا ہے۔ Continue کا `mcpServers` ایک array ہے۔ |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` `context_servers` کے تحت لکھتا ہے (Zed کی اپنی key، `mcpServers` نہیں)۔ ریموٹ MCP سرورز کو بجائے `{"url": "..."}` کے ذریعے جوڑا جا سکتا ہے۔ |
@@ -930,7 +722,6 @@ Session 2: "Now add rate limiting"
 |---|---|---|
 | دیکھ بھال | ہاتھ سے ترتیب دی گئی ہدایات | انڈیکس شدہ سیشن کی تاریخ اور میموری |
 | سرچ | سب کچھ context میں لوڈ کرتا ہے | BM25 + ویکٹر + گراف (صرف top-K) |
-| ٹوکن لاگت | 240 observations پر 22K+ | ~1,900 ٹوکنز (92% کم) |
 | کراس-ایجنٹ | فی-ایجنٹ فائلیں | MCP + REST (کوئی بھی ایجنٹ) |
 | کوآرڈینیشن | کوئی نہیں | Leases، سگنلز، actions، routines |
 | Observability | دستی طور پر فائلیں پڑھنا | :3113 پر ریئل-ٹائم ویور |
@@ -943,7 +734,7 @@ Session 2: "Now add rate limiting"
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1028,7 +819,7 @@ Reciprocal Rank Fusion (RRF، k=60) کے ساتھ فیوز کیا گیا اور 
 
 جب ویکٹر index پاپولیٹڈ ہو، `mem::search` (`memory_recall` کے پیچھے) hybrid BM25 + vector ranker استعمال کرتا ہے۔ embeddings کے بغیر یہ BM25 استعمال کرتا ہے۔ `smart-search` گراف ڈیٹا موجود ہونے پر اضافی طور پر structural graph matches بھی فیوز کر سکتا ہے۔ Lesson recall ہر کوئری پر پورے corpus کو اسکین کرنے کے بجائے ایک وقف شدہ in-memory BM25 index پر چلتا ہے۔ سپرسیڈ شدہ میموری ورژنز ہر recall راستے سے خارج ہوتے ہیں؛ version chain ان کی ہسٹری رکھتی ہے۔
 
-ویکٹرز کریش یا force-kill سے بچ جاتے ہیں۔ ویکٹر index کم از کم ہر `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 منٹ) بعد buckets میں محفوظ ہوتا ہے۔ اس دوران شامل یا ہٹایا گیا ہر ویکٹر state store میں ایک چھوٹے pending log میں فوراً لکھ دیا جاتا ہے، اور اگلا اسٹارٹ اسے embedding provider کو کال کیے بغیر replay کرتا ہے۔ ہر کامیاب save لاگ کو خالی کر دیتا ہے۔ وہ documents جن کا replay کے بعد بھی کوئی ویکٹر نہیں ہوتا انہیں پسِ منظر میں `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) کے batches میں دوبارہ embed کیا جاتا ہے جب تک کوئی باقی نہ رہے، اور رکا ہوا backfill اگلے اسٹارٹ پر جاری رہتا ہے۔ `/agentmemory/status` اور ویور pending log کا سائز اور backfill اسٹیٹس دکھاتے ہیں۔ Keyless انسٹالز کچھ نہیں لکھتے۔
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 بذاتِ خود یونانی، سیریلک، عبرانی، عربی، اور accented Latin کو ٹوکنائز کرتا ہے۔ چینی / جاپانی / کوریائی میموریز کے لیے، CJK runs کو word-level tokens میں تقسیم کرنے کے لیے اختیاری segmenters (`npm install @node-rs/jieba tiny-segmenter`) انسٹال کریں؛ ان کے بغیر، agentmemory نرمی سے whole-run tokenization پر fall ہو جاتا ہے اور stderr پر ایک بار اشارہ پرنٹ کرتا ہے۔
 
@@ -1044,9 +835,9 @@ EMBEDDING_PROVIDER=local
 
 | Provider | ماڈل | لاگت | نوٹس |
 |---|---|---|---|
-| **Local (تجویز کردہ opt-in)** | `all-MiniLM-L6-v2` | مفت | پہلے ماڈل ڈاؤن لوڈ کے بعد آن-ڈیوائس، صرف-BM25 کے مقابلے میں +8pp recall |
+| **Local (تجویز کردہ opt-in)** | `all-MiniLM-L6-v2` | مفت | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | مفت ٹیئر | 100+ زبانیں، 768/1536/3072 dims (MRL)، 2048-ٹوکن input۔ `text-embedding-004` کی جگہ لیتا ہے ([deprecated، shutdown Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | بہترین کوالٹی |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | ادا شدہ (Paid) | کوڈ کے لیے optimized |
 | Cohere | `embed-english-v3.0` | مفت trial | عمومی مقصد |
 | OpenRouter | کوئی بھی ماڈل | مختلف ہوتا ہے | Multi-model پراکسی |

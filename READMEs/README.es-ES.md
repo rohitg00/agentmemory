@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% de recuperación R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% menos tokens" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 tools MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks automáticos" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 bases de datos externas" height="38" /></picture>
@@ -331,223 +329,17 @@ Notas de la última release: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Resultados actuales de recuperación, definiciones de métricas y pasos para reproducirlos:
 
-### Precisión de recuperación
-
-**coding-agent-life-v1** (corpus propio, reproducible en sandbox)
-
-| Adaptador | P@5 | R@5 | Tasa de aciertos top-5 | Latencia p50 |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| baseline grep | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-Tasa de aciertos top-5 del 100% en el **techo matemático de P@5** para este corpus (0.240, ver scorecard). Hybrid recupera todas las sesiones gold; grep falla 1 de 2 gold en la consulta temporal multi-sesión. La mejora es **recall + temporal**, no precisión agregada. Este benchmark es pequeño y escaso en gold; el LongMemEval-S más grande de abajo diferencia mejor. Desglose completo por tipo + nota de corrección: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 preguntas)
-
-| Sistema | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| Fallback solo BM25 | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Ahorro de tokens
-
-| Enfoque | Tokens/año | Coste/año |
-|---|---|---|
-| Pegar el contexto completo | 19.5M+ | Imposible (excede la ventana) |
-| Resumido por LLM | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + embeddings locales | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Modelo de embedding: `all-MiniLM-L6-v2` (local, gratis, sin API key). Informes completos: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Comparativa con competidores: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md), que cubre agentmemory frente a mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**Reprodúcelo en local:** [`eval/README.md`](../eval/README.md), un harness con adaptadores intercambiables para LongMemEval `_s` (500 preguntas públicas) + `coding-agent-life-v1` (corpus propio de 15 sesiones). Los adaptadores grep / vector / agentmemory puntúan uno junto al otro, salida NDJSON, los scorecards publicados aterrizan en [`docs/benchmarks/`](../docs/benchmarks/).
-
-**Funciona muy bien con [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything) y [Graphify](https://github.com/safishamsi/graphify).** Indexado de grafos de código, pipelines de build multiagente y grafos de conocimiento más amplios sobre documentos / PDFs / imágenes / vídeos. agentmemory recuerda el trabajo; esos tres proyectos iluminan el resto de la capa de contexto. Recetas y tabla de enrutamiento por pregunta: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="Comparativa" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Integrada (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Tipo</strong></td>
-<td>Motor de memoria + servidor MCP</td>
-<td>API de capa de memoria</td>
-<td>Runtime de agente completo</td>
-<td>IA personal</td>
-<td>API de memoria + app</td>
-<td>Hub de memoria de equipo (proxy LLM)</td>
-<td>Memoria vectorial (OSS)</td>
-<td>Motor de memoria (Oracle DB)</td>
-<td>Sistema de memoria</td>
-<td>Fichero estático</td>
-</tr>
-<tr>
-<td><strong>R@5 de recuperación</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Autoinformado</td>
-<td>PersonaMem 76% (autoinformado)</td>
-<td>~96.6% (autoinformado)</td>
-<td>94.4% (autoinformado)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Captura automática</strong></td>
-<td>12 hooks (esfuerzo manual cero)</td>
-<td>Llamadas manuales a <code>add()</code></td>
-<td>Autoedición por el agente</td>
-<td>Manual</td>
-<td>Extracción del lado de la API</td>
-<td>Intercepción por proxy (cambio de base-URL)</td>
-<td>Manual</td>
-<td>Extracción por API</td>
-<td>Manual</td>
-<td>Edición manual</td>
-</tr>
-<tr>
-<td><strong>Búsqueda</strong></td>
-<td>BM25 + Vector + Graph (fusión RRF)</td>
-<td>Vector + Graph</td>
-<td>Vector (archival)</td>
-<td>Semántica</td>
-<td>Vector + RAG</td>
-<td>4 tipos de asset (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Solo vector</td>
-<td>Vector + semántica</td>
-<td>Ponderada por decaimiento</td>
-<td>Carga todo en el contexto</td>
-</tr>
-<tr>
-<td><strong>Multiagente</strong></td>
-<td>MCP + REST + leases + signals</td>
-<td>API (sin coordinación)</td>
-<td>Solo dentro del runtime de Letta</td>
-<td>No</td>
-<td>No</td>
-<td>Roles de equipo + assets compartidos</td>
-<td>No</td>
-<td>Solo con scope</td>
-<td>Compartido multiagente</td>
-<td>Ficheros por agente</td>
-</tr>
-<tr>
-<td><strong>Lock-in de framework</strong></td>
-<td>Ninguno (cualquier cliente MCP)</td>
-<td>Ninguno</td>
-<td>Alto (debes usar Letta)</td>
-<td>Standalone</td>
-<td>Ninguno</td>
-<td>Un proxy antepone cada llamada al modelo</td>
-<td>Ninguno</td>
-<td>Oracle Database</td>
-<td>Ninguno</td>
-<td>Formato por agente</td>
-</tr>
-<tr>
-<td><strong>Dependencias externas</strong></td>
-<td>No necesita un servicio de base de datos separado</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + BD vectorial</td>
-<td>Varias</td>
-<td>Nube gestionada</td>
-<td>Stack Docker (Core + Hub + Proxy)</td>
-<td>Vector store</td>
-<td>Oracle AI Database</td>
-<td>Ninguna</td>
-<td>Ninguna</td>
-</tr>
-<tr>
-<td><strong>Ciclo de vida de la memoria</strong></td>
-<td>Consolidación de 4 niveles + decaimiento + auto-olvido</td>
-<td>Extracción pasiva</td>
-<td>Gestionado por el agente</td>
-<td>Manual</td>
-<td>Auto-olvido</td>
-<td>Revisión manual; auto-enrutado en progreso</td>
-<td>Ninguno</td>
-<td>No especificado</td>
-<td>Decaimiento + consolidación</td>
-<td>Poda manual</td>
-</tr>
-<tr>
-<td><strong>Eficiencia de tokens</strong></td>
-<td>~1,900 tokens/sesión ($10/año)</td>
-<td>Varía según la integración</td>
-<td>Memoria core en el contexto</td>
-<td>Varía</td>
-<td>Precios de nube</td>
-<td>No especificado</td>
-<td>Sin presupuesto de tokens</td>
-<td>Respaldado por LLM (varía)</td>
-<td>Varía</td>
-<td>22K+ tokens con 240 obs</td>
-</tr>
-<tr>
-<td><strong>Visor en tiempo real</strong></td>
-<td>Sí (puerto 3113)</td>
-<td>Dashboard en la nube</td>
-<td>Dashboard en la nube</td>
-<td>UI web</td>
-<td>Dashboard en la nube</td>
-<td>UI web del hub</td>
-<td>No</td>
-<td>No</td>
-<td>No</td>
-<td>No</td>
-</tr>
-<tr>
-<td><strong>Self-hosted</strong></td>
-<td>Sí (por defecto)</td>
-<td>Opcional</td>
-<td>Opcional</td>
-<td>Sí</td>
-<td>No (solo nube)</td>
-<td>Sí (Docker)</td>
-<td>Sí</td>
-<td>Sí (Oracle DB)</td>
-<td>Sí</td>
-<td>Sí</td>
-</tr>
-</table>
+Comparación actualizada de productos y opciones de despliegue, con fuentes:
 
-<sub>Nota de benchmark: solo el R@5 de agentmemory es un resultado medido por nosotros (LongMemEval-S, reproducible desde <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). Las cifras de mem0 y Letta son sus números publicados de LoCoMo (un dataset distinto); las cifras de MemPalace, supermemory, TencentDB (PersonaMem) y oracleagentmemory son afirmaciones autoinformadas por el proveedor que no hemos reproducido de forma independiente (la ejecución de oracleagentmemory usó GPT-5.5 contra una Oracle AI Database). Se muestran una junto a otra solo a modo orientativo, no como un cara a cara sobre datos idénticos. Los conteos de estrellas son aproximados y varían con el tiempo.</sub>
-
-**Nuevos entrantes** que vale la pena conocer, comparados en profundidad en [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| Sistema | ⭐ | Enfoque |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Grafo de conocimiento temporal; los resultados publicados más fuertes en consultas temporales (LongMemEval 63.8%), pero el grafo se construye de forma asíncrona, así que los hechos recientes pueden tardar en aparecer |
-| Cognee | 30K | Ingesta de documento a grafo de conocimiento, solo Python, construido para extracción estructurada de entidades en lugar de captura de sesiones |
-
-AgentMemory combina captura desde agentes de programación, historial de proyecto consultable y un visor local. Puedes usarlo sin clave desde el primer inicio.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -779,7 +571,7 @@ Guía completa: [`integrations/hermes/`](../integrations/hermes/)
 
 Arranca el servidor de memoria: `npx -y @agentmemory/agentmemory@latest`
 
-#### Skills nativas vía `npx skills add` (50+ agentes)
+#### Skills nativas vía `npx skills add`
 
 agentmemory incluye 17 skills en el formato `<dir>/SKILL.md` al estilo de Claude Code: 9 skills de acción invocables (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) y 8 skills de referencia que el agente carga bajo demanda (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Las skills de referencia llevan tablas de datos generadas desde el código fuente, así que nunca se desincronizan. La CLI [`skills`](https://npmjs.com/package/skills) de vercel-labs las auto-instala en el directorio de skills nativo del agente que la invoca en 50+ agentes (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf y más):
 
@@ -836,7 +628,7 @@ La entrada de agentmemory es el **mismo bloque de servidor MCP** en todos los ho
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` instala el MCP y los hooks de captura en el directorio de personalización compartido. Consulta [configuración y límites de Antigravity](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` usa la misma configuración de MCP y hooks que las versiones actuales del IDE. Las instalaciones existentes deben actualizar con `--force`; consulta las [notas de actualización](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` escribe la configuración a nivel de usuario. Los overrides de workspace van en `.kiro/settings/mcp.json` junto a tu código. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` escribe el bloque `mcpServers` estándar. Warp también auto-descubre skills desde `.claude/skills/`; una vez instalado el plugin de Claude Code, las 8 skills de agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) aparecen de forma nativa en la paleta de slash commands de Warp. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` escribe el bloque `mcpServers` estándar. Warp también auto-descubre skills desde `.claude/skills/`; una vez instalado el plugin de Claude Code, las 9 skills de agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) aparecen de forma nativa en la paleta de slash commands de Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` escribe el bloque `mcpServers` estándar. Usuarios de la extensión de VS Code: pega el mismo bloque vía Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferido) o `config.json` (legacy) | `agentmemory connect continue` crea `config.yaml` si falta o modifica el `config.json` existente. Si ya existe YAML, muestra el bloque que debes añadir a `mcpServers:` para conservar comentarios y anclas. Continue usa un array, no un objeto. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` escribe bajo `context_servers` (la clave de Zed, NO `mcpServers`). Los servidores MCP remotos se pueden conectar en su lugar vía `{"url": "..."}`. |
@@ -927,7 +719,6 @@ Todo agente de codificación con IA viene con memoria integrada: Claude Code tie
 |---|---|---|
 | Mantenimiento | Instrucciones mantenidas manualmente | Historial de sesiones y recuerdos indexados |
 | Búsqueda | Carga todo en contexto | BM25 + vector + graph (solo top-K) |
-| Coste en tokens | 22K+ con 240 observaciones | ~1,900 tokens (92% menos) |
 | Cross-agent | Ficheros por agente | MCP + REST (cualquier agente) |
 | Coordinación | Ninguna | Leases, signals, actions, routines |
 | Observabilidad | Lectura manual de ficheros | Visor en tiempo real en :3113 |
@@ -940,7 +731,7 @@ Todo agente de codificación con IA viene con memoria integrada: Claude Code tie
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1025,7 +816,7 @@ Fusionado con Reciprocal Rank Fusion (RRF, k=60) y diversificado por sesión (m�
 
 Cuando el índice vectorial está poblado, `mem::search` (detrás de `memory_recall`) usa el ranker híbrido BM25 + vector. Sin embeddings usa BM25. `smart-search` además puede fusionar coincidencias estructurales del grafo cuando existen datos de grafo, incluso en modo sin claves. El recall de lecciones corre sobre un índice BM25 in-memory dedicado en lugar de escanear todo el corpus en cada consulta. Las versiones de memoria reemplazadas quedan excluidas de todas las rutas de recall; la cadena de versiones conserva su historial.
 
-Los vectores sobreviven a un crash o un force-kill. El índice vectorial se guarda en buckets como máximo cada `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 minutos). Cada vector añadido o eliminado entretanto también se escribe de inmediato en un pequeño log pendiente en el state store, y el siguiente arranque lo reproduce sin llamar al proveedor de embeddings. Cada guardado exitoso vacía el log. Los documentos que siguen sin vector tras la reproducción se re-embeben en segundo plano en lotes de `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) hasta que no quede ninguno, y un backfill que se detiene continúa en el siguiente arranque. `/agentmemory/status` y el visor muestran el tamaño del log pendiente y el estado del backfill. Las instalaciones sin claves no escriben nada.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 tokeniza griego, cirílico, hebreo, árabe y latín con tildes de serie. Para memorias en chino / japonés / coreano, instala los segmentadores opcionales (`npm install @node-rs/jieba tiny-segmenter`) para partir los runs CJK en tokens a nivel de palabra; sin ellos, agentmemory hace soft-fallback a tokenización por run completo y muestra una pista única en stderr.
 
@@ -1041,9 +832,9 @@ La instalación npm normal incluye el runtime opcional `@huggingface/transformer
 
 | Proveedor | Modelo | Coste | Notas |
 |---|---|---|---|
-| **Local (opt-in recomendado)** | `all-MiniLM-L6-v2` | Gratis | En local tras la primera descarga del modelo, +8pp de recall sobre BM25-only |
+| **Local (opt-in recomendado)** | `all-MiniLM-L6-v2` | Gratis | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Free tier | 100+ idiomas, 768/1536/3072 dims (MRL), entrada de 2048 tokens. Sustituye a `text-embedding-004` ([deprecado, cierre el 14 ene 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Máxima calidad |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | De pago | Optimizado para código |
 | Cohere | `embed-english-v3.0` | Trial gratis | Uso general |
 | OpenRouter | Cualquier modelo | Varía | Proxy multi-modelo |

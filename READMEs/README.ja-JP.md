@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="検索 R@5 95.2%" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="トークン 92% 削減" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP ツール" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 自動 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="外部 DB 0 個" height="38" /></picture>
@@ -331,223 +329,17 @@ agentmemory --instance 1
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+最新の検索評価結果、指標の定義、再現手順：
 
-### 検索精度
-
-**coding-agent-life-v1**(社内コーパス、サンドボックスで再現可能)
-
-| アダプタ | P@5 | R@5 | Top-5 ヒット率 | p50 レイテンシ |
-|---|---|---|---|---|
-| **agentmemory ハイブリッド** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep ベースライン | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-このコーパスの **P@5 の数学的上限**(0.240、スコアカード参照)で Top-5 ヒット率 100% を達成。ハイブリッドはすべてのゴールドセッションを取得しますが、grep は複数セッションにわたる時系列クエリでゴールドの 2 件中 1 件を取りこぼします。向上しているのは**リコール + 時系列性**であり、集計精度ではありません。このベンチマークは小規模でゴールドが少なく、下の、より大きな LongMemEval-S のほうがより明確に差を示します。種類別の詳細な内訳と補正の注記: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md)。
-
-**LongMemEval-S**(ICLR 2025、500 問)
-
-| システム | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| BM25 のみフォールバック | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### トークン削減
-
-| アプローチ | トークン/年 | コスト/年 |
-|---|---|---|
-| フルコンテキストを貼り付け | 19.5M+ | 不可能(ウィンドウを超過) |
-| LLM による要約 | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + ローカル埋め込み | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> 埋め込みモデル: `all-MiniLM-L6-v2`(ローカル、無料、API キー不要)。完全なレポート: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md)、[`benchmark/QUALITY.md`](../benchmark/QUALITY.md)、[`benchmark/SCALE.md`](../benchmark/SCALE.md)。競合比較: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) では agentmemory と mem0、Letta、Khoj、supermemory、TencentDB Agent Memory、MemPalace、Zep/Graphiti、Cognee、Hippo を比較しています。
-
-**ローカルで再現する:** [`eval/README.md`](../eval/README.md) は LongMemEval `_s`(公開 500 問)と `coding-agent-life-v1`(社内 15 セッションのコーパス)向けのアダプタ差し替え可能なハーネスです。grep / ベクトル / agentmemory の各アダプタを横並びでスコアリングし、NDJSON を出力し、公開済みのスコアカードは [`docs/benchmarks/`](../docs/benchmarks/) に置かれます。
-
-**[codegraph](https://github.com/colbymchenry/codegraph)、[Understand Anything](https://github.com/Lum1104/Understand-Anything)、[Graphify](https://github.com/safishamsi/graphify) と組み合わせる。** コードグラフのインデックス化、マルチエージェントのビルドパイプライン、ドキュメント / PDF / 画像 / 動画をまたぐより広いナレッジグラフ。agentmemory は作業内容を記憶し、この 3 つのプロジェクトはコンテキスト層の残りの部分を照らします。レシピと質問のルーティング表: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md)。
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="vs Competitors" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>組み込み (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>種別</strong></td>
-<td>メモリエンジン + MCP サーバー</td>
-<td>メモリレイヤー API</td>
-<td>フルエージェントランタイム</td>
-<td>パーソナル AI</td>
-<td>メモリ API + アプリ</td>
-<td>チームメモリハブ(LLM プロキシ)</td>
-<td>ベクトルメモリ(OSS)</td>
-<td>メモリエンジン(Oracle DB)</td>
-<td>メモリシステム</td>
-<td>静的ファイル</td>
-</tr>
-<tr>
-<td><strong>検索 R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>自己申告</td>
-<td>PersonaMem 76%(自己申告)</td>
-<td>~96.6%(自己申告)</td>
-<td>94.4%(自己申告)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>自動キャプチャ</strong></td>
-<td>12 hooks(手動作業ゼロ)</td>
-<td>手動の <code>add()</code> 呼び出し</td>
-<td>エージェントが自分で編集</td>
-<td>手動</td>
-<td>API 側での抽出</td>
-<td>プロキシ横取り(base-URL 差し替え)</td>
-<td>手動</td>
-<td>API 抽出</td>
-<td>手動</td>
-<td>手動編集</td>
-</tr>
-<tr>
-<td><strong>検索</strong></td>
-<td>BM25 + ベクトル + グラフ(RRF 融合)</td>
-<td>ベクトル + グラフ</td>
-<td>ベクトル(アーカイブ)</td>
-<td>セマンティック</td>
-<td>ベクトル + RAG</td>
-<td>4 種のアセット(Chat / Skill / Wiki / CodeGraph)</td>
-<td>ベクトルのみ</td>
-<td>ベクトル + セマンティック</td>
-<td>減衰重み付け</td>
-<td>すべてをコンテキストにロード</td>
-</tr>
-<tr>
-<td><strong>マルチエージェント</strong></td>
-<td>MCP + REST + リース + シグナル</td>
-<td>API(調整なし)</td>
-<td>Letta ランタイム内のみ</td>
-<td>なし</td>
-<td>なし</td>
-<td>チームロール + 共有アセット</td>
-<td>なし</td>
-<td>スコープのみ</td>
-<td>マルチエージェント共有</td>
-<td>エージェントごとのファイル</td>
-</tr>
-<tr>
-<td><strong>フレームワークロックイン</strong></td>
-<td>なし(任意の MCP クライアント)</td>
-<td>なし</td>
-<td>高(Letta 必須)</td>
-<td>スタンドアロン</td>
-<td>なし</td>
-<td>プロキシがすべてのモデル呼び出しを仲介</td>
-<td>なし</td>
-<td>Oracle Database</td>
-<td>なし</td>
-<td>エージェントごとのフォーマット</td>
-</tr>
-<tr>
-<td><strong>外部依存</strong></td>
-<td>別のデータベースサービスは不要</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + ベクトル DB</td>
-<td>複数</td>
-<td>マネージドクラウド</td>
-<td>Docker スタック(Core + Hub + Proxy)</td>
-<td>ベクトルストア</td>
-<td>Oracle AI Database</td>
-<td>なし</td>
-<td>なし</td>
-</tr>
-<tr>
-<td><strong>メモリライフサイクル</strong></td>
-<td>4 層統合 + 減衰 + 自動忘却</td>
-<td>受動的抽出</td>
-<td>エージェント管理</td>
-<td>手動</td>
-<td>自動忘却</td>
-<td>手動レビュー(自動ルーティングは開発中)</td>
-<td>なし</td>
-<td>記載なし</td>
-<td>減衰 + 統合</td>
-<td>手動プルーニング</td>
-</tr>
-<tr>
-<td><strong>トークン効率</strong></td>
-<td>~1,900 tokens/セッション ($10/年)</td>
-<td>統合方法による</td>
-<td>コアメモリがコンテキスト内</td>
-<td>場合による</td>
-<td>クラウド価格</td>
-<td>記載なし</td>
-<td>トークン予算なし</td>
-<td>LLM ベース(場合による)</td>
-<td>場合による</td>
-<td>240 観測で 22K+ tokens</td>
-</tr>
-<tr>
-<td><strong>リアルタイムビューワー</strong></td>
-<td>あり(ポート 3113)</td>
-<td>クラウドダッシュボード</td>
-<td>クラウドダッシュボード</td>
-<td>Web UI</td>
-<td>クラウドダッシュボード</td>
-<td>Hub の Web UI</td>
-<td>なし</td>
-<td>なし</td>
-<td>なし</td>
-<td>なし</td>
-</tr>
-<tr>
-<td><strong>セルフホスト</strong></td>
-<td>あり(デフォルト)</td>
-<td>オプション</td>
-<td>オプション</td>
-<td>あり</td>
-<td>なし(クラウドのみ)</td>
-<td>あり(Docker)</td>
-<td>あり</td>
-<td>あり(Oracle DB)</td>
-<td>あり</td>
-<td>あり</td>
-</tr>
-</table>
+製品と導入方法の最新比較（出典付き）：
 
-<sub>ベンチマークに関する注記: 自社で計測した結果は agentmemory の R@5 のみです(LongMemEval-S、<a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a> から再現可能)。mem0 と Letta の数値は各社が公表した LoCoMo の数値(別のデータセット)です。MemPalace、supermemory、TencentDB(PersonaMem)、oracleagentmemory の数値はベンダーの自己申告で、当方では独立に再現していません(oracleagentmemory の実行は Oracle AI Database に対して GPT-5.5 を使用しています)。並べて示しているのはあくまで目安であり、同一データでの直接対決ではありません。スター数は概数で、時間とともに変動します。</sub>
-
-**知っておく価値のある新顔**で、[`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) で詳しく比較しています:
-
-| システム | ⭐ | 切り口 |
-|--------|---|-------|
-| Zep / Graphiti | 30K | 時系列ナレッジグラフ。公表されている時系列クエリの結果としては最強(LongMemEval 63.8%)だが、グラフ構築が非同期のため新しい事実の反映が遅れることがある |
-| Cognee | 30K | ドキュメントからナレッジグラフへの取り込み。Python のみで、セッションキャプチャではなく構造化エンティティ抽出のために作られている |
-
-AgentMemory はセッションのキャプチャ、検索可能なプロジェクト履歴、ローカルビューアーを組み合わせ、初回からキーレスで使えます。
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -780,7 +572,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 メモリサーバーを起動: `npx -y @agentmemory/agentmemory@latest`
 
-#### `npx skills add` によるネイティブ skills(50+ エージェント)
+#### `npx skills add` によるネイティブ skills
 
 agentmemory は Claude Code スタイルの `<dir>/SKILL.md` フォーマットで 17 個の skills を同梱しています: 呼び出し可能な 9 つのアクション skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`lesson`、`commit-context`、`commit-history`、`session-history`)と、エージェントがオンデマンドで読み込む 8 個のリファレンス skills(`memory-discipline`、`agentmemory-mcp-tools`、`agentmemory-rest-api`、`agentmemory-config`、`agentmemory-agents`、`agentmemory-hooks`、`agentmemory-architecture`、`write-agentmemory-skill`)です。リファレンス skills はソースから生成されたデータ表を含むため、決してドリフトしません。vercel-labs による [`skills`](https://npmjs.com/package/skills) CLI が、呼び出し元エージェントのネイティブ skill ディレクトリへ 50 以上のエージェント(Claude Code、Cursor、Cline、Continue、Droid、Warp、Codex、Antigravity、Kiro、OpenCode、Goose、Roo、Trae、Windsurf など)にわたって自動インストールします:
 
@@ -837,7 +629,7 @@ agentmemory のエントリは、`mcpServers` の形式を使うすべてのホ�
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` が共有のカスタマイズディレクトリに MCP とキャプチャ hooks をインストールします。[Antigravity のセットアップと制限](../docs/plugins/antigravity.md)を参照。 |
 | **Antigravity CLI**(`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` は現在の IDE バージョンと同じ MCP と hook の設定を使います。既存のインストールは `--force` で更新してください。[アップグレードノート](../docs/plugins/antigravity.md)を参照。 |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` がユーザーレベルの設定を書き込みます。ワークスペース単位の上書きは、コードの隣にある `.kiro/settings/mcp.json` に書いてください。 |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` が標準の `mcpServers` ブロックを書き込みます。Warp は `.claude/skills/` からも skills を自動検出します。Claude Code プラグインをインストールすれば、8 つの agentmemory skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`commit-context`、`commit-history`、`session-history`)が Warp のスラッシュコマンドパレットにネイティブで表示されます。 |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` が標準の `mcpServers` ブロックを書き込みます。Warp は `.claude/skills/` からも skills を自動検出します。Claude Code プラグインをインストールすれば、9 つの agentmemory skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`commit-context`、`commit-history`、`session-history`)が Warp のスラッシュコマンドパレットにネイティブで表示されます。 |
 | **Cline(CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` が標準の `mcpServers` ブロックを書き込みます。VS Code 拡張を使う場合は、Cline Settings → MCP Servers → Edit JSON に同じブロックを貼り付けてください。 |
 | **Continue.dev** | `~/.continue/config.yaml`(推奨)または `config.json`(レガシー) | `agentmemory connect continue` は設定がなければ `config.yaml` を作成し、既存の `config.json` は更新します。既存の YAML はコメントとアンカーを維持するため書き換えず、`mcpServers:` に貼るブロックを表示します。Continue の `mcpServers` は配列です。 |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` は `context_servers`(`mcpServers` ではなく Zed 独自のキー)の下に書き込みます。リモート MCP サーバーは、代わりに `{"url": "..."}` で配線できます。 |
@@ -933,7 +725,6 @@ Session 2: "Now add rate limiting"
 |---|---|---|
 | 保守 | 手動で管理する指示 | インデックス化されたセッション履歴とメモリ |
 | 検索 | すべてをコンテキストにロード | BM25 + ベクトル + グラフ(top-K のみ) |
-| トークンコスト | 240 観測で 22K+ | ~1,900 トークン(92% 削減) |
 | クロスエージェント | エージェントごとのファイル | MCP + REST(任意のエージェント) |
 | 調整 | なし | リース、シグナル、アクション、ルーチン |
 | 可観測性 | 手動でファイルを読む | ポート 3113 のリアルタイムビューワー |
@@ -946,7 +737,7 @@ Session 2: "Now add rate limiting"
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1031,7 +822,7 @@ Reciprocal Rank Fusion(RRF、k=60)で融合し、セッションごとに多様�
 
 ベクトルインデックスが構築されている場合、`mem::search`(`memory_recall` の背後)はハイブリッドな BM25 + ベクトルランカーを使います。埋め込みがない場合は BM25 を使います。`smart-search` は、キーレスモードでも、グラフデータが存在する場合は構造的なグラフマッチをさらに融合できます。レッスンのリコールは、クエリごとにコーパス全体をスキャンするのではなく、専用のインメモリ BM25 インデックス上で動作します。上書きされたメモリバージョンはすべてのリコール経路から除外されます。バージョンチェーンがその履歴を保持します。
 
-ベクトルはクラッシュや強制終了を生き延びます。ベクトルインデックスは、少なくとも `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS`(10 分)ごとにバケット単位で保存されます。その間に追加・削除されたベクトルはすべて、ステートストア内の小さな保留ログにも即座に書き込まれ、次回起動時にそれが埋め込みプロバイダーを呼び出さずに再生されます。保存が成功するたびにそのログは空になります。再生後もベクトルを持たないドキュメントは、何も残らなくなるまで `AGENTMEMORY_VECTOR_BACKFILL_MAX`(500)件のバッチでバックグラウンドで再埋め込みされ、中断されたバックフィルは次回起動時に続行されます。`/agentmemory/status` とビューワーは、保留ログのサイズとバックフィルの状態を表示します。キーレスインストールは何も書き込みません。
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 は、ギリシャ語、キリル文字、ヘブライ語、アラビア語、アクセント付きラテン文字をそのままトークン化します。中国語 / 日本語 / 韓国語のメモリについては、オプションのセグメンタ(`npm install @node-rs/jieba tiny-segmenter`)をインストールすると、CJK の文字列を単語レベルのトークンに分割できます。インストールしない場合、agentmemory は文字列全体をそのままトークン化するようソフトにフォールバックし、stderr に 1 回だけヒントを表示します。
 
@@ -1047,9 +838,9 @@ EMBEDDING_PROVIDER=local
 
 | プロバイダー | モデル | コスト | 備考 |
 |---|---|---|---|
-| **ローカル(推奨オプトイン)** | `all-MiniLM-L6-v2` | 無料 | 最初のモデルダウンロード後はオンデバイス。BM25 のみに比べて R@5 +8pp |
+| **ローカル(推奨オプトイン)** | `all-MiniLM-L6-v2` | 無料 | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | 無料枠 | 100+ 言語、768/1536/3072 次元(MRL)、2048 トークン入力。`text-embedding-004`([非推奨、2026 年 1 月 14 日に終了](https://ai.google.dev/gemini-api/docs/deprecations))の後継 |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | 最高品質 |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | 有料 | コードに最適化 |
 | Cohere | `embed-english-v3.0` | 無料トライアル | 汎用 |
 | OpenRouter | 任意のモデル | 様々 | マルチモデルプロキシ |

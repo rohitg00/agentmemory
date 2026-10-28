@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% visszakeresési R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92%-kal kevesebb token" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP eszköz" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatikus hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 külső adatbázis" height="38" /></picture>
@@ -331,223 +329,17 @@ A legfrissebb kiadási megjegyzések: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarkok" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Aktuális visszakeresési eredmények, mérőszámok és reprodukálási lépések:
 
-### Visszakeresési pontosság
-
-**coding-agent-life-v1** (házon belüli korpusz, sandboxban reprodukálható)
-
-| Adapter | P@5 | R@5 | Top-5 találati arány | p50 késleltetés |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep alapvonal | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-100%-os top-5 találati arány a **P@5 matematikai felső határán** ennél a korpusznál (0.240, lásd a scorecardot). A hibrid minden gold sessiont visszakeres; a grep 2-ből 1 gold eredményt elveszít a több sessiont átfogó, időbeli lekérdezésnél. A nyereség **felidézésben és időbeliségben** mutatkozik, nem az összesített pontosságban. Ez a benchmark kicsi és gold-szegény; a lejjebb található, nagyobb LongMemEval-S jobban differenciál. Teljes, típus szerinti bontás + korrekciós megjegyzés: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 kérdés)
-
-| Rendszer | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| Csak BM25 fallback | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Token-megtakarítás
-
-| Megközelítés | Token/év | Költség/év |
-|---|---|---|
-| Teljes kontextus beillesztése | 19.5M+ | Lehetetlen (meghaladja az ablakot) |
-| LLM által összefoglalva | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + lokális embeddingek | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Embedding modell: `all-MiniLM-L6-v2` (lokális, ingyenes, nincs szükség API-kulcsra). Teljes jelentések: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Versenytárs-összehasonlítás: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md), amely az agentmemoryt a mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo rendszerekkel veti össze.
-
-**Lokális reprodukálás:** [`eval/README.md`](../eval/README.md), egy adapter-bővíthető harness a LongMemEval `_s` (nyilvános, 500 kérdéses) + `coding-agent-life-v1` (házon belüli, 15 sessiont tartalmazó korpusz) számára. A grep / vektor / agentmemory adapterek egymás mellett kapnak pontszámot, NDJSON kimenettel, a publikált scorecardok a [`docs/benchmarks/`](../docs/benchmarks/) mappában landolnak.
-
-**Jól illik a [codegraph](https://github.com/colbymchenry/codegraph), az [Understand Anything](https://github.com/Lum1104/Understand-Anything) és a [Graphify](https://github.com/safishamsi/graphify) mellé.** Kódgráf-indexelés, több ágenses build-pipeline-ok, és szélesebb tudásgráfok dokumentumok / PDF-ek / képek / videók fölött. Az agentmemory a munkára emlékszik; ez a három projekt a kontextusréteg többi részét kelti életre. Receptek + kérdés-útválasztási táblázat: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="Versenytársakkal szemben" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Beépített (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Típus</strong></td>
-<td>Memóriamotor + MCP szerver</td>
-<td>Memóriaréteg API</td>
-<td>Teljes ágens-futtatókörnyezet</td>
-<td>Személyes AI</td>
-<td>Memória API + app</td>
-<td>Csapatmemória-hub (LLM proxy)</td>
-<td>Vektormemória (OSS)</td>
-<td>Memóriamotor (Oracle DB)</td>
-<td>Memóriarendszer</td>
-<td>Statikus fájl</td>
-</tr>
-<tr>
-<td><strong>Visszakeresési R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Önbevallás alapján</td>
-<td>PersonaMem 76% (önbevallás alapján)</td>
-<td>~96.6% (önbevallás alapján)</td>
-<td>94.4% (önbevallás alapján)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Automatikus rögzítés</strong></td>
-<td>12 hook (nulla manuális munka)</td>
-<td>Manuális <code>add()</code> hívások</td>
-<td>Az ágens saját szerkesztései</td>
-<td>Manuális</td>
-<td>API-oldali kinyerés</td>
-<td>Proxy-elfogás (base-URL csere)</td>
-<td>Manuális</td>
-<td>API kinyerés</td>
-<td>Manuális</td>
-<td>Manuális szerkesztés</td>
-</tr>
-<tr>
-<td><strong>Keresés</strong></td>
-<td>BM25 + Vektor + Gráf (RRF fúzió)</td>
-<td>Vektor + Gráf</td>
-<td>Vektor (archivális)</td>
-<td>Szemantikus</td>
-<td>Vektor + RAG</td>
-<td>4 eszköztípus (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Csak vektor</td>
-<td>Vektor + szemantikus</td>
-<td>Lecsengés-súlyozott</td>
-<td>Mindent betölt a kontextusba</td>
-</tr>
-<tr>
-<td><strong>Több ágens</strong></td>
-<td>MCP + REST + lease-ek + szignálok</td>
-<td>API (nincs koordináció)</td>
-<td>Csak a Letta futtatókörnyezeten belül</td>
-<td>Nem</td>
-<td>Nem</td>
-<td>Csapatszerepek + megosztott eszközök</td>
-<td>Nem</td>
-<td>Csak hatókörön belül</td>
-<td>Több ágens közt megosztva</td>
-<td>Ágensenkénti fájlok</td>
-</tr>
-<tr>
-<td><strong>Keretrendszer-függés</strong></td>
-<td>Nincs (bármely MCP kliens)</td>
-<td>Nincs</td>
-<td>Magas (a Lettát kell használni)</td>
-<td>Önálló</td>
-<td>Nincs</td>
-<td>A proxy minden modellhívás elé kerül</td>
-<td>Nincs</td>
-<td>Oracle Database</td>
-<td>Nincs</td>
-<td>Ágensenkénti formátum</td>
-</tr>
-<tr>
-<td><strong>Külső függőségek</strong></td>
-<td>Nem szükséges külön adatbázis-szolgáltatás</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vektor DB</td>
-<td>Több</td>
-<td>Felügyelt felhő</td>
-<td>Docker-stack (Core + Hub + Proxy)</td>
-<td>Vektortár</td>
-<td>Oracle AI Database</td>
-<td>Nincs</td>
-<td>Nincs</td>
-</tr>
-<tr>
-<td><strong>Memória életciklus</strong></td>
-<td>4 szintű konszolidáció + lecsengés + automatikus elfelejtés</td>
-<td>Passzív kinyerés</td>
-<td>Az ágens kezeli</td>
-<td>Manuális</td>
-<td>Automatikus elfelejtés</td>
-<td>Manuális átnézés; az automatikus útválasztás folyamatban</td>
-<td>Nincs</td>
-<td>Nincs megadva</td>
-<td>Lecsengés + konszolidáció</td>
-<td>Manuális ritkítás</td>
-</tr>
-<tr>
-<td><strong>Token-hatékonyság</strong></td>
-<td>~1,900 token/session ($10/év)</td>
-<td>Az integrációtól függ</td>
-<td>A core memória a kontextusban van</td>
-<td>Változó</td>
-<td>Felhő alapú díjszabás</td>
-<td>Nincs megadva</td>
-<td>Nincs token-budget</td>
-<td>LLM-alapú (változó)</td>
-<td>Változó</td>
-<td>22K+ token 240 megfigyelésnél</td>
-</tr>
-<tr>
-<td><strong>Valós idejű megjelenítő</strong></td>
-<td>Igen (3113-as port)</td>
-<td>Felhő alapú dashboard</td>
-<td>Felhő alapú dashboard</td>
-<td>Webes felhasználói felület</td>
-<td>Felhő alapú dashboard</td>
-<td>Hub webes felhasználói felület</td>
-<td>Nincs</td>
-<td>Nincs</td>
-<td>Nincs</td>
-<td>Nincs</td>
-</tr>
-<tr>
-<td><strong>Önállóan üzemeltethető</strong></td>
-<td>Igen (alapértelmezett)</td>
-<td>Opcionális</td>
-<td>Opcionális</td>
-<td>Igen</td>
-<td>Nem (csak felhő)</td>
-<td>Igen (Docker)</td>
-<td>Igen</td>
-<td>Igen (Oracle DB)</td>
-<td>Igen</td>
-<td>Igen</td>
-</tr>
-</table>
+A termékek és telepítési lehetőségek frissített összehasonlítása, forrásokkal:
 
-<sub>Megjegyzés a benchmarkhoz: csak az agentmemory R@5 értéke a saját, mért eredményünk (LongMemEval-S, reprodukálható a <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a> alapján). A mem0 és a Letta számai a saját publikált LoCoMo-adataik (egy másik adathalmaz); a MemPalace, a supermemory, a TencentDB (PersonaMem) és az oracleagentmemory számai a gyártók önbevallás alapú állításai, amelyeket nem reprodukáltunk függetlenül (az oracleagentmemory futása GPT-5.5-öt használt egy Oracle AI Database ellen). Csak tájékoztató jellegű egymás mellett közlésre szánva, nem azonos adatokon futó közvetlen összehasonlításra. A csillagszámok közelítők, és idővel változnak.</sub>
-
-**Újabb belépők**, amelyeket érdemes ismerni, részletesen összehasonlítva a [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) fájlban:
-
-| Rendszer | ⭐ | Megközelítés |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Temporális tudásgráf; a legerősebb publikált időbeli lekérdezési eredmények (LongMemEval 63.8%), de a gráf aszinkron módon épül, így a friss tények lemaradhatnak |
-| Cognee | 30K | Dokumentum-tudásgráf feldolgozás, csak Python, strukturált entitáskinyerésre épül, nem session-rögzítésre |
-
-Az AgentMemory egyesíti a munkamenetek rögzítését, a kereshető projektelőzményeket és a helyi nézőfelületet, az első indítástól kulcs nélküli működéssel.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -784,7 +576,7 @@ Teljes útmutató: [`integrations/hermes/`](../integrations/hermes/)
 
 Indítsd el a memóriaszervert: `npx -y @agentmemory/agentmemory@latest`
 
-#### Natív skillek az `npx skills add` révén (50+ ágens)
+#### Natív skillek az `npx skills add` révén
 
 Az agentmemory 17 skillt szállít a Claude-Code-stílusú `<dir>/SKILL.md` formátumban: 9 meghívható akció-skill (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) és 8 referencia-skill, amelyeket az ágens igény szerint tölt be (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). A referencia-skillek forrásból generált adattáblákat hordoznak, így soha nem térnek el. A [`skills`](https://npmjs.com/package/skills) CLI, a vercel-labs eszköze, automatikusan telepíti ezeket a hívó ágens natív skill-mappájába, 50+ ágens között (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, és még több):
 
@@ -842,7 +634,7 @@ Az agentmemory bejegyzés **ugyanaz az MCP szerver blokk** minden olyan hoszton,
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | Az `agentmemory connect antigravity --with-hooks` telepíti az MCP-t és a rögzítő hookokat a megosztott testreszabási mappába. Lásd az [Antigravity beállítása és korlátai](../docs/plugins/antigravity.md) útmutatót. |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | Az `agentmemory connect antigravity-cli --with-hooks` ugyanazt az MCP- és hook-konfigurációt használja, mint a jelenlegi IDE-verziók. A meglévő telepítéseknek frissülniük kell a `--force`-szal; lásd a [frissítési megjegyzéseket](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | Az `agentmemory connect kiro` beírja a felhasználói szintű konfigurációt. A workspace-szintű felülírások a `.kiro/settings/mcp.json`-ba kerülnek, a kódod mellé. |
-| **Warp** | `~/.warp/.mcp.json` | Az `agentmemory connect warp` beírja a standard `mcpServers` blokkot. A Warp a skilleket is automatikusan felismeri a `.claude/skills/`-ből; a Claude Code plugin telepítése után a 8 agentmemory skill (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) natívan megjelenik a Warp slash-parancs palettáján. |
+| **Warp** | `~/.warp/.mcp.json` | Az `agentmemory connect warp` beírja a standard `mcpServers` blokkot. A Warp a skilleket is automatikusan felismeri a `.claude/skills/`-ből; a Claude Code plugin telepítése után a 9 agentmemory skill (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) natívan megjelenik a Warp slash-parancs palettáján. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | Az `agentmemory connect cline` beírja a standard `mcpServers` blokkot. VS Code extension felhasználóknak: illeszd be ugyanazt a blokkot a Cline Settings → MCP Servers → Edit JSON útján. |
 | **Continue.dev** | `~/.continue/config.yaml` (előnyben részesített) vagy `config.json` (örökölt) | Az `agentmemory connect continue` létrehozza a hiányzó `config.yaml` fájlt, vagy módosítja a meglévő `config.json` fájlt. Meglévő YAML esetén kiírja az `mcpServers:` alá illeszthető blokkot, megőrizve a megjegyzéseket és horgonyokat. A Continue tömböt használ, nem objektumot. |
 | **Zed** | `~/.config/zed/settings.json` | Az `agentmemory connect zed` a `context_servers` alá ír (a Zed saját kulcsa, NEM a `mcpServers`). A távoli MCP szerverek egy `{"url": "..."}`-vel is bekötődhetnek. |
@@ -925,7 +717,6 @@ Minden AI kódolóágens beépített memóriával érkezik: a Claude Code-nak `M
 |---|---|---|
 | Karbantartás | Kézzel gondozott instrukciók | Indexelt munkamenet-előzmények és emlékek |
 | Keresés | Mindent betölt a kontextusba | BM25 + vektor + gráf (csak top-K) |
-| Token-költség | 22K+ 240 megfigyelésnél | ~1,900 token (92%-kal kevesebb) |
 | Ágensek közötti | Ágensenkénti fájlok | MCP + REST (bármely ágens) |
 | Koordináció | Nincs | Lease-ek, szignálok, akciók, rutinok |
 | Megfigyelhetőség | Fájlok manuális olvasása | Valós idejű megjelenítő a :3113-on |
@@ -938,7 +729,7 @@ Minden AI kódolóágens beépített memóriával érkezik: a Claude Code-nak `M
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1023,7 +814,7 @@ Reciprocal Rank Fusionnal (RRF, k=60) fuzionálva, és sessionönkénti diverzif
 
 Ha egy vektorindex fel van töltve, a `mem::search` (a `memory_recall` mögött) a hibrid BM25 + vektor rangsorolót használja. Embeddingek nélkül BM25-öt használ. A `smart-search` emellett strukturális gráfegyezéseket is fuzionálhat, ha létezik gráfadat, kulcs nélküli módban is. A tanulság-felidézés egy dedikált, memóriában tartott BM25-indexen fut, nem a teljes korpusz lekérdezésenkénti átnézésével. A felülírt memória-verziók minden felidézési útvonalból ki vannak zárva; a verziólánc megtartja az előzményüket.
 
-A vektorok túlélnek egy összeomlást vagy egy force-killt. A vektorindex legfeljebb minden `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS`-ben (10 perc) kerül mentésre, csomagokban. Minden közben hozzáadott vagy eltávolított vektor azonnal felíródik egy kis, függőben lévő naplóba is az állapottárban, és a következő indítás lejátssza ezt az embedding-szolgáltató hívása nélkül. Minden sikeres mentés kiüríti a naplót. Azok a dokumentumok, amelyeknek a lejátszás után sincs vektoruk, a háttérben, `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) méretű batch-ekben kapnak újra embeddinget, amíg nem marad ilyen, és egy leállított backfill a következő indításkor folytatódik. A `/agentmemory/status` és a megjelenítő megmutatja a függőben lévő napló méretét és a backfill állapotát. A kulcs nélküli telepítések semmit nem írnak.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 A BM25 alapból tokenizálja a görögöt, a cirillt, a hébert, az arabot és az ékezetes latint. Kínai / japán / koreai memóriákhoz telepítsd az opcionális szegmentálókat (`npm install @node-rs/jieba tiny-segmenter`), hogy szóméretű tokenekre bontsa a CJK-futásokat; nélkülük az agentmemory finoman visszaesik a teljes futás tokenizálására, és egyszeri jelzést ír a stderr-re.
 
@@ -1039,9 +830,9 @@ A normál npm-telepítés tartalmazza az opcionális `@huggingface/transformers`
 
 | Szolgáltató | Modell | Költség | Megjegyzések |
 |---|---|---|---|
-| **Lokális (ajánlott opt-in)** | `all-MiniLM-L6-v2` | Ingyenes | Eszközön fut az első modell-letöltés után, +8pp felidézés a csak-BM25-höz képest |
+| **Lokális (ajánlott opt-in)** | `all-MiniLM-L6-v2` | Ingyenes | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Ingyenes szint | 100+ nyelv, 768/1536/3072 dimenzió (MRL), 2048 tokenes bemenet. Felváltja a `text-embedding-004`-et ([elavult, leállítva 2026. jan. 14-én](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Legjobb minőség |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | Fizetős | Kódra optimalizálva |
 | Cohere | `embed-english-v3.0` | Ingyenes próba | Általános célú |
 | OpenRouter | Bármely modell | Változó | Több modellt lefedő proxy |

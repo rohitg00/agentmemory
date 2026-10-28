@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% точність пошуку R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% менше токенів" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 інструменти MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 автоматичних хуків" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 зовнішніх БД" height="38" /></picture>
@@ -333,223 +331,17 @@ agentmemory --instance 1
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Бенчмарки" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Актуальні результати пошуку, визначення метрик і кроки відтворення:
 
-### Точність пригадування
-
-**coding-agent-life-v1** (власний корпус, відтворюваний у sandbox)
-
-| Адаптер | P@5 | R@5 | Частка влучань у топ-5 | латентність p50 |
-|---|---|---|---|---|
-| **agentmemory (гібридний)** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| базовий варіант grep | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-100% влучань у топ-5 на рівні **математичної межі P@5** для цього корпусу (0.240, див. scorecard). Гібридний режим знаходить усі золоті сесії; grep пропускає 1 з 2 золотих результатів у мультисесійному темпоральному запиті. Прирощення — це **пригадування + темпоральність**, а не агрегована точність. Цей бенчмарк невеликий і має мало золотих прикладів; більший LongMemEval-S нижче краще розрізняє результати. Повна розбивка за типами + примітка про виправлення: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 запитань)
-
-| Система | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| резервний варіант лише на BM25 | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Економія токенів
-
-| Підхід | Токенів/рік | Вартість/рік |
-|---|---|---|
-| Вставка повного контексту | 19.5M+ | Неможливо (перевищує вікно контексту) |
-| Підсумовування через LLM | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + локальні ембединги | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Модель ембедингів: `all-MiniLM-L6-v2` (локальна, безкоштовна, без API-ключа). Повні звіти: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Порівняння з конкурентами: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) охоплює agentmemory порівняно з mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**Відтворити локально:** [`eval/README.md`](../eval/README.md) — придатний до підключення адаптерів harness для LongMemEval `_s` (публічний набір із 500 запитань) + `coding-agent-life-v1` (власний корпус із 15 сесій). Адаптери grep / vector / agentmemory оцінюються поруч, вивід у форматі NDJSON, опубліковані scorecard потрапляють у [`docs/benchmarks/`](../docs/benchmarks/).
-
-**Добре поєднується з [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything) та [Graphify](https://github.com/safishamsi/graphify).** Індексування графа коду, конвеєри збирання для кількох агентів і ширші графи знань за документами / PDF / зображеннями / відео. agentmemory запам'ятовує роботу; ці три проєкти оживляють решту контекстного шару. Рецепти + таблиця маршрутизації питань: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="Порівняння з конкурентами" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Вбудована (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Тип</strong></td>
-<td>Двигун пам'яті + MCP-сервер</td>
-<td>API шару пам'яті</td>
-<td>Повноцінний рантайм агента</td>
-<td>Персональний AI</td>
-<td>API пам'яті + застосунок</td>
-<td>Хаб командної пам'яті (LLM-проксі)</td>
-<td>Векторна пам'ять (OSS)</td>
-<td>Двигун пам'яті (Oracle DB)</td>
-<td>Система пам'яті</td>
-<td>Статичний файл</td>
-</tr>
-<tr>
-<td><strong>Пригадування R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>Н/Д</td>
-<td>Заявлено самостійно</td>
-<td>PersonaMem 76% (заявлено самостійно)</td>
-<td>~96.6% (заявлено самостійно)</td>
-<td>94.4% (заявлено самостійно)</td>
-<td>Н/Д</td>
-<td>Н/Д (grep)</td>
-</tr>
-<tr>
-<td><strong>Автозахоплення</strong></td>
-<td>12 хуків (без ручних дій)</td>
-<td>Ручні виклики <code>add()</code></td>
-<td>Самостійне редагування агентом</td>
-<td>Вручну</td>
-<td>Видобування на стороні API</td>
-<td>Перехоплення через проксі (підміна base-URL)</td>
-<td>Вручну</td>
-<td>Видобування через API</td>
-<td>Вручну</td>
-<td>Ручне редагування</td>
-</tr>
-<tr>
-<td><strong>Пошук</strong></td>
-<td>BM25 + вектор + граф (злиття RRF)</td>
-<td>Вектор + граф</td>
-<td>Вектор (архівний)</td>
-<td>Семантичний</td>
-<td>Вектор + RAG</td>
-<td>4 типи активів (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Лише вектор</td>
-<td>Вектор + семантичний</td>
-<td>Зважений за згасанням</td>
-<td>Завантажує все у контекст</td>
-</tr>
-<tr>
-<td><strong>Мультиагентність</strong></td>
-<td>MCP + REST + оренди + сигнали</td>
-<td>API (без координації)</td>
-<td>Лише в межах рантайму Letta</td>
-<td>Ні</td>
-<td>Ні</td>
-<td>Командні ролі + спільні активи</td>
-<td>Ні</td>
-<td>Лише в межах скоупу</td>
-<td>Спільна для кількох агентів</td>
-<td>Файли для кожного агента</td>
-</tr>
-<tr>
-<td><strong>Прив'язка до фреймворку</strong></td>
-<td>Немає (будь-який MCP-клієнт)</td>
-<td>Немає</td>
-<td>Висока (потрібно використовувати Letta)</td>
-<td>Автономний</td>
-<td>Немає</td>
-<td>Проксі обробляє кожен виклик моделі</td>
-<td>Немає</td>
-<td>Oracle Database</td>
-<td>Немає</td>
-<td>Формат для кожного агента</td>
-</tr>
-<tr>
-<td><strong>Зовнішні залежності</strong></td>
-<td>Окрема служба бази даних не потрібна</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + векторна БД</td>
-<td>Декілька</td>
-<td>Керована хмара</td>
-<td>Docker-стек (Core + Hub + Proxy)</td>
-<td>Векторне сховище</td>
-<td>Oracle AI Database</td>
-<td>Немає</td>
-<td>Немає</td>
-</tr>
-<tr>
-<td><strong>Життєвий цикл пам'яті</strong></td>
-<td>4-рівнева консолідація + згасання + автозабування</td>
-<td>Пасивне видобування</td>
-<td>Керується агентом</td>
-<td>Вручну</td>
-<td>Автозабування</td>
-<td>Ручний перегляд; автоматична маршрутизація в розробці</td>
-<td>Немає</td>
-<td>Не вказано</td>
-<td>Згасання + консолідація</td>
-<td>Ручне очищення</td>
-</tr>
-<tr>
-<td><strong>Ефективність токенів</strong></td>
-<td>~1,900 токенів/сесію ($10/рік)</td>
-<td>Залежить від інтеграції</td>
-<td>Основна пам'ять у контексті</td>
-<td>Залежить</td>
-<td>Хмарне ціноутворення</td>
-<td>Не вказано</td>
-<td>Без бюджету токенів</td>
-<td>На основі LLM (залежить)</td>
-<td>Залежить</td>
-<td>22K+ токенів при 240 спостереженнях</td>
-</tr>
-<tr>
-<td><strong>Переглядач у реальному часі</strong></td>
-<td>Так (порт 3113)</td>
-<td>Хмарна панель</td>
-<td>Хмарна панель</td>
-<td>Веб-інтерфейс</td>
-<td>Хмарна панель</td>
-<td>Веб-інтерфейс Hub</td>
-<td>Ні</td>
-<td>Ні</td>
-<td>Ні</td>
-<td>Ні</td>
-</tr>
-<tr>
-<td><strong>Самостійний хостинг</strong></td>
-<td>Так (за замовчуванням)</td>
-<td>Опційно</td>
-<td>Опційно</td>
-<td>Так</td>
-<td>Ні (лише хмара)</td>
-<td>Так (Docker)</td>
-<td>Так</td>
-<td>Так (Oracle DB)</td>
-<td>Так</td>
-<td>Так</td>
-</tr>
-</table>
+Оновлене порівняння продуктів і варіантів розгортання з джерелами:
 
-<sub>Примітка до бенчмарків: лише R@5 для agentmemory — це наш власний вимірений результат (LongMemEval-S, відтворюваний з <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). Показники mem0 і Letta — це їхні опубліковані числа LoCoMo (інший набір даних); показники MemPalace, supermemory, TencentDB (PersonaMem) та oracleagentmemory — це заявлені самими постачальниками твердження, які ми не відтворювали самостійно (запуск oracleagentmemory використовував GPT-5.5 проти Oracle AI Database). Наведено поруч лише для орієнтовного порівняння, а не як пряме протистояння на однакових даних. Кількість зірок приблизна і змінюється з часом.</sub>
-
-**Новіші учасники**, варті уваги, детально порівняні в [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| Система | ⭐ | Підхід |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Темпоральний граф знань; найкращі опубліковані результати для темпоральних запитів (LongMemEval 63.8%), але граф будується асинхронно, тому нові факти можуть надходити із затримкою |
-| Cognee | 30K | Перетворення документів на граф знань, лише Python, створено для структурованого видобування сутностей, а не для захоплення сесій |
-
-AgentMemory поєднує захоплення сесій, пошук в історії проєкту й локальний viewer; робота без ключа доступна з першого запуску.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -786,7 +578,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 Запустіть сервер пам'яті: `npx -y @agentmemory/agentmemory@latest`
 
-#### Нативні скіли через `npx skills add` (50+ агентів)
+#### Нативні скіли через `npx skills add`
 
 agentmemory постачає 17 скілів у форматі `<dir>/SKILL.md` у стилі Claude Code: 9 викликаних скілів-дій (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) і 8 довідкових скілів, які агент завантажує за потреби (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Довідкові скіли містять таблиці даних, згенеровані з джерела, тому вони ніколи не розходяться з ним. CLI [`skills`](https://npmjs.com/package/skills) від vercel-labs автоматично встановлює їх у нативний каталог скілів агента, що викликає, для понад 50 агентів (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf та інших):
 
@@ -844,7 +636,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` встановлює MCP і хуки захоплення у спільному каталозі налаштувань. Див. [налаштування та обмеження Antigravity](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` використовує ту саму конфігурацію MCP і хуків, що й поточні версії IDE. Наявні встановлення слід оновити за допомогою `--force`; див. [примітки щодо оновлення](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` записує конфігурацію рівня користувача. Перевизначення на рівні робочого простору розміщуються в `.kiro/settings/mcp.json` поруч із вашим кодом. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` записує стандартний блок `mcpServers`. Warp також автоматично виявляє скіли з `.claude/skills/`; після встановлення плагіна Claude Code 8 скілів agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) з'являються нативно в палітрі слеш-команд Warp. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` записує стандартний блок `mcpServers`. Warp також автоматично виявляє скіли з `.claude/skills/`; після встановлення плагіна Claude Code 9 скілів agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) з'являються нативно в палітрі слеш-команд Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` записує стандартний блок `mcpServers`. Користувачі розширення VS Code: вставте той самий блок через Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (бажано) або `config.json` (застарілий) | `agentmemory connect continue` створює `config.yaml`, якщо налаштувань немає, або змінює наявний `config.json`. Для наявного YAML показує блок для `mcpServers:`, зберігаючи коментарі та якорі. Continue використовує масив, а не об’єкт. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` записує дані під `context_servers` (ключ Zed, НЕ `mcpServers`). Віддалені MCP-сервери замість цього можна підключити через `{"url": "..."}`. |
@@ -927,7 +719,6 @@ REST використовує `3111`, viewer `3113`. Залиште їх у пр
 |---|---|---|
 | Обслуговування | Інструкції, редаговані вручну | Індексована історія сесій і спогади |
 | Пошук | Завантажує все у контекст | BM25 + вектор + граф (лише топ-K) |
-| Вартість у токенах | 22K+ при 240 спостереженнях | ~1,900 токенів (на 92% менше) |
 | Між агентами | Файли для кожного агента | MCP + REST (будь-який агент) |
 | Координація | Немає | Оренди, сигнали, дії, рутини |
 | Спостережуваність | Читання файлів вручну | Переглядач у реальному часі на :3113 |
@@ -940,7 +731,7 @@ REST використовує `3111`, viewer `3113`. Залиште їх у пр
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1025,7 +816,7 @@ SessionStart hook fires
 
 Коли векторний індекс заповнено, `mem::search` (що стоїть за `memory_recall`) використовує гібридний ранжувальник BM25 + вектор. Без ембедингів він використовує BM25. `smart-search` може додатково об'єднувати структурні збіги графа, якщо дані графа існують, зокрема в режимі без ключа. Пригадування уроків виконується на окремому BM25-індексі в пам'яті, а не шляхом сканування всього корпусу під час кожного запиту. Заміщені версії пам'яті виключаються з усіх шляхів пригадування; ланцюжок версій зберігає їхню історію.
 
-Вектори переживають збій або примусове завершення. Векторний індекс зберігається пакетами не частіше, ніж кожні `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 хвилин). Кожен вектор, доданий або видалений у проміжку, також відразу записується у невеликий журнал очікування в хранилищі стану, і наступний запуск відтворює його без звернення до постачальника ембедингів. Кожне успішне збереження очищає журнал. Документи, які все ще не мають вектора після відтворення, повторно ембедяться у фоновому режимі партіями по `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500), доки не залишиться жодного, а зупинене доповнення продовжується з наступного запуску. `/agentmemory/status` і переглядач показують розмір журналу очікування та стан доповнення. Встановлення без ключа нічого не записують.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 одразу токенізує грецьку, кирилицю, іврит, арабську та латиницю з діакритикою. Для пам'яті китайською / японською / корейською встановіть опційні сегментатори (`npm install @node-rs/jieba tiny-segmenter`), щоб розбивати послідовності CJK на токени рівня слів; без них agentmemory плавно переходить на токенізацію цілими послідовностями та одноразово виводить підказку в stderr.
 
@@ -1041,9 +832,9 @@ EMBEDDING_PROVIDER=local
 
 | Постачальник | Модель | Вартість | Примітки |
 |---|---|---|---|
-| **Локальний (рекомендоване підключення)** | `all-MiniLM-L6-v2` | Безкоштовно | На пристрої після першого завантаження моделі, +8пп до пригадування порівняно з лише BM25 |
+| **Локальний (рекомендоване підключення)** | `all-MiniLM-L6-v2` | Безкоштовно | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Безкоштовний тариф | 100+ мов, 768/1536/3072 вимірів (MRL), вхід до 2048 токенів. Замінює `text-embedding-004` ([застаріла, вимкнення 14 січня 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Найвища якість |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | Платно | Оптимізовано для коду |
 | Cohere | `embed-english-v3.0` | Безкоштовна пробна версія | Загального призначення |
 | OpenRouter | Будь-яка модель | Залежить | Проксі для декількох моделей |

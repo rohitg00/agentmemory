@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
@@ -333,223 +331,17 @@ En son sürüm notları: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Güncel bilgi getirme sonuçları, metrik tanımları ve yeniden üretme adımları:
 
-### Geri Getirme Doğruluğu
-
-**coding-agent-life-v1** (şirket içi (in-house) corpus, sandbox'ta yeniden üretilebilir)
-
-| Adaptör | P@5 | R@5 | İlk 5'te bulma oranı | p50 gecikme |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep baseline | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-Bu corpus için **P@5 matematiksel tavanında** (0.240, scorecard'a bakın) %100 ilk-5 bulma oranı. Hybrid, her gold oturumu getirir; grep, çok-oturumlu temporal sorguda 2 gold'dan 1'ini kaçırır. Kazanım **recall + temporal**'dir, toplam precision değil. Bu benchmark küçüktür ve gold açısından seyrektir; aşağıdaki daha büyük LongMemEval-S daha iyi ayrıştırır. Tam tür bazlı döküm + düzeltme notu: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 soru)
-
-| Sistem | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| Yalnızca BM25 fallback | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Token Tasarrufu
-
-| Yaklaşım | Token/yıl | Maliyet/yıl |
-|---|---|---|
-| Tam bağlamı yapıştır | 19.5M+ | İmkansız (pencereyi aşar) |
-| LLM ile özetlenmiş | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + yerel embedding'ler | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Embedding modeli: `all-MiniLM-L6-v2` (yerel, ücretsiz, API anahtarı gerektirmez). Tam raporlar: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Rakip karşılaştırması: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) — agentmemory'yi mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo ile karşılaştırır.
-
-**Yerelde yeniden üretin:** [`eval/README.md`](../eval/README.md), LongMemEval `_s` (herkese açık 500 soru) + `coding-agent-life-v1` (şirket içi 15-oturumluk corpus) için adaptör-takılabilir bir harness. Grep / vektör / agentmemory adaptörleri yan yana puanlanır, NDJSON çıktısı verir, yayımlanan scorecard'lar [`docs/benchmarks/`](../docs/benchmarks/) içine düşer.
-
-**[codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything) ve [Graphify](https://github.com/safishamsi/graphify) ile eşleşir.** Kod-grafı indeksleme, çok-ajanlı build pipeline'ları ve doküman / PDF / görüntü / video genelinde daha geniş bilgi grafları. agentmemory yapılan işi hatırlar; bu üç proje, bağlam katmanının gerisini aydınlatır. Tarifler + soru-yönlendirme tablosu: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="vs Competitors" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Yerleşik (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Tür</strong></td>
-<td>Bellek engine'i + MCP sunucusu</td>
-<td>Bellek katmanı API'si</td>
-<td>Tam ajan runtime'ı</td>
-<td>Kişisel AI</td>
-<td>Bellek API'si + uygulama</td>
-<td>Takım belleği hub'ı (LLM proxy)</td>
-<td>Vektör belleği (OSS)</td>
-<td>Bellek engine'i (Oracle DB)</td>
-<td>Bellek sistemi</td>
-<td>Statik dosya</td>
-</tr>
-<tr>
-<td><strong>Geri Getirme R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Kendi beyanı</td>
-<td>PersonaMem 76% (kendi beyanı)</td>
-<td>~96.6% (kendi beyanı)</td>
-<td>94.4% (kendi beyanı)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Otomatik yakalama</strong></td>
-<td>12 hook (sıfır manuel çaba)</td>
-<td>Manuel <code>add()</code> çağrıları</td>
-<td>Ajan kendi kendine düzenler</td>
-<td>Manuel</td>
-<td>API tarafında çıkarım</td>
-<td>Proxy ile yakalama (base-URL değişimi)</td>
-<td>Manuel</td>
-<td>API çıkarımı</td>
-<td>Manuel</td>
-<td>Manuel düzenleme</td>
-</tr>
-<tr>
-<td><strong>Arama</strong></td>
-<td>BM25 + Vektör + Graf (RRF füzyonu)</td>
-<td>Vektör + Graf</td>
-<td>Vektör (arşivsel)</td>
-<td>Semantik</td>
-<td>Vektör + RAG</td>
-<td>4 varlık türü (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Yalnızca vektör</td>
-<td>Vektör + semantik</td>
-<td>Çürüme ağırlıklı (decay-weighted)</td>
-<td>Her şeyi bağlama yükler</td>
-</tr>
-<tr>
-<td><strong>Çoklu ajan</strong></td>
-<td>MCP + REST + lease'ler + signal'ler</td>
-<td>API (koordinasyon yok)</td>
-<td>Yalnızca Letta runtime'ı içinde</td>
-<td>Hayır</td>
-<td>Hayır</td>
-<td>Takım rolleri + paylaşılan varlıklar</td>
-<td>Hayır</td>
-<td>Yalnızca scope'lu</td>
-<td>Çoklu ajan arasında paylaşılan</td>
-<td>Ajan başına dosyalar</td>
-</tr>
-<tr>
-<td><strong>Framework bağımlılığı (lock-in)</strong></td>
-<td>Yok (herhangi bir MCP istemcisi)</td>
-<td>Yok</td>
-<td>Yüksek (Letta kullanmak zorunlu)</td>
-<td>Bağımsız</td>
-<td>Yok</td>
-<td>Proxy her model çağrısının önünde</td>
-<td>Yok</td>
-<td>Oracle Database</td>
-<td>Yok</td>
-<td>Ajan başına format</td>
-</tr>
-<tr>
-<td><strong>Harici bağımlılıklar</strong></td>
-<td>Ayrı bir veritabanı hizmeti gerektirmez</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vektör DB</td>
-<td>Birden fazla</td>
-<td>Yönetilen bulut</td>
-<td>Docker stack'i (Core + Hub + Proxy)</td>
-<td>Vektör deposu</td>
-<td>Oracle AI Database</td>
-<td>Yok</td>
-<td>Yok</td>
-</tr>
-<tr>
-<td><strong>Bellek yaşam döngüsü</strong></td>
-<td>4 katmanlı konsolidasyon + çürüme + otomatik unutma</td>
-<td>Pasif çıkarım</td>
-<td>Ajan tarafından yönetilen</td>
-<td>Manuel</td>
-<td>Otomatik unutma</td>
-<td>Manuel inceleme; otomatik yönlendirme geliştiriliyor</td>
-<td>Yok</td>
-<td>Belirtilmemiş</td>
-<td>Çürüme + konsolidasyon</td>
-<td>Manuel budama</td>
-</tr>
-<tr>
-<td><strong>Token verimliliği</strong></td>
-<td>~1,900 token/oturum ($10/yıl)</td>
-<td>Entegrasyona göre değişir</td>
-<td>Çekirdek bellek bağlamda</td>
-<td>Değişir</td>
-<td>Bulut fiyatlandırması</td>
-<td>Belirtilmemiş</td>
-<td>Token bütçesi yok</td>
-<td>LLM destekli (değişir)</td>
-<td>Değişir</td>
-<td>240 gözlemde 22K+ token</td>
-</tr>
-<tr>
-<td><strong>Gerçek zamanlı görüntüleyici</strong></td>
-<td>Evet (port 3113)</td>
-<td>Bulut dashboard'u</td>
-<td>Bulut dashboard'u</td>
-<td>Web arayüzü</td>
-<td>Bulut dashboard'u</td>
-<td>Hub web arayüzü</td>
-<td>Hayır</td>
-<td>Hayır</td>
-<td>Hayır</td>
-<td>Hayır</td>
-</tr>
-<tr>
-<td><strong>Kendi sunucunda barındırma</strong></td>
-<td>Evet (varsayılan)</td>
-<td>Opsiyonel</td>
-<td>Opsiyonel</td>
-<td>Evet</td>
-<td>Hayır (yalnızca bulut)</td>
-<td>Evet (Docker)</td>
-<td>Evet</td>
-<td>Evet (Oracle DB)</td>
-<td>Evet</td>
-<td>Evet</td>
-</tr>
-</table>
+Kaynaklarıyla birlikte ürünlerin ve dağıtım seçeneklerinin güncel karşılaştırması:
 
-<sub>Benchmark notu: yalnızca agentmemory'nin R@5'i bizim kendi ölçtüğümüz sonuçtur (LongMemEval-S, <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>'dan yeniden üretilebilir). mem0 ve Letta rakamları, onların yayımladığı LoCoMo sayılarıdır (farklı bir veri kümesi); MemPalace, supermemory, TencentDB (PersonaMem) ve oracleagentmemory rakamları, bağımsız olarak yeniden üretmediğimiz, satıcı tarafından kendi beyan edilen iddialardır (oracleagentmemory'nin çalıştırması bir Oracle AI Database'e karşı GPT-5.5 kullandı). Yalnızca kabaca karşılaştırma için yan yana gösterilmiştir, aynı veri üzerinde doğrudan bir karşılaştırma değildir. Yıldız sayıları yaklaşıktır ve zamanla değişir.</sub>
-
-**Bilinmesi gereken daha yeni oyuncular**, [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) içinde derinlemesine karşılaştırılmıştır:
-
-| Sistem | ⭐ | Yaklaşım |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Temporal bilgi grafı; yayımlanmış en güçlü temporal-sorgu sonuçları (LongMemEval 63.8%), ancak graf asenkron olarak oluşturulur, bu yüzden yeni bilgiler gecikebilir |
-| Cognee | 30K | Doküman-to-bilgi-grafı alımı, yalnızca Python, oturum yakalamadan ziyade yapılandırılmış entity çıkarımı için inşa edilmiştir |
-
-AgentMemory oturum kaydını, aranabilir proje geçmişini ve yerel görüntüleyiciyi birleştirir; anahtarsız çalışma ilk başlatmadan itibaren kullanılabilir.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -786,7 +578,7 @@ Tam kılavuz: [`integrations/hermes/`](../integrations/hermes/)
 
 Bellek sunucusunu başlatın: `npx -y @agentmemory/agentmemory@latest`
 
-#### `npx skills add` ile yerel skill'ler (50+ ajan)
+#### `npx skills add` ile yerel skill'ler
 
 agentmemory, Claude-Code-tarzı `<dir>/SKILL.md` formatında 17 skill sunar: 9 çağrılabilir aksiyon skill'i (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) ve ajanın gerektiğinde yüklediği 8 referans skill (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Referans skill'ler, kaynaktan üretilen veri tablolarını taşır, bu yüzden asla sapmazlar. vercel-labs'ın [`skills`](https://npmjs.com/package/skills) CLI'si, bunları çağıran ajanın yerel skill dizinine 50+ ajanda (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf ve daha fazlası) otomatik olarak kurar:
 
@@ -844,7 +636,7 @@ agentmemory girdisi, `mcpServers` şeklini kullanan her host'ta (Cursor, Claude 
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks`, paylaşılan customization dizinine MCP ve yakalama hook'larını kurar. Bkz. [Antigravity kurulumu ve sınırları](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks`, güncel IDE sürümleriyle aynı MCP ve hook yapılandırmasını kullanır. Mevcut kurulumlar `--force` ile yenilenmelidir; bkz. [yükseltme notları](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro`, kullanıcı seviyesindeki yapılandırmayı yazar. Workspace geçersiz kılmaları, kodunuzun yanındaki `.kiro/settings/mcp.json` içine gider. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp`, standart `mcpServers` bloğunu yazar. Warp, ayrıca `.claude/skills/`'ten skill'leri otomatik keşfeder; Claude Code eklentisi kurulduğunda 8 agentmemory skill'i (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`), Warp'ın slash-komut paletinde yerli olarak görünür. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp`, standart `mcpServers` bloğunu yazar. Warp, ayrıca `.claude/skills/`'ten skill'leri otomatik keşfeder; Claude Code eklentisi kurulduğunda 9 agentmemory skill'i (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`), Warp'ın slash-komut paletinde yerli olarak görünür. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline`, standart `mcpServers` bloğunu yazar. VS Code eklenti kullanıcıları: aynı bloğu Cline Settings → MCP Servers → Edit JSON üzerinden yapıştırın. |
 | **Continue.dev** | `~/.continue/config.yaml` (tercih edilen) veya `config.json` (eski/legacy) | `agentmemory connect continue`, yapılandırma yoksa `config.yaml` oluşturur veya mevcut `config.json` dosyasını değiştirir. Mevcut YAML için yorumları ve çapaları koruyarak `mcpServers:` altına eklenecek bloğu gösterir. Continue nesne yerine dizi kullanır. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed`, `context_servers` altına yazar (Zed'in key'i, `mcpServers` DEĞİL). Uzak MCP sunucuları, bunun yerine `{"url": "..."}` üzerinden bağlanabilir. |
@@ -926,7 +718,6 @@ Her AI kodlama ajanı, yerleşik bellekle gelir: Claude Code'da `MEMORY.md`, Cur
 |---|---|---|
 | Bakım | Elle düzenlenen talimatlar | İndekslenmiş oturum geçmişi ve anılar |
 | Arama | Her şeyi bağlama yükler | BM25 + vektör + graf (yalnızca top-K) |
-| Token maliyeti | 240 gözlemde 22K+ | ~1,900 token (92% daha az) |
 | Ajanlar arası | Ajan başına dosyalar | MCP + REST (herhangi bir ajan) |
 | Koordinasyon | Yok | Lease'ler, signal'ler, action'lar, routine'ler |
 | Gözlemlenebilirlik | Dosyaları manuel okuma | :3113'te gerçek zamanlı görüntüleyici |
@@ -939,7 +730,7 @@ Her AI kodlama ajanı, yerleşik bellekle gelir: Claude Code'da `MEMORY.md`, Cur
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1024,7 +815,7 @@ Reciprocal Rank Fusion (RRF, k=60) ile füzyonlanır ve oturum bazında çeşitl
 
 Bir vektör indeksi doldurulduğunda, `mem::search` (`memory_recall`'un arkasında) hybrid BM25 + vektör ranker'ı kullanır. Embedding olmadan BM25 kullanır. `smart-search`, anahtarsız modda dahi graf verisi mevcut olduğunda ek olarak yapısal graf eşleşmelerini füzyonlayabilir. Lesson recall'u, her sorguda tüm corpus'u taramak yerine özel bir bellek içi (in-memory) BM25 indeksinde çalışır. Supersede edilmiş bellek sürümleri her recall yolundan hariç tutulur; sürüm zinciri geçmişlerini korur.
 
-Vektörler bir çökme veya force-kill'den sağ çıkar. Vektör indeksi, en fazla her `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS`'de (10 dakika) bucket'lar halinde kaydedilir. Bu aralıkta eklenen veya kaldırılan her vektör, state store'daki küçük bir bekleyen (pending) log'a da hemen yazılır ve bir sonraki başlatma, embedding sağlayıcısını çağırmadan bunu replay eder. Her başarılı kayıt, log'u boşaltır. Replay'den sonra hâlâ vektörü olmayan dokümanlar, hiçbiri kalmayana kadar `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) parti halinde arka planda yeniden embed edilir ve durdurulan bir backfill, bir sonraki başlatmada devam eder. `/agentmemory/status` ve görüntüleyici, bekleyen log boyutunu ve backfill durumunu gösterir. Anahtarsız kurulumlar hiçbir şey yazmaz.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25, Yunanca, Kiril, İbranice, Arapça ve aksanlı Latin'i kutudan çıktığı gibi tokenize eder. Çince / Japonca / Korece bellekler için, CJK run'larını kelime seviyesinde token'lara bölmek üzere opsiyonel segmenter'ları kurun (`npm install @node-rs/jieba tiny-segmenter`); bunlar olmadan agentmemory, tüm-run tokenizasyonuna yumuşak geçiş yapar (soft-falls) ve stderr'de tek seferlik bir ipucu yazdırır.
 
@@ -1040,9 +831,9 @@ Normal npm kurulumu, opsiyonel `@huggingface/transformers` runtime'ını içerir
 
 | Sağlayıcı | Model | Maliyet | Notlar |
 |---|---|---|---|
-| **Yerel (önerilen opt-in)** | `all-MiniLM-L6-v2` | Ücretsiz | İlk model indirmesinden sonra cihaz üzerinde, yalnızca BM25'e göre +8pp recall |
+| **Yerel (önerilen opt-in)** | `all-MiniLM-L6-v2` | Ücretsiz | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Ücretsiz katman | 100+ dil, 768/1536/3072 boyut (MRL), 2048-token girdi. `text-embedding-004`'ün yerini alır ([kullanımdan kaldırıldı, 14 Oca 2026'da durduruldu](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | En yüksek kalite |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | Ücretli | Kod için optimize edilmiş |
 | Cohere | `embed-english-v3.0` | Ücretsiz deneme | Genel amaçlı |
 | OpenRouter | Herhangi bir model | Değişken | Çoklu-model proxy |

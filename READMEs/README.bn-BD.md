@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% রিট্রিভাল R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% কম টোকেন" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP টুল" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 অটো হুক" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 এক্সটার্নাল ডিবি" height="38" /></picture>
@@ -331,223 +329,17 @@ agentmemory --instance 1
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="বেঞ্চমার্ক" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+বর্তমান পুনরুদ্ধারের ফলাফল, মেট্রিকের সংজ্ঞা ও পুনরায় পরীক্ষার ধাপ:
 
-### রিট্রিভাল অ্যাকুরেসি
-
-**coding-agent-life-v1** (ইন-হাউস করপাস, স্যান্ডবক্সে রিপ্রোডিউসযোগ্য)
-
-| অ্যাডাপ্টার | P@5 | R@5 | টপ-5 হিট রেট | p50 লেটেন্সি |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep বেসলাইন | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-এই করপাসের জন্য **P@5-এর গাণিতিক সর্বোচ্চ সীমায় (0.240, স্কোরকার্ড দেখুন)** 100% টপ-5 হিট রেট। Hybrid প্রতিটি গোল্ড সেশন রিট্রিভ করে; multi-session temporal কোয়েরিতে grep 2টির মধ্যে 1টি গোল্ড মিস করে। উন্নতিটা **রিকল + টেম্পোরাল**-এর, অ্যাগ্রিগেট প্রিসিশনের নয়। এই বেঞ্চমার্কটি ছোট এবং গোল্ড-স্পার্স; নিচের বড় LongMemEval-S আরও ভালোভাবে পার্থক্য দেখায়। প্রতি-টাইপ সম্পূর্ণ ব্রেকডাউন + সংশোধন নোট: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md)।
-
-**LongMemEval-S** (ICLR 2025, 500 প্রশ্ন)
-
-| সিস্টেম | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| শুধু BM25 ফলব্যাক | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### টোকেন সাশ্রয়
-
-| পদ্ধতি | টোকেন/বছর | খরচ/বছর |
-|---|---|---|
-| সম্পূর্ণ কনটেক্সট পেস্ট করা | 19.5M+ | অসম্ভব (উইন্ডো অতিক্রম করে) |
-| LLM-সংক্ষেপিত | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + লোকাল এমবেডিং | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> এমবেডিং মডেল: `all-MiniLM-L6-v2` (লোকাল, ফ্রি, API কী ছাড়াই)। সম্পূর্ণ রিপোর্ট: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md)। প্রতিযোগীদের সাথে তুলনা: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md), যা agentmemory-কে mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo-র সাথে তুলনা করে।
-
-**লোকালি রিপ্রোডিউস করুন:** [`eval/README.md`](../eval/README.md), LongMemEval `_s` (পাবলিক 500-প্রশ্ন) + `coding-agent-life-v1` (ইন-হাউস 15-সেশন করপাস)-এর জন্য একটি অ্যাডাপ্টার-পাগেবল হার্নেস। grep / vector / agentmemory অ্যাডাপ্টারগুলো পাশাপাশি স্কোর করে, NDJSON আউটপুট দেয়, প্রকাশিত স্কোরকার্ড [`docs/benchmarks/`](../docs/benchmarks/)-এ জমা হয়।
-
-**[codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything), এবং [Graphify](https://github.com/safishamsi/graphify)-এর সাথে ভালোভাবে জুটি বাঁধে।** কোড-গ্রাফ ইনডেক্সিং, মাল্টি-এজেন্ট বিল্ড পাইপলাইন, এবং docs / PDF / ছবি / ভিডিও জুড়ে বিস্তৃত নলেজ গ্রাফ। agentmemory কাজটা মনে রাখে; এই তিনটি প্রজেক্ট কনটেক্সট লেয়ারের বাকি অংশ আলোকিত করে। রেসিপি + প্রশ্ন-রাউটিং টেবিল: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md)।
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="প্রতিযোগীদের সাথে তুলনা" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>বিল্ট-ইন (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>ধরন</strong></td>
-<td>মেমরি ইঞ্জিন + MCP সার্ভার</td>
-<td>মেমরি লেয়ার API</td>
-<td>সম্পূর্ণ এজেন্ট রানটাইম</td>
-<td>পার্সোনাল AI</td>
-<td>মেমরি API + অ্যাপ</td>
-<td>টিম মেমরি হাব (LLM প্রক্সি)</td>
-<td>ভেক্টর মেমরি (OSS)</td>
-<td>মেমরি ইঞ্জিন (Oracle DB)</td>
-<td>মেমরি সিস্টেম</td>
-<td>স্ট্যাটিক ফাইল</td>
-</tr>
-<tr>
-<td><strong>রিট্রিভাল R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>স্ব-ঘোষিত</td>
-<td>PersonaMem 76% (স্ব-ঘোষিত)</td>
-<td>~96.6% (স্ব-ঘোষিত)</td>
-<td>94.4% (স্ব-ঘোষিত)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>অটো-ক্যাপচার</strong></td>
-<td>12 হুক (ম্যানুয়াল পরিশ্রম শূন্য)</td>
-<td>ম্যানুয়াল <code>add()</code> কল</td>
-<td>এজেন্ট সেলফ-এডিট</td>
-<td>ম্যানুয়াল</td>
-<td>API-সাইড এক্সট্রাকশন</td>
-<td>প্রক্সি ইন্টারসেপশন (base-URL সোয়াপ)</td>
-<td>ম্যানুয়াল</td>
-<td>API এক্সট্রাকশন</td>
-<td>ম্যানুয়াল</td>
-<td>ম্যানুয়াল এডিটিং</td>
-</tr>
-<tr>
-<td><strong>সার্চ</strong></td>
-<td>BM25 + Vector + Graph (RRF ফিউশন)</td>
-<td>Vector + Graph</td>
-<td>Vector (আর্কাইভাল)</td>
-<td>সিম্যান্টিক</td>
-<td>Vector + RAG</td>
-<td>4 ধরনের অ্যাসেট (Chat / Skill / Wiki / CodeGraph)</td>
-<td>কেবল Vector</td>
-<td>Vector + সিম্যান্টিক</td>
-<td>ডিকে-ওয়েটেড</td>
-<td>সব কনটেক্সটে লোড করে</td>
-</tr>
-<tr>
-<td><strong>মাল্টি-এজেন্ট</strong></td>
-<td>MCP + REST + lease + signal</td>
-<td>API (কোনো কো-অর্ডিনেশন নেই)</td>
-<td>কেবল Letta রানটাইমের মধ্যে</td>
-<td>না</td>
-<td>না</td>
-<td>টিম রোল + শেয়ার্ড অ্যাসেট</td>
-<td>না</td>
-<td>কেবল স্কোপড</td>
-<td>মাল্টি-এজেন্ট শেয়ার্ড</td>
-<td>প্রতি-এজেন্ট ফাইল</td>
-</tr>
-<tr>
-<td><strong>ফ্রেমওয়ার্ক লক-ইন</strong></td>
-<td>নেই (যেকোনো MCP ক্লায়েন্ট)</td>
-<td>নেই</td>
-<td>বেশি (Letta-ই ব্যবহার করতে হবে)</td>
-<td>স্ট্যান্ডঅ্যালোন</td>
-<td>নেই</td>
-<td>প্রক্সি প্রতিটি মডেল কলের সামনে থাকে</td>
-<td>নেই</td>
-<td>Oracle Database</td>
-<td>নেই</td>
-<td>প্রতি-এজেন্ট ফরম্যাট</td>
-</tr>
-<tr>
-<td><strong>এক্সটার্নাল ডিপেন্ডেন্সি</strong></td>
-<td>আলাদা ডেটাবেস সেবা দরকার নেই</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + ভেক্টর DB</td>
-<td>একাধিক</td>
-<td>ম্যানেজড ক্লাউড</td>
-<td>Docker স্ট্যাক (Core + Hub + Proxy)</td>
-<td>ভেক্টর স্টোর</td>
-<td>Oracle AI Database</td>
-<td>নেই</td>
-<td>নেই</td>
-</tr>
-<tr>
-<td><strong>মেমরি লাইফসাইকেল</strong></td>
-<td>4-টায়ার কনসোলিডেশন + ডিকে + অটো-ফরগেট</td>
-<td>প্যাসিভ এক্সট্রাকশন</td>
-<td>এজেন্ট-ম্যানেজড</td>
-<td>ম্যানুয়াল</td>
-<td>অটো-ফরগেট</td>
-<td>ম্যানুয়াল রিভিউ; অটো-রাউটিং চলছে</td>
-<td>নেই</td>
-<td>বলা নেই</td>
-<td>ডিকে + কনসোলিডেশন</td>
-<td>ম্যানুয়াল প্রুনিং</td>
-</tr>
-<tr>
-<td><strong>টোকেন এফিশিয়েন্সি</strong></td>
-<td>~1,900 টোকেন/সেশন ($10/বছর)</td>
-<td>ইন্টিগ্রেশন অনুযায়ী ভিন্ন</td>
-<td>কোর মেমরি কনটেক্সটে থাকে</td>
-<td>ভিন্ন হয়</td>
-<td>ক্লাউড প্রাইসিং</td>
-<td>বলা নেই</td>
-<td>কোনো টোকেন বাজেট নেই</td>
-<td>LLM-ব্যাকড (ভিন্ন হয়)</td>
-<td>ভিন্ন হয়</td>
-<td>240 অবজারভেশনে 22K+ টোকেন</td>
-</tr>
-<tr>
-<td><strong>রিয়েল-টাইম ভিউয়ার</strong></td>
-<td>হ্যাঁ (পোর্ট 3113)</td>
-<td>ক্লাউড ড্যাশবোর্ড</td>
-<td>ক্লাউড ড্যাশবোর্ড</td>
-<td>ওয়েব UI</td>
-<td>ক্লাউড ড্যাশবোর্ড</td>
-<td>হাব ওয়েব UI</td>
-<td>না</td>
-<td>না</td>
-<td>না</td>
-<td>না</td>
-</tr>
-<tr>
-<td><strong>সেলফ-হোস্টেড</strong></td>
-<td>হ্যাঁ (ডিফল্ট)</td>
-<td>অপশনাল</td>
-<td>অপশনাল</td>
-<td>হ্যাঁ</td>
-<td>না (কেবল ক্লাউড)</td>
-<td>হ্যাঁ (Docker)</td>
-<td>হ্যাঁ</td>
-<td>হ্যাঁ (Oracle DB)</td>
-<td>হ্যাঁ</td>
-<td>হ্যাঁ</td>
-</tr>
-</table>
+পণ্য ও স্থাপনার বিকল্পের হালনাগাদ তুলনা এবং উৎস:
 
-<sub>বেঞ্চমার্ক নোট: শুধু agentmemory-র R@5 আমাদের নিজের মাপা ফল (LongMemEval-S, <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a> থেকে রিপ্রোডিউসযোগ্য)। mem0 এবং Letta-র সংখ্যাগুলো তাদের প্রকাশিত LoCoMo নম্বর (একটি ভিন্ন ডেটাসেট); MemPalace, supermemory, TencentDB (PersonaMem), এবং oracleagentmemory-র সংখ্যাগুলো ভেন্ডরের স্ব-ঘোষিত দাবি যা আমরা স্বতন্ত্রভাবে রিপ্রোডিউস করিনি (oracleagentmemory-র রানটি একটি Oracle AI Database-এর বিরুদ্ধে GPT-5.5 ব্যবহার করেছিল)। পাশাপাশি দেখানো হয়েছে কেবল মোটামুটি ধারণা দেওয়ার জন্য, অভিন্ন ডেটার উপর মুখোমুখি তুলনা নয়। স্টার সংখ্যা আনুমানিক এবং সময়ের সাথে বদলায়।</sub>
-
-**নতুন প্রতিযোগী** যাদের জানা দরকার, [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md)-এ গভীরভাবে তুলনা করা হয়েছে:
-
-| সিস্টেম | ⭐ | অ্যাঙ্গেল |
-|--------|---|-------|
-| Zep / Graphiti | 30K | টেম্পোরাল নলেজ গ্রাফ; সবচেয়ে শক্তিশালী প্রকাশিত টেম্পোরাল-কোয়েরি ফল (LongMemEval 63.8%), কিন্তু গ্রাফ অ্যাসিনক্রোনাসভাবে তৈরি হয় তাই নতুন তথ্য দেরিতে আসতে পারে |
-| Cognee | 30K | ডকুমেন্ট-থেকে-নলেজ-গ্রাফ ইনজেশন, কেবল Python, সেশন ক্যাপচারের বদলে স্ট্রাকচারড এনটিটি এক্সট্র্যাকশনের জন্য তৈরি |
-
-AgentMemory সেশন ক্যাপচার, অনুসন্ধানযোগ্য প্রজেক্ট ইতিহাস ও লোকাল ভিউয়ার একসঙ্গে দেয়; প্রথমবার থেকেই কী ছাড়া ব্যবহার করা যায়।
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -780,7 +572,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 মেমরি সার্ভার শুরু করুন: `npx -y @agentmemory/agentmemory@latest`
 
-#### `npx skills add`-এর মাধ্যমে নেটিভ স্কিল (50+ এজেন্ট)
+#### `npx skills add`-এর মাধ্যমে নেটিভ স্কিল
 
 agentmemory Claude-Code-স্টাইলের `<dir>/SKILL.md` ফরম্যাটে 17টি স্কিল নিয়ে আসে: 9টি ইনভোকেবল অ্যাকশন স্কিল (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) এবং 8টি রেফারেন্স স্কিল যা এজেন্ট প্রয়োজনমতো লোড করে (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`)। রেফারেন্স স্কিলগুলো সোর্স থেকে জেনারেট করা ডেটা টেবিল বহন করে, তাই এগুলো কখনো ডিফ্ট করে না। vercel-labs-এর [`skills`](https://npmjs.com/package/skills) CLI 50+ এজেন্টে (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, এবং আরও) কলিং এজেন্টের নেটিভ স্কিল ডিরেক্টরিতে এগুলো অটো-ইনস্টল করে:
 
@@ -837,7 +629,7 @@ Hermes, OpenClaw, Pi ও Oh My Pi কানেক্টর ডিফল্টভ
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` শেয়ার্ড কাস্টমাইজেশন ডিরেক্টরিতে MCP এবং ক্যাপচার হুক ইনস্টল করে। দেখুন [Antigravity সেটআপ ও সীমাবদ্ধতা](../docs/plugins/antigravity.md)। |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` বর্তমান IDE ভার্সনের মতো একই MCP এবং হুক কনফিগারেশন ব্যবহার করে। বিদ্যমান ইনস্টলেশনগুলো `--force` দিয়ে রিফ্রেশ করা উচিত; দেখুন [আপগ্রেড নোটস](../docs/plugins/antigravity.md)। |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` ইউজার-লেভেল কনফিগ লেখে। ওয়ার্কস্পেস ওভাররাইড আপনার কোডের পাশে `.kiro/settings/mcp.json`-এ যায়। |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। Warp `.claude/skills/` থেকেও স্কিল অটো-ডিসকভার করে; Claude Code প্লাগইন ইনস্টল হলে agentmemory-র 8টি স্কিল (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) Warp-এর স্ল্যাশ-কমান্ড প্যালেটে নেটিভভাবে দেখা যায়। |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। Warp `.claude/skills/` থেকেও স্কিল অটো-ডিসকভার করে; Claude Code প্লাগইন ইনস্টল হলে agentmemory-র 8টি স্কিল (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) Warp-এর স্ল্যাশ-কমান্ড প্যালেটে নেটিভভাবে দেখা যায়। |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। VS Code এক্সটেনশন ইউজাররা: Cline Settings → MCP Servers → Edit JSON-এর মাধ্যমে একই ব্লক পেস্ট করুন। |
 | **Continue.dev** | `~/.continue/config.yaml` (পছন্দনীয়) বা `config.json` (লেগ্যাসি) | `agentmemory connect continue` কনফিগারেশন না থাকলে `config.yaml` তৈরি করে অথবা বর্তমান `config.json` আপডেট করে। বিদ্যমান YAML-এর comment ও anchor বাঁচাতে সেটি না বদলে `mcpServers:`-এর নিচে বসানোর block দেখায়। Continue-এর `mcpServers` একটি array। |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` `context_servers`-এর নিচে লেখে (Zed-র কি, `mcpServers` নয়)। রিমোট MCP সার্ভার এর বদলে `{"url": "..."}` দিয়েও ওয়্যার করা যায়। |
@@ -933,7 +725,6 @@ Session 2: "Now add rate limiting"
 |---|---|---|
 | রক্ষণাবেক্ষণ | হাতে সাজানো নির্দেশনা | ইনডেক্স করা সেশন ইতিহাস ও মেমরি |
 | সার্চ | সবকিছু কনটেক্সটে লোড করে | BM25 + vector + graph (কেবল top-K) |
-| টোকেন খরচ | 240 অবজারভেশনে 22K+ | ~1,900 টোকেন (92% কম) |
 | ক্রস-এজেন্ট | প্রতি-এজেন্ট ফাইল | MCP + REST (যেকোনো এজেন্ট) |
 | কো-অর্ডিনেশন | নেই | lease, signal, action, routine |
 | অবজারভেবিলিটি | ম্যানুয়ালি ফাইল পড়া | :3113-এ রিয়েল-টাইম ভিউয়ার |
@@ -946,7 +737,7 @@ Session 2: "Now add rate limiting"
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1031,7 +822,7 @@ Reciprocal Rank Fusion (RRF, k=60) দিয়ে ফিউজড এবং স
 
 ভেক্টর ইনডেক্স পপুলেটেড থাকলে, `mem::search` (`memory_recall`-এর পেছনে) হাইব্রিড BM25 + vector র্যাংকার ব্যবহার করে। এমবেডিং ছাড়া এটি BM25 ব্যবহার করে। `smart-search` গ্রাফ ডেটা থাকলে অতিরিক্তভাবে স্ট্রাকচারাল গ্রাফ ম্যাচ ফিউজ করতে পারে, কিলেস মোডেও। লেসন রিকল প্রতি কোয়েরিতে সম্পূর্ণ করপাস স্ক্যান করার বদলে একটি ডেডিকেটেড ইন-মেমরি BM25 ইনডেক্সে চলে। রিপ্লেসড মেমরি ভার্সন প্রতিটি রিকল পাথ থেকে বাদ পড়ে; ভার্সন চেইন তাদের ইতিহাস রাখে।
 
-ভেক্টর ক্র্যাশ বা ফোর্স-কিল সহ্য করতে পারে। ভেক্টর ইনডেক্স সর্বোচ্চ প্রতি `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 মিনিট) অন্তর বাকেটে সেভ হয়। মাঝখানে যুক্ত বা বাদ দেওয়া প্রতিটি ভেক্টরও state store-এ একটি ছোট পেন্ডিং লগে তাৎক্ষণিকভাবে লেখা হয়, এবং পরের স্টার্ট এমবেডিং প্রোভাইডারকে কল না করেই সেটা রিপ্লে করে। প্রতিটি সফল সেভ লগটি খালি করে দেয়। রিপ্লের পরেও যে ডকুমেন্টগুলোর ভেক্টর নেই সেগুলো ব্যাকগ্রাউন্ডে `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500)-এর ব্যাচে পুনরায়-এমবেড করা হয় যতক্ষণ না কোনোটা বাকি থাকে, এবং থেমে যাওয়া ব্যাকফিল পরের স্টার্টে চালু থাকে। `/agentmemory/status` এবং ভিউয়ার পেন্ডিং লগের সাইজ ও ব্যাকফিল স্টেট দেখায়। কিলেস ইনস্টল কিছুই লেখে না।
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 আউট অফ দ্য বক্সে গ্রিক, সিরিলিক, হিব্রু, আরবি, এবং অ্যাকসেন্টেড ল্যাটিন টোকেনাইজ করে। চাইনিজ / জাপানিজ / কোরিয়ান মেমরির জন্য, CJK রানগুলো ওয়ার্ড-লেভেল টোকেনে ভাগ করতে অপশনাল সেগমেন্টার ইনস্টল করুন (`npm install @node-rs/jieba tiny-segmenter`); এগুলো ছাড়া, agentmemory সফট-ফল করে সম্পূর্ণ-রান টোকেনাইজেশনে এবং stderr-এ একবার একটি হিন্ট প্রিন্ট করে।
 
@@ -1047,9 +838,9 @@ EMBEDDING_PROVIDER=local
 
 | প্রোভাইডার | মডেল | খরচ | নোট |
 |---|---|---|---|
-| **Local (সুপারিশকৃত অপ্ট-ইন)** | `all-MiniLM-L6-v2` | ফ্রি | প্রথম মডেল ডাউনলোডের পর অন-ডিভাইস, শুধু-BM25-র তুলনায় +8pp রিকল |
+| **Local (সুপারিশকৃত অপ্ট-ইন)** | `all-MiniLM-L6-v2` | ফ্রি | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | ফ্রি টায়ার | 100+ ভাষা, 768/1536/3072 dims (MRL), 2048-টোকেন ইনপুট। `text-embedding-004`-কে প্রতিস্থাপন করে ([deprecated, শাটডাউন Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | সর্বোচ্চ কোয়ালিটি |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | পেইড | কোডের জন্য অপ্টিমাইজড |
 | Cohere | `embed-english-v3.0` | ফ্রি ট্রায়াল | জেনারেল পারপাস |
 | OpenRouter | কোনো মডেল | ভিন্ন হয় | মাল্টি-মডেল প্রক্সি |

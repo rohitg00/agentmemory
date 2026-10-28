@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% mas kaunting token" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tool" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 awtomatikong hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 panlabas na DB" height="38" /></picture>
@@ -331,223 +329,17 @@ Pinakabagong release notes: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Kasalukuyang resulta ng paghahanap, kahulugan ng mga sukatan, at mga hakbang sa pag-ulit ng pagsubok:
 
-### Katumpakan ng Retrieval
-
-**coding-agent-life-v1** (in-house corpus, reproducible sa sandbox)
-
-| Adapter | P@5 | R@5 | Top-5 hit rate | p50 latency |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep baseline | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-100% top-5 hit rate sa **P@5 math ceiling** para sa corpus na ito (0.240, tingnan ang scorecard). Nakukuha ng hybrid ang bawat gold session; nawawala sa grep ang 1 sa 2 gold sa multi-session temporal query. Ang lift ay sa **recall + temporal**, hindi sa aggregate precision. Maliit at gold-sparse ang benchmark na ito; mas mahusay na nagkakaiba ang mas malaking LongMemEval-S sa ibaba. Buong per-type breakdown + correction note: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 tanong)
-
-| Sistema | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| BM25-only fallback | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Pagtitipid sa Token
-
-| Pamamaraan | Tokens/yr | Cost/yr |
-|---|---|---|
-| I-paste ang buong context | 19.5M+ | Imposible (lumalagpas sa window) |
-| Pinaikli ng LLM | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + local embeddings | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Embedding model: `all-MiniLM-L6-v2` (lokal, libre, walang API key). Kumpletong mga ulat: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Paghambing sa kompetisyon: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) na sumasaklaw sa agentmemory laban sa mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**I-reproduce nang lokal:** [`eval/README.md`](../eval/README.md), isang adapter-pluggable harness para sa LongMemEval `_s` (public 500-Q) + `coding-agent-life-v1` (in-house na 15-session corpus). Nag-iiskor ang mga grep / vector / agentmemory adapter nang tabi-tabi, NDJSON output, dumadapo ang mga published scorecard sa [`docs/benchmarks/`](../docs/benchmarks/).
-
-**Umaangkop sa [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything), at [Graphify](https://github.com/safishamsi/graphify).** Code-graph indexing, multi-agent build pipeline, at mas malawak na knowledge graph sa mga docs / PDF / imahe / video. Naaalala ng agentmemory ang ginawang trabaho; pinapaliwanag naman ng tatlong project na ito ang iba pang bahagi ng context layer. Mga recipe + question-routing table: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="VS Kompetisyon" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Built-in (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Uri</strong></td>
-<td>Memory engine + MCP server</td>
-<td>Memory layer API</td>
-<td>Buong agent runtime</td>
-<td>Personal AI</td>
-<td>Memory API + app</td>
-<td>Team memory hub (LLM proxy)</td>
-<td>Vector memory (OSS)</td>
-<td>Memory engine (Oracle DB)</td>
-<td>Sistema ng memory</td>
-<td>Static file</td>
-</tr>
-<tr>
-<td><strong>Retrieval R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Sariling ulat</td>
-<td>PersonaMem 76% (sariling ulat)</td>
-<td>~96.6% (sariling ulat)</td>
-<td>94.4% (sariling ulat)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Auto-capture</strong></td>
-<td>12 hook (walang manu-manong pagsisikap)</td>
-<td>Manual na <code>add()</code> call</td>
-<td>Sariling pag-edit ng agent</td>
-<td>Manual</td>
-<td>API-side extraction</td>
-<td>Proxy interception (pagpalit ng base-URL)</td>
-<td>Manual</td>
-<td>API extraction</td>
-<td>Manual</td>
-<td>Manual na pag-edit</td>
-</tr>
-<tr>
-<td><strong>Paghahanap</strong></td>
-<td>BM25 + Vector + Graph (RRF fusion)</td>
-<td>Vector + Graph</td>
-<td>Vector (archival)</td>
-<td>Semantic</td>
-<td>Vector + RAG</td>
-<td>4 uri ng asset (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Vector lamang</td>
-<td>Vector + semantic</td>
-<td>Decay-weighted</td>
-<td>Nilo-load ang lahat sa context</td>
-</tr>
-<tr>
-<td><strong>Multi-agent</strong></td>
-<td>MCP + REST + lease + signal</td>
-<td>API (walang coordination)</td>
-<td>Sa loob lamang ng Letta runtime</td>
-<td>Hindi</td>
-<td>Hindi</td>
-<td>Mga tungkulin sa team + shared asset</td>
-<td>Hindi</td>
-<td>Scoped lamang</td>
-<td>Shared sa multi-agent</td>
-<td>Per-agent na file</td>
-</tr>
-<tr>
-<td><strong>Framework lock-in</strong></td>
-<td>Wala (kahit anong MCP client)</td>
-<td>Wala</td>
-<td>Mataas (kailangang gamitin ang Letta)</td>
-<td>Standalone</td>
-<td>Wala</td>
-<td>Proxy sa harap ng bawat model call</td>
-<td>Wala</td>
-<td>Oracle Database</td>
-<td>Wala</td>
-<td>Per-agent na format</td>
-</tr>
-<tr>
-<td><strong>Panlabas na deps</strong></td>
-<td>Hindi kailangan ng hiwalay na database service</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vector DB</td>
-<td>Marami</td>
-<td>Managed cloud</td>
-<td>Docker stack (Core + Hub + Proxy)</td>
-<td>Vector store</td>
-<td>Oracle AI Database</td>
-<td>Wala</td>
-<td>Wala</td>
-</tr>
-<tr>
-<td><strong>Memory lifecycle</strong></td>
-<td>4-tier consolidation + decay + auto-forget</td>
-<td>Passive extraction</td>
-<td>Pinamamahalaan ng agent</td>
-<td>Manual</td>
-<td>Auto-forget</td>
-<td>Manual review; isinasagawa pa ang auto-routing</td>
-<td>Wala</td>
-<td>Hindi nakasaad</td>
-<td>Decay + consolidation</td>
-<td>Manual na pruning</td>
-</tr>
-<tr>
-<td><strong>Kahusayan ng Token</strong></td>
-<td>~1,900 tokens/session ($10/yr)</td>
-<td>Depende sa integration</td>
-<td>Core memory sa context</td>
-<td>Depende</td>
-<td>Cloud pricing</td>
-<td>Hindi nakasaad</td>
-<td>Walang token budget</td>
-<td>LLM-backed (depende)</td>
-<td>Depende</td>
-<td>22K+ tokens sa 240 obs</td>
-</tr>
-<tr>
-<td><strong>Real-time viewer</strong></td>
-<td>Oo (port 3113)</td>
-<td>Cloud dashboard</td>
-<td>Cloud dashboard</td>
-<td>Web UI</td>
-<td>Cloud dashboard</td>
-<td>Hub web UI</td>
-<td>Hindi</td>
-<td>Hindi</td>
-<td>Hindi</td>
-<td>Hindi</td>
-</tr>
-<tr>
-<td><strong>Self-hosted</strong></td>
-<td>Oo (default)</td>
-<td>Opsyonal</td>
-<td>Opsyonal</td>
-<td>Oo</td>
-<td>Hindi (cloud-only)</td>
-<td>Oo (Docker)</td>
-<td>Oo</td>
-<td>Oo (Oracle DB)</td>
-<td>Oo</td>
-<td>Oo</td>
-</tr>
-</table>
+Na-update na paghahambing ng mga produkto at paraan ng deployment, kasama ang mga sanggunian:
 
-<sub>Tala sa benchmark: ang R@5 lamang ng agentmemory ang aming sariling nasukat na resulta (LongMemEval-S, reproducible mula sa <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). Ang mga figure ng mem0 at Letta ay ang kanilang mga pinublikang numero sa LoCoMo (ibang dataset); ang mga figure ng MemPalace, supermemory, TencentDB (PersonaMem), at oracleagentmemory ay mga claim na self-reported ng vendor na hindi namin independent na-reproduce (ang run ng oracleagentmemory ay gumamit ng GPT-5.5 laban sa isang Oracle AI Database). Ipinapakita nang tabi-tabi para sa ballpark estimate lamang, hindi isang head-to-head sa parehong data. Ang bilang ng star ay tinatantya at nagbabago sa paglipas ng panahon.</sub>
-
-**Mga bagong entrant** na dapat malaman, inihambing nang detalyado sa [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| Sistema | ⭐ | Anggulo |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Temporal knowledge graph; ang pinakamalakas na pinublikang resulta sa temporal-query (LongMemEval 63.8%), pero bumubuo ang graph nang asynchronous kaya maaaring mahuli ang mga bagong fact |
-| Cognee | 30K | Document-to-knowledge-graph ingestion, Python lamang, ginawa para sa structured entity extraction sa halip na session capture |
-
-Pinagsasama ng AgentMemory ang session capture, searchable na project history, at local viewer, na magagamit nang walang key mula sa unang pagpapatakbo.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -780,7 +572,7 @@ Kumpletong gabay: [`integrations/hermes/`](../integrations/hermes/)
 
 Simulan ang memory server: `npx -y @agentmemory/agentmemory@latest`
 
-#### Native na skill gamit ang `npx skills add` (50+ agent)
+#### Native na skill gamit ang `npx skills add`
 
 Nag-ship ang agentmemory ng 17 skill sa Claude-Code-style na `<dir>/SKILL.md` format: 9 invocable na action skill (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) at 8 reference skill na nilo-load ng agent kapag kailangan (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). May dala ang mga reference skill na data table na nabuo mula sa source, kaya hindi ito kailanman nadrift. Ang [`skills`](https://npmjs.com/package/skills) CLI ng vercel-labs ay awtomatikong nag-install nito sa native skill directory ng tumatawag na agent sa 50+ agent (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, at iba pa):
 
@@ -837,7 +629,7 @@ Ang entry ng agentmemory ay ang **parehong MCP server block** sa bawat host na g
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | Ini-install ng `agentmemory connect antigravity --with-hooks` ang MCP at capture hooks sa shared customization directory. Tingnan ang [setup at limitasyon ng Antigravity](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | Ginagamit ng `agentmemory connect antigravity-cli --with-hooks` ang parehong MCP at hook configuration ng kasalukuyang mga bersyon ng IDE. Dapat i-refresh ng mga umiiral na installation gamit ang `--force`; tingnan ang [upgrade notes](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | Isinusulat ng `agentmemory connect kiro` ang user-level config. Ang workspace override ay sa `.kiro/settings/mcp.json`, katabi ng iyong code. |
-| **Warp** | `~/.warp/.mcp.json` | Isinusulat ng `agentmemory connect warp` ang standard na `mcpServers` block. Awtomatikong nadidiskubre din ng Warp ang mga skill mula sa `.claude/skills/`; kapag naka-install na ang Claude Code plugin, lumalabas nang native ang 8 agentmemory skill (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) sa slash-command palette ng Warp. |
+| **Warp** | `~/.warp/.mcp.json` | Isinusulat ng `agentmemory connect warp` ang standard na `mcpServers` block. Awtomatikong nadidiskubre din ng Warp ang mga skill mula sa `.claude/skills/`; kapag naka-install na ang Claude Code plugin, lumalabas nang native ang 9 agentmemory skill (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) sa slash-command palette ng Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | Isinusulat ng `agentmemory connect cline` ang standard na `mcpServers` block. Para sa VS Code extension user: i-paste ang parehong block sa Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferred) o `config.json` (legacy) | Gumagawa ang `agentmemory connect continue` ng `config.yaml` kung wala pang configuration o ina-update ang kasalukuyang `config.json`. Hindi nito binabago ang umiiral na YAML upang mapanatili ang comments at anchors; ipinapakita ang block na ilalagay sa ilalim ng `mcpServers:`. Array ang gamit ng Continue para sa `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | Isinusulat ng `agentmemory connect zed` sa ilalim ng `context_servers` (ang key ng Zed, HINDI `mcpServers`). Maaaring i-wire ang remote MCP server gamit ang `{"url": "..."}` sa halip. |
@@ -933,7 +725,6 @@ Nag-ship ang bawat AI coding agent na may built-in memory: may `MEMORY.md` ang C
 |---|---|---|
 | Pagpapanatili | Manu-manong inayos na instructions | Naka-index na session history at memory |
 | Paghahanap | Nilo-load ang lahat sa context | BM25 + vector + graph (top-K lamang) |
-| Gastos sa Token | 22K+ sa 240 obserbasyon | ~1,900 token (92% mas kaunti) |
 | Cross-agent | Per-agent na file | MCP + REST (kahit anong agent) |
 | Koordinasyon | Wala | Lease, signal, action, routine |
 | Observability | Basahin ang mga file nang manu-mano | Real-time viewer sa :3113 |
@@ -946,7 +737,7 @@ Nag-ship ang bawat AI coding agent na may built-in memory: may `MEMORY.md` ang C
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1031,7 +822,7 @@ Pinagsasama gamit ang Reciprocal Rank Fusion (RRF, k=60) at session-diversified 
 
 Kapag napupuno ang isang vector index, ginagamit ng `mem::search` (sa likod ng `memory_recall`) ang hybrid na BM25 + vector ranker. Kapag walang embeddings, ginagamit nito ang BM25. Maaari pang pagsamahin ng `smart-search` ang structural graph matches kapag umiiral ang graph data, kasama na sa keyless mode. Tumatakbo ang lesson recall sa isang dedikadong in-memory BM25 index sa halip na i-scan ang buong corpus kada query. Hindi kasama sa bawat recall path ang mga superseded na bersyon ng memory; pinapanatili ng version chain ang kanilang history.
 
-Nakaligtas ang mga vector sa isang crash o force-kill. Nasa-save ang vector index sa mga bucket sa pinakamadalas na bawat `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 minuto). Bawat vector na idinagdag o inalis sa gitna ay agad na isinusulat din sa isang maliit na pending log sa state store, at ni-replay ito ng susunod na start nang hindi tinawag ang embedding provider. Ang bawat matagumpay na save ay nagwawalang-laman sa log. Ang mga documento na wala pa ring vector pagkatapos ng replay ay re-embedded sa background sa mga batch ng `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) hanggang maubos ang lahat, at ang backfill na natigil ay magpapatuloy sa susunod na start. Ipinapakita ng `/agentmemory/status` at ng viewer ang laki ng pending log at ang estado ng backfill. Walang isinusulat ang mga keyless install.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 Tinotokenize ng BM25 ang Griyego, Cyrillic, Hebreo, Arabic, at accented Latin nang out of the box. Para sa mga memory sa Chinese / Japanese / Korean, i-install ang opsyonal na segmenter (`npm install @node-rs/jieba tiny-segmenter`) para hatiin ang mga CJK run sa word-level token; kung wala ito, soft-falls ang agentmemory sa whole-run tokenization at nagprint ng one-time hint sa stderr.
 
@@ -1047,9 +838,9 @@ Kasama sa normal na npm install ang opsyonal na `@huggingface/transformers` runt
 
 | Provider | Model | Gastos | Mga Tala |
 |---|---|---|---|
-| **Local (inirerekomendang opt-in)** | `all-MiniLM-L6-v2` | Libre | On-device pagkatapos ng unang pag-download ng model, +8pp recall kaysa sa BM25-only |
+| **Local (inirerekomendang opt-in)** | `all-MiniLM-L6-v2` | Libre | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Free tier | 100+ wika, 768/1536/3072 dims (MRL), 2048-token input. Pumalit sa `text-embedding-004` ([deprecated, magsasara noong Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Pinakamataas na kalidad |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | Bayad | Na-optimize para sa code |
 | Cohere | `embed-english-v3.0` | Free trial | Pangkalahatang gamit |
 | OpenRouter | Kahit anong model | Depende | Multi-model proxy |

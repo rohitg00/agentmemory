@@ -68,8 +68,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
@@ -335,223 +333,17 @@ agentmemory --instance 1
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+نتائج الاسترجاع الحالية، وتعريف المقاييس، وخطوات إعادة الاختبار:
 
-### دقة الاسترجاع
-
-**coding-agent-life-v1** (مجموعة بيانات داخلية، قابلة لإعادة الإنتاج في بيئة معزولة)
-
-| المحوّل | P@5 | R@5 | معدل الإصابة ضمن أفضل 5 | زمن الاستجابة p50 |
-|---|---|---|---|---|
-| **agentmemory الهجين** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| خط أساس grep | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-معدل إصابة 100% ضمن أفضل 5 عند **سقف P@5 الرياضي** لهذه المجموعة (0.240، راجع بطاقة النتائج). يسترجع النظام الهجين كل جلسة مرجعية (gold)؛ بينما يفوّت grep جلسة واحدة من جلستين مرجعيتين في الاستعلام الزمني متعدد الجلسات. التحسّن هنا في **الاسترجاع + البعد الزمني**، لا في الدقة الكلية. هذا المقياس صغير وقليل الجلسات المرجعية؛ ويميّز المقياس الأكبر LongMemEval-S أدناه بشكل أفضل. التفصيل الكامل حسب النوع وملاحظة التصحيح: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025، 500 سؤال)
-
-| النظام | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| BM25 فقط (خيار احتياطي) | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### توفير الرموز (Tokens)
-
-| الأسلوب | الرموز/سنويًا | التكلفة/سنويًا |
-|---|---|---|
-| لصق السياق الكامل | 19.5M+ | غير ممكن (يتجاوز النافذة) |
-| ملخَّص بواسطة LLM | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + تضمينات محلية | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> نموذج التضمين: `all-MiniLM-L6-v2` (محلي، مجاني، بلا مفتاح API). التقارير الكاملة: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md)، [`benchmark/QUALITY.md`](../benchmark/QUALITY.md)، [`benchmark/SCALE.md`](../benchmark/SCALE.md). مقارنة بالمنافسين: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) وتشمل agentmemory في مواجهة mem0 وLetta وKhoj وsupermemory وTencentDB Agent Memory وMemPalace وZep/Graphiti وCognee وHippo.
-
-**إعادة الإنتاج محليًا:** [`eval/README.md`](../eval/README.md)، وهو إطار اختبار (harness) قابل لتوصيل المحوّلات لـ LongMemEval `_s` (500 سؤال علنية) + `coding-agent-life-v1` (مجموعة داخلية من 15 جلسة). تُقيَّم محوّلات grep / المتجهات / agentmemory جنبًا إلى جنب، بمخرجات NDJSON، وتُنشر بطاقات النتائج في [`docs/benchmarks/`](../docs/benchmarks/).
-
-**يتكامل مع [codegraph](https://github.com/colbymchenry/codegraph) و[Understand Anything](https://github.com/Lum1104/Understand-Anything) و[Graphify](https://github.com/safishamsi/graphify).** فهرسة الرسم البياني للشفرة (code-graph)، وخطوط بناء متعددة الوكلاء، ورسوم بيانية معرفية أوسع تمتد عبر المستندات/ملفات PDF/الصور/الفيديوهات. يتذكّر agentmemory العمل؛ وتُضيء هذه المشاريع الثلاثة بقية طبقة السياق. الوصفات وجدول توجيه الأسئلة: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="vs Competitors" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>مدمج (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>النوع</strong></td>
-<td>محرك ذاكرة + خادم MCP</td>
-<td>واجهة برمجية لطبقة الذاكرة</td>
-<td>بيئة تشغيل كاملة للوكيل</td>
-<td>ذكاء اصطناعي شخصي</td>
-<td>واجهة برمجية للذاكرة + تطبيق</td>
-<td>محور ذاكرة جماعي (وكيل LLM وسيط)</td>
-<td>ذاكرة متجهية (مفتوحة المصدر)</td>
-<td>محرك ذاكرة (قاعدة بيانات Oracle)</td>
-<td>نظام ذاكرة</td>
-<td>ملف ثابت</td>
-</tr>
-<tr>
-<td><strong>دقة الاسترجاع R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>غير متوفر</td>
-<td>مُعلَن من الشركة نفسها</td>
-<td>PersonaMem 76% (مُعلَن من الشركة نفسها)</td>
-<td>~96.6% (مُعلَن من الشركة نفسها)</td>
-<td>94.4% (مُعلَن من الشركة نفسها)</td>
-<td>غير متوفر</td>
-<td>غير متوفر (grep)</td>
-</tr>
-<tr>
-<td><strong>الالتقاط التلقائي</strong></td>
-<td>12 خطافًا (بلا أي جهد يدوي)</td>
-<td>استدعاءات <code>add()</code> يدوية</td>
-<td>تعديلات ذاتية من الوكيل</td>
-<td>يدوي</td>
-<td>استخراج من جانب الواجهة البرمجية</td>
-<td>اعتراض عبر وكيل وسيط (باستبدال base-URL)</td>
-<td>يدوي</td>
-<td>استخراج عبر API</td>
-<td>يدوي</td>
-<td>تعديل يدوي</td>
-</tr>
-<tr>
-<td><strong>البحث</strong></td>
-<td>BM25 + المتجهات + الرسم البياني (دمج RRF)</td>
-<td>المتجهات + الرسم البياني</td>
-<td>متجهات (أرشيفية)</td>
-<td>دلالي</td>
-<td>متجهات + RAG</td>
-<td>4 أنواع من الأصول (محادثة / مهارة / Wiki / CodeGraph)</td>
-<td>متجهات فقط</td>
-<td>متجهات + دلالي</td>
-<td>مرجَّح بالتلاشي</td>
-<td>يحمّل كل شيء إلى السياق</td>
-</tr>
-<tr>
-<td><strong>تعدد الوكلاء</strong></td>
-<td>MCP + REST + حجوزات (leases) + إشارات</td>
-<td>API (بلا تنسيق)</td>
-<td>داخل بيئة تشغيل Letta فقط</td>
-<td>لا</td>
-<td>لا</td>
-<td>أدوار جماعية + أصول مشتركة</td>
-<td>لا</td>
-<td>محدود النطاق فقط</td>
-<td>مشترك بين وكلاء متعددين</td>
-<td>ملفات لكل وكيل على حدة</td>
-</tr>
-<tr>
-<td><strong>الارتهان لإطار عمل محدد</strong></td>
-<td>لا يوجد (أي عميل MCP)</td>
-<td>لا يوجد</td>
-<td>مرتفع (يجب استخدام Letta)</td>
-<td>مستقل</td>
-<td>لا يوجد</td>
-<td>وكيل وسيط يتقدّم كل استدعاء للنموذج</td>
-<td>لا يوجد</td>
-<td>Oracle Database</td>
-<td>لا يوجد</td>
-<td>تنسيق خاص بكل وكيل</td>
-</tr>
-<tr>
-<td><strong>الاعتماديات الخارجية</strong></td>
-<td>لا يتطلب خدمة قاعدة بيانات منفصلة</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + قاعدة بيانات متجهية</td>
-<td>متعددة</td>
-<td>سحابة مُدارة</td>
-<td>حزمة Docker (Core + Hub + Proxy)</td>
-<td>مخزن متجهات</td>
-<td>Oracle AI Database</td>
-<td>لا يوجد</td>
-<td>لا يوجد</td>
-</tr>
-<tr>
-<td><strong>دورة حياة الذاكرة</strong></td>
-<td>توحيد رباعي المستويات + تلاشي + نسيان تلقائي</td>
-<td>استخراج سلبي (passive)</td>
-<td>يديرها الوكيل</td>
-<td>يدوي</td>
-<td>نسيان تلقائي</td>
-<td>مراجعة يدوية؛ والتوجيه التلقائي قيد التطوير</td>
-<td>لا يوجد</td>
-<td>غير مُحدَّد</td>
-<td>تلاشي + توحيد</td>
-<td>تقليم يدوي</td>
-</tr>
-<tr>
-<td><strong>كفاءة استخدام الرموز</strong></td>
-<td>~1,900 رمز/جلسة (10$/سنويًا)</td>
-<td>يتفاوت حسب التكامل</td>
-<td>الذاكرة الأساسية داخل السياق</td>
-<td>متفاوت</td>
-<td>تسعير سحابي</td>
-<td>غير مُحدَّد</td>
-<td>بلا حد لعدد الرموز</td>
-<td>معتمد على LLM (متفاوت)</td>
-<td>متفاوت</td>
-<td>أكثر من 22K رمز عند 240 ملاحظة</td>
-</tr>
-<tr>
-<td><strong>العارض اللحظي</strong></td>
-<td>نعم (المنفذ 3113)</td>
-<td>لوحة تحكم سحابية</td>
-<td>لوحة تحكم سحابية</td>
-<td>واجهة ويب</td>
-<td>لوحة تحكم سحابية</td>
-<td>واجهة ويب للمحور (Hub)</td>
-<td>لا</td>
-<td>لا</td>
-<td>لا</td>
-<td>لا</td>
-</tr>
-<tr>
-<td><strong>استضافة ذاتية</strong></td>
-<td>نعم (افتراضيًا)</td>
-<td>اختياري</td>
-<td>اختياري</td>
-<td>نعم</td>
-<td>لا (سحابي فقط)</td>
-<td>نعم (Docker)</td>
-<td>نعم</td>
-<td>نعم (Oracle DB)</td>
-<td>نعم</td>
-<td>نعم</td>
-</tr>
-</table>
+مقارنة محدثة بين المنتجات وخيارات النشر، مع المصادر:
 
-<sub>ملاحظة على المقياس: نتيجة R@5 الخاصة بـ agentmemory فقط هي قياسنا الفعلي (LongMemEval-S، قابلة لإعادة الإنتاج من <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). أما أرقام mem0 وLetta فهي أرقامهما المنشورة على LoCoMo (مجموعة بيانات مختلفة)؛ وأرقام MemPalace وsupermemory وTencentDB (PersonaMem) وoracleagentmemory هي ادعاءات مُعلَنة من الشركات نفسها لم نُعِد إنتاجها بشكل مستقل (استخدمت عملية تشغيل oracleagentmemory نموذج GPT-5.5 مقابل قاعدة بيانات Oracle AI Database). عُرضت جنبًا إلى جنب للمقارنة التقريبية فقط، لا كمواجهة مباشرة على بيانات متطابقة. أعداد النجوم تقريبية وتتغير مع الوقت.</sub>
-
-**داخلون جدد** تستحق المعرفة، مع مقارنة تفصيلية في [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| النظام | ⭐ | الزاوية |
-|--------|---|-------|
-| Zep / Graphiti | 30K | رسم بياني معرفي زمني؛ يملك أقوى نتائج منشورة للاستعلامات الزمنية (LongMemEval 63.8%)، لكن بناء الرسم البياني يتم بشكل غير متزامن، فقد تتأخر الحقائق الجديدة |
-| Cognee | 30K | استيعاب يحوّل المستندات إلى رسم بياني معرفي، مخصص لـ Python فقط، ومبني لاستخراج الكيانات البنيوية لا لالتقاط الجلسات |
-
-يجمع AgentMemory التقاط الجلسات وسجل المشروع القابل للبحث والعارض المحلي، مع العمل دون مفتاح منذ التشغيل الأول.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -928,7 +720,6 @@ npx -y @agentmemory/mcp
 |---|---|---|
 | الصيانة | تعليمات تُدار يدويًا | سجل جلسات وذكريات مفهرسة |
 | البحث | يحمّل كل شيء إلى السياق | BM25 + متجهات + رسم بياني (أفضل K فقط) |
-| تكلفة الرموز | أكثر من 22K عند 240 ملاحظة | ~1,900 رمز (أقل بنسبة 92%) |
 | بين الوكلاء | ملفات لكل وكيل | MCP + REST (أي وكيل) |
 | التنسيق | لا يوجد | حجوزات، وإشارات، وإجراءات، ومسارات عمل (routines) |
 | قابلية الرصد | قراءة الملفات يدويًا | عارض لحظي على :3113 |
@@ -941,7 +732,7 @@ npx -y @agentmemory/mcp
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1026,7 +817,7 @@ SessionStart hook fires
 
 عندما يكون فهرس المتجهات مُعبَّأً، يستخدم `mem::search` (الذي يقف خلف `memory_recall`) المُصنِّف الهجين BM25 + المتجهات. وبدون تضمينات يستخدم BM25. ويمكن لـ `smart-search` أيضًا دمج تطابقات الرسم البياني البنيوية عندما تتوفر بيانات رسم بياني، حتى في وضع عدم استخدام المفاتيح. ويعمل استرجاع الدروس المستفادة على فهرس BM25 مخصص في الذاكرة بدلًا من مسح المجموعة الكاملة في كل استعلام. وتُستبعد نسخ الذاكرة المُستبدَلة من كل مسار استرجاع؛ وتحتفظ سلسلة الإصدارات بتاريخها.
 
-تنجو المتجهات من الانهيار أو الإيقاف القسري. ويُحفظ فهرس المتجهات في حُزَم مرة واحدة على الأكثر كل `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 دقائق). ويُكتب أيضًا كل متجه يُضاف أو يُحذف بين ذلك فورًا في سجل انتظار صغير في مخزن الحالة، ويُعاد تشغيله عند البدء التالي دون استدعاء مزوّد التضمين. ويُفرَّغ السجل عند كل حفظ ناجح. وتُعاد تضمين المستندات التي لا تزال بلا متجه بعد إعادة التشغيل في الخلفية على دفعات بحجم `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) إلى أن لا يبقى منها شيء، ويستكمل أي ملء رجعي (backfill) متوقف في البدء التالي. يُظهر `/agentmemory/status` والعارض حجم سجل الانتظار وحالة الملء الرجعي. ولا تكتب التثبيتات بلا مفاتيح أي شيء.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 يُجزِّئ BM25 إلى رموز (tokens) اليونانية والسيريلية والعبرية والعربية واللاتينية المُشكَّلة جاهزًا دون أي إعداد. وبالنسبة لذكريات الصينية/اليابانية/الكورية، ثبّت المُجزِّئات (segmenters) الاختيارية (`npm install @node-rs/jieba tiny-segmenter`) لتقسيم سلاسل CJK إلى رموز على مستوى الكلمة؛ وبدونها، يتراجع agentmemory بسلاسة إلى تجزيء السلسلة كاملةً ويطبع تلميحًا لمرة واحدة على stderr.
 
@@ -1042,9 +833,9 @@ EMBEDDING_PROVIDER=local
 
 | المزوّد | النموذج | التكلفة | ملاحظات |
 |---|---|---|---|
-| **محلي (مُوصى بتفعيله)** | `all-MiniLM-L6-v2` | مجاني | على الجهاز نفسه بعد أول تنزيل للنموذج، وبزيادة 8 نقاط نسبة مئوية في الاسترجاع عن BM25 فقط |
+| **محلي (مُوصى بتفعيله)** | `all-MiniLM-L6-v2` | مجاني | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | مستوى مجاني | أكثر من 100 لغة، أبعاد 768/1536/3072 (MRL)، ومدخل حتى 2048 رمزًا. يحل محل `text-embedding-004` ([مُستبعَد، يُغلق في 14 يناير 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | 0.02$/مليون | أعلى جودة |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | مدفوع | مُحسَّن للشفرة |
 | Cohere | `embed-english-v3.0` | نسخة تجريبية مجانية | للاستخدام العام |
 | OpenRouter | أي نموذج | متفاوت | وكيل متعدد النماذج |

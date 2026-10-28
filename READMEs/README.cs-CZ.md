@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="o 92% méně tokenů" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP nástrojů" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatických hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externích databází" height="38" /></picture>
@@ -333,223 +331,17 @@ Nejnovější poznámky k vydání: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarky" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Aktuální výsledky vyhledávání, definice metrik a postup reprodukce:
 
-### Přesnost vyhledávání
-
-**coding-agent-life-v1** (vlastní korpus, reprodukovatelný v sandboxu)
-
-| Adaptér | P@5 | R@5 | Úspěšnost top-5 | latence p50 |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep baseline | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-100% úspěšnost top-5 na **matematickém stropu P@5** pro tento korpus (0.240, viz scorecard). Hybrid najde každou zlatou session; grep mine 1 ze 2 zlatých u vícesessionového temporálního dotazu. Zisk je v **recall + temporalitě**, ne v agregátní přesnosti. Tento benchmark je malý a s málo zlatými případy; větší LongMemEval-S níže rozlišuje lépe. Úplný rozpad podle typu + oprava: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 otázek)
-
-| Systém | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| záložní režim pouze BM25 | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Úspora tokenů
-
-| Přístup | Tokenů/rok | Náklady/rok |
-|---|---|---|
-| Vložení celého kontextu | 19.5M+ | Nemožné (překračuje okno) |
-| Shrnuto LLM | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + lokální embeddingy | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Embedding model: `all-MiniLM-L6-v2` (lokální, zdarma, bez API klíče). Úplné reporty: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Srovnání s konkurencí: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) porovnává agentmemory s mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**Reprodukce lokálně:** [`eval/README.md`](../eval/README.md), harness s zapojitelnými adaptéry pro LongMemEval `_s` (veřejných 500 otázek) + `coding-agent-life-v1` (vlastní korpus 15 sessions). Adaptéry grep / vektor / agentmemory bodují vedle sebe, výstup NDJSON, publikované scorecardy jsou v [`docs/benchmarks/`](../docs/benchmarks/).
-
-**Sedí dobře s [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything) a [Graphify](https://github.com/safishamsi/graphify).** Indexace grafu kódu, vícagentní build pipeline a širší znalostní grafy napříč dokumenty / PDF / obrázky / videi. agentmemory si pamatuje práci; tyto tři projekty rozsvítí zbytek kontextové vrstvy. Recepty + tabulka směrování podle otázky: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="Srovnání s konkurencí" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Vestavěné (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Typ</strong></td>
-<td>Paměťový engine + server MCP</td>
-<td>API paměťové vrstvy</td>
-<td>Plný runtime agenta</td>
-<td>Osobní AI</td>
-<td>API paměti + aplikace</td>
-<td>Týmový hub paměti (LLM proxy)</td>
-<td>Vektorová paměť (OSS)</td>
-<td>Paměťový engine (Oracle DB)</td>
-<td>Systém paměti</td>
-<td>Statický soubor</td>
-</tr>
-<tr>
-<td><strong>Vyhledávání R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Údaj výrobce</td>
-<td>PersonaMem 76% (údaj výrobce)</td>
-<td>~96.6% (údaj výrobce)</td>
-<td>94.4% (údaj výrobce)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Automatické zachycení</strong></td>
-<td>12 hooks (bez manuálního úsilí)</td>
-<td>Manuální volání <code>add()</code></td>
-<td>Agent si upravuje sám</td>
-<td>Manuální</td>
-<td>Extrakce na straně API</td>
-<td>Zachytávání přes proxy (výměna base URL)</td>
-<td>Manuální</td>
-<td>Extrakce přes API</td>
-<td>Manuální</td>
-<td>Manuální úpravy</td>
-</tr>
-<tr>
-<td><strong>Vyhledávání</strong></td>
-<td>BM25 + vektor + graf (fúze RRF)</td>
-<td>Vektor + graf</td>
-<td>Vektor (archivní)</td>
-<td>Sémantické</td>
-<td>Vektor + RAG</td>
-<td>4 typy assetů (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Pouze vektor</td>
-<td>Vektor + sémantika</td>
-<td>Váženo rozpadem (decay)</td>
-<td>Načte vše do kontextu</td>
-</tr>
-<tr>
-<td><strong>Multi-agent</strong></td>
-<td>MCP + REST + leases + signály</td>
-<td>API (bez koordinace)</td>
-<td>Pouze uvnitř runtime Letta</td>
-<td>Ne</td>
-<td>Ne</td>
-<td>Týmové role + sdílené assety</td>
-<td>Ne</td>
-<td>Pouze v rámci rozsahu</td>
-<td>Sdíleno mezi agenty</td>
-<td>Soubory po agentech</td>
-</tr>
-<tr>
-<td><strong>Vázanost na framework</strong></td>
-<td>Žádná (jakýkoli klient MCP)</td>
-<td>Žádná</td>
-<td>Vysoká (musíte používat Letta)</td>
-<td>Samostatné</td>
-<td>Žádná</td>
-<td>Proxy stojí před každým voláním modelu</td>
-<td>Žádná</td>
-<td>Oracle Database</td>
-<td>Žádná</td>
-<td>Formát po agentech</td>
-</tr>
-<tr>
-<td><strong>Externí závislosti</strong></td>
-<td>Není potřeba samostatná databázová služba</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vektorová DB</td>
-<td>Více</td>
-<td>Správovaný cloud</td>
-<td>Docker stack (Core + Hub + Proxy)</td>
-<td>Vektorové úložiště</td>
-<td>Oracle AI Database</td>
-<td>Žádné</td>
-<td>Žádné</td>
-</tr>
-<tr>
-<td><strong>Životní cyklus paměti</strong></td>
-<td>4úrovňová konsolidace + rozpad + automatické zapomínání</td>
-<td>Pasivní extrakce</td>
-<td>Správa agentem</td>
-<td>Manuální</td>
-<td>Automatické zapomínání</td>
-<td>Manuální revize; automatické směrování se připravuje</td>
-<td>Žádný</td>
-<td>Neuvedeno</td>
-<td>Rozpad + konsolidace</td>
-<td>Manuální prořezávání</td>
-</tr>
-<tr>
-<td><strong>Efektivita tokenů</strong></td>
-<td>~1,900 tokenů/session ($10/rok)</td>
-<td>Liší se podle integrace</td>
-<td>Klíčová paměť v kontextu</td>
-<td>Liší se</td>
-<td>Cloudové ceny</td>
-<td>Neuvedeno</td>
-<td>Žádný rozpočet tokenů</td>
-<td>Založeno na LLM (liší se)</td>
-<td>Liší se</td>
-<td>22K+ tokenů při 240 obs.</td>
-</tr>
-<tr>
-<td><strong>Viewer v reálném čase</strong></td>
-<td>Ano (port 3113)</td>
-<td>Cloudový dashboard</td>
-<td>Cloudový dashboard</td>
-<td>Webové UI</td>
-<td>Cloudový dashboard</td>
-<td>Webové UI hubu</td>
-<td>Ne</td>
-<td>Ne</td>
-<td>Ne</td>
-<td>Ne</td>
-</tr>
-<tr>
-<td><strong>Self-hosted</strong></td>
-<td>Ano (výchozí)</td>
-<td>Volitelné</td>
-<td>Volitelné</td>
-<td>Ano</td>
-<td>Ne (pouze cloud)</td>
-<td>Ano (Docker)</td>
-<td>Ano</td>
-<td>Ano (Oracle DB)</td>
-<td>Ano</td>
-<td>Ano</td>
-</tr>
-</table>
+Aktuální srovnání produktů a možností nasazení se zdroji:
 
-<sub>Poznámka k benchmarku: pouze R@5 pro agentmemory je náš vlastní naměřený výsledek (LongMemEval-S, reprodukovatelný z <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). Čísla pro mem0 a Letta jsou jejich publikované hodnoty LoCoMo (jiný dataset); čísla pro MemPalace, supermemory, TencentDB (PersonaMem) a oracleagentmemory jsou tvrzení výrobců, která jsme nezávisle nereprodukovali (běh oracleagentmemory použil GPT-5.5 proti Oracle AI Database). Uvedeno vedle sebe jen pro orientační srovnání, nejde o přímé porovnání na identických datech. Počty hvězd jsou orientační a v čase se mění.</sub>
-
-**Novější konkurenti**, o kterých má smysl vědět, podrobně srovnáni v [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| Systém | ⭐ | Přístup |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Temporální znalostní graf; nejsilnější publikované výsledky pro temporální dotazy (LongMemEval 63.8%), ale graf se buduje asynchronně, takže čerstvá fakta mohou zpožďovat |
-| Cognee | 30K | Načítání dokumentů do znalostního grafu, pouze Python, navrženo pro strukturovanou extrakci entit, nikoli pro zachytávání sessions |
-
-AgentMemory spojuje zachycení sessions, prohledávatelnou historii projektu a lokální viewer; bez klíče funguje od prvního spuštění.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -786,7 +578,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 Spusťte server paměti: `npx -y @agentmemory/agentmemory@latest`
 
-#### Nativní skills přes `npx skills add` (50+ agentů)
+#### Nativní skills přes `npx skills add`
 
 agentmemory dodává 17 skills ve formátu `<dir>/SKILL.md` ve stylu Claude Code: 9 vyvolatelných akčních skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) a 8 referenčních skills, které agent načítá podle potřeby (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Referenční skills obsahují datové tabulky generované ze zdroje, takže se nikdy neliší. CLI [`skills`](https://npmjs.com/package/skills) od vercel-labs je automaticky instaluje do nativního adresáře skills volajícího agenta napříč 50+ agenty (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf a dalšími):
 
@@ -844,7 +636,7 @@ Položka agentmemory je **stejný blok serveru MCP** na všech hostitelích, kte
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` nainstaluje MCP a hooky pro zachycení do sdíleného adresáře přizpůsobení. Viz [nastavení a limity Antigravity](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` používá stejnou konfiguraci MCP a hooků jako aktuální verze IDE. Stávající instalace by měly provést refresh pomocí `--force`; viz [poznámky k upgradu](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` zapíše konfiguraci na úrovni uživatele. Přepisy na úrovni workspace patří do `.kiro/settings/mcp.json` vedle vašeho kódu. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` zapíše standardní blok `mcpServers`. Warp také automaticky vyhledává skills z `.claude/skills/`; po instalaci pluginu Claude Code se 8 skills agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) objeví nativně v paletě slash příkazů Warp. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` zapíše standardní blok `mcpServers`. Warp také automaticky vyhledává skills z `.claude/skills/`; po instalaci pluginu Claude Code se 9 skills agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) objeví nativně v paletě slash příkazů Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` zapíše standardní blok `mcpServers`. Uživatelé rozšíření VS Code: vložte stejný blok přes Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferované) nebo `config.json` (starší) | `agentmemory connect continue` vytvoří `config.yaml`, pokud konfigurace chybí, nebo upraví existující `config.json`. U existujícího YAML vypíše blok k vložení pod `mcpServers:`, aby zachoval komentáře a kotvy. Continue používá pole, nikoli objekt. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` zapíše pod `context_servers` (klíč Zed, NE `mcpServers`). Vzdálené servery MCP lze zapojit místo toho přes `{"url": "..."}`. |
@@ -927,7 +719,6 @@ Každý AI kódovací agent se dodává s vestavěnou pamětí: Claude Code má 
 |---|---|---|
 | Údržba | Ručně spravované instrukce | Indexovaná historie sessions a vzpomínky |
 | Vyhledávání | načte vše do kontextu | BM25 + vektor + graf (pouze top-K) |
-| Náklady na tokeny | 22K+ při 240 pozorováních | ~1,900 tokenů (o 92% méně) |
 | Napříč agenty | soubory po agentech | MCP + REST (jakýkoli agent) |
 | Koordinace | žádná | leases, signály, akce, routiny |
 | Observabilita | manuální čtení souborů | viewer v reálném čase na :3113 |
@@ -940,7 +731,7 @@ Každý AI kódovací agent se dodává s vestavěnou pamětí: Claude Code má 
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1025,7 +816,7 @@ Sloučeno pomocí Reciprocal Rank Fusion (RRF, k=60) a diverzifikováno po sessi
 
 Když je vektorový index naplněný, `mem::search` (za `memory_recall`) používá hybridní řadič BM25 + vektor. Bez embeddingů používá BM25. `smart-search` může navíc sloučit strukturální shody z grafu, pokud grafová data existují, včetně režimu bez klíče. Vyhledávání lessons běží na vyhrazeném in-memory indexu BM25 místo skenování celého korpusu při každém dotazu. Nahrazené verze paměti jsou vyloučeny z každé cesty vyhledávání; řetězec verzí uchovává jejich historii.
 
-Vektory přežijí pád nebo násilné vypnutí. Vektorový index se ukládá v dávkách nejvýše jednou za `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 minut). Každý vektor přidaný nebo odstraněný mezitím se navíc okamžitě zapíše do malého čekajícího logu ve state store a při dalším startu se přehraje bez volání poskytovatele embeddingů. Každé úspěšné uložení log vyprázdní. Dokumenty, které po přehrání stále nemají vektor, se na pozadí znovu embedují v dávkách po `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500), dokud žádné nezbydou, a zastavený backfill pokračuje při dalším startu. `/agentmemory/status` a viewer zobrazují velikost čekajícího logu a stav backfillu. Instalace bez klíče nic nezapisují.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 standardně tokenizuje řečtinu, cyrilici, hebrejštinu, arabštinu a akcentovanou latinku. Pro paměti v čínštině / japonštině / korejštině nainstalujte volitelné segmentery (`npm install @node-rs/jieba tiny-segmenter`), aby se běhy CJK rozdělily na tokeny na úrovni slov; bez nich agentmemory měkce spadne na tokenizaci celého běhu a jednou vypíše nápovědu na stderr.
 
@@ -1041,9 +832,9 @@ Běžná instalace npm obsahuje volitelný runtime `@huggingface/transformers`. 
 
 | Poskytovatel | Model | Náklady | Poznámky |
 |---|---|---|---|
-| **Lokální (doporučeno jako opt-in)** | `all-MiniLM-L6-v2` | zdarma | na zařízení po prvním stažení modelu, +8pp recall oproti samotnému BM25 |
+| **Lokální (doporučeno jako opt-in)** | `all-MiniLM-L6-v2` | zdarma | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | bezplatný tier | 100+ jazyků, rozměry 768/1536/3072 (MRL), vstup 2048 tokenů. Nahrazuje `text-embedding-004` ([deprecated, ukončení 14. 1. 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | nejvyšší kvalita |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | placené | optimalizováno pro kód |
 | Cohere | `embed-english-v3.0` | bezplatná zkouška | univerzální použití |
 | OpenRouter | jakýkoli model | liší se | proxy pro více modelů |

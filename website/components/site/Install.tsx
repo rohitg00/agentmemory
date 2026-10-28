@@ -47,8 +47,8 @@ export function Install() {
             <div className={s.stepBody}>
               <h3>Wire an agent</h3>
               <p>
-                Writes the MCP entry for the agent you pick. Add <code>--with-hooks</code> for automatic capture where the
-                agent supports it.
+                Connects the selected agent through its native integration or MCP. Add <code>--with-hooks</code> for
+                optional hook capture. Pi and OMP use <code>--with-mcp</code> to add the full toolset alongside their native tools.
               </p>
               <div className={s.picker} role="radiogroup" aria-label="Agent">
                 {CONNECTABLE.map((a) => (

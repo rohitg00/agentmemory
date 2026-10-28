@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="ลด token ลง 92%" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 เครื่องมือ MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook อัตโนมัติ" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="ไม่ต้องพึ่ง external DB เลย" height="38" /></picture>
@@ -329,221 +327,17 @@ agentmemory --instance 1
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+ผลการค้นคืนล่าสุด นิยามตัวชี้วัด และขั้นตอนการทดสอบซ้ำ:
 
-### Retrieval Accuracy
-
-**coding-agent-life-v1** (คอร์ปัสภายใน ทำซ้ำได้ใน sandbox)
-
-| Adapter | P@5 | R@5 | Top-5 hit rate | p50 latency |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep baseline | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-Top-5 hit rate 100% ที่ **เพดานทางคณิตศาสตร์ของ P@5** สำหรับคอร์ปัสนี้ (0.240 ดูใน scorecard) hybrid ดึงข้อมูล gold session ได้ครบทุกตัว ส่วน grep พลาด 1 ใน 2 ของ gold ในคำค้นที่ครอบคลุมหลายเซสชันตามลำดับเวลา ส่วนที่ดีขึ้นคือ **recall + temporal** ไม่ใช่ precision โดยรวม benchmark นี้มีขนาดเล็กและ gold มีน้อย ส่วน LongMemEval-S ที่ใหญ่กว่าด้านล่างจะแยกความแตกต่างได้ดีกว่า รายละเอียดแยกตามประเภทแบบเต็ม พร้อมหมายเหตุการแก้ไข: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md)
-
-**LongMemEval-S** (ICLR 2025, 500 คำถาม)
-
-| System | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| BM25-only fallback | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Token Savings
-
-| Approach | Tokens/yr | Cost/yr |
-|---|---|---|
-| Paste full context | 19.5M+ | เป็นไปไม่ได้ (เกิน window) |
-| LLM-summarized | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + local embeddings | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Embedding model: `all-MiniLM-L6-v2` (local, ฟรี, ไม่ต้องใช้ API key) รายงานฉบับเต็ม: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md) การเทียบกับคู่แข่ง: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) ครอบคลุม agentmemory เทียบกับ mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo
-
-**ใช้คู่กับ [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything), และ [Graphify](https://github.com/safishamsi/graphify)** การทำ index แบบ code-graph, pipeline การ build แบบ multi-agent, และ knowledge graph ที่กว้างขึ้นครอบคลุม docs / PDF / รูปภาพ / วิดีโอ agentmemory จำงานที่ทำไปได้ ส่วนสามโครงการนี้ช่วยเติมเต็ม context layer ส่วนที่เหลือ สูตรการใช้งาน พร้อมตารางเลือกตามคำถาม: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md)
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="เทียบกับคู่แข่ง" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Built-in (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>ประเภท</strong></td>
-<td>Memory engine + MCP server</td>
-<td>Memory layer API</td>
-<td>Full agent runtime</td>
-<td>Personal AI</td>
-<td>Memory API + app</td>
-<td>Team memory hub (LLM proxy)</td>
-<td>Vector memory (OSS)</td>
-<td>Memory engine (Oracle DB)</td>
-<td>Memory system</td>
-<td>Static file</td>
-</tr>
-<tr>
-<td><strong>Retrieval R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>รายงานเอง</td>
-<td>PersonaMem 76% (รายงานเอง)</td>
-<td>~96.6% (รายงานเอง)</td>
-<td>94.4% (รายงานเอง)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Auto-capture</strong></td>
-<td>12 hooks (ไม่ต้องทำเอง)</td>
-<td>เรียก <code>add()</code> เอง</td>
-<td>Agent แก้ไขตัวเอง</td>
-<td>ทำเอง</td>
-<td>ดึงข้อมูลฝั่ง API</td>
-<td>Proxy interception (สลับ base-URL)</td>
-<td>ทำเอง</td>
-<td>ดึงข้อมูลผ่าน API</td>
-<td>ทำเอง</td>
-<td>แก้ไขเอง</td>
-</tr>
-<tr>
-<td><strong>Search</strong></td>
-<td>BM25 + Vector + Graph (RRF fusion)</td>
-<td>Vector + Graph</td>
-<td>Vector (archival)</td>
-<td>Semantic</td>
-<td>Vector + RAG</td>
-<td>4 asset types (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Vector-only</td>
-<td>Vector + semantic</td>
-<td>Decay-weighted</td>
-<td>โหลดทุกอย่างเข้า context</td>
-</tr>
-<tr>
-<td><strong>Multi-agent</strong></td>
-<td>MCP + REST + leases + signals</td>
-<td>API (ไม่มีการประสานงาน)</td>
-<td>ภายใน Letta runtime เท่านั้น</td>
-<td>ไม่มี</td>
-<td>ไม่มี</td>
-<td>Team roles + shared assets</td>
-<td>ไม่มี</td>
-<td>จำกัดเฉพาะ scope</td>
-<td>Multi-agent shared</td>
-<td>ไฟล์แยกตาม agent</td>
-</tr>
-<tr>
-<td><strong>Framework lock-in</strong></td>
-<td>ไม่มี (MCP client ใดก็ได้)</td>
-<td>ไม่มี</td>
-<td>สูง (ต้องใช้ Letta)</td>
-<td>Standalone</td>
-<td>ไม่มี</td>
-<td>Proxy ครอบทุก model call</td>
-<td>ไม่มี</td>
-<td>Oracle Database</td>
-<td>ไม่มี</td>
-<td>รูปแบบแยกตาม agent</td>
-</tr>
-<tr>
-<td><strong>External deps</strong></td>
-<td>ไม่ต้องมีบริการฐานข้อมูลแยก</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vector DB</td>
-<td>หลายตัว</td>
-<td>Managed cloud</td>
-<td>Docker stack (Core + Hub + Proxy)</td>
-<td>Vector store</td>
-<td>Oracle AI Database</td>
-<td>ไม่มี</td>
-<td>ไม่มี</td>
-</tr>
-<tr>
-<td><strong>Memory lifecycle</strong></td>
-<td>4-tier consolidation + decay + auto-forget</td>
-<td>ดึงข้อมูลแบบ passive</td>
-<td>Agent จัดการเอง</td>
-<td>ทำเอง</td>
-<td>Auto-forget</td>
-<td>ตรวจสอบเอง; auto-routing กำลังพัฒนา</td>
-<td>ไม่มี</td>
-<td>ไม่ระบุ</td>
-<td>Decay + consolidation</td>
-<td>ตัดทิ้งเอง</td>
-</tr>
-<tr>
-<td><strong>Token efficiency</strong></td>
-<td>~1,900 token/เซสชัน ($10/ปี)</td>
-<td>แตกต่างกันตามการเชื่อมต่อ</td>
-<td>Core memory อยู่ใน context</td>
-<td>แตกต่างกัน</td>
-<td>ราคาแบบ cloud</td>
-<td>ไม่ระบุ</td>
-<td>ไม่มี token budget</td>
-<td>ขึ้นกับ LLM (แตกต่างกัน)</td>
-<td>แตกต่างกัน</td>
-<td>22K+ token ที่ 240 observation</td>
-</tr>
-<tr>
-<td><strong>Real-time viewer</strong></td>
-<td>มี (พอร์ต 3113)</td>
-<td>Cloud dashboard</td>
-<td>Cloud dashboard</td>
-<td>Web UI</td>
-<td>Cloud dashboard</td>
-<td>Hub web UI</td>
-<td>ไม่มี</td>
-<td>ไม่มี</td>
-<td>ไม่มี</td>
-<td>ไม่มี</td>
-</tr>
-<tr>
-<td><strong>Self-hosted</strong></td>
-<td>มี (default)</td>
-<td>เป็นตัวเลือก</td>
-<td>เป็นตัวเลือก</td>
-<td>มี</td>
-<td>ไม่มี (cloud เท่านั้น)</td>
-<td>มี (Docker)</td>
-<td>มี</td>
-<td>มี (Oracle DB)</td>
-<td>มี</td>
-<td>มี</td>
-</tr>
-</table>
+การเปรียบเทียบผลิตภัณฑ์และตัวเลือกการติดตั้งล่าสุดพร้อมแหล่งอ้างอิง:
 
-<sub>หมายเหตุเรื่อง benchmark: มีเพียงค่า R@5 ของ agentmemory เท่านั้นที่เป็นผลวัดของเราเอง (LongMemEval-S ทำซ้ำได้จาก <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>) ตัวเลขของ mem0 และ Letta เป็นตัวเลข LoCoMo ที่พวกเขาเผยแพร่เอง (คนละ dataset) ส่วนตัวเลขของ MemPalace, supermemory, TencentDB (PersonaMem) และ oracleagentmemory เป็นข้อเรียกร้องที่ผู้ผลิตรายงานเอง ซึ่งเรายังไม่ได้ทำซ้ำเพื่อตรวจสอบอย่างเป็นอิสระ (การรันของ oracleagentmemory ใช้ GPT-5.5 กับ Oracle AI Database) แสดงเทียบกันเพื่อให้เห็นภาพกว้าง ๆ เท่านั้น ไม่ใช่การเทียบแบบตัวต่อตัวบนข้อมูลชุดเดียวกัน จำนวน star เป็นค่าประมาณและเปลี่ยนแปลงไปตามเวลา</sub>
-
-**ผู้เล่นใหม่** ที่ควรรู้จัก เทียบรายละเอียดได้ใน [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| System | ⭐ | มุมมอง |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Temporal knowledge graph; ผลลัพธ์ temporal-query ที่เผยแพร่แล้วแข็งแกร่งที่สุด (LongMemEval 63.8%) แต่ graph สร้างแบบ asynchronous จึงอาจตามข้อมูลใหม่ไม่ทัน |
-| Cognee | 30K | การนำ document เข้าสู่ knowledge graph, รองรับแค่ Python, สร้างมาเพื่อดึง structured entity มากกว่าการ capture เซสชัน |
-
-AgentMemory รวมการบันทึกเซสชัน ประวัติโปรเจ็กต์ที่ค้นหาได้ และตัวดูข้อมูลในเครื่อง พร้อมใช้งานแบบไม่ต้องมีคีย์ตั้งแต่ครั้งแรก
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -770,7 +564,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 เริ่ม memory server: `npx -y @agentmemory/agentmemory@latest`
 
-#### Native skills via `npx skills add` (50+ agents)
+#### Native skills via `npx skills add`
 
 agentmemory ship skill มาทั้งหมด 17 ตัว ในรูปแบบ `<dir>/SKILL.md` สไตล์ Claude Code: action skill ที่เรียกใช้ได้ 9 ตัว (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) และ reference skill อีก 8 ตัวที่ agent โหลดตามต้องการ (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`) reference skill พวกนี้มีตารางข้อมูลที่สร้างจาก source โดยตรง จึงไม่มีทางเพี้ยนไปจากของจริง CLI [`skills`](https://npmjs.com/package/skills) ของ vercel-labs จะติดตั้งให้อัตโนมัติเข้าไปใน native skill directory ของ agent ที่เรียกมันขึ้นมา ครอบคลุม agent กว่า 50 ตัว (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, และอีกมากมาย):
 
@@ -827,7 +621,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` จะติดตั้ง MCP และ capture hook ไว้ใน shared customization directory ดู [การตั้งค่าและข้อจำกัดของ Antigravity](../docs/plugins/antigravity.md) |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` ใช้ config ของ MCP และ hook แบบเดียวกับ IDE เวอร์ชันปัจจุบัน การติดตั้งที่มีอยู่แล้วควร refresh ด้วย `--force`; ดู [upgrade notes](../docs/plugins/antigravity.md) |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` เขียน config ระดับ user การ override ระดับ workspace ไปอยู่ที่ `.kiro/settings/mcp.json` ข้าง ๆ โค้ดของคุณ |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` เขียน `mcpServers` block แบบมาตรฐาน Warp ยัง auto-discover skill จาก `.claude/skills/` ด้วย เมื่อติดตั้ง Claude Code plugin แล้ว skill ทั้ง 8 ตัวของ agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) จะปรากฏใน slash-command palette ของ Warp โดยตรง |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` เขียน `mcpServers` block แบบมาตรฐาน Warp ยัง auto-discover skill จาก `.claude/skills/` ด้วย เมื่อติดตั้ง Claude Code plugin แล้ว skill ทั้ง 9 ตัวของ agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) จะปรากฏใน slash-command palette ของ Warp โดยตรง |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` เขียน `mcpServers` block แบบมาตรฐาน ผู้ใช้ VS Code extension: paste block เดียวกันผ่าน Cline Settings → MCP Servers → Edit JSON |
 | **Continue.dev** | `~/.continue/config.yaml` (แนะนำ) หรือ `config.json` (รุ่นเก่า) | `agentmemory connect continue` สร้าง `config.yaml` เมื่อยังไม่มีคอนฟิก หรืออัปเดต `config.json` ที่มีอยู่ สำหรับ YAML เดิมจะเก็บ comment และ anchor ไว้โดยไม่แก้ไฟล์ แต่แสดงบล็อกให้วางใต้ `mcpServers:` ซึ่ง Continue ใช้รูปแบบ array |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` เขียนไว้ใต้ `context_servers` (key ของ Zed ไม่ใช่ `mcpServers`) MCP server แบบ remote เชื่อมต่อผ่าน `{"url": "..."}` ได้เช่นกัน |
@@ -924,7 +718,6 @@ coding agent ที่ใช้ AI ทุกตัวมีหน่วยคว
 |---|---|---|
 | การดูแล | คำสั่งที่จัดการด้วยตนเอง | ประวัติเซสชันและความจำที่จัดทำดัชนี |
 | Search | โหลดทุกอย่างเข้า context | BM25 + vector + graph (top-K เท่านั้น) |
-| Token cost | 22K+ ที่ 240 observation | ~1,900 token (ลดลง 92%) |
 | Cross-agent | ไฟล์แยกตาม agent | MCP + REST (agent ใดก็ได้) |
 | Coordination | ไม่มี | Leases, signals, actions, routines |
 | Observability | อ่านไฟล์ด้วยตัวเอง | Real-time viewer บน :3113 |
@@ -937,7 +730,7 @@ coding agent ที่ใช้ AI ทุกตัวมีหน่วยคว
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1022,7 +815,7 @@ SessionStart hook fires
 
 เมื่อ vector index มีข้อมูลอยู่ `mem::search` (อยู่หลัง `memory_recall`) จะใช้ hybrid ranker แบบ BM25 + vector โดยไม่มี embedding มันจะใช้ BM25 `smart-search` สามารถผสาน structural graph match เพิ่มเติมได้เมื่อมีข้อมูล graph อยู่ รวมถึงในโหมด keyless ด้วย การ recall lesson รันบน BM25 index ในหน่วยความจำเฉพาะของมันเอง แทนการสแกนทั้งคอร์ปัสทุกครั้งที่ค้นหา memory version ที่ถูกแทนที่แล้วจะถูกตัดออกจากทุกเส้นทาง recall; version chain ยังคง history ไว้
 
-Vector รอดจากการ crash หรือ force-kill ได้ vector index จะถูกบันทึกเป็น bucket อย่างมากที่สุดทุก ๆ `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 นาที) vector ทุกตัวที่เพิ่มหรือลบในระหว่างนั้นจะถูกเขียนลง pending log เล็ก ๆ ใน state store ทันทีด้วย และการเริ่มครั้งถัดไปจะ replay มันโดยไม่ต้องเรียก embedding provider การบันทึกที่สำเร็จแต่ละครั้งจะล้าง log ให้ว่าง document ที่ยังไม่มี vector หลัง replay จะถูก re-embed ในพื้นหลังเป็น batch ละ `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) จนกว่าจะไม่เหลือสักตัว และ backfill ที่ถูกหยุดจะทำต่อในการเริ่มครั้งถัดไป `/agentmemory/status` และ viewer จะแสดงขนาด pending log และสถานะ backfill การติดตั้งแบบ keyless จะไม่เขียนอะไรเลย
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 tokenize ภาษากรีก, ซีริลลิก, ฮีบรู, อารบิก, และละตินแบบมี accent ได้ทันทีโดยไม่ต้องตั้งค่าเพิ่ม สำหรับหน่วยความจำภาษาจีน / ญี่ปุ่น / เกาหลี ให้ติดตั้ง segmenter แบบ optional (`npm install @node-rs/jieba tiny-segmenter`) เพื่อแยกข้อความ CJK เป็น token ระดับคำ; ถ้าไม่มี agentmemory จะ soft-fallback ไปที่การ tokenize ทั้ง run และพิมพ์คำเตือนครั้งเดียวออกที่ stderr
 
@@ -1038,9 +831,9 @@ EMBEDDING_PROVIDER=local
 
 | Provider | Model | Cost | Notes |
 |---|---|---|---|
-| **Local (แนะนำให้เปิดเอง)** | `all-MiniLM-L6-v2` | ฟรี | ทำงานในเครื่องหลังดาวน์โหลดโมเดลครั้งแรก, recall เพิ่มขึ้น +8pp เทียบกับ BM25-only |
+| **Local (แนะนำให้เปิดเอง)** | `all-MiniLM-L6-v2` | ฟรี | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | มี free tier | รองรับ 100+ ภาษา, 768/1536/3072 มิติ (MRL), input 2048 token แทนที่ `text-embedding-004` ([deprecated, ปิดให้บริการ 14 ม.ค. 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | คุณภาพสูงที่สุด |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | เสียเงิน | ปรับให้เหมาะกับโค้ด |
 | Cohere | `embed-english-v3.0` | มี free trial | ใช้งานทั่วไป |
 | OpenRouter | โมเดลใดก็ได้ | ขึ้นกับโมเดล | Proxy แบบ multi-model |

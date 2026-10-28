@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% token lebih sedikit" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 tool MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook otomatis" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 DB eksternal" height="38" /></picture>
@@ -331,223 +329,17 @@ Catatan rilis terbaru: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmark" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Hasil penelusuran terkini, definisi metrik, dan langkah reproduksi:
 
-### Akurasi Retrieval
-
-**coding-agent-life-v1** (korpus in-house, bisa direproduksi di sandbox)
-
-| Adapter | P@5 | R@5 | Top-5 hit rate | Latensi p50 |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep baseline | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-Top-5 hit rate 100% pada **batas matematis P@5** untuk korpus ini (0.240, lihat scorecard). Hybrid me-retrieve setiap sesi gold; grep melewatkan 1 dari 2 gold pada query temporal multi-sesi. Peningkatannya ada pada **recall + temporal**, bukan presisi agregat. Benchmark ini kecil dan gold-nya jarang; LongMemEval-S yang lebih besar di bawah memberi pembeda yang lebih baik. Rincian lengkap per tipe + catatan koreksi: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 pertanyaan)
-
-| Sistem | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| Fallback BM25-only | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Penghematan Token
-
-| Pendekatan | Token/thn | Biaya/thn |
-|---|---|---|
-| Tempel konteks penuh | 19.5M+ | Tidak mungkin (melebihi window) |
-| Diringkas LLM | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + embedding lokal | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Model embedding: `all-MiniLM-L6-v2` (lokal, gratis, tanpa API key). Laporan lengkap: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Perbandingan kompetitor: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) mencakup agentmemory vs mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**Reproduksi secara lokal:** [`eval/README.md`](../eval/README.md), harness yang adapternya bisa dipasang-cabut untuk LongMemEval `_s` (500-Q publik) + `coding-agent-life-v1` (korpus in-house 15 sesi). Adapter grep / vector / agentmemory dinilai berdampingan, output NDJSON, scorecard yang dipublikasikan mendarat di [`docs/benchmarks/`](../docs/benchmarks/).
-
-**Berpasangan dengan [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything), dan [Graphify](https://github.com/safishamsi/graphify).** Code-graph indexing, pipeline build multi-agen, dan knowledge graph yang lebih luas lintas dokumen / PDF / gambar / video. agentmemory mengingat pekerjaannya; ketiga proyek itu menghidupkan sisa layer konteksnya. Resep + tabel perutean pertanyaan: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="vs Kompetitor" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Bawaan (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Tipe</strong></td>
-<td>Memory engine + server MCP</td>
-<td>API memory layer</td>
-<td>Runtime agen lengkap</td>
-<td>AI pribadi</td>
-<td>API memori + app</td>
-<td>Hub memori tim (proxy LLM)</td>
-<td>Vector memory (OSS)</td>
-<td>Memory engine (Oracle DB)</td>
-<td>Sistem memori</td>
-<td>File statis</td>
-</tr>
-<tr>
-<td><strong>Retrieval R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Self-reported</td>
-<td>PersonaMem 76% (self-reported)</td>
-<td>~96.6% (self-reported)</td>
-<td>94.4% (self-reported)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Auto-capture</strong></td>
-<td>12 hook (tanpa effort manual)</td>
-<td>Panggilan <code>add()</code> manual</td>
-<td>Self-edit oleh agen</td>
-<td>Manual</td>
-<td>Ekstraksi di sisi API</td>
-<td>Intersepsi proxy (swap base-URL)</td>
-<td>Manual</td>
-<td>Ekstraksi API</td>
-<td>Manual</td>
-<td>Edit manual</td>
-</tr>
-<tr>
-<td><strong>Search</strong></td>
-<td>BM25 + Vector + Graph (fusi RRF)</td>
-<td>Vector + Graph</td>
-<td>Vector (archival)</td>
-<td>Semantik</td>
-<td>Vector + RAG</td>
-<td>4 tipe aset (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Vector-only</td>
-<td>Vector + semantik</td>
-<td>Decay-weighted</td>
-<td>Memuat semuanya ke konteks</td>
-</tr>
-<tr>
-<td><strong>Multi-agen</strong></td>
-<td>MCP + REST + lease + signal</td>
-<td>API (tanpa koordinasi)</td>
-<td>Hanya dalam runtime Letta</td>
-<td>Tidak</td>
-<td>Tidak</td>
-<td>Role tim + aset bersama</td>
-<td>Tidak</td>
-<td>Hanya terbatas (scoped)</td>
-<td>Multi-agen bersama</td>
-<td>File per agen</td>
-</tr>
-<tr>
-<td><strong>Framework lock-in</strong></td>
-<td>Tidak ada (klien MCP apa pun)</td>
-<td>Tidak ada</td>
-<td>Tinggi (harus pakai Letta)</td>
-<td>Standalone</td>
-<td>Tidak ada</td>
-<td>Proxy mengarahkan setiap panggilan model</td>
-<td>Tidak ada</td>
-<td>Oracle Database</td>
-<td>Tidak ada</td>
-<td>Format per agen</td>
-</tr>
-<tr>
-<td><strong>Dependensi eksternal</strong></td>
-<td>Tidak memerlukan layanan database terpisah</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vector DB</td>
-<td>Multipel</td>
-<td>Cloud terkelola</td>
-<td>Stack Docker (Core + Hub + Proxy)</td>
-<td>Vector store</td>
-<td>Oracle AI Database</td>
-<td>Tidak ada</td>
-<td>Tidak ada</td>
-</tr>
-<tr>
-<td><strong>Siklus hidup memori</strong></td>
-<td>Konsolidasi 4-tier + decay + auto-forget</td>
-<td>Ekstraksi pasif</td>
-<td>Dikelola agen</td>
-<td>Manual</td>
-<td>Auto-forget</td>
-<td>Review manual; auto-routing sedang dikerjakan</td>
-<td>Tidak ada</td>
-<td>Tidak disebutkan</td>
-<td>Decay + konsolidasi</td>
-<td>Pruning manual</td>
-</tr>
-<tr>
-<td><strong>Efisiensi token</strong></td>
-<td>~1.900 token/sesi ($10/thn)</td>
-<td>Bervariasi menurut integrasi</td>
-<td>Core memory di konteks</td>
-<td>Bervariasi</td>
-<td>Harga cloud</td>
-<td>Tidak disebutkan</td>
-<td>Tanpa budget token</td>
-<td>Didukung LLM (bervariasi)</td>
-<td>Bervariasi</td>
-<td>22K+ token pada 240 observasi</td>
-</tr>
-<tr>
-<td><strong>Viewer real-time</strong></td>
-<td>Ya (port 3113)</td>
-<td>Dashboard cloud</td>
-<td>Dashboard cloud</td>
-<td>Web UI</td>
-<td>Dashboard cloud</td>
-<td>Web UI Hub</td>
-<td>Tidak</td>
-<td>Tidak</td>
-<td>Tidak</td>
-<td>Tidak</td>
-</tr>
-<tr>
-<td><strong>Self-hosted</strong></td>
-<td>Ya (default)</td>
-<td>Opsional</td>
-<td>Opsional</td>
-<td>Ya</td>
-<td>Tidak (cloud-only)</td>
-<td>Ya (Docker)</td>
-<td>Ya</td>
-<td>Ya (Oracle DB)</td>
-<td>Ya</td>
-<td>Ya</td>
-</tr>
-</table>
+Perbandingan produk dan opsi penerapan terkini, beserta sumbernya:
 
-<sub>Catatan benchmark: hanya R@5 agentmemory yang merupakan hasil pengukuran kami sendiri (LongMemEval-S, bisa direproduksi dari <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). Angka mem0 dan Letta adalah angka LoCoMo yang mereka publikasikan sendiri (dataset yang berbeda); angka MemPalace, supermemory, TencentDB (PersonaMem), dan oracleagentmemory adalah klaim self-reported vendor yang belum kami reproduksi secara independen (run oracleagentmemory memakai GPT-5.5 terhadap Oracle AI Database). Ditampilkan berdampingan hanya sebagai perkiraan kasar, bukan head-to-head pada data yang identik. Jumlah star bersifat perkiraan dan bisa berubah seiring waktu.</sub>
-
-**Pemain baru** yang layak diketahui, dibahas lebih dalam di [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| Sistem | ⭐ | Sudut pandang |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Knowledge graph temporal; hasil query temporal terpublikasi terkuat (LongMemEval 63.8%), tapi graph dibangun secara asinkron sehingga fakta baru bisa tertinggal |
-| Cognee | 30K | Ingestion dokumen-ke-knowledge-graph, Python-only, dibangun untuk ekstraksi entitas terstruktur bukan capture sesi |
-
-AgentMemory memadukan capture sesi, riwayat proyek yang bisa dicari, dan viewer lokal, dengan mode tanpa kunci sejak awal.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -780,7 +572,7 @@ Panduan lengkap: [`integrations/hermes/`](../integrations/hermes/)
 
 Jalankan server memori: `npx -y @agentmemory/agentmemory@latest`
 
-#### Native skill lewat `npx skills add` (50+ agen)
+#### Native skill lewat `npx skills add`
 
 agentmemory menyediakan 17 skill dalam format `<dir>/SKILL.md` ala Claude Code: 9 skill aksi yang bisa dipanggil (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) dan 8 skill referensi yang dimuat agen sesuai kebutuhan (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Skill referensi membawa tabel data yang dihasilkan dari source, sehingga tidak pernah drift. CLI [`skills`](https://npmjs.com/package/skills) oleh vercel-labs memasangnya secara otomatis ke direktori skill native agen yang memanggilnya, di 50+ agen (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, dan lainnya):
 
@@ -837,7 +629,7 @@ Entri agentmemory adalah **blok server MCP yang sama** di setiap host yang memak
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` memasang MCP dan hook capture di direktori kustomisasi bersama. Lihat [pengaturan dan batasan Antigravity](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` memakai konfigurasi MCP dan hook yang sama dengan versi IDE saat ini. Instalasi yang sudah ada sebaiknya di-refresh dengan `--force`; lihat [catatan upgrade](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` menulis konfigurasi tingkat pengguna. Override workspace masuk di `.kiro/settings/mcp.json` di sebelah kode Anda. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` menulis blok `mcpServers` standar. Warp juga auto-discover skill dari `.claude/skills/`; setelah plugin Claude Code terpasang, 8 skill agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) muncul secara native di palet slash-command Warp. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` menulis blok `mcpServers` standar. Warp juga auto-discover skill dari `.claude/skills/`; setelah plugin Claude Code terpasang, 9 skill agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) muncul secara native di palet slash-command Warp. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` menulis blok `mcpServers` standar. Pengguna ekstensi VS Code: tempel blok yang sama lewat Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (disarankan) atau `config.json` (legacy) | `agentmemory connect continue` membuat `config.yaml` jika belum ada konfigurasi atau memperbarui `config.json` yang ada. YAML yang sudah ada dipertahankan agar komentar dan anchor tetap utuh; perintah mencetak blok untuk ditempel di bawah `mcpServers:`. Continue memakai bentuk array untuk `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` menulis di bawah `context_servers` (key milik Zed, BUKAN `mcpServers`). Server MCP remote bisa disambungkan lewat `{"url": "..."}` sebagai gantinya. |
@@ -934,7 +726,6 @@ Setiap agen coding AI dilengkapi memori bawaan: Claude Code punya `MEMORY.md`, C
 |---|---|---|
 | Pemeliharaan | Instruksi yang dikelola manual | Riwayat sesi dan memori terindeks |
 | Search | Memuat semuanya ke konteks | BM25 + vector + graph (hanya top-K) |
-| Biaya token | 22K+ pada 240 observasi | ~1.900 token (92% lebih sedikit) |
 | Lintas agen | File per agen | MCP + REST (agen apa pun) |
 | Koordinasi | Tidak ada | Lease, signal, action, routine |
 | Observability | Baca file secara manual | Viewer real-time di :3113 |
@@ -947,7 +738,7 @@ Setiap agen coding AI dilengkapi memori bawaan: Claude Code punya `MEMORY.md`, C
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1032,7 +823,7 @@ Difusikan dengan Reciprocal Rank Fusion (RRF, k=60) dan didiversifikasi per sesi
 
 Saat index vector terisi, `mem::search` (di belakang `memory_recall`) memakai ranker hybrid BM25 + vector. Tanpa embedding ia memakai BM25. `smart-search` juga bisa menggabungkan kecocokan graph struktural saat data graph ada, termasuk di mode keyless. Recall lesson berjalan di index BM25 in-memory khusus bukan memindai seluruh korpus per query. Versi memori yang disupersede dikecualikan dari setiap jalur recall; rantai versi menyimpan histori mereka.
 
-Vector tetap bertahan dari crash atau force-kill. Index vector disimpan dalam bucket paling lambat setiap `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 menit). Setiap vector yang ditambahkan atau dihapus di antaranya juga langsung ditulis ke log pending kecil di state store, dan start berikutnya me-replay-nya tanpa memanggil penyedia embedding. Setiap save yang berhasil mengosongkan log itu. Dokumen yang masih belum punya vector setelah replay di-embed ulang di background dalam batch `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) sampai tidak ada yang tersisa, dan backfill yang terhenti dilanjutkan pada start berikutnya. `/agentmemory/status` dan viewer menunjukkan ukuran log pending dan state backfill. Instalasi keyless tidak menulis apa pun.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 men-tokenisasi Yunani, Sirilik, Ibrani, Arab, dan Latin beraksen secara bawaan. Untuk memori Tionghoa / Jepang / Korea, pasang segmenter opsional (`npm install @node-rs/jieba tiny-segmenter`) untuk membelah runtun CJK menjadi token level-kata; tanpa itu, agentmemory soft-fallback ke tokenisasi seluruh runtun dan mencetak hint satu-kali di stderr.
 
@@ -1048,9 +839,9 @@ Instalasi npm normal menyertakan runtime opsional `@huggingface/transformers`. P
 
 | Penyedia | Model | Biaya | Catatan |
 |---|---|---|---|
-| **Lokal (opt-in yang disarankan)** | `all-MiniLM-L6-v2` | Gratis | Di perangkat sendiri setelah unduhan model pertama, +8pp recall dibanding BM25-only |
+| **Lokal (opt-in yang disarankan)** | `all-MiniLM-L6-v2` | Gratis | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Free tier | 100+ bahasa, 768/1536/3072 dimensi (MRL), input 2048-token. Menggantikan `text-embedding-004` ([deprecated, shutdown 14 Jan 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Kualitas tertinggi |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | Berbayar | Dioptimalkan untuk code |
 | Cohere | `embed-english-v3.0` | Free trial | Tujuan umum |
 | OpenRouter | Model apa pun | Bervariasi | Proxy multi-model |

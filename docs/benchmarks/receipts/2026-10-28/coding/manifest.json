@@ -1,0 +1,80 @@
+{
+  "schemaVersion": 1,
+  "metricVersion": "distinct-session-retrieval-v2",
+  "inputTransform": "role-flattened; opaque source IDs; all supplied dates retained; identical repeated IDs coalesced (v1)",
+  "benchmark": "coding-agent-life-v1",
+  "scope": "supplied-session retrieval; no reader, judge, or capture-quality score",
+  "startedAt": "2026-10-28T07:28:33.253Z",
+  "source": {
+    "revision": "3f8784d10c2e996873d4392b85226a5d042def0e",
+    "dirty": true,
+    "contentSha256": "25c0fc4f610b612675600ebac66da592716081b7cf97b34c018b417f1b34520f",
+    "dependencies": {
+      "@anthropic-ai/claude-agent-sdk": "0.3.308",
+      "@anthropic-ai/sdk": "0.100.1",
+      "@clack/prompts": "1.8.1",
+      "@huggingface/transformers": "4.3.1",
+      "@iii-dev/helpers": "0.25.0",
+      "@node-rs/jieba": "2.0.4",
+      "@types/node": "26.6.5",
+      "dotenv": "18.0.8",
+      "iii-sdk": "0.25.0",
+      "json5": "2.2.3",
+      "picocolors": "1.1.1",
+      "sigstore": null,
+      "tiny-segmenter": "0.2.0",
+      "tsdown": "0.21.10",
+      "tsx": "4.23.15",
+      "typescript": "6.0.3",
+      "vitest": "4.1.11",
+      "ws": "8.22.0",
+      "yaml": "2.9.1",
+      "zod": "4.6.7"
+    },
+    "installedLockSha256": "d8a23fe5cc06b1ae740ed1eb72594e9af9f2d52231a7431fa2d509d54e9f0950",
+    "builtArtifactSha256": null,
+    "engine": null
+  },
+  "datasetFiles": [
+    {
+      "name": "sessions.json",
+      "sha256": "d32f0c3c35a35e6c5aa0ac1fd0bd92e1f413c132efe3b1262038595589df3f16"
+    },
+    {
+      "name": "queries.json",
+      "sha256": "4f36fb00ea1e0ce3ccbefea9348fc4da027201a26a1fd7b5349391bcc69a24b4"
+    }
+  ],
+  "datasetSha256": "7c37494bd6c3211e937c132b7501a594151f56337f933d8c617f79d4bf4c0701",
+  "selectedQuestionIds": [
+    "q-001",
+    "q-002",
+    "q-003",
+    "q-004",
+    "q-005",
+    "q-006",
+    "q-007",
+    "q-008",
+    "q-009",
+    "q-010",
+    "q-011",
+    "q-012",
+    "q-013",
+    "q-014",
+    "q-015"
+  ],
+  "coalescedRepeatedSources": 0,
+  "adapters": [
+    "grep",
+    "agentmemory-bm25-component"
+  ],
+  "k": 5,
+  "retrievalUnit": "top k distinct source sessions",
+  "config": {},
+  "runtime": {
+    "node": "v25.6.1",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "planned": 30
+}

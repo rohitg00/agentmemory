@@ -7,7 +7,7 @@ export interface ProjectMeta {
   mcpTools: number;
   hooks: number;
   restEndpoints: number;
-  testsPassing: number;
+  testCases: string;
   stars: number;
   forks: number;
   contributors: number;

@@ -1,6 +1,5 @@
 import { ImageResponse } from "next/og";
 import { compact, getProjectMeta } from "@/lib/meta";
-import { LONGMEMEVAL } from "@/lib/site";
 
 export const alt = "agentmemory: memory that outlives the session";
 export const size = { width: 1200, height: 630 };
@@ -103,8 +102,8 @@ export default function Image() {
           }}
         >
           <div style={{ display: "flex", gap: 10 }}>
-            <span style={{ color: INK }}>{LONGMEMEVAL.hybrid.r5}%</span>
-            <span>recall@5 LongMemEval-S</span>
+            <span style={{ color: INK }}>{meta.mcpTools}</span>
+            <span>MCP tools</span>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
             <span style={{ color: INK }}>{compact(meta.stars)}</span>

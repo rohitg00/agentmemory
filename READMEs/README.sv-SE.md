@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% hämtning R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="92% färre tokens" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-verktyg" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiska hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externa databaser" height="38" /></picture>
@@ -331,223 +329,17 @@ Senaste versionsanteckningarna: [CHANGELOG.md](../CHANGELOG.md).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+Aktuella sökresultat, definitioner av mått och steg för reproduktion:
 
-### Hämtningsnoggrannhet
-
-**coding-agent-life-v1** (internt korpus, reproducerbart i sandbox)
-
-| Adapter | P@5 | R@5 | Topp-5-träffrate | p50-latens |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep-baslinje | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-100% topp-5-träffrate vid **P@5-mattaket** för detta korpus (0.240, se scorecard). Hybrid hämtar varje gold-session; grep missar 1 av 2 gold på den flersessions-temporala frågan. Lyftet ligger i **recall + temporal**, inte i aggregerad precision. Detta benchmark är litet och gold-glest; det större LongMemEval-S nedan differentierar bättre. Fullständig uppdelning per typ + rättelsenotis: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 frågor)
-
-| System | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| Endast BM25-fallback | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Tokenbesparingar
-
-| Metod | Tokens/år | Kostnad/år |
-|---|---|---|
-| Klistra in hela kontexten | 19.5M+ | Omöjligt (överskrider fönstret) |
-| LLM-sammanfattat | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + lokala embeddings | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Embedding-modell: `all-MiniLM-L6-v2` (lokal, kostnadsfri, inget API-nyckel krävs). Fullständiga rapporter: [`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](../benchmark/QUALITY.md), [`benchmark/SCALE.md`](../benchmark/SCALE.md). Konkurrentjämförelse: [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md) som täcker agentmemory mot mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**Reproducera lokalt:** [`eval/README.md`](../eval/README.md), en adapter-pluggbar testrigg för LongMemEval `_s` (publikt 500-frågors) + `coding-agent-life-v1` (internt 15-sessionskorpus). Grep-, vektor- och agentmemory-adaptrar poängsätts sida vid sida, NDJSON-utdata, publicerade scorecards hamnar i [`docs/benchmarks/`](../docs/benchmarks/).
-
-**Fungerar bra ihop med [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything) och [Graphify](https://github.com/safishamsi/graphify).** Kodgraf-indexering, multiagent-byggpipelines och bredare kunskapsgrafer över dokument/PDF-filer/bilder/videor. agentmemory minns arbetet; dessa tre projekt lyser upp resten av kontextlagret. Recept + frågerouting-tabell: [`docs/recipes/pairings.md`](../docs/recipes/pairings.md).
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="Jämfört med konkurrenter" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Inbyggt (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Typ</strong></td>
-<td>Minnesmotor + MCP-server</td>
-<td>Minneslager-API</td>
-<td>Fullständig agent-körtid</td>
-<td>Personlig AI</td>
-<td>Minnes-API + app</td>
-<td>Teamminnesnav (LLM-proxy)</td>
-<td>Vektorminne (OSS)</td>
-<td>Minnesmotor (Oracle DB)</td>
-<td>Minnessystem</td>
-<td>Statisk fil</td>
-</tr>
-<tr>
-<td><strong>Hämtning R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Självrapporterat</td>
-<td>PersonaMem 76% (självrapporterat)</td>
-<td>~96.6% (självrapporterat)</td>
-<td>94.4% (självrapporterat)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Automatisk infångning</strong></td>
-<td>12 hooks (noll manuellt arbete)</td>
-<td>Manuella <code>add()</code>-anrop</td>
-<td>Agenten redigerar sig själv</td>
-<td>Manuellt</td>
-<td>Extraktion på API-sidan</td>
-<td>Proxy-avlyssning (byte av bas-URL)</td>
-<td>Manuellt</td>
-<td>API-extraktion</td>
-<td>Manuellt</td>
-<td>Manuell redigering</td>
-</tr>
-<tr>
-<td><strong>Sökning</strong></td>
-<td>BM25 + vektor + graf (RRF-fusion)</td>
-<td>Vektor + graf</td>
-<td>Vektor (arkiverat)</td>
-<td>Semantisk</td>
-<td>Vektor + RAG</td>
-<td>4 typer av tillgångar (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Endast vektor</td>
-<td>Vektor + semantisk</td>
-<td>Avklingningsviktad</td>
-<td>Laddar allt in i kontexten</td>
-</tr>
-<tr>
-<td><strong>Multiagent</strong></td>
-<td>MCP + REST + leaser + signaler</td>
-<td>API (ingen koordinering)</td>
-<td>Endast inom Letta-körtiden</td>
-<td>Nej</td>
-<td>Nej</td>
-<td>Teamroller + delade tillgångar</td>
-<td>Nej</td>
-<td>Endast scopead</td>
-<td>Delad mellan agenter</td>
-<td>Filer per agent</td>
-</tr>
-<tr>
-<td><strong>Ramverksinlåsning</strong></td>
-<td>Ingen (vilken MCP-klient som helst)</td>
-<td>Ingen</td>
-<td>Hög (måste använda Letta)</td>
-<td>Fristående</td>
-<td>Ingen</td>
-<td>Proxy framför varje modellanrop</td>
-<td>Ingen</td>
-<td>Oracle Database</td>
-<td>Ingen</td>
-<td>Format per agent</td>
-</tr>
-<tr>
-<td><strong>Externa beroenden</strong></td>
-<td>Ingen separat databastjänst behövs</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vektor-DB</td>
-<td>Flera</td>
-<td>Hanterad molntjänst</td>
-<td>Docker-stack (Core + Hub + Proxy)</td>
-<td>Vektorlager</td>
-<td>Oracle AI Database</td>
-<td>Inga</td>
-<td>Inga</td>
-</tr>
-<tr>
-<td><strong>Minneslivscykel</strong></td>
-<td>4-nivås konsolidering + avklingning + auto-glömning</td>
-<td>Passiv extraktion</td>
-<td>Hanteras av agenten</td>
-<td>Manuellt</td>
-<td>Auto-glömning</td>
-<td>Manuell granskning; automatisk routing på gång</td>
-<td>Inget</td>
-<td>Inte angivet</td>
-<td>Avklingning + konsolidering</td>
-<td>Manuell beskärning</td>
-</tr>
-<tr>
-<td><strong>Tokeneffektivitet</strong></td>
-<td>~1,900 tokens/session ($10/år)</td>
-<td>Varierar efter integration</td>
-<td>Kärnminne i kontexten</td>
-<td>Varierar</td>
-<td>Molnprissättning</td>
-<td>Inte angivet</td>
-<td>Ingen tokenbudget</td>
-<td>LLM-baserad (varierar)</td>
-<td>Varierar</td>
-<td>22K+ tokens vid 240 observationer</td>
-</tr>
-<tr>
-<td><strong>Viewer i realtid</strong></td>
-<td>Ja (port 3113)</td>
-<td>Molnpanel</td>
-<td>Molnpanel</td>
-<td>Webbgränssnitt</td>
-<td>Molnpanel</td>
-<td>Webbgränssnitt för hubben</td>
-<td>Nej</td>
-<td>Nej</td>
-<td>Nej</td>
-<td>Nej</td>
-</tr>
-<tr>
-<td><strong>Självhostad</strong></td>
-<td>Ja (standard)</td>
-<td>Valfritt</td>
-<td>Valfritt</td>
-<td>Ja</td>
-<td>Nej (endast moln)</td>
-<td>Ja (Docker)</td>
-<td>Ja</td>
-<td>Ja (Oracle DB)</td>
-<td>Ja</td>
-<td>Ja</td>
-</tr>
-</table>
+Uppdaterad jämförelse av produkter och driftsalternativ med källor:
 
-<sub>Benchmark-notis: det är bara agentmemorys R@5 som är vårt eget uppmätta resultat (LongMemEval-S, reproducerbart från <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). Siffrorna för mem0 och Letta är deras publicerade LoCoMo-siffror (ett annat dataset); siffrorna för MemPalace, supermemory, TencentDB (PersonaMem) och oracleagentmemory är leverantörens egna rapporterade påståenden som vi inte har reproducerat oberoende (oracleagentmemorys körning använde GPT-5.5 mot en Oracle AI Database). Visas sida vid sida enbart som fingervisning, inte en head-to-head på identisk data. Stjärnantal är ungefärliga och förändras över tid.</sub>
-
-**Nyare aktörer** värda att känna till, jämförda på djupet i [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| System | ⭐ | Inriktning |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Temporal kunskapsgraf; starkast publicerade resultat för temporala frågor (LongMemEval 63.8%), men grafen byggs asynkront så färska fakta kan ligga efter |
-| Cognee | 30K | Dokument-till-kunskapsgraf-inmatning, endast Python, byggt för strukturerad entitetsextraktion snarare än sessionsinfångning |
-
-AgentMemory kombinerar registrering från kodningsagenter, sökbar projekthistorik och en lokal viewer. Du kan arbeta utan nyckel från första starten.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -779,7 +571,7 @@ Fullständig guide: [`integrations/hermes/`](../integrations/hermes/)
 
 Starta minnesservern: `npx -y @agentmemory/agentmemory@latest`
 
-#### Inbyggda skills via `npx skills add` (50+ agenter)
+#### Inbyggda skills via `npx skills add`
 
 agentmemory levereras med 17 skills i Claude-Code-stilens `<dir>/SKILL.md`-format: 9 anropsbara handlings-skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) och 8 referens-skills som agenten laddar vid behov (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). Referens-skillsen innehåller datatabeller genererade från källkoden, så de avviker aldrig. CLI-verktyget [`skills`](https://npmjs.com/package/skills) från vercel-labs installerar dem automatiskt i den anropande agentens inbyggda skill-katalog över 50+ agenter (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf och fler):
 
@@ -836,7 +628,7 @@ agentmemory-posten är **samma MCP-serverblock** på alla värdar som använder 
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` installerar MCP och infångnings-hooks i den delade anpassningskatalogen. Se [Antigravity-konfiguration och begränsningar](../docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` använder samma MCP- och hook-konfiguration som nuvarande IDE-versioner. Befintliga installationer bör uppdateras med `--force`; se [uppgraderingsanteckningarna](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` skriver konfigurationen på användarnivå. Arbetsyteöverskrivningar läggs i `.kiro/settings/mcp.json` bredvid din kod. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` skriver det vanliga `mcpServers`-blocket. Warp upptäcker också automatiskt skills från `.claude/skills/`; när Claude Code-pluginet är installerat visas agentmemorys 8 skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) naturligt i Warps snabbkommando-palett. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` skriver det vanliga `mcpServers`-blocket. Warp upptäcker också automatiskt skills från `.claude/skills/`; när Claude Code-pluginet är installerat visas agentmemorys 9 skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) naturligt i Warps snabbkommando-palett. |
 | **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` skriver det vanliga `mcpServers`-blocket. VS Code-tilläggsanvändare: klistra in samma block via Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (att föredra) eller `config.json` (äldre) | `agentmemory connect continue` skapar en saknad `config.yaml` eller ändrar befintlig `config.json`. Om YAML-filen finns visas blocket för `mcpServers:` så att kommentarer och ankare bevaras. Continue använder en array, inte ett objekt. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` skriver under `context_servers` (Zeds nyckel, INTE `mcpServers`). Fjärranslutna MCP-servrar kan istället kopplas in via `{"url": "..."}`. |
@@ -933,7 +725,6 @@ Varje AI-kodningsagent levereras med inbyggt minne: Claude Code har `MEMORY.md`,
 |---|---|---|
 | Underhåll | Manuellt underhållna instruktioner | Indexerad sessionshistorik och minnen |
 | Sökning | Laddar allt in i kontexten | BM25 + vektor + graf (endast topp-K) |
-| Tokenkostnad | 22K+ vid 240 observationer | ~1,900 tokens (92% mindre) |
 | Mellan agenter | Filer per agent | MCP + REST (vilken agent som helst) |
 | Koordinering | Ingen | Leaser, signaler, åtgärder, rutiner |
 | Observerbarhet | Läs filer manuellt | Viewer i realtid på :3113 |
@@ -946,7 +737,7 @@ Varje AI-kodningsagent levereras med inbyggt minne: Claude Code har `MEMORY.md`,
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1031,7 +822,7 @@ Sammanfogad med Reciprocal Rank Fusion (RRF, k=60) och sessionsdiversifierad (ma
 
 När ett vektorindex är ifyllt använder `mem::search` (bakom `memory_recall`) den hybrida BM25 + vektor-rankaren. Utan embeddings används BM25. `smart-search` kan dessutom sammanfoga strukturella grafmatchningar när grafdata finns, även i nyckelfritt läge. Återkallning av lärdomar körs på ett dedikerat BM25-index i minnet istället för att skanna hela korpuset per fråga. Ersatta minnesversioner exkluderas från varje återkallningsväg; versionskedjan behåller deras historik.
 
-Vektorer överlever en krasch eller en tvingad avstängning. Vektorindexet sparas i buckets högst var `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 minuter). Varje vektor som läggs till eller tas bort däremellan skrivs också direkt till en liten väntande logg i state-lagret, och nästa start spelar upp den igen utan att anropa embedding-leverantören. Varje lyckad sparning tömmer loggen. Dokument som fortfarande saknar en vektor efter uppspelningen bäddas in igen i bakgrunden i omgångar om `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) tills inga återstår, och en backfill som stoppas fortsätter vid nästa start. `/agentmemory/status` och viewern visar storleken på den väntande loggen och backfill-tillståndet. Nyckelfria installationer skriver ingenting.
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 tokeniserar grekiska, kyrilliska, hebreiska, arabiska och accentuerad latin direkt ur lådan. För kinesiska/japanska/koreanska minnen, installera de valfria segmenterarna (`npm install @node-rs/jieba tiny-segmenter`) för att dela upp CJK-sekvenser i ordnivå-tokens; utan dem faller agentmemory mjukt tillbaka till tokenisering av hela sekvenser och skriver ut en engångstips på stderr.
 
@@ -1047,9 +838,9 @@ Den vanliga npm-installationen inkluderar den valfria körtiden `@huggingface/tr
 
 | Leverantör | Modell | Kostnad | Anteckningar |
 |---|---|---|---|
-| **Lokal (rekommenderat att aktivera)** | `all-MiniLM-L6-v2` | Kostnadsfri | På enheten efter den första modellnedladdningen, +8 procentenheter recall jämfört med endast BM25 |
+| **Lokal (rekommenderat att aktivera)** | `all-MiniLM-L6-v2` | Kostnadsfri | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | Kostnadsfri nivå | 100+ språk, 768/1536/3072 dimensioner (MRL), 2048-token indata. Ersätter `text-embedding-004` ([utfasad, stängs ner 14 jan 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Högst kvalitet |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | Betald | Optimerad för kod |
 | Cohere | `embed-english-v3.0` | Kostnadsfri provperiod | Generell användning |
 | OpenRouter | Vilken modell som helst | Varierar | Multimodell-proxy |

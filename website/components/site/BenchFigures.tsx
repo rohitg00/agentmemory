@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { LONGMEMEVAL } from "@/lib/site";
-import { TYPE_HITS, totalHits, type K } from "@/lib/bench";
+import { ADAPTERS, ADAPTER_LABELS, EVALUATION, TYPE_HITS, totalHits, percent, type Adapter } from "@/lib/bench";
 import s from "./Benchmarks.module.css";
 
 function useInView<T extends HTMLElement>() {
@@ -30,14 +29,6 @@ function useInView<T extends HTMLElement>() {
   return [ref, inView] as const;
 }
 
-const LEDGER: { key: keyof typeof LONGMEMEVAL.hybrid; label: string; k?: K }[] = [
-  { key: "r5", label: "R@5", k: 5 },
-  { key: "r10", label: "R@10", k: 10 },
-  { key: "r20", label: "R@20" },
-  { key: "ndcg10", label: "NDCG@10" },
-  { key: "mrr", label: "MRR" },
-];
-
 function dotDelay(i: number, lit: boolean, before: number, firstReveal: boolean): number {
   if (firstReveal) return Math.min(i * 4, 420);
   if (lit && i >= before) return Math.min((i - before) * 45, 400);
@@ -46,24 +37,24 @@ function dotDelay(i: number, lit: boolean, before: number, firstReveal: boolean)
 
 export function QuestionDots() {
   const [ref, inView] = useInView<HTMLDivElement>();
-  const [k, setK] = useState<K>(5);
-  const [prevK, setPrevK] = useState<K | null>(null);
-  const hits = totalHits(k);
+  const [adapter, setAdapter] = useState<Adapter>("agentmemory-bm25-component");
+  const [previous, setPrevious] = useState<Adapter | null>(null);
+  const hits = totalHits(adapter);
 
-  const choose = (next: K) => {
-    if (next === k) return;
-    setPrevK(k);
-    setK(next);
+  const choose = (next: Adapter) => {
+    if (next === adapter) return;
+    setPrevious(adapter);
+    setAdapter(next);
   };
 
   return (
     <div ref={ref} className={s.dotsFigure}>
       <div className={s.figHead}>
-        <span className="mono">LongMemEval-S · 500 questions · one dot each</span>
-        <div className={s.toggle} role="group" aria-label="Retrieved sessions per question">
-          {([5, 10] as K[]).map((v) => (
-            <button key={v} type="button" aria-pressed={k === v} onClick={() => choose(v)}>
-              top {v}
+        <span className="mono">LongMemEval-S · 470 answerable questions</span>
+        <div className={s.toggle} role="group" aria-label="Retrieval adapter">
+          {ADAPTERS.map((v) => (
+            <button key={v} type="button" aria-pressed={adapter === v} onClick={() => choose(v)}>
+              {ADAPTER_LABELS[v]}
             </button>
           ))}
         </div>
@@ -71,15 +62,15 @@ export function QuestionDots() {
 
       <p className={s.verdict}>
         <strong>
-          {hits} of {LONGMEMEVAL.questions}
+          {hits} of {EVALUATION.longmemeval.byAdapter[adapter].scored}
         </strong>{" "}
-        questions found a gold session in the top {k} results.
+        questions found every required source in the top 5 results.
       </p>
 
       <div className={s.groups}>
         {TYPE_HITS.map((t) => {
-          const on = t.hits[k];
-          const before = prevK ? t.hits[prevK] : 0;
+          const on = t.hits[adapter];
+          const before = previous ? t.hits[previous] : 0;
           return (
             <div key={t.type} className={s.group}>
               <div className={s.groupHead}>
@@ -91,7 +82,7 @@ export function QuestionDots() {
               <div className={s.dots} aria-hidden="true">
                 {Array.from({ length: t.count }, (_, i) => {
                   const lit = inView && i < on;
-                  const delay = dotDelay(i, lit, before, prevK === null);
+                  const delay = dotDelay(i, lit, before, previous === null);
                   return (
                     <span key={i} className={s.dot} data-on={lit || undefined} data-hit={i < on || undefined}>
                       <span className={s.fill} style={{ "--d": `${delay}ms` } as CSSProperties} />
@@ -106,10 +97,10 @@ export function QuestionDots() {
 
       <div className={s.legend}>
         <span className="mono">
-          <span className={`${s.key} ${s.keyOn}`} /> gold session retrieved
+          <span className={`${s.key} ${s.keyOn}`} /> all required sources retrieved
         </span>
         <span className="mono">
-          <span className={s.key} /> missed
+          <span className={s.key} /> incomplete
         </span>
       </div>
 
@@ -118,30 +109,21 @@ export function QuestionDots() {
           <thead>
             <tr>
               <th scope="col">recall mode</th>
-              {LEDGER.map((c) => (
-                <th key={c.key} scope="col" data-active={c.k === k || undefined}>
-                  {c.label}
-                </th>
-              ))}
+              <th scope="col">Strict recall-all@5</th>
+              <th scope="col">Fractional recall@5</th>
+              <th scope="col">Any-hit@5</th>
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <th scope="row">BM25 + vectors</th>
-              {LEDGER.map((c) => (
-                <td key={c.key} data-active={c.k === k || undefined}>
-                  {LONGMEMEVAL.hybrid[c.key].toFixed(1)}%
-                </td>
-              ))}
-            </tr>
-            <tr>
-              <th scope="row">BM25 only, keyless</th>
-              {LEDGER.map((c) => (
-                <td key={c.key} data-active={c.k === k || undefined}>
-                  {LONGMEMEVAL.bm25[c.key].toFixed(1)}%
-                </td>
-              ))}
-            </tr>
+            {ADAPTERS.map((key) => {
+              const result = EVALUATION.longmemeval.byAdapter[key];
+              return <tr key={key}>
+                <th scope="row">{ADAPTER_LABELS[key]}</th>
+                <td>{percent(result.recallAll)}</td>
+                <td>{percent(result.r)}</td>
+                <td>{percent(result.hit / result.scored)}</td>
+              </tr>;
+            })}
           </tbody>
         </table>
       </div>

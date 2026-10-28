@@ -8,7 +8,9 @@ export const AGENT_INSTALL_PROMPT =
   "Retrieve and follow the instructions at: https://raw.githubusercontent.com/rohitg00/agentmemory/main/INSTALL_FOR_AGENTS.md";
 
 export const src = {
-  longmemeval: `${REPO_URL}/blob/main/benchmark/LONGMEMEVAL.md`,
+  longmemeval: `${REPO_URL}/blob/main/docs/benchmarks/2026-10-28-retrieval-evaluation.md`,
+  evaluation: `${REPO_URL}/blob/main/eval/README.md`,
+  recall: `${REPO_URL}/blob/main/docs/recall.md`,
   tokens: `${REPO_URL}/blob/main/benchmark/REAL-EMBEDDINGS.md`,
   agentLife: `${REPO_URL}/blob/main/docs/benchmarks/2026-05-20-coding-agent-life-v1.md`,
   gate: `${REPO_URL}/tree/main/scripts/release-gate`,
@@ -52,10 +54,11 @@ export const AGENTS: Agent[] = [
   { name: "Devin", logo: "/devin.png", href: "https://devin.ai", support: "plugin", detail: "6 hooks, skills, MCP", connect: "devin" },
   { name: "OpenClaw", logo: "https://github.com/openclaw.png", href: "https://github.com/openclaw/openclaw", support: "plugin", detail: "gateway plugin, MCP", connect: "openclaw" },
   { name: "Hermes", logo: "https://github.com/NousResearch.png", href: "https://github.com/NousResearch", support: "plugin", detail: "Python plugin, MCP", connect: "hermes" },
-  { name: "pi", logo: "https://raw.githubusercontent.com/rohitg00/agentmemory/main/assets/agents/pi.svg", href: `${REPO_URL}/tree/main/integrations/pi`, support: "plugin", detail: "native plugin, MCP", connect: "pi" },
+  { name: "pi", logo: "https://raw.githubusercontent.com/rohitg00/agentmemory/main/assets/agents/pi.svg", href: `${REPO_URL}/tree/main/integrations/pi`, support: "plugin", detail: "installable package, capture, recall, skills", connect: "pi" },
+  { name: "Oh My Pi", logo: "https://raw.githubusercontent.com/rohitg00/agentmemory/main/assets/agents/pi.svg", href: `${REPO_URL}/tree/main/integrations/omp`, support: "plugin", detail: "capture, recall, skills, optional MCP", connect: "omp" },
   { name: "OpenHuman", logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png", href: "https://github.com/tinyhumansai/openhuman", support: "plugin", detail: "native Memory backend", connect: "openhuman" },
   { name: "Gemini CLI", logo: "https://github.com/google-gemini.png", href: "https://github.com/google-gemini/gemini-cli", support: "mcp", detail: "MCP server", connect: "gemini-cli" },
-  { name: "Antigravity", logo: "https://svgl.app/library/antigravity.svg", href: "https://antigravity.google", support: "mcp", detail: "MCP, hooks", connect: "antigravity" },
+  { name: "Antigravity", logo: "https://svgl.app/library/antigravity.svg", href: "https://antigravity.google", support: "plugin", detail: "MCP, hooks", connect: "antigravity" },
   { name: "Claude Desktop", logo: "https://github.com/anthropics.png", href: "https://claude.ai/download", support: "mcp", detail: "MCP server" },
   { name: "Warp", logo: "https://svgl.app/library/warp.svg", href: "https://www.warp.dev", support: "mcp", detail: "MCP server", connect: "warp" },
   { name: "Zed", logo: "https://svgl.app/library/zed-logo_dark.svg", href: "https://zed.dev", support: "mcp", detail: "MCP server", connect: "zed" },
@@ -64,29 +67,13 @@ export const AGENTS: Agent[] = [
   { name: "Droid", logo: "https://www.factory.ai/favicon.svg", href: "https://docs.factory.ai/cli", support: "mcp", detail: "MCP server", connect: "droid" },
   { name: "Kiro", logo: "https://kiro.dev/favicon.ico", href: "https://kiro.dev", support: "mcp", detail: "MCP server", connect: "kiro" },
   { name: "Qwen Code", logo: "https://svgl.app/library/qwen_dark.svg", href: "https://github.com/QwenLM/qwen-code", support: "mcp", detail: "MCP server", connect: "qwen" },
-  { name: "DeepSeek Harness", logo: "https://svgl.app/library/deepseek.svg", href: "https://github.com/deepseek-ai/deepseek-harness", support: "mcp", detail: "MCP server", connect: "dsh" },
+  { name: "DeepSeek Harness", logo: "https://svgl.app/library/deepseek.svg", href: "https://github.com/deepseek-ai/deepseek-harness", support: "plugin", detail: "native capture and recall, MCP", connect: "dsh" },
   { name: "Roo Code", logo: "https://github.com/RooCodeInc.png", href: "https://github.com/RooCodeInc/Roo-Code", support: "mcp", detail: "MCP server" },
   { name: "Kilo Code", logo: "https://github.com/Kilo-Org.png", href: "https://github.com/Kilo-Org/kilocode", support: "mcp", detail: "MCP server" },
   { name: "Goose", logo: "https://github.com/block.png", href: "https://github.com/block/goose", support: "mcp", detail: "MCP server" },
   { name: "Aider", logo: "https://github.com/Aider-AI.png", href: "https://github.com/Aider-AI/aider", support: "rest", detail: "REST API" },
 ];
 
-export const LONGMEMEVAL = {
-  questions: 500,
-  hybrid: { r5: 95.2, r10: 98.6, r20: 99.4, ndcg10: 87.9, mrr: 88.2 },
-  bm25: { r5: 86.2, r10: 94.6, r20: 98.6, ndcg10: 73.0, mrr: 71.5 },
-  byType: [
-    { type: "knowledge-update", count: 78, r5: 98.7, r10: 100.0, h5: 77, h10: 78 },
-    { type: "multi-session", count: 133, r5: 97.7, r10: 100.0, h5: 130, h10: 133 },
-    { type: "single-session-assistant", count: 56, r5: 96.4, r10: 98.2, h5: 54, h10: 55 },
-    { type: "temporal-reasoning", count: 133, r5: 95.5, r10: 97.7, h5: 127, h10: 130 },
-    { type: "single-session-user", count: 70, r5: 90.0, r10: 97.1, h5: 63, h10: 68 },
-    { type: "single-session-preference", count: 30, r5: 83.3, r10: 96.7, h5: 25, h10: 29 },
-  ],
-  embedding: "all-MiniLM-L6-v2, 384 dimensions, local",
-};
-
-export const TOKENS = { fullContext: 19462, agentmemory: 1571, savedPct: 92 };
 
 export const GATE_SCENARIOS = [
   { id: "install", what: "The packed artifact installs and reports its identity" },
@@ -222,7 +209,7 @@ export const FAQ = [
   },
   {
     q: "Does anything leave my machine?",
-    a: "Not by default. With no provider configured, recall runs on BM25 keyword search and nothing is sent anywhere. If you add an LLM or an embedding provider, agentmemory sends that provider the text it needs. Local embeddings send nothing. There is no telemetry.",
+    a: "Memory text stays local with keyless search or local models. Installation, updates and the first local model download need network access. Configured remote LLM or embedding services receive the text they process. AgentMemory starts its runtime with usage telemetry disabled.",
   },
   {
     q: "Do I need an API key?",

@@ -66,8 +66,6 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-recall.svg"><img src="../assets/tags/stat-recall.svg" alt="95.2% 檢索 R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tokens.svg"><img src="../assets/tags/stat-tokens.svg" alt="少 92% 的 token" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 個 MCP 工具" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 個自動 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 個外部資料庫" height="38" /></picture>
@@ -329,223 +327,17 @@ agentmemory --instance 1
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-benchmarks.svg"><img src="../assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+最新檢索結果、指標定義及重現步驟：
 
-### 檢索準確率
-
-**coding-agent-life-v1**(內部語料庫,可在沙箱中重現)
-
-| 配接器 | P@5 | R@5 | Top-5 命中率 | p50 延遲 |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep 基準線 | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-在此語料庫的 **P@5 數學上限**(0.240,見計分卡)下,達成 100% 的 Top-5 命中率。混合檢索(Hybrid)找回了每一個黃金會話;grep 在多會話時間性查詢上漏掉了 2 個黃金中的 1 個。這裡的提升在於**召回 + 時間性**,而非整體精確度。此基準測試規模小且黃金樣本稀疏;下方規模更大的 LongMemEval-S 更能看出差異。完整的依類型分解與更正說明請見:[`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](../docs/benchmarks/2026-05-20-coding-agent-life-v1.md)。
-
-**LongMemEval-S**(ICLR 2025,500 個問題)
-
-| 系統 | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| 僅 BM25 回退 | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Token 節省
-
-| 方法 | 每年 Token 數 | 每年成本 |
-|---|---|---|
-| 貼上完整上下文 | 19.5M+ | 不可行(超出上下文視窗) |
-| LLM 摘要 | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + 本地嵌入 | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> 嵌入模型:`all-MiniLM-L6-v2`(本地、免費、無需 API 金鑰)。完整報告:[`benchmark/LONGMEMEVAL.md`](../benchmark/LONGMEMEVAL.md)、[`benchmark/QUALITY.md`](../benchmark/QUALITY.md)、[`benchmark/SCALE.md`](../benchmark/SCALE.md)。競品比較:[`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md),涵蓋 agentmemory 與 mem0、Letta、Khoj、supermemory、TencentDB Agent Memory、MemPalace、Zep/Graphiti、Cognee、Hippo 的對比。
-
-**本機重現:** [`eval/README.md`](../eval/README.md),一個可插拔配接器的測試框架,涵蓋 LongMemEval `_s`(公開 500 題)+ `coding-agent-life-v1`(內部 15 會話語料庫)。Grep / 向量 / agentmemory 配接器並列評分,輸出 NDJSON,已發布的計分卡位於 [`docs/benchmarks/`](../docs/benchmarks/)。
-
-**搭配 [codegraph](https://github.com/colbymchenry/codegraph)、[Understand Anything](https://github.com/Lum1104/Understand-Anything) 和 [Graphify](https://github.com/safishamsi/graphify) 使用效果更好。** 程式碼圖索引、多代理建置流程,以及跨文件 / PDF / 圖片 / 影片的更廣泛知識圖譜。agentmemory 負責記住這些工作成果;這三個專案則點亮情境層的其餘部分。使用方式與問題路由對照表:[`docs/recipes/pairings.md`](../docs/recipes/pairings.md)。
+[0.9.31 · 2026-10-28 · strict recall-all@5](../docs/benchmarks/2026-10-28-retrieval-evaluation.md) · [eval/README.md](../eval/README.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-competitors.svg"><img src="../assets/tags/section-competitors.svg" alt="vs Competitors" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>內建(CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>類型</strong></td>
-<td>記憶引擎 + MCP 伺服器</td>
-<td>記憶層 API</td>
-<td>完整代理執行階段</td>
-<td>個人 AI</td>
-<td>記憶 API + 應用程式</td>
-<td>團隊記憶中樞(LLM 代理層)</td>
-<td>向量記憶(開源)</td>
-<td>記憶引擎(Oracle DB)</td>
-<td>記憶系統</td>
-<td>靜態檔案</td>
-</tr>
-<tr>
-<td><strong>檢索 R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>自行回報</td>
-<td>PersonaMem 76%(自行回報)</td>
-<td>~96.6%(自行回報)</td>
-<td>94.4%(自行回報)</td>
-<td>N/A</td>
-<td>N/A(grep)</td>
-</tr>
-<tr>
-<td><strong>自動捕捉</strong></td>
-<td>12 hooks(零人工)</td>
-<td>手動呼叫 <code>add()</code></td>
-<td>代理自行編輯</td>
-<td>手動</td>
-<td>API 端擷取</td>
-<td>代理攔截(替換 base-URL)</td>
-<td>手動</td>
-<td>API 擷取</td>
-<td>手動</td>
-<td>手動編輯</td>
-</tr>
-<tr>
-<td><strong>搜尋</strong></td>
-<td>BM25 + 向量 + 圖(RRF 融合)</td>
-<td>向量 + 圖</td>
-<td>向量(封存)</td>
-<td>語意</td>
-<td>向量 + RAG</td>
-<td>4 種資產類型(Chat / Skill / Wiki / CodeGraph)</td>
-<td>僅向量</td>
-<td>向量 + 語意</td>
-<td>衰減加權</td>
-<td>把所有內容都載入上下文</td>
-</tr>
-<tr>
-<td><strong>多代理</strong></td>
-<td>MCP + REST + 租約 + 訊號</td>
-<td>API(無協調機制)</td>
-<td>僅限於 Letta 執行階段內</td>
-<td>否</td>
-<td>否</td>
-<td>團隊角色 + 共享資產</td>
-<td>否</td>
-<td>僅限範圍內</td>
-<td>多代理共享</td>
-<td>每個代理各自的檔案</td>
-</tr>
-<tr>
-<td><strong>框架綁定</strong></td>
-<td>無(任何 MCP 客戶端)</td>
-<td>無</td>
-<td>高(必須使用 Letta)</td>
-<td>獨立</td>
-<td>無</td>
-<td>代理層攔截每一次模型呼叫</td>
-<td>無</td>
-<td>Oracle Database</td>
-<td>無</td>
-<td>每個代理各自的格式</td>
-</tr>
-<tr>
-<td><strong>外部相依元件</strong></td>
-<td>不需要獨立資料庫服務</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + 向量資料庫</td>
-<td>多種</td>
-<td>託管雲端</td>
-<td>Docker 堆疊(Core + Hub + Proxy)</td>
-<td>向量儲存</td>
-<td>Oracle AI Database</td>
-<td>無</td>
-<td>無</td>
-</tr>
-<tr>
-<td><strong>記憶生命週期</strong></td>
-<td>4 層整合 + 衰減 + 自動遺忘</td>
-<td>被動擷取</td>
-<td>由代理管理</td>
-<td>手動</td>
-<td>自動遺忘</td>
-<td>手動審查;自動路由功能開發中</td>
-<td>無</td>
-<td>未說明</td>
-<td>衰減 + 整合</td>
-<td>手動清理</td>
-</tr>
-<tr>
-<td><strong>Token 效率</strong></td>
-<td>每會話約 1,900 個 token(每年 $10)</td>
-<td>依整合方式而異</td>
-<td>核心記憶留在上下文中</td>
-<td>依情況而異</td>
-<td>雲端計價</td>
-<td>未說明</td>
-<td>無 token 預算</td>
-<td>由 LLM 驅動(依情況而異)</td>
-<td>依情況而異</td>
-<td>240 條觀測達 22K+ tokens</td>
-</tr>
-<tr>
-<td><strong>即時檢視器</strong></td>
-<td>有(連接埠 3113)</td>
-<td>雲端儀表板</td>
-<td>雲端儀表板</td>
-<td>網頁介面</td>
-<td>雲端儀表板</td>
-<td>Hub 網頁介面</td>
-<td>無</td>
-<td>無</td>
-<td>無</td>
-<td>無</td>
-</tr>
-<tr>
-<td><strong>自行架設</strong></td>
-<td>有(預設)</td>
-<td>可選</td>
-<td>可選</td>
-<td>有</td>
-<td>無(僅限雲端)</td>
-<td>有(Docker)</td>
-<td>有</td>
-<td>有(Oracle DB)</td>
-<td>有</td>
-<td>有</td>
-</tr>
-</table>
+產品與部署方式的最新比較及來源：
 
-<sub>基準測試說明:只有 agentmemory 的 R@5 是我們自己量測的結果(LongMemEval-S,可從 <a href="../benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a> 重現)。mem0 和 Letta 的數字是它們公開發表的 LoCoMo 數據(屬於不同的資料集);MemPalace、supermemory、TencentDB(PersonaMem)和 oracleagentmemory 的數字是廠商自行回報、我們尚未獨立重現的宣稱(oracleagentmemory 的測試使用 GPT-5.5 對上 Oracle AI Database)。並列呈現僅供大致參考,並非在相同資料上的正面對比。星數為近似值,會隨時間變動。</sub>
-
-值得關注的**新進者**,詳細比較見 [`benchmark/COMPARISON.md`](../benchmark/COMPARISON.md):
-
-| 系統 | ⭐ | 切入點 |
-|--------|---|-------|
-| Zep / Graphiti | 30K | 時間性知識圖譜;已發表的時間性查詢結果最強(LongMemEval 63.8%),但圖是非同步建構,因此最新事實可能有延遲 |
-| Cognee | 30K | 文件到知識圖譜的擷取,僅支援 Python,專為結構化實體擷取而設計,而非會話捕捉 |
-
-AgentMemory 結合工作階段捕捉、可搜尋的專案歷史和本機檢視器，首次使用即可選擇免金鑰模式。
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
 
 ---
 
@@ -778,7 +570,7 @@ Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localho
 
 啟動記憶伺服器:`npx -y @agentmemory/agentmemory@latest`
 
-#### 透過 `npx skills add` 使用原生 skills(50+ 代理)
+#### 透過 `npx skills add` 使用原生 skills
 
 agentmemory 以 Claude-Code 風格的 `<dir>/SKILL.md` 格式提供 17 個 skills:9 個可呼叫的動作 skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`lesson`、`commit-context`、`commit-history`、`session-history`)和 8 個代理按需載入的參考 skills(`memory-discipline`、`agentmemory-mcp-tools`、`agentmemory-rest-api`、`agentmemory-config`、`agentmemory-agents`、`agentmemory-hooks`、`agentmemory-architecture`、`write-agentmemory-skill`)。這些參考 skills 內含從原始碼產生的資料表,因此永遠不會漂移。vercel-labs 的 [`skills`](https://npmjs.com/package/skills) CLI 會把它們自動安裝到發起代理的原生 skill 目錄中,支援 50+ 個代理(Claude Code、Cursor、Cline、Continue、Droid、Warp、Codex、Antigravity、Kiro、OpenCode、Goose、Roo、Trae、Windsurf 等):
 
@@ -835,7 +627,7 @@ Hermes、OpenClaw、Pi 和 Oh My Pi 的連接器預設安裝原生整合和 skil
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` 會在共用的自訂目錄中安裝 MCP 和擷取 hooks。參見[Antigravity 設定與限制](../docs/plugins/antigravity.md)。 |
 | **Antigravity CLI**(`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` 使用與目前 IDE 版本相同的 MCP 和 hook 設定。既有安裝應使用 `--force` 刷新;參見[升級說明](../docs/plugins/antigravity.md)。 |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` 會寫入使用者層級的設定。工作區層級的覆寫請放在你程式碼旁的 `.kiro/settings/mcp.json`。 |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` 會寫入標準的 `mcpServers` 區塊。Warp 也會自動從 `.claude/skills/` 探索 skills;一旦安裝了 Claude Code 外掛,8 個 agentmemory skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`commit-context`、`commit-history`、`session-history`)就會原生出現在 Warp 的斜線指令選單中。 |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` 會寫入標準的 `mcpServers` 區塊。Warp 也會自動從 `.claude/skills/` 探索 skills;一旦安裝了 Claude Code 外掛,9 個 agentmemory skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`commit-context`、`commit-history`、`session-history`)就會原生出現在 Warp 的斜線指令選單中。 |
 | **Cline(CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` 會寫入標準的 `mcpServers` 區塊。VS Code 擴充功能使用者:透過 Cline Settings → MCP Servers → Edit JSON 貼上同一個區塊。 |
 | **Continue.dev** | `~/.continue/config.yaml`(建議)或 `config.json`(舊版) | `agentmemory connect continue` 在沒有設定時建立 `config.yaml`，或更新既有 `config.json`。既有 YAML 會保留不動，以保護註解和錨點；指令會印出應貼到 `mcpServers:` 下的設定區塊。Continue 的 `mcpServers` 使用陣列。 |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` 會寫入 `context_servers`(Zed 自己的鍵,**不是** `mcpServers`)。遠端 MCP 伺服器可改用 `{"url": "..."}` 接上。 |
@@ -926,7 +718,6 @@ Session 2: "Now add rate limiting"
 |---|---|---|
 | 維護 | 手動整理的指令 | 已索引的工作階段歷史與記憶 |
 | 搜尋 | 把所有內容載入上下文 | BM25 + 向量 + 圖(僅 top-K) |
-| Token 成本 | 240 條觀測達 22K+ | ~1,900 個 token(少 92%) |
 | 跨代理 | 每個代理各自的檔案 | MCP + REST(任何代理) |
 | 協調 | 無 | 租約、訊號、動作、例程 |
 | 可觀測性 | 手動讀檔 | 連接埠 3113 的即時檢視器 |
@@ -939,7 +730,7 @@ Session 2: "Now add rate limiting"
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID / durable capture inbox / offline spool
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -1024,7 +815,7 @@ SessionStart hook fires
 
 當向量索引已有資料時,`mem::search`(`memory_recall` 背後)會使用混合的 BM25 + 向量排序器。沒有嵌入時則使用 BM25。當圖資料存在時,`smart-search` 還能額外融合結構化的圖比對結果,即使在無金鑰模式下也是如此。教訓召回在專用的記憶體內 BM25 索引上執行,而非每次查詢都掃描整個語料庫。被取代的記憶版本會從每一條召回路徑中排除;版本鏈保留它們的歷史。
 
-向量可在崩潰或強制終止後存活。向量索引最多每 `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS`(10 分鐘)以分桶方式儲存一次。期間新增或移除的每個向量,也會立即寫入狀態儲存中的一份小型待處理日誌,下次啟動時會重播它而不呼叫嵌入提供者。每次成功儲存都會清空該日誌。重播後仍沒有向量的文件,會在背景以每批 `AGENTMEMORY_VECTOR_BACKFILL_MAX`(500)筆的方式重新嵌入,直到沒有剩餘為止;被中止的回填會在下次啟動時繼續。`/agentmemory/status` 和檢視器會顯示待處理日誌大小與回填狀態。無金鑰安裝則完全不寫入任何內容。
+[0.9.31: `AGENTMEMORY_VECTOR_BACKFILL=all` / `AGENTMEMORY_VECTOR_BACKFILL_MAX`](../docs/reliability/source-and-vector-recovery.md).
 
 BM25 開箱即可對希臘文、西里爾文、希伯來文、阿拉伯文和帶重音的拉丁文進行分詞。對於中文 / 日文 / 韓文的記憶,安裝選用的分詞器(`npm install @node-rs/jieba tiny-segmenter`),把 CJK 文字段切成詞級 token;若未安裝,agentmemory 會優雅地退回整段分詞,並在 stderr 上印出一次性提示。
 
@@ -1040,9 +831,9 @@ EMBEDDING_PROVIDER=local
 
 | 提供者 | 模型 | 成本 | 備註 |
 |---|---|---|---|
-| **本地(建議選用)** | `all-MiniLM-L6-v2` | 免費 | 第一次模型下載後即為裝置端運算,召回率比僅用 BM25 高 +8pp |
+| **本地(建議選用)** | `all-MiniLM-L6-v2` | 免費 | [`EMBEDDING_PROVIDER=local`](../README.md#embedding-providers) |
 | Gemini | `gemini-embedding-001` | 免費額度 | 支援 100+ 種語言,768/1536/3072 維(MRL),輸入上限 2048 token。取代已棄用的 `text-embedding-004`([2026 年 1 月 14 日停用](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | 品質最高 |
+| OpenAI | `text-embedding-3-small` | [OpenAI](https://openai.com/api/pricing/) | [text-embedding-3-small](https://platform.openai.com/docs/models/text-embedding-3-small) |
 | Voyage AI | `voyage-code-3` | 付費 | 針對程式碼優化 |
 | Cohere | `embed-english-v3.0` | 免費試用 | 通用型 |
 | OpenRouter | 任何模型 | 依情況而異 | 多模型代理 |

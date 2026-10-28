@@ -20,9 +20,9 @@ export default function PrivacyPage() {
           <code>~/Library/Application Support/agentmemory</code> on macOS. You can export or delete them at any time.
         </p>
         <p>
-          <strong>What leaves your machine.</strong> Nothing, unless you configure it. If you add an LLM or embedding
-          provider, agentmemory sends that provider the text it needs, under the provider&apos;s own privacy policy. Local
-          embeddings send nothing.
+          <strong>What leaves your machine.</strong> Memory text stays local with keyless search or local models.
+          Configured remote services receive the text they process, under their own privacy policies.
+          Installation, updates and the first local model download require network access.
         </p>
         <p>
           <strong>Telemetry.</strong> None.
