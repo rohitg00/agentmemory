@@ -117,5 +117,5 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 - 146 REST endpoints
 - 6 MCP resources, 3 MCP prompts
 - 12 hooks, 17 skills
-- 327+ iii functions
+- 330+ iii functions
 - 4,100+ tests

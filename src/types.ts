@@ -1,3 +1,14 @@
+export interface RelationReactionMark {
+  relationId: string;
+  type: MemoryRelation["type"];
+  targetId: string;
+  isLatestBefore?: boolean;
+  strengthBefore?: number;
+  confidenceBefore?: number;
+  relatedIdsBefore?: string[];
+  appliedAt: string;
+}
+
 export interface GraphExtractMark {
   sessionId: string;
   lastObservationTimestamp: string;
@@ -735,6 +746,14 @@ export interface AuditEntry {
     | "core_add"
     | "core_remove"
     | "auto_page"
+    | "compress-failed"
+    | "summarize-failed"
+    | "graph-extract-failed"
+    | "consolidate-failed"
+    | "reflect-failed"
+    | "skill-extract-failed"
+    | "cascade"
+    | "relation_reaction"
     | "vision_embed"
     | "slot_append"
     | "slot_replace"
