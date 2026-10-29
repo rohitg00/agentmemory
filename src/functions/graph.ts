@@ -18,7 +18,7 @@ import {
   GRAPH_EXTRACTION_SYSTEM,
   buildGraphExtractionPrompt,
 } from "../prompts/graph-extraction.js";
-import { isGraphExtractionEnabled } from "../config.js";
+import { isGraphExtractionEnabled, isGraphStructuralEnabled } from "../config.js";
 import { recordAudit, safeAudit } from "./audit.js";
 import { logger } from "../logger.js";
 import { scrubRecord } from "./privacy.js";
@@ -730,14 +730,16 @@ export function registerGraphFunction(
 
       let nodes: GraphNode[] = [];
       let edges: GraphEdge[] = [];
-      try {
-        const heuristic = extractGraphHeuristics(data.observations);
-        nodes = heuristic.nodes;
-        edges = heuristic.edges;
-      } catch (err) {
-        logger.warn("heuristic graph extraction failed", {
-          error: err instanceof Error ? err.message : String(err),
-        });
+      if (isGraphStructuralEnabled()) {
+        try {
+          const heuristic = extractGraphHeuristics(data.observations);
+          nodes = heuristic.nodes;
+          edges = heuristic.edges;
+        } catch (err) {
+          logger.warn("heuristic graph extraction failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
 
       const llmEnabled =

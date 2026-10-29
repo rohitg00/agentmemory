@@ -29,6 +29,12 @@ interface PendingSpec {
   spec: HttpTriggerSpec | StateSpec;
 }
 
+interface PipelineSpec {
+  source: Record<string, unknown>;
+  target: string;
+  options?: Record<string, unknown>;
+}
+
 export interface BindingReport {
   state: "observe" | "trigger";
   http: "observe" | "trigger";
@@ -56,6 +62,8 @@ const OBSERVE_CAPABLE_HTTP_KEYS = new Set([
 export class Bindings {
   private readonly sdk: SdkLike;
   private readonly pending: PendingSpec[] = [];
+  private readonly pipelinePending: PipelineSpec[] = [];
+  private pipelineMode: "observe" | "inline" = "inline";
   private activated: Promise<BindingModes> | null = null;
   private readonly boundHandles: ObserverHandle[] = [];
   private readonly stateBoundHandles: ObserverHandle[] = [];
@@ -96,6 +104,25 @@ export class Bindings {
   state(spec: StateSpec): void {
     if (this.resolved || this.immediate()) return this.bindState(spec);
     this.pending.push({ kind: "state", spec });
+  }
+
+  get pipeline(): "observe" | "inline" {
+    return this.pipelineMode;
+  }
+
+  observePipeline(source: Record<string, unknown>, target: string, options?: Record<string, unknown>): ObserverHandle | null {
+    if (!this.resolved && !this.immediate()) {
+      this.pipelinePending.push({ source, target, options });
+      return null;
+    }
+    if (this.pipelineMode !== "observe" || typeof this.sdk.observe !== "function") return null;
+    const handle = this.sdk.observe(source, target, options);
+    this.boundHandles.push(handle);
+    void handle.ready().catch((err: unknown) => {
+      const code = (err as { code?: string })?.code;
+      logger.error(`Pipeline observer failed for ${target}`, { error: code ?? String(err) });
+    });
+    return handle;
   }
 
   private bindHttp(spec: HttpTriggerSpec): void {
@@ -230,9 +257,13 @@ export class Bindings {
         this.activated = this.detectModes().then((modes) => {
           this.modes = modes;
           this.resolved = true;
+          this.pipelineMode = typeof this.sdk.observe === "function" && process.env.AGENTMEMORY_BINDINGS !== "trigger" ? "observe" : "inline";
           for (const { spec } of this.pending.splice(0)) {
             if ("type" in spec && spec.type === "http") this.bindHttp(spec as HttpTriggerSpec);
             else this.bindState(spec as StateSpec);
+          }
+          for (const spec of this.pipelinePending.splice(0)) {
+            this.observePipeline(spec.source, spec.target, spec.options);
           }
           return modes;
         });
