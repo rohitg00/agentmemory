@@ -1186,7 +1186,15 @@ export function registerApiTriggers(
       const endResult = await withKeyedLock(`obs:${sessionId}`, async () => {
         const session = await kv.get<Session>(KV.sessions, sessionId);
         if (!session || session.id !== sessionId) return "not_found" as const;
-        if (session.status === "completed") return "already_completed" as const;
+        if (session.status === "completed") {
+          // An idle finalize may have completed the session mid-work (turn
+          // gap > AGENTMEMORY_FINALIZE_IDLE_MS), so a final end on a
+          // completed session must still re-run the stop lifecycle: newer
+          // observations would otherwise never be summarized. The session
+          // is not re-ended — mem::summarize merges the watermark delta,
+          // and is a no-op when nothing changed.
+          return body?.final === true ? ("final_on_completed" as const) : ("already_completed" as const);
+        }
 
         await requestSummaryRefresh(kv, sessionId);
         await kv.update(KV.sessions, sessionId, [
@@ -1195,6 +1203,24 @@ export function registerApiTriggers(
         ]);
         return "ended" as const;
       });
+      if (endResult === "final_on_completed") {
+        try {
+          sdk.trigger({
+            function_id: "event::session::stopped",
+            payload: { sessionId },
+            action: TriggerAction.Void(),
+          });
+        } catch (err) {
+          logger.warn("event::session::stopped trigger failed", {
+            sessionId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+        return {
+          status_code: 200,
+          body: { success: true, ended: false, reason: "already_completed", resummarized: true },
+        };
+      }
       if (endResult !== "ended") {
         return {
           status_code: 200,
