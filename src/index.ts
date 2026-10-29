@@ -467,11 +467,13 @@ async function main() {
   const indexPersistence = new IndexPersistence(kv, vectorIndex, { requireRecoveryPlan: true });
   setIndexPersistence(indexPersistence);
 
-  const loaded = await indexPersistence.load().catch((err) => {
-    console.warn(`[agentmemory] Failed to load persisted vector index:`, err);
-    return null;
-  });
-  let vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, isVectorBackfillAllEnabled());
+  const restoreVectorCheckpoint = async (boot: boolean) => {
+    const loaded = await indexPersistence.load().catch((err) => {
+      console.warn(`[agentmemory] Failed to load persisted vector index:`, err);
+      return null;
+    });
+    let checkpointBackfillSince = await indexPersistence.prepareBackfill(loaded, isVectorBackfillAllEnabled());
+    let mismatchBlocked = false;
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
     // Persisted vectors carry whatever dimension the provider had when
     // they were written. If the active provider declares a different
@@ -496,7 +498,7 @@ async function main() {
       const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
       const dropStale = isDropStaleIndexEnabled();
       if (dropStale) {
-        vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, true);
+        checkpointBackfillSince = await indexPersistence.prepareBackfill(loaded, true);
         for (const [obsId] of loaded.vector.entries()) vectorIndex.markRemoved(obsId);
         console.warn(
           `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
@@ -506,7 +508,7 @@ async function main() {
             `AGENTMEMORY_DROP_STALE_INDEX=true is set — discarding the persisted ` +
             `vectors. Live observations will rebuild the index over time.`,
         );
-      } else {
+      } else if (boot) {
         throw new Error(
           `[agentmemory] Refusing to start: persisted vector index has ` +
             `${mismatches.length} of ${loaded.vector.size} vectors with the ` +
@@ -519,6 +521,21 @@ async function main() {
             `vectors and rebuild from live observations.\n` +
             `  - Switch the embedding provider back to the one that wrote the index.`,
         );
+      } else {
+        console.error(
+          `[agentmemory] Refusing to start: persisted vector index has ` +
+            `${mismatches.length} of ${loaded.vector.size} vectors with the ` +
+            `wrong dimension. Active provider (${embeddingProvider?.name}) ` +
+            `declares ${activeDim}; dimensions seen on disk: ${distinct}. ` +
+            `First mismatched obsIds: ${sample}. Loading would silently corrupt ` +
+            `search (cross-dimension cosine returns 0). Choose one:\n` +
+            `  - Re-embed the existing index against the new provider, then start.\n` +
+            `  - Set AGENTMEMORY_DROP_STALE_INDEX=true to discard the persisted ` +
+            `vectors and rebuild from live observations.\n` +
+            `  - Switch the embedding provider back to the one that wrote the index.`,
+        );
+        await indexPersistence.prepareBackfill(null);
+        mismatchBlocked = true;
       }
     } else {
       vectorIndex.restoreFrom(loaded.vector);
@@ -530,8 +547,8 @@ async function main() {
 
   if (vectorIndex && loaded && loaded.state !== "unavailable") {
     const replay = await indexPersistence.replayPendingLog(embeddingProvider?.dimensions ?? 0);
-    if (replay.skipped > 0) vectorBackfillSince = null;
-    if (indexPersistence.isRecoveryPaused()) vectorBackfillSince = undefined;
+    if (replay.skipped > 0) checkpointBackfillSince = null;
+    if (indexPersistence.isRecoveryPaused()) checkpointBackfillSince = undefined;
     if (replay.entries > 0) {
       bootLog(
         `Recovered ${replay.added} vectors and ${replay.removed} removals written after the last index save, without calling the embedding provider` +
@@ -539,6 +556,12 @@ async function main() {
       );
     }
   }
+    return { loaded, vectorBackfillSince: checkpointBackfillSince, mismatchBlocked };
+  };
+
+  const bootCheckpoint = await restoreVectorCheckpoint(true);
+  let vectorBackfillSince = bootCheckpoint.vectorBackfillSince;
+  const bootCheckpointUnavailable = !bootCheckpoint.loaded || bootCheckpoint.loaded.state === "unavailable";
 
   const auditMigration = startAuditMigration(kv).catch(() => {});
 
@@ -650,6 +673,10 @@ async function main() {
         bm25Incomplete: isBm25RebuildIncomplete(),
         vectorBackfillState: getVectorBackfillState(),
       })) await runIndexRecovery();
+      if (bootCheckpointUnavailable && indexPersistence.resumeAfterUnavailable()) {
+        const retry = await restoreVectorCheckpoint(false);
+        vectorBackfillSince = retry.vectorBackfillSince;
+      }
       await runCaptureRecovery();
       await checkDuplicateWorkers(sdk);
     } catch (err) {

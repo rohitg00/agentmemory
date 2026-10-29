@@ -81,15 +81,21 @@ export function onStateWorkerReturn(
   cb: () => void | Promise<void>,
 ): { state: StateWorkerReturnState; probeTick: () => Promise<void>; stop: () => void } {
   const client = sdk as unknown as SdkLike;
-  const state: StateWorkerReturnState = { probeReady: true };
+  const state: StateWorkerReturnState = { probeReady: stateWorkerStatus.ready };
   let inFlight: Promise<void> | null = null;
   let queued = false;
   let lastFireAt = 0;
   let stopped = false;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleRetry = (delayMs: number) => {
+    if (retryTimer || stopped) return;
+    retryTimer = setTimeout(() => { retryTimer = null; fire(); }, delayMs);
+    retryTimer.unref();
+  };
   const fire = () => {
     if (stopped || inFlight) { if (!stopped) queued = true; return; }
     const now = Date.now();
-    if (now - lastFireAt < 1000) { queued = true; return; }
+    if (now - lastFireAt < 1000) { queued = true; scheduleRetry(1000 - (now - lastFireAt)); return; }
     lastFireAt = now;
     inFlight = Promise.resolve(cb()).then(() => {
       inFlight = null;
@@ -144,6 +150,9 @@ export function onStateWorkerReturn(
   return {
     state,
     probeTick,
-    stop: () => { stopped = true; },
+    stop: () => {
+      stopped = true;
+      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    },
   };
 }
