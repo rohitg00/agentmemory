@@ -86,3 +86,40 @@ jobs:
             ${{ runner.temp }}/graph-index-gate
           if-no-files-found: ignore
           retention-days: 14
+
+  windows-smoke:
+    name: windows smoke
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
+      - name: Build and pack with the POSIX build script
+        shell: pwsh
+        env:
+          npm_config_script_shell: C:\Program Files\Git\bin\bash.exe
+        run: |
+          New-Item -ItemType Directory -Force -Path "$env:RUNNER_TEMP\windows-smoke-pack" | Out-Null
+          npm run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm pack --pack-destination "$env:RUNNER_TEMP\windows-smoke-pack"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install and run the packed CLI under Windows Worker Compose
+        shell: pwsh
+        run: |
+          $tarballs = @(Get-ChildItem "$env:RUNNER_TEMP\windows-smoke-pack\agentmemory-agentmemory-*.tgz")
+          if ($tarballs.Count -ne 1) { throw "expected one packed tarball, found $($tarballs.Count)" }
+          node scripts/release-gate/windows-smoke.mjs --tarball $tarballs[0].FullName --out "$env:RUNNER_TEMP\windows-smoke"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke
+          path: ${{ runner.temp }}/windows-smoke
+          if-no-files-found: ignore
+          retention-days: 14

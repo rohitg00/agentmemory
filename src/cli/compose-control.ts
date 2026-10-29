@@ -44,7 +44,7 @@ export function composeStateRegistryFailure(dataDir: string, file: string): stri
       const state = JSON.parse(readFileSync(stateFile, "utf8")) as { compose_path?: string; containers?: Record<string, { status?: string; last_error?: string }> };
       const errors = Object.entries(state.containers ?? {}).filter(([, value]) => value.status === "failed").map(([name, value]) => `${name}: ${value.last_error ?? "failed"}`);
       const message = errors.join("\n");
-      if (state.compose_path !== file) continue;
+      if (!sameComposeFile(state.compose_path, file)) continue;
       if (message && composeRegistryFailureMessage(message)) return message;
     }
   } catch {}
@@ -65,8 +65,26 @@ export type ComposeStatus = ComposeProjectStatus & {
   projects?: Array<{ file?: string; state_dir?: string; [key: string]: unknown }>;
 };
 
-export function ownedComposeProject(status: ComposeStatus, file: string): ComposeProjectStatus | null {
-  return status.file === file ? status : status.projects?.find((item) => item.file === file) ?? null;
+export function sameComposeFile(left: string | undefined, right: string, windows = process.platform === "win32"): boolean {
+  if (!left) return false;
+  if (!windows) {
+    if (left === right) return true;
+    const real = (value: string): string => {
+      try { return realpathSync(value); } catch { return value; }
+    };
+    return real(left) === real(right);
+  }
+  const normalize = (value: string): string => {
+    let out = value;
+    if (out.startsWith("\\\\?\\UNC\\")) out = `\\\\${out.slice("\\\\?\\UNC\\".length)}`;
+    else if (out.startsWith("\\\\?\\")) out = out.slice("\\\\?\\".length);
+    return out.replace(/\//g, "\\").toLowerCase();
+  };
+  return normalize(left) === normalize(right);
+}
+
+export function ownedComposeProject(status: ComposeStatus, file: string, windows = process.platform === "win32"): ComposeProjectStatus | null {
+  return sameComposeFile(status.file, file, windows) ? status : status.projects?.find((item) => sameComposeFile(item.file, file, windows)) ?? null;
 }
 
 function cleanDaemonEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
