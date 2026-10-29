@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   CompressedObservation,
   RawObservation,
@@ -13,6 +13,13 @@ import {
   indexObservationSession,
   lookupObservationSession,
 } from "../src/state/obs-index.js";
+import {
+  getSearchIndex,
+  setIndexPersistence,
+  setVectorIndex,
+} from "../src/functions/search.js";
+import { VectorIndex } from "../src/state/vector-index.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -477,5 +484,86 @@ describe("mem::evict memory cleanup", () => {
 
     expect(result.expiredMemories).toBe(1);
     expect(await kv.list(KV.facets)).toHaveLength(1);
+  });
+
+  describe("search-index cleanup", () => {
+    afterEach(() => {
+      setIndexPersistence(null);
+      setVectorIndex(null);
+      getSearchIndex().remove("mem_expired");
+      getSearchIndex().remove("mem_stale");
+    });
+
+    it("removes an expired memory from the BM25 index and flushes", async () => {
+      const kv = mockKV(new Map());
+      const { sdk } = mockSdk();
+      const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+      setIndexPersistence(persistence);
+      const vectors = new VectorIndex();
+      setVectorIndex(vectors);
+
+      const memory = makeEvictMemory({
+        id: "mem_expired",
+        forgetAfter: daysAgo(1),
+      });
+      await kv.set(KV.memories, memory.id, memory);
+      getSearchIndex().add(memoryToObservation(memory));
+      vectors.add("mem_expired", "memory", new Float32Array([1, 0, 0]));
+      expect(getSearchIndex().has("mem_expired")).toBe(true);
+
+      registerEvictStubs(sdk, kv);
+      await sdk.trigger({ function_id: "mem::evict", payload: {} });
+
+      expect(getSearchIndex().has("mem_expired")).toBe(false);
+      expect(vectors.has("mem_expired")).toBe(false);
+      expect(persistence.save).toHaveBeenCalled();
+    });
+
+    it("removes an old non-latest memory from the BM25 index", async () => {
+      const kv = mockKV(new Map());
+      const { sdk } = mockSdk();
+      const vectors = new VectorIndex();
+      setVectorIndex(vectors);
+
+      const memory = makeEvictMemory({
+        id: "mem_stale",
+        createdAt: daysAgo(120),
+        updatedAt: daysAgo(120),
+        isLatest: false,
+      });
+      await kv.set(KV.memories, memory.id, memory);
+      getSearchIndex().add(memoryToObservation(memory));
+      vectors.add("mem_stale", "memory", new Float32Array([0, 1, 0]));
+
+      registerEvictStubs(sdk, kv);
+      await sdk.trigger({ function_id: "mem::evict", payload: {} });
+
+      expect(getSearchIndex().has("mem_stale")).toBe(false);
+      expect(vectors.has("mem_stale")).toBe(false);
+    });
+
+    it("does not touch the index in dryRun", async () => {
+      const kv = mockKV(new Map());
+      const { sdk } = mockSdk();
+      const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+      setIndexPersistence(persistence);
+      const vectors = new VectorIndex();
+      setVectorIndex(vectors);
+
+      const memory = makeEvictMemory({
+        id: "mem_expired",
+        forgetAfter: daysAgo(1),
+      });
+      await kv.set(KV.memories, memory.id, memory);
+      getSearchIndex().add(memoryToObservation(memory));
+      vectors.add("mem_expired", "memory", new Float32Array([1, 0, 0]));
+
+      registerEvictStubs(sdk, kv);
+      await sdk.trigger({ function_id: "mem::evict", payload: { dryRun: true } });
+
+      expect(getSearchIndex().has("mem_expired")).toBe(true);
+      expect(vectors.has("mem_expired")).toBe(true);
+      expect(persistence.save).not.toHaveBeenCalled();
+    });
   });
 });

@@ -358,6 +358,9 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                   });
                   continue;
                 }
+                getSearchIndex().remove(mem.id);
+                vectorIndexRemove(mem.id);
+                indexCleaned = true;
                 if (mem.imageRef) {
                   await decrementImageRef(kv, sdk, mem.imageRef);
                 }
@@ -394,6 +397,9 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                   });
                   continue;
                 }
+                getSearchIndex().remove(mem.id);
+                vectorIndexRemove(mem.id);
+                indexCleaned = true;
                 if (mem.imageRef) {
                   await decrementImageRef(kv, sdk, mem.imageRef);
                 }
@@ -409,9 +415,9 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
         }
       } finally {
         await deleteFacetsForTargets(kv, deletedMemIds);
+        if (indexCleaned) await flushIndexSave();
       }
 
-      if (indexCleaned) await flushIndexSave();
       logger.info("Eviction complete", { stats });
       return stats;
     },
