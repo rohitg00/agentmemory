@@ -40,13 +40,20 @@ const step = async (name, fn) => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isWindows = process.platform === "win32";
-const npmCmd = isWindows ? "npm.cmd" : "npm";
 const nodeBase = process.execPath;
+const npmCli = [
+  process.env.npm_execpath,
+  join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+  join(dirname(process.execPath), "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+].find((candidate) => candidate && candidate.endsWith(".js") && existsSync(candidate));
+assert(npmCli, "could not locate npm-cli.js next to this Node binary");
 
 function run(cmd, args, opts = {}) {
   const res = spawnSync(cmd, args, { encoding: "utf8", env: { ...process.env, ...opts.env }, cwd: opts.cwd ?? repo });
-  return { status: res.status ?? -1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
+  return { status: res.status ?? -1, stdout: res.stdout ?? "", stderr: `${res.stderr ?? ""}${res.error ? `\n${res.error.message}` : ""}` };
 }
+
+const npm = (args, opts) => run(nodeBase, [npmCli, ...args], opts);
 
 const baseEnv = () => ({
   HOME: home,
@@ -65,29 +72,6 @@ const baseEnv = () => ({
   OTEL_ENABLED: "false",
   EMBEDDING_PROVIDER: "none",
 });
-
-await step("build", () => {
-  if (!options.tarball) {
-    const build = run(npmCmd, ["run", "build"], { cwd: repo });
-    assert.equal(build.status, 0, `npm run build failed: ${build.stderr.slice(-400)}`);
-    const packDir = mkdtempSync(join(tmpdir(), "am-win-pack-"));
-    const pack = run(npmCmd, ["pack", "--pack-destination", packDir], { cwd: repo });
-    assert.equal(pack.status, 0, `npm pack failed: ${pack.stderr.slice(-400)}`);
-    const tgz = readdirSync(packDir).find((f) => f.endsWith(".tgz"));
-    assert(tgz, "npm pack produced no tarball");
-    options.tarball = join(packDir, tgz);
-  }
-  return { tarball: options.tarball };
-});
-
-await step("install", () => {
-  const install = run(npmCmd, ["install", "--prefix", pkgDir, options.tarball, "--no-audit", "--no-fund"], { env: { CI: "1" } });
-  assert.equal(install.status, 0, `npm install failed: ${install.stderr.slice(-400)}`);
-  artifactCli = join(pkgDir, "node_modules", "@agentmemory", "agentmemory", "dist", "cli.mjs");
-  assert(existsSync(artifactCli), `installed CLI missing at ${artifactCli}`);
-  return { cli: artifactCli };
-});
-
 
 const getJson = (path) => new Promise((resolvePromise, reject) => {
   http.get({ host: "127.0.0.1", port: 3911, path, timeout: 4000 }, (res) => {
@@ -123,7 +107,11 @@ function leftoverProcesses() {
   if (!isWindows) return [];
   const ps = spawnSync("powershell.exe", [
     "-NoProfile", "-Command",
-    `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${root.replace(/'/g, "''")}*' } | Select-Object -ExpandProperty ProcessId`,
+    [
+      `$byPath = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${root.replace(/'/g, "''")}*' } | ForEach-Object { "$($_.ProcessId) $($_.Name)" }`,
+      `$byPort = Get-NetTCPConnection -State Listen -LocalPort 3911,3913,49950 -ErrorAction SilentlyContinue | ForEach-Object { "$($_.OwningProcess) port:$($_.LocalPort)" }`,
+      `@($byPath) + @($byPort) | Where-Object { $_ }`,
+    ].join("; "),
   ], { encoding: "utf8" });
   return (ps.stdout ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 }
@@ -142,6 +130,26 @@ function collectEvidence() {
 
 let failure = null;
 try {
+await step("build", () => {
+  if (!options.tarball) {
+    const build = npm(["run", "build"], { cwd: repo });
+    assert.equal(build.status, 0, `npm run build failed: ${build.stderr.slice(-400)}`);
+    const packDir = mkdtempSync(join(tmpdir(), "am-win-pack-"));
+    const pack = npm(["pack", "--pack-destination", packDir], { cwd: repo });
+    assert.equal(pack.status, 0, `npm pack failed: ${pack.stderr.slice(-400)}`);
+    const tgz = readdirSync(packDir).find((f) => f.endsWith(".tgz"));
+    assert(tgz, "npm pack produced no tarball");
+    options.tarball = join(packDir, tgz);
+  }
+  return { tarball: options.tarball };
+});
+await step("install", () => {
+  const install = npm(["install", "--prefix", pkgDir, options.tarball, "--no-audit", "--no-fund"], { env: { CI: "1" } });
+  assert.equal(install.status, 0, `npm install failed: ${install.stderr.slice(-400)}`);
+  artifactCli = join(pkgDir, "node_modules", "@agentmemory", "agentmemory", "dist", "cli.mjs");
+  assert(existsSync(artifactCli), `installed CLI missing at ${artifactCli}`);
+  return { cli: artifactCli };
+});
 await step("start", async () => startWorker());
 await step("status lists workers", async () => {
   const res = cli("status", "--port", "3911");
