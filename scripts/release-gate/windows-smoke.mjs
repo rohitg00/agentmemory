@@ -30,7 +30,14 @@ const results = [];
 const children = new Set();
 let artifactCli = null;
 let worker = null;
-const step = async (name, fn) => results.push({ name, ...(await fn()) });
+const step = async (name, fn) => {
+  try {
+    results.push({ name, ok: true, ...(await fn()) });
+  } catch (error) {
+    results.push({ name, ok: false, error: String(error?.stack ?? error).slice(0, 4000) });
+    throw error;
+  }
+};
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isWindows = process.platform === "win32";
 const npmCmd = isWindows ? "npm.cmd" : "npm";
@@ -121,12 +128,28 @@ function leftoverProcesses() {
   return (ps.stdout ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 }
 
+function collectEvidence() {
+  const skip = (path) => /secret|\.env$/i.test(path);
+  for (const [source, target] of [
+    [join(dataDir, "compose"), "compose"],
+    [join(dataDir, "compose-state"), "compose-state"],
+    [join(home, ".agentmemory"), "agentmemory-home"],
+  ]) {
+    if (!existsSync(source)) continue;
+    try { cpSync(source, join(out, target), { recursive: true, filter: (path) => !skip(path) }); } catch {}
+  }
+}
+
+let failure = null;
+try {
 await step("start", async () => startWorker());
 await step("status lists workers", async () => {
   const res = cli("status", "--port", "3911");
   writeFileSync(join(out, "status.txt"), res.stdout + res.stderr);
+  const workers = res.stdout.split(/\r?\n/).slice(res.stdout.split(/\r?\n/).findIndex((line) => line.trim() === "Compose workers:") + 1);
+  assert(res.stdout.includes("Compose workers:"), `agentmemory status printed no Compose workers section:\n${res.stdout.slice(-800)}`);
   for (const name of ["state", "http", "agentmemory"]) {
-    assert(res.stdout.includes(name), `agentmemory status missing worker ${name}:\n${res.stdout.slice(-800)}`);
+    assert(workers.some((line) => line.trim().startsWith(`${name}:`)), `agentmemory status missing worker ${name}:\n${res.stdout.slice(-800)}`);
   }
   return { status: res.status };
 });
@@ -139,10 +162,7 @@ await step("second start does not lose project ownership", async () => {
   assert(!combined.includes("Could not verify the managed Compose project"), combined.slice(-800));
   return { status: res.status ?? "timeout" };
 });
-const composeFile = join(dataDir, "compose", "worker-compose.yaml");
-if (existsSync(composeFile)) cpSync(composeFile, join(out, "worker-compose.yaml"));
-const daemonLog = join(dataDir, "compose", "compose-daemon.log");
-if (existsSync(daemonLog)) cpSync(daemonLog, join(out, "compose-daemon.log"));
+collectEvidence();
 await step("stop cleans up", async () => {
   const stop = cli("stop", "--port", "3911");
   assert.equal(stop.status, 0, `stop failed: ${(stop.stdout + stop.stderr).slice(-400)}`);
@@ -160,7 +180,16 @@ await step("final stop", async () => {
   return {};
 });
 
-writeFileSync(join(out, "results.json"), JSON.stringify(results.map((r) => ({ name: r.name, ok: true })), null, 2));
-for (const c of children) { try { c.kill(); } catch {} }
-if (!options.keep) rmSync(root, { recursive: true, force: true });
+} catch (error) {
+  failure = error;
+} finally {
+  collectEvidence();
+  writeFileSync(join(out, "results.json"), JSON.stringify(results, null, 2));
+  for (const c of children) { try { c.kill(); } catch {} }
+  if (!options.keep && !failure) rmSync(root, { recursive: true, force: true });
+}
+if (failure) {
+  console.error(`windows-smoke failed; artifacts in ${out}`);
+  throw failure;
+}
 console.log(`windows-smoke: ${results.length} steps passed, artifacts in ${out}`);
