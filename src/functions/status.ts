@@ -85,6 +85,13 @@ export interface StatusInputs {
   stateStore?: { ok: boolean; latencyMs?: number } | null;
   capture?: CaptureStatus | null;
   observeDedup?: ObserveDedupStatus | null;
+  runtime?: StatusRuntimeInfo | null;
+}
+
+export interface StatusRuntimeInfo {
+  bindings: { state: string; http: string; observers: number; routesViaTrigger: number; reasons: string[] };
+  duplicateWorkers: { count: number; workerIds: string[] } | null;
+  stateWorker: { ready: boolean; waitedMs: number; lastReturnAt?: string };
 }
 
 export interface ObserveDedupStatus {
@@ -125,6 +132,7 @@ export interface StatusReport {
   graphIndex: GraphIndexMigrationStatus | null;
   capture: CaptureStatus | null;
   observeDedup: ObserveDedupStatus | null;
+  runtime: StatusRuntimeInfo | null;
   functions: Array<FunctionMetricInput & { failureRate: number; offWithoutLlm: boolean }>;
   flags: Array<StatusFlag & { inactiveReason?: string }>;
   problems: StatusProblem[];
@@ -519,6 +527,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     graphIndex,
     capture: input.capture ?? null,
     observeDedup: input.observeDedup ?? null,
+    runtime: input.runtime ?? null,
     functions,
     flags: input.flags.map((flag) =>
       flag.enabled && flag.needsLlm && noLlm

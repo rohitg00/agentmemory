@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- **Observe-native bindings** (#1623). HTTP routes and state subscriptions now attach engine observers (`http::on-request`, `state::on-changed`) via `iii.observe` when the providers support them, with `registerTrigger` fallback and `AGENTMEMORY_BINDINGS` (`auto` default, `observe`, `trigger`). `/agentmemory/status` reports `runtime.bindings`, `runtime.stateWorker` and `runtime.duplicateWorkers`; duplicate workers also raise a viewer alert and a `duplicate-workers` doctor diagnostic.
+- **State-worker readiness probe and re-arm** (#1631).
+- `AGENTMEMORY_ROUTE_MAX_IN_FLIGHT` (default 1024) raises the per-route observer delivery cap so bursty hook traffic no longer hits `OVERFLOW` at 64 concurrent requests. Boot waits for `state::get` up to `AGENTMEMORY_STATE_READY_TIMEOUT_MS` (default 60 s) instead of failing the first read, and an `engine::on-workers-changed` observer (or health-tick probes in trigger mode) re-arms index and capture recovery when the state worker returns.
+
+
 - **`AGENTMEMORY_LOCAL_DISPATCH` runtime switch.** iii 0.25 runs a worker's calls to its own functions in-process by default, so AgentMemory's internal calls produce only the SDK's execute span and skip the engine round trip. Set `AGENTMEMORY_LOCAL_DISPATCH=false` for full engine call spans at the cost of a round trip per call.
 - **`npm run gate:large-store`**, a release-gate harness that seeds `mem:semantic`, `mem:graph:nodes`, `mem:graph:edges`, `mem:insights` and `mem:sessions` to configurable sizes directly through the engine, then measures the semantic, insights, sessions, counts, graph-index migration, export and mesh-export probes against a real Compose runtime. `--small` selects CI-friendly sizes; `--state-version`/`--http-version` allow A/B runs against different registry worker pins and `--assert` turns it into a gate.
 - **`--repeat N` for the startup release gate**, which runs the whole scenario suite N times in fresh temp dirs and reports a per-run pass/fail summary.
