@@ -25,6 +25,14 @@ function rig() {
         store.get(scope)!.set(key, value);
         return value;
       }
+      if (function_id === "state::list_keys" || function_id === "state::get") {
+        if (resetOnNodeRead && (scope === KV.graphNodes || scope.startsWith(`${KV.graphNodes}:generation:`))) {
+          resetOnNodeRead = false;
+          await resetGraphGeneration(kv, emptySnapshot);
+        }
+        if (function_id === "state::list_keys") return { keys: [...(store.get(scope)?.keys() ?? [])] };
+        return store.get(scope)?.get(payload.key) ?? null;
+      }
       if (function_id === "state::list") {
         const rows = [...(store.get(scope)?.values() ?? [])];
         if (resetOnNodeRead && (scope === KV.graphNodes || scope.startsWith(`${KV.graphNodes}:generation:`))) {

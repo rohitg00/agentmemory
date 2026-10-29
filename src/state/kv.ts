@@ -1,5 +1,6 @@
 import type { IIIClient } from 'iii-sdk'
 import { withKeyedLock } from './keyed-mutex.js'
+import { decodeCursor, encodeCursor } from './list-query.js'
 import { resolveGraphScope, notifyGraphGenerationChange } from './graph-generation.js'
 import { ensureGraphConsistency, noteGraphSnapshotWrite } from './graph-consistency.js'
 import { withGraphIndexMutation, withGraphSnapshotIndexBarrier, withGraphSnapshotUnknownMutation } from './graph-retrieval-index.js'
@@ -104,6 +105,14 @@ export function orderLikeInsertion<T>(values: T[]): T[] {
     .map((entry) => entry.value)
 }
 
+export async function collectAll<T = unknown>(kv: StateKV, scope: string): Promise<T[]> {
+  if (typeof kv.iterate !== 'function') return kv.list<T>(scope)
+  const out: T[] = []
+  for await (const page of kv.iterate<T>(scope)) out.push(...page)
+  if (kv.backend === 'redis') return orderLikeInsertion(out)
+  return out
+}
+
 export class StateKV {
   readonly backend: StateBackend
 
@@ -197,5 +206,106 @@ export class StateKV {
     })
     if (this.backend !== 'redis' || !Array.isArray(values)) return values
     return orderLikeInsertion(values)
+  }
+
+  async listKeys(scope: string): Promise<string[]> {
+    scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    return this.rawListKeys(scope)
+  }
+
+  private async rawListKeys(scope: string): Promise<string[]> {
+    const result = await this.sdk.trigger<{ scope: string }, unknown>({
+      function_id: 'state::list_keys',
+      payload: { scope },
+    })
+    if (Array.isArray(result)) return result as string[]
+    const keys = (result as { keys?: unknown })?.keys
+    return Array.isArray(keys) ? (keys as string[]) : []
+  }
+
+  async getMany<T = unknown>(
+    scope: string,
+    keys: string[],
+    opts: { concurrency?: number } = {},
+  ): Promise<Array<T | null>> {
+    scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    const concurrency = Math.min(64, Math.max(1, Math.floor(opts.concurrency ?? 16)))
+    return this.rawGetMany<T>(scope, keys, concurrency)
+  }
+
+  private async rawGetMany<T = unknown>(
+    scope: string,
+    keys: string[],
+    concurrency: number,
+  ): Promise<Array<T | null>> {
+    const out: Array<T | null> = new Array(keys.length).fill(null)
+    for (let start = 0; start < keys.length; start += concurrency) {
+      const slice = keys.slice(start, start + concurrency)
+      const values = await Promise.all(
+        slice.map((key) =>
+          this.sdk.trigger<{ scope: string; key: string }, T | null>({
+            function_id: 'state::get',
+            payload: { scope, key },
+          }),
+        ),
+      )
+      for (let i = 0; i < slice.length; i++) out[start + i] = values[i] ?? null
+    }
+    return out
+  }
+
+  async *iterate<T = unknown>(
+    scope: string,
+    opts: { pageSize?: number } = {},
+  ): AsyncGenerator<T[]> {
+    const pageSize = Math.min(1000, Math.max(1, Math.floor(opts.pageSize ?? 200)))
+    scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    const keys = await this.rawListKeys(scope)
+    for (let start = 0; start < keys.length; start += pageSize) {
+      const values = await this.rawGetMany<T>(scope, keys.slice(start, start + pageSize), 16)
+      let page = values.filter((value): value is T => value !== null && value !== undefined)
+      if (this.backend === 'redis') page = orderLikeInsertion(page)
+      if (page.length) yield page
+    }
+  }
+
+  async listPage<T = unknown>(
+    scope: string,
+    opts: { limit: number; cursor?: string; order?: 'desc' | 'asc' },
+  ): Promise<{ items: T[]; nextCursor?: string; total: number }> {
+    const limit = Math.max(1, Math.floor(opts.limit))
+    const direction = opts.order === 'asc' ? 1 : -1
+    scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    const keys = await this.rawListKeys(scope)
+    const ranked = keys.map((key) => ({ key, at: generatedIdTime(key) }))
+    const rank = (entry: { key: string; at: number | null }) =>
+      entry.at === null ? Number.NEGATIVE_INFINITY : entry.at
+    const compare = (a: { key: string; at: number | null }, b: { key: string; at: number | null }) => {
+      if (rank(a) !== rank(b)) return (rank(a) - rank(b)) * direction
+      return (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) * direction
+    }
+    ranked.sort(compare)
+    const position = decodeCursor(opts.cursor)
+    let start = 0
+    if (position?.key) {
+      const at = generatedIdTime(position.key)
+      start = ranked.findIndex((entry) => compare(entry, { key: position.key!, at }) > 0)
+      if (start < 0) start = ranked.length
+    }
+    const pageKeys = ranked.slice(start, start + limit).map((entry) => entry.key)
+    const values = await this.rawGetMany<T>(scope, pageKeys, 16)
+    const items = values.filter((value): value is T => value !== null && value !== undefined)
+    const hasMore = start + pageKeys.length < ranked.length
+    return {
+      items,
+      total: ranked.length,
+      ...(hasMore && pageKeys.length
+        ? { nextCursor: encodeCursor({ key: pageKeys[pageKeys.length - 1]! }) }
+        : {}),
+    }
   }
 }

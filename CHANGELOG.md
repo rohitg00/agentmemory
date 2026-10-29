@@ -19,6 +19,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - **Graph index migration errors now include the underlying cause** (#1617). The friendly "storage failure" sentence is kept and the original `code: message` detail is appended (truncated to 300 chars), so a `payload_too_large` rejection or similar storage error is visible instead of hidden.
+- **Reads of scopes over 64 MiB no longer fail.** `StateKV` gains `listKeys`, `getMany`, `iterate` and `listPage` (key listing plus bounded-concurrency `state::get`, with automatic use of `state::get_many` when the state worker advertises it), and every reader of `mem:insights`, `mem:semantic`, `mem:procedural`, `mem:graph:nodes`, `mem:graph:edges`, `mem:memories`, `mem:audit*` and `mem:relations` now pages instead of issuing a single `state::list`. The graph index migration's legacy scan uses `listKeys`, so migration works above 64 MiB (#1585, #1617). A guard test forbids regressions.
+- **Mesh export pages by cursor** (#890). `GET /agentmemory/mesh/export` accepts `limit` (default 500) and `cursor`, returns `nextCursor` when more remains and shrinks the page rather than failing when it would exceed the transport cap. The sync client follows `nextCursor` until exhausted and only advances `lastSyncAt` after the final page; peers on older versions without `nextCursor` are treated as a single page.
+- **Export no longer drops collections whose read failed.** `mem::export`, `GET /agentmemory/export` and the import replace path no longer swallow `state::list` failures into empty collections; a failed read surfaces as an error instead of a silently truncated export.
 
 ## [0.9.31] — 2026-10-25
 ### Upgrade notes

@@ -3,6 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
+import { collectAll } from "../state/kv.js";
 import type {
   Action,
   ActionEdge,
@@ -319,7 +320,7 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
       }
 
       if (categories.includes("memories")) {
-        const memories = await kv.list<Memory>(KV.memories);
+        const memories = await collectAll<Memory>(kv, KV.memories);
         const memoryIds = new Set(memories.map((m) => m.id));
         const supersededBy = new Map<string, string>();
         let memoryIssues = 0;
@@ -467,7 +468,7 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
       }
 
       if (categories.includes("semantic")) {
-        const semantic = await kv.list<SemanticMemory>(KV.semantic);
+        const semantic = await collectAll<SemanticMemory>(kv, KV.semantic);
         let semanticIssues = 0;
         for (const s of semantic) {
           if (
@@ -497,7 +498,7 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
       }
 
       if (categories.includes("procedural")) {
-        const procedural = await kv.list<ProceduralMemory>(KV.procedural);
+        const procedural = await collectAll<ProceduralMemory>(kv, KV.procedural);
         let proceduralIssues = 0;
         for (const p of procedural) {
           if (!Array.isArray(p.steps) || p.steps.length === 0) {
@@ -549,7 +550,7 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
       }
 
       if (categories.includes("insights")) {
-        const insights = await kv.list<Insight>(KV.insights);
+        const insights = await collectAll<Insight>(kv, KV.insights);
         let insightIssues = 0;
         for (const i of insights) {
           if (
@@ -1009,7 +1010,7 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
       }
 
       if (categories.includes("memories")) {
-        const memories = await kv.list<Memory>(KV.memories);
+        const memories = await collectAll<Memory>(kv, KV.memories);
         const supersededBy = new Map<string, string>();
 
         for (const memory of memories) {

@@ -2,7 +2,7 @@ import { TriggerAction, type IIIClient } from "iii-sdk";
 import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, Session } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
@@ -108,7 +108,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
             );
             candidateMemories = loaded.filter((m): m is Memory => m !== null);
           } else {
-            candidateMemories = await kv.list<Memory>(KV.memories);
+            candidateMemories = await collectAll<Memory>(kv, KV.memories);
           }
         } catch (err) {
           // Candidate generation is an optimization; a failure here must
@@ -116,7 +116,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           logger.warn("supersession candidate lookup failed, using full scan", {
             error: err instanceof Error ? err.message : JSON.stringify(err),
           });
-          candidateMemories = await kv.list<Memory>(KV.memories);
+          candidateMemories = await collectAll<Memory>(kv, KV.memories);
         }
         let supersededId: string | undefined;
         let supersededVersion = 1;

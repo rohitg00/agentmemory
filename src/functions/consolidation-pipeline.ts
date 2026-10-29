@@ -8,6 +8,7 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import {
   SEMANTIC_MERGE_SYSTEM,
   buildSemanticMergePrompt,
@@ -18,7 +19,6 @@ import { recordAudit } from "./audit.js";
 import { CONSOLIDATION_LAST_RUN_KEY } from "./consolidation-status.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
-
 function applyDecay(
   items: Array<{
     strength: number;
@@ -94,7 +94,7 @@ export function registerConsolidationPipelineFunction(
 
       if (tier === "all" || tier === "semantic") {
         const summaries = await kv.list<SessionSummary>(KV.summaries);
-        const existingSemantic = await kv.list<SemanticMemory>(KV.semantic);
+        const existingSemantic = await collectAll<SemanticMemory>(kv, KV.semantic);
 
         if (summaries.length >= 5) {
           const recentSummaries = summaries
@@ -184,7 +184,7 @@ export function registerConsolidationPipelineFunction(
       }
 
       if (tier === "all" || tier === "procedural") {
-        const memories = await kv.list<Memory>(KV.memories);
+        const memories = await collectAll<Memory>(kv, KV.memories);
         const patterns = memories
           .filter((m) => m.isLatest && m.type === "pattern")
           .map((m) => ({
@@ -207,8 +207,8 @@ export function registerConsolidationPipelineFunction(
             let match;
             let newProcs = 0;
             const now = new Date().toISOString();
-            const existingProcs = await kv.list<ProceduralMemory>(
-              KV.procedural,
+            const existingProcs = await collectAll<ProceduralMemory>(
+              kv, KV.procedural,
             );
 
             while ((match = procRegex.exec(response)) !== null) {
@@ -265,8 +265,8 @@ export function registerConsolidationPipelineFunction(
       }
 
       if (tier === "all" || tier === "decay") {
-        const semantic = await kv.list<SemanticMemory>(KV.semantic);
-        const procedural = await kv.list<ProceduralMemory>(KV.procedural);
+        const semantic = await collectAll<SemanticMemory>(kv, KV.semantic);
+        const procedural = await collectAll<ProceduralMemory>(kv, KV.procedural);
 
         const semanticResult = await decayAndWriteChanged(
           kv,

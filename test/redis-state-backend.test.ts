@@ -75,6 +75,10 @@ function fakeRedisEngine() {
           events.push({ type: "deleted", scope: p.scope, key: p.key, old, next: null });
           return old;
         }
+        case "state::list_keys": {
+          const h = hashes.get(`state:${p.scope}`);
+          return { keys: h ? shuffled([...h.keys()]) : [] };
+        }
         case "state::list": {
           const h = hashes.get(`state:${p.scope}`);
           return h ? shuffled([...h.values()].map((raw) => JSON.parse(raw))) : [];

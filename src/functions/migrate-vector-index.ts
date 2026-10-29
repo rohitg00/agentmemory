@@ -2,8 +2,8 @@ import type { EmbeddingProvider, CompressedObservation, Memory } from "../types.
 import { VectorIndex } from "../state/vector-index.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { logger } from "../logger.js";
-
 export interface MigrateVectorIndexResult {
   success: boolean;
   totalProcessed: number;
@@ -51,7 +51,7 @@ export async function migrateVectorIndex(
   // size of the batch we were about to embed), not a flat +1.
   let textMems: Memory[] = [];
   try {
-    const memories = await kv.list<Memory>(KV.memories);
+    const memories = await collectAll<Memory>(kv, KV.memories);
     textMems = memories.filter(
       (m) => m.isLatest !== false && m.title && m.content && m.content.trim() !== "",
     );

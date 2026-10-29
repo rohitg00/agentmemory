@@ -11,6 +11,8 @@ import type {
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { confinePath, mkdirConfined, writeConfinedFile } from "./path-guard.js";
+import { collectAll } from "../state/kv.js";
+
 const DEFAULT_EXPORT_ROOT = join(homedir(), ".agentmemory");
 
 function getExportRoot(): string {
@@ -286,7 +288,7 @@ export function registerObsidianExportFunction(
         const sessionMoc: string[] = [];
 
         const [memories, lessons, crystals, sessions] = await Promise.all([
-          exportTypes.has("memories") ? kv.list<Memory>(KV.memories) : Promise.resolve([] as Memory[]),
+          exportTypes.has("memories") ? collectAll<Memory>(kv, KV.memories) : Promise.resolve([] as Memory[]),
           exportTypes.has("lessons") ? kv.list<Lesson>(KV.lessons) : Promise.resolve([] as Lesson[]),
           exportTypes.has("crystals") ? kv.list<Crystal>(KV.crystals) : Promise.resolve([] as Crystal[]),
           exportTypes.has("sessions") ? kv.list<Session>(KV.sessions) : Promise.resolve([] as Session[]),
