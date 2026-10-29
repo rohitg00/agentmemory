@@ -105,7 +105,7 @@
   "devDependencies": {
     "@types/node": "^26.6.2",
     "sigstore": "4.1.1",
-    "tsdown": "^0.21.10",
+    "tsdown": "^0.23.1",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6",
