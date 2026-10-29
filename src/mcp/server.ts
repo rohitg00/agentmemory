@@ -213,9 +213,11 @@ export function registerMcpEndpoints(
                 body: { error: "files must contain at least one valid path" },
               };
             }
-            const payload: { sessionId?: string; files: string[] } = { files: fileList };
+            const payload: { sessionId?: string; files: string[]; project?: string } = { files: fileList };
             const sessionId = asNonEmptyString(args.sessionId);
             if (sessionId) payload.sessionId = sessionId;
+            const project = asNonEmptyString(args.project);
+            if (project) payload.project = project;
             const result = await sdk.trigger({
               function_id: "mem::file-context",
               payload,

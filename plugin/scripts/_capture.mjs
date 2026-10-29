@@ -1,5 +1,5 @@
-import { spawn } from "node:child_process";
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
+import { execFileSync, spawn } from "node:child_process";
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir, platform } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -828,6 +828,150 @@ async function drainSpool(url, send, options = {}) {
 	}
 }
 //#endregion
+//#region src/hooks/_project.ts
+function relativePathsEnabled() {
+	return process.env["AGENTMEMORY_RELATIVE_PATHS"]?.trim().toLowerCase() === "true";
+}
+//#endregion
+//#region src/hooks/_relative-paths.ts
+function gitWorktreeListing(cwd) {
+	const run = (args) => execFileSync("git", [
+		"worktree",
+		"list",
+		"--porcelain",
+		...args
+	], {
+		cwd,
+		env: {
+			...process.env,
+			LC_ALL: "C"
+		},
+		stdio: [
+			"ignore",
+			"pipe",
+			"pipe"
+		],
+		timeout: 500
+	}).toString();
+	try {
+		return run(["-z"]).split("\0");
+	} catch (err) {
+		const stderr = String(err.stderr ?? "");
+		if (!/unknown switch|usage:/i.test(stderr)) return [];
+	}
+	try {
+		return run([]).split(/\r?\n/);
+	} catch {
+		return [];
+	}
+}
+function tryRealpath(path) {
+	try {
+		return realpathSync.native(path);
+	} catch {
+		return;
+	}
+}
+function slashed(path) {
+	return path.replace(/\\/g, "/");
+}
+function isInsideRoot(root, path) {
+	return slashed(path) === slashed(root) || slashed(path).startsWith(`${slashed(root)}/`);
+}
+function cwdAliases(rawCwd, roots) {
+	const cwd = rawCwd.replace(/(.)[\\/]+$/, "$1");
+	const physical = tryRealpath(cwd);
+	if (!physical || physical === cwd) return [];
+	const root = roots.find((candidate) => isInsideRoot(candidate, physical));
+	if (root === void 0) return [];
+	const inside = slashed(physical.slice(root.length));
+	const prefix = inside && slashed(cwd).endsWith(inside) ? cwd.slice(0, cwd.length - inside.length) : void 0;
+	const prefixPhysical = prefix ? tryRealpath(prefix) : void 0;
+	if (prefix && prefixPhysical && slashed(prefixPhysical) === slashed(root)) return [{
+		from: prefix,
+		to: ""
+	}];
+	return [{
+		from: cwd,
+		to: relative(root, physical).replace(/\\/g, "/")
+	}];
+}
+function repositoryRoots(cwd) {
+	const recorded = gitWorktreeListing(cwd).filter((line) => line.startsWith("worktree ")).map((line) => line.slice(9)).filter(Boolean);
+	const roots = /* @__PURE__ */ new Set();
+	for (const root of recorded) {
+		roots.add(root);
+		const physical = tryRealpath(root);
+		if (physical) roots.add(physical);
+	}
+	const longestFirst = [...roots].sort((a, b) => b.length - a.length);
+	const aliases = longestFirst.map((from) => ({
+		from,
+		to: ""
+	}));
+	aliases.push(...cwdAliases(cwd, longestFirst));
+	if (process.platform === "win32") for (const alias of [...aliases]) aliases.push({
+		...alias,
+		from: alias.from.replace(/\//g, "\\")
+	});
+	return aliases.sort((a, b) => b.from.length - a.from.length);
+}
+function escapeRegExp(text) {
+	return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+const PATH_END = `$|[\\s"'\`:;,)\\]}>|&]`;
+const WINDOWS_TAIL = `[^\\s"'\`,;|&<>]*`;
+const PATH_KEYS = new Set([
+	"file_path",
+	"filePath",
+	"filepath",
+	"notebook_path",
+	"path",
+	"file"
+]);
+const SKIPPED_KEYS = new Set(["image_data", "imageData"]);
+function ignoresCase(path) {
+	const swapped = path.replace(/[a-z]/gi, (c) => c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase());
+	if (swapped === path) return false;
+	try {
+		const original = statSync(path);
+		const other = statSync(swapped);
+		return original.ino === other.ino && original.dev === other.dev;
+	} catch {
+		return false;
+	}
+}
+function aliasPattern(aliases, platform, caseInsensitive) {
+	if (aliases.length === 0) return null;
+	const anyCase = (text) => text.replace(/[a-z]/gi, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
+	const alternatives = aliases.map((alias) => {
+		const escaped = escapeRegExp(alias.from);
+		return `(${caseInsensitive(alias.from) ? anyCase(escaped) : escaped})`;
+	}).join("|");
+	return new RegExp(`(?<![\\w.~/\\\\:-])(?:${alternatives})(?:([\\\\/]+)(?!${PATH_END})(${platform === "win32" ? WINDOWS_TAIL : ""})|[\\\\/]*(?=${PATH_END}))`, "g");
+}
+function relativizePaths(value, aliases, platform = process.platform, caseInsensitive = (root) => platform === "win32" || platform === "darwin" && ignoresCase(root)) {
+	const pattern = aliasPattern(aliases, platform, typeof caseInsensitive === "function" ? caseInsensitive : () => caseInsensitive);
+	if (!pattern) return value;
+	const windows = platform === "win32";
+	const rewrite = (_match, ...groups) => {
+		const to = aliases[groups.findIndex((group) => typeof group === "string")]?.to ?? "";
+		if (typeof groups[aliases.length] !== "string") return to || ".";
+		const tail = String(groups[aliases.length + 1] ?? "").replace(/\\/g, "/");
+		return to ? `${to}/${tail}` : tail;
+	};
+	const walk = (node, key) => {
+		if (typeof node === "string") {
+			const rewritten = node.replace(pattern, rewrite);
+			return windows && rewritten !== node && key !== void 0 && PATH_KEYS.has(key) ? rewritten.replace(/\\/g, "/") : rewritten;
+		}
+		if (Array.isArray(node)) return node.map((child) => walk(child, key));
+		if (node && typeof node === "object" && Object.getPrototypeOf(node) === Object.prototype) return Object.fromEntries(Object.entries(node).map(([k, child]) => [k, SKIPPED_KEYS.has(k) ? child : walk(child, k)]));
+		return node;
+	};
+	return walk(value);
+}
+//#endregion
 //#region src/hooks/_capture.ts
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
 const SECRET = resolveClientSecret(REST_URL);
@@ -904,8 +1048,10 @@ function startDrainChild() {
 }
 async function captureObservation(body, timeoutMs) {
 	const eventId = body.eventId ?? deriveEventId(body.hookType, body.sessionId, null, body.data);
+	const data = relativePathsEnabled() ? relativizePaths(body.data, repositoryRoots(body.cwd)) : body.data;
 	const payload = {
 		...body,
+		data,
 		eventId
 	};
 	let reason;
