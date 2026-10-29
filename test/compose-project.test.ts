@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { parse } from "yaml";
 import { composeEnvironment } from "../src/cli/compose-control.js";
-import { COMPOSE_WORKER_VERSIONS, composeNamespace, renderWorkerCompose, shellCommand, shellQuote, writeWorkerCompose } from "../src/cli/compose-project.js";
+import { COMPOSE_WORKER_VERSIONS, composeNamespace, renderWorkerCompose, shellCommand, shellQuote, workerRunScript, writeWorkerCompose } from "../src/cli/compose-project.js";
 
 const root = mkdtempSync(join(tmpdir(), "agentmemory-compose-"));
 const rootUrl = `path://${root.replaceAll("\\", "/")}`;
@@ -55,6 +55,35 @@ describe("Worker Compose project", () => {
     expect(shellQuote("C:\\Program Files\\Worker & Tools\\node.exe", true)).toBe(`"C:\\Program Files\\Worker & Tools\\node.exe"`);
     expect(shellCommand("C:\\Program Files\\Node Runtime\\node.exe", ["dist/index.mjs"], true)).toBe(`""C:\\Program Files\\Node Runtime\\node.exe" "dist/index.mjs""`);
     expect(shellQuote("100%", true)).toBe('"100%%"');
+  });
+
+  it("emits worker sources and commands the engine can resolve on Windows", () => {
+    const text = renderWorkerCompose(
+      options({
+        windows: true,
+        projectRoot: "C:\\Users\\someone\\pkg",
+        nodeBin: "C:\\Program Files\\nodejs\\node.exe",
+        dataDir: "C:\\Users\\someone\\data",
+        homeDir: "C:\\Users\\someone",
+        workerBinDir: "C:\\am&workers",
+        workerBinDirIsAbsolute: true,
+      }),
+    );
+    const parsed = parse(text) as { containers: Record<string, { worker: string; scripts: { run: string } }> };
+    expect(parsed.containers.agentmemory!.worker).toBe("path://C:/Users/someone/pkg");
+    expect(parsed.containers.agentmemory!.scripts.run).toBe("C:\\Program^ Files\\nodejs\\node.exe dist/index.mjs");
+    expect(parsed.containers.state!.worker).toBe("path://C:/Users/someone/data/compose/local-workers/state");
+    expect(parsed.containers.state!.scripts.run).toContain("C:\\am^&workers");
+    expect(parsed.containers.state!.scripts.run).toMatch(/state$/);
+    expect(text).not.toContain("path://C:\\");
+    expect(text).not.toContain('""');
+  });
+
+  it("escapes percent signs so cmd does not expand them", () => {
+    expect(workerRunScript("C:\\pct%TEMP%\\node.exe", ["dist/index.mjs"], true)).toBe(
+      "C:\\pct^%TEMP^%\\node.exe dist/index.mjs",
+    );
+    expect(workerRunScript("C:\\50% off\\node.exe", [], true)).toBe("C:\\50^%^ off\\node.exe");
   });
 
   it("executes generated commands through sh -c even with spaces and metacharacters", () => {

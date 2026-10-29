@@ -136,6 +136,16 @@ export function shellCommand(program: string, args: string[], windows: boolean):
   return windows ? `"${command}"` : command;
 }
 
+export function cmdEscape(value: string): string {
+  return value.replace(/[\s&|<>^()!%,;=]/g, (char) => `^${char}`);
+}
+
+export function workerRunScript(program: string, args: string[], windows: boolean): string {
+  const parts = [program, ...args];
+  if (windows) return parts.map(cmdEscape).join(" ");
+  return shellCommand(program, args, windows);
+}
+
 function yamlString(value: string): string {
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) {
     throw new Error("A Compose path or configuration value contains an unsupported control character.");
@@ -234,6 +244,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
     : null;
   const startupSeconds = Math.ceil((options.startupTimeoutMs ?? 300_000) / 1000);
   const restartEnabled = !options.disableRestartPolicy;
+  const windows = options.windows ?? process.platform === "win32";
   if (!Number.isSafeInteger(startupSeconds) || startupSeconds < 1 || startupSeconds * 1000 > MAX_STARTUP_TIMEOUT_MS + 999) {
     throw new Error("Compose worker startup timeout must be between 1 and 3600000 milliseconds.");
   }
@@ -273,7 +284,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
     ...(!workerBinDir ? [`    version: ${yamlString(COMPOSE_WORKER_VERSIONS.state)}`] : []),
     "    config_name: state",
     ...restartPolicyLines("    ", restartEnabled),
-    ...(workerBinDir ? [`    scripts:`, `      run: ${yamlString(shellCommand(stateScript, [], options.windows ?? process.platform === "win32"))}`] : []),
+    ...(workerBinDir ? [`    scripts:`, `      run: ${yamlString(workerRunScript(stateScript, [], windows))}`] : []),
     "    config_override:",
     "      adapter:",
     "        name: kv",
@@ -303,7 +314,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
     ...(!workerBinDir ? [`    version: ${yamlString(COMPOSE_WORKER_VERSIONS.http)}`] : []),
     "    config_name: http",
     ...restartPolicyLines("    ", restartEnabled),
-    ...(workerBinDir ? [`    scripts:`, `      run: ${yamlString(shellCommand(httpScript, [], options.windows ?? process.platform === "win32"))}`] : []),
+    ...(workerBinDir ? [`    scripts:`, `      run: ${yamlString(workerRunScript(httpScript, [], windows))}`] : []),
     "    config_override:",
     "      host: 127.0.0.1",
     `      port: ${restPort}`,
@@ -325,7 +336,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
     "    config_name: agentmemory",
     ...restartPolicyLines("    ", restartEnabled),
     "    scripts:",
-    `      run: ${yamlString(shellCommand(options.nodeBin, ["dist/index.mjs"], options.windows ?? process.platform === "win32"))}`,
+    `      run: ${yamlString(workerRunScript(options.nodeBin, ["dist/index.mjs"], windows))}`,
   );
   if (filteredEnvFile) lines.push(`    env_file: [${yamlString(filteredEnvFile)}]`);
   const explicitWorkerEnvironment = Object.entries(options.workerEnvironment ?? {})
