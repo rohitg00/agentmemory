@@ -1,27 +1,49 @@
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
+import { lookupObservationSession } from "../state/obs-index.js";
 import { KV, generateId } from "../state/schema.js";
-import type { Facet } from "../types.js";
+import type { Facet, Lesson } from "../types.js";
 import { logger } from "../logger.js";
+
+// Liveness is per target kind: a target only counts as live when a record
+// that facet queries could still resolve to exists. Lessons are soft-deleted
+// in place, so a lesson record with `deleted` set is not live; observations
+// are addressable only through their session scope, so an id with no session
+// mapping (deleted observations are unindexed) is not live either.
+async function isLiveTarget(kv: StateKV, id: string): Promise<boolean> {
+  if (id.startsWith("lsn_")) {
+    const lesson = await kv.get<Lesson>(KV.lessons, id);
+    return !!lesson && !lesson.deleted;
+  }
+  if (id.startsWith("obs_")) {
+    const sessionId = await lookupObservationSession(kv, id);
+    if (!sessionId) return false;
+    const obs = await kv.get(KV.observations(sessionId), id);
+    return !!obs;
+  }
+  const [mem, sem] = await Promise.all([
+    kv.get(KV.memories, id),
+    kv.get(KV.semantic, id),
+  ]);
+  return !!(mem || sem);
+}
 
 export async function deleteFacetsForTargets(
   kv: StateKV,
   targetIds: Iterable<string>,
+  options?: { targetTypes?: readonly string[] },
 ): Promise<void> {
   const ids = new Set(targetIds);
   ids.delete("");
   if (ids.size === 0) return;
+  const targetTypes = new Set(options?.targetTypes ?? ["memory"]);
   try {
     const live = new Set<string>();
     await Promise.all(
       [...ids].map(async (id) => {
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            const [mem, sem] = await Promise.all([
-              kv.get(KV.memories, id),
-              kv.get(KV.semantic, id),
-            ]);
-            if (mem || sem) live.add(id);
+            if (await isLiveTarget(kv, id)) live.add(id);
             return;
           } catch {
             if (attempt === 1) {
@@ -39,7 +61,7 @@ export async function deleteFacetsForTargets(
       (f) =>
         ids.has(f.targetId) &&
         !live.has(f.targetId) &&
-        f.targetType === "memory",
+        targetTypes.has(f.targetType),
     );
     await Promise.all(matches.map((f) => kv.delete(KV.facets, f.id)));
   } catch (err) {
