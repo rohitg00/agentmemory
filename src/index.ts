@@ -30,6 +30,7 @@ import {
   createImageEmbeddingProvider,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
+import { assertStateReady, waitForStateReady } from "./state/state-readiness.js";
 import { VectorIndex } from "./state/vector-index.js";
 import type { SearchLayer } from "./state/search-layer.js";
 import { HybridSearch } from "./state/hybrid-search.js";
@@ -259,6 +260,13 @@ async function main() {
     stateBackend = getStateBackend();
   } catch {}
   const kv = new StateKV(sdk, { backend: stateBackend });
+  const stateReadiness = await waitForStateReady(sdk);
+  assertStateReady(stateReadiness);
+  if (stateReadiness.waitedMs > 0) {
+    bootLog(
+      `State worker ready after ${stateReadiness.waitedMs}ms (${stateReadiness.attempts} attempts)`,
+    );
+  }
   const secret = resolveWorkerSecret();
   const metricsStore = new MetricsStore(kv);
   const dedupMap = new DedupMap();
