@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import http from "node:http";
-import { tmpdir } from "node:os";
+import { arch, homedir, platform, tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -73,6 +74,54 @@ const baseEnv = () => ({
   EMBEDDING_PROVIDER: "none",
 });
 
+const III_ASSETS = {
+  "darwin:arm64": "iii-aarch64-apple-darwin.tar.gz",
+  "darwin:x64": "iii-x86_64-apple-darwin.tar.gz",
+  "linux:x64": "iii-x86_64-unknown-linux-gnu.tar.gz",
+  "linux:arm64": "iii-aarch64-unknown-linux-gnu.tar.gz",
+  "win32:x64": "iii-x86_64-pc-windows-msvc.zip",
+  "win32:arm64": "iii-aarch64-pc-windows-msvc.zip",
+};
+
+function pinnedSha256(asset) {
+  const source = readFileSync(join(repo, "src", "cli", "engine-install.ts"), "utf8");
+  const match = source.match(new RegExp(`"${asset.replace(/[.]/g, "\\.")}": "([0-9a-f]{64})"`));
+  return match ? match[1] : null;
+}
+
+function provisionEngine() {
+  const installed = JSON.parse(readFileSync(join(pkgDir, "node_modules", "@agentmemory", "agentmemory", "package.json"), "utf8"));
+  const version = installed.dependencies["iii-sdk"];
+  const asset = III_ASSETS[`${platform()}:${arch()}`];
+  assert(asset, `no iii asset mapping for ${platform()}/${arch()}`);
+  const cacheDir = process.env.AGENTMEMORY_GATE_CACHE ?? join(homedir(), ".cache", "agentmemory-release-gate");
+  const binary = isWindows ? "iii.exe" : "iii";
+  const cached = join(cacheDir, `iii-${version}-${platform()}-${arch()}${isWindows ? ".exe" : ""}`);
+  if (!existsSync(cached)) {
+    const expected = pinnedSha256(asset);
+    assert(expected, `no pinned sha256 for ${asset}`);
+    const url = `https://github.com/iii-hq/iii/releases/download/iii/v${version}/${asset}`;
+    mkdirSync(cacheDir, { recursive: true });
+    const archive = join(cacheDir, asset);
+    const dl = run("curl", ["-fsSL", "--connect-timeout", "15", "-o", archive, url]);
+    assert.equal(dl.status, 0, `engine download failed: ${dl.stderr.slice(-300)}`);
+    const actual = createHash("sha256").update(readFileSync(archive)).digest("hex");
+    assert.equal(actual, expected, `engine sha256 mismatch: expected ${expected}, got ${actual}`);
+    const extract = run("tar", ["-xf", archive, "-C", cacheDir]);
+    assert.equal(extract.status, 0, `engine extract failed: ${extract.stderr.slice(-300)}`);
+    rmSync(archive, { force: true });
+    const extracted = join(cacheDir, binary);
+    assert(existsSync(extracted), `${binary} missing after extracting ${asset}: ${readdirSync(cacheDir).join(",")}`);
+    renameSync(extracted, cached);
+    if (!isWindows) chmodSync(cached, 0o755);
+  }
+  const binDir = join(home, ".agentmemory", "bin");
+  mkdirSync(binDir, { recursive: true });
+  copyFileSync(cached, join(binDir, binary));
+  if (!isWindows) chmodSync(join(binDir, binary), 0o755);
+  return { engine: join(binDir, binary), version, cached };
+}
+
 const getJson = (path) => new Promise((resolvePromise, reject) => {
   http.get({ host: "127.0.0.1", port: 3911, path, timeout: 4000 }, (res) => {
     let body = "";
@@ -91,9 +140,11 @@ async function startWorker() {
   worker.stdout.on("data", log);
   worker.stderr.on("data", log);
   const t0 = Date.now();
+  let exited = null;
+  worker.on("close", (code) => { exited = code; });
   for (;;) {
-    if (worker.exitCode !== null) throw new Error(`worker exited early:\n${worker.text.slice(-2000)}`);
-    try { const livez = await getJson("/agentmemory/livez"); if (livez.status === "ok") return { waitedMs: Date.now() - t0 }; } catch {}
+    try { const livez = await getJson("/agentmemory/livez"); if (livez.status === "ok") return { waitedMs: Date.now() - t0, cliExit: exited }; } catch {}
+    if (exited !== null && exited !== 0) throw new Error(`worker exited ${exited}:\n${worker.text.slice(-2000)}`);
     if (Date.now() - t0 > 300_000) throw new Error(`livez timeout:\n${worker.text.slice(-2000)}`);
     await sleep(2000);
   }
@@ -117,15 +168,31 @@ function leftoverProcesses() {
 }
 
 function collectEvidence() {
-  const skip = (path) => /secret|\.env$/i.test(path);
-  for (const [source, target] of [
-    [join(dataDir, "compose"), "compose"],
-    [join(dataDir, "compose-state"), "compose-state"],
-    [join(home, ".agentmemory"), "agentmemory-home"],
-  ]) {
+  const wanted = (name) => name === "worker-compose.yaml" || name === "state.json" || name.endsWith(".log");
+  const denied = (name) => /secret/i.test(name) || name.endsWith(".env");
+  const walk = (dir, sink) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "config") continue;
+        walk(path, sink);
+      } else if (wanted(entry.name) && !denied(entry.name)) {
+        sink.push(path);
+      }
+    }
+  };
+  const sources = [join(dataDir, "compose"), join(dataDir, "compose-state"), join(root, "runtime")];
+  const copied = [];
+  for (const source of sources) {
     if (!existsSync(source)) continue;
-    try { cpSync(source, join(out, target), { recursive: true, filter: (path) => !skip(path) }); } catch {}
+    const found = [];
+    try { walk(source, found); } catch {}
+    for (const file of found) {
+      const dest = join(out, `${copied.length}-${file.split(/[\\/]/).pop()}`);
+      try { copyFileSync(file, dest); copied.push(file); } catch {}
+    }
   }
+  return copied;
 }
 
 let failure = null;
@@ -150,16 +217,39 @@ await step("install", () => {
   assert(existsSync(artifactCli), `installed CLI missing at ${artifactCli}`);
   return { cli: artifactCli };
 });
+await step("engine", () => provisionEngine());
 await step("start", async () => startWorker());
 await step("status lists workers", async () => {
   const res = cli("status", "--port", "3911");
   writeFileSync(join(out, "status.txt"), res.stdout + res.stderr);
-  const workers = res.stdout.split(/\r?\n/).slice(res.stdout.split(/\r?\n/).findIndex((line) => line.trim() === "Compose workers:") + 1);
-  assert(res.stdout.includes("Compose workers:"), `agentmemory status printed no Compose workers section:\n${res.stdout.slice(-800)}`);
-  for (const name of ["state", "http", "agentmemory"]) {
-    assert(workers.some((line) => line.trim().startsWith(`${name}:`)), `agentmemory status missing worker ${name}:\n${res.stdout.slice(-800)}`);
+  let containers = null;
+  const t0 = Date.now();
+  for (;;) {
+    const stateFiles = [];
+    const stateRoot = join(dataDir, "compose-state");
+    const findState = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name);
+        if (entry.isDirectory()) findState(path);
+        else if (entry.name === "state.json") stateFiles.push(path);
+      }
+    };
+    try { findState(stateRoot); } catch {}
+    for (const file of stateFiles) {
+      try {
+        const state = JSON.parse(readFileSync(file, "utf8"));
+        containers = state.containers ?? containers;
+      } catch {}
+    }
+    if (containers && ["state", "http", "agentmemory"].every((n) => containers[n]?.status === "ready")) break;
+    if (Date.now() - t0 > 90_000) break;
+    await sleep(3000);
   }
-  return { status: res.status };
+  assert(containers, `no compose state.json with containers after 90s`);
+  for (const name of ["state", "http", "agentmemory"]) {
+    assert.equal(containers[name]?.status, "ready", `compose worker ${name} not ready: ${JSON.stringify(containers[name])}`);
+  }
+  return { cliStatus: res.status };
 });
 await step("second start does not lose project ownership", async () => {
   const res = spawnSync(nodeBase, [artifactCli, "--port", "3911", "--data-dir", dataDir], {
@@ -167,8 +257,9 @@ await step("second start does not lose project ownership", async () => {
   });
   const combined = (res.stdout ?? "") + (res.stderr ?? "");
   writeFileSync(join(out, "second-start.txt"), combined);
+  assert(res.status !== null, `second start timed out:\n${combined.slice(-800)}`);
   assert(!combined.includes("Could not verify the managed Compose project"), combined.slice(-800));
-  return { status: res.status ?? "timeout" };
+  return { status: res.status };
 });
 collectEvidence();
 await step("stop cleans up", async () => {
@@ -193,6 +284,10 @@ await step("final stop", async () => {
 } finally {
   collectEvidence();
   writeFileSync(join(out, "results.json"), JSON.stringify(results, null, 2));
+  if (artifactCli && existsSync(artifactCli)) {
+    try { cli("stop", "--port", "3911"); } catch {}
+    await sleep(2000);
+  }
   for (const c of children) { try { c.kill(); } catch {} }
   if (!options.keep && !failure) rmSync(root, { recursive: true, force: true });
 }

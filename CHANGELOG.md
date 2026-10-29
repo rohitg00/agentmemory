@@ -6,10 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Fixed
-
-- **Windows Worker Compose startup** renders `cmd /C`-safe `run` commands (unquoted `node.exe dist/index.mjs`, a `;`-joined inherited `PATH`, and validated local worker paths) and canonicalizes `\\?\`-prefixed compose file paths, fixing `CHILD_EXITED_BEFORE_REGISTRATION`, broken worker `PATH`, and "Compose daemon does not report the owned worker-compose.yaml project" on re-run (#1618, #1638).
-
 ## [0.9.31] — 2026-10-25
 ### Upgrade notes
 

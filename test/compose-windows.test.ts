@@ -29,6 +29,7 @@ describe("Windows Worker Compose render", () => {
     const agent = parsed.containers.agentmemory!;
     expect(agent.scripts!.run).toBe("node.exe dist/index.mjs");
     expect(agent.environment!.PATH).toBe("C:\\Program Files\\nodejs;C:\\Windows\\system32;C:\\Program Files\\Git\\cmd");
+    expect(agent.environment!.NoDefaultCurrentDirectoryInExePath).toBe("1");
     expect(agent.worker).toBe(`path://${join(root, "pkg")}`);
     for (const name of ["state", "http", "agentmemory"]) {
       expect(parsed.containers[name]!.scripts?.run ?? "").not.toContain('"');

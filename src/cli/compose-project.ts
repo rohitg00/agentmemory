@@ -357,6 +357,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
   lines.push(
     "    environment:",
     ...explicitWorkerEnvironment.map(([key, value]) => `      ${key}: ${yamlString(value!)}`),
+    ...(windows ? [`      NoDefaultCurrentDirectoryInExePath: ${yamlString("1")}`] : []),
     `      HOME: ${yamlString(options.homeDir)}`,
     `      PATH: ${yamlString(windows ? windowsWorkerPath(options.nodeBin, options.workerEnvironment?.PATH ?? process.env.PATH) : `${dirname(options.nodeBin)}:/usr/local/bin:/usr/bin:/bin`)}`,
     `      AGENTMEMORY_DATA_DIR: ${yamlString(options.dataDir)}`,

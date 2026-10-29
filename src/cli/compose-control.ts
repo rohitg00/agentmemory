@@ -67,7 +67,13 @@ export type ComposeStatus = ComposeProjectStatus & {
 
 export function sameComposeFile(left: string | undefined, right: string, windows = process.platform === "win32"): boolean {
   if (!left) return false;
-  if (!windows) return left === right;
+  if (!windows) {
+    if (left === right) return true;
+    const real = (value: string): string => {
+      try { return realpathSync(value); } catch { return value; }
+    };
+    return real(left) === real(right);
+  }
   const normalize = (value: string): string => {
     let out = value;
     if (out.startsWith("\\\\?\\UNC\\")) out = `\\\\${out.slice("\\\\?\\UNC\\".length)}`;
