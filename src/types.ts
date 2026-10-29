@@ -1,12 +1,13 @@
 export interface RelationReactionMark {
-  relationId: string;
-  type: MemoryRelation["type"];
   targetId: string;
+  type: MemoryRelation["type"];
+  sources: Record<string, string>;
   isLatestBefore?: boolean;
   strengthBefore?: number;
   confidenceBefore?: number;
-  relatedIdsBefore?: string[];
-  appliedAt: string;
+  relatedIdsAdded?: string[];
+  firstAppliedAt: string;
+  lastAppliedAt: string;
 }
 
 export interface GraphExtractMark {

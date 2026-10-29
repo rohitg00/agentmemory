@@ -820,7 +820,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         strategy,
         stats,
       });
-      if (strategy === "replace") void rebuildAfterReplace(kv).catch((err) => logger.warn("Post-replace index rebuild failed", { error: err instanceof Error ? err.message : String(err) }));
+      if (strategy === "replace") void rebuildAfterReplace().catch((err) => logger.warn("Post-replace index rebuild failed", { error: err instanceof Error ? err.message : String(err) }));
       return { success: true, strategy, ...stats };
     },
   );

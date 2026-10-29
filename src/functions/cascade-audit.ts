@@ -7,6 +7,7 @@ import type { AuditEntry, Memory, MemoryRelation, RelationReactionMark, Session 
 import { recordAudit } from "./audit.js";
 import { deleteFacetsCascade } from "./facets.js";
 import { getSearchIndex, vectorIndexRemove } from "./search.js";
+import { singleFlight } from "../runtime/recovery.js";
 
 const FAILURE_OPS: Record<string, AuditEntry["operation"]> = {
   "mem::compress": "compress-failed",
@@ -81,7 +82,53 @@ function pruneDedupe(now: number): void {
   }
 }
 
+const DELETE_BATCH_MS = 500;
+const DELETE_BATCH_MAX = 200;
+const pendingDeletes = new Set<string>();
+const pendingSessions = new Set<string>();
+let deleteTimer: ReturnType<typeof setTimeout> | null = null;
+let deleteFlusher: (() => Promise<void>) | null = null;
+
+function queueDeleteCascade(id: string, sessionId?: string): void {
+  pendingDeletes.add(id);
+  if (sessionId) pendingSessions.add(sessionId);
+  if (pendingDeletes.size >= DELETE_BATCH_MAX) void flushDeleteCascade();
+  else if (!deleteTimer) {
+    deleteTimer = setTimeout(() => { deleteTimer = null; void flushDeleteCascade(); }, DELETE_BATCH_MS);
+    deleteTimer.unref();
+  }
+}
+
+export async function flushDeleteCascade(): Promise<void> {
+  if (!deleteFlusher) return;
+  await deleteFlusher();
+}
+
 export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
+  deleteFlusher = singleFlight(async () => {
+    if (deleteTimer) { clearTimeout(deleteTimer); deleteTimer = null; }
+    const ids = [...pendingDeletes];
+    const sessions = [...pendingSessions];
+    pendingDeletes.clear();
+    pendingSessions.clear();
+    if (ids.length === 0 && sessions.length === 0) return;
+    await deleteFacetsCascade(kv, ids);
+    const reconciled: string[] = [];
+    for (const sessionId of sessions) {
+      const keys = await kv.listKeys(KV.observations(sessionId));
+      const session = await kv.get<Session>(KV.sessions, sessionId);
+      if (session && keys.length !== session.observationCount) {
+        await kv.update<Session>(KV.sessions, sessionId, [
+          { type: "set", path: "observationCount", value: keys.length },
+        ]);
+        reconciled.push(sessionId);
+      }
+    }
+    await recordAudit(kv, "cascade", "mem::on-record-deleted", ids.slice(0, 20), {
+      batched: ids.length,
+      sessionsReconciled: reconciled,
+    });
+  });
   sdk.registerFunction("mem::record-failure", async (envelope: Record<string, unknown>) => {
     const meta = envelope.metadata as { function_id?: string; source_fn?: string; observer_id?: string } | undefined;
     const observerId = (envelope.observer_id ?? meta?.observer_id ?? envelope.observer) as string | undefined;
@@ -94,14 +141,13 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     pruneDedupe(now);
     const prior = dedupe.get(key);
     const dedupedCount = prior?.skipped ?? 0;
+    if (retryable) counters.transient++; else counters.permanent++;
+    counters.lastAt = new Date(now).toISOString();
     if (prior && now - prior.seenAt < DEDUPE_WINDOW_MS) {
       prior.skipped++;
-      prior.seenAt = now;
       return { deduped: true, code };
     }
     dedupe.set(key, { seenAt: now, skipped: 0 });
-    if (retryable) counters.transient++; else counters.permanent++;
-    counters.lastAt = new Date().toISOString();
     const errMsg = (envelope.error as { message?: string } | undefined)?.message ??
       (envelope.output as { error?: string } | undefined)?.error ?? "";
     const op = FAILURE_OPS[functionId] ?? "cascade";
@@ -115,57 +161,23 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     return { recorded: true, code, retryable };
   });
 
-  sdk.registerFunction("mem::on-record-deleted", async (event: Record<string, unknown>) => {
+  sdk.registerFunction("mem::on-record-deleted", (event: Record<string, unknown>) => {
     const scope = String(event.scope ?? "");
     const id = String(event.key ?? "");
-    if (!id) return { skipped: "no_key" };
+    if (!id) return Promise.resolve({ skipped: "no_key" });
     try { getSearchIndex().remove(id); } catch {}
     try { vectorIndexRemove(id); } catch {}
-    await deleteFacetsCascade(kv, [id]);
-    let sessionReconciled = false;
-    if (scope.startsWith("mem:obs:")) {
-      const sessionId = scope.slice("mem:obs:".length);
-      const keys = await kv.listKeys(scope);
-      const session = await kv.get<Session>(KV.sessions, sessionId);
-      if (session && keys.length !== session.observationCount) {
-        await kv.update<Session>(KV.sessions, sessionId, [
-          { op: "set", path: "observationCount", value: keys.length },
-        ]);
-        sessionReconciled = true;
-      }
-    }
-    await recordAudit(kv, "cascade", "mem::on-record-deleted", [id], {
-      scope,
-      eventType: event.event_type,
-      sessionReconciled,
-    });
-    return { removed: id, sessionReconciled };
+    const sessionId = scope.startsWith("mem:obs:") ? scope.slice("mem:obs:".length) : undefined;
+    queueDeleteCascade(id, sessionId);
+    return Promise.resolve({ removed: id, queued: true });
   });
 
   sdk.registerFunction("event::graph::edge-reaction", async (event: Record<string, unknown>) => {
     const rel = (event.event_type === "state:deleted" ? event.old_value : event.new_value) as MemoryRelation | undefined;
     if (!rel || typeof rel.targetId !== "string") return { skipped: "no_relation" };
     const relationId = String(event.key ?? `${rel.sourceId}->${rel.targetId}:${rel.type}`);
+    const markKey = `${rel.targetId}:${rel.type}`;
     const deleted = event.event_type === "state:deleted";
-    if (!deleted) {
-      const existing = await kv.get<RelationReactionMark>(KV.relationReactions, relationId);
-      if (existing) return { skipped: "already_applied", relationId };
-    }
-    const all = await collectAll<MemoryRelation>(kv, KV.relations);
-    if (!deleted) {
-      const cyclic = all.find((r) => r.type === rel.type && r.sourceId === rel.targetId && r.targetId === rel.sourceId && `${r.sourceId}->${r.targetId}:${r.type}` !== relationId);
-      if (cyclic) {
-        await recordAudit(kv, "relation_reaction", "event::graph::edge-reaction", [rel.targetId, rel.sourceId], {
-          skipped: "cycle", type: rel.type, relationId,
-        });
-        return { skipped: "cycle", relationId };
-      }
-    }
-    if (deleted) {
-      const remaining = all.find((r) => r.type === rel.type && r.targetId === rel.targetId && `${r.sourceId}->${r.targetId}:${r.type}` !== relationId);
-      if (remaining) return { unreacted: false, remaining: true };
-    }
-    const mark = deleted ? await kv.get<RelationReactionMark>(KV.relationReactions, relationId) : null;
     const result = await withKeyedLock(`mem:${rel.targetId}`, async () => {
       const target = await kv.get<Memory>(KV.memories, rel.targetId);
       if (!target) {
@@ -174,41 +186,77 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
         });
         return { skipped: "missing_target" as const };
       }
-      if (deleted) {
-        if (!mark) return { skipped: "no_mark" as const };
-        if (mark.isLatestBefore !== undefined) target.isLatest = mark.isLatestBefore;
-        if (mark.strengthBefore !== undefined) target.strength = mark.strengthBefore;
-        if (mark.confidenceBefore !== undefined) target.confidence = mark.confidenceBefore;
-        if (mark.relatedIdsBefore !== undefined) target.relatedIds = mark.relatedIdsBefore;
+      const mark = await kv.get<RelationReactionMark>(KV.relationReactions, markKey);
+      if (!deleted) {
+        if (mark?.sources && Object.hasOwn(mark.sources, relationId)) {
+          return { skipped: "already_applied" as const, relationId };
+        }
+        if (rel.type === "supersedes") {
+          const reverseMark = await kv.get<RelationReactionMark>(KV.relationReactions, `${rel.sourceId}:supersedes`);
+          if (reverseMark && Object.values(reverseMark.sources).includes(rel.targetId)) {
+            await recordAudit(kv, "relation_reaction", "event::graph::edge-reaction", [rel.targetId, rel.sourceId], {
+              skipped: "cycle", type: rel.type, relationId,
+            });
+            return { skipped: "cycle" as const };
+          }
+        }
+        const next: RelationReactionMark = mark ?? {
+          targetId: rel.targetId,
+          type: rel.type,
+          sources: {},
+          firstAppliedAt: rel.createdAt,
+          lastAppliedAt: rel.createdAt,
+        };
+        next.sources[relationId] = rel.sourceId;
+        next.lastAppliedAt = rel.createdAt;
+        if (rel.type === "supersedes") {
+          if (!mark) {
+            next.isLatestBefore = target.isLatest;
+            next.strengthBefore = target.strength;
+            target.isLatest = false;
+            target.strength = target.strength * 0.5;
+          }
+        } else if (rel.type === "contradicts") {
+          if (!mark) next.confidenceBefore = target.confidence;
+          target.confidence = Math.max(0.05, target.confidence - (rel.confidence ?? 0.5) * 0.3);
+        } else if (rel.type === "extends") {
+          const related = target.relatedIds ?? [];
+          if (!related.includes(rel.sourceId)) {
+            target.relatedIds = [...related, rel.sourceId];
+            next.relatedIdsAdded = [...(next.relatedIdsAdded ?? []), rel.sourceId];
+          }
+        } else {
+          return { skipped: "unsupported_type" as const };
+        }
         await kv.set(KV.memories, rel.targetId, target);
-        return { unreacted: true as const };
+        await kv.set(KV.relationReactions, markKey, next);
+        return { reacted: true as const, contributors: Object.keys(next.sources).length };
       }
-      const appliedAt = rel.createdAt;
-      const nextMark: RelationReactionMark = { relationId, type: rel.type, targetId: rel.targetId, appliedAt };
-      if (rel.type === "supersedes") {
-        nextMark.isLatestBefore = target.isLatest;
-        nextMark.strengthBefore = target.strength;
-        target.isLatest = false;
-        target.strength = target.strength * 0.5;
-      } else if (rel.type === "contradicts") {
-        nextMark.confidenceBefore = target.confidence;
-        target.confidence = Math.max(0.05, target.confidence - (rel.confidence ?? 0.5) * 0.3);
-      } else if (rel.type === "extends") {
-        nextMark.relatedIdsBefore = target.relatedIds ?? [];
-        target.relatedIds = [...new Set([...(target.relatedIds ?? []), rel.sourceId])];
-      } else {
-        return { skipped: "unsupported_type" as const };
+      if (!mark || !Object.hasOwn(mark.sources, relationId)) {
+        return { skipped: "no_mark" as const };
+      }
+      delete mark.sources[relationId];
+      if (Object.keys(mark.sources).length > 0) {
+        await kv.set(KV.relationReactions, markKey, mark);
+        return { unreacted: false as const, remaining: Object.keys(mark.sources).length };
+      }
+      if (mark.isLatestBefore !== undefined) target.isLatest = mark.isLatestBefore;
+      if (mark.strengthBefore !== undefined) target.strength = mark.strengthBefore;
+      if (mark.confidenceBefore !== undefined) target.confidence = mark.confidenceBefore;
+      if (mark.relatedIdsAdded?.length) {
+        const added = new Set(mark.relatedIdsAdded);
+        target.relatedIds = (target.relatedIds ?? []).filter((id) => !added.has(id));
       }
       await kv.set(KV.memories, rel.targetId, target);
-      await kv.set(KV.relationReactions, relationId, nextMark);
-      return { reacted: true as const };
+      await kv.delete(KV.relationReactions, markKey);
+      return { unreacted: true as const };
     });
-    if (deleted && (result as { unreacted?: boolean }).unreacted) {
-      await kv.delete(KV.relationReactions, relationId).catch(() => {});
+    const skip = (result as { skipped?: string }).skipped;
+    if (skip !== "cycle" && skip !== "missing_target") {
+      await recordAudit(kv, "relation_reaction", "event::graph::edge-reaction", [rel.targetId], {
+        type: rel.type, relationId, deleted, ...result,
+      });
     }
-    await recordAudit(kv, "relation_reaction", "event::graph::edge-reaction", [rel.targetId], {
-      type: rel.type, relationId, deleted, ...result,
-    });
-    return { relationId, ...result };
+    return { relationId, markKey, ...result };
   });
 }

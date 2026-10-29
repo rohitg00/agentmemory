@@ -91,21 +91,25 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
         const relationId = generateId("rel");
         await kv.set(KV.relations, relationId, relation);
 
-        if (!source.relatedIds) source.relatedIds = [];
         let sourceUpdated = false;
-        if (!source.relatedIds.includes(data.targetId)) {
-          source.relatedIds.push(data.targetId);
-          await kv.set(KV.memories, data.sourceId, source);
-          sourceUpdated = true;
-        }
+        await withKeyedLock(`mem:${data.sourceId}`, async () => {
+          const fresh = await kv.get<Memory>(KV.memories, data.sourceId);
+          if (fresh && !(fresh.relatedIds ?? []).includes(data.targetId)) {
+            fresh.relatedIds = [...(fresh.relatedIds ?? []), data.targetId];
+            await kv.set(KV.memories, data.sourceId, fresh);
+            sourceUpdated = true;
+          }
+        });
 
-        if (!target.relatedIds) target.relatedIds = [];
         let targetUpdated = false;
-        if (!target.relatedIds.includes(data.sourceId)) {
-          target.relatedIds.push(data.sourceId);
-          await kv.set(KV.memories, data.targetId, target);
-          targetUpdated = true;
-        }
+        await withKeyedLock(`mem:${data.targetId}`, async () => {
+          const fresh = await kv.get<Memory>(KV.memories, data.targetId);
+          if (fresh && !(fresh.relatedIds ?? []).includes(data.sourceId)) {
+            fresh.relatedIds = [...(fresh.relatedIds ?? []), data.sourceId];
+            await kv.set(KV.memories, data.targetId, fresh);
+            targetUpdated = true;
+          }
+        })
 
         await safeAudit(kv, "relation_create", "mem::relate", [relationId], {
           type: data.type,
