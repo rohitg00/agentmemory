@@ -143,7 +143,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   if (hasRealValue(env["MINIMAX_API_KEY"])) {
     return {
       provider: "minimax",
-      model: env["MINIMAX_MODEL"] || "MiniMax-M3",
+      model: env["MINIMAX_MODEL"] || "MiniMax-M3.1-Flash",
       maxTokens,
     };
   }
