@@ -9,6 +9,7 @@ import {
   loadTeamConfig,
   loadSnapshotConfig,
   isGraphExtractionEnabled,
+  isGraphStructuralEnabled,
   isAutoCompressEnabled,
   isConsolidationEnabled,
   getConsolidationIntervalMs,
@@ -135,6 +136,10 @@ import { getBindings } from "./runtime/bindings.js";
 import { waitForStateWorker, onStateWorkerReturn } from "./runtime/state-worker.js";
 import { singleFlight, shouldRearmIndex } from "./runtime/recovery.js";
 import { checkDuplicateWorkers } from "./runtime/duplicates.js";
+import { registerPipelineObservers } from "./runtime/pipeline-observers.js";
+import { registerPostSessionFunctions } from "./functions/post-session.js";
+import { registerCompressionSweepFunction } from "./functions/compression-sweep.js";
+import { compressionSweepMs } from "./config.js";
 import { ensureServerSecret, explicitSecret, secretFilePath } from "./secret-store.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
@@ -333,7 +338,7 @@ async function main() {
   const graphIndexMigration = registerGraphIndexMigrationFunctions(sdk, kv);
   registerGraphImportFunction(sdk, kv);
   bootLog(
-    `Knowledge graph: structural extraction on (LLM relations ${isGraphExtractionEnabled() ? "enabled" : "off"})`,
+    `Knowledge graph: structural extraction ${isGraphStructuralEnabled() ? "on" : "off"} (LLM relations ${isGraphExtractionEnabled() ? "enabled" : "off"})`,
   );
 
   registerConsolidationPipelineFunction(sdk, kv, provider);
@@ -453,14 +458,25 @@ async function main() {
   markKeywordRebuildPending();
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);
   registerEventTriggers(sdk, kv);
+  registerPostSessionFunctions(sdk, kv);
+  const runCompressionSweep = registerCompressionSweepFunction(sdk, kv);
   registerViewerStreamTriggers(sdk, kv, { secret, metricsStore, provider });
   registerViewerSse(sdk);
   registerMcpEndpoints(sdk, kv, secret);
 
   const healthMonitor = registerHealthMonitor(sdk, kv);
 
+  registerPipelineObservers(sdk);
+
   const bindings = getBindings(sdk);
   await bindings.activate();
+  if (isAutoCompressEnabled()) {
+    const sweepMs = compressionSweepMs();
+    if (sweepMs > 0) {
+      const sweepTimer = setInterval(() => { void runCompressionSweep(); }, sweepMs);
+      sweepTimer.unref();
+    }
+  }
   bootLog(`Bindings: state=${bindings.modes.state} http=${bindings.modes.http} (${bindings.handles.length} observers)`);
   await waitForStateWorker(sdk);
 

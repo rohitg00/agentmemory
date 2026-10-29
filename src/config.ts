@@ -517,6 +517,35 @@ export function isAutoCompressEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_AUTO_COMPRESS"] === "true";
 }
 
+export function compressMaxConcurrent(): number {
+  const raw = getMergedEnv()["AGENTMEMORY_COMPRESS_MAX_CONCURRENT"];
+  if (raw === undefined) return 2;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 32) return 2;
+  return parsed;
+}
+
+export function compressionSweepMs(): number {
+  const raw = getMergedEnv()["AGENTMEMORY_COMPRESSION_SWEEP_MS"];
+  if (raw === undefined) return 600_000;
+  const parsed = Number(raw);
+  if (parsed === 0) return 0;
+  if (!Number.isInteger(parsed) || parsed < 60_000 || parsed > 86_400_000) return 600_000;
+  return parsed;
+}
+
+export function graphExtractCooldownMs(): number {
+  const raw = getMergedEnv()["AGENTMEMORY_GRAPH_EXTRACT_COOLDOWN_MS"];
+  if (raw === undefined) return 0;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 86_400_000) return 0;
+  return parsed;
+}
+
+export function isGraphStructuralEnabled(): boolean {
+  return getMergedEnv()["AGENTMEMORY_GRAPH_STRUCTURAL"] !== "false";
+}
+
 // Hook-level context injection into Claude Code's conversation is OFF by
 // default as of 0.8.10. When disabled, pre-tool-use and
 // session-start hooks still POST observations for background capture, but
