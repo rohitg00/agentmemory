@@ -1632,6 +1632,7 @@ export function registerApiTriggers(
     async (
       req: HttpRequest<{
         content: string;
+        title?: string;
         type?: string;
         concepts?: string[];
         files?: string[];
@@ -1660,6 +1661,9 @@ export function registerApiTriggers(
         function_id: "mem::remember",
         payload: {
           content: req.body.content,
+          ...(typeof req.body.title === "string" && req.body.title.trim()
+            ? { title: req.body.title.trim() }
+            : {}),
           ...(req.body.type !== undefined && { type: req.body.type }),
           ...(req.body.concepts !== undefined && { concepts: req.body.concepts }),
           ...(req.body.files !== undefined && { files: req.body.files }),
