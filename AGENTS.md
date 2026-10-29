@@ -62,11 +62,16 @@ sdk.registerFunction("api::your-endpoint", async (req: HttpRequest) => {
   });
   return { status_code: 200, body: result };
 });
-sdk.registerTrigger({
+import { getBindings } from "./runtime/bindings.js";
+
+getBindings(sdk).http({
   type: "http",
   function_id: "api::your-endpoint",
   config: { api_path: "/agentmemory/your-path", http_method: "POST" },
 });
+```
+
+Bindings pick observe (engine `http::on-request` / `state::on-changed` observers) or `registerTrigger` automatically — see `src/runtime/bindings.ts`; force a mode with `AGENTMEMORY_BINDINGS` (`auto` default, `observe`, `trigger`). State subscriptions use `getBindings(sdk).state({ function_id, scope, key?, maxInFlight? })`.
 ```
 
 ### MCP Tool Handler

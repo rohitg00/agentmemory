@@ -2557,6 +2557,12 @@
         html += '</div>';
       }
 
+      if (snap.runtime && snap.runtime.duplicateWorkers && snap.runtime.duplicateWorkers.count > 1) {
+        html += '<div class="card" style="margin-bottom:14px;border-color:var(--accent);border-width:2px;padding:12px 16px;"><div class="card-title" style="color:var(--accent);border-bottom-color:var(--accent);margin-bottom:6px;">Duplicate worker</div>';
+        html += '<div style="font-size:12px;color:var(--accent);padding:3px 0;font-family:var(--font-ui);">' + esc(snap.runtime.duplicateWorkers.count + ' agentmemory workers share this engine. Stop the extra daemon (agentmemory stop) and restart.') + '</div>';
+        html += '</div>';
+      }
+
       html += '<div class="section-head"><h2>What your agents remember</h2><span class="section-sub">updates live</span></div>';
       html += '<div class="stats-grid">';
       html += statCard({ label: 'Memories', help: 'memory', tab: 'memories', value: fmtNum(c.latestMemories), sub: fmtNum(c.memories) + ' incl. older versions' });

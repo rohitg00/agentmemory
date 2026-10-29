@@ -58,6 +58,7 @@ import {
   setHybridRanker,
   setPendingVectorBackfillCount,
   setVectorBackfillState,
+  getVectorBackfillState,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSessionIndexMaintenanceFunction } from "./functions/session-index-maintenance.js";
@@ -130,6 +131,10 @@ import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
 import { bootLog, bootWarn } from "./logger.js";
 import { runtimeMetadataPath } from "./runtime-paths.js";
+import { getBindings } from "./runtime/bindings.js";
+import { waitForStateWorker, onStateWorkerReturn } from "./runtime/state-worker.js";
+import { singleFlight, shouldRearmIndex } from "./runtime/recovery.js";
+import { checkDuplicateWorkers } from "./runtime/duplicates.js";
 import { ensureServerSecret, explicitSecret, secretFilePath } from "./secret-store.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
@@ -454,6 +459,11 @@ async function main() {
 
   const healthMonitor = registerHealthMonitor(sdk, kv);
 
+  const bindings = getBindings(sdk);
+  await bindings.activate();
+  bootLog(`Bindings: state=${bindings.modes.state} http=${bindings.modes.http} (${bindings.handles.length} observers)`);
+  await waitForStateWorker(sdk);
+
   const indexPersistence = new IndexPersistence(kv, vectorIndex, { requireRecoveryPlan: true });
   setIndexPersistence(indexPersistence);
 
@@ -533,66 +543,69 @@ async function main() {
   const auditMigration = startAuditMigration(kv).catch(() => {});
 
   const keywordStart = Date.now();
-  try {
-    const keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
-    bootLog(
-      `Rebuilt BM25 index from stored content (${keyword.documents} docs in ${Date.now() - keywordStart} ms)`,
-    );
-    const pending = keyword.vectorJobs.length + keyword.fullBackfillPending;
-    const backlogScanComplete = !isBm25RebuildIncomplete() && isMemoryIndexReady();
-    const optedIn = isVectorBackfillAllEnabled();
-    const activeIds = new Set(keyword.vectorJobs.map((job) => job.id));
-    const hasVector = (id: string) => Boolean(vectorIndex?.has(id));
-    const countRemaining = () => bm25Index.countMissingDocuments(hasVector, vectorBackfillSince, activeIds);
-    setPendingVectorBackfillCount(indexPersistence.isRecoveryPaused() ? countRemaining() : pending);
-    if (indexPersistence.isRecoveryPaused()) {
-      setVectorBackfillState("paused");
-    } else if (vectorBackfillSince !== undefined) {
-      setVectorBackfillState(keyword.fullBackfillPending > 0 && !optedIn ? "waiting-for-opt-in" : backlogScanComplete ? "idle" : "paused");
-    }
-    if (keyword.fullBackfillPending > 0) {
-      bootLog(optedIn
-        ? `Vector backfill has ${keyword.fullBackfillPending} additional documents beyond this start's limit; restart to resume.`
-        : `Vector backfill needs ${keyword.fullBackfillPending} embeddings (set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`);
-    }
-    if (vectorBackfillSince !== undefined && backlogScanComplete && pending === 0) {
-      if (!(await indexPersistence.completeBackfill(() => countRemaining() === 0))) {
-        setPendingVectorBackfillCount(countRemaining());
+  const runIndexRecovery = singleFlight(async () => {
+    try {
+      const keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
+      bootLog(
+        `Rebuilt BM25 index from stored content (${keyword.documents} docs in ${Date.now() - keywordStart} ms)`,
+      );
+      const pending = keyword.vectorJobs.length + keyword.fullBackfillPending;
+      const backlogScanComplete = !isBm25RebuildIncomplete() && isMemoryIndexReady();
+      const optedIn = isVectorBackfillAllEnabled();
+      const activeIds = new Set(keyword.vectorJobs.map((job) => job.id));
+      const hasVector = (id: string) => Boolean(vectorIndex?.has(id));
+      const countRemaining = () => bm25Index.countMissingDocuments(hasVector, vectorBackfillSince, activeIds);
+      setPendingVectorBackfillCount(indexPersistence.isRecoveryPaused() ? countRemaining() : pending);
+      if (indexPersistence.isRecoveryPaused()) {
         setVectorBackfillState("paused");
+      } else if (vectorBackfillSince !== undefined) {
+        setVectorBackfillState(keyword.fullBackfillPending > 0 && !optedIn ? "waiting-for-opt-in" : backlogScanComplete ? "idle" : "paused");
       }
-    }
-    if (keyword.vectorJobs.length > 0 && !(await indexPersistence.beginBackfill())) {
-      setVectorBackfillState("paused");
-      activeIds.clear();
-      for (const job of keyword.vectorJobs) job.revision?.release();
-    } else if (keyword.vectorJobs.length > 0) {
-      setVectorBackfillState("running");
-      bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors, ${getVectorBackfillMax()} per batch in the background`);
-      void backfillVectorBacklog(keyword.vectorJobs, {
-        remainingAfter: keyword.fullBackfillPending,
-        remainingCount: countRemaining,
-      })
-        .then(async (result) => {
-          const complete = result.complete && backlogScanComplete && await indexPersistence.completeBackfill(() => countRemaining() === 0);
-          const remaining = countRemaining();
-          setPendingVectorBackfillCount(remaining);
-          setVectorBackfillState(complete ? "idle" : "paused");
-          if (result.added > 0) bootLog(`Vector index backfilled: ${result.added} entries`);
-          if (!complete) bootWarn(`Vector recovery remains incomplete (${remaining} documents pending); it resumes on the next start.`);
-        })
-        .catch((err) => {
+      if (keyword.fullBackfillPending > 0) {
+        bootLog(optedIn
+          ? `Vector backfill has ${keyword.fullBackfillPending} additional documents beyond this start's limit; restart to resume.`
+          : `Vector backfill needs ${keyword.fullBackfillPending} embeddings (set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`);
+      }
+      if (vectorBackfillSince !== undefined && backlogScanComplete && pending === 0) {
+        if (!(await indexPersistence.completeBackfill(() => countRemaining() === 0))) {
+          setPendingVectorBackfillCount(countRemaining());
           setVectorBackfillState("paused");
-          console.warn(`[agentmemory] Failed to backfill vectors:`, err);
+        }
+      }
+      if (keyword.vectorJobs.length > 0 && !(await indexPersistence.beginBackfill())) {
+        setVectorBackfillState("paused");
+        activeIds.clear();
+        for (const job of keyword.vectorJobs) job.revision?.release();
+      } else if (keyword.vectorJobs.length > 0) {
+        setVectorBackfillState("running");
+        bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors, ${getVectorBackfillMax()} per batch in the background`);
+        void backfillVectorBacklog(keyword.vectorJobs, {
+          remainingAfter: keyword.fullBackfillPending,
+          remainingCount: countRemaining,
         })
-        .finally(() => {
-          activeIds.clear();
-          for (const job of keyword.vectorJobs) job.revision?.release();
-        });
+          .then(async (result) => {
+            const complete = result.complete && backlogScanComplete && await indexPersistence.completeBackfill(() => countRemaining() === 0);
+            const remaining = countRemaining();
+            setPendingVectorBackfillCount(remaining);
+            setVectorBackfillState(complete ? "idle" : "paused");
+            if (result.added > 0) bootLog(`Vector index backfilled: ${result.added} entries`);
+            if (!complete) bootWarn(`Vector recovery remains incomplete (${remaining} documents pending); it resumes on the next start.`);
+          })
+          .catch((err) => {
+            setVectorBackfillState("paused");
+            console.warn(`[agentmemory] Failed to backfill vectors:`, err);
+          })
+          .finally(() => {
+            activeIds.clear();
+            for (const job of keyword.vectorJobs) job.revision?.release();
+          });
+      }
+    } catch (err) {
+      setVectorBackfillState("paused");
+      console.warn(`[agentmemory] Failed to rebuild the BM25 index:`, err);
     }
-  } catch (err) {
-    setVectorBackfillState("paused");
-    console.warn(`[agentmemory] Failed to rebuild the BM25 index:`, err);
-  }
+  });
+  await runIndexRecovery();
 
   // Ready / Endpoints lines are emitted via `bootLog` so they're
   // buffered in quiet mode and printed verbatim under --verbose. The
@@ -608,6 +621,12 @@ async function main() {
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
   );
 
+  const runCaptureRecovery = singleFlight(async () => {
+    const swept = await capture.sweep();
+    if (swept.processed > 0) {
+      bootLog(`Capture inbox: ${swept.recovered} of ${swept.processed} unfinished observations stored after restart`);
+    }
+  });
   void (async () => {
     try {
       const drained = await capture.drainLocalSpool();
@@ -617,16 +636,29 @@ async function main() {
       if (delivered + duplicates + remaining > 0) {
         bootLog(`Capture spool: ${delivered} recovered, ${duplicates} already stored, ${remaining} still waiting`);
       }
-      const swept = await capture.sweep();
-      if (swept.processed > 0) {
-        bootLog(`Capture inbox: ${swept.recovered} of ${swept.processed} unfinished observations stored after restart`);
-      }
+      await runCaptureRecovery();
       await capture.prune();
     } catch (err) {
       bootWarn(`Capture recovery at boot failed: ${err instanceof Error ? err.message : String(err)}`);
     }
     capture.start();
   })();
+
+  const rearm = onStateWorkerReturn(sdk, bindings, async () => {
+    try {
+      if (shouldRearmIndex({
+        bm25Incomplete: isBm25RebuildIncomplete(),
+        vectorBackfillState: getVectorBackfillState(),
+      })) await runIndexRecovery();
+      await runCaptureRecovery();
+      await checkDuplicateWorkers(sdk);
+    } catch (err) {
+      bootWarn(`State-worker re-arm failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  });
+  const rearmTick = setInterval(() => { void rearm.probeTick(); }, 30_000);
+  rearmTick.unref();
+  void checkDuplicateWorkers(sdk);
 
   const viewerServer = startViewerServer(
     config.viewerPort,

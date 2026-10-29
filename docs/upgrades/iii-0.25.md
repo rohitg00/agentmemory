@@ -22,7 +22,7 @@ Existing file state remains at `state_store.db`; this upgrade does not convert o
 - MCP tools, HTTP routes, capture, recall, search, export/import and the AgentMemory viewer keep their existing interfaces.
 - The viewer remains on port 3113 by default. Live updates use authenticated SSE at `/agentmemory/viewer/events` on the REST port. Port 3112 is no longer used.
 - `/agentmemory/status` reports the configured engine pin as `service.enginePinnedVersion`, replacing the old `engineVersion` field. This is the supported version, not a probe of an arbitrary remote engine.
-- `registerTrigger` and `registerTriggerType` remain supported by iii 0.25, with deprecation warnings. HTTP and state providers still use these APIs; their warnings do not mean route registration failed.
+- HTTP routes and state subscriptions are bound through `src/runtime/bindings.ts` (`getBindings(sdk).http/.state`). In `auto` mode (default) agentmemory attaches native observers to `http::on-request` and `state::on-changed` when the providers advertise them, and falls back to `registerTrigger` otherwise. `AGENTMEMORY_BINDINGS=observe|trigger` forces a mode. `AGENTMEMORY_STATE_READY_TIMEOUT_MS` (1000-600000, default 60000) bounds the state-worker readiness probe before boot reads; late arrival is covered by event-driven re-arm.
 - iii 0.25 can dispatch calls to a worker's own functions locally. Engine-side spans differ for those calls; SDK tracing and state-worker persistence still apply.
 - Local dispatch is on by default, so AgentMemory's internal calls to its own functions run in-process and produce only the SDK's execute span, not an engine call span. Set `AGENTMEMORY_LOCAL_DISPATCH=false` for full engine traces at the cost of a round trip per call.
 

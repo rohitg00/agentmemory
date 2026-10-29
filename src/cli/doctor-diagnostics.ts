@@ -75,6 +75,7 @@ export const DIAGNOSTIC_IDS = [
   "stale-pidfile",
   "env-placeholder-keys",
   "iii-on-path-not-local-bin",
+  "duplicate-workers",
 ] as const;
 
 export type DiagnosticId = (typeof DIAGNOSTIC_IDS)[number];
@@ -153,6 +154,8 @@ export type DoctorEffects = {
   externalEngineRunning: () => Promise<boolean>;
   /** Probe the viewer URL; true if it returns OK within timeoutMs. */
   viewerReachable: (timeoutMs?: number) => Promise<boolean>;
+  /** Fetch the running daemon's status report; null when unreachable. */
+  daemonStatus: () => Promise<{ runtime?: { duplicateWorkers?: { count: number; workerIds: string[] } | null } } | null>;
   /** Run init logic (copies .env.example). */
   runInit: () => Promise<DiagnosticFixResult>;
   /** Open a file in $EDITOR (or fallback). Resolves when editor exits. */
@@ -378,6 +381,29 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
             "Installer wrote to ~/.agentmemory/bin/iii. Your PATH wasn't modified.",
         })),
     },
+    {
+      id: "duplicate-workers",
+      message: "More than one agentmemory worker is registered to the engine.",
+      fixPreview: "Stop the extra daemon with `agentmemory stop`, or run `agentmemory status` to see the registered workers.",
+      moreInfo:
+        "The engine owns each function id to one worker per namespace, so a second agentmemory worker " +
+        "is rejected and fails. This happens when two daemons (or a stale process from an older install) " +
+        "share one engine and namespace.",
+      manualOnly: true,
+      check: async () => {
+        const status = await effects.daemonStatus();
+        const dup = status?.runtime?.duplicateWorkers;
+        if (dup && dup.count > 1) {
+          return { ok: false, detail: `${dup.count} workers: ${dup.workerIds.join(", ")}` };
+        }
+        return { ok: true, detail: status === null ? "status endpoint unreachable; check skipped" : undefined };
+      },
+      fix: async () => ({
+        ok: false,
+        message: "Stop the extra daemon with `agentmemory stop`, then restart with `agentmemory start`.",
+      }),
+    },
+
   ];
 }
 
