@@ -516,30 +516,34 @@ export type VectorBackfillJob = {
   context: { kind: "memory" | "observation" | "synthetic"; logId: string }
 }
 
-const SESSIONS_LIST_RETRY_ATTEMPTS = 3
-const SESSIONS_LIST_RETRY_BASE_MS = 250
+const LIST_RETRY_ATTEMPTS = 8
+const LIST_RETRY_BASE_MS = 2500
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function listSessionsWithRetry(kv: StateKV): Promise<Session[] | null> {
+async function listWithRetry<T>(kv: StateKV, scope: string, label: string): Promise<T[] | null> {
   let lastErr: unknown
-  for (let attempt = 0; attempt < SESSIONS_LIST_RETRY_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt < LIST_RETRY_ATTEMPTS; attempt++) {
     try {
-      return await kv.list<Session>(KV.sessions)
+      return await kv.list<T>(scope)
     } catch (err) {
       lastErr = err
-      if (attempt < SESSIONS_LIST_RETRY_ATTEMPTS - 1) {
-        await delay(SESSIONS_LIST_RETRY_BASE_MS * (attempt + 1))
+      if (attempt < LIST_RETRY_ATTEMPTS - 1) {
+        await delay(LIST_RETRY_BASE_MS * (attempt + 1))
       }
     }
   }
-  logger.warn('rebuildKeywordIndex: failed to load sessions after retries', {
-    attempts: SESSIONS_LIST_RETRY_ATTEMPTS,
+  logger.warn(`${label}: failed to load after retries`, {
+    attempts: LIST_RETRY_ATTEMPTS,
     error: lastErr instanceof Error ? lastErr.message : String(lastErr),
   })
   return null
+}
+
+async function listSessionsWithRetry(kv: StateKV): Promise<Session[] | null> {
+  return listWithRetry<Session>(kv, KV.sessions, 'rebuildKeywordIndex: sessions')
 }
 
 type KeywordRebuildResult = { documents: number; vectorJobs: VectorBackfillJob[]; fullBackfillPending: number }
@@ -594,8 +598,10 @@ async function runKeywordRebuild(
 
   let documents = 0
   let memoriesLoaded = false
-  try {
-    const memories = await kv.list<Memory>(KV.memories)
+  const memories = await listWithRetry<Memory>(kv, KV.memories, 'rebuildKeywordIndex: memories')
+  if (memories === null) {
+    bm25RebuildIncomplete = true
+  } else {
     memoriesLoaded = true
     for (const memory of memories) {
       if (memory.isLatest === false) continue
@@ -604,10 +610,6 @@ async function runKeywordRebuild(
       consider(memory.id, memory.sessionIds?.[0] ?? 'memory', memory.title + ' ' + memory.content, memory.createdAt, "memory")
       documents++
     }
-  } catch (err) {
-    logger.warn('rebuildKeywordIndex: failed to load memories', {
-      error: err instanceof Error ? err.message : String(err),
-    })
   }
 
   const sessions = await listSessionsWithRetry(kv)
