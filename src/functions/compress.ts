@@ -17,6 +17,7 @@ import { logger } from "../logger.js";
 import { emitLiveEvent } from "../viewer/live-events.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { budgetLiveObservationSource } from "./observation-source-budget.js";
+import { observationEmbedText } from "../state/memory-utils.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { scrubRecord, stripPrivateData } from "./privacy.js";
@@ -193,7 +194,7 @@ export function registerCompressFunction(
       if (!compressed) return { success: false, error: "observation_changed", skipped: true, retryable: false };
       const committedRevision = observationRevision(compressed);
       await bounded(() => vectorIndexAddGuarded(
-        observationId, sessionId, compressed.title + " " + compressed.narrative,
+        observationId, sessionId, observationEmbedText(compressed),
         { kind: "observation", logId: observationId },
         (embedding, isCurrent) => withKeyedLock(`obs:${sessionId}`, async () => {
           const current = await kv.get<StoredObservation>(KV.observations(sessionId), observationId);

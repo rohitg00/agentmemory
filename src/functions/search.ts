@@ -8,7 +8,7 @@ import { getSearchResultLayer, isSearchLayer, matchesSearchLayer, type SearchLay
 import { SearchIndex, type SearchIndexRevision } from '../state/search-index.js'
 import { VectorIndex } from '../state/vector-index.js'
 import type { EmbeddingProvider } from '../types.js'
-import { memoryToObservation } from '../state/memory-utils.js'
+import { memoryToObservation, observationEmbedText } from '../state/memory-utils.js'
 import { buildRecallResponse, type RecallFormat } from "./recall-response.js";
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
@@ -403,7 +403,7 @@ export async function indexRecords(
       await enqueue({
         id: memory.id, revision,
         sessionId: memory.sessionIds?.[0] ?? 'memory',
-        text: memory.title + ' ' + memory.content,
+        text: observationEmbedText({ title: memory.title, narrative: memory.content, concepts: memory.concepts }),
         context: { kind: "memory", logId: memory.id },
       })
     }
@@ -412,7 +412,7 @@ export async function indexRecords(
       if (!revision?.isCurrent()) continue
       await enqueue({
         id: obs.id, revision, sessionId: obs.sessionId,
-        text: obs.title + ' ' + obs.narrative,
+        text: observationEmbedText(obs),
         context: { kind: "observation", logId: obs.id },
       })
     }
@@ -601,7 +601,7 @@ async function runKeywordRebuild(
       if (memory.isLatest === false) continue
       if (!memory.title || !memory.content) continue
       idx.add(memoryToObservation(memory), "memory")
-      consider(memory.id, memory.sessionIds?.[0] ?? 'memory', memory.title + ' ' + memory.content, memory.createdAt, "memory")
+      consider(memory.id, memory.sessionIds?.[0] ?? 'memory', observationEmbedText({ title: memory.title, narrative: memory.content, concepts: memory.concepts }), memory.createdAt, "memory")
       documents++
     }
   } catch (err) {
@@ -632,7 +632,7 @@ async function runKeywordRebuild(
     for (const obs of results.flat()) {
       if (!obs.title || !obs.narrative) continue
       idx.add(obs)
-      consider(obs.id, obs.sessionId, obs.title + ' ' + obs.narrative, obs.timestamp, "observation")
+      consider(obs.id, obs.sessionId, observationEmbedText(obs), obs.timestamp, "observation")
       documents++
     }
   }
