@@ -1509,7 +1509,7 @@ async function reconcilePersistedComposeEngine(): Promise<boolean> {
   const state = readEngineState();
   if (state?.kind !== "compose") return false;
   if (!(await isEngineRunning())) {
-    if (state.composePid && pidAlive(state.composePid)) {
+    if (state.composePid && pidAlive(state.composePid) && composePidMatches(state.composePid, state)) {
       p.log.error(`Worker Compose daemon ${state.composePid} is alive but REST ${state.restPort} is not ready. Inspect ${state.logFile}; use agentmemory stop to reconcile.`);
       process.exit(1);
     }

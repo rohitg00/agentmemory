@@ -113,4 +113,13 @@ describe("fresh native engine startup", () => {
     expect(source).toContain("function printCapturedStartupStderr()");
     expect(source).toContain("redactCredentialUrls(activeStartupStderr.text().trim())");
   });
+
+  it("checks Worker Compose daemon process identity during unready reconcile before erroring", () => {
+    const reconcileStart = source.indexOf("async function reconcilePersistedComposeEngine");
+    const reconcileEnd = source.indexOf("async function main()", reconcileStart);
+    const reconcileBody = source.slice(reconcileStart, reconcileEnd);
+    expect(reconcileBody).toContain(
+      "if (state.composePid && pidAlive(state.composePid) && composePidMatches(state.composePid, state))",
+    );
+  });
 });
