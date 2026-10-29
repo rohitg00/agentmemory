@@ -169,3 +169,22 @@ describe("api::mesh-export cursor paging", () => {
     expect((outOfRange.body as { error?: string }).error).toBe("invalid_cursor");
   });
 });
+
+describe("api::mesh-export page boundary", () => {
+  it("emits a cursor when the limit lands exactly on a collection end", async () => {
+    const kv = mockKV();
+    for (let i = 0; i < 5; i++) await kv.set(KV.memories, `m-${i}`, memory(`m-${i}`, "alpha"));
+    await kv.set(KV.actions, "a-1", { id: "a-1", project: "alpha", updatedAt: "2026-08-01T00:00:00Z" } as never);
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+
+    const page1 = await meshExport(sdk, "alpha", { limit: "5" });
+    expect(page1.status_code).toBe(200);
+    expect((page1.body.memories as Memory[]).length).toBe(5);
+    expect(page1.body.nextCursor).toBeTruthy();
+    const page2 = await meshExport(sdk, "alpha", { limit: "5", cursor: page1.body.nextCursor as string });
+    expect(page2.status_code).toBe(200);
+    expect(((page2.body.actions as Array<{ id: string }>).map((a) => a.id))).toEqual(["a-1"]);
+    expect(page2.body.nextCursor).toBeUndefined();
+  });
+});

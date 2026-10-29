@@ -109,6 +109,7 @@ export async function collectAll<T = unknown>(kv: StateKV, scope: string): Promi
   if (typeof kv.iterate !== 'function') return kv.list<T>(scope)
   const out: T[] = []
   for await (const page of kv.iterate<T>(scope)) out.push(...page)
+  if (kv.backend === 'redis') return orderLikeInsertion(out)
   return out
 }
 
@@ -223,35 +224,6 @@ export class StateKV {
     return Array.isArray(keys) ? (keys as string[]) : []
   }
 
-  private getManyProbe: Promise<boolean> | null = null
-
-  private supportsGetMany(): Promise<boolean> {
-    if (!this.getManyProbe) {
-      this.getManyProbe = (async () => {
-        try {
-          const listed = await this.sdk.trigger<Record<string, never>, unknown>({
-            function_id: 'engine::functions::list',
-            payload: {},
-          })
-          const entries = Array.isArray(listed)
-            ? listed
-            : ((listed as { functions?: unknown[] })?.functions ?? [])
-          return entries.some((entry) => {
-            const name = typeof entry === 'string'
-              ? entry
-              : ((entry as { id?: string; function_id?: string; name?: string })?.id ??
-                (entry as { function_id?: string; name?: string })?.function_id ??
-                (entry as { name?: string })?.name)
-            return name === 'state::get_many'
-          })
-        } catch {
-          return false
-        }
-      })()
-    }
-    return this.getManyProbe
-  }
-
   async getMany<T = unknown>(
     scope: string,
     keys: string[],
@@ -268,21 +240,6 @@ export class StateKV {
     keys: string[],
     concurrency: number,
   ): Promise<Array<T | null>> {
-    if (await this.supportsGetMany()) {
-      const out: Array<T | null> = new Array(keys.length).fill(null)
-      for (let start = 0; start < keys.length; start += 500) {
-        const chunk = keys.slice(start, start + 500)
-        const result = await this.sdk.trigger<{ scope: string; keys: string[] }, unknown>({
-          function_id: 'state::get_many',
-          payload: { scope, keys: chunk },
-        })
-        const values = Array.isArray(result)
-          ? result
-          : (((result as { values?: unknown })?.values ?? []) as unknown[])
-        for (let i = 0; i < chunk.length; i++) out[start + i] = (values[i] ?? null) as T | null
-      }
-      return out
-    }
     const out: Array<T | null> = new Array(keys.length).fill(null)
     for (let start = 0; start < keys.length; start += concurrency) {
       const slice = keys.slice(start, start + concurrency)

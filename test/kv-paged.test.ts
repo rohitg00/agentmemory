@@ -76,31 +76,6 @@ describe("StateKV paged reads", () => {
     expect(sdk.maxInFlight).toBeGreaterThan(1);
   });
 
-  it("getMany uses state::get_many when the engine advertises it", async () => {
-    const store = new Map();
-    seed(store, KV.insights, Object.fromEntries([...Array(1200)].map((_, i) => [`i${i}`, { id: `i${i}` }])));
-    const sdk = fakeSdk(store, { getMany: true });
-    const kv = new StateKV(sdk as never);
-    const out = await kv.getMany(KV.insights, [...Array(1200)].map((_, i) => `i${i}`));
-    expect(out).toHaveLength(1200);
-    const manyCalls = sdk.calls.filter((c) => c.function_id === "state::get_many");
-    expect(manyCalls.length).toBe(3);
-    expect(manyCalls.every((c) => (c.payload.keys as string[]).length <= 500)).toBe(true);
-    expect(sdk.calls.filter((c) => c.function_id === "state::get").length).toBe(0);
-    expect(sdk.calls.filter((c) => c.function_id === "engine::functions::list").length).toBe(1);
-  });
-
-  it("getMany falls back to state::get when the probe fails", async () => {
-    const store = new Map();
-    seed(store, KV.insights, { a: { id: "a" } });
-    const sdk = fakeSdk(store);
-    const raw = sdk.trigger;
-    sdk.trigger = async (req: Call) => req.function_id === "engine::functions::list" ? Promise.reject(new Error("nope")) : raw(req);
-    const kv = new StateKV(sdk as never);
-    expect(await kv.getMany(KV.insights, ["a"])).toEqual([{ id: "a" }]);
-    expect(sdk.calls.some((c) => c.function_id === "state::get_many")).toBe(false);
-  });
-
   it("iterate yields non-null values page by page", async () => {
     const store = new Map();
     seed(store, KV.graphNodes, Object.fromEntries([...Array(5)].map((_, i) => [`n${i}`, { id: `n${i}` }])));
@@ -166,5 +141,22 @@ describe("StateKV paged reads", () => {
     const pages: { id: string }[][] = [];
     for await (const page of kv.iterate<{ id: string }>(KV.insights, { pageSize: 10 })) pages.push(page);
     expect(pages[0]!.map((i) => i.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("collectAll redis ordering", () => {
+  it("orders the whole result like list() even across page boundaries", async () => {
+    const store = new Map();
+    const entries: Record<string, unknown> = {};
+    for (let i = 0; i < 250; i++) {
+      const key = `k${i}`;
+      entries[key] = { id: key, createdAt: new Date(1700000000000 + i * 1000).toISOString() };
+    }
+    seed(store, KV.insights, entries);
+    const kv = new StateKV(fakeSdk(store) as never, { backend: "redis" });
+    const listed = await kv.list<{ id: string }>(KV.insights);
+    const { collectAll } = await import("../src/state/kv.js");
+    const collected = await collectAll<{ id: string }>(kv, KV.insights);
+    expect(collected.map((r) => r.id)).toEqual(listed.map((r) => r.id));
   });
 });

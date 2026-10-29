@@ -234,6 +234,7 @@ export function registerMeshFunction(
             continue;
           }
 
+          const syncStartedAt = new Date().toISOString();
           if (direction === "push" || direction === "both") {
             const pushData = await collectSyncData(kv, scopes, peer.lastSyncAt, peer.syncFilter);
             try {
@@ -260,7 +261,6 @@ export function registerMeshFunction(
 
           if (direction === "pull" || direction === "both") {
             try {
-              const syncStartedAt = new Date().toISOString();
               let cursor: string | undefined;
               let pulled = 0;
               let failed = false;
@@ -300,7 +300,6 @@ export function registerMeshFunction(
               }
               if (!failed) {
                 result.pulled = pulled;
-                peer.lastSyncAt = syncStartedAt;
               }
             } catch (err) {
               result.errors.push(`pull failed: ${String(err)}`);
@@ -308,8 +307,8 @@ export function registerMeshFunction(
           }
 
           peer.status = result.errors.length > 0 ? "error" : "connected";
-          if (result.errors.length === 0 && direction === "push") {
-            peer.lastSyncAt = new Date().toISOString();
+          if (result.errors.length === 0) {
+            peer.lastSyncAt = syncStartedAt;
           }
         } catch (err) {
           peer.status = "disconnected";

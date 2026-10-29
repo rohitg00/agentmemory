@@ -463,11 +463,36 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
         if (strategy === "replace") {
           const existing = replaceSessions;
+          const obsBySession: Array<{ session: Session; obs: CompressedObservation[] }> = [];
+          for (let i = 0; i < existing.length; i += IMPORT_CHUNK_SIZE) {
+            const chunk = existing.slice(i, i + IMPORT_CHUNK_SIZE);
+            obsBySession.push(...(await Promise.all(chunk.map(async (session) => ({
+              session,
+              obs: await collectAll<CompressedObservation>(kv, KV.observations(session.id)),
+            })))));
+          }
+          const memories = await collectAll<Memory>(kv, KV.memories);
+          const summaries = await kv.list<SessionSummary>(KV.summaries);
+          const actions = await kv.list<Action>(KV.actions);
+          const actionEdges = await kv.list<ActionEdge>(KV.actionEdges);
+          const routines = await kv.list<Routine>(KV.routines);
+          const signals = await kv.list<Signal>(KV.signals);
+          const checkpoints = await kv.list<Checkpoint>(KV.checkpoints);
+          const sentinels = await kv.list<Sentinel>(KV.sentinels);
+          const sketches = await kv.list<Sketch>(KV.sketches);
+          const crystals = await kv.list<Crystal>(KV.crystals);
+          const facets = await kv.list<Facet>(KV.facets);
+          const lessons = await kv.list<Lesson>(KV.lessons);
+          const insights = await collectAll<Insight>(kv, KV.insights);
+          const semanticRows = await collectAll<{ id: string }>(kv, KV.semantic);
+          const proceduralRows = await collectAll<{ id: string }>(kv, KV.procedural);
+          const profiles = await kv.list<ProjectProfile>(KV.profiles);
+          const accessLogs = await kv.list<AccessLogExport>(KV.accessLog);
           // Collect observation deletes across all sessions, then run them in
           // one bounded pass: a runChunked nested inside a runChunked callback
           // multiplies in-flight deletes to chunk-size squared.
           const obsDeletes: Array<{ sessionId: string; obsId: string; captureKey?: string }> = [];
-          await runChunked(existing, async (session) => {
+          await runChunked(obsBySession, async ({ session, obs }) => {
             await kv.delete(KV.sessions, session.id);
             await kv.delete(KV.summaryRepairs, session.id);
             await removeSessionFromProjectIndex(
@@ -475,7 +500,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
               session.project,
               session.id,
             ).catch(() => {});
-            const obs = await collectAll<CompressedObservation>(kv, KV.observations(session.id));
             for (const o of obs) {
               obsDeletes.push({ sessionId: session.id, obsId: o.id, captureKey: o.captureKey });
             }
@@ -485,72 +509,55 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
             await kv.delete(KV.observations(d.sessionId), d.obsId);
             await unindexObservationSession(kv, d.obsId).catch(() => {});
           });
-          await runChunked(await collectAll<Memory>(kv, KV.memories), (m) =>
+          await runChunked(memories, (m) =>
             kv.delete(KV.memories, m.id),
           );
-          await runChunked(
-            await kv.list<SessionSummary>(KV.summaries),
-            (s) => kv.delete(KV.summaries, s.sessionId),
-          );
-          await runChunked(await kv.list<Action>(KV.actions), (a) =>
+          await runChunked(summaries, (s) => kv.delete(KV.summaries, s.sessionId));
+          await runChunked(actions, (a) =>
             kv.delete(KV.actions, a.id),
           );
-          await runChunked(
-            await kv.list<ActionEdge>(KV.actionEdges),
-            (e) => kv.delete(KV.actionEdges, e.id),
+          await runChunked(actionEdges, (e) =>
+            kv.delete(KV.actionEdges, e.id),
           );
-          await runChunked(
-            await kv.list<Routine>(KV.routines),
-            (r) => kv.delete(KV.routines, r.id),
+          await runChunked(routines, (r) =>
+            kv.delete(KV.routines, r.id),
           );
-          await runChunked(
-            await kv.list<Signal>(KV.signals),
-            (s) => kv.delete(KV.signals, s.id),
+          await runChunked(signals, (s) =>
+            kv.delete(KV.signals, s.id),
           );
-          await runChunked(
-            await kv.list<Checkpoint>(KV.checkpoints),
-            (c) => kv.delete(KV.checkpoints, c.id),
+          await runChunked(checkpoints, (c) =>
+            kv.delete(KV.checkpoints, c.id),
           );
-          await runChunked(
-            await kv.list<Sentinel>(KV.sentinels),
-            (s) => kv.delete(KV.sentinels, s.id),
+          await runChunked(sentinels, (s) =>
+            kv.delete(KV.sentinels, s.id),
           );
-          await runChunked(
-            await kv.list<Sketch>(KV.sketches),
-            (s) => kv.delete(KV.sketches, s.id),
+          await runChunked(sketches, (s) =>
+            kv.delete(KV.sketches, s.id),
           );
-          await runChunked(
-            await kv.list<Crystal>(KV.crystals),
-            (c) => kv.delete(KV.crystals, c.id),
+          await runChunked(crystals, (c) =>
+            kv.delete(KV.crystals, c.id),
           );
-          await runChunked(
-            await kv.list<Facet>(KV.facets),
-            (f) => kv.delete(KV.facets, f.id),
+          await runChunked(facets, (f) =>
+            kv.delete(KV.facets, f.id),
           );
-          await runChunked(
-            await kv.list<Lesson>(KV.lessons),
-            (l) => kv.delete(KV.lessons, l.id),
+          await runChunked(lessons, (l) =>
+            kv.delete(KV.lessons, l.id),
           );
           resetLessonIndex();
-          await runChunked(
-            await collectAll<Insight>(kv, KV.insights),
-            (i) => kv.delete(KV.insights, i.id),
+          await runChunked(insights, (i) =>
+            kv.delete(KV.insights, i.id),
           );
-          await runChunked(
-            await collectAll<{ id: string }>(kv, KV.semantic),
-            (s) => kv.delete(KV.semantic, s.id),
+          await runChunked(semanticRows, (s) =>
+            kv.delete(KV.semantic, s.id),
           );
-          await runChunked(
-            await collectAll<{ id: string }>(kv, KV.procedural),
-            (p) => kv.delete(KV.procedural, p.id),
+          await runChunked(proceduralRows, (p) =>
+            kv.delete(KV.procedural, p.id),
           );
-          await runChunked(
-            await kv.list<ProjectProfile>(KV.profiles),
-            (profile) => kv.delete(KV.profiles, profile.project),
+          await runChunked(profiles, (profile) =>
+            kv.delete(KV.profiles, profile.project),
           );
-          await runChunked(
-            await kv.list<AccessLogExport>(KV.accessLog),
-            (a) => kv.delete(KV.accessLog, a.memoryId),
+          await runChunked(accessLogs, (a) =>
+            kv.delete(KV.accessLog, a.memoryId),
           );
         }
 

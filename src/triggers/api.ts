@@ -3659,16 +3659,16 @@ export function registerApiTriggers(
       for (const [, rows] of collections) {
         rows.sort((a, b) => (rowId(a) < rowId(b) ? -1 : rowId(a) > rowId(b) ? 1 : 0));
       }
-      let cursorPos: { c: number; after: string } | null = null;
+      let cursorPos: { c: number; after?: string } | null = null;
       if (cursorRaw) {
         try {
           const parsed = JSON.parse(Buffer.from(cursorRaw, "base64url").toString("utf8"));
           if (
             parsed && typeof parsed === "object" &&
             Number.isInteger(parsed.c) && parsed.c >= 0 && parsed.c < collections.length &&
-            typeof parsed.after === "string" && parsed.after.length <= 512
+            (parsed.after === undefined || (typeof parsed.after === "string" && parsed.after.length <= 512))
           ) {
-            cursorPos = { c: parsed.c, after: parsed.after };
+            cursorPos = { c: parsed.c, ...(parsed.after !== undefined ? { after: parsed.after } : {}) };
           }
         } catch {}
         if (!cursorPos) return { status_code: 400, body: { error: "invalid_cursor" } };
@@ -3692,7 +3692,8 @@ export function registerApiTriggers(
           const [name, rows] = collections[ci]!;
           let start = 0;
           if (after !== undefined) {
-            start = rows.findIndex((row) => rowId(row) > after);
+            const resumeAfter = after;
+            start = rows.findIndex((row) => rowId(row) > resumeAfter);
             if (start < 0) { after = undefined; continue; }
           }
           const take = Math.min(remaining, rows.length - start);
@@ -3703,6 +3704,14 @@ export function registerApiTriggers(
           if (start + take < rows.length) {
             nextCursor = Buffer.from(JSON.stringify({ c: ci, after: rowId(slice[slice.length - 1]) })).toString("base64url");
             break;
+          }
+        }
+        if (!nextCursor && remaining === 0) {
+          for (let c = ci; c < collections.length; c++) {
+            if (collections[c]![1].length > 0) {
+              nextCursor = Buffer.from(JSON.stringify({ c })).toString("base64url");
+              break;
+            }
           }
         }
         const oversized = checkPayloadFrameSize(
