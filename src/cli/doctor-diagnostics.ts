@@ -16,7 +16,7 @@
 //   agentmemory doctor --all       # apply every available fix without prompting (CI)
 //   agentmemory doctor --dry-run   # show what each fix WOULD do; execute nothing
 
-import { detectLlmProviderKind, parseEnvContent } from "../config.js";
+import { detectLlmProviderKind, isRealProviderKey, parseEnvContent } from "../config.js";
 
 export type DiagnosticStatus = {
   ok: boolean;
@@ -82,17 +82,6 @@ export type DiagnosticId = (typeof DIAGNOSTIC_IDS)[number];
 // Pure helpers (no I/O) — exported for direct unit testing.
 // ---------------------------------------------------------------------------
 
-/** Common placeholder values shipped in .env.example. */
-const PLACEHOLDER_VALUES = new Set([
-  "",
-  "your-key-here",
-  "sk-ant-...",
-  "sk-...",
-  "changeme",
-  "todo",
-  "xxx",
-]);
-
 const PROVIDER_KEY_NAMES = [
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
@@ -106,25 +95,12 @@ export const parseEnvFile = parseEnvContent;
 
 /** Returns the list of provider keys that look real (non-placeholder). */
 export function realProviderKeys(env: Record<string, string>): string[] {
-  return PROVIDER_KEY_NAMES.filter((k) => {
-    const v = (env[k] ?? "").trim();
-    if (!v) return false;
-    if (PLACEHOLDER_VALUES.has(v.toLowerCase())) return false;
-    // Reject values that are just dots/placeholders like "xxxx-xxxx".
-    if (/^x+$/i.test(v.replace(/[-_]/g, ""))) return false;
-    return true;
-  });
+  return PROVIDER_KEY_NAMES.filter((k) => isRealProviderKey(env, k));
 }
 
 /** Returns the list of provider key NAMES that exist but are placeholders. */
 export function placeholderProviderKeys(env: Record<string, string>): string[] {
-  return PROVIDER_KEY_NAMES.filter((k) => {
-    const v = (env[k] ?? "").trim();
-    if (!v) return false;
-    if (PLACEHOLDER_VALUES.has(v.toLowerCase())) return true;
-    if (/^x+$/i.test(v.replace(/[-_]/g, ""))) return true;
-    return false;
-  });
+  return PROVIDER_KEY_NAMES.filter((k) => (env[k] ?? "").trim() !== "" && !isRealProviderKey(env, k));
 }
 
 /**
@@ -200,7 +176,6 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         for (const [k, v] of Object.entries(effects.processEnv())) {
           if (v !== undefined) env[k] = v;
         }
-        for (const k of placeholderProviderKeys(env)) delete env[k];
         if (detectLlmProviderKind(env) !== "llm") {
           return {
             ok: false,
@@ -214,6 +189,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
             detectLlmProviderKind({
               [k]: env[k],
               OPENAI_API_KEY_FOR_LLM: env.OPENAI_API_KEY_FOR_LLM,
+              OPENAI_BASE_URL: env.OPENAI_BASE_URL,
             }) === "llm",
         );
         const fromEnv = real.filter((k) => file[k] !== env[k]);

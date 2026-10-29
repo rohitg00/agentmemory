@@ -82,8 +82,29 @@ export function __resetEnvFileCache(): void {
   envFileCache = undefined;
 }
 
-function hasRealValue(v: string | undefined): v is string {
-  return typeof v === "string" && v.trim().length > 0;
+const PLACEHOLDER_KEY_VALUES = new Set(["your-key-here", "changeme", "todo"]);
+
+function hasRealKey(value: string | undefined): boolean {
+  const v = value?.trim().toLowerCase();
+  return (
+    !!v &&
+    !v.endsWith("...") &&
+    !PLACEHOLDER_KEY_VALUES.has(v) &&
+    !/^x+$/.test(v.replace(/[-_]/g, ""))
+  );
+}
+
+function hasRealOpenAIKey(env: Record<string, string | undefined>): boolean {
+  return /^http:\/\//i.test(env["OPENAI_BASE_URL"]?.trim() ?? "")
+    ? !!env["OPENAI_API_KEY"]?.trim()
+    : hasRealKey(env["OPENAI_API_KEY"]);
+}
+
+export function isRealProviderKey(
+  env: Record<string, string | undefined>,
+  key: string,
+): boolean {
+  return key === "OPENAI_API_KEY" ? hasRealOpenAIKey(env) : hasRealKey(env[key]);
 }
 
 // Hydrate ~/.agentmemory/.env into process.env at boot. loadEnvFile() is
@@ -128,7 +149,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
-  if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
+  if (hasRealOpenAIKey(env) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
     const model = env["OPENAI_MODEL"] || "gpt-5.6-luna";
     warnIfPremiumModel(env, "OPENAI_MODEL", model);
     return {
@@ -140,7 +161,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   }
 
   // MiniMax: Anthropic-compatible API, requires raw fetch to avoid SDK stainless headers
-  if (hasRealValue(env["MINIMAX_API_KEY"])) {
+  if (hasRealKey(env["MINIMAX_API_KEY"])) {
     return {
       provider: "minimax",
       model: env["MINIMAX_MODEL"] || "MiniMax-M3",
@@ -148,7 +169,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
     };
   }
 
-  if (hasRealValue(env["ANTHROPIC_API_KEY"])) {
+  if (hasRealKey(env["ANTHROPIC_API_KEY"])) {
     return {
       provider: "anthropic",
       model: env["ANTHROPIC_MODEL"] || "claude-sonnet-5",
@@ -156,8 +177,8 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       baseURL: env["ANTHROPIC_BASE_URL"],
     };
   }
-  if (hasRealValue(env["GEMINI_API_KEY"]) || hasRealValue(env["GOOGLE_API_KEY"])) {
-    if (!hasRealValue(env["GEMINI_API_KEY"]) && hasRealValue(env["GOOGLE_API_KEY"])) {
+  if (hasRealKey(env["GEMINI_API_KEY"]) || hasRealKey(env["GOOGLE_API_KEY"])) {
+    if (!hasRealKey(env["GEMINI_API_KEY"]) && hasRealKey(env["GOOGLE_API_KEY"])) {
       process.stderr.write(
         "[agentmemory] GOOGLE_API_KEY detected — treating as GEMINI_API_KEY. " +
           "Set GEMINI_API_KEY in ~/.agentmemory/.env to silence this warning.\n",
@@ -169,7 +190,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
       maxTokens,
     };
   }
-  if (hasRealValue(env["OPENROUTER_API_KEY"])) {
+  if (hasRealKey(env["OPENROUTER_API_KEY"])) {
     const model = env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-5";
     warnIfPremiumModel(env, "OPENROUTER_MODEL", model);
     return {
@@ -263,6 +284,11 @@ export function getEnvVar(key: string): string | undefined {
   return getMergedEnv()[key];
 }
 
+export function getProviderKey(key: string): string | undefined {
+  const env = getMergedEnv();
+  return isRealProviderKey(env, key) ? env[key] : undefined;
+}
+
 export function isSessionSweepEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_SESSION_SWEEP_ENABLED"] !== "false";
 }
@@ -305,7 +331,7 @@ export function getStateBackend(): "file" | "redis" {
 
 export function getRedisUrl(): string | undefined {
   const value = getMergedEnv()["AGENTMEMORY_REDIS_URL"];
-  return hasRealValue(value) ? value.trim() : undefined;
+  return value?.trim() || undefined;
 }
 
 export function getAuditRetentionMonths(): number {
@@ -323,12 +349,12 @@ export function detectLlmProviderKind(
   env: Record<string, string | undefined> = getMergedEnv(),
 ): "llm" | "noop" {
   if (
-    hasRealValue(env["ANTHROPIC_API_KEY"]) ||
-    hasRealValue(env["GEMINI_API_KEY"]) ||
-    hasRealValue(env["GOOGLE_API_KEY"]) ||
-    hasRealValue(env["OPENROUTER_API_KEY"]) ||
-    hasRealValue(env["MINIMAX_API_KEY"]) ||
-    (hasRealValue(env["OPENAI_API_KEY"]) &&
+    hasRealKey(env["ANTHROPIC_API_KEY"]) ||
+    hasRealKey(env["GEMINI_API_KEY"]) ||
+    hasRealKey(env["GOOGLE_API_KEY"]) ||
+    hasRealKey(env["OPENROUTER_API_KEY"]) ||
+    hasRealKey(env["MINIMAX_API_KEY"]) ||
+    (hasRealOpenAIKey(env) &&
       env["OPENAI_API_KEY_FOR_LLM"] !== "false") ||
     env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true"
   ) {
