@@ -3,6 +3,7 @@ import type { VectorBackfillState } from "./search.js";
 import { describeGraphCompactBoot, type GraphCompactBootStatus } from "./graph-compact-boot.js";
 import type { CaptureStatus } from "./capture.js";
 import type { GraphIndexMigrationStatus } from "../state/graph-index-migration.js";
+import { failureCounters } from "./cascade-audit.js";
 
 export type StatusLevel = "ok" | "info" | "warn" | "error";
 
@@ -133,6 +134,7 @@ export interface StatusReport {
   capture: CaptureStatus | null;
   observeDedup: ObserveDedupStatus | null;
   runtime: StatusRuntimeInfo | null;
+  failures: { transient: number; permanent: number; lastAt: string | null };
   functions: Array<FunctionMetricInput & { failureRate: number; offWithoutLlm: boolean }>;
   flags: Array<StatusFlag & { inactiveReason?: string }>;
   problems: StatusProblem[];
@@ -528,6 +530,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     capture: input.capture ?? null,
     observeDedup: input.observeDedup ?? null,
     runtime: input.runtime ?? null,
+    failures: failureCounters(),
     functions,
     flags: input.flags.map((flag) =>
       flag.enabled && flag.needsLlm && noLlm

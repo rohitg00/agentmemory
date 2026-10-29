@@ -105,7 +105,6 @@ import { registerCrystallizeFunction } from "./functions/crystallize.js";
 import { registerDiagnosticsFunction } from "./functions/diagnostics.js";
 import { registerFacetsFunction } from "./functions/facets.js";
 import { registerVerifyFunction } from "./functions/verify.js";
-import { registerCascadeFunction } from "./functions/cascade.js";
 import { registerLessonsFunctions } from "./functions/lessons.js";
 import { registerObsidianExportFunction } from "./functions/obsidian-export.js";
 import { registerReflectFunctions } from "./functions/reflect.js";
@@ -139,6 +138,8 @@ import { checkDuplicateWorkers } from "./runtime/duplicates.js";
 import { registerPipelineObservers } from "./runtime/pipeline-observers.js";
 import { registerPostSessionFunctions } from "./functions/post-session.js";
 import { registerCompressionSweepFunction } from "./functions/compression-sweep.js";
+import { registerCascadeFunction } from "./functions/cascade.js";
+import { registerCascadeFunctions } from "./functions/cascade-audit.js";
 import { compressionSweepMs } from "./config.js";
 import { ensureServerSecret, explicitSecret, secretFilePath } from "./secret-store.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
@@ -395,6 +396,7 @@ async function main() {
   registerWorkingMemoryFunctions(sdk, kv, config.tokenBudget);
   registerSkillExtractFunctions(sdk, kv, provider);
   registerCascadeFunction(sdk, kv);
+  registerCascadeFunctions(sdk, kv);
 
   registerSlidingWindowFunction(sdk, kv, provider);
   registerQueryExpansionFunction(sdk, provider);

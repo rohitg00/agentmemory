@@ -33,6 +33,7 @@ interface PipelineSpec {
   source: Record<string, unknown>;
   target: string;
   options?: Record<string, unknown>;
+  stateOnly?: boolean;
 }
 
 export interface BindingReport {
@@ -123,6 +124,16 @@ export class Bindings {
       logger.error(`Pipeline observer failed for ${target}`, { error: code ?? String(err) });
     });
     return handle;
+  }
+
+  observeStateChanges(filters: Record<string, unknown>, target: string, options?: Record<string, unknown>): ObserverHandle | null {
+    const source = { function_id: "state::on-changed", filters, capture: ["input"], deliver: "input" };
+    if (!this.resolved && !this.immediate()) {
+      this.pipelinePending.push({ source, target, options, stateOnly: true });
+      return null;
+    }
+    if (this.modes.state !== "observe") return null;
+    return this.observePipeline(source, target, options);
   }
 
   private bindHttp(spec: HttpTriggerSpec): void {
@@ -263,6 +274,7 @@ export class Bindings {
             else this.bindState(spec as StateSpec);
           }
           for (const spec of this.pipelinePending.splice(0)) {
+            if (spec.stateOnly && this.modes.state !== "observe") continue;
             this.observePipeline(spec.source, spec.target, spec.options);
           }
           return modes;
