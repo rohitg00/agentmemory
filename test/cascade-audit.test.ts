@@ -142,10 +142,13 @@ describe("mem::on-record-deleted", () => {
     });
     registerCascadeFunctions(sdk as never, kv as never);
     const fn = sdk.functions.get("mem::on-record-deleted")!;
+    kv.store[KV.observations("s1")]?.delete("o9");
     await fn({ event_type: "state:deleted", scope: "mem:obs:s1", key: "o9" });
     expect(removedBm25).toContain("o9");
     expect(removedVector).toContain("o9");
+    kv.store[KV.lessons]?.set("l1", { deleted: true });
     await fn({ scope: KV.lessons, key: "l1", event_type: "state:updated", new_value: { deleted: true }, old_value: { deleted: false } });
+    kv.store[KV.memories]?.delete("m1");
     await fn({ event_type: "state:deleted", scope: KV.memories, key: "m1" });
     const { flushDeleteCascade } = await import("../src/functions/cascade-audit.js");
     await flushDeleteCascade();
@@ -192,16 +195,27 @@ describe("event::graph::edge-reaction", () => {
     expect(mark(kv)).toBeUndefined();
   });
 
-  it("contradicts: cumulative floored decay, undo restores original, mutual contradicts allowed", async () => {
+  it("contradicts: cumulative floored decay, partial undo adds back per-relation delta", async () => {
     const { kv, fn } = seeded();
     await fn(created("rA", { type: "contradicts", confidence: 0.5 }));
     await fn(created("rB", { type: "contradicts", sourceId: "srcB", confidence: 0.5 }));
     expect(mem(kv).confidence).toBeCloseTo(0.5);
-    const cycle = await fn(created("rC", { type: "contradicts", sourceId: "tgt", targetId: "src", confidence: 0.5 }));
-    expect(cycle).toMatchObject({ reacted: true });
+    const mutual = await fn(created("rC", { type: "contradicts", sourceId: "tgt", targetId: "src", confidence: 0.5 }));
+    expect(mutual).toMatchObject({ reacted: true });
     await fn(deleted("rA", { type: "contradicts" }));
+    expect(mem(kv).confidence).toBeCloseTo(0.65);
     await fn(deleted("rB", { type: "contradicts", sourceId: "srcB" }));
     expect(mem(kv).confidence).toBeCloseTo(0.8);
+  });
+
+  it("supersedes removes the target from search indexes and the final undo re-adds it", async () => {
+    const { kv, fn } = seeded();
+    removedBm25.length = 0; removedVector.length = 0;
+    await fn(created("rA"));
+    expect(removedBm25).toContain("tgt");
+    expect(removedVector).toContain("tgt");
+    await fn(deleted("rA"));
+    expect(mem(kv).isLatest).toBe(true);
   });
 
   it("supersedes cycle guard via reverse mark", async () => {

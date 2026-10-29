@@ -6,7 +6,8 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { AuditEntry, Memory, MemoryRelation, RelationReactionMark, Session } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { deleteFacetsCascade } from "./facets.js";
-import { getSearchIndex, vectorIndexRemove } from "./search.js";
+import { getSearchIndex, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove } from "./search.js";
+import { memoryToObservation } from "../state/memory-utils.js";
 import { singleFlight } from "../runtime/recovery.js";
 import { logger } from "../logger.js";
 
@@ -85,7 +86,8 @@ function pruneDedupe(now: number): void {
 
 const DELETE_BATCH_MS = 500;
 const DELETE_BATCH_MAX = 200;
-const pendingDeletes = new Set<string>();
+type PendingDelete = { id: string; kind: "memory" | "observation" | "lesson"; sessionId?: string };
+const pendingDeletes = new Map<string, PendingDelete>();
 const pendingSessions = new Set<string>();
 let deleteTimer: ReturnType<typeof setTimeout> | null = null;
 let deleteFlusher: (() => Promise<void>) | null = null;
@@ -100,12 +102,26 @@ function reportFlushFailure(): void {
   scheduleDeleteFlush();
 }
 
-function queueDeleteCascade(id: string, sessionId?: string): void {
-  pendingDeletes.add(id);
-  if (sessionId) pendingSessions.add(sessionId);
+function queueDeleteCascade(item: PendingDelete): void {
+  pendingDeletes.set(`${item.kind}:${item.id}`, item);
+  if (item.sessionId) pendingSessions.add(item.sessionId);
   if (pendingDeletes.size >= DELETE_BATCH_MAX) void flushDeleteCascade().catch(() => reportFlushFailure());
   else scheduleDeleteFlush();
 }
+
+async function deleteTargetGone(kv: StateKV, item: PendingDelete): Promise<boolean> {
+  if (item.kind === "memory") return (await kv.get(KV.memories, item.id)) === null;
+  if (item.kind === "observation" && item.sessionId) {
+    return (await kv.get(KV.observations(item.sessionId), item.id)) === null;
+  }
+  if (item.kind === "lesson") {
+    const lesson = await kv.get<{ deleted?: boolean }>(KV.lessons, item.id);
+    return lesson === null || lesson.deleted === true;
+  }
+  return true;
+}
+
+const KIND_TARGET_TYPE: Record<string, string | null> = { memory: "memory", observation: "observation", lesson: "memory" };
 
 export async function flushDeleteCascade(): Promise<void> {
   if (!deleteFlusher) return;
@@ -115,34 +131,44 @@ export async function flushDeleteCascade(): Promise<void> {
 export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
   deleteFlusher = singleFlight(async () => {
     if (deleteTimer) { clearTimeout(deleteTimer); deleteTimer = null; }
-    const ids = [...pendingDeletes];
+    const items = [...pendingDeletes.values()];
     const sessions = [...pendingSessions];
     pendingDeletes.clear();
     pendingSessions.clear();
-    if (ids.length === 0 && sessions.length === 0) return;
+    if (items.length === 0 && sessions.length === 0) return;
     try {
-      await deleteFacetsCascade(kv, ids);
+      const gone = (await Promise.all(items.map((item) => deleteTargetGone(kv, item).catch(() => false))))
+        .map((ok, i) => (ok ? items[i]! : null))
+        .filter((item): item is PendingDelete => item !== null);
+      await Promise.all(gone.map(async (item) => {
+        const targetType = KIND_TARGET_TYPE[item.kind];
+        if (!targetType) return;
+        await deleteFacetsCascade(kv, [item.id], targetType);
+      }));
       const reconciled: string[] = [];
       for (const sessionId of sessions) {
-        const keys = await kv.listKeys(KV.observations(sessionId));
-        const session = await kv.get<Session>(KV.sessions, sessionId);
-        if (session && keys.length !== session.observationCount) {
-          await kv.update<Session>(KV.sessions, sessionId, [
-            { type: "set", path: "observationCount", value: keys.length },
-          ]);
-          reconciled.push(sessionId);
-        }
+        await withKeyedLock(`obs:${sessionId}`, async () => {
+          const keys = await kv.listKeys(KV.observations(sessionId));
+          const session = await kv.get<Session>(KV.sessions, sessionId);
+          if (session && keys.length !== session.observationCount) {
+            await kv.update<Session>(KV.sessions, sessionId, [
+              { type: "set", path: "observationCount", value: keys.length },
+            ]);
+            reconciled.push(sessionId);
+          }
+        });
       }
-      await recordAudit(kv, "cascade", "mem::on-record-deleted", ids.slice(0, 20), {
-        batched: ids.length,
+      await recordAudit(kv, "cascade", "mem::on-record-deleted", items.map((item) => item.id).slice(0, 20), {
+        batched: items.length,
         sessionsReconciled: reconciled,
       });
     } catch (err) {
       logger.warn("Delete cascade flush failed", {
-        ids: ids.length,
+        ids: items.length,
         sessions: sessions.length,
         error: err instanceof Error ? err.message : String(err),
       });
+      for (const item of items) pendingDeletes.set(`${item.kind}:${item.id}`, item);
       for (const sessionId of sessions) pendingSessions.add(sessionId);
       throw err;
     } finally {
@@ -188,7 +214,8 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     try { getSearchIndex().remove(id); } catch {}
     try { vectorIndexRemove(id); } catch {}
     const sessionId = scope.startsWith("mem:obs:") ? scope.slice("mem:obs:".length) : undefined;
-    queueDeleteCascade(id, sessionId);
+    const kind = sessionId ? "observation" : scope === KV.lessons ? "lesson" : "memory";
+    queueDeleteCascade({ id, kind, sessionId });
     return Promise.resolve({ removed: id, queued: true });
   });
 
@@ -233,12 +260,18 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
           if (!mark) {
             next.isLatestBefore = target.isLatest;
             next.strengthBefore = target.strength;
+            const wasLatest = target.isLatest === true;
             target.isLatest = false;
             target.strength = target.strength * 0.5;
+            if (wasLatest) {
+              try { getSearchIndex().remove(rel.targetId); } catch {}
+              try { vectorIndexRemove(rel.targetId); } catch {}
+            }
           }
         } else if (rel.type === "contradicts") {
-          if (!mark) next.confidenceBefore = target.confidence;
+          const before = target.confidence;
           target.confidence = Math.max(0.05, target.confidence - (rel.confidence ?? 0.5) * 0.3);
+          next.contradictDeltas = { ...(next.contradictDeltas ?? {}), [relationId]: before - target.confidence };
         } else if (rel.type === "extends") {
           const related = target.relatedIds ?? [];
           if (!related.includes(rel.sourceId)) {
@@ -256,13 +289,26 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
         return { skipped: "no_mark" as const };
       }
       delete mark.sources[relationId];
+      if (rel.type === "contradicts" && mark.contradictDeltas) {
+        const delta = mark.contradictDeltas[relationId];
+        if (delta !== undefined) {
+          target.confidence = Math.min(1, target.confidence + delta);
+          delete mark.contradictDeltas[relationId];
+        }
+      }
       if (Object.keys(mark.sources).length > 0) {
+        await kv.set(KV.memories, rel.targetId, target);
         await kv.set(KV.relationReactions, markKey, mark);
         return { unreacted: false as const, remaining: Object.keys(mark.sources).length };
       }
+      const restoredLatest = mark.isLatestBefore !== undefined && target.isLatest !== true && mark.isLatestBefore === true;
       if (mark.isLatestBefore !== undefined) target.isLatest = mark.isLatestBefore;
       if (mark.strengthBefore !== undefined) target.strength = mark.strengthBefore;
       if (mark.confidenceBefore !== undefined) target.confidence = mark.confidenceBefore;
+      if (restoredLatest) {
+        try { getSearchIndex().add(memoryToObservation(target), "memory"); scheduleIndexSave(); } catch {}
+        try { void vectorIndexAddGuarded(rel.targetId, memoryToObservation(target)); } catch {}
+      }
       if (mark.relatedIdsAdded?.length) {
         const added = new Set(mark.relatedIdsAdded);
         target.relatedIds = (target.relatedIds ?? []).filter((id) => !added.has(id));

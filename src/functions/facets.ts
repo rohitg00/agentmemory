@@ -53,20 +53,14 @@ export async function deleteFacetsForTargets(
 export async function deleteFacetsCascade(
   kv: StateKV,
   targetIds: Iterable<string>,
+  targetType?: string,
 ): Promise<void> {
   const ids = new Set(targetIds);
   ids.delete("");
   if (ids.size === 0) return;
-  try {
-    const all = await kv.list<Facet>(KV.facets);
-    const matches = all.filter((f) => ids.has(f.targetId));
-    await Promise.all(matches.map((f) => kv.delete(KV.facets, f.id)));
-  } catch (err) {
-    logger.warn("Facet cascade cleanup failed", {
-      targetIds: ids.size,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
+  const all = await kv.list<Facet>(KV.facets);
+  const matches = all.filter((f) => ids.has(f.targetId) && (targetType === undefined || f.targetType === targetType));
+  await Promise.all(matches.map((f) => kv.delete(KV.facets, f.id)));
 }
 
 export function registerFacetsFunction(sdk: IIIClient, kv: StateKV): void {

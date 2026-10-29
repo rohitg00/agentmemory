@@ -5,6 +5,7 @@ export interface RelationReactionMark {
   isLatestBefore?: boolean;
   strengthBefore?: number;
   confidenceBefore?: number;
+  contradictDeltas?: Record<string, number>;
   relatedIdsAdded?: string[];
   firstAppliedAt: string;
   lastAppliedAt: string;
