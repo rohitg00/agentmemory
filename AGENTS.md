@@ -72,7 +72,6 @@ getBindings(sdk).http({
 ```
 
 Bindings pick observe (engine `http::on-request` / `state::on-changed` observers) or `registerTrigger` automatically — see `src/runtime/bindings.ts`; force a mode with `AGENTMEMORY_BINDINGS` (`auto` default, `observe`, `trigger`). State subscriptions use `getBindings(sdk).state({ function_id, scope, key?, maxInFlight? })`.
-```
 
 ### MCP Tool Handler
 ```typescript

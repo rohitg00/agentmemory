@@ -80,6 +80,14 @@ export class Bindings {
     return typeof this.sdk.observe !== "function" || process.env.AGENTMEMORY_BINDINGS === "trigger";
   }
 
+  private routeMaxInFlight(): number {
+    const raw = process.env.AGENTMEMORY_ROUTE_MAX_IN_FLIGHT;
+    if (raw === undefined) return 1024;
+    const parsed = Number(raw);
+    if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65536) return 1024;
+    return parsed;
+  }
+
   http(spec: HttpTriggerSpec): void {
     if (this.resolved || this.immediate()) return this.bindHttp(spec);
     this.pending.push({ kind: "http", spec });
@@ -130,7 +138,7 @@ export class Bindings {
         },
       },
       spec.function_id,
-      { id: `agentmemory:route:${method} ${config.api_path}` },
+      { id: `agentmemory:route:${method} ${config.api_path}`, max_in_flight: this.routeMaxInFlight() },
     );
     this.boundHandles.push(handle);
     void handle.ready().catch((err: unknown) => {

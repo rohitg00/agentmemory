@@ -86,6 +86,7 @@ describe("Bindings", () => {
     expect(route.source.args).toEqual({ method: "POST", path: "/agentmemory/x", middleware_function_ids: ["middleware::api-auth"] });
     expect(route.target).toBe("api::x");
     expect(route.options?.id).toBe("agentmemory:route:POST /agentmemory/x");
+    expect(route.options?.max_in_flight).toBe(1024);
     const st = sdk.observed.find((o) => (o.source as { function_id: string }).function_id === "state::on-changed")!;
     expect(st.source.deliver).toBe("input");
     expect(st.source.filters).toEqual({ "input.scope": { $eq: KV.memories } });
@@ -175,6 +176,22 @@ describe("Bindings", () => {
     expect(sdk.registerTrigger).not.toHaveBeenCalled();
     expect(sdk.observed).toHaveLength(1);
     expect(sdk.observed[0].source.function_id).toBe("http::on-request");
+  });
+
+  it("route observer max_in_flight honors AGENTMEMORY_ROUTE_MAX_IN_FLIGHT and falls back on invalid", async () => {
+    process.env.AGENTMEMORY_ROUTE_MAX_IN_FLIGHT = "256";
+    let sdk = fakeSdk(["state::get", "http::x", "http::on-request"]);
+    let b = new Bindings(sdk as never);
+    b.http(ROUTE);
+    await b.activate();
+    expect(sdk.observed[0].options?.max_in_flight).toBe(256);
+    process.env.AGENTMEMORY_ROUTE_MAX_IN_FLIGHT = "abc";
+    sdk = fakeSdk(["state::get", "http::x", "http::on-request"]);
+    b = new Bindings(sdk as never);
+    b.http(ROUTE);
+    await b.activate();
+    expect(sdk.observed[0].options?.max_in_flight).toBe(1024);
+    process.env.AGENTMEMORY_ROUTE_MAX_IN_FLIGHT = undefined;
   });
 
   it("per-sdk singleton", () => {
