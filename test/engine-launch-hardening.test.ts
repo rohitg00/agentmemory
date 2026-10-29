@@ -30,8 +30,8 @@ describe("Worker Compose runtime configuration", () => {
       homeDir: "/home/u",
       linux: false,
     });
-    expect(rendered).toContain("version: '0.22.20'");
-    expect(rendered).toContain("version: '0.22.7'");
+    expect(rendered).toContain("version: '0.22.22'");
+    expect(rendered).toContain("version: '0.22.8'");
     expect(rendered).toContain("save_interval_ms: 2000");
     expect(rendered).toContain("file_path: '/var/lib/agentmemory/state_store.db'");
     expect(rendered).not.toContain("iii-config.yaml");

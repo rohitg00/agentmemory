@@ -87,7 +87,7 @@ describe("mem::export stops assembling once the frame budget is exceeded", () =>
     const kv = countingKV();
     const sdk = mockSdk();
     registerExportImportFunction(sdk as never, kv as never);
-    seedSessions(kv, 10, 6 * MIB);
+    seedSessions(kv, 10, 25 * MIB);
     kv.seed(KV.graphNodes, "n_1", { id: "n_1" });
 
     const result = (await sdk.trigger({ function_id: "mem::export", payload: {} })) as {
@@ -102,14 +102,14 @@ describe("mem::export stops assembling once the frame budget is exceeded", () =>
     expect(obsLists).toHaveLength(3);
     expect(kv.listCalls).not.toContain(KV.graphNodes);
     expect(result.bytes).toBeGreaterThan(SAFE_PAYLOAD_BYTES);
-    expect(result.bytes).toBeLessThan(19 * MIB);
+    expect(result.bytes).toBeLessThan(80 * MIB);
   });
 
   it("never lists later collections once the graph exceeds the limit", async () => {
     const kv = countingKV();
     const sdk = mockSdk();
     registerExportImportFunction(sdk as never, kv as never);
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 70; i++) {
       kv.seed(KV.graphNodes, `n_${i}`, { id: `n_${i}`, name: "g".repeat(MIB) });
     }
 
@@ -147,7 +147,7 @@ describe("mem::export stops assembling once the frame budget is exceeded", () =>
     const sdk = mockSdk();
     registerExportImportFunction(sdk as never, kv as never);
     registerApiTriggers(sdk as never, kv as never, BEARER);
-    seedSessions(kv, 10, 6 * MIB);
+    seedSessions(kv, 10, 25 * MIB);
 
     const resp = (await sdk.fns.get("api::export")!({
       headers: { authorization: `Bearer ${BEARER}` },
@@ -168,7 +168,7 @@ describe("mem::export pages a collection that alone exceeds the frame limit", ()
     registerApiTriggers(sdk as never, kv as never, BEARER);
     seedSessions(kv, 3, 10);
     const ids: string[] = [];
-    for (let i = 0; i < 24; i++) {
+    for (let i = 0; i < 65; i++) {
       ids.push(`ses_${i}`);
       kv.seed(KV.summaries, `ses_${i}`, { sessionId: `ses_${i}`, narrative: "s".repeat(MIB) });
     }
@@ -192,7 +192,7 @@ describe("mem::export pages a collection that alone exceeds the frame limit", ()
 
     const exported: string[] = [];
     let last: Page | undefined;
-    for (const collectionOffset of ["0", "10", "20"]) {
+    for (const collectionOffset of ["0", "10", "20", "30", "40", "50", "60"]) {
       last = await get({ collections: "summaries", collectionLimit: "10", collectionOffset });
       expect(last.status_code).toBe(200);
       expect(payloadByteLength(last.body)).toBeLessThanOrEqual(SAFE_PAYLOAD_BYTES);

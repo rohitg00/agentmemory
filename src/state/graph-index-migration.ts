@@ -129,9 +129,13 @@ function readPage(value: unknown, job: GraphIndexMigration): GraphIndexManifestP
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof GraphIndexMigrationError || error instanceof GraphIndexError
-    ? error.message
-    : "Graph index migration stopped after a storage failure. Check the server and resume when storage is available.";
+  if (error instanceof GraphIndexMigrationError || error instanceof GraphIndexError) return error.message;
+  const base = "Graph index migration stopped after a storage failure. Check the server and resume when storage is available.";
+  const record = error as { code?: unknown; message?: unknown };
+  const detail = typeof record?.code === "string"
+    ? `${record.code}: ${typeof record.message === "string" ? record.message : String(error)}`
+    : typeof record?.message === "string" ? record.message : String(error);
+  return `${base} (${detail.slice(0, 300)})`;
 }
 
 export async function getGraphIndexMigrationStatus(kv: StateKV): Promise<GraphIndexMigrationStatus> {

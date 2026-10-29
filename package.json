@@ -31,6 +31,7 @@
     "test:summary-recovery:packaged": "node scripts/release-gate/summary-recovery.mjs",
     "test:cli-diagnostics:packaged": "node scripts/release-gate/cli-diagnostics.mjs",
     "test:graph-index:packaged": "node scripts/release-gate/graph-index.mjs",
+    "gate:large-store": "node scripts/release-gate/large-store.mjs",
     "test:skills:packaged": "node scripts/release-gate/skills.mjs",
     "test:openclaw:packaged": "node scripts/release-gate/openclaw.mjs",
     "release:gate": "node scripts/release-gate/run.mjs",

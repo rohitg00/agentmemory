@@ -34,4 +34,4 @@ The authenticated REST equivalents are:
 
 Both accept `project`, `agentId`, `limit` and `cursor`; at least `sessionId` or `project` is required. Results contain identifiers, status, safe error codes and counts. They do not return retained source or raw provider errors. A retry result with `success: false` exits the CLI with status 1. Inspect `recovered`, `items[].outcome` and `items[].retryable` for each batch; source-unavailable or concurrently changed rows are not model successes.
 
-Responses also obey the engine's 15 MiB payload allowance. If unusually large imported identifiers exceed it, REST returns HTTP 413 with a small error. Lower `--limit` or select one session. Already completed retries are not repeated when you inspect again.
+Responses also obey the engine's 60 MiB payload allowance. If unusually large imported identifiers exceed it, REST returns HTTP 413 with a small error. Lower `--limit` or select one session. Already completed retries are not repeated when you inspect again.

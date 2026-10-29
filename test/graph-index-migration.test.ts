@@ -333,7 +333,7 @@ describe("explicit graph index migration", () => {
     intercept((fn, payload) => { if (fn === "state::get" && payload.scope === KV.graphRetrievalControl) throw new Error("storage offline"); });
     expect(await controller.status()).toMatchObject({
       state: "unavailable", ready: false,
-      error: "Graph index migration stopped after a storage failure. Check the server and resume when storage is available.",
+      error: "Graph index migration stopped after a storage failure. Check the server and resume when storage is available. (storage offline)",
     });
     await expect(controller.start({ allowLegacyScan: true })).rejects.toThrow("storage offline");
     expect(calls.some((call) => call.fn === "state::set" || call.fn === "state::list")).toBe(false);
@@ -341,6 +341,20 @@ describe("explicit graph index migration", () => {
     await controller.start({ allowLegacyScan: true }); await controller.waitForIdle();
     expect(await controller.status()).toMatchObject({ ready: true, nodes: 1 });
     expect((await controller.status()).jobId).not.toBe(old);
+  });
+
+  it("appends the underlying storage error code and message, truncated to 300 chars", async () => {
+    const { controller, intercept } = setup();
+    const transportError = Object.assign(new Error("Serialized JSON envelope is too large"), { code: "payload_too_large" });
+    intercept((fn, payload) => { if (fn === "state::get" && payload.scope === KV.graphRetrievalControl) throw transportError; });
+    const status = await controller.status();
+    expect(status).toMatchObject({ state: "unavailable", ready: false });
+    expect(status.error).toContain("resume when storage is available. (payload_too_large: Serialized JSON envelope is too large)");
+    intercept((fn, payload) => { if (fn === "state::get" && payload.scope === KV.graphRetrievalControl) throw Object.assign(new Error("x".repeat(500)), { code: "boom" }); });
+    const truncated = await controller.status();
+    expect(truncated.error).toContain("boom: ");
+    expect(truncated.error!.length).toBeLessThanOrEqual("Graph index migration stopped after a storage failure. Check the server and resume when storage is available. ()".length + 300);
+    expect(truncated.error).not.toContain("x".repeat(301));
   });
 
   it("fails closed for corrupt descriptors and oversized legacy IDs", async () => {

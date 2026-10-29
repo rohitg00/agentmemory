@@ -36,6 +36,7 @@ import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, runStartupCleanup, settleWithin } from "./shutdown.js";
 import { registerPrivacyFunction, withWriteScrubbing } from "./functions/privacy.js";
+import { withRegistrationDefaults } from "./runtime/registration.js";
 import { registerObserveFunction } from "./functions/observe.js";
 import { registerCaptureFunctions } from "./functions/capture.js";
 import { registerImageQuotaCleanup } from "./functions/image-quota-cleanup.js";
@@ -230,7 +231,7 @@ async function main() {
     `REST API: http://localhost:${config.restPort}/agentmemory/*`,
   );
 
-  const sdk = withWriteScrubbing(registerWorker(config.engineUrl, {
+  const sdk = withWriteScrubbing(withRegistrationDefaults(registerWorker(config.engineUrl, {
     workerName: "agentmemory",
     invocationTimeoutMs: 180000,
     otel: {
@@ -250,7 +251,7 @@ async function main() {
       language: "node",
       framework: "iii-sdk",
     },
-  }));
+  })));
 
   writeWorkerPidfile();
 
