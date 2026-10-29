@@ -163,7 +163,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
       const budget = new ExportBudget();
       const refuse = (collection: string) => {
-        logger.warn("Export exceeds transport frame limit", {
+        logger.warn("Export exceeds transport message limit", {
           bytesSoFar: budget.bytes,
           collection,
         });
@@ -271,7 +271,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
       const oversized = checkPayloadFrameSize(exportData, EXPORT_OVERSIZE_HINT);
       if (oversized) {
-        logger.warn("Export exceeds transport frame limit", {
+        logger.warn("Export exceeds transport message limit", {
           bytes: oversized.bytes,
         });
         return oversized;

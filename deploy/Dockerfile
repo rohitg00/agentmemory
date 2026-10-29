@@ -1,8 +1,8 @@
 # Shared build for local Compose and every deployment platform.
 # Update these four pins together when promoting the runtime.
 ARG III_VERSION=0.25.0
-ARG STATE_VERSION=0.22.20
-ARG HTTP_VERSION=0.22.7
+ARG STATE_VERSION=0.22.22
+ARG HTTP_VERSION=0.22.8
 
 FROM node:24-slim AS agent-build
 ARG III_VERSION

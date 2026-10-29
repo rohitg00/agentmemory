@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **`AGENTMEMORY_LOCAL_DISPATCH` runtime switch.** iii 0.25 runs a worker's calls to its own functions in-process by default, so AgentMemory's internal calls produce only the SDK's execute span and skip the engine round trip. Set `AGENTMEMORY_LOCAL_DISPATCH=false` for full engine call spans at the cost of a round trip per call.
+- **`npm run gate:large-store`**, a release-gate harness that seeds `mem:semantic`, `mem:graph:nodes`, `mem:graph:edges`, `mem:insights` and `mem:sessions` to configurable sizes directly through the engine, then measures the semantic, insights, sessions, counts, graph-index migration, export and mesh-export probes against a real Compose runtime. `--small` selects CI-friendly sizes; `--state-version`/`--http-version` allow A/B runs against different registry worker pins and `--assert` turns it into a gate.
+- **`--repeat N` for the startup release gate**, which runs the whole scenario suite N times in fresh temp dirs and reports a per-run pass/fail summary.
+
+### Changed
+
+- **Registry worker pins move to `state@0.22.22` and `http@0.22.8`.** Both are built on iii-sdk 0.25.0, which fragments engine transport messages up to 64 MiB; the previous 0.22.20/0.22.7 workers cap outgoing messages at 16 MiB, so whole-scope state reads beyond that failed. The payload guard (`SAFE_PAYLOAD_BYTES`) rises to 60 MiB and its error now names the engine transport message limit.
+
+### Fixed
+
+- **Graph index migration errors now include the underlying cause** (#1617). The friendly "storage failure" sentence is kept and the original `code: message` detail is appended (truncated to 300 chars), so a `payload_too_large` rejection or similar storage error is visible instead of hidden.
+
 ## [0.9.31] — 2026-10-25
 ### Upgrade notes
 
