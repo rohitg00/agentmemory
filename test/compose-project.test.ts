@@ -48,13 +48,11 @@ describe("Worker Compose project", () => {
     for (const retired of ["iii-stream", "iii-pubsub", "iii-http", "iii-state", "queue"]) expect(text).not.toContain(retired);
   });
 
-  it("quotes worker shell commands correctly on POSIX and Windows", () => {
+  it("quotes worker shell commands correctly on POSIX", () => {
     const weird = "/tmp/Program Files/worker 'one';$(touch /tmp/should-not-exist)";
-    const posix = shellCommand(weird, ["arg with spaces", "x;$()|&<>*?[]\\\""], false);
+    const posix = shellCommand(weird, ["arg with spaces", "x;$()|&<>*?[]\\\""]);
     expect(posix).toContain(`\'"\'"\'`);
-    expect(shellQuote("C:\\Program Files\\Worker & Tools\\node.exe", true)).toBe(`"C:\\Program Files\\Worker & Tools\\node.exe"`);
-    expect(shellCommand("C:\\Program Files\\Node Runtime\\node.exe", ["dist/index.mjs"], true)).toBe(`""C:\\Program Files\\Node Runtime\\node.exe" "dist/index.mjs""`);
-    expect(shellQuote("100%", true)).toBe('"100%%"');
+    expect(shellQuote("C:\\Program Files\\Worker & Tools\\node.exe")).toBe(`'C:\\Program Files\\Worker & Tools\\node.exe'`);
   });
 
   it("executes generated commands through sh -c even with spaces and metacharacters", () => {
@@ -80,7 +78,7 @@ describe("Worker Compose project", () => {
       expect(status).toBe(0);
       expect(stdout).toBe(key === "agentmemory" ? "dist/index.mjs" : `${bin}\n`);
     }
-    const command = shellCommand(node, ["value with spaces;$(false)"], false);
+    const command = shellCommand(node, ["value with spaces;$(false)"]);
     const result = spawnSync("sh", ["-c", command], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("value with spaces;$(false)");

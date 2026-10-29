@@ -86,3 +86,24 @@ jobs:
             ${{ runner.temp }}/graph-index-gate
           if-no-files-found: ignore
           retention-days: 14
+
+  windows-smoke:
+    name: windows smoke
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
+      - run: node scripts/release-gate/windows-smoke.mjs --out "${{ runner.temp }}/windows-smoke"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-smoke
+          path: ${{ runner.temp }}/windows-smoke
+          if-no-files-found: ignore
+          retention-days: 14
