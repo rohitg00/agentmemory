@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, beforeEach } from "vitest";
 import { withRegistrationDefaults } from "../src/runtime/registration.js";
 
 function fakeSdk() {
@@ -16,11 +16,18 @@ function fakeSdk() {
   };
 }
 
+const originalLocalDispatch = process.env.AGENTMEMORY_LOCAL_DISPATCH;
+
 afterEach(() => {
-  delete process.env.AGENTMEMORY_LOCAL_DISPATCH;
+  if (originalLocalDispatch === undefined) delete process.env.AGENTMEMORY_LOCAL_DISPATCH;
+  else process.env.AGENTMEMORY_LOCAL_DISPATCH = originalLocalDispatch;
 });
 
 describe("withRegistrationDefaults", () => {
+  beforeEach(() => {
+    delete process.env.AGENTMEMORY_LOCAL_DISPATCH;
+  });
+
   it("passes registerFunction options through unchanged when the env is unset", () => {
     const sdk = fakeSdk();
     const wrapped = withRegistrationDefaults(sdk);

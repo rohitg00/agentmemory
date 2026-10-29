@@ -364,7 +364,7 @@ function scanLogs() {
   return findings;
 }
 
-let seeded = {}, workersBefore = [], workersAfter = [], workerReregistered = false, logFindings = {}, migrateFinal;
+let seeded = {}, workersBefore = [], workersAfter = [], workerObserved = false, workerReregistered = false, logFindings = {}, migrateFinal;
 try {
   await install();
   engine = await ensureEngine();
@@ -384,7 +384,10 @@ try {
   seeded = await seed();
   console.log(JSON.stringify({ name: "seeded", scopes: seeded, totalMs: Math.round(performance.now() - seedStart) }));
   await startWorker();
-  workersBefore = await agentmemoryWorkers();
+  workersBefore = await poll("agentmemory worker registration", async () => {
+    const listed = await agentmemoryWorkers();
+    return listed.some((worker) => worker.id) ? listed : false;
+  }, 60_000);
 
   await probe("semantic", "/semantic?limit=50");
   await probe("insights", "/insights?limit=50");
@@ -420,7 +423,8 @@ try {
   workersAfter = await agentmemoryWorkers();
   const ids = (list) => list.filter((worker) => worker.id).map((worker) => worker.id);
   const before = ids(workersBefore), after = ids(workersAfter);
-  workerReregistered = before.length !== after.length || before.some((id) => !after.includes(id)) || after.some((id) => !before.includes(id));
+  workerObserved = before.length > 0 && after.length > 0 && !workersAfter.some((worker) => worker.error);
+  workerReregistered = !workerObserved || before.length !== after.length || before.some((id) => !after.includes(id)) || after.some((id) => !before.includes(id));
   logFindings = scanLogs();
 } catch (error) {
   fatal = error.stack ?? String(error);
@@ -447,7 +451,7 @@ const summary = {
   probes,
   failedProbes: probeFailed.map((entry) => entry.name),
   migrate: migrateFinal,
-  stability: { workersBefore, workersAfter, workerReregistered },
+  stability: { workersBefore, workersAfter, workerObserved, workerReregistered },
   logFindings,
   fatal,
 };
@@ -457,7 +461,7 @@ for (const entry of probes) {
   const mib = entry.bytes !== undefined ? (entry.bytes / (1024 * 1024)).toFixed(1) : "-";
   console.log(`${entry.name.padEnd(24)} ${String(entry.status ?? entry.state ?? "-").padEnd(8)} ${String(entry.latencyMs ?? entry.elapsedMs ?? "-").padEnd(9)} ${mib.padEnd(8)} ${entry.error ?? ""}`);
 }
-console.log(`workerReregistered: ${workerReregistered}  payload_too_large hits: ${logFindings.payload_too_large ?? 0}  WS_ERR hits: ${logFindings.WS_ERR_UNSUPPORTED_MESSAGE_LENGTH ?? 0}`);
+console.log(`workerObserved: ${workerObserved}  workerReregistered: ${workerReregistered}  payload_too_large hits: ${logFindings.payload_too_large ?? 0}  WS_ERR hits: ${logFindings.WS_ERR_UNSUPPORTED_MESSAGE_LENGTH ?? 0}`);
 console.log(`Results: ${join(root, "results.json")}`);
 const assertFailed = options.assert && (fatal || probeFailed.length > 0 || (migrateFinal && !migrateOk) || workerReregistered);
 process.exit(fatal ? 1 : assertFailed ? 1 : 0);

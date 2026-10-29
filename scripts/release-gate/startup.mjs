@@ -39,10 +39,22 @@ if (options.repeat) {
   mkdirSync(repeatOut, { recursive: true });
   console.log(`Repeat runs: ${repeatOut}`);
   const runs = [];
-  for (let run = 1; run <= options.repeat; run++) {
+  const active = new Set();
+  let interrupted = null;
+  const forward = (signal) => {
+    const escalate = interrupted !== null;
+    interrupted = signal;
+    for (const pid of active) {
+      try { process.kill(-pid, escalate ? "SIGKILL" : "SIGTERM"); } catch {}
+    }
+  };
+  process.on("SIGINT", () => forward("SIGINT"));
+  process.on("SIGTERM", () => forward("SIGTERM"));
+  process.on("SIGHUP", () => forward("SIGHUP"));
+  for (let run = 1; run <= options.repeat && !interrupted; run++) {
     const runOut = join(repeatOut, `run-${run}`);
     console.log(`\n=== run ${run}/${options.repeat}: ${runOut} ===`);
-    const result = await runCommand(process.execPath, [self, ...childArgs, "--out", runOut], { env: process.env, cwd: repo, timeoutMs: 3_600_000 });
+    const result = await runCommand(process.execPath, [self, ...childArgs, "--out", runOut], { env: process.env, cwd: repo, timeoutMs: 3_600_000, children: active });
     process.stdout.write(result.output);
     let summary;
     try { summary = JSON.parse(readFileSync(join(runOut, "summary.json"), "utf8")); } catch {}
@@ -53,8 +65,8 @@ if (options.repeat) {
   }
   console.log("\nrun  result  passed  out");
   for (const r of runs) console.log(`${String(r.run).padEnd(5)} ${(r.ok ? "pass" : "fail").padEnd(7)} ${`${r.passed}/${r.total}`.padEnd(7)} ${r.out}`);
-  writeFileSync(join(repeatOut, "repeat-summary.json"), JSON.stringify({ repeat: options.repeat, runs }, null, 2) + "\n");
-  process.exit(runs.every((r) => r.ok) ? 0 : 1);
+  writeFileSync(join(repeatOut, "repeat-summary.json"), JSON.stringify({ repeat: options.repeat, runs, interrupted }, null, 2) + "\n");
+  process.exit(interrupted ? 130 : runs.every((r) => r.ok) ? 0 : 1);
 }
 const root = mkdtempSync(join(tmpdir(), "am-startup-"));
 const out = options.out ?? mkdtempSync(join(tmpdir(), "agentmemory-startup-gate-"));
