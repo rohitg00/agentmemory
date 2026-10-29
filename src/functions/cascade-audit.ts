@@ -8,6 +8,7 @@ import { recordAudit } from "./audit.js";
 import { deleteFacetsCascade } from "./facets.js";
 import { getSearchIndex, vectorIndexRemove } from "./search.js";
 import { singleFlight } from "../runtime/recovery.js";
+import { logger } from "../logger.js";
 
 const FAILURE_OPS: Record<string, AuditEntry["operation"]> = {
   "mem::compress": "compress-failed",
@@ -89,14 +90,21 @@ const pendingSessions = new Set<string>();
 let deleteTimer: ReturnType<typeof setTimeout> | null = null;
 let deleteFlusher: (() => Promise<void>) | null = null;
 
+function scheduleDeleteFlush(): void {
+  if (deleteTimer) return;
+  deleteTimer = setTimeout(() => { deleteTimer = null; void flushDeleteCascade().catch(() => reportFlushFailure()); }, DELETE_BATCH_MS);
+  deleteTimer.unref();
+}
+
+function reportFlushFailure(): void {
+  scheduleDeleteFlush();
+}
+
 function queueDeleteCascade(id: string, sessionId?: string): void {
   pendingDeletes.add(id);
   if (sessionId) pendingSessions.add(sessionId);
-  if (pendingDeletes.size >= DELETE_BATCH_MAX) void flushDeleteCascade();
-  else if (!deleteTimer) {
-    deleteTimer = setTimeout(() => { deleteTimer = null; void flushDeleteCascade(); }, DELETE_BATCH_MS);
-    deleteTimer.unref();
-  }
+  if (pendingDeletes.size >= DELETE_BATCH_MAX) void flushDeleteCascade().catch(() => reportFlushFailure());
+  else scheduleDeleteFlush();
 }
 
 export async function flushDeleteCascade(): Promise<void> {
@@ -112,22 +120,34 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     pendingDeletes.clear();
     pendingSessions.clear();
     if (ids.length === 0 && sessions.length === 0) return;
-    await deleteFacetsCascade(kv, ids);
-    const reconciled: string[] = [];
-    for (const sessionId of sessions) {
-      const keys = await kv.listKeys(KV.observations(sessionId));
-      const session = await kv.get<Session>(KV.sessions, sessionId);
-      if (session && keys.length !== session.observationCount) {
-        await kv.update<Session>(KV.sessions, sessionId, [
-          { type: "set", path: "observationCount", value: keys.length },
-        ]);
-        reconciled.push(sessionId);
+    try {
+      await deleteFacetsCascade(kv, ids);
+      const reconciled: string[] = [];
+      for (const sessionId of sessions) {
+        const keys = await kv.listKeys(KV.observations(sessionId));
+        const session = await kv.get<Session>(KV.sessions, sessionId);
+        if (session && keys.length !== session.observationCount) {
+          await kv.update<Session>(KV.sessions, sessionId, [
+            { type: "set", path: "observationCount", value: keys.length },
+          ]);
+          reconciled.push(sessionId);
+        }
       }
+      await recordAudit(kv, "cascade", "mem::on-record-deleted", ids.slice(0, 20), {
+        batched: ids.length,
+        sessionsReconciled: reconciled,
+      });
+    } catch (err) {
+      logger.warn("Delete cascade flush failed", {
+        ids: ids.length,
+        sessions: sessions.length,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      for (const sessionId of sessions) pendingSessions.add(sessionId);
+      throw err;
+    } finally {
+      if (pendingDeletes.size > 0 || pendingSessions.size > 0) scheduleDeleteFlush();
     }
-    await recordAudit(kv, "cascade", "mem::on-record-deleted", ids.slice(0, 20), {
-      batched: ids.length,
-      sessionsReconciled: reconciled,
-    });
   });
   sdk.registerFunction("mem::record-failure", async (envelope: Record<string, unknown>) => {
     const meta = envelope.metadata as { function_id?: string; source_fn?: string; observer_id?: string } | undefined;

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { registerCascadeFunctions, failureCounters } from "../src/functions/cascade-audit.js";
+import { registerCascadeFunctions, failureCounters, flushDeleteCascade } from "../src/functions/cascade-audit.js";
 import { registerPipelineObservers } from "../src/runtime/pipeline-observers.js";
 import { getBindings } from "../src/runtime/bindings.js";
 import { KV } from "../src/state/schema.js";
@@ -12,6 +12,10 @@ vi.mock("../src/logger.js", () => ({
 const audits: Array<Record<string, unknown>> = [];
 vi.mock("../src/functions/audit.js", () => ({
   recordAudit: vi.fn(async (_kv: unknown, operation: string, functionId: string, targetIds: string[], details: Record<string, unknown>) => {
+    audits.push({ operation, functionId, targetIds, details });
+    return { id: "aud_x" };
+  }),
+  safeAudit: vi.fn(async (_kv: unknown, operation: string, functionId: string, targetIds: string[], details: Record<string, unknown>) => {
     audits.push({ operation, functionId, targetIds, details });
     return { id: "aud_x" };
   }),
@@ -231,5 +235,83 @@ describe("event::graph::edge-reaction", () => {
     kv.store[KV.memories].delete("tgt");
     const r = await fn(created("rA"));
     expect(r).toMatchObject({ skipped: "missing_target" });
+  });
+});
+
+describe("mem::relate lock safety", () => {
+  it("resolves when sourceId === targetId and a follow-up relate resolves", async () => {
+    const { registerRelationsFunction } = await import("../src/functions/relations.js");
+    const sdk = fakeFns();
+    const kv = memoryKv({
+      [KV.memories]: new Map([["m1", { id: "m1", relatedIds: [], sessionIds: [], concepts: [], files: [] }]]),
+      [KV.relations]: new Map(),
+    });
+    registerRelationsFunction(sdk as never, kv as never);
+    const fn = sdk.functions.get("mem::relate")!;
+    const timed = (p: Promise<unknown>) =>
+      Promise.race([p, new Promise((_, rj) => setTimeout(() => rj(new Error("deadlock")), 2000))]);
+    const r1 = await timed(fn({ sourceId: "m1", targetId: "m1", type: "extends" }));
+    expect(r1).toMatchObject({ success: true });
+    const r2 = await timed(fn({ sourceId: "m1", targetId: "m1", type: "contradicts" }));
+    expect(r2).toMatchObject({ success: true });
+  });
+});
+
+describe("delete cascade batcher resilience", () => {
+  function seededDelete() {
+    const sdk = fakeFns();
+    const kv = memoryKv({
+      [KV.sessions]: new Map([
+        ["s1", { id: "s1", observationCount: 5 }],
+        ["s2", { id: "s2", observationCount: 3 }],
+      ]),
+      [KV.observations("s1")]: new Map([["o1", {}], ["o2", {}]]),
+      [KV.observations("s2")]: new Map([["o3", {}]]),
+      [KV.facets]: new Map(),
+    });
+    registerCascadeFunctions(sdk as never, kv as never);
+    return { kv, fn: sdk.functions.get("mem::on-record-deleted")! };
+  }
+
+  it("a failed flush logs, requeues sessions, and reconciles on the next flush", async () => {
+    const { kv, fn } = seededDelete();
+    const rejections: unknown[] = [];
+    const onRej = (e: unknown) => { rejections.push(e); };
+    process.on("unhandledRejection", onRej);
+    try {
+      kv.listKeys.mockRejectedValueOnce(new Error("state worker restarting"));
+      await fn({ event_type: "state:deleted", scope: "mem:obs:s1", key: "o9" });
+      await flushDeleteCascade().catch(() => {});
+      expect(rejections).toEqual([]);
+      await flushDeleteCascade();
+      expect(kv.update).toHaveBeenCalledWith(KV.sessions, "s1", [
+        { type: "set", path: "observationCount", value: 2 },
+      ]);
+    } finally {
+      process.off("unhandledRejection", onRej);
+    }
+  });
+
+  it("items queued during an in-flight flush are drained by the next batch", async () => {
+    vi.useFakeTimers();
+    try {
+      const { kv, fn } = seededDelete();
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      kv.list.mockImplementationOnce(() => gate.then(() => []));
+      await fn({ event_type: "state:deleted", scope: "mem:obs:s1", key: "o1" });
+      await vi.advanceTimersByTimeAsync(600);
+      await fn({ event_type: "state:deleted", scope: "mem:obs:s2", key: "o3" });
+      release();
+      await vi.advanceTimersByTimeAsync(600);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(kv.update).toHaveBeenCalledWith(KV.sessions, "s2", [
+        { type: "set", path: "observationCount", value: 1 },
+      ]);
+      const cascades = audits.filter((a) => a.operation === "cascade");
+      expect(cascades.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
