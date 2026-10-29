@@ -418,7 +418,26 @@ try {
   console.log(JSON.stringify(migrateFinal));
 
   await probe("export", "/export");
-  await probe("mesh-export", "/mesh/export");
+  {
+    const started = performance.now();
+    let cursor, pages = 0, totalBytes = 0, lastStatus = 0, meshError;
+    do {
+      const res = await response(`/mesh/export${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+      lastStatus = res.status;
+      const text = await res.text();
+      totalBytes += text.length;
+      pages++;
+      let json;
+      try { json = JSON.parse(text); } catch {}
+      cursor = json?.nextCursor;
+      if (!res.ok) { meshError = `HTTP ${res.status}: ${text.slice(0, 300)}`; break; }
+      if (pages > 200) { meshError = "pagination did not terminate"; break; }
+    } while (cursor);
+    const result = { name: "mesh-export", method: "GET", path: "/mesh/export (paged)", status: lastStatus, bytes: totalBytes, pages, latencyMs: Math.round(performance.now() - started), ...(meshError ? { error: meshError } : {}) };
+    result.ok = lastStatus >= 200 && lastStatus < 300 && !meshError;
+    probes.push(result);
+    console.log(JSON.stringify(result));
+  }
 
   workersAfter = await agentmemoryWorkers();
   const ids = (list) => list.filter((worker) => worker.id).map((worker) => worker.id);

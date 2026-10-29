@@ -12,6 +12,7 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import {
   GRAPH_EXTRACTION_SYSTEM,
@@ -21,7 +22,6 @@ import { isGraphExtractionEnabled } from "../config.js";
 import { recordAudit, safeAudit } from "./audit.js";
 import { logger } from "../logger.js";
 import { scrubRecord } from "./privacy.js";
-
 const DEFAULT_GRAPH_QUERY_LIMIT = 500;
 
 const SNAPSHOT_TOP_NODES = DEFAULT_GRAPH_QUERY_LIMIT;
@@ -876,8 +876,8 @@ export function registerGraphFunction(
         const outcome = await withKeyedLock("graph:persist", async () => {
           const [nodes, edges] = await withTimeout(
             Promise.all([
-              kv.list<GraphNode>(KV.graphNodes),
-              kv.list<GraphEdge>(KV.graphEdges),
+              collectAll<GraphNode>(kv, KV.graphNodes),
+              collectAll<GraphEdge>(kv, KV.graphEdges),
             ]),
             LIVE_ENUMERATION_BUDGET_MS,
             "graph-snapshot-rebuild enumeration",

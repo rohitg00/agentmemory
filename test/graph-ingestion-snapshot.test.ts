@@ -37,6 +37,7 @@ async function setup() {
       const rows = store.get(payload.scope) ?? new Map<string, unknown>();
       if (id === "state::get") return structuredClone(rows.get(payload.key) ?? null);
       if (id === "state::list") return structuredClone([...rows.values()]);
+      if (id === "state::list_keys") return { keys: [...rows.keys()] };
       if (id === "state::delete") { rows.delete(payload.key); return; }
       if (id === "state::set") {
         rows.set(payload.key, structuredClone(payload.value));

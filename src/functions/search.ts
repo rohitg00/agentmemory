@@ -3,7 +3,7 @@ import type { GraphObservationAuthorization } from "./graph-retrieval.js";
 import type { IndexPersistenceStatus } from "../state/index-persistence.js";
 import type { CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
-import { StateKV } from '../state/kv.js'
+import { StateKV, collectAll } from '../state/kv.js'
 import { getSearchResultLayer, isSearchLayer, matchesSearchLayer, type SearchLayer, type SearchResultLayer } from "../state/search-layer.js";
 import { SearchIndex, type SearchIndexRevision } from '../state/search-index.js'
 import { VectorIndex } from '../state/vector-index.js'
@@ -469,7 +469,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   let memories: Memory[] = []
   let memoriesLoaded = false
   try {
-    memories = await kv.list<Memory>(KV.memories)
+    memories = await collectAll<Memory>(kv, KV.memories)
     memoriesLoaded = true
   } catch (err) {
     logger.warn('rebuildIndex: failed to load memories', {
@@ -595,7 +595,7 @@ async function runKeywordRebuild(
   let documents = 0
   let memoriesLoaded = false
   try {
-    const memories = await kv.list<Memory>(KV.memories)
+    const memories = await collectAll<Memory>(kv, KV.memories)
     memoriesLoaded = true
     for (const memory of memories) {
       if (memory.isLatest === false) continue

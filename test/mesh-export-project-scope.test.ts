@@ -63,11 +63,12 @@ function memory(id: string, project: string, content = "x"): Memory {
 async function meshExport(
   sdk: ReturnType<typeof mockSdk>,
   project?: string,
+  extra?: Record<string, string>,
 ): Promise<{ status_code: number; body: Record<string, unknown> }> {
   const handler = sdk._fns.get("api::mesh-export")!;
   return handler({
     headers: { authorization: `Bearer ${SECRET}` },
-    query_params: project ? { project } : {},
+    query_params: { ...(project ? { project } : {}), ...extra },
   });
 }
 
@@ -125,5 +126,46 @@ describe("api::mesh-export project scoping", () => {
     const unscoped = await meshExport(sdk);
     expect(unscoped.status_code).toBe(413);
     expect((unscoped.body as { oversized?: boolean }).oversized).toBe(true);
+  });
+});
+
+describe("api::mesh-export cursor paging", () => {
+  it("does not skip surviving rows when a row is deleted between pages", async () => {
+    const kv = mockKV();
+    for (const id of ["m-1", "m-2", "m-3", "m-4", "m-5"]) {
+      await kv.set(KV.memories, id, memory(id, "alpha"));
+    }
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const res = await meshExport(sdk, "alpha", { limit: "2", ...(cursor ? { cursor } : {}) });
+      expect(res.status_code).toBe(200);
+      seen.push(...(res.body.memories as Memory[]).map((m) => m.id));
+      cursor = res.body.nextCursor as string | undefined;
+      if (seen.length === 2) kv._store.get(KV.memories)!.delete("m-1");
+      if (!cursor) break;
+    }
+    expect(seen.sort()).toEqual(["m-1", "m-2", "m-3", "m-4", "m-5"]);
+    expect(new Set(seen).size).toBe(5);
+  });
+
+  it("rejects an invalid cursor with 400", async () => {
+    const kv = mockKV();
+    await kv.set(KV.memories, "m-1", memory("m-1", "alpha"));
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+
+    const bad = await meshExport(sdk, "alpha", { cursor: "not-a-cursor" });
+    expect(bad.status_code).toBe(400);
+    expect((bad.body as { error?: string }).error).toBe("invalid_cursor");
+
+    const outOfRange = await meshExport(sdk, "alpha", {
+      cursor: Buffer.from(JSON.stringify({ c: 99, after: "m-1" })).toString("base64url"),
+    });
+    expect(outOfRange.status_code).toBe(400);
+    expect((outOfRange.body as { error?: string }).error).toBe("invalid_cursor");
   });
 });

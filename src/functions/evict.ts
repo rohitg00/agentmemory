@@ -8,7 +8,7 @@ import type {
   Memory,
 } from "../types.js";
 import { KV } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
@@ -332,7 +332,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
         }
       }
 
-      const memories = await kv.list<Memory>(KV.memories).catch(() => []);
+      const memories = await collectAll<Memory>(kv, KV.memories).catch(() => []);
       const evictedMemIds = new Set<string>();
       const deletedMemIds = new Set<string>();
       try {

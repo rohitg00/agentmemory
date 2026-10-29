@@ -2,7 +2,7 @@ import type { IIIClient } from "iii-sdk";
 import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { recordAudit } from "./audit.js";
@@ -39,7 +39,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
         dryRun,
       };
 
-      const memories = await kv.list<Memory>(KV.memories);
+      const memories = await collectAll<Memory>(kv, KV.memories);
       const deletedIds = new Set<string>();
       const facetIds = new Set<string>();
       try {

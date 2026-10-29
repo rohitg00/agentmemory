@@ -28,7 +28,7 @@ import { importOrigin } from "../types.js";
 import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize, oversizedPayloadError, payloadByteLength, SAFE_PAYLOAD_BYTES } from "../state/frame-guard.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import {
   addSessionToProjectIndex,
   removeSessionFromProjectIndex,
@@ -172,9 +172,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           stoppedAt: collection,
         };
       };
-      const optional = async <T>(scope: string): Promise<T[]> =>
-        kv.list<T>(scope).catch(() => [] as T[]);
-
       const allSessions = await kv.list<Session>(KV.sessions);
       const sessionWindow = maxSessions !== undefined
         ? allSessions.slice(offset, offset + maxSessions)
@@ -182,7 +179,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       const paginatedSessions = isSelected("sessions") ? sessionWindow : [];
       if (!budget.fits(paginatedSessions)) return refuse("sessions");
 
-      const memories = sliceCollection("memories", await kv.list<Memory>(KV.memories));
+      const memories = sliceCollection("memories", await collectAll<Memory>(kv, KV.memories));
       if (!budget.fits(memories)) return refuse("memories");
 
       const summaries = sliceCollection(
@@ -193,9 +190,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
       const observations: Record<string, CompressedObservation[]> = {};
       for (const session of paginatedSessions) {
-        const obs = await optional<CompressedObservation>(
-          KV.observations(session.id),
-        );
+        const obs = await collectAll<CompressedObservation>(kv, KV.observations(session.id));
         if (obs.length === 0) continue;
         if (!budget.fits(obs, session.id)) return refuse("observations");
         observations[session.id] = obs;
@@ -222,7 +217,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       };
       const collections: Partial<ExportData> = {};
       for (const [field, scope] of EXPORT_COLLECTIONS) {
-        const rows = await optional<unknown>(scope);
+        const rows = await collectAll<unknown>(kv, scope);
         const items =
           field === "accessLogs" && partial
             ? accessLogsFor(rows as AccessLogExport[])
@@ -480,9 +475,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
               session.project,
               session.id,
             ).catch(() => {});
-            const obs = await kv
-              .list<CompressedObservation>(KV.observations(session.id))
-              .catch(() => []);
+            const obs = await collectAll<CompressedObservation>(kv, KV.observations(session.id));
             for (const o of obs) {
               obsDeletes.push({ sessionId: session.id, obsId: o.id, captureKey: o.captureKey });
             }
@@ -492,71 +485,71 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
             await kv.delete(KV.observations(d.sessionId), d.obsId);
             await unindexObservationSession(kv, d.obsId).catch(() => {});
           });
-          await runChunked(await kv.list<Memory>(KV.memories), (m) =>
+          await runChunked(await collectAll<Memory>(kv, KV.memories), (m) =>
             kv.delete(KV.memories, m.id),
           );
           await runChunked(
             await kv.list<SessionSummary>(KV.summaries),
             (s) => kv.delete(KV.summaries, s.sessionId),
           );
-          await runChunked(await kv.list<Action>(KV.actions).catch(() => []), (a) =>
+          await runChunked(await kv.list<Action>(KV.actions), (a) =>
             kv.delete(KV.actions, a.id),
           );
           await runChunked(
-            await kv.list<ActionEdge>(KV.actionEdges).catch(() => []),
+            await kv.list<ActionEdge>(KV.actionEdges),
             (e) => kv.delete(KV.actionEdges, e.id),
           );
           await runChunked(
-            await kv.list<Routine>(KV.routines).catch(() => []),
+            await kv.list<Routine>(KV.routines),
             (r) => kv.delete(KV.routines, r.id),
           );
           await runChunked(
-            await kv.list<Signal>(KV.signals).catch(() => []),
+            await kv.list<Signal>(KV.signals),
             (s) => kv.delete(KV.signals, s.id),
           );
           await runChunked(
-            await kv.list<Checkpoint>(KV.checkpoints).catch(() => []),
+            await kv.list<Checkpoint>(KV.checkpoints),
             (c) => kv.delete(KV.checkpoints, c.id),
           );
           await runChunked(
-            await kv.list<Sentinel>(KV.sentinels).catch(() => []),
+            await kv.list<Sentinel>(KV.sentinels),
             (s) => kv.delete(KV.sentinels, s.id),
           );
           await runChunked(
-            await kv.list<Sketch>(KV.sketches).catch(() => []),
+            await kv.list<Sketch>(KV.sketches),
             (s) => kv.delete(KV.sketches, s.id),
           );
           await runChunked(
-            await kv.list<Crystal>(KV.crystals).catch(() => []),
+            await kv.list<Crystal>(KV.crystals),
             (c) => kv.delete(KV.crystals, c.id),
           );
           await runChunked(
-            await kv.list<Facet>(KV.facets).catch(() => []),
+            await kv.list<Facet>(KV.facets),
             (f) => kv.delete(KV.facets, f.id),
           );
           await runChunked(
-            await kv.list<Lesson>(KV.lessons).catch(() => []),
+            await kv.list<Lesson>(KV.lessons),
             (l) => kv.delete(KV.lessons, l.id),
           );
           resetLessonIndex();
           await runChunked(
-            await kv.list<Insight>(KV.insights).catch(() => []),
+            await collectAll<Insight>(kv, KV.insights),
             (i) => kv.delete(KV.insights, i.id),
           );
           await runChunked(
-            await kv.list<{ id: string }>(KV.semantic).catch(() => []),
+            await collectAll<{ id: string }>(kv, KV.semantic),
             (s) => kv.delete(KV.semantic, s.id),
           );
           await runChunked(
-            await kv.list<{ id: string }>(KV.procedural).catch(() => []),
+            await collectAll<{ id: string }>(kv, KV.procedural),
             (p) => kv.delete(KV.procedural, p.id),
           );
           await runChunked(
-            await kv.list<ProjectProfile>(KV.profiles).catch(() => []),
+            await kv.list<ProjectProfile>(KV.profiles),
             (profile) => kv.delete(KV.profiles, profile.project),
           );
           await runChunked(
-            await kv.list<AccessLogExport>(KV.accessLog).catch(() => []),
+            await kv.list<AccessLogExport>(KV.accessLog),
             (a) => kv.delete(KV.accessLog, a.memoryId),
           );
         }

@@ -6,7 +6,7 @@ import type {
   MemoryProvider,
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
@@ -111,7 +111,7 @@ export function registerConsolidateFunction(
       }
 
       let consolidated = 0;
-      const existingMemories = await kv.list<Memory>(KV.memories);
+      const existingMemories = await collectAll<Memory>(kv, KV.memories);
       const existingTitles = new Set(
         existingMemories.map((m) => m.title.toLowerCase()),
       );

@@ -2,6 +2,7 @@ import { pinGraphState } from "../state/graph-generation.js";
 import { persistGraphRecords } from "../state/graph-ingestion.js";
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
@@ -259,24 +260,47 @@ export function registerMeshFunction(
 
           if (direction === "pull" || direction === "both") {
             try {
-              const response = await fetch(
-                `${peer.url}/agentmemory/mesh/export?since=${peer.lastSyncAt || ""}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${meshAuthToken}`,
+              const syncStartedAt = new Date().toISOString();
+              let cursor: string | undefined;
+              let pulled = 0;
+              let failed = false;
+              let pages = 0;
+              for (;;) {
+                const response = await fetch(
+                  `${peer.url}/agentmemory/mesh/export?since=${peer.lastSyncAt || ""}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+                  {
+                    headers: {
+                      Authorization: `Bearer ${meshAuthToken}`,
+                    },
+                    signal: AbortSignal.timeout(30000),
+                    redirect: "error",
                   },
-                  signal: AbortSignal.timeout(30000),
-                  redirect: "error",
-                },
-              );
-              if (response.ok) {
-                const pullData = (await response.json()) as {
-                  memories?: Memory[];
-                  actions?: Action[];
-                };
-                result.pulled = await applySyncData(kv, pullData, scopes);
-              } else {
-                result.errors.push(`pull failed: HTTP ${response.status}`);
+                );
+                if (!response.ok) {
+                  result.errors.push(`pull failed: HTTP ${response.status}`);
+                  failed = true;
+                  break;
+                }
+                const pullData = (await response.json()) as MeshSyncPayload & { nextCursor?: string };
+                pulled += await applySyncData(kv, pullData, scopes);
+                pages++;
+                const next = typeof pullData.nextCursor === "string" ? pullData.nextCursor : undefined;
+                if (next && next === cursor) {
+                  result.errors.push("pull failed: cursor did not advance");
+                  failed = true;
+                  break;
+                }
+                cursor = next;
+                if (!cursor) break;
+                if (pages >= 10000) {
+                  result.errors.push("pull failed: page limit reached");
+                  failed = true;
+                  break;
+                }
+              }
+              if (!failed) {
+                result.pulled = pulled;
+                peer.lastSyncAt = syncStartedAt;
               }
             } catch (err) {
               result.errors.push(`pull failed: ${String(err)}`);
@@ -284,7 +308,7 @@ export function registerMeshFunction(
           }
 
           peer.status = result.errors.length > 0 ? "error" : "connected";
-          if (result.errors.length === 0) {
+          if (result.errors.length === 0 && direction === "push") {
             peer.lastSyncAt = new Date().toISOString();
           }
         } catch (err) {
@@ -389,7 +413,7 @@ async function collectSyncData(
   const sinceTime = Number.isNaN(parsed) ? 0 : parsed;
 
   if (scopes.includes("memories")) {
-    const all = await kv.list<Memory>(KV.memories);
+    const all = await collectAll<Memory>(kv, KV.memories);
     result.memories = deltaFilter(all, sinceTime, "updatedAt");
   }
 
@@ -404,29 +428,29 @@ async function collectSyncData(
   const projectScoped = !!syncFilter?.project;
 
   if (scopes.includes("semantic") && !projectScoped) {
-    const all = await kv.list<SemanticMemory>(KV.semantic);
+    const all = await collectAll<SemanticMemory>(kv, KV.semantic);
     result.semantic = deltaFilter(all, sinceTime, "updatedAt");
   }
 
   if (scopes.includes("procedural") && !projectScoped) {
-    const all = await kv.list<ProceduralMemory>(KV.procedural);
+    const all = await collectAll<ProceduralMemory>(kv, KV.procedural);
     result.procedural = deltaFilter(all, sinceTime, "updatedAt");
   }
 
   if (scopes.includes("relations") && !projectScoped) {
-    const all = await kv.list<MemoryRelation>(KV.relations);
+    const all = await collectAll<MemoryRelation>(kv, KV.relations);
     result.relations = deltaFilter(all, sinceTime, "createdAt");
   }
 
   if (scopes.includes("graph:nodes") && !projectScoped) {
-    const all = await kv.list<GraphNode>(KV.graphNodes);
+    const all = await collectAll<GraphNode>(kv, KV.graphNodes);
     result.graphNodes = all.filter(
       (n) => new Date(graphNodeTs(n)).getTime() > sinceTime,
     );
   }
 
   if (scopes.includes("graph:edges") && !projectScoped) {
-    const all = await kv.list<GraphEdge>(KV.graphEdges);
+    const all = await collectAll<GraphEdge>(kv, KV.graphEdges);
     result.graphEdges = deltaFilter(all, sinceTime, "createdAt");
   }
 

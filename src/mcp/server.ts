@@ -1,6 +1,7 @@
 import type { IIIClient } from "iii-sdk";
 import type { HttpRequest } from "@iii-dev/helpers/http";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { pinGraphState } from "../state/graph-generation.js";
 import type {
@@ -16,7 +17,6 @@ import { parseSessionArguments } from "./session-arguments.js";
 import { isSearchLayer } from "../state/search-layer.js";
 import { checkAuth } from "../triggers/api.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
-
 type McpResponse = {
   status_code: number;
   headers?: Record<string, string>;
@@ -1394,7 +1394,7 @@ export function registerMcpEndpoints(
       try {
         if (uri === "agentmemory://status") {
           const sessions = await kv.list<Session>(KV.sessions);
-          const memories = await kv.list<Memory>(KV.memories);
+          const memories = await collectAll<Memory>(kv, KV.memories);
           const healthData = await kv.list(KV.health).catch(() => []);
           return {
             status_code: 200,
@@ -1482,7 +1482,7 @@ export function registerMcpEndpoints(
         }
 
         if (uri === "agentmemory://memories/latest") {
-          const memories = await kv.list<Memory>(KV.memories);
+          const memories = await collectAll<Memory>(kv, KV.memories);
           const latest = memories
             .filter((m) => m.isLatest)
             .sort(
@@ -1514,8 +1514,8 @@ export function registerMcpEndpoints(
         if (uri === "agentmemory://graph/stats") {
           try {
             const graphState = await pinGraphState(kv);
-            const nodes = await graphState.list<GraphNode>(KV.graphNodes);
-            const edges = await graphState.list<GraphEdge>(KV.graphEdges);
+            const nodes = await collectAll<GraphNode>(graphState, KV.graphNodes);
+            const edges = await collectAll<GraphEdge>(graphState, KV.graphEdges);
             const nodesByType: Record<string, number> = {};
             for (const n of nodes)
               nodesByType[n.type] = (nodesByType[n.type] || 0) + 1;
@@ -1701,7 +1701,7 @@ export function registerMcpEndpoints(
                 payload: { query: taskDesc, limit: 10 },
               })
               .catch(() => ({ results: [] }));
-            const memories = await kv.list<Memory>(KV.memories);
+            const memories = await collectAll<Memory>(kv, KV.memories);
             const isolated = isAgentScopeIsolated();
             const activeAgentId = isolated ? getAgentId() : undefined;
             const relevant =
