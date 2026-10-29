@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
 import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
 
@@ -44,7 +45,7 @@ async function main() {
           task_id: data.task_id,
           task_subject: data.task_subject,
           task_description: typeof data.task_description === "string"
-            ? data.task_description.slice(0, 2000)
+            ? truncateText(data.task_description, 2000)
             : "",
           teammate_name: data.teammate_name,
           team_name: data.team_name,

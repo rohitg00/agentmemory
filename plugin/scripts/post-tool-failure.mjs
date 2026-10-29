@@ -43,6 +43,11 @@ function shouldCaptureTool(toolName) {
 	if (allow) return matchesAny(toolName, allow);
 	return !matchesAny(toolName, [...DEFAULT_DENY_PATTERNS, ...parseEnvList(process.env["AGENTMEMORY_CAPTURE_DENY"]) ?? []]);
 }
+function truncateText(value, max) {
+	if (value.length <= max) return value;
+	const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
+	return value.slice(0, end);
+}
 //#endregion
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
@@ -116,8 +121,8 @@ async function main() {
 		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 		data: {
 			tool_name: toolName,
-			tool_input: typeof toolInput === "string" ? toolInput.slice(0, 4e3) : JSON.stringify(toolInput ?? "").slice(0, 4e3),
-			error: typeof error === "string" ? error.slice(0, 4e3) : JSON.stringify(error ?? "").slice(0, 4e3)
+			tool_input: typeof toolInput === "string" ? truncateText(toolInput, 4e3) : truncateText(JSON.stringify(toolInput ?? ""), 4e3),
+			error: typeof error === "string" ? truncateText(error, 4e3) : truncateText(JSON.stringify(error ?? ""), 4e3)
 		}
 	}, data), OBSERVE_TIMEOUT_MS);
 	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
