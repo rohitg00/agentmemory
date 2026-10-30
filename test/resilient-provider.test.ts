@@ -55,7 +55,7 @@ describe("ResilientProvider concurrency", () => {
       if (n <= 2) throw new Error("boom");
       return "ok";
     });
-    // maxConcurrent 1 is load-bearing here: at the default of 4 a leaked slot
+    // maxConcurrent 1 is load-bearing here: at the default of 6 a leaked slot
     // would not deadlock, and the test would pass despite the bug.
     const provider = new ResilientProvider(inner, { maxConcurrent: 1 });
 
@@ -65,6 +65,31 @@ describe("ResilientProvider concurrency", () => {
 
     expect(settled).toHaveLength(5);
     expect(settled.filter((s) => s.status === "fulfilled")).toHaveLength(3);
+  });
+
+  it("rejects calls past the queue cap without tripping the breaker", async () => {
+    let release!: () => void;
+    const gate = new Promise<string>((resolve) => {
+      release = () => resolve("ok");
+    });
+    const inner = countingProvider(() => gate);
+    const provider = new ResilientProvider(inner, { maxConcurrent: 1 });
+
+    // One call in flight plus 512 queued fills the gate; the rest overflow.
+    const calls = Array.from({ length: 516 }, () =>
+      provider.compress("sys", "user"),
+    );
+    const overflow = await Promise.allSettled(calls.slice(513));
+    release();
+    const admitted = await Promise.allSettled(calls.slice(0, 513));
+
+    expect(overflow.every((s) => s.status === "rejected")).toBe(true);
+    expect(
+      overflow.map((s) => (s as PromiseRejectedResult).reason.message),
+    ).toEqual(["provider_queue_full", "provider_queue_full", "provider_queue_full"]);
+    expect(admitted.every((s) => s.status === "fulfilled")).toBe(true);
+    expect(inner.calls).toBe(513);
+    expect(provider.circuitState.state).toBe("closed");
   });
 });
 
