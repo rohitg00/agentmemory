@@ -1,11 +1,22 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
 import { registerMcpEndpoints } from "../src/mcp/server.js";
-import type { Session, SessionSummary, Memory } from "../src/types.js";
+import { persistGraphDelta, registerGraphFunction } from "../src/functions/graph.js";
+import { registerSnapshotFunction } from "../src/functions/snapshot.js";
+import { registerExportImportFunction } from "../src/functions/export-import.js";
+import { getSearchIndex, setEmbeddingProvider, setIndexPersistence, setVectorIndex } from "../src/functions/search.js";
+import { StateKV, applyUpdateOps } from "../src/state/kv.js";
+import { KV } from "../src/state/schema.js";
+import { setGraphGenerationListener } from "../src/state/graph-generation.js";
+import { getGraphIndexStatus, initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
+import type { Session, SessionSummary, Memory, ExportData, GraphEdge, GraphNode, GraphSnapshot } from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -231,6 +242,34 @@ describe("MCP Resources", () => {
     expect(data[0].title).toBe("Latest pattern");
   });
 
+  it("returns the mem::graph-stats payload unchanged, warning included", async () => {
+    const stats = {
+      totalNodes: 3,
+      totalEdges: 2,
+      nodesByType: { file: 2, other: 1 },
+      edgesByType: { imports: 2 },
+      fromSnapshot: false,
+      fromIndex: true,
+      available: true,
+      coverage: "partial",
+      updatedAt: "2026-10-12T12:00:00.000Z",
+      warning:
+        "Counts describe indexed live records; oversized projections may be incomplete and unrecognized types are grouped under other.",
+    };
+    sdk.overrideTrigger("mem::graph-stats", async () => stats);
+
+    const fn = sdk.getFunction("mcp::resources::read")!;
+    const result = (await fn(
+      makeReq({ uri: "agentmemory://graph/stats" }),
+    )) as {
+      status_code: number;
+      body: { contents: Array<{ text: string }> };
+    };
+
+    expect(result.status_code).toBe(200);
+    expect(JSON.parse(result.body.contents[0].text)).toEqual(stats);
+  });
+
   it("returns 404 for unknown URI", async () => {
     const fn = sdk.getFunction("mcp::resources::read")!;
     const result = (await fn(
@@ -286,5 +325,164 @@ describe("MCP Resources", () => {
 
     expect(result.status_code).toBe(400);
     expect(result.body.error).toContain("percent-encoding");
+  });
+});
+
+describe("MCP graph/stats resource over live graph state", () => {
+  const timestamp = "2026-10-12T12:00:00.000Z";
+  const node = (id: string): GraphNode => ({ id, name: id, type: "concept", properties: {}, sourceObservationIds: [], createdAt: timestamp });
+  const edge = (id: string, sourceNodeId: string, targetNodeId: string): GraphEdge => ({
+    id, sourceNodeId, targetNodeId, type: "related_to", weight: 0.8, sourceObservationIds: [], createdAt: timestamp,
+  });
+  const unavailable = {
+    totalNodes: null, totalEdges: null, nodesByType: {}, edgesByType: {},
+    fromSnapshot: false, fromIndex: false, available: false, coverage: "unknown",
+    warning: expect.stringContaining("Graph index counts are unavailable"),
+  };
+  const dirs: string[] = [];
+
+  async function rig(options: { index?: "ready" | "building" | "none" } = {}) {
+    const dir = mkdtempSync(join(tmpdir(), "mcp-graph-stats-"));
+    dirs.push(dir);
+    const store = new Map<string, Map<string, unknown>>();
+    const handlers = new Map<string, (data?: any) => Promise<any>>();
+    const listed: string[] = [];
+    const sdk = {
+      registerFunction: (idOrOpts: string | { id: string }, fn: (data?: any) => Promise<any>) =>
+        handlers.set(typeof idOrOpts === "string" ? idOrOpts : idOrOpts.id, fn),
+      registerTrigger: vi.fn(),
+      trigger: async ({ function_id: id, payload }: { function_id: string; payload: any }): Promise<any> => {
+        if (!id.startsWith("state::")) return handlers.get(id)!(payload);
+        const rows = store.get(payload.scope) ?? new Map<string, unknown>();
+        if (id === "state::get") return structuredClone(rows.get(payload.key) ?? null);
+        if (id === "state::list") {
+          listed.push(payload.scope);
+          return structuredClone([...rows.values()]);
+        }
+        if (id === "state::delete") rows.delete(payload.key);
+        else if (id === "state::set") rows.set(payload.key, structuredClone(payload.value));
+        else if (id === "state::update") rows.set(payload.key, applyUpdateOps(structuredClone(rows.get(payload.key) ?? null), payload.ops));
+        else throw new Error(`unexpected state call ${id}`);
+        store.set(payload.scope, rows);
+        return structuredClone(rows.get(payload.key) ?? null);
+      },
+    };
+    const kv = new StateKV(sdk as never);
+    if (options.index !== "none") await initializeGraphIndex(kv, { status: options.index ?? "ready" });
+    registerGraphFunction(sdk as never, kv, { name: "noop" } as never);
+    registerSnapshotFunction(sdk as never, kv, dir);
+    registerExportImportFunction(sdk as never, kv);
+    registerMcpEndpoints(sdk as never, kv);
+    const call = (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload });
+    // Clears the spy first: reset, import and restore legitimately list scopes.
+    const readStats = async () => {
+      listed.length = 0;
+      const result = await call("mcp::resources::read", makeReq({ uri: "agentmemory://graph/stats" }));
+      expect(result.status_code).toBe(200);
+      expect(listed).toEqual([]);
+      return JSON.parse(result.body.contents[0].text);
+    };
+    return { kv, call, readStats };
+  }
+
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+    setGraphGenerationListener(null);
+    setIndexPersistence(null);
+    setEmbeddingProvider(null);
+    setVectorIndex(null);
+    getSearchIndex().clear();
+  });
+
+  it("reports unavailable counts when the graph index is missing", async () => {
+    const r = await rig({ index: "none" });
+    expect(await r.readStats()).toEqual(unavailable);
+  });
+
+  it("reports unavailable counts while the graph index is building or paused", async () => {
+    const building = await rig({ index: "building" });
+    expect(await building.readStats()).toEqual(unavailable);
+
+    const paused = await rig();
+    const control = (await getGraphIndexStatus(paused.kv))!;
+    await paused.kv.set(KV.graphRetrievalControl, "current", { ...control, status: "paused" });
+    expect(await paused.readStats()).toEqual(unavailable);
+  });
+
+  it("reports unavailable counts while a record mutation is pending", async () => {
+    const r = await rig();
+    await persistGraphDelta(r.kv, [node("a")], []);
+    const control = (await getGraphIndexStatus(r.kv))!;
+    await r.kv.set(KV.graphRetrievalControl, "current", { ...control, pending: { kind: "node", id: "a" } });
+    expect(await r.readStats()).toEqual(unavailable);
+    expect((await getGraphIndexStatus(r.kv))!.pending).toEqual({ kind: "node", id: "a" });
+  });
+
+  it("reports unavailable counts while the graph snapshot is dirty", async () => {
+    const r = await rig();
+    await persistGraphDelta(r.kv, [node("a"), node("b")], [edge("ab", "a", "b")]);
+    const snapshot = (await r.kv.get<GraphSnapshot>(KV.graphSnapshot, "current"))!;
+    await r.kv.set(KV.graphSnapshot, "current", { ...snapshot, dirty: true });
+    expect((await getGraphIndexStatus(r.kv))!.batchPending).toBe(true);
+    expect(await r.readStats()).toEqual(unavailable);
+  });
+
+  it("returns the new generation's counts after a graph reset", async () => {
+    const r = await rig();
+    await persistGraphDelta(r.kv, [node("a"), node("b"), node("c")], [edge("ab", "a", "b"), edge("bc", "b", "c")]);
+    expect(await r.readStats()).toMatchObject({ totalNodes: 3, totalEdges: 2, available: true });
+
+    expect(await r.call("mem::graph-reset")).toMatchObject({ success: true });
+    expect(await r.readStats()).toMatchObject({
+      totalNodes: 0, totalEdges: 0, nodesByType: {}, edgesByType: {},
+      fromIndex: true, available: true, coverage: "complete",
+    });
+  });
+
+  it("returns the imported generation's counts after a replace import", async () => {
+    const r = await rig();
+    await persistGraphDelta(r.kv, [node("a"), node("b"), node("c")], [edge("ab", "a", "b"), edge("bc", "b", "c")]);
+    const exportData: ExportData = {
+      version: "0.9.30", exportedAt: timestamp, sessions: [], observations: {}, memories: [], summaries: [],
+      graphNodes: [node("x"), node("y")], graphEdges: [edge("xy", "x", "y")],
+    };
+
+    expect(await r.call("mem::import", { exportData, strategy: "replace" })).toMatchObject({ success: true });
+    expect(await r.readStats()).toMatchObject({
+      totalNodes: 2, totalEdges: 1, nodesByType: { concept: 2 }, edgesByType: { related_to: 1 },
+      fromIndex: true, available: true, coverage: "complete",
+    });
+  });
+
+  it("returns the merged counts after a default merge import", async () => {
+    const r = await rig();
+    await persistGraphDelta(r.kv, [node("a"), node("b"), node("c")], [edge("ab", "a", "b")]);
+    const exportData: ExportData = {
+      version: "0.9.30", exportedAt: timestamp, sessions: [], observations: {}, memories: [], summaries: [],
+      graphNodes: [node("d")], graphEdges: [edge("cd", "c", "d")],
+    };
+
+    expect(await r.call("mem::import", { exportData })).toMatchObject({ success: true });
+    expect(await r.readStats()).toMatchObject({
+      totalNodes: 4, totalEdges: 2, nodesByType: { concept: 4 }, edgesByType: { related_to: 2 },
+      fromIndex: true, available: true, coverage: "complete",
+    });
+  });
+
+  it("returns the restored counts after a snapshot restore that follows a reset", async () => {
+    const r = await rig();
+    await persistGraphDelta(r.kv, [node("a"), node("b")], [edge("ab", "a", "b")]);
+    const created = await r.call("mem::snapshot-create");
+    expect(created.success).toBe(true);
+    await persistGraphDelta(r.kv, [node("c")], []);
+    expect(await r.readStats()).toMatchObject({ totalNodes: 3, totalEdges: 1 });
+    await r.call("mem::graph-reset");
+    expect(await r.readStats()).toMatchObject({ totalNodes: 0, totalEdges: 0, available: true });
+
+    expect(await r.call("mem::snapshot-restore", { commitHash: created.snapshot.commitHash })).toMatchObject({ success: true });
+    expect(await r.readStats()).toMatchObject({
+      totalNodes: 2, totalEdges: 1, nodesByType: { concept: 2 }, edgesByType: { related_to: 1 },
+      fromIndex: true, available: true, coverage: "complete",
+    });
   });
 });

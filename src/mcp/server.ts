@@ -2,14 +2,7 @@ import type { IIIClient } from "iii-sdk";
 import type { HttpRequest } from "@iii-dev/helpers/http";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
-import { pinGraphState } from "../state/graph-generation.js";
-import type {
-  SessionSummary,
-  Memory,
-  Session,
-  GraphNode,
-  GraphEdge,
-} from "../types.js";
+import type { SessionSummary, Memory, Session } from "../types.js";
 import { getVisibleTools } from "./tools-registry.js";
 import { parseSearchExpansionIds } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
@@ -1513,15 +1506,10 @@ export function registerMcpEndpoints(
 
         if (uri === "agentmemory://graph/stats") {
           try {
-            const graphState = await pinGraphState(kv);
-            const nodes = await graphState.list<GraphNode>(KV.graphNodes);
-            const edges = await graphState.list<GraphEdge>(KV.graphEdges);
-            const nodesByType: Record<string, number> = {};
-            for (const n of nodes)
-              nodesByType[n.type] = (nodesByType[n.type] || 0) + 1;
-            const edgesByType: Record<string, number> = {};
-            for (const e of edges)
-              edgesByType[e.type] = (edgesByType[e.type] || 0) + 1;
+            const stats = await sdk.trigger({
+              function_id: "mem::graph-stats",
+              payload: {},
+            });
             return {
               status_code: 200,
               body: {
@@ -1529,12 +1517,7 @@ export function registerMcpEndpoints(
                   {
                     uri,
                     mimeType: "application/json",
-                    text: JSON.stringify({
-                      totalNodes: nodes.length,
-                      totalEdges: edges.length,
-                      nodesByType,
-                      edgesByType,
-                    }),
+                    text: JSON.stringify(stats),
                   },
                 ],
               },
