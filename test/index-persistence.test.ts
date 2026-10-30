@@ -29,6 +29,8 @@ function mockKV() {
       ops.push({ op: "list", scope });
       return Array.from(store.get(scope)?.values() ?? []) as T[];
     },
+    listGroups: async (): Promise<string[]> =>
+      [...store].filter(([, entries]) => entries.size > 0).map(([scope]) => scope).sort(),
   };
 }
 
@@ -564,5 +566,196 @@ describe("index_persist audit gating", () => {
     expectSameVectors(reloaded.vector, legacy);
     expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).toBeNull();
     expect(await indexPersistEntries()).toEqual([]);
+  });
+});
+
+describe("IndexPersistence orphaned legacy generation sweep", () => {
+  const SWEEP_KEY = "legacy:sweep";
+  const ORPHAN_IDX = "idx_mf000001_cccccccccccc";
+  const ORPHAN_OLD = `mf000002-${"d".repeat(32)}`;
+  let kv: MockKV;
+
+  beforeEach(() => {
+    kv = mockKV();
+  });
+
+  async function writeOrphan(leg: "bm25" | "vectors", generation: string, shards = 2): Promise<string[]> {
+    const scopes: string[] = [];
+    for (let i = 0; i < shards; i++) {
+      const scope = `${INDEX_SCOPE}:${leg}:${generation}:${String(i).padStart(5, "0")}`;
+      await kv.set(scope, "data", `orphan ${generation} ${i}`);
+      scopes.push(scope);
+    }
+    return scopes;
+  }
+
+  async function writeBuckets(): Promise<VectorIndex> {
+    const vector = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    await new IndexPersistence(kv as never, vector, { bucketSize: 16 }).save();
+    return vector;
+  }
+
+  function present(scopes: string[]): boolean[] {
+    return scopes.map((scope) => kv.store.get(scope)?.has("data") ?? false);
+  }
+
+  function load(vector: VectorIndex | null = new VectorIndex()) {
+    return new IndexPersistence(kv as never, vector, { bucketSize: 16 }).load();
+  }
+
+  it("removes generations no manifest names while migrating a legacy store", async () => {
+    const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    await writeLegacyVectorSnapshot(kv, legacy, { generation: "idx_mfabcd12_aaaaaaaaaaaa" });
+    await writeLegacyBm25Snapshot(kv);
+    const orphans = [...(await writeOrphan("bm25", ORPHAN_IDX)), ...(await writeOrphan("vectors", ORPHAN_OLD))];
+
+    const loaded = await load();
+
+    expect(loaded.state).toBe("migrated");
+    expectSameVectors(loaded.vector, legacy);
+    expect(present(orphans)).toEqual([false, false, false, false]);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).toMatchObject({ v: 1, generations: 2, shards: 4, failed: 0 });
+  });
+
+  it("removes orphans from a store that already uses buckets and leaves the buckets alone", async () => {
+    const vector = await writeBuckets();
+    const orphans = await writeOrphan("bm25", ORPHAN_IDX);
+
+    const loaded = await load();
+
+    expect(loaded.state).toBe("buckets");
+    expectSameVectors(loaded.vector, vector);
+    expect(present(orphans)).toEqual([false, false]);
+    expect(kv.store.get(vectorBucketScope(0))?.has("obs_a")).toBe(true);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).toMatchObject({ generations: 1, shards: 2 });
+  });
+
+  it("keeps every generation a surviving manifest names", async () => {
+    const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    await writeLegacyVectorSnapshot(kv, legacy, { generation: "idx_mfabcd12_aaaaaaaaaaaa" });
+    const named = [...kv.store.keys()].filter((scope) => scope.includes(":vectors:"));
+    const orphans = await writeOrphan("vectors", ORPHAN_IDX);
+
+    await load(null);
+
+    expect(named.length).toBeGreaterThan(0);
+    expect(present(named).every(Boolean)).toBe(true);
+    expect(await kv.get(INDEX_SCOPE, "vectors:manifest")).not.toBeNull();
+    expect(present(orphans)).toEqual([false, false]);
+  });
+
+  it("deletes nothing when a manifest read fails", async () => {
+    await writeBuckets();
+    const orphans = await writeOrphan("bm25", ORPHAN_IDX);
+    const baseGet = kv.get;
+    kv.get = (async <T>(scope: string, key: string) => {
+      if (key === "data:manifest") throw new Error("engine busy");
+      return baseGet<T>(scope, key);
+    }) as typeof kv.get;
+
+    await load();
+
+    kv.get = baseGet;
+    expect(present(orphans)).toEqual([true, true]);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).toBeNull();
+  });
+
+  it("deletes nothing when a manifest names no generation", async () => {
+    await writeBuckets();
+    const orphans = await writeOrphan("bm25", ORPHAN_IDX);
+    await kv.set(INDEX_SCOPE, "vectors:manifest", { v: 1, shards: "corrupt", chars: 0 });
+
+    await load(null);
+
+    expect(present(orphans)).toEqual([true, true]);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).toBeNull();
+  });
+
+  it("deletes nothing when a legacy-prefixed scope does not parse", async () => {
+    await writeBuckets();
+    const orphans = await writeOrphan("bm25", ORPHAN_IDX);
+    await kv.set(`${INDEX_SCOPE}:bm25:something-else`, "data", "unknown");
+
+    await load();
+
+    expect(present(orphans)).toEqual([true, true]);
+    expect(kv.store.get(`${INDEX_SCOPE}:bm25:something-else`)?.get("data")).toBe("unknown");
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).toBeNull();
+  });
+
+  it("deletes nothing when scopes cannot be listed, and sweeps on the next boot", async () => {
+    await writeBuckets();
+    const orphans = await writeOrphan("bm25", ORPHAN_IDX);
+    const baseListGroups = kv.listGroups;
+    kv.listGroups = async () => {
+      throw new Error("state::list_groups unavailable");
+    };
+
+    await load();
+    expect(present(orphans)).toEqual([true, true]);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).toBeNull();
+
+    kv.listGroups = baseListGroups;
+    await load();
+    expect(present(orphans)).toEqual([false, false]);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).not.toBeNull();
+  });
+
+  it("records no completion when a delete fails, and finishes on the next boot", async () => {
+    await writeBuckets();
+    const orphans = await writeOrphan("bm25", ORPHAN_IDX);
+    const baseDelete = kv.delete;
+    kv.delete = async (scope: string, key: string) => {
+      if (scope === orphans[1]) throw new Error("delete timed out");
+      return baseDelete(scope, key);
+    };
+
+    await load();
+    expect(present(orphans)).toEqual([false, true]);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).toBeNull();
+
+    kv.delete = baseDelete;
+    await load();
+    expect(present(orphans)).toEqual([false, false]);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).toMatchObject({ shards: 1, failed: 0 });
+  });
+
+  it("runs once: a later boot neither lists scopes nor deletes", async () => {
+    await writeBuckets();
+    await writeOrphan("bm25", ORPHAN_IDX);
+    await load();
+    const later = await writeOrphan("vectors", ORPHAN_OLD);
+    let listed = 0;
+    const baseListGroups = kv.listGroups;
+    kv.listGroups = async () => {
+      listed++;
+      return baseListGroups();
+    };
+    const opsBefore = kv.ops.length;
+
+    await load();
+
+    expect(listed).toBe(0);
+    expect(kv.ops.slice(opsBefore).filter((o) => o.op === "delete")).toEqual([]);
+    expect(present(later)).toEqual([true, true]);
+  });
+
+  it("audits each sweep delete and the summary when index auditing is on", async () => {
+    const previous = process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
+    process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = "1";
+    try {
+      await writeBuckets();
+      await writeOrphan("bm25", ORPHAN_IDX);
+
+      await load();
+
+      const entries = await kv.list<{ operation: string; details: { action?: string; reason?: string } }>(currentAuditScope());
+      const audited = entries.filter((entry) => entry.operation === "index_persist");
+      expect(audited.filter((entry) => entry.details.reason === "orphan_generation_sweep")).toHaveLength(2);
+      expect(audited.some((entry) => entry.details.action === "sweep")).toBe(true);
+    } finally {
+      if (previous === undefined) delete process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
+      else process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST = previous;
+    }
   });
 });
