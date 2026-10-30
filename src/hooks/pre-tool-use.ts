@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveClientSecret } from "../secret-store.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -6,24 +7,10 @@ function isSdkChildContext(payload: unknown): boolean {
   return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
 }
 
-// Pre-tool-use enrichment hook.
-//
-// THIS HOOK IS A NO-OP BY DEFAULT AS OF 0.8.10 (#143). Previously it
-// fired /agentmemory/enrich on every Edit/Write/Read/Glob/Grep tool call
-// and wrote up to 4000 chars of context to stdout. Claude Code reads
-// PreToolUse stdout and prepends it to the model's next turn, which meant
-// agentmemory was silently injecting ~1000 tokens into every tool turn
-// via the user's Claude Code session. On Claude Pro that burned entire
-// allocations in a handful of messages (@adrianricardo, #143).
-//
-// Users who explicitly want pre-tool enrichment opt in with:
-//   AGENTMEMORY_INJECT_CONTEXT=true   in ~/.agentmemory/.env
-// and restart Claude Code. Expect your session input token count to grow
-// proportionally with the number of file-touching tool calls per turn.
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = resolveClientSecret(REST_URL);
 
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };

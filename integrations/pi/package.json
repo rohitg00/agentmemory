@@ -1,10 +1,13 @@
 {
-  "name": "agentmemory-pi-extension",
+  "name": "@agentmemory/pi",
   "version": "0.1.0",
-  "private": true,
   "description": "agentmemory extension for the pi coding agent: memory recall on agent start, capture on agent end, memory_search / memory_save / memory_health tools, /agentmemory-status command",
   "type": "module",
   "license": "Apache-2.0",
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/rohitg00/agentmemory/tree/main/integrations/pi",
   "keywords": [
     "pi-package",
     "agentmemory",
@@ -16,17 +19,24 @@
     "directory": "integrations/pi"
   },
   "files": [
-    "index.ts",
-    "security.ts",
-    "README.md"
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE"
   ],
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./dist/index.mjs"
+    ],
+    "skills": [
+      "./skills"
     ]
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "typebox": "*"
+  },
+  "scripts": {
+    "prepack": "node -e \"const fs=require('node:fs'); for(const p of ['dist/index.mjs','skills/remember/SKILL.md','LICENSE']) if(!fs.existsSync(p)) throw new Error('Run npm run plugin:pack:pi from the repository root first')\""
   }
 }

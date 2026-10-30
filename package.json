@@ -1,6 +1,6 @@
 {
   "name": "@agentmemory/agentmemory",
-  "version": "0.9.29",
+  "version": "0.9.31",
   "description": "Persistent memory for AI coding agents, powered by iii-engine's three primitives",
   "type": "module",
   "main": "dist/index.mjs",
@@ -17,19 +17,43 @@
     "agentmemory": "dist/cli.mjs"
   },
   "scripts": {
-    "build": "tsdown && (cp iii-config.yaml dist/ 2>/dev/null || true) && (cp iii-config.docker.yaml dist/ 2>/dev/null || true) && (cp docker-compose.yml dist/ 2>/dev/null || true) && (cp .env.example dist/ 2>/dev/null || true) && mkdir -p dist/viewer && cp src/viewer/index.html dist/viewer/ && cp src/viewer/favicon.svg dist/viewer/",
+    "build": "tsdown && rm -f dist/iii-config.yaml dist/iii-config.docker.yaml dist/docker-compose.yml && (cp .env.example dist/ 2>/dev/null || true) && mkdir -p dist/viewer && cp src/viewer/index.html dist/viewer/ && cp src/viewer/favicon.svg dist/viewer/",
     "dev": "tsx src/index.ts",
     "start": "node dist/cli.mjs",
     "migrate": "node dist/functions/migrate.js",
+    "pretest": "npm run build",
     "test": "vitest run --exclude test/integration.test.ts",
     "test:watch": "vitest --exclude test/integration.test.ts",
     "test:integration": "vitest run test/integration.test.ts",
     "test:all": "vitest run",
+    "test:vector-recovery:packaged": "node scripts/release-gate/vector-recovery.mjs",
+    "test:startup:packaged": "node scripts/release-gate/startup.mjs",
+    "test:summary-recovery:packaged": "node scripts/release-gate/summary-recovery.mjs",
+    "test:cli-diagnostics:packaged": "node scripts/release-gate/cli-diagnostics.mjs",
+    "test:graph-index:packaged": "node scripts/release-gate/graph-index.mjs",
+    "test:skills:packaged": "node scripts/release-gate/skills.mjs",
+    "test:openclaw:packaged": "node scripts/release-gate/openclaw.mjs",
+    "release:gate": "node scripts/release-gate/run.mjs",
+    "release:prepare": "node scripts/release/publish.mjs prepare",
+    "release:publish": "node scripts/release/publish.mjs publish",
     "skills:gen": "tsx scripts/skills/generate.ts",
+    "engine:hashes": "node scripts/engine-hashes.mjs",
     "skills:check": "tsx scripts/skills/generate.ts --check && tsx scripts/skills/check.ts",
+    "docs:sync": "tsx scripts/docs-sync.ts",
+    "docs:check": "tsx scripts/docs-sync.ts --check",
+    "plugin:pack:codex": "npm run build && node scripts/plugins/package-codex.mjs",
+    "plugin:pack:pi": "tsdown --filter pi-extension && node scripts/plugins/prepare-native.mjs && node -e \"require('node:fs').mkdirSync('dist/plugins', { recursive: true })\" && npm pack ./integrations/pi --pack-destination dist/plugins",
+    "plugin:verify:published": "node scripts/plugins/verify-published.mjs",
+    "test:plugin:live": "node scripts/plugins/test-live.mjs",
     "bench:load": "node --import tsx benchmark/load-100k.ts",
-    "eval:longmemeval": "tsx eval/runner/longmemeval.ts",
-    "eval:coding-life": "tsx eval/runner/coding-life.ts"
+    "bench:capture-costs": "node --import tsx benchmark/capture-costs.ts",
+    "eval:longmemeval": "node --import tsx eval/runner/longmemeval.ts",
+    "eval:coding-life": "node --import tsx eval/runner/coding-life.ts",
+    "eval:lifecycle": "node --import tsx eval/runner/lifecycle.ts",
+    "eval:recall": "node --import tsx eval/runner/recall-quality.ts",
+    "eval:check": "tsc --noEmit --project tsconfig.eval.json && vitest run test/eval-adapters.test.ts test/eval-integrity.test.ts",
+    "prepack": "node scripts/plugins/prepare-native.mjs",
+    "plugin:pack:openclaw": "node scripts/plugins/prepare-native.mjs && mkdir -p dist/plugins && npm pack ./integrations/openclaw --pack-destination dist/plugins"
   },
   "keywords": [
     "ai",
@@ -44,11 +68,12 @@
   ],
   "files": [
     "dist/",
+    "!dist/plugins/**",
     "plugin/",
     "integrations/pi/",
-    "iii-config.yaml",
-    "iii-config.docker.yaml",
-    "docker-compose.yml",
+    "integrations/omp/",
+    "integrations/hermes/",
+    "integrations/openclaw/",
     ".env.example",
     "LICENSE",
     "README.md",
@@ -64,10 +89,13 @@
     "@anthropic-ai/claude-agent-sdk": "^0.3.142",
     "@anthropic-ai/sdk": "^0.100.1",
     "@clack/prompts": "^1.2.0",
-    "dotenv": "^17.4.2",
-    "iii-sdk": "0.11.2",
+    "dotenv": "^18.0.3",
+    "@iii-dev/helpers": "0.25.0",
+    "iii-sdk": "0.25.0",
     "picocolors": "^1.1.1",
-    "zod": "^4.0.0"
+    "zod": "^4.0.0",
+    "yaml": "^2.8.1",
+    "json5": "^2.2.3"
   },
   "optionalDependencies": {
     "@huggingface/transformers": "^4.2.0",
@@ -75,11 +103,13 @@
     "tiny-segmenter": "^0.2.0"
   },
   "devDependencies": {
-    "@types/node": "^25.9.1",
+    "@types/node": "^26.6.2",
+    "sigstore": "4.1.1",
     "tsdown": "^0.21.10",
     "tsx": "^4.19.0",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6"
+    "vitest": "^4.1.6",
+    "ws": "^8.21.0"
   },
   "overrides": {
     "qs": "^6.15.2",

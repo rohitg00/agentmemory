@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
@@ -43,7 +43,7 @@ const ALL_CATEGORIES = [
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
 
-export function registerDiagnosticsFunction(sdk: ISdk, kv: StateKV): void {
+export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::diagnose", 
     async (data: { categories?: string[] }) => {
       const categories = data.categories && data.categories.length > 0

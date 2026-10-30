@@ -6,22 +6,10 @@ import {
   copyFileSync,
   renameSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import * as p from "@clack/prompts";
 
-// Env values use ${VAR:-default} expansion so the wired MCP entry
-// inherits AGENTMEMORY_URL / AGENTMEMORY_SECRET / AGENTMEMORY_TOOLS
-// from the user's shell, but never fails parse when the var is unset
-// (#510). Earlier `${VAR}` form caused Claude Code to silently drop the
-// server when no shell-level export existed — per the Claude Code MCP
-// docs, "If a required environment variable is not set and has no
-// default value, Claude Code will fail to parse the config."
-//
-// Defaults match the documented runtime: localhost:3111 (no auth, all
-// tools). One wired entry now serves local AND remote (Kubernetes /
-// reverse-proxied) deployments without doctor-warning duplicates (#375)
-// AND fresh installs that haven't exported envs (#510).
 export const AGENTMEMORY_MCP_BLOCK = {
   command: "npx",
   args: ["-y", "@agentmemory/mcp"],
@@ -53,6 +41,14 @@ export const AGENTMEMORY_COPILOT_MCP_BLOCK = {
   },
   tools: ["*"],
 };
+
+export function resolveDshHome(home: string = homedir()): string {
+  const override = process.env["DSH_HOME"];
+  const value = override?.trim() ? override : join(home, ".dsh");
+  if (value === "~") return resolve(home);
+  if (value.startsWith("~/") || value.startsWith("~\\")) return resolve(join(home, value.slice(2)));
+  return resolve(value);
+}
 
 export function backupsDir(): string {
   return join(homedir(), ".agentmemory", "backups");

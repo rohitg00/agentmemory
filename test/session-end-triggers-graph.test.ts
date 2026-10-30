@@ -1,15 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 
-// #666: api::session::end must publish the session-stopped lifecycle so
-// summarize + slot-reflect + graph extraction actually fire. Before this
-// fix the `event::session::stopped` handler in events.ts was a dead
-// subscriber — no code published `agentmemory.session.stopped`, so graph
-// nodes / lessons / crystals never materialized despite the handler
-// existing. Direct fire-and-forget trigger keeps the HTTP response fast
-// (kv.update runs synchronously, downstream pipeline fan-outs without
-// blocking).
-describe("api::session::end → event::session::stopped (#666)", () => {
+describe("api::session::end → event::session::stopped", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");
 
   it("api::session::end fires event::session::stopped after kv.update", () => {
@@ -31,11 +23,7 @@ describe("api::session::end → event::session::stopped (#666)", () => {
   });
 });
 
-// #666: viewer's "Build Graph" button used to POST /agentmemory/graph/build
-// which returned 404 because the endpoint was never registered. Backfill
-// the knowledge graph from existing compressed observations across every
-// session in batches.
-describe("api::graph-build endpoint (#666)", () => {
+describe("api::graph-build endpoint", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");
 
   it("registers api::graph-build function", () => {
@@ -69,11 +57,7 @@ describe("api::graph-build endpoint (#666)", () => {
   });
 });
 
-// #666: `agentmemory status` showed Memories/Observations as 0 because it
-// fetched /agentmemory/export which times out on iii-engine's file-based
-// KV under concurrent kv.list() pressure. Switch to /memories for the
-// memory count and derive observation count from sessions[].observationCount.
-describe("agentmemory status no longer depends on /export (#666)", () => {
+describe("agentmemory status no longer depends on /export", () => {
   const cli = readFileSync("src/cli.ts", "utf-8");
 
   it("status uses count-only memories endpoint instead of export", () => {

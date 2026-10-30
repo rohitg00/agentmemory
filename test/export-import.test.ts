@@ -6,6 +6,8 @@ vi.mock("../src/logger.js", () => ({
 
 import { registerExportImportFunction } from "../src/functions/export-import.js";
 import { VERSION } from "../src/version.js";
+import { KV } from "../src/state/schema.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import { getSearchIndex } from "../src/functions/search.js";
 import type {
   Session,
@@ -103,6 +105,10 @@ const testSummary: SessionSummary = {
   observationCount: 1,
 };
 
+const testLesson = { id: "les_1", content: "Validate tokens" };
+
+const testAccessLog = { memoryId: "mem_1", count: 3, lastAt: "2026-02-01T00:00:00Z", recent: [] };
+
 describe("Export/Import Functions", () => {
   let sdk: ReturnType<typeof mockSdk>;
   let kv: ReturnType<typeof mockKV>;
@@ -120,6 +126,8 @@ describe("Export/Import Functions", () => {
     await kv.set("mem:obs:ses_1", "obs_1", testObs);
     await kv.set("mem:memories", "mem_1", testMemory);
     await kv.set("mem:summaries", "ses_1", testSummary);
+    await kv.set("mem:lessons", "les_1", testLesson);
+    await kv.set("mem:access", "mem_1", testAccessLog);
   });
 
   it("export produces valid ExportData structure", async () => {
@@ -230,7 +238,66 @@ describe("Export/Import Functions", () => {
     expect(result.sessions).toBe(0);
   });
 
+  it.each(["merge", "skip"] as const)("serializes a summary-only %s import with summary publication", async (strategy) => {
+    await kv.delete(KV.summaries, testSession.id);
+    const published = { ...testSummary, title: "Concurrent published summary" };
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const publishing = withKeyedLock(`obs:${testSession.id}`, async () => {
+      entered(); await gate;
+      await kv.set(KV.summaries, testSession.id, published);
+    });
+    await ready;
+    const importing = sdk.trigger("mem::import", { strategy, exportData: {
+      version: VERSION, exportedAt: new Date().toISOString(), sessions: [], observations: {}, memories: [], summaries: [testSummary],
+    } });
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(await kv.get(KV.summaries, testSession.id)).toBeNull();
+    } finally { release(); await publishing; }
+    expect(await importing).toMatchObject({ success: true, summaries: strategy === "skip" ? 0 : 1 });
+    expect(await kv.get(KV.summaries, testSession.id)).toEqual(strategy === "skip" ? published : testSummary);
+  });
+
+  it("keeps summary mutation locks until sibling writes settle after an import failure", async () => {
+    const delayed = { ...testSummary, sessionId: "ses_delayed", title: "Imported delayed summary" };
+    const published = { ...delayed, title: "Summary published after import" };
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const originalSet = kv.set;
+    vi.spyOn(kv, "set").mockImplementation(async (scope, key, value) => {
+      if (scope === KV.summaries && key === testSession.id) throw new Error("summary write failed");
+      if (scope === KV.summaries && key === delayed.sessionId && value === delayed) {
+        entered(); await gate;
+      }
+      return originalSet(scope, key, value);
+    });
+    let settled = false;
+    const importing = sdk.trigger("mem::import", { exportData: {
+      version: VERSION, exportedAt: new Date().toISOString(), sessions: [], observations: {}, memories: [],
+      summaries: [testSummary, delayed],
+    } }).then(() => { settled = true; return null; }, (error: Error) => { settled = true; return error; });
+    await ready;
+    let publishedWhileImporting = false;
+    const publishing = withKeyedLock(`obs:${delayed.sessionId}`, async () => {
+      publishedWhileImporting = true;
+      await kv.set(KV.summaries, delayed.sessionId, published);
+    });
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+      expect(publishedWhileImporting).toBe(false);
+    } finally { release(); await publishing; }
+    expect(await importing).toMatchObject({ message: "summary write failed" });
+    expect(await kv.get(KV.summaries, delayed.sessionId)).toEqual(published);
+  });
+
   it("import with replace strategy clears existing data first", async () => {
+    await kv.set(KV.summaryRepairs, testSession.id, { sessionId: testSession.id, token: "old-repair", dueAt: 0, attempts: 0 });
     const newSession: Session = {
       id: "ses_new",
       project: "new-project",
@@ -258,6 +325,59 @@ describe("Export/Import Functions", () => {
 
     const oldSession = await kv.get("mem:sessions", "ses_1");
     expect(oldSession).toBeNull();
+    expect(await kv.get(KV.summaryRepairs, testSession.id)).toBeNull();
+  });
+
+  it.each([
+    { section: "lessons", shape: "an object", value: { les_1: { id: "les_1" } }, error: "lessons must be an array" },
+    { section: "profiles", shape: "a string", value: "ab", error: "profiles must be an array" },
+    { section: "accessLogs", shape: "a string", value: "oops", error: "accessLogs must be an array" },
+    { section: "lessons", shape: "null", value: null, error: "lessons must be an array" },
+    { section: "profiles", shape: "null", value: null, error: "profiles must be an array" },
+    { section: "accessLogs", shape: "null", value: null, error: "accessLogs must be an array" },
+    { section: "graphNodes", shape: "null", value: null, error: "graphNodes must be an array" },
+    {
+      section: "accessLogs",
+      shape: "over the cap",
+      value: Array.from({ length: 50_001 }, () => ({ memoryId: testMemory.id })),
+      error: "Too many access logs (max 50000)",
+    },
+    { section: "lessons", shape: "a null row", value: [null], error: "lessons[0] must be an object with a string id" },
+    { section: "facets", shape: "a null row", value: [null], error: "facets[0] must be an object with a string id" },
+    { section: "memories", shape: "a null row", value: [null], error: "memories[0] must be an object with a string id" },
+    { section: "accessLogs", shape: "a null row", value: [null], error: "accessLogs[0] must be an object with a string memoryId" },
+    { section: "lessons", shape: "a row without id", value: [{ content: "x" }], error: "lessons[0] must be an object with a string id" },
+    { section: "lessons", shape: "a row with an empty id", value: [{ id: "" }], error: "lessons[0] must be an object with a string id" },
+    { section: "profiles", shape: "a row without project", value: [{ id: "my-project" }], error: "profiles[0] must be an object with a string project" },
+    { section: "sessions", shape: "a row without id", value: [{}], error: "sessions[0] must be an object with a string id" },
+    { section: "summaries", shape: "a row without sessionId", value: [{ id: "ses_1" }], error: "summaries[0] must be an object with a string sessionId" },
+    {
+      section: "observations",
+      shape: "a row without id",
+      value: { ses_1: [{ sessionId: "ses_1" }] },
+      error: "observations.ses_1[0] must be an object with a string id",
+    },
+  ])("replace import leaves the store intact when $section is $shape", async ({ section, value, error }) => {
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      [section]: value,
+    } as unknown as ExportData;
+
+    const result = await sdk
+      .trigger("mem::import", { exportData, strategy: "replace" })
+      .catch((thrown: unknown) => thrown);
+
+    expect(result).not.toBeInstanceOf(Error);
+    expect(result).toMatchObject({ success: false, error });
+    expect(await kv.get(KV.sessions, testSession.id)).toEqual(testSession);
+    expect(await kv.get(KV.memories, testMemory.id)).toEqual(testMemory);
+    expect(await kv.get(KV.lessons, testLesson.id)).toEqual(testLesson);
+    expect(await kv.get(KV.accessLog, testAccessLog.memoryId)).toEqual(testAccessLog);
   });
 
   it("export then import round-trip preserves data", async () => {
@@ -307,5 +427,356 @@ describe("Export/Import Functions", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("Unsupported export version");
+  });
+});
+
+const bloatedIds = (prefix: string, n: number) =>
+  Array.from({ length: n }, (_, i) => `${prefix}_${String(i).padStart(3, "0")}`);
+
+describe("import bounds graph provenance", () => {
+  it("caps sourceObservationIds on imported graph nodes and edges", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const exportData = {
+      version: "0.9.28",
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      graphNodes: [
+        {
+          id: "gn_bloat",
+          type: "file",
+          name: "src/hot.ts",
+          properties: {},
+          sourceObservationIds: bloatedIds("obs", 400),
+          createdAt: "2026-03-01T00:00:00Z",
+        },
+        {
+          id: "gn_small",
+          type: "file",
+          name: "src/cold.ts",
+          properties: {},
+          sourceObservationIds: ["obs_x"],
+          createdAt: "2026-03-01T00:00:00Z",
+        },
+      ],
+      graphEdges: [
+        {
+          id: "ge_bloat",
+          type: "related_to",
+          sourceNodeId: "gn_bloat",
+          targetNodeId: "gn_small",
+          weight: 0.5,
+          sourceObservationIds: bloatedIds("eobs", 100),
+          createdAt: "2026-03-01T00:00:00Z",
+        },
+      ],
+    } as unknown as ExportData;
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "merge",
+    })) as { success: boolean };
+    expect(result.success).toBe(true);
+    const n = await kv.get<{ sourceObservationIds: string[] }>("mem:graph:nodes", "gn_bloat");
+    const s = await kv.get<{ sourceObservationIds: string[] }>("mem:graph:nodes", "gn_small");
+    const e = await kv.get<{ sourceObservationIds: string[] }>("mem:graph:edges", "ge_bloat");
+    expect(n!.sourceObservationIds).toEqual(bloatedIds("obs", 400).slice(-32));
+    expect(s!.sourceObservationIds).toEqual(["obs_x"]);
+    expect(e!.sourceObservationIds).toEqual(bloatedIds("eobs", 100).slice(-32));
+  });
+});
+
+describe("Export collection pagination", () => {
+  let sdk: ReturnType<typeof mockSdk>;
+  let kv: ReturnType<typeof mockKV>;
+
+  beforeEach(async () => {
+    sdk = mockSdk();
+    kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set("mem:sessions", "ses_1", testSession);
+    for (let i = 0; i < 7; i++) {
+      await kv.set("mem:memories", `mem_${i}`, { ...testMemory, id: `mem_${i}` });
+    }
+    for (let i = 0; i < 5; i++) {
+      await kv.set("mem:graph:nodes", `node_${i}`, { id: `node_${i}`, label: `n${i}` });
+    }
+  });
+
+  it("returns every collection in full when no collection limit is given", async () => {
+    const result = (await sdk.trigger("mem::export", {})) as ExportData;
+
+    expect(result.memories.length).toBe(7);
+    expect(result.graphNodes?.length).toBe(5);
+    expect(result.collectionPagination).toBeUndefined();
+  });
+
+  it("bounds every collection, not just sessions, when a collection limit is given", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collectionLimit: 3,
+    })) as ExportData;
+
+    expect(result.memories.length).toBe(3);
+    expect(result.graphNodes?.length).toBe(3);
+    expect(result.collectionPagination?.limit).toBe(3);
+    expect(result.collectionPagination?.offset).toBe(0);
+    expect(result.collectionPagination?.totals["memories"]).toBe(7);
+    expect(result.collectionPagination?.totals["graphNodes"]).toBe(5);
+    expect(result.collectionPagination?.hasMore).toBe(true);
+  });
+
+  it("walks a collection to its end across pages", async () => {
+    const page2 = (await sdk.trigger("mem::export", {
+      collectionLimit: 3,
+      collectionOffset: 3,
+    })) as ExportData;
+    expect(page2.memories.length).toBe(3);
+    expect(page2.collectionPagination?.offset).toBe(3);
+    expect(page2.collectionPagination?.limit).toBe(3);
+    expect(page2.collectionPagination?.hasMore).toBe(true);
+
+    const page3 = (await sdk.trigger("mem::export", {
+      collectionLimit: 3,
+      collectionOffset: 6,
+    })) as ExportData;
+    expect(page3.memories.length).toBe(1);
+    expect(page3.collectionPagination?.hasMore).toBe(false);
+  });
+});
+
+describe("Export collection pages and import", () => {
+  let sdk: ReturnType<typeof mockSdk>;
+  let kv: ReturnType<typeof mockKV>;
+  const logged = ["mem_0", "mem_2", "mem_4", "mem_5", "mem_6"];
+
+  beforeEach(async () => {
+    sdk = mockSdk();
+    kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    for (let i = 0; i < 7; i++) {
+      await kv.set("mem:memories", `mem_${i}`, { ...testMemory, id: `mem_${i}` });
+    }
+    for (const id of logged) {
+      await kv.set("mem:access", id, { memoryId: id, count: 2, lastAt: "2026-02-01T00:00:00Z", recent: [] });
+    }
+  });
+
+  it("pages access logs together with the memories they belong to", async () => {
+    const seen: string[] = [];
+    for (const collectionOffset of [0, 3, 6]) {
+      const page = (await sdk.trigger("mem::export", {
+        collectionLimit: 3,
+        collectionOffset,
+      })) as ExportData;
+      const ids = new Set(page.memories.map((m) => m.id));
+      const logIds = (page.accessLogs ?? []).map((l) => l.memoryId);
+      expect(logIds.every((id) => ids.has(id))).toBe(true);
+      expect(page.collectionPagination?.totals["accessLogs"]).toBe(5);
+      seen.push(...logIds);
+    }
+    expect(seen.sort()).toEqual(logged);
+  });
+
+  it("restores every access log when the pages are imported one by one", async () => {
+    const target = mockKV();
+    const targetSdk = mockSdk();
+    registerExportImportFunction(targetSdk as never, target as never);
+    for (const collectionOffset of [0, 3, 6]) {
+      const page = await sdk.trigger("mem::export", { collectionLimit: 3, collectionOffset });
+      const result = (await targetSdk.trigger("mem::import", {
+        exportData: page,
+        strategy: "merge",
+      })) as { success: boolean };
+      expect(result.success).toBe(true);
+    }
+    expect((await target.list("mem:memories")).length).toBe(7);
+    expect((await target.list("mem:access")).length).toBe(5);
+  });
+
+  it("refuses to replace the store with a page of an export", async () => {
+    const page = await sdk.trigger("mem::export", { collectionLimit: 3 });
+    const result = (await sdk.trigger("mem::import", {
+      exportData: page,
+      strategy: "replace",
+    })) as { success: boolean; error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/replace/);
+    expect((await kv.list("mem:memories")).length).toBe(7);
+  });
+
+  it("refuses to replace the store with a selection of collections", async () => {
+    const selection = await sdk.trigger("mem::export", { collections: "memories" });
+    const result = (await sdk.trigger("mem::import", {
+      exportData: selection,
+      strategy: "replace",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(false);
+    expect((await kv.list("mem:access")).length).toBe(5);
+  });
+
+  it("refuses to replace the store with a page of sessions", async () => {
+    for (const id of ["ses_1", "ses_2", "ses_3"]) {
+      await kv.set("mem:sessions", id, { ...testSession, id });
+    }
+    for (const offset of [0, 2]) {
+      const page = await sdk.trigger("mem::export", { maxSessions: 2, offset });
+      const result = (await sdk.trigger("mem::import", {
+        exportData: page,
+        strategy: "replace",
+      })) as { success: boolean };
+      expect(result.success).toBe(false);
+    }
+    expect((await kv.list("mem:sessions")).length).toBe(3);
+    expect((await kv.list("mem:memories")).length).toBe(7);
+  });
+
+  it("replaces the store with a session window that covers every session", async () => {
+    await kv.set("mem:sessions", "ses_1", testSession);
+    const whole = await sdk.trigger("mem::export", { maxSessions: 10 });
+    const result = (await sdk.trigger("mem::import", {
+      exportData: whole,
+      strategy: "replace",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+  });
+
+  it("reports no further page for an access-log selection", async () => {
+    const page = (await sdk.trigger("mem::export", {
+      collections: "accessLogs",
+      collectionLimit: 3,
+    })) as ExportData;
+
+    expect(page.collectionPagination?.hasMore).toBe(false);
+  });
+});
+
+describe("Export collection allowlist", () => {
+  let sdk: ReturnType<typeof mockSdk>;
+  let kv: ReturnType<typeof mockKV>;
+
+  beforeEach(async () => {
+    sdk = mockSdk();
+    kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set("mem:sessions", "ses_1", testSession);
+    await kv.set("mem:obs:ses_1", "obs_1", testObs);
+    await kv.set("mem:summaries", "ses_1", testSummary);
+    for (let i = 0; i < 7; i++) {
+      await kv.set("mem:memories", `mem_${i}`, { ...testMemory, id: `mem_${i}` });
+    }
+    for (let i = 0; i < 20; i++) {
+      await kv.set("mem:graph:nodes", `node_${i}`, { id: `node_${i}`, label: `n${i}` });
+    }
+  });
+
+  it("drops the collections outside the allowlist", async () => {
+    await kv.set("mem:access", "mem_0", { memoryId: "mem_0", count: 1, lastAt: "2026-02-01T00:00:00Z", recent: [] });
+    const result = (await sdk.trigger("mem::export", {
+      collections: ["memories", "summaries"],
+    })) as ExportData;
+
+    expect(result.memories.length).toBe(7);
+    expect(result.summaries.length).toBe(1);
+    expect(result.graphNodes).toBeUndefined();
+    expect(result.accessLogs).toBeUndefined();
+  });
+
+  it("accepts the allowlist as a comma-separated string", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: "memories, summaries",
+    })) as ExportData;
+
+    expect(result.memories.length).toBe(7);
+    expect(result.summaries.length).toBe(1);
+    expect(result.graphNodes).toBeUndefined();
+  });
+
+  it("keeps collectionTotals reporting every collection", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: ["memories"],
+      collectionLimit: 3,
+    })) as ExportData;
+
+    expect(result.collectionPagination?.totals["memories"]).toBe(7);
+    expect(result.collectionPagination?.totals["summaries"]).toBe(1);
+    expect(result.collectionPagination?.totals["graphNodes"]).toBe(20);
+  });
+
+  it("computes hasMore from the allowlist alone", async () => {
+    const selected = (await sdk.trigger("mem::export", {
+      collections: ["memories"],
+      collectionLimit: 7,
+    })) as ExportData;
+    expect(selected.collectionPagination?.hasMore).toBe(false);
+
+    const everything = (await sdk.trigger("mem::export", {
+      collectionLimit: 7,
+    })) as ExportData;
+    expect(everything.collectionPagination?.hasMore).toBe(true);
+  });
+
+  it("ignores unknown collection names instead of failing", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: ["memories", "notACollection"],
+      collectionLimit: 7,
+    })) as ExportData;
+
+    expect(result.memories.length).toBe(7);
+    expect(result.graphNodes).toBeUndefined();
+    expect(result.collectionPagination?.collections).toEqual(["memories"]);
+    expect(result.collectionPagination?.hasMore).toBe(false);
+  });
+
+  it("selects nothing when the allowlist names no known collection", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: ["notACollection"],
+      collectionLimit: 3,
+    })) as ExportData;
+
+    expect(result.memories).toEqual([]);
+    expect(result.summaries).toEqual([]);
+    expect(result.graphNodes).toBeUndefined();
+    expect(result.collectionPagination?.totals["memories"]).toBe(7);
+    expect(result.collectionPagination?.hasMore).toBe(false);
+  });
+
+  it("treats an empty allowlist as an explicit empty selection", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: "",
+    })) as ExportData;
+
+    expect(result.memories).toEqual([]);
+    expect(result.graphNodes).toBeUndefined();
+  });
+
+  it("exports sessions only when the selection names them", async () => {
+    const without = (await sdk.trigger("mem::export", {
+      collections: ["memories"],
+    })) as ExportData;
+    expect(without.sessions).toEqual([]);
+    expect(without.observations).toEqual({});
+
+    const withSessions = (await sdk.trigger("mem::export", {
+      collections: ["memories", "sessions"],
+    })) as ExportData;
+    expect(withSessions.sessions.length).toBe(1);
+    expect(withSessions.observations["ses_1"].length).toBe(1);
+  });
+
+  it("marks a selection without a collection limit as partial", async () => {
+    const result = (await sdk.trigger("mem::export", {
+      collections: "memories",
+    })) as ExportData;
+
+    expect(result.collectionPagination?.collections).toEqual(["memories"]);
+    expect(result.collectionPagination?.limit).toBeUndefined();
+    expect(result.collectionPagination?.totals["graphNodes"]).toBe(20);
+    expect(result.collectionPagination?.hasMore).toBe(false);
   });
 });

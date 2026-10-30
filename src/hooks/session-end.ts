@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { resolveProject, hookCwd } from "./_project.js";
+import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -8,16 +9,51 @@ function isSdkChildContext(payload: unknown): boolean {
   return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
 }
 
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+type TranscriptBlock = { type?: string; text?: string };
+type TranscriptLine = {
+  role?: string;
+  type?: string;
+  source?: string;
+  content?: unknown;
+  isSidechain?: boolean;
+  isMeta?: boolean;
+  isCompactSummary?: boolean;
+  promptId?: string;
+  timestamp?: string;
+  message?: { role?: string; content?: string | TranscriptBlock[] };
+};
 
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
+type TranscriptPrompt = { prompt: string; promptId?: string; timestamp?: string };
+
+const HARNESS_TEXT =
+  /^(?:<(?:command-name|command-message|command-args|local-command-stdout|local-command-stderr|local-command-caveat|bash-input|bash-stdout|bash-stderr|task-notification|system-reminder|ci-monitor-event|cross-session-message|scheduled-task)(?=[\s>])|\[Request interrupted)/;
+
+function isUserTurn(msg: TranscriptLine): boolean {
+  if (msg.isSidechain || msg.isMeta || msg.isCompactSummary) return false;
+  return (
+    msg.role === "user" || msg.type === "user" || msg.message?.role === "user"
+  );
 }
 
-function extractTranscriptPrompts(data: Record<string, unknown>): string[] {
+function promptText(raw: string): string {
+  const m = raw.match(/<user_query>\n?([\s\S]*?)\n?<\/user_query>/);
+  const text = (m ? m[1] : raw).trim();
+  return HARNESS_TEXT.test(text) ? "" : text;
+}
+
+function turnTexts(content: string | TranscriptBlock[] | undefined): string[] {
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+  const texts: string[] = [];
+  for (const block of content) {
+    if (block?.type === "text" && typeof block.text === "string") {
+      texts.push(block.text);
+    }
+  }
+  return texts;
+}
+
+function extractTranscriptPrompts(data: Record<string, unknown>): TranscriptPrompt[] {
   const path = data.transcript_path;
   if (typeof path !== "string" || !path.endsWith(".jsonl")) return [];
   let raw: string;
@@ -26,31 +62,36 @@ function extractTranscriptPrompts(data: Record<string, unknown>): string[] {
   } catch {
     return [];
   }
-  const prompts: string[] = [];
+  const prompts: TranscriptPrompt[] = [];
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
-    let msg: {
-      role?: string;
-      message?: { content?: Array<{ type?: string; text?: string }> };
-    };
+    let msg: TranscriptLine;
     try {
       msg = JSON.parse(line);
     } catch {
       continue;
     }
-    if (msg.role !== "user") continue;
-    for (const block of msg.message?.content ?? []) {
+    if (msg.type === "USER_INPUT" && msg.source === "USER_EXPLICIT" && typeof msg.content === "string") {
       if (prompts.length >= 50) return prompts;
-      if (block.type !== "text" || typeof block.text !== "string") continue;
-      const m = block.text.match(/<user_query>\n?([\s\S]*?)\n?<\/user_query>/);
-      const text = (m ? m[1] : block.text).trim();
-      if (text) prompts.push(text.slice(0, 8000));
+      const match = msg.content.match(/<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/);
+      const text = (match ? match[1] : msg.content).trim();
+      if (text) prompts.push({ prompt: text.slice(0, 8000) });
+      continue;
+    }
+    if (!isUserTurn(msg)) continue;
+    const texts = turnTexts(msg.message?.content).map(promptText).filter(Boolean);
+    const promptId = typeof msg.promptId === "string" ? msg.promptId : undefined;
+    const timestamp = typeof msg.timestamp === "string" ? msg.timestamp : undefined;
+    for (const text of promptId ? [texts.join("\n\n")].filter(Boolean) : texts) {
+      if (prompts.length >= 50) return prompts;
+      prompts.push({ prompt: text.slice(0, 8000), promptId, timestamp });
     }
   }
   return prompts;
 }
 
 async function main() {
+  if (isDrainChild()) return runDrainChild();
   let input = "";
   for await (const chunk of process.stdin) {
     input += chunk;
@@ -74,20 +115,16 @@ async function main() {
     const project = resolveProject(cwd);
     const timestamp = new Date().toISOString();
     await Promise.allSettled(
-      transcriptPrompts.map((prompt) =>
-        fetch(`${REST_URL}/agentmemory/observe`, {
-          method: "POST",
-          headers: authHeaders(),
-          body: JSON.stringify({
-            hookType: "prompt_submit",
-            sessionId,
-            project,
-            cwd,
-            timestamp,
-            data: { prompt },
-          }),
-          signal: AbortSignal.timeout(3000),
-        }),
+      transcriptPrompts.map(({ prompt, promptId, timestamp: at }, index) =>
+        captureObservation(
+          withEventId(
+            { hookType: "prompt_submit", sessionId, project, cwd, timestamp: at ?? timestamp, data: { prompt, backfill: true } },
+            promptId ? { prompt_id: promptId } : {},
+            { source: "transcript", transcript: data.transcript_path, index, prompt },
+            { stable: true },
+          ),
+          3000,
+        ),
       ),
     );
   }
@@ -95,7 +132,7 @@ async function main() {
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ sessionId }),
+    body: JSON.stringify({ sessionId, final: true }),
     signal: AbortSignal.timeout(30000),
   }).catch(() => {});
 

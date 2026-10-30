@@ -1,0 +1,88 @@
+name: Release gate
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "website/**"
+      - "docs/**"
+      - "assets/**"
+      - "**/*.md"
+      - "**/*.mdx"
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "website/**"
+      - "docs/**"
+      - "assets/**"
+      - "**/*.md"
+      - "**/*.mdx"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  packed-artifact:
+    name: packed artifact (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
+      - run: npm run release:gate -- --out "${{ runner.temp }}/release-gate"
+      - name: Verify live workers and plugins on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          engine_pin=$(node --import tsx --input-type=module -e 'import { III_PINNED_VERSION } from "./src/version.ts"; console.log(III_PINNED_VERSION)')
+          engine_bin="$HOME/.cache/agentmemory-release-gate/iii-${engine_pin}-linux-x64"
+          test -x "$engine_bin"
+          AGENTMEMORY_TEST_III="$engine_bin" AGENTMEMORY_REQUIRE_LIVE_TESTS=1 npx vitest run test/compose-supervision-integration.test.ts test/codex-live-daemon.test.ts
+      - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
+      - name: Test packaged vector recovery
+        shell: bash
+        run: |
+          pack_dir="$(mktemp -d "${{ runner.temp }}/vector-recovery-pack.XXXXXX")"
+          npm pack --pack-destination "$pack_dir"
+          tarballs=("$pack_dir"/agentmemory-agentmemory-*.tgz)
+          test "${#tarballs[@]}" -eq 1
+          test -f "${tarballs[0]}"
+          npm run test:vector-recovery:packaged -- \
+            --tarball "${tarballs[0]}" \
+            --dependencies "$GITHUB_WORKSPACE/node_modules" \
+            --out "${{ runner.temp }}/vector-recovery-gate"
+      - run: npm run test:summary-recovery:packaged -- --skip-build --out "${{ runner.temp }}/summary-recovery-gate"
+      - run: npm run test:cli-diagnostics:packaged -- --skip-build --out "${{ runner.temp }}/cli-diagnostics-gate"
+      - name: Verify bounded graph migration with the packaged CLI
+        run: |
+          mkdir -p "$RUNNER_TEMP/graph-index-pack"
+          npm pack --ignore-scripts --pack-destination "$RUNNER_TEMP/graph-index-pack"
+          archives=("$RUNNER_TEMP"/graph-index-pack/*.tgz)
+          npm run test:graph-index:packaged -- --tarball "${archives[0]}" --out "$RUNNER_TEMP/graph-index-gate"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/release-gate
+            ${{ runner.temp }}/startup-gate
+            ${{ runner.temp }}/vector-recovery-gate
+            ${{ runner.temp }}/summary-recovery-gate
+            ${{ runner.temp }}/cli-diagnostics-gate
+            ${{ runner.temp }}/graph-index-gate
+          if-no-files-found: ignore
+          retention-days: 14

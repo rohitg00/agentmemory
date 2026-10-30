@@ -3,14 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-// Regression tests for #678:
-//   - isSlotsEnabled / isReflectEnabled must read from ~/.agentmemory/.env
-//     (not only process.env), so users who set AGENTMEMORY_SLOTS in the
-//     dotfile see the flag take effect.
-//   - HTTP triggers must return 503 with enableHow when the flag is off,
-//     not 500.
-
-describe("isSlotsEnabled — reads merged env (#678)", () => {
+describe("isSlotsEnabled — reads merged env", () => {
   let home: string;
   let ORIG_HOME: string | undefined;
   let ORIG_FLAG: string | undefined;
@@ -57,7 +50,7 @@ describe("isSlotsEnabled — reads merged env (#678)", () => {
   });
 });
 
-describe("isReflectEnabled — reads merged env (#678)", () => {
+describe("isReflectEnabled — reads merged env", () => {
   let home: string;
   let ORIG_HOME: string | undefined;
   let ORIG_FLAG: string | undefined;

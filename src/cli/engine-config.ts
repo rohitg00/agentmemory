@@ -1,121 +1,46 @@
 import { join } from "node:path";
 
-export interface EngineConfigOptions {
-  dataDir: string;
-  ports?: EngineRuntimePorts;
+export const ENGINE_DEFAULT_SAVE_INTERVAL_MS = 5000;
+export const AGENTMEMORY_STATE_SAVE_INTERVAL_MS = 2000;
+export const ENGINE_FLUSH_MARGIN_MS = 1500;
+
+export function engineFlushWaitMs(
+  stateBackend: "file" | "redis",
+  configTexts: readonly string[],
+): number {
+  if (stateBackend === "redis") return 0;
+  return engineSaveIntervalMs(configTexts) + ENGINE_FLUSH_MARGIN_MS;
 }
 
-export interface EngineRuntimePorts {
-  restPort: number;
-  streamPort: number;
-  viewerPort: number;
-  enginePort: number;
+export function captureDurableAfterMs(
+  stateBackend: "file" | "redis",
+  configTexts: readonly string[],
+): number {
+  if (stateBackend === "redis") return ENGINE_FLUSH_MARGIN_MS;
+  return engineSaveIntervalMs(configTexts) + ENGINE_FLUSH_MARGIN_MS;
 }
 
-function yamlSingleQuote(value: string): string {
-  return `'${value.replace(/'/g, "''")}'`;
-}
-
-function workerBlock(
-  lines: string[],
-  name: string,
-): { start: number; end: number; indent: string } | null {
-  const marker = `- name: ${name}`;
-  const start = lines.findIndex((line) => line.trim() === marker);
-  if (start === -1) return null;
-  const indent = lines[start]!.match(/^\s*/)?.[0] ?? "";
-  let end = lines.length;
-  for (let i = start + 1; i < lines.length; i++) {
-    const line = lines[i]!;
-    if (line.startsWith(indent) && line.trim().startsWith("- name: ")) {
-      end = i;
-      break;
+export function engineSaveIntervalMs(configTexts: readonly string[], env: NodeJS.ProcessEnv = process.env): number {
+  const intervals: number[] = [];
+  for (const text of configTexts) {
+    const explicit: number[] = [];
+    for (const match of text.matchAll(/save_interval_ms:\s*["']?(\d+|\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-(\d+))?\})/g)) {
+      const raw = match[2] ? env[match[2]] || match[3] : match[1];
+      if (raw && /^\d+$/.test(raw) && Number.isSafeInteger(Number(raw))) explicit.push(Number(raw));
     }
+    intervals.push(...explicit);
+    const fileStores = text.match(/store_method:\s*file_based/g)?.length ?? 0;
+    if (fileStores > explicit.length) intervals.push(ENGINE_DEFAULT_SAVE_INTERVAL_MS);
   }
-  return { start, end, indent };
+  return intervals.length > 0 ? Math.max(...intervals) : ENGINE_DEFAULT_SAVE_INTERVAL_MS;
 }
 
-function setWorkerPort(lines: string[], name: string, port: number): void {
-  let block = workerBlock(lines, name);
-  if (!block && name === "iii-worker-manager") {
-    const workersIndex = lines.findIndex((line) => line.trim() === "workers:");
-    if (workersIndex === -1) return;
-    lines.splice(
-      workersIndex + 1,
-      0,
-      "  - name: iii-worker-manager",
-      "    config:",
-      `      port: ${port}`,
-      "      host: 127.0.0.1",
-    );
-    return;
-  }
-  if (!block) return;
-
-  const portIndex = lines.findIndex(
-    (line, index) =>
-      index > block!.start &&
-      index < block!.end &&
-      line.trim().startsWith("port:"),
-  );
-  if (portIndex !== -1) {
-    const indent = lines[portIndex]!.match(/^\s*/)?.[0] ?? `${block.indent}    `;
-    lines[portIndex] = `${indent}port: ${port}`;
-    return;
-  }
-
-  const configIndex = lines.findIndex(
-    (line, index) =>
-      index > block!.start && index < block!.end && line.trim() === "config:",
-  );
-  if (configIndex !== -1) {
-    const configIndent = lines[configIndex]!.match(/^\s*/)?.[0] ?? `${block.indent}  `;
-    lines.splice(configIndex + 1, 0, `${configIndent}  port: ${port}`);
-  }
-}
-
-function setManagedCorsOrigins(
-  lines: string[],
-  restPort: number,
-  viewerPort: number,
-): void {
-  const block = workerBlock(lines, "iii-http");
-  if (!block) return;
-  const originsIndex = lines.findIndex(
-    (line, index) =>
-      index > block.start &&
-      index < block.end &&
-      line.trim().startsWith("allowed_origins:"),
-  );
-  if (originsIndex === -1) return;
-  const indent = lines[originsIndex]!.match(/^\s*/)?.[0] ?? "        ";
-  lines[originsIndex] =
-    `${indent}allowed_origins: [` +
-    `"http://localhost:${restPort}", ` +
-    `"http://localhost:${viewerPort}", ` +
-    `"http://127.0.0.1:${restPort}", ` +
-    `"http://127.0.0.1:${viewerPort}"]`;
-}
-
-export function renderEngineConfig(
-  template: string,
-  options: EngineConfigOptions,
-): string {
-  const rendered = template
-    .replace(
-      "file_path: ./data/state_store.db",
-      `file_path: ${yamlSingleQuote(join(options.dataDir, "state_store.db"))}`,
-    )
-    .replace(
-      "file_path: ./data/stream_store",
-      `file_path: ${yamlSingleQuote(join(options.dataDir, "stream_store"))}`,
-    );
-  if (!options.ports) return rendered;
-
-  const lines = rendered.split("\n");
-  setWorkerPort(lines, "iii-http", options.ports.restPort);
-  setWorkerPort(lines, "iii-stream", options.ports.streamPort);
-  setWorkerPort(lines, "iii-worker-manager", options.ports.enginePort);
-  setManagedCorsOrigins(lines, options.ports.restPort, options.ports.viewerPort);
-  return lines.join("\n");
+export function engineStateConfigPaths(engineCwd: string, runtimePath: string): string[] {
+  return [...new Set([
+    join(engineCwd, "compose", "worker-compose.yaml"),
+    join(engineCwd, "compose", "config", "state.yaml"),
+    join(engineCwd, "worker-compose.runtime.yaml"),
+    join(engineCwd, "config", "state.yaml"),
+    runtimePath,
+  ])];
 }

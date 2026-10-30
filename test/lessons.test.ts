@@ -4,7 +4,8 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-import { registerLessonsFunctions } from "../src/functions/lessons.js";
+import { normalizeLessonSourceIds, registerLessonsFunctions } from "../src/functions/lessons.js";
+import { currentAuditScope } from "./helpers/mocks.js";
 import type { Lesson } from "../src/types.js";
 
 function mockKV() {
@@ -128,6 +129,33 @@ describe("Lessons", () => {
       expect(result.lesson.source).toBe("crystal");
       expect(result.lesson.sourceIds).toEqual(["crys_123"]);
       expect(result.lesson.confidence).toBe(0.6);
+    });
+
+    it("merges new sourceIds into an existing lesson when it is strengthened", async () => {
+      await sdk.trigger("mem::lesson-save", { content: "Run tsc first", sourceIds: ["ses_a", "mem_1"] });
+      const result = (await sdk.trigger("mem::lesson-save", {
+        content: "Run tsc first",
+        sourceIds: ["mem_1", "ses_b"],
+      })) as { action: string; lesson: Lesson };
+
+      expect(result.action).toBe("strengthened");
+      expect(result.lesson.sourceIds).toEqual(["ses_a", "mem_1", "ses_b"]);
+    });
+  });
+
+  describe("normalizeLessonSourceIds", () => {
+    it("trims, dedupes and accepts a missing value", () => {
+      expect(normalizeLessonSourceIds(undefined)).toEqual([]);
+      expect(normalizeLessonSourceIds([" ses_1 ", "ses_1", "mem_2"])).toEqual(["ses_1", "mem_2"]);
+    });
+
+    it("rejects anything that is not a short list of id strings", () => {
+      expect(normalizeLessonSourceIds("ses_1")).toBeNull();
+      expect(normalizeLessonSourceIds([1])).toBeNull();
+      expect(normalizeLessonSourceIds([""])).toBeNull();
+      expect(normalizeLessonSourceIds(["two words"])).toBeNull();
+      expect(normalizeLessonSourceIds(["x".repeat(201)])).toBeNull();
+      expect(normalizeLessonSourceIds(Array.from({ length: 51 }, (_, i) => `ses_${i}`))).toBeNull();
     });
   });
 
@@ -443,7 +471,7 @@ describe("Lessons", () => {
 
       await sdk.trigger("mem::lesson-delete", { lessonId: saved.lesson.id });
 
-      const auditRows = (await kv.list("mem:audit")) as Array<{
+      const auditRows = (await kv.list(currentAuditScope())) as Array<{
         operation: string;
         targetIds: string[];
       }>;

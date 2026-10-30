@@ -1,4 +1,6 @@
-import type { ISdk } from "iii-sdk";
+import { createGraphIndexReader } from "../state/graph-retrieval-index.js";
+import { lookupObservationSession } from "../state/obs-index.js";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
 import type {
@@ -9,9 +11,13 @@ import type {
   Lesson,
   Crystal,
   MemoryProvider,
+  CompressedObservation,
+  Memory,
+  Session,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 
 interface ConceptCluster {
   concepts: string[];
@@ -23,6 +29,73 @@ interface ConceptCluster {
   crystalIds: string[];
 }
 
+function parseInsight(attributes: string, content: string, cluster: ConceptCluster) {
+  const attributePattern = /(?:^|\s)(confidence|title|sources)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
+  if (attributes.replace(attributePattern, "").trim()) return null;
+  const values = new Map<string, string>();
+  for (const match of attributes.matchAll(attributePattern)) {
+    if (values.has(match[1])) return null;
+    values.set(match[1], match[2] ?? match[3]);
+  }
+  const confidenceText = values.get("confidence")?.trim();
+  const confidence = Number(confidenceText);
+  const title = values.get("title")?.trim();
+  content = content.trim();
+  if (!confidenceText || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 || !title || !content || /<\/?insight\b/.test(content)) return null;
+
+  const sourceMemoryIds = new Set<string>();
+  const sourceLessonIds = new Set<string>();
+  const sourceCrystalIds = new Set<string>();
+  for (const label of new Set((values.get("sources") ?? "").split(/[\s,]+/).filter(Boolean))) {
+    const match = /^([FLC])([1-9]\d*)$/.exec(label);
+    if (!match) return null;
+    const index = Number(match[2]) - 1;
+    const [ids, selected] = match[1] === "F" ? [cluster.factIds, sourceMemoryIds]
+      : match[1] === "L" ? [cluster.lessonIds, sourceLessonIds]
+      : [cluster.crystalIds, sourceCrystalIds];
+    const id = ids[index];
+    if (typeof id !== "string" || !id) return null;
+    selected.add(id);
+  }
+  if (sourceMemoryIds.size + sourceLessonIds.size + sourceCrystalIds.size < 2) return null;
+  return {
+    confidence, title: decodeXmlText(title), content: decodeXmlText(content),
+    sourceMemoryIds: [...sourceMemoryIds],
+    sourceLessonIds: [...sourceLessonIds],
+    sourceCrystalIds: [...sourceCrystalIds],
+  };
+}
+
+function decodeXmlText(text: string): string {
+  const entities: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&apos;": "'" };
+  return text.replace(/&(amp|lt|gt|quot|apos);/g, (entity) => entities[entity]);
+}
+
+async function evidenceStillCurrent(
+  kv: StateKV,
+  parsed: NonNullable<ReturnType<typeof parseInsight>>,
+  cluster: ConceptCluster,
+): Promise<boolean> {
+  const checks = [
+    ...parsed.sourceMemoryIds.map((id) => ({
+      scope: KV.semantic, id, field: "fact",
+      text: cluster.facts[cluster.factIds.indexOf(id)].fact,
+    })),
+    ...parsed.sourceLessonIds.map((id) => ({
+      scope: KV.lessons, id, field: "content",
+      text: cluster.lessons[cluster.lessonIds.indexOf(id)].content,
+    })),
+    ...parsed.sourceCrystalIds.map((id) => ({
+      scope: KV.crystals, id, field: "narrative",
+      text: cluster.crystalNarratives[cluster.crystalIds.indexOf(id)],
+    })),
+  ];
+  return (await Promise.all(checks.map(async ({ scope, id, field, text }) => {
+    const current = await kv.get<Record<string, unknown>>(scope, id);
+    return !!current && current[field] === text && current.deleted !== true;
+  }))).every(Boolean);
+}
+
 function reinforceInsight(insight: Insight): void {
   const now = new Date().toISOString();
   insight.reinforcements++;
@@ -32,6 +105,71 @@ function reinforceInsight(insight: Insight): void {
   );
   insight.lastReinforcedAt = now;
   insight.updatedAt = now;
+}
+
+async function reflectionGraph(state: StateKV, project?: string): Promise<{
+  nodes: GraphNode[]; edges: GraphEdge[]; diagnostic: { status: string; truncated: boolean };
+}> {
+  const controller = new AbortController();
+  const empty = (status: string) => ({ nodes: [], edges: [], diagnostic: { status, truncated: true } });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const work = (async () => {
+    const reader = await createGraphIndexReader(state, { signal: controller.signal, maxReads: 256, maxBytes: 512 * 1024 });
+    if (!reader) return empty("unavailable");
+    const read = reader.read.bind(reader);
+    const sources = new Map<string, Promise<boolean>>();
+    const backed = async (row: GraphNode | GraphEdge): Promise<boolean> => {
+      for (const id of row.sourceObservationIds) {
+        if (reader.remainingReads <= 8) return false;
+        let source = sources.get(id);
+        if (!source) {
+          source = (async () => {
+            const memory = await read<Memory>(KV.memories, id);
+            if (memory) {
+              if (memory.isLatest === false) return false;
+              if (!project) return true;
+              if (memory.project !== undefined) return memory.project === project;
+              return (await read<Session>(KV.sessions, memory.sessionIds?.[0] ?? "memory"))?.project === project;
+            }
+            const sessionId = await lookupObservationSession({ get: read } as StateKV, id);
+            if (!sessionId) return false;
+            const observation = await read<CompressedObservation>(KV.observations(sessionId), id);
+            if (observation?.id !== id || observation.sessionId !== sessionId) return false;
+            return !project || (await read<Session>(KV.sessions, sessionId))?.project === project;
+          })();
+          sources.set(id, source);
+        }
+        if (await source) return true;
+      }
+      return false;
+    };
+    const inventory = await reader.posting("nodes", "", { limit: 64 });
+    let truncated = Boolean(inventory.cursor) || reader.status.incompleteRecords > 0;
+    const nodes: GraphNode[] = [];
+    for (const id of inventory.ids) {
+      if (reader.remainingReads <= 32) { truncated = true; break; }
+      const node = await reader.getNode(id);
+      if (node && node.type === "concept" && !node.stale && await backed(node)) nodes.push(node);
+    }
+    const selected = new Set(nodes.map((node) => node.id));
+    const edges = new Map<string, GraphEdge>();
+    for (const node of nodes) {
+      if (reader.remainingReads <= 8) { truncated = true; break; }
+      const adjacency = await reader.posting("adjacency", node.id, { limit: 16 });
+      truncated ||= Boolean(adjacency.cursor);
+      for (const id of adjacency.ids) {
+        const edge = await reader.getEdge(id);
+        if (edge && !edge.stale && edge.isLatest !== false && selected.has(edge.sourceNodeId) && selected.has(edge.targetNodeId) && await backed(edge)) edges.set(id, edge);
+      }
+    }
+    if (!await reader.finish()) return empty("changed");
+    return { nodes, edges: [...edges.values()], diagnostic: { status: "ready", truncated: truncated || reader.exhausted } };
+  })().catch(() => empty("unavailable"));
+  try {
+    return await Promise.race([work, new Promise<ReturnType<typeof empty>>((resolve) => {
+      timer = setTimeout(() => { controller.abort(); resolve(empty("timeout")); }, 500);
+    })]);
+  } finally { clearTimeout(timer); }
 }
 
 function buildGraphClusters(
@@ -46,7 +184,7 @@ function buildGraphClusters(
 
   const edgeMap = new Map<string, Set<string>>();
   for (const edge of edges) {
-    if (edge.stale) continue;
+    if (edge.stale || edge.isLatest === false) continue;
     if (!edgeMap.has(edge.sourceNodeId))
       edgeMap.set(edge.sourceNodeId, new Set());
     if (!edgeMap.has(edge.targetNodeId))
@@ -66,10 +204,11 @@ function buildGraphClusters(
 
   const visited = new Set<string>();
   const clusters: string[][] = [];
-  const conceptNodeIds = new Set(conceptNodes.map((n) => n.id));
+  const nodeById = new Map(conceptNodes.map((n) => [n.id, n]));
 
   for (const seed of sorted) {
-    if (visited.has(seed.id) || clusters.length >= maxClusters) break;
+    if (clusters.length >= maxClusters) break;
+    if (visited.has(seed.id)) continue;
 
     const cluster: string[] = [];
     const queue = [seed.id];
@@ -83,9 +222,9 @@ function buildGraphClusters(
         if (seen.has(current)) continue;
         seen.add(current);
 
-        if (conceptNodeIds.has(current)) {
-          const node = conceptNodes.find((n) => n.id === current);
-          if (node) cluster.push(node.name);
+        const node = nodeById.get(current);
+        if (node) {
+          cluster.push(node.name);
           visited.add(current);
         }
 
@@ -161,20 +300,21 @@ function buildJaccardClusters(
 }
 
 export function registerReflectFunctions(
-  sdk: ISdk,
-  kv: StateKV,
+  sdk: IIIClient,
+  state: StateKV,
   provider: MemoryProvider,
 ): void {
+  const kv = state;
   sdk.registerFunction("mem::reflect", 
     async (data: { maxClusters?: number; project?: string }) => {
+      const kv = state;
       const maxClusters = Math.min(data?.maxClusters ?? 10, 20);
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
 
-      const [graphNodes, graphEdges, semanticMemories, lessons, crystals] =
+      const [graph, semanticMemories, lessons, crystals] =
         await Promise.all([
-          kv.list<GraphNode>(KV.graphNodes).catch(() => []),
-          kv.list<GraphEdge>(KV.graphEdges).catch(() => []),
+          reflectionGraph(kv, data?.project),
           kv.list<SemanticMemory>(KV.semantic).catch(() => []),
           kv.list<Lesson>(KV.lessons).catch(() => []),
           kv.list<Crystal>(KV.crystals).catch(() => []),
@@ -186,12 +326,13 @@ export function registerReflectFunctions(
       }
 
       let conceptClusters = buildGraphClusters(
-        graphNodes,
-        graphEdges,
+        graph.nodes,
+        graph.edges,
         maxClusters,
       );
 
-      const usedFallback = conceptClusters.length === 0;
+      const clusterStrategy = conceptClusters.length === 0 ? "jaccard" : "graph";
+      const usedFallback = clusterStrategy === "jaccard";
       if (usedFallback) {
         conceptClusters = buildJaccardClusters(
           semanticMemories,
@@ -204,6 +345,9 @@ export function registerReflectFunctions(
       let reinforced = 0;
       let clustersSkipped = 0;
       let totalInsights = 0;
+      let rejectedInsights = 0;
+      let failedClusters = 0;
+      const acceptedIds = new Set<string>();
 
       for (const conceptNames of conceptClusters) {
         if (totalInsights >= maxTotal) break;
@@ -257,58 +401,74 @@ export function registerReflectFunctions(
           const prompt = buildReflectPrompt(cluster);
           const response = await provider.summarize(REFLECT_SYSTEM, prompt);
 
-          const insightRegex =
-            /<insight\s+confidence="([^"]+)"\s+title="([^"]+)">([\s\S]*?)<\/insight>/g;
-          let match;
+          const matches = [...response.matchAll(/<insight\b([^<>]*)>([\s\S]*?)<\/insight>/g)];
+          const incomplete = (response.match(/<insight\b/g) ?? []).length - matches.length;
+          if (incomplete > 0) {
+            rejectedInsights += incomplete;
+            failedClusters++;
+          }
+          if (matches.length === 0) {
+            if (!incomplete && !/<insights>\s*<\/insights>/.test(response)) failedClusters++;
+            continue;
+          }
           let clusterCount = 0;
 
-          while (
-            (match = insightRegex.exec(response)) !== null &&
-            clusterCount < maxInsightsPerCluster &&
-            totalInsights < maxTotal
-          ) {
-            const parsedConf = parseFloat(match[1]);
-            const confidence = Number.isNaN(parsedConf)
-              ? 0.5
-              : Math.max(0, Math.min(1, parsedConf));
-            const title = match[2].trim();
-            const content = match[3].trim();
-
-            if (!content) continue;
-
-            const fp = fingerprintId("ins", content.trim().toLowerCase());
-            const existing = await kv.get<Insight>(KV.insights, fp);
-
-            if (existing && !existing.deleted) {
-              reinforceInsight(existing);
-              await kv.set(KV.insights, existing.id, existing);
-              reinforced++;
-            } else {
-              const now = new Date().toISOString();
-              const insight: Insight = {
-                id: fp,
-                title,
-                content,
-                confidence,
-                reinforcements: 0,
-                sourceConceptCluster: conceptNames,
-                sourceMemoryIds: cluster.factIds,
-                sourceLessonIds: cluster.lessonIds,
-                sourceCrystalIds: cluster.crystalIds,
-                project: data?.project,
-                tags: conceptNames,
-                createdAt: now,
-                updatedAt: now,
-                decayRate: 0.05,
-              };
-              await kv.set(KV.insights, insight.id, insight);
-              newInsights++;
+          for (const match of matches) {
+            if (clusterCount >= maxInsightsPerCluster || totalInsights >= maxTotal) break;
+            const parsed = parseInsight(match[1], match[2], cluster);
+            if (!parsed) {
+              rejectedInsights++;
+              continue;
             }
+            const { confidence, title, content } = parsed;
+
+            const fp = fingerprintId("ins_v1", JSON.stringify([1, data?.project || null, content.toLowerCase()]));
+            if (acceptedIds.has(fp)) {
+              rejectedInsights++;
+              continue;
+            }
+            const accepted = await withKeyedLock(`insight:${fp}`, async () => {
+              if (!await evidenceStillCurrent(kv, parsed, cluster)) return false;
+              const existing = await kv.get<Insight>(KV.insights, fp);
+              const evidence = {
+                sourceMemoryIds: parsed.sourceMemoryIds,
+                sourceLessonIds: parsed.sourceLessonIds,
+                sourceCrystalIds: parsed.sourceCrystalIds,
+                evidenceVersion: 1 as const,
+              };
+              if (existing && !existing.deleted) {
+                const insight = { ...existing, ...evidence };
+                reinforceInsight(insight);
+                await kv.set(KV.insights, insight.id, insight);
+                reinforced++;
+              } else {
+                const now = new Date().toISOString();
+                const insight: Insight = {
+                  id: fp, title, content, confidence,
+                  reinforcements: 0,
+                  sourceConceptCluster: conceptNames,
+                  ...evidence,
+                  project: data?.project,
+                  tags: conceptNames,
+                  createdAt: now, updatedAt: now,
+                  decayRate: 0.05,
+                };
+                await kv.set(KV.insights, insight.id, insight);
+                newInsights++;
+              }
+              return true;
+            });
+            if (!accepted) {
+              rejectedInsights++;
+              continue;
+            }
+            acceptedIds.add(fp);
 
             clusterCount++;
             totalInsights++;
           }
         } catch {
+          failedClusters++;
           continue;
         }
       }
@@ -319,17 +479,25 @@ export function registerReflectFunctions(
           reinforced,
           clustersProcessed: conceptClusters.length - clustersSkipped,
           clustersSkipped,
+          clusterStrategy,
           usedFallback,
+          rejectedInsights,
+          failedClusters,
         });
       } catch {}
 
       return {
-        success: true,
+        success: failedClusters === 0,
         newInsights,
         reinforced,
         clustersProcessed: conceptClusters.length - clustersSkipped,
         clustersSkipped,
+        clusterStrategy,
+        /** @deprecated Use clusterStrategy to identify the clustering algorithm. */
         usedFallback,
+        rejectedInsights,
+        failedClusters,
+        graph: { ...graph.diagnostic, nodes: graph.nodes.length, edges: graph.edges.length },
       };
     },
   );
@@ -431,38 +599,30 @@ export function registerReflectFunctions(
       const timestamp = new Date().toISOString();
       const dirty: Insight[] = [];
 
-      for (const insight of items) {
-        if (insight.deleted) continue;
+      for (const item of items) {
+        await withKeyedLock(`insight:${item.id}`, async () => {
+          const current = await kv.get<Insight>(KV.insights, item.id);
+          if (!current || current.deleted) return;
+          const insight = { ...current };
+          const baseline = Math.max(...[
+            insight.createdAt, insight.lastDecayedAt, insight.lastReinforcedAt,
+          ].filter((date): date is string => !!date).map((date) => new Date(date).getTime()));
+          const weeksSince = (now - baseline) / (1000 * 60 * 60 * 24 * 7);
+          if (!Number.isFinite(weeksSince) || weeksSince < 1) return;
 
-        const baseline =
-          insight.lastDecayedAt ||
-          insight.lastReinforcedAt ||
-          insight.createdAt;
-        const weeksSince =
-          (now - new Date(baseline).getTime()) / (1000 * 60 * 60 * 24 * 7);
-
-        if (weeksSince < 1) continue;
-
-        const decay = insight.decayRate * weeksSince;
-        const newConfidence = Math.max(0.05, insight.confidence - decay);
-
-        if (newConfidence !== insight.confidence) {
+          const newConfidence = Math.max(0.05, insight.confidence - insight.decayRate * weeksSince);
+          if (newConfidence === insight.confidence) return;
           insight.confidence = Math.round(newConfidence * 1000) / 1000;
           insight.lastDecayedAt = timestamp;
           insight.updatedAt = timestamp;
-
-          if (insight.confidence <= 0.1 && insight.reinforcements === 0) {
-            insight.deleted = true;
-            softDeleted++;
-          } else {
-            decayed++;
-          }
-
+          if (insight.confidence <= 0.1 && insight.reinforcements === 0) insight.deleted = true;
+          await kv.set(KV.insights, insight.id, insight);
+          if (insight.deleted) softDeleted++;
+          else decayed++;
           dirty.push(insight);
-        }
+        });
       }
 
-      await Promise.all(dirty.map((i) => kv.set(KV.insights, i.id, i)));
       await recordAudit(kv, "reflect", "mem::insight-decay-sweep", dirty.map((i) => i.id), {
         event: "insight.decay",
         decayed,

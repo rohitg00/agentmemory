@@ -112,6 +112,11 @@ describe("fetchWithTimeout bounded retry (total deadline)", () => {
   //    initial request past HARD_BUDGET_CAP_MS (170s) and the iii 180s
   //    invocation timeout before any retry logic ran.
   it("caps the first attempt at the hard budget, not the raw caller timeout", async () => {
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), ms);
+      return controller.signal;
+    });
     const signals: AbortSignal[] = [];
     const capturing = ((_url: string, init?: RequestInit) => {
       const signal = init!.signal as AbortSignal;
@@ -432,15 +437,7 @@ describe("Provider hang regression — OpenRouterEmbeddingProvider", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────
-// #446 — OpenAI LLM provider env-var precedence
-//
-// v0.9.17 shipped OPENAI_TIMEOUT_MS (OpenAI-scoped). PR #379 then
-// shipped AGENTMEMORY_LLM_TIMEOUT_MS (shared). The provider now
-// honours both: OPENAI_TIMEOUT_MS wins for back-compat, with
-// AGENTMEMORY_LLM_TIMEOUT_MS as the global fall-back.
-// ─────────────────────────────────────────────────────────────
-describe("OpenAIProvider timeout env precedence (#446)", () => {
+describe("OpenAIProvider timeout env precedence", () => {
   beforeEach(() => {
     delete process.env["OPENAI_TIMEOUT_MS"];
     delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
@@ -511,13 +508,7 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────
-// #627 — OpenAI provider must read message.reasoning_content
-// DeepSeek V4 / Qwen3 / GLM / Kimi return reasoning_content (with
-// underscore); only checking `reasoning` left thinking-model output
-// dropped on the floor and tripped the compress circuit breaker.
-// ─────────────────────────────────────────────────────────────
-describe("OpenAIProvider thinking-model fallback (#627)", () => {
+describe("OpenAIProvider thinking-model fallback", () => {
   beforeEach(() => {
     delete process.env["OPENAI_TIMEOUT_MS"];
     delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];

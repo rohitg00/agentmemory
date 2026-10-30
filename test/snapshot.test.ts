@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
+const snapshotContent = vi.hoisted(() => vi.fn(() => '{"version":"0.4.0","sessions":[],"memories":[]}'));
+
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -19,7 +21,7 @@ vi.mock("node:util", async () => {
   >;
   return {
     ...actual,
-    promisify: () => async () => ({ stdout: "abc1234\n", stderr: "" }),
+    promisify: () => async (_file: string, args: string[]) => ({ stdout: args[0] === "show" ? snapshotContent() : "abc1234\n", stderr: "" }),
   };
 });
 
@@ -27,12 +29,13 @@ vi.mock("node:fs", () => ({
   existsSync: vi.fn().mockReturnValue(true),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
-  readFileSync: vi
-    .fn()
-    .mockReturnValue('{"version":"0.4.0","sessions":[],"memories":[]}'),
 }));
 
 import { registerSnapshotFunction } from "../src/functions/snapshot.js";
+import { currentAuditScope } from "./helpers/mocks.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
+import { KV } from "../src/state/schema.js";
+import { getProjectSessionIndex } from "../src/state/session-index.js";
 import type { Session, Memory, SnapshotMeta } from "../src/types.js";
 
 function mockKV() {
@@ -157,10 +160,63 @@ describe("Snapshot Functions", () => {
     expect(result.commitHash).toBe("abc1234");
   });
 
+  it("snapshot-restore self-heals the project session index for restored sessions", async () => {
+    const restoredSession: Session = {
+      id: "ses_restored",
+      project: "proj-restored",
+      cwd: "/tmp/restored",
+      startedAt: "2026-02-01T00:00:00Z",
+      status: "completed",
+      observationCount: 0,
+    };
+    snapshotContent.mockReturnValueOnce(
+      JSON.stringify({
+        version: "0.4.0",
+        sessions: [restoredSession],
+        memories: [],
+      }),
+    );
+
+    expect(
+      await getProjectSessionIndex(kv as never, "proj-restored"),
+    ).toBeNull();
+
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    const index = await getProjectSessionIndex(kv as never, "proj-restored");
+    expect(index?.map((e) => e.id)).toEqual(["ses_restored"]);
+  });
+
+  it("waits for summary publication before replacing restored observation content", async () => {
+    const old = { id: "obs_locked", sessionId: "ses_1", timestamp: "2026-02-01T00:00:00Z",
+      type: "decision", title: "Original", narrative: "Old content", facts: [], concepts: [], files: [], importance: 5 };
+    const replacement = { ...old, title: "Restored", narrative: "Changed content" };
+    await kv.set(KV.observations("ses_1"), old.id, old);
+    snapshotContent.mockReturnValueOnce(JSON.stringify({
+      sessions: [], memories: [], observations: { ses_1: [replacement] },
+    }));
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const publishing = withKeyedLock("obs:ses_1", async () => { entered(); await gate; });
+    await ready;
+    const restoring = sdk.trigger("mem::snapshot-restore", { commitHash: "abc1234" });
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(await kv.get(KV.observations("ses_1"), old.id)).toEqual(old);
+    } finally { release(); await publishing; }
+    expect(await restoring).toMatchObject({ success: true });
+    expect(await kv.get(KV.observations("ses_1"), old.id)).toEqual(replacement);
+  });
+
   it("snapshot-create records an audit entry", async () => {
     await sdk.trigger("mem::snapshot-create", { message: "Audit test" });
 
-    const audits = await kv.list("mem:audit");
+    const audits = await kv.list(currentAuditScope());
     expect(audits.length).toBe(1);
   });
 });
@@ -223,5 +279,40 @@ describe("snapshot-create reentrancy guard", () => {
     })) as { success: boolean; snapshot?: unknown };
     expect(r3.success).toBe(true);
     expect(r3.snapshot).toBeDefined();
+  });
+});
+
+const bloatedIds = (prefix: string, n: number) =>
+  Array.from({ length: n }, (_, i) => `${prefix}_${String(i).padStart(3, "0")}`);
+
+describe("snapshot-restore bounds graph provenance", () => {
+  it("caps sourceObservationIds on restored graph nodes", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSnapshotFunction(sdk as never, kv as never, "/tmp/agentmemory-snapshots");
+    snapshotContent.mockReturnValueOnce(
+      JSON.stringify({
+        version: "0.4.0",
+        sessions: [],
+        memories: [],
+        graphNodes: [
+          {
+            id: "gn_bloat",
+            type: "file",
+            name: "src/hot.ts",
+            properties: {},
+            sourceObservationIds: bloatedIds("obs", 250),
+            createdAt: "2026-03-01T00:00:00Z",
+          },
+        ],
+      }),
+    );
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+    expect(result.success).toBe(true);
+    const n = await kv.get<{ name: string; sourceObservationIds: string[] }>("mem:graph:nodes", "gn_bloat");
+    expect(n!.name).toBe("src/hot.ts");
+    expect(n!.sourceObservationIds).toEqual(bloatedIds("obs", 250).slice(-32));
   });
 });

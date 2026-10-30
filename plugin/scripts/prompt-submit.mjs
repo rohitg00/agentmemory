@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
-import { basename } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
+import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
 	if (explicit && explicit.trim()) return explicit.trim();
 	const dir = cwd && cwd.trim() ? cwd : process.cwd();
 	try {
-		const top = execSync("git rev-parse --show-toplevel", {
+		const [top, gitDir, commonDir] = execSync("git rev-parse --show-toplevel --git-dir --git-common-dir", {
 			cwd: dir,
 			stdio: [
 				"ignore",
@@ -15,10 +17,17 @@ function resolveProject(cwd) {
 				"ignore"
 			],
 			timeout: 500
-		}).toString().trim();
-		if (top) return basename(top);
+		}).toString().trim().split(/\r?\n/);
+		if (top) return basename(repositoryRoot(dir, top, gitDir, commonDir));
 	} catch {}
 	return basename(dir);
+}
+function repositoryRoot(dir, top, gitDir, commonDir) {
+	if (!gitDir || !commonDir) return top;
+	const physical = realpathSync(dir);
+	const common = resolve(physical, commonDir);
+	if (resolve(physical, gitDir) === common || basename(common) !== ".git") return top;
+	return dirname(common);
 }
 function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;
@@ -37,14 +46,10 @@ function isSdkChildContext(payload) {
 	if (!payload || typeof payload !== "object") return false;
 	return payload.entrypoint === "sdk-ts";
 }
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-function authHeaders() {
-	const h = { "Content-Type": "application/json" };
-	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-	return h;
-}
+const OBSERVE_TIMEOUT_MS = 3e3;
+const EXIT_CAP_MS = 3500;
 async function main() {
+	if (isDrainChild()) return runDrainChild();
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
 	let data;
@@ -57,20 +62,15 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
 	const cwd = hookCwd(data) || process.cwd();
-	fetch(`${REST_URL}/agentmemory/observe`, {
-		method: "POST",
-		headers: authHeaders(),
-		body: JSON.stringify({
-			hookType: "prompt_submit",
-			sessionId,
-			project: resolveProject(cwd),
-			cwd,
-			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-			data: { prompt: data.prompt ?? data.userPrompt }
-		}),
-		signal: AbortSignal.timeout(3e3)
-	}).catch(() => {});
-	setTimeout(() => process.exit(0), 500).unref();
+	captureObservation(withEventId({
+		hookType: "prompt_submit",
+		sessionId,
+		project: resolveProject(cwd),
+		cwd,
+		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+		data: { prompt: data.prompt ?? data.userPrompt }
+	}, data), OBSERVE_TIMEOUT_MS);
+	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 main().catch(() => process.exit(0));
 //#endregion

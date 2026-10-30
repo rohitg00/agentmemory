@@ -1,12 +1,27 @@
 name: agentmemory
-version: 0.9.29
-description: "Persistent cross-session memory for Hermes Agent via agentmemory. 95.2% retrieval accuracy on LongMemEval."
+version: 0.9.31
+description: "Persistent memory for Hermes Agent with profile-scoped capture, recall, and native memory tools."
 author: "Rohit Ghumare"
 homepage: "https://github.com/rohitg00/agentmemory"
+optional_env:
+  - name: AGENTMEMORY_URL
+    description: "AgentMemory server URL"
+    password: false
+  - name: AGENTMEMORY_SECRET
+    description: "AgentMemory server authentication secret"
+    password: true
+  - name: AGENTMEMORY_PROJECT_NAME
+    description: "Explicit project scope; otherwise use the active workspace"
+    password: false
+  - name: AGENTMEMORY_AGENT_ID
+    description: "Optional shared identity; otherwise isolate this profile and author"
+    password: false
 hooks:
+  - on_turn_start
   - prefetch
   - sync_turn
   - on_session_end
+  - on_session_switch
   - on_pre_compress
   - on_memory_write
   - system_prompt_block

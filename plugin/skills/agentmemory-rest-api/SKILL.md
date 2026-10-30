@@ -12,31 +12,37 @@ REST is agentmemory's primary surface. MCP is a bridge on top of it. Every memor
 # liveness
 curl -fsS http://localhost:3111/agentmemory/livez
 
+# For this fixed loopback URL only. Do not print the value or enable shell tracing.
+agentmemory_secret="${AGENTMEMORY_SECRET:-$(cat "$HOME/.agentmemory/secret")}"
+test -n "$agentmemory_secret" || exit 1
+
 # save
-curl -X POST http://localhost:3111/agentmemory/remember \
+curl -fsS -X POST http://localhost:3111/agentmemory/remember \
+  -H "Authorization: Bearer $agentmemory_secret" \
   -H "Content-Type: application/json" \
   -d '{"content":"chose JWT refresh rotation","concepts":["jwt-refresh-rotation"]}'
 
 # recall
-curl -X POST http://localhost:3111/agentmemory/smart-search \
+curl -fsS -X POST http://localhost:3111/agentmemory/smart-search \
+  -H "Authorization: Bearer $agentmemory_secret" \
   -H "Content-Type: application/json" \
   -d '{"query":"auth token strategy","limit":5}'
 ```
 
 ## Auth
 
-By default localhost is open and no auth is needed. When `AGENTMEMORY_SECRET` is set, every request needs `Authorization: Bearer $AGENTMEMORY_SECRET`. See agentmemory-config.
+Protected endpoints require bearer authentication by default, including localhost. Liveness is public. The example uses an explicit environment secret or the generated local secret file; if the daemon uses a secret from its `.env`, load that value locally without displaying it. For a remote daemon, require an explicit credential for that endpoint and HTTPS. Never forward a local-file secret or follow an authenticated redirect to another host. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Conventions
 
 - Save returns `201`, reads return `200`, validation errors return `400`.
-- Handlers whitelist body fields and drop unknown ones, so passing extra keys is safe but ignored.
-- The port is configurable with `--port` or `--instance`; streams, viewer, and engine derive from it.
+- Use documented fields only. A successful response does not prove an unsupported field was applied.
+- The REST port defaults to `3111` and is configurable with `--port` or `--instance`. The viewer defaults to `3113`; the internal engine WebSocket defaults to `49134`.
 
 ## See also
 
 - agentmemory-mcp-tools for the MCP equivalents.
-- agentmemory-config for the port quartet and the secret.
+- agentmemory-config for local configuration and the secret.
 
 ## Reference
 

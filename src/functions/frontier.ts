@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import type { Action, ActionEdge, Checkpoint, Lease } from "../types.js";
@@ -10,7 +10,7 @@ export interface FrontierItem {
   leased: boolean;
 }
 
-export function registerFrontierFunction(sdk: ISdk, kv: StateKV): void {
+export function registerFrontierFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::frontier", 
     async (data: {
       project?: string;

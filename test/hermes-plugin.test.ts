@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+
+const PYTHON = execFileSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" }).trim();
 
 const expectedHermesHooks = [
+  "on_turn_start",
   "prefetch",
   "sync_turn",
   "on_session_end",
+  "on_session_switch",
   "on_pre_compress",
   "on_memory_write",
   "system_prompt_block",
@@ -62,10 +67,15 @@ describe("Hermes plugin manifest", () => {
     expect(declaredHooks).toEqual(expectedHermesHooks);
   });
 
-  it("preloads AGENTMEMORY_URL default at import time", () => {
-    const source = readFileSync("integrations/hermes/__init__.py", "utf8");
-    expect(source).toMatch(
-      /os\.environ\.setdefault\(\s*["']AGENTMEMORY_URL["']\s*,\s*DEFAULT_BASE_URL\s*\)/,
-    );
-  });
+  it("satisfies native provider runtime and credential contracts", () => {
+    const result = spawnSync(PYTHON, ["test/hermes-provider-contracts.py", "-v"], {
+      encoding: "utf8",
+      timeout: 60_000,
+      env: { PATH: process.env.PATH, PYTHONDONTWRITEBYTECODE: "1" },
+    });
+    const diagnostics = [result.error?.message, result.signal, result.stderr, result.stdout]
+      .filter(Boolean)
+      .join("\n");
+    expect(result.status, diagnostics).toBe(0);
+  }, 70_000);
 });

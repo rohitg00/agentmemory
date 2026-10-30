@@ -9,7 +9,7 @@ Invocation:
 ```json
 memory_save {
   "content": "We decided to drop Redis and use the iii-engine state store for session caching to remove a moving part.",
-  "concepts": "session-caching, iii-state-store, dropped-redis",
+  "concepts": "session-caching, state-worker-store, dropped-redis",
   "files": ""
 }
 ```
@@ -17,12 +17,12 @@ memory_save {
 Response:
 
 ```json
-{ "id": "7f3a9c21", "concepts": ["session-caching", "iii-state-store", "dropped-redis"], "saved": true }
+{ "id": "7f3a9c21", "concepts": ["session-caching", "state-worker-store", "dropped-redis"], "saved": true }
 ```
 
 Present:
 
-> Saved. Tagged it `session-caching`, `iii-state-store`, `dropped-redis`, so a
+> Saved. Tagged it `session-caching`, `state-worker-store`, `dropped-redis`, so a
 > later recall on caching or Redis will surface this decision.
 
 ## 2. Saving a code-specific gotcha

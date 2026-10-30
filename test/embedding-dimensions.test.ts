@@ -37,6 +37,16 @@ describe("resolveDimensions", () => {
     );
   });
 
+  it("ignores an OpenRouter variant suffix on the model id", () => {
+    expect(resolveDimensions("openai/text-embedding-3-large:floor", undefined, ENV)).toBe(3072);
+    expect(resolveDimensions("openai/text-embedding-3-large:nitro", undefined, ENV)).toBe(3072);
+    expect(resolveDimensions("text-embedding-3-large:floor", undefined, ENV)).toBe(3072);
+    expect(resolveDimensions("acme/unknown-embed:floor", undefined, ENV)).toBe(1536);
+    expect(resolveDimensions("acme/constructor:floor", undefined, ENV)).toBe(1536);
+    expect(resolveDimensions("toString", undefined, ENV)).toBe(1536);
+    expect(resolveDimensions("openai/text-embedding-3-large:floor", "256", ENV)).toBe(256);
+  });
+
   it("falls back to the default (1536) for unknown models", () => {
     expect(resolveDimensions("mystery-self-hosted-model", undefined, ENV)).toBe(1536);
     expect(resolveDimensions("someprovider/unknown-model", undefined, ENV)).toBe(1536);

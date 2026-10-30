@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 430" width="960" height="430" role="img" aria-labelledby="t d">
+<title id="t">agentmemory capture path under a hard kill, and what it costs</title>
+<desc id="d">Tool calls flow from the agent through the post-tool-use hook into agentmemory on port 3111 and into state. The service is killed with SIGKILL; the next tool calls land in the local spool file capture-spool/local-3111.jsonl. After the restart the spool drains into state. Measured: 10,000 of 10,000 memories and vectors back after SIGKILL with 0 embedding calls, and 1,000 of 1,000 tool calls kept while the service was down. At 10,000 memories: 32 MiB of disk for text, 72 MiB with 768-dimension vectors, 504 to 788 MiB of RAM for engine and worker, 1,455 of 2,000 context tokens per session, hook median 59 to 139 ms with p95 under 235 ms, and no API keys required.</desc>
+<style>
+:root{--bg:#F9F9F7;--card:#FFFFFF;--soft:#F2F2EE;--ink:#111111;--muted:#6B6B66;--hair:#E1E1DC;--hair2:#CFCFC9;--pk:#1D4E89;--red:#cf2d56;--green:#1f8a65}
+@media (prefers-color-scheme:dark){:root{--bg:#111214;--card:#17181B;--soft:#1D1F23;--ink:#EEF0F3;--muted:#94979D;--hair:#26282C;--hair2:#34373C;--pk:#93C5FD;--red:#f2555a;--green:#3fb950}}
+text{font-family:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;fill:var(--ink)}
+.bg{fill:var(--bg)}.card{fill:var(--card);stroke:var(--hair2)}.soft{fill:var(--soft)}.hair{stroke:var(--hair);fill:none}
+.box{fill:var(--card);stroke:var(--hair2)}.row{fill:var(--soft);stroke:var(--hair)}
+.cap{font-size:11px;letter-spacing:.08em;fill:var(--muted)}.t12{font-size:12px}.t11{font-size:11px;fill:var(--muted)}.v{font-size:12.5px;font-weight:600}
+.wire{stroke:var(--hair2);stroke-width:1.2;fill:none}.dash{stroke-dasharray:3 4}
+.pk{fill:var(--pk)}.e.pk{opacity:0}.red{fill:var(--red)}.redline{stroke:var(--red);stroke-width:1.5}.green{fill:var(--green)}
+.e{animation-timing-function:cubic-bezier(.23,1,.32,1);animation-duration:4.6s;animation-fill-mode:both;animation-iteration-count:1}
+.rise{animation:rise .42s cubic-bezier(.23,1,.32,1) both}
+@keyframes rise{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.pa{animation-name:pa}.pb{animation-name:pb}.pc{animation-name:pc}.pd{animation-name:pd}.pe{animation-name:pe}
+@keyframes pa{0%{opacity:0;transform:translate(178px,80px)}11%{opacity:1;transform:translate(178px,80px)}20%{transform:translate(204px,141px)}28%{transform:translate(338px,141px)}34%{opacity:1;transform:translate(480px,141px)}37%,100%{opacity:0;transform:translate(480px,141px)}}
+@keyframes pb{0%{opacity:0;transform:translate(178px,106px)}17%{opacity:1;transform:translate(178px,106px)}25%{transform:translate(204px,141px)}33%{transform:translate(338px,141px)}39%{opacity:1;transform:translate(480px,141px)}42%,100%{opacity:0;transform:translate(480px,141px)}}
+@keyframes pc{0%{opacity:0;transform:translate(178px,132px)}45%{opacity:1;transform:translate(178px,132px)}52%{transform:translate(204px,141px)}59%,72%{transform:translate(236px,255px)}79%{transform:translate(332px,156px)}86%{opacity:1;transform:translate(480px,150px)}89%,100%{opacity:0;transform:translate(480px,150px)}}
+@keyframes pd{0%{opacity:0;transform:translate(178px,158px)}50%{opacity:1;transform:translate(178px,158px)}56%{transform:translate(204px,141px)}63%,76%{transform:translate(254px,255px)}83%{transform:translate(332px,156px)}90%{opacity:1;transform:translate(480px,150px)}93%,100%{opacity:0;transform:translate(480px,150px)}}
+@keyframes pe{0%{opacity:0;transform:translate(178px,184px)}55%{opacity:1;transform:translate(178px,184px)}61%{transform:translate(204px,141px)}68%,80%{transform:translate(272px,255px)}87%{transform:translate(332px,156px)}95%{opacity:1;transform:translate(480px,150px)}98%,100%{opacity:0;transform:translate(480px,150px)}}
+.kill{animation-name:kill}@keyframes kill{0%,41%{opacity:0;transform:scale(.95)}44%,100%{opacity:1;transform:none}}
+.down{animation-name:down;opacity:0}@keyframes down{0%,41%{opacity:0}44%,70%{opacity:.6}74%,100%{opacity:0}}
+.up{animation-name:up}@keyframes up{0%,72%{opacity:0}76%,100%{opacity:1}}
+.kept{animation-name:kept;opacity:0}@keyframes kept{0%,64%{opacity:0}68%,78%{opacity:1}84%,100%{opacity:0}}
+.drained{animation-name:drained}@keyframes drained{0%,86%{opacity:0}90%,100%{opacity:1}}
+.stored{animation-name:stored}@keyframes stored{0%,90%{opacity:0}95%,100%{opacity:1}}
+.verdict{animation-name:verdict}@keyframes verdict{0%,94%{opacity:0;transform:translateY(4px)}100%{opacity:1;transform:none}}
+.r1{animation-delay:.05s}.r2{animation-delay:.1s}.r3{animation-delay:.15s}.r4{animation-delay:.2s}.r5{animation-delay:.25s}.r6{animation-delay:.3s}.r7{animation-delay:.35s}
+@media (prefers-reduced-motion:reduce){.e,.rise{animation:none}}
+</style>
+<rect class="bg" width="960" height="430"/>
+<rect class="card" x="10.5" y="10.5" width="939" height="409" rx="12"/>
+<path class="soft" d="M11 23 a12 12 0 0 1 12 -12 h914 a12 12 0 0 1 12 12 v21 h-938 z"/>
+<line class="hair" x1="11" y1="44.5" x2="949" y2="44.5"/>
+<text class="cap" x="26" y="32">AGENTMEMORY · CAPTURE PATH UNDER A HARD KILL</text>
+<text class="cap" x="934" y="32" text-anchor="end">NPM RUN BENCH:CAPTURE-COSTS</text>
+
+<text class="cap" x="24" y="68">AGENT</text>
+<text class="cap" x="200" y="68">HOOK</text>
+<text class="cap" x="342" y="68">SERVICE</text>
+<text class="cap" x="476" y="68">STATE</text>
+
+<g class="rise r1"><rect class="row" x="24.5" y="74.5" width="152" height="20" rx="4"/><text class="t12" x="32" y="88">Bash<tspan x="78">npm test</tspan></text></g>
+<g class="rise r2"><rect class="row" x="24.5" y="100.5" width="152" height="20" rx="4"/><text class="t12" x="32" y="114">Edit<tspan x="78">src/auth.ts</tspan></text></g>
+<g class="rise r3"><rect class="row" x="24.5" y="126.5" width="152" height="20" rx="4"/><text class="t12" x="32" y="140">Read<tspan x="78">package.json</tspan></text></g>
+<g class="rise r4"><rect class="row" x="24.5" y="152.5" width="152" height="20" rx="4"/><text class="t12" x="32" y="166">Grep<tspan x="78">"TODO"</tspan></text></g>
+<g class="rise r5"><rect class="row" x="24.5" y="178.5" width="152" height="20" rx="4"/><text class="t12" x="32" y="192">Bash<tspan x="78">git diff</tspan></text></g>
+<g class="rise r6"><rect class="row" x="24.5" y="204.5" width="152" height="20" rx="4"/><text class="t12" x="32" y="218">Write<tspan x="78">docs/api.md</tspan></text></g>
+
+<path class="wire" d="M177 85 C190 85 190 145 200 145 M177 111 C190 111 190 145 200 145 M177 137 C190 137 190 145 200 145 M177 163 C190 163 190 145 200 145 M177 189 C190 189 190 145 200 145 M177 215 C190 215 190 145 200 145"/>
+<line class="wire" x1="318" y1="145" x2="342" y2="145"/>
+<line class="wire" x1="460" y1="145" x2="476" y2="145"/>
+<path class="wire dash" d="M259 168 V236"/>
+<path class="wire dash" d="M318 260 C331 260 330 160 342 160"/>
+
+<rect class="box" x="200.5" y="122.5" width="118" height="46" rx="6"/>
+<text class="t12" x="259" y="149" text-anchor="middle">post-tool-use</text>
+
+<rect class="box" x="342.5" y="122.5" width="118" height="46" rx="6"/>
+<text class="t12" x="401" y="141" text-anchor="middle">agentmemory</text>
+<text class="t11" x="401" y="157" text-anchor="middle">:3111</text>
+<rect class="e down" x="343" y="123" width="117" height="45" rx="6" fill="var(--bg)"/>
+<g transform="rotate(-4 401 104)"><g class="e kill"><rect x="362.5" y="92.5" width="78" height="22" rx="3" fill="var(--card)" class="redline"/><text x="401" y="108" text-anchor="middle" class="v red">SIGKILL</text></g></g>
+<text class="e up t11" x="401" y="186" text-anchor="middle">restarted in ~1 s</text>
+
+<rect class="box" x="476.5" y="122.5" width="140" height="46" rx="6"/>
+<text class="t12" x="486" y="141">mem:obs:*</text>
+<text class="t12" x="486" y="159">vec-pending</text>
+<text class="e stored t11" x="546" y="186" text-anchor="middle">every call stored</text>
+
+<text class="cap" x="200" y="230">LOCAL SPOOL</text>
+<rect class="box" x="200.5" y="236.5" width="118" height="48" rx="6"/>
+<text class="t11" x="208" y="255">capture-spool/</text>
+<text class="t11" x="208" y="271">local-3111.jsonl</text>
+<text class="e kept t11" x="259" y="302" text-anchor="middle">3 kept while down</text>
+<text class="e drained t11" x="259" y="302" text-anchor="middle">drained on restart</text>
+
+<rect class="e pk pa" width="8" height="8" rx="2"/>
+<rect class="e pk pb" width="8" height="8" rx="2"/>
+<rect class="e pk pc" width="8" height="8" rx="2"/>
+<rect class="e pk pd" width="8" height="8" rx="2"/>
+<rect class="e pk pe" width="8" height="8" rx="2"/>
+
+<g class="e verdict">
+<rect x="24.5" y="318.5" width="592" height="52" rx="8" class="soft" stroke="var(--green)"/>
+<text class="v" x="36" y="340">10,000 / 10,000 memories and vectors back after SIGKILL,</text>
+<text class="v" x="36" y="358">0 embedding calls. 1,000 / 1,000 tool calls kept while down.</text>
+</g>
+
+<line class="hair" x1="640.5" y1="58" x2="640.5" y2="372"/>
+<text class="cap" x="660" y="68">COST AT 10,000 MEMORIES</text>
+<g class="rise r1"><circle class="pk" cx="664" cy="96" r="3.5"/><text class="t12" x="674" y="100">disk, text only</text><text class="v" x="934" y="100" text-anchor="end">32 MiB</text><line class="hair" x1="660" y1="112.5" x2="934" y2="112.5"/></g>
+<g class="rise r2"><circle class="pk" cx="664" cy="132" r="3.5"/><text class="t12" x="674" y="136">disk, 768-d vectors</text><text class="v" x="934" y="136" text-anchor="end">72 MiB</text><line class="hair" x1="660" y1="148.5" x2="934" y2="148.5"/></g>
+<g class="rise r3"><circle class="green" cx="664" cy="168" r="3.5"/><text class="t12" x="674" y="172">RAM, engine+worker</text><text class="v" x="934" y="172" text-anchor="end">504–788 MiB</text><line class="hair" x1="660" y1="184.5" x2="934" y2="184.5"/></g>
+<g class="rise r4"><circle fill="var(--muted)" cx="664" cy="204" r="3.5"/><text class="t12" x="674" y="208">context/session</text><text class="v" x="934" y="208" text-anchor="end">1,455/2,000 tok</text><line class="hair" x1="660" y1="220.5" x2="934" y2="220.5"/></g>
+<g class="rise r5"><circle fill="var(--muted)" cx="664" cy="240" r="3.5"/><text class="t12" x="674" y="244">hook p50</text><text class="v" x="934" y="244" text-anchor="end">59–139 ms</text><line class="hair" x1="660" y1="256.5" x2="934" y2="256.5"/></g>
+<g class="rise r6"><circle fill="var(--muted)" cx="664" cy="276" r="3.5"/><text class="t12" x="674" y="280">hook p95</text><text class="v" x="934" y="280" text-anchor="end">&lt; 235 ms</text><line class="hair" x1="660" y1="292.5" x2="934" y2="292.5"/></g>
+<g class="rise r7"><circle class="green" cx="664" cy="312" r="3.5"/><text class="t12" x="674" y="316">API keys needed</text><text class="v" x="934" y="316" text-anchor="end">none</text></g>
+<text class="t11" x="660" y="352">At 1,000: 3.6 / 7.6 MiB disk,</text>
+<text class="t11" x="660" y="368">266–365 MiB RAM.</text>
+
+<text class="t11" x="26" y="402">Apple M1 Max · iii 0.22.1 · stub 768-d embedder · file state store · worst of 2 runs · 2026-10-02</text>
+</svg>

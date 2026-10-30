@@ -10,10 +10,11 @@ The user wants a recap. Time window args: $ARGUMENTS
 ## Quick start
 
 ```json
-memory_sessions { "limit": 30 }
+memory_sessions { "project": "<current-project-id>", "limit": 30 }
 ```
 
-Then per surviving session: `memory_recall { "query": "<top concepts>", "limit": 3 }`.
+Then per surviving session: `memory_recall { "query": "<top concepts>", "project": "<current-project-id>", "limit": 3 }`.
+When an agent is requested, pass the same `agentId` to both calls.
 
 Expected output:
 
@@ -33,11 +34,15 @@ a real answer, not a prompt to invent activity.
 
 1. Parse `$ARGUMENTS`: `today` = current local date; `this week` = last 7 days;
    `last <n>` or bare numeric = most recent N; empty = `last 10`.
-2. Call `memory_sessions`, filter to the current project (match `cwd` against the
-   working directory), apply the window, sort by `startedAt` descending.
+2. Call `memory_sessions` with the exact recorded project identifier when known
+   and the requested `agentId`. Follow `nextCursor` with the same filters until
+   the requested window is covered or pages end. When the project identifier is
+   unknown, match normalized `cwd` by directory boundary across pages before
+   applying the time/count window. Sort by `startedAt` descending.
 3. Group survivors by local calendar date (YYYY-MM-DD).
 4. Per session list id (first 8), title or first prompt, observation count,
-   status. Indent 2-3 highlights (importance >= 7) from `memory_recall`.
+   status. Obtain highlights with `memory_recall`, retaining project/agent scope,
+   and verify each result belongs to that session before including it.
 5. End with "N sessions across M days, K observations."
 
 ## Anti-patterns
@@ -60,4 +65,4 @@ RIGHT: "No sessions in the last 7 days for this project."
 
 ## Troubleshooting
 
-See ../_shared/TROUBLESHOOTING.md if `memory_sessions` or `memory_recall` is not available.
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if `memory_sessions` or `memory_recall` is not available.

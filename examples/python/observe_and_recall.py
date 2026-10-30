@@ -4,7 +4,7 @@ Pattern: send hook-style observations during a coding session, then ask
 agentmemory to render the most relevant context back at a fixed token budget.
 
 Prerequisites:
-    pip install iii-sdk
+    pip install iii-sdk==0.25.0
     npx -y @agentmemory/agentmemory
 
 Run:
@@ -12,7 +12,8 @@ Run:
 """
 
 from datetime import datetime, timezone
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
 
 SESSION_ID = "py-example-session-001"
@@ -24,43 +25,47 @@ def now_iso() -> str:
 
 
 def main() -> None:
-    iii = register_worker("ws://localhost:49134")
-    iii.connect()
+    iii = register_worker(
+        os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134"),
+        InitOptions(namespace=os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")),
+    )
+    try:
+        observations = [
+            ("PreToolUse", {"tool": "Bash", "command": "cargo test"}),
+            ("PostToolUse", {"tool": "Bash", "exit_code": 0}),
+            ("UserPromptSubmit", {"prompt": "refactor auth middleware to use HMAC"}),
+        ]
 
-    observations = [
-        ("PreToolUse", {"tool": "Bash", "command": "cargo test"}),
-        ("PostToolUse", {"tool": "Bash", "exit_code": 0}),
-        ("UserPromptSubmit", {"prompt": "refactor auth middleware to use HMAC"}),
-    ]
+        for hook_type, data in observations:
+            iii.trigger(
+                {
+                    "function_id": "mem::observe",
+                    "payload": {
+                        "hookType": hook_type,
+                        "sessionId": SESSION_ID,
+                        "project": PROJECT,
+                        "cwd": "/home/user/service",
+                        "timestamp": now_iso(),
+                        "data": data,
+                    },
+                }
+            )
 
-    for hook_type, data in observations:
-        iii.trigger(
+        context = iii.trigger(
             {
-                "function_id": "mem::observe",
+                "function_id": "mem::context",
                 "payload": {
-                    "hookType": hook_type,
                     "sessionId": SESSION_ID,
                     "project": PROJECT,
-                    "cwd": "/home/user/service",
-                    "timestamp": now_iso(),
-                    "data": data,
+                    "budget": 2000,
                 },
             }
         )
 
-    context = iii.trigger(
-        {
-            "function_id": "mem::context",
-            "payload": {
-                "sessionId": SESSION_ID,
-                "project": PROJECT,
-                "budget": 2000,
-            },
-        }
-    )
-
-    print(f"Rendered context ({context.get('token_count', 0)} tokens):\n")
-    print(context.get("text", ""))
+        print(f"Rendered context ({context.get('token_count', 0)} tokens):\n")
+        print(context.get("text", ""))
+    finally:
+        iii.shutdown()
 
 
 if __name__ == "__main__":

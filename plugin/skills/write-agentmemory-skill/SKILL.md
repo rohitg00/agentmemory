@@ -13,6 +13,7 @@ plugin/skills/<name>/
   SKILL.md      (required, under 100 lines)
   REFERENCE.md  (optional, dense facts; auto-generate data tables)
   EXAMPLES.md   (optional, worked transcripts)
+  TROUBLESHOOTING.md (generated support file)
 ```
 
 ## SKILL.md rules
@@ -21,7 +22,7 @@ plugin/skills/<name>/
 - Description is two sentences and the only thing the agent sees when deciding to load the skill. Sentence one states the capability. Sentence two starts "Use when" and lists concrete triggers. Keep it distinct from sibling skills, under 1024 chars, third person.
 - Body order: Quick start (one concrete example), Why (the governing principle), Workflow (numbered steps with decision gates), Anti-patterns (a WRONG vs RIGHT callout for the top mistake), Checklist, See also (cross-link siblings), Reference or Troubleshooting pointer.
 - Stay under 100 lines. Move dense facts to REFERENCE.md and examples to EXAMPLES.md.
-- Cross-references link one level deep only. Shared recovery steps live in `../_shared/TROUBLESHOOTING.md`, never inlined.
+- Keep supporting files inside the skill directory so each skill works when installed separately. Link [TROUBLESHOOTING.md](TROUBLESHOOTING.md); the generator copies shared recovery instructions into each skill root.
 
 ## Keep it current
 

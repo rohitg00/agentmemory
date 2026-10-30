@@ -15,8 +15,20 @@ const HARD_BUDGET_CAP_MS = 170000;
 const MIN_ATTEMPT_FLOOR_MS = 100;
 const RETRY_STATUS = new Set([429, 503]);
 
-const sleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 /**
  * Parse a Retry-After header into a delay in milliseconds. Supports both the
@@ -42,19 +54,6 @@ function parseRetryAfter(header: string | null): number | undefined {
   return undefined;
 }
 
-async function fetchOnce(
-  url: string,
-  init: RequestInit,
-  ms: number,
-): Promise<Response> {
-  const ctl = new AbortController();
-  const signal = init.signal
-    ? AbortSignal.any([init.signal, ctl.signal])
-    : ctl.signal;
-  const t = setTimeout(() => ctl.abort(), ms);
-  return fetch(url, { ...init, signal }).finally(() => clearTimeout(t));
-}
-
 export async function fetchWithTimeout(
   url: string,
   init: RequestInit,
@@ -69,11 +68,15 @@ export async function fetchWithTimeout(
   // capped so we never approach the iii invocation timeout.
   const budgetMs = Math.min(ms, HARD_BUDGET_CAP_MS);
   const start = Date.now();
+  // Fetch resolves at headers. Keep this same signal alive through retries
+  // and the caller's response-body reads, including non-success responses.
+  const deadline = AbortSignal.timeout(Math.max(1, Math.floor(budgetMs)));
+  const signal = init.signal
+    ? AbortSignal.any([init.signal, deadline])
+    : deadline;
+  signal.throwIfAborted();
 
-  // The first attempt must honor the capped budget too — passing raw `ms`
-  // here would let a large caller timeout hang past HARD_BUDGET_CAP_MS (and
-  // the iii 180s invocation timeout) before any retry logic runs.
-  let response: Response = await fetchOnce(url, init, budgetMs);
+  let response = await fetch(url, { ...init, signal });
   for (let attempt = 1; attempt < MAX_ATTEMPTS; attempt++) {
     if (!RETRY_STATUS.has(response.status)) return response;
 
@@ -92,15 +95,13 @@ export async function fetchWithTimeout(
     // This response is being discarded for a retry; release its body so the
     // underlying connection is returned to the pool instead of leaking.
     await response.body?.cancel().catch(() => {});
-    await sleep(delay);
+    await sleep(delay, signal);
 
-    // Cap the per-attempt timeout to whatever budget is left so a late attempt
-    // can't push total elapsed past the deadline.
-    const attemptMs = Math.max(
-      MIN_ATTEMPT_FLOOR_MS,
-      Math.min(ms, budgetMs - (Date.now() - start)),
-    );
-    response = await fetchOnce(url, init, attemptMs);
+    signal.throwIfAborted();
+    if (Date.now() - start >= budgetMs) {
+      throw new DOMException("Provider request timed out", "TimeoutError");
+    }
+    response = await fetch(url, { ...init, signal });
   }
   return response;
 }

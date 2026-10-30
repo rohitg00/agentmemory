@@ -21,6 +21,7 @@ Output EXACTLY this XML format with no additional text:
 </observation>
 
 Rules:
+- Escape &, <, and > inside text as &amp;, &lt;, and &gt;. Use only the tags shown, with no attributes or nested tags inside text fields.
 - Be concise but preserve ALL technically relevant details
 - File paths must be exact
 - Importance: 1-3 for routine reads, 4-6 for edits/commands, 7-9 for architectural decisions, 10 for breaking changes
@@ -33,6 +34,7 @@ export function buildCompressionPrompt(observation: {
   toolInput?: unknown;
   toolOutput?: unknown;
   userPrompt?: string;
+  assistantResponse?: string;
   timestamp: string;
 }): string {
   const parts = [
@@ -57,6 +59,9 @@ export function buildCompressionPrompt(observation: {
   }
   if (observation.userPrompt) {
     parts.push(`User prompt:\n${truncate(observation.userPrompt, 2000)}`);
+  }
+  if (observation.assistantResponse) {
+    parts.push(`Assistant response:\n${truncate(observation.assistantResponse, 4000)}`);
   }
 
   return parts.join("\n\n");

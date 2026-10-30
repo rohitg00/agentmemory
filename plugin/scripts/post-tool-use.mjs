@@ -1,13 +1,77 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
-import { basename } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
+import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
+//#region src/hooks/_capture-filter.ts
+const DEFAULT_DENY_PATTERNS = [
+	"memory_*",
+	"toolsearch",
+	"listmcpresources",
+	"fetchmcpresource"
+];
+function parseEnvList(raw) {
+	if (!raw?.trim()) return void 0;
+	return raw.split(/[,\s]+/).map((part) => part.trim()).filter(Boolean);
+}
+function bareToolName(toolName) {
+	const trimmed = toolName.trim();
+	if (/^mcp__/i.test(trimmed)) {
+		const parts = trimmed.split("__");
+		if (parts.length >= 3) return parts[parts.length - 1];
+	}
+	return trimmed;
+}
+function normalizePattern(pattern) {
+	return pattern.trim().toLowerCase();
+}
+function matchesPattern(toolName, pattern) {
+	const bare = bareToolName(toolName).toLowerCase();
+	const full = toolName.trim().toLowerCase();
+	const pat = normalizePattern(pattern);
+	if (!pat.includes("*")) return bare === pat || full === pat;
+	const escaped = pat.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+	const re = new RegExp(`^${escaped.replace(/\*/g, ".*")}$`);
+	return re.test(bare) || re.test(full);
+}
+function matchesAny(toolName, patterns) {
+	return patterns.some((pattern) => matchesPattern(toolName, pattern));
+}
+function shouldCaptureTool(toolName) {
+	if (typeof toolName !== "string" || !toolName.trim()) return true;
+	const allow = parseEnvList(process.env["AGENTMEMORY_CAPTURE_ALLOW"]);
+	if (allow) return matchesAny(toolName, allow);
+	return !matchesAny(toolName, [...DEFAULT_DENY_PATTERNS, ...parseEnvList(process.env["AGENTMEMORY_CAPTURE_DENY"]) ?? []]);
+}
+function captureOutputMax() {
+	const raw = process.env["AGENTMEMORY_CAPTURE_OUTPUT_MAX"];
+	if (!raw?.trim()) return 8e3;
+	const parsed = Number.parseInt(raw, 10);
+	return Number.isFinite(parsed) && parsed > 0 ? parsed : 8e3;
+}
+function truncateCaptureOutput(value, max) {
+	if (typeof value === "string" && value.length > max) {
+		const suffix = "\n[...truncated]";
+		return max <= 15 ? suffix.slice(0, max) : value.slice(0, max - 15) + suffix;
+	}
+	if (typeof value === "object" && value !== null) {
+		const str = JSON.stringify(value);
+		if (str.length > max) {
+			const suffix = "...[truncated]";
+			return max <= 14 ? suffix.slice(0, max) : str.slice(0, max - 14) + suffix;
+		}
+		return value;
+	}
+	return value;
+}
+//#endregion
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
 	if (explicit && explicit.trim()) return explicit.trim();
 	const dir = cwd && cwd.trim() ? cwd : process.cwd();
 	try {
-		const top = execSync("git rev-parse --show-toplevel", {
+		const [top, gitDir, commonDir] = execSync("git rev-parse --show-toplevel --git-dir --git-common-dir", {
 			cwd: dir,
 			stdio: [
 				"ignore",
@@ -15,10 +79,17 @@ function resolveProject(cwd) {
 				"ignore"
 			],
 			timeout: 500
-		}).toString().trim();
-		if (top) return basename(top);
+		}).toString().trim().split(/\r?\n/);
+		if (top) return basename(repositoryRoot(dir, top, gitDir, commonDir));
 	} catch {}
 	return basename(dir);
+}
+function repositoryRoot(dir, top, gitDir, commonDir) {
+	if (!gitDir || !commonDir) return top;
+	const physical = realpathSync(dir);
+	const common = resolve(physical, commonDir);
+	if (resolve(physical, gitDir) === common || basename(common) !== ".git") return top;
+	return dirname(common);
 }
 function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;
@@ -37,14 +108,10 @@ function isSdkChildContext(payload) {
 	if (!payload || typeof payload !== "object") return false;
 	return payload.entrypoint === "sdk-ts";
 }
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-function authHeaders() {
-	const h = { "Content-Type": "application/json" };
-	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-	return h;
-}
+const OBSERVE_TIMEOUT_MS = 3e3;
+const EXIT_CAP_MS = 3500;
 async function main() {
+	if (isDrainChild()) return runDrainChild();
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
 	let data;
@@ -57,28 +124,30 @@ async function main() {
 	if (isSdkChildContext(data)) return;
 	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
 	const toolName = data.tool_name ?? data.toolName;
+	if (!shouldCaptureTool(toolName)) return;
 	const toolInput = data.tool_input ?? data.toolArgs;
 	const { imageData, cleanOutput } = extractImageData(toolOutput(data));
 	const cwd = hookCwd(data) || process.cwd();
-	fetch(`${REST_URL}/agentmemory/observe`, {
-		method: "POST",
-		headers: authHeaders(),
-		body: JSON.stringify({
-			hookType: "post_tool_use",
-			sessionId,
-			project: resolveProject(cwd),
-			cwd,
-			timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-			data: {
-				tool_name: toolName,
-				tool_input: toolInput,
-				tool_output: truncate(cleanOutput, 8e3),
-				...imageData ? { image_data: imageData } : {}
-			}
-		}),
-		signal: AbortSignal.timeout(3e3)
-	}).catch(() => {});
-	setTimeout(() => process.exit(0), 500).unref();
+	const toolOutputText = truncateCaptureOutput(cleanOutput, captureOutputMax());
+	captureObservation(withEventId({
+		hookType: "post_tool_use",
+		sessionId,
+		project: resolveProject(cwd),
+		cwd,
+		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+		data: {
+			tool_name: toolName,
+			tool_input: toolInput,
+			tool_output: toolOutputText,
+			...imageData ? { image_data: imageData } : {}
+		}
+	}, data, {
+		tool_name: toolName,
+		tool_input: toolInput,
+		tool_output: toolOutputText,
+		image_data: imageData
+	}), OBSERVE_TIMEOUT_MS);
+	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 function toolOutput(data) {
 	if (data.tool_response !== void 0) return data.tool_response;
@@ -115,15 +184,6 @@ function extractImageData(output) {
 		imageData: void 0,
 		cleanOutput: output
 	};
-}
-function truncate(value, max) {
-	if (typeof value === "string" && value.length > max) return value.slice(0, max) + "\n[...truncated]";
-	if (typeof value === "object" && value !== null) {
-		const str = JSON.stringify(value);
-		if (str.length > max) return str.slice(0, max) + "...[truncated]";
-		return value;
-	}
-	return value;
 }
 main().catch(() => process.exit(0));
 //#endregion

@@ -7,7 +7,7 @@ User: "Where were we?"
 Project cwd: `/Users/dev/app`. Invocation:
 
 ```json
-memory_sessions { "limit": 20 }
+memory_sessions { "project": "app", "limit": 20 }
 ```
 
 Response:
@@ -26,7 +26,7 @@ Response:
 Pull supporting context:
 
 ```json
-memory_recall { "query": "jwt-refresh-rotation logout", "limit": 10 }
+memory_recall { "query": "jwt-refresh-rotation logout", "project": "app", "limit": 10 }
 ```
 
 Present:
@@ -43,8 +43,9 @@ Project cwd: `/Users/dev/repo-a`. Sessions include one with `cwd:
 
 A raw prefix would match `repo-a-staging`. The boundary check rejects it because
 `/Users/dev/repo-a-staging` does not equal `/Users/dev/repo-a` and does not start
-with `/Users/dev/repo-a/`. Pick the real `repo-a` session instead, or fall back
-to the most recent session overall if none matches.
+with `/Users/dev/repo-a/`. Continue through `nextCursor` when another page is
+available. If no matching session exists, report that this project has no
+recorded session; do not substitute the most recent session from another repo.
 
 ## 3. Empty session
 

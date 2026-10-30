@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { KV, STREAM, generateId, jaccardSimilarity } from '../src/state/schema.js'
+import { KV, generateId, jaccardSimilarity } from '../src/state/schema.js'
 
 describe('KV', () => {
   it('has correct session scope', () => {
@@ -12,16 +12,6 @@ describe('KV', () => {
 
   it('has correct summaries scope', () => {
     expect(KV.summaries).toBe('mem:summaries')
-  })
-})
-
-describe('STREAM', () => {
-  it('has correct name', () => {
-    expect(STREAM.name).toBe('mem-live')
-  })
-
-  it('group returns session ID', () => {
-    expect(STREAM.group('ses_123')).toBe('ses_123')
   })
 })
 

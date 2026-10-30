@@ -18,11 +18,8 @@ import {
   writeJsonAtomic,
 } from "./util.js";
 
-// The `agy` CLI shares no configuration with the Antigravity IDE that
-// `antigravity.ts` wires — it reads MCP from ~/.gemini/config/mcp_config.json
-// and hooks from ~/.gemini/config/hooks.json (per-workspace overrides in
-// <repo>/.agents/hooks.json). Detection keys off ~/.gemini/antigravity-cli/,
-// which only the CLI creates; ~/.gemini/ alone would also match Gemini CLI.
+// Current Antigravity surfaces share ~/.gemini/config customizations.
+// Detection keys off the CLI's own state directory, not Gemini CLI's home.
 // Sources: antigravity.google/docs/hooks, antigravity.google/docs/cli/using
 const GEMINI_DIR = join(homedir(), ".gemini");
 const ANTIGRAVITY_CLI_DIR = join(GEMINI_DIR, "antigravity-cli");
@@ -34,9 +31,12 @@ export const adapter = createJsonMcpAdapter({
   displayName: "Antigravity CLI (agy)",
   detectDir: ANTIGRAVITY_CLI_DIR,
   configPath: join(CUSTOMIZATION_DIR, "mcp_config.json"),
+  // agy does not expand shell-style ${NAME:-default} values. Inherit the
+  // runtime environment so custom endpoints and credentials survive.
+  extraEntryFields: { env: {} },
   docs: "https://github.com/rohitg00/agentmemory#other-agents",
   protocolNote:
-    "→ Using MCP via ~/.gemini/config/mcp_config.json (the agy CLI, not the Antigravity IDE — that one is `connect antigravity`). The `/mcp` slash command inside agy lists configured servers. Pass --with-hooks to also install the native ~/.gemini/config/hooks.json auto-capture hooks.",
+    "→ Using MCP via ~/.gemini/config/mcp_config.json, shared with current Antigravity IDE versions. The `/mcp` slash command inside agy lists configured servers. Pass --with-hooks to also install the native ~/.gemini/config/hooks.json auto-capture hooks.",
   installHooks: installAntigravityCliHooks,
 });
 
@@ -44,7 +44,7 @@ export const adapter = createJsonMcpAdapter({
  * Merge the bundled `plugin/hooks/hooks.antigravity.json` into
  * `~/.gemini/config/hooks.json`, replacing only the bundle agentmemory owns.
  */
-function installAntigravityCliHooks(opts: ConnectOptions): ConnectResult {
+export function installAntigravityCliHooks(opts: ConnectOptions): ConnectResult {
   let pluginRoot: string;
   try {
     pluginRoot = findPluginRoot();

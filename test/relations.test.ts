@@ -5,6 +5,8 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerRelationsFunction } from "../src/functions/relations.js";
+import { getSearchIndex } from "../src/functions/search.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 import type { Memory } from "../src/types.js";
 
 function mockKV() {
@@ -155,6 +157,40 @@ describe("Relations Functions", () => {
       });
 
       expect((result as { success: boolean }).success).toBe(false);
+    });
+
+    it("refuses to fork an older version, an unchanged edit or an unknown type", async () => {
+      await kv.set("mem:memories", "mem_old", makeMemory({ id: "mem_old", isLatest: false }));
+      await kv.set("mem:memories", "mem_cur", makeMemory({ id: "mem_cur" }));
+
+      const older = (await sdk.trigger("mem::evolve", { memoryId: "mem_old", newContent: "x" })) as { success: boolean; code: string };
+      expect(older).toMatchObject({ success: false, code: "not_latest" });
+      const same = (await sdk.trigger("mem::evolve", { memoryId: "mem_cur", newContent: "This is a test memory" })) as { success: boolean; code: string };
+      expect(same).toMatchObject({ success: false, code: "unchanged" });
+      const badType = (await sdk.trigger("mem::evolve", { memoryId: "mem_cur", newContent: "y", newType: "nope" })) as { success: boolean };
+      expect(badType.success).toBe(false);
+      expect((await kv.get<Memory>("mem:memories", "mem_cur"))!.isLatest).toBe(true);
+    });
+
+    it("re-derives a content-derived title, applies a new type and moves the search entry", async () => {
+      const content = "Checkout applies coupons before shipping thresholds";
+      await kv.set("mem:memories", "mem_t", makeMemory({ id: "mem_t", title: content, content, type: "fact" }));
+      getSearchIndex().add(memoryToObservation(makeMemory({ id: "mem_t", title: content, content })));
+
+      const result = (await sdk.trigger("mem::evolve", {
+        memoryId: "mem_t",
+        newContent: "Checkout applies gift cards after coupons",
+        newType: "bug",
+      })) as { success: boolean; memory: Memory };
+
+      expect(result.success).toBe(true);
+      expect(result.memory.title).toBe("Checkout applies gift cards after coupons");
+      expect(result.memory.type).toBe("bug");
+      expect(result.memory.supersedes).toEqual(["mem_t"]);
+      const hits = getSearchIndex().search("gift cards", 5).map((h) => h.obsId);
+      expect(hits).toContain(result.memory.id);
+      expect(getSearchIndex().search("thresholds", 5).map((h) => h.obsId)).not.toContain("mem_t");
+      getSearchIndex().remove(result.memory.id);
     });
   });
 

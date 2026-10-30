@@ -11,8 +11,17 @@ import {
   isGraphExtractionEnabled,
   isAutoCompressEnabled,
   isConsolidationEnabled,
+  getConsolidationIntervalMs,
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
+  getVectorBackfillMax,
+  isVectorBackfillAllEnabled,
+  getAuditRetentionMonths,
+  getStateBackend,
+  isSessionSweepEnabled,
+  isGraphCompactOnBootEnabled,
+  getSessionSweepStaleHours,
+  getFinalizeIdleMs,
 } from "./config.js";
 import {
   createProvider,
@@ -21,12 +30,14 @@ import {
   createImageEmbeddingProvider,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
-import { KV } from "./state/schema.js";
 import { VectorIndex } from "./state/vector-index.js";
+import type { SearchLayer } from "./state/search-layer.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
-import { registerPrivacyFunction } from "./functions/privacy.js";
+import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, runStartupCleanup, settleWithin } from "./shutdown.js";
+import { registerPrivacyFunction, withWriteScrubbing } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
+import { registerCaptureFunctions } from "./functions/capture.js";
 import { registerImageQuotaCleanup } from "./functions/image-quota-cleanup.js";
 import { registerVisionSearchFunctions } from "./functions/vision-search.js";
 import { registerSlotsFunctions, isSlotsEnabled, isReflectEnabled } from "./functions/slots.js";
@@ -34,14 +45,22 @@ import { registerDiskSizeManager } from "./functions/disk-size-manager.js";
 import { registerCompressFunction } from "./functions/compress.js";
 import {
   registerSearchFunction,
-  rebuildIndex,
+  backfillVectorBacklog,
+  isBm25RebuildIncomplete,
+  isMemoryIndexReady,
+  rebuildKeywordIndex,
+  markKeywordRebuildPending,
   getSearchIndex,
   setVectorIndex,
   setEmbeddingProvider,
   setIndexPersistence,
   setHybridRanker,
+  setPendingVectorBackfillCount,
+  setVectorBackfillState,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
+import { registerSessionIndexMaintenanceFunction } from "./functions/session-index-maintenance.js";
+import { rebuildSessionIndexIfStale } from "./state/session-index.js";
 import { registerSummarizeFunction } from "./functions/summarize.js";
 import { registerMigrateFunction } from "./functions/migrate.js";
 import { registerFileIndexFunction } from "./functions/file-index.js";
@@ -53,12 +72,16 @@ import { registerRelationsFunction } from "./functions/relations.js";
 import { registerTimelineFunction } from "./functions/timeline.js";
 import { registerSmartSearchFunction } from "./functions/smart-search.js";
 import { registerRecentSearchesSweepFunction } from "./functions/recent-searches-sweep.js";
+import { registerSessionSweepFunction } from "./functions/session-sweep.js";
+import { FINALIZE_TICK_MS, registerSessionFinalizeFunction } from "./functions/session-finalize.js";
 import { registerProfileFunction } from "./functions/profile.js";
 import { registerAutoForgetFunction } from "./functions/auto-forget.js";
 import { registerExportImportFunction } from "./functions/export-import.js";
 import { registerEnrichFunction } from "./functions/enrich.js";
 import { registerClaudeBridgeFunction } from "./functions/claude-bridge.js";
 import { registerGraphFunction } from "./functions/graph.js";
+import { registerGraphIndexMigrationFunctions } from "./state/graph-index-migration.js";
+import { GRAPH_COMPACT_BOOT_DELAY_MS, runGraphCompactOnBoot, setGraphCompactBootDisabled } from "./functions/graph-compact-boot.js";
 import { registerGraphImportFunction } from "./functions/graph-import.js";
 import { registerConsolidationPipelineFunction } from "./functions/consolidation-pipeline.js";
 import { registerTeamFunction } from "./functions/team.js";
@@ -89,10 +112,13 @@ import { registerSlidingWindowFunction } from "./functions/sliding-window.js";
 import { registerQueryExpansionFunction } from "./functions/query-expansion.js";
 import { registerTemporalGraphFunctions } from "./functions/temporal-graph.js";
 import { registerRetentionFunctions } from "./functions/retention.js";
+import { startAuditMigration } from "./functions/audit.js";
 import { registerCompressFileFunction } from "./functions/compress-file.js";
 import { registerReplayFunctions } from "./functions/replay.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
+import { registerViewerStreamTriggers } from "./triggers/viewer-streams.js";
+import { registerViewerSse } from "./triggers/viewer-sse.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
 import { getAllTools } from "./mcp/tools-registry.js";
 import { startViewerServer } from "./viewer/server.js";
@@ -101,8 +127,9 @@ import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
-import { bootLog } from "./logger.js";
+import { bootLog, bootWarn } from "./logger.js";
 import { runtimeMetadataPath } from "./runtime-paths.js";
+import { ensureServerSecret, explicitSecret, secretFilePath } from "./secret-store.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
 import { dirname } from "node:path";
 
@@ -110,6 +137,9 @@ function workerPidfilePath(): string {
   return runtimeMetadataPath("worker.pid");
 }
 function writeWorkerPidfile(): void {
+  // Worker Compose owns the entire process lifecycle. Its supervised container
+  // PID is authoritative; do not create a second ownership record.
+  if (process.env["III_COMPOSE_FILE"]) return;
   try {
     const p = workerPidfilePath();
     mkdirSync(dirname(p), { recursive: true });
@@ -119,6 +149,7 @@ function writeWorkerPidfile(): void {
   }
 }
 function clearWorkerPidfile(): void {
+  if (process.env["III_COMPOSE_FILE"]) return;
   try {
     unlinkSync(workerPidfilePath());
   } catch {}
@@ -135,13 +166,6 @@ function hasGetMeter(
   );
 }
 
-// Top-level safety net for iii-engine invocation timeouts (issue #204).
-// Under sustained write load (e.g. Claude Code hooks across many
-// projects) `state::set` can occasionally exceed the SDK's 30s timeout.
-// We don't want one such timeout to terminate the long-lived memory
-// service — the rejection is surfaced to the relevant call site via
-// .catch() where it matters; everything else is logged-and-continued.
-// Throttle logs to avoid spamming on bursts.
 let lastUnhandledLogAt = 0;
 process.on("unhandledRejection", (reason) => {
   const now = Date.now();
@@ -153,6 +177,20 @@ process.on("unhandledRejection", (reason) => {
     r?.code ? `${r.code} ${r.function_id ?? ""} ${r.message ?? ""}`.trim() : reason,
   );
 });
+
+function resolveWorkerSecret(): string {
+  try {
+    const { secret, source } = ensureServerSecret();
+    if (source === "generated") {
+      bootLog(`Generated an API secret at ${secretFilePath()} (mode 0600). Local clients read it automatically.`);
+    }
+    return secret;
+  } catch (err) {
+    throw new Error(
+      `agentmemory could not create its API secret at ${secretFilePath()}: ${err instanceof Error ? err.message : String(err)}. Set AGENTMEMORY_SECRET explicitly or make the directory writable.`,
+    );
+  }
+}
 
 async function main() {
   // Fold ~/.agentmemory/.env into process.env before anything reads config
@@ -191,9 +229,8 @@ async function main() {
   bootLog(
     `REST API: http://localhost:${config.restPort}/agentmemory/*`,
   );
-  bootLog(`Streams: ws://localhost:${config.streamsPort}`);
 
-  const sdk = registerWorker(config.engineUrl, {
+  const sdk = withWriteScrubbing(registerWorker(config.engineUrl, {
     workerName: "agentmemory",
     invocationTimeoutMs: 180000,
     otel: {
@@ -213,12 +250,16 @@ async function main() {
       language: "node",
       framework: "iii-sdk",
     },
-  });
+  }));
 
   writeWorkerPidfile();
 
-  const kv = new StateKV(sdk);
-  const secret = getEnvVar("AGENTMEMORY_SECRET");
+  let stateBackend: "file" | "redis" = "file";
+  try {
+    stateBackend = getStateBackend();
+  } catch {}
+  const kv = new StateKV(sdk, { backend: stateBackend });
+  const secret = resolveWorkerSecret();
   const metricsStore = new MetricsStore(kv);
   const dedupMap = new DedupMap();
 
@@ -235,6 +276,7 @@ async function main() {
 
   registerPrivacyFunction(sdk);
   registerObserveFunction(sdk, kv, dedupMap, config.maxObservationsPerSession);
+  const capture = registerCaptureFunctions(sdk, kv, { restPort: config.restPort });
   registerImageQuotaCleanup(sdk, kv);
   registerVisionSearchFunctions(sdk, kv, imageEmbeddingProvider);
   if (isSlotsEnabled()) {
@@ -244,6 +286,18 @@ async function main() {
   registerCompressFunction(sdk, kv, provider, metricsStore);
   registerSearchFunction(sdk, kv);
   registerContextFunction(sdk, kv, config.tokenBudget);
+  registerSessionIndexMaintenanceFunction(sdk, kv);
+  void rebuildSessionIndexIfStale(kv)
+    .then((result) => {
+      if (result) {
+        bootLog(
+          `Session index rebuilt: ${result.projects} projects, ${result.sessions} sessions`,
+        );
+      }
+    })
+    .catch((err) => {
+      console.warn(`[agentmemory] Failed to rebuild session index at boot:`, err);
+    });
   registerSummarizeFunction(sdk, kv, provider, metricsStore);
   registerMigrateFunction(sdk, kv);
   registerFileIndexFunction(sdk, kv);
@@ -251,6 +305,8 @@ async function main() {
   registerPatternsFunction(sdk, kv);
   registerRememberFunction(sdk, kv);
   registerEvictFunction(sdk, kv);
+  registerSessionSweepFunction(sdk, kv);
+  registerSessionFinalizeFunction(sdk, kv);
 
   registerRelationsFunction(sdk, kv);
   registerTimelineFunction(sdk, kv);
@@ -268,6 +324,7 @@ async function main() {
   }
 
   registerGraphFunction(sdk, kv, provider);
+  const graphIndexMigration = registerGraphIndexMigrationFunctions(sdk, kv);
   registerGraphImportFunction(sdk, kv);
   bootLog(
     `Knowledge graph: structural extraction on (LLM relations ${isGraphExtractionEnabled() ? "enabled" : "off"})`,
@@ -312,7 +369,7 @@ async function main() {
   registerRoutinesFunction(sdk, kv);
   registerSignalsFunction(sdk, kv);
   registerCheckpointsFunction(sdk, kv);
-  registerMeshFunction(sdk, kv, secret);
+  registerMeshFunction(sdk, kv, explicitSecret() || undefined);
   registerBranchAwareFunction(sdk, kv);
   registerFlowCompressFunction(sdk, kv, provider);
   registerSentinelsFunction(sdk, kv);
@@ -381,35 +438,29 @@ async function main() {
     graphWeight,
   );
 
-  const hybridRanker = (query: string, limit: number) =>
-    hybridSearch.search(query, limit);
+  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3]) =>
+    hybridSearch.search(query, limit, targetLayer, authorizeGraph);
   registerSmartSearchFunction(sdk, kv, hybridRanker);
   setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);
 
+  markKeywordRebuildPending();
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);
   registerEventTriggers(sdk, kv);
+  registerViewerStreamTriggers(sdk, kv, { secret, metricsStore, provider });
+  registerViewerSse(sdk);
   registerMcpEndpoints(sdk, kv, secret);
 
   const healthMonitor = registerHealthMonitor(sdk, kv);
 
-  const indexPersistence = new IndexPersistence(kv, bm25Index, vectorIndex);
-  // Wire the persistence hook so delete paths can flush BM25/vector
-  // index mutations to disk. Without this, an in-memory remove can be
-  // lost across a hard process exit and the persisted snapshot
-  // restores the deleted entry at next boot.
+  const indexPersistence = new IndexPersistence(kv, vectorIndex, { requireRecoveryPlan: true });
   setIndexPersistence(indexPersistence);
 
   const loaded = await indexPersistence.load().catch((err) => {
-    console.warn(`[agentmemory] Failed to load persisted index:`, err);
+    console.warn(`[agentmemory] Failed to load persisted vector index:`, err);
     return null;
   });
-  if (loaded?.bm25 && loaded.bm25.size > 0) {
-    bm25Index.restoreFrom(loaded.bm25);
-    bootLog(
-      `Loaded persisted BM25 index (${bm25Index.size} docs)`,
-    );
-  }
+  let vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, isVectorBackfillAllEnabled());
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
     // Persisted vectors carry whatever dimension the provider had when
     // they were written. If the active provider declares a different
@@ -434,6 +485,8 @@ async function main() {
       const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
       const dropStale = isDropStaleIndexEnabled();
       if (dropStale) {
+        vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, true);
+        for (const [obsId] of loaded.vector.entries()) vectorIndex.markRemoved(obsId);
         console.warn(
           `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
             `${loaded.vector.size} vectors with the wrong dimension. Active ` +
@@ -464,68 +517,80 @@ async function main() {
     }
   }
 
-  const needsRebuild = bm25Index.size === 0;
-
-  if (needsRebuild) {
-    // Fire-and-forget. rebuildIndex iterates every observation across
-    // every session and AWAITS an embedding-provider call per record.
-    // On a large corpus + rate-limited embedding endpoint that can
-    // take HOURS; awaiting it here blocks every subsequent boot step
-    // (including startViewerServer below, leaving the viewer port
-    // unbound for the duration). The index lazily fills in over time
-    // and search degrades gracefully — partial coverage > no viewer
-    // for hours. Errors still surface via the inner .catch.
-    void rebuildIndex(kv)
-      .then((indexCount) => {
-        if (indexCount > 0) {
-          bootLog(`Search index rebuilt: ${indexCount} entries`);
-          indexPersistence.scheduleSave();
-        }
-      })
-      .catch((err) => {
-        console.warn(`[agentmemory] Failed to rebuild search index:`, err);
-      });
-  } else {
-    // Backfill memories into BM25 for users upgrading from <0.9.5: prior
-    // versions of mem::remember never indexed memories, so the persisted
-    // BM25 covers observations only and `memory_smart_search` returns
-    // empty for everything saved via memory_save (#257). Walk KV.memories
-    // and add the ones missing from the restored index. Idempotent on
-    // re-runs because SearchIndex.has() short-circuits already-indexed
-    // ids.
-    try {
-      const memories = await kv.list<import("./types.js").Memory>(KV.memories);
-      let backfilled = 0;
-      for (const memory of memories) {
-        if (memory.isLatest === false) continue;
-        if (!memory.title || !memory.content) continue;
-        if (bm25Index.has(memory.id)) continue;
-        bm25Index.add({
-          id: memory.id,
-          sessionId: memory.sessionIds?.[0] ?? "memory",
-          timestamp: memory.createdAt,
-          type: "decision",
-          title: memory.title,
-          facts: [memory.content],
-          narrative: memory.content,
-          concepts: memory.concepts,
-          files: memory.files,
-          importance: memory.strength,
-        });
-        backfilled++;
-      }
-      if (backfilled > 0) {
-        bootLog(
-          `Backfilled ${backfilled} memories into BM25 (legacy index gap)`,
-        );
-        indexPersistence.scheduleSave();
-      }
-    } catch (err) {
-      console.warn(
-        `[agentmemory] Failed to backfill memories into BM25:`,
-        err,
+  if (vectorIndex && loaded && loaded.state !== "unavailable") {
+    const replay = await indexPersistence.replayPendingLog(embeddingProvider?.dimensions ?? 0);
+    if (replay.skipped > 0) vectorBackfillSince = null;
+    if (indexPersistence.isRecoveryPaused()) vectorBackfillSince = undefined;
+    if (replay.entries > 0) {
+      bootLog(
+        `Recovered ${replay.added} vectors and ${replay.removed} removals written after the last index save, without calling the embedding provider` +
+          (replay.skipped > 0 ? ` (${replay.skipped} entries skipped)` : ""),
       );
     }
+  }
+
+  const auditMigration = startAuditMigration(kv).catch(() => {});
+
+  const keywordStart = Date.now();
+  try {
+    const keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
+    bootLog(
+      `Rebuilt BM25 index from stored content (${keyword.documents} docs in ${Date.now() - keywordStart} ms)`,
+    );
+    const pending = keyword.vectorJobs.length + keyword.fullBackfillPending;
+    const backlogScanComplete = !isBm25RebuildIncomplete() && isMemoryIndexReady();
+    const optedIn = isVectorBackfillAllEnabled();
+    const activeIds = new Set(keyword.vectorJobs.map((job) => job.id));
+    const hasVector = (id: string) => Boolean(vectorIndex?.has(id));
+    const countRemaining = () => bm25Index.countMissingDocuments(hasVector, vectorBackfillSince, activeIds);
+    setPendingVectorBackfillCount(indexPersistence.isRecoveryPaused() ? countRemaining() : pending);
+    if (indexPersistence.isRecoveryPaused()) {
+      setVectorBackfillState("paused");
+    } else if (vectorBackfillSince !== undefined) {
+      setVectorBackfillState(keyword.fullBackfillPending > 0 && !optedIn ? "waiting-for-opt-in" : backlogScanComplete ? "idle" : "paused");
+    }
+    if (keyword.fullBackfillPending > 0) {
+      bootLog(optedIn
+        ? `Vector backfill has ${keyword.fullBackfillPending} additional documents beyond this start's limit; restart to resume.`
+        : `Vector backfill needs ${keyword.fullBackfillPending} embeddings (set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`);
+    }
+    if (vectorBackfillSince !== undefined && backlogScanComplete && pending === 0) {
+      if (!(await indexPersistence.completeBackfill(() => countRemaining() === 0))) {
+        setPendingVectorBackfillCount(countRemaining());
+        setVectorBackfillState("paused");
+      }
+    }
+    if (keyword.vectorJobs.length > 0 && !(await indexPersistence.beginBackfill())) {
+      setVectorBackfillState("paused");
+      activeIds.clear();
+      for (const job of keyword.vectorJobs) job.revision?.release();
+    } else if (keyword.vectorJobs.length > 0) {
+      setVectorBackfillState("running");
+      bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors, ${getVectorBackfillMax()} per batch in the background`);
+      void backfillVectorBacklog(keyword.vectorJobs, {
+        remainingAfter: keyword.fullBackfillPending,
+        remainingCount: countRemaining,
+      })
+        .then(async (result) => {
+          const complete = result.complete && backlogScanComplete && await indexPersistence.completeBackfill(() => countRemaining() === 0);
+          const remaining = countRemaining();
+          setPendingVectorBackfillCount(remaining);
+          setVectorBackfillState(complete ? "idle" : "paused");
+          if (result.added > 0) bootLog(`Vector index backfilled: ${result.added} entries`);
+          if (!complete) bootWarn(`Vector recovery remains incomplete (${remaining} documents pending); it resumes on the next start.`);
+        })
+        .catch((err) => {
+          setVectorBackfillState("paused");
+          console.warn(`[agentmemory] Failed to backfill vectors:`, err);
+        })
+        .finally(() => {
+          activeIds.clear();
+          for (const job of keyword.vectorJobs) job.revision?.release();
+        });
+    }
+  } catch (err) {
+    setVectorBackfillState("paused");
+    console.warn(`[agentmemory] Failed to rebuild the BM25 index:`, err);
   }
 
   // Ready / Endpoints lines are emitted via `bootLog` so they're
@@ -536,11 +601,31 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 130 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 146 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
   );
+
+  void (async () => {
+    try {
+      const drained = await capture.drainLocalSpool();
+      const delivered = drained.reduce((n, r) => n + r.delivered, 0);
+      const duplicates = drained.reduce((n, r) => n + r.duplicates, 0);
+      const remaining = drained.reduce((n, r) => n + r.remaining, 0);
+      if (delivered + duplicates + remaining > 0) {
+        bootLog(`Capture spool: ${delivered} recovered, ${duplicates} already stored, ${remaining} still waiting`);
+      }
+      const swept = await capture.sweep();
+      if (swept.processed > 0) {
+        bootLog(`Capture inbox: ${swept.recovered} of ${swept.processed} unfinished observations stored after restart`);
+      }
+      await capture.prune();
+    } catch (err) {
+      bootWarn(`Capture recovery at boot failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    capture.start();
+  })();
 
   const viewerServer = startViewerServer(
     config.viewerPort,
@@ -550,8 +635,21 @@ async function main() {
     config.restPort,
   );
 
+  void graphIndexMigration.resumeOnBoot().catch(() => {
+    bootWarn("Graph index migration could not resume. Run agentmemory graph-index status for recovery instructions.");
+  });
+
+  if (isGraphCompactOnBootEnabled()) {
+    const graphCompactTimer = setTimeout(() => {
+      void runGraphCompactOnBoot(kv, { log: bootLog, warn: bootWarn }).catch(() => {});
+    }, GRAPH_COMPACT_BOOT_DELAY_MS);
+    graphCompactTimer.unref();
+  } else {
+    setGraphCompactBootDisabled();
+  }
+
   const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
-  const consolidationIntervalMs = parseInt(process.env.CONSOLIDATION_INTERVAL_MS || "7200000", 10);
+  const consolidationIntervalMs = getConsolidationIntervalMs();
 
   if (process.env.AUTO_FORGET_ENABLED !== "false") {
     const autoForgetTimer = setInterval(async () => {
@@ -561,6 +659,22 @@ async function main() {
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
     bootLog(`Auto-forget: enabled (every ${autoForgetIntervalMs / 60000}m)`);
+  }
+
+  const auditRetentionMonths = getAuditRetentionMonths();
+  if (auditRetentionMonths > 0) {
+    const runAuditSweep = async () => {
+      try {
+        await auditMigration;
+        await sdk.trigger({ function_id: "mem::audit-retention-sweep", payload: {} });
+      } catch {}
+    };
+    void runAuditSweep();
+    const auditRetentionTimer = setInterval(runAuditSweep, 86400000);
+    auditRetentionTimer.unref();
+    bootLog(
+      `Audit retention sweep: enabled (drop month scopes older than ${auditRetentionMonths}mo, every 24h)`,
+    );
   }
 
   if (process.env.LESSON_DECAY_ENABLED !== "false") {
@@ -582,10 +696,6 @@ async function main() {
     insightDecayTimer.unref();
   }
 
-  // #771: hourly TTL sweep for the followup-rate diagnostic. The
-  // recent-searches scope only needs the last entry per session;
-  // sweeping anything older than the retention window keeps the scope
-  // from growing unbounded across long-lived deployments.
   const recentSearchesSweepTimer = setInterval(async () => {
     try {
       await sdk.trigger({
@@ -595,6 +705,37 @@ async function main() {
     } catch {}
   }, 60 * 60 * 1000);
   recentSearchesSweepTimer.unref();
+
+
+  if (isSessionSweepEnabled()) {
+    const sessionSweepTimer = setInterval(async () => {
+      try {
+        await sdk.trigger({ function_id: "mem::session-sweep", payload: {} });
+      } catch (err) {
+        bootLog(`Session sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }, 60 * 60 * 1000);
+    sessionSweepTimer.unref();
+    bootLog(`Session sweep: enabled (hourly, stale after ${getSessionSweepStaleHours()}h)`);
+  }
+
+  const finalizeIdleMs = getFinalizeIdleMs();
+  let finalizeRunning = false;
+  const runSessionFinalize = async () => {
+    if (finalizeRunning) return;
+    finalizeRunning = true;
+    try {
+      await sdk.trigger({ function_id: "mem::session-finalize", payload: {} });
+    } catch (err) {
+      bootLog(`Session finalize failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      finalizeRunning = false;
+    }
+  };
+  const sessionFinalizeTimer = setInterval(runSessionFinalize, FINALIZE_TICK_MS);
+  sessionFinalizeTimer.unref();
+  void runSessionFinalize();
+  bootLog(`Session finalize: ${finalizeIdleMs > 0 ? `idle sessions complete after ${Math.round(finalizeIdleMs / 1000)}s` : "idle finalization disabled"}; pending summaries recover at startup and every ${FINALIZE_TICK_MS / 1000}s`);
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {
@@ -608,22 +749,45 @@ async function main() {
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
+    const hardExit = setTimeout(async () => {
+      console.warn(
+        `[agentmemory] Shutdown still blocked after ${SHUTDOWN_HARD_EXIT_MS}ms; exiting now.`,
+      );
+      clearWorkerPidfile();
+      process.exit(await runStartupCleanup(1).catch(() => 1));
+    }, SHUTDOWN_HARD_EXIT_MS);
+    hardExit.unref();
     healthMonitor.stop();
     dedupMap.stop();
+    capture.stop();
+    clearInterval(sessionFinalizeTimer);
+    await settleWithin(graphIndexMigration.stop(), SHUTDOWN_FLUSH_TIMEOUT_MS);
     indexPersistence.stop();
-    await new Promise<void>((resolve) => viewerServer.close(() => resolve()));
-    await indexPersistence.save().catch((err) => {
-      console.warn(`[agentmemory] Failed to save index on shutdown:`, err);
+    const viewerClosed = new Promise<void>((resolve) =>
+      viewerServer.close(() => resolve()),
+    );
+    viewerServer.closeAllConnections();
+    await viewerClosed;
+    const flushed = await settleWithin(
+      indexPersistence.save(),
+      SHUTDOWN_FLUSH_TIMEOUT_MS,
+    );
+    if (!flushed) {
+      console.warn(
+        `[agentmemory] Search index flush did not finish within ${SHUTDOWN_FLUSH_TIMEOUT_MS}ms; the engine is probably gone. Observations are already in the engine's state store and the index reconciles them on the next boot.`,
+      );
+    }
+    await settleWithin(sdk.shutdown(), SHUTDOWN_FLUSH_TIMEOUT_MS).catch((err) => {
+      console.warn(`[agentmemory] SDK shutdown failed:`, err);
     });
-    await sdk.shutdown();
     clearWorkerPidfile();
-    process.exit(0);
+    process.exit(await runStartupCleanup(0).catch(() => 1));
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error(`[agentmemory] Fatal:`, err);
-  process.exit(1);
+  process.exit(await runStartupCleanup(1).catch(() => 1));
 });

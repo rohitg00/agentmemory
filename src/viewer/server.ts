@@ -3,12 +3,18 @@ import {
   type Server,
   type IncomingMessage,
   type ServerResponse,
+  request as httpRequest,
 } from "node:http";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderViewerDocument } from "./document.js";
-import { timingSafeCompare } from "../auth.js";
+import {
+  checkRequestGuard,
+  configuredAllowedOrigins,
+  parseOriginList,
+  timingSafeCompare,
+} from "../auth.js";
 
 // Self-host the viewer favicon at /favicon.svg instead of an inline
 // data: URI so the viewer CSP can stay tight at `img-src 'self'`.
@@ -102,6 +108,12 @@ export function buildAllowedHosts(
   }
   for (const h of readAllowedHostsOverride()) hosts.add(h);
   return hosts;
+}
+
+export function buildAllowedOrigins(listenPort: number, restPort: number): Set<string> {
+  const origins = configuredAllowedOrigins([listenPort, restPort]);
+  for (const origin of parseOriginList(ALLOWED_ORIGINS.join(","))) origins.add(origin);
+  return origins;
 }
 
 export function isHostAllowed(
@@ -232,19 +244,32 @@ export function startViewerServer(
   // or the EADDRINUSE retry loop below may bump us to a different port,
   // so we read the actual bound port from server.address() on first hit.
   let allowedHosts: Set<string> | null = null;
+  let allowedOrigins: Set<string> | null = null;
 
   const server = createServer(async (req, res) => {
-    if (!allowedHosts) {
+    if (!allowedHosts || !allowedOrigins) {
       const addr = server.address();
       const actualPort =
         addr && typeof addr === "object" && "port" in addr
           ? (addr.port as number)
           : port;
       allowedHosts = buildAllowedHosts(ALLOWED_ORIGINS, actualPort, host);
+      allowedOrigins = buildAllowedOrigins(actualPort, resolvedRestPort);
     }
     if (!isHostAllowed(req.headers.host, allowedHosts)) {
       res.writeHead(403, { "Content-Type": "text/plain" });
       res.end("forbidden host");
+      return;
+    }
+
+    const rejected = checkRequestGuard({
+      method: req.method,
+      headers: req.headers,
+      allowedOrigins,
+      sameOriginHost: req.headers.host,
+    });
+    if (rejected) {
+      json(res, rejected.status_code, rejected.body, req);
       return;
     }
 
@@ -411,6 +436,44 @@ async function proxyToRestApi(
     headers["Content-Type"] = ct;
   }
 
+  const cors = corsHeaders(req);
+  if (pathname === "/agentmemory/viewer/events") {
+    const headers: Record<string, string> = {};
+    if (secret) headers["Authorization"] = `Bearer ${secret}`;
+    const client = httpRequest(upstreamUrl, { method, headers });
+    const abortUpstream = () => client.destroy();
+    req.once("aborted", abortUpstream);
+    res.once("close", abortUpstream);
+    client.once("response", (upstream) => {
+      const responseHeaders: Record<string, string> = {
+        ...cors,
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+      };
+      const contentType = upstream.headers["content-type"];
+      if (contentType) responseHeaders["Content-Type"] = Array.isArray(contentType) ? contentType.join(", ") : contentType;
+      res.writeHead(upstream.statusCode ?? 502, responseHeaders);
+      upstream.on("data", (chunk: Buffer) => {
+        if (!res.write(chunk)) upstream.pause();
+      });
+      res.on("drain", () => upstream.resume());
+      upstream.once("end", () => { if (!res.destroyed) res.end(); });
+      upstream.once("error", () => { if (!res.destroyed) res.destroy(); });
+    });
+    client.once("error", (err) => {
+      if (!res.headersSent && !res.destroyed) json(res, 502, { error: "upstream error" }, req);
+      else if (!res.destroyed) res.destroy(err);
+    });
+    client.end();
+    await new Promise<void>((resolve) => {
+      res.once("close", resolve);
+      res.once("finish", resolve);
+    });
+    req.off("aborted", abortUpstream);
+    res.off("close", abortUpstream);
+    return;
+  }
+
   let body: string | undefined;
   if (method === "POST" || method === "PUT" || method === "DELETE" || method === "PATCH") {
     body = await readBody(req);
@@ -422,7 +485,7 @@ async function proxyToRestApi(
   try {
     upstream = await fetch(upstreamUrl, {
       method,
-      headers,
+      headers: { ...(secret ? { "Authorization": `Bearer ${secret}` } : {}), ...(req.headers["content-type"] ? { "Content-Type": req.headers["content-type"] } : {}) },
       body: body || undefined,
       signal: controller.signal,
     });
@@ -435,17 +498,11 @@ async function proxyToRestApi(
     }
     throw err;
   }
-
-  const cors = corsHeaders(req);
   const responseBody = await upstream.text();
-  const responseHeaders: Record<string, string> = {
-    ...cors,
-  };
+  const responseHeaders: Record<string, string> = { ...cors };
   const upstreamCt = upstream.headers.get("content-type");
-  if (upstreamCt) {
-    responseHeaders["Content-Type"] = upstreamCt;
-  }
-
+  if (upstreamCt) responseHeaders["Content-Type"] = upstreamCt;
   res.writeHead(upstream.status, responseHeaders);
   res.end(responseBody);
+  return;
 }

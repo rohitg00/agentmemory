@@ -1,14 +1,24 @@
-import type { ISdk } from 'iii-sdk'
-import type { CompactSearchResult, CompressedObservation, Memory, SearchResult, Session } from '../types.js'
+import type { IIIClient } from 'iii-sdk'
+import type { GraphObservationAuthorization } from "./graph-retrieval.js";
+import type { IndexPersistenceStatus } from "../state/index-persistence.js";
+import type { CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
 import { StateKV } from '../state/kv.js'
-import { SearchIndex } from '../state/search-index.js'
+import { getSearchResultLayer, isSearchLayer, matchesSearchLayer, type SearchLayer, type SearchResultLayer } from "../state/search-layer.js";
+import { SearchIndex, type SearchIndexRevision } from '../state/search-index.js'
 import { VectorIndex } from '../state/vector-index.js'
 import type { EmbeddingProvider } from '../types.js'
 import { memoryToObservation } from '../state/memory-utils.js'
+import { buildRecallResponse, type RecallFormat } from "./recall-response.js";
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
-import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import { withoutObservationSource } from "./observation-source.js";
+import {
+  getAgentId,
+  getVectorBackfillMax,
+  isAgentScopeIsolated,
+  isVectorBackfillAllEnabled,
+} from "../config.js";
 
 let index: SearchIndex | null = null
 let vectorIndex: VectorIndex | null = null
@@ -16,14 +26,14 @@ let currentEmbeddingProvider: EmbeddingProvider | null = null
 
 // Hybrid ranking hook for mem::search. Wired by index.ts once the
 // hybrid searcher exists (it is constructed after this module's
-// registration runs). When set and the vector index has entries,
-// mem::search ranks candidates through the full BM25+vector+graph
-// fusion instead of BM25 alone — previously only mem::smart-search got
-// hybrid ranking while the primary recall surface stayed keyword-only.
+// registration runs). The graph stream can retrieve evidence even when
+// embeddings are disabled or the vector index is still empty.
 type HybridRanker = (
   query: string,
   limit: number,
-) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number }>>
+  targetLayer?: SearchLayer,
+  authorizeGraph?: GraphObservationAuthorization,
+) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number; layer?: SearchResultLayer }>>
 let hybridRanker: HybridRanker | null = null
 
 export function setHybridRanker(fn: HybridRanker | null): void {
@@ -42,6 +52,40 @@ let rebuildPromise: Promise<number> | null = null
 let memoryIndexReady = false
 export function isMemoryIndexReady(): boolean {
   return memoryIndexReady
+}
+
+let bm25RebuildIncomplete = false
+export function isBm25RebuildIncomplete(): boolean {
+  return bm25RebuildIncomplete
+}
+
+let keywordRebuildPending = false
+let keywordRebuildsRunning = 0
+let keywordRebuildEpoch = 0
+export function getKeywordRebuildEpoch(): number {
+  return keywordRebuildEpoch
+}
+export function markKeywordRebuildPending(): void {
+  keywordRebuildPending = true
+}
+export function isKeywordRebuildInProgress(): boolean {
+  return keywordRebuildPending || keywordRebuildsRunning > 0
+}
+
+let pendingVectorBackfill = 0
+export type VectorBackfillState = "idle" | "running" | "paused" | "waiting-for-opt-in"
+let vectorBackfillState: VectorBackfillState = "idle"
+export function getVectorBackfillState(): VectorBackfillState {
+  return vectorBackfillState
+}
+export function setVectorBackfillState(state: VectorBackfillState): void {
+  vectorBackfillState = state
+}
+export function getPendingVectorBackfillCount(): number {
+  return pendingVectorBackfill
+}
+export function setPendingVectorBackfillCount(n: number): void {
+  pendingVectorBackfill = Math.max(0, n)
 }
 
 export function getSearchIndex(): SearchIndex {
@@ -65,7 +109,44 @@ export function getEmbeddingProvider(): EmbeddingProvider | null {
   return currentEmbeddingProvider
 }
 
+const RANK_FUSION_K = 60
+
+export async function rankMemoryIds(
+  query: string,
+  limit: number,
+): Promise<{ ids: string[]; mode: "hybrid" | "keyword" }> {
+  const fetchLimit = Math.max(limit * 4, 50)
+  const keyword = getSearchIndex()
+    .search(query, fetchLimit, "memory")
+  let semantic: Array<{ obsId: string }> = []
+  if (vectorIndex && vectorIndex.size > 0 && currentEmbeddingProvider) {
+    try {
+      const embedding = await currentEmbeddingProvider.embed(query)
+      semantic = vectorIndex
+        .search(embedding, fetchLimit, "memory", (id) => getSearchIndex().layerOf(id))
+    } catch (err) {
+      logger.warn("memory vector ranking failed, using keyword ranking", {
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+  const scores = new Map<string, number>()
+  const addRanks = (hits: Array<{ obsId: string }>) => {
+    hits.forEach((hit, rank) => {
+      scores.set(hit.obsId, (scores.get(hit.obsId) ?? 0) + 1 / (RANK_FUSION_K + rank + 1))
+    })
+  }
+  addRanks(keyword)
+  addRanks(semantic)
+  const ids = Array.from(scores.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([id]) => id)
+  return { ids, mode: semantic.length > 0 ? "hybrid" : "keyword" }
+}
+
 export function vectorIndexRemove(id: string): void {
+  getSearchIndex().invalidateRevision(id);
   vectorIndex?.remove(id);
 }
 
@@ -75,15 +156,20 @@ export function vectorIndexRemove(id: string): void {
 // Wired by src/index.ts after IndexPersistence is constructed; no-op
 // until then so unit tests that exercise the delete paths in
 // isolation don't need to wire persistence.
-let indexPersistence: {
+type IndexPersistenceHook = {
   scheduleSave: () => void;
   save: () => Promise<void>;
-} | null = null;
+  status?: () => IndexPersistenceStatus;
+};
 
-export function setIndexPersistence(
-  p: { scheduleSave: () => void; save: () => Promise<void> } | null,
-): void {
+let indexPersistence: IndexPersistenceHook | null = null;
+
+export function setIndexPersistence(p: IndexPersistenceHook | null): void {
   indexPersistence = p;
+}
+
+export function getIndexPersistenceStatus(): IndexPersistenceStatus | null {
+  return indexPersistence?.status?.() ?? null;
 }
 
 export function scheduleIndexSave(): void {
@@ -114,24 +200,35 @@ export function clipEmbedInput(text: string): string {
   return text.slice(0, EMBED_MAX_CHARS)
 }
 
-// Single guarded vector-index write. Returns true on success. Logs and
-// no-ops on:
-//   - dimension mismatch (mis-configured provider would silently corrupt
-//     the index per #248 otherwise — guarded at persistence load there;
-//     this is the symmetric guard at the write site)
-//   - embed throwing (network, rate limit, provider down)
-// Always soft-fails so a downed embedder doesn't break the upstream save.
 export async function vectorIndexAddGuarded(
   id: string,
   sessionId: string,
   text: string,
   context: { kind: "memory" | "observation" | "synthetic"; logId: string },
+  commit?: (embedding: Float32Array, isCurrent: () => boolean) => Promise<boolean> | boolean,
 ): Promise<boolean> {
   const vi = vectorIndex
   const ep = currentEmbeddingProvider
   if (!vi || !ep) return false
+  const keyword = getSearchIndex()
+  const revision = keyword.watchRevision(id)
+  const previous = vi.get(id)
+  const isCurrent = () => vectorIndex === vi && currentEmbeddingProvider === ep &&
+    revision.isCurrent() && vi.get(id) === previous
   try {
-    const embedding = await ep.embed(clipEmbedInput(text))
+    let embedding: Float32Array
+    try {
+      embedding = await ep.embed(clipEmbedInput(text))
+    } catch (err) {
+      logger.warn("vector-index add: embed failed — skipping", {
+        kind: context.kind,
+        id: context.logId,
+        provider: ep.name,
+        error: err instanceof Error ? err.message : String(err),
+      })
+      return false
+    }
+    if (!isCurrent()) return false
     if (embedding.length !== ep.dimensions) {
       logger.warn("vector-index add: dimension mismatch — skipping", {
         kind: context.kind,
@@ -142,16 +239,26 @@ export async function vectorIndexAddGuarded(
       })
       return false
     }
+    if (commit) {
+      try {
+        const committed = await commit(embedding, isCurrent)
+        if (committed) scheduleIndexSave()
+        return committed
+      } catch (err) {
+        logger.warn("vector-index add: commit failed — skipping", {
+          kind: context.kind,
+          id: context.logId,
+          provider: ep.name,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        return false
+      }
+    }
     vi.add(id, sessionId, embedding)
+    scheduleIndexSave()
     return true
-  } catch (err) {
-    logger.warn("vector-index add: embed failed — skipping", {
-      kind: context.kind,
-      id: context.logId,
-      provider: ep.name,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    return false
+  } finally {
+    revision.release()
   }
 }
 
@@ -166,70 +273,72 @@ export async function vectorIndexAddGuarded(
 //   - whole-batch network/provider error → all skipped, single warn line
 //   - per-item dimension mismatch → that item skipped, others continue
 export async function vectorIndexAddBatchGuarded(
-  items: Array<{
-    id: string
-    sessionId: string
-    text: string
-    context: { kind: "memory" | "observation" | "synthetic"; logId: string }
-  }>,
-): Promise<{ ok: number; fail: number }> {
+  items: VectorBackfillJob[],
+): Promise<{ ok: number; fail: number; skipped: number }> {
   const vi = vectorIndex
   const ep = currentEmbeddingProvider
-  if (!vi || !ep || items.length === 0) return { ok: 0, fail: 0 }
-
-  let embeddings: Float32Array[]
+  if (!vi || !ep || items.length === 0) return { ok: 0, fail: 0, skipped: 0 }
+  const keyword = getSearchIndex()
+  const guarded = items.map((item) => ({ item, revision: item.revision ?? keyword.watchRevision(item.id), previous: vi.get(item.id) }))
+  const isCurrent = (job: typeof guarded[number]) => vectorIndex === vi && currentEmbeddingProvider === ep &&
+    job.revision.isCurrent() && vi.get(job.item.id) === job.previous
   try {
-    embeddings = await ep.embedBatch(items.map((i) => clipEmbedInput(i.text)))
-  } catch (err) {
-    logger.warn("vector-index add batch: embed failed — skipping batch", {
-      batchSize: items.length,
-      provider: ep.name,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    return { ok: 0, fail: items.length }
-  }
-
-  if (embeddings.length !== items.length) {
-    logger.warn(
-      "vector-index add batch: provider returned wrong length — skipping batch",
-      {
-        batchSize: items.length,
-        returned: embeddings.length,
-        provider: ep.name,
-      },
-    )
-    return { ok: 0, fail: items.length }
-  }
-
-  let ok = 0
-  let fail = 0
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]
-    const embedding = embeddings[i]
-    if (embedding.length !== ep.dimensions) {
-      logger.warn("vector-index add batch: dimension mismatch — skipping item", {
-        kind: item.context.kind,
-        id: item.context.logId,
-        provider: ep.name,
-        expected: ep.dimensions,
-        received: embedding.length,
-      })
-      fail++
-      continue
+    const active = guarded.filter(isCurrent)
+    let skipped = items.length - active.length
+    if (!active.length) return { ok: 0, fail: 0, skipped }
+    const failedBatch = () => {
+      const fail = active.filter(isCurrent).length
+      return { ok: 0, fail, skipped: items.length - fail }
     }
+
+    let embeddings: Float32Array[]
     try {
-      vi.add(item.id, item.sessionId, embedding)
-      ok++
+      embeddings = await ep.embedBatch(active.map(({ item }) => clipEmbedInput(item.text)))
     } catch (err) {
-      logger.warn("vector-index add batch: index write failed — skipping item", {
-        kind: item.context.kind,
-        id: item.context.logId,
+      logger.warn("vector-index add batch: embed failed — skipping batch", {
+        batchSize: active.length,
+        provider: ep.name,
         error: err instanceof Error ? err.message : String(err),
       })
-      fail++
+      return failedBatch()
     }
+    if (embeddings.length !== active.length) {
+      logger.warn("vector-index add batch: provider returned wrong length — skipping batch", {
+        batchSize: active.length, returned: embeddings.length, provider: ep.name,
+      })
+      return failedBatch()
+    }
+
+    let ok = 0
+    let fail = 0
+    for (let i = 0; i < active.length; i++) {
+      const job = active[i]
+      if (!isCurrent(job)) { skipped++; continue }
+      const item = job.item
+      const embedding = embeddings[i]
+      if (embedding.length !== ep.dimensions) {
+        logger.warn("vector-index add batch: dimension mismatch — skipping item", {
+          kind: item.context.kind, id: item.context.logId, provider: ep.name,
+          expected: ep.dimensions, received: embedding.length,
+        })
+        fail++
+        continue
+      }
+      try {
+        vi.add(item.id, item.sessionId, embedding)
+        ok++
+      } catch (err) {
+        logger.warn("vector-index add batch: index write failed — skipping item", {
+          kind: item.context.kind, id: item.context.logId,
+          error: err instanceof Error ? err.message : String(err),
+        })
+        fail++
+      }
+    }
+    return { ok, fail, skipped }
+  } finally {
+    for (const job of guarded) if (!job.item.revision) job.revision.release()
   }
-  return { ok, fail }
 }
 
 // Embed-batch size for rebuild. Each item is one /v1/embeddings call's
@@ -262,50 +371,84 @@ export async function indexRecords(
   const idx = getSearchIndex()
   const vectorEnabled = Boolean(vectorIndex && currentEmbeddingProvider)
   const batchSize = getRebuildEmbedBatchSize()
-  type EmbedJob = {
-    id: string
-    sessionId: string
-    text: string
-    context: { kind: "memory" | "observation" | "synthetic"; logId: string }
-  }
-  const pending: EmbedJob[] = []
-  const flush = async (): Promise<void> => {
-    if (pending.length === 0) return
-    await vectorIndexAddBatchGuarded(pending)
-    pending.length = 0
-  }
-  const enqueue = async (job: EmbedJob): Promise<void> => {
-    if (!vectorEnabled) return
-    pending.push(job)
-    if (pending.length >= batchSize) await flush()
-  }
-
+  const revisions = new Map<Memory | CompressedObservation, SearchIndexRevision>()
   let count = 0
   for (const memory of memories) {
-    if (memory.isLatest === false) continue
-    if (!memory.title || !memory.content) continue
-    idx.add(memoryToObservation(memory))
-    await enqueue({
-      id: memory.id,
-      sessionId: memory.sessionIds?.[0] ?? 'memory',
-      text: memory.title + ' ' + memory.content,
-      context: { kind: "memory", logId: memory.id },
-    })
+    if (memory.isLatest === false || !memory.title || !memory.content) continue
+    idx.add(memoryToObservation(memory), "memory")
+    if (vectorEnabled) revisions.set(memory, idx.watchRevision(memory.id))
     count++
   }
   for (const obs of observations) {
     if (!obs.title || !obs.narrative) continue
     idx.add(obs)
-    await enqueue({
-      id: obs.id,
-      sessionId: obs.sessionId,
-      text: obs.title + ' ' + obs.narrative,
-      context: { kind: "observation", logId: obs.id },
-    })
+    if (vectorEnabled) revisions.set(obs, idx.watchRevision(obs.id))
     count++
   }
-  await flush()
+  if (count > 0) scheduleIndexSave()
+  const pending: VectorBackfillJob[] = []
+  const flush = async (): Promise<void> => {
+    if (pending.length === 0) return
+    await vectorIndexAddBatchGuarded(pending)
+    pending.length = 0
+  }
+  const enqueue = async (job: VectorBackfillJob): Promise<void> => {
+    pending.push(job)
+    if (pending.length >= batchSize) await flush()
+  }
+  try {
+    for (const memory of memories) {
+      const revision = revisions.get(memory)
+      if (!revision?.isCurrent()) continue
+      await enqueue({
+        id: memory.id, revision,
+        sessionId: memory.sessionIds?.[0] ?? 'memory',
+        text: memory.title + ' ' + memory.content,
+        context: { kind: "memory", logId: memory.id },
+      })
+    }
+    for (const obs of observations) {
+      const revision = revisions.get(obs)
+      if (!revision?.isCurrent()) continue
+      await enqueue({
+        id: obs.id, revision, sessionId: obs.sessionId,
+        text: obs.title + ' ' + obs.narrative,
+        context: { kind: "observation", logId: obs.id },
+      })
+    }
+    await flush()
+    if (count > 0 && vectorEnabled) scheduleIndexSave()
+  } finally {
+    for (const revision of revisions.values()) revision.release()
+  }
   return count
+}
+
+export async function findUnindexedObservations(
+  kv: StateKV,
+): Promise<{ sessions: number; missing: CompressedObservation[] }> {
+  const idx = getSearchIndex()
+  const sessions = await kv.list<Session>(KV.sessions)
+  const indexed = idx.observationCountsBySession()
+  const missing: CompressedObservation[] = []
+  for (const session of sessions) {
+    const known = session.observationCount ?? 0
+    if (known > 0 && known <= (indexed.get(session.id) ?? 0)) continue
+    const observations = await kv.list<CompressedObservation>(KV.observations(session.id))
+    for (const obs of observations) {
+      if (!obs.title || !obs.narrative || idx.has(obs.id)) continue
+      missing.push(obs)
+    }
+  }
+  return { sessions: sessions.length, missing }
+}
+
+export async function reconcileIndex(kv: StateKV): Promise<number> {
+  const idx = getSearchIndex()
+  const { missing } = await findUnindexedObservations(kv)
+  const stillMissing = missing.filter((obs) => !idx.has(obs.id))
+  if (stillMissing.length === 0) return 0
+  return indexRecords(stillMissing, [])
 }
 
 export async function rebuildIndex(kv: StateKV): Promise<number> {
@@ -365,7 +508,224 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   return indexed
 }
 
-export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
+export type VectorBackfillJob = {
+  id: string
+  revision?: SearchIndexRevision
+  sessionId: string
+  text: string
+  context: { kind: "memory" | "observation" | "synthetic"; logId: string }
+}
+
+const SESSIONS_LIST_RETRY_ATTEMPTS = 3
+const SESSIONS_LIST_RETRY_BASE_MS = 250
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function listSessionsWithRetry(kv: StateKV): Promise<Session[] | null> {
+  let lastErr: unknown
+  for (let attempt = 0; attempt < SESSIONS_LIST_RETRY_ATTEMPTS; attempt++) {
+    try {
+      return await kv.list<Session>(KV.sessions)
+    } catch (err) {
+      lastErr = err
+      if (attempt < SESSIONS_LIST_RETRY_ATTEMPTS - 1) {
+        await delay(SESSIONS_LIST_RETRY_BASE_MS * (attempt + 1))
+      }
+    }
+  }
+  logger.warn('rebuildKeywordIndex: failed to load sessions after retries', {
+    attempts: SESSIONS_LIST_RETRY_ATTEMPTS,
+    error: lastErr instanceof Error ? lastErr.message : String(lastErr),
+  })
+  return null
+}
+
+type KeywordRebuildResult = { documents: number; vectorJobs: VectorBackfillJob[]; fullBackfillPending: number }
+
+export async function rebuildKeywordIndex(
+  kv: StateKV,
+  vectorBackfillSince?: string | null,
+): Promise<KeywordRebuildResult> {
+  keywordRebuildsRunning++
+  try {
+    return await runKeywordRebuild(kv, vectorBackfillSince)
+  } finally {
+    keywordRebuildsRunning--
+    keywordRebuildPending = false
+    keywordRebuildEpoch++
+  }
+}
+
+async function runKeywordRebuild(
+  kv: StateKV,
+  vectorBackfillSince?: string | null,
+): Promise<KeywordRebuildResult> {
+  const idx = getSearchIndex()
+  idx.clear()
+  memoryIndexReady = false
+  bm25RebuildIncomplete = false
+  const vi = vectorIndex
+  const backfillEligible = Boolean(vi && currentEmbeddingProvider) && vectorBackfillSince !== undefined
+  const wholeStoreBackfill = vectorBackfillSince === null
+  const backfillGated = backfillEligible && wholeStoreBackfill && !isVectorBackfillAllEnabled()
+  const backfillActive = backfillEligible && !backfillGated
+  const cutoff = typeof vectorBackfillSince === 'string' ? Date.parse(vectorBackfillSince) : Number.NaN
+  const backfillCap = backfillActive ? getVectorBackfillMax() : 0
+  const vectorJobs: VectorBackfillJob[] = []
+  let fullBackfillPending = 0
+  const consider = (
+    id: string,
+    sessionId: string,
+    text: string,
+    timestamp: string | undefined,
+    kind: "memory" | "observation",
+  ): void => {
+    if (!backfillEligible || vi?.has(id)) return
+    if (!Number.isNaN(cutoff) && !(Date.parse(timestamp ?? '') > cutoff)) return
+    if (backfillGated || (wholeStoreBackfill && vectorJobs.length >= backfillCap)) {
+      fullBackfillPending++
+      return
+    }
+    if (!backfillActive) return
+    vectorJobs.push({ id, sessionId, text, revision: idx.watchRevision(id), context: { kind, logId: id } })
+  }
+
+  let documents = 0
+  let memoriesLoaded = false
+  try {
+    const memories = await kv.list<Memory>(KV.memories)
+    memoriesLoaded = true
+    for (const memory of memories) {
+      if (memory.isLatest === false) continue
+      if (!memory.title || !memory.content) continue
+      idx.add(memoryToObservation(memory), "memory")
+      consider(memory.id, memory.sessionIds?.[0] ?? 'memory', memory.title + ' ' + memory.content, memory.createdAt, "memory")
+      documents++
+    }
+  } catch (err) {
+    logger.warn('rebuildKeywordIndex: failed to load memories', {
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+
+  const sessions = await listSessionsWithRetry(kv)
+  if (sessions === null) {
+    bm25RebuildIncomplete = true
+    if (memoriesLoaded) memoryIndexReady = true
+    return { documents, vectorJobs, fullBackfillPending }
+  }
+  const failedSessions: string[] = []
+  for (let batch = 0; batch < sessions.length; batch += 10) {
+    const chunk = sessions.slice(batch, batch + 10)
+    const results = await Promise.all(
+      chunk.map(async (s) => {
+        try {
+          return await kv.list<CompressedObservation>(KV.observations(s.id))
+        } catch {
+          failedSessions.push(s.id)
+          return [] as CompressedObservation[]
+        }
+      })
+    )
+    for (const obs of results.flat()) {
+      if (!obs.title || !obs.narrative) continue
+      idx.add(obs)
+      consider(obs.id, obs.sessionId, obs.title + ' ' + obs.narrative, obs.timestamp, "observation")
+      documents++
+    }
+  }
+  if (failedSessions.length > 0) {
+    bm25RebuildIncomplete = true
+    logger.warn('rebuildKeywordIndex: failed to load observations for sessions', { failedSessions })
+  }
+  if (memoriesLoaded) memoryIndexReady = true
+  return { documents, vectorJobs, fullBackfillPending }
+}
+
+const BACKFILL_SAVE_EVERY_BATCHES = 10
+const VECTOR_BACKLOG_PAUSE_MS = 1000
+
+async function embedBackfillJobs(
+  jobs: VectorBackfillJob[],
+  remainingAfter: number,
+): Promise<{ ok: number; fail: number; skipped: number }> {
+  const batchSize = getRebuildEmbedBatchSize()
+  const initialVector = vectorIndex
+  const initialProvider = currentEmbeddingProvider
+  let ok = 0
+  let fail = 0
+  let skipped = 0
+  let batchesSinceSave = 0
+  setPendingVectorBackfillCount(remainingAfter + jobs.length)
+  for (let offset = 0; offset < jobs.length; offset += batchSize) {
+    if (vectorIndex !== initialVector || currentEmbeddingProvider !== initialProvider) break
+    const result = await vectorIndexAddBatchGuarded(jobs.slice(offset, offset + batchSize))
+    ok += result.ok
+    fail += result.fail
+    skipped += result.skipped
+    setPendingVectorBackfillCount(remainingAfter + fail + jobs.length - Math.min(jobs.length, offset + batchSize))
+    batchesSinceSave++
+    if (batchesSinceSave >= BACKFILL_SAVE_EVERY_BATCHES) {
+      await flushIndexSave()
+      batchesSinceSave = 0
+    }
+  }
+  if (ok > 0) await flushIndexSave()
+  return { ok, fail, skipped }
+}
+
+export async function backfillVectors(jobs: VectorBackfillJob[]): Promise<number> {
+  return (await embedBackfillJobs(jobs, 0)).ok
+}
+
+export type VectorBacklogResult = { added: number; failed: number; remaining: number; complete: boolean }
+
+export async function backfillVectorBacklog(
+  jobs: VectorBackfillJob[],
+  options: { batchSize?: number; pauseMs?: number; remainingAfter?: number; remainingCount?: () => number } = {},
+): Promise<VectorBacklogResult> {
+  const batchSize = options.batchSize && options.batchSize > 0 ? options.batchSize : getVectorBackfillMax()
+  const pauseMs = options.pauseMs ?? VECTOR_BACKLOG_PAUSE_MS
+  const deferred = options.remainingAfter ?? 0
+  const initialVector = vectorIndex
+  const initialProvider = currentEmbeddingProvider
+  const replaced = () => vectorIndex !== initialVector || currentEmbeddingProvider !== initialProvider
+  const countRemaining = () => options.remainingCount?.() ?? deferred + jobs.filter((job) =>
+    !vectorIndex?.has(job.id) && (!job.revision || getSearchIndex().has(job.id))).length
+  const interrupted = (): VectorBacklogResult => {
+    const remaining = countRemaining()
+    setPendingVectorBackfillCount(remaining)
+    return { added, failed, remaining, complete: false }
+  }
+  let added = 0
+  let failed = 0
+  for (let offset = 0; offset < jobs.length; offset += batchSize) {
+    if (offset > 0 && pauseMs > 0) await delay(pauseMs)
+    if (replaced()) return interrupted()
+    const after = deferred + failed + Math.max(0, jobs.length - offset - batchSize)
+    const batch = jobs.slice(offset, offset + batchSize).filter((job) => !vectorIndex?.has(job.id) && (!job.revision || job.revision.isCurrent()))
+    if (batch.length === 0) {
+      setPendingVectorBackfillCount(after)
+      continue
+    }
+    const result = await embedBackfillJobs(batch, after)
+    added += result.ok
+    failed += result.fail
+    if (replaced()) return interrupted()
+    if (result.ok === 0 && (result.fail > 0 || result.skipped === 0)) {
+      const remaining = countRemaining()
+      setPendingVectorBackfillCount(remaining)
+      return { added, failed, remaining, complete: false }
+    }
+  }
+  const remaining = countRemaining()
+  setPendingVectorBackfillCount(remaining)
+  return { added, failed, remaining, complete: remaining === 0 }
+}
+
+export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     'mem::search',
     async (data: {
@@ -375,6 +735,7 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       cwd?: string
       format?: string
       token_budget?: number
+      targetLayer?: SearchLayer
       agentId?: string
     }) => {
       const idx = getSearchIndex()
@@ -384,6 +745,10 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         throw new Error('mem::search: query must be a non-empty string')
       }
       const query = data.query.trim()
+      if (data.targetLayer !== undefined && !isSearchLayer(data.targetLayer)) {
+        throw new Error("mem::search: targetLayer must be one of 'all', 'memory', or 'observation'")
+      }
+      const targetLayer = data.targetLayer ?? 'all'
       const MAX_LIMIT = 100
       let effectiveLimit = 20
       if (data.limit !== undefined) {
@@ -394,19 +759,6 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       }
       const projectFilter = typeof data.project === 'string' && data.project.trim().length > 0 ? data.project.trim() : undefined
       const cwdFilter = typeof data.cwd === 'string' && data.cwd.trim().length > 0 ? data.cwd.trim() : undefined
-      // #817: agent-scope isolation. mem::search backs REST /search,
-      // memory_recall and recall_context. Without filtering here a
-      // worker booted with AGENT_ID=B + AGENTMEMORY_AGENT_SCOPE=isolated
-      // could read A's memories — the cross-agent leak the issue
-      // documented. Mirrors the smart-search pattern: wildcard "*"
-      // bypasses, explicit agentId pins, isolated mode falls back to
-      // the worker's own AGENT_ID.
-      //
-      // Fail-closed: if isolated mode is on AND no explicit agentId
-      // is given AND env AGENT_ID is unset, refuse the call rather
-      // than silently dropping the filter. Allowing the call through
-      // with filterAgentId=undefined is the same leak this fix is
-      // supposed to close.
       const isolated = isAgentScopeIsolated();
       const explicitAgentId =
         typeof data.agentId === "string" && data.agentId.trim().length > 0
@@ -446,10 +798,10 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         // Share one rebuild across concurrent cold-start queries so they
         // don't each walk the whole corpus and saturate the pool.
         if (!rebuildPromise) {
-          rebuildPromise = rebuildIndex(kv)
-            .then((count) => {
-              logger.info('Search index rebuilt', { entries: count })
-              return count
+          rebuildPromise = rebuildKeywordIndex(kv)
+            .then((result) => {
+              logger.info('Search index rebuilt', { entries: result.documents })
+              return result.documents
             })
             .catch((err) => {
               logger.warn('Index rebuild failed', {
@@ -481,24 +833,38 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         sessionId: string
         score: number
         observation?: CompressedObservation
+        layer?: SearchResultLayer
       }>
-      if (hybridRanker && vectorIndex && vectorIndex.size > 0) {
+      const authorizeGraph: GraphObservationAuthorization = async (record, sessionId, read) => {
+        if (filterAgentId !== undefined && record.agentId !== filterAgentId) return false
+        const memoryProject = "content" in record ? record.project : undefined
+        if (projectFilter && memoryProject !== undefined && memoryProject !== projectFilter) return false
+        if (cwdFilter || (projectFilter && memoryProject === undefined)) {
+          const session = await read<Session>(KV.sessions, sessionId)
+          if (!session) return false
+          if (cwdFilter && session.cwd !== cwdFilter) return false
+          if (projectFilter && memoryProject === undefined && session.project !== projectFilter) return false
+        }
+        return true
+      }
+      if (hybridRanker) {
         try {
-          const hybrid = await hybridRanker(query, fetchLimit)
+          const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph)
           results = hybrid.map((r) => ({
             obsId: r.observation.id,
             sessionId: r.sessionId,
             score: r.combinedScore,
             observation: r.observation,
+            layer: r.layer,
           }))
         } catch (err) {
           logger.warn("hybrid ranking failed, falling back to keyword search", {
             error: err instanceof Error ? err.message : String(err),
           })
-          results = idx.search(query, fetchLimit)
+          results = idx.search(query, fetchLimit, targetLayer)
         }
       } else {
-        results = idx.search(query, fetchLimit)
+        results = idx.search(query, fetchLimit, targetLayer)
       }
 
       // Resolve session -> project/cwd once per sessionId we touch.
@@ -510,15 +876,10 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
         return s ?? null
       }
 
-      // Cache for memory project lookups. Memories indexed via mem::remember
-      // use a synthetic sessionId ('memory' or the first real sessionId) that
-      // either has no KV.sessions entry or belongs to a different project.
-      // When loadSession returns null we fall through to a KV.memories probe
-      // so project-filtered search can include or exclude them correctly.
       const memoryProjectCache = new Map<string, string | null>()
       const loadMemoryProject = async (obsId: string): Promise<string | null> => {
         if (memoryProjectCache.has(obsId)) return memoryProjectCache.get(obsId)!
-        const mem = await kv.get<Memory>(KV.memories, obsId).catch(() => null)
+        const mem = await kv.get<Memory>(KV.memories, obsId)
         const proj = mem?.project ?? null
         memoryProjectCache.set(obsId, proj)
         return proj
@@ -537,155 +898,64 @@ export function registerSearchFunction(sdk: ISdk, kv: StateKV): void {
       const candidates: typeof results = []
       for (const r of results) {
         if (candidates.length >= earlyCap) break
+        const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
+        if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) continue
         if (filtering) {
-          const s = await loadSession(r.sessionId)
-          if (s) {
-            if (projectFilter && s.project !== projectFilter) continue
-            if (cwdFilter && s.cwd !== cwdFilter) continue
-          } else {
-            // Session not found. Two cases arrive here:
-            //   1. Synthetic sessionId — memories indexed via mem::remember use
-            //      sessionIds[0] ?? 'memory'. The string 'memory' has no session
-            //      entry; neither does a real sessionId when sessionIds[0] happens
-            //      to be a session from a different lifecycle. Probe KV.memories
-            //      directly to get the memory's own project field.
-            //   2. Deleted session — the session existed when the entry was indexed
-            //      but was since evicted. The KV.memories probe returns null for
-            //      these (they are observations, not memories), so memProject is
-            //      null and the entry passes through as unscoped. This is the safe
-            //      fallback: we lose the ability to filter but never incorrectly
-            //      block a result whose session we can no longer verify.
-            // In both cases, a null memProject means "project unknown — treat as
-            // unscoped and let it through" to preserve backward-compatibility.
-            if (projectFilter) {
-              const memProject = await loadMemoryProject(r.obsId)
-              if (memProject !== null && memProject !== projectFilter) continue
-            }
-            // cwd filter does not apply to unbound entries.
+          const memoryProject = projectFilter && layer === "memory"
+            ? await loadMemoryProject(r.obsId)
+            : null
+          if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) continue
+          const session = await loadSession(r.sessionId)
+          if (session) {
+            if (projectFilter && memoryProject === null && session.project !== projectFilter) continue
+            if (cwdFilter && session.cwd !== cwdFilter) continue
           }
         }
         candidates.push(r)
       }
 
-      // Second pass: load observations in parallel. Fall back to
-      // KV.memories when the observation lookup misses — entries indexed
-      // via mem::remember live in the memories scope under a synthetic
-      // sessionId, so the observation key never exists (#265).
       const obsResults = await Promise.all(
         candidates.map(async (r) => {
-          if (r.observation) return r.observation
+          if (r.observation) return { observation: r.observation, layer: r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId) }
           const obs = await kv
             .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
             .catch(() => null)
-          if (obs) return obs
+          if (obs) return { observation: obs, layer: "observation" as const }
           const mem = await kv
             .get<Memory>(KV.memories, r.obsId)
             .catch(() => null)
-          return mem ? memoryToObservation(mem) : null
+          return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
         })
       )
       const enriched: SearchResult[] = []
       for (let i = 0; i < candidates.length; i++) {
-        const obs = obsResults[i]
-        if (!obs) continue
-        // #817: enforce agent-scope after the observation/memory is
-        // loaded. The BM25 index doesn't carry agentId so the filter
-        // happens post-lookup. Wildcard ("*") and no-isolation paths
-        // resolved filterAgentId=undefined upstream and pass through.
+        const resolved = obsResults[i]
+        if (!resolved) continue
+        const obs = resolved.observation
+        if (!matchesSearchLayer(obs.id, obs.sessionId, targetLayer, resolved.layer)) continue
         if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
         if (enriched.length >= effectiveLimit) break
         enriched.push({
-          observation: obs,
+          observation: withoutObservationSource(obs),
+          layer: resolved.layer,
           score: candidates[i].score,
           sessionId: candidates[i].sessionId,
         })
       }
 
+      const response = buildRecallResponse(enriched, format as RecallFormat, tokenBudget)
       void recordAccessBatch(
         kv,
-        enriched.map((r) => r.observation.id),
+        enriched.slice(0, response.results.length).map((result) => result.observation.id),
       )
 
-      const estimateTokens = (value: unknown): number =>
-        Math.max(1, Math.ceil(JSON.stringify(value).length / 3))
-
-      const applyTokenBudget = <T>(items: T[]): {
-        items: T[]
-        used: number
-        truncated: boolean
-      } => {
-        if (!tokenBudget) return { items, used: items.reduce((sum, item) => sum + estimateTokens(item), 0), truncated: false }
-        const selected: T[] = []
-        let used = 0
-        for (const item of items) {
-          const itemTokens = estimateTokens(item)
-          if (used + itemTokens > tokenBudget) {
-            return { items: selected, used, truncated: selected.length < items.length }
-          }
-          selected.push(item)
-          used += itemTokens
-        }
-        return { items: selected, used, truncated: false }
-      }
-
-      if (format === 'compact') {
-        const compactResults: CompactSearchResult[] = enriched.map((r) => ({
-          obsId: r.observation.id,
-          sessionId: r.sessionId,
-          title: r.observation.title,
-          type: r.observation.type,
-          score: r.score,
-          timestamp: r.observation.timestamp,
-        }))
-        const packed = applyTokenBudget(compactResults)
-        return {
-          format,
-          results: packed.items,
-          tokens_used: packed.used,
-          tokens_budget: tokenBudget,
-          truncated: packed.truncated,
-        }
-      }
-
-      if (format === 'narrative') {
-        const narrativeResults = enriched.map((r) => ({
-          obsId: r.observation.id,
-          sessionId: r.sessionId,
-          title: r.observation.title,
-          narrative: r.observation.narrative,
-          score: r.score,
-          timestamp: r.observation.timestamp,
-        }))
-        const packed = applyTokenBudget(narrativeResults)
-        const text = packed.items
-          .map((r, index) => `${index + 1}. ${r.title}\n${r.narrative}`)
-          .join('\n\n')
-        return {
-          format,
-          results: packed.items,
-          text,
-          tokens_used: packed.used,
-          tokens_budget: tokenBudget,
-          truncated: packed.truncated,
-        }
-      }
-
-      const packed = applyTokenBudget(enriched)
-
-      // Avoid logging raw cwd/project (host paths). Log only that filters were active.
       logger.info('Search completed', {
         query,
-        results: packed.items.length,
+        results: response.results.length,
         hasProjectFilter: !!projectFilter,
         hasCwdFilter: !!cwdFilter,
       })
-      return {
-        format,
-        results: packed.items,
-        tokens_used: packed.used,
-        tokens_budget: tokenBudget,
-        truncated: packed.truncated,
-      }
+      return response
     }
   )
 }

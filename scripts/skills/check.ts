@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -54,7 +54,14 @@ for (const name of dirs) {
 
   const body = fm ? text.slice(text.indexOf("\n---", 3) + 4) : text;
   if (body.includes(DUP_MARKER)) {
-    errors.push(`${rel}: inlines the shared troubleshooting block; reference ../_shared/TROUBLESHOOTING.md instead`);
+    errors.push(`${rel}: inlines the shared troubleshooting block; link the local TROUBLESHOOTING.md instead`);
+  }
+  for (const [reference] of body.matchAll(/[\w./-]*TROUBLESHOOTING\.md/g)) {
+    const skillRoot = resolve(SKILLS, name);
+    const target = resolve(skillRoot, reference);
+    if (!target.startsWith(skillRoot + sep) || !existsSync(target)) {
+      errors.push(`${rel}: supporting file must exist inside the installed skill: ${reference}`);
+    }
   }
 }
 

@@ -1,17 +1,38 @@
 # Troubleshooting agentmemory skills
 
-Shared recovery steps for all user-invocable agentmemory skills. Each skill's
-Troubleshooting section points here instead of duplicating the block.
+Recovery steps for separately installed skills. This document is generated into
+each skill directory so native skill readers can open it without parent traversal.
 
 ## "MCP tool not available"
 
-If a `memory_*` MCP tool does not appear, the stdio MCP shim never started.
-Walk these in order:
+Missing tools can mean a stopped MCP process, a disconnected daemon, or an
+explicitly reduced tool surface. Walk these in order:
 
-1. Run `/plugin list` in the host and confirm `agentmemory` shows as enabled.
-2. Restart the host. The plugin's `.mcp.json` is only read on startup, so a
-   freshly installed or re-enabled plugin will not register tools mid-session.
-3. Check `/mcp` and confirm the `agentmemory` server shows a live connection.
+1. Identify the host. In Claude Code, inspect `/plugin list` and `/mcp`.
+   In Hermes, inspect the configured memory provider and `mcp_servers` separately.
+   In OpenClaw, validate the host configuration and inspect its MCP servers and
+   native plugins separately. In Pi or OMP, inspect `/agentmemory-status` and the
+   MCP inventory separately; native save/search does not prove the broader tools
+   are connected. Do not run another host's setup commands.
+2. Restart or reload the affected host connection after configuration changes.
+3. Inspect the connected tool inventory. Hermes may namespace MCP tools; invoke
+   the actual advertised names and schemas. A native memory provider is not
+   proof that every MCP tool or shared skill is available.
+4. Check `agentmemory status` and the daemon's `AGENTMEMORY_TOOLS` setting.
+   Codex's bundled bridge lists the daemon's enabled tools. The standalone shim
+   used by other hosts can fall back to seven basic tools with a separate store.
+   Do not claim full daemon functionality based on those seven tools.
+5. If `agentmemory connect codex` and the Codex plugin are both enabled, choose
+   one MCP connection. Check `/hooks` before adding global hook fallbacks.
+
+Hermes, OpenClaw, Pi and OMP connector installations bundle skills; other hosts
+may install them separately. Check the host's skill inventory and open this file
+from the installed skill directory. Test automatic capture with a real turn and
+a recorded observation; tool connectivity alone does not establish lifecycle
+capture.
+
+An outage or timeout is not an empty search result. Report the failure. A write
+may have committed before the response was lost; inspect state before retrying.
 
 ## REST fallback
 
@@ -19,8 +40,15 @@ When the MCP tools stay unavailable but the daemon is running, call the REST
 API directly:
 
 1. Set `AGENTMEMORY_URL` to the daemon base URL (default `http://localhost:3111`).
-2. Add `Authorization: Bearer $AGENTMEMORY_SECRET` ONLY when `AGENTMEMORY_SECRET`
-   is set. The default localhost daemon is open and rejects a stray header.
+2. The REST API requires a bearer credential by default. Use the host's explicit
+   `AGENTMEMORY_SECRET`; for loopback URLs only, fall back to the secret in
+   `~/.agentmemory/.env` and then `~/.agentmemory/secret`. Load the value locally
+   without displaying it. Never send a local-file secret to a remote URL.
+   If `AGENTMEMORY_CREDENTIAL_MODE=explicit`, require the explicit host credential
+   and do not read local credential files.
+   Authenticated REST fallback requests require HTTPS for non-loopback
+   URLs; HTTP is allowed for loopback URLs (`localhost`, `127.0.0.0/8`, or `[::1]`).
+   Reject redirects on authenticated requests. Do not print or save the secret.
 
 Endpoint map by skill:
 
@@ -34,5 +62,7 @@ Endpoint map by skill:
 | commit-context  | `GET /agentmemory/session/by-commit?sha=<sha>`                   |
 | commit-history  | `GET /agentmemory/commits` (URL-encode every query param)       |
 
-The daemon reads `.mcp.json` on startup only, so any port or auth change needs a
-restart before either transport sees it.
+The MCP host reads the plugin MCP configuration. Restart the daemon after
+changing its configuration, then restart or reconnect the host MCP process after
+changing its URL or explicit secret. The local bridge reads the credential files
+for each request; it does not inherit other daemon `.env` settings.

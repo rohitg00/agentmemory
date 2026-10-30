@@ -1,0 +1,135 @@
+.section {
+  padding: clamp(48px, 6vw, 80px) 0;
+}
+
+.heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.9fr);
+  align-items: end;
+  gap: var(--s-7);
+  margin-bottom: var(--s-7);
+}
+
+.heading h2 {
+  margin-top: var(--s-4);
+  font-size: var(--t-49);
+  letter-spacing: var(--track-display);
+  line-height: 1.08;
+}
+
+.heading p {
+  color: var(--muted);
+  font-size: var(--t-16);
+  max-width: 400px;
+}
+
+.tour {
+  margin: 0;
+}
+
+.frame {
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow), 0 24px 64px -40px color-mix(in srgb, var(--ink) 25%, transparent);
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  min-height: 44px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sunk);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.dots {
+  display: flex;
+  gap: 6px;
+}
+
+.dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+
+.address {
+  flex: 1;
+}
+
+.recording {
+  white-space: nowrap;
+}
+
+.shot {
+  width: 100%;
+  height: auto;
+  filter: none;
+}
+
+.caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-5);
+  margin-top: var(--s-5);
+  color: var(--muted);
+  font-size: var(--t-12);
+}
+
+.caption ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  min-height: 44px;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  text-decoration-color: var(--line-2);
+}
+
+.expand:hover {
+  color: var(--accent-ink);
+  text-decoration-color: currentColor;
+}
+
+@media (max-width: 720px) {
+  .heading {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+    margin-bottom: var(--s-6);
+  }
+
+  .dots {
+    display: none;
+  }
+
+  .chrome {
+    padding: 10px 12px;
+    gap: var(--s-2);
+  }
+
+  .caption {
+    align-items: start;
+    flex-direction: column;
+    gap: var(--s-2);
+    margin-top: var(--s-4);
+  }
+}
