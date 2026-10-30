@@ -454,11 +454,28 @@ describe("MCP graph/stats resource over live graph state", () => {
     });
   });
 
+  it("returns the merged counts after a default merge import", async () => {
+    const r = await rig();
+    await persistGraphDelta(r.kv, [node("a"), node("b"), node("c")], [edge("ab", "a", "b")]);
+    const exportData: ExportData = {
+      version: "0.9.30", exportedAt: timestamp, sessions: [], observations: {}, memories: [], summaries: [],
+      graphNodes: [node("d")], graphEdges: [edge("cd", "c", "d")],
+    };
+
+    expect(await r.call("mem::import", { exportData })).toMatchObject({ success: true });
+    expect(await r.readStats()).toMatchObject({
+      totalNodes: 4, totalEdges: 2, nodesByType: { concept: 4 }, edgesByType: { related_to: 2 },
+      fromIndex: true, available: true, coverage: "complete",
+    });
+  });
+
   it("returns the restored counts after a snapshot restore that follows a reset", async () => {
     const r = await rig();
     await persistGraphDelta(r.kv, [node("a"), node("b")], [edge("ab", "a", "b")]);
     const created = await r.call("mem::snapshot-create");
     expect(created.success).toBe(true);
+    await persistGraphDelta(r.kv, [node("c")], []);
+    expect(await r.readStats()).toMatchObject({ totalNodes: 3, totalEdges: 1 });
     await r.call("mem::graph-reset");
     expect(await r.readStats()).toMatchObject({ totalNodes: 0, totalEdges: 0, available: true });
 
