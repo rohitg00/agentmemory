@@ -289,4 +289,36 @@ describe("graph-extract watermark never skips an observation", () => {
       graphExtractedDigest: expect.any(String),
     });
   });
+  it("extracts a row that gets its title below the watermark", async () => {
+    // A legacy untitled row (hookType, no title) is skipped until
+    // mem::compression-retry titles it, and the title keeps the capture time.
+    const h = harness();
+    const untitled = { id: "b", sessionId: SID, timestamp: "2026-01-01T00:00:01.000Z", hookType: "post_tool_use" };
+    h.land(untitled as unknown as CompressedObservation, obs("a", "2026-01-01T00:00:02.000Z"));
+    await h.stop();
+    h.land(obs("b", "2026-01-01T00:00:01.000Z"));
+    await h.stop();
+
+    expect(batches(h.trigger)).toEqual([["a"], ["b", "a"]]);
+  });
+});
+
+// Pins current behaviour, not desired behaviour. The digest is over ids, and
+// the timestamp marker sees only timestamps, so neither notices a row whose
+// content changed in place.
+describe("graph-extract watermark known limitations", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("does not re-extract a row upgraded in place by compression (known limitation, shared with the timestamp marker)", async () => {
+    // observe.ts writes a titled synthetic row with no concepts; mem::compress
+    // later rewrites it with the same id and timestamp. A stop that ran in
+    // between already extracted the synthetic version.
+    const h = harness();
+    h.land(obs("b", "2026-01-01T00:00:01.000Z"), obs("a", "2026-01-01T00:00:02.000Z"));
+    await h.stop();
+    h.land({ ...obs("b", "2026-01-01T00:00:01.000Z"), concepts: ["auth"] });
+    await h.stop();
+
+    expect(batches(h.trigger)).toEqual([["b", "a"]]);
+  });
 });

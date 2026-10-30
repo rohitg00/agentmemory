@@ -86,11 +86,12 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
         // that is quadratic permanent heap. Send only what landed since the
         // last extract.
         //
-        // The digest is what makes the timestamp watermark safe. mem::compress
-        // is dispatched fire-and-forget (observe.ts) and stamps the capture
-        // time, not the write time, so a slow compression can land an OLDER
-        // timestamp after a newer one was already extracted; evict can also
-        // remove one at any point. Whenever the already-extracted half no
+        // The digest is what makes the timestamp watermark safe. Rows keep
+        // their capture time, not the write time, so one can become
+        // extractable below the watermark: a legacy untitled row titled late
+        // by mem::compression-retry, or a row restored by
+        // import/replay into a live session. Evict can also remove one at any
+        // point. Whenever the already-extracted half no
         // longer fingerprints the same, we re-send the whole session rather
         // than skip it. Missing a memory is worse than re-merging one.
         const session = await kv
