@@ -413,7 +413,7 @@ async function handleLocal(
         return textResponse(buildRecallResponse(matches, v.format ?? "full", v.tokenBudget), true);
       }
       return textResponse({ mode: "compact", results: results.map((memory) => ({
-        ...memory, obsId: memory.id, sessionId: memory.sessionIds?.[0] ?? "memory", layer: "memory",
+        ...memory, memoryType: memory.type, obsId: memory.id, sessionId: memory.sessionIds?.[0] ?? "memory", layer: "memory",
       })) }, true);
     }
 

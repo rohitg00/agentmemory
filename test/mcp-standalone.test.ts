@@ -282,6 +282,17 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("Use bcrypt for password hashing");
   });
 
+  it.each(["pattern", "preference", "architecture", "bug", "workflow", "fact"])("retains %s metadata in fallback compact and expanded search", async (type) => {
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_save", { content: "Synthetic type probe", type, project: "type-project" }, kv);
+    const compact = JSON.parse((await handleToolCall("memory_smart_search", { query: "Synthetic", project: "type-project" }, kv)).content[0].text);
+    expect(compact.results[0]).toHaveProperty("memoryType", type);
+    const id = compact.results[0].obsId;
+    const expanded = JSON.parse((await handleToolCall("memory_smart_search", { expandIds: id, project: "type-project" }, kv)).content[0].text);
+    expect(expanded.results[0].observation).toMatchObject({ id, type: "decision", memoryType: type });
+    expect((await kv.get<{ type: string }>("mem:memories", id))?.type).toBe(type);
+  });
+
   it("memory_smart_search rejects empty query to prevent match-all in forget flow", async () => {
     const kv = new InMemoryKV();
     await handleToolCall("memory_save", { content: "anything" }, kv);

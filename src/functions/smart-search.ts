@@ -227,14 +227,22 @@ export function registerSmartSearchFunction(
             .slice(0, limit)
         : projectResults.slice(0, limit);
 
-      const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
-        obsId: r.observation.id,
-        layer: r.layer ?? getSearchIndex().layerOf(r.observation.id) ?? getSearchResultLayer(r.observation.id, r.sessionId),
-        sessionId: r.sessionId,
-        title: r.observation.title,
-        type: r.observation.type,
-        score: r.combinedScore,
-        timestamp: r.observation.timestamp,
+      const compact: CompactSearchResult[] = await Promise.all(filteredHybrid.map(async (r) => {
+        const layer = r.layer ?? getSearchIndex().layerOf(r.observation.id) ?? getSearchResultLayer(r.observation.id, r.sessionId);
+        // Older persisted indexes lack memoryType; use the already-authorized source row.
+        const memoryType = layer === "memory"
+          ? (await kv.get<Memory>(KV.memories, r.observation.id))?.type ?? r.observation.memoryType
+          : undefined;
+        return {
+          obsId: r.observation.id,
+          layer,
+          sessionId: r.sessionId,
+          title: r.observation.title,
+          type: r.observation.type,
+          ...(memoryType !== undefined && { memoryType }),
+          score: r.combinedScore,
+          timestamp: r.observation.timestamp,
+        };
       }));
 
       void recordAccessBatch(
