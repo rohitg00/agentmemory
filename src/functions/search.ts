@@ -906,6 +906,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
             : null
           if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) continue
           const session = await loadSession(r.sessionId)
+          if (projectFilter && memoryProject === null && !session) continue
           if (session) {
             if (projectFilter && memoryProject === null && session.project !== projectFilter) continue
             if (cwdFilter && session.cwd !== cwdFilter) continue
