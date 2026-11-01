@@ -896,12 +896,8 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         // Memory entries with a synthetic sessionId take a secondary KV.memories
         // path so project filtering works correctly for them too.
         //
-        // When agentId filtering is active we can't cap at effectiveLimit
-        // here — the second pass (post-load) is what drops cross-agent
-        // rows, and capping early would underfill the result page. Use
-        // fetchLimit as the upper bound in that case; the final
-        // truncation lives at the end of the second pass.
-        const earlyCap = filterAgentId ? fetchLimit : effectiveLimit
+        // Missing records and agent mismatches must not consume result slots.
+        const earlyCap = fetchLimit
         const candidates: typeof results = []
         for (const r of results) {
           if (candidates.length >= earlyCap) break
@@ -914,6 +910,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
             if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) continue
             const session = await loadSession(r.sessionId)
             if (projectFilter && memoryProject === null && !session) continue
+            if (cwdFilter && layer === "observation" && !session) continue
             if (session) {
               if (projectFilter && memoryProject === null && session.project !== projectFilter) continue
               if (cwdFilter && session.cwd !== cwdFilter) continue
@@ -922,10 +919,11 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
           candidates.push(r)
         }
 
-        const obsResults: Array<{ observation: CompressedObservation; layer: SearchResultLayer } | null> = []
-        for (let offset = 0; offset < candidates.length; offset += 10) {
-          obsResults.push(...await Promise.all(
-            candidates.slice(offset, offset + 10).map((r) => {
+        enriched = []
+        for (let offset = 0; offset < candidates.length && enriched.length < effectiveLimit; offset += 10) {
+          const batch = candidates.slice(offset, offset + 10)
+          const obsResults = await Promise.all(
+            batch.map((r) => {
               const key = JSON.stringify([r.obsId, r.sessionId])
               let pending = observationCache.get(key)
               if (!pending) {
@@ -944,22 +942,21 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
               }
               return pending
             })
-          ))
-        }
-        enriched = []
-        for (let i = 0; i < candidates.length; i++) {
-          const resolved = obsResults[i]
-          if (!resolved) continue
-          const obs = resolved.observation
-          if (!matchesSearchLayer(obs.id, obs.sessionId, targetLayer, resolved.layer)) continue
-          if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
-          if (enriched.length >= effectiveLimit) break
-          enriched.push({
-            observation: withoutObservationSource(obs),
-            layer: resolved.layer,
-            score: candidates[i].score,
-            sessionId: candidates[i].sessionId,
-          })
+          )
+          for (let i = 0; i < batch.length; i++) {
+            const resolved = obsResults[i]
+            if (!resolved) continue
+            const obs = resolved.observation
+            if (!matchesSearchLayer(obs.id, obs.sessionId, targetLayer, resolved.layer)) continue
+            if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
+            if (enriched.length >= effectiveLimit) break
+            enriched.push({
+              observation: withoutObservationSource(obs),
+              layer: resolved.layer,
+              score: batch[i].score,
+              sessionId: batch[i].sessionId,
+            })
+          }
         }
         if (!filtering || enriched.length >= effectiveLimit || results.length < fetchLimit || fetchLimit >= MAX_CANDIDATES) break
         // A full candidate window can hide valid matches behind rejected records.

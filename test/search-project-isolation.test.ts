@@ -222,6 +222,32 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       expect(requestedLimits).toEqual([100, 200]);
     });
 
+    it("rejects orphaned observations when a directory filter is requested", async () => {
+      const orphan = addMemory({ id: "obs_orphan", sessionIds: ["session_missing"] });
+      const observation = memoryToObservation(orphan);
+      getSearchIndex().add(observation, "observation");
+      put(KV.observations("session_missing"), orphan.id, observation);
+      if (ranking === "hybrid") {
+        setHybridRanker(async () => [{ observation, sessionId: "session_missing", combinedScore: 1, layer: "observation" }]);
+      }
+      expect(await recall({ project: undefined, cwd: "/test/project", targetLayer: "all" })).toEqual([]);
+    });
+
+    it("preserves sessionless memories when a directory filter is requested", async () => {
+      const memory = addMemory({ project: "project-a" });
+      expect(await recall({ cwd: "/test/project" })).toEqual([memory.id]);
+    });
+
+    it("does not let an unloadable observation consume the result limit", async () => {
+      const session = addSession("project-a");
+      const matching = addMemory({ id: "mem_matching", project: "project-a" });
+      vi.spyOn(getSearchIndex(), "search").mockImplementation((_query, limit) => [
+        { obsId: "obs_missing", sessionId: session.id, score: 2, layer: "observation" as const },
+        { obsId: matching.id, sessionId: "memory", score: 1, layer: "memory" as const },
+      ].slice(0, limit));
+      expect(await recall({ limit: 1, targetLayer: "all" })).toEqual([matching.id]);
+    });
+
     it("fills the result limit after excluding an unscoped first candidate", async () => {
       const unscoped = addMemory();
       const matching = addMemory({ id: "mem_matching", project: "project-a" });
