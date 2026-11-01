@@ -23,6 +23,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
   (ranking) => {
     let records: Map<string, Map<string, unknown>>;
     let memories: Memory[];
+    let hybridLimits: number[];
     let search: (data: Record<string, unknown>) => Promise<{ results: SearchResult[] }>;
 
     const put = (scope: string, key: string, value: unknown) => {
@@ -79,10 +80,12 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
     beforeEach(() => {
       records = new Map();
       memories = [];
+      hybridLimits = [];
       getSearchIndex().clear();
       setHybridRanker(null);
       if (ranking !== "keyword") {
-        setHybridRanker(async () => {
+        setHybridRanker(async (_query, limit) => {
+          hybridLimits.push(limit);
           if (ranking === "hybrid-fallback") throw new Error("ranker unavailable");
           return memories.map((memory, index) => {
             const observation = memoryToObservation(memory);
@@ -92,7 +95,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
               combinedScore: 1 / (index + 1),
               layer: "memory" as const,
             };
-          });
+          }).slice(0, limit);
         });
       }
       const kv = {
@@ -149,12 +152,50 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       expect(await recall({ project: undefined })).toEqual([memory.id]);
     });
 
+    const orderedKeywordResults = () =>
+      vi.spyOn(getSearchIndex(), "search").mockImplementation((_query, limit) =>
+        memories.slice(0, limit).map((memory, index) => ({
+          obsId: memory.id,
+          sessionId: memory.sessionIds[0] ?? "memory",
+          score: 1 / (index + 1),
+          layer: "memory" as const,
+        })),
+      );
+
+    it("refills multiple full windows without returning excluded projects", async () => {
+      for (let i = 0; i < 205; i++) {
+        addMemory({ id: `mem_excluded_${i}`, project: i % 2 ? "project-b" : undefined });
+      }
+      const matching = addMemory({ id: "mem_matching", project: "project-a" });
+      orderedKeywordResults();
+      expect(await recall({ limit: 1 })).toEqual([matching.id]);
+    });
+
+    it("refills after the loaded agent filter consumes a full window", async () => {
+      for (let i = 0; i < 100; i++) {
+        addMemory({ id: `mem_foreign_agent_${i}`, project: "project-a", agentId: "agent-b" });
+      }
+      const matching = addMemory({ id: "mem_matching", project: "project-a", agentId: "agent-a" });
+      orderedKeywordResults();
+      expect(await recall({ limit: 1, agentId: "agent-a" })).toEqual([matching.id]);
+    });
+
+    it("stops refilling when the candidate source is exhausted", async () => {
+      for (let i = 0; i < 100; i++) addMemory({ id: `mem_unscoped_${i}` });
+      const keyword = orderedKeywordResults();
+      expect(await recall({ limit: 1 })).toEqual([]);
+      const requestedLimits = ranking === "hybrid"
+        ? hybridLimits
+        : keyword.mock.calls.map((call) => call[1]);
+      expect(requestedLimits).toEqual([100, 200]);
+    });
+
     it("fills the result limit after excluding an unscoped first candidate", async () => {
       const unscoped = addMemory();
       const matching = addMemory({ id: "mem_matching", project: "project-a" });
       // Candidate ordering is external to the ownership filter under test.
-      vi.spyOn(getSearchIndex(), "search").mockReturnValue(
-        [unscoped, matching].map((memory, index) => ({
+      vi.spyOn(getSearchIndex(), "search").mockImplementation((_query, limit) =>
+        [unscoped, matching].slice(0, limit).map((memory, index) => ({
           obsId: memory.id,
           sessionId: "memory",
           score: 1 / (index + 1),
