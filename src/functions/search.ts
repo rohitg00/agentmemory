@@ -1,5 +1,6 @@
 import type { IIIClient } from 'iii-sdk'
 import type { GraphObservationAuthorization } from "./graph-retrieval.js";
+import type { HybridSearchRequest } from "../state/hybrid-search.js";
 import type { IndexPersistenceStatus } from "../state/index-persistence.js";
 import type { CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
@@ -33,6 +34,7 @@ type HybridRanker = (
   limit: number,
   targetLayer?: SearchLayer,
   authorizeGraph?: GraphObservationAuthorization,
+  request?: HybridSearchRequest,
 ) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number; layer?: SearchResultLayer }>>
 let hybridRanker: HybridRanker | null = null
 
@@ -849,12 +851,12 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         return true
       }
       // Resolve session -> project/cwd once per sessionId we touch.
-      const sessionCache = new Map<string, Session | null>()
+      const sessionCache = new Map<string, Promise<Session | null>>()
       const loadSession = async (sessionId: string): Promise<Session | null> => {
         if (sessionCache.has(sessionId)) return sessionCache.get(sessionId)!
-        const s = await kv.get<Session>(KV.sessions, sessionId)
-        sessionCache.set(sessionId, s ?? null)
-        return s ?? null
+        const pending = kv.get<Session>(KV.sessions, sessionId).then((session) => session ?? null)
+        sessionCache.set(sessionId, pending)
+        return pending
       }
 
       const memoryProjectCache = new Map<string, string | null>()
@@ -870,11 +872,13 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         observation: CompressedObservation
         layer: SearchResultLayer
       } | null>>()
+      const hybridRequest: HybridSearchRequest = {}
       let enriched: SearchResult[] = []
       while (true) {
+        hybridRequest.candidateCount = undefined
         if (hybridRanker) {
           try {
-            const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph)
+            const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph, hybridRequest)
             results = hybrid.map((r) => ({
               obsId: r.observation.id,
               sessionId: r.sessionId,
@@ -883,6 +887,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
               layer: r.layer,
             }))
           } catch (err) {
+            hybridRequest.candidateCount = undefined
             logger.warn("hybrid ranking failed, falling back to keyword search", {
               error: err instanceof Error ? err.message : String(err),
             })
@@ -892,38 +897,29 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
           results = idx.search(query, fetchLimit, targetLayer)
         }
 
-        // First pass: filter by session (sequential — benefits from session cache).
-        // Memory entries with a synthetic sessionId take a secondary KV.memories
-        // path so project filtering works correctly for them too.
-        //
-        // Missing records and agent mismatches must not consume result slots.
-        const earlyCap = fetchLimit
-        const candidates: typeof results = []
-        for (const r of results) {
-          if (candidates.length >= earlyCap) break
-          const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
-          if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) continue
-          if (filtering) {
-            const memoryProject = projectFilter && layer === "memory"
-              ? await loadMemoryProject(r.obsId)
-              : null
-            if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) continue
-            const session = await loadSession(r.sessionId)
-            if (projectFilter && memoryProject === null && !session) continue
-            if (cwdFilter && layer === "observation" && !session) continue
-            if (session) {
-              if (projectFilter && memoryProject === null && session.project !== projectFilter) continue
-              if (cwdFilter && session.cwd !== cwdFilter) continue
-            }
-          }
-          candidates.push(r)
-        }
-
         enriched = []
-        for (let offset = 0; offset < candidates.length && enriched.length < effectiveLimit; offset += 10) {
-          const batch = candidates.slice(offset, offset + 10)
+        let batchSize = Math.min(10, effectiveLimit)
+        for (let offset = 0; offset < results.length && enriched.length < effectiveLimit;) {
+          const batch = results.slice(offset, offset + batchSize)
+          offset += batch.length
           const obsResults = await Promise.all(
-            batch.map((r) => {
+            batch.map(async (r) => {
+              const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
+              if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) return null
+              if (filtering) {
+                const memoryProject = projectFilter && layer === "memory"
+                  ? await loadMemoryProject(r.obsId)
+                  : null
+                if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) return null
+                const session = await loadSession(r.sessionId)
+                if (projectFilter && memoryProject === null && !session) return null
+                if (cwdFilter && layer === "observation" && !session) return null
+                if (session) {
+                  if (projectFilter && memoryProject === null && session.project !== projectFilter) return null
+                  if (cwdFilter && session.cwd !== cwdFilter) return null
+                }
+              }
+
               const key = JSON.stringify([r.obsId, r.sessionId])
               let pending = observationCache.get(key)
               if (!pending) {
@@ -957,8 +953,9 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
               sessionId: batch[i].sessionId,
             })
           }
+          batchSize = Math.min(10, Math.max(effectiveLimit - enriched.length, batchSize * 2))
         }
-        if (!filtering || enriched.length >= effectiveLimit || results.length < fetchLimit || fetchLimit >= MAX_CANDIDATES) break
+        if (!filtering || enriched.length >= effectiveLimit || (hybridRequest.candidateCount ?? results.length) < fetchLimit || fetchLimit >= MAX_CANDIDATES) break
         // A full candidate window can hide valid matches behind rejected records.
         fetchLimit = Math.min(fetchLimit * 2, MAX_CANDIDATES)
       }

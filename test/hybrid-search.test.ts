@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { VectorIndex } from "../src/state/vector-index.js";
 import { HybridSearch } from "../src/state/hybrid-search.js";
+import { KV } from "../src/state/schema.js";
 import { SearchIndex } from "../src/state/search-index.js";
 import type { CompressedObservation, EmbeddingProvider } from "../src/types.js";
 
@@ -50,6 +52,23 @@ describe("HybridSearch", () => {
   beforeEach(() => {
     bm25 = new SearchIndex();
     kv = mockKV();
+  });
+
+  it("reuses query embeddings only within a recall request", async () => {
+    const obs = makeObs();
+    bm25.add(obs);
+    await kv.set(KV.observations(obs.sessionId), obs.id, obs);
+    const vector = new VectorIndex();
+    vector.add(obs.id, obs.sessionId, new Float32Array([1, 0]));
+    const embed = vi.fn(async () => new Float32Array([1, 0]));
+    const provider = { name: "test", dimensions: 2, embed, embedBatch: vi.fn() };
+    const hybrid = new HybridSearch(bm25, vector, provider, kv as never, 0.4, 0.6, 0);
+    const request = {};
+    await hybrid.search("auth", 100, "all", undefined, request);
+    await hybrid.search("auth", 200, "all", undefined, request);
+    expect(embed).toHaveBeenCalledTimes(1);
+    await hybrid.search("auth", 100, "all", undefined, {});
+    expect(embed).toHaveBeenCalledTimes(2);
   });
 
   it("returns BM25-only results when no vector index is provided", async () => {

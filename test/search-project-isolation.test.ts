@@ -12,6 +12,7 @@ import {
   registerSearchFunction,
   setHybridRanker,
 } from "../src/functions/search.js";
+import { HybridSearch } from "../src/state/hybrid-search.js";
 import { memoryToObservation } from "../src/state/memory-utils.js";
 import { KV } from "../src/state/schema.js";
 import type { Memory, SearchResult, Session } from "../src/types.js";
@@ -25,6 +26,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
     let memories: Memory[];
     let hybridLimits: number[];
     let memoryReads: string[];
+    let sessionReads: string[];
     let activeObservationReads: number;
     let maxObservationReads: number;
     let search: (data: Record<string, unknown>) => Promise<{ results: SearchResult[] }>;
@@ -85,6 +87,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       memories = [];
       hybridLimits = [];
       memoryReads = [];
+      sessionReads = [];
       activeObservationReads = 0;
       maxObservationReads = 0;
       getSearchIndex().clear();
@@ -106,6 +109,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       }
       const kv = {
         get: async (scope: string, key: string) => {
+          if (scope === KV.sessions) sessionReads.push(key);
           if (scope === KV.observations("memory")) {
             memoryReads.push(key);
             activeObservationReads++;
@@ -176,6 +180,34 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
           layer: "memory" as const,
         })),
       );
+
+    it.each(["project", "directory"])("stops session checks once a %s-filtered page is full", async (filter) => {
+      for (let i = 0; i < 100; i++) {
+        const session = { ...addSession("project-a"), id: `session_${i}` };
+        put(KV.sessions, session.id, session);
+        addMemory({ id: `mem_${i}`, sessionIds: [session.id] });
+      }
+      orderedKeywordResults();
+      expect(await recall({ limit: 1, ...(filter === "directory" ? { project: undefined, cwd: "/test/project" } : {}) })).toEqual(["mem_0"]);
+      expect(sessionReads).toEqual(["session_0"]);
+    });
+
+    if (ranking === "hybrid") {
+      it("expands a real hybrid window shortened by a missing record", async () => {
+        for (let i = 0; i < 100; i++) {
+          addMemory({ id: `mem_foreign_${i.toString().padStart(3, "0")}`, project: "project-b" });
+        }
+        records.get(KV.memories)!.delete("mem_foreign_000");
+        const matching = addMemory({ id: "mem_matching", project: "project-a" });
+        const hybrid = new HybridSearch(getSearchIndex(), null, null, {
+          get: async (scope: string, key: string) => records.get(scope)?.get(key) ?? null,
+        } as never, 0.4, 0.6, 0);
+        const ranker = vi.fn(hybrid.search.bind(hybrid));
+        setHybridRanker(ranker);
+        expect(await recall({ limit: 1 })).toEqual([matching.id]);
+        expect(ranker.mock.calls.map((call) => call[1])).toEqual([100, 200]);
+      });
+    }
 
     it("refills multiple full windows without returning excluded projects", async () => {
       for (let i = 0; i < 205; i++) {

@@ -438,8 +438,8 @@ async function main() {
     graphWeight,
   );
 
-  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3]) =>
-    hybridSearch.search(query, limit, targetLayer, authorizeGraph);
+  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3], request?: Parameters<HybridSearch["search"]>[4]) =>
+    hybridSearch.search(query, limit, targetLayer, authorizeGraph, request);
   registerSmartSearchFunction(sdk, kv, hybridRanker);
   setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);
