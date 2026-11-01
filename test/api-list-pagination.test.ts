@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { registerApiTriggers, SESSION_SUMMARY_BULK_THRESHOLD } from "../src/triggers/api.js";
+import { registerApiTriggers, SESSION_SUMMARY_READ_CONCURRENCY } from "../src/triggers/api.js";
 import { getSearchIndex, rankMemoryIds, setVectorIndex, setEmbeddingProvider } from "../src/functions/search.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import { memoryToObservation } from "../src/state/memory-utils.js";
@@ -171,45 +171,112 @@ describe("paginated and filtered list endpoints", () => {
     expect((await evolve({ headers: {}, query_params: {}, body: { memoryId: "mem_1", newContent: "y" } })).status_code).toBe(200);
   });
 
-  it("reads the summaries scope once instead of one kv.get per session for large unpaginated listings", async () => {
-    const count = SESSION_SUMMARY_BULK_THRESHOLD + 50;
+  it("reads summaries by key for the returned sessions only, never listing the summaries scope", async () => {
+    const count = 2324;
     const sessions: Record<string, unknown> = {};
     const summaries: Record<string, unknown> = {};
     for (let i = 0; i < count; i++) {
       const id = `s${String(i).padStart(4, "0")}`;
-      sessions[id] = { id, project: "web", status: "completed", startedAt: `2026-09-01T00:00:00Z` };
-      if (i % 2 === 0) summaries[id] = { sessionId: id, project: "web", title: `summary ${id}` };
+      const project = i < 150 ? "web" : "other";
+      sessions[id] = { id, project, status: "completed", startedAt: `2026-09-01T00:00:00Z` };
+      // Sessions outside the requested project carry bulky summaries: a
+      // whole-scope read would ship them although the response excludes them.
+      if (i % 2 === 0) {
+        summaries[id] = {
+          sessionId: id,
+          project,
+          title: `summary ${id}`,
+          ...(project === "other" ? { narrative: "x".repeat(64 * 1024) } : {}),
+        };
+      }
     }
     const { handlers, kv } = setup({ [KV.sessions]: sessions, [KV.summaries]: summaries });
+    const largestSummaryBytes = Math.max(
+      ...Object.values(summaries).map((v) => Buffer.byteLength(JSON.stringify(v))),
+    );
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const perCallBytes: number[] = [];
+    const get = kv.get.getMockImplementation()!;
+    kv.get.mockImplementation(async (scope: string, key: string) => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 0));
+      const value = await get(scope, key);
+      if (scope === KV.summaries) perCallBytes.push(Buffer.byteLength(JSON.stringify(value)));
+      inFlight--;
+      return value;
+    });
 
-    const res = await call(handlers, "api::sessions", {});
+    const res = await call(handlers, "api::sessions", { project: "web" });
     const rows = res.body.sessions as Array<{ id: string; summary?: { title: string } }>;
-    expect(rows).toHaveLength(count);
-    expect(kv.get.mock.calls.filter(([scope]) => scope === KV.summaries)).toHaveLength(0);
-    expect(kv.list.mock.calls.filter(([scope]) => scope === KV.summaries)).toHaveLength(1);
+    expect(rows).toHaveLength(150);
+    expect(kv.list.mock.calls.filter(([scope]) => scope === KV.summaries)).toHaveLength(0);
+    const summaryGets = kv.get.mock.calls.filter(([scope]) => scope === KV.summaries);
+    expect(summaryGets).toHaveLength(150);
+    expect(new Set(summaryGets.map(([, key]) => key))).toEqual(new Set(rows.map((r) => r.id)));
+    expect(Math.max(...perCallBytes)).toBeLessThanOrEqual(largestSummaryBytes);
+    expect(maxInFlight).toBeLessThanOrEqual(SESSION_SUMMARY_READ_CONCURRENCY);
     const byId = new Map(rows.map((r) => [r.id, r]));
     expect(byId.get("s0000")?.summary?.title).toBe("summary s0000");
     expect(byId.get("s0001")?.summary).toBeUndefined();
+    expect(byId.get("s0100")?.summary?.title).toBe("summary s0100");
+    expect(byId.get("s0148")?.summary?.title).toBe("summary s0148");
+
+    kv.get.mockClear();
+    const page = await call(handlers, "api::sessions", { limit: "50" });
+    expect(page.body.sessions as unknown[]).toHaveLength(50);
+    expect(kv.get.mock.calls.filter(([scope]) => scope === KV.summaries)).toHaveLength(50);
+    expect(kv.list.mock.calls.filter(([scope]) => scope === KV.summaries)).toHaveLength(0);
   });
 
-  it("falls back to per-session summary reads when the bulk read fails", async () => {
-    const count = SESSION_SUMMARY_BULK_THRESHOLD + 1;
+  it("joins summaries by KV key in listings over 100 sessions, even without a sessionId field", async () => {
+    const count = 101;
     const sessions: Record<string, unknown> = {};
     for (let i = 0; i < count; i++) {
       sessions[`s${i}`] = { id: `s${i}`, project: "web", status: "completed", startedAt: `2026-09-01T00:00:00Z` };
     }
-    const { handlers, kv } = setup({ [KV.sessions]: sessions, [KV.summaries]: { s3: { sessionId: "s3", title: "kept" } } });
-    const list = kv.list.getMockImplementation()!;
-    kv.list.mockImplementation(async (scope: string) => {
-      if (scope === KV.summaries) throw new Error("frame too large");
-      return list(scope);
+    const { handlers } = setup({
+      [KV.sessions]: sessions,
+      [KV.summaries]: {
+        s3: { title: "Imported summary" },
+        s7: { sessionId: "stale-id", title: "Renamed summary" },
+        s9: { sessionId: "s9", title: "kept" },
+      },
     });
 
     const res = await call(handlers, "api::sessions", {});
     const rows = res.body.sessions as Array<{ id: string; summary?: { title: string } }>;
     expect(rows).toHaveLength(count);
-    expect(kv.get.mock.calls.filter(([scope]) => scope === KV.summaries)).toHaveLength(count);
-    expect(rows.find((r) => r.id === "s3")?.summary?.title).toBe("kept");
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get("s3")?.summary?.title).toBe("Imported summary");
+    expect(byId.get("s7")?.summary?.title).toBe("Renamed summary");
+    expect(byId.get("s9")?.summary?.title).toBe("kept");
+    expect(byId.get("s4")?.summary).toBeUndefined();
+  });
+
+  it("keeps listing sessions when a single summary read fails", async () => {
+    const sessions: Record<string, unknown> = {};
+    for (let i = 0; i < 3; i++) {
+      sessions[`s${i}`] = { id: `s${i}`, project: "web", status: "completed", startedAt: `2026-09-01T00:00:00Z` };
+    }
+    const { handlers, kv } = setup({
+      [KV.sessions]: sessions,
+      [KV.summaries]: { s0: { title: "a" }, s1: { title: "b" }, s2: { title: "c" } },
+    });
+    const get = kv.get.getMockImplementation()!;
+    kv.get.mockImplementation(async (scope: string, key: string) => {
+      if (scope === KV.summaries && key === "s1") throw new Error("read failed");
+      return get(scope, key);
+    });
+
+    const res = await call(handlers, "api::sessions", {});
+    const rows = res.body.sessions as Array<{ id: string; summary?: { title: string } }>;
+    expect(rows).toHaveLength(3);
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get("s0")?.summary?.title).toBe("a");
+    expect(byId.get("s1")?.summary).toBeUndefined();
+    expect(byId.get("s2")?.summary?.title).toBe("c");
   });
 
   it("filters and pages sessions, loading summaries only for the returned page", async () => {

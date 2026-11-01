@@ -270,45 +270,39 @@ export function buildConfigFlags() {
   ];
 }
 
-// Above this many sessions, one read of the summaries scope is cheaper than
-// a kv.get per session. Each kv.get is a full engine round-trip and they run
-// ten at a time, so an unpaginated listing of N sessions costs N/10
-// sequential rounds: about 6 s for ~2,300 sessions on a file-based store,
-// which is enough to trip a 10 s proxy timeout once the store grows.
-export const SESSION_SUMMARY_BULK_THRESHOLD = 100;
+// Summaries are read by key, only for the sessions in the response, never
+// by listing the whole summaries scope: a state::list returns the scope in
+// one engine frame, and a frame over 16 MiB drops the worker (see
+// frame-guard.ts). Each kv.get is its own small frame, so the size of every
+// call stays bounded by one summary whatever the store holds. Reads run
+// through a fixed-width pool: a Promise.all over hundreds of sessions would
+// saturate the engine invocation pool, and lockstep chunks wait on the
+// slowest read of each chunk, so a free slot picks up the next key at once.
+export const SESSION_SUMMARY_READ_CONCURRENCY = 10;
 
 async function loadSessionSummaries(
   kv: StateKV,
   sessions: Session[],
 ): Promise<Array<SessionSummary | null>> {
-  if (sessions.length > SESSION_SUMMARY_BULK_THRESHOLD) {
-    try {
-      const all = await kv.list<SessionSummary>(KV.summaries);
-      const bySession = new Map<string, SessionSummary>();
-      for (const summary of all) {
-        if (summary && typeof summary.sessionId === "string") {
-          bySession.set(summary.sessionId, summary);
-        }
-      }
-      return sessions.map((s) => bySession.get(s.id) ?? null);
-    } catch {
-      // Fall through to per-session reads.
+  // Index-aligned with `sessions`; joined by KV key (the session id), so a
+  // stored summary whose own sessionId field is missing or stale still
+  // attaches to its session.
+  const summaries: Array<SessionSummary | null> = new Array(sessions.length).fill(null);
+  let next = 0;
+  const worker = async () => {
+    while (next < sessions.length) {
+      const i = next++;
+      summaries[i] = await kv
+        .get<SessionSummary>(KV.summaries, sessions[i].id)
+        .catch(() => null);
     }
-  }
-  // Bounded fan-out: each kv.get is a full engine invocation, so
-  // Promise.all over hundreds of sessions saturates the invocation
-  // pool. Batch in chunks of 10 (parallel within a chunk, sequential
-  // across chunks); the result stays index-aligned with `sessions`.
-  const summaries: Array<SessionSummary | null> = [];
-  for (let batch = 0; batch < sessions.length; batch += 10) {
-    const chunk = sessions.slice(batch, batch + 10);
-    const results = await Promise.all(
-      chunk.map((s) =>
-        kv.get<SessionSummary>(KV.summaries, s.id).catch(() => null),
-      ),
-    );
-    summaries.push(...results);
-  }
+  };
+  await Promise.all(
+    Array.from(
+      { length: Math.min(SESSION_SUMMARY_READ_CONCURRENCY, sessions.length) },
+      worker,
+    ),
+  );
   return summaries;
 }
 
