@@ -118,7 +118,13 @@ export class HybridSearch {
           if (!request.embedding || request.embedding.query !== query) {
             request.embedding = { query, value: this.embeddingProvider.embed(query) };
           }
-          queryEmbedding = await request.embedding.value;
+          const embedding = request.embedding;
+          try {
+            queryEmbedding = await embedding.value;
+          } catch (error) {
+            if (request.embedding === embedding) request.embedding = undefined;
+            throw error;
+          }
         } else {
           queryEmbedding = await this.embeddingProvider.embed(query);
         }

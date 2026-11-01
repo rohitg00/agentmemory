@@ -27,6 +27,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
     let hybridLimits: number[];
     let memoryReads: string[];
     let sessionReads: string[];
+    let failSessionReads: boolean;
     let activeObservationReads: number;
     let maxObservationReads: number;
     let search: (data: Record<string, unknown>) => Promise<{ results: SearchResult[] }>;
@@ -88,6 +89,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       hybridLimits = [];
       memoryReads = [];
       sessionReads = [];
+      failSessionReads = false;
       activeObservationReads = 0;
       maxObservationReads = 0;
       getSearchIndex().clear();
@@ -109,7 +111,10 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       }
       const kv = {
         get: async (scope: string, key: string) => {
-          if (scope === KV.sessions) sessionReads.push(key);
+          if (scope === KV.sessions) {
+            sessionReads.push(key);
+            if (failSessionReads) throw new Error("session store unavailable");
+          }
           if (scope === KV.observations("memory")) {
             memoryReads.push(key);
             activeObservationReads++;
@@ -280,6 +285,30 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       expect(sessionReads).not.toContain("session_10");
     });
 
+    it("does not read sessions for agent-only filtering", async () => {
+      const memory = addMemory({ project: "project-a", agentId: "agent-a" });
+      failSessionReads = true;
+      expect(await recall({ project: undefined, agentId: "agent-a" })).toEqual([memory.id]);
+      expect(sessionReads).toEqual([]);
+    });
+
+    if (ranking === "hybrid") {
+      it("preserves accepted hybrid hits when a later refill fails", async () => {
+        const matching = addMemory({ id: "mem_vector_only", project: "project-a" });
+        for (let i = 0; i < 99; i++) addMemory({ id: `mem_foreign_${i}`, project: "project-b" });
+        let calls = 0;
+        setHybridRanker(async () => {
+          if (++calls > 1) throw new Error("refill unavailable");
+          return memories.map((memory, i) => ({
+            observation: memoryToObservation(memory), sessionId: "memory", combinedScore: 1 / (i + 1), layer: "memory" as const,
+          }));
+        });
+        const keyword = vi.spyOn(getSearchIndex(), "search").mockReturnValue([]);
+        expect(await recall({ limit: 2 })).toEqual([matching.id]);
+        expect(keyword).not.toHaveBeenCalled();
+      });
+    }
+
     it("rejects orphaned observations when a directory filter is requested", async () => {
       const orphan = addMemory({ id: "obs_orphan", sessionIds: ["session_missing"] });
       const observation = memoryToObservation(orphan);
@@ -293,7 +322,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
 
     it("preserves sessionless memories when a directory filter is requested", async () => {
       const memory = addMemory({ project: "project-a" });
-      expect(await recall({ cwd: "/test/project" })).toEqual([memory.id]);
+      expect(await recall({ project: undefined, cwd: "/test/project" })).toEqual([memory.id]);
     });
 
     it("does not let an unloadable observation consume the result limit", async () => {

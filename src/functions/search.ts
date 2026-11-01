@@ -874,9 +874,10 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       } | null>>()
       const hybridRequest: HybridSearchRequest = {}
       let enriched: SearchResult[] = []
+      let useHybridRanker = hybridRanker !== null
       while (true) {
         hybridRequest.candidateCount = undefined
-        if (hybridRanker) {
+        if (useHybridRanker && hybridRanker) {
           try {
             const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph, hybridRequest)
             results = hybrid.map((r) => ({
@@ -888,9 +889,11 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
             }))
           } catch (err) {
             hybridRequest.candidateCount = undefined
-            logger.warn("hybrid ranking failed, falling back to keyword search", {
+            logger.warn("hybrid ranking failed", {
               error: err instanceof Error ? err.message : String(err),
             })
+            if (enriched.length > 0) break
+            useHybridRanker = false
             results = idx.search(query, fetchLimit, targetLayer)
           }
         } else {
@@ -912,7 +915,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
                   ? await loadMemoryProject(r.obsId)
                   : null
                 if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) return null
-                const session = await loadSession(r.sessionId)
+                const session = projectFilter || cwdFilter ? await loadSession(r.sessionId) : null
                 if (projectFilter && memoryProject === null && !session) return null
                 if (cwdFilter && layer === "observation" && !session) return null
                 if (session) {
