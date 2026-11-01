@@ -140,8 +140,9 @@ function loadViewerSandbox() {
         removeItem: (key: string) => values.delete(key),
       };
     })(),
-    fetch: async () => ({ ok: true, json: async () => ({}) }),
-    WebSocket: function WebSocket() {},
+    fetch: async () => ({ ok: false, status: 404, body: null, json: async () => ({}) }),
+    AbortController: class AbortController { signal = { aborted: false }; abort() { this.signal.aborted = true; } },
+    TextDecoder: class TextDecoder { decode() { return ""; } },
     navigator: { userAgent: "vitest" },
     Element: function Element() {},
     alert: () => {},
@@ -150,25 +151,27 @@ function loadViewerSandbox() {
     setTimeout: () => 0,
     clearTimeout: () => {},
     URLSearchParams,
+    AbortSignal: { timeout: () => ({}) },
     Date,
     Math,
     Promise,
     JSON,
     Array,
     Object,
+    Map,
+    Set,
     String,
     Number,
     parseInt,
     encodeURIComponent,
+    queueMicrotask,
+    performance: { now: () => 0 },
   };
 
-  const scriptWithoutAutoStart = scriptMatch[1].replace(
-    /\n\s*loadTab\('dashboard'\);\n\s*connectWs\(\);\n\s*startDashboardAutoRefresh\(\);\s*$/,
-    "\n",
-  );
+  const scriptWithoutAutoStart = scriptMatch[1];
 
   vm.createContext(sandbox);
-  vm.runInContext(scriptWithoutAutoStart, sandbox);
+  try { vm.runInContext(scriptWithoutAutoStart, sandbox); } catch (err) { console.error("sandbox script failure", (err as Error).message, (err as Error).stack, scriptWithoutAutoStart.length, scriptWithoutAutoStart.slice(-700)); throw err; }
 
   return { sandbox, getElement };
 }

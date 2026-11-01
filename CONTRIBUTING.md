@@ -31,6 +31,8 @@ If it's a feature: describe the user problem before the implementation. "I could
 4. `npm test` — the full test suite must pass. The one integration test under `test/integration.test.ts` needs a live server on `:3111` and is fine to skip locally.
 5. Commit with sign-off. Rebase over tiny fixup commits so the history stays readable.
 
+Run `npm run build` before focused DSH connector tests too: `npm test -- test/connect-dsh.test.ts` loads the generated `dist/integrations/dsh.mjs` bundle.
+
 ## Pull request flow
 
 - Keep PRs small and focused. One logical change per PR.
@@ -105,11 +107,17 @@ npm run release:gate
 
 It builds, packs `@agentmemory/agentmemory` and `@agentmemory/mcp`, installs both tarballs into a fresh prefix with a clean `HOME`, starts the installed CLI on random free ports with a deterministic local embedding server (no API keys), and checks capture through the bundled hooks, offline capture and spool recovery, replay dedup after a force kill, dead letters across a restart, vector survival before the first checkpoint, `agentmemory stop` then start, export and import into a fresh home, the MCP entrypoints, and the viewer plus `/agentmemory/status`. It prints a pass or fail line per scenario and a JSON summary, writes logs and `summary.json` to the output directory it prints, and stops only the processes it started. To gate the exact file you will publish, pass it in: `npm pack` then `npm run release:gate -- --tarball agentmemory-agentmemory-<version>.tgz`, and publish that tarball. Do not publish when a scenario fails. The `Release gate` workflow runs the same script on Ubuntu and macOS for pull requests and pushes to main.
 
-For startup changes, also run `npm run test:startup:packaged`. It installs the packed CLI in isolated homes and tests delayed workers, existing-engine adoption, `--no-engine`, doctor, demo, timeout failures and process cleanup. The default slow-worker case waits 48 seconds before importing the installed worker. Pass `--tarball <file.tgz>` to test an existing artifact. Run the standard release gate first to cache the pinned engine, or set `AGENTMEMORY_GATE_ENGINE` to that engine binary. Docker scenarios require a working Docker daemon; the report records unavailable Docker coverage explicitly.
+For startup changes, also run `npm run test:startup:packaged`. It installs the packed CLI in isolated homes and tests delayed and externally managed Worker Compose runtimes, `--no-engine` joining, worker and readiness failures, timeout cleanup, environment-file precedence, doctor, observability storage, and demo. It does not test adoption of an arbitrary already-running engine or Docker-specific CLI startup scenarios. The default slow-worker case waits 48 seconds before importing the installed worker. Pass `--tarball <file.tgz>` to test an existing artifact. Run the standard release gate first to cache the pinned engine, or set `AGENTMEMORY_GATE_ENGINE` to that engine binary.
 
 For Hermes, OpenClaw or shared skill changes, follow [Native integration tests](docs/native-integration-tests.md). Those gates load plugins and skills from an installed tarball and inspect the native model requests and backend records. Source tests alone do not establish native lifecycle capture or skill discovery.
 
-Then: CHANGELOG section, PR, merge, tag, GitHub release. The `Publish to npm` workflow picks up the release trigger and publishes `@agentmemory/agentmemory`, `@agentmemory/mcp`, and `@agentmemory/fs-watcher` to npm with provenance (`@agentmemory/fs-watcher` versions independently from `integrations/filesystem-watcher/package.json`).
+Then: CHANGELOG section, PR, merge, tag, GitHub release. The `Publish to npm` workflow picks up the release trigger and publishes `@agentmemory/agentmemory` and `@agentmemory/mcp` to npm with provenance. It packs once, runs the release gate with both exact tarballs, checks their hashes again, and publishes those files with lifecycle scripts disabled. It retains the manifest, tarballs and gate logs as workflow artifacts. A failed gate prevents publication.
+
+Manual runs accept a comma-separated selection of `agentmemory`, `mcp`, and `fs-watcher`. The default is `agentmemory,mcp`; `@agentmemory/fs-watcher` versions independently and must be explicitly selected when releasing a new connector version. Its exact packed CLI must pass capture, credential, scope and shutdown checks. An MCP-only run also verifies that the registry's main package is the artifact used in its gate.
+
+Before publishing any selected package, the workflow checks existing versions. An existing version is accepted only when its SHA512 matches the gated tarball and its cryptographically verified SLSA provenance identifies this repository, workflow, ref and source commit. Conflicting or unprovenanced versions fail the run and cannot be overwritten. Only a registry version lookup returning HTTP 404 permits publication; authorization, network and other registry failures never count as absence. After publication, bounded retries allow registry metadata and provenance to propagate, then require the same verification. Reruns can skip only identical, verified artifacts from the same source identity.
+
+These checks do not configure or prove npm publish authorization. Maintainers must separately ensure that each selected package permits this workflow to publish, using its configured trusted publisher or publish token. The workflow retains the existing credential configuration. A successful dry run does not establish that npm will accept a future publication or persist its provenance.
 
 ## Security issues
 

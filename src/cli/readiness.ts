@@ -30,6 +30,8 @@ export function startupTimeouts(env: NodeJS.ProcessEnv = process.env): {
   };
 }
 
+// Used only for unattached native engine state persisted by legacy installs;
+// new installs use Worker Compose.
 export function configStartsAgentmemoryWorker(raw: string, workerEntry: string, engineCwd?: string): boolean {
   const lines = raw.split(/\r?\n/);
   let workerIndent: number | undefined;
@@ -94,6 +96,16 @@ export function startupDeadline(timeoutMs: number): StartupDeadline {
   return { remaining: () => Math.max(0, deadline - performance.now()) };
 }
 
+/** Probe the loopback REST listener owned by this managed Compose instance.
+ * Client commands may honor AGENTMEMORY_URL, but startup readiness must always
+ * target the endpoint that this process asked Compose to create. */
+export function managedComposeReadinessUrl(restPort: number): string {
+  if (!Number.isInteger(restPort) || restPort < 1 || restPort > 65535) {
+    throw new Error(`Invalid managed Compose REST port: ${restPort}`);
+  }
+  return `http://127.0.0.1:${restPort}`;
+}
+
 export async function withinStartupDeadline<T>(
   deadline: StartupDeadline,
   work: (signal: AbortSignal) => Promise<T>,
@@ -124,23 +136,27 @@ export async function withinStartupDeadline<T>(
 export async function waitForReadiness(
   deadline: StartupDeadline,
   probe: (signal: AbortSignal) => Promise<boolean>,
-  options: { intervalMs?: number; stopped?: () => boolean } = {},
+  options: { intervalMs?: number; probeTimeoutMs?: number; stopped?: () => boolean } = {},
 ): Promise<boolean> {
   while (deadline.remaining() > 0 && !options.stopped?.()) {
-    const result = await withinStartupDeadline(deadline, probe, 2000).catch(() => ({ completed: false as const }));
+    const result = await withinStartupDeadline(deadline, probe, options.probeTimeoutMs ?? 1000).catch(() => ({ completed: false as const }));
     if (options.stopped?.()) return false;
     if (result.completed && result.value) return true;
     const remaining = deadline.remaining();
     if (remaining <= 0) break;
-    await new Promise((resolve) => setTimeout(resolve, Math.min(options.intervalMs ?? 250, remaining)));
+    const pause = Math.min(options.intervalMs ?? 250, remaining);
+    if (pause > 0) await new Promise((resolve) => setTimeout(resolve, pause));
   }
   return false;
 }
 
 export async function probeEngine(base: string, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return false;
   const response = await fetch(`${base}/`, { signal });
+  // The engine's root path is normally 404 until the worker registers routes;
+  // a response of any HTTP status proves the listener is reachable. Canceling
+  // the body prevents a slow/streaming route from holding a probe open.
   void response.body?.cancel().catch(() => {});
-  // The engine's root path is normally 404 until the worker registers routes.
   return true;
 }
 
@@ -149,6 +165,7 @@ export async function probeWorker(
   signal: AbortSignal,
   onViewerPort?: (port: number) => void,
 ): Promise<boolean> {
+  if (signal.aborted) return false;
   const response = await fetch(`${base}/agentmemory/livez`, { signal });
   if (!response.ok) {
     void response.body?.cancel().catch(() => {});

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,9 +18,10 @@ const resolvers: Array<[string, Resolver]> = [
   ["pi", piSecret],
 ];
 
-function hasPython(): boolean {
-  return spawnSync("python3", ["--version"], { stdio: "ignore" }).status === 0;
-}
+const python = (() => {
+  try { return execFileSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" }).trim(); }
+  catch { return null; }
+})();
 
 function hermesCredentialState(home: string): { available: boolean; reason: string } {
   const script = [
@@ -32,7 +33,8 @@ function hermesCredentialState(home: string): { available: boolean; reason: stri
     "provider = mod.AgentMemoryProvider()",
     "print(json.dumps({'available': provider.is_available(), 'reason': provider.unavailable_reason()}))",
   ].join("\n");
-  const result = spawnSync("python3", ["-c", script, join(process.cwd(), "integrations", "hermes", "__init__.py")], {
+  if (!python) throw new Error("python3 is unavailable");
+  const result = spawnSync(python, ["-c", script, join(process.cwd(), "integrations", "hermes", "__init__.py")], {
     env: { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, ".hermes"), AGENTMEMORY_SECRET: "process-secret-must-not-be-used" },
     encoding: "utf-8",
     timeout: 5_000,
@@ -111,7 +113,7 @@ describe("client secret resolution", () => {
     expect(seen[0]?.Authorization).toBe("Bearer from-env-file");
   });
 
-  it.skipIf(!hasPython())("hermes fails closed when scoped credential access is unavailable", () => {
+  it.skipIf(!python)("hermes fails closed when scoped credential access is unavailable", () => {
     writeSecrets('AGENTMEMORY_SECRET="from-env-file"\n');
     const result = hermesCredentialState(home);
     expect(result.available).toBe(false);

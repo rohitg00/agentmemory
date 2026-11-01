@@ -12,6 +12,7 @@ import {
   secretFilePath,
 } from "../src/secret-store.js";
 import { resetHandleForTests, resolveHandle, setLivezProbe } from "../src/mcp/rest-proxy.js";
+import { resolveDataDir } from "../src/cli-data-dir.js";
 
 const KEY = "AGENTMEMORY_SECRET";
 
@@ -22,6 +23,7 @@ describe("stored API secret", () => {
     profile: process.env.USERPROFILE,
     value: process.env[KEY],
     url: process.env.AGENTMEMORY_URL,
+    dataDir: process.env.AGENTMEMORY_DATA_DIR,
   };
 
   beforeEach(() => {
@@ -30,6 +32,7 @@ describe("stored API secret", () => {
     process.env.USERPROFILE = home;
     delete process.env[KEY];
     delete process.env.AGENTMEMORY_URL;
+    delete process.env.AGENTMEMORY_DATA_DIR;
   });
 
   afterEach(() => {
@@ -40,6 +43,8 @@ describe("stored API secret", () => {
     else process.env[KEY] = saved.value;
     if (saved.url === undefined) delete process.env.AGENTMEMORY_URL;
     else process.env.AGENTMEMORY_URL = saved.url;
+    if (saved.dataDir === undefined) delete process.env.AGENTMEMORY_DATA_DIR;
+    else process.env.AGENTMEMORY_DATA_DIR = saved.dataDir;
     rmSync(home, { recursive: true, force: true });
   });
 
@@ -54,6 +59,150 @@ describe("stored API secret", () => {
     const second = ensureServerSecret();
     expect(second).toEqual({ secret: first.secret, source: "file" });
     expect(readFileSync(secretFilePath(), "utf-8").trim()).toBe(first.secret);
+  });
+
+  it("uses an existing canonical secret for a second instance client", () => {
+    const canonicalPath = join(home, ".agentmemory", "secret");
+    mkdirSync(join(home, ".agentmemory"), { recursive: true });
+    writeFileSync(canonicalPath, "canonical-instance-secret\n");
+    const customDataDir = join(home, "instance-2");
+    process.env.AGENTMEMORY_DATA_DIR = customDataDir;
+
+    const server = ensureServerSecret();
+    expect(server).toEqual({ secret: "canonical-instance-secret", source: "file" });
+    expect(readFileSync(join(customDataDir, "secret"), "utf-8").trim()).toBe(server.secret);
+    expect(resolveClientSecret("http://localhost:3211", { AGENTMEMORY_DATA_DIR: customDataDir })).toBe(server.secret);
+  });
+
+  it("creates the local and canonical secret files for an instance without a canonical secret", () => {
+    const customDataDir = join(home, "instance-3");
+    process.env.AGENTMEMORY_DATA_DIR = customDataDir;
+    const { secret } = ensureServerSecret();
+    expect(readFileSync(join(customDataDir, "secret"), "utf-8").trim()).toBe(secret);
+    expect(readFileSync(join(home, ".agentmemory", "secret"), "utf-8").trim()).toBe(secret);
+  });
+
+  it("keeps a custom data-dir secret readable by clients without that override", () => {
+    const customDataDir = join(home, "custom-state");
+    process.env.AGENTMEMORY_DATA_DIR = customDataDir;
+    const { secret } = ensureServerSecret();
+    expect(secretFilePath()).toBe(join(customDataDir, "secret"));
+    expect(readFileSync(secretFilePath(), "utf-8").trim()).toBe(secret);
+    expect(readFileSync(join(home, ".agentmemory", "secret"), "utf-8").trim()).toBe(secret);
+    delete process.env.AGENTMEMORY_DATA_DIR;
+    expect(resolveClientSecret("http://localhost:3211")).toBe(secret);
+    expect(resolveClientSecret("http://localhost:3211", { AGENTMEMORY_DATA_DIR: customDataDir })).toBe(secret);
+  });
+
+  it("shares the secret for a resolved --instance data directory", () => {
+    const instance = resolveDataDir({ args: ["--instance", "2"], env: {}, home, cwd: home, platform: "linux" });
+    expect(instance.dataDir).toBe(join(home, ".local", "share", "agentmemory", "instance-2"));
+    process.env.AGENTMEMORY_DATA_DIR = instance.dataDir;
+    const { secret } = ensureServerSecret();
+    expect(secretFilePath()).toBe(join(instance.dataDir, "secret"));
+    expect(readFileSync(join(home, ".agentmemory", "secret"), "utf-8").trim()).toBe(secret);
+    delete process.env.AGENTMEMORY_DATA_DIR;
+    expect(resolveClientSecret("http://localhost:3311")).toBe(secret);
+    expect(resolveClientSecret("http://localhost:3311", { AGENTMEMORY_DATA_DIR: instance.dataDir })).toBe(secret);
+  });
+
+  it("migrates an existing data-dir secret to the shared client-visible path", () => {
+    const customDataDir = join(home, "custom-state");
+    mkdirSync(customDataDir, { recursive: true });
+    writeFileSync(join(customDataDir, "secret"), "existing-custom-secret\n");
+    process.env.AGENTMEMORY_DATA_DIR = customDataDir;
+    expect(ensureServerSecret()).toEqual({ secret: "existing-custom-secret", source: "file" });
+    delete process.env.AGENTMEMORY_DATA_DIR;
+    expect(resolveClientSecret("http://localhost:3211")).toBe("existing-custom-secret");
+  });
+
+  it("uses the canonical winning secret when first starts race across data directories", async () => {
+    const barrier = join(home, "secret-link-barrier");
+    mkdirSync(barrier, { recursive: true });
+    const canonicalPath = join(home, ".agentmemory", "secret");
+    const childScript = `
+      import fs from "node:fs";
+      import { syncBuiltinESMExports } from "node:module";
+      import { resolve } from "node:path";
+      const originalLink = fs.linkSync.bind(fs);
+      fs.linkSync = (source, target) => {
+        if (target === process.env.CANONICAL_SECRET) {
+          fs.writeFileSync(resolve(process.env.SECRET_BARRIER, process.env.BARRIER_MARKER), "ready");
+          const deadline = Date.now() + 10000;
+          while (Date.now() < deadline && !["a", "b"].every((name) => fs.existsSync(resolve(process.env.SECRET_BARRIER, name)))) {
+            Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+          }
+          if (!["a", "b"].every((name) => fs.existsSync(resolve(process.env.SECRET_BARRIER, name)))) throw new Error("barrier timed out");
+        }
+        return originalLink(source, target);
+      };
+      syncBuiltinESMExports();
+      const { ensureServerSecret, resolveClientSecret } = await import(${JSON.stringify(new URL("../src/secret-store.ts", import.meta.url).href)});
+      const server = ensureServerSecret();
+      console.log(JSON.stringify({ server: server.secret, client: resolveClientSecret("http://127.0.0.1:3111") }));
+    `;
+    const run = (name: "a" | "b") => new Promise<{ server: string; client: string }>((resolve, reject) => {
+      const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", childScript], {
+        cwd: process.cwd(),
+        env: {
+          ...process.env,
+          HOME: home,
+          USERPROFILE: home,
+          AGENTMEMORY_DATA_DIR: join(home, `data-${name}`),
+          CANONICAL_SECRET: canonicalPath,
+          SECRET_BARRIER: barrier,
+          BARRIER_MARKER: name,
+        },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8").on("data", (chunk: string) => stdout += chunk);
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => stderr += chunk);
+      child.on("error", reject);
+      child.on("exit", (code) => {
+        if (code !== 0) reject(new Error(`secret race child ${name} failed (${code}): ${stderr}`));
+        else {
+          try { resolve(JSON.parse(stdout.trim()) as { server: string; client: string }); }
+          catch (error) { reject(error); }
+        }
+      });
+    });
+    const results = await Promise.all([run("a"), run("b")]);
+    for (const result of results) expect(result.server).toBe(result.client);
+    expect(results[0]!.server).toBe(results[1]!.server);
+  });
+
+  it("migrates a legacy platform .hmac from the data directory without regenerating it", () => {
+    const customDataDir = join(home, "platform-data");
+    mkdirSync(customDataDir, { recursive: true });
+    writeFileSync(join(customDataDir, ".hmac"), "legacy-platform-secret\n");
+    process.env.AGENTMEMORY_DATA_DIR = customDataDir;
+    const migrated = ensureServerSecret();
+    expect(migrated.source).toBe("file");
+    expect(migrated.secret).toBe("legacy-platform-secret");
+    expect(readFileSync(join(customDataDir, "secret"), "utf-8").trim()).toBe(migrated.secret);
+    expect(readFileSync(join(home, ".agentmemory", "secret"), "utf-8").trim()).toBe(migrated.secret);
+  });
+
+  it("migrates a legacy platform .hmac in the data directory parent", () => {
+    const customDataDir = join(home, "platform", "data");
+    mkdirSync(join(home, "platform"), { recursive: true });
+    writeFileSync(join(home, "platform", ".hmac"), "legacy-parent-secret\n");
+    process.env.AGENTMEMORY_DATA_DIR = customDataDir;
+    const migrated = ensureServerSecret();
+    expect(migrated.source).toBe("file");
+    expect(migrated.secret).toBe("legacy-parent-secret");
+  });
+
+  it("preserves explicit secret overrides over a legacy platform .hmac", () => {
+    const customDataDir = join(home, "platform-data");
+    mkdirSync(customDataDir, { recursive: true });
+    writeFileSync(join(customDataDir, ".hmac"), "legacy-platform-secret\n");
+    process.env.AGENTMEMORY_DATA_DIR = customDataDir;
+    process.env[KEY] = "explicit-override";
+    expect(ensureServerSecret()).toEqual({ secret: "explicit-override", source: "env" });
+    expect(readFileSync(join(customDataDir, ".hmac"), "utf-8").trim()).toBe("legacy-platform-secret");
   });
 
   it("lets an explicit secret win over the stored one", () => {

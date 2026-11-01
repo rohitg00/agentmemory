@@ -16,6 +16,18 @@ After wiring, restart the host or run its MCP reload (for example `/mcp` in Clau
 
 Devin CLI and Devin Desktop can also install the whole plugin with `devin plugins install rohitg00/agentmemory#plugin`, which adds the skills, the MCP server, and the capture hooks in one step. Cloud Devin sessions cannot reach a local agentmemory server, so the plugin is for local sessions only.
 
+For Pi, Oh My Pi, or DeepSeek Harness, start the daemon and choose the matching command:
+
+```bash
+agentmemory connect pi --with-mcp
+agentmemory connect omp --with-mcp
+agentmemory connect dsh --with-hooks
+```
+
+Pi and OMP install native recall, capture and bundled skills; `--with-mcp` adds the tools needed by the broader workflows. Reload Pi with `/reload`, or restart OMP, then run `/agentmemory-status`. Restart DSH after enabling its bundled capture plugin. Re-run the matching connector after upgrading or moving AgentMemory so installed runtime paths stay current.
+
+Cursor's connector configures MCP. Install and enable the Cursor plugin through Settings → Plugins → Add marketplace → this repository for lifecycle capture; do not add a second global hook copy.
+
 ## Workflow
 
 1. Detect the calling agent. If unknown, ask which host to configure before changing files.
@@ -24,8 +36,8 @@ Devin CLI and Devin Desktop can also install the whole plugin with `devin plugin
 
 ## Notes
 
-- Skills install separately: `npx skills@1.7.1 add rohitg00/agentmemory --agent hermes-agent --skill '*'` or use `--agent openclaw`. Choose the intended host; add `--global` only for a user-wide installation. Verify skill discovery and read a skill's local support file in that host.
-- Windows: use WSL2. Native Windows runs the server but `connect` is not supported there.
+- Hermes, OpenClaw, Pi and OMP connectors bundle skills. For a separate skills installation, use `npx skills@1.7.1 add rohitg00/agentmemory --agent hermes-agent --skill '*'` or `--agent openclaw`. Choose the intended host; add `--global` only for a user-wide installation. Avoid duplicate skill installations when a native package already bundles them. Verify skill discovery and read a skill's local support file in that host.
+- Native Windows supports `agentmemory connect copilot-cli`. Other automated connectors require macOS, Linux or a host running in the same WSL2 environment; use the host's manual setup instructions otherwise.
 
 ## See also
 

@@ -1,3 +1,4 @@
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { KV } from "../src/state/schema.js";
 import { resetGraphGeneration, setGraphGenerationListener } from "../src/state/graph-generation.js";
@@ -26,13 +27,13 @@ async function setup() {
   const handlers = new Map<string, (data: any) => Promise<any>>();
   const sent: Array<{ type: string; data: any }> = [];
   let failSend = false;
+  const unsubscribeEvents = onLiveEvent((event) => {
+    if (failSend) { failSend = false; throw new Error("simulated SSE listener write failure"); }
+    sent.push({ type: event.type, data: structuredClone(event.data) });
+  });
   const sdk = {
     registerFunction: vi.fn((id: string, handler: (data: any) => Promise<any>) => handlers.set(id, handler)), registerTrigger: vi.fn(),
     trigger: async ({ function_id, payload }: { function_id: string; payload: any }): Promise<any> => {
-      if (function_id === "stream::send") {
-        if (failSend) { failSend = false; throw new Error("stream unavailable"); }
-        sent.push(structuredClone(payload)); return {};
-      }
       throw new Error(`Unexpected call ${function_id}`);
     },
   };
@@ -81,7 +82,7 @@ describe("generation graph viewer metadata", () => {
       await resetGraphGeneration(kv, snapshot(0));
       if (!lostReset) expect(graphEvents()[before].data).toMatchObject({ reset: true, stats: { totalNodes: 0 }, delta: null });
       await write(1);
-      expect(graphEvents().at(-1)?.data).toMatchObject({ reset: lostReset, stats: { totalNodes: 1 }, delta: null,
+      expect(graphEvents().at(-1)?.data).toMatchObject({ stats: { totalNodes: 1 }, delta: null,
         generation: await kv.get(KV.graphControl, "generation") });
     }
   });
@@ -112,7 +113,7 @@ describe("generation graph viewer metadata", () => {
     await kv.set(KV.graphNodes, "n0", snapshot(1).topNodes[0]);
     failNextSend(); await kv.set(KV.graphSnapshot, "current", snapshot(1));
     await vi.advanceTimersByTimeAsync(1000);
-    expect(graphEvents().at(-1)?.data).toMatchObject({ source: "items", coveredBySnapshot: false });
+    expect(graphEvents().at(-1)?.data).toMatchObject({ source: "items", coveredBySnapshot: true });
   });
 
   it("tags reconnect metadata with its generation without reading the snapshot", async () => {

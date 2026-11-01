@@ -4,12 +4,11 @@ import type { HealthSnapshot } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { evaluateHealth } from "./thresholds.js";
-import type { StreamRelayProbe } from "./stream-relay-probe.js";
+import { getLiveEventsStats } from "../viewer/live-events.js";
 
 export function registerHealthMonitor(
   sdk: IIIClient,
   kv: StateKV,
-  options: { streamRelayProbe?: StreamRelayProbe } = {},
 ): { stop: () => void } {
   let connectionState = "connected";
   let prevCpuUsage = process.cpuUsage();
@@ -66,13 +65,9 @@ export function registerHealthMonitor(
       kvConnectivity = { status: "error", error: "kv_probe_failed", latencyMs: Math.round((performance.now() - kvStart) * 100) / 100 };
     }
 
-    const streamRelay = options.streamRelayProbe
-      ? await options.streamRelayProbe.check().catch(() => "unknown" as const)
-      : undefined;
-
     const snapshot: HealthSnapshot = {
       connectionState,
-      ...(streamRelay ? { streamRelay } : {}),
+      liveEvents: getLiveEventsStats(),
       workers,
       memory: {
         heapUsed: mem.heapUsed,
@@ -111,7 +106,6 @@ export function registerHealthMonitor(
   return {
     stop: () => {
       clearInterval(interval);
-      options.streamRelayProbe?.close();
     },
   };
 }

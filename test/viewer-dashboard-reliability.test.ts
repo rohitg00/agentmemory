@@ -109,16 +109,23 @@ describe("viewer streams instead of polling", () => {
     const ensure = extractFunction("ensureLoaded");
     expect(ensure).toMatch(/var seqAtStart = eventSeq;/);
     expect(ensure).toMatch(/replayEventsSince\(seqAtStart, kind\);/);
-    expect(viewer).toMatch(/ws\.onopen = function\(\) \{[\s\S]{0,700}resyncAfterConnect\(firstConnect\);/);
+    expect(extractFunction("connectWs")).toMatch(/resyncAfterConnect\(firstConnect\);/);
+    expect(viewer).toMatch(/LIVE_EVENTS_URL = REST \+ '\/agentmemory\/viewer\/events'/);
   });
 
   it("reconnects with capped exponential backoff and never falls back to polling", () => {
     const delay = load<(n: number) => number>("reconnectDelay");
     expect([1, 2, 3, 4, 5, 6, 7, 10].map(delay)).toEqual([1000, 2000, 4000, 8000, 16000, 30000, 30000, 30000]);
     expect(extractFunction("scheduleReconnect")).toMatch(/wsReconnectTimer = setTimeout\(connectWs, delay\);/);
-    expect(viewer).toMatch(/var directFailed = true;/);
-    expect(viewer).toMatch(/if \(directFailures >= DIRECT_FAILURE_THRESHOLD\) \{\s*directFailed = ws\.__direct;/);
+    expect(viewer).not.toMatch(/directFailed|DIRECT_FAILURE_THRESHOLD|new WebSocket/);
     expect(viewer).toMatch(/addEventListener\('visibilitychange'[\s\S]{0,300}reconnectNow\(\);/);
+  });
+
+  it("manual reconnect aborts the active SSE connection and starts a replacement", () => {
+    const reconnect = extractFunction("reconnectNow");
+    expect(reconnect).toMatch(/liveAbortController\.abort\(\);/);
+    expect(reconnect).toMatch(/liveAbortController = null;/);
+    expect(reconnect).toMatch(/connectWs\(\);/);
   });
 
   it("shows an explicit reconnecting and offline state and marks data stale", () => {
@@ -284,7 +291,8 @@ describe("viewer navigation and shared components", () => {
 
   it("live buffers are capped so a large sync backlog cannot freeze the tab", () => {
     expect(viewer).toMatch(/var LIVE_BUFFER_MAX = 200;/);
-    expect(extractFunction("handleStreamEvent")).toMatch(/evt\.data\.slice\(-LIVE_BUFFER_MAX\)/);
+    expect(extractFunction("loadRecentObservations")).toMatch(/observations/);
+    expect(extractFunction("consumeSseChunk")).toContain("frames.push(parsed)");
     expect(extractFunction("routeWsMessage")).toMatch(/observations\.length > LIVE_BUFFER_MAX/);
   });
 
@@ -294,7 +302,7 @@ describe("viewer navigation and shared components", () => {
     expect(rebuild).toMatch(/window\.confirm\(/);
     expect(rebuild).toMatch(/result && result\.success/);
     expect(rebuild).toMatch(/finally \{\s*graphRebuilding = false;/);
-    expect(rebuild).toMatch(/New ones arrive on the live stream\./);
+    expect(rebuild).toMatch(/New ones arrive on the SSE feed\./);
     expect(rebuild).not.toMatch(/loadGraph\(/);
   });
 

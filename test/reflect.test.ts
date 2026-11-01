@@ -9,6 +9,7 @@ import { initializeGraphIndex, reconcileGraphIndexRecord } from "../src/state/gr
 import { indexObservationSession } from "../src/state/obs-index.js";
 import { KV, fingerprintId } from "../src/state/schema.js";
 import type { Insight, GraphNode, GraphEdge, SemanticMemory, Lesson, Crystal } from "../src/types.js";
+import { currentAuditScope } from "./helpers/mocks.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -367,11 +368,13 @@ describe("Reflect", () => {
         success: boolean;
         newInsights: number;
         clustersProcessed: number;
+        clusterStrategy: "graph" | "jaccard";
       };
 
       expect(result.success).toBe(true);
       expect(result.newInsights).toBe(0);
       expect(result.clustersProcessed).toBe(0);
+      expect(result.clusterStrategy).toBe("jaccard");
     });
 
     it("synthesizes insights from graph concept clusters", async () => {
@@ -389,16 +392,31 @@ describe("Reflect", () => {
       const result = (await sdk.trigger("mem::reflect", {})) as {
         success: boolean;
         newInsights: number;
+        clusterStrategy: "graph" | "jaccard";
+        usedFallback: boolean;
       };
 
       expect(result.success).toBe(true);
       expect(result.newInsights).toBe(2);
+      expect(result.clusterStrategy).toBe("graph");
+      expect(result.usedFallback).toBe(false);
       expect(provider.summarize).toHaveBeenCalled();
 
       const insights = await kv.list<Insight>("mem:insights");
       expect(insights.length).toBe(2);
       expect(insights[0].title).toBeTruthy();
       expect(insights[0].sourceConceptCluster.length).toBeGreaterThan(0);
+
+      const auditRows = await kv.list<{
+        operation: string;
+        details: Record<string, unknown>;
+      }>(currentAuditScope());
+      const reflectAudit = auditRows.find((row) => row.operation === "reflect");
+      expect(reflectAudit?.details).toMatchObject({
+        clusterStrategy: "graph",
+        usedFallback: false,
+      });
+      expect(reflectAudit?.details.clusterStrategy).toBe(result.clusterStrategy);
     });
 
     it("skips clusters with fewer than 3 supporting items", async () => {
@@ -516,10 +534,26 @@ describe("Reflect", () => {
       const result = (await sdk.trigger("mem::reflect", {})) as {
         success: boolean;
         usedFallback: boolean;
+        clusterStrategy: "graph" | "jaccard";
+        clustersProcessed: number;
       };
 
       expect(result.success).toBe(true);
       expect(result.usedFallback).toBe(true);
+      expect(result.clusterStrategy).toBe("jaccard");
+      expect(result.clustersProcessed).toBeGreaterThan(0);
+      expect(provider.summarize).toHaveBeenCalled();
+
+      const auditRows = await kv.list<{
+        operation: string;
+        details: Record<string, unknown>;
+      }>(currentAuditScope());
+      const reflectAudit = auditRows.find((row) => row.operation === "reflect");
+      expect(reflectAudit?.details).toMatchObject({
+        clusterStrategy: "jaccard",
+        usedFallback: true,
+      });
+      expect(reflectAudit?.details.clusterStrategy).toBe(result.clusterStrategy);
     });
 
     it("handles LLM failure gracefully", async () => {
@@ -535,11 +569,16 @@ describe("Reflect", () => {
       const result = (await sdk.trigger("mem::reflect", {})) as {
         success: boolean;
         newInsights: number;
+        clusterStrategy: "graph" | "jaccard";
+        usedFallback: boolean;
+        failedClusters: number;
       };
 
       expect(result.success).toBe(false);
-      expect(result).toMatchObject({ failedClusters: 1 });
+      expect(result.failedClusters).toBe(1);
       expect(result.newInsights).toBe(0);
+      expect(result.clusterStrategy).toBe("graph");
+      expect(result.usedFallback).toBe(false);
     });
   });
 

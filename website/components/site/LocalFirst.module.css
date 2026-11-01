@@ -51,6 +51,9 @@
   height: 1px;
   background: var(--ink);
   transform-origin: left;
+}
+
+:global(.js) .railLine {
   transform: scaleX(0);
 }
 
@@ -65,6 +68,9 @@
   left: 0;
   width: 100%;
   height: 9px;
+}
+
+:global(.js) .carrier {
   transform: translateX(-100%);
   opacity: 0;
 }
@@ -112,6 +118,9 @@
   align-content: start;
   text-align: center;
   gap: 6px;
+}
+
+:global(.js) .node {
   opacity: 0;
   transform: translateY(8px);
 }
@@ -176,6 +185,9 @@
   align-self: center;
   font-size: var(--t-12);
   color: var(--ink);
+}
+
+:global(.js) .stored {
   opacity: 0;
 }
 
@@ -288,6 +300,8 @@
     width: 1px;
     height: 100%;
     transform-origin: top;
+  }
+  :global(.js) .railLine {
     transform: scaleY(0);
   }
   :global(.is-in) .railLine {
@@ -298,12 +312,14 @@
     left: -4px;
     width: 9px;
     height: 100%;
+  }
+  :global(.js) .carrier {
     transform: translateY(-100%);
   }
   .packet {
     right: auto;
     top: auto;
-    bottom: calc(var(--i) * 12px + 14px);
+    bottom: calc(var(--i) * 12px + 8px);
     left: 0;
   }
   @keyframes travel {
@@ -347,22 +363,24 @@
 
 @media (prefers-reduced-motion: reduce) {
   .railLine,
+  :global(.js) .railLine,
   :global(.is-in) .railLine {
     transform: none;
     transition: none;
   }
   .carrier,
+  :global(.js) .carrier,
   :global(.is-in) .carrier {
     animation: none;
     transform: none;
     opacity: 1;
   }
   .node,
+  :global(.js) .node,
   :global(.is-in) .node,
   .stored,
-  :global(.is-in) .stored,
-  .write,
-  :global(.is-in) .write {
+  :global(.js) .stored,
+  :global(.is-in) .stored {
     opacity: 1;
     transform: none;
     transition: none;
@@ -391,6 +409,9 @@
   grid-template-columns: 56px minmax(0, 1fr) auto;
   gap: var(--s-3);
   color: var(--ink-2);
+}
+
+:global(.js) .write {
   opacity: 0;
   transform: translateY(4px);
 }
@@ -400,6 +421,15 @@
   transform: none;
   transition: opacity 400ms var(--ease-out), transform 400ms var(--ease-out);
   transition-delay: calc(2500ms + var(--i) * 520ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :global(.js) .write,
+  :global(.is-in) .write {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
 }
 
 .writeId {

@@ -26,6 +26,7 @@ agentmemory reads configuration from the environment and from `~/.agentmemory/.e
    allowed for loopback URLs (`localhost`, `127.0.0.0/8`, or `[::1]`).
    Only the local secret is read from the daemon's `.env`; other settings are not
    automatically inherited by the MCP host.
+   `AGENTMEMORY_CREDENTIAL_MODE=explicit` disables local credential discovery.
 5. Describe the observed mode. Codex's bundled bridge requires the daemon and
    never silently saves into a fallback store. Other hosts using the standalone
    shim may expose only seven basic tools when the daemon is unavailable.
@@ -52,7 +53,8 @@ AGENTMEMORY_INJECT_CONTEXT=true
 - Basic keyword recall requires no API key. Local embeddings are optional and
   need explicit configuration and model downloads; do not promise vector search
   until it is enabled.
-- Token-spending features ship OFF on purpose: `AGENTMEMORY_AUTO_COMPRESS` (LLM summaries) and `AGENTMEMORY_INJECT_CONTEXT` (auto context injection) both cost tokens proportional to tool-use frequency.
+- Per-observation LLM compression (`AGENTMEMORY_AUTO_COMPRESS=true`) and Claude-style hook injection (`AGENTMEMORY_INJECT_CONTEXT=true`) are opt-in. Session summaries can use a configured LLM provider even when automatic observation compression is off. Native integrations have independent recall settings: Pi and OMP recall before prompts by default, and use `AGENTMEMORY_INJECT_CONTEXT=1` in the host launch environment for optional file enrichment. Do not apply daemon `.env` settings to every host implicitly.
+- Consolidation is enabled when an LLM provider is configured unless explicitly disabled or `AGENTMEMORY_PROVIDER=noop`. Set `CONSOLIDATION_ENABLED=false` to disable it. Structured slots require `AGENTMEMORY_SLOTS=true`; slot reflection also requires `AGENTMEMORY_REFLECT=true`.
 - Tool visibility: set `AGENTMEMORY_TOOLS=all` (default) or `core` on the daemon,
   then restart it and reconnect MCP so the host refreshes its tool list.
 - Data stays in the configured local daemon store. Enabled external model
@@ -62,12 +64,14 @@ AGENTMEMORY_INJECT_CONTEXT=true
 
 ## Ports
 
-REST is the anchor at 3111. Streams = N+1 (3112), viewer = N+2 (3113), engine = N+46023 (49134). Relocate the whole block with `--port <N>` or `--instance <N>`.
+REST defaults to port `3111`, the viewer to `3113`, and the internal engine WebSocket to `49134`. Set `--port <N>` or `--instance <N>` to select another local runtime.
+
+Normal CLI startup manages the engine and its workers through Worker Compose. Use `agentmemory status` for runtime health and the active viewer URL. `agentmemory console` only prints migration guidance; it no longer starts a bundled engine console.
 
 ## See also
 
 - agentmemory-rest-api for how the secret is used.
-- agentmemory-architecture for the port quartet rationale.
+- agentmemory-architecture for the runtime architecture.
 
 ## Reference
 

@@ -17,6 +17,7 @@ export function CopyButton({
 }) {
   const [copied, setCopied] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { idle, done } = labels ?? { idle: "copy", done: "copied" };
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
   }, []);
@@ -38,15 +39,11 @@ export function CopyButton({
       }}
     >
       {children}
-      {labels ? (
-        <span className="copy-label" aria-live="polite">
-          {copied ? labels.done : labels.idle}
+      <span className={labels ? "copy-label" : "copy-state mono"} aria-live="polite">
+        <span key={copied ? "done" : "idle"} className="copy-swap">
+          {copied ? done : idle}
         </span>
-      ) : (
-        <span className="copy-state mono" aria-live="polite">
-          {copied ? "copied" : "copy"}
-        </span>
-      )}
+      </span>
     </button>
   );
 }

@@ -1,3 +1,4 @@
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -142,10 +143,14 @@ describe("retained observation source", () => {
       expect(JSON.stringify(response)).not.toContain(tail);
     }
     expect(buildSummaryPrompt([observation])).not.toContain(tail);
-    const updates = sdk.trigger.mock.calls.map(([input]) => input)
-      .filter((input) => input.function_id === "stream::set");
+    const updates: unknown[] = [];
+    const unsubscribe = onLiveEvent((event) => updates.push(event));
+    await observe("post_tool_use", { tool_name: "Read", tool_input: { file_path: "config.ts" }, tool_output: tail });
+    unsubscribe();
     expect(updates.length).toBeGreaterThan(0);
-    expect(JSON.stringify(updates)).not.toContain(tail);
+    const compressedEvent = updates.find((event) => (event as any).type === "compressed_observation") as any;
+    expect(compressedEvent.data.observation.source).toBeUndefined();
+    expect(compressedEvent.data.observation.sourceObservation).toBeUndefined();
   });
 
   it("preserves source when model compression succeeds without returning it to the model caller or viewer", async () => {
@@ -164,10 +169,13 @@ describe("retained observation source", () => {
     expect(saved.narrative).not.toContain(tail);
     expect(provider.compress).toHaveBeenCalledOnce();
     expect(JSON.stringify(vi.mocked(provider.compress).mock.calls)).not.toContain(tail);
-    const updates = r.sdk.trigger.mock.calls.map(([input]) => input)
-      .filter((input) => input.function_id === "stream::send" && (input.payload as any).type === "compressed_observation");
-    expect(updates.length).toBe(1);
-    expect(JSON.stringify(updates)).not.toContain(tail);
+    const updates: unknown[] = [];
+    const unsubscribe = onLiveEvent((event) => updates.push(event));
+    await r.observe("post_tool_use", { tool_name: "Read", tool_input: { file_path: "config.ts" }, tool_output: `${"detail ".repeat(1000)}${tail}` });
+    unsubscribe();
+    const compressedEvents = updates.filter((event) => (event as any).type === "compressed_observation");
+    expect(compressedEvents.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(compressedEvents)).not.toContain(tail);
   });
 
   it("makes a captured stop reply searchable and keeps it as the replay response", async () => {

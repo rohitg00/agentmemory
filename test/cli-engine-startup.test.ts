@@ -4,49 +4,28 @@ import { describe, expect, it } from "vitest";
 describe("fresh native engine startup", () => {
   const source = readFileSync("src/cli.ts", "utf8");
 
-  it("routes existing and newly installed engines through one runtime config", () => {
-    const prepareStart = source.indexOf("function prepareEngineLaunch");
-    const prepareEnd = source.indexOf("function startIiiBin", prepareStart);
-    const prepareBody = source.slice(prepareStart, prepareEnd);
-    expect(prepareBody).toContain("dataDir: dataDirResolution.dataDir");
-    expect(prepareBody).toContain("restPort: getRestPort()");
-    expect(prepareBody).toContain("streamPort: getStreamPort()");
-    expect(prepareBody).toContain("viewerPort: getConfiguredViewerPort()");
-    expect(prepareBody).toContain("enginePort: getEnginePort()");
-
-    const engineStart = source.indexOf("async function startEngine");
-    const engineEnd = source.indexOf("async function waitForEngine", engineStart);
-    const engineBody = source.slice(engineStart, engineEnd);
-    expect(engineBody).not.toContain("writeRuntimeIiiConfig");
-    expect(engineBody.match(/startIiiBin\(iiiBin, configPath\)/g)).toHaveLength(2);
+  it("routes new iii engines through per-instance Worker Compose without reading legacy engine config files", () => {
+    const start = source.indexOf("async function startIiiBin");
+    const end = source.indexOf("function pickCompatibleIii", start);
+    const body = source.slice(start, end);
+    expect(body).toContain("startComposeDaemon(");
+    expect(body).toContain("dataDir: dataDirResolution.dataDir");
+    expect(body).toContain("restPort: getRestPort()");
+    expect(body).toContain("viewerPort: getConfiguredViewerPort()");
+    expect(body).toContain("enginePort: getEnginePort()");
+    expect(body).not.toContain("prepareEngineLaunch(");
+    expect(body).not.toContain("iii-config.runtime.yaml");
+    expect(body).not.toContain("configPath");
+    expect(source).not.toContain("findIiiConfig");
+    expect(source).not.toContain("AGENTMEMORY_III_CONFIG");
   });
 
-  it("reports buffered engine stderr when a verbose startup times out", () => {
-    const spawnStart = source.indexOf("function spawnEngineBackground");
-    const spawnEnd = source.indexOf("function prepareEngineLaunch", spawnStart);
-    const spawnBody = source.slice(spawnStart, spawnEnd);
-    expect(spawnBody).toContain(
-      "activeStartupStderr = createStartupStderrCapture()",
-    );
-    expect(spawnBody).toContain("activeStartupStderr.append(chunk)");
-
-    const timeoutStart = source.indexOf("const ready = await waitForEngine()");
-    const timeoutEnd = source.indexOf('s.stop(c.ok("iii-engine is ready"))', timeoutStart);
-    expect(source.slice(timeoutStart, timeoutEnd)).toContain(
-      "printCapturedStartupStderr()",
-    );
-
-    const demoTimeoutStart = source.indexOf("await waitForEngine()", timeoutEnd);
-    const demoTimeoutEnd = source.indexOf("await import(\"./index.js\")", demoTimeoutStart);
-    expect(source.slice(demoTimeoutStart, demoTimeoutEnd)).toContain(
-      "printCapturedStartupStderr()",
-    );
+  it("reports captured startup stderr when engine or worker startup times out", () => {
+    expect(source).toContain("function printCapturedStartupStderr()");
+    expect(source).toContain("printCapturedStartupStderr()");
   });
 
-  it("exports the complete derived port set for Docker and native launchers", () => {
-    expect(source).toContain(
-      'process.env["III_STREAM_PORT"] ??=\n    process.env["III_STREAMS_PORT"] ?? String(restPort + 1)',
-    );
+  it("exports the complete derived port set for managed engine launchers", () => {
     expect(source).toContain(
       'process.env["III_VIEWER_PORT"] ??= String(restPort + 2)',
     );
@@ -74,36 +53,20 @@ describe("fresh native engine startup", () => {
     expect(installerBody).toContain('whichBinary("tar")');
   });
 
-  it("lets the CLI own one bundled worker and reuses a live worker", () => {
-    const prepareStart = source.indexOf("function prepareEngineLaunch");
-    const prepareEnd = source.indexOf("function startIiiBin", prepareStart);
-    const prepareBody = source.slice(prepareStart, prepareEnd);
-    expect(prepareBody).toContain(
-      "rewriteBundledConfig(",
-    );
-    expect(prepareBody).toContain(": renderEngineConfig(rawConfig, options)");
-
-    const workerStart = source.indexOf("async function startWorkerForEngineState");
-    const workerEnd = source.indexOf("async function startEngine", workerStart);
-    const workerBody = source.slice(workerStart, workerEnd);
-    expect(workerBody).toContain("readWorkerPidfile()");
-    expect(workerBody).toContain("pidAlive(workerPid)");
-    expect(workerBody).toContain("startWorkerAndWait");
-    expect(workerBody).toContain("engineStartsWorker: configuredEngineMayStartWorker");
-    expect(workerBody).toContain('await import("./index.js")');
-
-    expect(source.match(/await startWorkerForEngineState\(\)/g)).toHaveLength(5);
-    expect(source).toContain('startupTimeoutMessage("worker", timeoutMs)');
-    expect(source).not.toContain("waitForAgentmemoryReady(15000)");
+  it("starts Worker Compose directly without preparing a legacy native config", () => {
+    expect(source).not.toContain("function prepareEngineLaunch");
+    expect(source).not.toContain("function adoptRunningEngine");
+    expect(source).toContain("startComposeDaemon({");
+    expect(source).toContain("await startWorkerForEngineState()");
   });
 
-  it("stores lifecycle metadata per resolved instance and scopes Docker", () => {
+  it("stores lifecycle metadata per resolved instance", () => {
     expect(source).toContain('runtimeMetadataPath("iii.pid")');
+    expect(source).toContain('kind: "compose"');
+    expect(source).toContain("composePid: compose.child.pid");
     expect(source).toContain('runtimeMetadataPath("engine-state.json")');
     expect(source).toContain('runtimeMetadataPath("worker.pid")');
     expect(source).toContain('process.env["AGENTMEMORY_RUNTIME_DIR"] = selectedInstance > 0');
-    expect(source).toContain("dockerProjectName(getRestPort())");
-    expect(source).toContain("dockerComposeArgs(");
   });
 
   it("keeps AGENTMEMORY_URL client-only and lets local port flags win", () => {
@@ -113,53 +76,26 @@ describe("fresh native engine startup", () => {
     expect(source).toContain('process.env["III_REST_PORT"] = String(base)');
   });
 
-  it("recovers the host worker for a validated Docker engine", () => {
-    expect(source).toContain("function inspectOwnedDockerEngine");
-    expect(source).toMatch(/"ps",\s*"-q",\s*"--all",\s*"iii-engine"/);
-    expect(source).toContain('"com.docker.compose.service"');
-    expect(source).toContain('record.HostConfig?.PortBindings');
-    expect(source).toContain('mount.Destination === "/data"');
-    expect(source).toContain('["start", inspection.containerId]');
-    expect(source).toContain('["stop", "--time", "10", inspection.containerId]');
-
-    const mainStart = source.indexOf("async function main()");
-    const mainEnd = source.indexOf("async function apiFetch", mainStart);
-    const mainBody = source.slice(mainStart, mainEnd);
-    expect(mainBody).toContain("reconcilePersistedDockerEngine()");
-    expect(mainBody.indexOf("reconcilePersistedDockerEngine()"))
-      .toBeLessThan(mainBody.indexOf("if (await isEngineRunning() ||"));
+  it("routes persisted Docker state to the legacy recovery message without inspection", () => {
+    const ownershipStart = source.indexOf("async function assertRuntimePortOwnership");
+    const ownershipEnd = source.indexOf("function isInvokedViaNpx", ownershipStart);
+    const ownershipBody = source.slice(ownershipStart, ownershipEnd);
+    const dockerGuardStart = ownershipBody.indexOf('if (state.kind === "docker")');
+    const dockerGuardEnd = ownershipBody.indexOf("  const ownerPort", dockerGuardStart);
+    const dockerGuard = ownershipBody.slice(dockerGuardStart, dockerGuardEnd);
+    expect(dockerGuard).toContain("legacyDockerStateMessage(state)");
+    expect(dockerGuard).not.toContain("inspectOwnedDockerEngine");
+    expect(dockerGuard).not.toContain("clearEngineState");
+    expect(source).toContain("legacyDockerStateMessage(persistedState)");
   });
 
-  it("keeps canonical compatibility and rejects Docker ownership on another port", () => {
+  it("keeps canonical compatibility without inspecting or mutating Docker ownership", () => {
     expect(source).toContain('function cliArgValue(name: string)');
     expect(source).toContain('arg.startsWith(`${name}=`)');
     expect(source).toContain("async function assertRuntimePortOwnership");
     expect(source).toContain("restPort: getRestPort()");
-    expect(source).toContain('inspection.status === "running" || inspection.status === "stopped"');
     expect(source).not.toContain("migrateLegacyRuntimeMetadata");
     expect(source).not.toContain("clearLegacyRuntimeMetadata");
-  });
-
-  it("preserves Docker ownership when compose startup fails", () => {
-    const spawnStart = source.indexOf("function spawnEngineBackground");
-    const spawnEnd = source.indexOf("function prepareEngineLaunch", spawnStart);
-    const spawnBody = source.slice(spawnStart, spawnEnd);
-    expect(spawnBody).toContain("if (!isDocker)");
-    expect(spawnBody).toContain("clearEngineState()");
-    expect(spawnBody).not.toContain("if (!isDocker) clearEnginePidfile();\n      clearEngineState();");
-  });
-
-  it("stops the launch instead of silently falling back to file when the redis rewrite fails", () => {
-    const prepareStart = source.indexOf("function prepareEngineLaunch");
-    const prepareEnd = source.indexOf("function startIiiBin", prepareStart);
-    const prepareBody = source.slice(prepareStart, prepareEnd);
-    expect(prepareBody).toContain("const stateBackendKind = getStateBackend();");
-    expect(prepareBody).toMatch(
-      /catch \(err\) \{\s*const failure = resolveLaunchRenderFailure\(stateBackendKind, err\);\s*if \(failure\.fatal\) \{\s*p\.log\.error\(failure\.message\);\s*process\.exit\(1\);\s*\}/,
-    );
-    expect(prepareBody).toContain(
-      'vlog(`runtime config generation failed, using bundled config verbatim: ${String(err)}`);',
-    );
   });
 
   it("rejects an unrecognized AGENTMEMORY_STATE_BACKEND before touching the engine", () => {
@@ -169,18 +105,12 @@ describe("fresh native engine startup", () => {
     expect(engineBody).toMatch(
       /try \{\s*stateBackendKind = getStateBackend\(\);\s*\} catch \(err\) \{\s*p\.log\.error\(err instanceof Error \? err\.message : String\(err\)\);\s*process\.exit\(1\);\s*\}/,
     );
-    expect(engineBody.match(/warnIfDockerIgnoresStateBackend\(stateBackendKind\)/g)).toHaveLength(2);
+    // The retired Docker-mode environment switch must not return to CLI startup.
+    expect(engineBody).not.toContain("AGENTMEMORY_USE_DOCKER");
   });
 
-  it("redacts credentials out of every engine stderr surface the CLI prints", () => {
-    expect(source).toContain(
-      "const stderr = redactCredentialUrls(activeStartupStderr.text().trim());",
-    );
-    expect(source).toContain(
-      "const stderr = redactCredentialUrls(activeStartupStderr.text());",
-    );
-    expect(source).toContain(
-      'const output = redactCredentialUrls(`${result.stdout ?? ""}${result.stderr ?? ""}`.trim());',
-    );
+  it("redacts credentials from the captured startup stderr output", () => {
+    expect(source).toContain("function printCapturedStartupStderr()");
+    expect(source).toContain("redactCredentialUrls(activeStartupStderr.text().trim())");
   });
 });
