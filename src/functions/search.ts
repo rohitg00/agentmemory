@@ -897,10 +897,11 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
           results = idx.search(query, fetchLimit, targetLayer)
         }
 
+        // A full page must stop further session lookups as well as record loads.
         enriched = []
         let batchSize = Math.min(10, effectiveLimit)
-        for (let offset = 0; offset < results.length && enriched.length < effectiveLimit;) {
-          const batch = results.slice(offset, offset + batchSize)
+        for (let offset = 0; offset < Math.min(results.length, fetchLimit) && enriched.length < effectiveLimit;) {
+          const batch = results.slice(offset, Math.min(offset + batchSize, fetchLimit))
           offset += batch.length
           const obsResults = await Promise.all(
             batch.map(async (r) => {

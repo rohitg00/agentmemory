@@ -254,6 +254,32 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       expect(requestedLimits).toEqual([100, 200]);
     });
 
+    it("stops session filtering after a bounded batch fills the page", async () => {
+      const observations = [];
+      for (let i = 0; i < 100; i++) {
+        const session = { ...addSession("project-a"), id: `session_${i}` };
+        put(KV.sessions, session.id, session);
+        const memory = addMemory({ id: `obs_valid_${i}`, sessionIds: [session.id] });
+        const observation = memoryToObservation(memory);
+        observations.push(observation);
+        getSearchIndex().add(observation, "observation");
+        put(KV.observations(session.id), observation.id, observation);
+      }
+      vi.spyOn(getSearchIndex(), "search").mockImplementation((_query, limit) =>
+        observations.slice(0, limit).map((observation, i) => ({
+          obsId: observation.id, sessionId: observation.sessionId, score: 1 / (i + 1), layer: "observation" as const,
+        })),
+      );
+      if (ranking === "hybrid") {
+        setHybridRanker(async (_query, limit) => observations.slice(0, limit).map((observation, i) => ({
+          observation, sessionId: observation.sessionId, combinedScore: 1 / (i + 1), layer: "observation" as const,
+        })));
+      }
+      expect(await recall({ limit: 1, targetLayer: "observation" })).toEqual(["obs_valid_0"]);
+      expect(sessionReads.length).toBeLessThanOrEqual(10);
+      expect(sessionReads).not.toContain("session_10");
+    });
+
     it("rejects orphaned observations when a directory filter is requested", async () => {
       const orphan = addMemory({ id: "obs_orphan", sessionIds: ["session_missing"] });
       const observation = memoryToObservation(orphan);
