@@ -892,36 +892,29 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
           results = idx.search(query, fetchLimit, targetLayer)
         }
 
-        // First pass: filter by session (sequential — benefits from session cache).
-        // Memory entries with a synthetic sessionId take a secondary KV.memories
-        // path so project filtering works correctly for them too.
-        //
-        // Missing records and agent mismatches must not consume result slots.
-        const earlyCap = fetchLimit
-        const candidates: typeof results = []
-        for (const r of results) {
-          if (candidates.length >= earlyCap) break
-          const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
-          if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) continue
-          if (filtering) {
-            const memoryProject = projectFilter && layer === "memory"
-              ? await loadMemoryProject(r.obsId)
-              : null
-            if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) continue
-            const session = await loadSession(r.sessionId)
-            if (projectFilter && memoryProject === null && !session) continue
-            if (cwdFilter && layer === "observation" && !session) continue
-            if (session) {
-              if (projectFilter && memoryProject === null && session.project !== projectFilter) continue
-              if (cwdFilter && session.cwd !== cwdFilter) continue
-            }
-          }
-          candidates.push(r)
-        }
-
+        // A full page must stop further session lookups as well as record loads.
         enriched = []
-        for (let offset = 0; offset < candidates.length && enriched.length < effectiveLimit; offset += 10) {
-          const batch = candidates.slice(offset, offset + 10)
+        for (let offset = 0; offset < Math.min(results.length, fetchLimit) && enriched.length < effectiveLimit; offset += 10) {
+          const candidates: typeof results = []
+          for (const r of results.slice(offset, Math.min(offset + 10, fetchLimit))) {
+            const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
+            if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) continue
+            if (filtering) {
+              const memoryProject = projectFilter && layer === "memory"
+                ? await loadMemoryProject(r.obsId)
+                : null
+              if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) continue
+              const session = await loadSession(r.sessionId)
+              if (projectFilter && memoryProject === null && !session) continue
+              if (cwdFilter && layer === "observation" && !session) continue
+              if (session) {
+                if (projectFilter && memoryProject === null && session.project !== projectFilter) continue
+                if (cwdFilter && session.cwd !== cwdFilter) continue
+              }
+            }
+            candidates.push(r)
+          }
+          const batch = candidates
           const obsResults = await Promise.all(
             batch.map((r) => {
               const key = JSON.stringify([r.obsId, r.sessionId])
