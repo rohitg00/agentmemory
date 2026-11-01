@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { registerApiTriggers } from "../src/triggers/api.js";
+import { registerApiTriggers, SESSION_SUMMARY_BULK_THRESHOLD } from "../src/triggers/api.js";
 import { getSearchIndex, rankMemoryIds, setVectorIndex, setEmbeddingProvider } from "../src/functions/search.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import { memoryToObservation } from "../src/state/memory-utils.js";
@@ -169,6 +169,47 @@ describe("paginated and filtered list endpoints", () => {
     expect((await run("unchanged")).status_code).toBe(400);
     expect((await evolve({ headers: {}, query_params: {}, body: { memoryId: "mem_1" } })).status_code).toBe(400);
     expect((await evolve({ headers: {}, query_params: {}, body: { memoryId: "mem_1", newContent: "y" } })).status_code).toBe(200);
+  });
+
+  it("reads the summaries scope once instead of one kv.get per session for large unpaginated listings", async () => {
+    const count = SESSION_SUMMARY_BULK_THRESHOLD + 50;
+    const sessions: Record<string, unknown> = {};
+    const summaries: Record<string, unknown> = {};
+    for (let i = 0; i < count; i++) {
+      const id = `s${String(i).padStart(4, "0")}`;
+      sessions[id] = { id, project: "web", status: "completed", startedAt: `2026-09-01T00:00:00Z` };
+      if (i % 2 === 0) summaries[id] = { sessionId: id, project: "web", title: `summary ${id}` };
+    }
+    const { handlers, kv } = setup({ [KV.sessions]: sessions, [KV.summaries]: summaries });
+
+    const res = await call(handlers, "api::sessions", {});
+    const rows = res.body.sessions as Array<{ id: string; summary?: { title: string } }>;
+    expect(rows).toHaveLength(count);
+    expect(kv.get.mock.calls.filter(([scope]) => scope === KV.summaries)).toHaveLength(0);
+    expect(kv.list.mock.calls.filter(([scope]) => scope === KV.summaries)).toHaveLength(1);
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    expect(byId.get("s0000")?.summary?.title).toBe("summary s0000");
+    expect(byId.get("s0001")?.summary).toBeUndefined();
+  });
+
+  it("falls back to per-session summary reads when the bulk read fails", async () => {
+    const count = SESSION_SUMMARY_BULK_THRESHOLD + 1;
+    const sessions: Record<string, unknown> = {};
+    for (let i = 0; i < count; i++) {
+      sessions[`s${i}`] = { id: `s${i}`, project: "web", status: "completed", startedAt: `2026-09-01T00:00:00Z` };
+    }
+    const { handlers, kv } = setup({ [KV.sessions]: sessions, [KV.summaries]: { s3: { sessionId: "s3", title: "kept" } } });
+    const list = kv.list.getMockImplementation()!;
+    kv.list.mockImplementation(async (scope: string) => {
+      if (scope === KV.summaries) throw new Error("frame too large");
+      return list(scope);
+    });
+
+    const res = await call(handlers, "api::sessions", {});
+    const rows = res.body.sessions as Array<{ id: string; summary?: { title: string } }>;
+    expect(rows).toHaveLength(count);
+    expect(kv.get.mock.calls.filter(([scope]) => scope === KV.summaries)).toHaveLength(count);
+    expect(rows.find((r) => r.id === "s3")?.summary?.title).toBe("kept");
   });
 
   it("filters and pages sessions, loading summaries only for the returned page", async () => {
