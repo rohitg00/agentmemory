@@ -1,3 +1,5 @@
+import { createGraphIndexState } from "./helpers/graph-index-state.js";
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
@@ -10,24 +12,10 @@ import {
 } from "../src/functions/graph.js";
 import type { GraphEdge, GraphNode } from "../src/types.js";
 
-function mockKV() {
-  const store = new Map<string, Map<string, unknown>>();
-  return {
-    get: async <T>(scope: string, key: string): Promise<T | null> =>
-      (store.get(scope)?.get(key) as T) ?? null,
-    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
-      if (!store.has(scope)) store.set(scope, new Map());
-      store.get(scope)!.set(key, data);
-      return data;
-    },
-    delete: async (scope: string, key: string): Promise<void> => {
-      store.get(scope)?.delete(key);
-    },
-    list: async <T>(scope: string): Promise<T[]> => {
-      const entries = store.get(scope);
-      return entries ? (Array.from(entries.values()) as T[]) : [];
-    },
-  };
+async function mockKV() {
+  const { kv } = createGraphIndexState();
+  await initializeGraphIndex(kv, { status: "ready" });
+  return kv;
 }
 
 let seq = 0;
@@ -59,14 +47,14 @@ function edge(src: string, tgt: string, sources: string[]): GraphEdge {
 const ids = (prefix: string, n: number) =>
   Array.from({ length: n }, (_, i) => `${prefix}_${i}`);
 
-async function onlyNode(kv: ReturnType<typeof mockKV>, name: string) {
+async function onlyNode(kv: Awaited<ReturnType<typeof mockKV>>, name: string) {
   const all = await kv.list<GraphNode>("mem:graph:nodes");
   const hits = all.filter((n) => n.name === name);
   expect(hits.length).toBe(1);
   return hits[0]!;
 }
 
-async function onlyEdge(kv: ReturnType<typeof mockKV>) {
+async function onlyEdge(kv: Awaited<ReturnType<typeof mockKV>>) {
   const all = await kv.list<GraphEdge>("mem:graph:edges");
   expect(all.length).toBe(1);
   return all[0]!;
@@ -78,7 +66,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("a node merged many times never exceeds the cap", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     for (let batch = 0; batch < 20; batch++) {
       const batchIds = ids(`obs_b${batch}`, 10);
       await persistGraphDelta(kv as never, [node("CLAUDE.md", batchIds)], []);
@@ -88,7 +76,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("the cap keeps the NEWEST ids, in arrival order", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     const all: string[] = [];
     for (let batch = 0; batch < 10; batch++) {
       const batchIds = ids(`obs_b${batch}`, 10);
@@ -102,7 +90,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("a re-seen id moves to the newest end and survives trimming", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     await persistGraphDelta(kv as never, [node("hub", ["obs_old"])], []);
     const filler = ids("obs_fill", MAX_GRAPH_SOURCE_OBSERVATIONS - 1);
     await persistGraphDelta(kv as never, [node("hub", filler)], []);
@@ -116,7 +104,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("ids are never duplicated", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     for (let i = 0; i < 3; i++) {
       await persistGraphDelta(
         kv as never,
@@ -129,7 +117,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("a brand-new node carrying more than the cap is trimmed on first write", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     const many = ids("obs", MAX_GRAPH_SOURCE_OBSERVATIONS + 15);
     await persistGraphDelta(kv as never, [node("fresh", many)], []);
     const n = await onlyNode(kv, "fresh");
@@ -139,7 +127,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("a merged node gains ITS OWN sources, not every id in the batch", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     await persistGraphDelta(kv as never, [node("a.ts", ["obs_1"])], []);
     await persistGraphDelta(
       kv as never,
@@ -151,7 +139,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("a merged edge gains its own sources, bounded, not the batch", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     const a = node("a", ["obs_0"]);
     const b = node("b", ["obs_0"]);
     await persistGraphDelta(kv as never, [a, b], [edge(a.id, b.id, ["obs_0"])]);
@@ -173,7 +161,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("a merged edge is capped", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     const a = node("a", ["obs_0"]);
     const b = node("b", ["obs_0"]);
     await persistGraphDelta(kv as never, [a, b], [edge(a.id, b.id, ["obs_0"])]);
@@ -188,7 +176,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("a brand-new edge carrying more than the cap is trimmed on first write", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     const a = node("a", ["obs_0"]);
     const b = node("b", ["obs_0"]);
     const many = ids("obs", MAX_GRAPH_SOURCE_OBSERVATIONS + 5);
@@ -200,7 +188,7 @@ describe("graph provenance is bounded and attributed", () => {
   });
 
   it("a record written before this change with an oversized list is trimmed on its next merge", async () => {
-    const kv = mockKV();
+    const kv = await mockKV();
     const legacy = node("legacy", ids("obs_legacy", 500));
     await kv.set("mem:graph:nodes", legacy.id, legacy);
     await kv.set("mem:graph:name-index", "concept|legacy", legacy.id);
@@ -245,7 +233,7 @@ describe("temporal graph provenance is bounded", () => {
       summarize: vi.fn().mockResolvedValue(response),
     };
     const sdk = mockSdk();
-    const kv = mockKV();
+    const kv = await mockKV();
     registerTemporalGraphFunctions(
       sdk as never,
       kv as never,
@@ -298,7 +286,7 @@ describe("temporal graph provenance is bounded", () => {
       summarize: vi.fn().mockResolvedValue(response),
     };
     const sdk = mockSdk();
-    const kv = mockKV();
+    const kv = await mockKV();
     registerTemporalGraphFunctions(
       sdk as never,
       kv as never,

@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "metricVersion": "distinct-session-retrieval-v2",
+  "inputTransform": "role-flattened; opaque source IDs; all supplied dates retained; identical repeated IDs coalesced (v1)",
+  "benchmark": "longmemeval",
+  "scope": "supplied-session retrieval; no reader, judge, or capture-quality score",
+  "startedAt": "2026-10-09T15:00:50.046Z",
+  "source": {
+    "revision": "df3d4a83b966d8d415cb9180d5a4724b07f729dc",
+    "dirty": true,
+    "contentSha256": "b0a529fa193fe3fad6e2fdc867515f8d994db72d5adef794e131ae1bb083380f",
+    "dependencies": {
+      "@anthropic-ai/claude-agent-sdk": "0.3.295",
+      "@anthropic-ai/sdk": "0.100.1",
+      "@clack/prompts": "1.8.1",
+      "@huggingface/transformers": "4.3.1",
+      "@iii-dev/helpers": "0.22.1",
+      "@node-rs/jieba": "2.0.4",
+      "@types/node": "26.6.4",
+      "dotenv": "18.0.6",
+      "iii-sdk": "0.22.1",
+      "picocolors": "1.1.1",
+      "tiny-segmenter": "0.2.0",
+      "tsdown": "0.21.10",
+      "tsx": "4.23.15",
+      "typescript": "6.0.3",
+      "vitest": "4.1.11",
+      "zod": "4.6.5"
+    },
+    "installedLockSha256": "5f91fac54c5227649080944e92129a9b8f6efb9ae17d1c59d0891d1818d52cbd",
+    "builtArtifactSha256": "47f74b2726ba3858a15e92fcc0ddf56c7792b198ccbfa44600942a4232da6c48",
+    "engine": {
+      "version": "0.22.1",
+      "sha256": "6452e54b05e73bee301e05bd8b75c0a6eb1986d8cb37664c4465859612110ed2"
+    }
+  },
+  "datasetFiles": [
+    {
+      "name": "longmemeval_s_cleaned.json",
+      "sha256": "d6f21ea9d60a0d56f34a05b609c79c88a451d2ae03597821ea3d5a9678c3a442"
+    }
+  ],
+  "datasetSha256": "f92fce317e7a00945830a5043fe8e877a599d0726c76e00796a1bac75902f6bd",
+  "selectedQuestionIds": [
+    "6a1eabeb",
+    "6aeb4375",
+    "0a995998",
+    "6d550036",
+    "7161e7e2",
+    "c4f10528",
+    "8a2466db",
+    "06878be2",
+    "e47becba",
+    "118b2229",
+    "gpt4_59149c77",
+    "gpt4_f49edff3"
+  ],
+  "coalescedRepeatedSources": 0,
+  "adapters": [
+    "grep",
+    "agentmemory-bm25-component",
+    "agentmemory-http-bm25"
+  ],
+  "k": 5,
+  "retrievalUnit": "top k distinct source sessions",
+  "config": {},
+  "runtime": {
+    "node": "v25.6.1",
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "planned": 36
+}

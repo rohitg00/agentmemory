@@ -10,7 +10,7 @@ import {
   setIndexPersistence,
 } from "../src/functions/search.js";
 import { memoryToObservation } from "../src/state/memory-utils.js";
-import type { Memory, AuditEntry } from "../src/types.js";
+import type { Memory, AuditEntry, Facet } from "../src/types.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
@@ -65,6 +65,17 @@ function makeMemory(id: string, type: Memory["type"] = "pattern"): Memory {
     strength: 5,
     version: 1,
     isLatest: true,
+  };
+}
+
+function makeFacet(id: string, targetId: string): Facet {
+  return {
+    id,
+    targetId,
+    targetType: "memory",
+    dimension: "probe",
+    value: "value",
+    createdAt: "2026-02-01T00:00:00Z",
   };
 }
 
@@ -136,6 +147,64 @@ describe("Governance Functions", () => {
 
     const remaining = await kv.list("mem:memories");
     expect(remaining.length).toBe(3);
+  });
+
+  it("governance-delete removes facets pointing at the deleted memory", async () => {
+    await kv.set("mem:facets", "fct_1", makeFacet("fct_1", "mem_1"));
+    await kv.set("mem:facets", "fct_2", makeFacet("fct_2", "mem_2"));
+
+    const result = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["mem_1"],
+    })) as { success: boolean; deleted: number };
+
+    expect(result.deleted).toBe(1);
+    const remaining = await kv.list<Facet>("mem:facets");
+    expect(remaining.map((f) => f.id)).toEqual(["fct_2"]);
+  });
+
+  it("governance-delete sweeps facets for already-missing memories", async () => {
+    await kv.set("mem:facets", "fct_1", makeFacet("fct_1", "mem_gone"));
+    await kv.set("mem:facets", "fct_2", makeFacet("fct_2", "mem_2"));
+    await kv.set("mem:facets", "fct_obs", {
+      ...makeFacet("fct_obs", "obs_1"),
+      targetType: "observation",
+    });
+
+    const result = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["mem_gone", "obs_1"],
+    })) as { success: boolean; deleted: number; notFound: string[] };
+
+    expect(result.deleted).toBe(0);
+    expect(result.notFound).toEqual(["mem_gone", "obs_1"]);
+    const remaining = await kv.list<Facet>("mem:facets");
+    expect(remaining.map((f) => f.id).sort()).toEqual(["fct_2", "fct_obs"]);
+  });
+
+  it("governance-delete keeps facets on live semantic records", async () => {
+    await kv.set("mem:semantic", "sem_1", { id: "sem_1", content: "x" });
+    await kv.set("mem:facets", "fct_s", makeFacet("fct_s", "sem_1"));
+
+    const result = (await sdk.trigger("mem::governance-delete", {
+      memoryIds: ["sem_1"],
+    })) as { notFound: string[] };
+
+    expect(result.notFound).toEqual(["sem_1"]);
+    const remaining = await kv.list<Facet>("mem:facets");
+    expect(remaining.map((f) => f.id)).toEqual(["fct_s"]);
+  });
+
+  it("governance-bulk removes facets for every deleted memory", async () => {
+    await kv.set("mem:facets", "fct_1", makeFacet("fct_1", "mem_1"));
+    await kv.set("mem:facets", "fct_2", makeFacet("fct_2", "mem_2"));
+    await kv.set("mem:facets", "fct_3", makeFacet("fct_3", "mem_3"));
+
+    const result = (await sdk.trigger("mem::governance-bulk", {
+      type: ["pattern"],
+    })) as { success: boolean; deleted: number };
+
+    expect(result.deleted).toBe(2);
+    const remaining = await kv.list<Facet>("mem:facets");
+    expect(remaining.map((f) => f.id)).toEqual(["fct_2"]);
   });
 
   // Delete paths must tear down the BM25 index entry and trigger an

@@ -1,7 +1,8 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { basename, dirname, resolve } from "node:path";
 import type { HookType, RawObservation } from "../types.js";
-import { generateId } from "../state/schema.js";
+import { fingerprintId, generateId } from "../state/schema.js";
 
 interface JsonlEntry {
   type?: string;
@@ -29,24 +30,38 @@ export interface ParsedTranscript {
 // Memoized per import run: transcripts repeat the same cwd on every line.
 const projectByCwd = new Map<string, string>();
 
+function repositoryRoot(dir: string, top: string, gitDir?: string, commonDir?: string): string {
+  if (!gitDir || !commonDir) return top;
+  const physical = realpathSync(dir);
+  const common = resolve(physical, commonDir);
+  if (resolve(physical, gitDir) === common || basename(common) !== ".git") return top;
+  return dirname(common);
+}
+
 function deriveProject(cwd: string): string {
   if (!cwd) return "unknown";
   const cached = projectByCwd.get(cwd);
   if (cached) return cached;
   let name = "";
   // When the recorded cwd still exists on this machine, resolve the git
-  // toplevel basename so a subdirectory session scopes to the repository
+  // repository basename so a subdirectory session scopes to the repository
   // name, matching the hooks' resolveProject. Historical or cross-platform
   // paths fall back to the basename below. No env override here: a bulk
   // import spans many projects, so a global name would mislabel them all.
   if (existsSync(cwd)) {
     try {
-      const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-        cwd,
-        stdio: ["ignore", "pipe", "ignore"],
-        encoding: "utf8",
-      }).trim();
-      if (top) name = top.split(/[\\/]+/).filter(Boolean).pop() ?? "";
+      const [top, gitDir, commonDir] = execFileSync(
+        "git",
+        ["rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir"],
+        {
+          cwd,
+          stdio: ["ignore", "pipe", "ignore"],
+          encoding: "utf8",
+        },
+      )
+        .trim()
+        .split(/\r?\n/);
+      if (top) name = basename(repositoryRoot(cwd, top, gitDir, commonDir));
     } catch {
       // not a git repo
     }
@@ -128,12 +143,17 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
 
   const observations: RawObservation[] = [];
 
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
+    let produced = 0;
+    const nextId = () =>
+      fingerprintId("obs", `${entry.uuid ?? `${sessionId}:${index}`}:${produced++}`);
     if (entry.sessionId && !sessionId) sessionId = entry.sessionId;
     if (typeof entry.cwd === "string" && entry.cwd.trim() && !cwd) cwd = entry.cwd;
-    const ts = entry.timestamp || new Date().toISOString();
-    if (!firstTs) firstTs = ts;
-    lastTs = ts;
+    if (entry.timestamp) {
+      if (!firstTs) firstTs = entry.timestamp;
+      lastTs = entry.timestamp;
+    }
+    const ts = entry.timestamp || lastTs || new Date().toISOString();
 
     const role = entry.message?.role;
     const content = entry.message?.content;
@@ -143,7 +163,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
       if (toolResults.length > 0) {
         for (const result of toolResults) {
           observations.push({
-            id: generateId("obs"),
+            id: nextId(),
             sessionId: sessionId || "imported",
             timestamp: ts,
             hookType: (result.isError ? "post_tool_failure" : "post_tool_use") as HookType,
@@ -157,7 +177,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
         const text = toText(content);
         if (text.trim().length > 0) {
           observations.push({
-            id: generateId("obs"),
+            id: nextId(),
             sessionId: sessionId || "imported",
             timestamp: ts,
             hookType: "prompt_submit" as HookType,
@@ -171,7 +191,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
       const tools = extractToolUses(content);
       if (text.trim().length > 0) {
         observations.push({
-          id: generateId("obs"),
+          id: nextId(),
           sessionId: sessionId || "imported",
           timestamp: ts,
           hookType: "stop" as HookType,
@@ -181,7 +201,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
       }
       for (const tool of tools) {
         observations.push({
-          id: generateId("obs"),
+          id: nextId(),
           sessionId: sessionId || "imported",
           timestamp: ts,
           hookType: "pre_tool_use" as HookType,

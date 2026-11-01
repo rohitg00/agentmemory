@@ -5,6 +5,7 @@ import type { IIIClient } from "iii-sdk";
 import type { GraphEdge, GraphEdgeType, GraphNode, GraphNodeType } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { pinGraphState } from "../state/graph-generation.js";
 import { persistGraphDelta } from "./graph.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
@@ -193,10 +194,11 @@ export function parseGraphifyGraph(raw: string): {
   };
 }
 
-export function registerGraphImportFunction(sdk: IIIClient, kv: StateKV): void {
+export function registerGraphImportFunction(sdk: IIIClient, state: StateKV): void {
   sdk.registerFunction(
     "mem::graph::import-graphify",
     async (data?: { path?: string; cwd?: string }): Promise<GraphifyImportResult> => {
+      const kv = await pinGraphState(state);
       const explicitPath = typeof data?.path === "string" ? data.path : undefined;
       const cwd = typeof data?.cwd === "string" ? data.cwd : process.cwd();
       const requested = explicitPath ?? join(cwd, "graphify-out", "graph.json");

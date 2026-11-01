@@ -162,6 +162,39 @@ describe("mem::forget audit coverage", () => {
     const auditRows = await kv.list(currentAuditScope());
     expect(auditRows).toHaveLength(0);
   });
+
+  it("removes facets that point at the forgotten memory", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+
+    await kv.set("mem:memories", "mem_a", { id: "mem_a", content: "x" });
+    await kv.set("mem:memories", "mem_b", { id: "mem_b", content: "y" });
+    await kv.set("mem:facets", "fct_1", {
+      id: "fct_1",
+      targetId: "mem_a",
+      targetType: "memory",
+      dimension: "probe",
+      value: "value",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+    await kv.set("mem:facets", "fct_2", {
+      id: "fct_2",
+      targetId: "mem_b",
+      targetType: "memory",
+      dimension: "probe",
+      value: "value",
+      createdAt: "2026-01-01T00:00:00Z",
+    });
+
+    const result = await sdk.trigger({
+      function_id: "mem::forget",
+      payload: { memoryId: "mem_a" },
+    });
+    expect((result as { deleted: number }).deleted).toBe(1);
+    const remaining = await kv.list<{ id: string }>("mem:facets");
+    expect(remaining.map((f) => f.id)).toEqual(["fct_2"]);
+  });
 });
 
 // Delete paths must tear down the BM25 index entry and synchronously

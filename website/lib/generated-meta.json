@@ -1,15 +1,15 @@
 {
-  "version": "0.9.30",
+  "version": "0.9.31",
   "mcpTools": 54,
   "hooks": 12,
-  "restEndpoints": 138,
-  "testsPassing": 2520,
-  "stars": 29164,
-  "forks": 2554,
-  "contributors": 48,
-  "releases": 51,
-  "npmWeekly": 6106,
-  "npmMonthly": 24228,
-  "npmAllTime": 461269,
-  "generatedAt": "2026-10-06T07:03:04.638Z"
+  "restEndpoints": 146,
+  "testCases": "4000+",
+  "stars": 29963,
+  "forks": 2646,
+  "contributors": 55,
+  "releases": 53,
+  "npmWeekly": 12481,
+  "npmMonthly": 42744,
+  "npmAllTime": 527228,
+  "generatedAt": "2026-10-28T08:19:41.991Z"
 }

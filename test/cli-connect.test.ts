@@ -61,12 +61,13 @@ describe("agentmemory connect — dispatcher", () => {
         "openclaw",
         "openhuman",
         "pi",
+        "omp",
         "qwen",
         "warp",
         "zed",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(21);
+    expect(ADAPTERS.length).toBe(22);
   });
 
   it("every adapter exposes detect() and install()", () => {
@@ -486,12 +487,6 @@ describe("agentmemory connect — copilot-cli adapter (mock filesystem)", () => 
 });
 
 describe("agentmemory connect — stub adapters log + return stub", () => {
-  it("hermes adapter returns stub regardless of detect", async () => {
-    const { adapter } = await import("../src/cli/connect/hermes.js");
-    const result = await adapter.install({ dryRun: false, force: false });
-    expect(result.kind).toBe("stub");
-  });
-
   it("openhuman adapter returns stub", async () => {
     const { adapter } = await import("../src/cli/connect/openhuman.js");
     const result = await adapter.install({ dryRun: false, force: false });

@@ -112,6 +112,11 @@ describe("fetchWithTimeout bounded retry (total deadline)", () => {
   //    initial request past HARD_BUDGET_CAP_MS (170s) and the iii 180s
   //    invocation timeout before any retry logic ran.
   it("caps the first attempt at the hard budget, not the raw caller timeout", async () => {
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), ms);
+      return controller.signal;
+    });
     const signals: AbortSignal[] = [];
     const capturing = ((_url: string, init?: RequestInit) => {
       const signal = init!.signal as AbortSignal;

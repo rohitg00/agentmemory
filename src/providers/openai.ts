@@ -90,9 +90,8 @@ export class OpenAIProvider implements MemoryProvider {
       body.reasoning_effort = this.reasoningEffort;
     }
 
-    let response: Response;
     try {
-      response = await fetchWithTimeout(
+      const response = await fetchWithTimeout(
         url,
         {
           method: "POST",
@@ -101,8 +100,33 @@ export class OpenAIProvider implements MemoryProvider {
         },
         this.timeoutMs,
       );
+
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`OpenAI API error (${response.status}): ${text}`);
+      }
+
+      const data = (await response.json()) as {
+        choices?: Array<{
+          message?: { content?: string; reasoning?: string; reasoning_content?: string };
+        }>;
+      };
+      const message = data.choices?.[0]?.message;
+      const content = message?.content;
+      if (content) {
+        return content;
+      }
+      const reasoning = message?.reasoning ?? message?.reasoning_content;
+      if (reasoning) {
+        return reasoning;
+      }
+      throw new Error(
+        `OpenAI returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
+      );
     } catch (err) {
-      const aborted = err instanceof Error && err.name === "AbortError";
+      const aborted =
+        err instanceof Error &&
+        (err.name === "AbortError" || err.name === "TimeoutError");
       if (aborted) {
         throw new Error(
           `OpenAI API request timed out after ${this.timeoutMs}ms — set OPENAI_TIMEOUT_MS (or AGENTMEMORY_LLM_TIMEOUT_MS) to raise the bound or check the provider status.`,
@@ -110,29 +134,6 @@ export class OpenAIProvider implements MemoryProvider {
       }
       throw err;
     }
-
-    if (!response.ok) {
-      const text = await response.text();
-      throw new Error(`OpenAI API error (${response.status}): ${text}`);
-    }
-
-    const data = (await response.json()) as {
-      choices?: Array<{
-        message?: { content?: string; reasoning?: string; reasoning_content?: string };
-      }>;
-    };
-    const message = data.choices?.[0]?.message;
-    const content = message?.content;
-    if (content) {
-      return content;
-    }
-    const reasoning = message?.reasoning ?? message?.reasoning_content;
-    if (reasoning) {
-      return reasoning;
-    }
-    throw new Error(
-      `OpenAI returned unexpected response: ${JSON.stringify(data).slice(0, 200)}`,
-    );
   }
 }
 

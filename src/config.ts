@@ -11,17 +11,22 @@ import type {
   TeamConfig,
 } from "./types.js";
 
+// Import-side ceiling for observations in a single session (enforced by mem::import).
+// This is independent of MAX_OBS_PER_SESSION, which controls runtime writes.
+export const MAX_IMPORT_OBS_PER_SESSION = 5_000;
+
 function safeParseInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = parseInt(value, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-const DATA_DIR = join(homedir(), ".agentmemory");
-const ENV_FILE = join(DATA_DIR, ".env");
+const DATA_DIR = process.env["AGENTMEMORY_DATA_DIR"] || join(homedir(), ".agentmemory");
+const ENV_FILE = process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env");
 
 let warnPremiumModelShown = false;
 let providerNoticeShown = false;
+let obsCapImportCeilingWarned = false;
 
 function writeProviderNoticeOnce(text: string): void {
   if (providerNoticeShown) return;
@@ -43,7 +48,11 @@ function loadEnvFile(): Record<string, string> {
     envFileCache = {};
     return envFileCache;
   }
-  const content = readFileSync(ENV_FILE, "utf-8");
+  envFileCache = parseEnvContent(readFileSync(ENV_FILE, "utf-8"));
+  return envFileCache;
+}
+
+export function parseEnvContent(content: string): Record<string, string> {
   const vars: Record<string, string> = {};
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
@@ -62,8 +71,7 @@ function loadEnvFile(): Record<string, string> {
     }
     vars[key] = val;
   }
-  envFileCache = vars;
-  return envFileCache;
+  return vars;
 }
 
 // Test hook: clears the memoized .env so the next loadEnvFile() re-reads disk
@@ -84,10 +92,36 @@ function hasRealValue(v: string | undefined): v is string {
 // ignored by them. Copy the file's vars into process.env, but only when the
 // key is currently unset so a real process.env value still wins (this
 // preserves the {...fileEnv, ...process.env} precedence getMergedEnv uses).
-export function hydrateProcessEnvFromFile(): void {
+export function hydrateProcessEnvFromFile(): Record<string, string | undefined> {
+  const beforeHydration = { ...process.env };
   for (const [k, v] of Object.entries(loadEnvFile())) {
     if (process.env[k] === undefined) process.env[k] = v;
   }
+  return beforeHydration;
+}
+
+// Warn once when a configured model is in the premium tier and likely to burn
+// money on background compression. Captured workload data shows ~$5/35h on
+// claude-sonnet-4 vs ~$0.46/35h on deepseek-v4-pro for the same compression
+// mix. Heuristic match avoids hard-coding a pricing table.
+function warnIfPremiumModel(env: Record<string, string>, envName: string, model: string): void {
+  if (
+    warnPremiumModelShown ||
+    !/sonnet|opus|gpt-5\.\d+-sol|gpt-4o(?!.*mini)|gpt-4-turbo/i.test(model) ||
+    env["AGENTMEMORY_SUPPRESS_COST_WARNING"] === "1" ||
+    env["AGENTMEMORY_SUPPRESS_COST_WARNING"] === "true"
+  ) {
+    return;
+  }
+  warnPremiumModelShown = true;
+  process.stderr.write(
+    `[agentmemory] ${envName}=${model} is in the premium tier. ` +
+      `Background compression on this model can cost $5+/day under active use. ` +
+      `Cheaper alternatives with comparable quality for memory compression: ` +
+      `deepseek/deepseek-v4-flash-0731, deepseek/deepseek-v4-pro, qwen/qwen3-coder. ` +
+      `See README "Cost-aware model selection" for the full table. ` +
+      `Set AGENTMEMORY_SUPPRESS_COST_WARNING=1 to silence.\n`,
+  );
 }
 
 function detectProvider(env: Record<string, string>): ProviderConfig {
@@ -95,9 +129,11 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
 
   // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
   if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
+    const model = env["OPENAI_MODEL"] || "gpt-5.6-luna";
+    warnIfPremiumModel(env, "OPENAI_MODEL", model);
     return {
       provider: "openai",
-      model: env["OPENAI_MODEL"] || "gpt-5.6-luna",
+      model,
       maxTokens,
       baseURL: env["OPENAI_BASE_URL"],
     };
@@ -135,27 +171,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
   }
   if (hasRealValue(env["OPENROUTER_API_KEY"])) {
     const model = env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-5";
-    // warn when the configured OpenRouter model is in the
-    // premium tier and likely to burn money on background compression.
-    // Captured workload data shows ~$5/35h on claude-sonnet-4 vs
-    // ~$0.46/35h on deepseek-v4-pro for the same compression mix.
-    // Heuristic match avoids hard-coding a pricing table.
-    if (
-      !warnPremiumModelShown &&
-      /sonnet|opus|gpt-5\.\d+-sol|gpt-4o(?!.*mini)|gpt-4-turbo/i.test(model) &&
-      env["AGENTMEMORY_SUPPRESS_COST_WARNING"] !== "1" &&
-      env["AGENTMEMORY_SUPPRESS_COST_WARNING"] !== "true"
-    ) {
-      warnPremiumModelShown = true;
-      process.stderr.write(
-        `[agentmemory] OPENROUTER_MODEL=${model} is in the premium tier. ` +
-          `Background compression on this model can cost $5+/day under active use. ` +
-          `Cheaper alternatives with comparable quality for memory compression: ` +
-          `deepseek/deepseek-v4-flash-0731, deepseek/deepseek-v4-pro, qwen/qwen3-coder. ` +
-          `See README "Cost-aware model selection" for the full table. ` +
-          `Set AGENTMEMORY_SUPPRESS_COST_WARNING=1 to silence.\n`,
-      );
-    }
+    warnIfPremiumModel(env, "OPENROUTER_MODEL", model);
     return {
       provider: "openrouter",
       model,
@@ -198,30 +214,39 @@ export function loadConfig(): AgentMemoryConfig {
 
   const provider = detectProvider(env);
 
-  // Port quartet: REST is the anchor; streams/engine derive from it
-  // unless individually overridden. Default anchor 3111 yields the
-  // canonical 3112 streams / 49134 engine pair, but `III_REST_PORT=3211`
-  // auto-picks 3212 + 49234 so a second instance doesn't collide.
+  // REST is the anchor; viewer and engine ports derive from it unless individually overridden.
   const restPort = parseInt(env["III_REST_PORT"] || "3111", 10) || 3111;
-  const streamsPort =
-    parseInt(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"] || "", 10) ||
-    restPort + 1;
   const viewerPort =
     parseInt(env["III_VIEWER_PORT"] || "", 10) || restPort + 2;
   const engineUrl =
     env["III_ENGINE_URL"] ||
+    env["III_URL"] ||
     `ws://localhost:${
       parseInt(env["III_ENGINE_PORT"] || "", 10) || restPort + 46023
     }`;
 
+  const maxObservationsPerSession = safeParseInt(env["MAX_OBS_PER_SESSION"], 500);
+  if (
+    !obsCapImportCeilingWarned &&
+    (maxObservationsPerSession === 0 || maxObservationsPerSession > MAX_IMPORT_OBS_PER_SESSION)
+  ) {
+    obsCapImportCeilingWarned = true;
+    const capDesc = maxObservationsPerSession === 0 ? "uncapped (0)" : String(maxObservationsPerSession);
+    process.stderr.write(
+      `[agentmemory] WARNING: MAX_OBS_PER_SESSION is ${capDesc}, above the ` +
+        `${MAX_IMPORT_OBS_PER_SESSION}-per-session import ceiling (MAX_IMPORT_OBS_PER_SESSION). ` +
+        `Sessions past that ceiling make every mem::export -> mem::import restore fail wholesale. ` +
+        `Keep MAX_OBS_PER_SESSION at or below ${MAX_IMPORT_OBS_PER_SESSION} if you rely on export/import backups.\n`,
+    );
+  }
+
   return {
     engineUrl,
     restPort,
-    streamsPort,
     viewerPort,
     provider,
     tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
-    maxObservationsPerSession: safeParseInt(env["MAX_OBS_PER_SESSION"], 500),
+    maxObservationsPerSession,
     compressionModel: provider.model,
     dataDir: DATA_DIR,
   };
@@ -247,6 +272,12 @@ export function getSessionSweepStaleHours(): number {
   if (!raw || !/^\d+$/.test(raw.trim())) return 24;
   const parsed = parseInt(raw.trim(), 10);
   return parsed > 0 ? parsed : 24;
+}
+
+export function getFinalizeIdleMs(): number {
+  const raw = getMergedEnv()["AGENTMEMORY_FINALIZE_IDLE_MS"];
+  if (!raw || !/^\d+$/.test(raw.trim())) return 120000;
+  return parseInt(raw.trim(), 10);
 }
 
 export function isGraphCompactOnBootEnabled(): boolean {
@@ -304,6 +335,19 @@ export function detectLlmProviderKind(
     return "llm";
   }
   return "noop";
+}
+
+export function describeLlmRoute(provider: ProviderConfig): string | null {
+  if (provider.provider === "noop") return null;
+  const parts = [provider.provider, provider.model];
+  if (provider.baseURL) {
+    try {
+      parts.push(new URL(provider.baseURL).host);
+    } catch {
+      parts.push("custom base URL");
+    }
+  }
+  return parts.join(" · ");
 }
 
 export function loadEmbeddingConfig(): EmbeddingConfig {
@@ -454,26 +498,6 @@ export function getFollowupWindowSeconds(): number {
   );
 }
 
-const VIEWER_STREAM_MAX_DEFAULT = 500;
-const VIEWER_STREAM_MAX_FLOOR = 200;
-
-function parseExactInt(value: string | undefined, fallback: number): number {
-  if (!value) return fallback;
-  const trimmed = value.trim();
-  if (!/^-?\d+$/.test(trimmed)) return fallback;
-  const parsed = Number(trimmed);
-  return Number.isSafeInteger(parsed) ? parsed : fallback;
-}
-
-export function getViewerStreamMax(): number {
-  const parsed = parseExactInt(
-    getMergedEnv()["AGENTMEMORY_VIEWER_STREAM_MAX"],
-    VIEWER_STREAM_MAX_DEFAULT,
-  );
-  if (parsed < 0) return VIEWER_STREAM_MAX_DEFAULT;
-  return Math.max(parsed, VIEWER_STREAM_MAX_FLOOR);
-}
-
 export function isConsolidationEnabled(): boolean {
   const env = getMergedEnv();
   const explicit = env["CONSOLIDATION_ENABLED"];
@@ -542,9 +566,18 @@ export function getIndexSaveIntervalMs(): number {
   return raw > 0 ? raw : INDEX_SAVE_INTERVAL_DEFAULT_MS;
 }
 
-export function getStateSaveIntervalMs(): number | undefined {
-  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_STATE_SAVE_INTERVAL_MS"], 0);
-  return raw > 0 ? raw : undefined;
+export const STATE_SAVE_INTERVAL_DEFAULT_MS = 2000;
+export const STATE_SAVE_INTERVAL_MIN_MS = 100;
+export const STATE_SAVE_INTERVAL_MAX_MS = 3_600_000;
+
+export function getStateSaveIntervalMs(): number {
+  const value = getMergedEnv()["AGENTMEMORY_STATE_SAVE_INTERVAL_MS"];
+  if (value === undefined || value.trim() === "") return STATE_SAVE_INTERVAL_DEFAULT_MS;
+  if (!/^\d+$/.test(value.trim())) return STATE_SAVE_INTERVAL_DEFAULT_MS;
+  const raw = Number(value);
+  return Number.isSafeInteger(raw) && raw >= STATE_SAVE_INTERVAL_MIN_MS && raw <= STATE_SAVE_INTERVAL_MAX_MS
+    ? raw
+    : STATE_SAVE_INTERVAL_DEFAULT_MS;
 }
 
 export const VECTOR_BUCKET_SIZE_DEFAULT = 500;

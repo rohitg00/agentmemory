@@ -96,6 +96,21 @@ describe("mem::session-sweep", () => {
     expect(sweep.success).toBe(true);
   });
 
+  it("summarizes what a stale session captured before leaving it abandoned", async () => {
+    kv.set(
+      KV.sessions,
+      "s-obs",
+      session({ id: "s-obs", observationCount: 3, updatedAt: new Date(nowMs - 30 * H).toISOString() }),
+    );
+    kv.set(KV.sessions, "s-empty", session({ id: "s-empty", updatedAt: new Date(nowMs - 30 * H).toISOString() }));
+    const sweep = await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} });
+    expect(sweep.abandoned).toBe(2);
+    const stopped = sdk.triggers.filter((t) => t.function_id === "event::session::stopped");
+    expect(stopped).toEqual([
+      expect.objectContaining({ payload: { sessionId: "s-obs", skipConsolidation: true } }),
+    ]);
+  });
+
   it("falls back to startedAt when the session has no heartbeat", async () => {
     kv.set(KV.sessions, "s-nobeat", session({ id: "s-nobeat", startedAt: new Date(nowMs - 48 * H).toISOString() }));
     const sweep = await (sdk as any).trigger({ function_id: "mem::session-sweep", payload: {} });

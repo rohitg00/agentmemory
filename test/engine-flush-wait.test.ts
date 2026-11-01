@@ -30,15 +30,28 @@ describe("engine flush wait on stop", () => {
     expect(engineFlushWaitMs("file", [custom, "save_interval_ms: 9000"])).toBe(10500);
   });
 
+  it.each(["30000", '"30000"', "'30000'"])("reads the numeric interval %s", (value) => {
+    expect(engineSaveIntervalMs([`${persistedState}\n      save_interval_ms: ${value}`])).toBe(30000);
+  });
+
+  it.each([
+    ["30000", 30000],
+    [undefined, 2000],
+    ["", 2000],
+    ["invalid", 5000],
+    ["9007199254740992", 5000],
+  ])("resolves a Compose save interval with environment value %s", (value, expected) => {
+    const compose = `${persistedState}\n      save_interval_ms: "\${AGENTMEMORY_STATE_SAVE_INTERVAL_MS:-2000}"`;
+    expect(engineSaveIntervalMs([compose], { AGENTMEMORY_STATE_SAVE_INTERVAL_MS: value })).toBe(expected);
+    expect(engineSaveIntervalMs([compose, "save_interval_ms: 90000"], { AGENTMEMORY_STATE_SAVE_INTERVAL_MS: value })).toBe(90000);
+  });
+
   it("counts a file store without an explicit interval at the engine default", () => {
-    const stateAndStream = [
+    const stateStore = [
       "  - name: iii-state",
       "        store_method: file_based",
-      "        save_interval_ms: 2000",
-      "  - name: iii-stream",
-      "        store_method: file_based",
     ].join("\n");
-    expect(engineSaveIntervalMs([stateAndStream])).toBe(5000);
+    expect(engineSaveIntervalMs([stateStore])).toBe(5000);
   });
 
   it("does not cut a long configured interval short", () => {

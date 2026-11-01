@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("iii-sdk", async (importOriginal) => {
   const actual = await importOriginal<typeof import("iii-sdk")>();
@@ -180,67 +180,85 @@ describe("session lifecycle API", () => {
   });
 });
 
-describe("event::session::ended", () => {
-  it("ignores an unknown session without creating a partial row", async () => {
-    const harness = makeHarness();
-    const handler = harness.functions.get("event::session::ended")!;
-
-    const result = await handler({ sessionId: "agent:dmp-pm:direct:test" });
-
-    expect(result).toEqual({ success: true, ended: false, reason: "not_found" });
-    expect(harness.update).not.toHaveBeenCalled();
-    expect(harness.store.get(KV.sessions)).toEqual(new Map());
+describe("api::session::end with final", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
-  it("ignores a malformed session id", async () => {
-    const harness = makeHarness();
-    const handler = harness.functions.get("event::session::ended")!;
+  it("keeps the session open on a per-turn end and schedules the idle finalizer", async () => {
+    const sessionId = "agent:dmp-pm:direct:turn";
+    const harness = makeHarness([[sessionId, session(sessionId)]]);
+    const handler = harness.functions.get("api::session::end")!;
 
-    const result = await handler({});
+    const response = (await handler({ body: { sessionId, final: false } })) as ApiResponse;
 
-    expect(result).toEqual({ success: true, ended: false, reason: "not_found" });
-    expect(harness.kv.get).not.toHaveBeenCalled();
-    expect(harness.update).not.toHaveBeenCalled();
-  });
-
-  it("does not treat an existing partial row as a valid session", async () => {
-    const sessionId = "agent:dmp-pm:direct:partial";
-    const harness = makeHarness([[sessionId, { status: "active" }]]);
-    const handler = harness.functions.get("event::session::ended")!;
-
-    const result = await handler({ sessionId });
-
-    expect(result).toEqual({ success: true, ended: false, reason: "not_found" });
-    expect(harness.update).not.toHaveBeenCalled();
-  });
-
-  it("leaves an already-completed session untouched", async () => {
-    const sessionId = "agent:dmp-pm:direct:completed";
-    const harness = makeHarness([[sessionId, session(sessionId, "completed")]]);
-    const handler = harness.functions.get("event::session::ended")!;
-
-    const result = await handler({ sessionId });
-
-    expect(result).toEqual({
+    expect(response.status_code).toBe(200);
+    expect(response.body).toEqual({
       success: true,
       ended: false,
-      reason: "already_completed",
+      reason: "deferred",
+      finalizeAt: expect.any(String),
     });
-    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.store.get(KV.sessions)?.get(sessionId)).toMatchObject({
+      status: "active",
+      updatedAt: expect.any(String),
+    });
+    expect(harness.kv.set).toHaveBeenCalledWith(KV.config, "finalize:due", {
+      [sessionId]: expect.any(Number),
+    });
+    expect(harness.trigger).not.toHaveBeenCalled();
   });
 
-  it("completes an existing active session", async () => {
-    const sessionId = "agent:dmp-pm:direct:existing";
+  it("reopens an abandoned session on a per-turn end", async () => {
+    const sessionId = "agent:dmp-pm:direct:abandoned";
+    const row = { ...session(sessionId, "abandoned"), endedAt: "2026-08-26T01:00:00.000Z" };
+    const harness = makeHarness([[sessionId, row]]);
+    const handler = harness.functions.get("api::session::end")!;
+
+    const response = (await handler({ body: { sessionId, final: false } })) as ApiResponse;
+
+    expect(response.body).toMatchObject({ ended: false, reason: "deferred" });
+    const stored = harness.store.get(KV.sessions)?.get(sessionId) as Record<string, unknown>;
+    expect(stored.status).toBe("active");
+    expect("endedAt" in stored).toBe(false);
+  });
+
+  it("reports an already completed session on a per-turn end without touching it", async () => {
+    const sessionId = "agent:dmp-pm:direct:completed";
+    const harness = makeHarness([[sessionId, session(sessionId, "completed")]]);
+    const handler = harness.functions.get("api::session::end")!;
+
+    const response = (await handler({ body: { sessionId, final: false } })) as ApiResponse;
+
+    expect(response.body).toEqual({ success: true, ended: false, reason: "already_completed" });
+    expect(harness.update).not.toHaveBeenCalled();
+    expect(harness.kv.set).not.toHaveBeenCalled();
+  });
+
+  it("completes on every end when the idle window is zero", async () => {
+    vi.stubEnv("AGENTMEMORY_FINALIZE_IDLE_MS", "0");
+    const sessionId = "agent:dmp-pm:direct:immediate";
     const harness = makeHarness([[sessionId, session(sessionId)]]);
-    const handler = harness.functions.get("event::session::ended")!;
+    const handler = harness.functions.get("api::session::end")!;
 
-    const result = await handler({ sessionId });
+    const response = (await handler({ body: { sessionId, final: false } })) as ApiResponse;
 
-    expect(result).toEqual({ success: true, ended: true });
-    expect(harness.store.get(KV.sessions)?.get(sessionId)).toMatchObject({
-      id: sessionId,
-      status: "completed",
-      endedAt: expect.any(String),
-    });
+    expect(response.body).toEqual({ success: true, ended: true });
+    expect(harness.store.get(KV.sessions)?.get(sessionId)).toMatchObject({ status: "completed" });
+    expect(harness.trigger).toHaveBeenCalledWith(
+      expect.objectContaining({ function_id: "event::session::stopped" }),
+    );
+  });
+
+  it("completes at once on a final end", async () => {
+    const sessionId = "agent:dmp-pm:direct:final";
+    const harness = makeHarness([[sessionId, session(sessionId)]]);
+    const handler = harness.functions.get("api::session::end")!;
+
+    const response = (await handler({ body: { sessionId, final: true } })) as ApiResponse;
+
+    expect(response.body).toEqual({ success: true, ended: true });
+    expect(harness.store.get(KV.sessions)?.get(sessionId)).toMatchObject({ status: "completed" });
+    expect(harness.trigger).toHaveBeenCalledTimes(1);
   });
 });
