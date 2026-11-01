@@ -750,6 +750,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       }
       const targetLayer = data.targetLayer ?? 'all'
       const MAX_LIMIT = 100
+      const MAX_CANDIDATES = 1000
       let effectiveLimit = 20
       if (data.limit !== undefined) {
         if (!Number.isInteger(data.limit) || data.limit < 1) {
@@ -865,6 +866,10 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         return proj
       }
 
+      const observationCache = new Map<string, Promise<{
+        observation: CompressedObservation
+        layer: SearchResultLayer
+      } | null>>()
       let enriched: SearchResult[] = []
       while (true) {
         if (hybridRanker) {
@@ -917,19 +922,30 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
           candidates.push(r)
         }
 
-        const obsResults = await Promise.all(
-          candidates.map(async (r) => {
-            if (r.observation) return { observation: r.observation, layer: r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId) }
-            const obs = await kv
-              .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
-              .catch(() => null)
-            if (obs) return { observation: obs, layer: "observation" as const }
-            const mem = await kv
-              .get<Memory>(KV.memories, r.obsId)
-              .catch(() => null)
-            return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
-          })
-        )
+        const obsResults: Array<{ observation: CompressedObservation; layer: SearchResultLayer } | null> = []
+        for (let offset = 0; offset < candidates.length; offset += 10) {
+          obsResults.push(...await Promise.all(
+            candidates.slice(offset, offset + 10).map((r) => {
+              const key = JSON.stringify([r.obsId, r.sessionId])
+              let pending = observationCache.get(key)
+              if (!pending) {
+                pending = (async () => {
+                  if (r.observation) return { observation: r.observation, layer: r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId) }
+                  const obs = await kv
+                    .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
+                    .catch(() => null)
+                  if (obs) return { observation: obs, layer: "observation" as const }
+                  const mem = await kv
+                    .get<Memory>(KV.memories, r.obsId)
+                    .catch(() => null)
+                  return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
+                })()
+                observationCache.set(key, pending)
+              }
+              return pending
+            })
+          ))
+        }
         enriched = []
         for (let i = 0; i < candidates.length; i++) {
           const resolved = obsResults[i]
@@ -945,9 +961,9 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
             sessionId: candidates[i].sessionId,
           })
         }
-        if (!filtering || enriched.length >= effectiveLimit || results.length < fetchLimit) break
+        if (!filtering || enriched.length >= effectiveLimit || results.length < fetchLimit || fetchLimit >= MAX_CANDIDATES) break
         // A full candidate window can hide valid matches behind rejected records.
-        fetchLimit *= 2
+        fetchLimit = Math.min(fetchLimit * 2, MAX_CANDIDATES)
       }
 
       const response = buildRecallResponse(enriched, format as RecallFormat, tokenBudget)

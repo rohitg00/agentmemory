@@ -24,6 +24,9 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
     let records: Map<string, Map<string, unknown>>;
     let memories: Memory[];
     let hybridLimits: number[];
+    let memoryReads: string[];
+    let activeObservationReads: number;
+    let maxObservationReads: number;
     let search: (data: Record<string, unknown>) => Promise<{ results: SearchResult[] }>;
 
     const put = (scope: string, key: string, value: unknown) => {
@@ -81,6 +84,9 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       records = new Map();
       memories = [];
       hybridLimits = [];
+      memoryReads = [];
+      activeObservationReads = 0;
+      maxObservationReads = 0;
       getSearchIndex().clear();
       setHybridRanker(null);
       if (ranking !== "keyword") {
@@ -99,7 +105,16 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
         });
       }
       const kv = {
-        get: async (scope: string, key: string) => records.get(scope)?.get(key) ?? null,
+        get: async (scope: string, key: string) => {
+          if (scope === KV.observations("memory")) {
+            memoryReads.push(key);
+            activeObservationReads++;
+            maxObservationReads = Math.max(maxObservationReads, activeObservationReads);
+            await Promise.resolve();
+            activeObservationReads--;
+          }
+          return records.get(scope)?.get(key) ?? null;
+        },
         list: async (scope: string) => [...(records.get(scope)?.values() ?? [])],
       };
       const sdk = {
@@ -178,6 +193,23 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       const matching = addMemory({ id: "mem_matching", project: "project-a", agentId: "agent-a" });
       orderedKeywordResults();
       expect(await recall({ limit: 1, agentId: "agent-a" })).toEqual([matching.id]);
+      if (ranking !== "hybrid") {
+        expect(memoryReads.filter((id) => id === "mem_foreign_agent_0")).toHaveLength(1);
+        expect(maxObservationReads).toBeLessThanOrEqual(10);
+      }
+    });
+
+    it("bounds candidate scanning even when every record is rejected", async () => {
+      for (let i = 0; i < 1001; i++) {
+        addMemory({ id: `mem_foreign_${i}`, project: "project-b" });
+      }
+      addMemory({ id: "mem_beyond_budget", project: "project-a" });
+      const keyword = orderedKeywordResults();
+      expect(await recall({ limit: 1 })).toEqual([]);
+      const requestedLimits = ranking === "hybrid"
+        ? hybridLimits
+        : keyword.mock.calls.map((call) => call[1]);
+      expect(requestedLimits).toEqual([100, 200, 400, 800, 1000]);
     });
 
     it("stops refilling when the candidate source is exhausted", async () => {
