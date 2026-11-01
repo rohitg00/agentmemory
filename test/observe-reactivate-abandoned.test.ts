@@ -122,4 +122,30 @@ describe("observe reactivates abandoned sessions", () => {
     expect(session.endedAt).toBeUndefined();
     expect(session.observationCount).toBe(4);
   });
+
+  it("reopens a completed session when a later turn captures more", async () => {
+    const { registerObserveFunction } = await import("../src/functions/observe.js");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    seedSession(kv.store, "ses_completed", "completed");
+    kv.store.get("mem:sessions")!.set("ses_completed", {
+      ...(kv.store.get("mem:sessions")!.get("ses_completed") as Record<string, unknown>),
+      endedAt: new Date(Date.now() - 60 * 1000).toISOString(),
+    });
+    registerObserveFunction(sdk as never, kv as never);
+
+    await sdk.trigger("mem::observe", {
+      sessionId: "ses_completed",
+      project: "/home/user/myrepo",
+      cwd: "/home/user/myrepo",
+      hookType: "post_tool_use",
+      timestamp: new Date().toISOString(),
+      data: { tool_name: "Edit", tool_input: { file_path: "z.ts" } },
+    });
+
+    const session = kv.store.get("mem:sessions")!.get("ses_completed") as Record<string, unknown>;
+    expect(session.status).toBe("active");
+    expect("endedAt" in session).toBe(false);
+    expect(session.observationCount).toBe(4);
+  });
 });

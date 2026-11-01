@@ -9,6 +9,7 @@ const captureHooks = [
   "post-tool-use",
   "prompt-submit",
   "session-end",
+  "stop",
   "subagent-start",
   "subagent-stop",
   "task-completed",
@@ -29,7 +30,7 @@ describe("shared capture module in plugin/scripts", () => {
   });
 
   it("leaves hooks that do not capture self-contained", () => {
-    for (const hook of ["session-start", "pre-tool-use", "stop", "pre-compact", "post-commit"]) {
+    for (const hook of ["session-start", "pre-tool-use", "pre-compact", "post-commit"]) {
       expect(existsSync(join(scriptsDir, `${hook}.mjs`))).toBe(true);
       expect(readFileSync(join(scriptsDir, `${hook}.mjs`), "utf-8")).not.toContain("_capture.mjs");
     }

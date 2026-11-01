@@ -3,12 +3,12 @@ import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 //#region src/version.ts
-const VERSION = "0.9.30";
+const VERSION = "0.9.31";
 //#endregion
 //#region src/secret-store.ts
 const SECRET_KEY = "AGENTMEMORY_SECRET";
 function agentmemoryHomeDir() {
-	return join(homedir(), ".agentmemory");
+	return process.env["AGENTMEMORY_DATA_DIR"] || join(homedir(), ".agentmemory");
 }
 function secretFilePath() {
 	return join(agentmemoryHomeDir(), "secret");
@@ -32,7 +32,7 @@ function unquote(value) {
 function readEnvFileSecret() {
 	let content;
 	try {
-		content = readFileSync(join(agentmemoryHomeDir(), ".env"), "utf-8");
+		content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
 	} catch {
 		return "";
 	}
@@ -48,12 +48,28 @@ function readEnvFileSecret() {
 	}
 	return found;
 }
-function readStoredSecret() {
+function readSecretFile(path) {
 	try {
-		return usable(readFileSync(secretFilePath(), "utf-8"));
+		return usable(readFileSync(path, "utf-8"));
 	} catch {
 		return "";
 	}
+}
+function legacyDataDirSecretPaths(env = process.env) {
+	const dataDir = env["AGENTMEMORY_DATA_DIR"];
+	if (!dataDir) return [];
+	const paths = [
+		join(dataDir, "secret"),
+		join(dataDir, ".hmac"),
+		join(dataDir, "..", ".hmac")
+	];
+	return [...new Set(paths.filter((path) => path !== secretFilePath()))];
+}
+function readStoredSecret(env = process.env) {
+	const canonicalPath = canonicalSecretPath();
+	const localPath = secretFilePath();
+	const legacyPaths = legacyDataDirSecretPaths(env);
+	return readSecretFile(canonicalPath) || (localPath === canonicalPath ? "" : readSecretFile(localPath)) || legacyPaths.map(readSecretFile).find(Boolean) || "";
 }
 function isLoopbackUrl(url) {
 	let hostname;
@@ -68,8 +84,12 @@ function isLoopbackUrl(url) {
 function resolveClientSecret(baseUrl, env = process.env) {
 	const fromEnv = usable(env[SECRET_KEY]);
 	if (fromEnv) return fromEnv;
+	if (env.AGENTMEMORY_CREDENTIAL_MODE === "explicit") return "";
 	if (!isLoopbackUrl(baseUrl)) return "";
-	return readEnvFileSecret() || readStoredSecret();
+	return readEnvFileSecret() || readStoredSecret(env);
+}
+function canonicalSecretPath() {
+	return join(homedir(), ".agentmemory", "secret");
 }
 //#endregion
 //#region src/mcp/rest-proxy.ts
@@ -81,6 +101,7 @@ function resolveEnvOrEmpty(name) {
 }
 //#endregion
 //#region src/mcp/transport.ts
+let activeStdioTransports = 0;
 var JsonRpcError = class extends Error {
 	constructor(code, message) {
 		super(message);
@@ -233,6 +254,7 @@ function createMessageParser(onMessage, writeErr = (msg) => process.stderr.write
 function createStdioTransport(handler) {
 	let parser = null;
 	let queue = Promise.resolve();
+	let active = false;
 	const writeResponse = (response) => {
 		const formatted = formatResponse(response, parser?.isFramed() ?? false);
 		if (typeof formatted === "string") {
@@ -244,6 +266,10 @@ function createStdioTransport(handler) {
 	const onData = (chunk) => parser?.push(chunk);
 	return {
 		start() {
+			if (active) return;
+			active = true;
+			activeStdioTransports += 1;
+			process.env["AGENTMEMORY_MCP_STDIO__"] = "1";
 			parser = createMessageParser((message) => {
 				queue = queue.then(() => processLine(message, handler, writeResponse));
 				queue.catch((err) => {
@@ -254,6 +280,11 @@ function createStdioTransport(handler) {
 		},
 		stop() {
 			process.stdin.off("data", onData);
+			if (active) {
+				active = false;
+				activeStdioTransports -= 1;
+				if (activeStdioTransports === 0) delete process.env["AGENTMEMORY_MCP_STDIO__"];
+			}
 			parser = null;
 		}
 	};

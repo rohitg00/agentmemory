@@ -42,8 +42,8 @@ export class InMemoryKV {
     return entries ? (Array.from(entries.values()) as T[]) : [];
   }
 
-  persist(): void {
-    if (!this.persistPath) return;
+  persist(): boolean {
+    if (!this.persistPath) return false;
     try {
       const dir = dirname(this.persistPath);
       if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -52,10 +52,12 @@ export class InMemoryKV {
         data[scope] = Object.fromEntries(entries);
       }
       writeFileSync(this.persistPath, JSON.stringify(data), "utf-8");
+      return true;
     } catch (err) {
       process.stderr.write(
         `[@agentmemory/mcp] Persist failed: ${err instanceof Error ? err.message : String(err)}\n`,
       );
+      return false;
     }
   }
 }

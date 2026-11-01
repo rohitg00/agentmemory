@@ -4,18 +4,18 @@ description: Map of every agentmemory MCP tool, what each does, and its paramete
 user-invocable: false
 ---
 
-agentmemory exposes its full capability set as MCP tools. This skill is the index: it tells you which tool to reach for and where to find exact parameters.
+This skill indexes agentmemory's MCP tools. Use the connected server's tool inventory and schemas; a native memory provider may expose a smaller set under different names. Hermes and OpenClaw skills that need the full surface require a separate MCP connection to the running daemon. For Pi and OMP, connect with `--with-mcp` to enable the broader workflows. Pi exposes MCP names with an `mcp__agentmemory__` prefix; OMP exposes MCP operations as `xd://mcp__agentmemory_<tool>` devices through its `write` tool.
 
 ## Quick start
 
 Save then recall:
 
 1. `memory_save` with `content` (the insight), `concepts` (comma-separated keywords), `files` (comma-separated paths).
-2. `memory_smart_search` with `query` and `limit` to retrieve it later. This runs hybrid BM25 plus vector plus graph-expanded search.
+2. `memory_smart_search` with `query`, `limit`, and `targetLayer: "memory"` to retrieve saved knowledge later. Omit `targetLayer` to also search captured observations. This runs hybrid BM25 plus vector plus graph-expanded search.
 
 ## Tool families
 
-- Capture: `memory_save`, `memory_observe` flows, `memory_compress_file`.
+- Capture: `memory_save`, `memory_compress_file`. Automatic observations use native hooks or `POST /agentmemory/observe`, not an MCP observation tool.
 - Retrieve: `memory_smart_search`, `memory_recall`, `memory_file_history`, `memory_timeline`, `memory_vision_search`.
 - Sessions and commits: `memory_sessions`, `memory_commits`, `memory_commit_lookup`.
 - Knowledge and graph: `memory_lesson_save`, `memory_lesson_recall`, `memory_graph_query`, `memory_relations`, `memory_patterns`, `memory_crystallize`.
@@ -27,6 +27,9 @@ Save then recall:
 1. Pick the narrowest tool for the task. Prefer `memory_smart_search` for open recall, `memory_recall` when you already have a focused query, `memory_sessions` for session listings.
 2. Look up exact parameter names and which are required in REFERENCE.md before calling.
 3. Pass only documented fields. REST handlers whitelist fields and drop unknown ones.
+4. For budgeted `memory_recall`, distinguish `matched_count: 0` from
+   `excluded_by_budget > 0`. Expand clipped or omitted IDs with
+   `memory_smart_search` and `expandIds`, preserving the same scope filters.
 
 ## See also
 

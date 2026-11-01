@@ -9,11 +9,14 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { isConsolidationEnabled } from "../config.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { deleteFacetsForTargets } from "./facets.js";
+import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
 
 interface EvictionConfig {
@@ -113,6 +116,21 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
     async (data: { dryRun?: boolean }): Promise<EvictionStats> => {
       const dryRun = data?.dryRun ?? false;
       const { decrementImageRef } = await import("./image-refs.js");
+      let indexCleaned = false;
+      const removeObservation = (
+        sessionId: string,
+        selected: CompressedObservation,
+        eligible: (current: CompressedObservation) => boolean,
+      ) => withKeyedLock(`obs:${sessionId}`, async () => {
+        const current = await kv.get<CompressedObservation>(KV.observations(sessionId), selected.id);
+        if (!current || !eligible(current)) return null;
+        await markCaptureEventDeleted(kv, current);
+        await kv.delete(KV.observations(sessionId), selected.id);
+        getSearchIndex().remove(selected.id);
+        vectorIndexRemove(selected.id);
+        indexCleaned = true;
+        return current;
+      });
 
       const configOverride = await kv
         .get<Partial<EvictionConfig>>(KV.config, "eviction")
@@ -157,6 +175,8 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
               });
             if (!observations) continue;
 
+            const sessionRevision = JSON.stringify(session);
+            const observationsRevision = JSON.stringify(observations);
             let recovered = false;
             const hasCompressedObservations = observations.some(
               isCompressedObservation,
@@ -173,7 +193,16 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
             }
 
             try {
-              await kv.delete(KV.sessions, session.id);
+              const removed = await withKeyedLock(`obs:${session.id}`, async () => {
+                const current = await kv.get<Session>(KV.sessions, session.id);
+                if (!current || JSON.stringify(current) !== sessionRevision) return false;
+                const currentObservations = await kv.list(KV.observations(session.id));
+                if (JSON.stringify(currentObservations) !== observationsRevision) return false;
+                await kv.delete(KV.sessions, session.id);
+                await kv.delete(KV.summaryRepairs, session.id);
+                return true;
+              });
+              if (!removed) continue;
               stats.staleSessions++;
             } catch (err) {
               logger.warn("Eviction delete failed", {
@@ -224,9 +253,13 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
             if (dryRun) {
               stats.lowImportanceObs++;
             } else {
+              let removed: CompressedObservation | null;
               try {
-                await markCaptureEventDeleted(kv, o);
-                await kv.delete(KV.observations(session.id), o.id);
+                removed = await removeObservation(session.id, o, (current) =>
+                  Boolean(current.title) && now - new Date(current.timestamp).getTime() > maxAge &&
+                  (current.importance ?? 5) < cfg.lowImportanceThreshold,
+                );
+                if (!removed) continue;
                 stats.lowImportanceObs++;
               } catch (err) {
                 logger.warn("Eviction delete failed", {
@@ -238,8 +271,8 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 continue;
               }
               await unindexObservationSession(kv, o.id).catch(() => {});
-              if (o.imageData) await decrementImageRef(kv, sdk, o.imageData);
-              if (o.imageRef && o.imageRef !== o.imageData) await decrementImageRef(kv, sdk, o.imageRef);
+              if (removed.imageData) await decrementImageRef(kv, sdk, removed.imageData);
+              if (removed.imageRef && removed.imageRef !== removed.imageData) await decrementImageRef(kv, sdk, removed.imageRef);
               await recordAudit(kv, "delete", "mem::evict", [o.id], {
                 resource: "observation",
                 reason: "low_importance_old_observation",
@@ -269,9 +302,12 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
             stats.capEvictions += toEvict.length;
           } else {
             for (const o of toEvict) {
+              let removed: CompressedObservation | null;
               try {
-                await markCaptureEventDeleted(kv, o);
-                await kv.delete(KV.observations(o.sessionId), o.id);
+                removed = await removeObservation(o.sessionId, o, (current) =>
+                  JSON.stringify(current) === JSON.stringify(o),
+                );
+                if (!removed) continue;
                 stats.capEvictions++;
               } catch (err) {
                 logger.warn("Eviction delete failed", {
@@ -283,8 +319,8 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 continue;
               }
               await unindexObservationSession(kv, o.id).catch(() => {});
-              if (o.imageData) await decrementImageRef(kv, sdk, o.imageData);
-              if (o.imageRef && o.imageRef !== o.imageData) await decrementImageRef(kv, sdk, o.imageRef);
+              if (removed.imageData) await decrementImageRef(kv, sdk, removed.imageData);
+              if (removed.imageRef && removed.imageRef !== removed.imageData) await decrementImageRef(kv, sdk, removed.imageRef);
               await recordAudit(kv, "delete", "mem::evict", [o.id], {
                 resource: "observation",
                 reason: "project_observation_cap",
@@ -298,76 +334,84 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
 
       const memories = await kv.list<Memory>(KV.memories).catch(() => []);
       const evictedMemIds = new Set<string>();
-      for (const mem of memories) {
-        if (mem.forgetAfter) {
-          const expiry = new Date(mem.forgetAfter).getTime();
-          if (now > expiry) {
-            if (dryRun) {
-              stats.expiredMemories++;
-              evictedMemIds.add(mem.id);
-            } else {
-              try {
-                await kv.delete(KV.memories, mem.id);
+      const deletedMemIds = new Set<string>();
+      try {
+        for (const mem of memories) {
+          if (mem.forgetAfter) {
+            const expiry = new Date(mem.forgetAfter).getTime();
+            if (now > expiry) {
+              if (dryRun) {
                 stats.expiredMemories++;
                 evictedMemIds.add(mem.id);
-              } catch (err) {
-                logger.warn("Eviction delete failed", {
+              } else {
+                try {
+                  await kv.delete(KV.memories, mem.id);
+                  deletedMemIds.add(mem.id);
+                  stats.expiredMemories++;
+                  evictedMemIds.add(mem.id);
+                } catch (err) {
+                  logger.warn("Eviction delete failed", {
+                    resource: "memory",
+                    id: mem.id,
+                    reason: "expired_memory",
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                  continue;
+                }
+                if (mem.imageRef) {
+                  await decrementImageRef(kv, sdk, mem.imageRef);
+                }
+                await recordAudit(kv, "delete", "mem::evict", [mem.id], {
                   resource: "memory",
-                  id: mem.id,
                   reason: "expired_memory",
-                  error: err instanceof Error ? err.message : String(err),
+                  dryRun,
                 });
-                continue;
+                await deleteAccessLog(kv, mem.id);
               }
-              if (mem.imageRef) {
-                await decrementImageRef(kv, sdk, mem.imageRef);
-              }
-              await recordAudit(kv, "delete", "mem::evict", [mem.id], {
-                resource: "memory",
-                reason: "expired_memory",
-                dryRun,
-              });
-              await deleteAccessLog(kv, mem.id);
             }
           }
-        }
 
-        if (
-          !evictedMemIds.has(mem.id) &&
-          mem.isLatest === false &&
-          mem.createdAt
-        ) {
-          const age = now - new Date(mem.createdAt).getTime();
-          if (age > cfg.lowImportanceMaxDays * MS_PER_DAY) {
-            if (dryRun) {
-              stats.nonLatestMemories++;
-            } else {
-              try {
-                await kv.delete(KV.memories, mem.id);
+          if (
+            !evictedMemIds.has(mem.id) &&
+            mem.isLatest === false &&
+            mem.createdAt
+          ) {
+            const age = now - new Date(mem.createdAt).getTime();
+            if (age > cfg.lowImportanceMaxDays * MS_PER_DAY) {
+              if (dryRun) {
                 stats.nonLatestMemories++;
-              } catch (err) {
-                logger.warn("Eviction delete failed", {
+              } else {
+                try {
+                  await kv.delete(KV.memories, mem.id);
+                  deletedMemIds.add(mem.id);
+                  stats.nonLatestMemories++;
+                } catch (err) {
+                  logger.warn("Eviction delete failed", {
+                    resource: "memory",
+                    id: mem.id,
+                    reason: "old_non_latest_memory",
+                    error: err instanceof Error ? err.message : String(err),
+                  });
+                  continue;
+                }
+                if (mem.imageRef) {
+                  await decrementImageRef(kv, sdk, mem.imageRef);
+                }
+                await recordAudit(kv, "delete", "mem::evict", [mem.id], {
                   resource: "memory",
-                  id: mem.id,
                   reason: "old_non_latest_memory",
-                  error: err instanceof Error ? err.message : String(err),
+                  dryRun,
                 });
-                continue;
+                await deleteAccessLog(kv, mem.id);
               }
-              if (mem.imageRef) {
-                await decrementImageRef(kv, sdk, mem.imageRef);
-              }
-              await recordAudit(kv, "delete", "mem::evict", [mem.id], {
-                resource: "memory",
-                reason: "old_non_latest_memory",
-                dryRun,
-              });
-              await deleteAccessLog(kv, mem.id);
             }
           }
         }
+      } finally {
+        await deleteFacetsForTargets(kv, deletedMemIds);
       }
 
+      if (indexCleaned) await flushIndexSave();
       logger.info("Eviction complete", { stats });
       return stats;
     },

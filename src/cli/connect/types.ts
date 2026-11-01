@@ -2,6 +2,7 @@ export type ConnectOptions = {
   dryRun: boolean;
   force: boolean;
   withHooks?: boolean;
+  withMcp?: boolean;
   /**
    * When true (default), after wiring the agent's MCP/hooks, also write a
    * memory-usage guideline into the agent's native rules file so hook-less

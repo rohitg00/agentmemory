@@ -165,7 +165,7 @@ export function serverDurableAfterMs(): number {
   const configTexts: string[] = [];
   const dataDir = getEnvVar("AGENTMEMORY_DATA_DIR");
   if (dataDir) {
-    for (const path of engineStateConfigPaths(join(homedir(), ".agentmemory"), runtimeConfigPath(dataDir))) {
+    for (const path of engineStateConfigPaths(dataDir, runtimeConfigPath(dataDir))) {
       try {
         configTexts.push(readFileSync(path, "utf-8"));
       } catch {}

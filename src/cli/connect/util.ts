@@ -6,7 +6,7 @@ import {
   copyFileSync,
   renameSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import * as p from "@clack/prompts";
 
@@ -41,6 +41,14 @@ export const AGENTMEMORY_COPILOT_MCP_BLOCK = {
   },
   tools: ["*"],
 };
+
+export function resolveDshHome(home: string = homedir()): string {
+  const override = process.env["DSH_HOME"];
+  const value = override?.trim() ? override : join(home, ".dsh");
+  if (value === "~") return resolve(home);
+  if (value.startsWith("~/") || value.startsWith("~\\")) return resolve(join(home, value.slice(2)));
+  return resolve(value);
+}
 
 export function backupsDir(): string {
   return join(homedir(), ".agentmemory", "backups");

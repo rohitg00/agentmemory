@@ -440,7 +440,7 @@ agentmemory  ──push──▶  OpenCode system prompt
 
 ### Why OpenCode goes direct
 
-agentmemory already persists everything in SQLite (`data/state_store.db`). Adding an intermediate MEMORY.md file would duplicate data, introduce sync lag, and require the model to re-parse structured context from markdown. Direct injection delivers the same data with lower latency and zero staleness — the agent always sees what agentmemory knows right now.
+agentmemory persists state through the iii state worker, using file-backed KV (`data/state_store.db`) by default or Redis when configured. Adding an intermediate MEMORY.md file would duplicate data, introduce sync lag, and require the model to re-parse structured context from markdown. Direct injection delivers the same data with lower latency and zero staleness — the agent always sees what agentmemory knows right now.
 
 ## Slash commands
 

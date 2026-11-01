@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,27 +18,29 @@ const resolvers: Array<[string, Resolver]> = [
   ["pi", piSecret],
 ];
 
-function hasPython(): boolean {
-  return spawnSync("python3", ["--version"], { stdio: "ignore" }).status === 0;
-}
+const python = (() => {
+  try { return execFileSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" }).trim(); }
+  catch { return null; }
+})();
 
-function hermesSecret(home: string, url: string, explicit?: string): string {
+function hermesCredentialState(home: string): { available: boolean; reason: string } {
   const script = [
-    "import importlib.util, sys",
+    "import importlib.util, json, sys",
+    "sys.modules['agent.secret_scope'] = None",
     "spec = importlib.util.spec_from_file_location('hermes_plugin', sys.argv[1])",
     "mod = importlib.util.module_from_spec(spec)",
     "spec.loader.exec_module(mod)",
-    "import os",
-    "print(mod._usable_secret(os.environ.get('AGENTMEMORY_SECRET')) or mod._stored_secret(sys.argv[2]))",
+    "provider = mod.AgentMemoryProvider()",
+    "print(json.dumps({'available': provider.is_available(), 'reason': provider.unavailable_reason()}))",
   ].join("\n");
-  const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: home, USERPROFILE: home };
-  if (explicit !== undefined) env[KEY] = explicit;
-  const result = spawnSync("python3", ["-c", script, join(process.cwd(), "integrations", "hermes", "__init__.py"), url], {
-    env,
+  if (!python) throw new Error("python3 is unavailable");
+  const result = spawnSync(python, ["-c", script, join(process.cwd(), "integrations", "hermes", "__init__.py")], {
+    env: { PATH: process.env.PATH, HOME: home, HERMES_HOME: join(home, ".hermes"), AGENTMEMORY_SECRET: "process-secret-must-not-be-used" },
     encoding: "utf-8",
+    timeout: 5_000,
   });
-  if (result.status !== 0) throw new Error(result.stderr);
-  return result.stdout.trim();
+  if (result.status !== 0) throw new Error([result.error?.message, result.signal, result.stderr].filter(Boolean).join("\n"));
+  return JSON.parse(result.stdout);
 }
 
 describe("client secret resolution", () => {
@@ -111,13 +113,11 @@ describe("client secret resolution", () => {
     expect(seen[0]?.Authorization).toBe("Bearer from-env-file");
   });
 
-  it.skipIf(!hasPython())("hermes follows the same order and keeps its loopback restriction", () => {
+  it.skipIf(!python)("hermes fails closed when scoped credential access is unavailable", () => {
     writeSecrets('AGENTMEMORY_SECRET="from-env-file"\n');
-    expect(hermesSecret(home, LOCAL)).toBe("from-env-file");
-    expect(hermesSecret(home, LOCAL, "explicit-value")).toBe("explicit-value");
-    expect(hermesSecret(home, "https://memory.example.com", "${AGENTMEMORY_SECRET}")).toBe("");
-    writeFileSync(join(home, ".agentmemory", ".env"), "AGENTMEMORY_SECRET=${AGENTMEMORY_SECRET}\n");
-    expect(hermesSecret(home, LOCAL)).toBe("generated-secret");
-    expect(hermesSecret(home, "https://memory.example.com")).toBe("");
+    const result = hermesCredentialState(home);
+    expect(result.available).toBe(false);
+    expect(result.reason).toContain("scoped credential access is unavailable");
+    expect(result.reason).not.toMatch(/process-secret|from-env-file|generated-secret/);
   });
 });

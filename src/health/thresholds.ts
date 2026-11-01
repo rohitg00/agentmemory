@@ -41,10 +41,7 @@ export function evaluateHealth(
     degraded = true;
   }
 
-  if (snapshot.streamRelay === "down") {
-    alerts.push("stream_relay_down");
-    degraded = true;
-  }
+
 
   if (snapshot.eventLoopLagMs > cfg.eventLoopLagCriticalMs) {
     alerts.push(

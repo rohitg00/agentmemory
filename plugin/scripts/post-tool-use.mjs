@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execSync } from "node:child_process";
-import { basename } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
 //#region src/hooks/_capture-filter.ts
 const DEFAULT_DENY_PATTERNS = [
@@ -70,7 +71,7 @@ function resolveProject(cwd) {
 	if (explicit && explicit.trim()) return explicit.trim();
 	const dir = cwd && cwd.trim() ? cwd : process.cwd();
 	try {
-		const top = execSync("git rev-parse --show-toplevel", {
+		const [top, gitDir, commonDir] = execSync("git rev-parse --show-toplevel --git-dir --git-common-dir", {
 			cwd: dir,
 			stdio: [
 				"ignore",
@@ -78,10 +79,17 @@ function resolveProject(cwd) {
 				"ignore"
 			],
 			timeout: 500
-		}).toString().trim();
-		if (top) return basename(top);
+		}).toString().trim().split(/\r?\n/);
+		if (top) return basename(repositoryRoot(dir, top, gitDir, commonDir));
 	} catch {}
 	return basename(dir);
+}
+function repositoryRoot(dir, top, gitDir, commonDir) {
+	if (!gitDir || !commonDir) return top;
+	const physical = realpathSync(dir);
+	const common = resolve(physical, commonDir);
+	if (resolve(physical, gitDir) === common || basename(common) !== ".git") return top;
+	return dirname(common);
 }
 function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;

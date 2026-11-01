@@ -62,4 +62,4 @@ RIGHT: search first, save each decision as it settles, let hooks own the summary
 
 ## Troubleshooting
 
-See ../_shared/TROUBLESHOOTING.md if `memory_smart_search` or `memory_save` is not available.
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if `memory_smart_search` or `memory_save` is not available.

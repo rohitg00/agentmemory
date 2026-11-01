@@ -50,14 +50,14 @@ import { registerObserveFunction } from "../src/functions/observe.js";
 import { registerCompressFunction } from "../src/functions/compress.js";
 import type { RawObservation, CompressedObservation, MemoryProvider } from "../src/types.js";
 
-const VALID_COMPRESS_XML = `<type>image</type>
+const VALID_COMPRESS_XML = `<observation><type>image</type>
 <title>Screenshot of Red Dot</title>
 <subtitle>Test image observation</subtitle>
 <facts><fact>Image shows a single red pixel on white background</fact></facts>
 <narrative>A vision model described a screenshot showing a red dot on a white background</narrative>
 <concepts><concept>testing</concept><concept>screenshot</concept></concepts>
 <files></files>
-<importance>5</importance>`;
+<importance>5</importance></observation>`;
 
 describe("End-to-End Multimodal Flow", () => {
   let savedImagePath: string | undefined;
@@ -148,7 +148,6 @@ describe("End-to-End Multimodal Flow", () => {
     const result = await compressCallback({
       observationId: raw.id,
       sessionId: raw.sessionId,
-      raw,
     });
 
     expect(result.success).toBe(true);
@@ -401,6 +400,7 @@ describe("mem::compress image descriptions", () => {
       modality: "image",
       imageData: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
     } as unknown as RawObservation;
+    await store.set(`mem:obs:${raw.sessionId}`, raw.id, raw);
     const result = await handler({ observationId: raw.id, sessionId: raw.sessionId, raw });
     expect(result.success).toBe(true);
     return (await store.get("mem:obs:ses_img_scrub", "obs_img_scrub")) as CompressedObservation;

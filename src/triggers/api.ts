@@ -6,8 +6,10 @@ import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSu
 import { AUDIT_MIGRATION_STATE_KEY } from "../functions/audit.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
+import { isSearchLayer, type SearchLayer } from "../state/search-layer.js";
 import { checkPayloadFrameSize } from "../state/frame-guard.js";
 import { StateKV } from "../state/kv.js";
+import { pinGraphState } from "../state/graph-generation.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { getLatestHealth } from "../health/monitor.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
@@ -47,12 +49,20 @@ import { MAX_FILES_UPPER_BOUND } from "../functions/replay.js";
 import { describeGraphNode } from "../functions/graph-node.js";
 import { COMPACT_SCOPES, type GraphCompactScope } from "../functions/graph.js";
 import { getGraphCompactBootStatus } from "../functions/graph-compact-boot.js";
+import { getGraphIndexMigrationStatus } from "../state/graph-index-migration.js";
+import { GraphIndexError } from "../state/graph-retrieval-index.js";
+import { registerGraphIndexApi } from "./graph-index-api.js";
 import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { logger } from "../logger.js";
+import { getLiveEventsStats } from "../viewer/live-events.js";
 import { isValidEventId } from "../capture/event-id.js";
 import { getCaptureController, type CaptureResult } from "../functions/capture.js";
 import { withoutObservationSource } from "../functions/observation-source.js";
+import { clearSessionFinalize, scheduleSessionFinalize } from "../functions/session-finalize.js";
+import { requestSummaryRefresh } from "../functions/summary-state.js";
+import { registerCompressionApi } from "./compression.js";
 import {
+  getFinalizeIdleMs,
   isGraphExtractionEnabled,
   isConsolidationEnabled,
   getConsolidationIntervalMs,
@@ -60,7 +70,7 @@ import {
   getConsolidationDecayDays,
   isAutoCompressEnabled,
   isContextInjectionEnabled,
-  detectEmbeddingProvider,
+  describeLlmRoute,
   detectLlmProviderKind,
   getAgentId,
   isAgentScopeIsolated,
@@ -319,7 +329,7 @@ function sessionFacets(
 function describeEmbeddingProvider(): string {
   const active = getEmbeddingProvider();
   if (active) return `${active.name} (${active.dimensions} dims)`;
-  return detectEmbeddingProvider() ?? "none";
+  return "none";
 }
 
 const STATUS_CHECK_TIMEOUT_MS = 5000;
@@ -381,7 +391,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
     const cached = scan.last && options.scanMaxAgeMs !== undefined && Date.now() - scan.last.at < options.scanMaxAgeMs
       ? scan.last.value
       : null;
-    const [health, functionMetrics, graph, unindexed, auditMigrationState, stateStore, capture] = await Promise.all([
+    const [health, functionMetrics, graph, unindexed, auditMigrationState, stateStore, capture, graphIndex] = await Promise.all([
       options.health !== undefined ? Promise.resolve(options.health) : valueWithin(getLatestHealth(kv), STATUS_CHECK_TIMEOUT_MS),
       deps.metricsStore ? valueWithin(deps.metricsStore.getAll(), STATUS_CHECK_TIMEOUT_MS) : Promise.resolve([]),
       valueWithin(
@@ -395,6 +405,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
       ),
       probeStateStore(kv),
       valueWithin(getCaptureController()?.status() ?? Promise.resolve(null), STATUS_CHECK_TIMEOUT_MS),
+      valueWithin(getGraphIndexMigrationStatus(kv), STATUS_CHECK_TIMEOUT_MS),
     ]);
     const observationsIndexed = [...idx.observationCountsBySession().values()].reduce((a, n) => a + n, 0);
     const documentKinds = idx.documentKindCounts();
@@ -406,12 +417,11 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
     return evaluateStatus({
       now: new Date(),
       version: VERSION,
-      engineVersion: III_PINNED_VERSION,
+      enginePinnedVersion: III_PINNED_VERSION,
       uptimeSeconds: Math.round(process.uptime()),
       stateBackend: kv.backend === "redis" ? "redis" : "file",
       ports: {
         rest: config.restPort ?? null,
-        streams: config.streamsPort ?? null,
         viewer: getViewerSkipped() ? null : (getBoundViewerPort() ?? null),
       },
       health: health
@@ -426,6 +436,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
           }
         : null,
       circuitBreaker: circuit,
+      llmRoute: describeLlmRoute(config.provider),
       functionMetrics: functionMetrics ?? [],
       provider: detectLlmProviderKind(),
       embeddingProvider: describeEmbeddingProvider(),
@@ -445,6 +456,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
         vectorBackfillState: getVectorBackfillState(),
       },
       graph,
+      graphIndex,
       graphCompaction: getGraphCompactBootStatus(),
       graphExtractionEnabled: isGraphExtractionEnabled(),
       auditLegacy: auditMigrationState
@@ -516,6 +528,10 @@ export function registerApiTriggers(
   metricsStore?: MetricsStore,
   provider?: ResilientProvider | { circuitState?: unknown },
 ): void {
+  registerGraphIndexApi(sdk, secret, checkAuth);
+  sdk.registerTrigger({ type: "http", function_id: "api::graph-index-status", config: { api_path: "/agentmemory/graph/index", http_method: "GET" } });
+  sdk.registerTrigger({ type: "http", function_id: "api::graph-index-migrate", config: { api_path: "/agentmemory/graph/index/migrate", http_method: "POST" } });
+  sdk.registerTrigger({ type: "http", function_id: "api::graph-index-resume", config: { api_path: "/agentmemory/graph/index/resume", http_method: "POST" } });
   sdk.registerFunction(
     "middleware::api-auth",
     async (input: {
@@ -539,19 +555,13 @@ export function registerApiTriggers(
     },
   );
 
-  // Shared instance metadata for livez and health so the two never
-  // drift. streamsPort lets the viewer resolve its stream WebSocket
-  // target from the server instead of port arithmetic, which broke
-  // whenever the viewer bound a fallback port. Config is boot-static,
-  // so read it once instead of rebuilding the merged env per request.
+  // Config is boot-static, so read it once rather than rebuilding the merged env per request.
   const bootConfig = loadConfig();
-  const bootStreamsPort = bootConfig.streamsPort;
   setRestOriginPorts(() => [bootConfig.restPort, bootConfig.viewerPort, getBoundViewerPort()]);
   const instanceInfo = () => ({
     service: "agentmemory",
     viewerPort: getBoundViewerPort(),
     viewerSkipped: getViewerSkipped(),
-    streamsPort: bootStreamsPort,
   });
 
   sdk.registerFunction("api::liveness",
@@ -595,7 +605,7 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::health", 
-    async (req: HttpRequest): Promise<Response> => {
+    async (): Promise<Response> => {
       const health = await getLatestHealth(kv);
       const functionMetrics = metricsStore ? await metricsStore.getAll() : [];
       const circuitBreaker =
@@ -649,7 +659,7 @@ export function registerApiTriggers(
           body: renderStatusHtml(report, nonce, { viewerUrl: statusViewerUrl(req, report.service.ports.viewer) }),
         };
       }
-      return { status_code: 200, headers: { "Cache-Control": "no-store" }, body: report };
+      return { status_code: 200, headers: { "Cache-Control": "no-store" }, body: { ...report, liveEvents: getLiveEventsStats() } };
     },
   );
   sdk.registerTrigger({
@@ -847,10 +857,14 @@ export function registerApiTriggers(
         cwd?: string;
         format?: string;
         token_budget?: number;
+        targetLayer?: SearchLayer;
         agentId?: string;
       }>,
     ): Promise<Response> => {
       const body = (req.body ?? {}) as Record<string, unknown>;
+      if (body.targetLayer !== undefined && !isSearchLayer(body.targetLayer)) {
+        return { status_code: 400, body: { error: "targetLayer must be one of: all, memory, observation" } };
+      }
       const queryAgentId =
         typeof (req as { query_params?: Record<string, string> })
           .query_params?.["agentId"] === "string"
@@ -866,11 +880,10 @@ export function registerApiTriggers(
       ) {
         return { status_code: 400, body: { error: "limit must be a positive integer" } };
       }
-      if (body.project !== undefined && typeof body.project !== "string") {
-        return { status_code: 400, body: { error: "project must be a string" } };
-      }
-      if (body.cwd !== undefined && typeof body.cwd !== "string") {
-        return { status_code: 400, body: { error: "cwd must be a string" } };
+      for (const field of ["project", "cwd", "agentId"] as const) {
+        if (body[field] !== undefined && typeof body[field] !== "string") {
+          return { status_code: 400, body: { error: `${field} must be a string` } };
+        }
       }
       if (
         body.format !== undefined &&
@@ -906,6 +919,7 @@ export function registerApiTriggers(
             : undefined,
         token_budget: body.token_budget as number | undefined,
         agentId: bodyAgentId ?? queryAgentId,
+        targetLayer: body.targetLayer ?? "all",
       };
       const result = await sdk.trigger({ function_id: "mem::search", payload: payload });
       return { status_code: 200, body: result };
@@ -918,6 +932,24 @@ export function registerApiTriggers(
       api_path: "/agentmemory/search",
       http_method: "POST",
       middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
+  registerCompressionApi(sdk, secret);
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::compression-status",
+    config: {
+      http_method: "GET",
+      api_path: "/agentmemory/compression",
+    },
+  });
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::compression-retry",
+    config: {
+      http_method: "POST",
+      api_path: "/agentmemory/compression/retry",
     },
   });
 
@@ -1112,12 +1144,45 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::session::end",
-    async (req: HttpRequest<{ sessionId: string }>): Promise<Response> => {
-      const sessionId = asNonEmptyString((req.body as Record<string, unknown>)?.sessionId);
+    async (req: HttpRequest<{ sessionId: string; final?: boolean }>): Promise<Response> => {
+      const body = req.body as Record<string, unknown> | undefined;
+      const sessionId = asNonEmptyString(body?.sessionId);
       if (!sessionId) {
         return {
           status_code: 400,
           body: { error: "sessionId is required and must be a non-empty string" },
+        };
+      }
+      if (body?.final === false && getFinalizeIdleMs() > 0) {
+        const deferResult = await withKeyedLock(`obs:${sessionId}`, async () => {
+          const session = await kv.get<Session>(KV.sessions, sessionId);
+          if (!session || session.id !== sessionId) return "not_found" as const;
+          if (session.status === "completed") return "already_completed" as const;
+          const updates: Array<{ type: "set" | "remove"; path: string; value?: unknown }> = [
+            { type: "set", path: "updatedAt", value: new Date().toISOString() },
+          ];
+          if (session.status === "abandoned") {
+            updates.push({ type: "set", path: "status", value: "active" });
+            updates.push({ type: "remove", path: "endedAt" });
+          }
+          await kv.update(KV.sessions, sessionId, updates);
+          return "deferred" as const;
+        });
+        if (deferResult !== "deferred") {
+          return {
+            status_code: 200,
+            body: { success: true, ended: false, reason: deferResult },
+          };
+        }
+        const finalizeAt = await scheduleSessionFinalize(kv, sessionId);
+        return {
+          status_code: 200,
+          body: {
+            success: true,
+            ended: false,
+            reason: "deferred",
+            finalizeAt: new Date(finalizeAt).toISOString(),
+          },
         };
       }
       const endResult = await withKeyedLock(`obs:${sessionId}`, async () => {
@@ -1125,6 +1190,7 @@ export function registerApiTriggers(
         if (!session || session.id !== sessionId) return "not_found" as const;
         if (session.status === "completed") return "already_completed" as const;
 
+        await requestSummaryRefresh(kv, sessionId);
         await kv.update(KV.sessions, sessionId, [
           { type: "set", path: "endedAt", value: new Date().toISOString() },
           { type: "set", path: "status", value: "completed" },
@@ -1137,9 +1203,10 @@ export function registerApiTriggers(
           body: { success: true, ended: false, reason: endResult },
         };
       }
+      await clearSessionFinalize(kv, sessionId).catch(() => {});
       // Fan out session-stopped lifecycle (non-blocking).
       try {
-        sdk.trigger({
+        void sdk.trigger({
           function_id: "event::session::stopped",
           payload: { sessionId },
           action: TriggerAction.Void(),
@@ -1741,10 +1808,11 @@ export function registerApiTriggers(
     async (
       req: HttpRequest<{
         query?: string;
-        expandIds?: Array<string | { obsId: string; sessionId: string }>;
+        expandIds?: Array<string | { obsId: string; sessionId?: string }>;
         limit?: number;
         project?: string;
         includeLessons?: boolean;
+        targetLayer?: SearchLayer;
         agentId?: string;
         sessionId?: string;
         source?: string;
@@ -1752,10 +1820,34 @@ export function registerApiTriggers(
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      if (
-        !req.body?.query &&
-        (!req.body?.expandIds || req.body.expandIds.length === 0)
-      ) {
+      if (req.body?.targetLayer !== undefined && !isSearchLayer(req.body.targetLayer)) {
+        return { status_code: 400, body: { error: "targetLayer must be one of: all, memory, observation" } };
+      }
+      const body = req.body ?? {};
+      for (const field of ["query", "project", "agentId", "sessionId", "source"] as const) {
+        if (body[field] !== undefined && typeof body[field] !== "string") {
+          return { status_code: 400, body: { error: `${field} must be a string` } };
+        }
+      }
+      if (body.includeLessons !== undefined && typeof body.includeLessons !== "boolean") {
+        return { status_code: 400, body: { error: "includeLessons must be a boolean" } };
+      }
+      if (body.expandIds !== undefined && (
+        !Array.isArray(body.expandIds) || !body.expandIds.every((entry) => {
+          if (typeof entry === "string") return entry.trim().length > 0;
+          return entry && typeof entry === "object" &&
+            typeof entry.obsId === "string" && entry.obsId.trim().length > 0 &&
+            (entry.sessionId === undefined || (typeof entry.sessionId === "string" && entry.sessionId.trim().length > 0));
+        })
+      )) {
+        return { status_code: 400, body: { error: "expandIds must be an array of non-empty IDs or objects with obsId and optional sessionId strings" } };
+      }
+      const expandIds = body.expandIds?.map((entry) => {
+        if (typeof entry === "string") return entry.trim();
+        if (entry.sessionId !== undefined) return { obsId: entry.obsId.trim(), sessionId: entry.sessionId.trim() };
+        return entry.obsId.trim();
+      });
+      if (!body.query?.trim() && !expandIds?.length) {
         return {
           status_code: 400,
           body: { error: "query or expandIds is required" },
@@ -1769,11 +1861,12 @@ export function registerApiTriggers(
       // section). Drops unknown fields so a misbehaving client can't
       // inject downstream-only options.
       const payload = {
-        query: req.body?.query,
-        expandIds: req.body?.expandIds,
+        query: body.query?.trim() || undefined,
+        expandIds,
         limit: req.body?.limit,
         project: req.body?.project,
         includeLessons: req.body?.includeLessons,
+        targetLayer: req.body?.targetLayer ?? "all",
         agentId: req.body?.agentId,
         sessionId: req.body?.sessionId,
         source: req.body?.source ?? sourceFromHeader,
@@ -1872,9 +1965,18 @@ export function registerApiTriggers(
       // real corpus (40 sessions × 34K observations × 8K memories) hit the
       // iii engine invocation timeout and `agentmemory status` reported 0.
       // Pass through the query-string pagination so callers can chunk.
+      const payload: {
+        maxSessions?: number;
+        offset?: number;
+        collectionLimit?: number;
+        collectionOffset?: number;
+        collections?: string;
+      } = {};
       const rawMax = req.query_params?.["maxSessions"];
       const rawOffset = req.query_params?.["offset"];
-      const payload: { maxSessions?: number; offset?: number } = {};
+      const rawCollectionLimit = req.query_params?.["collectionLimit"];
+      const rawCollectionOffset = req.query_params?.["collectionOffset"];
+      const rawCollections = req.query_params?.["collections"];
       if (typeof rawMax === "string") {
         const n = Number(rawMax);
         if (Number.isInteger(n) && n > 0) payload.maxSessions = n;
@@ -1882,6 +1984,17 @@ export function registerApiTriggers(
       if (typeof rawOffset === "string") {
         const n = Number(rawOffset);
         if (Number.isInteger(n) && n >= 0) payload.offset = n;
+      }
+      if (typeof rawCollectionLimit === "string") {
+        const n = Number(rawCollectionLimit);
+        if (Number.isInteger(n) && n > 0) payload.collectionLimit = n;
+      }
+      if (typeof rawCollectionOffset === "string") {
+        const n = Number(rawCollectionOffset);
+        if (Number.isInteger(n) && n >= 0) payload.collectionOffset = n;
+      }
+      if (typeof rawCollections === "string") {
+        payload.collections = rawCollections;
       }
       const result = await sdk.trigger({
         function_id: "mem::export",
@@ -2101,9 +2214,21 @@ export function registerApiTriggers(
       if (authErr) return authErr;
       const id = asNonEmptyString(req.query_params?.["id"]);
       if (!id) return { status_code: 400, body: { error: "id required" } };
-      const detail = await describeGraphNode(kv, id);
-      if (!detail) return { status_code: 404, body: { error: "graph node not found", id } };
-      return { status_code: 200, body: detail };
+      const cursor = req.query_params?.["cursor"];
+      const limit = parseOptionalPositiveInt(req.query_params?.["limit"]);
+      if (cursor !== undefined && typeof cursor !== "string") return { status_code: 400, body: { error: "cursor must be a string" } };
+      if (limit === null || (limit !== undefined && limit > 200)) return { status_code: 400, body: { error: "limit must be an integer between 1 and 200" } };
+      try {
+        const detail = await describeGraphNode(kv, id, { cursor: cursor || undefined, limit });
+        if (!detail) return { status_code: 404, body: { error: "graph node not found", id } };
+        if ("error" in detail) return { status_code: 503, body: detail };
+        return { status_code: 200, body: detail };
+      } catch (error) {
+        if (error instanceof GraphIndexError && error.message === "Invalid or expired graph posting cursor") {
+          return { status_code: 400, body: { error: "Invalid or expired graph cursor" } };
+        }
+        return { status_code: 503, body: { error: "Graph node index is unavailable" } };
+      }
     },
   );
   sdk.registerTrigger({
@@ -3074,10 +3199,13 @@ export function registerApiTriggers(
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const listQuery = parseListQuery(req.query_params);
       const result = await sdk.trigger({ function_id: "mem::action-list", payload: {
         status: req.query_params?.["status"],
         project: req.query_params?.["project"],
         parentId: req.query_params?.["parentId"],
+        limit: listQuery.limit,
+        cursor: listQuery.cursor,
       } });
       return { status_code: 200, body: result };
     },
@@ -3509,11 +3637,12 @@ export function registerApiTriggers(
         actions: df(actions, "updatedAt"),
       };
       if (!project) {
+        const graphState = await pinGraphState(kv);
         const semantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
         const procedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
         const relations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
-        const graphNodes = await kv.list<import("../types.js").GraphNode>(KV.graphNodes);
-        const graphEdges = await kv.list<import("../types.js").GraphEdge>(KV.graphEdges);
+        const graphNodes = await graphState.list<import("../types.js").GraphNode>(KV.graphNodes);
+        const graphEdges = await graphState.list<import("../types.js").GraphEdge>(KV.graphEdges);
         body.semantic = df(semantic, "updatedAt");
         body.procedural = df(procedural, "updatedAt");
         body.relations = df(relations, "createdAt");

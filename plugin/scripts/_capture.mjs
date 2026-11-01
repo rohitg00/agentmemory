@@ -6,7 +6,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 //#region src/secret-store.ts
 const SECRET_KEY = "AGENTMEMORY_SECRET";
 function agentmemoryHomeDir() {
-	return join(homedir(), ".agentmemory");
+	return process.env["AGENTMEMORY_DATA_DIR"] || join(homedir(), ".agentmemory");
 }
 function secretFilePath() {
 	return join(agentmemoryHomeDir(), "secret");
@@ -30,7 +30,7 @@ function unquote(value) {
 function readEnvFileSecret() {
 	let content;
 	try {
-		content = readFileSync(join(agentmemoryHomeDir(), ".env"), "utf-8");
+		content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
 	} catch {
 		return "";
 	}
@@ -46,12 +46,28 @@ function readEnvFileSecret() {
 	}
 	return found;
 }
-function readStoredSecret() {
+function readSecretFile(path) {
 	try {
-		return usable(readFileSync(secretFilePath(), "utf-8"));
+		return usable(readFileSync(path, "utf-8"));
 	} catch {
 		return "";
 	}
+}
+function legacyDataDirSecretPaths(env = process.env) {
+	const dataDir = env["AGENTMEMORY_DATA_DIR"];
+	if (!dataDir) return [];
+	const paths = [
+		join(dataDir, "secret"),
+		join(dataDir, ".hmac"),
+		join(dataDir, "..", ".hmac")
+	];
+	return [...new Set(paths.filter((path) => path !== secretFilePath()))];
+}
+function readStoredSecret(env = process.env) {
+	const canonicalPath = canonicalSecretPath();
+	const localPath = secretFilePath();
+	const legacyPaths = legacyDataDirSecretPaths(env);
+	return readSecretFile(canonicalPath) || (localPath === canonicalPath ? "" : readSecretFile(localPath)) || legacyPaths.map(readSecretFile).find(Boolean) || "";
 }
 function isLoopbackUrl(url) {
 	let hostname;
@@ -66,8 +82,12 @@ function isLoopbackUrl(url) {
 function resolveClientSecret(baseUrl, env = process.env) {
 	const fromEnv = usable(env[SECRET_KEY]);
 	if (fromEnv) return fromEnv;
+	if (env.AGENTMEMORY_CREDENTIAL_MODE === "explicit") return "";
 	if (!isLoopbackUrl(baseUrl)) return "";
-	return readEnvFileSecret() || readStoredSecret();
+	return readEnvFileSecret() || readStoredSecret(env);
+}
+function canonicalSecretPath() {
+	return join(homedir(), ".agentmemory", "secret");
 }
 //#endregion
 //#region src/capture/event-id.ts
@@ -220,9 +240,9 @@ const PRIVATE_TAG_RE = /<private>[\s\S]*?<\/private>/gi;
 const SECRET_PATTERN_SOURCES = [
 	/(?:api[_-]?key|secret|token|password|credential|auth)[\s]*[=:]\s*["']?[A-Za-z0-9_\-/.+]{20,}["']?/gi,
 	/Bearer\s+[A-Za-z0-9._\-+/=]{20,}/gi,
-	/sk-proj-[A-Za-z0-9\-_]{20,}/g,
-	/(?:sk|pk|rk|ak)-[A-Za-z0-9][A-Za-z0-9\-_]{19,}/g,
-	/sk-ant-[A-Za-z0-9\-_]{20,}/g,
+	/(?<![\p{L}\p{N}\p{M}_])sk-proj-[A-Za-z0-9\-_]{20,}/gu,
+	/(?<![\p{L}\p{N}\p{M}_])(?:sk|pk|rk|ak)-[A-Za-z0-9][A-Za-z0-9\-_]{19,}/gu,
+	/(?<![\p{L}\p{N}\p{M}_])sk-ant-[A-Za-z0-9\-_]{20,}/gu,
 	/gh[pus]_[A-Za-z0-9]{36,}/g,
 	/github_pat_[A-Za-z0-9_]{22,}/g,
 	/xoxb-[A-Za-z0-9\-]+/g,
@@ -245,6 +265,29 @@ function stripPrivateData(input) {
 	}
 	return result;
 }
+function scrubRecord(value, options = {}) {
+	if (typeof value === "string") return stripPrivateData(value);
+	if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options));
+	if (value !== null && typeof value === "object") {
+		const proto = Object.getPrototypeOf(value);
+		if (proto !== Object.prototype && proto !== null) return value;
+		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? stripPrivateData(key) : key, item]);
+		const reserved = new Set(entries.map(([key]) => key));
+		const used = /* @__PURE__ */ new Set();
+		return Object.fromEntries(entries.map(([key, item]) => {
+			let unique = key;
+			if (used.has(unique)) {
+				let suffix = 2;
+				do
+					unique = `${key}_${suffix++}`;
+				while (reserved.has(unique) || used.has(unique));
+			}
+			used.add(unique);
+			return [unique, scrubRecord(item, options)];
+		}));
+	}
+	return value;
+}
 //#endregion
 //#region src/capture/spool.ts
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
@@ -258,7 +301,7 @@ const IMAGE_PLACEHOLDER = "[image dropped from capture spool]";
 const BOOT_ID_RE = /^[A-Za-z0-9]{8,64}$/;
 const SENT_FILE_RE = /^([A-Za-z0-9]{8,64})-(\d+)\.jsonl$/;
 const SENT_BUCKET_MS = 1e3;
-const MAX_DURABLE_AFTER_MS = 10 * 6e4;
+const MAX_DURABLE_AFTER_MS = 61 * 6e4;
 function emptyStats() {
 	return {
 		spooled: 0,
@@ -390,13 +433,6 @@ function fileSize(path) {
 		return 0;
 	}
 }
-function sanitizeBody(body) {
-	try {
-		return JSON.parse(stripPrivateData(JSON.stringify(body)));
-	} catch {
-		return body;
-	}
-}
 function withoutImage(body) {
 	const data = body["data"];
 	if (!data || typeof data !== "object" || Array.isArray(data)) return body;
@@ -482,7 +518,7 @@ function appendSpool(url, eventId, body, reason, options = {}) {
 			spooledAt: (/* @__PURE__ */ new Date()).toISOString(),
 			reason,
 			attempts: options.attempts ?? 0,
-			body: sanitizeBody(body)
+			body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true })
 		};
 		let line = JSON.stringify(record) + "\n";
 		if (Buffer.byteLength(line) > policy.maxRecordBytes) {
@@ -582,7 +618,7 @@ function retainSent(url, eventId, body, mark, options = {}) {
 			spooledAt: new Date(now).toISOString(),
 			reason: "sent",
 			attempts: 0,
-			body: sanitizeBody(body),
+			body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true }),
 			bootId: mark.bootId
 		};
 		let line = JSON.stringify(record) + "\n";
@@ -903,6 +939,6 @@ async function runDrainChild() {
 	}).catch(() => void 0);
 }
 //#endregion
-export { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId };
+export { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, stripPrivateData, withEventId };
 
 //# sourceMappingURL=_capture.mjs.map

@@ -10,7 +10,7 @@ import { parseJsonlText } from "../src/replay/jsonl-parser.js";
 import { configFromEnv } from "../integrations/filesystem-watcher/watcher.mjs";
 
 // Project-scope parity: every capture surface must resolve `project` the same
-// way the hooks do (env override, git toplevel basename, cwd basename), or the
+// way the hooks do (env override, git repository basename, cwd basename), or the
 // same repo fragments into per-agent memory buckets that never cross-recall.
 
 function transcriptLine(cwd: string): string {
@@ -118,6 +118,51 @@ describe("git-toplevel resolution parity", () => {
       logger: {},
     });
     expect(w.project).toBe("plain-dir");
+  });
+});
+
+describe("linked worktree parity", () => {
+  let tmpRoot: string;
+  let worktreeDir: string;
+
+  beforeAll(() => {
+    tmpRoot = mkdtempSync(join(tmpdir(), "amem-parity-wt-"));
+    const mainDir = join(tmpRoot, "parity-main-repo");
+    mkdirSync(mainDir, { recursive: true });
+    const git = (...args: string[]) =>
+      execFileSync(
+        "git",
+        [
+          "-c", "user.name=amem",
+          "-c", "user.email=amem@example.invalid",
+          "-c", "commit.gpgsign=false",
+          ...args,
+        ],
+        { cwd: mainDir, stdio: "ignore" },
+      );
+    git("init", "--quiet");
+    git("commit", "--quiet", "--allow-empty", "--no-verify", "-m", "init");
+    worktreeDir = join(tmpRoot, "parity-feature-branch");
+    git("worktree", "add", "-b", "parity-feature-branch", worktreeDir);
+    mkdirSync(join(worktreeDir, "packages", "core"), { recursive: true });
+  });
+
+  afterAll(() => {
+    rmSync(tmpRoot, { recursive: true, force: true });
+  });
+
+  it("replay names a linked worktree session after the main checkout", () => {
+    const parsed = parseJsonlText(transcriptLine(join(worktreeDir, "packages", "core")));
+    expect(parsed.project).toBe("parity-main-repo");
+  });
+
+  it("watcher names a linked worktree root after the main checkout", () => {
+    const w = new FilesystemWatcher({
+      roots: [worktreeDir],
+      baseUrl: "http://localhost:3111",
+      logger: {},
+    });
+    expect(w.project).toBe("parity-main-repo");
   });
 });
 
