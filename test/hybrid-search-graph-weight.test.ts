@@ -4,10 +4,7 @@ import { SearchIndex } from "../src/state/search-index.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import type { CompressedObservation } from "../src/types.js";
 
-// Graph retrieval lists every node and edge on each search. A graph weight
-// of 0 multiplied its results by zero but still paid for both traversals,
-// so AGENTMEMORY_GRAPH_WEIGHT=0 saved nothing. At weight 0 the graph must
-// not be read at all.
+// A disabled graph stream must not even probe index readiness.
 
 const obs: CompressedObservation = {
   id: "obs_1",
@@ -27,10 +24,13 @@ const obs: CompressedObservation = {
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
   const listed: string[] = [];
+  const reads: string[] = [];
   return {
-    listed,
-    get: async <T>(scope: string, key: string): Promise<T | null> =>
-      (store.get(scope)?.get(key) as T) ?? null,
+    listed, reads,
+    get: async <T>(scope: string, key: string): Promise<T | null> => {
+      reads.push(scope);
+      return (store.get(scope)?.get(key) as T) ?? null;
+    },
     set: async <T>(scope: string, key: string, data: T): Promise<T> => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
@@ -62,19 +62,19 @@ async function searchWith(graphWeight: number | undefined) {
   );
   return {
     results,
-    graphLists: kv.listed.filter((s) => s.startsWith("mem:graph:")),
+    graphReads: kv.reads.filter((s) => s.startsWith("mem:graph:")),
   };
 }
 
 describe("graph weight 0 skips graph retrieval", () => {
   it("control: the default weight reads the graph", async () => {
-    const { graphLists } = await searchWith(undefined);
-    expect(graphLists.length).toBeGreaterThan(0);
+    const { graphReads } = await searchWith(undefined);
+    expect(graphReads.length).toBeGreaterThan(0);
   });
 
-  it("weight 0 never lists a graph scope", async () => {
-    const { graphLists } = await searchWith(0);
-    expect(graphLists).toEqual([]);
+  it("weight 0 never reads a graph scope", async () => {
+    const { graphReads } = await searchWith(0);
+    expect(graphReads).toEqual([]);
   });
 
   it("weight 0 still returns the BM25 result", async () => {
@@ -112,7 +112,7 @@ describe("graph weight 0 also skips vector-chunk graph expansion", () => {
       graphWeight,
     );
     await hybrid.search("validate tokens", 10);
-    return kv.listed.filter((sc) => sc.startsWith("mem:graph:"));
+    return kv.reads.filter((sc) => sc.startsWith("mem:graph:"));
   }
 
   it("control: a positive weight expands through the graph", async () => {

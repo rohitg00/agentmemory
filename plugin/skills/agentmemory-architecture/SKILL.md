@@ -4,7 +4,7 @@ description: How agentmemory is built, the iii engine primitives it runs on, its
 user-invocable: false
 ---
 
-agentmemory is a memory server for coding agents. It runs locally, captures observations, indexes them for hybrid retrieval, and serves them back over REST and MCP. It is built on the iii engine.
+agentmemory is a memory server for coding agents. It runs locally, captures observations, indexes them for hybrid retrieval, and serves them back over REST and MCP. Worker Compose runs the pinned iii engine with AgentMemory and the registry `state` and `http` workers. The state worker uses a file-backed KV store by default, with Redis available by configuration; it is not SQLite.
 
 ## iii primitives
 
@@ -12,7 +12,7 @@ Everything is a function, a trigger, or worker state on the iii engine. There is
 
 ## Retrieval model
 
-Recall is hybrid: BM25 keyword search plus vector similarity plus graph expansion over linked concepts. The default install needs no API key because embeddings run on-device and BM25 needs none. An LLM provider only adds richer summaries and auto-injection, both opt-in.
+Recall combines BM25 keyword search with configured vector similarity and graph expansion. A clean installation without an embedding provider uses BM25 without an API key. Set `EMBEDDING_PROVIDER=local` to enable on-device embeddings, which may download a model, or configure a remote provider. LLM compression and summaries require a configured provider and their relevant options.
 
 ## Storage and lifecycle
 
@@ -20,11 +20,11 @@ Memories carry content, concepts, files, importance, and timestamps, grouped int
 
 ## Ports
 
-REST is the anchor at 3111. Streams = N+1 (3112), viewer = N+2 (3113), engine = N+46023 (49134). `--instance N` shifts the whole block by N*100.
+REST defaults to port `3111`, the viewer to `3113`, and the internal engine WebSocket to `49134`. Use `--port <N>` or `--instance <N>` to select another local runtime.
 
 ## Viewer
 
-A real-time web viewer at `http://localhost:3113` shows memory building as sessions run. Useful for demos and for confirming capture is working.
+A real-time web viewer at `http://localhost:3113` shows memory building as sessions run, with authenticated SSE updates over the REST port. Useful for demos and for confirming capture is working.
 
 ## See also
 

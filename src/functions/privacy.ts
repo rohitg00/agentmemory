@@ -5,9 +5,9 @@ const PRIVATE_TAG_RE = /<private>[\s\S]*?<\/private>/gi;
 const SECRET_PATTERN_SOURCES = [
   /(?:api[_-]?key|secret|token|password|credential|auth)[\s]*[=:]\s*["']?[A-Za-z0-9_\-/.+]{20,}["']?/gi,
   /Bearer\s+[A-Za-z0-9._\-+/=]{20,}/gi,
-  /sk-proj-[A-Za-z0-9\-_]{20,}/g,
-  /(?:sk|pk|rk|ak)-[A-Za-z0-9][A-Za-z0-9\-_]{19,}/g,
-  /sk-ant-[A-Za-z0-9\-_]{20,}/g,
+  /(?<![\p{L}\p{N}\p{M}_])sk-proj-[A-Za-z0-9\-_]{20,}/gu,
+  /(?<![\p{L}\p{N}\p{M}_])(?:sk|pk|rk|ak)-[A-Za-z0-9][A-Za-z0-9\-_]{19,}/gu,
+  /(?<![\p{L}\p{N}\p{M}_])sk-ant-[A-Za-z0-9\-_]{20,}/gu,
   /gh[pus]_[A-Za-z0-9]{36,}/g,
   /github_pat_[A-Za-z0-9_]{22,}/g,
   /xoxb-[A-Za-z0-9\-]+/g,
@@ -36,17 +36,29 @@ export function stripPrivateData(input: string): string {
   return result;
 }
 
-export function scrubRecord<T>(value: T): T {
+export function scrubRecord<T>(value: T, options: { scrubKeys?: boolean } = {}): T {
   if (typeof value === "string") return stripPrivateData(value) as T;
-  if (Array.isArray(value)) return value.map((item) => scrubRecord(item)) as T;
+  if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options)) as T;
   if (value !== null && typeof value === "object") {
     const proto = Object.getPrototypeOf(value);
     if (proto !== Object.prototype && proto !== null) return value;
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = scrubRecord(item);
-    }
-    return out as T;
+    const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+      options.scrubKeys ? stripPrivateData(key) : key,
+      item,
+    ] as const);
+    const reserved = new Set(entries.map(([key]) => key));
+    const used = new Set<string>();
+    return Object.fromEntries(
+      entries.map(([key, item]) => {
+        let unique = key;
+        if (used.has(unique)) {
+          let suffix = 2;
+          do { unique = `${key}_${suffix++}`; } while (reserved.has(unique) || used.has(unique));
+        }
+        used.add(unique);
+        return [unique, scrubRecord(item, options)];
+      }),
+    ) as T;
   }
   return value;
 }

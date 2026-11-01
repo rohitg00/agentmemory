@@ -1,5 +1,5 @@
-import { AGENT_INSTALL_PROMPT, INSTALL_CMD, LONGMEMEVAL, REPO_URL, src } from "@/lib/site";
-import { compact, getProjectMeta } from "@/lib/meta";
+import { AGENT_INSTALL_PROMPT, INSTALL_CMD, REPO_URL, src } from "@/lib/site";
+import { compact, getLiveProjectMeta } from "@/lib/meta";
 import { CopyButton } from "./client";
 import { MemoryField } from "./MemoryField";
 import { HeroTitle } from "./HeroTitle";
@@ -11,8 +11,8 @@ const AGENT_GLYPHS = [
   { name: "Cursor", d: "M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23" },
 ];
 
-export function Hero() {
-  const meta = getProjectMeta();
+export async function Hero() {
+  const meta = await getLiveProjectMeta();
   return (
     <section className={s.hero}>
       <div className={`wrap ${s.grid}`}>
@@ -22,9 +22,9 @@ export function Hero() {
             <span className={s.sep} />
             <span>Open source, Apache-2.0</span>
           </a>
-          <HeroTitle rankHref="https://trendshift.io/repositories/25123" />
+          <HeroTitle />
           <p className={s.lede}>
-            Your coding agent starts every session from zero. agentmemory captures what it did, keeps it on your machine,
+            Keep project decisions across sessions and agents. agentmemory captures supported activity, stores it on your machine,
             and hands the right context back next time. No account, no API key, no cloud.
           </p>
 
@@ -62,24 +62,27 @@ export function Hero() {
               </a>
             </div>
             <a className={s.docs} href="/docs">
-              Read the docs <span aria-hidden="true">→</span>
+              <span className={s.docsText}>Read the docs</span>
+              <span className={s.docsArrow} aria-hidden="true">
+                →
+              </span>
             </a>
           </div>
 
           <dl className={s.facts}>
             <div>
-              <dt className="mono">LongMemEval-S recall@5</dt>
+              <dt className="mono">MCP tools</dt>
               <dd>
-                {LONGMEMEVAL.hybrid.r5}%{" "}
-                <a className="src" href={src.longmemeval} target="_blank" rel="noreferrer">
+                {meta.mcpTools}{" "}
+                <a className="src" href={`${REPO_URL}#mcp-server`} target="_blank" rel="noreferrer">
                   source
                 </a>
               </dd>
             </div>
             <div>
-              <dt className="mono">Leaves your machine</dt>
+              <dt className="mono">Memory storage</dt>
               <dd>
-                Nothing, by default{" "}
+                Local by default{" "}
                 <a className="src" href="/security">
                   how
                 </a>

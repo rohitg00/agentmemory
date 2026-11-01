@@ -1,16 +1,29 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync, cpSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, mkdirSync, cpSync, copyFileSync, chmodSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
-import { rewriteBundledConfig } from "../src/cli/engine-launch.js";
 import { III_PINNED_VERSION } from "../src/version.js";
 
 const root = resolve(__dirname, "..");
-const engineBin = process.env.AGENTMEMORY_TEST_III;
+const engineBin = [
+  process.env.AGENTMEMORY_TEST_III,
+  ...(process.env.PATH ?? "").split(delimiter).map((directory) => join(directory, process.platform === "win32" ? "iii.exe" : "iii")),
+].filter((candidate): candidate is string => Boolean(candidate)).map((candidate) => resolve(candidate)).find((candidate) => {
+  try {
+    return execFileSync(candidate, ["--version"], { encoding: "utf8", timeout: 3000 }).trim() === III_PINNED_VERSION;
+  } catch {
+    return false;
+  }
+});
+if (process.env.AGENTMEMORY_REQUIRE_LIVE_TESTS === "1" && !engineBin) {
+  throw new Error(`Live plugin tests require iii ${III_PINNED_VERSION}; set AGENTMEMORY_TEST_III to the pinned engine binary.`);
+}
+const cliPath = join(root, "dist/cli.mjs");
+let activeRuntime: { port: number; env: NodeJS.ProcessEnv; cli: ChildProcess } | undefined;
 const children = new Set<ChildProcess>();
 let sandbox: string;
 
@@ -24,7 +37,62 @@ async function stop(child: ChildProcess) {
   children.delete(child);
 }
 
+function stopRuntime(): void {
+  if (!activeRuntime) return;
+  const { port, env } = activeRuntime;
+  try {
+    execFileSync(process.execPath, [cliPath, "stop", "--port", String(port)], {
+      cwd: sandbox,
+      env,
+      encoding: "utf8",
+      timeout: 30_000,
+      stdio: "pipe",
+    });
+  } finally {
+    activeRuntime = undefined;
+  }
+}
+
+async function cleanupRuntime(): Promise<void> {
+  if (!activeRuntime) return;
+  const { port, env, cli } = activeRuntime;
+  try {
+    stopRuntime();
+  } catch {
+    if (cli.exitCode === null && cli.signalCode === null) {
+      const exited = new Promise<void>((done) => cli.once("exit", () => done()));
+      cli.kill("SIGTERM");
+      const force = setTimeout(() => {
+        if (typeof cli.pid === "number") {
+          try { process.kill(-cli.pid, "SIGKILL"); } catch {}
+        }
+        cli.kill("SIGKILL");
+      }, 5000);
+      await exited;
+      clearTimeout(force);
+    }
+    for (const pidFile of [join(env.AGENTMEMORY_RUNTIME_DIR ?? homeFromRuntime(env), "engine-state.json")]) {
+      try {
+        const state = JSON.parse(readFileSync(pidFile, "utf8")) as { composePid?: number };
+        if (state.composePid && state.composePid !== process.pid) {
+          try { process.kill(-state.composePid, "SIGTERM"); } catch {}
+          try { process.kill(state.composePid, "SIGTERM"); } catch {}
+          await delay(1000);
+          try { process.kill(-state.composePid, "SIGKILL"); } catch {}
+          try { process.kill(state.composePid, "SIGKILL"); } catch {}
+        }
+      } catch {}
+    }
+    activeRuntime = undefined;
+  }
+}
+
+function homeFromRuntime(env: NodeJS.ProcessEnv): string {
+  return env.HOME ?? tmpdir();
+}
+
 afterEach(async () => {
+  await cleanupRuntime();
   await Promise.all([...children].map(stop));
   if (sandbox) rmSync(sandbox, { recursive: true, force: true });
 });
@@ -43,7 +111,9 @@ function launch(command: string, args: string[], cwd: string, env: NodeJS.Proces
   const child = spawn(command, args, { cwd, env, stdio: "pipe" });
   children.add(child);
   let diagnostic = "";
-  child.stderr.on("data", (data) => { diagnostic = (diagnostic + data).slice(-6000); });
+  const record = (data: Buffer) => { diagnostic = (diagnostic + data.toString()).slice(-6000); };
+  child.stdout.on("data", record);
+  child.stderr.on("data", record);
   return { child, diagnostic: () => diagnostic };
 }
 
@@ -81,37 +151,50 @@ describe.skipIf(!engineBin).each(["codex", "copilot", "antigravity"] as const)("
   it("authenticates locally, captures and recovers hooks, shares memory, and persists across restart", async () => {
     // vitest.config.ts isolates user configuration for the entire test process.
     expect(homedir()).toContain("agentmemory-test-home-");
-    expect(execFileSync(engineBin!, ["--version"], { encoding: "utf8" }).trim()).toBe(III_PINNED_VERSION);
+    if (!engineBin) throw new Error("Pinned iii engine binary is required");
+    expect(execFileSync(engineBin, ["--version"], { encoding: "utf8" }).trim()).toBe(III_PINNED_VERSION);
     sandbox = mkdtempSync(join(tmpdir(), "agentmemory-live-plugin-"));
-    const [restPort, streamPort, viewerPort, enginePort] = await unusedPorts();
+    const home = join(sandbox, "home");
+    const binDir = join(home, ".agentmemory", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const isolatedEngine = join(binDir, process.platform === "win32" ? "iii.exe" : "iii");
+    copyFileSync(engineBin, isolatedEngine);
+    chmodSync(isolatedEngine, 0o755);
+    const [restPort, viewerPort, enginePort, metricsPort] = await unusedPorts();
     const base = `http://127.0.0.1:${restPort}`;
-    const secretPath = join(homedir(), ".agentmemory", "secret");
-    const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "TMPDIR", "TEMP", "LANG"].includes(key)));
-    const env = { ...inherited, AGENTMEMORY_URL: base, AGENTMEMORY_DATA_DIR: join(sandbox, "state"),
-      III_ENGINE_URL: `ws://127.0.0.1:${enginePort}`, III_REST_PORT: String(restPort), III_STREAM_PORT: String(streamPort),
-      III_VIEWER_PORT: String(viewerPort), III_TELEMETRY_ENABLED: "false", AGENTMEMORY_RUNTIME_DIR: join(sandbox, "runtime"),
-      AGENTMEMORY_AUTO_COMPRESS: "false", AGENTMEMORY_INJECT_CONTEXT: "false", AGENTMEMORY_TOOLS: "all" };
-    const config = rewriteBundledConfig(readFileSync(join(root, "iii-config.yaml"), "utf8"), homedir(), process.execPath, join(root, "dist/index.mjs"), {
-      dataDir: join(sandbox, "state"), saveIntervalMs: 250, ports: { restPort, streamPort, viewerPort, enginePort },
-    });
-    writeFileSync(join(sandbox, "iii.yaml"), config);
+    const stateDir = join(sandbox, "state");
+    const secretPath = join(home, ".agentmemory", "secret");
+    const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => ["PATH", "SYSTEMROOT", "LANG"].includes(key)));
+    const path = `${binDir}${delimiter}${inherited.PATH ?? ""}`;
+    const env: NodeJS.ProcessEnv = { ...inherited, PATH: path, HOME: home, USERPROFILE: home, TMPDIR: tmpdir(), TEMP: tmpdir(),
+      AGENTMEMORY_URL: base, AGENTMEMORY_DATA_DIR: stateDir,
+      III_ENGINE_URL: `ws://127.0.0.1:${enginePort}`, III_REST_PORT: String(restPort),
+      III_VIEWER_PORT: String(viewerPort), AGENTMEMORY_METRICS_PORT: String(metricsPort), III_TELEMETRY_ENABLED: "false",
+      AGENTMEMORY_RUNTIME_DIR: join(home, ".agentmemory"), AGENTMEMORY_AUTO_COMPRESS: "false",
+      AGENTMEMORY_INJECT_CONTEXT: "false", AGENTMEMORY_TOOLS: "all", AGENTMEMORY_DISABLE_COMPOSE_RESTART: "1",
+      EMBEDDING_PROVIDER: "none", LLM_PROVIDER: "none", CI: "1", AGENTMEMORY_FINALIZE_IDLE_MS: "0",
+      AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "300000", AGENTMEMORY_READY_TIMEOUT_MS: "300000" };
     const daemon = async () => {
-      const engine = launch(engineBin!, ["-c", join(sandbox, "iii.yaml"), "--no-update-check"], sandbox, env);
-      engine.child.stdout.resume();
-      const worker = launch(process.execPath, [join(root, "dist/index.mjs")], sandbox, env);
-      worker.child.stdout.resume();
-      const deadline = Date.now() + 30_000;
+      const cli = launch(process.execPath, [cliPath, "--port", String(restPort)], sandbox, env);
+      activeRuntime = { port: restPort, env, cli: cli.child };
+      const deadline = Date.now() + 300_000;
       while (Date.now() < deadline) {
         try {
-          const secret = readFileSync(secretPath, "utf8").trim();
-          const res = await fetch(`${base}/agentmemory/mcp/tools`, { headers: { authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(1000) });
-          if (res.ok) return { engine: engine.child, worker: worker.child };
+          const res = await fetch(`${base}/agentmemory/livez`, { signal: AbortSignal.timeout(1000) });
+          if (res.ok) {
+            await res.body?.cancel();
+            if (readFileSync(secretPath, "utf8").trim()) return { cli: cli.child };
+          }
+          await res.body?.cancel();
         } catch {}
-        if (engine.child.exitCode !== null || worker.child.exitCode !== null) break;
+        if (cli.child.exitCode !== null) break;
         await delay(250);
       }
-      throw new Error(`Daemon failed to become ready:\n${engine.diagnostic()}\n${worker.diagnostic()}`);
+      let composeLog = "";
+      try { composeLog = readFileSync(join(home, ".agentmemory", `compose-${restPort}.log`), "utf8"); } catch {}
+      throw new Error(`Compose daemon failed to become ready:\n${cli.diagnostic()}\n${composeLog.slice(-6000)}`);
     };
+    if (host === "codex") execFileSync(process.execPath, [join(root, "scripts/plugins/package-codex.mjs")], { cwd: root, timeout: 30_000, stdio: "pipe" });
     const packaged = host === "codex" ? join(root, "dist/plugins/agentmemory-codex-local") : join(sandbox, `${host} plugin`);
     if (host !== "codex") cpSync(join(root, "plugin"), packaged, { recursive: true });
     const configPath = join(packaged, ".mcp.json");
@@ -140,10 +223,10 @@ describe.skipIf(!engineBin).each(["codex", "copilot", "antigravity"] as const)("
     const sessionId = `ses_${token}`;
     let step = 0;
     const hook = async (name: string, input: Record<string, unknown>) => {
-      const event = { "session-start": "PreInvocation", "post-tool-use": "PostToolUse", stop: "Stop" }[name];
+      const event = { "session-start": "PreInvocation", "post-tool-use": "PostToolUse", stop: host === "antigravity" ? "Stop" : host === "codex" ? "Stop" : "SessionEnd" }[name];
       const args = host === "antigravity"
         ? [join(packaged, "scripts/antigravity-bridge.mjs"), event!]
-        : [join(packaged, `scripts/${name}.mjs`)];
+        : [join(packaged, `scripts/${host === "copilot" && name === "stop" ? "session-end" : name}.mjs`)];
       const { child, diagnostic } = launch(process.execPath, args, cwd, env);
       child.stdout.resume();
       const exit = new Promise<number | null>((done) => child.once("exit", done));
@@ -157,6 +240,8 @@ describe.skipIf(!engineBin).each(["codex", "copilot", "antigravity"] as const)("
           delete payload.tool_response;
         }
       }
+      if (host === "codex" && name === "stop") payload.session_id = sessionId;
+      if (host === "copilot" && name === "stop") { payload.sessionId = sessionId; delete payload.session_id; }
       if (host === "antigravity") {
         payload.conversationId = sessionId;
         payload.workspacePaths = [cwd];
@@ -191,8 +276,8 @@ describe.skipIf(!engineBin).each(["codex", "copilot", "antigravity"] as const)("
     const prompt = await codex.request("prompts/get", { name: "recall_context", arguments: { task_description: token } });
     expect(prompt.result.messages.length).toBeGreaterThan(0);
     await delay(1000);
-    await stop(running.worker);
-    await stop(running.engine);
+    stopRuntime();
+    await stop(running.cli);
     const failed = await codex.request("tools/call", { name: "memory_save", arguments: { content: "must not fallback" } });
     expect(failed.result.isError).toBe(true);
     const offlineMarker = `offlinecapture${Date.now()}`;
@@ -220,7 +305,7 @@ describe.skipIf(!engineBin).each(["codex", "copilot", "antigravity"] as const)("
     for (const id of ids) expect(remaining).not.toContain(id);
     await stop(codex.child);
     await stop(claude.child);
-    await stop(running.worker);
-    await stop(running.engine);
-  }, 90_000);
+    stopRuntime();
+    await stop(running.cli);
+  }, 600_000);
 });

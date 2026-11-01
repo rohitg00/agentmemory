@@ -10,8 +10,8 @@ export function LocalFirst() {
           <span className="eyebrow">Local-first</span>
           <h2 id="local-title">Everything runs inside your machine.</h2>
           <p>
-            Capture, storage, search and the viewer all bind to 127.0.0.1. Nothing crosses the boundary unless you add a
-            provider yourself.
+            Capture, storage and keyword search run locally. The REST API and viewer bind to 127.0.0.1 by default.
+            Configured remote services receive the text they process. Installation, updates and model downloads need network access.
           </p>
         </div>
 
@@ -82,7 +82,7 @@ export function LocalFirst() {
         <ul className={s.facts}>
           <li>
             <span className="mono">bind</span>
-            REST, streams and viewer listen on 127.0.0.1 unless you change it.
+            REST and viewer listen on 127.0.0.1; live updates use the authenticated REST feed.
           </li>
           <li>
             <span className="mono">auth</span>

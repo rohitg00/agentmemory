@@ -50,7 +50,9 @@ async function main() {
           team_name: data.team_name,
         },
       },
-      data,
+      {},
+      undefined,
+      { stable: Boolean(data.task_id) },
     ),
     OBSERVE_TIMEOUT_MS,
   );

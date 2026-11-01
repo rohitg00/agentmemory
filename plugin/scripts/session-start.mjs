@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-import { readFileSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { execSync } from "node:child_process";
 //#region src/secret-store.ts
 const SECRET_KEY = "AGENTMEMORY_SECRET";
 function agentmemoryHomeDir() {
-	return join(homedir(), ".agentmemory");
+	return process.env["AGENTMEMORY_DATA_DIR"] || join(homedir(), ".agentmemory");
 }
 function secretFilePath() {
 	return join(agentmemoryHomeDir(), "secret");
@@ -30,7 +30,7 @@ function unquote(value) {
 function readEnvFileSecret() {
 	let content;
 	try {
-		content = readFileSync(join(agentmemoryHomeDir(), ".env"), "utf-8");
+		content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
 	} catch {
 		return "";
 	}
@@ -46,12 +46,28 @@ function readEnvFileSecret() {
 	}
 	return found;
 }
-function readStoredSecret() {
+function readSecretFile(path) {
 	try {
-		return usable(readFileSync(secretFilePath(), "utf-8"));
+		return usable(readFileSync(path, "utf-8"));
 	} catch {
 		return "";
 	}
+}
+function legacyDataDirSecretPaths(env = process.env) {
+	const dataDir = env["AGENTMEMORY_DATA_DIR"];
+	if (!dataDir) return [];
+	const paths = [
+		join(dataDir, "secret"),
+		join(dataDir, ".hmac"),
+		join(dataDir, "..", ".hmac")
+	];
+	return [...new Set(paths.filter((path) => path !== secretFilePath()))];
+}
+function readStoredSecret(env = process.env) {
+	const canonicalPath = canonicalSecretPath();
+	const localPath = secretFilePath();
+	const legacyPaths = legacyDataDirSecretPaths(env);
+	return readSecretFile(canonicalPath) || (localPath === canonicalPath ? "" : readSecretFile(localPath)) || legacyPaths.map(readSecretFile).find(Boolean) || "";
 }
 function isLoopbackUrl(url) {
 	let hostname;
@@ -66,8 +82,12 @@ function isLoopbackUrl(url) {
 function resolveClientSecret(baseUrl, env = process.env) {
 	const fromEnv = usable(env[SECRET_KEY]);
 	if (fromEnv) return fromEnv;
+	if (env.AGENTMEMORY_CREDENTIAL_MODE === "explicit") return "";
 	if (!isLoopbackUrl(baseUrl)) return "";
-	return readEnvFileSecret() || readStoredSecret();
+	return readEnvFileSecret() || readStoredSecret(env);
+}
+function canonicalSecretPath() {
+	return join(homedir(), ".agentmemory", "secret");
 }
 //#endregion
 //#region src/hooks/_project.ts
@@ -76,7 +96,7 @@ function resolveProject(cwd) {
 	if (explicit && explicit.trim()) return explicit.trim();
 	const dir = cwd && cwd.trim() ? cwd : process.cwd();
 	try {
-		const top = execSync("git rev-parse --show-toplevel", {
+		const [top, gitDir, commonDir] = execSync("git rev-parse --show-toplevel --git-dir --git-common-dir", {
 			cwd: dir,
 			stdio: [
 				"ignore",
@@ -84,10 +104,17 @@ function resolveProject(cwd) {
 				"ignore"
 			],
 			timeout: 500
-		}).toString().trim();
-		if (top) return basename(top);
+		}).toString().trim().split(/\r?\n/);
+		if (top) return basename(repositoryRoot(dir, top, gitDir, commonDir));
 	} catch {}
 	return basename(dir);
+}
+function repositoryRoot(dir, top, gitDir, commonDir) {
+	if (!gitDir || !commonDir) return top;
+	const physical = realpathSync(dir);
+	const common = resolve(physical, commonDir);
+	if (resolve(physical, gitDir) === common || basename(common) !== ".git") return top;
+	return dirname(common);
 }
 function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;

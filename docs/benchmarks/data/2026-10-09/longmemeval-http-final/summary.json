@@ -1,0 +1,485 @@
+{
+  "byAdapter": {
+    "grep": {
+      "n": 12,
+      "completed": 12,
+      "failed": 0,
+      "scored": 12,
+      "answerable": {
+        "attempted": 12,
+        "completed": 12,
+        "failed": 0
+      },
+      "unanswerable": 0,
+      "unanswerableCompleted": 0,
+      "unanswerableFailed": 0,
+      "p": 0.3166666666666667,
+      "r": 0.875,
+      "recallAll": 0.8333333333333334,
+      "hit": 11,
+      "strictSuccessOverAttempts": 0.8333333333333334,
+      "latencyP50": 1.8529160000000502,
+      "latencyP95": 7.6464169999999285,
+      "ingestionP50": 0.00620800000001509
+    },
+    "agentmemory-bm25-component": {
+      "n": 12,
+      "completed": 12,
+      "failed": 0,
+      "scored": 12,
+      "answerable": {
+        "attempted": 12,
+        "completed": 12,
+        "failed": 0
+      },
+      "unanswerable": 0,
+      "unanswerableCompleted": 0,
+      "unanswerableFailed": 0,
+      "p": 0.2666666666666667,
+      "r": 0.7777777777777778,
+      "recallAll": 0.6666666666666666,
+      "hit": 11,
+      "strictSuccessOverAttempts": 0.6666666666666666,
+      "latencyP50": 1.9981250000000728,
+      "latencyP95": 2.5252910000003794,
+      "ingestionP50": 127.96370900000011
+    },
+    "agentmemory-http-bm25": {
+      "n": 12,
+      "completed": 12,
+      "failed": 0,
+      "scored": 12,
+      "answerable": {
+        "attempted": 12,
+        "completed": 12,
+        "failed": 0
+      },
+      "unanswerable": 0,
+      "unanswerableCompleted": 0,
+      "unanswerableFailed": 0,
+      "p": 0.25000000000000006,
+      "r": 0.7569444444444445,
+      "recallAll": 0.6666666666666666,
+      "hit": 11,
+      "strictSuccessOverAttempts": 0.6666666666666666,
+      "latencyP50": 27.148542000002635,
+      "latencyP95": 30.639500000004773,
+      "ingestionP50": 2402.500334
+    }
+  },
+  "byType": {
+    "knowledge-update": {
+      "grep": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.4,
+        "r": 1,
+        "recallAll": 1,
+        "hit": 2,
+        "strictSuccessOverAttempts": 1,
+        "latencyP50": 1.4605839999999262,
+        "latencyP95": 1.6004579999998896,
+        "ingestionP50": 0.019000000000005457
+      },
+      "agentmemory-bm25-component": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.30000000000000004,
+        "r": 0.75,
+        "recallAll": 0.5,
+        "hit": 2,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 2.074500000000171,
+        "latencyP95": 2.2834589999999935,
+        "ingestionP50": 159.21916699999997
+      },
+      "agentmemory-http-bm25": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.30000000000000004,
+        "r": 0.75,
+        "recallAll": 0.5,
+        "hit": 2,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 28.403792000000976,
+        "latencyP95": 28.796707999999853,
+        "ingestionP50": 2381.187416999999
+      }
+    },
+    "multi-session": {
+      "grep": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.5,
+        "r": 0.75,
+        "recallAll": 0.5,
+        "hit": 2,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 1.372000000000071,
+        "latencyP95": 2.3452910000000884,
+        "ingestionP50": 0.007000000000061846
+      },
+      "agentmemory-bm25-component": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.5,
+        "r": 0.75,
+        "recallAll": 0.5,
+        "hit": 2,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 1.6339590000002318,
+        "latencyP95": 2.4093330000000606,
+        "ingestionP50": 129.11429199999975
+      },
+      "agentmemory-http-bm25": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.4,
+        "r": 0.625,
+        "recallAll": 0.5,
+        "hit": 2,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 25.7153330000001,
+        "latencyP95": 27.080958999998984,
+        "ingestionP50": 2348.9192919999987
+      }
+    },
+    "single-session-assistant": {
+      "grep": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.2,
+        "r": 1,
+        "recallAll": 1,
+        "hit": 2,
+        "strictSuccessOverAttempts": 1,
+        "latencyP50": 4.75066599999991,
+        "latencyP95": 5.570332999999891,
+        "ingestionP50": 0.00829199999998309
+      },
+      "agentmemory-bm25-component": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.2,
+        "r": 1,
+        "recallAll": 1,
+        "hit": 2,
+        "strictSuccessOverAttempts": 1,
+        "latencyP50": 2.2816250000000764,
+        "latencyP95": 2.4160000000001673,
+        "ingestionP50": 127.72087499999998
+      },
+      "agentmemory-http-bm25": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.2,
+        "r": 1,
+        "recallAll": 1,
+        "hit": 2,
+        "strictSuccessOverAttempts": 1,
+        "latencyP50": 26.396166999998968,
+        "latencyP95": 28.250999999996566,
+        "ingestionP50": 2410.959332999999
+      }
+    },
+    "single-session-preference": {
+      "grep": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.1,
+        "r": 0.5,
+        "recallAll": 0.5,
+        "hit": 1,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 1.8529160000000502,
+        "latencyP95": 2.2927910000000793,
+        "ingestionP50": 0.0038329999999859865
+      },
+      "agentmemory-bm25-component": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.1,
+        "r": 0.5,
+        "recallAll": 0.5,
+        "hit": 1,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 1.618167000000085,
+        "latencyP95": 1.9981250000000728,
+        "ingestionP50": 126.75562499999978
+      },
+      "agentmemory-http-bm25": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.1,
+        "r": 0.5,
+        "recallAll": 0.5,
+        "hit": 1,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 25.620875000000524,
+        "latencyP95": 27.148542000002635,
+        "ingestionP50": 2384.8212090000015
+      }
+    },
+    "single-session-user": {
+      "grep": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.2,
+        "r": 1,
+        "recallAll": 1,
+        "hit": 2,
+        "strictSuccessOverAttempts": 1,
+        "latencyP50": 1.0355839999999716,
+        "latencyP95": 1.0388749999999618,
+        "ingestionP50": 0.0027499999998781277
+      },
+      "agentmemory-bm25-component": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.2,
+        "r": 1,
+        "recallAll": 1,
+        "hit": 2,
+        "strictSuccessOverAttempts": 1,
+        "latencyP50": 1.6640830000001188,
+        "latencyP95": 1.7525410000002921,
+        "ingestionP50": 124.03670800000009
+      },
+      "agentmemory-http-bm25": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.2,
+        "r": 1,
+        "recallAll": 1,
+        "hit": 2,
+        "strictSuccessOverAttempts": 1,
+        "latencyP50": 25.80724999999802,
+        "latencyP95": 28.003458999999566,
+        "ingestionP50": 2257.1357080000016
+      }
+    },
+    "temporal-reasoning": {
+      "grep": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.5,
+        "r": 1,
+        "recallAll": 1,
+        "hit": 2,
+        "strictSuccessOverAttempts": 1,
+        "latencyP50": 3.3698750000000928,
+        "latencyP95": 7.6464169999999285,
+        "ingestionP50": 0.0036660000000665605
+      },
+      "agentmemory-bm25-component": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.30000000000000004,
+        "r": 0.6666666666666666,
+        "recallAll": 0.5,
+        "hit": 2,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 1.9113340000003518,
+        "latencyP95": 2.5252910000003794,
+        "ingestionP50": 125.42850000000044
+      },
+      "agentmemory-http-bm25": {
+        "n": 2,
+        "completed": 2,
+        "failed": 0,
+        "scored": 2,
+        "answerable": {
+          "attempted": 2,
+          "completed": 2,
+          "failed": 0
+        },
+        "unanswerable": 0,
+        "unanswerableCompleted": 0,
+        "unanswerableFailed": 0,
+        "p": 0.30000000000000004,
+        "r": 0.6666666666666666,
+        "recallAll": 0.5,
+        "hit": 2,
+        "strictSuccessOverAttempts": 0.5,
+        "latencyP50": 27.378624999997555,
+        "latencyP95": 30.639500000004773,
+        "ingestionP50": 2447.6546669999952
+      }
+    }
+  },
+  "planned": 36,
+  "completed": 36,
+  "failed": 0,
+  "finishedAt": "2026-10-09T15:02:15.361Z",
+  "claim": "Development evaluation only. No competitor ranking or answer-accuracy claim."
+}

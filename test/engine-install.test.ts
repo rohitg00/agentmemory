@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -72,6 +72,14 @@ function runInstall(dir: string, bin: string, sha256: string | null, asset = ASS
 }
 
 describe("iii engine auto-installer", () => {
+  it("keeps the SDK, helper and deployment defaults aligned with the installed engine", () => {
+    const manifest = JSON.parse(readFileSync("package.json", "utf8"));
+    expect(manifest.dependencies["iii-sdk"]).toBe(III_PINNED_VERSION);
+    expect(manifest.dependencies["@iii-dev/helpers"]).toBe(III_PINNED_VERSION);
+    expect(readFileSync("deploy/Dockerfile", "utf8")).toContain(`ARG III_VERSION=${III_PINNED_VERSION}\n`);
+    expect(readFileSync("docker-compose.yml", "utf8")).toContain(`III_VERSION: "\${III_VERSION:-${III_PINNED_VERSION}}"`);
+  });
+
   it("passes connect and overall timeouts to curl", () => {
     const cmd = iiiDownloadShellCommand();
     expect(cmd).toContain(`--connect-timeout ${III_INSTALL_CONNECT_TIMEOUT_S}`);

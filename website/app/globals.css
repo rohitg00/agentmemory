@@ -277,10 +277,13 @@ video {
 }
 
 .reveal {
-  opacity: 0;
-  transform: translateY(12px);
   transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out);
   transition-delay: var(--d, 0ms);
+}
+
+.js .reveal {
+  opacity: 0;
+  transform: translateY(12px);
 }
 
 .reveal.is-in {
@@ -299,6 +302,54 @@ video {
 .src:hover {
   color: var(--accent-ink);
   border-color: var(--accent);
+}
+
+.copy-swap {
+  display: inline-block;
+  animation: copy-swap 160ms var(--ease-out);
+}
+
+@keyframes copy-swap {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+  }
+}
+
+@keyframes copy-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.flow-arrow {
+  --head: 7px;
+  position: relative;
+  display: block;
+  flex: none;
+  height: 9px;
+  color: var(--ink-2);
+}
+
+.flow-arrow::before {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
+  right: calc(var(--head) - 1px);
+  height: 1px;
+  background: repeating-linear-gradient(to left, currentColor 0 4px, transparent 4px 7px);
+}
+
+.flow-arrow::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: var(--head);
+  height: 9px;
+  background: currentColor;
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
 }
 
 .theme-dark-only {
@@ -347,10 +398,14 @@ video {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
+  .reveal,
+  .js .reveal {
     opacity: 1;
     transform: none;
     transition: none;
+  }
+  .copy-swap {
+    animation-name: copy-fade;
   }
   html {
     scroll-behavior: auto;

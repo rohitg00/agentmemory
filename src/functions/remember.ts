@@ -8,6 +8,7 @@ import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { memoryToObservation } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { deleteFacetsForTargets } from "./facets.js";
 import { recordAudit } from "./audit.js";
 import { getSearchIndex, getVectorIndex, isMemoryIndexReady, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
@@ -75,6 +76,11 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           ? data.project.trim()
           : undefined;
 
+      const callAgentId =
+        typeof data.agentId === "string" && data.agentId.trim().length > 0
+          ? data.agentId.trim().slice(0, 128)
+          : getAgentId();
+
       const { memory, supersededId, nearMatch } = await withKeyedLock("mem:remember", async () => {
         // Candidate generation: query the BM25 index with the new content
         // and Jaccard-compare only the top hits, instead of walking the
@@ -122,6 +128,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         const lowerContent = data.content.toLowerCase();
         for (const existing of candidateMemories) {
           if (existing.isLatest === false) continue;
+          if ((existing.agentId || undefined) !== callAgentId) continue;
           // Never supersede a memory that belongs to a different project.
           // Both sides must have an explicit project for the guard to engage;
           // an unscoped memory (legacy, no project field) is treated as a
@@ -146,15 +153,6 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
             nearMatch = { id: existing.id, title: existing.title, similarity };
           }
         }
-
-        // stamp the agent role on the memory so future recall can
-        // filter by agent. Request body wins (multi-agent runtimes
-        // explicitly tagging at write time), env AGENT_ID fallback,
-        // none → memory is unscoped (legacy behavior).
-        const callAgentId =
-          typeof data.agentId === "string" && data.agentId.trim().length > 0
-            ? data.agentId.trim().slice(0, 128)
-            : getAgentId();
 
         const memory: Memory = {
           id: generateId("mem"),
@@ -198,7 +196,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         await kv.set(KV.memories, memory.id, memory);
 
         try {
-          getSearchIndex().add(memoryToObservation(memory));
+          getSearchIndex().add(memoryToObservation(memory), "memory");
           scheduleIndexSave();
         } catch (err) {
           logger.warn("Failed to index saved memory into BM25", {
@@ -214,10 +212,10 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         memory.sessionIds?.[0] ?? "memory",
         memory.title + " " + memory.content,
         { kind: "memory", logId: memory.id },
-        (embedding) =>
+        (embedding, isCurrent) =>
           withKeyedLock("mem:remember", async () => {
             const current = await kv.get<Memory>(KV.memories, memory.id);
-            if (!current || current.isLatest === false) return false;
+            if (!isCurrent() || !current || current.isLatest === false) return false;
             getVectorIndex()?.add(
               memory.id,
               memory.sessionIds?.[0] ?? "memory",
@@ -336,15 +334,19 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         const memoryId = data.memoryId;
         await attempt(memoryId, async () => {
           const mem = await kv.get<Memory>(KV.memories, memoryId);
-          if (!mem) return false;
+          if (!mem) {
+            await deleteFacetsForTargets(kv, [memoryId]);
+            return false;
+          }
           await kv.delete(KV.memories, memoryId);
           deletedMemoryIds.push(memoryId);
           getSearchIndex().remove(memoryId);
           vectorIndexRemove(memoryId);
           indexCleaned = true;
           await cleanup(memoryId, async () => {
-            if (mem.imageRef) await decrementImageRef(kv, sdk, mem.imageRef);
             await deleteAccessLog(kv, memoryId);
+            await deleteFacetsForTargets(kv, [memoryId]);
+            if (mem.imageRef) await decrementImageRef(kv, sdk, mem.imageRef);
           });
           return true;
         });
@@ -357,7 +359,9 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       ) {
         const sessionId = data.sessionId;
         for (const obsId of data.observationIds) {
-          await attempt(obsId, () => forgetObservation(sessionId, obsId));
+          await attempt(obsId, () =>
+            withKeyedLock(`obs:${sessionId}`, () => forgetObservation(sessionId, obsId)),
+          );
         }
       }
 
@@ -367,34 +371,37 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         !data.memoryId
       ) {
         const sessionId = data.sessionId;
-        const observations = await kv.list<ObservationRef & { id: string }>(
-          KV.observations(sessionId),
-        );
-        for (const obs of observations) {
-          await attempt(obs.id, () => forgetObservation(sessionId, obs.id, obs));
-        }
-        await attempt(sessionId, async () => {
-          const session = await kv.get<Session>(KV.sessions, sessionId);
-          if (!session) return false;
-          await kv.delete(KV.sessions, sessionId);
-          await removeSessionFromProjectIndex(
-            kv,
-            session.project,
-            sessionId,
-          ).catch(() => {});
-          deletedSession = true;
-          return true;
-        });
-        try {
-          const summary = await kv.get(KV.summaries, sessionId);
-          if (summary) {
-            await kv.delete(KV.summaries, sessionId);
-            deletedSummary = true;
-            deleted++;
+        await withKeyedLock(`obs:${sessionId}`, async () => {
+          const observations = await kv.list<ObservationRef & { id: string }>(
+            KV.observations(sessionId),
+          );
+          for (const obs of observations) {
+            await attempt(obs.id, () => forgetObservation(sessionId, obs.id, obs));
           }
-        } catch (err) {
-          recordFailure(`summary:${sessionId}`, err);
-        }
+          await attempt(sessionId, async () => {
+            const session = await kv.get<Session>(KV.sessions, sessionId);
+            if (!session) return false;
+            await kv.delete(KV.sessions, sessionId);
+            await kv.delete(KV.summaryRepairs, sessionId);
+            await removeSessionFromProjectIndex(
+              kv,
+              session.project,
+              sessionId,
+            ).catch(() => {});
+            deletedSession = true;
+            return true;
+          });
+          try {
+            const summary = await kv.get(KV.summaries, sessionId);
+            if (summary) {
+              await kv.delete(KV.summaries, sessionId);
+              deletedSummary = true;
+              deleted++;
+            }
+          } catch (err) {
+            recordFailure(`summary:${sessionId}`, err);
+          }
+        });
       }
 
       if (deleted > 0 || indexCleaned) await flushIndexSave();

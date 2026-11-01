@@ -61,4 +61,4 @@ RIGHT: `content: "Run vitest with --run in CI; watch mode hangs the pipeline."` 
 
 ## Troubleshooting
 
-See ../_shared/TROUBLESHOOTING.md if `memory_lesson_save` is not available.
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if `memory_lesson_save` is not available.

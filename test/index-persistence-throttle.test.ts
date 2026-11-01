@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { IndexPersistence } from "../src/state/index-persistence.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import { evaluateStatus, renderStatusHtml, type StatusInputs } from "../src/functions/status.js";
+import { III_PINNED_VERSION } from "../src/version.js";
 
 const META_KEY = "vectors:meta";
 
@@ -66,6 +67,88 @@ describe("IndexPersistence save throttling", () => {
     expect(metaSaves(kv)).toBe(1);
     await vi.advanceTimersByTimeAsync(30_000);
     expect(metaSaves(kv)).toBe(2);
+  });
+
+  it.each([false, true])("checkpoints the first captured vector early after metadata-only recovery (restart: %s)", async (restart) => {
+    let vector = new VectorIndex();
+    let persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 600_000, requireRecoveryPlan: true });
+    await persistence.prepareBackfill(await persistence.load());
+    expect(await persistence.completeBackfill()).toBe(true);
+    expect(metaSaves(kv)).toBe(1);
+
+    if (restart) {
+      persistence.stop();
+      vector = new VectorIndex();
+      persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 600_000, requireRecoveryPlan: true });
+      await persistence.prepareBackfill(await persistence.load());
+      expect(await persistence.completeBackfill()).toBe(true);
+    }
+
+    await vi.advanceTimersByTimeAsync(20_000);
+    touch(vector, "obs_first");
+    persistence.scheduleSave();
+    expect(persistence.status().firstCheckpointPending).toBe(true);
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(metaSaves(kv)).toBe(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(metaSaves(kv)).toBe(2);
+    expect(persistence.status().pendingChanges).toBe(0);
+    expect(persistence.status().firstCheckpointPending).toBe(false);
+
+    touch(vector, "obs_second");
+    persistence.scheduleSave();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(metaSaves(kv)).toBe(2);
+    persistence.stop();
+  });
+
+  it("rearms the early checkpoint after clearing all persisted vectors", async () => {
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(kv as never, vector, { saveIntervalMs: 600_000 });
+    touch(vector, "obs_old");
+    await persistence.save();
+    vector.clear();
+    await persistence.save();
+    expect(metaSaves(kv)).toBe(2);
+
+    touch(vector, "obs_replacement");
+    persistence.scheduleSave();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(metaSaves(kv)).toBe(3);
+    expect(persistence.status().pendingChanges).toBe(0);
+    persistence.stop();
+  });
+
+  it("keeps a vector added during metadata-only recovery eligible for the early checkpoint", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const writing = new Promise<void>((resolve) => { entered = resolve; });
+    let held = false;
+    const slowKV = {
+      ...kv,
+      set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+        if (key === META_KEY && !held) {
+          held = true;
+          entered();
+          await gate;
+        }
+        return kv.set(scope, key, data);
+      },
+    };
+    const vector = new VectorIndex();
+    const persistence = new IndexPersistence(slowKV as never, vector, { saveIntervalMs: 600_000, requireRecoveryPlan: true });
+    await persistence.prepareBackfill(await persistence.load());
+    const completion = persistence.completeBackfill();
+    await writing;
+    touch(vector, "obs_concurrent");
+    persistence.scheduleSave();
+    release();
+    expect(await completion).toBe(false);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(metaSaves(kv)).toBe(2);
+    expect(persistence.status().pendingChanges).toBe(0);
+    persistence.stop();
   });
 
   it("an explicit save runs immediately and cancels the pending timer", async () => {
@@ -168,9 +251,9 @@ function statusInputs(overrides: Partial<StatusInputs> = {}): StatusInputs {
   return {
     now: new Date("2026-09-25T12:00:00.000Z"),
     version: "0.9.29",
-    engineVersion: "0.22.1",
+    enginePinnedVersion: III_PINNED_VERSION,
     uptimeSeconds: 100,
-    ports: { rest: 3111, streams: 3112, viewer: 3113 },
+    ports: { rest: 3111, viewer: 3113 },
     health: { status: "healthy", alerts: [], notes: [], connectionState: "connected" },
     circuitBreaker: null,
     functionMetrics: [],

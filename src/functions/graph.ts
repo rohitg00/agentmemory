@@ -1,3 +1,6 @@
+import { getGraphIndexStatus } from "../state/graph-retrieval-index.js";
+import { queryGraphIndex } from "./graph-index-query.js";
+import { isLegacyGraphState, pinGraphState, resetGraphGeneration } from "../state/graph-generation.js";
 import type { IIIClient } from "iii-sdk";
 import type {
   GraphNode,
@@ -20,16 +23,11 @@ import { logger } from "../logger.js";
 import { scrubRecord } from "./privacy.js";
 
 const DEFAULT_GRAPH_QUERY_LIMIT = 500;
-const MAX_GRAPH_QUERY_LIMIT = 5000;
 
 const SNAPSHOT_TOP_NODES = DEFAULT_GRAPH_QUERY_LIMIT;
 const SNAPSHOT_KEY = "current";
 
-// `state::list` over a 75K-node scope can exceed the iii invocation
-// timeout. The query handler races the enumeration against this budget
-// and falls back to the snapshot (or a warning envelope) when the live
-// path is too slow. 6000ms leaves headroom under the default 8s engine
-// invocation deadline.
+// This deadline applies only to explicitly requested legacy snapshot rebuilds.
 const LIVE_ENUMERATION_BUDGET_MS = 6000;
 
 function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -150,43 +148,6 @@ function buildSnapshotFromArrays(
     },
     updatedAt: new Date().toISOString(),
     dirty: false,
-  };
-}
-
-function paginateFromSnapshot(
-  snap: GraphSnapshot,
-  filterType: string | undefined,
-  limit: number,
-  offset: number,
-): GraphQueryResult {
-  const filteredNodes = filterType
-    ? snap.topNodes.filter((n) => n.type === filterType)
-    : snap.topNodes;
-  const totalRaw = filterType
-    ? snap.stats.nodesByType[filterType] ?? 0
-    : snap.stats.totalNodes;
-  const total = Math.max(totalRaw, filteredNodes.length);
-  const pageNodes = filteredNodes.slice(offset, offset + limit);
-  const pageIds = new Set(pageNodes.map((n) => n.id));
-  const pageEdges = snap.topEdges.filter(
-    (e) => pageIds.has(e.sourceNodeId) && pageIds.has(e.targetNodeId),
-  );
-  const degrees: Record<string, number> = {};
-  for (const n of pageNodes) {
-    const d = snap.topDegrees?.[n.id];
-    if (typeof d === "number") degrees[n.id] = d;
-  }
-  return {
-    nodes: pageNodes,
-    edges: pageEdges,
-    depth: 0,
-    totalNodes: total,
-    totalEdges: snap.stats.totalEdges,
-    truncated: total > pageNodes.length,
-    limit,
-    offset,
-    fromSnapshot: true,
-    degrees,
   };
 }
 
@@ -325,62 +286,6 @@ function mergeEdge(existing: GraphEdge, incoming: GraphEdge): GraphEdge {
   };
 }
 
-function resolvePagination(
-  rawLimit: number | undefined,
-  rawOffset: number | undefined,
-): { limit: number; offset: number } {
-  const requested = typeof rawLimit === "number" && Number.isFinite(rawLimit)
-    ? Math.floor(rawLimit)
-    : DEFAULT_GRAPH_QUERY_LIMIT;
-  const limit = Math.max(1, Math.min(requested, MAX_GRAPH_QUERY_LIMIT));
-  const offset = Math.max(
-    0,
-    typeof rawOffset === "number" && Number.isFinite(rawOffset)
-      ? Math.floor(rawOffset)
-      : 0,
-  );
-  return { limit, offset };
-}
-
-function paginate(
-  nodes: GraphNode[],
-  allEdges: GraphEdge[],
-  depth: number,
-  limit: number,
-  offset: number,
-): GraphQueryResult {
-  const totalNodes = nodes.length;
-  const pageNodes = nodes.slice(offset, offset + limit);
-  const pageNodeIds = new Set(pageNodes.map((n) => n.id));
-  // Edges restricted to the page so the response payload scales with
-  // `limit`, not with the global edge count. An edge is included only
-  // when BOTH endpoints land in the page — half-edges to nodes outside
-  // the page would render as dangling links in the viewer.
-  const pageEdges = allEdges.filter(
-    (e) => pageNodeIds.has(e.sourceNodeId) && pageNodeIds.has(e.targetNodeId),
-  );
-  // Total edges (for the same node universe). Counted unbounded so the
-  // viewer can show "showing X of Y" without re-querying.
-  const universeIds = new Set(nodes.map((n) => n.id));
-  const totalEdges = allEdges.reduce(
-    (count, e) =>
-      universeIds.has(e.sourceNodeId) && universeIds.has(e.targetNodeId)
-        ? count + 1
-        : count,
-    0,
-  );
-  return {
-    nodes: pageNodes,
-    edges: pageEdges,
-    depth,
-    totalNodes,
-    totalEdges,
-    truncated: totalNodes > pageNodes.length,
-    limit,
-    offset,
-  };
-}
-
 function parseAttrs(raw: string): Record<string, string> {
   const attrs: Record<string, string> = {};
   const attrRegex = /([A-Za-z_][\w:-]*)="([^"]*)"/g;
@@ -480,7 +385,7 @@ export function extractGraphHeuristics(
   ): GraphNode | null => {
     const trimmed = name.trim();
     if (!trimmed) return null;
-    const key = `${type} ${trimmed.toLowerCase()}`;
+    const key = `${type}\u0000${trimmed.toLowerCase()}`;
     let node = nodeByKey.get(key);
     if (!node) {
       node = {
@@ -552,10 +457,12 @@ export async function persistGraphDelta(
   rawNodes: GraphNode[],
   rawEdges: GraphEdge[],
 ): Promise<{ newNodeCount: number; newEdgeCount: number }> {
+  kv = await pinGraphState(kv);
   const nodes = rawNodes.map((node) => scrubRecord(node));
   const edges = rawEdges.map((edge) => scrubRecord(edge));
   return withKeyedLock("graph:persist", async () => {
     const snap = (await readSnapshotStrict(kv)) ?? emptySnapshot();
+    const legacyResetAt = await isLegacyGraphState(kv) ? snap.resetAt : undefined;
     const capturedAt = new Date().toISOString();
     let newNodeCount = 0;
     let newEdgeCount = 0;
@@ -578,9 +485,9 @@ export async function persistGraphDelta(
         existing = await kv.get<GraphNode>(KV.graphNodes, existingId);
         if (
           existing &&
-          snap.resetAt &&
+          legacyResetAt &&
           typeof existing.createdAt === "string" &&
-          existing.createdAt < snap.resetAt
+          existing.createdAt < legacyResetAt
         ) {
           existing = null;
         }
@@ -629,9 +536,9 @@ export async function persistGraphDelta(
         existing = await kv.get<GraphEdge>(KV.graphEdges, existingId);
         if (
           existing &&
-          snap.resetAt &&
+          legacyResetAt &&
           typeof existing.createdAt === "string" &&
-          existing.createdAt < snap.resetAt
+          existing.createdAt < legacyResetAt
         ) {
           existing = null;
         }
@@ -705,6 +612,7 @@ export async function compactGraphProvenance(
   kv: StateKV,
   opts: GraphCompactOptions = {},
 ): Promise<GraphCompactResult> {
+  kv = await pinGraphState(kv);
   const { scope } = opts;
   if (scope !== undefined && !COMPACT_SCOPES.includes(scope)) {
     throw new Error(`unknown compact scope: ${String(scope)}`);
@@ -807,11 +715,13 @@ export async function compactGraphProvenance(
 
 export function registerGraphFunction(
   sdk: IIIClient,
-  kv: StateKV,
+  state: StateKV,
   provider: MemoryProvider,
 ): void {
+  const kv = state;
   sdk.registerFunction("mem::graph-extract",
     async (data: { observations: CompressedObservation[] }) => {
+      const kv = await pinGraphState(state);
       if (!data.observations || data.observations.length === 0) {
         return { success: false, error: "No observations provided" };
       }
@@ -904,171 +814,36 @@ export function registerGraphFunction(
       limit?: number;
       offset?: number;
     }): Promise<GraphQueryResult> => {
-      const maxDepth = Math.min(data.maxDepth || 3, 5);
-      const { limit, offset } = resolvePagination(data.limit, data.offset);
-
-      const noWalk = !data.query && !data.startNodeId;
-      if (noWalk) {
-        const snap = await readSnapshot(kv);
-        if (snap && snap.stats.totalNodes > 0) {
-          return paginateFromSnapshot(snap, data.nodeType, limit, offset);
-        }
-        return {
-          nodes: [],
-          edges: [],
-          depth: 0,
-          totalNodes: 0,
-          totalEdges: 0,
-          truncated: false,
-          limit,
-          offset,
-          warning:
-            "No graph snapshot available. Either no graph has been " +
-            "extracted yet, or you are on a legacy corpus from an older " +
-            "agentmemory build. Run POST /agentmemory/graph/snapshot-rebuild " +
-            "(safe up to ~25K nodes) or POST /agentmemory/graph/reset to " +
-            "wipe and let future extracts repopulate.",
-        };
-      }
-
-      // Query / startNodeId paths still need broader access. Race the
-      // live enumeration against a wall-clock budget so a long
-      // kv.list doesn't block the worker indefinitely. On timeout the
-      // caller gets a snapshot-backed approximation instead of a 500.
-      let allNodes: GraphNode[];
-      let allEdges: GraphEdge[];
-      try {
-        const [rawNodes, rawEdges] = await withTimeout(
-          Promise.all([
-            kv.list<GraphNode>(KV.graphNodes),
-            kv.list<GraphEdge>(KV.graphEdges),
-          ]),
-          LIVE_ENUMERATION_BUDGET_MS,
-          "graph-query enumeration",
-        );
-        allNodes = rawNodes.filter((n) => !n.stale);
-        allEdges = rawEdges.filter((e) => !e.stale);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        logger.warn("Graph query enumeration timed out, using snapshot", {
-          error: msg,
-        });
-        const snap = await readSnapshot(kv);
-        if (snap) {
-          return {
-            ...paginateFromSnapshot(snap, data.nodeType, limit, offset),
-            warning:
-              "Live graph enumeration exceeded budget. Query / " +
-              "startNodeId paths degrade on >25K-node corpora until a " +
-              "per-node edge index lands. Result reflects top-degree " +
-              "snapshot, not the requested walk.",
-          };
-        }
-        return {
-          nodes: [],
-          edges: [],
-          depth: 0,
-          totalNodes: 0,
-          totalEdges: 0,
-          truncated: false,
-          limit,
-          offset,
-          warning:
-            "Graph enumeration exceeded budget and no snapshot is available.",
-        };
-      }
-
-      if (data.query) {
-        const lower = data.query.toLowerCase();
-        const matchingNodes = allNodes.filter(
-          (n) =>
-            n.name.toLowerCase().includes(lower) ||
-            Object.values(n.properties).some(
-              (v) => typeof v === "string" && v.toLowerCase().includes(lower),
-            ),
-        );
-        return paginate(matchingNodes, allEdges, 0, limit, offset);
-      }
-
-      if (data.startNodeId) {
-        const visited = new Set<string>();
-        const visitedEdges = new Set<string>();
-        const resultNodes: GraphNode[] = [];
-        const resultEdges: GraphEdge[] = [];
-        const queue: Array<{ nodeId: string; depth: number }> = [
-          { nodeId: data.startNodeId, depth: 0 },
-        ];
-
-        while (queue.length > 0) {
-          const { nodeId, depth } = queue.shift()!;
-          if (visited.has(nodeId) || depth > maxDepth) continue;
-          visited.add(nodeId);
-
-          const node = allNodes.find((n) => n.id === nodeId);
-          if (node) {
-            if (!data.nodeType || node.type === data.nodeType) {
-              resultNodes.push(node);
-            }
-          }
-
-          const neighborEdges = allEdges.filter(
-            (e) => e.sourceNodeId === nodeId || e.targetNodeId === nodeId,
-          );
-          for (const edge of neighborEdges) {
-            if (!visitedEdges.has(edge.id)) {
-              visitedEdges.add(edge.id);
-              resultEdges.push(edge);
-            }
-            const nextId =
-              edge.sourceNodeId === nodeId
-                ? edge.targetNodeId
-                : edge.sourceNodeId;
-            if (!visited.has(nextId)) {
-              queue.push({ nodeId: nextId, depth: depth + 1 });
-            }
-          }
-        }
-
-        return paginate(resultNodes, resultEdges, maxDepth, limit, offset);
-      }
-
-      // Unreachable — noWalk branch handles the rest.
-      return paginate([], [], 0, limit, offset);
+      return queryGraphIndex(state, data);
     },
   );
 
   sdk.registerFunction("mem::graph-stats", async () => {
-    const snap = await readSnapshot(kv);
-    if (snap) {
+    const kv = await pinGraphState(state);
+    const index = await getGraphIndexStatus(kv);
+    if (!index || index.status !== "ready" || index.pending || index.batchPending) {
       return {
-        ...snap.stats,
-        fromSnapshot: true,
-        updatedAt: snap.updatedAt,
-        ...(snap.dirty
-          ? {
-              warning:
-                "Snapshot is marked dirty (write was in-flight when read). " +
-                "Counts are eventually consistent.",
-            }
-          : {}),
+        totalNodes: null, totalEdges: null, nodesByType: {}, edgesByType: {},
+        fromSnapshot: false, fromIndex: false, available: false, coverage: "unknown",
+        warning: "Graph index counts are unavailable. Run agentmemory graph-index status; legacy stores require an explicit migration.",
       };
     }
     return {
-      totalNodes: 0,
-      totalEdges: 0,
-      nodesByType: {},
-      edgesByType: {},
-      fromSnapshot: false,
-      warning:
-        "No graph snapshot available. Run POST /agentmemory/graph/snapshot-rebuild " +
-        "(safe up to ~25K nodes) or POST /agentmemory/graph/reset to wipe " +
-        "and let future extracts repopulate.",
+      totalNodes: index.nodes, totalEdges: index.edges,
+      nodesByType: index.nodesByType, edgesByType: index.edgesByType,
+      fromSnapshot: false, fromIndex: true, available: true,
+      coverage: index.incompleteRecords ? "partial" : "complete",
+      updatedAt: index.updatedAt,
+      ...(index.incompleteRecords || index.otherTypes ? {
+        warning: "Counts describe indexed live records; oversized projections may be incomplete and unrecognized types are grouped under other.",
+      } : {}),
     };
   });
 
   sdk.registerFunction(
     "mem::graph-snapshot-rebuild",
     async (data?: { force?: boolean }) => {
+      const kv = await pinGraphState(state);
       const started = Date.now();
       const forceRebuild = data?.force === true;
       try {
@@ -1190,6 +965,7 @@ export function registerGraphFunction(
   });
 
   sdk.registerFunction("mem::graph-compact", async (data?: GraphCompactOptions) => {
+    const kv = await pinGraphState(state);
     const started = Date.now();
     try {
       const result = await compactGraphProvenance(kv, data ?? {});
@@ -1217,24 +993,28 @@ export function registerGraphFunction(
 
   sdk.registerFunction("mem::graph-reset", async () => {
     const started = Date.now();
-    // Stamp resetAt=now on the empty snapshot. Future
-    // mem::graph-extract calls compare each name-index lookup's
-    // existing node `createdAt` against this timestamp; anything
-    // older counts as an orphan and is dropped from the merge path,
-    // forcing extract to write a fresh row instead of reconnecting
-    // to a pre-reset entry.
+    // Publish a fresh namespace without enumerating or deleting the old graph.
     const resetSnapshot: GraphSnapshot = {
       ...emptySnapshot(),
       resetAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      dirty: false,
     };
     await withKeyedLock("graph:persist", () =>
-      kv.set(KV.graphSnapshot, SNAPSHOT_KEY, resetSnapshot),
+      resetGraphGeneration(kv, resetSnapshot),
     );
     const counts: Record<string, number> = {
       [KV.graphSnapshot]: 1,
     };
     const tookMs = Date.now() - started;
     logger.info("Graph state reset", { counts, tookMs });
-    return { success: true, cleared: counts, tookMs };
+    return {
+      success: true,
+      cleared: counts,
+      resetMode: "generation",
+      physicalStorageRetained: true,
+      message: "The active graph is empty. Previous graph storage is retained; this operation does not reclaim disk space.",
+      tookMs,
+    };
   });
 }

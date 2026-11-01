@@ -44,7 +44,7 @@ export interface GraphCompactBootSlicePlan {
   total: number | null;
 }
 
-export type GraphCompactBootState = "off" | "pending" | "running" | "done" | "failed";
+export type GraphCompactBootState = "off" | "pending" | "running" | "done" | "failed" | "deferred";
 
 export interface GraphCompactBootStatus {
   state: GraphCompactBootState;
@@ -60,6 +60,7 @@ export interface GraphCompactBootStatus {
 }
 
 export interface GraphCompactBootOptions {
+  allowLegacyScan?: boolean;
   sliceSize?: number;
   pauseMs?: number;
   maxAttempts?: number;
@@ -133,6 +134,7 @@ function scannedOf(scope: SlicedScope, r: GraphCompactResult): [number, number] 
 export function describeGraphCompactBoot(s: GraphCompactBootStatus): string {
   if (s.state === "off") return "off (AGENTMEMORY_GRAPH_COMPACT_ON_BOOT=false)";
   if (s.state === "pending") return "pending";
+  if (s.state === "deferred") return "deferred (legacy scan requires explicit maintenance)";
   const where =
     s.phase === "snapshot" || s.total === null || s.total === undefined
       ? `${s.phase ?? "nodes"}`
@@ -146,6 +148,10 @@ export function runGraphCompactOnBoot(
   kv: StateKV,
   opts: GraphCompactBootOptions = {},
 ): Promise<GraphCompactBootStatus> {
+  if (opts.allowLegacyScan !== true) {
+    current = { state: "deferred" };
+    return Promise.resolve(getGraphCompactBootStatus());
+  }
   if (running) return running;
   running = runOnce(kv, opts).finally(() => {
     running = null;

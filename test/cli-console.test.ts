@@ -1,60 +1,31 @@
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  consoleArgs,
-  defaultConsolePort,
-  parseConsoleArgs,
-} from "../src/cli/console.js";
 
-describe("agentmemory console", () => {
-  it("serves one port above the viewer so the two never collide", () => {
-    expect(defaultConsolePort(3113)).toBe(3114);
-    expect(defaultConsolePort(3213)).toBe(3214);
-  });
-
-  it("builds the pinned engine's console invocation against the resolved port quartet", () => {
-    expect(
-      consoleArgs({
-        iiiBin: "/home/u/.agentmemory/bin/iii",
-        consolePort: 3114,
-        restPort: 3111,
-        streamPort: 3112,
-        enginePort: 49134,
-        extraArgs: ["--enable-flow"],
-      }),
-    ).toEqual([
-      "console",
-      "--port",
-      "3114",
-      "--engine-port",
-      "3111",
-      "--ws-port",
-      "3112",
-      "--bridge-port",
-      "49134",
-      "--enable-flow",
-    ]);
-  });
-
-  it("takes --console-port in both spellings and falls back to the default", () => {
-    expect(parseConsoleArgs([], 3114)).toEqual({ consolePort: 3114, extraArgs: [] });
-    expect(parseConsoleArgs(["--console-port", "4000"], 3114).consolePort).toBe(4000);
-    expect(parseConsoleArgs(["--console-port=4001"], 3114).consolePort).toBe(4001);
-  });
-
-  it("drops the CLI's own global flags and forwards everything else to iii console", () => {
-    const parsed = parseConsoleArgs(
-      ["--port", "3211", "--instance=1", "--verbose", "--enable-flow", "--host", "0.0.0.0"],
-      3214,
-    );
-
-    expect(parsed).toEqual({
-      consolePort: 3214,
-      extraArgs: ["--enable-flow", "--host", "0.0.0.0"],
-    });
-  });
-
-  it("rejects an unusable console port", () => {
-    expect(() => parseConsoleArgs(["--console-port", "70000"], 3114)).toThrow(/between 1 and 65535/);
-    expect(() => parseConsoleArgs(["--console-port"], 3114)).toThrow(/--console-port/);
+describe("agentmemory console migration", () => {
+  it.each([
+    { args: [], port: 3113 },
+    { args: ["--port", "3211"], port: 3213 },
+    { args: ["--instance", "2", "--console-port", "4014"], port: 3313 },
+  ])("prints the selected viewer without installing or launching an engine: $args", ({ args, port }) => {
+    const home = mkdtempSync(join(tmpdir(), "agentmemory-console-"));
+    try {
+      const result = spawnSync(process.execPath, [resolve("dist/cli.mjs"), "console", ...args], {
+        cwd: home,
+        env: { PATH: process.env.PATH, HOME: home, USERPROFILE: home, CI: "1", NO_COLOR: "1" },
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain("iii 0.25 retired the bundled engine console");
+      expect(result.stdout).toContain(`http://localhost:${port}`);
+      expect(result.stdout).toContain("agentmemory status");
+      expect(existsSync(join(home, ".agentmemory", "bin"))).toBe(false);
+      expect(existsSync(join(home, ".agentmemory", "engine-state.json"))).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 });

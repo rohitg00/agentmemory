@@ -214,7 +214,7 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
 
         await kv.set(KV.memories, evolved.id, evolved);
         try {
-          getSearchIndex().add(memoryToObservation(evolved));
+          getSearchIndex().add(memoryToObservation(evolved), "memory");
           scheduleIndexSave();
         } catch (err) {
           logger.warn("Failed to index evolved memory into BM25", {

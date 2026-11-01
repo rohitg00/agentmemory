@@ -2,6 +2,53 @@ import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import type { Facet } from "../types.js";
+import { logger } from "../logger.js";
+
+export async function deleteFacetsForTargets(
+  kv: StateKV,
+  targetIds: Iterable<string>,
+): Promise<void> {
+  const ids = new Set(targetIds);
+  ids.delete("");
+  if (ids.size === 0) return;
+  try {
+    const live = new Set<string>();
+    await Promise.all(
+      [...ids].map(async (id) => {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const [mem, sem] = await Promise.all([
+              kv.get(KV.memories, id),
+              kv.get(KV.semantic, id),
+            ]);
+            if (mem || sem) live.add(id);
+            return;
+          } catch {
+            if (attempt === 1) {
+              live.add(id);
+              logger.warn("Facet cleanup skipped unverifiable target", {
+                targetId: id,
+              });
+            }
+          }
+        }
+      }),
+    );
+    const all = await kv.list<Facet>(KV.facets);
+    const matches = all.filter(
+      (f) =>
+        ids.has(f.targetId) &&
+        !live.has(f.targetId) &&
+        f.targetType === "memory",
+    );
+    await Promise.all(matches.map((f) => kv.delete(KV.facets, f.id)));
+  } catch (err) {
+    logger.warn("Facet cleanup failed", {
+      targetIds: ids.size,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 export function registerFacetsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::facet-tag", 
