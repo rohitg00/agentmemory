@@ -11,7 +11,7 @@ import { logger } from "../logger.js";
 // are addressable only through their session scope, so an id with no session
 // mapping (deleted observations are unindexed) is not live either.
 async function isLiveTarget(kv: StateKV, id: string): Promise<boolean> {
-  if (id.startsWith("lsn_")) {
+  if (id.startsWith("lsn_") || id.startsWith("lesson_")) {
     const lesson = await kv.get<Lesson>(KV.lessons, id);
     return !!lesson && !lesson.deleted;
   }

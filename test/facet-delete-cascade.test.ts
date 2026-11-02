@@ -232,6 +232,41 @@ describe("facet cleanup on lesson and observation deletes", () => {
     expect(await facetIds()).toEqual(["fct_lesson", "fct_obs"]);
   });
 
+  it("deleteFacetsForTargets keeps facets of a live replay-imported lesson (lesson_ id)", async () => {
+    // Replay imports store lessons under stable lesson_ ids (fingerprintId),
+    // not lsn_ ids; liveness must resolve them through KV.lessons as well.
+    await kv.set(KV.lessons, "lesson_imported", {
+      id: "lesson_imported",
+      title: "Imported",
+    } as Lesson);
+    await kv.set(
+      KV.facets,
+      "fct_imported",
+      makeFacet("fct_imported", "lesson_imported"),
+    );
+
+    await deleteFacetsForTargets(kv as never, ["lesson_imported"]);
+
+    expect(await facetIds()).toEqual(["fct_imported"]);
+  });
+
+  it("deleteFacetsForTargets removes facets of a soft-deleted replay-imported lesson", async () => {
+    await kv.set(KV.lessons, "lesson_imported", {
+      id: "lesson_imported",
+      title: "Imported",
+      deleted: true,
+    } as Lesson);
+    await kv.set(
+      KV.facets,
+      "fct_imported",
+      makeFacet("fct_imported", "lesson_imported"),
+    );
+
+    await deleteFacetsForTargets(kv as never, ["lesson_imported"]);
+
+    expect(await facetIds()).toEqual([]);
+  });
+
   it("deleteFacetsForTargets leaves observation facets alone unless the caller opts in", async () => {
     await kv.set(
       KV.facets,
