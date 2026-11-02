@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -50,6 +50,20 @@ describe("deployment ONNX binary pruning", () => {
     expect(() => execFileSync(process.execPath, [script, bin, "linux", "arm64"], { stdio: "pipe" })).toThrow(/Missing ONNX binding/);
     expect(readdirSync(join(bin, "napi-v6")).sort()).toEqual(["darwin", "linux", "win32"]);
     expect(existsSync(join(bin, "napi-v6", "linux", "x64", "onnxruntime_binding.node"))).toBe(true);
+  });
+
+  it("validates every ABI before pruning any binaries", () => {
+    const { bin } = fixture();
+    cpSync(join(bin, "napi-v6"), join(bin, "napi-v7"), { recursive: true });
+    const abis = readdirSync(bin, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+    expect(abis).toHaveLength(2);
+    rmSync(join(bin, abis[1], "linux", "arm64", "onnxruntime_binding.node"));
+    const before = readdirSync(bin, { recursive: true }).sort();
+
+    expect(() => execFileSync(process.execPath, [script, bin, "linux", "arm64"], { stdio: "pipe" })).toThrow(/Missing ONNX binding/);
+    expect(readdirSync(bin, { recursive: true }).sort()).toEqual(before);
   });
 
   it("rejects an unrecognized binary layout without deleting it", () => {
