@@ -13,6 +13,8 @@ import {
   type SentMark,
   type SpoolRecord,
 } from "../capture/spool.js";
+import { relativePathsEnabled } from "./_project.js";
+import { relativizePaths, repositoryRoots } from "./_relative-paths.js";
 
 export { stripPrivateData } from "../functions/privacy.js";
 
@@ -100,7 +102,8 @@ function startDrainChild(): void {
 
 export async function captureObservation(body: ObserveBody, timeoutMs: number): Promise<CaptureOutcome> {
   const eventId = body.eventId ?? deriveEventId(body.hookType, body.sessionId, null, body.data);
-  const payload = { ...body, eventId } as unknown as Record<string, unknown>;
+  const data = relativePathsEnabled() ? relativizePaths(body.data, repositoryRoots(body.cwd)) : body.data;
+  const payload = { ...body, data, eventId } as unknown as Record<string, unknown>;
   let reason: string;
   try {
     const { outcome, mark } = await post(payload, timeoutMs);

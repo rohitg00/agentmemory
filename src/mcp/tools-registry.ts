@@ -112,6 +112,10 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Current session ID to exclude",
         },
+        project: {
+          type: "string",
+          description: "Only search sessions of this project",
+        },
       },
       required: ["files"],
     },

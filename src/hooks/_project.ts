@@ -2,6 +2,10 @@ import { execSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 
+export function relativePathsEnabled(): boolean {
+  return process.env["AGENTMEMORY_RELATIVE_PATHS"]?.trim().toLowerCase() === "true";
+}
+
 // Resolution order: AGENTMEMORY_PROJECT_NAME env → git repository basename → cwd basename.
 export function resolveProject(cwd?: string): string {
   const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];

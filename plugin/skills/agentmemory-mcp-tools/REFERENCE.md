@@ -21,7 +21,7 @@ agentmemory exposes 54 MCP tools. 8 are in the lean core set (`--tools core` or 
 | `memory_export` |  | `maxSessions`: number, `offset`: number, `collectionLimit`: number, `collectionOffset`: number, `collections`: string | Export memory data as JSON. Past the transport size limit the export is refused, so use the paging arguments on a large store. |
 | `memory_facet_query` |  | `matchAll`: string, `matchAny`: string, `targetType`: string | Query targets by facet tags with AND/OR logic. Find all actions tagged priority:urgent AND team:backend. |
 | `memory_facet_tag` |  | `targetId`*: string, `targetType`*: string, `dimension`*: string, `value`*: string | Attach a structured tag (dimension:value) to an action, memory, or observation for multi-dimensional categorization. |
-| `memory_file_history` |  | `files`*: string, `sessionId`: string | Get past observations about specific files. |
+| `memory_file_history` |  | `files`*: string, `sessionId`: string, `project`: string | Get past observations about specific files. |
 | `memory_frontier` |  | `project`: string, `agentId`: string, `limit`: number | Get all unblocked actions ranked by priority and urgency. Returns the frontier of actionable work with no unsatisfied dependencies. |
 | `memory_governance_delete` |  | `memoryIds`*: string, `reason`: string | Delete specific memories with audit trail. |
 | `memory_graph_query` |  | `startNodeId`: string, `nodeType`: string, `maxDepth`: number, `query`: string | Query the knowledge graph for entities and relationships. |
