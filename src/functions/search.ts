@@ -542,8 +542,9 @@ async function listWithRetry<T>(kv: StateKV, scope: string, label: string, deadl
       lastErr = err
       if (!isStateNotReadyError(err)) break
       const remaining = deadline - performance.now()
-      if (attempts >= LIST_RETRY_ATTEMPTS || remaining <= 0) break
-      await delay(Math.min(LIST_RETRY_BASE_MS * attempts, remaining))
+      const wait = LIST_RETRY_BASE_MS * attempts
+      if (attempts >= LIST_RETRY_ATTEMPTS || wait >= remaining) break
+      await delay(wait)
     }
   }
   logger.warn(`${label}: failed to load`, {
@@ -607,6 +608,7 @@ async function runKeywordRebuild(
   let memoriesLoaded = false
   const listDeadline = performance.now() + LIST_RETRY_BUDGET_MS
   const memories = await listWithRetry<Memory>(kv, KV.memories, 'rebuildKeywordIndex: memories', listDeadline)
+  const sessions = await listWithRetry<Session>(kv, KV.sessions, 'rebuildKeywordIndex: sessions', listDeadline)
   if (memories === null) {
     bm25RebuildIncomplete = true
   } else {
@@ -620,7 +622,6 @@ async function runKeywordRebuild(
     }
   }
 
-  const sessions = await listWithRetry<Session>(kv, KV.sessions, 'rebuildKeywordIndex: sessions', listDeadline)
   if (sessions === null) {
     bm25RebuildIncomplete = true
     if (memoriesLoaded) memoryIndexReady = true

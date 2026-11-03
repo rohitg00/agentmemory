@@ -225,7 +225,7 @@ describe("rebuildKeywordIndex", () => {
       await vi.advanceTimersByTimeAsync(120_000);
       const result = await promise;
 
-      expect(failures).toBe(8);
+      expect(failures).toBe(7);
       expect(result.documents).toBeGreaterThan(0);
       expect(isBm25RebuildIncomplete()).toBe(true);
     } finally {
@@ -289,7 +289,7 @@ describe("rebuildKeywordIndex", () => {
       await promise;
 
       expect(finishedAt - started).toBeLessThanOrEqual(70_000);
-      expect(sessionCalls).toBe(1);
+      expect(sessionCalls).toBe(4);
       expect(isBm25RebuildIncomplete()).toBe(true);
     } finally {
       vi.useRealTimers();
