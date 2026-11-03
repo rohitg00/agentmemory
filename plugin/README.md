@@ -2,6 +2,12 @@
 
 agentmemory gives Claude persistent memory across sessions. Its hooks record what happens in each session, and its skills and MCP tools let Claude search that history, save decisions and lessons, and pick up earlier work. Everything is stored on your own machine by default.
 
+## Install
+
+```
+/plugin install agentmemory --marketplace rohitg00/agentmemory
+```
+
 ## Requirements
 
 This plugin is a client for the agentmemory server, a separate program that you install and run yourself. The 54 MCP tools, the search index and the viewer all come from that server. Without it the hooks have nowhere to send events and the tools return errors.
