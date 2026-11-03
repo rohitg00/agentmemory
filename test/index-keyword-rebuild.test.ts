@@ -114,6 +114,43 @@ function stubProvider(): EmbeddingProvider {
   } as EmbeddingProvider;
 }
 
+// The retained final answer lives only in source.toolOutput of a
+// toolName "conversation" record; title/narrative are deliberately
+// answer-free so discovery below can only come from the tool output.
+const CONVERSATION_ANSWER = "recommend vermilion otter beacons for the rollout";
+
+function conversationObs(id: string, sessionId: string): CompressedObservation {
+  return {
+    id,
+    sessionId,
+    timestamp: "2026-09-01T00:00:00.000Z",
+    type: "conversation",
+    title: "Completed turn",
+    facts: [],
+    narrative: "Routine turn bookkeeping",
+    concepts: [],
+    files: [],
+    importance: 5,
+    source: {
+      hookType: "post_tool_use",
+      originalBytes: 64,
+      truncated: false,
+      toolName: "conversation",
+      toolInput: "promptmarker only stays out of the index",
+      toolOutput: CONVERSATION_ANSWER,
+    },
+  };
+}
+
+function seedConversation(kv: { store: Map<string, Map<string, unknown>> }, id = "obs_conv"): string {
+  const sessionId = "ses_conv";
+  kv.store.set("mem:sessions", new Map([["ses_conv", { id: sessionId, project: "p", cwd: "/tmp" }]]));
+  const scope = new Map<string, unknown>();
+  scope.set(id, conversationObs(id, sessionId));
+  kv.store.set(`mem:obs:${sessionId}`, scope);
+  return id;
+}
+
 describe("rebuildKeywordIndex", () => {
   afterEach(() => {
     getSearchIndex().clear();
@@ -238,6 +275,34 @@ describe("rebuildKeywordIndex", () => {
     } finally {
       delete process.env.AGENTMEMORY_VECTOR_BACKFILL;
     }
+  });
+
+  // Regression coverage: the keyword rebuild must keep answer-only terms of
+  // a retained conversation record searchable, without picking up the
+  // record's toolInput. Unit-level simulation only: the preexisting record is
+  // seeded directly into a mock KV store; no real worker restart, migration
+  // rollback, or upgrade path is exercised here.
+  it("rebuilds BM25 so a retained conversation answer is discoverable", async () => {
+    const kv = mockKV();
+    const id = seedConversation(kv);
+
+    await rebuildKeywordIndex(kv as never);
+
+    const idx = getSearchIndex();
+    expect(idx.has(id)).toBe(true);
+    expect(idx.search("vermilion otter beacons").map((r) => r.obsId)).toEqual([id]);
+    expect(idx.search("promptmarker")).toEqual([]);
+  });
+
+  it("keeps answer discovery across repeated rebuilds (idempotency)", async () => {
+    const kv = mockKV();
+    const id = seedConversation(kv);
+
+    await rebuildKeywordIndex(kv as never);
+    expect(getSearchIndex().search("vermilion otter beacons").map((r) => r.obsId)).toEqual([id]);
+
+    await rebuildKeywordIndex(kv as never);
+    expect(getSearchIndex().search("vermilion otter beacons").map((r) => r.obsId)).toEqual([id]);
   });
 });
 
