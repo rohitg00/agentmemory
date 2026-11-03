@@ -24,6 +24,7 @@ export interface SessionSweepResult {
 
 function isStaleActive(session: Session | null, cutoff: number): session is Session {
   if (!session || session.status !== "active") return false;
+  if (typeof session.id !== "string" || session.id.length === 0) return false;
   const freshness = session.updatedAt ?? session.startedAt;
   if (!freshness) return false;
   const ts = new Date(freshness).getTime();

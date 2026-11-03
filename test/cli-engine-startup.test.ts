@@ -140,5 +140,12 @@ describe("fresh native engine startup", () => {
     const windowsBranch = body.indexOf("} else if (IS_WINDOWS) {");
     expect(windowsBranch).toBeGreaterThan(-1);
     expect(windowsBranch).toBeLessThan(body.indexOf("p.select<Choice>("));
+  it("clears unready Compose state only for a PID positively identified as foreign", () => {
+    const reconcileStart = source.indexOf("async function reconcilePersistedComposeEngine");
+    const reconcileEnd = source.indexOf("async function main()", reconcileStart);
+    const reconcileBody = source.slice(reconcileStart, reconcileEnd);
+    expect(reconcileBody).toContain(
+      'if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign")',
+    );
   });
 });
