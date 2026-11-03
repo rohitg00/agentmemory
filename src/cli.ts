@@ -549,18 +549,38 @@ function fallbackIiiPaths(): string[] {
   return paths;
 }
 
+const III_VERSION_PROBE_TIMEOUTS_MS = [3000, 30000];
+
+function isProbeTimeout(err: unknown): boolean {
+  const e = err as { code?: string; signal?: string } | null;
+  return e?.code === "ETIMEDOUT" || e?.signal === "SIGTERM";
+}
+
+let iiiProbeScan: Map<string, string | null> | null = null;
+
 function iiiBinVersion(binPath: string): string | null {
-  try {
-    const out = execFileSync(binPath, ["--version"], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 3000,
-    });
-    const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
-    return match ? match[1]! : null;
-  } catch {
-    return null;
+  if (iiiProbeScan?.has(binPath)) return iiiProbeScan.get(binPath)!;
+  const version = probeIiiVersion(binPath);
+  iiiProbeScan?.set(binPath, version);
+  return version;
+}
+
+function probeIiiVersion(binPath: string): string | null {
+  for (const timeout of III_VERSION_PROBE_TIMEOUTS_MS) {
+    try {
+      const out = execFileSync(binPath, ["--version"], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout,
+      });
+      const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
+      return match ? match[1]! : null;
+    } catch (err) {
+      if (!isProbeTimeout(err)) return null;
+      vlog(`iii --version at ${binPath} timed out after ${timeout}ms`);
+    }
   }
+  return null;
 }
 
 // Resolve a compatible iii binary for the pinned engine version.
@@ -994,6 +1014,7 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
     return { ok: false, binPath: null };
   }
   spinner.stop(`${label} ${pc.green("✓")}`);
+  iiiProbeScan?.delete(binPath);
   return { ok: true, binPath };
 }
 
@@ -1284,6 +1305,15 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 }
 
 async function startEngine(): Promise<boolean> {
+  iiiProbeScan = new Map();
+  try {
+    return await scanAndStartEngine();
+  } finally {
+    iiiProbeScan = null;
+  }
+}
+
+async function scanAndStartEngine(): Promise<boolean> {
   startupFailure = null;
   engineReadinessDeadline = null;
   let stateBackendKind: "file" | "redis";
@@ -1324,10 +1354,7 @@ async function startEngine(): Promise<boolean> {
   vlog(`iii binary: ${pathIii ?? "(not on PATH)"}`);
 
   const fallbacks = fallbackIiiPaths().filter((p) => existsSync(p));
-  for (const f of fallbacks) {
-    const v = iiiBinVersion(f);
-    vlog(`fallback iii at ${f} reports version: ${v ?? "unknown"}`);
-  }
+  vlog(`fallback iii candidates: ${fallbacks.length > 0 ? fallbacks.join(", ") : "(none)"}`);
 
   let iiiBin = pickCompatibleIii([pathIii, ...fallbacks]);
 
@@ -1365,6 +1392,9 @@ async function startEngine(): Promise<boolean> {
       `iii on PATH is v${detected ?? "unknown"} but agentmemory pins v${IIPINNED_VERSION}. ` +
         `Installing pinned engine to ~/.agentmemory/bin (leaves your existing iii untouched).`,
     );
+  } else if (IS_WINDOWS) {
+    choice = "install";
+    p.log.warn("iii-engine binary not found locally.");
   } else if (!interactive) {
     choice = "install";
     p.log.info("Non-interactive environment detected — auto-installing iii-engine.");
