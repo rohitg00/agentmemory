@@ -835,6 +835,11 @@ export const V070_TOOLS: McpToolDef[] = [
         },
         project: { type: "string", description: "Project this lesson is about" },
         tags: { type: "string", description: "Comma-separated tags" },
+        sourceIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ids of the session, memory, observation or crystal this lesson came from (max 50)",
+        },
       },
       required: ["content"],
     },

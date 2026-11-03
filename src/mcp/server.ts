@@ -15,6 +15,7 @@ import { parseSearchExpansionIds } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
 import { isSearchLayer } from "../state/search-layer.js";
 import { checkAuth } from "../triggers/api.js";
+import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
 type McpResponse = {
@@ -1137,6 +1138,10 @@ export function registerMcpEndpoints(
             const lessonTags = typeof args.tags === "string" && args.tags.trim()
               ? args.tags.split(",").map((t: string) => t.trim()).filter(Boolean)
               : [];
+            const lessonSourceIds = normalizeLessonSourceIds(args.sourceIds);
+            if (!lessonSourceIds) {
+              return { status_code: 400, body: { error: `sourceIds must be an array of at most ${LESSON_SOURCE_IDS_MAX} ids (session, memory, observation or crystal ids) without spaces` } };
+            }
             const lessonSaveResult = await sdk.trigger({ function_id: "mem::lesson-save", payload: {
               content: args.content,
               context: args.context || "",
@@ -1144,6 +1149,7 @@ export function registerMcpEndpoints(
               project: args.project,
               tags: lessonTags,
               source: "manual",
+              sourceIds: lessonSourceIds,
             } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonSaveResult, null, 2) }] } };
           }
