@@ -556,7 +556,10 @@ function isProbeTimeout(err: unknown): boolean {
   return e?.code === "ETIMEDOUT" || e?.signal === "SIGTERM";
 }
 
+const timedOutIiiProbes = new Set<string>();
+
 function iiiBinVersion(binPath: string): string | null {
+  if (timedOutIiiProbes.has(binPath)) return null;
   for (const timeout of III_VERSION_PROBE_TIMEOUTS_MS) {
     try {
       const out = execFileSync(binPath, ["--version"], {
@@ -571,6 +574,7 @@ function iiiBinVersion(binPath: string): string | null {
       vlog(`iii --version at ${binPath} timed out after ${timeout}ms`);
     }
   }
+  timedOutIiiProbes.add(binPath);
   return null;
 }
 
@@ -1005,6 +1009,7 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
     return { ok: false, binPath: null };
   }
   spinner.stop(`${label} ${pc.green("✓")}`);
+  timedOutIiiProbes.delete(binPath);
   return { ok: true, binPath };
 }
 

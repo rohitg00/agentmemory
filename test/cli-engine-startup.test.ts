@@ -122,6 +122,15 @@ describe("fresh native engine startup", () => {
     expect(body).toContain("if (!isProbeTimeout(err)) return null;");
   });
 
+  it("probes a binary that timed out only once per process and forgets it after a fresh install", () => {
+    const start = source.indexOf("function iiiBinVersion");
+    const body = source.slice(start, source.indexOf("\n}\n", start));
+    expect(body).toContain("if (timedOutIiiProbes.has(binPath)) return null;");
+    expect(body).toContain("timedOutIiiProbes.add(binPath);");
+    const installer = source.slice(source.indexOf("async function runIiiInstaller"), source.indexOf("type StartupFailure"));
+    expect(installer).toContain("timedOutIiiProbes.delete(binPath);");
+  });
+
   it("never opens the install prompt on Windows, where auto-install is unavailable", () => {
     const start = source.indexOf("async function startEngine");
     const body = source.slice(start, source.indexOf("async function waitForEngine", start));
