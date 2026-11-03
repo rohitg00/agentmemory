@@ -215,7 +215,7 @@ describe("rebuildKeywordIndex", () => {
         list: async <T>(scope: string): Promise<T[]> => {
           if (scope === "mem:memories") {
             failures++;
-            throw new Error("engine unreachable");
+            throw new Error("function_not_found: Function state::list not found in namespace agentmemory-3111.");
           }
           return kv.list<T>(scope);
         },
@@ -231,6 +231,30 @@ describe("rebuildKeywordIndex", () => {
     } finally {
       vi.useRealTimers();
     }
+  }, 10_000);
+
+  it("does not hold boot retrying an error that waiting cannot fix", async () => {
+    const kv = mockKV();
+    seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+    let failures = 0;
+    const failingKv = {
+      ...kv,
+      list: async <T>(scope: string): Promise<T[]> => {
+        if (scope === "mem:memories") {
+          failures++;
+          throw new Error("frame too large");
+        }
+        return kv.list<T>(scope);
+      },
+    };
+
+    const started = Date.now();
+    const result = await rebuildKeywordIndex(failingKv as never);
+
+    expect(failures).toBe(1);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    expect(result.documents).toBeGreaterThan(0);
+    expect(isBm25RebuildIncomplete()).toBe(true);
   }, 10_000);
 
   it("queues embeddings only for documents newer than the last vector save", async () => {
