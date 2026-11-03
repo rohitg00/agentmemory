@@ -19,6 +19,11 @@ interface IndexEntry {
 // transcript or long tool output cannot blow up the BM25 index.
 const USER_PROMPT_TERM_CAP = 2000;
 const ASSISTANT_RESPONSE_TERM_CAP = 1000;
+// Only the retained final answer (toolName "conversation", string toolOutput)
+// is indexed; arbitrary tool output never enters the BM25 document. The cap
+// keeps a long answer from dominating document length the way the per-field
+// caps above do for pasted transcripts.
+const TOOL_OUTPUT_TERM_CAP = 1000;
 
 export interface SearchIndexRevision {
   isCurrent(): boolean;
@@ -365,6 +370,12 @@ export class SearchIndex {
       parts.push(
         obs.source.assistantResponse.slice(0, ASSISTANT_RESPONSE_TERM_CAP),
       );
+    }
+    if (
+      obs.source?.toolName === "conversation" &&
+      typeof obs.source.toolOutput === "string"
+    ) {
+      parts.push(obs.source.toolOutput.slice(0, TOOL_OUTPUT_TERM_CAP));
     }
     return this.tokenize(parts.join(" ").toLowerCase());
   }

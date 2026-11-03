@@ -375,4 +375,77 @@ describe("SearchIndex", () => {
     expect(index.search("headmarker").length).toBeGreaterThan(0);
     expect(index.search("tailmarker")).toEqual([]);
   });
+
+  // Regression coverage: the retained final answer lives in
+  // source.toolOutput of a toolName "conversation" record. Its terms may
+  // appear nowhere else on the card, so answer-only discovery must work,
+  // while unrelated tool output and non-string payloads stay out of the
+  // BM25 document entirely.
+  it("indexes only the retained conversation answer, not unrelated tool output", () => {
+    index.add(
+      makeObs({
+        id: "obs_answer",
+        title: "Completed turn",
+        narrative: "Routine turn bookkeeping",
+        source: {
+          hookType: "post_tool_use",
+          originalBytes: 64,
+          truncated: false,
+          toolName: "conversation",
+          toolInput: "promptmarker only stays out of the index",
+          toolOutput: "recommend vermilion otter beacons for the rollout",
+        },
+      }),
+    );
+    index.add(
+      makeObs({
+        id: "obs_file_tool",
+        title: "Read config",
+        narrative: "Routine tool bookkeeping",
+        source: {
+          hookType: "post_tool_use",
+          originalBytes: 64,
+          truncated: false,
+          toolName: "read_file",
+          toolOutput: "recommend vermilion otter beacons for the rollout",
+        },
+      }),
+    );
+    index.add(
+      makeObs({
+        id: "obs_object_output",
+        title: "Object output turn",
+        narrative: "Routine turn bookkeeping",
+        source: {
+          hookType: "post_tool_use",
+          originalBytes: 64,
+          truncated: false,
+          toolName: "conversation",
+          toolOutput: { text: "recommend vermilion otter beacons for the rollout" },
+        },
+      }),
+    );
+
+    expect(index.search("vermilion otter beacons").map((r) => r.obsId)).toEqual(["obs_answer"]);
+    expect(index.search("promptmarker")).toEqual([]);
+  });
+
+  it("caps the indexed length of a retained conversation answer", () => {
+    index.add(
+      makeObs({
+        id: "obs_capped_answer",
+        title: "Completed turn",
+        narrative: "Routine turn bookkeeping",
+        source: {
+          hookType: "post_tool_use",
+          originalBytes: 90000,
+          truncated: true,
+          toolName: "conversation",
+          toolOutput: `headanswer ${"filler ".repeat(2000)} tailanswer`,
+        },
+      }),
+    );
+    expect(index.search("headanswer").map((r) => r.obsId)).toEqual(["obs_capped_answer"]);
+    expect(index.search("tailanswer")).toEqual([]);
+  });
 });
