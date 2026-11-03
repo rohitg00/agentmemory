@@ -83,7 +83,7 @@ import {
 } from "./cli/engine-config.js";
 import { SHUTDOWN_HARD_EXIT_MS, registerStartupCleanup, runStartupCleanup } from "./shutdown.js";
 import { processStatIsRunning } from "./cli/process-state.js";
-import { readUnixProcessExecutable, sameResolvedExecutable } from "./cli/compose-process.js";
+import { classifyComposeProcess, readUnixProcessExecutable, type ComposeProcessIdentity } from "./cli/compose-process.js";
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
@@ -1102,6 +1102,14 @@ function printComposeStartupLogs(): void {
 }
 
 function composePidMatches(pid: number, state: ComposeEngineState): boolean {
+  return composePidIdentity(pid, state) === "match";
+}
+
+function composePidIdentity(pid: number, state: ComposeEngineState): ComposeProcessIdentity {
+  return classifyComposeProcess(inspectComposeProcess(pid), state, IS_WINDOWS);
+}
+
+function inspectComposeProcess(pid: number): { command: string; executable: string } | null {
   try {
     let command = "";
     let executable = "";
@@ -1120,15 +1128,9 @@ function composePidMatches(pid: number, state: ComposeEngineState): boolean {
       command = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
       executable = readUnixProcessExecutable(pid, "linux");
     }
-    const expectedCommand = command.includes("compose") &&
-      command.includes("compose --namespace") &&
-      command.includes(state.namespace) &&
-      command.includes(state.file);
-    if (!expectedCommand) return false;
-    if (!executable) return false;
-    return sameResolvedExecutable(executable, state.binPath, IS_WINDOWS);
+    return { command, executable };
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -1510,7 +1512,7 @@ async function reconcilePersistedComposeEngine(): Promise<boolean> {
   const state = readEngineState();
   if (state?.kind !== "compose") return false;
   if (!(await isEngineRunning())) {
-    if (state.composePid && pidAlive(state.composePid) && composePidMatches(state.composePid, state)) {
+    if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign") {
       p.log.error(`Worker Compose daemon ${state.composePid} is alive but REST ${state.restPort} is not ready. Inspect ${state.logFile}; use agentmemory stop to reconcile.`);
       process.exit(1);
     }
