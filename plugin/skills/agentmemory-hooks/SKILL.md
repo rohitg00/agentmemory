@@ -23,7 +23,9 @@ devin plugins install rohitg00/agentmemory#plugin
 
 Run `/hooks` inside Devin to confirm the agentmemory hooks are loaded. Plugin hooks run only in local Devin sessions, not in cloud sessions.
 
-Hermes and OpenClaw use their native integrations and lifecycle contracts. Follow the matching integration setup instructions and verify a real turn creates an observation. Installing shared skills or connecting MCP alone does not enable automatic capture. Watch recorded observations in the viewer at `http://localhost:3113` when using the default port.
+Pi and OMP install native recall and capture with `agentmemory connect pi --with-mcp` or `agentmemory connect omp --with-mcp`. Reload Pi or restart OMP, then inspect `/agentmemory-status`. DSH requires `agentmemory connect dsh --with-hooks` and a restart. Cursor lifecycle hooks come from its enabled plugin, separately from `connect cursor`'s MCP setup.
+
+Hermes and OpenClaw use their native integrations and lifecycle contracts. Follow the matching integration setup instructions and verify a real turn creates an observation. Installing shared skills or connecting MCP alone does not enable automatic capture. Watch recorded observations in the viewer at `http://localhost:3113` when using the default port. A pending capture queue is not proof that the daemon stored the event.
 
 ## What the hooks do
 
@@ -34,7 +36,7 @@ Hermes and OpenClaw use their native integrations and lifecycle contracts. Follo
 
 ## Important
 
-- The plugin hooks capture by default without an LLM. Summary generation (`AGENTMEMORY_AUTO_COMPRESS`) and hook context injection (`AGENTMEMORY_INJECT_CONTEXT`) are separate options. Native integrations have their own recall/capture settings; inspect the host configuration instead of assuming these flags control every plugin.
+- The plugin hooks capture by default without an LLM. Per-observation LLM compression (`AGENTMEMORY_AUTO_COMPRESS`) and hook context injection (`AGENTMEMORY_INJECT_CONTEXT`) are separate options. Session summaries can use a configured LLM provider independently of automatic observation compression. Native integrations have their own recall/capture settings; inspect the host configuration instead of assuming these flags control every plugin.
 - If observations are missing, confirm the plugin is enabled and the server is running. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## See also

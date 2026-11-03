@@ -116,6 +116,11 @@
   transition-delay: var(--d, 0ms);
 }
 
+:global(html:not(.js)) .dot[data-hit] .fill {
+  opacity: 1;
+  transform: none;
+}
+
 .legend {
   display: flex;
   flex-wrap: wrap;

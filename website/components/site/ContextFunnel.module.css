@@ -85,23 +85,11 @@
 .flow {
   display: grid;
   place-items: center;
+  padding: 0 8px;
 }
 
-.arrow {
-  position: relative;
+.flow :global(.flow-arrow) {
   width: 100%;
-  height: 1px;
-  background: repeating-linear-gradient(90deg, var(--ink-2) 0 4px, transparent 4px 8px);
-}
-
-.arrow::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  top: -4px;
-  border: 4px solid transparent;
-  border-left: 6px solid var(--ink-2);
-  border-right: 0;
 }
 
 .engine {
@@ -249,7 +237,7 @@
   justify-self: start;
 }
 
-.figure:not(.play) .sq {
+:global(.js) .figure:not(.play) .sq {
   opacity: 0;
   transform: translateY(4px);
 }
@@ -291,20 +279,12 @@
     gap: 0;
   }
   .flow {
-    height: 40px;
+    height: 48px;
+    padding: 0;
   }
-  .arrow {
-    width: 1px;
-    height: 100%;
-    background: repeating-linear-gradient(180deg, var(--ink-2) 0 4px, transparent 4px 8px);
-  }
-  .arrow::after {
-    right: -4px;
-    top: auto;
-    bottom: 0;
-    border: 4px solid transparent;
-    border-top: 6px solid var(--ink-2);
-    border-bottom: 0;
+  .flow :global(.flow-arrow) {
+    width: 32px;
+    transform: rotate(90deg);
   }
   .engineCard {
     grid-template-columns: 1fr;
@@ -347,6 +327,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .figure:not(.play) .sq,
+  :global(.js) .figure:not(.play) .sq,
   .play .sq,
   .focus .sel {
     opacity: 1;
@@ -373,4 +354,23 @@
   .tick {
     transition: none;
   }
+}
+
+:global(html:not(.js)) .figure .sq:not(.sel) {
+  opacity: 0.22;
+}
+
+:global(html:not(.js)) .figure .sel,
+:global(html:not(.js)) .figure .slot {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+:global(html:not(.js)) .figure .steps li {
+  color: var(--bg);
+}
+
+:global(html:not(.js)) .figure .tick {
+  background: var(--accent);
+  border-color: var(--accent);
 }

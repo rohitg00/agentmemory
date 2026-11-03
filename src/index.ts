@@ -38,7 +38,6 @@ import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, runStartupCleanup, se
 import { registerPrivacyFunction, withWriteScrubbing } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
 import { registerCaptureFunctions } from "./functions/capture.js";
-import { seedViewerStreamTracker } from "./state/viewer-stream.js";
 import { registerImageQuotaCleanup } from "./functions/image-quota-cleanup.js";
 import { registerVisionSearchFunctions } from "./functions/vision-search.js";
 import { registerSlotsFunctions, isSlotsEnabled, isReflectEnabled } from "./functions/slots.js";
@@ -119,13 +118,13 @@ import { registerReplayFunctions } from "./functions/replay.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerViewerStreamTriggers } from "./triggers/viewer-streams.js";
+import { registerViewerSse } from "./triggers/viewer-sse.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
 import { getAllTools } from "./mcp/tools-registry.js";
 import { startViewerServer } from "./viewer/server.js";
 import { MetricsStore } from "./eval/metrics-store.js";
 import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
-import { createStreamRelayProbe } from "./health/stream-relay-probe.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
 import { bootLog, bootWarn } from "./logger.js";
@@ -138,6 +137,9 @@ function workerPidfilePath(): string {
   return runtimeMetadataPath("worker.pid");
 }
 function writeWorkerPidfile(): void {
+  // Worker Compose owns the entire process lifecycle. Its supervised container
+  // PID is authoritative; do not create a second ownership record.
+  if (process.env["III_COMPOSE_FILE"]) return;
   try {
     const p = workerPidfilePath();
     mkdirSync(dirname(p), { recursive: true });
@@ -147,6 +149,7 @@ function writeWorkerPidfile(): void {
   }
 }
 function clearWorkerPidfile(): void {
+  if (process.env["III_COMPOSE_FILE"]) return;
   try {
     unlinkSync(workerPidfilePath());
   } catch {}
@@ -226,7 +229,6 @@ async function main() {
   bootLog(
     `REST API: http://localhost:${config.restPort}/agentmemory/*`,
   );
-  bootLog(`Streams: ws://localhost:${config.streamsPort}`);
 
   const sdk = withWriteScrubbing(registerWorker(config.engineUrl, {
     workerName: "agentmemory",
@@ -446,14 +448,10 @@ async function main() {
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);
   registerEventTriggers(sdk, kv);
   registerViewerStreamTriggers(sdk, kv, { secret, metricsStore, provider });
+  registerViewerSse(sdk);
   registerMcpEndpoints(sdk, kv, secret);
 
-  const healthMonitor = registerHealthMonitor(sdk, kv, {
-    streamRelayProbe:
-      kv.backend === "redis"
-        ? createStreamRelayProbe(sdk, { url: `ws://localhost:${config.streamsPort}` })
-        : undefined,
-  });
+  const healthMonitor = registerHealthMonitor(sdk, kv);
 
   const indexPersistence = new IndexPersistence(kv, vectorIndex, { requireRecoveryPlan: true });
   setIndexPersistence(indexPersistence);
@@ -603,7 +601,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 143 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 146 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -708,7 +706,6 @@ async function main() {
   }, 60 * 60 * 1000);
   recentSearchesSweepTimer.unref();
 
-  void seedViewerStreamTracker(sdk, { unorderedListing: kv.backend === "redis" }).catch(() => {});
 
   if (isSessionSweepEnabled()) {
     const sessionSweepTimer = setInterval(async () => {
