@@ -2,6 +2,7 @@
 
 import { InMemoryKV } from "./in-memory-kv.js";
 import { createStdioTransport } from "./transport.js";
+import { installCrashHandlers } from "./crash-log.js";
 import { getAllTools } from "./tools-registry.js";
 import { getAgentId, getStandalonePersistPath, isAgentScopeIsolated } from "../config.js";
 import { isSearchLayer, type SearchLayer } from "../state/search-layer.js";
@@ -634,6 +635,13 @@ const transport = createStdioTransport(async (method, params) => {
     default:
       throw new Error(`Unknown method: ${method}`);
   }
+});
+
+installCrashHandlers(() => {
+  try {
+    kv.persist();
+  } catch {}
+  process.exit(1);
 });
 
 process.stderr.write(
