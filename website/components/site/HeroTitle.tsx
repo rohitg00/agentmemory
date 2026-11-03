@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import s from "./HeroTitle.module.css";
 
-const MODES = ["persistent", "cross-agent", "infinite", "shared", "local", "long-term"];
+const MODES = ["persistent", "cross-agent", "searchable", "shared", "local", "long-term"];
 
 const AGENTS = [
   { name: "Claude Code", logo: "https://svgl.app/library/claude-ai-icon.svg" },
@@ -16,7 +16,7 @@ const AGENTS = [
 
 const STEP = 2400;
 
-export function HeroTitle({ rankHref }: { rankHref: string }) {
+export function HeroTitle() {
   const [mode, setMode] = useState(0);
   const [agent, setAgent] = useState(0);
   const ref = useRef<HTMLHeadingElement | null>(null);
@@ -44,11 +44,8 @@ export function HeroTitle({ rankHref }: { rankHref: string }) {
 
   return (
     <h1 ref={ref} className={s.title}>
-      <span className="sr-only">The number one persistent memory for coding agents.</span>
+      <span className="sr-only">Persistent memory for coding agents.</span>
       <span aria-hidden="true" className={s.line}>
-        <a className={s.rank} href={rankHref} target="_blank" rel="noreferrer" tabIndex={-1}>
-          #1
-        </a>{" "}
         <span className={s.slot}>
           {MODES.map((m, i) => (
             <span key={m} className={s.item} data-on={i === mode || undefined}>

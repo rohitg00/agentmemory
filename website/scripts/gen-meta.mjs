@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFileSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,29 +44,6 @@ function countHookTypes(typesPath) {
     .filter((s) => /^["'`]/.test(s)).length;
 }
 
-function countTestCases(testDir) {
-  let total = 0;
-  let entries;
-  try {
-    entries = readdirSync(testDir, { withFileTypes: true });
-  } catch {
-    return 0;
-  }
-  for (const entry of entries) {
-    const full = join(testDir, entry.name);
-    if (entry.isDirectory()) {
-      total += countTestCases(full);
-      continue;
-    }
-    if (!/\.test\.[jt]sx?$/.test(entry.name)) continue;
-    const txt = readFileSafe(full);
-    if (!txt) continue;
-    const m = txt.match(/(?:^|\s)(?:it|test)(?:\.\w+)?\s*\(/g);
-    if (m) total += m.length;
-  }
-  return total;
-}
-
 const pkg = safeReadJson(join(repoRoot, "package.json"));
 const version = pkg?.version;
 if (!version) {
@@ -85,7 +62,11 @@ const mcpTools = safeCountMatches(
   /name:\s*"memory_/g,
 );
 const hooks = countHookTypes(join(repoRoot, "src", "types.ts"));
-const testsPassing = countTestCases(join(repoRoot, "test"));
+const synced = safeReadJson(join(repoRoot, "scripts/docs-sync.state.json"));
+const testCases = synced?.facts?.tests?.[0];
+if (synced?.version !== version || !testCases || !mcpTools || !hooks || !restEndpoints) {
+  throw new Error("gen-meta: source metadata is missing or stale; run npm run docs:sync from the repository root");
+}
 
 const REPO = "rohitg00/agentmemory";
 const NPM_PKG = "@agentmemory/agentmemory";
@@ -183,15 +164,27 @@ for (const key of Object.keys(STAT_FALLBACK)) {
 
 const meta = {
   version,
-  mcpTools: mcpTools || 45,
-  hooks: hooks || 12,
-  restEndpoints: restEndpoints || 107,
-  testsPassing: testsPassing || 794,
+  mcpTools,
+  hooks,
+  restEndpoints,
+  testCases,
   ...stats,
   generatedAt: new Date().toISOString(),
 };
 
 writeFileSync(outPath, JSON.stringify(meta, null, 2) + "\n", "utf-8");
+
+const evaluation = {};
+for (const suite of ["longmemeval", "coding"]) {
+  const dir = join(repoRoot, "docs/benchmarks/receipts/2026-10-28", suite);
+  const summary = safeReadJson(join(dir, "summary.json"));
+  const manifest = safeReadJson(join(dir, "manifest.json"));
+  if (!summary || manifest?.k !== 5 || summary.completed + summary.failed !== summary.planned) {
+    throw new Error(`gen-meta: missing or incomplete ${suite} evaluation receipts`);
+  }
+  evaluation[suite] = summary;
+}
+writeFileSync(join(outDir, "generated-evaluation.json"), JSON.stringify(evaluation, null, 2) + "\n");
 
 function parseChangelog(text) {
   const releases = [];
@@ -213,5 +206,5 @@ const changelog = parseChangelog(readFileSafe(join(repoRoot, "CHANGELOG.md"))).s
 writeFileSync(join(outDir, "generated-changelog.json"), JSON.stringify(changelog, null, 2) + "\n", "utf-8");
 
 console.log(
-  `[gen-meta] wrote ${outPath}: v${meta.version}, ${meta.mcpTools} tools, ${meta.hooks} hooks, ${meta.restEndpoints} endpoints, ${meta.testsPassing} tests, ${meta.stars} stars, ${meta.npmMonthly} npm/month, ${changelog.length} changelog entries`,
+  `[gen-meta] wrote ${outPath}: v${meta.version}, ${meta.mcpTools} tools, ${meta.hooks} hooks, ${meta.restEndpoints} endpoints, ${meta.testCases} test cases, ${meta.stars} stars, ${meta.npmMonthly} npm/month, ${changelog.length} changelog entries`,
 );

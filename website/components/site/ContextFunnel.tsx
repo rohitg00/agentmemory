@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type CSSProperties } from "react";
-import { LONGMEMEVAL, TOKENS, src } from "@/lib/site";
+import { src } from "@/lib/site";
 import s from "./ContextFunnel.module.css";
 
 const COLS = 15;
@@ -12,7 +12,7 @@ const AGENTS = [
 ];
 const TOTAL = COLS * AGENTS.reduce((n, a) => n + a.rows, 0);
 const SELECTED = new Set([3, 17, 29, 41, 52, 66, 79, 88, 101, 114, 126, 139, 151, 163, 176, 188]);
-const STEPS = ["capture", "dedupe", "rank", "compress"];
+const STEPS = ["capture", "dedupe", "rank", "budget"];
 
 function tone(index: number) {
   const row = Math.floor(index / COLS);
@@ -51,18 +51,16 @@ export function ContextFunnel() {
     };
   }, []);
 
-  const saved = Math.round((1 - TOKENS.agentmemory / TOKENS.fullContext) * 100);
 
   return (
     <section id="value" className="section" aria-labelledby="value-h">
       <div className="wrap">
         <div className="section-head">
           <span className="eyebrow">What your agent gets</span>
-          <h2 id="value-h">The {100 - saved}% of your history that matters, every session.</h2>
+          <h2 id="value-h">Relevant context, within a budget you control.</h2>
           <p>
-            A month of work across agents is {TOKENS.fullContext.toLocaleString("en-US")} tokens. Pasting all of it buries
-            the task. agentmemory hands the next session the {TOKENS.agentmemory.toLocaleString("en-US")} tokens that
-            answer it, and leaves the rest of the window for the work.
+            Recall by project and agent, select saved memories, and expand a source when you need more detail.
+            The diagram illustrates selection from shared history; the amount returned depends on the query and budget.
           </p>
         </div>
 
@@ -70,9 +68,9 @@ export function ContextFunnel() {
           <div className={`${s.col} ${s.history}`}>
             <div className={s.colHead}>
               <span className="mono">your history</span>
-              <span className={`mono ${s.count}`}>{TOKENS.fullContext.toLocaleString("en-US")} tokens</span>
+              <span className={`mono ${s.count}`}>shared history</span>
             </div>
-            <div className={s.grid} role="img" aria-label={`${TOTAL} squares, about 100 tokens each, from three agents. ${SELECTED.size} of them are selected as relevant.`}>
+            <div className={s.grid} role="img" aria-label={`${TOTAL} illustrative history items from three agents. ${SELECTED.size} of them are selected as relevant.`}>
               {Array.from({ length: TOTAL }, (_, i) => (
                 <span
                   key={i}
@@ -89,7 +87,7 @@ export function ContextFunnel() {
                 </li>
               ))}
               <li className={s.legendNote}>
-                <span className="mono">1 square ≈ 100 tokens</span>
+                <span className="mono">illustrative history items</span>
               </li>
             </ul>
           </div>
@@ -124,7 +122,7 @@ export function ContextFunnel() {
             <div className={s.ctx}>
               <div className={s.injected}>
                 <span className={`mono ${s.injHead}`}>
-                  SessionStart · {TOKENS.agentmemory.toLocaleString("en-US")} tokens
+                  relevant context
                 </span>
                 <div className={s.slots}>
                   {Array.from({ length: SELECTED.size }, (_, i) => (
@@ -142,24 +140,24 @@ export function ContextFunnel() {
 
         <ul className={s.outcomes}>
           <li>
-            <span className={s.big}>{LONGMEMEVAL.hybrid.r5}%</span>
-            <span className={s.what}>of questions find the right past session in the top 5</span>
-            <a className="src" href={src.longmemeval} target="_blank" rel="noreferrer">
-              LongMemEval-S
+            <span className={s.big}>Scoped</span>
+            <span className={s.what}>filter recall by project and agent</span>
+            <a className="src" href={src.recall} target="_blank" rel="noreferrer">
+              recall guide
             </a>
           </li>
           <li>
-            <span className={s.big}>{TOKENS.savedPct}%</span>
-            <span className={s.what}>fewer input tokens than pasting your whole history</span>
-            <a className="src" href={src.tokens} target="_blank" rel="noreferrer">
-              240 observations, 30 sessions, v0.6.0
+            <span className={s.big}>Budgeted</span>
+            <span className={s.what}>choose how much context to retrieve</span>
+            <a className="src" href={src.recall} target="_blank" rel="noreferrer">
+              context budgets
             </a>
           </li>
           <li>
-            <span className={s.big}>14 ms</span>
-            <span className={s.what}>median recall, with nothing sent over the network</span>
-            <a className="src" href={src.agentLife} target="_blank" rel="noreferrer">
-              coding-agent-life-v1 on v0.9.26
+            <span className={s.big}>Expandable</span>
+            <span className={s.what}>follow a result back to its full source</span>
+            <a className="src" href={src.recall} target="_blank" rel="noreferrer">
+              source expansion
             </a>
           </li>
         </ul>
