@@ -541,7 +541,7 @@ async function listWithRetry<T>(kv: StateKV, scope: string, label: string, deadl
     } catch (err) {
       lastErr = err
       if (!isStateNotReadyError(err)) break
-      const remaining = deadline - Date.now()
+      const remaining = deadline - performance.now()
       if (attempts >= LIST_RETRY_ATTEMPTS || remaining <= 0) break
       await delay(Math.min(LIST_RETRY_BASE_MS * attempts, remaining))
     }
@@ -605,7 +605,7 @@ async function runKeywordRebuild(
 
   let documents = 0
   let memoriesLoaded = false
-  const listDeadline = Date.now() + LIST_RETRY_BUDGET_MS
+  const listDeadline = performance.now() + LIST_RETRY_BUDGET_MS
   const memories = await listWithRetry<Memory>(kv, KV.memories, 'rebuildKeywordIndex: memories', listDeadline)
   if (memories === null) {
     bm25RebuildIncomplete = true

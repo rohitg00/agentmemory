@@ -267,9 +267,11 @@ describe("rebuildKeywordIndex", () => {
     try {
       const kv = mockKV();
       seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let sessionCalls = 0;
       const failingKv = {
         ...kv,
         list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:sessions") sessionCalls++;
           if (scope === "mem:memories" || scope === "mem:sessions") {
             throw new Error("function_not_found: Function state::list not found in namespace agentmemory-3111.");
           }
@@ -277,16 +279,17 @@ describe("rebuildKeywordIndex", () => {
         },
       };
 
-      const started = Date.now();
+      const started = performance.now();
       let finishedAt = 0;
       const promise = rebuildKeywordIndex(failingKv as never).then((result) => {
-        finishedAt = Date.now();
+        finishedAt = performance.now();
         return result;
       });
       await vi.advanceTimersByTimeAsync(200_000);
       await promise;
 
       expect(finishedAt - started).toBeLessThanOrEqual(70_000);
+      expect(sessionCalls).toBe(1);
       expect(isBm25RebuildIncomplete()).toBe(true);
     } finally {
       vi.useRealTimers();
