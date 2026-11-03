@@ -21,6 +21,13 @@ export const COMPOSE_WORKER_VERSIONS = {
   http: "0.22.7",
 } as const;
 
+export const COMPOSE_STOP_TIMEOUT_SECONDS = 20;
+const COMPOSE_CONTAINER_COUNT = Object.keys(COMPOSE_WORKER_VERSIONS).length + 1;
+
+export function composeDownTimeoutMs(): number {
+  return (COMPOSE_STOP_TIMEOUT_SECONDS * COMPOSE_CONTAINER_COUNT + 30) * 1000;
+}
+
 export function composeNamespace(restPort: number): string {
   // A distinct namespace per REST port prevents two separately managed engine
   // daemons from competing for the SDK/default namespace during overlap.
@@ -273,7 +280,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
   const lines = [
     `namespace: ${namespace}`,
     "startup_timeout: 60s",
-    "stop_timeout: 20s",
+    `stop_timeout: ${COMPOSE_STOP_TIMEOUT_SECONDS}s`,
     "required_default: true",
     "engine:",
     `  url: ws://127.0.0.1:${enginePort}`,

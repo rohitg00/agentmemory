@@ -3,7 +3,7 @@ import { parse } from "yaml";
 import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { renderWorkerCompose } from "../src/cli/compose-project.js";
+import { COMPOSE_STOP_TIMEOUT_SECONDS, composeDownTimeoutMs, renderWorkerCompose } from "../src/cli/compose-project.js";
 import { ownedComposeProject, sameComposeFile } from "../src/cli/compose-control.js";
 
 const root = mkdtempSync(join(tmpdir(), "compose-win-"));
@@ -50,6 +50,13 @@ describe("Windows Worker Compose render", () => {
 
   it("rejects a local worker directory with spaces or metacharacters", () => {
     expect(() => renderWorkerCompose(options({ workerBinDir: "C:\\Program Files\\workers", workerBinDirIsAbsolute: true }))).toThrow(/AGENTMEMORY_WORKER_BIN_DIR/);
+  });
+
+  it("gives compose::down enough time to wait out every worker's stop_timeout", () => {
+    const parsed = parse(renderWorkerCompose(options())) as { stop_timeout: string; containers: Record<string, unknown> };
+    const stopSeconds = Number(parsed.stop_timeout.replace(/s$/, ""));
+    expect(stopSeconds).toBe(COMPOSE_STOP_TIMEOUT_SECONDS);
+    expect(composeDownTimeoutMs()).toBeGreaterThan(stopSeconds * Object.keys(parsed.containers).length * 1000);
   });
 
   it("keeps the POSIX render unchanged", () => {
