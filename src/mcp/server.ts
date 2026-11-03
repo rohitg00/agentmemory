@@ -10,7 +10,7 @@ import type {
   GraphNode,
   GraphEdge,
 } from "../types.js";
-import { getVisibleTools } from "./tools-registry.js";
+import { getAllTools, getVisibleTools } from "./tools-registry.js";
 import { parseSearchExpansionIds } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
 import { isSearchLayer } from "../state/search-layer.js";
@@ -46,8 +46,12 @@ function parseCsvList(value: unknown): string[] {
   return [];
 }
 
+const SLOT_TOOL_NAMES = new Set(
+  getAllTools().filter((t) => t.name.startsWith("memory_slot_")).map((t) => t.name),
+);
+
 function isSlotTool(name: string): boolean {
-  return name.startsWith("memory_slot_");
+  return SLOT_TOOL_NAMES.has(name);
 }
 
 export function registerMcpEndpoints(
@@ -55,11 +59,11 @@ export function registerMcpEndpoints(
   kv: StateKV,
   secret?: string,
 ): void {
-  sdk.registerFunction("mcp::tools::list", 
+  const slotsEnabled = isSlotsEnabled();
+  sdk.registerFunction("mcp::tools::list",
     async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const slotsEnabled = isSlotsEnabled();
       const tools = getVisibleTools().filter((t) => slotsEnabled || !isSlotTool(t.name));
       return { status_code: 200, body: { tools } };
     },
@@ -83,7 +87,7 @@ export function registerMcpEndpoints(
 
       const { name, arguments: args = {} } = req.body;
 
-      if (isSlotTool(name) && !isSlotsEnabled()) return slotsDisabledResponse();
+      if (isSlotTool(name) && !slotsEnabled) return slotsDisabledResponse();
 
       try {
         switch (name) {

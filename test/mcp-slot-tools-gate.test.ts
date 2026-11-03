@@ -72,6 +72,23 @@ describe("MCP slot tools follow AGENTMEMORY_SLOTS", () => {
     expect(sdk.triggered).not.toContain("mem::slot-list");
   });
 
+  it("keeps the unknown-tool response for a misspelled slot name", async () => {
+    process.env["AGENTMEMORY_SLOTS"] = "false";
+    const res = await register().getFunction("mcp::tools::call")({
+      headers: {},
+      body: { name: "memory_slot_lsit", arguments: {} },
+    });
+    expect(res.status_code).not.toBe(503);
+    expect(JSON.stringify(res.body)).toContain("Unknown tool");
+  });
+
+  it("uses the flag value from registration, matching which slot functions were registered", async () => {
+    process.env["AGENTMEMORY_SLOTS"] = "false";
+    const sdk = register();
+    process.env["AGENTMEMORY_SLOTS"] = "true";
+    expect((await listedNames(sdk)).some((n) => n.startsWith("memory_slot_"))).toBe(false);
+  });
+
   it("lists and routes slot tools when AGENTMEMORY_SLOTS=true", async () => {
     process.env["AGENTMEMORY_SLOTS"] = "true";
     const sdk = register();
