@@ -14,7 +14,8 @@ import { getVisibleTools } from "./tools-registry.js";
 import { parseSearchExpansionIds } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
 import { isSearchLayer } from "../state/search-layer.js";
-import { checkAuth } from "../triggers/api.js";
+import { checkAuth, slotsDisabledResponse } from "../triggers/api.js";
+import { isSlotsEnabled } from "../functions/slots.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 
 type McpResponse = {
@@ -45,6 +46,10 @@ function parseCsvList(value: unknown): string[] {
   return [];
 }
 
+function isSlotTool(name: string): boolean {
+  return name.startsWith("memory_slot_");
+}
+
 export function registerMcpEndpoints(
   sdk: IIIClient,
   kv: StateKV,
@@ -54,7 +59,9 @@ export function registerMcpEndpoints(
     async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      return { status_code: 200, body: { tools: getVisibleTools() } };
+      const slotsEnabled = isSlotsEnabled();
+      const tools = getVisibleTools().filter((t) => slotsEnabled || !isSlotTool(t.name));
+      return { status_code: 200, body: { tools } };
     },
   );
   sdk.registerTrigger({
@@ -75,6 +82,8 @@ export function registerMcpEndpoints(
       }
 
       const { name, arguments: args = {} } = req.body;
+
+      if (isSlotTool(name) && !isSlotsEnabled()) return slotsDisabledResponse();
 
       try {
         switch (name) {
