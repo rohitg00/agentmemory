@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { renderWorkerCompose } from "../src/cli/compose-project.js";
@@ -71,6 +71,26 @@ describe("sameComposeFile", () => {
     expect(sameComposeFile("/a/b", "/a/B", false)).toBe(false);
     expect(sameComposeFile(undefined, "/a/b", false)).toBe(false);
     expect(sameComposeFile("/a/b", "/a/b", false)).toBe(true);
+  });
+  it("matches a short 8.3 path against the long verbatim path the daemon reports", () => {
+    const longPaths: Record<string, string> = {
+      "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\smoke\\data\\compose\\worker-compose.yaml":
+        "C:\\Users\\runneradmin\\AppData\\Local\\Temp\\smoke\\data\\compose\\worker-compose.yaml",
+    };
+    const canonicalize = (value: string) => longPaths[value] ?? value;
+    const reported = "\\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\smoke\\data\\compose\\worker-compose.yaml";
+    const owned = "C:\\Users\\RUNNER~1\\AppData\\Local\\Temp\\smoke\\data\\compose\\worker-compose.yaml";
+    expect(sameComposeFile(reported, owned, true, (value) => value)).toBe(false);
+    expect(sameComposeFile(reported, owned, true, canonicalize)).toBe(true);
+    expect(ownedComposeProject({ projects: [{ file: reported }] } as never, owned, true, canonicalize)?.file).toBe(reported);
+  });
+  it.skipIf(process.platform === "win32")("resolves POSIX symlinks before comparing", () => {
+    const real = join(root, "real-data");
+    const link = join(root, "linked-data");
+    mkdirSync(real, { recursive: true });
+    writeFileSync(join(real, "worker-compose.yaml"), "");
+    symlinkSync(real, link);
+    expect(sameComposeFile(join(real, "worker-compose.yaml"), join(link, "worker-compose.yaml"), false)).toBe(true);
   });
   it("lets ownedComposeProject find a verbatim-path project", () => {
     const status = {

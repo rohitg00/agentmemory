@@ -1,4 +1,4 @@
-import { chmodSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createConnection } from "node:net";
@@ -65,26 +65,41 @@ export type ComposeStatus = ComposeProjectStatus & {
   projects?: Array<{ file?: string; state_dir?: string; [key: string]: unknown }>;
 };
 
-export function sameComposeFile(left: string | undefined, right: string, windows = process.platform === "win32"): boolean {
-  if (!left) return false;
-  if (!windows) {
-    if (left === right) return true;
-    const real = (value: string): string => {
-      try { return realpathSync(value); } catch { return value; }
-    };
-    return real(left) === real(right);
-  }
-  const normalize = (value: string): string => {
-    let out = value;
-    if (out.startsWith("\\\\?\\UNC\\")) out = `\\\\${out.slice("\\\\?\\UNC\\".length)}`;
-    else if (out.startsWith("\\\\?\\")) out = out.slice("\\\\?\\".length);
-    return out.replace(/\//g, "\\").toLowerCase();
+export type PathCanonicalizer = (value: string) => string;
+
+function defaultCanonicalizer(windows: boolean): PathCanonicalizer {
+  return (value) => {
+    try { return windows ? realpathSync.native(value) : realpathSync(value); } catch { return value; }
   };
-  return normalize(left) === normalize(right);
 }
 
-export function ownedComposeProject(status: ComposeStatus, file: string, windows = process.platform === "win32"): ComposeProjectStatus | null {
-  return sameComposeFile(status.file, file, windows) ? status : status.projects?.find((item) => sameComposeFile(item.file, file, windows)) ?? null;
+function normalizeWindowsPath(value: string): string {
+  let out = value;
+  if (out.startsWith("\\\\?\\UNC\\")) out = `\\\\${out.slice("\\\\?\\UNC\\".length)}`;
+  else if (out.startsWith("\\\\?\\")) out = out.slice("\\\\?\\".length);
+  return out.replace(/\//g, "\\").toLowerCase();
+}
+
+export function sameComposeFile(
+  left: string | undefined,
+  right: string,
+  windows = process.platform === "win32",
+  canonicalize: PathCanonicalizer = defaultCanonicalizer(windows),
+): boolean {
+  if (!left) return false;
+  if (!windows) return left === right || canonicalize(left) === canonicalize(right);
+  if (normalizeWindowsPath(left) === normalizeWindowsPath(right)) return true;
+  return normalizeWindowsPath(canonicalize(left)) === normalizeWindowsPath(canonicalize(right));
+}
+
+export function ownedComposeProject(
+  status: ComposeStatus,
+  file: string,
+  windows = process.platform === "win32",
+  canonicalize: PathCanonicalizer = defaultCanonicalizer(windows),
+): ComposeProjectStatus | null {
+  if (sameComposeFile(status.file, file, windows, canonicalize)) return status;
+  return status.projects?.find((item) => sameComposeFile(item.file, file, windows, canonicalize)) ?? null;
 }
 
 function cleanDaemonEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
