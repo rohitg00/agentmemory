@@ -101,7 +101,7 @@ import { runCompressionCommand } from "./cli/compression.js";
 import { runGraphIndexCommand } from "./cli/graph-index.js";
 import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
-import { COMPOSE_WORKER_VERSIONS, composeNamespace } from "./cli/compose-project.js";
+import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -3123,7 +3123,7 @@ async function runStop(): Promise<void> {
     }
     if (running && ownedDaemonAlive) {
       try {
-        await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: 60_000 });
+        await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: composeDownTimeoutMs() });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (!message.includes("ENGINE_RESTART_REQUIRED")) {
