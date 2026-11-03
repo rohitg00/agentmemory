@@ -260,9 +260,12 @@ async function main() {
     stateBackend = getStateBackend();
   } catch {}
   const kv = new StateKV(sdk, { backend: stateBackend });
-  const stateReadiness = await waitForStateReady(sdk);
+  const stateReadiness = await waitForStateReady(sdk, {
+    onWaiting: (error) =>
+      bootWarn(`Waiting for the state worker to register state::get and state::list (${error})`),
+  });
   assertStateReady(stateReadiness);
-  if (stateReadiness.waitedMs > 0) {
+  if (stateReadiness.attempts > 1) {
     bootLog(
       `State worker ready after ${stateReadiness.waitedMs}ms (${stateReadiness.attempts} attempts)`,
     );

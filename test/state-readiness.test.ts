@@ -176,6 +176,29 @@ describe("waitForStateReady", () => {
     expect(trigger).toHaveBeenCalledTimes(4);
   });
 
+  it("keeps waiting past 60 s by default and reports the wait once", async () => {
+    let clock = 0;
+    const waiting: string[] = [];
+    const trigger = vi.fn(async (call: TriggerCall) => {
+      if (clock < 90_000) throw missingFunction(call.function_id);
+      return null;
+    });
+
+    const result = await waitForStateReady(asClient(trigger), {
+      intervalMs: 1000,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      onWaiting: (error) => waiting.push(error),
+    });
+
+    expect(result.ready).toBe(true);
+    expect(result.waitedMs).toBe(90_000);
+    expect(waiting).toHaveLength(1);
+    expect(waiting[0]).toContain("function_not_found");
+  });
+
   it("does not wait on a failure that the readiness probe cannot fix", async () => {
     const trigger = vi.fn(async () => {
       throw new Error("payload_too_large: Serialized JSON envelope is too big");

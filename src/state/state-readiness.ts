@@ -1,7 +1,7 @@
 import type { IIIClient } from "iii-sdk";
 import { KV } from "./schema.js";
 
-const STATE_READY_TIMEOUT_MS = 15_000;
+const STATE_READY_TIMEOUT_MS = 120_000;
 const STATE_READY_INTERVAL_MS = 100;
 const PROBE_TIMEOUT_MS = 2_000;
 const READINESS_PROBE_KEY = "__agentmemory_state_readiness__";
@@ -21,6 +21,7 @@ type WaitOptions = {
   intervalMs?: number;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  onWaiting?: (error: string) => void;
 };
 
 function errorMessage(error: unknown): string {
@@ -41,18 +42,6 @@ function isRetryableProbeError(error: unknown): boolean {
   );
 }
 
-/**
- * Worker Compose reports a state worker as ready when its process starts, but
- * the engine registers `state::get`/`state::list` a fraction of a second
- * later. Boot reads that run in that window fail with `function_not_found`
- * and are not retried: the vector checkpoint never loads, the keyword index
- * skips sessions, and capture recovery stops. Wait for both functions before
- * the first boot read; missing functions and probe timeouts are retried, while
- * other errors return without blocking startup. Each probe carries its own
- * timeout, bounded by the time left before the readiness deadline, so a state
- * worker that accepts the call but never answers cannot hold boot for the
- * worker's 180 s invocation budget.
- */
 export async function waitForStateReady(
   sdk: TriggerClient,
   options: WaitOptions = {},
@@ -73,8 +62,6 @@ export async function waitForStateReady(
   for (;;) {
     attempts += 1;
     try {
-      // timeoutMs is the SDK's per-invocation timeout. It rejects and releases
-      // the invocation, so a stalled state call cannot outlive the deadline.
       await sdk.trigger({
         function_id: "state::list",
         payload: { scope },
@@ -96,6 +83,7 @@ export async function waitForStateReady(
           error: lastError,
         };
       }
+      if (attempts === 1) options.onWaiting?.(lastError);
     }
 
     const elapsed = now() - startedAt;
@@ -106,11 +94,6 @@ export async function waitForStateReady(
   }
 }
 
-/**
- * A failed readiness wait means the one-shot boot recovery would read an empty
- * state, skip keyword sessions, and report Ready. Fail instead so a supervised
- * worker restarts with the state worker registered.
- */
 export function assertStateReady(readiness: StateReadiness): void {
   if (!readiness.ready) {
     throw new Error(
