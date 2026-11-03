@@ -3,7 +3,7 @@ import { KV } from "./schema.js";
 
 const STATE_READY_TIMEOUT_MS = 120_000;
 const STATE_READY_INTERVAL_MS = 100;
-const PROBE_TIMEOUT_MS = 2_000;
+const PROBE_TIMEOUT_MS = 10_000;
 const READINESS_PROBE_KEY = "__agentmemory_state_readiness__";
 
 export type StateReadiness = {
@@ -49,7 +49,7 @@ export async function waitForStateReady(
   const scope = options.scope ?? KV.config;
   const timeoutMs = options.timeoutMs ?? STATE_READY_TIMEOUT_MS;
   const intervalMs = options.intervalMs ?? STATE_READY_INTERVAL_MS;
-  const now = options.now ?? Date.now;
+  const now = options.now ?? (() => performance.now());
   const sleep =
     options.sleep ??
     ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -72,13 +72,13 @@ export async function waitForStateReady(
         payload: { scope, key: READINESS_PROBE_KEY },
         timeoutMs: probeTimeoutMs(),
       });
-      return { ready: true, waitedMs: now() - startedAt, attempts };
+      return { ready: true, waitedMs: Math.round(now() - startedAt), attempts };
     } catch (error) {
       lastError = errorMessage(error);
       if (!isRetryableProbeError(error)) {
         return {
           ready: false,
-          waitedMs: now() - startedAt,
+          waitedMs: Math.round(now() - startedAt),
           attempts,
           error: lastError,
         };
@@ -88,7 +88,7 @@ export async function waitForStateReady(
 
     const elapsed = now() - startedAt;
     if (elapsed >= timeoutMs) {
-      return { ready: false, waitedMs: elapsed, attempts, error: lastError };
+      return { ready: false, waitedMs: Math.round(elapsed), attempts, error: lastError };
     }
     await sleep(Math.min(intervalMs, timeoutMs - elapsed));
   }
