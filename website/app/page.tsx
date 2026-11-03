@@ -25,6 +25,7 @@ export default function Page() {
         <Hero />
         <Proof />
         <Featured />
+        <Interfaces />
         <UseCases />
         <ContextFunnel />
         <InfraTiles />
@@ -34,7 +35,6 @@ export default function Page() {
         <Benchmarks />
         <Agents />
         <LocalFirst />
-        <Interfaces />
         <Faq />
         <Install />
       </main>

@@ -10,8 +10,8 @@ export function LocalFirst() {
           <span className="eyebrow">Local-first</span>
           <h2 id="local-title">Everything runs inside your machine.</h2>
           <p>
-            Capture, storage and search run locally. The REST API and viewer bind to 127.0.0.1 by default. Nothing
-            crosses the boundary unless you add a provider yourself.
+            Capture, storage and keyword search run locally. The REST API and viewer bind to 127.0.0.1 by default.
+            Configured remote services receive the text they process. Installation, updates and model downloads need network access.
           </p>
         </div>
 
