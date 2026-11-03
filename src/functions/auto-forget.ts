@@ -141,6 +141,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
                     ? memA
                     : memB;
                 older.isLatest = false;
+                older.updatedAt = new Date().toISOString();
                 await kv.set(KV.memories, older.id, older);
                 await recordAudit(kv, "forget", "mem::auto-forget", [older.id], {
                   resource: "memory",

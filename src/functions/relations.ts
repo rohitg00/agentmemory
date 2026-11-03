@@ -201,6 +201,7 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
         };
 
         existing.isLatest = false;
+        existing.updatedAt = new Date().toISOString();
         await kv.set(KV.memories, existing.id, existing);
         try {
           getSearchIndex().remove(existing.id);

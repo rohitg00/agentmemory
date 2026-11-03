@@ -174,6 +174,7 @@ export function registerConsolidateFunction(
 
           if (existingMatch) {
             existingMatch.isLatest = false;
+            existingMatch.updatedAt = new Date().toISOString();
             await kv.set(KV.memories, existingMatch.id, existingMatch);
             await recordAudit(kv, "evolve", "mem::consolidate", [existingMatch.id], {
               action: "mark_non_latest",

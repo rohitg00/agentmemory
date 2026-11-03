@@ -183,6 +183,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
 
         if (supersededMemory) {
           supersededMemory.isLatest = false;
+          supersededMemory.updatedAt = new Date().toISOString();
           await kv.set(KV.memories, supersededMemory.id, supersededMemory);
           // The superseded version stays in KV (the viewer's version
           // chain reads it there) but leaves both search indexes:
