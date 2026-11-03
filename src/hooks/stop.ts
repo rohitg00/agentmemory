@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { resolveProject, hookCwd } from "./_project.js";
-import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, stripPrivateData, withEventId } from "./_capture.js";
+import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, stripPrivateData, transportBlocked, withEventId } from "./_capture.js";
 
 // Inlined — see src/hooks/sdk-guard.ts for canonical version. Kept local
 // per-hook so tsdown does not emit a shared hashed chunk that would churn
@@ -71,6 +71,7 @@ async function main() {
   }
 
   setTimeout(() => process.exit(0), END_CAP_MS).unref();
+  if (transportBlocked()) return;
   fetch(`${REST_URL}/agentmemory/session/end`, {
     method: "POST",
     headers: authHeaders(),

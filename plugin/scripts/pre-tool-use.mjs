@@ -89,6 +89,53 @@ function canonicalSecretPath() {
 	return join(homedir(), ".agentmemory", "secret");
 }
 //#endregion
+//#region src/hooks/_endpoint.ts
+const OPTION_PREFIX = "CLAUDE_PLUGIN_OPTION_";
+const DEFAULT_URL = "http://localhost:3111";
+function hookSetting(name, env = process.env) {
+	const optionKey = `${OPTION_PREFIX}${name}`;
+	if (optionKey in env) {
+		const option = env[optionKey]?.trim();
+		return option ? option : void 0;
+	}
+	return env[name];
+}
+function secretTransportAllowed(url) {
+	try {
+		return new URL(url).protocol === "https:" || isLoopbackUrl(url);
+	} catch {
+		return false;
+	}
+}
+function resolveHookEndpoint(env = process.env) {
+	const url = hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL;
+	const secretEnv = { ...env };
+	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
+	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
+	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
+	const secret = resolveClientSecret(url, secretEnv);
+	const blocked = Boolean(secret) && !secretTransportAllowed(url);
+	return {
+		url,
+		secret: blocked ? "" : secret,
+		blocked
+	};
+}
+let blockedNoticeShown = false;
+function reportBlockedTransport(endpoint) {
+	if (!endpoint.blocked) return false;
+	if (!blockedNoticeShown) {
+		blockedNoticeShown = true;
+		process.stderr.write("[agentmemory] AGENTMEMORY_URL must use HTTPS when a secret is set, except for loopback URLs. Nothing was sent.\n");
+	}
+	return true;
+}
+function hookAuthHeaders(endpoint) {
+	const h = { "Content-Type": "application/json" };
+	if (endpoint.secret) h["Authorization"] = `Bearer ${endpoint.secret}`;
+	return h;
+}
+//#endregion
 //#region src/hooks/pre-tool-use.ts
 function isSdkChildContext(payload) {
 	if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -96,15 +143,14 @@ function isSdkChildContext(payload) {
 	return payload.entrypoint === "sdk-ts";
 }
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = resolveClientSecret(REST_URL);
+const ENDPOINT = resolveHookEndpoint();
+const REST_URL = ENDPOINT.url;
 function authHeaders() {
-	const h = { "Content-Type": "application/json" };
-	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-	return h;
+	return hookAuthHeaders(ENDPOINT);
 }
 async function main() {
 	if (!INJECT_CONTEXT) return;
+	if (reportBlockedTransport(ENDPOINT)) return;
 	let input = "";
 	for await (const chunk of process.stdin) input += chunk;
 	let data;

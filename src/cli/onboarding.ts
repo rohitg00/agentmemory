@@ -214,6 +214,7 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   }
 
   const envPath = await seedEnvFile(provider);
+  const providerWritten = provider ? setLlmProviderInEnv(envPath, provider) : false;
 
   await maybePromptContextInjection(envPath);
 
@@ -235,7 +236,11 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   if (provider) {
     const envKey = PROVIDERS.find((x) => x.value === provider)?.envKey;
     if (envKey) {
-      lines.push(`  Uncomment ${envKey}= in that file to enable ${provider}.`);
+      lines.push(
+        providerWritten
+          ? `  Set AGENTMEMORY_LLM_PROVIDER=${provider}. Add ${envKey}= to that file to enable ${provider}.`
+          : `  Add AGENTMEMORY_LLM_PROVIDER=${provider} and ${envKey}= to that file to enable ${provider}.`,
+      );
     }
   } else {
     lines.push("  No provider chosen — agentmemory will run in BM25-only mode.");
@@ -247,6 +252,22 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   }
 
   return { agents, provider };
+}
+
+export function setLlmProviderInEnv(envPath: string | null, provider: string): boolean {
+  if (!envPath || !existsSync(envPath)) return false;
+  try {
+    const current = readFileSync(envPath, "utf-8");
+    const line = `AGENTMEMORY_LLM_PROVIDER=${provider}`;
+    const active = /^\s*AGENTMEMORY_LLM_PROVIDER\s*=.*$/m;
+    const next = active.test(current)
+      ? current.replace(active, line)
+      : `${current}${current.length > 0 && !current.endsWith("\n") ? "\n" : ""}${line}\n`;
+    writeFileSync(envPath, next, { mode: 0o600 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function enableInjectContextInEnv(envPath: string | null): boolean {

@@ -50,11 +50,18 @@ describe("MCP tool surface default", () => {
     }
   });
 
-  it("plugin MCP uses its bundled bridge and inherits the host environment", () => {
+  it("plugin MCP uses its bundled bridge and the user's plugin options", () => {
     const cfg = JSON.parse(readFileSync("plugin/.mcp.json", "utf-8"));
     expect(cfg.mcpServers.agentmemory).toEqual({
       command: "node",
       args: ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bridge.mjs"],
+      env: {
+        AGENTMEMORY_URL: "${user_config.agentmemory_url}",
+        AGENTMEMORY_SECRET: "${user_config.agentmemory_secret}",
+      },
     });
+    const manifest = JSON.parse(readFileSync("plugin/.claude-plugin/plugin.json", "utf-8"));
+    expect(manifest.userConfig.agentmemory_secret).toMatchObject({ type: "string", sensitive: true });
+    expect(manifest.userConfig.agentmemory_url).toMatchObject({ type: "string", default: "http://localhost:3111" });
   });
 });
