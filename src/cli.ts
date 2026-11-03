@@ -549,18 +549,29 @@ function fallbackIiiPaths(): string[] {
   return paths;
 }
 
+const III_VERSION_PROBE_TIMEOUTS_MS = [3000, 30000];
+
+function isProbeTimeout(err: unknown): boolean {
+  const e = err as { code?: string; signal?: string } | null;
+  return e?.code === "ETIMEDOUT" || e?.signal === "SIGTERM";
+}
+
 function iiiBinVersion(binPath: string): string | null {
-  try {
-    const out = execFileSync(binPath, ["--version"], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 3000,
-    });
-    const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
-    return match ? match[1]! : null;
-  } catch {
-    return null;
+  for (const timeout of III_VERSION_PROBE_TIMEOUTS_MS) {
+    try {
+      const out = execFileSync(binPath, ["--version"], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout,
+      });
+      const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
+      return match ? match[1]! : null;
+    } catch (err) {
+      if (!isProbeTimeout(err)) return null;
+      vlog(`iii --version at ${binPath} timed out after ${timeout}ms`);
+    }
   }
+  return null;
 }
 
 // Resolve a compatible iii binary for the pinned engine version.
@@ -1363,6 +1374,9 @@ async function startEngine(): Promise<boolean> {
       `iii on PATH is v${detected ?? "unknown"} but agentmemory pins v${IIPINNED_VERSION}. ` +
         `Installing pinned engine to ~/.agentmemory/bin (leaves your existing iii untouched).`,
     );
+  } else if (IS_WINDOWS) {
+    choice = "install";
+    p.log.warn("iii-engine binary not found locally.");
   } else if (!interactive) {
     choice = "install";
     p.log.info("Non-interactive environment detected — auto-installing iii-engine.");

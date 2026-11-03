@@ -113,4 +113,20 @@ describe("fresh native engine startup", () => {
     expect(source).toContain("function printCapturedStartupStderr()");
     expect(source).toContain("redactCredentialUrls(activeStartupStderr.text().trim())");
   });
+
+  it("retries a timed-out iii --version probe with a longer timeout before treating the binary as missing", () => {
+    const start = source.indexOf("function iiiBinVersion");
+    const body = source.slice(start, source.indexOf("\n}\n", start));
+    expect(source).toContain("const III_VERSION_PROBE_TIMEOUTS_MS = [3000, 30000]");
+    expect(body).toContain("for (const timeout of III_VERSION_PROBE_TIMEOUTS_MS)");
+    expect(body).toContain("if (!isProbeTimeout(err)) return null;");
+  });
+
+  it("never opens the install prompt on Windows, where auto-install is unavailable", () => {
+    const start = source.indexOf("async function startEngine");
+    const body = source.slice(start, source.indexOf("async function waitForEngine", start));
+    const windowsBranch = body.indexOf("} else if (IS_WINDOWS) {");
+    expect(windowsBranch).toBeGreaterThan(-1);
+    expect(windowsBranch).toBeLessThan(body.indexOf("p.select<Choice>("));
+  });
 });
