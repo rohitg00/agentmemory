@@ -267,6 +267,7 @@ await step("second start does not lose project ownership", async () => {
   writeFileSync(join(out, "second-start.txt"), combined);
   assert(res.status !== null, `second start timed out:\n${combined.slice(-800)}`);
   assert(!combined.includes("Could not verify the managed Compose project"), combined.slice(-800));
+  assert.equal(res.status, 0, `second start exited ${res.status}:\n${combined.slice(-800)}`);
   return { status: res.status };
 });
 collectEvidence();
