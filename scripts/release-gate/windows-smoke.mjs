@@ -50,7 +50,7 @@ const npmCli = [
 assert(npmCli, "could not locate npm-cli.js next to this Node binary");
 
 function run(cmd, args, opts = {}) {
-  const res = spawnSync(cmd, args, { encoding: "utf8", env: { ...process.env, ...opts.env }, cwd: opts.cwd ?? repo });
+  const res = spawnSync(cmd, args, { encoding: "utf8", env: { ...process.env, ...opts.env }, cwd: opts.cwd ?? repo, timeout: opts.timeout ?? 900_000 });
   return { status: res.status ?? -1, stdout: res.stdout ?? "", stderr: `${res.stderr ?? ""}${res.error ? `\n${res.error.message}` : ""}` };
 }
 
@@ -103,7 +103,7 @@ function provisionEngine() {
     const url = `https://github.com/iii-hq/iii/releases/download/iii/v${version}/${asset}`;
     mkdirSync(cacheDir, { recursive: true });
     const archive = join(cacheDir, asset);
-    const dl = run("curl", ["-fsSL", "--connect-timeout", "15", "-o", archive, url]);
+    const dl = run("curl", ["-fsSL", "--connect-timeout", "15", "--max-time", "300", "-o", archive, url]);
     assert.equal(dl.status, 0, `engine download failed: ${dl.stderr.slice(-300)}`);
     const actual = createHash("sha256").update(readFileSync(archive)).digest("hex");
     assert.equal(actual, expected, `engine sha256 mismatch: expected ${expected}, got ${actual}`);
@@ -159,7 +159,7 @@ function leftoverProcesses() {
   const ps = spawnSync("powershell.exe", [
     "-NoProfile", "-Command",
     [
-      `$byPath = Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*${root.replace(/'/g, "''")}*' } | ForEach-Object { "$($_.ProcessId) $($_.Name)" }`,
+      `$byPath = Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*${root.replace(/'/g, "''")}*' } | ForEach-Object { "$($_.ProcessId) $($_.Name)" }`,
       `$byPort = Get-NetTCPConnection -State Listen -LocalPort 3911,3913,49950 -ErrorAction SilentlyContinue | ForEach-Object { "$($_.OwningProcess) port:$($_.LocalPort)" }`,
       `@($byPath) + @($byPort) | Where-Object { $_ }`,
     ].join("; "),
@@ -199,6 +199,10 @@ let failure = null;
 try {
 await step("build", () => {
   if (!options.tarball) {
+    assert(
+      !isWindows || process.env.npm_config_script_shell,
+      "npm run build needs a POSIX shell on Windows: pass --tarball <packed.tgz> or set npm_config_script_shell to Git Bash (C:\\Program Files\\Git\\bin\\bash.exe)",
+    );
     const build = npm(["run", "build"], { cwd: repo });
     assert.equal(build.status, 0, `npm run build failed: ${build.stderr.slice(-400)}`);
     const packDir = mkdtempSync(join(tmpdir(), "am-win-pack-"));
@@ -220,8 +224,6 @@ await step("install", () => {
 await step("engine", () => provisionEngine());
 await step("start", async () => startWorker());
 await step("status lists workers", async () => {
-  const res = cli("status", "--port", "3911");
-  writeFileSync(join(out, "status.txt"), res.stdout + res.stderr);
   let containers = null;
   const t0 = Date.now();
   for (;;) {
@@ -248,6 +250,12 @@ await step("status lists workers", async () => {
   assert(containers, `no compose state.json with containers after 90s`);
   for (const name of ["state", "http", "agentmemory"]) {
     assert.equal(containers[name]?.status, "ready", `compose worker ${name} not ready: ${JSON.stringify(containers[name])}`);
+  }
+  const res = cli("status", "--port", "3911");
+  const listing = res.stdout + res.stderr;
+  writeFileSync(join(out, "status.txt"), listing);
+  for (const name of ["state", "http", "agentmemory"]) {
+    assert(new RegExp(`\\s${name}: \\S`).test(listing), `agentmemory status does not list compose worker ${name}:\n${listing.slice(-1200)}`);
   }
   return { cliStatus: res.status };
 });
