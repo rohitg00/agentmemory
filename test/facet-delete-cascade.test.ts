@@ -259,13 +259,14 @@ describe("facet cleanup on lesson and observation deletes", () => {
     expect(await facetIds()).toEqual(["fct_shared"]);
   });
 
-  it("deleteFacetsForTargets keeps observation-prefixed ids that still name a live memory", async () => {
+  it("deleteFacetsForTargets judges a shared obs_ id per facet type", async () => {
     await kv.set(KV.memories, "obs_shared", { id: "obs_shared" });
-    await kv.set(KV.facets, "fct_obs_shared", makeFacet("fct_obs_shared", "obs_shared"));
+    await kv.set(KV.facets, "fct_mem_shared", makeFacet("fct_mem_shared", "obs_shared", "memory"));
+    await kv.set(KV.facets, "fct_obs_shared", makeFacet("fct_obs_shared", "obs_shared", "observation"));
 
     await deleteFacetsForTargets(kv as never, ["obs_shared"], { targetTypes: ["memory", "observation"] });
 
-    expect(await facetIds()).toEqual(["fct_obs_shared"]);
+    expect(await facetIds()).toEqual(["fct_mem_shared"]);
   });
 
   it("deleteFacetsForTargets removes facets of a soft-deleted replay-imported lesson", async () => {

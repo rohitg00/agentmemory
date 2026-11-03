@@ -5,20 +5,32 @@ import { KV, generateId } from "../state/schema.js";
 import type { Facet, Lesson } from "../types.js";
 import { logger } from "../logger.js";
 
-async function isLiveTarget(kv: StateKV, id: string): Promise<boolean> {
-  if (id.startsWith("lsn_") || id.startsWith("lesson_")) {
-    const lesson = await kv.get<Lesson>(KV.lessons, id);
-    if (lesson && !lesson.deleted) return true;
-  }
+interface TargetLiveness {
+  observation: boolean;
+  record: boolean;
+}
+
+async function targetLiveness(kv: StateKV, id: string): Promise<TargetLiveness> {
+  let observation = false;
   if (id.startsWith("obs_")) {
     const sessionId = await lookupObservationSession(kv, id);
-    if (sessionId && (await kv.get(KV.observations(sessionId), id))) return true;
+    observation = !!sessionId && !!(await kv.get(KV.observations(sessionId), id));
+  }
+  if (id.startsWith("lsn_") || id.startsWith("lesson_")) {
+    const lesson = await kv.get<Lesson>(KV.lessons, id);
+    if (lesson && !lesson.deleted) return { observation, record: true };
   }
   const [mem, sem] = await Promise.all([
     kv.get(KV.memories, id),
     kv.get(KV.semantic, id),
   ]);
-  return !!(mem || sem);
+  return { observation, record: !!(mem || sem) };
+}
+
+function facetTargetLive(facet: Facet, liveness: TargetLiveness | undefined): boolean {
+  if (!liveness) return false;
+  if (facet.targetType === "observation") return liveness.observation;
+  return liveness.record || liveness.observation;
 }
 
 export async function deleteFacetsForTargets(
@@ -31,16 +43,16 @@ export async function deleteFacetsForTargets(
   if (ids.size === 0) return;
   const targetTypes = new Set(options?.targetTypes ?? ["memory"]);
   try {
-    const live = new Set<string>();
+    const live = new Map<string, TargetLiveness>();
     await Promise.all(
       [...ids].map(async (id) => {
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            if (await isLiveTarget(kv, id)) live.add(id);
+            live.set(id, await targetLiveness(kv, id));
             return;
           } catch {
             if (attempt === 1) {
-              live.add(id);
+              live.set(id, { observation: true, record: true });
               logger.warn("Facet cleanup skipped unverifiable target", {
                 targetId: id,
               });
@@ -53,8 +65,8 @@ export async function deleteFacetsForTargets(
     const matches = all.filter(
       (f) =>
         ids.has(f.targetId) &&
-        !live.has(f.targetId) &&
-        targetTypes.has(f.targetType),
+        targetTypes.has(f.targetType) &&
+        !facetTargetLive(f, live.get(f.targetId)),
     );
     await Promise.all(matches.map((f) => kv.delete(KV.facets, f.id)));
   } catch (err) {
