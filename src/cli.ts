@@ -1354,10 +1354,7 @@ async function scanAndStartEngine(): Promise<boolean> {
   vlog(`iii binary: ${pathIii ?? "(not on PATH)"}`);
 
   const fallbacks = fallbackIiiPaths().filter((p) => existsSync(p));
-  for (const f of fallbacks) {
-    const v = iiiBinVersion(f);
-    vlog(`fallback iii at ${f} reports version: ${v ?? "unknown"}`);
-  }
+  vlog(`fallback iii candidates: ${fallbacks.length > 0 ? fallbacks.join(", ") : "(none)"}`);
 
   let iiiBin = pickCompatibleIii([pathIii, ...fallbacks]);
 
