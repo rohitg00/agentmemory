@@ -556,10 +556,16 @@ function isProbeTimeout(err: unknown): boolean {
   return e?.code === "ETIMEDOUT" || e?.signal === "SIGTERM";
 }
 
-const timedOutIiiProbes = new Set<string>();
+let iiiProbeScan: Map<string, string | null> | null = null;
 
 function iiiBinVersion(binPath: string): string | null {
-  if (timedOutIiiProbes.has(binPath)) return null;
+  if (iiiProbeScan?.has(binPath)) return iiiProbeScan.get(binPath)!;
+  const version = probeIiiVersion(binPath);
+  iiiProbeScan?.set(binPath, version);
+  return version;
+}
+
+function probeIiiVersion(binPath: string): string | null {
   for (const timeout of III_VERSION_PROBE_TIMEOUTS_MS) {
     try {
       const out = execFileSync(binPath, ["--version"], {
@@ -574,7 +580,6 @@ function iiiBinVersion(binPath: string): string | null {
       vlog(`iii --version at ${binPath} timed out after ${timeout}ms`);
     }
   }
-  timedOutIiiProbes.add(binPath);
   return null;
 }
 
@@ -1009,7 +1014,7 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
     return { ok: false, binPath: null };
   }
   spinner.stop(`${label} ${pc.green("✓")}`);
-  timedOutIiiProbes.delete(binPath);
+  iiiProbeScan?.delete(binPath);
   return { ok: true, binPath };
 }
 
@@ -1298,6 +1303,15 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 }
 
 async function startEngine(): Promise<boolean> {
+  iiiProbeScan = new Map();
+  try {
+    return await scanAndStartEngine();
+  } finally {
+    iiiProbeScan = null;
+  }
+}
+
+async function scanAndStartEngine(): Promise<boolean> {
   startupFailure = null;
   engineReadinessDeadline = null;
   let stateBackendKind: "file" | "redis";
