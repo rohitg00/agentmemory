@@ -36,6 +36,7 @@ Restart Pi or run `/reload`, then `/agentmemory-status`. Keep the memory server 
 ## Tools, commands and capture
 
 - `memory_health`, `memory_search`, `memory_save`: native server health, project recall and deliberate saves.
+- `memory_get_lesson`: read a full lesson by the ID that `memory_search` shows beside a truncated lesson preview.
 - `/agentmemory-status`: health plus pending, retained, dropped and rejected capture counts; also retries queued captures.
 - `/skill:remember`, `/skill:recall`, `/skill:session-history`, `/skill:recap`, `/skill:handoff`, `/skill:lesson`, `/skill:forget`, `/skill:commit-context`, `/skill:commit-history`: bundled workflows. Pi also discovers eight reference skills. Workflows referring to tools beyond native save/search require MCP.
 - With `--with-mcp`, Pi exposes the full server toolset under `mcp__agentmemory__*`. Native operations use the active repository's project scope; MCP callers must pass their intended project explicitly. Project MCP settings override global entries only in trusted projects.
