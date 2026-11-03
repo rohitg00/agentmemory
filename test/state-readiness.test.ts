@@ -34,12 +34,12 @@ describe("waitForStateReady", () => {
     expect(trigger).toHaveBeenNthCalledWith(1, {
       function_id: "state::list",
       payload: { scope: KV.config },
-      timeoutMs: 2000,
+      timeoutMs: 10000,
     });
     expect(trigger).toHaveBeenNthCalledWith(2, {
       function_id: "state::get",
       payload: { scope: KV.config, key: expect.any(String) },
-      timeoutMs: 2000,
+      timeoutMs: 10000,
     });
   });
 
