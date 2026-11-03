@@ -113,4 +113,13 @@ describe("fresh native engine startup", () => {
     expect(source).toContain("function printCapturedStartupStderr()");
     expect(source).toContain("redactCredentialUrls(activeStartupStderr.text().trim())");
   });
+
+  it("clears unready Compose state only for a PID positively identified as foreign", () => {
+    const reconcileStart = source.indexOf("async function reconcilePersistedComposeEngine");
+    const reconcileEnd = source.indexOf("async function main()", reconcileStart);
+    const reconcileBody = source.slice(reconcileStart, reconcileEnd);
+    expect(reconcileBody).toContain(
+      'if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign")',
+    );
+  });
 });
