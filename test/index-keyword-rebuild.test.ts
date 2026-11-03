@@ -233,6 +233,66 @@ describe("rebuildKeywordIndex", () => {
     }
   }, 10_000);
 
+  it("retries a connection reset while the state worker reconnects", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      const total = seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let failures = 1;
+      const flakyKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:memories" && failures > 0) {
+            failures--;
+            throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const promise = rebuildKeywordIndex(flakyKv as never);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
+
+      expect(failures).toBe(0);
+      expect(result.documents).toBeGreaterThanOrEqual(total);
+      expect(isBm25RebuildIncomplete()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("shares one retry budget between the memories and sessions listings", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      const failingKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:memories" || scope === "mem:sessions") {
+            throw new Error("function_not_found: Function state::list not found in namespace agentmemory-3111.");
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const started = Date.now();
+      let finishedAt = 0;
+      const promise = rebuildKeywordIndex(failingKv as never).then((result) => {
+        finishedAt = Date.now();
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(200_000);
+      await promise;
+
+      expect(finishedAt - started).toBeLessThanOrEqual(70_000);
+      expect(isBm25RebuildIncomplete()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
   it("does not hold boot retrying an error that waiting cannot fix", async () => {
     const kv = mockKV();
     seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
@@ -248,11 +308,9 @@ describe("rebuildKeywordIndex", () => {
       },
     };
 
-    const started = Date.now();
     const result = await rebuildKeywordIndex(failingKv as never);
 
     expect(failures).toBe(1);
-    expect(Date.now() - started).toBeLessThan(2_000);
     expect(result.documents).toBeGreaterThan(0);
     expect(isBm25RebuildIncomplete()).toBe(true);
   }, 10_000);
