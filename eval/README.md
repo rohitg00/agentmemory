@@ -1,6 +1,6 @@
 # AgentMemory evaluations
 
-Development evaluations for retrieval and persistent-memory behavior. These are separate from end-to-end answer accuracy, agent task success, and competitor rankings. Current measured results and remaining failures are in [the baseline report](../docs/benchmarks/2026-10-09-evaluation-baseline.md).
+Development evaluations for retrieval and persistent-memory behavior. These are separate from end-to-end answer accuracy, agent task success, and competitor rankings. Current component results are in the [2026-10-28 retrieval report](../docs/benchmarks/2026-10-28-retrieval-evaluation.md). The [2026-10-09 baseline](../docs/benchmarks/2026-10-09-evaluation-baseline.md) preserves the earlier runtime results and failures.
 
 ## Run locally
 
