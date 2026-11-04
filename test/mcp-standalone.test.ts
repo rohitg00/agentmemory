@@ -286,7 +286,7 @@ describe("handleToolCall", () => {
     const kv = new InMemoryKV();
     await handleToolCall("memory_save", { content: "Synthetic type probe", type, project: "type-project" }, kv);
     const compact = JSON.parse((await handleToolCall("memory_smart_search", { query: "Synthetic", project: "type-project" }, kv)).content[0].text);
-    expect(compact.results[0]).toHaveProperty("memoryType", type);
+    expect(compact.results[0]).toMatchObject({ type: "decision", memoryType: type });
     const id = compact.results[0].obsId;
     const expanded = JSON.parse((await handleToolCall("memory_smart_search", { expandIds: id, project: "type-project" }, kv)).content[0].text);
     expect(expanded.results[0].observation).toMatchObject({ id, type: "decision", memoryType: type });

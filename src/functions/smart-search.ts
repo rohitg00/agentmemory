@@ -229,9 +229,8 @@ export function registerSmartSearchFunction(
 
       const compact: CompactSearchResult[] = await Promise.all(filteredHybrid.map(async (r) => {
         const layer = r.layer ?? getSearchIndex().layerOf(r.observation.id) ?? getSearchResultLayer(r.observation.id, r.sessionId);
-        // Older persisted indexes lack memoryType; use the already-authorized source row.
         const memoryType = layer === "memory"
-          ? (await kv.get<Memory>(KV.memories, r.observation.id))?.type ?? r.observation.memoryType
+          ? (await kv.get<Memory>(KV.memories, r.observation.id).catch(() => null))?.type ?? r.observation.memoryType
           : undefined;
         return {
           obsId: r.observation.id,

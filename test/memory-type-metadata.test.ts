@@ -19,10 +19,13 @@ function memory(type: Memory["type"]): Memory {
   };
 }
 
-function fixture(saved: Memory, legacy = false) {
+function fixture(saved: Memory, legacy = false, failMemoryReads = false) {
   const store = new Map<string, Map<string, unknown>>([["mem:memories", new Map([[saved.id, saved]])]]);
   const kv = {
-    get: async (scope: string, id: string) => store.get(scope)?.get(id) ?? null,
+    get: async (scope: string, id: string) => {
+      if (failMemoryReads && scope === "mem:memories") throw new Error("state read failed");
+      return store.get(scope)?.get(id) ?? null;
+    },
     set: async (scope: string, id: string, value: unknown) => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(id, value);
@@ -48,6 +51,12 @@ function fixture(saved: Memory, legacy = false) {
 }
 
 describe("original memory type metadata", () => {
+  it("keeps compact search working when the stored memory read fails", async () => {
+    const f = fixture(memory("bug"), false, true);
+    const compact = await f.call({ query: "Synthetic", agentId: "*", targetLayer: "memory", includeLessons: false });
+    expect(compact.results[0]).toMatchObject({ obsId: f.saved.id, type: "decision", memoryType: "bug" });
+  });
+
   it.each(types)("preserves %s without changing the observation type or input", (type) => {
     const saved = memory(type);
     const before = structuredClone(saved);
