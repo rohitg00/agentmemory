@@ -1160,7 +1160,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpointů na portu `3111`. REST API se ve výchozím stavu váže na `127.0.0.1`. Chráněné endpointy vyžadují `Authorization: Bearer <secret>`, a endpointy pro mesh sync vyžadují explicitně nastavené `AGENTMEMORY_SECRET` na obou stranách.
+147 endpointů na portu `3111`. REST API se ve výchozím stavu váže na `127.0.0.1`. Chráněné endpointy vyžadují `Authorization: Bearer <secret>`, a endpointy pro mesh sync vyžadují explicitně nastavené `AGENTMEMORY_SECRET` na obou stranách.
 
 **Autentizace je ve výchozím stavu zapnutá.** Pokud `AGENTMEMORY_SECRET` není nastaveno, CLI při prvním spuštění vygeneruje náhodný secret v `~/.agentmemory/secret` s oprávněním `0600` a zkopíruje jej také do vybraného datového adresáře. Všichni zabalení klienti jej načítají odtud při komunikaci s lokálním serverem: CLI, viewer, hooks v `plugin/scripts`, server MCP a shim `@agentmemory/mcp`, konfigurace zapsané pomocí `agentmemory connect` a zabalené integrace OpenCode, Pi, OpenClaw, Hermes a filesystem-watcher. Uložený secret se odesílá pouze na loopback URL (`localhost`, `127.0.0.0/8`, `::1`). Výslovně nastavená `AGENTMEMORY_SECRET` má vždy přednost a vzdálení klienti ji musí mít ve svém prostředí. Self-host nasazení Dockeru z repozitáře a entrypointy `deploy/` generují a exportují vlastní secret. Pro ruční volání API:
 

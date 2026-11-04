@@ -1168,7 +1168,7 @@ Den fulde reference er [`.env.example`](../.env.example) med legitimationsoplysn
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints på port `3111`. REST API'et binder til `127.0.0.1` som standard. Beskyttede endpoints kræver `Authorization: Bearer <secret>`, og mesh-sync-endpoints kræver en eksplicit sat `AGENTMEMORY_SECRET` på begge peers.
+147 endpoints på port `3111`. REST API'et binder til `127.0.0.1` som standard. Beskyttede endpoints kræver `Authorization: Bearer <secret>`, og mesh-sync-endpoints kræver en eksplicit sat `AGENTMEMORY_SECRET` på begge peers.
 
 **Autentificering er slået til som standard.** Hvis `AGENTMEMORY_SECRET` hverken er sat i shellen eller i `~/.agentmemory/.env`, opretter CLI’en en tilfældig hemmelighed ved første start i `~/.agentmemory/secret` og en kopi med navnet `secret` i den valgte datamappe, med filtilstanden `0600`. Alle medfølgende klienter læser den derfra, når de taler med en lokal server: CLI’en, viewer, hooks under `plugin/scripts`, MCP-serveren og `@agentmemory/mcp`-shimmen, konfigurationerne skrevet af `agentmemory connect`, og de medfølgende OpenCode-, Pi-, OpenClaw-, Hermes- og filesystem-watcher-integrationer. Den lagrede secret sendes kun til loopback-URL’er (`localhost`, `127.0.0.0/8`, `::1`). En eksplicit `AGENTMEMORY_SECRET` vinder altid, og eksterne klienter skal have den i deres miljø. Docker-self-hosting fra repositoryet og `deploy/`-entrypoints genererer og eksporterer deres egen secret. Sådan kaldes API’et manuelt:
 

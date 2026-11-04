@@ -17,7 +17,7 @@
     "agentmemory": "dist/cli.mjs"
   },
   "scripts": {
-    "build": "tsdown && rm -f dist/iii-config.yaml dist/iii-config.docker.yaml dist/docker-compose.yml && (cp .env.example dist/ 2>/dev/null || true) && mkdir -p dist/viewer && cp src/viewer/index.html dist/viewer/ && cp src/viewer/favicon.svg dist/viewer/",
+    "build": "tsdown && node scripts/copy-assets.mjs",
     "dev": "tsx src/index.ts",
     "start": "node dist/cli.mjs",
     "migrate": "node dist/functions/migrate.js",
@@ -53,7 +53,7 @@
     "eval:recall": "node --import tsx eval/runner/recall-quality.ts",
     "eval:check": "tsc --noEmit --project tsconfig.eval.json && vitest run test/eval-adapters.test.ts test/eval-integrity.test.ts",
     "prepack": "node scripts/plugins/prepare-native.mjs",
-    "plugin:pack:openclaw": "node scripts/plugins/prepare-native.mjs && mkdir -p dist/plugins && npm pack ./integrations/openclaw --pack-destination dist/plugins"
+    "plugin:pack:openclaw": "node scripts/plugins/prepare-native.mjs && node -e \"require('node:fs').mkdirSync('dist/plugins', { recursive: true })\" && npm pack ./integrations/openclaw --pack-destination dist/plugins"
   },
   "keywords": [
     "ai",
@@ -107,6 +107,7 @@
     "sigstore": "4.1.1",
     "tsdown": "^0.21.10",
     "tsx": "^4.19.0",
+    "typebox": "^1.4.3",
     "typescript": "^6.0.3",
     "vitest": "^4.1.6",
     "ws": "^8.21.0"

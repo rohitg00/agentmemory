@@ -1175,7 +1175,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-Port `3111` पर 146 endpoints। REST API default रूप से `127.0.0.1` से bind होता है। Protected endpoints `Authorization: Bearer <secret>` की आवश्यकता रखते हैं, और mesh sync endpoints दोनों peers पर एक explicitly set `AGENTMEMORY_SECRET` की आवश्यकता रखते हैं।
+Port `3111` पर 147 endpoints। REST API default रूप से `127.0.0.1` से bind होता है। Protected endpoints `Authorization: Bearer <secret>` की आवश्यकता रखते हैं, और mesh sync endpoints दोनों peers पर एक explicitly set `AGENTMEMORY_SECRET` की आवश्यकता रखते हैं।
 
 प्रमाणीकरण डिफ़ॉल्ट रूप से चालू है। `AGENTMEMORY_SECRET` सेट न होने पर CLI पहली बार एक random secret `~/.agentmemory/secret` में रखता है और चुनी हुई डेटा डायरेक्टरी के `secret` में उसकी प्रति बनाता है; permissions `0600` होती हैं। साथ आए क्लाइंट लोकल कनेक्शन में इस मूल फ़ाइल को प्राथमिकता देते हैं और सेव किया secret सिर्फ loopback URL को भेजते हैं। स्पष्ट `AGENTMEMORY_SECRET` प्राथमिकता रखता है; रिमोट क्लाइंट को इसे environment में सेट करना होता है। Docker अपना secret बनाता है।
 
