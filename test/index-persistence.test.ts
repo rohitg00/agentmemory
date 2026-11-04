@@ -644,6 +644,21 @@ describe("IndexPersistence orphaned legacy generation sweep", () => {
     expect(present(orphans)).toEqual([false, false]);
   });
 
+  it("stays open while a manifest protects shards, and sweeps them once the manifest is gone", async () => {
+    const legacy = vectorWith([["obs_a", [0.1, 0.2, 0.3]]]);
+    await writeLegacyVectorSnapshot(kv, legacy, { generation: "idx_mfabcd12_aaaaaaaaaaaa" });
+    const named = [...kv.store.keys()].filter((scope) => scope.includes(":vectors:"));
+
+    await load(null);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).toBeNull();
+
+    await kv.delete(INDEX_SCOPE, "vectors:manifest");
+    await load(null);
+
+    expect(present(named).some(Boolean)).toBe(false);
+    expect(await kv.get(INDEX_SCOPE, SWEEP_KEY)).not.toBeNull();
+  });
+
   it("deletes nothing when a manifest read fails", async () => {
     await writeBuckets();
     const orphans = await writeOrphan("bm25", ORPHAN_IDX);

@@ -903,6 +903,10 @@ export class IndexPersistence {
         logger.warn("index persistence: orphan sweep left shards behind; the next boot retries", summary);
         return;
       }
+      if (candidates.size > orphans.length) {
+        if (orphans.length > 0) logger.info("index persistence: swept orphaned legacy index generations", summary);
+        return;
+      }
       await this.kv.set(KV.bm25Index, ORPHAN_SWEEP_KEY, { v: 1, at: new Date(this.now()).toISOString(), ...summary });
       await this.auditIndexPersistence("sweep", [statePath(KV.bm25Index, ORPHAN_SWEEP_KEY)], summary);
       logger.info("index persistence: swept orphaned legacy index generations", summary);
@@ -919,7 +923,9 @@ export class IndexPersistence {
       const manifest = read.value;
       if (manifest == null) continue;
       const generations = typeof manifest === "object" && Array.isArray(manifest.shards)
-        ? manifest.shards.filter(isValidShardDescriptor).map((shard) => legacyShardGeneration(shard.scope))
+        ? manifest.shards
+            .filter((shard) => typeof shard?.scope === "string" && shard.scope.length > 0)
+            .map((shard) => legacyShardGeneration(shard.scope))
         : [];
       if (typeof manifest === "object" && typeof manifest.generation === "string") generations.push(manifest.generation);
       const usable = generations.filter((generation): generation is string => !!generation);
