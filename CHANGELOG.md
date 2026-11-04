@@ -42,6 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - pi includes recalled lessons in search and can read a full lesson by ID, scoped to its project (#1605 by @YeChenglin8888).
 - `npm run build` works under the Windows `cmd.exe` shell (#1362 by @mattamundson).
 - `.env.example` names the Agent SDK route and documents `MAX_OBS_PER_SESSION` as a hard per-session cap (#1675, from #1503 by @Rex57).
+- The Claude Code plugin passes its URL and secret settings to the MCP server as `CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL` and `CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET`, the names the plugin directory accepts. An empty URL setting no longer hides `AGENTMEMORY_URL` from the environment, and an empty secret setting still never sends `AGENTMEMORY_SECRET` from the environment.
 
 ### Known issues
 
