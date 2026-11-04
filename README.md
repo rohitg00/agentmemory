@@ -66,16 +66,16 @@
 </p>
 
 <p align="center">
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-recall.svg"><img src="assets/tags/stat-recall.svg" alt="95.2% retrieval R@5" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tokens.svg"><img src="assets/tags/stat-tokens.svg" alt="92% fewer tokens" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,000+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="agentmemory demo" width="720" />
+  <a href="assets/demo.gif">
+    <img src="assets/demo.gif" alt="AgentMemory viewer: memories, knowledge graph, sessions and replay in dark and light themes" width="960" />
+  </a>
 </p>
 
 <p align="center">
@@ -332,225 +332,47 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
+### What's new in 0.9.31
+
+- **More focused recall:** project and agent scopes, saved-memory retrieval, explicit context budgets and full-source expansion.
+- **Less repeated work:** incremental session summaries skip unchanged observations; exports page through stored data.
+- **More native integrations:** installable Pi package, OMP and DeepSeek Harness plugins, and improved Cursor workspace attribution.
+- **Safer recovery:** compression, import validation and runtime recovery fixes, with status and activity visible in the viewer.
+
+[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.31).
+
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-benchmarks.svg"><img src="assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
-<table>
-<tr>
-<td width="50%">
+**Useful recall without a model API.** On LongMemEval-S, AgentMemory's keyless BM25 component found at least one relevant source for **96.2%** of answerable questions and **every required source for 84.7%**.
 
-### Retrieval Accuracy
+| LongMemEval-S, top 5 distinct sessions | AgentMemory BM25 | Lexical baseline |
+|---|---:|---:|
+| Every required source found (strict recall-all@5) | **84.7%** | 72.1% |
+| At least one relevant source found (any-hit@5) | **96.2%** | 88.7% |
 
-**coding-agent-life-v1** (in-house corpus, sandbox-reproducible)
+That is **12.6 percentage points higher complete-source retrieval** than the lexical baseline on the same inputs, with no embedding model or paid API. Measured on 2026-10-28: 500 questions per adapter, 470 answerable, 30 excluded from retrieval scoring, zero execution failures.
 
-| Adapter | P@5 | R@5 | Top-5 hit rate | p50 latency |
-|---|---|---|---|---|
-| **agentmemory hybrid** | **0.240** | **1.000** | **15 / 15** | 14 ms |
-| grep baseline | 0.227 | 0.967 | 15 / 15 | 0 ms |
-
-100% top-5 hit rate at the **P@5 math ceiling** for this corpus (0.240, see scorecard). Hybrid retrieves every gold session; grep misses 1 of 2 gold on the multi-session temporal query. Lift is **recall + temporal**, not aggregate precision. This benchmark is small and gold-sparse; the larger LongMemEval-S below differentiates better. Full per-type breakdown + correction note: [`docs/benchmarks/2026-05-20-coding-agent-life-v1.md`](docs/benchmarks/2026-05-20-coding-agent-life-v1.md).
-
-**LongMemEval-S** (ICLR 2025, 500 questions)
-
-| System | R@5 | R@10 | MRR |
-|---|---|---|---|
-| **agentmemory** | **95.2%** | **98.6%** | **88.2%** |
-| BM25-only fallback | 86.2% | 94.6% | 71.5% |
-
-</td>
-<td width="50%">
-
-### Token Savings
-
-| Approach | Tokens/yr | Cost/yr |
-|---|---|---|
-| Paste full context | 19.5M+ | Impossible (exceeds window) |
-| LLM-summarized | ~650K | ~$500 |
-| **agentmemory** | **~170K** | **~$10** |
-| agentmemory + local embeddings | ~170K | **$0** |
-
-</td>
-</tr>
-</table>
-
-> Embedding model: `all-MiniLM-L6-v2` (local, free, no API key). Full reports: [`benchmark/LONGMEMEVAL.md`](benchmark/LONGMEMEVAL.md), [`benchmark/QUALITY.md`](benchmark/QUALITY.md), [`benchmark/SCALE.md`](benchmark/SCALE.md). Competitor comparison: [`benchmark/COMPARISON.md`](benchmark/COMPARISON.md) covering agentmemory vs mem0, Letta, Khoj, supermemory, TencentDB Agent Memory, MemPalace, Zep/Graphiti, Cognee, Hippo.
-
-**Reproduce locally:** [`eval/README.md`](eval/README.md), an adapter-pluggable harness for LongMemEval `_s` (public 500-Q) + `coding-agent-life-v1` (in-house 15-session corpus). Grep / vector / agentmemory adapters score side-by-side, NDJSON output, published scorecards land in [`docs/benchmarks/`](docs/benchmarks/).
-
-**Pairs with [codegraph](https://github.com/colbymchenry/codegraph), [Understand Anything](https://github.com/Lum1104/Understand-Anything), and [Graphify](https://github.com/safishamsi/graphify).** Code-graph indexing, multi-agent build pipelines, and broader knowledge graphs across docs / PDFs / images / videos. agentmemory remembers the work; those three projects light up the rest of the context layer. Recipes + question-routing table: [`docs/recipes/pairings.md`](docs/recipes/pairings.md).
+This component test measures retrieval from supplied sessions. Full-system answer quality, hybrid retrieval and competitor rankings require separate evaluations. [Read the complete results, including the smaller coding fixture, limitations and reproduction steps](docs/benchmarks/2026-10-28-retrieval-evaluation.md).
 
 ---
 
 <h2 id="vs-competitors"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-competitors.svg"><img src="assets/tags/section-competitors.svg" alt="vs Competitors" height="32" /></picture></h2>
 
-<table>
-<tr>
-<th></th>
-<th>agentmemory</th>
-<th>mem0 (63K ⭐)</th>
-<th>Letta / MemGPT (24K ⭐)</th>
-<th>Khoj (36K ⭐)</th>
-<th>supermemory (29K ⭐)</th>
-<th>TencentDB Agent Memory (22K ⭐)</th>
-<th>MemPalace (54K ⭐)</th>
-<th>oracleagentmemory</th>
-<th>Hippo</th>
-<th>Built-in (CLAUDE.md)</th>
-</tr>
-<tr>
-<td><strong>Type</strong></td>
-<td>Memory engine + MCP server</td>
-<td>Memory layer API</td>
-<td>Full agent runtime</td>
-<td>Personal AI</td>
-<td>Memory API + app</td>
-<td>Team memory hub (LLM proxy)</td>
-<td>Vector memory (OSS)</td>
-<td>Memory engine (Oracle DB)</td>
-<td>Memory system</td>
-<td>Static file</td>
-</tr>
-<tr>
-<td><strong>Retrieval R@5</strong></td>
-<td><strong>95.2%</strong></td>
-<td>68.5% (LoCoMo)</td>
-<td>83.2% (LoCoMo)</td>
-<td>N/A</td>
-<td>Self-reported</td>
-<td>PersonaMem 76% (self-reported)</td>
-<td>~96.6% (self-reported)</td>
-<td>94.4% (self-reported)</td>
-<td>N/A</td>
-<td>N/A (grep)</td>
-</tr>
-<tr>
-<td><strong>Auto-capture</strong></td>
-<td>12 hooks (zero manual effort)</td>
-<td>Manual <code>add()</code> calls</td>
-<td>Agent self-edits</td>
-<td>Manual</td>
-<td>API-side extraction</td>
-<td>Proxy interception (base-URL swap)</td>
-<td>Manual</td>
-<td>API extraction</td>
-<td>Manual</td>
-<td>Manual editing</td>
-</tr>
-<tr>
-<td><strong>Search</strong></td>
-<td>BM25 + Vector + Graph (RRF fusion)</td>
-<td>Vector + Graph</td>
-<td>Vector (archival)</td>
-<td>Semantic</td>
-<td>Vector + RAG</td>
-<td>4 asset types (Chat / Skill / Wiki / CodeGraph)</td>
-<td>Vector-only</td>
-<td>Vector + semantic</td>
-<td>Decay-weighted</td>
-<td>Loads everything into context</td>
-</tr>
-<tr>
-<td><strong>Multi-agent</strong></td>
-<td>MCP + REST + leases + signals</td>
-<td>API (no coordination)</td>
-<td>Within Letta runtime only</td>
-<td>No</td>
-<td>No</td>
-<td>Team roles + shared assets</td>
-<td>No</td>
-<td>Scoped only</td>
-<td>Multi-agent shared</td>
-<td>Per-agent files</td>
-</tr>
-<tr>
-<td><strong>Framework lock-in</strong></td>
-<td>None (any MCP client)</td>
-<td>None</td>
-<td>High (must use Letta)</td>
-<td>Standalone</td>
-<td>None</td>
-<td>Proxy fronts every model call</td>
-<td>None</td>
-<td>Oracle Database</td>
-<td>None</td>
-<td>Per-agent format</td>
-</tr>
-<tr>
-<td><strong>External deps</strong></td>
-<td>No separate database service required</td>
-<td>Qdrant / pgvector</td>
-<td>Postgres + vector DB</td>
-<td>Multiple</td>
-<td>Managed cloud</td>
-<td>Docker stack (Core + Hub + Proxy)</td>
-<td>Vector store</td>
-<td>Oracle AI Database</td>
-<td>None</td>
-<td>None</td>
-</tr>
-<tr>
-<td><strong>Memory lifecycle</strong></td>
-<td>4-tier consolidation + decay + auto-forget</td>
-<td>Passive extraction</td>
-<td>Agent-managed</td>
-<td>Manual</td>
-<td>Auto-forget</td>
-<td>Manual review; auto-routing in progress</td>
-<td>None</td>
-<td>Not stated</td>
-<td>Decay + consolidation</td>
-<td>Manual pruning</td>
-</tr>
-<tr>
-<td><strong>Token efficiency</strong></td>
-<td>~1,900 tokens/session ($10/yr)</td>
-<td>Varies by integration</td>
-<td>Core memory in context</td>
-<td>Varies</td>
-<td>Cloud pricing</td>
-<td>Not stated</td>
-<td>No token budget</td>
-<td>LLM-backed (varies)</td>
-<td>Varies</td>
-<td>22K+ tokens at 240 obs</td>
-</tr>
-<tr>
-<td><strong>Real-time viewer</strong></td>
-<td>Yes (port 3113)</td>
-<td>Cloud dashboard</td>
-<td>Cloud dashboard</td>
-<td>Web UI</td>
-<td>Cloud dashboard</td>
-<td>Hub web UI</td>
-<td>No</td>
-<td>No</td>
-<td>No</td>
-<td>No</td>
-</tr>
-<tr>
-<td><strong>Self-hosted</strong></td>
-<td>Yes (default)</td>
-<td>Optional</td>
-<td>Optional</td>
-<td>Yes</td>
-<td>No (cloud-only)</td>
-<td>Yes (Docker)</td>
-<td>Yes</td>
-<td>Yes (Oracle DB)</td>
-<td>Yes</td>
-<td>Yes</td>
-</tr>
-</table>
+**AgentMemory is built for the coding workflow you already have.** Capture supported agent activity automatically, share project history across tools, retrieve scoped memories, and inspect the original sources in a local viewer. Lessons, actions, versioned memories and import/export ship in the Apache-2.0 project; keyword recall needs no account or model API key.
 
-<sub>Benchmark note: only agentmemory's R@5 is our own measured result (LongMemEval-S, reproducible from <a href="benchmark/COMPARISON.md"><code>benchmark/COMPARISON.md</code></a>). The mem0 and Letta figures are their published LoCoMo numbers (a different dataset); the MemPalace, supermemory, TencentDB (PersonaMem), and oracleagentmemory figures are vendor self-reported claims we have not independently reproduced (oracleagentmemory's run used GPT-5.5 against an Oracle AI Database). Shown side by side for ballpark only, not a head-to-head on identical data. Star counts are approximate and drift over time.</sub>
+Choose by workload and deployment. Other products also offer local deployment or agent plugins, so those alone are not useful differentiators.
 
-**Newer entrants** worth knowing, compared in depth in [`benchmark/COMPARISON.md`](benchmark/COMPARISON.md):
+| Project | Best starting point for |
+|---|---|
+| **AgentMemory** | Shared local memory for existing coding agents, automatic capture, scoped recall and a live viewer |
+| [Mem0](https://docs.mem0.ai/introduction) | Memory APIs, hosted or self-hosted, with SDKs and agent plugins |
+| [Supermemory](https://supermemory.ai/docs/self-hosting/overview) | Memory and document context through a hosted API or local server |
+| [Zep / Graphiti](https://github.com/getzep/graphiti) | Enterprise context and temporal knowledge graphs |
+| [Letta](https://docs.letta.com/) | Building stateful agents with their own managed memory |
+| [Cognee](https://github.com/topoteretes/cognee) | Turning documents, code and conversations into searchable knowledge |
+| [claude-mem](https://github.com/thedotmack/claude-mem) | Capturing and summarizing coding sessions across supported agents |
 
-| System | ⭐ | Angle |
-|--------|---|-------|
-| Zep / Graphiti | 30K | Temporal knowledge graph; strongest published temporal-query results (LongMemEval 63.8%), but graph builds asynchronously so fresh facts can lag |
-| Cognee | 30K | Document-to-knowledge-graph ingestion, Python-only, built for structured entity extraction rather than session capture |
-
-AgentMemory combines coding-agent capture, searchable project history and a local viewer, with keyless operation available from the first run.
+[Detailed comparison and sources](benchmark/COMPARISON.md), checked 2026-10-28. Deployment options, provider costs and integrations vary; scores from different datasets and metrics are not a head-to-head ranking.
 
 ---
 
@@ -785,9 +607,9 @@ Full guide: [`integrations/hermes/`](integrations/hermes/)
 
 Start the memory server: `npx -y @agentmemory/agentmemory@latest`
 
-#### Native skills via `npx skills add` (50+ agents)
+#### Native skills via `npx skills add`
 
-agentmemory ships 17 skills in the Claude-Code-style `<dir>/SKILL.md` format: 9 invocable action skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) and 8 reference skills the agent loads on demand (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). The reference skills carry data tables generated from source, so they never drift. The [`skills`](https://npmjs.com/package/skills) CLI by vercel-labs auto-installs them into the calling agent's native skill directory across 50+ agents (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, and more):
+agentmemory ships 17 skills in the Claude-Code-style `<dir>/SKILL.md` format: 9 invocable action skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) and 8 reference skills the agent loads on demand (`memory-discipline`, `agentmemory-mcp-tools`, `agentmemory-rest-api`, `agentmemory-config`, `agentmemory-agents`, `agentmemory-hooks`, `agentmemory-architecture`, `write-agentmemory-skill`). The reference skills carry data tables generated from source, so they never drift. The [`skills`](https://npmjs.com/package/skills) CLI by vercel-labs auto-installs them into the calling agent's native skill directory across supported agents (Claude Code, Cursor, Cline, Continue, Droid, Warp, Codex, Antigravity, Kiro, OpenCode, Goose, Roo, Trae, Windsurf, and more):
 
 ```bash
 npx skills add rohitg00/agentmemory -y          # auto-detects the calling agent
@@ -843,8 +665,8 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` installs MCP and capture hooks in the shared customization directory. See [Antigravity setup and limits](docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` uses the same MCP and hook configuration as current IDE versions. Existing installations should refresh with `--force`; see the [upgrade notes](docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` writes the user-level config. Workspace overrides go in `.kiro/settings/mcp.json` next to your code. |
-| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` writes the standard `mcpServers` block. Warp also auto-discovers skills from `.claude/skills/`; once the Claude Code plugin is installed the 8 agentmemory skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `commit-context`, `commit-history`, `session-history`) appear natively in Warp's slash-command palette. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` writes the standard `mcpServers` block. VS Code extension users: paste the same block via Cline Settings → MCP Servers → Edit JSON. |
+| **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` writes the standard `mcpServers` block. Warp also auto-discovers skills from `.claude/skills/`; once the Claude Code plugin is installed the 9 agentmemory skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) appear natively in Warp's slash-command palette. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` writes the standard `mcpServers` block. Set `CLINE_MCP_SETTINGS_PATH` to use another settings file. VS Code extension users: paste the same block via Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferred) or `config.json` (legacy) | `agentmemory connect continue` creates `config.yaml` from scratch when neither exists, or modifies existing `config.json`. **If you already have `config.yaml`** the adapter prints the exact block to paste under `mcpServers:`; it won't silently rewrite your yaml so your existing comments and anchors are preserved. Continue uses array form (not object) for `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` writes under `context_servers` (Zed's key, NOT `mcpServers`). Remote MCP servers can be wired via `{"url": "..."}` instead. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` writes the standard `mcpServers` block. Project-scoped overrides go in `<repo>/.factory/mcp.json`. Pass `--with-hooks` for native auto-capture. |
@@ -936,15 +758,15 @@ Session 2: "Now add rate limiting"
 
 ### vs built-in agent memory
 
-Every AI coding agent ships with built-in memory: Claude Code has `MEMORY.md`, Cursor has notepads, Cline has memory bank. These work like sticky notes. agentmemory is the searchable database behind the sticky notes.
+Agent instructions and memory files remain useful for stable project guidance. AgentMemory adds searchable session history, source-linked memories and coordination across connected agents.
 
 | | Built-in (CLAUDE.md) | agentmemory |
 |---|---|---|
 | Upkeep | Manually curated instructions | Indexed session history and memories |
 | Search | Loads everything into context | BM25 + vector + graph (top-K only) |
-| Token cost | 22K+ at 240 observations | ~1,900 tokens (92% less) |
+| Context budget | Depends on the files included | Configurable recall budget with source expansion |
 | Cross-agent | Per-agent files | MCP + REST (any agent) |
-| Coordination | None | Leases, signals, actions, routines |
+| Coordination | Depends on the agent | Leases, signals, actions, routines |
 | Observability | Read files manually | Real-time viewer on :3113 |
 
 ---
@@ -955,7 +777,7 @@ Every AI coding agent ships with built-in memory: Claude Code has `MEMORY.md`, C
 
 ```text
 PostToolUse hook fires
-  -> SHA-256 dedup (5min window)
+  -> Stable event ID, durable capture inbox, offline spool when unavailable
   -> Privacy filter (strip secrets, API keys)
   -> Store raw observation
   -> Synthetic compression by default
@@ -964,7 +786,7 @@ PostToolUse hook fires
   -> Index in BM25, plus vectors when enabled
 
 Stop / SessionEnd hook fires
-  -> Summarize session
+  -> Incremental summary when new observations are available
   -> Knowledge graph extraction (if GRAPH_EXTRACTION_ENABLED=true)
   -> Slot reflection (if AGENTMEMORY_SLOTS=true and AGENTMEMORY_REFLECT=true)
 
@@ -1044,7 +866,9 @@ Fused with Reciprocal Rank Fusion (RRF, k=60) and session-diversified (max 3 res
 
 When a vector index is populated, `mem::search` (behind `memory_recall`) uses the hybrid BM25 + vector ranker. Without embeddings it uses BM25. `smart-search` can additionally fuse structural graph matches when graph data exists, including in keyless mode. Lesson recall runs on a dedicated in-memory BM25 index instead of scanning the whole corpus per query. Superseded memory versions are excluded from every recall path; the version chain keeps their history.
 
-Vectors survive a crash or force-kill. The vector index is saved in buckets at most every `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 minutes). Every vector added or removed in between is also written right away to a small pending log in the state store, and the next start replays it without calling the embedding provider. Each successful save empties the log. Documents that still have no vector after the replay are re-embedded in the background in batches of `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500) until none are left, and a backfill that is stopped continues at the next start. `/agentmemory/status` and the viewer show the pending log size and the backfill state. Keyless installs write nothing.
+Filtered `memory_recall` expands its ranked candidate window until it fills the requested result limit, exhausts the candidate source, or reaches 1,000 candidates. This bound limits work for queries with many unrelated matches. Results can contain fewer items when qualifying records rank below that budget.
+
+Vectors survive a crash or force-kill. The vector index is saved in buckets at most every `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 minutes). Every vector added or removed in between is also written right away to a small pending log in the state store, and the next start replays it without calling the embedding provider. Each successful save empties the log. For older documents without vectors, `AGENTMEMORY_VECTOR_BACKFILL=all` opts into a bounded backfill at startup, capped by `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500). Keep the opt-in set across restarts to process more documents. See [source and vector recovery](docs/reliability/source-and-vector-recovery.md). `/agentmemory/status` and the viewer show the pending log size and the backfill state. Keyless installs write nothing.
 
 BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the box. For Chinese / Japanese / Korean memories, install the optional segmenters (`npm install @node-rs/jieba tiny-segmenter`) to split CJK runs into word-level tokens; without them, agentmemory soft-falls to whole-run tokenization and prints a one-time hint on stderr.
 
@@ -1056,13 +880,13 @@ Keyless installs disable vector embeddings: `mem::search` uses BM25, while `smar
 EMBEDDING_PROVIDER=local
 ```
 
-The normal npm install includes the optional `@huggingface/transformers` runtime. The first embedding request downloads `Xenova/all-MiniLM-L6-v2`, so it needs network access and can take longer; subsequent inference runs on-device. Remote providers are auto-detected from their keys unless `EMBEDDING_PROVIDER` overrides them.
+The normal npm install includes the optional `@huggingface/transformers` runtime. The first embedding request downloads `Xenova/all-MiniLM-L6-v2`, so it needs network access and can take longer; subsequent inference runs on-device. Remote embedding providers run only when `EMBEDDING_PROVIDER` names one of them (`gemini`, `openai`, `voyage`, `cohere`, `openrouter`) and its key is set. A key on its own never turns on remote embeddings.
 
 | Provider | Model | Cost | Notes |
 |---|---|---|---|
-| **Local (recommended opt-in)** | `all-MiniLM-L6-v2` | Free | On-device after the first model download, +8pp recall over BM25-only |
+| **Local (recommended opt-in)** | `all-MiniLM-L6-v2` | Free | On-device after the first model download |
 | Gemini | `gemini-embedding-001` | Free tier | 100+ languages, 768/1536/3072 dims (MRL), 2048-token input. Replaces `text-embedding-004` ([deprecated, shutdown Jan 14, 2026](https://ai.google.dev/gemini-api/docs/deprecations)) |
-| OpenAI | `text-embedding-3-small` | $0.02/1M | Highest quality |
+| OpenAI | `text-embedding-3-small` | [Provider pricing](https://openai.com/api/pricing/) | Remote embeddings |
 | Voyage AI | `voyage-code-3` | Paid | Optimized for code |
 | Cohere | `embed-english-v3.0` | Free trial | General purpose |
 | OpenRouter | Any model | Varies | Multi-model proxy |
@@ -1077,7 +901,7 @@ The normal npm install includes the optional `@huggingface/transformers` runtime
 
 ### 54 Tools
 
-Three tool surfaces, smallest to largest: `AGENTMEMORY_TOOLS=core` trims visibility to 8 essentials (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); the base set below is the registry's 14 foundational tools; the default (`AGENTMEMORY_TOOLS=all`) exposes all 54.
+Three tool surfaces, smallest to largest: `AGENTMEMORY_TOOLS=core` trims visibility to 8 essentials (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); the base set below is the registry's 14 foundational tools; the default (`AGENTMEMORY_TOOLS=all`) exposes all 54, minus the 6 `memory_slot_*` tools until `AGENTMEMORY_SLOTS=true`.
 
 <details>
 <summary>Base tools (14)</summary>
@@ -1234,17 +1058,17 @@ The viewer server binds to `127.0.0.1` by default and attaches the server secret
 
 ### LLM Providers
 
-agentmemory auto-detects providers from your environment. A provider makes LLM-backed operations available, but provider configuration alone does not enable LLM-written observation compression. That path requires both a provider and `AGENTMEMORY_AUTO_COMPRESS=true`.
+agentmemory sends session content to an LLM only after you select a provider with `AGENTMEMORY_LLM_PROVIDER`, or turn on the Claude Agent SDK fallback with `AGENTMEMORY_ALLOW_AGENT_SDK=true`. A key that exists in your environment for another tool is never enough. A selected provider makes LLM-backed operations available (session summaries, consolidation, reflection), but it does not enable LLM-written observation compression on its own. That path also requires `AGENTMEMORY_AUTO_COMPRESS=true`.
 
 | Provider | Config | Notes |
 |----------|--------|-------|
 | **No-op (default)** | No config needed | LLM-backed compress/summarize is disabled. Synthetic compression and BM25 recall still work. See `AGENTMEMORY_ALLOW_AGENT_SDK` below if you used to rely on the Claude-subscription fallback. |
-| Anthropic API | `ANTHROPIC_API_KEY` | Per-token billing |
-| MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
-| Gemini | `GEMINI_API_KEY` | Also enables embeddings |
-| OpenRouter | `OPENROUTER_API_KEY` | Any model |
-| OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
-| **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
+| Anthropic API | `AGENTMEMORY_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` | Per-token billing |
+| MiniMax | `AGENTMEMORY_LLM_PROVIDER=minimax` + `MINIMAX_API_KEY` | Anthropic-compatible |
+| Gemini | `AGENTMEMORY_LLM_PROVIDER=gemini` + `GEMINI_API_KEY` | Gemini embeddings need `EMBEDDING_PROVIDER=gemini` as well |
+| OpenRouter | `AGENTMEMORY_LLM_PROVIDER=openrouter` + `OPENROUTER_API_KEY` | Any model |
+| OpenAI API | `AGENTMEMORY_LLM_PROVIDER=openai` + `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
+| **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `AGENTMEMORY_LLM_PROVIDER=openai` + `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions; it used to cause unbounded Stop-hook recursion, so it is no longer the default. |
 
 ### Local models (Ollama / LM Studio / vLLM)
@@ -1260,6 +1084,7 @@ ollama serve
 
 ```env
 # ~/.agentmemory/.env
+AGENTMEMORY_LLM_PROVIDER=openai
 OPENAI_API_KEY=ollama                          # any non-empty string; Ollama ignores it
 OPENAI_BASE_URL=http://localhost:11434/v1
 OPENAI_MODEL=qwen3:8b
@@ -1271,6 +1096,7 @@ Open LM Studio → Local Server tab → Start Server. Pick any chat model from t
 
 ```env
 # ~/.agentmemory/.env
+AGENTMEMORY_LLM_PROVIDER=openai
 OPENAI_API_KEY=lmstudio                        # any non-empty string; LM Studio ignores it
 OPENAI_BASE_URL=http://localhost:1234/v1
 OPENAI_MODEL=qwen3-8b                          # match the model name from LM Studio
@@ -1343,7 +1169,7 @@ The default file store needs no separate database service. Redis is optional wit
 
 ### Config File
 
-Put agentmemory runtime configuration in `~/.agentmemory/.env` instead of exporting variables in every shell. If the viewer shows a setup hint like `export ANTHROPIC_API_KEY=...`, copy it into this file as `ANTHROPIC_API_KEY=...` without the `export` prefix, then restart agentmemory. Set `AGENTMEMORY_ENV_FILE` to use another env-file path.
+Put agentmemory runtime configuration in `~/.agentmemory/.env` instead of exporting variables in every shell. If the viewer shows a setup hint like `export ANTHROPIC_API_KEY=...`, copy it into this file as `ANTHROPIC_API_KEY=...` without the `export` prefix, add `AGENTMEMORY_LLM_PROVIDER=anthropic` to select it, then restart agentmemory. Set `AGENTMEMORY_ENV_FILE` to use another env-file path.
 
 Process environment variables take precedence over values in the file. Restart the server after changing its configuration.
 
@@ -1363,7 +1189,7 @@ AGENTMEMORY_AUTO_COMPRESS=true
 
 LLM-written observation compression requires both lines: access to an LLM provider (including this explicit subscription fallback) and `AGENTMEMORY_AUTO_COMPRESS=true`. A provider by itself leaves the default synthetic compression path in place.
 
-Consolidation (graph nodes, lessons, crystals) is on by default whenever an LLM provider is configured. Explicitly opt out with `CONSOLIDATION_ENABLED=false` if you want LLM-free operation. Graph extraction is a separate flag:
+Consolidation (graph nodes, lessons, crystals) is on by default whenever an LLM provider is selected with `AGENTMEMORY_LLM_PROVIDER`, or the Agent SDK fallback is on with `AGENTMEMORY_ALLOW_AGENT_SDK=true`. Explicitly opt out with `CONSOLIDATION_ENABLED=false` if you want LLM-free operation. Graph extraction is a separate flag:
 
 ```env
 GRAPH_EXTRACTION_ENABLED=true
@@ -1381,7 +1207,11 @@ EMBEDDING_PROVIDER=local
 # Optional automatic context injection through the shared hooks
 # AGENTMEMORY_INJECT_CONTEXT=true
 
-# Optional LLM-written compression; also requires a configured provider
+# Optional outside LLM for summaries and consolidation. A key alone does nothing;
+# this line selects the provider whose key agentmemory may use.
+# AGENTMEMORY_LLM_PROVIDER=anthropic
+
+# Optional LLM-written compression; also requires AGENTMEMORY_LLM_PROVIDER
 # AGENTMEMORY_AUTO_COMPRESS=true
 
 # Show 8 essential MCP tools instead of the default 54
@@ -1485,7 +1315,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,100+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

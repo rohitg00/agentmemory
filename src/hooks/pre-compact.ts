@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { resolveClientSecret } from "../secret-store.js";
 import { preCompactBudget } from "./_capture-filter.js";
+import { hookAuthHeaders, reportBlockedTransport, resolveHookEndpoint } from "./_endpoint.js";
 import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
@@ -9,13 +9,12 @@ function isSdkChildContext(payload: unknown): boolean {
   return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
 }
 
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = resolveClientSecret(REST_URL);
+const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
+const ENDPOINT = resolveHookEndpoint();
+const REST_URL = ENDPOINT.url;
 
 function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
+  return hookAuthHeaders(ENDPOINT);
 }
 
 async function main() {
@@ -33,6 +32,7 @@ async function main() {
 
   if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
+  if (reportBlockedTransport(ENDPOINT)) return;
 
   const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
   const project = resolveProject(hookCwd(data));
@@ -50,6 +50,7 @@ async function main() {
     }
   }
 
+  if (!INJECT_CONTEXT) return;
   const budget = preCompactBudget();
   if (budget === 0) return;
 

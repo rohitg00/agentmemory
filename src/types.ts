@@ -96,6 +96,7 @@ export interface CompressedObservation {
   sessionId: string;
   timestamp: string;
   type: ObservationType;
+  memoryType?: Memory["type"];
   title: string;
   subtitle?: string;
   facts: string[];
@@ -269,7 +270,13 @@ export interface FunctionMetrics {
 
 export interface HealthSnapshot {
   connectionState: string;
-  workers: Array<{ id: string; name: string; status: string }>;
+  workers: Array<{
+    id: string;
+    name?: string | null;
+    status: string;
+    runtime?: string | null;
+    isolation?: string | null;
+  }>;
   memory: {
     heapUsed: number;
     heapTotal: number;
@@ -340,6 +347,7 @@ export interface CompactSearchResult {
   sessionId: string;
   title: string;
   type: ObservationType;
+  memoryType?: Memory["type"];
   score: number;
   timestamp: string;
   layer?: "memory" | "observation" | "lesson" | "insight";

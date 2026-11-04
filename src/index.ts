@@ -5,6 +5,7 @@ import {
   getEnvVar,
   loadEmbeddingConfig,
   loadFallbackConfig,
+  embeddingOptInHint,
   loadClaudeBridgeConfig,
   loadTeamConfig,
   loadSnapshotConfig,
@@ -30,6 +31,7 @@ import {
   createImageEmbeddingProvider,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
+import { assertStateReady, waitForStateReady } from "./state/state-readiness.js";
 import { VectorIndex } from "./state/vector-index.js";
 import type { SearchLayer } from "./state/search-layer.js";
 import { HybridSearch } from "./state/hybrid-search.js";
@@ -202,7 +204,7 @@ async function main() {
   const fallbackConfig = loadFallbackConfig();
 
   const provider =
-    fallbackConfig.providers.length > 0
+    fallbackConfig.providers.length > 0 && config.provider.provider !== "noop"
       ? createFallbackProvider(config.provider, fallbackConfig)
       : createProvider(config.provider);
 
@@ -220,6 +222,8 @@ async function main() {
     );
   } else {
     bootLog(`Embedding provider: none (BM25-only mode)`);
+    const embeddingHint = embeddingOptInHint();
+    if (embeddingHint) bootLog(embeddingHint);
   }
   if (imageEmbeddingProvider) {
     bootLog(
@@ -259,6 +263,16 @@ async function main() {
     stateBackend = getStateBackend();
   } catch {}
   const kv = new StateKV(sdk, { backend: stateBackend });
+  const stateReadiness = await waitForStateReady(sdk, {
+    onWaiting: (error) =>
+      bootWarn(`Waiting for the state worker to register state::get and state::list (${error})`),
+  });
+  assertStateReady(stateReadiness);
+  if (stateReadiness.attempts > 1) {
+    bootLog(
+      `State worker ready after ${stateReadiness.waitedMs}ms (${stateReadiness.attempts} attempts)`,
+    );
+  }
   const secret = resolveWorkerSecret();
   const metricsStore = new MetricsStore(kv);
   const dedupMap = new DedupMap();
@@ -438,8 +452,8 @@ async function main() {
     graphWeight,
   );
 
-  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3]) =>
-    hybridSearch.search(query, limit, targetLayer, authorizeGraph);
+  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3], request?: Parameters<HybridSearch["search"]>[4]) =>
+    hybridSearch.search(query, limit, targetLayer, authorizeGraph, request);
   registerSmartSearchFunction(sdk, kv, hybridRanker);
   setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);

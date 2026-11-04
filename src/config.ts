@@ -82,6 +82,10 @@ export function __resetEnvFileCache(): void {
   envFileCache = undefined;
 }
 
+function hasRealValue(v: string | undefined): v is string {
+  return typeof v === "string" && v.trim().length > 0;
+}
+
 const PLACEHOLDER_KEY_VALUES = new Set(["your-key-here", "changeme", "todo"]);
 
 function hasRealKey(value: string | undefined): boolean {
@@ -145,76 +149,130 @@ function warnIfPremiumModel(env: Record<string, string>, envName: string, model:
   );
 }
 
+export const LLM_PROVIDER_NAMES = ["anthropic", "openai", "gemini", "openrouter", "minimax"] as const;
+export type LlmProviderName = (typeof LLM_PROVIDER_NAMES)[number];
+
+export const LLM_PROVIDER_KEYS: Record<LlmProviderName, readonly string[]> = {
+  anthropic: ["ANTHROPIC_API_KEY"],
+  openai: ["OPENAI_API_KEY"],
+  gemini: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+  openrouter: ["OPENROUTER_API_KEY"],
+  minimax: ["MINIMAX_API_KEY"],
+};
+
+export const REMOTE_EMBEDDING_PROVIDER_KEYS: Record<string, readonly string[]> = {
+  gemini: ["GEMINI_API_KEY"],
+  openai: ["OPENAI_API_KEY", "OPENAI_EMBEDDING_API_KEY"],
+  voyage: ["VOYAGE_API_KEY"],
+  cohere: ["COHERE_API_KEY"],
+  openrouter: ["OPENROUTER_API_KEY"],
+};
+
+function isLlmProviderName(value: string): value is LlmProviderName {
+  return (LLM_PROVIDER_NAMES as readonly string[]).includes(value);
+}
+
+function selectedLlmProviderValue(env: Record<string, string | undefined>): string {
+  return (env["AGENTMEMORY_LLM_PROVIDER"] || "").trim().toLowerCase();
+}
+
+function llmProviderHasKey(env: Record<string, string | undefined>, name: LlmProviderName): boolean {
+  return LLM_PROVIDER_KEYS[name].some((k) => isRealProviderKey(env, k));
+}
+
+export function envFileLabel(path: string = ENV_FILE): string {
+  const home = homedir();
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
+
+export function llmOptInHint(env: Record<string, string | undefined> = getMergedEnv()): string | null {
+  const selected = selectedLlmProviderValue(env);
+  if (selected) {
+    if (!isLlmProviderName(selected)) {
+      return `AGENTMEMORY_LLM_PROVIDER=${selected} is not a known provider. Use one of: ${LLM_PROVIDER_NAMES.join(", ")}.`;
+    }
+    if (!llmProviderHasKey(env, selected)) {
+      return `AGENTMEMORY_LLM_PROVIDER=${selected} is set, but ${LLM_PROVIDER_KEYS[selected].join(" or ")} is not. Add the key to ${envFileLabel()}.`;
+    }
+    return null;
+  }
+  if (env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true") return null;
+  const withKey = LLM_PROVIDER_NAMES.filter((name) => llmProviderHasKey(env, name));
+  if (withKey.length === 0) return null;
+  const keys = withKey.flatMap((name) => LLM_PROVIDER_KEYS[name].filter((k) => isRealProviderKey(env, k)));
+  return `Found ${keys.join(", ")}, but agentmemory sends nothing to an LLM provider until you choose one for it. To turn on LLM summaries and compression, add AGENTMEMORY_LLM_PROVIDER=${withKey[0]} to ${envFileLabel()}.`;
+}
+
+export function embeddingOptInHint(env: Record<string, string | undefined> = getMergedEnv()): string | null {
+  const chosen = (env["EMBEDDING_PROVIDER"] || "").trim().toLowerCase();
+  if (chosen) {
+    const keys = REMOTE_EMBEDDING_PROVIDER_KEYS[chosen];
+    if (keys && !keys.some((k) => hasRealValue(env[k]))) {
+      return `EMBEDDING_PROVIDER=${chosen} is set, but ${keys.join(" or ")} is not. Add the key to ${envFileLabel()}, or set EMBEDDING_PROVIDER=local for on-device embeddings.`;
+    }
+    return null;
+  }
+  const withKey = Object.keys(REMOTE_EMBEDDING_PROVIDER_KEYS).filter((name) =>
+    REMOTE_EMBEDDING_PROVIDER_KEYS[name].some((k) => hasRealValue(env[k])),
+  );
+  if (withKey.length === 0) return null;
+  return `A ${withKey.join("/")} key is present, but cloud embeddings stay off until you choose them. Add EMBEDDING_PROVIDER=${withKey[0]} to ${envFileLabel()}, or EMBEDDING_PROVIDER=local for on-device embeddings.`;
+}
+
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
+  const noop: ProviderConfig = { provider: "noop", model: "noop", maxTokens };
+  const selected = selectedLlmProviderValue(env);
 
-  // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
-  if (hasRealOpenAIKey(env) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
-    const model = env["OPENAI_MODEL"] || "gpt-5.6-luna";
-    warnIfPremiumModel(env, "OPENAI_MODEL", model);
-    return {
-      provider: "openai",
-      model,
-      maxTokens,
-      baseURL: env["OPENAI_BASE_URL"],
-    };
-  }
-
-  // MiniMax: Anthropic-compatible API, requires raw fetch to avoid SDK stainless headers
-  if (hasRealKey(env["MINIMAX_API_KEY"])) {
-    return {
-      provider: "minimax",
-      model: env["MINIMAX_MODEL"] || "MiniMax-M3",
-      maxTokens,
-    };
-  }
-
-  if (hasRealKey(env["ANTHROPIC_API_KEY"])) {
-    return {
-      provider: "anthropic",
-      model: env["ANTHROPIC_MODEL"] || "claude-sonnet-5",
-      maxTokens,
-      baseURL: env["ANTHROPIC_BASE_URL"],
-    };
-  }
-  if (hasRealKey(env["GEMINI_API_KEY"]) || hasRealKey(env["GOOGLE_API_KEY"])) {
-    if (!hasRealKey(env["GEMINI_API_KEY"]) && hasRealKey(env["GOOGLE_API_KEY"])) {
-      process.stderr.write(
-        "[agentmemory] GOOGLE_API_KEY detected — treating as GEMINI_API_KEY. " +
-          "Set GEMINI_API_KEY in ~/.agentmemory/.env to silence this warning.\n",
-      );
+  if (selected) {
+    if (!isLlmProviderName(selected) || !llmProviderHasKey(env, selected)) {
+      writeProviderNoticeOnce(`[agentmemory] ${llmOptInHint(env)} Running zero-LLM.\n`);
+      return noop;
     }
-    return {
-      provider: "gemini",
-      model: env["GEMINI_MODEL"] || "gemini-3.7-flash",
-      maxTokens,
-    };
-  }
-  if (hasRealKey(env["OPENROUTER_API_KEY"])) {
-    const model = env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-5";
-    warnIfPremiumModel(env, "OPENROUTER_MODEL", model);
-    return {
-      provider: "openrouter",
-      model,
-      maxTokens,
-    };
+    switch (selected) {
+      case "openai": {
+        const model = env["OPENAI_MODEL"] || "gpt-5.6-luna";
+        warnIfPremiumModel(env, "OPENAI_MODEL", model);
+        return { provider: "openai", model, maxTokens, baseURL: env["OPENAI_BASE_URL"] };
+      }
+      case "minimax":
+        return { provider: "minimax", model: env["MINIMAX_MODEL"] || "MiniMax-M3", maxTokens };
+      case "anthropic":
+        return {
+          provider: "anthropic",
+          model: env["ANTHROPIC_MODEL"] || "claude-sonnet-5",
+          maxTokens,
+          baseURL: env["ANTHROPIC_BASE_URL"],
+        };
+      case "gemini":
+        if (!hasRealKey(env["GEMINI_API_KEY"])) {
+          process.stderr.write(
+            "[agentmemory] GOOGLE_API_KEY detected — treating as GEMINI_API_KEY. " +
+              "Set GEMINI_API_KEY in ~/.agentmemory/.env to silence this warning.\n",
+          );
+        }
+        return { provider: "gemini", model: env["GEMINI_MODEL"] || "gemini-3.7-flash", maxTokens };
+      case "openrouter": {
+        const model = env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-5";
+        warnIfPremiumModel(env, "OPENROUTER_MODEL", model);
+        return { provider: "openrouter", model, maxTokens };
+      }
+    }
   }
 
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
+    const hint = llmOptInHint(env);
     writeProviderNoticeOnce(
-      pc.dim(
-        "[agentmemory] No LLM provider key set — running zero-LLM: no LLM compression or summaries; search uses BM25 plus any configured embedding provider. " +
-          "Set EMBEDDING_PROVIDER=local for on-device semantic embeddings if none is configured. " +
-          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
-          "Agent-SDK fallback stays off by default to avoid a Stop-hook recursion loop; opt in with AGENTMEMORY_AUTO_COMPRESS=true + AGENTMEMORY_ALLOW_AGENT_SDK=true.\n",
-      ),
+      hint
+        ? `[agentmemory] ${hint}\n`
+        : pc.dim(
+            "[agentmemory] No LLM provider chosen, so agentmemory runs zero-LLM: no LLM compression or summaries, and no session content leaves this machine for an LLM. " +
+              "Search uses BM25 plus any embedding provider you set with EMBEDDING_PROVIDER (EMBEDDING_PROVIDER=local runs on-device). " +
+              "To turn on LLM summaries, set AGENTMEMORY_LLM_PROVIDER (anthropic, openai, gemini, openrouter or minimax) and that provider's key in ~/.agentmemory/.env.\n",
+          ),
     );
-    return {
-      provider: "noop",
-      model: "noop",
-      maxTokens,
-    };
+    return noop;
   }
 
   writeProviderNoticeOnce(
@@ -331,7 +389,7 @@ export function getStateBackend(): "file" | "redis" {
 
 export function getRedisUrl(): string | undefined {
   const value = getMergedEnv()["AGENTMEMORY_REDIS_URL"];
-  return value?.trim() || undefined;
+  return hasRealValue(value) ? value.trim() : undefined;
 }
 
 export function getAuditRetentionMonths(): number {
@@ -348,18 +406,11 @@ export function getAuditMigrateMaxBytes(): number {
 export function detectLlmProviderKind(
   env: Record<string, string | undefined> = getMergedEnv(),
 ): "llm" | "noop" {
-  if (
-    hasRealKey(env["ANTHROPIC_API_KEY"]) ||
-    hasRealKey(env["GEMINI_API_KEY"]) ||
-    hasRealKey(env["GOOGLE_API_KEY"]) ||
-    hasRealKey(env["OPENROUTER_API_KEY"]) ||
-    hasRealKey(env["MINIMAX_API_KEY"]) ||
-    (hasRealOpenAIKey(env) &&
-      env["OPENAI_API_KEY_FOR_LLM"] !== "false") ||
-    env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true"
-  ) {
+  const selected = selectedLlmProviderValue(env);
+  if (selected && isLlmProviderName(selected) && llmProviderHasKey(env, selected)) {
     return "llm";
   }
+  if (!selected && env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true") return "llm";
   return "noop";
 }
 
@@ -395,15 +446,8 @@ export function detectEmbeddingProvider(
   env?: Record<string, string>,
 ): string | null {
   const source = env ?? getMergedEnv();
-  const forced = source["EMBEDDING_PROVIDER"];
-  if (forced) return forced;
-
-  if (source["GEMINI_API_KEY"]) return "gemini";
-  if (source["OPENAI_API_KEY"] || source["OPENAI_EMBEDDING_API_KEY"]) return "openai";
-  if (source["VOYAGE_API_KEY"]) return "voyage";
-  if (source["COHERE_API_KEY"]) return "cohere";
-  if (source["OPENROUTER_API_KEY"]) return "openrouter";
-  return null;
+  const forced = (source["EMBEDDING_PROVIDER"] || "").trim();
+  return forced ? forced : null;
 }
 
 export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {

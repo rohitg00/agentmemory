@@ -38,22 +38,40 @@ describe("placeholder provider keys", () => {
   });
 
   it.each([
-    ["ANTHROPIC_API_KEY", "sk-ant-..."],
-    ["OPENAI_API_KEY", "sk-..."],
-    ["OPENROUTER_API_KEY", "changeme"],
-    ["MINIMAX_API_KEY", "your-key-here"],
-    ["GEMINI_API_KEY", "xxxx-xxxx"],
-    ["GOOGLE_API_KEY", "your-key-here"],
-    ["OPENROUTER_API_KEY", "CHANGEME"],
-    ["ANTHROPIC_API_KEY", "todo"],
-    ["GEMINI_API_KEY", "XXXX-XXXX"],
-    ["OPENROUTER_API_KEY", "sk-or-v1-..."],
-  ])("does not pick a provider for %s=%s", async (key, value) => {
+    ["anthropic", "ANTHROPIC_API_KEY", "sk-ant-..."],
+    ["openai", "OPENAI_API_KEY", "sk-..."],
+    ["openrouter", "OPENROUTER_API_KEY", "changeme"],
+    ["minimax", "MINIMAX_API_KEY", "your-key-here"],
+    ["gemini", "GEMINI_API_KEY", "xxxx-xxxx"],
+    ["gemini", "GOOGLE_API_KEY", "your-key-here"],
+    ["openrouter", "OPENROUTER_API_KEY", "CHANGEME"],
+    ["anthropic", "ANTHROPIC_API_KEY", "todo"],
+    ["gemini", "GEMINI_API_KEY", "XXXX-XXXX"],
+    ["openrouter", "OPENROUTER_API_KEY", "sk-or-v1-..."],
+  ])("runs zero-LLM when %s is chosen but %s=%s", async (provider, key, value) => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = provider;
     process.env[key] = value;
-    const { loadConfig, detectLlmProviderKind } = await import("../src/config.js");
+    const { loadConfig, detectLlmProviderKind, llmOptInHint } = await import("../src/config.js");
 
     expect(loadConfig().provider.provider).toBe("noop");
     expect(detectLlmProviderKind()).toBe("noop");
+    expect(llmOptInHint()).toContain(`AGENTMEMORY_LLM_PROVIDER=${provider} is set, but`);
+  });
+
+  it("does not offer a provider whose only key is a placeholder", async () => {
+    process.env["ANTHROPIC_API_KEY"] = "sk-ant-...";
+    process.env["GEMINI_API_KEY"] = "your-key-here";
+    process.env["GOOGLE_API_KEY"] = "AIzaRealKey123";
+    const { llmOptInHint } = await import("../src/config.js");
+
+    const hint = llmOptInHint();
+    expect(hint).toContain("Found GOOGLE_API_KEY,");
+    expect(hint).toContain("AGENTMEMORY_LLM_PROVIDER=gemini");
+    expect(hint).not.toContain("ANTHROPIC_API_KEY");
+    expect(hint).not.toContain("GEMINI_API_KEY");
+
+    delete process.env["GOOGLE_API_KEY"];
+    expect(llmOptInHint()).toBeNull();
   });
 
   it("rejects every sample value in .env.example", async () => {
@@ -68,6 +86,7 @@ describe("placeholder provider keys", () => {
   });
 
   it("keeps a dummy OpenAI key for a plain-http OPENAI_BASE_URL", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "openai";
     process.env["OPENAI_API_KEY"] = "xxx";
     process.env["OPENAI_BASE_URL"] = "http://localhost:11434/v1";
     const fetchMock = vi.fn(async () =>
@@ -97,6 +116,7 @@ describe("placeholder provider keys", () => {
   });
 
   it("keeps a dummy OpenAI key for a plain-http server on another host", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "openai";
     process.env["OPENAI_API_KEY"] = "xxx";
     process.env["OPENAI_BASE_URL"] = "http://vllm.lan:8000/v1";
     const { loadConfig, detectLlmProviderKind } = await import("../src/config.js");
@@ -110,6 +130,7 @@ describe("placeholder provider keys", () => {
   });
 
   it("keeps a sample OpenAI key for a plain-http OPENAI_BASE_URL", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "openai";
     process.env["OPENAI_API_KEY"] = "sk-...";
     process.env["OPENAI_BASE_URL"] = "http://localhost:11434/v1";
     const { loadConfig, detectLlmProviderKind } = await import("../src/config.js");
@@ -123,6 +144,7 @@ describe("placeholder provider keys", () => {
   });
 
   it("does not keep a placeholder OpenAI key for an https OPENAI_BASE_URL", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "openai";
     process.env["OPENAI_API_KEY"] = "sk-...";
     process.env["OPENAI_BASE_URL"] = "https://api.openai.com";
     const { loadConfig, detectLlmProviderKind } = await import("../src/config.js");
@@ -136,6 +158,7 @@ describe("placeholder provider keys", () => {
   });
 
   it("keeps OPENAI_BASE_URL from excusing other placeholder keys", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "anthropic";
     process.env["ANTHROPIC_API_KEY"] = "sk-ant-...";
     process.env["OPENAI_BASE_URL"] = "http://localhost:11434/v1";
     const { loadConfig, detectLlmProviderKind } = await import("../src/config.js");
@@ -160,7 +183,8 @@ describe("placeholder provider keys", () => {
     expect(() => createProvider({ provider, model: "m", maxTokens: 1 })).toThrow(key);
   });
 
-  it("still picks a provider for a real key", async () => {
+  it("still uses the chosen provider with a real key", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "anthropic";
     process.env["ANTHROPIC_API_KEY"] = "sk-ant-api03-abc123";
     const { loadConfig } = await import("../src/config.js");
 
@@ -168,6 +192,7 @@ describe("placeholder provider keys", () => {
   });
 
   it("sends GOOGLE_API_KEY when GEMINI_API_KEY is a placeholder", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "gemini";
     process.env["GEMINI_API_KEY"] = "your-key-here";
     process.env["GOOGLE_API_KEY"] = "AIzaRealKey123";
     const fetchMock = vi.fn(async () =>

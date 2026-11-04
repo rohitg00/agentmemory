@@ -16,12 +16,20 @@
 //   agentmemory doctor --all       # apply every available fix without prompting (CI)
 //   agentmemory doctor --dry-run   # show what each fix WOULD do; execute nothing
 
-import { detectLlmProviderKind, isRealProviderKey, parseEnvContent } from "../config.js";
+import {
+  detectLlmProviderKind,
+  embeddingOptInHint,
+  isRealProviderKey,
+  LLM_PROVIDER_KEYS,
+  llmOptInHint,
+  parseEnvContent,
+} from "../config.js";
 
 export type DiagnosticStatus = {
   ok: boolean;
   /** Short status detail (one line). Shown alongside the check name. */
   detail?: string;
+  manualFix?: string;
 };
 
 export type DiagnosticFixResult = {
@@ -61,10 +69,23 @@ export type Diagnostic = {
   manualOnly?: boolean;
 };
 
+export function canAutoFix(d: Diagnostic, status?: DiagnosticStatus): boolean {
+  return !d.manualOnly && !status?.manualFix;
+}
+
+export function doctorPromptsAllowed(
+  env: NodeJS.ProcessEnv,
+  stdinIsTTY: boolean | undefined,
+  stdoutIsTTY: boolean | undefined,
+): boolean {
+  return Boolean(stdinIsTTY) && Boolean(stdoutIsTTY) && !env["CI"];
+}
+
 // Diagnostic ids are stable for testing and machine-readable doctor output.
 export const DIAGNOSTIC_IDS = [
   "env-missing",
   "no-llm-provider-key",
+  "embedding-provider-not-chosen",
   "engine-version-mismatch",
   "viewer-unreachable",
   "stale-pidfile",
@@ -121,6 +142,7 @@ export type DoctorEffects = {
   localBinIiiPath: () => string;
   /** Run `iii --version`; null if it fails. */
   iiiBinaryVersion: (binPath: string) => string | null;
+  externalEngineRunning: () => Promise<boolean>;
   /** Probe the viewer URL; true if it returns OK within timeoutMs. */
   viewerReachable: (timeoutMs?: number) => Promise<boolean>;
   /** Run init logic (copies .env.example). */
@@ -155,15 +177,16 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     },
     {
       id: "no-llm-provider-key",
-      message: "No LLM provider API key found in ~/.agentmemory/.env or the environment.",
-      fixPreview: "Open ~/.agentmemory/.env in $EDITOR and paste your key, then re-check.",
+      message: "No LLM provider chosen for agentmemory in ~/.agentmemory/.env or the environment.",
+      fixPreview:
+        "Open ~/.agentmemory/.env in $EDITOR, set AGENTMEMORY_LLM_PROVIDER and that provider's key, then re-check.",
       moreInfo:
-        "Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, " +
-        "GOOGLE_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY. Placeholder values count as missing. " +
-        "OPENAI_API_KEY counts only while OPENAI_API_KEY_FOR_LLM is not false, and " +
-        "AGENTMEMORY_ALLOW_AGENT_SDK=true needs no key. A value exported in the environment " +
-        "wins over the file, but only for a daemon started from that environment, and " +
-        "counts even when the file is absent.",
+        "agentmemory sends session content to an LLM provider only after you choose one: set " +
+        "AGENTMEMORY_LLM_PROVIDER to anthropic, openai, gemini, openrouter or minimax, and set that " +
+        "provider's key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY or GOOGLE_API_KEY, " +
+        "OPENROUTER_API_KEY, MINIMAX_API_KEY). A key alone never turns LLM use on. Placeholder " +
+        "values count as missing. AGENTMEMORY_ALLOW_AGENT_SDK=true needs no key. A value exported " +
+        "in the environment wins over the file, but only for a daemon started from that environment.",
       check: async () => {
         const file = effects.readEnvFile();
         const env: Record<string, string> = { ...file };
@@ -171,21 +194,19 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
           if (v !== undefined) env[k] = v;
         }
         if (detectLlmProviderKind(env) !== "llm") {
+          const hint = llmOptInHint(env);
+          if (hint) return { ok: false, detail: hint };
           return {
             ok: false,
             detail: effects.envFileExists()
-              ? "no provider key set"
-              : "no provider key set (run env-missing fix first)",
+              ? "no provider chosen"
+              : "no provider chosen (run env-missing fix first)",
           };
         }
-        const real = realProviderKeys(env).filter(
-          (k) =>
-            detectLlmProviderKind({
-              [k]: env[k],
-              OPENAI_API_KEY_FOR_LLM: env.OPENAI_API_KEY_FOR_LLM,
-              OPENAI_BASE_URL: env.OPENAI_BASE_URL,
-            }) === "llm",
-        );
+        const selected = (env.AGENTMEMORY_LLM_PROVIDER ?? "").trim().toLowerCase();
+        const selectedKeys: readonly string[] =
+          selected in LLM_PROVIDER_KEYS ? LLM_PROVIDER_KEYS[selected as keyof typeof LLM_PROVIDER_KEYS] : [];
+        const real = realProviderKeys(env).filter((k) => selectedKeys.includes(k));
         const fromEnv = real.filter((k) => file[k] !== env[k]);
         const named = real.map((k) => (fromEnv.includes(k) ? `${k} (environment)` : k));
         if (named.length === 0) return { ok: true, detail: "agent-sdk fallback, no API key" };
@@ -196,26 +217,71 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
       fix: (ctx) => effects.openEditor(ctx.envPath),
     },
     {
+      id: "embedding-provider-not-chosen",
+      message: "Cloud embeddings are not set up: EMBEDDING_PROVIDER does not choose a present key, or names a provider whose key is missing.",
+      fixPreview:
+        "Open ~/.agentmemory/.env in $EDITOR and set EMBEDDING_PROVIDER (local, openai, voyage, cohere, gemini or openrouter).",
+      moreInfo:
+        "Cloud embeddings send memory text to that provider, so agentmemory uses them only when " +
+        "EMBEDDING_PROVIDER names the provider. A key alone never turns them on. " +
+        "EMBEDDING_PROVIDER=local runs on-device. Without a provider, search is keyword and graph only.",
+      check: async () => {
+        const env: Record<string, string> = { ...effects.readEnvFile() };
+        for (const [k, v] of Object.entries(effects.processEnv())) {
+          if (v !== undefined) env[k] = v;
+        }
+        const hint = embeddingOptInHint(env);
+        return hint ? { ok: false, detail: hint } : { ok: true };
+      },
+      fix: (ctx) => effects.openEditor(ctx.envPath),
+    },
+    {
       id: "engine-version-mismatch",
-      message: "iii binary on PATH doesn't match the version agentmemory pins to.",
+      message: "No iii binary matches the version agentmemory pins to.",
       fixPreview:
         "Reinstall the pinned iii-engine and restart the managed Worker Compose project.",
       moreInfo:
         "agentmemory manages its pinned iii engine and workers through Worker Compose; " +
         "a foreign process on PATH is not the instance binary. " +
         "Running a mismatched binary surfaces as EPIPE " +
-        "reconnect loops and empty search results.",
+        "reconnect loops and empty search results. Before an instance is configured, " +
+        "a matching private install at ~/.agentmemory/bin/iii can satisfy the pin.",
       check: async (ctx) => {
+        if (await effects.externalEngineRunning()) {
+          return {
+            ok: false,
+            detail: "external engine version is unknown",
+            manualFix: "Verify the external engine version, or stop it before starting a managed instance.",
+          };
+        }
+        const privateVersion = effects.iiiBinaryVersion(effects.localBinIiiPath());
         const bin = effects.findIiiBinary();
-        if (!bin) return { ok: false, detail: "iii not on PATH" };
-        const v = effects.iiiBinaryVersion(bin);
-        if (!v) return { ok: false, detail: "iii on PATH but --version failed" };
+        const pathVersion = bin ? effects.iiiBinaryVersion(bin) : null;
+        if (privateVersion === ctx.pinnedVersion) {
+          const note =
+            pathVersion && pathVersion !== ctx.pinnedVersion
+              ? `; PATH iii is ${pathVersion}; the pinned private install is available for startup`
+              : "";
+          return {
+            ok: true,
+            detail: `private install ${privateVersion} (pinned ${ctx.pinnedVersion})${note}`,
+          };
+        }
+        if (!bin) {
+          return { ok: false, detail: "iii not on PATH and no private install" };
+        }
+        if (!pathVersion) {
+          return { ok: false, detail: "iii on PATH but --version failed" };
+        }
         return {
-          ok: v === ctx.pinnedVersion,
-          detail: `${v} (pinned ${ctx.pinnedVersion})`,
+          ok: pathVersion === ctx.pinnedVersion,
+          detail: `${pathVersion} (pinned ${ctx.pinnedVersion})`,
         };
       },
       fix: async () => {
+        if (await effects.externalEngineRunning()) {
+          return { ok: false, message: "Verify or stop the external engine manually." };
+        }
         const r = await effects.runIiiInstaller();
         if (!r.ok) return r;
         // Best-effort restart: stop then start.
@@ -291,7 +357,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     {
       id: "iii-on-path-not-local-bin",
       message:
-        "iii is on PATH but not at agentmemory's private install path.",
+        "iii is on PATH but agentmemory's private install is absent or mismatched.",
       fixPreview:
         "Install the pinned version to ~/.agentmemory/bin — won't touch your PATH.",
       moreInfo:
@@ -300,14 +366,19 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         "When agentmemory needs the pin and PATH doesn't have it, it falls back to the " +
         "private install. If neither exists, run the installer.",
       manualOnly: true,
-      check: async () => {
+      check: async (ctx) => {
         const bin = effects.findIiiBinary();
         if (!bin) return { ok: true, detail: "iii not on PATH (handled elsewhere)" };
         const localBin = effects.localBinIiiPath();
-        return {
-          ok: bin === localBin,
-          detail: bin === localBin ? undefined : `iii at: ${bin}`,
-        };
+        if (bin === localBin) return { ok: true };
+        const privateVersion = effects.iiiBinaryVersion(localBin);
+        if (privateVersion === ctx.pinnedVersion) {
+          return {
+            ok: true,
+            detail: `private install pinned; PATH iii at ${bin} stays untouched`,
+          };
+        }
+        return { ok: false, detail: `iii at: ${bin}` };
       },
       fix: async () =>
         effects.runIiiInstaller().then((r) => ({
@@ -352,7 +423,7 @@ export function dryRunPlan(
     if (status.ok) continue;
     n++;
     lines.push(`${n}. [${diagnostic.id}] ${diagnostic.message}`);
-    lines.push(`   would fix: ${diagnostic.fixPreview}`);
+    lines.push(`   ${canAutoFix(diagnostic, status) ? "would fix" : "manual fix"}: ${status.manualFix ?? diagnostic.fixPreview}`);
     if (status.detail) lines.push(`   detail: ${status.detail}`);
   }
   if (lines.length === 0) {

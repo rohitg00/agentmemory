@@ -336,7 +336,10 @@ async function fixtureServer(instance, livez) {
 async function expectFailure(instance, args, env, { budgetMs = 5000, message } = {}) {
   const at = Date.now(); const child = instance.start(args, env); const result = await exited(child, budgetMs);
   assert.notEqual(result.code, 0, `CLI incorrectly succeeded: ${child.text}`);
-  if (message) assert(child.text.includes(message), `Missing ${message}: ${child.text.slice(-1500)}`);
+  if (message) {
+    const found = message instanceof RegExp ? message.test(child.text) : child.text.includes(message);
+    assert(found, `Missing ${message}: ${child.text.slice(-1500)}`);
+  }
   return { elapsedMs: Date.now() - at, exitCode: result.code };
 }
 
@@ -421,7 +424,7 @@ async function main() {
   await scenario("inline-worker-fatal", async (i, d) => {
     const workerData = join(i.data, "fatal-worker-data"); mkdirSync(join(workerData, "secret"), { recursive: true });
     const config = i.config({ workerDataDir: workerData }); await i.startEngine(config);
-    Object.assign(d, await expectFailure(i, ["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "3000" }, { budgetMs: 10_000, message: "3s" }));
+    Object.assign(d, await expectFailure(i, ["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "3000" }, { budgetMs: 10_000, message: /3s|could not create its API secret/ }));
     const workerLogs = readdirSync(join(i.data, "compose-state"), { withFileTypes: true })
       .filter((entry) => entry.isDirectory())
       .flatMap((entry) => { const stateRoot = join(i.data, "compose-state", entry.name); return readdirSync(stateRoot, { withFileTypes: true }).filter((project) => project.isDirectory()).map((project) => join(stateRoot, project.name, "logs", "agentmemory.log")); })

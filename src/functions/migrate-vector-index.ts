@@ -3,6 +3,7 @@ import { VectorIndex } from "../state/vector-index.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { logger } from "../logger.js";
+import { observationEmbedText } from "../state/memory-utils.js";
 
 export interface MigrateVectorIndexResult {
   success: boolean;
@@ -55,7 +56,9 @@ export async function migrateVectorIndex(
     textMems = memories.filter(
       (m) => m.isLatest !== false && m.title && m.content && m.content.trim() !== "",
     );
-    const texts = textMems.map((m) => m.title + " " + m.content);
+    const texts = textMems.map((m) =>
+      observationEmbedText({ title: m.title, narrative: m.content, concepts: m.concepts }),
+    );
 
     if (texts.length > 0) {
       const embeddings = await newProvider.embedBatch(texts);
@@ -115,7 +118,7 @@ export async function migrateVectorIndex(
         KV.observations(session.id),
       );
       const textObs = observations.filter((o) => o.title);
-      const texts = textObs.map((o) => o.title + " " + (o.narrative || ""));
+      const texts = textObs.map((o) => observationEmbedText(o));
       if (texts.length === 0) continue;
 
       const embeddings = await newProvider.embedBatch(texts);
