@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -154,7 +154,40 @@ export type ZipCommandRunner = (command: string, args: string[]) => ZipRunResult
 export type ZipDownloader = (url: string, dest: string) => Promise<void>;
 
 export function iiiZipArchivePath(binDir: string): string {
-  return join(binDir, ".iii-download.zip");
+  return join(binDir, `.iii-download-${process.pid}-${randomBytes(4).toString("hex")}.zip`);
+}
+
+function removeQuietly(path: string): void {
+  try {
+    rmSync(path, { force: true });
+  } catch {}
+}
+
+const PROXY_ENV_KEYS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"];
+
+export function proxyConfigured(env: NodeJS.ProcessEnv): boolean {
+  return PROXY_ENV_KEYS.some((key) => Boolean(env[key]?.trim()));
+}
+
+export function windowsCurlDownloadCommand(
+  url: string,
+  dest: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] } {
+  const systemRoot = env["SystemRoot"] || env["SYSTEMROOT"] || "C:\\Windows";
+  return {
+    command: join(systemRoot, "System32", "curl.exe"),
+    args: [
+      "-fsSL",
+      "--connect-timeout",
+      String(III_INSTALL_CONNECT_TIMEOUT_S),
+      "--max-time",
+      String(III_INSTALL_MAX_TIME_S),
+      "-o",
+      dest,
+      url,
+    ],
+  };
 }
 
 export function powershellLiteral(value: string): string {
@@ -182,7 +215,18 @@ export function windowsZipExtractCommands(
   ];
 }
 
-export async function downloadToFile(url: string, dest: string): Promise<void> {
+export async function downloadToFile(
+  url: string,
+  dest: string,
+  env: NodeJS.ProcessEnv = process.env,
+  run: ZipCommandRunner = defaultZipRunner,
+): Promise<void> {
+  if (proxyConfigured(env)) {
+    const step = windowsCurlDownloadCommand(url, dest, env);
+    const result = run(step.command, step.args);
+    if (result.status !== 0) throw new Error(describeInstallFailure(result));
+    return;
+  }
   const res = await fetch(url, {
     redirect: "follow",
     signal: AbortSignal.timeout(III_INSTALL_MAX_TIME_S * 1000),
@@ -220,16 +264,15 @@ export async function installIiiZip(opts: {
       detail: `no pinned SHA-256 for ${opts.asset} in iii v${opts.version}, so the download cannot be verified`,
     };
   }
-  const download = opts.download ?? downloadToFile;
   const run = opts.run ?? defaultZipRunner;
+  const download = opts.download ?? ((url: string, dest: string) => downloadToFile(url, dest, opts.env ?? process.env, run));
   const archive = iiiZipArchivePath(opts.binDir);
 
   try {
     mkdirSync(opts.binDir, { recursive: true });
-    rmSync(archive, { force: true });
     await download(opts.releaseUrl, archive);
   } catch (err) {
-    rmSync(archive, { force: true });
+    removeQuietly(archive);
     return { ok: false, reason: "download", detail: err instanceof Error ? err.message : String(err) };
   }
 
@@ -237,11 +280,11 @@ export async function installIiiZip(opts: {
   try {
     actual = sha256File(archive);
   } catch (err) {
-    rmSync(archive, { force: true });
+    removeQuietly(archive);
     return { ok: false, reason: "download", detail: err instanceof Error ? err.message : String(err) };
   }
   if (actual !== expected) {
-    rmSync(archive, { force: true });
+    removeQuietly(archive);
     return {
       ok: false,
       reason: "checksum",
@@ -253,11 +296,11 @@ export async function installIiiZip(opts: {
   for (const step of windowsZipExtractCommands(archive, opts.binDir, opts.env)) {
     const result = run(step.command, step.args);
     if (result.status === 0 && existsSync(opts.binPath)) {
-      rmSync(archive, { force: true });
+      removeQuietly(archive);
       return { ok: true };
     }
     failures.push(`${step.command}: ${result.status === 0 ? `finished but ${opts.binPath} is missing` : describeInstallFailure(result)}`);
   }
-  rmSync(archive, { force: true });
+  removeQuietly(archive);
   return { ok: false, reason: "extract", detail: failures.join("; ") };
 }

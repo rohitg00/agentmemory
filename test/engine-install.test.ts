@@ -13,8 +13,11 @@ import {
   iiiManualInstallCommand,
   installIiiArchive,
   sha256File,
+  downloadToFile,
+  iiiZipArchivePath,
   installIiiZip,
   powershellLiteral,
+  proxyConfigured,
   windowsZipExtractCommands,
 } from "../src/cli/engine-install.js";
 import { III_PINNED_VERSION } from "../src/version.js";
@@ -222,6 +225,10 @@ describe("iii engine Windows zip installer", () => {
   const ZIP_ASSET = "iii-x86_64-pc-windows-msvc.zip";
   const ZIP_BYTES = Buffer.from("fake windows iii zip");
 
+  function leftoverArchives(binDir: string): string[] {
+    return existsSync(binDir) ? readdirSync(binDir).filter((name) => name.startsWith(".iii-download")) : [];
+  }
+
   function zipChecksums(bytes: Buffer = ZIP_BYTES) {
     const dir = sandbox();
     const file = join(dir, "probe.zip");
@@ -270,7 +277,7 @@ describe("iii engine Windows zip installer", () => {
     expect(outcome).toEqual({ ok: true });
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatch(/tar\.exe$/);
-    expect(existsSync(join(binDir, ".iii-download.zip"))).toBe(false);
+    expect(leftoverArchives(binDir)).toEqual([]);
   });
 
   it("falls back to Expand-Archive when tar.exe fails", async () => {
@@ -301,7 +308,7 @@ describe("iii engine Windows zip installer", () => {
     expect(outcome.ok).toBe(false);
     expect(outcome.ok === false && outcome.reason).toBe("checksum");
     expect(ran).toBe(false);
-    expect(existsSync(join(binDir, ".iii-download.zip"))).toBe(false);
+    expect(leftoverArchives(binDir)).toEqual([]);
   });
 
   it("downloads nothing for an asset without a pinned SHA-256", async () => {
@@ -322,6 +329,29 @@ describe("iii engine Windows zip installer", () => {
     const outcome = await installIiiZip(zipOpts(binDir, { run: () => ({ status: 0 }) }));
     expect(outcome.ok === false && outcome.reason).toBe("extract");
     expect(outcome.ok === false && outcome.detail).toContain("iii.exe is missing");
+  });
+
+  it("gives every install its own archive file so concurrent starts cannot clobber each other", () => {
+    const a = iiiZipArchivePath("C:\\bin");
+    const b = iiiZipArchivePath("C:\\bin");
+    expect(a).not.toBe(b);
+    expect(a).toContain(`.iii-download-${process.pid}-`);
+    expect(a.endsWith(".zip")).toBe(true);
+  });
+
+  it("downloads through System32 curl.exe when a proxy is configured", async () => {
+    expect(proxyConfigured({})).toBe(false);
+    expect(proxyConfigured({ HTTPS_PROXY: "http://proxy:3128" })).toBe(true);
+    expect(proxyConfigured({ http_proxy: " " })).toBe(false);
+    const calls: { command: string; args: string[] }[] = [];
+    await downloadToFile("https://example.invalid/iii.zip", "C:\\bin\\a.zip", { SystemRoot: "C:\\Windows", HTTPS_PROXY: "http://proxy:3128" }, (command, args) => {
+      calls.push({ command, args });
+      return { status: 0 };
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].command).toMatch(/System32[\\/]curl\.exe$/);
+    expect(calls[0].args).toEqual(expect.arrayContaining(["-o", "C:\\bin\\a.zip", "https://example.invalid/iii.zip", "--max-time"]));
+    await expect(downloadToFile("https://example.invalid/iii.zip", "C:\\bin\\a.zip", { HTTPS_PROXY: "http://proxy:3128" }, () => ({ status: 22, stderr: "curl: (22) 407" }))).rejects.toThrow("407");
   });
 
   it("pins a SHA-256 for both Windows assets of the pinned release", () => {
