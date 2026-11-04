@@ -3,6 +3,13 @@ import { readFileSync, realpathSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
 import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
+//#region src/hooks/_capture-filter.ts
+function truncateText(value, max) {
+	if (value.length <= max) return value;
+	const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
+	return value.slice(0, end);
+}
+//#endregion
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -85,7 +92,7 @@ function extractTranscriptPrompts(data) {
 			if (prompts.length >= 50) return prompts;
 			const match = msg.content.match(/<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/);
 			const text = (match ? match[1] : msg.content).trim();
-			if (text) prompts.push({ prompt: text.slice(0, 8e3) });
+			if (text) prompts.push({ prompt: truncateText(text, 8e3) });
 			continue;
 		}
 		if (!isUserTurn(msg)) continue;
@@ -95,7 +102,7 @@ function extractTranscriptPrompts(data) {
 		for (const text of promptId ? [texts.join("\n\n")].filter(Boolean) : texts) {
 			if (prompts.length >= 50) return prompts;
 			prompts.push({
-				prompt: text.slice(0, 8e3),
+				prompt: truncateText(text, 8e3),
 				promptId,
 				timestamp
 			});
