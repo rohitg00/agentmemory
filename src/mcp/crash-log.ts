@@ -12,10 +12,15 @@ export interface FatalHooks {
   exit?: (code: number) => void;
   write?: StderrWriter;
   logPath?: string;
+  stderrMayBlock?: boolean;
 }
 
 function writeStderr(text: string): void {
   process.stderr.write(text);
+}
+
+export function stderrWriteMayBlock(platform: NodeJS.Platform = process.platform, isTTY = process.stderr.isTTY): boolean {
+  return platform === "win32" && !isTTY;
 }
 
 export function mcpCrashLogPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -45,6 +50,9 @@ export function appendCrashLog(line: string, logPath: string = mcpCrashLogPath()
     if (existsSync(logPath)) {
       if (statSync(logPath).size >= MAX_CRASH_LOG_BYTES) {
         renameSync(logPath, `${logPath}.1`);
+        try {
+          chmodSync(`${logPath}.1`, 0o600);
+        } catch {}
       } else {
         try {
           chmodSync(logPath, 0o600);
@@ -85,11 +93,13 @@ export function handleFatal(kind: string, reason: unknown, hooks: FatalHooks): v
   try {
     hooks.persist();
   } catch {}
-  const write = hooks.write ?? writeStderr;
-  for (const text of [`[@agentmemory/mcp] fatal ${line}`, ...notices]) {
-    try {
-      write(text);
-    } catch {}
+  if (!(hooks.stderrMayBlock ?? stderrWriteMayBlock())) {
+    const write = hooks.write ?? writeStderr;
+    for (const text of [`[@agentmemory/mcp] fatal ${line}`, ...notices]) {
+      try {
+        write(text);
+      } catch {}
+    }
   }
   (hooks.exit ?? ((code: number) => process.exit(code)))(1);
 }

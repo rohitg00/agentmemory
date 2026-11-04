@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, statSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { MAX_CRASH_LOG_BYTES, formatFatal, handleFatal, mcpCrashLogPath, reportFatal } from "../src/mcp/crash-log.js";
+import { MAX_CRASH_LOG_BYTES, formatFatal, handleFatal, mcpCrashLogPath, reportFatal, stderrWriteMayBlock } from "../src/mcp/crash-log.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 
 const dirs: string[] = [];
@@ -138,6 +138,7 @@ describe("MCP shim crash diagnostics", () => {
       exit: (code) => order.push(`exit:${code}`),
       write: neverDrains as (text: string) => void,
       logPath: join(dataDir, "mcp-crash.log"),
+      stderrMayBlock: false,
     });
     expect(order[0]).toBe("persist");
     expect(order.at(-1)).toBe("exit:1");
@@ -145,9 +146,39 @@ describe("MCP shim crash diagnostics", () => {
     expect(readFileSync(join(dataDir, "mcp-crash.log"), "utf8")).toContain("uncaughtException: Error: boom");
   });
 
-  it("does not write to stderr synchronously on the fatal path", () => {
-    const source = readFileSync(resolve("src/mcp/crash-log.ts"), "utf8");
-    expect(source).not.toMatch(/writeSync\(\s*2\b/);
+  it("saves and exits without touching stderr when a stderr write could block", () => {
+    const dataDir = tempDir();
+    const order: string[] = [];
+    const blockingWrite = () => {
+      order.push("stderr");
+      throw new Error("a blocking stderr write must not be attempted");
+    };
+    handleFatal("uncaughtException", new Error("boom"), {
+      persist: () => order.push("persist"),
+      exit: (code) => order.push(`exit:${code}`),
+      write: blockingWrite,
+      logPath: join(dataDir, "mcp-crash.log"),
+      stderrMayBlock: true,
+    });
+    expect(order).toEqual(["persist", "exit:1"]);
+    expect(readFileSync(join(dataDir, "mcp-crash.log"), "utf8")).toContain("uncaughtException: Error: boom");
+  });
+
+  it("treats only a Windows stderr pipe as a write that can block", () => {
+    expect(stderrWriteMayBlock("win32", false)).toBe(true);
+    expect(stderrWriteMayBlock("win32", true)).toBe(false);
+    expect(stderrWriteMayBlock("linux", false)).toBe(false);
+    expect(stderrWriteMayBlock("darwin", false)).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")("makes a rotated crash log owner-only", () => {
+    const dataDir = tempDir();
+    const logPath = join(dataDir, "mcp-crash.log");
+    writeFileSync(logPath, "x".repeat(MAX_CRASH_LOG_BYTES));
+    chmodSync(logPath, 0o644);
+    reportFatal("uncaughtException", new Error("after rotation"), logPath, () => {});
+    expect(statSync(`${logPath}.1`).mode & 0o777).toBe(0o600);
+    expect(statSync(logPath).mode & 0o777).toBe(0o600);
   });
 
   it.skipIf(process.platform === "win32")("restricts an existing crash log before appending", () => {
