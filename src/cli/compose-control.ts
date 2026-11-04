@@ -159,14 +159,33 @@ export function composeEnvironment(env: NodeJS.ProcessEnv, stateDir: string): No
   };
 }
 
-export async function composeCall<T>(options: {
+type ComposeCallOptions = {
   engineUrl: string;
   namespace: string;
   functionId: "compose::down" | "compose::status";
   file: string;
   timeoutMs?: number;
-}): Promise<T> {
-  const client = registerWorker(options.engineUrl, {
+};
+
+export async function withQuietSdkDebug<T>(run: () => Promise<T>): Promise<T> {
+  const original = console.debug;
+  console.debug = () => {};
+  try {
+    return await run();
+  } finally {
+    console.debug = original;
+  }
+}
+
+export async function composeCall<T>(
+  options: ComposeCallOptions,
+  register: typeof registerWorker = registerWorker,
+): Promise<T> {
+  return withQuietSdkDebug(() => composeCallWithClient<T>(options, register));
+}
+
+async function composeCallWithClient<T>(options: ComposeCallOptions, register: typeof registerWorker): Promise<T> {
+  const client = register(options.engineUrl, {
     workerName: "agentmemory-cli",
     namespace: options.namespace,
     invocationTimeoutMs: options.timeoutMs ?? 30_000,
