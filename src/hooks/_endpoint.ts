@@ -35,7 +35,7 @@ export function resolveHookEndpoint(env: NodeJS.ProcessEnv = process.env): HookE
   if (explicit === undefined) delete secretEnv["AGENTMEMORY_SECRET"];
   else secretEnv["AGENTMEMORY_SECRET"] = explicit;
   const secret = resolveClientSecret(url, secretEnv);
-  const blocked = Boolean(secret) && !secretTransportAllowed(url);
+  const blocked = !secretTransportAllowed(url);
   return { url, secret: blocked ? "" : secret, blocked };
 }
 
@@ -46,7 +46,7 @@ export function reportBlockedTransport(endpoint: HookEndpoint): boolean {
   if (!blockedNoticeShown) {
     blockedNoticeShown = true;
     process.stderr.write(
-      "[agentmemory] AGENTMEMORY_URL must use HTTPS when a secret is set, except for loopback URLs. Nothing was sent.\n",
+      "[agentmemory] AGENTMEMORY_URL must use HTTPS unless it is a loopback address. Nothing was sent.\n",
     );
   }
   return true;

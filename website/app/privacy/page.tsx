@@ -88,6 +88,10 @@ export default function PrivacyPage() {
             Ollama, keeps the content local.
           </li>
           <li>
+            <strong>The Claude Agent SDK fallback.</strong> With <code>AGENTMEMORY_ALLOW_AGENT_SDK=true</code> and no
+            provider selected, the same excerpts go to Claude through the Claude Agent SDK.
+          </li>
+          <li>
             <strong>A cloud embedding provider.</strong> When <code>EMBEDDING_PROVIDER</code> is <code>gemini</code>,{" "}
             <code>openai</code>, <code>voyage</code>, <code>cohere</code> or <code>openrouter</code>, the text of
             observations, memories and search queries is sent to that service to build search vectors.{" "}
@@ -124,7 +128,9 @@ export default function PrivacyPage() {
           </li>
           <li>
             Delete everything by stopping the server with <code>agentmemory stop</code> and deleting the data folder,
-            the capture spool inside it, and <code>~/.agentmemory</code>.
+            the capture spool inside it, and <code>~/.agentmemory</code>. With a Redis state backend, also delete
+            agentmemory&apos;s records from that Redis server, for example by flushing the Redis database you gave
+            agentmemory.
           </li>
         </ul>
 

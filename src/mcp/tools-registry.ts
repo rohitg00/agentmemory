@@ -24,7 +24,6 @@ export const READ_ONLY_TOOLS = new Set([
   "memory_smart_search",
   "memory_vision_search",
   "memory_timeline",
-  "memory_profile",
   "memory_export",
   "memory_relations",
   "memory_commit_lookup",
@@ -44,6 +43,7 @@ export const READ_ONLY_TOOLS = new Set([
 ]);
 
 export const DESTRUCTIVE_TOOLS = new Set([
+  "memory_action_update",
   "memory_compress_file",
   "memory_claude_bridge_sync",
   "memory_governance_delete",

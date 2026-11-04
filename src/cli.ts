@@ -1915,7 +1915,7 @@ async function runStatus() {
     }
 
     if (flagsRes) {
-      const provider = flagsRes.provider === "llm" ? pc.green("✓ llm") : pc.yellow("✗ noop (no provider chosen)");
+      const provider = flagsRes.provider === "llm" ? pc.green("✓ llm") : pc.yellow("✗ noop (LLM features off)");
       const embedding = embeddingStatusLabel(flagsRes.embeddingProvider);
       const embed = embedding ? pc.green(`✓ ${embedding}`) : pc.dim("bm25-only");
       const flagRows = (flagsRes.flags || []).map((f: { key: string; enabled: boolean; label: string }) =>

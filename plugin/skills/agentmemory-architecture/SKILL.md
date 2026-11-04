@@ -12,11 +12,11 @@ Everything is a function, a trigger, or worker state on the iii engine. There is
 
 ## Retrieval model
 
-Recall combines BM25 keyword search with configured vector similarity and graph expansion. A clean installation has no embedding provider and uses BM25 without an API key. Set `EMBEDDING_PROVIDER=local` to enable on-device embeddings, which download a model once. A remote embedding provider runs only when `EMBEDDING_PROVIDER` names it. LLM summaries, consolidation and reflection run only when `AGENTMEMORY_LLM_PROVIDER` selects a provider; a key in the environment alone does not turn them on. Per-observation LLM compression also needs `AGENTMEMORY_AUTO_COMPRESS=true`.
+Recall combines BM25 keyword search with configured vector similarity and graph expansion. A clean installation has no embedding provider and uses BM25 without an API key. Set `EMBEDDING_PROVIDER=local` to enable on-device embeddings, which download a model once. A remote embedding provider runs only when `EMBEDDING_PROVIDER` names it. LLM summaries, consolidation and reflection run only when `AGENTMEMORY_LLM_PROVIDER` selects a provider or `AGENTMEMORY_ALLOW_AGENT_SDK=true` turns on the Claude Agent SDK fallback; a key in the environment alone does not turn them on. Per-observation LLM compression also needs `AGENTMEMORY_AUTO_COMPRESS=true`.
 
 ## Data boundary
 
-Captured prompts, tool inputs and outputs, and memories stay in the local store. They leave the machine only through options the user turns on: a selected LLM provider, a remote embedding provider, a Redis state backend, or mesh sync to peer servers the user registers.
+Captured prompts, tool inputs and outputs, and memories stay in the local store. They leave the machine only through options the user turns on: a selected LLM provider, the Agent SDK fallback (`AGENTMEMORY_ALLOW_AGENT_SDK=true`), a remote embedding provider, a Redis state backend, or mesh sync to peer servers the user registers.
 
 ## Storage and lifecycle
 

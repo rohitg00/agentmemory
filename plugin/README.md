@@ -18,9 +18,9 @@ Start the server in its own terminal with Node.js 20 or newer:
 npx -y @agentmemory/agentmemory@latest
 ```
 
-Keep it running while you use the plugin. Check it with `agentmemory status`. The server listens on `http://localhost:3111` and the viewer on `http://localhost:3113`.
+Keep it running while you use the plugin. Check it with `npx -y @agentmemory/agentmemory@latest status`. The server listens on `http://localhost:3111` and the viewer on `http://localhost:3113`.
 
-When you enable the plugin, Claude Code asks for two optional settings: the server URL and the server secret. Leave both empty for a local server. The secret is kept in your system's secure credential store. The plugin sends the secret only to a loopback address or an `https://` URL.
+When you enable the plugin, Claude Code asks for two optional settings: the server URL and the server secret. Leave both empty for a local server. If the URL is empty, the plugin uses `AGENTMEMORY_URL` from your environment when it is set. Claude Code keeps the secret in your system keychain; on systems without a keychain it keeps it in `~/.claude/.credentials.json`, a file readable only by your user. The plugin sends events and the secret only to a loopback address or an `https://` URL; for a remote `http://` URL it sends nothing.
 
 ## What the hooks record
 
@@ -50,6 +50,7 @@ Data is kept until you delete it. Each session keeps at most 500 observations by
 By default, nothing. Search uses local keyword matching, and no LLM is called. Content leaves your machine only when you turn on one of these options on the server:
 
 - `AGENTMEMORY_LLM_PROVIDER` selects an LLM provider (Anthropic, OpenAI, Gemini, OpenRouter or MiniMax). Session summaries, consolidation and reflection then send excerpts of recorded content to it. A provider key that is already in your environment does nothing until you set this option. LLM compression of each observation stays off unless you also set `AGENTMEMORY_AUTO_COMPRESS=true`.
+- `AGENTMEMORY_ALLOW_AGENT_SDK=true`, with no provider selected, sends the same excerpts to Claude through the Claude Agent SDK.
 - `EMBEDDING_PROVIDER` set to `gemini`, `openai`, `voyage`, `cohere` or `openrouter` sends text to that service to build search vectors. `EMBEDDING_PROVIDER=local` runs on your machine after a one-time model download.
 - A Redis state backend stores records on the Redis server you configure.
 - Mesh sync sends memories to peer agentmemory servers that you register.
@@ -58,10 +59,10 @@ Context injection is also off by default. The plugin prints stored memory into t
 
 ## View and delete your data
 
-- Open the viewer at `http://localhost:3113`, or run `agentmemory status`.
+- Open the viewer at `http://localhost:3113`, or run `npx -y @agentmemory/agentmemory@latest status`.
 - Export everything with the `memory_export` tool.
 - Delete single memories with the `forget` skill or the `memory_governance_delete` tool.
-- Delete everything: stop the server with `agentmemory stop`, then delete the data folder listed above.
+- Delete everything: stop the server with `npx -y @agentmemory/agentmemory@latest stop`, then delete the data folder listed above. With a Redis state backend, also delete agentmemory's records from that Redis server, for example by flushing the Redis database you gave agentmemory.
 
 Recalled memories are evidence from past sessions, not instructions. Claude should check them before acting on them.
 

@@ -62,8 +62,9 @@ A provider key in the environment does nothing until `AGENTMEMORY_LLM_PROVIDER` 
   Embeddings are off until `EMBEDDING_PROVIDER` is set. `EMBEDDING_PROVIDER=local`
   runs on-device after a model download; do not promise vector search until an
   embedding provider is enabled.
-- With no `AGENTMEMORY_LLM_PROVIDER`, no LLM is called: no summaries, no
-  compression, no consolidation. After a provider is selected, session summaries,
+- With neither `AGENTMEMORY_LLM_PROVIDER` nor `AGENTMEMORY_ALLOW_AGENT_SDK=true`,
+  no LLM is called: no summaries, no compression, no consolidation. After a
+  provider is selected, or the Agent SDK fallback is turned on, session summaries,
   consolidation and reflection can send excerpts of captured content to it.
   Per-observation LLM compression also needs `AGENTMEMORY_AUTO_COMPRESS=true`.
 - Hook context injection is off by default. The SessionStart and PreCompact hooks
@@ -72,8 +73,8 @@ A provider key in the environment does nothing until `AGENTMEMORY_LLM_PROVIDER` 
   settings: Pi and OMP recall before prompts by default, and use
   `AGENTMEMORY_INJECT_CONTEXT=1` in the host launch environment for optional file
   enrichment. Do not apply daemon `.env` settings to every host implicitly.
-- Consolidation runs only after an LLM provider is selected
-  (`CONSOLIDATION_ENABLED=false` disables it). Structured slots require `AGENTMEMORY_SLOTS=true`; slot reflection also requires `AGENTMEMORY_REFLECT=true`.
+- Consolidation runs only after an LLM provider is selected or
+  `AGENTMEMORY_ALLOW_AGENT_SDK=true` is set (`CONSOLIDATION_ENABLED=false` disables it). Structured slots require `AGENTMEMORY_SLOTS=true`; slot reflection also requires `AGENTMEMORY_REFLECT=true`.
 - Tool visibility: set `AGENTMEMORY_TOOLS=all` (default) or `core` on the daemon,
   then restart it and reconnect MCP so the host refreshes its tool list.
 - Data stays in the configured local daemon store. Enabled external model

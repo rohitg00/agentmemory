@@ -113,7 +113,7 @@ function resolveHookEndpoint(env = process.env) {
 	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
 	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
 	const secret = resolveClientSecret(url, secretEnv);
-	const blocked = Boolean(secret) && !secretTransportAllowed(url);
+	const blocked = !secretTransportAllowed(url);
 	return {
 		url,
 		secret: blocked ? "" : secret,
@@ -125,7 +125,7 @@ function reportBlockedTransport(endpoint) {
 	if (!endpoint.blocked) return false;
 	if (!blockedNoticeShown) {
 		blockedNoticeShown = true;
-		process.stderr.write("[agentmemory] AGENTMEMORY_URL must use HTTPS when a secret is set, except for loopback URLs. Nothing was sent.\n");
+		process.stderr.write("[agentmemory] AGENTMEMORY_URL must use HTTPS unless it is a loopback address. Nothing was sent.\n");
 	}
 	return true;
 }

@@ -155,6 +155,11 @@ function llmProviderHasKey(env: Record<string, string | undefined>, name: LlmPro
   return LLM_PROVIDER_KEYS[name].some((k) => hasRealValue(env[k]));
 }
 
+export function envFileLabel(path: string = ENV_FILE): string {
+  const home = homedir();
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
+
 export function llmOptInHint(env: Record<string, string | undefined> = getMergedEnv()): string | null {
   const selected = selectedLlmProviderValue(env);
   if (selected) {
@@ -162,23 +167,31 @@ export function llmOptInHint(env: Record<string, string | undefined> = getMerged
       return `AGENTMEMORY_LLM_PROVIDER=${selected} is not a known provider. Use one of: ${LLM_PROVIDER_NAMES.join(", ")}.`;
     }
     if (!llmProviderHasKey(env, selected)) {
-      return `AGENTMEMORY_LLM_PROVIDER=${selected} is set, but ${LLM_PROVIDER_KEYS[selected].join(" or ")} is not. Add the key to ~/.agentmemory/.env.`;
+      return `AGENTMEMORY_LLM_PROVIDER=${selected} is set, but ${LLM_PROVIDER_KEYS[selected].join(" or ")} is not. Add the key to ${envFileLabel()}.`;
     }
     return null;
   }
+  if (env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true") return null;
   const withKey = LLM_PROVIDER_NAMES.filter((name) => llmProviderHasKey(env, name));
   if (withKey.length === 0) return null;
   const keys = withKey.flatMap((name) => LLM_PROVIDER_KEYS[name].filter((k) => hasRealValue(env[k])));
-  return `Found ${keys.join(", ")}, but agentmemory sends nothing to an LLM provider until you choose one for it. To turn on LLM summaries and compression, add AGENTMEMORY_LLM_PROVIDER=${withKey[0]} to ~/.agentmemory/.env.`;
+  return `Found ${keys.join(", ")}, but agentmemory sends nothing to an LLM provider until you choose one for it. To turn on LLM summaries and compression, add AGENTMEMORY_LLM_PROVIDER=${withKey[0]} to ${envFileLabel()}.`;
 }
 
 export function embeddingOptInHint(env: Record<string, string | undefined> = getMergedEnv()): string | null {
-  if (hasRealValue(env["EMBEDDING_PROVIDER"])) return null;
+  const chosen = (env["EMBEDDING_PROVIDER"] || "").trim().toLowerCase();
+  if (chosen) {
+    const keys = REMOTE_EMBEDDING_PROVIDER_KEYS[chosen];
+    if (keys && !keys.some((k) => hasRealValue(env[k]))) {
+      return `EMBEDDING_PROVIDER=${chosen} is set, but ${keys.join(" or ")} is not. Add the key to ${envFileLabel()}, or set EMBEDDING_PROVIDER=local for on-device embeddings.`;
+    }
+    return null;
+  }
   const withKey = Object.keys(REMOTE_EMBEDDING_PROVIDER_KEYS).filter((name) =>
     REMOTE_EMBEDDING_PROVIDER_KEYS[name].some((k) => hasRealValue(env[k])),
   );
   if (withKey.length === 0) return null;
-  return `A ${withKey.join("/")} key is present, but cloud embeddings stay off until you choose them. Add EMBEDDING_PROVIDER=${withKey[0]} to ~/.agentmemory/.env, or EMBEDDING_PROVIDER=local for on-device embeddings.`;
+  return `A ${withKey.join("/")} key is present, but cloud embeddings stay off until you choose them. Add EMBEDDING_PROVIDER=${withKey[0]} to ${envFileLabel()}, or EMBEDDING_PROVIDER=local for on-device embeddings.`;
 }
 
 function detectProvider(env: Record<string, string>): ProviderConfig {

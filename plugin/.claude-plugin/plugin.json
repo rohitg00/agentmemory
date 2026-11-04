@@ -14,7 +14,7 @@
     "agentmemory_url": {
       "type": "string",
       "title": "agentmemory server URL",
-      "description": "Where the hooks and MCP server reach your agentmemory server. Leave empty for a server on this machine at http://localhost:3111. A remote server must use https."
+      "description": "Where the hooks and MCP server reach your agentmemory server. Leave empty to use AGENTMEMORY_URL from your environment when it is set, otherwise http://localhost:3111. A remote server must use https."
     },
     "agentmemory_secret": {
       "type": "string",

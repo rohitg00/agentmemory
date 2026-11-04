@@ -214,7 +214,7 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   }
 
   const envPath = await seedEnvFile(provider);
-  const providerWritten = provider ? setLlmProviderInEnv(envPath, provider) : false;
+  const providerWritten = setLlmProviderInEnv(envPath, provider);
 
   await maybePromptContextInjection(envPath);
 
@@ -242,8 +242,10 @@ export async function runOnboarding(): Promise<OnboardingResult> {
           : `  Add AGENTMEMORY_LLM_PROVIDER=${provider} and ${envKey}= to that file to enable ${provider}.`,
       );
     }
+  } else if (providerWritten) {
+    lines.push("  No LLM provider chosen. LLM summaries and compression stay off.");
   } else {
-    lines.push("  No provider chosen — agentmemory will run in BM25-only mode.");
+    lines.push(`  ! Could not remove AGENTMEMORY_LLM_PROVIDER from ${envPath}. Delete that line to keep LLM features off.`);
   }
   p.note(lines.join("\n"), "ready");
 
@@ -254,17 +256,19 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   return { agents, provider };
 }
 
-export function setLlmProviderInEnv(envPath: string | null, provider: string): boolean {
-  if (!envPath || !existsSync(envPath)) return false;
+export function setLlmProviderInEnv(envPath: string | null, provider: string | null): boolean {
+  if (provider === null) delete process.env["AGENTMEMORY_LLM_PROVIDER"];
+  if (!envPath || !existsSync(envPath)) return provider === null;
   try {
     const current = readFileSync(envPath, "utf-8");
-    const line = `AGENTMEMORY_LLM_PROVIDER=${provider}`;
     const kept = current
       .split("\n")
       .filter((entry) => !/^\s*AGENTMEMORY_LLM_PROVIDER\s*=/.test(entry))
       .join("\n");
-    const next = `${kept}${kept.length > 0 && !kept.endsWith("\n") ? "\n" : ""}${line}\n`;
-    writeFileSync(envPath, next, { mode: 0o600 });
+    const next = provider === null
+      ? kept
+      : `${kept}${kept.length > 0 && !kept.endsWith("\n") ? "\n" : ""}AGENTMEMORY_LLM_PROVIDER=${provider}\n`;
+    if (next !== current) writeFileSync(envPath, next, { mode: 0o600 });
     return true;
   } catch {
     return false;

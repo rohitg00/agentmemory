@@ -228,7 +228,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     },
     {
       id: "embedding-provider-not-chosen",
-      message: "A cloud embedding key is present, but EMBEDDING_PROVIDER does not choose it.",
+      message: "Cloud embeddings are not set up: EMBEDDING_PROVIDER does not choose a present key, or names a provider whose key is missing.",
       fixPreview:
         "Open ~/.agentmemory/.env in $EDITOR and set EMBEDDING_PROVIDER (local, openai, voyage, cohere, gemini or openrouter).",
       moreInfo:

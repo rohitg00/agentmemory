@@ -3,11 +3,12 @@ import { join, resolve } from "node:path";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import {
   detectEmbeddingProvider,
   detectLlmProviderKind,
   embeddingOptInHint,
+  envFileLabel,
   llmOptInHint,
   parseEnvContent,
 } from "../src/config.js";
@@ -44,6 +45,16 @@ describe("LLM provider opt-in", () => {
   it("keeps the agent-sdk path behind its own gate", () => {
     expect(detectLlmProviderKind({ AGENTMEMORY_ALLOW_AGENT_SDK: "true" })).toBe("llm");
   });
+
+  it("gives no opt-in hint while the agent-sdk route is active", () => {
+    expect(llmOptInHint({ AGENTMEMORY_ALLOW_AGENT_SDK: "true", ANTHROPIC_API_KEY: "k" })).toBeNull();
+  });
+
+  it("points the hints at the env file the daemon reads", () => {
+    expect(llmOptInHint({ ANTHROPIC_API_KEY: "k" })).toContain(envFileLabel());
+    expect(envFileLabel("/srv/agentmemory/custom.env")).toBe("/srv/agentmemory/custom.env");
+    expect(envFileLabel(join(homedir(), ".agentmemory", ".env"))).toBe("~/.agentmemory/.env");
+  });
 });
 
 describe("embedding provider opt-in", () => {
@@ -63,6 +74,12 @@ describe("embedding provider opt-in", () => {
     expect(embeddingOptInHint({ VOYAGE_API_KEY: "k", EMBEDDING_PROVIDER: "local" })).toBeNull();
     expect(embeddingOptInHint({})).toBeNull();
   });
+
+  it("reports a chosen cloud embedding provider whose key is missing", () => {
+    expect(embeddingOptInHint({ EMBEDDING_PROVIDER: "voyage" })).toContain("VOYAGE_API_KEY is not");
+    expect(embeddingOptInHint({ EMBEDDING_PROVIDER: "voyage", VOYAGE_API_KEY: "k" })).toBeNull();
+    expect(embeddingOptInHint({ EMBEDDING_PROVIDER: "local" })).toBeNull();
+  });
 });
 
 describe("hook token transport", () => {
@@ -70,6 +87,11 @@ describe("hook token transport", () => {
     const endpoint = resolveHookEndpoint({ AGENTMEMORY_URL: "http://memory.example.com", AGENTMEMORY_SECRET: "s3cret" });
     expect(endpoint.blocked).toBe(true);
     expect(endpoint.secret).toBe("");
+  });
+
+  it("sends nothing to a remote http URL even without a secret", () => {
+    expect(resolveHookEndpoint({ AGENTMEMORY_URL: "http://memory.example.com", AGENTMEMORY_SECRET: "" }).blocked).toBe(true);
+    expect(resolveHookEndpoint({ AGENTMEMORY_URL: "http://127.0.0.1:3111", AGENTMEMORY_SECRET: "" }).blocked).toBe(false);
   });
 
   it("allows https and loopback URLs", () => {
@@ -125,6 +147,24 @@ describe("onboarding provider choice", () => {
     expect(parseEnvContent(content)["AGENTMEMORY_LLM_PROVIDER"]).toBe("anthropic");
     expect(parseEnvContent(content)["ANTHROPIC_API_KEY"]).toBe("k");
   });
+
+  it("removes the provider from the file and this process on Skip", () => {
+    const dir = mkdtempSync(join(tmpdir(), "am-onboard-"));
+    const envPath = join(dir, ".env");
+    writeFileSync(envPath, "AGENTMEMORY_LLM_PROVIDER=openai\nOPENAI_API_KEY=k\n");
+    const previous = process.env["AGENTMEMORY_LLM_PROVIDER"];
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "openai";
+    try {
+      expect(setLlmProviderInEnv(envPath, null)).toBe(true);
+      expect(process.env["AGENTMEMORY_LLM_PROVIDER"]).toBeUndefined();
+      const content = readFileSync(envPath, "utf-8");
+      expect(content).not.toContain("AGENTMEMORY_LLM_PROVIDER");
+      expect(parseEnvContent(content)["OPENAI_API_KEY"]).toBe("k");
+    } finally {
+      if (previous === undefined) delete process.env["AGENTMEMORY_LLM_PROVIDER"];
+      else process.env["AGENTMEMORY_LLM_PROVIDER"] = previous;
+    }
+  });
 });
 
 describe("MCP tool annotations", () => {
@@ -136,7 +176,9 @@ describe("MCP tool annotations", () => {
 
   it("marks tools that delete or overwrite data as destructive", () => {
     const byName = new Map(getAllTools().map((t) => [t.name, t]));
-    for (const name of ["memory_governance_delete", "memory_lesson_delete", "memory_slot_delete", "memory_slot_replace", "memory_heal"]) {
+    expect(READ_ONLY_TOOLS.has("memory_profile")).toBe(false);
+    expect(byName.get("memory_profile")?.annotations).toMatchObject({ readOnlyHint: false });
+    for (const name of ["memory_governance_delete", "memory_lesson_delete", "memory_slot_delete", "memory_slot_replace", "memory_heal", "memory_action_update"]) {
       expect(DESTRUCTIVE_TOOLS.has(name)).toBe(true);
       expect(byName.get(name)?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: true });
     }

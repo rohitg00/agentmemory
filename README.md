@@ -1056,7 +1056,7 @@ The viewer server binds to `127.0.0.1` by default and attaches the server secret
 
 ### LLM Providers
 
-agentmemory sends session content to an LLM only after you select a provider with `AGENTMEMORY_LLM_PROVIDER`. A key that exists in your environment for another tool is never enough. A selected provider makes LLM-backed operations available (session summaries, consolidation, reflection), but it does not enable LLM-written observation compression on its own. That path also requires `AGENTMEMORY_AUTO_COMPRESS=true`.
+agentmemory sends session content to an LLM only after you select a provider with `AGENTMEMORY_LLM_PROVIDER`, or turn on the Claude Agent SDK fallback with `AGENTMEMORY_ALLOW_AGENT_SDK=true`. A key that exists in your environment for another tool is never enough. A selected provider makes LLM-backed operations available (session summaries, consolidation, reflection), but it does not enable LLM-written observation compression on its own. That path also requires `AGENTMEMORY_AUTO_COMPRESS=true`.
 
 | Provider | Config | Notes |
 |----------|--------|-------|
@@ -1187,7 +1187,7 @@ AGENTMEMORY_AUTO_COMPRESS=true
 
 LLM-written observation compression requires both lines: access to an LLM provider (including this explicit subscription fallback) and `AGENTMEMORY_AUTO_COMPRESS=true`. A provider by itself leaves the default synthetic compression path in place.
 
-Consolidation (graph nodes, lessons, crystals) is on by default whenever an LLM provider is selected with `AGENTMEMORY_LLM_PROVIDER`. Explicitly opt out with `CONSOLIDATION_ENABLED=false` if you want LLM-free operation. Graph extraction is a separate flag:
+Consolidation (graph nodes, lessons, crystals) is on by default whenever an LLM provider is selected with `AGENTMEMORY_LLM_PROVIDER`, or the Agent SDK fallback is on with `AGENTMEMORY_ALLOW_AGENT_SDK=true`. Explicitly opt out with `CONSOLIDATION_ENABLED=false` if you want LLM-free operation. Graph extraction is a separate flag:
 
 ```env
 GRAPH_EXTRACTION_ENABLED=true
