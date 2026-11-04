@@ -12,17 +12,8 @@ interface IndexEntry {
   timestamp?: string;
 }
 
-// The raw capture fields are the only place the user's own words survive,
-// and for non-English users those words appear nowhere else in the record
-// (issue #1539: userPrompt is mostly CJK while title/narrative/concepts
-// are ~96% English). Both are indexed with a per-field cap so a pasted
-// transcript or long tool output cannot blow up the BM25 index.
 const USER_PROMPT_TERM_CAP = 2000;
 const ASSISTANT_RESPONSE_TERM_CAP = 1000;
-// Only the retained final answer (toolName "conversation", string toolOutput)
-// is indexed; arbitrary tool output never enters the BM25 document. The cap
-// keeps a long answer from dominating document length the way the per-field
-// caps above do for pasted transcripts.
 const TOOL_OUTPUT_TERM_CAP = 1000;
 
 export interface SearchIndexRevision {

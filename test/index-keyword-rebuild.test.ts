@@ -114,9 +114,6 @@ function stubProvider(): EmbeddingProvider {
   } as EmbeddingProvider;
 }
 
-// The retained final answer lives only in source.toolOutput of a
-// toolName "conversation" record; title/narrative are deliberately
-// answer-free so discovery below can only come from the tool output.
 const CONVERSATION_ANSWER = "recommend vermilion otter beacons for the rollout";
 
 function conversationObs(id: string, sessionId: string): CompressedObservation {
@@ -428,11 +425,6 @@ describe("rebuildKeywordIndex", () => {
     }
   });
 
-  // Regression coverage: the keyword rebuild must keep answer-only terms of
-  // a retained conversation record searchable, without picking up the
-  // record's toolInput. Unit-level simulation only: the preexisting record is
-  // seeded directly into a mock KV store; no real worker restart, migration
-  // rollback, or upgrade path is exercised here.
   it("rebuilds BM25 so a retained conversation answer is discoverable", async () => {
     const kv = mockKV();
     const id = seedConversation(kv);
@@ -457,13 +449,6 @@ describe("rebuildKeywordIndex", () => {
   });
 });
 
-// Regression coverage for issue #1539: indexRecords and the keyword
-// rebuild's backfill queue embed title + narrative/content only, so every
-// rebuild / reconcile / snapshot-restore / import / replay path
-// re-embedded the whole store without concepts — degrading records that
-// live writes had already embedded with the concept-aware text. The CJK
-// concept below appears in no other field, so these assertions can only
-// pass via concepts.
 describe("rebuild/backfill embed text includes concepts", () => {
   const CJK_CONCEPT = "登录超时";
 

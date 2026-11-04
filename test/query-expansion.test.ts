@@ -51,16 +51,12 @@ describe("QueryExpansion", () => {
     expect(entities).toContain("auth middleware");
   });
 
-  // Regression coverage for issue #1539: the capitalized-word regex is
-  // ASCII-only, so a pure CJK query used to yield zero entities and the
-  // graph leg (0.3 weight) never fired for those queries.
   it("extracts entities from a pure CJK query", async () => {
     const { extractEntitiesFromQuery } = await import(
       "../src/functions/query-expansion.js"
     );
     const entities = extractEntitiesFromQuery("修复登录超时的问题");
     expect(entities.length).toBeGreaterThan(0);
-    // Graph seeds must be real words, not single filler characters.
     expect(entities.some((e) => e.length >= 2)).toBe(true);
   });
 

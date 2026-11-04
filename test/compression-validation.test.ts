@@ -190,10 +190,6 @@ describe("compression validation and retry", () => {
   });
 });
 
-// Regression coverage for issue #1539: the vector leg embedded
-// title + narrative only, so concepts — the field the compression prompt
-// tells the model to fill with "reusable search terms" — never reached
-// the vector index and non-English content had no language anchor there.
 describe("vector embed text for compressed observations", () => {
   const zhXml = xml.replace(
     "<concepts><concept>configuration</concept></concepts>",

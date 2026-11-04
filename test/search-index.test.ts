@@ -320,10 +320,6 @@ describe("SearchIndex", () => {
     expect(segmentCjk("项目 trailing")).toEqual(["项目", "trailing"]);
   });
 
-  // Regression coverage for issue #1539: the user's own words live in
-  // source.userPrompt, which was never part of the BM25 document. With an
-  // English card (title/narrative/concepts all English) a Chinese query
-  // built from the user's original wording must still recall the record.
   it("indexes source.userPrompt so the user's own CJK words are searchable", () => {
     index.add(
       makeObs({
@@ -366,8 +362,6 @@ describe("SearchIndex", () => {
           hookType: "prompt_submit",
           originalBytes: 40000,
           truncated: true,
-          // "headmarker" sits inside the cap, "tailmarker" far beyond any
-          // reasonable per-field budget — only the prefix may be indexed.
           userPrompt: `headmarker ${"filler ".repeat(2000)} tailmarker`,
         },
       }),
@@ -376,11 +370,6 @@ describe("SearchIndex", () => {
     expect(index.search("tailmarker")).toEqual([]);
   });
 
-  // Regression coverage: the retained final answer lives in
-  // source.toolOutput of a toolName "conversation" record. Its terms may
-  // appear nowhere else on the card, so answer-only discovery must work,
-  // while unrelated tool output and non-string payloads stay out of the
-  // BM25 document entirely.
   it("indexes only the retained conversation answer, not unrelated tool output", () => {
     index.add(
       makeObs({

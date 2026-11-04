@@ -9,12 +9,6 @@ import {
 import { SearchIndex } from "../src/state/search-index.js";
 import type { CompressedObservation } from "../src/types.js";
 
-// Synthetic regression coverage for retained conversation answers: each
-// scenario's distinctive terms appear only in source.toolOutput, so every
-// assertion below can only pass via the bounded tool-output indexing.
-// Limitation: these are in-process unit tests against a mock KV store. The
-// persistence round-trip and rebuilds simulate lifecycle steps; no real
-// worker restart, daemon restart, or migration/upgrade path is exercised.
 const SCENARIOS = [
   {
     id: "obs_first",
@@ -93,8 +87,6 @@ describe("retained conversation tool output indexing", () => {
     const live = new SearchIndex();
     for (const s of SCENARIOS) live.add(conversationObs(s.id, s.sessionId, s.answer));
 
-    // Simulated restart: persistence round-trip into a fresh index. This only
-    // exercises serialize/deserialize, not an actual worker restart.
     const restarted = SearchIndex.deserialize(live.serialize());
     for (const s of SCENARIOS) {
       expect(restarted.search(s.query).map((r) => r.obsId)).toEqual([s.id]);
@@ -143,7 +135,6 @@ describe("retained conversation tool output indexing", () => {
     }
     expect(idx.search("promptmarker")).toEqual([]);
 
-    // Idempotency: the same store rebuilds to the same discoverability.
     await rebuildKeywordIndex(kv as never);
     for (const s of SCENARIOS) {
       expect(getSearchIndex().search(s.query).map((r) => r.obsId)).toEqual([s.id]);

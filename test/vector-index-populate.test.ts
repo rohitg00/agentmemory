@@ -119,10 +119,6 @@ describe("vector index population on remember", () => {
     expect(getVectorIndex()).toBeNull();
   });
 
-  // Regression coverage for issue #1539: memories were embedded as
-  // title + content only, so a concept in the user's language never
-  // reached the vector index. Content and concept are deliberately in
-  // different languages here so the assertion can only pass via concepts.
   it("includes concepts in the text embedded for a memory", async () => {
     const embeddedTexts: string[] = [];
     setEmbeddingProvider({

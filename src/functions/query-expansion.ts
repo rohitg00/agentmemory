@@ -130,11 +130,6 @@ export function registerQueryExpansionFunction(
   );
 }
 
-// CJK scripts have no capitalization, so the capitalized-word rule below
-// never fires for them and a pure CJK query used to yield zero entities,
-// leaving the graph leg silent (issue #1539). Segment CJK runs into words
-// with the same segmenter the search index uses; single characters are
-// dropped as noise for entity matching.
 const CJK_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
 
 export function extractEntitiesFromQuery(query: string): string[] {
