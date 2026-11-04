@@ -332,14 +332,14 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-### What's new in 0.9.31
+### What's new in 0.9.32
 
-- **More focused recall:** project and agent scopes, saved-memory retrieval, explicit context budgets and full-source expansion.
-- **Less repeated work:** incremental session summaries skip unchanged observations; exports page through stored data.
-- **More native integrations:** installable Pi package, OMP and DeepSeek Harness plugins, and improved Cursor workspace attribution.
-- **Safer recovery:** compression, import validation and runtime recovery fixes, with status and activity visible in the viewer.
+- **Providers are opt-in:** a key alone sends nothing out. Set `AGENTMEMORY_LLM_PROVIDER` for LLM features and `EMBEDDING_PROVIDER` for cloud embeddings.
+- **Native Windows works:** Worker Compose starts, iii installs itself, and `doctor` never waits on a prompt in scripts.
+- **Reliable boot:** agentmemory waits for the state worker, so slow starts keep their search index and vectors.
+- **Better recall:** CJK queries, scoped smart-search and project isolation fixes.
 
-[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.31).
+[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.32).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-benchmarks.svg"><img src="assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
