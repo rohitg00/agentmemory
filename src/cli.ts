@@ -83,7 +83,7 @@ import {
 } from "./cli/engine-config.js";
 import { SHUTDOWN_HARD_EXIT_MS, registerStartupCleanup, runStartupCleanup } from "./shutdown.js";
 import { processStatIsRunning } from "./cli/process-state.js";
-import { readUnixProcessExecutable, sameResolvedExecutable } from "./cli/compose-process.js";
+import { classifyComposeProcess, readUnixProcessExecutable, type ComposeProcessIdentity } from "./cli/compose-process.js";
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
@@ -101,7 +101,7 @@ import { runCompressionCommand } from "./cli/compression.js";
 import { runGraphIndexCommand } from "./cli/graph-index.js";
 import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
-import { COMPOSE_WORKER_VERSIONS, composeNamespace } from "./cli/compose-project.js";
+import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -549,18 +549,38 @@ function fallbackIiiPaths(): string[] {
   return paths;
 }
 
+const III_VERSION_PROBE_TIMEOUTS_MS = [3000, 30000];
+
+function isProbeTimeout(err: unknown): boolean {
+  const e = err as { code?: string; signal?: string } | null;
+  return e?.code === "ETIMEDOUT" || e?.signal === "SIGTERM";
+}
+
+let iiiProbeScan: Map<string, string | null> | null = null;
+
 function iiiBinVersion(binPath: string): string | null {
-  try {
-    const out = execFileSync(binPath, ["--version"], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 3000,
-    });
-    const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
-    return match ? match[1]! : null;
-  } catch {
-    return null;
+  if (iiiProbeScan?.has(binPath)) return iiiProbeScan.get(binPath)!;
+  const version = probeIiiVersion(binPath);
+  iiiProbeScan?.set(binPath, version);
+  return version;
+}
+
+function probeIiiVersion(binPath: string): string | null {
+  for (const timeout of III_VERSION_PROBE_TIMEOUTS_MS) {
+    try {
+      const out = execFileSync(binPath, ["--version"], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout,
+      });
+      const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
+      return match ? match[1]! : null;
+    } catch (err) {
+      if (!isProbeTimeout(err)) return null;
+      vlog(`iii --version at ${binPath} timed out after ${timeout}ms`);
+    }
   }
+  return null;
 }
 
 // Resolve a compatible iii binary for the pinned engine version.
@@ -994,6 +1014,7 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
     return { ok: false, binPath: null };
   }
   spinner.stop(`${label} ${pc.green("✓")}`);
+  iiiProbeScan?.delete(binPath);
   return { ok: true, binPath };
 }
 
@@ -1102,6 +1123,14 @@ function printComposeStartupLogs(): void {
 }
 
 function composePidMatches(pid: number, state: ComposeEngineState): boolean {
+  return composePidIdentity(pid, state) === "match";
+}
+
+function composePidIdentity(pid: number, state: ComposeEngineState): ComposeProcessIdentity {
+  return classifyComposeProcess(inspectComposeProcess(pid), state, IS_WINDOWS);
+}
+
+function inspectComposeProcess(pid: number): { command: string; executable: string } | null {
   try {
     let command = "";
     let executable = "";
@@ -1120,15 +1149,9 @@ function composePidMatches(pid: number, state: ComposeEngineState): boolean {
       command = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
       executable = readUnixProcessExecutable(pid, "linux");
     }
-    const expectedCommand = command.includes("compose") &&
-      command.includes("compose --namespace") &&
-      command.includes(state.namespace) &&
-      command.includes(state.file);
-    if (!expectedCommand) return false;
-    if (!executable) return false;
-    return sameResolvedExecutable(executable, state.binPath, IS_WINDOWS);
+    return { command, executable };
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -1282,6 +1305,15 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 }
 
 async function startEngine(): Promise<boolean> {
+  iiiProbeScan = new Map();
+  try {
+    return await scanAndStartEngine();
+  } finally {
+    iiiProbeScan = null;
+  }
+}
+
+async function scanAndStartEngine(): Promise<boolean> {
   startupFailure = null;
   engineReadinessDeadline = null;
   let stateBackendKind: "file" | "redis";
@@ -1322,10 +1354,7 @@ async function startEngine(): Promise<boolean> {
   vlog(`iii binary: ${pathIii ?? "(not on PATH)"}`);
 
   const fallbacks = fallbackIiiPaths().filter((p) => existsSync(p));
-  for (const f of fallbacks) {
-    const v = iiiBinVersion(f);
-    vlog(`fallback iii at ${f} reports version: ${v ?? "unknown"}`);
-  }
+  vlog(`fallback iii candidates: ${fallbacks.length > 0 ? fallbacks.join(", ") : "(none)"}`);
 
   let iiiBin = pickCompatibleIii([pathIii, ...fallbacks]);
 
@@ -1363,6 +1392,9 @@ async function startEngine(): Promise<boolean> {
       `iii on PATH is v${detected ?? "unknown"} but agentmemory pins v${IIPINNED_VERSION}. ` +
         `Installing pinned engine to ~/.agentmemory/bin (leaves your existing iii untouched).`,
     );
+  } else if (IS_WINDOWS) {
+    choice = "install";
+    p.log.warn("iii-engine binary not found locally.");
   } else if (!interactive) {
     choice = "install";
     p.log.info("Non-interactive environment detected — auto-installing iii-engine.");
@@ -1510,7 +1542,7 @@ async function reconcilePersistedComposeEngine(): Promise<boolean> {
   const state = readEngineState();
   if (state?.kind !== "compose") return false;
   if (!(await isEngineRunning())) {
-    if (state.composePid && pidAlive(state.composePid)) {
+    if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign") {
       p.log.error(`Worker Compose daemon ${state.composePid} is alive but REST ${state.restPort} is not ready. Inspect ${state.logFile}; use agentmemory stop to reconcile.`);
       process.exit(1);
     }
@@ -3121,7 +3153,7 @@ async function runStop(): Promise<void> {
     }
     if (running && ownedDaemonAlive) {
       try {
-        await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: 60_000 });
+        await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: composeDownTimeoutMs() });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (!message.includes("ENGINE_RESTART_REQUIRED")) {
