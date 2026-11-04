@@ -1114,6 +1114,8 @@ Qwen 3 models think by default and can burn the whole token budget on reasoning 
 
 Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `content` with a `reasoning` field your local server may not surface. If extractions come back blank, switch to a non-reasoning model first. The `OPENAI_REASONING_EFFORT=none` env can also disable thinking on Ollama Cloud thinking models that mirror the OpenAI reasoning schema.
 
+To send an endpoint-specific request field, set `OPENAI_EXTRA_BODY` to a JSON object; it is merged into every chat request, and the `model`, `messages`, `max_tokens`, `stream` and `reasoning_effort` that agentmemory sets always win. For example, `OPENAI_EXTRA_BODY={"provider":{"order":["deepinfra"],"allow_fallbacks":false}}` pins one OpenRouter provider so its prompt cache stays warm.
+
 Local embeddings ship as an optional dependency but are not enabled by default. Set `EMBEDDING_PROVIDER=local` to opt into `Xenova/all-MiniLM-L6-v2` (384-dim). The first embedding request downloads the model; inference is on-device afterward. Without that setting or a remote embedding key, vectors stay disabled, `mem::search` uses BM25, and `smart-search` can still add existing graph matches.
 
 ### Cost-aware model selection
