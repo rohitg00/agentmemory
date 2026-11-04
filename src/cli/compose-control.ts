@@ -167,13 +167,23 @@ type ComposeCallOptions = {
   timeoutMs?: number;
 };
 
+let quietDepth = 0;
+let savedDebug: typeof console.debug | null = null;
+
 export async function withQuietSdkDebug<T>(run: () => Promise<T>): Promise<T> {
-  const original = console.debug;
-  console.debug = () => {};
+  if (quietDepth === 0) {
+    savedDebug = console.debug;
+    console.debug = () => {};
+  }
+  quietDepth++;
   try {
     return await run();
   } finally {
-    console.debug = original;
+    quietDepth--;
+    if (quietDepth === 0 && savedDebug) {
+      console.debug = savedDebug;
+      savedDebug = null;
+    }
   }
 }
 

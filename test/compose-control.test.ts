@@ -142,6 +142,20 @@ describe("Compose control client output", () => {
     }
   });
 
+  it("restores console.debug after overlapping calls finish in any order", async () => {
+    const original = console.debug;
+    let releaseFirst: () => void = () => {};
+    let releaseSecond: () => void = () => {};
+    const first = withQuietSdkDebug(() => new Promise<void>((resolve) => { releaseFirst = resolve; }));
+    const second = withQuietSdkDebug(() => new Promise<void>((resolve) => { releaseSecond = resolve; }));
+    releaseFirst();
+    await first;
+    expect(console.debug).not.toBe(original);
+    releaseSecond();
+    await second;
+    expect(console.debug).toBe(original);
+  });
+
   it("restores console.debug when the call throws", async () => {
     const original = console.debug;
     await expect(withQuietSdkDebug(async () => {
