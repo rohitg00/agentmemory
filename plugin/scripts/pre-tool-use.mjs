@@ -92,12 +92,24 @@ function canonicalSecretPath() {
 //#region src/hooks/_endpoint.ts
 const OPTION_PREFIX = "CLAUDE_PLUGIN_OPTION_";
 const DEFAULT_URL = "http://localhost:3111";
+function filled(value) {
+	const trimmed = value?.trim();
+	if (!trimmed || trimmed.startsWith("${") && trimmed.endsWith("}")) return void 0;
+	return value;
+}
 function hookSetting(name, env = process.env) {
 	const optionKey = `${OPTION_PREFIX}${name}`;
-	const option = env[optionKey]?.trim();
+	const option = filled(env[optionKey])?.trim();
 	if (option) return option;
 	if (name === "AGENTMEMORY_SECRET" && optionKey in env) return void 0;
-	return env[name];
+	return filled(env[name]);
+}
+function resolveSettingSecret(url, env = process.env) {
+	const secretEnv = { ...env };
+	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
+	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
+	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
+	return resolveClientSecret(url, secretEnv);
 }
 function secretTransportAllowed(url) {
 	try {
@@ -108,11 +120,7 @@ function secretTransportAllowed(url) {
 }
 function resolveHookEndpoint(env = process.env) {
 	const url = hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL;
-	const secretEnv = { ...env };
-	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
-	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
-	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
-	const secret = resolveClientSecret(url, secretEnv);
+	const secret = resolveSettingSecret(url, env);
 	const blocked = !secretTransportAllowed(url);
 	return {
 		url,

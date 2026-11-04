@@ -9,15 +9,29 @@ export interface HookEndpoint {
   blocked: boolean;
 }
 
+function filled(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed || (trimmed.startsWith("${") && trimmed.endsWith("}"))) return undefined;
+  return value;
+}
+
 export function hookSetting(
-  name: "AGENTMEMORY_URL" | "AGENTMEMORY_SECRET",
+  name: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   const optionKey = `${OPTION_PREFIX}${name}`;
-  const option = env[optionKey]?.trim();
+  const option = filled(env[optionKey])?.trim();
   if (option) return option;
   if (name === "AGENTMEMORY_SECRET" && optionKey in env) return undefined;
-  return env[name];
+  return filled(env[name]);
+}
+
+export function resolveSettingSecret(url: string, env: NodeJS.ProcessEnv = process.env): string {
+  const secretEnv: NodeJS.ProcessEnv = { ...env };
+  const explicit = hookSetting("AGENTMEMORY_SECRET", env);
+  if (explicit === undefined) delete secretEnv["AGENTMEMORY_SECRET"];
+  else secretEnv["AGENTMEMORY_SECRET"] = explicit;
+  return resolveClientSecret(url, secretEnv);
 }
 
 export function secretTransportAllowed(url: string): boolean {
@@ -30,11 +44,7 @@ export function secretTransportAllowed(url: string): boolean {
 
 export function resolveHookEndpoint(env: NodeJS.ProcessEnv = process.env): HookEndpoint {
   const url = hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL;
-  const secretEnv: NodeJS.ProcessEnv = { ...env };
-  const explicit = hookSetting("AGENTMEMORY_SECRET", env);
-  if (explicit === undefined) delete secretEnv["AGENTMEMORY_SECRET"];
-  else secretEnv["AGENTMEMORY_SECRET"] = explicit;
-  const secret = resolveClientSecret(url, secretEnv);
+  const secret = resolveSettingSecret(url, env);
   const blocked = !secretTransportAllowed(url);
   return { url, secret: blocked ? "" : secret, blocked };
 }

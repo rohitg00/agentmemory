@@ -56,8 +56,8 @@ describe("MCP tool surface default", () => {
       command: "node",
       args: ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bridge.mjs"],
       env: {
-        AGENTMEMORY_URL: "${user_config.agentmemory_url}",
-        AGENTMEMORY_SECRET: "${user_config.agentmemory_secret}",
+        CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL: "${user_config.agentmemory_url}",
+        CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET: "${user_config.agentmemory_secret}",
       },
     });
     const manifest = JSON.parse(readFileSync("plugin/.claude-plugin/plugin.json", "utf-8"));
