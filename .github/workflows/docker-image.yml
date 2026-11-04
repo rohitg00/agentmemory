@@ -192,8 +192,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
         run: |
-          tag=$(gh api "repos/$REPO/releases/latest" --jq .tag_name)
-          newest="${tag#v}"
+          newest=$(gh api --paginate "repos/$REPO/releases" \
+            --jq '.[] | select(.draft | not) | select(.prerelease | not) | .tag_name' \
+            | sed 's/^v//' \
+            | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -t. -k1,1n -k2,2n -k3,3n \
+            | tail -n 1)
+          if [ -z "$newest" ]; then
+            echo "No stable release found; leaving latest unchanged."
+            exit 0
+          fi
           if ! skopeo inspect --raw "docker://$IMAGE:$newest" >/dev/null 2>&1; then
             echo "Image for the newest stable release ($newest) is not pushed yet; leaving latest unchanged."
             exit 0

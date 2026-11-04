@@ -36,7 +36,7 @@ docker run -d --name agentmemory \
   ghumarerohit/agentmemory:<version>
 ```
 
-Keep `/data` on a persistent volume: it holds the memories, the generated secret (`docker exec agentmemory cat /data/secret`) and the worker cache. The container fetches the pinned `state` and `http` registry workers on first start, so it needs network access then. Set `AGENTMEMORY_SECRET`, `EMBEDDING_PROVIDER` and the other variables from the sections above with `-e`. The `latest` tag points at the image for the release GitHub marks as Latest, so an older or prerelease build never replaces it. Pin a version tag for deployments.
+Keep `/data` on a persistent volume: it holds the memories, the generated secret (`docker exec agentmemory cat /data/secret`) and the worker cache. The container fetches the pinned `state` and `http` registry workers on first start, so it needs network access then. Set `AGENTMEMORY_SECRET`, `EMBEDDING_PROVIDER` and the other variables from the sections above with `-e`. The `latest` tag points at the image for the highest stable release version (semver order, prereleases and drafts excluded), so an older, backported or prerelease build never replaces it. Pin a version tag for deployments.
 
 ## Local embeddings
 
