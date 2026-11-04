@@ -404,6 +404,12 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         });
       }
 
+      if (deletedObservationIds.length > 0) {
+        await deleteFacetsForTargets(kv, deletedObservationIds, {
+          targetTypes: ["memory", "observation"],
+        });
+      }
+
       if (deleted > 0 || indexCleaned) await flushIndexSave();
 
       if (deleted > 0 || failures.length > 0) {

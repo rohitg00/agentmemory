@@ -24,6 +24,10 @@ AGENTMEMORY_REST_PORT=3611 AGENTMEMORY_VIEWER_PORT=3613 docker compose up --buil
 
 Open `http://127.0.0.1:3613`, use the persisted secret in `docker compose exec agentmemory cat /data/secret`, and stop with `docker compose down`. `docker compose down -v` deletes the memories and secret. Set `AGENTMEMORY_SECRET` to provide an explicit REST bearer. To use Redis for state, set `AGENTMEMORY_STATE_BACKEND=redis` and `AGENTMEMORY_REDIS_URL=redis://...`; otherwise the persistent file-backed store is used.
 
+## Local embeddings
+
+Set `EMBEDDING_PROVIDER=local` to generate embeddings without an API key. The shared image includes `@huggingface/transformers` and its runtime dependencies; the image build checks that the package loads after pruning development dependencies. Only ONNX native binaries for the image's platform and architecture are retained; other runtime dependencies remain installed. Model weights are not bundled: the first embedding request downloads `Xenova/all-MiniLM-L6-v2` from Hugging Face and requires network access.
+
 ## Platform templates
 
 - [Fly.io](fly/README.md) — separate HTTPS listeners for REST (`3111`) and the bearer-protected viewer (`8443` externally → `3113` internally); a 1 GB persistent volume.

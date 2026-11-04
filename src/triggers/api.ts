@@ -163,7 +163,7 @@ function consolidationDisabledResponse(): Response {
   });
 }
 
-function slotsDisabledResponse(): Response {
+export function slotsDisabledResponse(): Response {
   return flagDisabledResponse({
     error: "Memory slots not enabled",
     flag: "AGENTMEMORY_SLOTS",

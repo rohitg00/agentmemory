@@ -49,16 +49,21 @@ function captureOutputMax() {
 	const parsed = Number.parseInt(raw, 10);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : 8e3;
 }
+function truncateText(value, max) {
+	if (value.length <= max) return value;
+	const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
+	return value.slice(0, end);
+}
 function truncateCaptureOutput(value, max) {
 	if (typeof value === "string" && value.length > max) {
 		const suffix = "\n[...truncated]";
-		return max <= 15 ? suffix.slice(0, max) : value.slice(0, max - 15) + suffix;
+		return max <= 15 ? suffix.slice(0, max) : truncateText(value, max - 15) + suffix;
 	}
 	if (typeof value === "object" && value !== null) {
 		const str = JSON.stringify(value);
 		if (str.length > max) {
 			const suffix = "...[truncated]";
-			return max <= 14 ? suffix.slice(0, max) : str.slice(0, max - 14) + suffix;
+			return max <= 14 ? suffix.slice(0, max) : truncateText(str, max - 14) + suffix;
 		}
 		return value;
 	}
