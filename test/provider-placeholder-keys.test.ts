@@ -117,16 +117,17 @@ describe("placeholder provider keys", () => {
     expect(placeholderProviderKeys(env)).toEqual([]);
   });
 
-  it("does not count a missing OpenAI key behind a plain-http OPENAI_BASE_URL", async () => {
+  it.each([undefined, "", "   "])("does not count OPENAI_API_KEY=%j behind a plain-http OPENAI_BASE_URL", async (key) => {
     process.env["AGENTMEMORY_LLM_PROVIDER"] = "openai";
     process.env["OPENAI_BASE_URL"] = "http://localhost:11434/v1";
+    if (key !== undefined) process.env["OPENAI_API_KEY"] = key;
     const { loadConfig, detectLlmProviderKind, llmOptInHint } = await import("../src/config.js");
     const { realProviderKeys } = await import("../src/cli/doctor-diagnostics.js");
 
     expect(loadConfig().provider.provider).toBe("noop");
     expect(detectLlmProviderKind()).toBe("noop");
     expect(llmOptInHint()).toContain("OPENAI_API_KEY is not");
-    expect(realProviderKeys({ OPENAI_BASE_URL: "http://localhost:11434/v1" })).toEqual([]);
+    expect(realProviderKeys({ OPENAI_API_KEY: key ?? "", OPENAI_BASE_URL: "http://localhost:11434/v1" })).toEqual([]);
   });
 
   it("keeps a dummy OpenAI key for a plain-http server on another host", async () => {
@@ -197,12 +198,15 @@ describe("placeholder provider keys", () => {
     expect(() => createProvider({ provider, model: "m", maxTokens: 1 })).toThrow(key);
   });
 
-  it("still uses the chosen provider with a real key", async () => {
-    process.env["AGENTMEMORY_LLM_PROVIDER"] = "anthropic";
-    process.env["ANTHROPIC_API_KEY"] = "sk-ant-api03-abc123";
+  it.each([
+    ["anthropic", "ANTHROPIC_API_KEY", "sk-ant-api03-abc123"],
+    ["openai", "OPENAI_API_KEY", "xai-abc123def"],
+  ] as const)("still uses the chosen %s provider with a real %s", async (provider, key, value) => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = provider;
+    process.env[key] = value;
     const { loadConfig } = await import("../src/config.js");
 
-    expect(loadConfig().provider.provider).toBe("anthropic");
+    expect(loadConfig().provider.provider).toBe(provider);
   });
 
   it("sends GEMINI_API_KEY without a warning when both Gemini keys are real", async () => {
