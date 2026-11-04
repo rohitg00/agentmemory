@@ -338,7 +338,6 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
     it("fills the result limit after excluding an unscoped first candidate", async () => {
       const unscoped = addMemory();
       const matching = addMemory({ id: "mem_matching", project: "project-a" });
-      // Candidate ordering is external to the ownership filter under test.
       vi.spyOn(getSearchIndex(), "search").mockImplementation((_query, limit) =>
         [unscoped, matching].slice(0, limit).map((memory, index) => ({
           obsId: memory.id,

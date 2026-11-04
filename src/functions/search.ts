@@ -911,7 +911,6 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
           results = idx.search(query, fetchLimit, targetLayer)
         }
 
-        // A full page must stop further session lookups as well as record loads.
         enriched = []
         let batchSize = Math.min(10, effectiveLimit)
         for (let offset = 0; offset < Math.min(results.length, fetchLimit) && enriched.length < effectiveLimit;) {
@@ -971,7 +970,6 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
           batchSize = Math.min(10, Math.max(effectiveLimit - enriched.length, batchSize * 2))
         }
         if (!filtering || enriched.length >= effectiveLimit || (hybridRequest.candidateCount ?? results.length) < fetchLimit || fetchLimit >= MAX_CANDIDATES) break
-        // A full candidate window can hide valid matches behind rejected records.
         fetchLimit = Math.min(fetchLimit * 2, MAX_CANDIDATES)
       }
 
