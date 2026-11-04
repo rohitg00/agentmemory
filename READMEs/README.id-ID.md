@@ -1175,7 +1175,7 @@ Referensi lengkap ada di [`.env.example`](../.env.example), termasuk penyedia, f
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoint di port `3111`. REST API terbind ke `127.0.0.1` secara default. Endpoint yang terlindungi membutuhkan `Authorization: Bearer <secret>`, dan endpoint mesh sync membutuhkan `AGENTMEMORY_SECRET` yang diset secara eksplisit di kedua peer.
+147 endpoint di port `3111`. REST API terbind ke `127.0.0.1` secara default. Endpoint yang terlindungi membutuhkan `Authorization: Bearer <secret>`, dan endpoint mesh sync membutuhkan `AGENTMEMORY_SECRET` yang diset secara eksplisit di kedua peer.
 
 Autentikasi aktif secara default. Jika `AGENTMEMORY_SECRET` tidak disetel, CLI membuat rahasia acak saat pertama dijalankan di `~/.agentmemory/secret` dan menyalinnya ke `secret` dalam direktori data terpilih, dengan mode `0600`. Klien bawaan mengutamakan file kanonis ini untuk koneksi lokal dan hanya mengirim rahasia tersimpan ke URL loopback. `AGENTMEMORY_SECRET` eksplisit selalu diutamakan; klien remote harus mengaturnya melalui environment. Deployment Docker membuat rahasianya sendiri.
 

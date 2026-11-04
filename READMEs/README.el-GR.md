@@ -1160,7 +1160,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints στη θύρα `3111`. Το REST API συνδέεται στο `127.0.0.1` από προεπιλογή. Τα προστατευμένα endpoints απαιτούν `Authorization: Bearer <secret>`, και τα endpoints mesh sync απαιτούν ένα ρητά ρυθμισμένο `AGENTMEMORY_SECRET` και στους δύο peers.
+147 endpoints στη θύρα `3111`. Το REST API συνδέεται στο `127.0.0.1` από προεπιλογή. Τα προστατευμένα endpoints απαιτούν `Authorization: Bearer <secret>`, και τα endpoints mesh sync απαιτούν ένα ρητά ρυθμισμένο `AGENTMEMORY_SECRET` και στους δύο peers.
 
 **Η πιστοποίηση είναι ενεργή από προεπιλογή.** Όταν δεν ορίζεται `AGENTMEMORY_SECRET`, στην πρώτη εκκίνηση το CLI δημιουργεί τυχαίο μυστικό στο `~/.agentmemory/secret` με δικαιώματα `0600` και το αντιγράφει και στον επιλεγμένο κατάλογο δεδομένων. Κάθε ενσωματωμένος client το διαβάζει από εκεί όταν μιλά με έναν τοπικό διακομιστή: το CLI, το viewer, τα hooks κάτω από το `plugin/scripts`, ο διακομιστής MCP και το shim `@agentmemory/mcp`, οι ρυθμίσεις που γράφει το `agentmemory connect`, και οι ενσωματωμένες ενσωματώσεις OpenCode, Pi, OpenClaw, Hermes, και filesystem-watcher. Το αποθηκευμένο secret αποστέλλεται μόνο σε loopback URLs (`localhost`, `127.0.0.0/8`, `::1`). Ένα ρητό `AGENTMEMORY_SECRET` υπερισχύει πάντα, και οι απομακρυσμένοι clients εξακολουθούν να το χρειάζονται ρυθμισμένο. Το Docker και τα entrypoints του `deploy/` δημιουργούν και εξάγουν ήδη το δικό τους secret. Για να καλέσετε το API χειροκίνητα:
 

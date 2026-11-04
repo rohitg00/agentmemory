@@ -1161,7 +1161,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
+147 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
 
 เปิดการยืนยันตัวตนตามค่าเริ่มต้น หากไม่ตั้ง `AGENTMEMORY_SECRET` CLI จะสร้างรหัสลับสุ่มครั้งแรกที่ `~/.agentmemory/secret` และคัดลอกไปยัง `secret` ในไดเรกทอรีข้อมูลที่เลือก โดยใช้สิทธิ์ `0600` ไคลเอนต์ที่รวมมาจะอ่านไฟล์หลักนี้ก่อนเมื่อเชื่อมต่อในเครื่อง และส่งรหัสลับที่บันทึกไว้เฉพาะ URL แบบ loopback ค่า `AGENTMEMORY_SECRET` ที่ระบุเองมีลำดับความสำคัญสูงกว่า ไคลเอนต์ระยะไกลต้องตั้งผ่าน environment ส่วน Docker สร้างรหัสลับของตนเอง
 

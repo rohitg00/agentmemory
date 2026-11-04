@@ -1163,7 +1163,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-連接埠 `3111` 上有 146 個端點。REST API 預設綁定 `127.0.0.1`。受保護的端點需要 `Authorization: Bearer <secret>`,而網狀同步端點要求兩端都明確設定 `AGENTMEMORY_SECRET`。
+連接埠 `3111` 上有 147 個端點。REST API 預設綁定 `127.0.0.1`。受保護的端點需要 `Authorization: Bearer <secret>`,而網狀同步端點要求兩端都明確設定 `AGENTMEMORY_SECRET`。
 
 驗證預設開啟。未設定 `AGENTMEMORY_SECRET` 時，CLI 首次啟動會將隨機密鑰儲存到 `~/.agentmemory/secret`，並鏡像到所選資料目錄的 `secret`，權限為 `0600`。內建客戶端連接本機伺服器時優先讀取此共用檔案，只向回環 URL 傳送儲存的密鑰。明確設定的 `AGENTMEMORY_SECRET` 優先；遠端客戶端需透過環境變數設定密鑰。Docker 部署會產生自己的密鑰。
 
