@@ -341,7 +341,7 @@ describe("MCP graph/stats resource over live graph state", () => {
   };
   const dirs: string[] = [];
 
-  async function rig(options: { index?: "ready" | "building" | "none" } = {}) {
+  async function rig(options: { index?: "ready" | "building" | "none"; failStats?: boolean } = {}) {
     const dir = mkdtempSync(join(tmpdir(), "mcp-graph-stats-"));
     dirs.push(dir);
     const store = new Map<string, Map<string, unknown>>();
@@ -352,6 +352,7 @@ describe("MCP graph/stats resource over live graph state", () => {
         handlers.set(typeof idOrOpts === "string" ? idOrOpts : idOrOpts.id, fn),
       registerTrigger: vi.fn(),
       trigger: async ({ function_id: id, payload }: { function_id: string; payload: any }): Promise<any> => {
+        if (options.failStats && id === "mem::graph-stats") throw new Error("graph index read failed");
         if (!id.startsWith("state::")) return handlers.get(id)!(payload);
         const rows = store.get(payload.scope) ?? new Map<string, unknown>();
         if (id === "state::get") return structuredClone(rows.get(payload.key) ?? null);
@@ -397,6 +398,12 @@ describe("MCP graph/stats resource over live graph state", () => {
   it("reports unavailable counts when the graph index is missing", async () => {
     const r = await rig({ index: "none" });
     expect(await r.readStats()).toEqual(unavailable);
+  });
+
+  it("reports unavailable counts, not zero, when the stats call fails", async () => {
+    const r = await rig({ failStats: true });
+    const stats = await r.readStats();
+    expect(stats).toMatchObject({ totalNodes: null, totalEdges: null, available: false, coverage: "unknown" });
   });
 
   it("reports unavailable counts while the graph index is building or paused", async () => {
