@@ -483,7 +483,8 @@ agentmemory connect claude-code --with-hooks
 ```
 
 This merges the same hook commands into `~/.claude/settings.json` with absolute paths resolved to the bundled `plugin/` directory of the currently installed `@agentmemory/agentmemory` package. Re-run the command after upgrading agentmemory to refresh the paths. User entries in the same file are preserved; only previous agentmemory entries are replaced. Using the `/plugin install` path remains the recommended approach.
-For a remote server, enter its `https://` URL and secret in the plugin settings that Claude Code asks for when you enable the plugin. The hooks and the bundled MCP server read both from there. With the URL setting empty, they use `AGENTMEMORY_URL` from your environment, then `http://localhost:3111`; with the secret setting empty, they send only the local server's own secret, and only to a loopback address.
+
+For a remote server with the plugin, enter its `https://` URL and secret in the plugin settings that Claude Code asks for when you enable the plugin. The hooks and the bundled MCP server read both from there. With the URL setting empty, they use `AGENTMEMORY_URL` from your environment, then `http://localhost:3111`; with the secret setting empty, they send only the local server's own secret, and only to a loopback address. With `agentmemory connect claude-code` there are no plugin settings: set `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` in the environment that starts Claude Code.
 
 ### Codex CLI (Codex plugin platform)
 
