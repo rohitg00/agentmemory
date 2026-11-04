@@ -1,5 +1,6 @@
 import type { IIIClient } from 'iii-sdk'
 import type { GraphObservationAuthorization } from "./graph-retrieval.js";
+import type { HybridSearchRequest } from "../state/hybrid-search.js";
 import type { IndexPersistenceStatus } from "../state/index-persistence.js";
 import type { CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
@@ -33,6 +34,7 @@ type HybridRanker = (
   limit: number,
   targetLayer?: SearchLayer,
   authorizeGraph?: GraphObservationAuthorization,
+  request?: HybridSearchRequest,
 ) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number; layer?: SearchResultLayer }>>
 let hybridRanker: HybridRanker | null = null
 
@@ -761,6 +763,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       }
       const targetLayer = data.targetLayer ?? 'all'
       const MAX_LIMIT = 100
+      const MAX_CANDIDATES = 1000
       let effectiveLimit = 20
       if (data.limit !== undefined) {
         if (!Number.isInteger(data.limit) || data.limit < 1) {
@@ -835,7 +838,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       // queries return underfilled pages when same-agent matches
       // rank lower than cross-agent ones in the hybrid score.
       const filtering = !!(projectFilter || cwdFilter || filterAgentId)
-      const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
+      let fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
       // Hybrid results carry the observation the ranker already loaded,
       // so the load pass below doesn't refetch every record it just
       // enriched.
@@ -858,33 +861,13 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         }
         return true
       }
-      if (hybridRanker) {
-        try {
-          const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph)
-          results = hybrid.map((r) => ({
-            obsId: r.observation.id,
-            sessionId: r.sessionId,
-            score: r.combinedScore,
-            observation: r.observation,
-            layer: r.layer,
-          }))
-        } catch (err) {
-          logger.warn("hybrid ranking failed, falling back to keyword search", {
-            error: err instanceof Error ? err.message : String(err),
-          })
-          results = idx.search(query, fetchLimit, targetLayer)
-        }
-      } else {
-        results = idx.search(query, fetchLimit, targetLayer)
-      }
-
       // Resolve session -> project/cwd once per sessionId we touch.
-      const sessionCache = new Map<string, Session | null>()
+      const sessionCache = new Map<string, Promise<Session | null>>()
       const loadSession = async (sessionId: string): Promise<Session | null> => {
         if (sessionCache.has(sessionId)) return sessionCache.get(sessionId)!
-        const s = await kv.get<Session>(KV.sessions, sessionId)
-        sessionCache.set(sessionId, s ?? null)
-        return s ?? null
+        const pending = kv.get<Session>(KV.sessions, sessionId).then((session) => session ?? null)
+        sessionCache.set(sessionId, pending)
+        return pending
       }
 
       const memoryProjectCache = new Map<string, string | null>()
@@ -896,62 +879,98 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         return proj
       }
 
-      // First pass: filter by session (sequential — benefits from session cache).
-      // Memory entries with a synthetic sessionId take a secondary KV.memories
-      // path so project filtering works correctly for them too.
-      //
-      // When agentId filtering is active we can't cap at effectiveLimit
-      // here — the second pass (post-load) is what drops cross-agent
-      // rows, and capping early would underfill the result page. Use
-      // fetchLimit as the upper bound in that case; the final
-      // truncation lives at the end of the second pass.
-      const earlyCap = filterAgentId ? fetchLimit : effectiveLimit
-      const candidates: typeof results = []
-      for (const r of results) {
-        if (candidates.length >= earlyCap) break
-        const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
-        if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) continue
-        if (filtering) {
-          const memoryProject = projectFilter && layer === "memory"
-            ? await loadMemoryProject(r.obsId)
-            : null
-          if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) continue
-          const session = await loadSession(r.sessionId)
-          if (session) {
-            if (projectFilter && memoryProject === null && session.project !== projectFilter) continue
-            if (cwdFilter && session.cwd !== cwdFilter) continue
+      const observationCache = new Map<string, Promise<{
+        observation: CompressedObservation
+        layer: SearchResultLayer
+      } | null>>()
+      const hybridRequest: HybridSearchRequest = {}
+      let enriched: SearchResult[] = []
+      let useHybridRanker = hybridRanker !== null
+      while (true) {
+        hybridRequest.candidateCount = undefined
+        if (useHybridRanker && hybridRanker) {
+          try {
+            const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph, hybridRequest)
+            results = hybrid.map((r) => ({
+              obsId: r.observation.id,
+              sessionId: r.sessionId,
+              score: r.combinedScore,
+              observation: r.observation,
+              layer: r.layer,
+            }))
+          } catch (err) {
+            hybridRequest.candidateCount = undefined
+            logger.warn("hybrid ranking failed", {
+              error: err instanceof Error ? err.message : String(err),
+            })
+            if (enriched.length > 0) break
+            useHybridRanker = false
+            results = idx.search(query, fetchLimit, targetLayer)
           }
+        } else {
+          results = idx.search(query, fetchLimit, targetLayer)
         }
-        candidates.push(r)
-      }
 
-      const obsResults = await Promise.all(
-        candidates.map(async (r) => {
-          if (r.observation) return { observation: r.observation, layer: r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId) }
-          const obs = await kv
-            .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
-            .catch(() => null)
-          if (obs) return { observation: obs, layer: "observation" as const }
-          const mem = await kv
-            .get<Memory>(KV.memories, r.obsId)
-            .catch(() => null)
-          return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
-        })
-      )
-      const enriched: SearchResult[] = []
-      for (let i = 0; i < candidates.length; i++) {
-        const resolved = obsResults[i]
-        if (!resolved) continue
-        const obs = resolved.observation
-        if (!matchesSearchLayer(obs.id, obs.sessionId, targetLayer, resolved.layer)) continue
-        if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
-        if (enriched.length >= effectiveLimit) break
-        enriched.push({
-          observation: withoutObservationSource(obs),
-          layer: resolved.layer,
-          score: candidates[i].score,
-          sessionId: candidates[i].sessionId,
-        })
+        enriched = []
+        let batchSize = Math.min(10, effectiveLimit)
+        for (let offset = 0; offset < Math.min(results.length, fetchLimit) && enriched.length < effectiveLimit;) {
+          const batch = results.slice(offset, Math.min(offset + batchSize, fetchLimit))
+          offset += batch.length
+          const obsResults = await Promise.all(
+            batch.map(async (r) => {
+              const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
+              if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) return null
+              if (filtering) {
+                const memoryProject = projectFilter && layer === "memory"
+                  ? await loadMemoryProject(r.obsId)
+                  : null
+                if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) return null
+                const session = projectFilter || cwdFilter ? await loadSession(r.sessionId) : null
+                if (projectFilter && memoryProject === null && !session) return null
+                if (cwdFilter && layer === "observation" && !session) return null
+                if (session) {
+                  if (projectFilter && memoryProject === null && session.project !== projectFilter) return null
+                  if (cwdFilter && session.cwd !== cwdFilter) return null
+                }
+              }
+
+              const key = JSON.stringify([r.obsId, r.sessionId])
+              let pending = observationCache.get(key)
+              if (!pending) {
+                pending = (async () => {
+                  if (r.observation) return { observation: r.observation, layer: r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId) }
+                  const obs = await kv
+                    .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
+                    .catch(() => null)
+                  if (obs) return { observation: obs, layer: "observation" as const }
+                  const mem = await kv
+                    .get<Memory>(KV.memories, r.obsId)
+                    .catch(() => null)
+                  return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
+                })()
+                observationCache.set(key, pending)
+              }
+              return pending
+            })
+          )
+          for (let i = 0; i < batch.length; i++) {
+            const resolved = obsResults[i]
+            if (!resolved) continue
+            const obs = resolved.observation
+            if (!matchesSearchLayer(obs.id, obs.sessionId, targetLayer, resolved.layer)) continue
+            if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
+            if (enriched.length >= effectiveLimit) break
+            enriched.push({
+              observation: withoutObservationSource(obs),
+              layer: resolved.layer,
+              score: batch[i].score,
+              sessionId: batch[i].sessionId,
+            })
+          }
+          batchSize = Math.min(10, Math.max(effectiveLimit - enriched.length, batchSize * 2))
+        }
+        if (!filtering || enriched.length >= effectiveLimit || (hybridRequest.candidateCount ?? results.length) < fetchLimit || fetchLimit >= MAX_CANDIDATES) break
+        fetchLimit = Math.min(fetchLimit * 2, MAX_CANDIDATES)
       }
 
       const response = buildRecallResponse(enriched, format as RecallFormat, tokenBudget)
