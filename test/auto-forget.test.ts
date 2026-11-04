@@ -134,6 +134,7 @@ describe("Auto-Forget Function", () => {
       id: "mem_1",
       content: "Use React hooks for state management in all components",
       createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
     });
     const mem2 = makeMemory({
       id: "mem_2",
@@ -154,6 +155,7 @@ describe("Auto-Forget Function", () => {
     expect(result.contradictions.length).toBe(1);
     const older = await kv.get<Memory>("mem:memories", "mem_1");
     expect(older!.isLatest).toBe(false);
+    expect(older!.updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
   });
 
   it("evicts low-value old observations", async () => {

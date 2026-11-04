@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 เครื่องมือ MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook อัตโนมัติ" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="ไม่ต้องพึ่ง external DB เลย" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 4,300+ รายการ" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 4,400+ รายการ" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1161,7 +1161,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
+147 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
 
 เปิดการยืนยันตัวตนตามค่าเริ่มต้น หากไม่ตั้ง `AGENTMEMORY_SECRET` CLI จะสร้างรหัสลับสุ่มครั้งแรกที่ `~/.agentmemory/secret` และคัดลอกไปยัง `secret` ในไดเรกทอรีข้อมูลที่เลือก โดยใช้สิทธิ์ `0600` ไคลเอนต์ที่รวมมาจะอ่านไฟล์หลักนี้ก่อนเมื่อเชื่อมต่อในเครื่อง และส่งรหัสลับที่บันทึกไว้เฉพาะ URL แบบ loopback ค่า `AGENTMEMORY_SECRET` ที่ระบุเองมีลำดับความสำคัญสูงกว่า ไคลเอนต์ระยะไกลต้องตั้งผ่าน environment ส่วน Docker สร้างรหัสลับของตนเอง
 
@@ -1242,7 +1242,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,300+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
