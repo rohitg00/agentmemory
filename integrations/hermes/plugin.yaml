@@ -1,5 +1,5 @@
 name: agentmemory
-version: 0.9.30
+version: 0.9.31
 description: "Persistent memory for Hermes Agent with profile-scoped capture, recall, and native memory tools."
 author: "Rohit Ghumare"
 homepage: "https://github.com/rohitg00/agentmemory"

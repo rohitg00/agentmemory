@@ -44,10 +44,10 @@ export interface GraphStatsInput {
 export interface StatusInputs {
   now: Date;
   version: string;
-  engineVersion: string;
+  enginePinnedVersion: string;
   uptimeSeconds: number;
   stateBackend: "file" | "redis";
-  ports: { rest: number | null; streams: number | null; viewer: number | null };
+  ports: { rest: number | null; viewer: number | null };
   health: {
     status?: string;
     alerts?: string[];
@@ -104,7 +104,7 @@ export interface StatusReport {
   checkedAt: string;
   service: {
     version: string;
-    engineVersion: string;
+    enginePinnedVersion: string;
     uptimeSeconds: number;
     stateBackend: StatusInputs["stateBackend"];
     stateStore: { ok: boolean; latencyMs?: number } | null;
@@ -181,13 +181,7 @@ export function describeHealthAlert(slug: string): { level: "warn" | "error"; me
       fix: "It usually clears after an import or index rebuild finishes. If it persists, restart agentmemory.",
     };
   }
-  if (slug === "stream_relay_down") {
-    return {
-      level: "warn",
-      message: "Live updates are not reaching the viewer: the engine stopped relaying stream events, which happens after Redis restarts or drops the connection. Data is still saved.",
-      fix: "Restart agentmemory (npx @agentmemory/agentmemory stop, then start) so the engine subscribes to Redis again, then reload the viewer.",
-    };
-  }
+
   if (slug === "connection_reconnecting") {
     return {
       level: "warn",
@@ -504,7 +498,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     checkedAt: input.now.toISOString(),
     service: {
       version: input.version,
-      engineVersion: input.engineVersion,
+      enginePinnedVersion: input.enginePinnedVersion,
       uptimeSeconds: input.uptimeSeconds,
       stateBackend: input.stateBackend,
       stateStore: input.stateStore ?? null,
@@ -846,7 +840,7 @@ a{color:inherit}
 @media (max-width:640px){th{width:110px}table.list{table-layout:fixed}table.list th,table.list td{padding:6px 4px;font-size:12px}}
 </style></head><body><main>
 <header><h1>agentmemory</h1><span class="badge ${report.status}">${report.status}</span>
-<span class="meta">v${escapeHtml(report.service.version)} · engine ${escapeHtml(report.service.engineVersion)} · checked ${escapeHtml(report.checkedAt)} · <a href="?format=json">json</a></span></header>
+<span class="meta">v${escapeHtml(report.service.version)} · engine pinned ${escapeHtml(report.service.enginePinnedVersion)} · checked ${escapeHtml(report.checkedAt)} · <a href="?format=json">json</a></span></header>
 <p class="lead ${report.status}">${escapeHtml(report.headline)}</p>
 <p class="live">A snapshot from when this page loaded. <a href="${escapeHtml(viewerUrl)}">Open the live version in the viewer &rarr;</a> From a terminal: <code>curl -s ${escapeHtml(CURL_AUTH_HEADER)} ${ports.rest ? `http://localhost:${escapeHtml(ports.rest)}` : ""}/agentmemory/status</code> returns this report as JSON.</p>
 <h2>Problems</h2><ul class="problems">${problems}</ul>
@@ -855,7 +849,6 @@ ${row("Engine connection", escapeHtml(report.health?.connectionState ?? "unknown
 ${row("Uptime", escapeHtml(formatDuration(report.service.uptimeSeconds)))}
 ${row("State backend", escapeHtml(report.service.stateBackend))}
 ${row("REST port", escapeHtml(ports.rest ?? "unknown"))}
-${row("Streams port", escapeHtml(ports.streams ?? "unknown"))}
 ${row("Viewer port", escapeHtml(ports.viewer ?? "not running"))}
 </table>
 <h2>LLM and embeddings</h2><table>

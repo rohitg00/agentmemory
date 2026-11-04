@@ -61,12 +61,13 @@ describe("agentmemory connect — dispatcher", () => {
         "openclaw",
         "openhuman",
         "pi",
+        "omp",
         "qwen",
         "warp",
         "zed",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(21);
+    expect(ADAPTERS.length).toBe(22);
   });
 
   it("every adapter exposes detect() and install()", () => {

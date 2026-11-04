@@ -4,7 +4,7 @@ description: Map of every agentmemory MCP tool, what each does, and its paramete
 user-invocable: false
 ---
 
-This skill indexes agentmemory's MCP tools. Use the connected server's tool inventory and schemas; a native memory provider may expose a smaller set under different names. Hermes and OpenClaw skills that need the full surface require a separate MCP connection to the running daemon.
+This skill indexes agentmemory's MCP tools. Use the connected server's tool inventory and schemas; a native memory provider may expose a smaller set under different names. Hermes and OpenClaw skills that need the full surface require a separate MCP connection to the running daemon. For Pi and OMP, connect with `--with-mcp` to enable the broader workflows. Pi exposes MCP names with an `mcp__agentmemory__` prefix; OMP exposes MCP operations as `xd://mcp__agentmemory_<tool>` devices through its `write` tool.
 
 ## Quick start
 

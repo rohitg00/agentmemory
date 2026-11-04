@@ -4,6 +4,7 @@ import { COMPRESSION_SYSTEM } from "../src/prompts/compression.js";
 import { compressWithRetry } from "../src/eval/self-correct.js";
 import { CompressOutputSchema } from "../src/eval/schemas.js";
 import { registerCompressFunction } from "../src/functions/compress.js";
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { buildSyntheticCompression } from "../src/functions/compress-synthetic.js";
 import { NoopProvider } from "../src/providers/noop.js";
 import type { CompressedObservation, MemoryProvider, RawObservation } from "../src/types.js";
@@ -136,7 +137,9 @@ describe("compression validation and retry", () => {
   it("persists only a successful retry and preserves the original evidence", async () => {
     const provider = providerReturning(xml.replace("Updated configuration", "x".repeat(900)), xml);
     const r = rig(provider, buildSyntheticCompression(raw));
+    const unsubscribe = onLiveEvent((event) => { if (event.type === "compressed_observation") r.trigger(event); });
     expect(await r.call()).toMatchObject({ success: true, compressed: { title: "Updated configuration" } });
+    unsubscribe();
     expect(provider.compress).toHaveBeenCalledTimes(2);
     expect((r.stored() as CompressedObservation).compression?.status).toBe("complete");
     expect((r.stored() as CompressedObservation).source?.toolOutput).toBe(raw.toolOutput);

@@ -1,3 +1,4 @@
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StateKV, applyUpdateOps } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
@@ -37,12 +38,12 @@ function setup(backend: "file" | "redis" = "file") {
   const handlers = new Map<string, (data?: any) => Promise<any>>();
   const calls: Array<{ id: string; payload: Payload }> = [];
   const sent: any[] = [];
+  const unsubscribeEvents = onLiveEvent((event) => sent.push({ type: event.type, data: structuredClone(event.data) }));
   let intercept: ((id: string, payload: Payload) => Promise<void> | void) | undefined;
   const sdk = {
     registerFunction: (id: string, fn: (data?: any) => Promise<any>) => handlers.set(id, fn),
     registerTrigger: vi.fn(),
     trigger: async ({ function_id: id, payload }: { function_id: string; payload: any }): Promise<any> => {
-      if (id === "stream::send") { sent.push(structuredClone(payload)); return {}; }
       if (!id.startsWith("state::")) return handlers.get(id)!(payload);
       calls.push({ id, payload: structuredClone(payload) });
       await intercept?.(id, payload);
@@ -67,9 +68,10 @@ function setup(backend: "file" | "redis" = "file") {
   };
   const kv = new StateKV(sdk as never, { backend });
   registerGraphFunction(sdk as never, kv, { name: "noop" } as never);
+  registerViewerStreamTriggers(sdk as never, kv);
   const call = (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload });
   const snapshot = async (view = kv) => (await view.get<GraphSnapshot>(KV.graphSnapshot, "current"))!;
-  return { kv, sdk, store, calls, sent, call, snapshot, intercept: (fn?: typeof intercept) => { intercept = fn; } };
+  return { kv, sdk, store, calls, sent, call, snapshot, unsubscribeEvents, intercept: (fn?: typeof intercept) => { intercept = fn; } };
 }
 
 async function degrees(kv: StateKV, ids: string[]) {

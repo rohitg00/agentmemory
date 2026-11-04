@@ -9,15 +9,16 @@ import {
   singleFlight,
   type StatusInputs,
 } from "../src/functions/status.js";
+import { III_PINNED_VERSION } from "../src/version.js";
 
 function inputs(overrides: Partial<StatusInputs> = {}): StatusInputs {
   return {
     now: new Date("2026-09-24T12:00:00.000Z"),
     version: "0.9.29",
-    engineVersion: "0.22.1",
+    enginePinnedVersion: III_PINNED_VERSION,
     uptimeSeconds: 125,
     stateBackend: "file",
-    ports: { rest: 3111, streams: 3112, viewer: 3113 },
+    ports: { rest: 3111, viewer: 3113 },
     health: { status: "healthy", alerts: [], notes: [], connectionState: "connected" },
     circuitBreaker: { state: "closed", failures: 0 },
     functionMetrics: [],
@@ -63,7 +64,7 @@ describe("evaluateStatus", () => {
     expect(report.status).toBe("ok");
     expect(report.problems).toEqual([]);
     expect(report.graph?.ageSeconds).toBe(60);
-    expect(report.service.engineVersion).toBe("0.22.1");
+    expect(report.service.enginePinnedVersion).toBe(III_PINNED_VERSION);
   });
 
   it("surfaces the active state backend, never the URL", () => {
@@ -489,6 +490,15 @@ describe("status wiring", () => {
   const api = readFileSync("src/triggers/api.ts", "utf-8");
   const viewer = readFileSync("src/viewer/index.html", "utf-8");
   const index = readFileSync("src/index.ts", "utf-8");
+
+  it("labels the reported build pin as pinned instead of claiming a live engine version", () => {
+    expect(api).toMatch(/enginePinnedVersion: III_PINNED_VERSION/);
+    expect(api).not.toMatch(/engineVersion: III_PINNED_VERSION/);
+    expect(viewer).toContain("engine pinned ' + r.service.enginePinnedVersion");
+    const report = evaluateStatus(inputs({ enginePinnedVersion: "0.24.6" }));
+    expect(report.service.enginePinnedVersion).toBe("0.24.6");
+    expect(report.service).not.toHaveProperty("engineVersion");
+  });
 
   it("registers GET /agentmemory/status behind the same auth check as the other endpoints", () => {
     expect(api).toMatch(/registerFunction\("api::status",\s*async \(req: HttpRequest\): Promise<Response> => \{\s*const authErr = checkAuth\(req, secret\);/);

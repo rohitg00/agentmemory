@@ -1,16 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const KEYS = [
   "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_MODEL",
+  "GEMINI_API_KEY",
+  "GOOGLE_API_KEY",
+  "MINIMAX_API_KEY",
+  "AGENTMEMORY_ALLOW_AGENT_SDK",
   "OPENAI_MODEL",
   "OPENAI_BASE_URL",
   "OPENROUTER_API_KEY",
   "OPENROUTER_MODEL",
   "OPENAI_API_KEY_FOR_LLM",
   "AGENTMEMORY_SUPPRESS_COST_WARNING",
+  "AGENTMEMORY_ENV_FILE",
 ];
 
 async function warningsFor(env: Record<string, string>, loads = 1): Promise<string[]> {
+  const isolatedDir = mkdtempSync(join(tmpdir(), "am-premium-warning-"));
+  process.env["AGENTMEMORY_ENV_FILE"] = join(isolatedDir, "absent.env");
   for (const [k, v] of Object.entries(env)) process.env[k] = v;
   const writes: string[] = [];
   vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
@@ -20,7 +32,9 @@ async function warningsFor(env: Record<string, string>, loads = 1): Promise<stri
   vi.resetModules();
   const { loadConfig } = await import("../src/config.js");
   for (let i = 0; i < loads; i++) loadConfig();
-  return writes.filter((w) => w.includes("premium tier"));
+  const warnings = writes.filter((w) => w.includes("premium tier"));
+  rmSync(isolatedDir, { recursive: true, force: true });
+  return warnings;
 }
 
 describe("premium-model cost warning", () => {
@@ -55,13 +69,13 @@ describe("premium-model cost warning", () => {
     expect(warnings).toHaveLength(0);
   });
 
-  it("keeps the OpenRouter warning text", async () => {
+  it("warns about premium models on the active OPENAI-compatible route", async () => {
     const warnings = await warningsFor({
-      OPENROUTER_API_KEY: "k",
-      OPENROUTER_MODEL: "anthropic/claude-opus-5",
-      OPENAI_API_KEY_FOR_LLM: "false",
+      OPENAI_API_KEY: "k",
+      OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
+      OPENAI_MODEL: "anthropic/claude-opus-5",
     });
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("OPENROUTER_MODEL=anthropic/claude-opus-5 is in the premium tier");
+    expect(warnings[0]).toContain("OPENAI_MODEL=anthropic/claude-opus-5 is in the premium tier");
   });
 });

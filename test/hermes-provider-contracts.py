@@ -648,6 +648,20 @@ class ProviderContract(unittest.TestCase):
         provider.initialize('named', cwd=str(workspace))
         self.assertEqual(provider._project, 'explicit-project')
 
+    def test_project_git_probe_never_inherits_the_worker_stdin(self):
+        module = self.load()
+        seen = {}
+
+        def fake_run(cmd, **kwargs):
+            seen.update(kwargs)
+            return types.SimpleNamespace(stdout='/work/repo-name\n.git\n.git\n')
+
+        with patch.object(module.subprocess, 'run', side_effect=fake_run):
+            project = module._resolve_project('/work/repo-name')
+        self.assertIs(seen.get('stdin'), module.subprocess.DEVNULL)
+        self.assertEqual(seen.get('timeout'), 5)
+        self.assertEqual(project, 'repo-name')
+
 
 if __name__ == '__main__':
     unittest.main()

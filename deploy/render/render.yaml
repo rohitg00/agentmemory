@@ -3,8 +3,8 @@ services:
     name: agentmemory
     runtime: docker
     plan: starter
-    dockerfilePath: ./deploy/render/Dockerfile
-    dockerContext: ./deploy/render
+    dockerfilePath: ./deploy/Dockerfile
+    dockerContext: .
     healthCheckPath: /agentmemory/livez
     autoDeploy: false
     disk:
@@ -14,9 +14,15 @@ services:
     envVars:
       - key: PORT
         value: "3111"
-      - key: AGENTMEMORY_VERSION
-        value: "0.9.30"
-      - key: III_VERSION
-        value: "0.22.1"
-      - key: III_SDK_VERSION
-        value: "0.22.1"
+      - key: AGENTMEMORY_DATA_DIR
+        value: /data
+      - key: HOME
+        value: /data/home
+      - key: AGENTMEMORY_VIEWER_HOST
+        value: 0.0.0.0
+      - key: VIEWER_ALLOWED_HOSTS
+        value: localhost:3113,127.0.0.1:3113
+      - key: VIEWER_ALLOWED_ORIGINS
+        value: http://localhost:3113,http://127.0.0.1:3113
+      - key: III_TELEMETRY_ENABLED
+        value: "false"

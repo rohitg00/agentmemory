@@ -1,12 +1,15 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { registerViewerStreamTriggers } from "../src/triggers/viewer-streams.js";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { registerEventTriggers } from "../src/triggers/events.js";
 import { getViewerCounts, resetViewerCounts } from "../src/state/viewer-counts.js";
 import { KV } from "../src/state/schema.js";
 import { recordAudit, setAuditRecordedListener } from "../src/functions/audit.js";
 
+const cleanupListeners: Array<() => void> = [];
+
 type Handler = (payload: unknown) => Promise<unknown>;
-type Sent = { type: string; group_id: string; data: Record<string, unknown> };
+type Sent = { type: string; id: string; data: Record<string, unknown> };
 
 function mockKV(seed: Record<string, Record<string, unknown>> = {}) {
   const store = new Map<string, Map<string, unknown>>();
@@ -36,10 +39,10 @@ function setup(kv = mockKV(), deps: Record<string, unknown> = {}) {
     registerFunction: (id: string, fn: Handler) => handlers.set(id, fn),
     registerTrigger: (t: (typeof triggers)[number]) => triggers.push(t),
     trigger: vi.fn(async (req: { function_id: string; payload: Record<string, unknown> }) => {
-      if (req.function_id === "stream::send") sent.push(req.payload as unknown as Sent);
       return {};
     }),
   };
+  cleanupListeners.push(onLiveEvent((event) => sent.push(event)));
   registerEventTriggers(sdk as never, kv as never);
   registerViewerStreamTriggers(sdk as never, kv as never, deps);
   return { handlers, triggers, sent, kv };
@@ -71,6 +74,7 @@ const seeded = () =>
 describe("viewer stream triggers", () => {
   beforeEach(() => resetViewerCounts());
   afterEach(() => {
+    cleanupListeners.splice(0).forEach((cleanup) => cleanup());
     vi.useRealTimers();
     resetViewerCounts();
     setAuditRecordedListener(null);
@@ -125,7 +129,6 @@ describe("viewer stream triggers", () => {
       "procedural.created",
       "audit.created",
     ]);
-    expect(sent.every((e) => e.group_id === "viewer")).toBe(true);
     expect(sent[1].data).toEqual({ id: "l9", lesson: { ...lesson, confidence: 0.8 } });
     expect(sent[2].data).toEqual({ id: "l9", lesson: null });
     expect(sent[7].data.audit).toMatchObject({ operation: "forget", targetIds: ["m1"] });

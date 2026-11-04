@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import openclawPlugin from "../integrations/openclaw/plugin.mjs";
-import { createPlaintextBearerAuthGuard } from "../integrations/pi/security.ts";
+import { guardPlaintextBearerAuth } from "../integrations/pi/security.ts";
 
 type OpenClawHandler = (event: Record<string, unknown>) => Promise<unknown>;
 
@@ -78,69 +78,12 @@ describe("OpenClaw plaintext bearer guard", () => {
 });
 
 describe("pi plaintext bearer guard", () => {
-  it("keeps loopback HTTP silent", () => {
-    const warn = vi.fn();
-    const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://127.0.0.1:3111", "secret");
-    expect(warn).not.toHaveBeenCalled();
+  it.each(["http://127.0.0.1:3111", "http://127.0.0.2:3111", "http://[::1]:3111", "http://localhost:3111", "https://remote.example"])("allows %s", url => {
+    expect(() => guardPlaintextBearerAuth(url, "secret")).not.toThrow();
   });
-
-  it("warns once for non-loopback HTTP with a bearer secret", () => {
-    const warn = vi.fn();
-    const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://remote.example:3111", "secret");
-    guard("http://remote.example:3111", "secret");
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(warn.mock.calls[0][0]).toContain("plaintext HTTP to http://remote.example:3111");
-  });
-
-  it("keeps HTTPS with a bearer secret silent", () => {
-    const warn = vi.fn();
-    const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("https://remote.example", "secret");
-    expect(warn).not.toHaveBeenCalled();
-  });
-
-  it("fails before callers can issue a request when HTTPS is required", () => {
-    const warn = vi.fn();
-    const guard = createPlaintextBearerAuthGuard(warn, {
-      AGENTMEMORY_REQUIRE_HTTPS: "1",
-    });
-    expect(() => guard("http://remote.example:3111", "secret")).toThrow(
-      /plaintext HTTP to http:\/\/remote\.example:3111/,
-    );
-    expect(warn).not.toHaveBeenCalled();
-  });
-
-  it("treats IPv6 loopback ([::1]) as loopback (URL parser strips brackets)", () => {
-    const warn = vi.fn();
-    const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://[::1]:3111", "secret");
-    expect(warn).not.toHaveBeenCalled();
-  });
-
-  it("warns for private LAN IPs — RFC1918 ranges are NOT loopback", () => {
-    const warn = vi.fn();
-    const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://192.168.1.50:3111", "secret");
-    guard("http://10.0.0.42:3111", "secret");
-    expect(warn).toHaveBeenCalledTimes(1); // warn-once
-    expect(warn.mock.calls[0][0]).toContain("plaintext HTTP to http://192.168.1.50:3111");
-  });
-
-  it("does not warn when no secret is set — guard only fires when a bearer would actually be sent", () => {
-    const warn = vi.fn();
-    const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://remote.example:3111", "");
-    guard("http://remote.example:3111", undefined);
-    expect(warn).not.toHaveBeenCalled();
-  });
-
-  it("treats hostnames that LOOK loopback but aren't (localhost.evil.com) as remote", () => {
-    const warn = vi.fn();
-    const guard = createPlaintextBearerAuthGuard(warn, {});
-    guard("http://localhost.evil.com:3111", "secret");
-    expect(warn).toHaveBeenCalledTimes(1);
+  it.each(["http://remote.example", "http://localhost.evil.com", "http://192.168.1.50", "http://10.0.0.42"])("refuses plaintext credentials to %s", url => {
+    expect(() => guardPlaintextBearerAuth(url, "secret")).toThrow("Use HTTPS or an SSH tunnel");
+    expect(() => guardPlaintextBearerAuth(url)).not.toThrow();
   });
 });
 

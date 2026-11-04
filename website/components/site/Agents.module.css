@@ -156,10 +156,6 @@
   overflow-wrap: anywhere;
 }
 
-.slug {
-  white-space: nowrap;
-}
-
 .cmd :global(.copy-state) {
   flex: none;
   color: var(--muted);

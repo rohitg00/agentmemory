@@ -6,8 +6,30 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.31] — 2026-10-25
+### Upgrade notes
+
+- **The runtime moves to iii 0.25.0 and Worker Compose.** Stop the existing instance with its old CLI before upgrading, then restart with the same instance, port and data directory. File state, the daemon secret and Docker data volumes are preserved. The CLI no longer uses `AGENTMEMORY_USE_DOCKER`, `AGENTMEMORY_III_CONFIG` or custom `iii-config.yaml` files; Docker deployments use the shared deployment image. Follow the [upgrade guide](docs/upgrades/iii-0.25.md) for these installation changes.
+- **Viewer updates use authenticated SSE** on the REST port at `/agentmemory/viewer/events`; port 3112 is unused. `agentmemory console` now prints migration guidance and the viewer URL. The viewer remains on port 3113 by default. Status reports the configured engine pin as `service.enginePinnedVersion` instead of `engineVersion`.
+- **Narrative recall now returns structured JSON through MCP.** Read the `text` field for the narrative and the accompanying budget metadata for omitted or shortened results. See [recall guidance](docs/recall.md).
+- Full historical vector recovery requires `AGENTMEMORY_VECTOR_BACKFILL=all` on each start and processes at most `AGENTMEMORY_VECTOR_BACKFILL_MAX` missing records per start. Keyword search remains available while recovery is paused. See [vector recovery](docs/reliability/source-and-vector-recovery.md) before rebuilding an old index.
+- Re-run `agentmemory connect pi --with-mcp` or `agentmemory connect omp --with-mcp` after upgrading to refresh their bundled paths and skills. Existing DSH hook-bridge installations migrate with `agentmemory connect dsh --with-hooks --force`; the connector backs up configuration and preserves unrelated entries.
+
+### Added
+
+- **Installable Pi package and native OMP integration.** Pi's `@agentmemory/pi` package contains the compiled extension and shared skills. Both connectors install project recall, capture, native memory tools and optional MCP, with bounded offline capture queues. The connector works before the separate Pi package's first npm publication.
+- **Native DSH capture** ships inside AgentMemory, with prompt, tool and assistant-reply capture, privacy filtering and offline recovery. No separate capture package is needed (#1609, including instruction-file setup by hejiawow).
+- **Cursor workspace resolution** maps lifecycle hooks to the correct project using validated paths and local session metadata, with detached stop/session-end delivery (#1112).
+- **Paged exports** support `collectionLimit`, `collectionOffset` and `collections` through REST and MCP. Partial exports cannot be imported with `strategy: "replace"`.
+- **Compression recovery** preserves searchable captures after optional model compression fails. `agentmemory compression` inspects failures and supports scoped retries; summary repair resumes after late capture and restart.
+
 ### Fixed
 
+- Saved-memory recall preserves project and agent scope, supports memory-only retrieval and retains recovery references when a token budget omits content. Graph retrieval uses bounded shared reads and keeps each observation's best score; optional reranking uses the model's actual paired-query scores.
+- Vector recovery retains unfinished work across checkpoints, provider failures and restarts. Redis state mutations serialize per key within a worker, and deletion keeps graph and facet indexes consistent.
+- Imports validate collection shapes and row keys before a replace operation deletes stored data. The import observation ceiling no longer changes with the ordinary capture limit.
+- Hooks capture final assistant replies and distinguish separate subagent, task and notification events. Structured redaction preserves identifiers and retained custom-event content remains searchable.
+- MCP keeps routine logs off stdout and reports when a write only reached its local fallback store. The viewer loads actions beyond the first page.
 - **JSONL import keeps real session times and no longer duplicates on re-import.** `parseJsonlText` took `startedAt`/`endedAt` from the first and last line even when it was a timestampless metadata entry (`last-prompt`, `cost-state`), so the session got the import time. It now uses only entries that carry a timestamp. Observation ids are derived from the entry `uuid` (or session id and line position when absent) instead of a random id, so importing the same transcript again overwrites the same rows, and `observationCount` counts only rows that were new. Rows imported by earlier versions keep their random ids, so the first re-import after upgrading adds one last copy.
 - **Session summaries cover the whole session again** (#745). 0.9.30 completed a session on the first per-turn Stop and ignored every later end, so summaries and graph extraction stopped at turn 1. `mem::observe` now reopens a completed session when new observations arrive, the Stop hook sends `final: false` so the session stays open, and an idle finalizer completes it once nothing has happened for `AGENTMEMORY_FINALIZE_IDLE_MS` (default 2 minutes). SessionEnd, the CLI and the OpenCode plugin send `final: true` and complete at once; a request without the flag behaves as before. The sweep summarizes a session before marking it abandoned (#737).
 - **The Devin plugin captures sessions.** A plugin install loaded `hooks/hooks.json`, whose capitalized Claude Code matchers never match Devin's tool names and whose extra events Devin rejects, so capture never fired. `plugin/hooks.json` now carries the six Devin hooks with lowercase matchers, and Devin loads it first. Verified on Devin CLI 3000.11.3: one session recorded session start, prompt, tool use and session end.
@@ -15,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
+- **Publishing verifies the exact gated tarballs.** The workflow checks SHA512 integrity and signed provenance against the source repository, workflow, ref and commit before accepting an existing version or completing publication. Conflicting artifacts fail instead of being skipped.
+- Shared agent skills now describe the current runtime, credential discovery, native integrations and capture limits. The README and translations link to current setup, storage and upgrade guidance.
 - The Devin plugin manifest adds a display name and logo, says it is for Devin CLI and Devin Desktop only, and runs `@agentmemory/mcp` at the release version instead of the latest one. `npm run docs:sync` moves that pin on each version bump.
 - `@agentmemory/mcp` pins the exact matching `@agentmemory/agentmemory` release instead of a `~` range, so an installed shim never resolves a newer runtime than the one it was published with.
 
@@ -273,6 +297,7 @@ Wave release closing several breaking regressions reported against v0.9.26, plus
 - `/agentmemory:forget` skill still calls `memory_governance_delete` which only touches `KV.memories` and never observations ([#833](https://github.com/rohitg00/agentmemory/issues/833)). Skill rewrite + new `memory_forget` MCP tool tracked separately.
 - `crypto.randomUUID()` global-only on Node <19 ([#715](https://github.com/rohitg00/agentmemory/issues/715)). Drop-in import fix tracked.
 
+[0.9.31]: https://github.com/rohitg00/agentmemory/compare/v0.9.30...v0.9.31
 [0.9.30]: https://github.com/rohitg00/agentmemory/compare/v0.9.29...v0.9.30
 [0.9.29]: https://github.com/rohitg00/agentmemory/compare/v0.9.28...v0.9.29
 [0.9.28]: https://github.com/rohitg00/agentmemory/compare/v0.9.27...v0.9.28

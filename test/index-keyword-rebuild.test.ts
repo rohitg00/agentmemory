@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   backfillVectors,
   getPendingVectorBackfillCount,
@@ -183,25 +183,176 @@ describe("rebuildKeywordIndex", () => {
   });
 
   it("keeps the vector index untouched and reports an incomplete rebuild when the sessions listing fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      const vector = new VectorIndex();
+      vector.add("obs_0", "ses_0", new Float32Array([0.1, 0.2, 0.3]));
+      setVectorIndex(vector);
+      setEmbeddingProvider(stubProvider());
+      const failingKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:sessions") throw new Error("engine unreachable");
+          return kv.list<T>(scope);
+        },
+      };
+
+      const promise = rebuildKeywordIndex(failingKv as never, null);
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await promise;
+
+      expect(result.vectorJobs).toEqual([]);
+      expect(vector.size).toBe(1);
+      expect(vector.has("obs_0")).toBe(true);
+      expect(isBm25RebuildIncomplete()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("retries the listings while the state worker finishes registering", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      const total = seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let failures = 4;
+      const flakyKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:sessions" && failures > 0) {
+            failures--;
+            throw new Error("function_not_found: Function state::list not found in namespace agentmemory-3111.");
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const promise = rebuildKeywordIndex(flakyKv as never);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const result = await promise;
+
+      expect(failures).toBe(0);
+      expect(result.documents).toBeGreaterThanOrEqual(total);
+      expect(getSearchIndex().size).toBe(result.documents);
+      expect(isBm25RebuildIncomplete()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("flags the rebuild incomplete when the memories listing never succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let failures = 0;
+      const failingKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:memories") {
+            failures++;
+            throw new Error("function_not_found: Function state::list not found in namespace agentmemory-3111.");
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const promise = rebuildKeywordIndex(failingKv as never);
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await promise;
+
+      expect(failures).toBe(7);
+      expect(result.documents).toBeGreaterThan(0);
+      expect(isBm25RebuildIncomplete()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("retries a connection reset while the state worker reconnects", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      const total = seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let failures = 1;
+      const flakyKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:memories" && failures > 0) {
+            failures--;
+            throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const promise = rebuildKeywordIndex(flakyKv as never);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
+
+      expect(failures).toBe(0);
+      expect(result.documents).toBeGreaterThanOrEqual(total);
+      expect(isBm25RebuildIncomplete()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("shares one retry budget between the memories and sessions listings", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let sessionCalls = 0;
+      const failingKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:sessions") sessionCalls++;
+          if (scope === "mem:memories" || scope === "mem:sessions") {
+            throw new Error("function_not_found: Function state::list not found in namespace agentmemory-3111.");
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const started = performance.now();
+      let finishedAt = 0;
+      const promise = rebuildKeywordIndex(failingKv as never).then((result) => {
+        finishedAt = performance.now();
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(200_000);
+      await promise;
+
+      expect(finishedAt - started).toBeLessThanOrEqual(70_000);
+      expect(sessionCalls).toBe(4);
+      expect(isBm25RebuildIncomplete()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("does not hold boot retrying an error that waiting cannot fix", async () => {
     const kv = mockKV();
     seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
-    const vector = new VectorIndex();
-    vector.add("obs_0", "ses_0", new Float32Array([0.1, 0.2, 0.3]));
-    setVectorIndex(vector);
-    setEmbeddingProvider(stubProvider());
+    let failures = 0;
     const failingKv = {
       ...kv,
       list: async <T>(scope: string): Promise<T[]> => {
-        if (scope === "mem:sessions") throw new Error("engine unreachable");
+        if (scope === "mem:memories") {
+          failures++;
+          throw new Error("frame too large");
+        }
         return kv.list<T>(scope);
       },
     };
 
-    const result = await rebuildKeywordIndex(failingKv as never, null);
+    const result = await rebuildKeywordIndex(failingKv as never);
 
-    expect(result.vectorJobs).toEqual([]);
-    expect(vector.size).toBe(1);
-    expect(vector.has("obs_0")).toBe(true);
+    expect(failures).toBe(1);
+    expect(result.documents).toBeGreaterThan(0);
     expect(isBm25RebuildIncomplete()).toBe(true);
   }, 10_000);
 
