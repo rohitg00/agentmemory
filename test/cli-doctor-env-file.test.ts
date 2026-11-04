@@ -17,9 +17,9 @@ afterEach(() => {
   rmSync(home, { recursive: true, force: true });
 });
 
-function doctorDryRun(extraEnv: Record<string, string>): Promise<string> {
+function doctorDryRun(extraEnv: Record<string, string>, args: string[] = ["--dry-run"]): Promise<string> {
   return new Promise((done, reject) => {
-    const child = spawn(process.execPath, [resolve("dist/cli.mjs"), "doctor", "--dry-run"], {
+    const child = spawn(process.execPath, [resolve("dist/cli.mjs"), "doctor", ...args], {
       env: {
         PATH: process.env.PATH,
         HOME: home,
@@ -46,6 +46,14 @@ it("reads provider keys from AGENTMEMORY_ENV_FILE, the file the daemon loads", a
   expect(output).toContain("Dry-run complete");
   expect(output).not.toContain("[env-missing]");
   expect(output).not.toContain("[no-llm-provider-key]");
+});
+
+it("never shows the Fix/Skip prompt when CI is set", async () => {
+  rmSync(join(home, ".agentmemory", ".env"));
+  const output = await doctorDryRun({}, []);
+  expect(output).toContain("env-missing");
+  expect(output).not.toContain("Fix");
+  expect(output).toContain("agentmemory doctor --all");
 });
 
 it("reports no provider key when only the default env file is read", async () => {

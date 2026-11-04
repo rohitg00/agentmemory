@@ -10,6 +10,7 @@ import { III_PINNED_VERSION } from "../src/version.js";
 import {
   buildDiagnostics,
   canAutoFix,
+  doctorPromptsAllowed,
   DIAGNOSTIC_IDS,
   dryRunPlan,
   parseEnvFile,
@@ -506,5 +507,15 @@ describe("realProviderKeys / placeholderProviderKeys", () => {
     expect(placeholderProviderKeys({ ANTHROPIC_API_KEY: "xxxx-xxxx" })).toEqual([
       "ANTHROPIC_API_KEY",
     ]);
+  });
+});
+
+describe("doctor prompts", () => {
+  it("prompts only in an interactive terminal without CI", () => {
+    expect(doctorPromptsAllowed({}, true, true)).toBe(true);
+    expect(doctorPromptsAllowed({ CI: "1" }, true, true)).toBe(false);
+    expect(doctorPromptsAllowed({}, false, true)).toBe(false);
+    expect(doctorPromptsAllowed({}, true, false)).toBe(false);
+    expect(doctorPromptsAllowed({}, undefined, undefined)).toBe(false);
   });
 });

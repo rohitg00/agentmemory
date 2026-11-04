@@ -66,6 +66,14 @@ export function canAutoFix(d: Diagnostic, status?: DiagnosticStatus): boolean {
   return !d.manualOnly && !status?.manualFix;
 }
 
+export function doctorPromptsAllowed(
+  env: NodeJS.ProcessEnv,
+  stdinIsTTY: boolean | undefined,
+  stdoutIsTTY: boolean | undefined,
+): boolean {
+  return Boolean(stdinIsTTY) && Boolean(stdoutIsTTY) && !env["CI"];
+}
+
 // Diagnostic ids are stable for testing and machine-readable doctor output.
 export const DIAGNOSTIC_IDS = [
   "env-missing",

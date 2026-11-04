@@ -41,6 +41,7 @@ import { generateId } from "./state/schema.js";
 import {
   buildDiagnostics,
   canAutoFix,
+  doctorPromptsAllowed,
   dryRunPlan,
   parseEnvFile,
   type Diagnostic,
@@ -2366,6 +2367,8 @@ async function runDoctor() {
   let fixed = 0;
   let skipped = 0;
   let quit = false;
+  const promptsAllowed = doctorPromptsAllowed(process.env, process.stdin.isTTY, process.stdout.isTTY);
+  let autoFixHintShown = false;
 
   for (const d of diagnostics) {
     if (quit) {
@@ -2394,6 +2397,15 @@ async function runDoctor() {
       // Re-check only this diagnostic.
       const after = await d.check(ctx);
       if (!after.ok) p.log.warn(`${d.id} still failing after fix.`);
+      continue;
+    }
+
+    if (!promptsAllowed) {
+      skipped++;
+      if (!autoFixHintShown) {
+        autoFixHintShown = true;
+        p.log.info("Not prompting in a non-interactive shell. Run `agentmemory doctor --all` to apply the fixes.");
+      }
       continue;
     }
 
