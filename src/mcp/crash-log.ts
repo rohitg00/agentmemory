@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, chmodSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { redactCredentialUrls } from "../cli/engine-launch.js";
@@ -15,11 +15,21 @@ export function formatFatal(kind: string, reason: unknown, now: Date = new Date(
 export function reportFatal(kind: string, reason: unknown, logPath: string = mcpCrashLogPath()): string {
   const line = formatFatal(kind, reason);
   try {
-    process.stderr.write(`[@agentmemory/mcp] fatal ${line}[@agentmemory/mcp] crash log: ${logPath}\n`);
+    process.stderr.write(`[@agentmemory/mcp] fatal ${line}`);
   } catch {}
   try {
-    mkdirSync(dirname(logPath), { recursive: true });
-    appendFileSync(logPath, line);
+    mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
+    appendFileSync(logPath, line, { mode: 0o600 });
+    chmodSync(logPath, 0o600);
+  } catch (err) {
+    try {
+      const detail = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[@agentmemory/mcp] crash log not written to ${logPath}: ${detail}\n`);
+    } catch {}
+    return line;
+  }
+  try {
+    process.stderr.write(`[@agentmemory/mcp] crash log: ${logPath}\n`);
   } catch {}
   return line;
 }
