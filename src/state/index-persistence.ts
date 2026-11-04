@@ -23,7 +23,6 @@ const BACKFILL_MARKER_KEY = "vectors:backfill";
 const MEMORY_ID_PREFIX = "mem_";
 const LEGACY_SHARD_SCOPE_PREFIXES = [`${KV.bm25Index}:bm25:`, `${KV.bm25Index}:vectors:`];
 const LEGACY_SHARD_KEY = "data";
-// Both generation formats sharded saves ever wrote: `<base36>-<32 hex>`, then generateId("idx").
 const LEGACY_SHARD_SUFFIX = /^((?:[0-9a-z]+-[0-9a-f]{32})|(?:idx_[0-9a-z]+_[0-9a-f]{12})):\d{5}$/;
 const ORPHAN_SWEEP_KEY = "legacy:sweep";
 
@@ -164,7 +163,6 @@ function isValidShardDescriptor(
   );
 }
 
-// undefined: not a legacy shard scope. null: under a legacy prefix but not a shape any save wrote.
 function legacyShardGeneration(scope: string): string | null | undefined {
   const prefix = LEGACY_SHARD_SCOPE_PREFIXES.find((candidate) => scope.startsWith(candidate));
   if (!prefix) return undefined;
@@ -877,8 +875,6 @@ export class IndexPersistence {
     await this.sweepOrphanedGenerations();
   }
 
-  // Legacy cleanup deletes only shards a manifest still names. A generation stranded before the
-  // upgrade (#1115) is named by none, so it is found by listing scopes. Any doubt deletes nothing.
   private async sweepOrphanedGenerations(): Promise<void> {
     try {
       if ((await this.kv.get(KV.bm25Index, ORPHAN_SWEEP_KEY)) != null) return;
