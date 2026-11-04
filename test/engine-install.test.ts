@@ -384,6 +384,28 @@ describe("iii engine Windows zip installer", () => {
     expect(result.stdout).toBe("done");
   });
 
+  it("returns an extract failure instead of throwing when an extractor throws", async () => {
+    const binDir = join(sandbox(), "bin");
+    const outcome = await installIiiZip(zipOpts(binDir, {
+      run: () => {
+        throw new Error("EPERM: staging denied");
+      },
+    }));
+    expect(outcome.ok === false && outcome.reason).toBe("extract");
+    expect(outcome.ok === false && outcome.detail).toContain("EPERM: staging denied");
+    expect(leftoverArchives(binDir)).toEqual([]);
+  });
+
+  it("kills a running install command when the CLI exits", async () => {
+    const before = process.listenerCount("exit");
+    const pending = runInstallCommand(process.execPath, ["-e", "setTimeout(() => {}, 5000)"]);
+    expect(process.listenerCount("exit")).toBe(before + 1);
+    process.listeners("exit").at(-1)?.call(process, 0);
+    const result = await pending;
+    expect(result.status === 0).toBe(false);
+    expect(process.listenerCount("exit")).toBe(before);
+  });
+
   it("removes stale archives and staging folders from earlier failed installs", () => {
     const binDir = join(sandbox(), "bin");
     mkdirSync(join(binDir, ".iii-staging-1-old"), { recursive: true });

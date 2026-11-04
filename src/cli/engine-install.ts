@@ -265,6 +265,12 @@ export function runInstallCommand(command: string, args: string[]): Promise<ZipR
     let stderr = "";
     let timedOut = false;
     const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: false });
+    const killOnExit = () => {
+      try {
+        child.kill();
+      } catch {}
+    };
+    process.once("exit", killOnExit);
     const timer = setTimeout(() => {
       timedOut = true;
       child.kill();
@@ -273,10 +279,12 @@ export function runInstallCommand(command: string, args: string[]): Promise<ZipR
     child.stderr?.on("data", (chunk) => { stderr += chunk; });
     child.on("error", (error: Error & { code?: string }) => {
       clearTimeout(timer);
+      process.off("exit", killOnExit);
       done({ status: null, stdout, stderr, error });
     });
     child.on("close", (status, signal) => {
       clearTimeout(timer);
+      process.off("exit", killOnExit);
       if (timedOut) {
         done({ status: null, stdout, stderr, signal, error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }) });
         return;
@@ -353,6 +361,9 @@ export async function installIiiZip(opts: {
       }
       failures.push(`${step.command}: ${result.status === 0 ? `finished but ${basename(opts.binPath)} is missing from the archive` : describeInstallFailure(result)}`);
     }
+    return { ok: false, reason: "extract", detail: failures.join("; ") };
+  } catch (err) {
+    failures.push(err instanceof Error ? err.message : String(err));
     return { ok: false, reason: "extract", detail: failures.join("; ") };
   } finally {
     removeQuietly(staging);
