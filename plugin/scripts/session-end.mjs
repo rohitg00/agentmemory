@@ -2,7 +2,7 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
-import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
+import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, transportBlocked, withEventId } from "./_capture.mjs";
 //#region src/hooks/_capture-filter.ts
 function truncateText(value, max) {
 	if (value.length <= max) return value;
@@ -144,6 +144,10 @@ async function main() {
 			index,
 			prompt
 		}, { stable: true }), 3e3)));
+	}
+	if (transportBlocked()) {
+		setTimeout(() => process.exit(0), 1500).unref();
+		return;
 	}
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",

@@ -27,6 +27,7 @@ describe("OpenAI embedding key precedence", () => {
     for (const k of KEYS) delete process.env[k];
     process.env["HOME"] = tmpHome;
     process.env["USERPROFILE"] = tmpHome;
+    process.env["EMBEDDING_PROVIDER"] = "openai";
     vi.resetModules();
   });
 

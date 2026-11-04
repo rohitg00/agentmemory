@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,300+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -866,6 +866,8 @@ Fused with Reciprocal Rank Fusion (RRF, k=60) and session-diversified (max 3 res
 
 When a vector index is populated, `mem::search` (behind `memory_recall`) uses the hybrid BM25 + vector ranker. Without embeddings it uses BM25. `smart-search` can additionally fuse structural graph matches when graph data exists, including in keyless mode. Lesson recall runs on a dedicated in-memory BM25 index instead of scanning the whole corpus per query. Superseded memory versions are excluded from every recall path; the version chain keeps their history.
 
+Filtered `memory_recall` expands its ranked candidate window until it fills the requested result limit, exhausts the candidate source, or reaches 1,000 candidates. This bound limits work for queries with many unrelated matches. Results can contain fewer items when qualifying records rank below that budget.
+
 Vectors survive a crash or force-kill. The vector index is saved in buckets at most every `AGENTMEMORY_INDEX_SAVE_INTERVAL_MS` (10 minutes). Every vector added or removed in between is also written right away to a small pending log in the state store, and the next start replays it without calling the embedding provider. Each successful save empties the log. For older documents without vectors, `AGENTMEMORY_VECTOR_BACKFILL=all` opts into a bounded backfill at startup, capped by `AGENTMEMORY_VECTOR_BACKFILL_MAX` (500). Keep the opt-in set across restarts to process more documents. See [source and vector recovery](docs/reliability/source-and-vector-recovery.md). `/agentmemory/status` and the viewer show the pending log size and the backfill state. Keyless installs write nothing.
 
 BM25 tokenizes Greek, Cyrillic, Hebrew, Arabic, and accented Latin out of the box. For Chinese / Japanese / Korean memories, install the optional segmenters (`npm install @node-rs/jieba tiny-segmenter`) to split CJK runs into word-level tokens; without them, agentmemory soft-falls to whole-run tokenization and prints a one-time hint on stderr.
@@ -878,7 +880,7 @@ Keyless installs disable vector embeddings: `mem::search` uses BM25, while `smar
 EMBEDDING_PROVIDER=local
 ```
 
-The normal npm install includes the optional `@huggingface/transformers` runtime. The first embedding request downloads `Xenova/all-MiniLM-L6-v2`, so it needs network access and can take longer; subsequent inference runs on-device. Remote providers are auto-detected from their keys unless `EMBEDDING_PROVIDER` overrides them.
+The normal npm install includes the optional `@huggingface/transformers` runtime. The first embedding request downloads `Xenova/all-MiniLM-L6-v2`, so it needs network access and can take longer; subsequent inference runs on-device. Remote embedding providers run only when `EMBEDDING_PROVIDER` names one of them (`gemini`, `openai`, `voyage`, `cohere`, `openrouter`) and its key is set. A key on its own never turns on remote embeddings.
 
 | Provider | Model | Cost | Notes |
 |---|---|---|---|
@@ -1056,17 +1058,17 @@ The viewer server binds to `127.0.0.1` by default and attaches the server secret
 
 ### LLM Providers
 
-agentmemory auto-detects providers from your environment. A provider makes LLM-backed operations available, but provider configuration alone does not enable LLM-written observation compression. That path requires both a provider and `AGENTMEMORY_AUTO_COMPRESS=true`.
+agentmemory sends session content to an LLM only after you select a provider with `AGENTMEMORY_LLM_PROVIDER`, or turn on the Claude Agent SDK fallback with `AGENTMEMORY_ALLOW_AGENT_SDK=true`. A key that exists in your environment for another tool is never enough. A selected provider makes LLM-backed operations available (session summaries, consolidation, reflection), but it does not enable LLM-written observation compression on its own. That path also requires `AGENTMEMORY_AUTO_COMPRESS=true`.
 
 | Provider | Config | Notes |
 |----------|--------|-------|
 | **No-op (default)** | No config needed | LLM-backed compress/summarize is disabled. Synthetic compression and BM25 recall still work. See `AGENTMEMORY_ALLOW_AGENT_SDK` below if you used to rely on the Claude-subscription fallback. |
-| Anthropic API | `ANTHROPIC_API_KEY` | Per-token billing |
-| MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
-| Gemini | `GEMINI_API_KEY` | Also enables embeddings |
-| OpenRouter | `OPENROUTER_API_KEY` | Any model |
-| OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
-| **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
+| Anthropic API | `AGENTMEMORY_LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY` | Per-token billing |
+| MiniMax | `AGENTMEMORY_LLM_PROVIDER=minimax` + `MINIMAX_API_KEY` | Anthropic-compatible |
+| Gemini | `AGENTMEMORY_LLM_PROVIDER=gemini` + `GEMINI_API_KEY` | Gemini embeddings need `EMBEDDING_PROVIDER=gemini` as well |
+| OpenRouter | `AGENTMEMORY_LLM_PROVIDER=openrouter` + `OPENROUTER_API_KEY` | Any model |
+| OpenAI API | `AGENTMEMORY_LLM_PROVIDER=openai` + `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
+| **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `AGENTMEMORY_LLM_PROVIDER=openai` + `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions; it used to cause unbounded Stop-hook recursion, so it is no longer the default. |
 
 ### Local models (Ollama / LM Studio / vLLM)
@@ -1082,6 +1084,7 @@ ollama serve
 
 ```env
 # ~/.agentmemory/.env
+AGENTMEMORY_LLM_PROVIDER=openai
 OPENAI_API_KEY=ollama                          # any non-empty string; Ollama ignores it
 OPENAI_BASE_URL=http://localhost:11434/v1
 OPENAI_MODEL=qwen3:8b
@@ -1093,6 +1096,7 @@ Open LM Studio → Local Server tab → Start Server. Pick any chat model from t
 
 ```env
 # ~/.agentmemory/.env
+AGENTMEMORY_LLM_PROVIDER=openai
 OPENAI_API_KEY=lmstudio                        # any non-empty string; LM Studio ignores it
 OPENAI_BASE_URL=http://localhost:1234/v1
 OPENAI_MODEL=qwen3-8b                          # match the model name from LM Studio
@@ -1165,7 +1169,7 @@ The default file store needs no separate database service. Redis is optional wit
 
 ### Config File
 
-Put agentmemory runtime configuration in `~/.agentmemory/.env` instead of exporting variables in every shell. If the viewer shows a setup hint like `export ANTHROPIC_API_KEY=...`, copy it into this file as `ANTHROPIC_API_KEY=...` without the `export` prefix, then restart agentmemory. Set `AGENTMEMORY_ENV_FILE` to use another env-file path.
+Put agentmemory runtime configuration in `~/.agentmemory/.env` instead of exporting variables in every shell. If the viewer shows a setup hint like `export ANTHROPIC_API_KEY=...`, copy it into this file as `ANTHROPIC_API_KEY=...` without the `export` prefix, add `AGENTMEMORY_LLM_PROVIDER=anthropic` to select it, then restart agentmemory. Set `AGENTMEMORY_ENV_FILE` to use another env-file path.
 
 Process environment variables take precedence over values in the file. Restart the server after changing its configuration.
 
@@ -1185,7 +1189,7 @@ AGENTMEMORY_AUTO_COMPRESS=true
 
 LLM-written observation compression requires both lines: access to an LLM provider (including this explicit subscription fallback) and `AGENTMEMORY_AUTO_COMPRESS=true`. A provider by itself leaves the default synthetic compression path in place.
 
-Consolidation (graph nodes, lessons, crystals) is on by default whenever an LLM provider is configured. Explicitly opt out with `CONSOLIDATION_ENABLED=false` if you want LLM-free operation. Graph extraction is a separate flag:
+Consolidation (graph nodes, lessons, crystals) is on by default whenever an LLM provider is selected with `AGENTMEMORY_LLM_PROVIDER`, or the Agent SDK fallback is on with `AGENTMEMORY_ALLOW_AGENT_SDK=true`. Explicitly opt out with `CONSOLIDATION_ENABLED=false` if you want LLM-free operation. Graph extraction is a separate flag:
 
 ```env
 GRAPH_EXTRACTION_ENABLED=true
@@ -1203,7 +1207,11 @@ EMBEDDING_PROVIDER=local
 # Optional automatic context injection through the shared hooks
 # AGENTMEMORY_INJECT_CONTEXT=true
 
-# Optional LLM-written compression; also requires a configured provider
+# Optional outside LLM for summaries and consolidation. A key alone does nothing;
+# this line selects the provider whose key agentmemory may use.
+# AGENTMEMORY_LLM_PROVIDER=anthropic
+
+# Optional LLM-written compression; also requires AGENTMEMORY_LLM_PROVIDER
 # AGENTMEMORY_AUTO_COMPRESS=true
 
 # Show 8 essential MCP tools instead of the default 54
@@ -1307,7 +1315,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,300+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

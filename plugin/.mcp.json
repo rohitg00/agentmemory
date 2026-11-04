@@ -2,7 +2,11 @@
   "mcpServers": {
     "agentmemory": {
       "command": "node",
-      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bridge.mjs"]
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bridge.mjs"],
+      "env": {
+        "AGENTMEMORY_URL": "${user_config.agentmemory_url}",
+        "AGENTMEMORY_SECRET": "${user_config.agentmemory_secret}"
+      }
     }
   }
 }
