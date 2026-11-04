@@ -2,9 +2,9 @@ import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { RawObservation, CompressedObservation, HookPayload, Origin, Session } from "../types.js";
 
 const TOOL_HOOKS = new Set(["pre_tool_use", "post_tool_use", "post_tool_failure"]);
-import { KV, STREAM, generateId } from "../state/schema.js";
+import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
-import { trackViewerStreamItem, pruneViewerStreamIfDue } from "../state/viewer-stream.js";
+import { emitLiveEvent } from "../viewer/live-events.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { indexObservationSession } from "../state/obs-index.js";
 import { scrubRecord } from "./privacy.js";
@@ -20,6 +20,7 @@ import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { budgetLiveObservationSource } from "./observation-source-budget.js";
+import { observationEmbedText } from "../state/memory-utils.js";
 import { markCompressionDispatchFailed, pendingCompression } from "./compression-state.js";
 import { requestSummaryRefresh } from "./summary-state.js";
 import { scheduleSessionFinalize } from "./session-finalize.js";
@@ -56,7 +57,7 @@ export async function restoreIndexEntries(obs: CompressedObservation): Promise<v
   }
   const vectors = getVectorIndex();
   if (vectors && !vectors.has(obs.id)) {
-    await vectorIndexAddGuarded(obs.id, obs.sessionId, obs.title + " " + (obs.narrative || ""), {
+    await vectorIndexAddGuarded(obs.id, obs.sessionId, observationEmbedText(obs), {
       kind: "synthetic",
       logId: obs.id,
     });
@@ -293,16 +294,10 @@ export function registerObserveFunction(
         }
         if (livePrompt) await recordLivePrompt(kv, payload.sessionId, livePrompt, promptRef);
 
-        await sdk.trigger({
-          function_id: "stream::send",
-          payload: {
-            stream_name: STREAM.name,
-            group_id: STREAM.viewerGroup,
-            id: `raw-${obsId}`,
-            type: "raw_observation",
-            data: { type: "raw", observation: raw, sessionId: payload.sessionId },
-          },
-          action: TriggerAction.Void(),
+        emitLiveEvent({
+          id: `raw-${obsId}`,
+          type: "raw_observation",
+          data: { type: "raw", observation: raw, sessionId: payload.sessionId },
         });
 
         const session = existingSession;
@@ -380,24 +375,18 @@ export function registerObserveFunction(
         await vectorIndexAddGuarded(
           synthetic.id,
           synthetic.sessionId,
-          synthetic.title + " " + (synthetic.narrative || ""),
+          observationEmbedText(synthetic),
           { kind: "synthetic", logId: synthetic.id },
         );
-        await sdk.trigger({
-          function_id: "stream::set",
-          payload: {
-            stream_name: STREAM.name,
-            group_id: STREAM.viewerGroup,
-            item_id: obsId,
-            data: {
-              type: "compressed",
-              observation: withoutObservationSource(synthetic),
-              sessionId: payload.sessionId,
-            },
+        emitLiveEvent({
+          id: `compressed-${obsId}`,
+          type: "compressed_observation",
+          data: {
+            type: "compressed",
+            observation: withoutObservationSource(synthetic),
+            sessionId: payload.sessionId,
           },
         });
-        trackViewerStreamItem(obsId);
-        void pruneViewerStreamIfDue(sdk).catch(() => {});
 
         if (autoCompress) {
           afterKeyedLock(`obs:${payload.sessionId}`, async () => {

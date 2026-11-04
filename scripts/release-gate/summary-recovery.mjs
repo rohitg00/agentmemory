@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { appendFileSync, chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import http from "node:http";
@@ -41,6 +41,7 @@ const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("he
 let port, modelPort, modelServer, secret, installed, packageBefore, boot = 0;
 let heldCompression = null, failSummary = false, phase = "setup";
 const markers = { BASE: "RECOVERED_BASE_COBALT", FINAL: "RECOVERED_FINAL_JUNIPER", LATE: "RECOVERED_LATE_QUARTZ" };
+const truncation = { session: "truncated-reasoning-session", accepted: "TRUNCATION_ACCEPTED_SAGE", marker: "TRUNCATED_REASONING_ONYX" };
 function log(message) {
   const line = `[${((Date.now() - began) / 1000).toFixed(1)}s] ${message}`;
   console.log(line); appendFileSync(join(out, "gate.log"), `${line}\n`);
@@ -61,11 +62,11 @@ function cleanEnv() {
     HOME: home, USERPROFILE: home, PATH: [dirname(process.execPath), "/usr/bin", "/bin", "/usr/sbin", "/sbin"].join(delimiter),
     TMPDIR: tmpdir(), CI: "1", NO_COLOR: "1", LANG: "C.UTF-8", III_TELEMETRY_ENABLED: "false",
     AGENTMEMORY_DATA_DIR: dataDir, AGENTMEMORY_RUNTIME_DIR: runtime,
-    III_REST_PORT: String(port), III_STREAM_PORT: String(port + 1), III_VIEWER_PORT: String(port + 2),
+    III_REST_PORT: String(port), III_VIEWER_PORT: String(port + 2),
     III_ENGINE_PORT: String(port + 46023), AGENTMEMORY_METRICS_PORT: String(port + 6353), AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
     EMBEDDING_PROVIDER: "none", AGENTMEMORY_AUTO_COMPRESS: "true", AGENTMEMORY_FINALIZE_IDLE_MS: "0",
     AGENTMEMORY_SESSION_SWEEP_ENABLED: "false", GRAPH_EXTRACTION_ENABLED: "false", CONSOLIDATION_ENABLED: "false", AGENTMEMORY_REFLECT: "false",
-    OPENAI_API_KEY: "summary-gate-synthetic-key", OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}`,
+    AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "summary-gate-synthetic-key", OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}`,
     OPENAI_MODEL: "summary-recovery-fixture", OPENAI_TIMEOUT_MS: "60000",
   };
 }
@@ -155,7 +156,19 @@ async function startModel() {
       const item = { phase, boot, operation: compress ? "compression" : "summary", prompt };
       modelRequests.push(item);
       let content;
-      if (compress) {
+      const truncatedCompression = compress && prompt.includes("GATE_INPUT_TRUNCATED");
+      if (truncatedCompression || (summarize && phase === "truncated-reasoning-is-rejected")) {
+        const partial = compress
+          ? `Draft: <observation><type>decision</type><title>${truncation.marker}</title><facts><fact>${truncation.marker}</fact></facts><narrative>The draft names ${truncation.marker} before the budget ran out.</narrative><concepts><concept>truncation</concept></concepts><files><file>fixture.txt</file></files><importance>8</importance></observation>`
+          : `Draft: <summary><title>${truncation.marker}</title><narrative>The draft names ${truncation.marker} before the budget ran out.</narrative><decisions><decision>${truncation.marker}</decision></decisions><files><file>fixture.txt</file></files><concepts><concept>truncation</concept></concepts></summary>`;
+        item.outcome = "truncated-reasoning"; item.response = partial;
+        response.writeHead(200, { "content-type": "application/json" });
+        response.end(JSON.stringify({ choices: [{ finish_reason: "length", message: { role: "assistant", content: null, reasoning: partial } }] }));
+        return;
+      }
+      if (compress && prompt.includes("GATE_INPUT_ACCEPTED")) {
+        content = `<observation><type>decision</type><title>${truncation.accepted}</title><facts><fact>The verified result is ${truncation.accepted}.</fact></facts><narrative>The local fixture completed processing and verified ${truncation.accepted}.</narrative><concepts><concept>truncation</concept></concepts><files><file>fixture.txt</file></files><importance>8</importance></observation>`;
+      } else if (compress) {
         const token = prompt.match(/GATE_INPUT_(BASE|FINAL|LATE)\b/)?.[1];
         assert(token, "Compression request lost the retained raw fixture");
         item.token = token;
@@ -199,6 +212,17 @@ function rememberPids() {
       if (Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid) ownedPids.add(pid);
     } catch {}
   }
+  // Process loss takes the whole runtime: Compose, engine and workers. Killing only the
+  // recorded pids left the daemon ports open on macOS CI, so collect the tree explicitly.
+  try {
+    const state = JSON.parse(readFileSync(join(runtime, "engine-state.json"), "utf8"));
+    for (const pid of [state.composePid, state.enginePid]) if (Number.isSafeInteger(pid) && pid > 1 && pid !== process.pid) ownedPids.add(pid);
+  } catch {}
+  try {
+    const rows = execFileSync("ps", ["-eo", "pid=,ppid="], { encoding: "utf8" }).split(/\r?\n/).map((row) => row.trim().split(/\s+/).map(Number)).filter((row) => row.length === 2 && row.every(Number.isFinite));
+    let changed = true;
+    while (changed) { changed = false; for (const [child, parent] of rows) if (ownedPids.has(parent) && !ownedPids.has(child) && child !== process.pid) { ownedPids.add(child); changed = true; } }
+  } catch {}
 }
 async function startDaemon() {
   boot++;
@@ -221,14 +245,14 @@ async function crashDaemon() {
   await poll("crashed daemon ports closed", async () => (await Promise.all(daemonPorts().map(portFree))).every(Boolean), 15_000);
   modelServer.closeAllConnections(); ownedPids.clear(); log(`Native CLI boot ${boot} terminated`);
 }
-function event(token) {
-  return { hookType: "post_tool_use", sessionId, project, cwd: root, timestamp: new Date().toISOString(), eventId: `summary-gate-${token.toLowerCase()}`, data: { tool_name: "Bash", tool_input: { command: `printf GATE_INPUT_${token}` }, tool_response: `GATE_INPUT_${token}: tool completed` } };
+function event(token, session = sessionId) {
+  return { hookType: "post_tool_use", sessionId: session, project, cwd: root, timestamp: new Date().toISOString(), eventId: `summary-gate-${token.toLowerCase()}`, data: { tool_name: "Bash", tool_input: { command: `printf GATE_INPUT_${token}` }, tool_response: `GATE_INPUT_${token}: tool completed` } };
 }
 async function snapshot(name) {
   const data = await rest("/export", undefined, { record: false });
   writeFileSync(join(out, `${name}.json`), JSON.stringify(data, null, 2) + "\n"); return data;
 }
-const observations = (data) => data.observations?.[sessionId] ?? [];
+const observations = (data, session = sessionId) => data.observations?.[session] ?? [];
 const summaryFor = (data) => data.summaries?.find((summary) => summary.sessionId === sessionId);
 async function waitSummary(expected) {
   return poll(`summary contains ${expected.join(", ")}`, async () => {
@@ -293,6 +317,27 @@ async function main() {
     assert.equal(wire.filter((entry) => entry.path === "/summarize").length, 1, "Only the initial baseline may explicitly summarize");
     assert(!wire.some((entry) => /retry|repair/.test(entry.path)), "Recovery must use the autonomous runtime path");
     assert(!modelRequests.some((entry) => entry.error), "The fixture rejected an unexpected model request");
+  });
+  await scenario("truncated-reasoning-is-rejected", async () => {
+    const session = truncation.session;
+    const exported = () => rest("/export", undefined, { record: false });
+    await rest("/session/start", { sessionId: session, project, cwd: root });
+    await rest("/observe", event("ACCEPTED", session));
+    await poll("accepted compression", async () => observations(await exported(), session).some((row) => row.title === truncation.accepted && row.compression?.status === "complete"));
+    const summary = await rest("/summarize", { sessionId: session });
+    assert.equal(summary.success, false, "A summary reply cut at max_tokens must not succeed");
+    assert.match(summary.error, /max_tokens/);
+    await rest("/observe", event("TRUNCATED", session));
+    const failed = await poll("truncated compression rejected", async () => {
+      const row = observations(await exported(), session).find((item) => JSON.stringify(item.source ?? "").includes("GATE_INPUT_TRUNCATED"));
+      return row?.compression?.status === "failed" ? row : false;
+    });
+    assert.equal(failed.compression.error, "compression_failed");
+    const truncatedCalls = modelRequests.filter((request) => request.phase === phase && request.outcome === "truncated-reasoning");
+    assert(truncatedCalls.some((request) => request.operation === "summary"), "The summary request must reach the truncating fixture");
+    assert(truncatedCalls.some((request) => request.operation === "compression"), "The compression request must reach the truncating fixture");
+    const after = await snapshot("after-truncated-reasoning");
+    assert(!JSON.stringify(after).includes(truncation.marker), "Truncated reasoning must never be stored as model output");
   });
   await scenario("installed-package-unchanged", async () => {
     assert.deepEqual(packageManifest(), packageBefore); assert.equal(sha(artifact.tarball), artifact.tarballSha256);

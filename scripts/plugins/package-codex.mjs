@@ -6,7 +6,8 @@ import { createHash } from "node:crypto";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const plugin = join(root, "plugin");
-const output = join(root, "dist/plugins");
+// Tests package into a private directory so they never clobber dist/plugins mid-run.
+const output = process.env.AGENTMEMORY_PLUGIN_OUT_DIR ? resolve(process.env.AGENTMEMORY_PLUGIN_OUT_DIR) : join(root, "dist/plugins");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 const sourceManifest = JSON.parse(readFileSync(join(plugin, ".codex-plugin/plugin.json"), "utf8"));
 if (sourceManifest.version !== pkg.version) throw new Error("Plugin and runtime versions must match before packaging.");

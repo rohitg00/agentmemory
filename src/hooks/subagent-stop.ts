@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
 import { captureObservation, isDrainChild, runDrainChild, stripPrivateData, withEventId } from "./_capture.js";
 
@@ -32,7 +33,7 @@ async function main() {
   const agentId = data.agent_id || data.agentId || data.agentName;
   const agentType = data.agent_type || data.agentType || data.agentDisplayName || data.agentName;
   const reply = data.last_assistant_message ?? data.response;
-  const lastMsg = typeof reply === "string" ? stripPrivateData(reply).slice(0, 4000) : "";
+  const lastMsg = typeof reply === "string" ? truncateText(stripPrivateData(reply), 4000) : "";
 
   const cwd = hookCwd(data) || process.cwd();
 

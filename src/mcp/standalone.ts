@@ -2,6 +2,7 @@
 
 import { InMemoryKV } from "./in-memory-kv.js";
 import { createStdioTransport } from "./transport.js";
+import { installCrashHandlers } from "./crash-log.js";
 import { getAllTools } from "./tools-registry.js";
 import { getAgentId, getStandalonePersistPath, isAgentScopeIsolated } from "../config.js";
 import { isSearchLayer, type SearchLayer } from "../state/search-layer.js";
@@ -413,7 +414,7 @@ async function handleLocal(
         return textResponse(buildRecallResponse(matches, v.format ?? "full", v.tokenBudget), true);
       }
       return textResponse({ mode: "compact", results: results.map((memory) => ({
-        ...memory, obsId: memory.id, sessionId: memory.sessionIds?.[0] ?? "memory", layer: "memory",
+        ...memory, type: "decision", memoryType: memory.type, obsId: memory.id, sessionId: memory.sessionIds?.[0] ?? "memory", layer: "memory",
       })) }, true);
     }
 
@@ -634,6 +635,13 @@ const transport = createStdioTransport(async (method, params) => {
     default:
       throw new Error(`Unknown method: ${method}`);
   }
+});
+
+installCrashHandlers(() => {
+  try {
+    kv.persist();
+  } catch {}
+  process.exit(1);
 });
 
 process.stderr.write(

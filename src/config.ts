@@ -11,21 +11,18 @@ import type {
   TeamConfig,
 } from "./types.js";
 
+// Import-side ceiling for observations in a single session (enforced by mem::import).
+// This is independent of MAX_OBS_PER_SESSION, which controls runtime writes.
+export const MAX_IMPORT_OBS_PER_SESSION = 5_000;
+
 function safeParseInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = parseInt(value, 10);
   return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-// Import-side ceiling for observations in a single session (enforced by
-// mem::import). Deliberately NOT named MAX_OBS_PER_SESSION — that env var is
-// the runtime write cap and the two are independent; loadConfig() warns when
-// the runtime cap is raised past this ceiling, which would let a session grow
-// past the point where export→import round-trips can restore the store.
-export const MAX_IMPORT_OBS_PER_SESSION = 5_000;
-
-const DATA_DIR = join(homedir(), ".agentmemory");
-const ENV_FILE = join(DATA_DIR, ".env");
+const DATA_DIR = process.env["AGENTMEMORY_DATA_DIR"] || join(homedir(), ".agentmemory");
+const ENV_FILE = process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env");
 
 let warnPremiumModelShown = false;
 let providerNoticeShown = false;
@@ -51,7 +48,11 @@ function loadEnvFile(): Record<string, string> {
     envFileCache = {};
     return envFileCache;
   }
-  const content = readFileSync(ENV_FILE, "utf-8");
+  envFileCache = parseEnvContent(readFileSync(ENV_FILE, "utf-8"));
+  return envFileCache;
+}
+
+export function parseEnvContent(content: string): Record<string, string> {
   const vars: Record<string, string> = {};
   for (const line of content.split("\n")) {
     const trimmed = line.trim();
@@ -70,8 +71,7 @@ function loadEnvFile(): Record<string, string> {
     }
     vars[key] = val;
   }
-  envFileCache = vars;
-  return envFileCache;
+  return vars;
 }
 
 // Test hook: clears the memoized .env so the next loadEnvFile() re-reads disk
@@ -92,10 +92,12 @@ function hasRealValue(v: string | undefined): v is string {
 // ignored by them. Copy the file's vars into process.env, but only when the
 // key is currently unset so a real process.env value still wins (this
 // preserves the {...fileEnv, ...process.env} precedence getMergedEnv uses).
-export function hydrateProcessEnvFromFile(): void {
+export function hydrateProcessEnvFromFile(): Record<string, string | undefined> {
+  const beforeHydration = { ...process.env };
   for (const [k, v] of Object.entries(loadEnvFile())) {
     if (process.env[k] === undefined) process.env[k] = v;
   }
+  return beforeHydration;
 }
 
 // Warn once when a configured model is in the premium tier and likely to burn
@@ -122,76 +124,130 @@ function warnIfPremiumModel(env: Record<string, string>, envName: string, model:
   );
 }
 
+export const LLM_PROVIDER_NAMES = ["anthropic", "openai", "gemini", "openrouter", "minimax"] as const;
+export type LlmProviderName = (typeof LLM_PROVIDER_NAMES)[number];
+
+export const LLM_PROVIDER_KEYS: Record<LlmProviderName, readonly string[]> = {
+  anthropic: ["ANTHROPIC_API_KEY"],
+  openai: ["OPENAI_API_KEY"],
+  gemini: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+  openrouter: ["OPENROUTER_API_KEY"],
+  minimax: ["MINIMAX_API_KEY"],
+};
+
+export const REMOTE_EMBEDDING_PROVIDER_KEYS: Record<string, readonly string[]> = {
+  gemini: ["GEMINI_API_KEY"],
+  openai: ["OPENAI_API_KEY", "OPENAI_EMBEDDING_API_KEY"],
+  voyage: ["VOYAGE_API_KEY"],
+  cohere: ["COHERE_API_KEY"],
+  openrouter: ["OPENROUTER_API_KEY"],
+};
+
+function isLlmProviderName(value: string): value is LlmProviderName {
+  return (LLM_PROVIDER_NAMES as readonly string[]).includes(value);
+}
+
+function selectedLlmProviderValue(env: Record<string, string | undefined>): string {
+  return (env["AGENTMEMORY_LLM_PROVIDER"] || "").trim().toLowerCase();
+}
+
+function llmProviderHasKey(env: Record<string, string | undefined>, name: LlmProviderName): boolean {
+  return LLM_PROVIDER_KEYS[name].some((k) => hasRealValue(env[k]));
+}
+
+export function envFileLabel(path: string = ENV_FILE): string {
+  const home = homedir();
+  return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
+}
+
+export function llmOptInHint(env: Record<string, string | undefined> = getMergedEnv()): string | null {
+  const selected = selectedLlmProviderValue(env);
+  if (selected) {
+    if (!isLlmProviderName(selected)) {
+      return `AGENTMEMORY_LLM_PROVIDER=${selected} is not a known provider. Use one of: ${LLM_PROVIDER_NAMES.join(", ")}.`;
+    }
+    if (!llmProviderHasKey(env, selected)) {
+      return `AGENTMEMORY_LLM_PROVIDER=${selected} is set, but ${LLM_PROVIDER_KEYS[selected].join(" or ")} is not. Add the key to ${envFileLabel()}.`;
+    }
+    return null;
+  }
+  if (env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true") return null;
+  const withKey = LLM_PROVIDER_NAMES.filter((name) => llmProviderHasKey(env, name));
+  if (withKey.length === 0) return null;
+  const keys = withKey.flatMap((name) => LLM_PROVIDER_KEYS[name].filter((k) => hasRealValue(env[k])));
+  return `Found ${keys.join(", ")}, but agentmemory sends nothing to an LLM provider until you choose one for it. To turn on LLM summaries and compression, add AGENTMEMORY_LLM_PROVIDER=${withKey[0]} to ${envFileLabel()}.`;
+}
+
+export function embeddingOptInHint(env: Record<string, string | undefined> = getMergedEnv()): string | null {
+  const chosen = (env["EMBEDDING_PROVIDER"] || "").trim().toLowerCase();
+  if (chosen) {
+    const keys = REMOTE_EMBEDDING_PROVIDER_KEYS[chosen];
+    if (keys && !keys.some((k) => hasRealValue(env[k]))) {
+      return `EMBEDDING_PROVIDER=${chosen} is set, but ${keys.join(" or ")} is not. Add the key to ${envFileLabel()}, or set EMBEDDING_PROVIDER=local for on-device embeddings.`;
+    }
+    return null;
+  }
+  const withKey = Object.keys(REMOTE_EMBEDDING_PROVIDER_KEYS).filter((name) =>
+    REMOTE_EMBEDDING_PROVIDER_KEYS[name].some((k) => hasRealValue(env[k])),
+  );
+  if (withKey.length === 0) return null;
+  return `A ${withKey.join("/")} key is present, but cloud embeddings stay off until you choose them. Add EMBEDDING_PROVIDER=${withKey[0]} to ${envFileLabel()}, or EMBEDDING_PROVIDER=local for on-device embeddings.`;
+}
+
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
+  const noop: ProviderConfig = { provider: "noop", model: "noop", maxTokens };
+  const selected = selectedLlmProviderValue(env);
 
-  // OpenAI-compatible: supports OpenAI, DeepSeek, SiliconFlow, Azure, vLLM, LM Studio
-  if (hasRealValue(env["OPENAI_API_KEY"]) && env["OPENAI_API_KEY_FOR_LLM"] !== "false") {
-    const model = env["OPENAI_MODEL"] || "gpt-5.6-luna";
-    warnIfPremiumModel(env, "OPENAI_MODEL", model);
-    return {
-      provider: "openai",
-      model,
-      maxTokens,
-      baseURL: env["OPENAI_BASE_URL"],
-    };
-  }
-
-  // MiniMax: Anthropic-compatible API, requires raw fetch to avoid SDK stainless headers
-  if (hasRealValue(env["MINIMAX_API_KEY"])) {
-    return {
-      provider: "minimax",
-      model: env["MINIMAX_MODEL"] || "MiniMax-M3",
-      maxTokens,
-    };
-  }
-
-  if (hasRealValue(env["ANTHROPIC_API_KEY"])) {
-    return {
-      provider: "anthropic",
-      model: env["ANTHROPIC_MODEL"] || "claude-sonnet-5",
-      maxTokens,
-      baseURL: env["ANTHROPIC_BASE_URL"],
-    };
-  }
-  if (hasRealValue(env["GEMINI_API_KEY"]) || hasRealValue(env["GOOGLE_API_KEY"])) {
-    if (!hasRealValue(env["GEMINI_API_KEY"]) && hasRealValue(env["GOOGLE_API_KEY"])) {
-      process.stderr.write(
-        "[agentmemory] GOOGLE_API_KEY detected — treating as GEMINI_API_KEY. " +
-          "Set GEMINI_API_KEY in ~/.agentmemory/.env to silence this warning.\n",
-      );
+  if (selected) {
+    if (!isLlmProviderName(selected) || !llmProviderHasKey(env, selected)) {
+      writeProviderNoticeOnce(`[agentmemory] ${llmOptInHint(env)} Running zero-LLM.\n`);
+      return noop;
     }
-    return {
-      provider: "gemini",
-      model: env["GEMINI_MODEL"] || "gemini-3.7-flash",
-      maxTokens,
-    };
-  }
-  if (hasRealValue(env["OPENROUTER_API_KEY"])) {
-    const model = env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-5";
-    warnIfPremiumModel(env, "OPENROUTER_MODEL", model);
-    return {
-      provider: "openrouter",
-      model,
-      maxTokens,
-    };
+    switch (selected) {
+      case "openai": {
+        const model = env["OPENAI_MODEL"] || "gpt-5.6-luna";
+        warnIfPremiumModel(env, "OPENAI_MODEL", model);
+        return { provider: "openai", model, maxTokens, baseURL: env["OPENAI_BASE_URL"] };
+      }
+      case "minimax":
+        return { provider: "minimax", model: env["MINIMAX_MODEL"] || "MiniMax-M3", maxTokens };
+      case "anthropic":
+        return {
+          provider: "anthropic",
+          model: env["ANTHROPIC_MODEL"] || "claude-sonnet-5",
+          maxTokens,
+          baseURL: env["ANTHROPIC_BASE_URL"],
+        };
+      case "gemini":
+        if (!hasRealValue(env["GEMINI_API_KEY"])) {
+          process.stderr.write(
+            "[agentmemory] GOOGLE_API_KEY detected — treating as GEMINI_API_KEY. " +
+              "Set GEMINI_API_KEY in ~/.agentmemory/.env to silence this warning.\n",
+          );
+        }
+        return { provider: "gemini", model: env["GEMINI_MODEL"] || "gemini-3.7-flash", maxTokens };
+      case "openrouter": {
+        const model = env["OPENROUTER_MODEL"] || "anthropic/claude-sonnet-5";
+        warnIfPremiumModel(env, "OPENROUTER_MODEL", model);
+        return { provider: "openrouter", model, maxTokens };
+      }
+    }
   }
 
   const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
   if (!allowAgentSdk) {
+    const hint = llmOptInHint(env);
     writeProviderNoticeOnce(
-      pc.dim(
-        "[agentmemory] No LLM provider key set — running zero-LLM: no LLM compression or summaries; search uses BM25 plus any configured embedding provider. " +
-          "Set EMBEDDING_PROVIDER=local for on-device semantic embeddings if none is configured. " +
-          "Set ANTHROPIC_API_KEY (or GEMINI/OPENAI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env for LLM compression and summaries. " +
-          "Agent-SDK fallback stays off by default to avoid a Stop-hook recursion loop; opt in with AGENTMEMORY_AUTO_COMPRESS=true + AGENTMEMORY_ALLOW_AGENT_SDK=true.\n",
-      ),
+      hint
+        ? `[agentmemory] ${hint}\n`
+        : pc.dim(
+            "[agentmemory] No LLM provider chosen, so agentmemory runs zero-LLM: no LLM compression or summaries, and no session content leaves this machine for an LLM. " +
+              "Search uses BM25 plus any embedding provider you set with EMBEDDING_PROVIDER (EMBEDDING_PROVIDER=local runs on-device). " +
+              "To turn on LLM summaries, set AGENTMEMORY_LLM_PROVIDER (anthropic, openai, gemini, openrouter or minimax) and that provider's key in ~/.agentmemory/.env.\n",
+          ),
     );
-    return {
-      provider: "noop",
-      model: "noop",
-      maxTokens,
-    };
+    return noop;
   }
 
   writeProviderNoticeOnce(
@@ -212,50 +268,35 @@ export function loadConfig(): AgentMemoryConfig {
 
   const provider = detectProvider(env);
 
-  // Port quartet: REST is the anchor; streams/engine derive from it
-  // unless individually overridden. Default anchor 3111 yields the
-  // canonical 3112 streams / 49134 engine pair, but `III_REST_PORT=3211`
-  // auto-picks 3212 + 49234 so a second instance doesn't collide.
+  // REST is the anchor; viewer and engine ports derive from it unless individually overridden.
   const restPort = parseInt(env["III_REST_PORT"] || "3111", 10) || 3111;
-  const streamsPort =
-    parseInt(env["III_STREAM_PORT"] || env["III_STREAMS_PORT"] || "", 10) ||
-    restPort + 1;
   const viewerPort =
     parseInt(env["III_VIEWER_PORT"] || "", 10) || restPort + 2;
   const engineUrl =
     env["III_ENGINE_URL"] ||
+    env["III_URL"] ||
     `ws://localhost:${
       parseInt(env["III_ENGINE_PORT"] || "", 10) || restPort + 46023
     }`;
 
-  const maxObservationsPerSession = safeParseInt(
-    env["MAX_OBS_PER_SESSION"],
-    500,
-  );
+  const maxObservationsPerSession = safeParseInt(env["MAX_OBS_PER_SESSION"], 500);
   if (
     !obsCapImportCeilingWarned &&
-    (maxObservationsPerSession === 0 ||
-      maxObservationsPerSession > MAX_IMPORT_OBS_PER_SESSION)
+    (maxObservationsPerSession === 0 || maxObservationsPerSession > MAX_IMPORT_OBS_PER_SESSION)
   ) {
     obsCapImportCeilingWarned = true;
-    const capDesc =
-      maxObservationsPerSession === 0
-        ? "uncapped (0)"
-        : String(maxObservationsPerSession);
+    const capDesc = maxObservationsPerSession === 0 ? "uncapped (0)" : String(maxObservationsPerSession);
     process.stderr.write(
       `[agentmemory] WARNING: MAX_OBS_PER_SESSION is ${capDesc}, above the ` +
-        `${MAX_IMPORT_OBS_PER_SESSION}-per-session import ceiling ` +
-        `(MAX_IMPORT_OBS_PER_SESSION). Sessions past that ceiling make every ` +
-        `mem::export -> mem::import restore fail wholesale. Keep ` +
-        `MAX_OBS_PER_SESSION at or below ${MAX_IMPORT_OBS_PER_SESSION} if you ` +
-        `rely on export/import backups.\n`,
+        `${MAX_IMPORT_OBS_PER_SESSION}-per-session import ceiling (MAX_IMPORT_OBS_PER_SESSION). ` +
+        `Sessions past that ceiling make every mem::export -> mem::import restore fail wholesale. ` +
+        `Keep MAX_OBS_PER_SESSION at or below ${MAX_IMPORT_OBS_PER_SESSION} if you rely on export/import backups.\n`,
     );
   }
 
   return {
     engineUrl,
     restPort,
-    streamsPort,
     viewerPort,
     provider,
     tokenBudget: safeParseInt(env["TOKEN_BUDGET"], 2000),
@@ -335,18 +376,11 @@ export function getAuditMigrateMaxBytes(): number {
 export function detectLlmProviderKind(
   env: Record<string, string | undefined> = getMergedEnv(),
 ): "llm" | "noop" {
-  if (
-    hasRealValue(env["ANTHROPIC_API_KEY"]) ||
-    hasRealValue(env["GEMINI_API_KEY"]) ||
-    hasRealValue(env["GOOGLE_API_KEY"]) ||
-    hasRealValue(env["OPENROUTER_API_KEY"]) ||
-    hasRealValue(env["MINIMAX_API_KEY"]) ||
-    (hasRealValue(env["OPENAI_API_KEY"]) &&
-      env["OPENAI_API_KEY_FOR_LLM"] !== "false") ||
-    env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true"
-  ) {
+  const selected = selectedLlmProviderValue(env);
+  if (selected && isLlmProviderName(selected) && llmProviderHasKey(env, selected)) {
     return "llm";
   }
+  if (!selected && env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true") return "llm";
   return "noop";
 }
 
@@ -382,15 +416,8 @@ export function detectEmbeddingProvider(
   env?: Record<string, string>,
 ): string | null {
   const source = env ?? getMergedEnv();
-  const forced = source["EMBEDDING_PROVIDER"];
-  if (forced) return forced;
-
-  if (source["GEMINI_API_KEY"]) return "gemini";
-  if (source["OPENAI_API_KEY"] || source["OPENAI_EMBEDDING_API_KEY"]) return "openai";
-  if (source["VOYAGE_API_KEY"]) return "voyage";
-  if (source["COHERE_API_KEY"]) return "cohere";
-  if (source["OPENROUTER_API_KEY"]) return "openrouter";
-  return null;
+  const forced = (source["EMBEDDING_PROVIDER"] || "").trim();
+  return forced ? forced : null;
 }
 
 export function loadClaudeBridgeConfig(): ClaudeBridgeConfig {
@@ -511,26 +538,6 @@ export function getFollowupWindowSeconds(): number {
   );
 }
 
-const VIEWER_STREAM_MAX_DEFAULT = 500;
-const VIEWER_STREAM_MAX_FLOOR = 200;
-
-function parseExactInt(value: string | undefined, fallback: number): number {
-  if (!value) return fallback;
-  const trimmed = value.trim();
-  if (!/^-?\d+$/.test(trimmed)) return fallback;
-  const parsed = Number(trimmed);
-  return Number.isSafeInteger(parsed) ? parsed : fallback;
-}
-
-export function getViewerStreamMax(): number {
-  const parsed = parseExactInt(
-    getMergedEnv()["AGENTMEMORY_VIEWER_STREAM_MAX"],
-    VIEWER_STREAM_MAX_DEFAULT,
-  );
-  if (parsed < 0) return VIEWER_STREAM_MAX_DEFAULT;
-  return Math.max(parsed, VIEWER_STREAM_MAX_FLOOR);
-}
-
 export function isConsolidationEnabled(): boolean {
   const env = getMergedEnv();
   const explicit = env["CONSOLIDATION_ENABLED"];
@@ -599,9 +606,18 @@ export function getIndexSaveIntervalMs(): number {
   return raw > 0 ? raw : INDEX_SAVE_INTERVAL_DEFAULT_MS;
 }
 
-export function getStateSaveIntervalMs(): number | undefined {
-  const raw = safeParseInt(getMergedEnv()["AGENTMEMORY_STATE_SAVE_INTERVAL_MS"], 0);
-  return raw > 0 ? raw : undefined;
+export const STATE_SAVE_INTERVAL_DEFAULT_MS = 2000;
+export const STATE_SAVE_INTERVAL_MIN_MS = 100;
+export const STATE_SAVE_INTERVAL_MAX_MS = 3_600_000;
+
+export function getStateSaveIntervalMs(): number {
+  const value = getMergedEnv()["AGENTMEMORY_STATE_SAVE_INTERVAL_MS"];
+  if (value === undefined || value.trim() === "") return STATE_SAVE_INTERVAL_DEFAULT_MS;
+  if (!/^\d+$/.test(value.trim())) return STATE_SAVE_INTERVAL_DEFAULT_MS;
+  const raw = Number(value);
+  return Number.isSafeInteger(raw) && raw >= STATE_SAVE_INTERVAL_MIN_MS && raw <= STATE_SAVE_INTERVAL_MAX_MS
+    ? raw
+    : STATE_SAVE_INTERVAL_DEFAULT_MS;
 }
 
 export const VECTOR_BUCKET_SIZE_DEFAULT = 500;

@@ -36,6 +36,7 @@ def _resolve_project(cwd: str) -> str:
         out = subprocess.run(
             ["git", "rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir"],
             cwd=cwd,
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=5,

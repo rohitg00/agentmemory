@@ -2,7 +2,7 @@
 import { execSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, stripPrivateData, withEventId } from "./_capture.mjs";
+import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, stripPrivateData, transportBlocked, withEventId } from "./_capture.mjs";
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -94,6 +94,7 @@ async function main() {
 		clearTimeout(capture);
 	}
 	setTimeout(() => process.exit(0), END_CAP_MS).unref();
+	if (transportBlocked()) return;
 	fetch(`${REST_URL}/agentmemory/session/end`, {
 		method: "POST",
 		headers: authHeaders(),

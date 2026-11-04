@@ -25,8 +25,11 @@
 }
 
 .k {
-  opacity: 0;
   will-change: opacity, transform;
+}
+
+:global(.js) .k {
+  opacity: 0;
 }
 
 .side {
@@ -497,4 +500,66 @@
     visibility: visible;
     transform: none;
   }
+}
+
+:global(html:not(.js)) .track {
+  height: auto;
+}
+
+:global(html:not(.js)) .sticky {
+  position: relative;
+  top: 0;
+  height: auto;
+  padding: var(--s-6) 0 var(--s-9);
+}
+
+:global(html:not(.js)) .steps {
+  display: none;
+}
+
+:global(html:not(.js)) .details {
+  gap: var(--s-3);
+  padding-left: 0;
+}
+
+:global(html:not(.js)) .detail {
+  grid-area: auto;
+  opacity: 1;
+  visibility: visible;
+}
+
+:global(html:not(.js)) .detailTitle {
+  display: inline;
+}
+
+:global(html:not(.js)) .figure > .pane {
+  grid-area: auto;
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+:global(html:not(.js)) .sessionBody {
+  row-gap: 14px;
+}
+
+:global(html:not(.js)) .mon,
+:global(html:not(.js)) .tue,
+:global(html:not(.js)) .day > span {
+  grid-area: auto;
+}
+
+:global(html:not(.js)) .tue {
+  padding-top: 14px;
+  border-top: 1px dashed var(--line);
+}
+
+:global(html:not(.js)) .day {
+  grid-auto-flow: column;
+  column-gap: 6px;
+}
+
+:global(html:not(.js)) .day > span + span::before {
+  content: "\2192\00a0";
+  color: var(--muted);
 }

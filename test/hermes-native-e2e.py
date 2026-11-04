@@ -272,8 +272,9 @@ display:
         nonlocal backend
         backend = subprocess.Popen([args.node, str(cli), '--port', str(port), '--data-dir', str(out / 'state')], cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         for _ in range(180):
-            if backend.poll() is not None:
-                raise RuntimeError('Backend exited; inspect backend.log.')
+            exit_code = backend.poll()
+            if exit_code not in (None, 0):
+                raise RuntimeError(f'Backend exited with code {exit_code}; inspect backend.log.')
             try:
                 with urllib.request.urlopen(base + '/agentmemory/livez', timeout=1) as response:
                     if isinstance(json.load(response).get('viewerPort'), int):

@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { resolveClientSecret } from "../secret-store.js";
+import { hookAuthHeaders, reportBlockedTransport, resolveHookEndpoint } from "./_endpoint.js";
 import { deriveEventId, hasHostIdentity } from "../capture/event-id.js";
 import {
   appendSpool,
@@ -16,8 +16,8 @@ import {
 
 export { stripPrivateData } from "../functions/privacy.js";
 
-export const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = resolveClientSecret(REST_URL);
+const ENDPOINT = resolveHookEndpoint();
+export const REST_URL = ENDPOINT.url;
 const DRAIN_CHILD_ENV = "AGENTMEMORY_CAPTURE_DRAIN_CHILD";
 const DRAIN_MAX_RECORDS = 500;
 const DRAIN_DEADLINE_MS = 20_000;
@@ -36,9 +36,11 @@ export interface ObserveBody {
 }
 
 export function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
+  return hookAuthHeaders(ENDPOINT);
+}
+
+export function transportBlocked(): boolean {
+  return reportBlockedTransport(ENDPOINT);
 }
 
 export function withEventId(
@@ -61,6 +63,7 @@ function classify(status: number): SendOutcome {
 }
 
 async function post(body: Record<string, unknown>, timeoutMs: number): Promise<{ outcome: SendOutcome; mark: SentMark | null }> {
+  if (transportBlocked()) throw new Error("insecure transport");
   const res = await fetch(`${REST_URL}/agentmemory/observe`, {
     method: "POST",
     headers: authHeaders(),
@@ -99,6 +102,7 @@ function startDrainChild(): void {
 }
 
 export async function captureObservation(body: ObserveBody, timeoutMs: number): Promise<CaptureOutcome> {
+  if (transportBlocked()) return "dropped";
   const eventId = body.eventId ?? deriveEventId(body.hookType, body.sessionId, null, body.data);
   const payload = { ...body, eventId } as unknown as Record<string, unknown>;
   let reason: string;

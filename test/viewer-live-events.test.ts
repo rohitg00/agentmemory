@@ -1,3 +1,4 @@
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { describe, it, expect, vi } from "vitest";
 import { registerEventTriggers } from "../src/triggers/events.js";
 import type { StateKV } from "../src/state/kv.js";
@@ -7,17 +8,15 @@ type Handler = (payload: unknown) => Promise<unknown>;
 function setup() {
   const handlers = new Map<string, Handler>();
   const triggers: Array<{ type: string; function_id: string; config: Record<string, unknown> }> = [];
-  const sent: Array<{ type: string; group_id: string; data: Record<string, unknown> }> = [];
+  const sent: Array<{ type: string; id: string; data: Record<string, unknown> }> = [];
   const sdk = {
     registerFunction: (id: string, fn: Handler) => handlers.set(id, fn),
     registerTrigger: (t: { type: string; function_id: string; config: Record<string, unknown> }) => triggers.push(t),
     trigger: vi.fn(async (req: { function_id: string; payload: Record<string, unknown> }) => {
-      if (req.function_id === "stream::send") {
-        sent.push(req.payload as (typeof sent)[number]);
-      }
       return {};
     }),
   };
+  onLiveEvent((event) => sent.push(event));
   registerEventTriggers(sdk as never, {} as StateKV);
   return { handlers, triggers, sent };
 }
@@ -33,7 +32,6 @@ describe("viewer live events", () => {
       new_value: { id: "s1", status: "active", observationCount: 3 },
     });
     expect(sent.map((e) => e.type)).toEqual(["session.updated", "session.activity"]);
-    expect(sent[0].group_id).toBe("viewer");
     expect(sent[0].data.session).toMatchObject({ id: "s1", observationCount: 3 });
     expect(sent[1].data).toMatchObject({ sessionId: "s1", observationCount: 3, delta: 1 });
   });

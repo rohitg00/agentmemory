@@ -1,8 +1,8 @@
-import { TriggerAction, type IIIClient } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import { readFileSync } from "node:fs";
 import { isManagedImagePath } from "../utils/image-store.js";
 import type { RawObservation, CompressedObservation, MemoryProvider, ObservationCompression, Session } from "../types.js";
-import { KV, STREAM } from "../state/schema.js";
+import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { COMPRESSION_SYSTEM, buildCompressionPrompt } from "../prompts/compression.js";
 import { VISION_DESCRIPTION_PROMPT } from "../prompts/vision.js";
@@ -14,8 +14,10 @@ import { scoreCompression } from "../eval/quality.js";
 import { compressWithRetry } from "../eval/self-correct.js";
 import type { MetricsStore } from "../eval/metrics-store.js";
 import { logger } from "../logger.js";
+import { emitLiveEvent } from "../viewer/live-events.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { budgetLiveObservationSource } from "./observation-source-budget.js";
+import { observationEmbedText } from "../state/memory-utils.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { scrubRecord, stripPrivateData } from "./privacy.js";
@@ -192,7 +194,7 @@ export function registerCompressFunction(
       if (!compressed) return { success: false, error: "observation_changed", skipped: true, retryable: false };
       const committedRevision = observationRevision(compressed);
       await bounded(() => vectorIndexAddGuarded(
-        observationId, sessionId, compressed.title + " " + compressed.narrative,
+        observationId, sessionId, observationEmbedText(compressed),
         { kind: "observation", logId: observationId },
         (embedding, isCurrent) => withKeyedLock(`obs:${sessionId}`, async () => {
           const current = await kv.get<StoredObservation>(KV.observations(sessionId), observationId);
@@ -204,15 +206,11 @@ export function registerCompressFunction(
       const published = await withKeyedLock(`obs:${sessionId}`, async () => {
         const current = await kv.get<StoredObservation>(KV.observations(sessionId), observationId);
         if (!current || observationRevision(current) !== committedRevision || !await matchesScope(data, current)) return false;
-        await sdk.trigger({
-          function_id: "stream::send",
-          payload: {
-            stream_name: STREAM.name, group_id: STREAM.viewerGroup,
-            id: `compressed-${observationId}`, type: "compressed_observation",
-            data: { type: "compressed", observation: withoutObservationSource(compressed), sessionId },
-          },
-          action: TriggerAction.Void(),
-        }).catch(() => {});
+        emitLiveEvent({
+          id: `compressed-${observationId}`,
+          type: "compressed_observation",
+          data: { type: "compressed", observation: withoutObservationSource(compressed), sessionId },
+        });
         return true;
       });
       if (!published) return { success: false, error: "observation_changed", skipped: true, retryable: false };

@@ -1,0 +1,17 @@
+.git
+.iii
+.src
+.run
+upgrade
+upgrade-cli
+upgrade-docker
+upgrade-lat
+node_modules
+**/node_modules
+**/target
+**/dist
+**/.cache
+**/coverage
+**/tmp
+*.log
+*.tsbuildinfo

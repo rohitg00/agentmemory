@@ -213,7 +213,7 @@ describe("capture spool retention until durable", () => {
     expect(parseSentMark({ status: "accepted" })).toBeNull();
     expect(parseSentMark({ bootId: "../etc", durableAfterMs: 1 })).toBeNull();
     expect(parseSentMark({ bootId: BOOT_A, durableAfterMs: -1 })).toBeNull();
-    expect(parseSentMark({ bootId: BOOT_A, durableAfterMs: 1e12 })!.durableAfterMs).toBe(600_000);
+    expect(parseSentMark({ bootId: BOOT_A, durableAfterMs: 1e12 })!.durableAfterMs).toBe(61 * 60_000);
     expect(parseSentMark(null)).toBeNull();
   });
 
@@ -229,6 +229,15 @@ describe("capture spool retention until durable", () => {
     let calls = 0;
     await drainSpool(URL, async () => (calls++, "delivered"), { dir, policy });
     expect(calls).toBe(0);
+  });
+
+  it("retains a capture through the longest supported state flush interval", () => {
+    const now = 1_700_000_000_000;
+    const mark = parseSentMark({ bootId: BOOT_A, durableAfterMs: 3_600_000 + 1500 })!;
+    expect(retainSent(URL, "evc_slowflush001", body("slow-flush"), mark, { dir, policy, now })).toBe(true);
+    expect(reconcileSent(URL, BOOT_A, { dir, policy, now: now + 600_000 })).toEqual({ released: 0, requeued: 0 });
+    expect(reconcileSent(URL, BOOT_A, { dir, policy, now: now + 3_600_000 })).toEqual({ released: 0, requeued: 0 });
+    expect(reconcileSent(URL, BOOT_A, { dir, policy, now: now + 3_602_000 })).toEqual({ released: 1, requeued: 0 });
   });
 
   it("re-sends a kept record with the same event id once the server restarted", async () => {

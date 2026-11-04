@@ -1,12 +1,12 @@
 import Link from "next/link";
 import { NAV, REPO_URL } from "@/lib/site";
-import { compact, getProjectMeta } from "@/lib/meta";
+import { compact, getLiveProjectMeta } from "@/lib/meta";
 import { ThemeToggle } from "./client";
 import { Logo } from "./Logo";
 import s from "./Nav.module.css";
 
-export function Nav() {
-  const meta = getProjectMeta();
+export async function Nav() {
+  const meta = await getLiveProjectMeta();
   return (
     <header className={s.bar}>
       <div className={`wrap ${s.inner}`}>

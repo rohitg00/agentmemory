@@ -4,6 +4,7 @@ import { KV } from "../src/state/schema.js";
 import { resetGraphGeneration } from "../src/state/graph-generation.js";
 import { registerApiTriggers } from "../src/triggers/api.js";
 import { registerMcpEndpoints } from "../src/mcp/server.js";
+import { registerGraphFunction } from "../src/functions/graph.js";
 
 vi.mock("../src/logger.js", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
@@ -18,6 +19,7 @@ function rig() {
     registerFunction: (id: string, handler: (req: unknown) => Promise<any>) => handlers.set(id, handler),
     registerTrigger: () => {},
     trigger: async ({ function_id, payload }: { function_id: string; payload: { scope: string; key: string; value?: unknown } }) => {
+      if (!function_id.startsWith("state::")) return handlers.get(function_id)!(payload);
       const { scope, key, value } = payload;
       if (function_id === "state::get") return store.get(scope)?.get(key) ?? null;
       if (function_id === "state::set") {
@@ -39,9 +41,11 @@ function rig() {
   const kv = new StateKV(sdk as never);
   registerApiTriggers(sdk as never, kv, secret);
   registerMcpEndpoints(sdk as never, kv, secret);
+  registerGraphFunction(sdk as never, kv, { name: "noop" } as never);
   return {
     kv,
     resetDuringNextRead: () => { resetOnNodeRead = true; },
+    resetStillArmed: () => resetOnNodeRead,
     exportMesh: () => handlers.get("api::mesh-export")!({ headers: { authorization: `Bearer ${secret}` }, query_params: {} }),
     readStats: async () => {
       const result = await handlers.get("mcp::resources::read")!({ headers: { authorization: `Bearer ${secret}` }, body: { uri: "agentmemory://graph/stats" } });
@@ -74,9 +78,13 @@ describe.each(["legacy", "rotated"])("%s graph reads across a concurrent reset",
     expect(after.body.graphEdges).toEqual([]);
   });
 
-  it("reports consistent MCP counts, then observes the reset on a new resource read", async () => {
+  it("reads MCP counts from the graph index without listing nodes, then observes a reset on a new resource read", async () => {
     const r = await seeded();
-    expect(await r.readStats()).toMatchObject({ totalNodes: 2, totalEdges: 1, nodesByType: { file: 2 }, edgesByType: { imports: 1 } });
-    expect(await r.readStats()).toMatchObject({ totalNodes: 0, totalEdges: 0 });
+    const before = await r.readStats();
+    expect(r.resetStillArmed()).toBe(true);
+    if (generation === "legacy") expect(before).toMatchObject({ totalNodes: null, totalEdges: null, available: false });
+    else expect(before).toMatchObject({ totalNodes: 2, totalEdges: 1, nodesByType: { file: 2 }, edgesByType: { imports: 1 }, available: true });
+    await resetGraphGeneration(r.kv, emptySnapshot);
+    expect(await r.readStats()).toMatchObject({ totalNodes: 0, totalEdges: 0, available: true });
   });
 });

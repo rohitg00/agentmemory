@@ -4,7 +4,7 @@ description: How agentmemory is built, the iii engine primitives it runs on, its
 user-invocable: false
 ---
 
-agentmemory is a memory server for coding agents. It runs locally, captures observations, indexes them for hybrid retrieval, and serves them back over REST and MCP. It is built on the iii engine.
+agentmemory is a memory server for coding agents. It runs locally, captures observations, indexes them for hybrid retrieval, and serves them back over REST and MCP. Worker Compose runs the pinned iii engine with AgentMemory and the registry `state` and `http` workers. The state worker uses a file-backed KV store by default, with Redis available by configuration; it is not SQLite.
 
 ## iii primitives
 
@@ -12,7 +12,11 @@ Everything is a function, a trigger, or worker state on the iii engine. There is
 
 ## Retrieval model
 
-Recall combines BM25 keyword search with configured vector similarity and graph expansion. A clean installation without an embedding provider uses BM25 without an API key. Set `EMBEDDING_PROVIDER=local` to enable on-device embeddings, which may download a model, or configure a remote provider. LLM compression and summaries require a configured provider and their relevant options.
+Recall combines BM25 keyword search with configured vector similarity and graph expansion. A clean installation has no embedding provider and uses BM25 without an API key. Set `EMBEDDING_PROVIDER=local` to enable on-device embeddings, which download a model once. A remote embedding provider runs only when `EMBEDDING_PROVIDER` names it. LLM summaries, consolidation and reflection run only when `AGENTMEMORY_LLM_PROVIDER` selects a provider or `AGENTMEMORY_ALLOW_AGENT_SDK=true` turns on the Claude Agent SDK fallback; a key in the environment alone does not turn them on. Per-observation LLM compression also needs `AGENTMEMORY_AUTO_COMPRESS=true`.
+
+## Data boundary
+
+Captured prompts, tool inputs and outputs, and memories stay in the local store. They leave the machine only through options the user turns on: a selected LLM provider, the Agent SDK fallback (`AGENTMEMORY_ALLOW_AGENT_SDK=true`), a remote embedding provider, a Redis state backend, or mesh sync to peer servers the user registers.
 
 ## Storage and lifecycle
 
@@ -20,11 +24,11 @@ Memories carry content, concepts, files, importance, and timestamps, grouped int
 
 ## Ports
 
-REST is the anchor at 3111. Streams = N+1 (3112), viewer = N+2 (3113), engine = N+46023 (49134). `--instance N` shifts the whole block by N*100.
+REST defaults to port `3111`, the viewer to `3113`, and the internal engine WebSocket to `49134`. Use `--port <N>` or `--instance <N>` to select another local runtime.
 
 ## Viewer
 
-A real-time web viewer at `http://localhost:3113` shows memory building as sessions run. Useful for demos and for confirming capture is working.
+A real-time web viewer at `http://localhost:3113` shows memory building as sessions run, with authenticated SSE updates over the REST port. Useful for demos and for confirming capture is working.
 
 ## See also
 

@@ -44,10 +44,10 @@ export interface GraphStatsInput {
 export interface StatusInputs {
   now: Date;
   version: string;
-  engineVersion: string;
+  enginePinnedVersion: string;
   uptimeSeconds: number;
   stateBackend: "file" | "redis";
-  ports: { rest: number | null; streams: number | null; viewer: number | null };
+  ports: { rest: number | null; viewer: number | null };
   health: {
     status?: string;
     alerts?: string[];
@@ -61,7 +61,9 @@ export interface StatusInputs {
   llmRoute?: string | null;
   functionMetrics: FunctionMetricInput[];
   provider: string;
+  providerHint?: string | null;
   embeddingProvider: string;
+  embeddingHint?: string | null;
   flags: StatusFlag[];
   index: {
     bm25Documents: number;
@@ -104,7 +106,7 @@ export interface StatusReport {
   checkedAt: string;
   service: {
     version: string;
-    engineVersion: string;
+    enginePinnedVersion: string;
     uptimeSeconds: number;
     stateBackend: StatusInputs["stateBackend"];
     stateStore: { ok: boolean; latencyMs?: number } | null;
@@ -114,7 +116,9 @@ export interface StatusReport {
   provider: {
     llm: string;
     route: string | null;
+    hint: string | null;
     embeddings: string;
+    embeddingHint: string | null;
     circuitBreaker: StatusInputs["circuitBreaker"];
     offWithoutLlm: string[];
   };
@@ -145,7 +149,7 @@ const FUNCTION_FIXES: Record<string, string> = {
 };
 
 export const LLM_KEY_FIX =
-  "Add one LLM provider key (for example ANTHROPIC_API_KEY or OPENAI_API_KEY) to ~/.agentmemory/.env and restart.";
+  "Set AGENTMEMORY_LLM_PROVIDER and that provider's key (for example AGENTMEMORY_LLM_PROVIDER=anthropic and ANTHROPIC_API_KEY) in ~/.agentmemory/.env and restart.";
 
 export const OFF_WITHOUT_LLM = [
   "session summaries",
@@ -181,13 +185,7 @@ export function describeHealthAlert(slug: string): { level: "warn" | "error"; me
       fix: "It usually clears after an import or index rebuild finishes. If it persists, restart agentmemory.",
     };
   }
-  if (slug === "stream_relay_down") {
-    return {
-      level: "warn",
-      message: "Live updates are not reaching the viewer: the engine stopped relaying stream events, which happens after Redis restarts or drops the connection. Data is still saved.",
-      fix: "Restart agentmemory (npx @agentmemory/agentmemory stop, then start) so the engine subscribes to Redis again, then reload the viewer.",
-    };
-  }
+
   if (slug === "connection_reconnecting") {
     return {
       level: "warn",
@@ -291,7 +289,19 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       level: "info",
       code: "no-llm-provider",
       message: "No LLM provider is configured, so summaries, consolidation and graph extraction stay off. Search still works.",
-      fix: LLM_KEY_FIX,
+      fix: input.providerHint || LLM_KEY_FIX,
+    });
+  }
+
+  if (input.embeddingHint) {
+    const keyMissing = input.embeddingHint.startsWith("EMBEDDING_PROVIDER=");
+    problems.push({
+      level: "info",
+      code: keyMissing ? "embedding-provider-key-missing" : "embedding-provider-not-chosen",
+      message: keyMissing
+        ? "EMBEDDING_PROVIDER names a cloud provider whose key is missing, so search is keyword and graph only."
+        : "A cloud embedding key is present, but no embedding provider is chosen, so search is keyword and graph only.",
+      fix: input.embeddingHint,
     });
   }
 
@@ -504,7 +514,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     checkedAt: input.now.toISOString(),
     service: {
       version: input.version,
-      engineVersion: input.engineVersion,
+      enginePinnedVersion: input.enginePinnedVersion,
       uptimeSeconds: input.uptimeSeconds,
       stateBackend: input.stateBackend,
       stateStore: input.stateStore ?? null,
@@ -514,7 +524,9 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     provider: {
       llm: input.provider,
       route: input.provider === "noop" ? null : (input.llmRoute ?? null),
+      hint: input.providerHint ?? null,
       embeddings: input.embeddingProvider,
+      embeddingHint: input.embeddingHint ?? null,
       circuitBreaker: input.circuitBreaker,
       offWithoutLlm: noLlm ? OFF_WITHOUT_LLM : [],
     },
@@ -846,7 +858,7 @@ a{color:inherit}
 @media (max-width:640px){th{width:110px}table.list{table-layout:fixed}table.list th,table.list td{padding:6px 4px;font-size:12px}}
 </style></head><body><main>
 <header><h1>agentmemory</h1><span class="badge ${report.status}">${report.status}</span>
-<span class="meta">v${escapeHtml(report.service.version)} · engine ${escapeHtml(report.service.engineVersion)} · checked ${escapeHtml(report.checkedAt)} · <a href="?format=json">json</a></span></header>
+<span class="meta">v${escapeHtml(report.service.version)} · engine pinned ${escapeHtml(report.service.enginePinnedVersion)} · checked ${escapeHtml(report.checkedAt)} · <a href="?format=json">json</a></span></header>
 <p class="lead ${report.status}">${escapeHtml(report.headline)}</p>
 <p class="live">A snapshot from when this page loaded. <a href="${escapeHtml(viewerUrl)}">Open the live version in the viewer &rarr;</a> From a terminal: <code>curl -s ${escapeHtml(CURL_AUTH_HEADER)} ${ports.rest ? `http://localhost:${escapeHtml(ports.rest)}` : ""}/agentmemory/status</code> returns this report as JSON.</p>
 <h2>Problems</h2><ul class="problems">${problems}</ul>
@@ -855,7 +867,6 @@ ${row("Engine connection", escapeHtml(report.health?.connectionState ?? "unknown
 ${row("Uptime", escapeHtml(formatDuration(report.service.uptimeSeconds)))}
 ${row("State backend", escapeHtml(report.service.stateBackend))}
 ${row("REST port", escapeHtml(ports.rest ?? "unknown"))}
-${row("Streams port", escapeHtml(ports.streams ?? "unknown"))}
 ${row("Viewer port", escapeHtml(ports.viewer ?? "not running"))}
 </table>
 <h2>LLM and embeddings</h2><table>
