@@ -518,6 +518,7 @@ export type VectorBackfillJob = {
 
 const LIST_RETRY_ATTEMPTS = 8
 const LIST_RETRY_BASE_MS = 2500
+const LIST_RETRY_BUDGET_MS = 70_000
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -525,12 +526,12 @@ function delay(ms: number): Promise<void> {
 
 function isStateNotReadyError(err: unknown): boolean {
   const code = (err as { code?: unknown } | null)?.code
-  if (code === "function_not_found" || code === "invocation_timeout" || code === "timeout") return true
+  if (code === "function_not_found" || code === "invocation_timeout" || code === "timeout" || code === "ECONNRESET" || code === "ECONNREFUSED" || code === "EPIPE") return true
   const message = err instanceof Error ? err.message : String(err)
-  return /function_not_found|Function state::\w+ not found|timed out|timeout|ETIMEDOUT/i.test(message)
+  return /function_not_found|Function state::\w+ not found|timed out|timeout|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|socket hang up|connection (?:closed|reset)/i.test(message)
 }
 
-async function listWithRetry<T>(kv: StateKV, scope: string, label: string): Promise<T[] | null> {
+async function listWithRetry<T>(kv: StateKV, scope: string, label: string, deadline: number): Promise<T[] | null> {
   let lastErr: unknown
   let attempts = 0
   while (attempts < LIST_RETRY_ATTEMPTS) {
@@ -540,9 +541,10 @@ async function listWithRetry<T>(kv: StateKV, scope: string, label: string): Prom
     } catch (err) {
       lastErr = err
       if (!isStateNotReadyError(err)) break
-      if (attempts < LIST_RETRY_ATTEMPTS) {
-        await delay(LIST_RETRY_BASE_MS * attempts)
-      }
+      const remaining = deadline - performance.now()
+      const wait = LIST_RETRY_BASE_MS * attempts
+      if (attempts >= LIST_RETRY_ATTEMPTS || wait >= remaining) break
+      await delay(wait)
     }
   }
   logger.warn(`${label}: failed to load`, {
@@ -550,10 +552,6 @@ async function listWithRetry<T>(kv: StateKV, scope: string, label: string): Prom
     error: lastErr instanceof Error ? lastErr.message : String(lastErr),
   })
   return null
-}
-
-async function listSessionsWithRetry(kv: StateKV): Promise<Session[] | null> {
-  return listWithRetry<Session>(kv, KV.sessions, 'rebuildKeywordIndex: sessions')
 }
 
 type KeywordRebuildResult = { documents: number; vectorJobs: VectorBackfillJob[]; fullBackfillPending: number }
@@ -608,7 +606,9 @@ async function runKeywordRebuild(
 
   let documents = 0
   let memoriesLoaded = false
-  const memories = await listWithRetry<Memory>(kv, KV.memories, 'rebuildKeywordIndex: memories')
+  const listDeadline = performance.now() + LIST_RETRY_BUDGET_MS
+  const memories = await listWithRetry<Memory>(kv, KV.memories, 'rebuildKeywordIndex: memories', listDeadline)
+  const sessions = await listWithRetry<Session>(kv, KV.sessions, 'rebuildKeywordIndex: sessions', listDeadline)
   if (memories === null) {
     bm25RebuildIncomplete = true
   } else {
@@ -622,7 +622,6 @@ async function runKeywordRebuild(
     }
   }
 
-  const sessions = await listSessionsWithRetry(kv)
   if (sessions === null) {
     bm25RebuildIncomplete = true
     if (memoriesLoaded) memoryIndexReady = true

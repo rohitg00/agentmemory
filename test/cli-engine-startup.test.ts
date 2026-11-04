@@ -114,6 +114,34 @@ describe("fresh native engine startup", () => {
     expect(source).toContain("redactCredentialUrls(activeStartupStderr.text().trim())");
   });
 
+  it("retries a timed-out iii --version probe with a longer timeout before treating the binary as missing", () => {
+    const start = source.indexOf("function probeIiiVersion");
+    const body = source.slice(start, source.indexOf("\n}\n", start));
+    expect(source).toContain("const III_VERSION_PROBE_TIMEOUTS_MS = [3000, 30000]");
+    expect(body).toContain("for (const timeout of III_VERSION_PROBE_TIMEOUTS_MS)");
+    expect(body).toContain("if (!isProbeTimeout(err)) return null;");
+  });
+
+  it("probes each iii path at most once per startEngine scan and re-probes on the next scan", () => {
+    const start = source.indexOf("function iiiBinVersion");
+    const body = source.slice(start, source.indexOf("\n}\n", start));
+    expect(body).toContain("if (iiiProbeScan?.has(binPath)) return iiiProbeScan.get(binPath)!;");
+    expect(body).toContain("iiiProbeScan?.set(binPath, version);");
+    const wrapper = source.slice(source.indexOf("async function startEngine("), source.indexOf("async function scanAndStartEngine("));
+    expect(wrapper).toContain("iiiProbeScan = new Map();");
+    expect(wrapper).toMatch(/finally \{\s*iiiProbeScan = null;\s*\}/);
+    const installer = source.slice(source.indexOf("async function runIiiInstaller"), source.indexOf("type StartupFailure"));
+    expect(installer).toContain("iiiProbeScan?.delete(binPath);");
+  });
+
+  it("never opens the install prompt on Windows, where auto-install is unavailable", () => {
+    const start = source.indexOf("async function startEngine");
+    const body = source.slice(start, source.indexOf("async function waitForEngine", start));
+    const windowsBranch = body.indexOf("} else if (IS_WINDOWS) {");
+    expect(windowsBranch).toBeGreaterThan(-1);
+    expect(windowsBranch).toBeLessThan(body.indexOf("p.select<Choice>("));
+  });
+
   it("clears unready Compose state only for a PID positively identified as foreign", () => {
     const reconcileStart = source.indexOf("async function reconcilePersistedComposeEngine");
     const reconcileEnd = source.indexOf("async function main()", reconcileStart);
