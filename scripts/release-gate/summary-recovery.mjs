@@ -41,7 +41,6 @@ const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("he
 let port, modelPort, modelServer, secret, installed, packageBefore, boot = 0;
 let heldCompression = null, failSummary = false, phase = "setup";
 const markers = { BASE: "RECOVERED_BASE_COBALT", FINAL: "RECOVERED_FINAL_JUNIPER", LATE: "RECOVERED_LATE_QUARTZ" };
-// A reasoning model cut at max_tokens returns only partial reasoning; this fixture makes that reasoning parse as valid XML.
 const truncation = { session: "truncated-reasoning-session", accepted: "TRUNCATION_ACCEPTED_SAGE", marker: "TRUNCATED_REASONING_ONYX" };
 function log(message) {
   const line = `[${((Date.now() - began) / 1000).toFixed(1)}s] ${message}`;
@@ -325,7 +324,6 @@ async function main() {
     await rest("/session/start", { sessionId: session, project, cwd: root });
     await rest("/observe", event("ACCEPTED", session));
     await poll("accepted compression", async () => observations(await exported(), session).some((row) => row.title === truncation.accepted && row.compression?.status === "complete"));
-    // Summarize before the truncated compression so two provider errors stay below the circuit breaker threshold.
     const summary = await rest("/summarize", { sessionId: session });
     assert.equal(summary.success, false, "A summary reply cut at max_tokens must not succeed");
     assert.match(summary.error, /max_tokens/);
