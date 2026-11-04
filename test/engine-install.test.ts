@@ -18,6 +18,9 @@ import {
   installIiiZip,
   powershellLiteral,
   proxyConfigured,
+  removeStaleInstallFiles,
+  runInstallCommand,
+  STALE_INSTALL_FILE_MS,
   windowsZipExtractCommands,
 } from "../src/cli/engine-install.js";
 import { III_PINNED_VERSION } from "../src/version.js";
@@ -226,7 +229,13 @@ describe("iii engine Windows zip installer", () => {
   const ZIP_BYTES = Buffer.from("fake windows iii zip");
 
   function leftoverArchives(binDir: string): string[] {
-    return existsSync(binDir) ? readdirSync(binDir).filter((name) => name.startsWith(".iii-download")) : [];
+    return existsSync(binDir) ? readdirSync(binDir).filter((name) => name.startsWith(".iii-download") || name.startsWith(".iii-staging")) : [];
+  }
+
+  function extractDest(args: string[]): string {
+    if (args[0] === "-xf") return args[3];
+    const match = /-DestinationPath '((?:[^']|'')*)'/.exec(args[3] ?? "");
+    return (match?.[1] ?? "").replace(/''/g, "'");
   }
 
   function zipChecksums(bytes: Buffer = ZIP_BYTES) {
@@ -268,9 +277,9 @@ describe("iii engine Windows zip installer", () => {
     const binDir = join(sandbox(), "bin");
     const calls: string[] = [];
     const outcome = await installIiiZip(zipOpts(binDir, {
-      run: (command: string) => {
+      run: (command: string, args: string[]) => {
         calls.push(command);
-        writeFileSync(join(binDir, "iii.exe"), "bin");
+        writeFileSync(join(extractDest(args), "iii.exe"), "bin");
         return { status: 0 };
       },
     }));
@@ -284,10 +293,10 @@ describe("iii engine Windows zip installer", () => {
     const binDir = join(sandbox(), "bin");
     const calls: string[] = [];
     const outcome = await installIiiZip(zipOpts(binDir, {
-      run: (command: string) => {
+      run: (command: string, args: string[]) => {
         calls.push(command);
         if (command.endsWith("tar.exe")) return { status: 1, stderr: "tar: unsupported" };
-        writeFileSync(join(binDir, "iii.exe"), "bin");
+        writeFileSync(join(extractDest(args), "iii.exe"), "bin");
         return { status: 0 };
       },
     }));
@@ -329,6 +338,66 @@ describe("iii engine Windows zip installer", () => {
     const outcome = await installIiiZip(zipOpts(binDir, { run: () => ({ status: 0 }) }));
     expect(outcome.ok === false && outcome.reason).toBe("extract");
     expect(outcome.ok === false && outcome.detail).toContain("iii.exe is missing");
+  });
+
+  it("extracts into a staging directory and keeps a working iii.exe when extraction fails", async () => {
+    const binDir = join(sandbox(), "bin");
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(join(binDir, "iii.exe"), "working");
+    const dests: string[] = [];
+    const outcome = await installIiiZip(zipOpts(binDir, {
+      run: (_command: string, args: string[]) => {
+        dests.push(extractDest(args));
+        writeFileSync(join(extractDest(args), "iii.exe"), "partial");
+        return { status: 1, stderr: "disk full" };
+      },
+    }));
+    expect(outcome.ok === false && outcome.reason).toBe("extract");
+    expect(dests.every((dest) => dest !== binDir && dest.includes(".iii-staging-"))).toBe(true);
+    expect(readFileSync(join(binDir, "iii.exe"), "utf-8")).toBe("working");
+    expect(leftoverArchives(binDir)).toEqual([]);
+  });
+
+  it("replaces iii.exe only after the staged copy exists", async () => {
+    const binDir = join(sandbox(), "bin");
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(join(binDir, "iii.exe"), "old");
+    const outcome = await installIiiZip(zipOpts(binDir, {
+      run: (_command: string, args: string[]) => {
+        writeFileSync(join(extractDest(args), "iii.exe"), "new");
+        return { status: 0 };
+      },
+    }));
+    expect(outcome).toEqual({ ok: true });
+    expect(readFileSync(join(binDir, "iii.exe"), "utf-8")).toBe("new");
+    expect(leftoverArchives(binDir)).toEqual([]);
+  });
+
+  it("runs install commands without blocking the event loop, so Ctrl+C handlers can still run", async () => {
+    let timerFired = false;
+    setTimeout(() => { timerFired = true; }, 20);
+    const pending = runInstallCommand(process.execPath, ["-e", "setTimeout(() => process.stdout.write('done'), 300)"]);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(timerFired).toBe(true);
+    const result = await pending;
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("done");
+  });
+
+  it("removes stale archives and staging folders from earlier failed installs", () => {
+    const binDir = join(sandbox(), "bin");
+    mkdirSync(join(binDir, ".iii-staging-1-old"), { recursive: true });
+    writeFileSync(join(binDir, ".iii-download-1-old.zip"), "x");
+    writeFileSync(join(binDir, ".iii-download-2-fresh.zip"), "x");
+    writeFileSync(join(binDir, "iii.exe"), "keep");
+    const later = Date.now() + STALE_INSTALL_FILE_MS + 1000;
+    const freshNow = Date.now();
+    const removedLater = removeStaleInstallFiles(binDir, later);
+    expect(removedLater.sort()).toEqual([".iii-download-1-old.zip", ".iii-download-2-fresh.zip", ".iii-staging-1-old"]);
+    expect(existsSync(join(binDir, "iii.exe"))).toBe(true);
+    writeFileSync(join(binDir, ".iii-download-3-new.zip"), "x");
+    expect(removeStaleInstallFiles(binDir, freshNow)).toEqual([]);
+    expect(existsSync(join(binDir, ".iii-download-3-new.zip"))).toBe(true);
   });
 
   it("gives every install its own archive file so concurrent starts cannot clobber each other", () => {
