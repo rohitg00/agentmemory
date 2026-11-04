@@ -282,7 +282,29 @@ function resolveDataDir(options = {}) {
 }
 //#endregion
 //#region src/functions/privacy.ts
-const PRIVATE_TAG_RE = /<private>[\s\S]*?<\/private>/gi;
+const PRIVATE_TAG_TOKEN_RE = /<private(?=\s|>)[^>]*>|<\/private\s*>/gi;
+function redactPrivateBlocks(input) {
+	const tokens = new RegExp(PRIVATE_TAG_TOKEN_RE.source, PRIVATE_TAG_TOKEN_RE.flags);
+	let out = "";
+	let cursor = 0;
+	let depth = 0;
+	for (let match = tokens.exec(input); match; match = tokens.exec(input)) {
+		const closing = match[0].startsWith("</");
+		if (depth === 0) {
+			if (closing) continue;
+			out += input.slice(cursor, match.index);
+			depth = 1;
+		} else if (closing) {
+			depth -= 1;
+			if (depth === 0) {
+				out += "[REDACTED]";
+				cursor = match.index + match[0].length;
+			}
+		} else depth += 1;
+	}
+	if (depth > 0) return `${out}[REDACTED]`;
+	return out + input.slice(cursor);
+}
 const SECRET_PATTERN_SOURCES = [
 	/(?:api[_-]?key|secret|token|password|credential|auth)[\s]*[=:]\s*["']?[A-Za-z0-9_\-/.+]{20,}["']?/gi,
 	/Bearer\s+[A-Za-z0-9._\-+/=]{20,}/gi,
@@ -302,7 +324,7 @@ const SECRET_PATTERN_SOURCES = [
 const PRIVATE_KEY_BLOCK_RE = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/g;
 const URL_CREDENTIALS_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]*:[^\s/?#@"'<>]+@/gi;
 function stripPrivateData(input) {
-	let result = input.replace(PRIVATE_TAG_RE, "[REDACTED]");
+	let result = redactPrivateBlocks(input);
 	result = result.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
 	result = result.replace(new RegExp(URL_CREDENTIALS_RE.source, URL_CREDENTIALS_RE.flags), "$1[REDACTED_SECRET]@");
 	for (const source of SECRET_PATTERN_SOURCES) {
