@@ -1,28 +1,21 @@
-import { cpSync, existsSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const root = join(dirname(fileURLToPath(import.meta.url)), '..');
+const root = resolve(process.argv[2] ?? join(dirname(fileURLToPath(import.meta.url)), '..'));
 const dist = join(root, 'dist');
-
-const copyIfExists = (from, to) => {
-  if (!existsSync(from)) return;
-  mkdirSync(dirname(to), { recursive: true });
-  cpSync(from, to, { recursive: true });
-};
 
 mkdirSync(dist, { recursive: true });
 
-for (const name of [
-  'iii-config.yaml',
-  'iii-config.docker.yaml',
-  'docker-compose.yml',
-  '.env.example',
-]) {
-  copyIfExists(join(root, name), join(dist, name));
+for (const name of ['iii-config.yaml', 'iii-config.docker.yaml', 'docker-compose.yml']) {
+  rmSync(join(dist, name), { force: true });
 }
+
+const envExample = join(root, '.env.example');
+if (existsSync(envExample)) copyFileSync(envExample, join(dist, '.env.example'));
 
 const viewerDist = join(dist, 'viewer');
 mkdirSync(viewerDist, { recursive: true });
-copyIfExists(join(root, 'src', 'viewer', 'index.html'), join(viewerDist, 'index.html'));
-copyIfExists(join(root, 'src', 'viewer', 'favicon.svg'), join(viewerDist, 'favicon.svg'));
+for (const name of ['index.html', 'favicon.svg']) {
+  copyFileSync(join(root, 'src', 'viewer', name), join(viewerDist, name));
+}
