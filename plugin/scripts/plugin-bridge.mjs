@@ -92,12 +92,31 @@ function canonicalSecretPath() {
 	return join(homedir(), ".agentmemory", "secret");
 }
 //#endregion
+//#region src/hooks/_endpoint.ts
+const OPTION_PREFIX = "CLAUDE_PLUGIN_OPTION_";
+function filled(value) {
+	const trimmed = value?.trim();
+	if (!trimmed || trimmed.startsWith("${") && trimmed.endsWith("}")) return void 0;
+	return value;
+}
+function hookSetting(name, env = process.env) {
+	const optionKey = `${OPTION_PREFIX}${name}`;
+	const option = filled(env[optionKey])?.trim();
+	if (option) return option;
+	if (name === "AGENTMEMORY_SECRET" && optionKey in env) return void 0;
+	return filled(env[name]);
+}
+function resolveSettingSecret(url, env = process.env) {
+	const secretEnv = { ...env };
+	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
+	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
+	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
+	return resolveClientSecret(url, secretEnv);
+}
+//#endregion
 //#region src/mcp/rest-proxy.ts
 function resolveEnvOrEmpty(name) {
-	const raw = process.env[name];
-	if (!raw) return "";
-	if (raw.startsWith("${") && raw.endsWith("}")) return "";
-	return raw;
+	return hookSetting(name) ?? "";
 }
 //#endregion
 //#region src/mcp/transport.ts
@@ -307,7 +326,7 @@ function createPluginBridge() {
 		"[::1]"
 	].includes(base.hostname) || /^127(?:\.\d{1,3}){3}$/.test(base.hostname);
 	function resolveSecret() {
-		const secret = resolveClientSecret(base.href);
+		const secret = resolveSettingSecret(base.href);
 		if (secret && base.protocol !== "https:" && !loopback) throw new Error("AGENTMEMORY_URL requires HTTPS when AGENTMEMORY_SECRET is set, except for loopback URLs.");
 		return secret;
 	}

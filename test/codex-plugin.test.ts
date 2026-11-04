@@ -82,8 +82,8 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     }>(join(pluginRoot, ".mcp.json"));
 
     expect(mcp.mcpServers.agentmemory?.env).toEqual({
-      AGENTMEMORY_URL: "${user_config.agentmemory_url}",
-      AGENTMEMORY_SECRET: "${user_config.agentmemory_secret}",
+      CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL: "${user_config.agentmemory_url}",
+      CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET: "${user_config.agentmemory_secret}",
     });
     expect(mcp.mcpServers.agentmemory?.command).toBe("node");
     expect(mcp.mcpServers.agentmemory?.args).toEqual([
