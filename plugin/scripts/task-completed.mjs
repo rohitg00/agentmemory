@@ -3,6 +3,13 @@ import { execSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
+//#region src/hooks/_capture-filter.ts
+function truncateText(value, max) {
+	if (value.length <= max) return value;
+	const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
+	return value.slice(0, end);
+}
+//#endregion
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -71,7 +78,7 @@ async function main() {
 		data: {
 			task_id: data.task_id,
 			task_subject: data.task_subject,
-			task_description: typeof data.task_description === "string" ? data.task_description.slice(0, 2e3) : "",
+			task_description: typeof data.task_description === "string" ? truncateText(data.task_description, 2e3) : "",
 			teammate_name: data.teammate_name,
 			team_name: data.team_name
 		}
