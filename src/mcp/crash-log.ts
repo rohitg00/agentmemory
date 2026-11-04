@@ -20,7 +20,6 @@ export function reportFatal(kind: string, reason: unknown, logPath: string = mcp
   try {
     mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
     appendFileSync(logPath, line, { mode: 0o600 });
-    chmodSync(logPath, 0o600);
   } catch (err) {
     try {
       const detail = err instanceof Error ? err.message : String(err);
@@ -28,6 +27,9 @@ export function reportFatal(kind: string, reason: unknown, logPath: string = mcp
     } catch {}
     return line;
   }
+  try {
+    chmodSync(logPath, 0o600);
+  } catch {}
   try {
     process.stderr.write(`[@agentmemory/mcp] crash log: ${logPath}\n`);
   } catch {}

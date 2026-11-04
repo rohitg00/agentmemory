@@ -123,7 +123,7 @@ describe("InMemoryKV", () => {
     expect(writeFileSync).toHaveBeenCalledWith(
       `/tmp/test-kv.json.${process.pid}.tmp`,
       expect.any(String),
-      "utf-8",
+      { encoding: "utf-8", mode: 0o600 },
     );
     expect(renameSync).toHaveBeenCalledWith(`/tmp/test-kv.json.${process.pid}.tmp`, "/tmp/test-kv.json");
     const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
@@ -181,7 +181,7 @@ describe("handleToolCall", () => {
     expect(writeFileSync).toHaveBeenCalledWith(
       `/tmp/test-handle.json.${process.pid}.tmp`,
       expect.any(String),
-      "utf-8",
+      { encoding: "utf-8", mode: 0o600 },
     );
     expect(renameSync).toHaveBeenCalledWith(`/tmp/test-handle.json.${process.pid}.tmp`, "/tmp/test-handle.json");
   });

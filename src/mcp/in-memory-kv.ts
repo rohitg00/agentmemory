@@ -53,7 +53,7 @@ export class InMemoryKV {
       }
       const tmpPath = `${this.persistPath}.${process.pid}.tmp`;
       try {
-        writeFileSync(tmpPath, JSON.stringify(data), "utf-8");
+        writeFileSync(tmpPath, JSON.stringify(data), { encoding: "utf-8", mode: 0o600 });
         renameSync(tmpPath, this.persistPath);
       } catch (err) {
         try {

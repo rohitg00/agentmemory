@@ -136,6 +136,15 @@ describe("standalone store snapshot", () => {
     expect(readdirSync(dir)).toEqual(["standalone.json"]);
   });
 
+  it.skipIf(process.platform === "win32")("keeps the snapshot readable only by its owner", async () => {
+    const dir = tempDir();
+    const storePath = join(dir, "standalone.json");
+    const kv = new InMemoryKV(storePath);
+    await kv.set("s", "k", "private");
+    expect(kv.persist()).toBe(true);
+    expect(statSync(storePath).mode & 0o777).toBe(0o600);
+  });
+
   it("keeps the previous snapshot when a write fails", async () => {
     const dir = tempDir();
     const storePath = join(dir, "standalone.json");
