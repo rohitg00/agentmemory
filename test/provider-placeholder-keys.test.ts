@@ -48,6 +48,8 @@ describe("placeholder provider keys", () => {
     ["anthropic", "ANTHROPIC_API_KEY", "todo"],
     ["gemini", "GEMINI_API_KEY", "XXXX-XXXX"],
     ["openrouter", "OPENROUTER_API_KEY", "sk-or-v1-..."],
+    ["anthropic", "ANTHROPIC_API_KEY", "   "],
+    ["anthropic", "ANTHROPIC_API_KEY", "sk-ant-... "],
   ])("runs zero-LLM when %s is chosen but %s=%s", async (provider, key, value) => {
     process.env["AGENTMEMORY_LLM_PROVIDER"] = provider;
     process.env[key] = value;
@@ -113,6 +115,18 @@ describe("placeholder provider keys", () => {
     const env = { OPENAI_API_KEY: "xxx", OPENAI_BASE_URL: "http://localhost:11434/v1" };
     expect(realProviderKeys(env)).toEqual(["OPENAI_API_KEY"]);
     expect(placeholderProviderKeys(env)).toEqual([]);
+  });
+
+  it("does not count a missing OpenAI key behind a plain-http OPENAI_BASE_URL", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "openai";
+    process.env["OPENAI_BASE_URL"] = "http://localhost:11434/v1";
+    const { loadConfig, detectLlmProviderKind, llmOptInHint } = await import("../src/config.js");
+    const { realProviderKeys } = await import("../src/cli/doctor-diagnostics.js");
+
+    expect(loadConfig().provider.provider).toBe("noop");
+    expect(detectLlmProviderKind()).toBe("noop");
+    expect(llmOptInHint()).toContain("OPENAI_API_KEY is not");
+    expect(realProviderKeys({ OPENAI_BASE_URL: "http://localhost:11434/v1" })).toEqual([]);
   });
 
   it("keeps a dummy OpenAI key for a plain-http server on another host", async () => {
@@ -189,6 +203,31 @@ describe("placeholder provider keys", () => {
     const { loadConfig } = await import("../src/config.js");
 
     expect(loadConfig().provider.provider).toBe("anthropic");
+  });
+
+  it("sends GEMINI_API_KEY without a warning when both Gemini keys are real", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "gemini";
+    process.env["GEMINI_API_KEY"] = "AIzaGeminiKey456";
+    process.env["GOOGLE_API_KEY"] = "AIzaRealKey123";
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { loadConfig } = await import("../src/config.js");
+    const { createProvider } = await import("../src/providers/index.js");
+
+    const config = loadConfig();
+    expect(config.provider.provider).toBe("gemini");
+    await createProvider(config.provider).compress("system", "user");
+
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer AIzaGeminiKey456");
+    expect(process.stderr.write).not.toHaveBeenCalledWith(
+      expect.stringContaining("GOOGLE_API_KEY detected"),
+    );
   });
 
   it("sends GOOGLE_API_KEY when GEMINI_API_KEY is a placeholder", async () => {
