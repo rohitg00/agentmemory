@@ -259,10 +259,11 @@ export function setLlmProviderInEnv(envPath: string | null, provider: string): b
   try {
     const current = readFileSync(envPath, "utf-8");
     const line = `AGENTMEMORY_LLM_PROVIDER=${provider}`;
-    const active = /^\s*AGENTMEMORY_LLM_PROVIDER\s*=.*$/m;
-    const next = active.test(current)
-      ? current.replace(active, line)
-      : `${current}${current.length > 0 && !current.endsWith("\n") ? "\n" : ""}${line}\n`;
+    const kept = current
+      .split("\n")
+      .filter((entry) => !/^\s*AGENTMEMORY_LLM_PROVIDER\s*=/.test(entry))
+      .join("\n");
+    const next = `${kept}${kept.length > 0 && !kept.endsWith("\n") ? "\n" : ""}${line}\n`;
     writeFileSync(envPath, next, { mode: 0o600 });
     return true;
   } catch {

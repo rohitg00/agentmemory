@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import { join, resolve } from "node:path";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import {
   detectEmbeddingProvider,
   detectLlmProviderKind,
   embeddingOptInHint,
   llmOptInHint,
+  parseEnvContent,
 } from "../src/config.js";
+import { setLlmProviderInEnv } from "../src/cli/onboarding.js";
 import { resolveHookEndpoint, secretTransportAllowed } from "../src/hooks/_endpoint.js";
 import { getAllTools, DESTRUCTIVE_TOOLS, READ_ONLY_TOOLS } from "../src/mcp/tools-registry.js";
 
@@ -94,6 +98,32 @@ describe("hook token transport", () => {
       CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET: "",
     });
     expect(endpoint.secret).toBe("");
+  });
+
+  it("keeps a custom AGENTMEMORY_URL when the plugin URL option is empty", () => {
+    const endpoint = resolveHookEndpoint({
+      AGENTMEMORY_URL: "http://127.0.0.1:3311",
+      CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL: "",
+      CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET: "",
+    });
+    expect(endpoint.url).toBe("http://127.0.0.1:3311");
+  });
+
+  it("uses the local default when neither the option nor the environment names a URL", () => {
+    expect(resolveHookEndpoint({ CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL: "" }).url).toBe("http://localhost:3111");
+  });
+});
+
+describe("onboarding provider choice", () => {
+  it("leaves exactly one AGENTMEMORY_LLM_PROVIDER line", () => {
+    const dir = mkdtempSync(join(tmpdir(), "am-onboard-"));
+    const envPath = join(dir, ".env");
+    writeFileSync(envPath, "AGENTMEMORY_LLM_PROVIDER=openai\nANTHROPIC_API_KEY=k\nAGENTMEMORY_LLM_PROVIDER=gemini\n");
+    expect(setLlmProviderInEnv(envPath, "anthropic")).toBe(true);
+    const content = readFileSync(envPath, "utf-8");
+    expect(content.match(/AGENTMEMORY_LLM_PROVIDER=/g)).toHaveLength(1);
+    expect(parseEnvContent(content)["AGENTMEMORY_LLM_PROVIDER"]).toBe("anthropic");
+    expect(parseEnvContent(content)["ANTHROPIC_API_KEY"]).toBe("k");
   });
 });
 

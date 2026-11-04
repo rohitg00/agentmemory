@@ -14,10 +14,9 @@ export function hookSetting(
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   const optionKey = `${OPTION_PREFIX}${name}`;
-  if (optionKey in env) {
-    const option = env[optionKey]?.trim();
-    return option ? option : undefined;
-  }
+  const option = env[optionKey]?.trim();
+  if (option) return option;
+  if (name === "AGENTMEMORY_SECRET" && optionKey in env) return undefined;
   return env[name];
 }
 

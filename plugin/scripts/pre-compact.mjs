@@ -104,10 +104,9 @@ const OPTION_PREFIX = "CLAUDE_PLUGIN_OPTION_";
 const DEFAULT_URL = "http://localhost:3111";
 function hookSetting(name, env = process.env) {
 	const optionKey = `${OPTION_PREFIX}${name}`;
-	if (optionKey in env) {
-		const option = env[optionKey]?.trim();
-		return option ? option : void 0;
-	}
+	const option = env[optionKey]?.trim();
+	if (option) return option;
+	if (name === "AGENTMEMORY_SECRET" && optionKey in env) return void 0;
 	return env[name];
 }
 function secretTransportAllowed(url) {
