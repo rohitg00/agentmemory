@@ -552,7 +552,7 @@ describe("OpenAIProvider thinking-model fallback", () => {
     expect(out).toBe("older shape");
   });
 
-  const emptyReasoningReplies = [null, ""].flatMap((content) =>
+  const emptyReasoningReplies = [null, "", " \n "].flatMap((content) =>
     (["reasoning", "reasoning_content"] as const).map((field) => ({ content, field })),
   );
 

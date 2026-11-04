@@ -115,7 +115,7 @@ export class OpenAIProvider implements MemoryProvider {
       const choice = data.choices?.[0];
       const message = choice?.message;
       const content = message?.content;
-      if (content) {
+      if (content?.trim()) {
         return content;
       }
       if (choice?.finish_reason === "length") {
