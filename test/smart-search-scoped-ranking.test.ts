@@ -113,6 +113,17 @@ describe("smart search scoped ranking", () => {
     expect(await f.query({ project: "alpha", limit: 20 })).toEqual(["obs_a_0", "obs_a_1", "obs_a_2"]);
   });
 
+  it("keeps first-pass hits when the deeper ranking returns fewer", async () => {
+    const f = fixture();
+    for (let i = 0; i < 400; i++) await f.add(`obs_b_${i}`, `ses_b_${i}`, "beta", "agent-b", "deploy rollback");
+    for (let i = 0; i < 3; i++) await f.add(`obs_a_${i}`, "ses_a", "alpha", "agent-a", "deploy rollback deploy rollback");
+    const first = f.searchFn.getMockImplementation()!;
+    f.searchFn.mockImplementationOnce(first).mockImplementationOnce(async () => []);
+
+    expect(await f.query({ project: "alpha", limit: 20 })).toEqual(["obs_a_0", "obs_a_1", "obs_a_2"]);
+    expect(f.searchFn).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps the requested layer on the deeper ranking", async () => {
     const f = fixture();
     for (let i = 0; i < 997; i++) await f.add(`obs_o_${i}`, `ses_o_${i}`, "alpha", "agent-a", "deploy rollback");
