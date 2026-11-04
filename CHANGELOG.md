@@ -21,7 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **iii installs itself on Windows.** A fresh `agentmemory` on win32 downloads the pinned iii zip, checks its SHA-256 and extracts it with the system `tar.exe`, falling back to PowerShell `Expand-Archive` (#1670).
 - MCP tools carry `readOnlyHint` and `destructiveHint` annotations, and the plugin README states what the hooks record, where it is kept and how to delete it. Privacy policy: https://agent-memory.dev/privacy (#1664).
 - `memory_lesson_save` accepts `sourceIds` (#1661).
-- agentmemory is listed in the Hermes plugin catalog and on ClawHub. Install with `hermes plugins install agentmemory` or `openclaw plugins install clawhub:agentmemory`; the README and the Hermes and OpenClaw guides describe both routes beside `agentmemory connect`.
+- agentmemory is listed in the [OpenAI plugin directory](https://chatgpt.com/plugins/plugins_6ac50a1b89948191906ff15c72357972) for Codex (skills; pair with `agentmemory connect codex`), the Hermes plugin catalog and ClawHub. For Hermes and OpenClaw, install with `hermes plugins install agentmemory` or `openclaw plugins install clawhub:agentmemory`; the README and the Hermes and OpenClaw guides describe both routes beside `agentmemory connect`.
 - Each published release builds a `linux/amd64` and `linux/arm64` image and pushes it to Docker Hub as `ghumarerohit/agentmemory:<version>`; `latest` follows the highest stable version (#1677).
 - The MCP stdio shim records why it exits in `mcp-crash.log` in the data directory (owner-only, rotated at 1 MiB) and saves its fallback store before writing to stderr (#1662, #1674).
 

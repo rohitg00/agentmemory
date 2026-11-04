@@ -487,6 +487,8 @@ For remote or protected deployments, launch Claude Code with `AGENTMEMORY_URL` a
 
 ### Codex CLI (Codex plugin platform)
 
+Agent Memory is listed in the [OpenAI plugin directory](https://chatgpt.com/plugins/plugins_6ac50a1b89948191906ff15c72357972). That listing adds the 17 skills only. Start the memory server and wire its MCP server with `agentmemory connect codex` so the skills can call the memory tools. For the MCP server, hooks and skills in one plugin, use the repository marketplace below.
+
 ```bash
 # 1. start the memory server in a separate terminal
 npx -y @agentmemory/agentmemory@latest
@@ -643,6 +645,7 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **GitHub Copilot CLI (full plugin)** | Copilot plugin install | `copilot plugin install rohitg00/agentmemory:plugin` for the plugin from the GitHub subdir. |
 | **OpenClaw** | `~/.openclaw/openclaw.json` | `openclaw plugins install clawhub:agentmemory` installs the [ClawHub listing](https://clawhub.ai/plugins/agentmemory); `agentmemory connect openclaw` installs the same plugin and also selects `plugins.slots.memory` and grants `hooks.allowConversationAccess`, without which capture is blocked. Add `--with-mcp` for the full tool set. See [`integrations/openclaw`](integrations/openclaw/). |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
+| **Codex CLI (skills, official listing)** | [OpenAI plugin directory](https://chatgpt.com/plugins/plugins_6ac50a1b89948191906ff15c72357972) | Adds the 17 skills. Pair it with `agentmemory connect codex` for the MCP server. |
 | **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin add agentmemory@agentmemory`. Registers MCP + 6 lifecycle hooks + 17 skills. Trust hooks and verify capture in your host; see [Codex setup and validation](docs/plugins/codex-local.md). |
 | **OpenCode (MCP only)** | `opencode.json` | Different shape: top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 22 auto-capture hooks covering session lifecycle, messages, tools, errors. Project attribution is per-session, so one OpenCode process spanning several repositories files each session under its own project. Two slash commands (`/recall`, `/remember`). Copy `plugin/opencode/` into your OpenCode workspace and add the plugin entry to `opencode.json`. See [`plugin/opencode/README.md`](plugin/opencode/README.md) for the full hook table + gap analysis. |
