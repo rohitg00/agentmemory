@@ -70,8 +70,23 @@ export function boundCrashLine(line: string, maxBytes: number = MAX_CRASH_LINE_B
   const bytes = Buffer.from(line, "utf8");
   if (bytes.length <= maxBytes) return line;
   const marker = " ...(truncated)\n";
-  const keep = bytes.subarray(0, maxBytes - Buffer.byteLength(marker)).toString("utf8").replace(/�+$/, "");
+  const markerBytes = Buffer.byteLength(marker);
+  if (maxBytes <= markerBytes) return bytes.subarray(0, Math.max(0, maxBytes)).toString("utf8").replace(/�+$/, "");
+  const keep = bytes.subarray(0, maxBytes - markerBytes).toString("utf8").replace(/�+$/, "");
   return `${keep}${marker}`;
+}
+
+export function writeAll(
+  fd: number,
+  data: Buffer,
+  write: (fd: number, buffer: Buffer, offset: number, length: number) => number = writeSync,
+): void {
+  let offset = 0;
+  while (offset < data.length) {
+    const n = write(fd, data, offset, data.length - offset);
+    if (!(n > 0)) throw new Error(`crash log write stopped after ${offset} of ${data.length} bytes`);
+    offset += n;
+  }
 }
 
 export function writeCrashLog(line: string, logPath: string = mcpCrashLogPath()): CrashLogResult {
@@ -90,7 +105,7 @@ export function writeCrashLog(line: string, logPath: string = mcpCrashLogPath())
       notices.push(`[@agentmemory/mcp] crash log ${logPath} could not be made owner-only, so it was not written: ${describe(err)}\n`);
       return { written: false, notices };
     }
-    writeSync(fd, bounded);
+    writeAll(fd, Buffer.from(bounded, "utf8"));
     notices.push(`[@agentmemory/mcp] crash log: ${logPath}\n`);
     return { written: true, notices };
   } catch (err) {

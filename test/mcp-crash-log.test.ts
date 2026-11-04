@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, statSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { MAX_CRASH_LINE_BYTES, MAX_CRASH_LOG_BYTES, formatFatal, handleFatal, mcpCrashLogPath, reportFatal, rotateCrashLog, stderrWriteMayBlock } from "../src/mcp/crash-log.js";
+import { MAX_CRASH_LINE_BYTES, MAX_CRASH_LOG_BYTES, boundCrashLine, writeAll, formatFatal, handleFatal, mcpCrashLogPath, reportFatal, rotateCrashLog, stderrWriteMayBlock } from "../src/mcp/crash-log.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 
 const dirs: string[] = [];
@@ -236,6 +236,24 @@ describe("MCP shim crash diagnostics", () => {
       stderrMayBlock: true,
     });
     expect(statSync(fallback).mode & 0o777).toBe(0o600);
+  });
+
+  it("keeps a bounded line within a budget smaller than the truncation marker", () => {
+    expect(Buffer.byteLength(boundCrashLine("x".repeat(100), 10))).toBeLessThanOrEqual(10);
+    expect(boundCrashLine("x".repeat(100), 0)).toBe("");
+  });
+
+  it("finishes a short write and reports a write that stops making progress", () => {
+    const data = Buffer.from("crash record");
+    const chunks: string[] = [];
+    writeAll(3, data, (_fd, buffer, offset, length) => {
+      const n = Math.min(4, length);
+      chunks.push(buffer.subarray(offset, offset + n).toString());
+      return n;
+    });
+    expect(chunks.join("")).toBe("crash record");
+    let calls = 0;
+    expect(() => writeAll(3, data, () => (calls++ === 0 ? 5 : 0))).toThrow(/stopped after 5 of 12 bytes/);
   });
 
   it("does not fail when another process rotated the crash log first", () => {
