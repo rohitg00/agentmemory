@@ -62,6 +62,7 @@ describe("MCP tool surface default", () => {
     });
     const manifest = JSON.parse(readFileSync("plugin/.claude-plugin/plugin.json", "utf-8"));
     expect(manifest.userConfig.agentmemory_secret).toMatchObject({ type: "string", sensitive: true });
-    expect(manifest.userConfig.agentmemory_url).toMatchObject({ type: "string", default: "http://localhost:3111" });
+    expect(manifest.userConfig.agentmemory_url).toMatchObject({ type: "string" });
+    expect(manifest.userConfig.agentmemory_url).not.toHaveProperty("default");
   });
 });
