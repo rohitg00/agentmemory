@@ -76,6 +76,7 @@ export function resetFollowupStatsForTests(): void {
 // Compact mode trims each lesson's content for at-a-glance display. The
 // full content is fetched via memory_lesson_recall when the caller needs it.
 const LESSON_CONTENT_PREVIEW_CHARS = 240;
+const SCOPED_RETRY_CANDIDATES = 1000;
 
 export function registerSmartSearchFunction(
   sdk: IIIClient,
@@ -211,21 +212,41 @@ export function registerSmartSearchFunction(
           : Promise.resolve([]),
       ]);
 
-      const layerResults = hybridResults.filter((result) => matchesSearchLayer(
-        result.observation.id,
-        result.sessionId,
-        targetLayer,
-        result.layer ?? getSearchIndex().layerOf(result.observation.id),
-      ));
-      const projectResults = matchesProject
-        ? await filterProjectResults(layerResults, (result) => matchesProject(result.observation.id, result.sessionId))
-        : layerResults;
+      const scopeResults = async (results: HybridSearchResult[]) => {
+        const layerResults = results.filter((result) => matchesSearchLayer(
+          result.observation.id,
+          result.sessionId,
+          targetLayer,
+          result.layer ?? getSearchIndex().layerOf(result.observation.id),
+        ));
+        const projectResults = matchesProject
+          ? await filterProjectResults(layerResults, (result) => matchesProject(result.observation.id, result.sessionId))
+          : layerResults;
 
-      const filteredHybrid = filterAgentId
-        ? projectResults
-            .filter((r) => r.observation.agentId === filterAgentId)
-            .slice(0, limit)
-        : projectResults.slice(0, limit);
+        return filterAgentId
+          ? projectResults
+              .filter((r) => r.observation.agentId === filterAgentId)
+              .slice(0, limit)
+          : projectResults.slice(0, limit);
+      };
+
+      let filteredHybrid = await scopeResults(hybridResults);
+      if ((filterAgentId || project) && filteredHybrid.length < limit && getSearchIndex().size > overFetchLimit) {
+        try {
+          const deeper = await scopeResults(
+            await searchFn(data.query, SCOPED_RETRY_CANDIDATES, targetLayer, authorizeGraph),
+          );
+          const seen = new Set(deeper.map((result) => result.observation.id));
+          filteredHybrid = [
+            ...deeper,
+            ...filteredHybrid.filter((result) => !seen.has(result.observation.id)),
+          ].slice(0, limit);
+        } catch (err) {
+          logger.warn("Smart search deeper scoped ranking failed; keeping first-pass results", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
         obsId: r.observation.id,
