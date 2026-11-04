@@ -24,6 +24,20 @@ AGENTMEMORY_REST_PORT=3611 AGENTMEMORY_VIEWER_PORT=3613 docker compose up --buil
 
 Open `http://127.0.0.1:3613`, use the persisted secret in `docker compose exec agentmemory cat /data/secret`, and stop with `docker compose down`. `docker compose down -v` deletes the memories and secret. Set `AGENTMEMORY_SECRET` to provide an explicit REST bearer. To use Redis for state, set `AGENTMEMORY_STATE_BACKEND=redis` and `AGENTMEMORY_REDIS_URL=redis://...`; otherwise the persistent file-backed store is used.
 
+## Prebuilt image
+
+Each published release is also available as a prebuilt image on Docker Hub, built from this Dockerfile at the release tag for `linux/amd64` and `linux/arm64`:
+
+```bash
+docker pull ghumarerohit/agentmemory:<version>
+docker run -d --name agentmemory \
+  -p 127.0.0.1:3111:3111 -p 127.0.0.1:3113:3113 \
+  -v agentmemory-data:/data \
+  ghumarerohit/agentmemory:<version>
+```
+
+Keep `/data` on a persistent volume: it holds the memories, the generated secret (`docker exec agentmemory cat /data/secret`) and the worker cache. The container fetches the pinned `state` and `http` registry workers on first start, so it needs network access then. Set `AGENTMEMORY_SECRET`, `EMBEDDING_PROVIDER` and the other variables from the sections above with `-e`. The `latest` tag follows the newest stable release; pin a version tag for deployments.
+
 ## Local embeddings
 
 Set `EMBEDDING_PROVIDER=local` to generate embeddings without an API key. The shared image includes `@huggingface/transformers` and its runtime dependencies; the image build checks that the package loads after pruning development dependencies. Only ONNX native binaries for the image's platform and architecture are retained; other runtime dependencies remain installed. Model weights are not bundled: the first embedding request downloads `Xenova/all-MiniLM-L6-v2` from Hugging Face and requires network access.
