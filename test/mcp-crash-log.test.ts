@@ -92,15 +92,25 @@ describe("MCP shim crash diagnostics", () => {
     expect(saved["mem:memories"]["m1"].content).toBe("kept across the crash");
   }, 90_000);
 
+  it("still runs the exit callback when the crash reason cannot be formatted", async () => {
+    const dataDir = tempDir();
+    const marker = join(dataDir, "on-fatal-ran");
+    const result = await runFixture(
+      `const bad = new Error("unprintable");\n` +
+        `Object.defineProperty(bad, "stack", { get() { throw new Error("stack getter failed"); } });\n` +
+        `setTimeout(() => { throw bad; }, 0);`,
+      dataDir,
+      `import { writeFileSync as markDone } from "node:fs";\n` +
+        `installCrashHandlers(() => { markDone(${JSON.stringify(marker)}, "1"); process.exit(1); });`,
+    );
+    expect(result.code).toBe(1);
+    expect(existsSync(marker)).toBe(true);
+  }, 90_000);
+
   it.skipIf(process.platform === "win32")("creates the crash log readable only by its owner", () => {
     const dataDir = tempDir();
     const logPath = join(dataDir, "mcp-crash.log");
-    const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
-    try {
-      reportFatal("uncaughtException", new Error("private detail"), logPath);
-    } finally {
-      write.mockRestore();
-    }
+    reportFatal("uncaughtException", new Error("private detail"), logPath, () => {});
     expect(statSync(logPath).mode & 0o777).toBe(0o600);
   });
 
@@ -110,15 +120,7 @@ describe("MCP shim crash diagnostics", () => {
     writeFileSync(blocker, "");
     const logPath = join(blocker, "mcp-crash.log");
     const lines: string[] = [];
-    const write = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
-      lines.push(String(chunk));
-      return true;
-    });
-    try {
-      reportFatal("uncaughtException", new Error("boom"), logPath);
-    } finally {
-      write.mockRestore();
-    }
+    reportFatal("uncaughtException", new Error("boom"), logPath, (text) => lines.push(text));
     const out = lines.join("");
     expect(out).toContain(`crash log not written to ${logPath}`);
     expect(out).not.toContain(`crash log: ${logPath}`);
