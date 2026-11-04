@@ -43,6 +43,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `.env.example` names the Agent SDK route and documents `MAX_OBS_PER_SESSION` as a hard per-session cap (#1675, from #1503 by @Rex57).
 - The Claude Code plugin passes its URL and secret settings to the MCP server as `CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL` and `CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET`, the names the plugin directory accepts. An empty URL setting no longer hides `AGENTMEMORY_URL` from the environment, and an empty secret setting still never sends `AGENTMEMORY_SECRET` from the environment.
 
+### Changed
+
+- The Claude Code plugin hooks run in exec form (`command` plus `args`), so the plugin path reaches Node as one argument with no shell quoting. The plugin and `connect claude-code --with-hooks` now need Claude Code 2.1.139 or later.
+
 ### Known issues
 
 - On Windows, `agentmemory stop` takes about 60 s and each start opens empty console windows for the engine and workers. Both come from iii (iii-hq/iii#2430).
