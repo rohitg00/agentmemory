@@ -26,6 +26,30 @@ Its optional lesson list accompanies mixed search only. Use `memory_lesson_recal
 for lessons and `memory_insight_list` for insights. Layer selection is separate
 from `project` and `agentId`; preserve scope filters when expanding results.
 
+## Original memory types
+
+Saved memories have their own `type`, such as `fact`, `preference`, or
+`architecture`. Search adapts them to the observation format, where `type`
+remains `decision`. Read `memoryType` for the original saved-memory type.
+
+Compact search returns `memoryType` beside `type`. Expanded search and full
+recall put it inside `observation`. Compact and narrative recall retain it,
+including shortened previews. Ordinary observations and lessons omit it.
+
+For example, a saved fact appears as:
+
+```json
+{
+  "type": "decision",
+  "memoryType": "fact"
+}
+```
+
+Older persisted indexes need no migration: compact smart search resolves the
+type from the authorized saved record. Stored memory types and the observation
+type enum do not change. The reduced local MCP fallback adds `memoryType` while
+retaining its existing compact response fields.
+
 ## Budgeted recall
 
 All three `memory_recall` formats (`full`, `compact`, `narrative`) return structured

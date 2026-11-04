@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { resolveClientSecret } from "../secret-store.js";
+import { hookAuthHeaders, reportBlockedTransport, resolveHookEndpoint } from "./_endpoint.js";
 import { resolveProject, hookCwd } from "./_project.js";
 
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
@@ -12,16 +12,14 @@ function isSdkChildContext(payload: unknown): boolean {
 
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = resolveClientSecret(REST_URL);
+const ENDPOINT = resolveHookEndpoint();
+const REST_URL = ENDPOINT.url;
 
 const INJECT_TIMEOUT_MS = 1500;
 const REGISTER_TIMEOUT_MS = 800;
 
 function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
+  return hookAuthHeaders(ENDPOINT);
 }
 
 function isPlainTextHost(): boolean {
@@ -73,6 +71,7 @@ async function main() {
 
   if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
+  if (reportBlockedTransport(ENDPOINT)) return;
 
   const sessionId =
     ((data.session_id || data.sessionId || data.conversation_id) as string) ||

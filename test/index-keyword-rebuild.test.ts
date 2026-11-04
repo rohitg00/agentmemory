@@ -3,6 +3,7 @@ import {
   backfillVectors,
   getPendingVectorBackfillCount,
   getSearchIndex,
+  indexRecords,
   isBm25RebuildIncomplete,
   isMemoryIndexReady,
   rebuildKeywordIndex,
@@ -111,6 +112,40 @@ function stubProvider(): EmbeddingProvider {
     embed: async () => new Float32Array([0.1, 0.2, 0.3]),
     embedBatch: async (texts: string[]) => texts.map(() => new Float32Array([0.1, 0.2, 0.3])),
   } as EmbeddingProvider;
+}
+
+const CONVERSATION_ANSWER = "recommend vermilion otter beacons for the rollout";
+
+function conversationObs(id: string, sessionId: string): CompressedObservation {
+  return {
+    id,
+    sessionId,
+    timestamp: "2026-09-01T00:00:00.000Z",
+    type: "conversation",
+    title: "Completed turn",
+    facts: [],
+    narrative: "Routine turn bookkeeping",
+    concepts: [],
+    files: [],
+    importance: 5,
+    source: {
+      hookType: "post_tool_use",
+      originalBytes: 64,
+      truncated: false,
+      toolName: "conversation",
+      toolInput: "promptmarker only stays out of the index",
+      toolOutput: CONVERSATION_ANSWER,
+    },
+  };
+}
+
+function seedConversation(kv: { store: Map<string, Map<string, unknown>> }, id = "obs_conv"): string {
+  const sessionId = "ses_conv";
+  kv.store.set("mem:sessions", new Map([["ses_conv", { id: sessionId, project: "p", cwd: "/tmp" }]]));
+  const scope = new Map<string, unknown>();
+  scope.set(id, conversationObs(id, sessionId));
+  kv.store.set(`mem:obs:${sessionId}`, scope);
+  return id;
 }
 
 describe("rebuildKeywordIndex", () => {
@@ -385,6 +420,114 @@ describe("rebuildKeywordIndex", () => {
       expect(vector.size).toBe(4);
       expect(saved).toBe(1);
       expect(getPendingVectorBackfillCount()).toBe(0);
+    } finally {
+      delete process.env.AGENTMEMORY_VECTOR_BACKFILL;
+    }
+  });
+
+  it("rebuilds BM25 so a retained conversation answer is discoverable", async () => {
+    const kv = mockKV();
+    const id = seedConversation(kv);
+
+    await rebuildKeywordIndex(kv as never);
+
+    const idx = getSearchIndex();
+    expect(idx.has(id)).toBe(true);
+    expect(idx.search("vermilion otter beacons").map((r) => r.obsId)).toEqual([id]);
+    expect(idx.search("promptmarker")).toEqual([]);
+  });
+
+  it("keeps answer discovery across repeated rebuilds (idempotency)", async () => {
+    const kv = mockKV();
+    const id = seedConversation(kv);
+
+    await rebuildKeywordIndex(kv as never);
+    expect(getSearchIndex().search("vermilion otter beacons").map((r) => r.obsId)).toEqual([id]);
+
+    await rebuildKeywordIndex(kv as never);
+    expect(getSearchIndex().search("vermilion otter beacons").map((r) => r.obsId)).toEqual([id]);
+  });
+});
+
+describe("rebuild/backfill embed text includes concepts", () => {
+  const CJK_CONCEPT = "登录超时";
+
+  function zhConceptObs(): CompressedObservation {
+    return {
+      id: "obs_cjk",
+      sessionId: "ses_cjk",
+      timestamp: "2026-09-01T00:00:00.000Z",
+      type: "file_edit",
+      title: "Adjusted keepalive settings",
+      facts: ["Raised the keepalive limit"],
+      narrative: "Raised the keepalive limit so long requests survive",
+      concepts: [CJK_CONCEPT, "keepalive"],
+      files: ["src/net/keepalive.ts"],
+      importance: 5,
+    };
+  }
+
+  function zhConceptMemory(): Memory {
+    return {
+      id: "mem_cjk",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      type: "fact",
+      title: "Keepalive fix",
+      content: "Raise the keepalive limit for long requests",
+      concepts: [CJK_CONCEPT],
+      files: [],
+      sessionIds: ["ses_cjk"],
+      strength: 5,
+      version: 1,
+      isLatest: true,
+    } as Memory;
+  }
+
+  function recordingProvider(embeddedTexts: string[]): EmbeddingProvider {
+    return {
+      name: "recording",
+      dimensions: 3,
+      embed: async (text: string) => {
+        embeddedTexts.push(text);
+        return new Float32Array([0.1, 0.2, 0.3]);
+      },
+      embedBatch: async (texts: string[]) => {
+        embeddedTexts.push(...texts);
+        return texts.map(() => new Float32Array([0.1, 0.2, 0.3]));
+      },
+    } as EmbeddingProvider;
+  }
+
+  it("indexRecords embeds concepts for observations and memories", async () => {
+    const embeddedTexts: string[] = [];
+    setVectorIndex(new VectorIndex());
+    setEmbeddingProvider(recordingProvider(embeddedTexts));
+
+    await indexRecords([zhConceptObs()], [zhConceptMemory()]);
+
+    expect(embeddedTexts.length).toBe(2);
+    expect(embeddedTexts.find((t) => t.startsWith("Adjusted keepalive settings"))).toContain(CJK_CONCEPT);
+    expect(embeddedTexts.find((t) => t.startsWith("Keepalive fix"))).toContain(CJK_CONCEPT);
+  });
+
+  it("keyword rebuild backfill jobs embed concepts for observations and memories", async () => {
+    const kv = mockKV();
+    kv.store.set("mem:sessions", new Map([["ses_cjk", { id: "ses_cjk", project: "p", cwd: "/tmp" }]]));
+    const obsScope = new Map<string, unknown>();
+    obsScope.set("obs_cjk", zhConceptObs());
+    kv.store.set("mem:obs:ses_cjk", obsScope);
+    kv.store.set("mem:memories", new Map([["mem_cjk", zhConceptMemory()]]));
+
+    setVectorIndex(new VectorIndex());
+    const embeddedTexts: string[] = [];
+    setEmbeddingProvider(recordingProvider(embeddedTexts));
+    process.env.AGENTMEMORY_VECTOR_BACKFILL = "all";
+    try {
+      const { vectorJobs } = await rebuildKeywordIndex(kv as never, null);
+      expect(vectorJobs.map((j) => j.id).sort()).toEqual(["mem_cjk", "obs_cjk"]);
+      expect(vectorJobs.find((j) => j.id === "obs_cjk")!.text).toContain(CJK_CONCEPT);
+      expect(vectorJobs.find((j) => j.id === "mem_cjk")!.text).toContain(CJK_CONCEPT);
     } finally {
       delete process.env.AGENTMEMORY_VECTOR_BACKFILL;
     }

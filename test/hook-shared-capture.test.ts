@@ -30,9 +30,15 @@ describe("shared capture module in plugin/scripts", () => {
   });
 
   it("leaves hooks that do not capture self-contained", () => {
-    for (const hook of ["session-start", "pre-tool-use", "pre-compact", "post-commit"]) {
+    for (const hook of ["session-start", "pre-tool-use", "pre-compact"]) {
       expect(existsSync(join(scriptsDir, `${hook}.mjs`))).toBe(true);
       expect(readFileSync(join(scriptsDir, `${hook}.mjs`), "utf-8")).not.toContain("_capture.mjs");
     }
+  });
+
+  it("ships only hook scripts that the plugin registers", () => {
+    const registered = readFileSync(join(scriptsDir, "..", "hooks", "hooks.json"), "utf-8");
+    expect(existsSync(join(scriptsDir, "post-commit.mjs"))).toBe(false);
+    expect(registered).not.toContain("post-commit");
   });
 });
