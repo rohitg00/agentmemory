@@ -9,6 +9,7 @@ vi.mock("../src/config.js", () => ({
   getAgentId: vi.fn(() => undefined),
   isConsolidationEnabled: vi.fn(() => false),
   getConsolidationCooldownMs: vi.fn(() => 300000),
+  isGraphExtractionEnabled: vi.fn(() => false),
 }));
 
 vi.mock("../src/functions/slots.js", () => ({
@@ -17,6 +18,8 @@ vi.mock("../src/functions/slots.js", () => ({
 
 import { registerEventTriggers } from "../src/triggers/events.js";
 import { logger } from "../src/logger.js";
+import { isGraphExtractionEnabled } from "../src/config.js";
+import { KV } from "../src/state/schema.js";
 
 const STALE = "graph-extract watermark stale, re-extracting session";
 
@@ -184,6 +187,31 @@ describe("event::session::stopped graph-extract is incremental", () => {
 
     expect(batches(h.trigger)).toEqual([["a"]]);
     expect(h.kv.scope("mem:sessions").has(SID)).toBe(false);
+  });
+
+  it("re-extracts the whole session after a graph reset starts a new generation", async () => {
+    const h = harness();
+    h.land(obs("a", "2026-01-01T00:00:01.000Z"));
+    await h.stop();
+    h.kv.scope(KV.graphControl).set("generation", "11111111-2222-3333-4444-555555555555");
+    h.land(obs("b", "2026-01-01T00:00:02.000Z"));
+    await h.stop();
+
+    expect(batches(h.trigger)).toEqual([["a"], ["a", "b"]]);
+  });
+
+  it("re-extracts the whole session when LLM graph extraction is turned on", async () => {
+    const h = harness();
+    h.land(obs("a", "2026-01-01T00:00:01.000Z"));
+    await h.stop();
+    vi.mocked(isGraphExtractionEnabled).mockReturnValue(true);
+    try {
+      await h.stop();
+    } finally {
+      vi.mocked(isGraphExtractionEnabled).mockReturnValue(false);
+    }
+
+    expect(batches(h.trigger)).toEqual([["a"], ["a"]]);
   });
 });
 

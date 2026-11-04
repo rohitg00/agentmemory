@@ -10,7 +10,9 @@ import {
   getConsolidationCooldownMs,
   isAgentScopeIsolated,
   isConsolidationEnabled,
+  isGraphExtractionEnabled,
 } from "../config.js";
+import { getGraphGeneration } from "../state/graph-generation.js";
 import { logger } from "../logger.js";
 import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 
@@ -18,8 +20,13 @@ import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 // the per-turn session-stop fan-out.
 const CONSOLIDATION_MARKER_KEY = "consolidation:lastRun";
 
-const observationFingerprint = (obs: CompressedObservation[]): string =>
-  fingerprintId("gx", obs.map((o) => o.id).sort().join(","));
+const observationFingerprint = (obs: CompressedObservation[], context: string): string =>
+  fingerprintId("gx", `${context}|${obs.map((o) => o.id).sort().join(",")}`);
+
+async function graphExtractContext(kv: StateKV): Promise<string> {
+  const generation = await getGraphGeneration(kv).catch(() => null);
+  return `${generation ?? "legacy"}|${isGraphExtractionEnabled() ? "llm" : "heuristic"}`;
+}
 
 async function consolidationDueUnserialized(kv: StateKV): Promise<boolean> {
   const cooldownMs = getConsolidationCooldownMs();
@@ -78,10 +85,11 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
           .catch(() => null);
         const at = session?.graphExtractedAt;
         const mark = session?.graphExtractedDigest;
+        const context = await graphExtractContext(kv);
         let batch = compressed;
         if (typeof at === "string") {
           const seen = compressed.filter((o) => o.timestamp <= at);
-          if (observationFingerprint(seen) === mark) {
+          if (observationFingerprint(seen, context) === mark) {
             batch = compressed.filter((o) => o.timestamp > at);
           } else {
             logger.info("graph-extract watermark stale, re-extracting session", {
@@ -106,7 +114,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
             {
               type: "set",
               path: "graphExtractedDigest",
-              value: observationFingerprint(compressed),
+              value: observationFingerprint(compressed, context),
             },
           ]);
         }
