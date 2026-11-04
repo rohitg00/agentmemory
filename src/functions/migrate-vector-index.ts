@@ -12,11 +12,6 @@ export interface MigrateVectorIndexResult {
   failedSessions: string[];
 }
 
-// Validate one embedding's shape against the provider's declared dimensions
-// before pushing it into the index. Mirrors the symmetric guard in
-// search.ts::vectorIndexAddGuarded — without this, a misconfigured
-// provider returning the wrong-length Float32Array would silently corrupt
-// the rebuilt index (per #248).
 function isValidEmbedding(
   embedding: Float32Array,
   provider: EmbeddingProvider,

@@ -753,3 +753,45 @@ describe("Mesh Functions", () => {
     });
   });
 });
+
+const bloatedIds = (prefix: string, n: number) =>
+  Array.from({ length: n }, (_, i) => `${prefix}_${String(i).padStart(3, "0")}`);
+
+describe("mesh-receive bounds graph provenance", () => {
+  it("caps sourceObservationIds on received nodes and edges", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerMeshFunction(sdk as never, kv as never);
+    const node: GraphNode = {
+      id: "gn_peer",
+      type: "file",
+      name: "src/hot.ts",
+      properties: {},
+      sourceObservationIds: bloatedIds("obs", 500),
+      createdAt: "2026-03-01T00:00:00Z",
+    };
+    const small: GraphNode = { ...node, id: "gn_small", sourceObservationIds: ["obs_a", "obs_b"] };
+    const edge: GraphEdge = {
+      id: "ge_peer",
+      type: "related_to",
+      sourceNodeId: "gn_peer",
+      targetNodeId: "gn_small",
+      weight: 0.5,
+      sourceObservationIds: bloatedIds("eobs", 300),
+      createdAt: "2026-03-01T00:00:00Z",
+    };
+    const result = (await sdk.trigger("mem::mesh-receive", {
+      graphNodes: [node, small],
+      graphEdges: [edge],
+    })) as { success: boolean; accepted: number };
+    expect(result.success).toBe(true);
+    expect(result.accepted).toBe(3);
+    const storedNode = await kv.get<GraphNode>("mem:graph:nodes", "gn_peer");
+    const storedSmall = await kv.get<GraphNode>("mem:graph:nodes", "gn_small");
+    const storedEdge = await kv.get<GraphEdge>("mem:graph:edges", "ge_peer");
+    expect(storedNode!.sourceObservationIds).toEqual(bloatedIds("obs", 500).slice(-32));
+    expect(storedNode!.name).toBe("src/hot.ts");
+    expect(storedSmall!.sourceObservationIds).toEqual(["obs_a", "obs_b"]);
+    expect(storedEdge!.sourceObservationIds).toEqual(bloatedIds("eobs", 300).slice(-32));
+  });
+});

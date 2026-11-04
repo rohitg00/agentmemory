@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { KV } from "../src/state/schema.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
 
 vi.mock("../src/logger.js", () => ({
@@ -82,4 +83,19 @@ describe("mem::remember supersession and recall hygiene", () => {
     expect(update.memory.supersedes).toContain(target.memory.id);
     expect(update.memory.version).toBe(2);
   });
+  it.each([["alpha", "beta"], ["alpha", undefined], [undefined, "alpha"]])("does not supersede or suggest memories across agent scopes (%s, %s)", async (firstAgent, secondAgent) => {
+    const { sdk, kv, search } = await setup();
+    const content = "redis cache layer fronting the primary database for hot reads";
+    const first = await sdk.trigger("mem::remember", { content, project: "shared", agentId: firstAgent }) as any;
+    const duplicate = await sdk.trigger("mem::remember", { content, project: "shared", agentId: secondAgent }) as any;
+    const near = await sdk.trigger("mem::remember", { content: "redis cache layer fronting the primary database misses cold writes entirely", project: "shared", agentId: secondAgent }) as any;
+    expect(duplicate.memory.supersedes).toEqual([]);
+    expect(duplicate.similarTo).toBeUndefined();
+    expect(near.similarTo?.id).not.toBe(first.memory.id);
+    expect((await kv.get(KV.memories, first.memory.id))?.isLatest).not.toBe(false);
+    expect(search.getSearchIndex().has(first.memory.id)).toBe(true);
+    const own = await sdk.trigger("mem::remember", { content, project: "shared", agentId: firstAgent }) as any;
+    expect(own.memory.supersedes).toContain(first.memory.id);
+  });
+
 });

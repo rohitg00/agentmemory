@@ -1,0 +1,135 @@
+.main {
+  padding-bottom: var(--s-10);
+}
+
+.head {
+  display: grid;
+  gap: var(--s-4);
+  padding-top: clamp(48px, 7vw, 96px);
+  padding-bottom: var(--s-7);
+  max-width: 820px;
+}
+
+.head h1 {
+  font-size: var(--t-49);
+  letter-spacing: var(--track-display);
+  line-height: 1.06;
+  font-weight: 600;
+}
+
+.lede {
+  font-size: var(--t-20);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.updated {
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.body {
+  border-top: 1px solid var(--line);
+  padding-top: var(--s-7);
+}
+
+.prose {
+  max-width: 720px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  display: grid;
+  gap: var(--s-4);
+  font-size: var(--t-16);
+  line-height: 1.7;
+  color: var(--ink-2);
+}
+
+.prose h2 {
+  font-size: var(--t-25);
+  margin-top: var(--s-6);
+  letter-spacing: var(--track-head);
+}
+
+.prose h3 {
+  font-size: var(--t-20);
+  margin-top: var(--s-4);
+}
+
+.prose a {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 3px;
+  transition: text-decoration-color var(--dur-1) ease;
+}
+
+.prose a:hover {
+  text-decoration-color: var(--ink);
+}
+
+.prose strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.prose code {
+  font-size: 0.9em;
+  padding: 1px 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--sunk);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.prose pre {
+  margin: 0;
+  padding: var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow-x: auto;
+  font-size: var(--t-14);
+  line-height: 1.6;
+}
+
+.prose pre code {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+
+.prose ul,
+.prose ol {
+  margin: 0;
+  padding-left: 1.25em;
+  display: grid;
+  gap: var(--s-2);
+}
+
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--t-14);
+}
+
+.prose th,
+.prose td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+
+.prose th {
+  font-family: var(--font-mono), monospace;
+  font-size: var(--t-12);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.prose td {
+  color: var(--ink-2);
+}

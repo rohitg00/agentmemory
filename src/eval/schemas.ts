@@ -29,6 +29,7 @@ const ObservationTypeEnum = z.enum([
   "subagent",
   "notification",
   "task",
+  "image",
   "other",
 ]);
 

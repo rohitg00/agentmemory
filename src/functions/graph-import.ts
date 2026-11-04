@@ -1,9 +1,11 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import type { ISdk } from "iii-sdk";
+import { confinePath } from "./path-guard.js";
+import type { IIIClient } from "iii-sdk";
 import type { GraphEdge, GraphEdgeType, GraphNode, GraphNodeType } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { pinGraphState } from "../state/graph-generation.js";
 import { persistGraphDelta } from "./graph.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
@@ -192,13 +194,22 @@ export function parseGraphifyGraph(raw: string): {
   };
 }
 
-export function registerGraphImportFunction(sdk: ISdk, kv: StateKV): void {
+export function registerGraphImportFunction(sdk: IIIClient, state: StateKV): void {
   sdk.registerFunction(
     "mem::graph::import-graphify",
     async (data?: { path?: string; cwd?: string }): Promise<GraphifyImportResult> => {
+      const kv = await pinGraphState(state);
       const explicitPath = typeof data?.path === "string" ? data.path : undefined;
       const cwd = typeof data?.cwd === "string" ? data.cwd : process.cwd();
-      const path = explicitPath ?? join(cwd, "graphify-out", "graph.json");
+      const requested = explicitPath ?? join(cwd, "graphify-out", "graph.json");
+      if (!requested.toLowerCase().endsWith(".json")) {
+        return { success: false, error: "path must point to a .json file", path: requested };
+      }
+      const confined = await confinePath(requested);
+      if (!confined.ok) {
+        return { success: false, error: confined.error, path: requested };
+      }
+      const path = confined.path;
 
       try {
         let size: number;
@@ -224,7 +235,6 @@ export function registerGraphImportFunction(sdk: ISdk, kv: StateKV): void {
           kv,
           parsed.nodes,
           parsed.edges,
-          [],
         );
 
         await recordAudit(kv, "import", "mem::graph::import-graphify", [], {

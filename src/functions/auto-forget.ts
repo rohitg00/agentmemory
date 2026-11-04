@@ -1,9 +1,13 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
+import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
+import { unindexObservationSession } from "../state/obs-index.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { deleteFacetsForTargets } from "./facets.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
 
@@ -21,7 +25,7 @@ interface AutoForgetResult {
   dryRun: boolean;
 }
 
-export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
+export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::auto-forget", 
     async (data: { dryRun?: boolean }): Promise<AutoForgetResult> => {
       const dryRun = data?.dryRun ?? false;
@@ -37,28 +41,34 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
 
       const memories = await kv.list<Memory>(KV.memories);
       const deletedIds = new Set<string>();
-      for (const mem of memories) {
-        if (mem.forgetAfter) {
-          const expiry = new Date(mem.forgetAfter).getTime();
-          if (now > expiry) {
-            result.ttlExpired.push(mem.id);
-            deletedIds.add(mem.id);
-            if (!dryRun) {
-              if (mem.imageRef) {
-                await decrementImageRef(kv, sdk, mem.imageRef);
+      const facetIds = new Set<string>();
+      try {
+        for (const mem of memories) {
+          if (mem.forgetAfter) {
+            const expiry = new Date(mem.forgetAfter).getTime();
+            if (now > expiry) {
+              result.ttlExpired.push(mem.id);
+              deletedIds.add(mem.id);
+              if (!dryRun) {
+                if (mem.imageRef) {
+                  await decrementImageRef(kv, sdk, mem.imageRef);
+                }
+                await kv.delete(KV.memories, mem.id);
+                facetIds.add(mem.id);
+                await recordAudit(kv, "delete", "mem::auto-forget", [mem.id], {
+                  resource: "memory",
+                  reason: "auto-forget TTL",
+                  timestamp: mem.forgetAfter,
+                });
+                await deleteAccessLog(kv, mem.id);
+                getSearchIndex().remove(mem.id);
+                vectorIndexRemove(mem.id);
               }
-              await kv.delete(KV.memories, mem.id);
-              await recordAudit(kv, "delete", "mem::auto-forget", [mem.id], {
-                resource: "memory",
-                reason: "auto-forget TTL",
-                timestamp: mem.forgetAfter,
-              });
-              await deleteAccessLog(kv, mem.id);
-              getSearchIndex().remove(mem.id);
-              vectorIndexRemove(mem.id);
             }
           }
         }
+      } finally {
+        await deleteFacetsForTargets(kv, facetIds);
       }
 
       const latestMemories = memories
@@ -164,17 +174,27 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
           if (age > 180 * MS_PER_DAY && (obs.importance ?? 5) <= 2) {
             result.lowValueObs.push(obs.id);
             if (!dryRun) {
-              let deletedOk = false;
+              let removed: CompressedObservation | null = null;
               try {
-                await kv.delete(KV.observations(sessions[i].id), obs.id);
-                deletedOk = true;
+                removed = await withKeyedLock(`obs:${sessions[i].id}`, async () => {
+                  const current = await kv.get<CompressedObservation>(KV.observations(sessions[i].id), obs.id);
+                  if (!current?.timestamp) return null;
+                  const currentAge = now - new Date(current.timestamp).getTime();
+                  if (!(currentAge > 180 * MS_PER_DAY && (current.importance ?? 5) <= 2)) return null;
+                  await markCaptureEventDeleted(kv, current);
+                  await kv.delete(KV.observations(sessions[i].id), obs.id);
+                  getSearchIndex().remove(obs.id);
+                  vectorIndexRemove(obs.id);
+                  return current;
+                });
               } catch {
-                deletedOk = false;
+                logger.warn("Auto-forget observation cleanup failed");
               }
-              if (deletedOk) {
-                if (obs.imageData) await decrementImageRef(kv, sdk, obs.imageData);
-                if (obs.imageRef && obs.imageRef !== obs.imageData) {
-                  await decrementImageRef(kv, sdk, obs.imageRef);
+              if (removed) {
+                await unindexObservationSession(kv, obs.id).catch(() => {});
+                if (removed.imageData) await decrementImageRef(kv, sdk, removed.imageData);
+                if (removed.imageRef && removed.imageRef !== removed.imageData) {
+                  await decrementImageRef(kv, sdk, removed.imageRef);
                 }
                 await recordAudit(kv, "delete", "mem::auto-forget", [obs.id], {
                   resource: "observation",
@@ -182,8 +202,6 @@ export function registerAutoForgetFunction(sdk: ISdk, kv: StateKV): void {
                   sessionId: sessions[i].id,
                   timestamp: obs.timestamp,
                 });
-                getSearchIndex().remove(obs.id);
-                vectorIndexRemove(obs.id);
               }
             }
           }

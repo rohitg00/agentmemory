@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { resolveClientSecret } from "../secret-store.js";
 import { resolveProject, hookCwd } from "./_project.js";
 
 // Inlined from ./sdk-guard so each hook bundles to a single self-contained
@@ -9,22 +10,11 @@ function isSdkChildContext(payload: unknown): boolean {
   return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
 }
 
-// Session-start hook.
-//
-// Always registers the session for observation tracking (so memories
-// captured on PostToolUse get attached to the right session). Only writes
-// project context to stdout — which Claude Code prepends to the very first
-// turn — when AGENTMEMORY_INJECT_CONTEXT=true. Default off as of 0.8.10
-// (#143); see pre-tool-use.ts for the full explanation.
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = resolveClientSecret(REST_URL);
 
-// When the server is unreachable a 5s timeout multiplies hard under
-// concurrent fan-out (Slack bots, multi-agent harnesses) and becomes a
-// positive feedback loop that OOM-kills iii-engine (#221). Cap tight on
-// both paths and skip the await entirely when the response is unused.
 const INJECT_TIMEOUT_MS = 1500;
 const REGISTER_TIMEOUT_MS = 800;
 
@@ -34,14 +24,30 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+function isPlainTextHost(): boolean {
+  return Boolean(
+    process.env["FACTORY_PROJECT_DIR"] || process.env["DROID_PLUGIN_ROOT"],
+  );
+}
+
+function wantsStructuredOutput(data: Record<string, unknown>): boolean {
+  if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== undefined) {
+    return true;
+  }
+  return data.hook_event_name === "SessionStart" && !isPlainTextHost();
+}
+
 function contextPayload(data: Record<string, unknown>, context: string): string {
+  if (process.env["COPILOT_PLUGIN_ROOT"] && !data.hook_event_name) {
+    return JSON.stringify({ additionalContext: context });
+  }
   if (
     typeof data.cursor_version === "string" ||
     data.hook_event_name === "sessionStart"
   ) {
     return JSON.stringify({ additional_context: context });
   }
-  if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== undefined) {
+  if (wantsStructuredOutput(data)) {
     return JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "SessionStart",

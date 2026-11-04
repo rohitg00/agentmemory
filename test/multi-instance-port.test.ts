@@ -3,14 +3,13 @@ import { loadConfig } from "../src/config";
 
 const PORT_ENVS = [
   "III_REST_PORT",
-  "III_STREAM_PORT",
-  "III_STREAMS_PORT",
   "III_VIEWER_PORT",
   "III_ENGINE_PORT",
   "III_ENGINE_URL",
+  "III_URL",
 ] as const;
 
-describe("multi-instance port auto-derive (#750)", () => {
+describe("multi-instance port auto-derive", () => {
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {
@@ -30,52 +29,33 @@ describe("multi-instance port auto-derive (#750)", () => {
     }
   });
 
-  it("default REST anchor yields canonical 3111/3112/49134 quartet", () => {
+  it("default REST anchor yields REST/viewer/engine ports", () => {
     const cfg = loadConfig();
     expect(cfg.restPort).toBe(3111);
-    expect(cfg.streamsPort).toBe(3112);
     expect(cfg.viewerPort).toBe(3113);
     expect(cfg.engineUrl).toBe("ws://localhost:49134");
   });
 
-  it("relocating REST drags streams + engine with it", () => {
+  it("relocating REST drags viewer + engine with it", () => {
     process.env["III_REST_PORT"] = "3211";
     const cfg = loadConfig();
     expect(cfg.restPort).toBe(3211);
-    expect(cfg.streamsPort).toBe(3212);
     expect(cfg.viewerPort).toBe(3213);
     expect(cfg.engineUrl).toBe("ws://localhost:49234");
   });
 
-  it("instance N=2 block (3311) lands on 3312 + 49334", () => {
+  it("instance N=2 block (3311) lands on viewer 3313 + engine 49334", () => {
     process.env["III_REST_PORT"] = "3311";
     const cfg = loadConfig();
     expect(cfg.restPort).toBe(3311);
-    expect(cfg.streamsPort).toBe(3312);
     expect(cfg.engineUrl).toBe("ws://localhost:49334");
   });
 
-  it("explicit III_STREAM_PORT pins streams without affecting REST/engine", () => {
-    process.env["III_REST_PORT"] = "3211";
-    process.env["III_STREAM_PORT"] = "9999";
-    const cfg = loadConfig();
-    expect(cfg.restPort).toBe(3211);
-    expect(cfg.streamsPort).toBe(9999);
-    expect(cfg.engineUrl).toBe("ws://localhost:49234");
-  });
-
-  it("legacy III_STREAMS_PORT still honored", () => {
-    process.env["III_STREAMS_PORT"] = "9000";
-    const cfg = loadConfig();
-    expect(cfg.streamsPort).toBe(9000);
-  });
-
-  it("explicit III_ENGINE_PORT pins engine without affecting REST/streams", () => {
+  it("explicit III_ENGINE_PORT pins engine without affecting REST/viewer", () => {
     process.env["III_REST_PORT"] = "3211";
     process.env["III_ENGINE_PORT"] = "55555";
     const cfg = loadConfig();
     expect(cfg.restPort).toBe(3211);
-    expect(cfg.streamsPort).toBe(3212);
     expect(cfg.engineUrl).toBe("ws://localhost:55555");
   });
 
@@ -84,6 +64,12 @@ describe("multi-instance port auto-derive (#750)", () => {
     process.env["III_VIEWER_PORT"] = "7777";
     const cfg = loadConfig();
     expect(cfg.viewerPort).toBe(7777);
+  });
+
+  it("Compose-reserved III_URL overrides the derived bridge endpoint", () => {
+    process.env["III_REST_PORT"] = "3511";
+    process.env["III_URL"] = "ws://127.0.0.1:49534";
+    expect(loadConfig().engineUrl).toBe("ws://127.0.0.1:49534");
   });
 
   it("legacy III_ENGINE_URL overrides derivation entirely", () => {

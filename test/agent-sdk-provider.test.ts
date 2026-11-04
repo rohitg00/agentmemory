@@ -1,10 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-// #781: concurrent siblings on the agent-sdk provider used to bail out
-// empty because the recursion guard mutated process.env synchronously
-// before the first await. With the guard scoped to AsyncLocalStorage,
-// each sibling runs in its own context and receives the real SDK result.
-
 // vi.mock is hoisted above module-scope `const`/`let`, so the factory's
 // closure can't safely reference non-hoisted bindings. Use vi.hoisted to
 // declare the mock's mutable state alongside the mock itself.
@@ -37,7 +32,7 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 
 import { AgentSDKProvider } from "../src/providers/agent-sdk.js";
 
-describe("AgentSDKProvider recursion guard (#781)", () => {
+describe("AgentSDKProvider recursion guard", () => {
   beforeEach(() => {
     state.queryCalls.length = 0;
     state.mockResult = "<result>ok</result>";

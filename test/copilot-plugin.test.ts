@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, cpSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
@@ -112,13 +113,9 @@ describe("Copilot MCP config (.mcp.copilot.json)", () => {
     }>(mcpPath);
     const server = config.mcpServers.agentmemory;
     expect(server.type).toBe("local");
-    expect(server.command).toBe("npx");
-    expect(server.args).toEqual(["-y", "@agentmemory/mcp"]);
-    expect(server.env["AGENTMEMORY_URL"]).toBe(
-      "${AGENTMEMORY_URL:-http://localhost:3111}",
-    );
-    expect(server.env["AGENTMEMORY_SECRET"]).toBe("${AGENTMEMORY_SECRET:-}");
-    expect(server.env["AGENTMEMORY_TOOLS"]).toBe("${AGENTMEMORY_TOOLS:-all}");
+    expect(server.command).toBe("node");
+    expect(server.args).toEqual(["${COPILOT_PLUGIN_ROOT}/scripts/plugin-bridge.mjs"]);
+    expect(server.env).toBeUndefined();
     expect(server.tools).toContain("*");
   });
 });
@@ -198,7 +195,7 @@ describe("Copilot hooks config (hooks/hooks.copilot.json)", () => {
     for (const entries of Object.values(config.hooks)) {
       for (const handler of entries) {
         const cmd = handler.command ?? handler.bash ?? handler.powershell ?? "";
-        const match = cmd.match(/\$\{(?:COPILOT_PLUGIN_ROOT|CLAUDE_PLUGIN_ROOT)\}\/(scripts\/[^\s]+)/);
+        const match = cmd.match(/\$\{(?:COPILOT_PLUGIN_ROOT|CLAUDE_PLUGIN_ROOT)\}\/(scripts\/[^\s"']+)/);
         if (match) scriptRefs.add(match[1]);
       }
     }
@@ -216,6 +213,7 @@ describe("Copilot hook scripts", () => {
     script: string,
     payload: Record<string, unknown>,
     env: Record<string, string> = {},
+    command?: string,
   ): Promise<{ requests: ObservedRequest[]; stdout: string }> {
     const requests: ObservedRequest[] = [];
     const server = createServer((req, res) => {
@@ -244,7 +242,8 @@ describe("Copilot hook scripts", () => {
     }
 
     try {
-      const child = spawn(process.execPath, [join(pluginRoot, script)], {
+      const child = spawn(command ?? process.execPath, command ? [] : [join(pluginRoot, script)], {
+        shell: Boolean(command),
         env: {
           ...process.env,
           AGENTMEMORY_URL: `http://127.0.0.1:${address.port}`,
@@ -298,6 +297,39 @@ describe("Copilot hook scripts", () => {
       project: "C:\\repo",
       cwd: "C:\\repo",
     });
+  });
+
+  it("runs the manifest command from an installed path containing spaces", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "copilot plugin "));
+    const installed = join(sandbox, "agentmemory");
+    cpSync(pluginRoot, installed, { recursive: true });
+    try {
+      const hooks = readJson<{ hooks: Record<string, { command: string }[]> }>(
+        join(installed, "hooks/hooks.copilot.json"),
+      );
+      const command = hooks.hooks.postToolUse[0].command.replaceAll("${COPILOT_PLUGIN_ROOT}", installed);
+      const result = await runHook("", {
+        sessionId: "copilot-manifest-session",
+        cwd: sandbox,
+        toolName: "view",
+        toolArgs: { path: "sample.txt" },
+        toolResult: { resultType: "success", textResultForLlm: "synthetic capture" },
+      }, {}, command);
+      expect(result.requests.find((r) => r.path === "/agentmemory/observe")?.body).toMatchObject({
+        sessionId: "copilot-manifest-session",
+        hookType: "post_tool_use",
+        data: { tool_name: "view", tool_output: "synthetic capture" },
+      });
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it("returns the JSON context consumed by the native Copilot sessionStart hook", async () => {
+    const result = await runHook("scripts/session-start.mjs", {
+      sessionId: "copilot-context", cwd: "/repo", source: "startup",
+    }, { AGENTMEMORY_INJECT_CONTEXT: "true", COPILOT_PLUGIN_ROOT: pluginRoot });
+    expect(JSON.parse(result.stdout)).toEqual({ additionalContext: "remembered context" });
   });
 
   it("pre-tool-use narrows Copilot sessionId to strings", async () => {

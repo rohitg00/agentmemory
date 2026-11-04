@@ -1,8 +1,10 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { addSessionToProjectIndex } from "../state/session-index.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 import type {
   Memory,
   Session,
@@ -10,13 +12,9 @@ import type {
   SessionSummary,
 } from "../types.js";
 import { logger } from "../logger.js";
+import { confinePath } from "./path-guard.js";
 
 const ALLOWED_DIRS = [resolve(homedir(), ".agentmemory")];
-
-function isAllowedPath(dbPath: string): boolean {
-  const resolved = resolve(dbPath);
-  return ALLOWED_DIRS.some((dir) => resolved.startsWith(dir + "/"));
-}
 
 // Infer memory project from the majority project of its associated sessions.
 // Returns { updated, skipped } — safe to run repeatedly (idempotent).
@@ -85,7 +83,7 @@ export async function inferMemoryProjects(
   return { updated, skipped, ambiguous };
 }
 
-export function registerMigrateFunction(sdk: ISdk, kv: StateKV): void {
+export function registerMigrateFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::migrate",
     async (data: { dbPath?: string; step?: string; dryRun?: boolean }) => {
       // In-place KV migration steps (no SQLite dependency).
@@ -105,12 +103,14 @@ export function registerMigrateFunction(sdk: ISdk, kv: StateKV): void {
 
       logger.info("Migration started", { dbPath: data.dbPath });
 
-      if (!isAllowedPath(data.dbPath)) {
+      const confined = await confinePath(data.dbPath, ALLOWED_DIRS);
+      if (!confined.ok) {
         return {
           success: false,
           error: `Path not allowed. Must be under: ${ALLOWED_DIRS.join(", ")}`,
         };
       }
+      const dbPath = confined.path;
 
       let Database: any;
       try {
@@ -125,13 +125,13 @@ export function registerMigrateFunction(sdk: ISdk, kv: StateKV): void {
       }
 
       const fs = await import("node:fs");
-      if (!fs.existsSync(data.dbPath)) {
+      if (!fs.existsSync(dbPath)) {
         return { success: false, error: `Database not found: ${data.dbPath}` };
       }
 
       let db: any;
       try {
-        db = Database(data.dbPath, { readonly: true });
+        db = Database(dbPath, { readonly: true });
         let sessionCount = 0;
         let obsCount = 0;
         let summaryCount = 0;
@@ -150,7 +150,14 @@ export function registerMigrateFunction(sdk: ISdk, kv: StateKV): void {
             status: "completed",
             observationCount: 0,
           };
-          await kv.set(KV.sessions, session.id, session);
+          await withKeyedLock(`obs:${session.id}`, () =>
+            kv.set(KV.sessions, session.id, session),
+          );
+          await addSessionToProjectIndex(kv, session.project, {
+            id: session.id,
+            startedAt: session.startedAt,
+            ...(session.agentId ? { agentId: session.agentId } : {}),
+          }).catch(() => {});
           sessionCount++;
         }
 

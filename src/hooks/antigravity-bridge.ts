@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { spawnSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Antigravity CLI (`agy`) bridge — sits in front of the canonical hooks
 // because three parts of agy's contract make them unusable as direct
 // `command` targets: only five events exist (no SessionStart/SessionEnd/
-// UserPromptSubmit, so the lifecycle is synthesized from PreInvocation and
-// Stop); the payload is camelCase and nests tool calls under `toolCall`; and
+// UserPromptSubmit, so session boundaries use PreInvocation and Stop and
+// prompts come from the transcript); tool calls are nested under `toolCall`; and
 // stdout must be a JSON object, which `pre-tool-use.mjs` breaks when
 // AGENTMEMORY_INJECT_CONTEXT=true makes it write raw context text.
 //
@@ -117,7 +118,10 @@ export function normalizePayload(event: string, raw: Json): Json {
       out["native_tool_name"] = rawName;
     }
     out["tool_input"] = args;
-    const result = toolCall["result"] ?? raw["toolResult"] ?? raw["result"];
+    if (out["tool_use_id"] === undefined && Number.isInteger(raw["stepIdx"]) && (raw["stepIdx"] as number) >= 0) {
+      out["tool_use_id"] = `step:${raw["stepIdx"]}`;
+    }
+    const result = toolCall["result"] ?? raw["toolResult"] ?? raw["result"] ?? firstString(raw["error"]);
     if (result !== undefined) out["tool_result"] = result;
   }
 
@@ -125,25 +129,20 @@ export function normalizePayload(event: string, raw: Json): Json {
 }
 
 // Map an Antigravity event to the bundled scripts it should drive.
-// PreInvocation stands in for both SessionStart and UserPromptSubmit: the
-// first invocation of a conversation opens the session, every later one is a
-// fresh user turn. PostInvocation is deliberately unmapped — PostToolUse
-// already captures the work, and firing again would double-record it.
+// PreInvocation fires per model call, not per user prompt. Antigravity omits
+// prompt text from that payload; session-end backfills it from the transcript.
 export function targetsFor(event: string, raw: Json): string[] {
   switch (event) {
     case "PreInvocation": {
       const n = raw["invocationNum"];
-      const isFirst = typeof n !== "number" || n <= 1;
-      return isFirst
-        ? ["session-start.mjs", "prompt-submit.mjs"]
-        : ["prompt-submit.mjs"];
+      return typeof n !== "number" || n === 0 ? ["session-start.mjs"] : [];
     }
     case "PreToolUse":
       return ["pre-tool-use.mjs"];
     case "PostToolUse":
       return ["post-tool-use.mjs"];
     case "Stop":
-      return ["stop.mjs", "session-end.mjs"];
+      return raw["fullyIdle"] === false ? [] : ["session-end.mjs"];
     default:
       return [];
   }
@@ -152,8 +151,11 @@ export function targetsFor(event: string, raw: Json): string[] {
 // The stdout contract, per event. agy treats a PreToolUse response without
 // `decision` as a denial, so a bare `{}` there makes it refuse every matched
 // tool call (verified on 1.0.15). No other event carries a permission
-// decision, so they stay on `{}` — sending one would override user settings.
-export function responseFor(event: string): string {
+// decision. PreInvocation can inject recalled context as an ephemeral step.
+export function responseFor(event: string, context = ""): string {
+  if (event === "PreInvocation" && context) {
+    return JSON.stringify({ injectSteps: [{ ephemeralMessage: context }] });
+  }
   return event === "PreToolUse" ? '{"decision":"allow"}' : "{}";
 }
 
@@ -175,19 +177,22 @@ async function main() {
   if (!raw || typeof raw !== "object") return;
 
   const payload = JSON.stringify(normalizePayload(event, raw));
+  let context = "";
 
   for (const script of targetsFor(event, raw)) {
     // Synchronous so the hook process does not exit before the capture
     // POSTs are issued. Each bundled hook already caps its own fetch
     // timeout, so the worst case here is bounded by those.
-    spawnSync(process.execPath, [join(SCRIPTS_DIR, script)], {
+    const child = spawnSync(process.execPath, [join(SCRIPTS_DIR, script)], {
       input: payload,
-      // Child stdout is discarded on purpose: Antigravity parses this
-      // process's stdout as the hook response, and the bundled scripts
-      // emit prose when context injection is enabled.
-      stdio: ["pipe", "ignore", "ignore"],
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "ignore"],
     });
+    if (event === "PreInvocation" && script === "session-start.mjs" && child.status === 0) {
+      context = child.stdout?.trim() ?? "";
+    }
   }
+  return context;
 }
 
 // Guarded so the pure helpers above stay importable from tests without the
@@ -195,16 +200,16 @@ async function main() {
 // needs no such guard.
 const invokedDirectly =
   process.argv[1] !== undefined &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+  realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 
 if (invokedDirectly) {
   main()
-    .catch(() => {})
-    .finally(() => {
+    .catch(() => undefined)
+    .then((context) => {
       // Always a well-formed, non-blocking response, emitted even when the
       // capture above threw or the payload was unparseable — a hook that
       // writes nothing is as fatal to PreToolUse as one that writes `{}`.
-      process.stdout.write(responseFor(process.argv[2] ?? ""));
+      process.stdout.write(responseFor(process.argv[2] ?? "", context));
       process.exit(0);
     });
 }

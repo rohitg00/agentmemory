@@ -763,7 +763,7 @@ describe("Diagnostics Functions", () => {
       expect(result.checks.some((c) => c.category === "summaries")).toBe(true);
     });
 
-    describe("defensive row-shape handling (CodeRabbit #473 review)", () => {
+    describe("defensive row-shape handling", () => {
       it("NaN/Infinity confidence on a lesson is flagged as warn, not silently passed", async () => {
         await kv.set(KV.lessons, "lsn_nan", {
           id: "lsn_nan", content: "x", context: "", confidence: NaN,

@@ -1,13 +1,102 @@
 #!/usr/bin/env node
+import { readFileSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import { execSync } from "node:child_process";
-import { basename } from "node:path";
+//#region src/secret-store.ts
+const SECRET_KEY = "AGENTMEMORY_SECRET";
+function agentmemoryHomeDir() {
+	return process.env["AGENTMEMORY_DATA_DIR"] || join(homedir(), ".agentmemory");
+}
+function secretFilePath() {
+	return join(agentmemoryHomeDir(), "secret");
+}
+function usable(value) {
+	if (typeof value !== "string") return "";
+	const trimmed = value.trim();
+	if (!trimmed) return "";
+	if (trimmed.startsWith("${") && trimmed.endsWith("}")) return "";
+	return trimmed;
+}
+function unquote(value) {
+	const quote = value[0];
+	if ((quote === "\"" || quote === "'") && value.length > 1) {
+		const close = value.indexOf(quote, 1);
+		if (close !== -1) return value.slice(1, close);
+	}
+	const hash = value.indexOf(" #");
+	return hash === -1 ? value : value.slice(0, hash).trim();
+}
+function readEnvFileSecret() {
+	let content;
+	try {
+		content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
+	} catch {
+		return "";
+	}
+	if (typeof content !== "string") return "";
+	let found = "";
+	for (const line of content.split("\n")) {
+		const trimmed = line.trim();
+		if (trimmed.startsWith("#")) continue;
+		const eq = trimmed.indexOf("=");
+		if (eq === -1) continue;
+		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== SECRET_KEY) continue;
+		found = usable(unquote(trimmed.slice(eq + 1).trim()));
+	}
+	return found;
+}
+function readSecretFile(path) {
+	try {
+		return usable(readFileSync(path, "utf-8"));
+	} catch {
+		return "";
+	}
+}
+function legacyDataDirSecretPaths(env = process.env) {
+	const dataDir = env["AGENTMEMORY_DATA_DIR"];
+	if (!dataDir) return [];
+	const paths = [
+		join(dataDir, "secret"),
+		join(dataDir, ".hmac"),
+		join(dataDir, "..", ".hmac")
+	];
+	return [...new Set(paths.filter((path) => path !== secretFilePath()))];
+}
+function readStoredSecret(env = process.env) {
+	const canonicalPath = canonicalSecretPath();
+	const localPath = secretFilePath();
+	const legacyPaths = legacyDataDirSecretPaths(env);
+	return readSecretFile(canonicalPath) || (localPath === canonicalPath ? "" : readSecretFile(localPath)) || legacyPaths.map(readSecretFile).find(Boolean) || "";
+}
+function isLoopbackUrl(url) {
+	let hostname;
+	try {
+		hostname = new URL(url).hostname.toLowerCase();
+	} catch {
+		return false;
+	}
+	const bare = hostname.replace(/^\[|\]$/g, "");
+	return bare === "localhost" || bare === "::1" || /^127(?:\.\d{1,3}){3}$/.test(bare);
+}
+function resolveClientSecret(baseUrl, env = process.env) {
+	const fromEnv = usable(env[SECRET_KEY]);
+	if (fromEnv) return fromEnv;
+	if (env.AGENTMEMORY_CREDENTIAL_MODE === "explicit") return "";
+	if (!isLoopbackUrl(baseUrl)) return "";
+	return readEnvFileSecret() || readStoredSecret(env);
+}
+function canonicalSecretPath() {
+	return join(homedir(), ".agentmemory", "secret");
+}
+//#endregion
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
 	if (explicit && explicit.trim()) return explicit.trim();
 	const dir = cwd && cwd.trim() ? cwd : process.cwd();
 	try {
-		const top = execSync("git rev-parse --show-toplevel", {
+		const [top, gitDir, commonDir] = execSync("git rev-parse --show-toplevel --git-dir --git-common-dir", {
 			cwd: dir,
 			stdio: [
 				"ignore",
@@ -15,10 +104,17 @@ function resolveProject(cwd) {
 				"ignore"
 			],
 			timeout: 500
-		}).toString().trim();
-		if (top) return basename(top);
+		}).toString().trim().split(/\r?\n/);
+		if (top) return basename(repositoryRoot(dir, top, gitDir, commonDir));
 	} catch {}
 	return basename(dir);
+}
+function repositoryRoot(dir, top, gitDir, commonDir) {
+	if (!gitDir || !commonDir) return top;
+	const physical = realpathSync(dir);
+	const common = resolve(physical, commonDir);
+	if (resolve(physical, gitDir) === common || basename(common) !== ".git") return top;
+	return dirname(common);
 }
 function hookCwd(data) {
 	if (!data || typeof data !== "object") return void 0;
@@ -39,7 +135,7 @@ function isSdkChildContext(payload) {
 }
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const SECRET = resolveClientSecret(REST_URL);
 const INJECT_TIMEOUT_MS = 1500;
 const REGISTER_TIMEOUT_MS = 800;
 function authHeaders() {
@@ -47,9 +143,17 @@ function authHeaders() {
 	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
 	return h;
 }
+function isPlainTextHost() {
+	return Boolean(process.env["FACTORY_PROJECT_DIR"] || process.env["DROID_PLUGIN_ROOT"]);
+}
+function wantsStructuredOutput(data) {
+	if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== void 0) return true;
+	return data.hook_event_name === "SessionStart" && !isPlainTextHost();
+}
 function contextPayload(data, context) {
+	if (process.env["COPILOT_PLUGIN_ROOT"] && !data.hook_event_name) return JSON.stringify({ additionalContext: context });
 	if (typeof data.cursor_version === "string" || data.hook_event_name === "sessionStart") return JSON.stringify({ additional_context: context });
-	if (process.env["DEVIN_PROJECT_DIR"] || data.prompt_id !== void 0) return JSON.stringify({ hookSpecificOutput: {
+	if (wantsStructuredOutput(data)) return JSON.stringify({ hookSpecificOutput: {
 		hookEventName: "SessionStart",
 		additionalContext: context
 	} });

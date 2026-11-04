@@ -1,54 +1,45 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { renderEngineConfig } from "../src/cli/engine-config.js";
+import { COMPOSE_WORKER_VERSIONS, renderWorkerCompose } from "../src/cli/compose-project.js";
 
-describe("renderEngineConfig", () => {
-  it("stores engine state in the resolved data directory", () => {
-    const source = readFileSync(
-      join(import.meta.dirname, "..", "iii-config.yaml"),
-      "utf8",
-    );
-    const dataDir = join("/var", "lib", "agentmemory");
-
-    const rendered = renderEngineConfig(source, { dataDir });
-
-    expect(rendered).toContain(
-      `file_path: '${join(dataDir, "state_store.db")}'`,
-    );
-    expect(rendered).toContain(
-      `file_path: '${join(dataDir, "stream_store")}'`,
-    );
-    expect(rendered).not.toContain("./data/");
+describe("native Worker Compose runtime configuration", () => {
+  it("pins state/http workers at the reviewed registry versions", () => {
+    expect(COMPOSE_WORKER_VERSIONS).toEqual({ state: "0.22.20", http: "0.22.7" });
   });
 
-  it("moves the complete native port quartet from one REST override", () => {
-    const source = readFileSync(
-      join(import.meta.dirname, "..", "iii-config.yaml"),
-      "utf8",
-    );
-
-    const rendered = renderEngineConfig(source, {
+  it("renders instance-specific worker ports and persistent state storage", () => {
+    const rendered = renderWorkerCompose({
+      ports: { restPort: 3211, viewerPort: 3213, enginePort: 49234 },
       dataDir: "/tmp/agentmemory",
-      ports: {
-        restPort: 3211,
-        streamPort: 3212,
-        viewerPort: 3213,
-        enginePort: 49234,
-      },
+      projectRoot: "/opt/agentmemory",
+      nodeBin: "/usr/bin/node",
+      homeDir: "/home/user",
+      linux: false,
     });
+    expect(rendered).toContain("worker: 'package://api.workers.iii.dev/state'");
+    expect(rendered).toContain("version: '0.22.20'");
+    expect(rendered).toContain("worker: 'package://api.workers.iii.dev/http'");
+    expect(rendered).toContain("version: '0.22.7'");
+    expect(rendered).toContain("port: 3211");
+    expect(rendered).toContain("port: 49234");
+    expect(rendered).toContain("file_path: '/tmp/agentmemory/state_store.db'");
+    expect(rendered).toContain("namespace: agentmemory-3211");
+    // The generated Compose project no longer emits the legacy engine config.
+    expect(rendered).not.toContain("iii-config.yaml");
+  });
 
-    expect(rendered).toMatch(
-      /- name: iii-http\n\s+config:\n\s+port: 3211/,
-    );
-    expect(rendered).toMatch(
-      /- name: iii-stream\n\s+config:\n\s+port: 3212/,
-    );
-    expect(rendered).toContain(
-      'allowed_origins: ["http://localhost:3211", "http://localhost:3213", "http://127.0.0.1:3211", "http://127.0.0.1:3213"]',
-    );
-    expect(rendered).toMatch(
-      /- name: iii-worker-manager\n\s+config:\n\s+port: 49234\n\s+host: 127\.0\.0\.1/,
-    );
+  it("supports Redis state via Worker Compose", () => {
+    const rendered = renderWorkerCompose({
+      ports: { restPort: 3111, viewerPort: 3113, enginePort: 49134 },
+      dataDir: "/tmp/am",
+      projectRoot: "/opt/am",
+      nodeBin: "node",
+      homeDir: "/home/u",
+      stateBackend: { kind: "redis", redisUrl: "redis://localhost:6379" },
+      redisUrl: "redis://localhost:6379",
+      linux: false,
+    });
+    expect(rendered).toContain("name: redis");
+    expect(rendered).toContain("redis://localhost:6379");
+    expect(rendered).not.toContain("store_method: file_based");
   });
 });

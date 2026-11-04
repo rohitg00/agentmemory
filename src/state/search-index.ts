@@ -1,4 +1,5 @@
 import type { CompressedObservation } from "../types.js";
+import { getSearchResultLayer, isSearchResultLayer, matchesSearchLayer, type SearchLayer, type SearchResultLayer } from "./search-layer.js";
 import { stem } from "./stemmer.js";
 import { getSynonyms } from "./synonyms.js";
 import { segmentCjk, hasCjk } from "./cjk-segmenter.js";
@@ -7,6 +8,13 @@ interface IndexEntry {
   obsId: string;
   sessionId: string;
   termCount: number;
+  layer: SearchResultLayer;
+  timestamp?: string;
+}
+
+export interface SearchIndexRevision {
+  isCurrent(): boolean;
+  release(): void;
 }
 
 export class SearchIndex {
@@ -15,11 +23,15 @@ export class SearchIndex {
   private docTermCounts: Map<string, Map<string, number>> = new Map();
   private totalDocLength = 0;
   private sortedTerms: string[] | null = null;
+  private revisionGeneration: object = {};
+  private absentRevisions = new Map<string, { token: object; readers: number }>();
 
   private readonly k1 = 1.2;
   private readonly b = 0.75;
 
-  add(obs: CompressedObservation): void {
+  add(obs: CompressedObservation, layer: SearchResultLayer = "observation"): void {
+    this.invalidateAbsentRevision(obs.id);
+    if (this.entries.has(obs.id)) this.remove(obs.id);
     const terms = this.extractTerms(obs);
     const termFreq = new Map<string, number>();
     let termCount = 0;
@@ -33,6 +45,8 @@ export class SearchIndex {
       obsId: obs.id,
       sessionId: obs.sessionId,
       termCount,
+      layer,
+      timestamp: obs.timestamp,
     });
     this.docTermCounts.set(obs.id, termFreq);
     this.totalDocLength += termCount;
@@ -47,11 +61,92 @@ export class SearchIndex {
     this.sortedTerms = null;
   }
 
+  watchRevision(id: string): SearchIndexRevision {
+    const generation = this.revisionGeneration;
+    const entry = this.entries.get(id);
+    if (entry) {
+      return {
+        isCurrent: () => this.revisionGeneration === generation && this.entries.get(id) === entry,
+        release: () => {},
+      };
+    }
+    // Only absent IDs need a lease: retaining deleted-ID tombstones would grow
+    // forever, while one shared absent epoch would cancel unrelated writes.
+    let slot = this.absentRevisions.get(id);
+    if (!slot) {
+      slot = { token: {}, readers: 0 };
+      this.absentRevisions.set(id, slot);
+    }
+    slot.readers++;
+    const token = slot.token;
+    let released = false;
+    return {
+      isCurrent: () => !released && this.revisionGeneration === generation &&
+        this.entries.get(id) === undefined && slot.token === token,
+      release: () => {
+        if (released) return;
+        released = true;
+        slot.readers--;
+        if (slot.readers === 0 && this.absentRevisions.get(id) === slot) this.absentRevisions.delete(id);
+      },
+    };
+  }
+
+  private invalidateAbsentRevision(id: string): void {
+    const slot = this.absentRevisions.get(id);
+    if (slot) slot.token = {};
+  }
+
+  invalidateRevision(id: string): void {
+    this.invalidateAbsentRevision(id);
+    const entry = this.entries.get(id);
+    if (entry) this.entries.set(id, { ...entry });
+  }
+
   has(id: string): boolean {
     return this.entries.has(id);
   }
 
+  sessionOf(id: string): string | undefined {
+    return this.entries.get(id)?.sessionId;
+  }
+
+  layerOf(id: string): SearchResultLayer | undefined {
+    return this.entries.get(id)?.layer;
+  }
+
+  countMissingDocuments(hasDocument: (id: string) => boolean, since?: string | null, activeIds?: ReadonlySet<string>): number {
+    const cutoff = typeof since === "string" ? Date.parse(since) : Number.NaN;
+    let missing = 0;
+    for (const entry of this.entries.values()) {
+      if (entry.layer !== "observation" && entry.layer !== "memory") continue;
+      if (Number.isFinite(cutoff) && !(Date.parse(entry.timestamp ?? "") > cutoff) && !activeIds?.has(entry.obsId)) continue;
+      if (!hasDocument(entry.obsId)) missing++;
+    }
+    return missing;
+  }
+
+  observationCountsBySession(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const entry of this.entries.values()) {
+      if (entry.layer !== "observation") continue;
+      counts.set(entry.sessionId, (counts.get(entry.sessionId) ?? 0) + 1);
+    }
+    return counts;
+  }
+
+  documentKindCounts(): { memories: number; lessons: number } {
+    let memories = 0;
+    let lessons = 0;
+    for (const entry of this.entries.values()) {
+      if (entry.layer === "memory") memories++;
+      else if (entry.layer === "lesson") lessons++;
+    }
+    return { memories, lessons };
+  }
+
   remove(id: string): void {
+    this.invalidateAbsentRevision(id);
     const entry = this.entries.get(id);
     if (!entry) return;
 
@@ -77,6 +172,7 @@ export class SearchIndex {
   search(
     query: string,
     limit = 20,
+    targetLayer: SearchLayer = "all",
   ): Array<{ obsId: string; sessionId: string; score: number }> {
     const rawTerms = this.tokenize(query.toLowerCase());
     if (rawTerms.length === 0) return [];
@@ -111,6 +207,7 @@ export class SearchIndex {
 
         for (const obsId of matchingDocs) {
           const entry = this.entries.get(obsId)!;
+          if (!matchesSearchLayer(obsId, entry.sessionId, targetLayer, entry.layer)) continue;
           const docTerms = this.docTermCounts.get(obsId);
           const tf = docTerms?.get(term) || 0;
           const docLen = entry.termCount;
@@ -124,6 +221,7 @@ export class SearchIndex {
         }
       }
 
+      const prefixScores = new Map<string, number>();
       const startIdx = this.lowerBound(sorted, term);
       for (let si = startIdx; si < sorted.length; si++) {
         const indexTerm = sorted[si];
@@ -135,18 +233,21 @@ export class SearchIndex {
         const prefixIdf =
           Math.log((N - prefixDf + 0.5) / (prefixDf + 0.5) + 1) * 0.5;
         for (const obsId of obsIds) {
+          if (matchingDocs?.has(obsId)) continue;
           const entry = this.entries.get(obsId)!;
+          if (!matchesSearchLayer(obsId, entry.sessionId, targetLayer, entry.layer)) continue;
           const docTerms = this.docTermCounts.get(obsId);
           const tf = docTerms?.get(indexTerm) || 0;
           const docLen = entry.termCount;
           const numerator = tf * (this.k1 + 1);
           const denominator =
             tf + this.k1 * (1 - this.b + this.b * (docLen / avgDocLen));
-          scores.set(
-            obsId,
-            (scores.get(obsId) || 0) + prefixIdf * (numerator / denominator) * weight,
-          );
+          const score = prefixIdf * (numerator / denominator) * weight;
+          prefixScores.set(obsId, Math.max(prefixScores.get(obsId) ?? 0, score));
         }
+      }
+      for (const [obsId, score] of prefixScores) {
+        scores.set(obsId, (scores.get(obsId) ?? 0) + score);
       }
     }
 
@@ -164,6 +265,8 @@ export class SearchIndex {
   }
 
   clear(): void {
+    this.revisionGeneration = {};
+    this.absentRevisions.clear();
     this.entries.clear();
     this.invertedIndex.clear();
     this.docTermCounts.clear();
@@ -172,6 +275,8 @@ export class SearchIndex {
   }
 
   restoreFrom(other: SearchIndex): void {
+    this.revisionGeneration = {};
+    this.absentRevisions.clear();
     this.entries = new Map(
       Array.from(other.entries.entries()).map(([k, v]) => [k, { ...v }]),
     );
@@ -201,7 +306,7 @@ export class SearchIndex {
         [id, Array.from(counts.entries())] as [string, [string, number][]],
     );
     return JSON.stringify({
-      v: 2,
+      v: 3,
       entries,
       inverted,
       docTerms,
@@ -215,7 +320,10 @@ export class SearchIndex {
       const data = JSON.parse(json);
       if (!data?.entries || !data?.inverted || !data?.docTerms) return idx;
       for (const [key, val] of data.entries) {
-        idx.entries.set(key, val);
+        idx.entries.set(key, {
+          ...val,
+          layer: isSearchResultLayer(val.layer) ? val.layer : getSearchResultLayer(key, val.sessionId),
+        });
       }
       for (const [term, ids] of data.inverted) {
         idx.invertedIndex.set(term, new Set(ids));

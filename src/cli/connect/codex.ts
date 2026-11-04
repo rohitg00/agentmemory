@@ -66,7 +66,7 @@ export const adapter: ConnectAdapter = {
   category: "native",
   docs: "https://github.com/rohitg00/agentmemory#codex-cli-codex-plugin-platform",
   protocolNote:
-    "→ Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install the global hooks.json workaround for openai/codex#16430.",
+    "→ Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install the global hooks.json workaround.",
 
   detect(): boolean {
     return existsSync(CODEX_DIR);
@@ -133,12 +133,6 @@ export const adapter: ConnectAdapter = {
   },
 };
 
-/**
- * Install the global `~/.codex/hooks.json` fallback. See
- * `codex-hooks.ts` for context (openai/codex#16430). Returns a result
- * describing the side effect for the caller's summary; failures here do
- * not roll back the MCP wiring.
- */
 function installCodexHooks(opts: ConnectOptions): ConnectResult {
   let pluginRoot: string;
   try {
@@ -168,7 +162,7 @@ function installCodexHooks(opts: ConnectOptions): ConnectResult {
 
   writeJsonAtomic(CODEX_HOOKS, merged);
 
-  logInstalled("Codex hooks (workaround for openai/codex#16430)", CODEX_HOOKS);
+  logInstalled("Codex hooks", CODEX_HOOKS);
   p.log.warn(
     "Codex runs only trusted hooks: launch `codex` (the TUI) once and choose \"Trust all and continue\" at the \"Hooks need review\" prompt. `codex exec` never shows the prompt, so hooks stay inert until then.",
   );

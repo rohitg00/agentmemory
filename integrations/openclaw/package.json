@@ -1,6 +1,6 @@
 {
   "name": "agentmemory",
-  "version": "0.9.29",
+  "version": "0.9.31",
   "type": "module",
   "openclaw": {
     "extensions": [
@@ -12,5 +12,27 @@
     "build": {
       "openclawVersion": "2026.7.1-2"
     }
-  }
+  },
+  "description": "Persistent project memory with automatic recall and conversation capture for OpenClaw.",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/rohitg00/agentmemory/tree/main/integrations/openclaw",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rohitg00/agentmemory.git",
+    "directory": "integrations/openclaw"
+  },
+  "keywords": [
+    "openclaw",
+    "memory",
+    "persistent-memory",
+    "agentmemory"
+  ],
+  "files": [
+    "plugin.mjs",
+    "openclaw.plugin.json",
+    "plugin.yaml",
+    "README.md",
+    "LICENSE",
+    "skills/"
+  ]
 }

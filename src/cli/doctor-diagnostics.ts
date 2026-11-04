@@ -16,10 +16,13 @@
 //   agentmemory doctor --all       # apply every available fix without prompting (CI)
 //   agentmemory doctor --dry-run   # show what each fix WOULD do; execute nothing
 
+import { detectLlmProviderKind, parseEnvContent } from "../config.js";
+
 export type DiagnosticStatus = {
   ok: boolean;
   /** Short status detail (one line). Shown alongside the check name. */
   detail?: string;
+  manualFix?: string;
 };
 
 export type DiagnosticFixResult = {
@@ -38,7 +41,7 @@ export type DoctorContext = {
   pidfilePath: string;
   /** Path to ~/.agentmemory/engine-state.json */
   enginePath: string;
-  /** Pinned engine version (e.g. "0.11.2"). */
+  /** Pinned engine version. */
   pinnedVersion: string;
 };
 
@@ -58,6 +61,10 @@ export type Diagnostic = {
   /** True when there's nothing to auto-fix (we only suggest). */
   manualOnly?: boolean;
 };
+
+export function canAutoFix(d: Diagnostic, status?: DiagnosticStatus): boolean {
+  return !d.manualOnly && !status?.manualFix;
+}
 
 // Diagnostic ids are stable for testing and machine-readable doctor output.
 export const DIAGNOSTIC_IDS = [
@@ -95,26 +102,7 @@ const PROVIDER_KEY_NAMES = [
   "MINIMAX_API_KEY",
 ] as const;
 
-export function parseEnvFile(content: string): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const rawLine of content.split(/\r?\n/)) {
-    const line = rawLine.trim();
-    if (!line || line.startsWith("#")) continue;
-    const eq = line.indexOf("=");
-    if (eq < 0) continue;
-    const key = line.slice(0, eq).trim();
-    let value = line.slice(eq + 1).trim();
-    // Strip surrounding quotes.
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-    out[key] = value;
-  }
-  return out;
-}
+export const parseEnvFile = parseEnvContent;
 
 /** Returns the list of provider keys that look real (non-placeholder). */
 export function realProviderKeys(env: Record<string, string>): string[] {
@@ -151,6 +139,7 @@ export type DoctorEffects = {
   envFileExists: () => boolean;
   /** Read ~/.agentmemory/.env and return parsed key=value pairs. */
   readEnvFile: () => Record<string, string>;
+  processEnv: () => Record<string, string | undefined>;
   /** Is the iii engine PID in the pidfile still alive? */
   pidfilePidIsAlive: () => boolean | null;
   /** Does the pidfile exist on disk? */
@@ -161,6 +150,7 @@ export type DoctorEffects = {
   localBinIiiPath: () => string;
   /** Run `iii --version`; null if it fails. */
   iiiBinaryVersion: (binPath: string) => string | null;
+  externalEngineRunning: () => Promise<boolean>;
   /** Probe the viewer URL; true if it returns OK within timeoutMs. */
   viewerReachable: (timeoutMs?: number) => Promise<boolean>;
   /** Run init logic (copies .env.example). */
@@ -185,7 +175,8 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
       fixPreview: "Copy .env.example into ~/.agentmemory/.env (your keys file).",
       moreInfo:
         "agentmemory reads provider API keys (Anthropic, OpenAI, Gemini, …) from ~/.agentmemory/.env. " +
-        "Without this file the daemon falls back to BM25-only search and no LLM-backed enrichment runs.",
+        "Without this file, and without a provider key exported in the environment, the daemon " +
+        "falls back to BM25-only search and no LLM-backed enrichment runs.",
       check: async () => ({
         ok: effects.envFileExists(),
         detail: effects.envFileExists() ? undefined : "no env file",
@@ -194,45 +185,93 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     },
     {
       id: "no-llm-provider-key",
-      message: "No LLM provider API key found in ~/.agentmemory/.env.",
+      message: "No LLM provider API key found in ~/.agentmemory/.env or the environment.",
       fixPreview: "Open ~/.agentmemory/.env in $EDITOR and paste your key, then re-check.",
       moreInfo:
         "Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, " +
-        "OPENROUTER_API_KEY, MINIMAX_API_KEY. The daemon picks the first that resolves " +
-        "to a real (non-placeholder) value at startup.",
+        "GOOGLE_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY. Placeholder values count as missing. " +
+        "OPENAI_API_KEY counts only while OPENAI_API_KEY_FOR_LLM is not false, and " +
+        "AGENTMEMORY_ALLOW_AGENT_SDK=true needs no key. A value exported in the environment " +
+        "wins over the file, but only for a daemon started from that environment, and " +
+        "counts even when the file is absent.",
       check: async () => {
-        if (!effects.envFileExists()) {
-          return { ok: false, detail: "env file missing (run env-missing fix first)" };
+        const file = effects.readEnvFile();
+        const env: Record<string, string> = { ...file };
+        for (const [k, v] of Object.entries(effects.processEnv())) {
+          if (v !== undefined) env[k] = v;
         }
-        const env = effects.readEnvFile();
-        const real = realProviderKeys(env);
-        return {
-          ok: real.length > 0,
-          detail: real.length > 0 ? `found: ${real.join(", ")}` : "no provider key set",
-        };
+        for (const k of placeholderProviderKeys(env)) delete env[k];
+        if (detectLlmProviderKind(env) !== "llm") {
+          return {
+            ok: false,
+            detail: effects.envFileExists()
+              ? "no provider key set"
+              : "no provider key set (run env-missing fix first)",
+          };
+        }
+        const real = realProviderKeys(env).filter(
+          (k) =>
+            detectLlmProviderKind({
+              [k]: env[k],
+              OPENAI_API_KEY_FOR_LLM: env.OPENAI_API_KEY_FOR_LLM,
+            }) === "llm",
+        );
+        const fromEnv = real.filter((k) => file[k] !== env[k]);
+        const named = real.map((k) => (fromEnv.includes(k) ? `${k} (environment)` : k));
+        if (named.length === 0) return { ok: true, detail: "agent-sdk fallback, no API key" };
+        const caveat =
+          fromEnv.length > 0 ? "; a daemon started elsewhere will not see it" : "";
+        return { ok: true, detail: `found: ${named.join(", ")}${caveat}` };
       },
       fix: (ctx) => effects.openEditor(ctx.envPath),
     },
     {
       id: "engine-version-mismatch",
-      message: "iii binary on PATH doesn't match the version agentmemory pins to.",
+      message: "No iii binary matches the version agentmemory pins to.",
       fixPreview:
-        "Re-run the iii installer for the pinned version and restart the engine.",
+        "Reinstall the pinned iii-engine and restart the managed Worker Compose project.",
       moreInfo:
-        "agentmemory pins the iii engine to a specific release because newer engines " +
-        "use a different worker model. Running a mismatched binary surfaces as EPIPE " +
-        "reconnect loops and empty search results.",
+        "agentmemory manages its pinned iii engine and workers through Worker Compose; " +
+        "a foreign process on PATH is not the instance binary. " +
+        "Running a mismatched binary surfaces as EPIPE " +
+        "reconnect loops and empty search results. Before an instance is configured, " +
+        "a matching private install at ~/.agentmemory/bin/iii can satisfy the pin.",
       check: async (ctx) => {
+        if (await effects.externalEngineRunning()) {
+          return {
+            ok: false,
+            detail: "external engine version is unknown",
+            manualFix: "Verify the external engine version, or stop it before starting a managed instance.",
+          };
+        }
+        const privateVersion = effects.iiiBinaryVersion(effects.localBinIiiPath());
         const bin = effects.findIiiBinary();
-        if (!bin) return { ok: false, detail: "iii not on PATH" };
-        const v = effects.iiiBinaryVersion(bin);
-        if (!v) return { ok: false, detail: "iii on PATH but --version failed" };
+        const pathVersion = bin ? effects.iiiBinaryVersion(bin) : null;
+        if (privateVersion === ctx.pinnedVersion) {
+          const note =
+            pathVersion && pathVersion !== ctx.pinnedVersion
+              ? `; PATH iii is ${pathVersion}; the pinned private install is available for startup`
+              : "";
+          return {
+            ok: true,
+            detail: `private install ${privateVersion} (pinned ${ctx.pinnedVersion})${note}`,
+          };
+        }
+        if (!bin) {
+          return { ok: false, detail: "iii not on PATH and no private install" };
+        }
+        if (!pathVersion) {
+          return { ok: false, detail: "iii on PATH but --version failed" };
+        }
         return {
-          ok: v === ctx.pinnedVersion,
-          detail: `${v} (pinned ${ctx.pinnedVersion})`,
+          ok: pathVersion === ctx.pinnedVersion,
+          detail: `${pathVersion} (pinned ${ctx.pinnedVersion})`,
         };
       },
       fix: async () => {
+        if (await effects.externalEngineRunning()) {
+          return { ok: false, message: "Verify or stop the external engine manually." };
+        }
         const r = await effects.runIiiInstaller();
         if (!r.ok) return r;
         // Best-effort restart: stop then start.
@@ -262,11 +301,11 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     {
       id: "stale-pidfile",
       message: "Stale pidfile: pid recorded but the process is gone.",
-      fixPreview: "Clear ~/.agentmemory/iii.pid + engine-state.json, then restart.",
+      fixPreview: "Verify the Compose daemon ownership record and restart only the managed project.",
       moreInfo:
-        "When the engine crashes hard (kill -9, OOM, host reboot) the pidfile sticks " +
-        "around. agentmemory refuses to start a second engine on top of a stale pid, " +
-        "so this state must be cleared explicitly.",
+        "When a managed Compose daemon crashes hard (kill -9, OOM, host reboot), its " +
+        "ownership PID can stick around. The check uses the saved Compose process, " +
+        "never a legacy iii.pid from a previous lifecycle.",
       check: async () => {
         if (!effects.pidfileExists()) return { ok: true, detail: "no pidfile" };
         const alive = effects.pidfilePidIsAlive();
@@ -308,7 +347,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     {
       id: "iii-on-path-not-local-bin",
       message:
-        "iii is on PATH but not at agentmemory's private install path.",
+        "iii is on PATH but agentmemory's private install is absent or mismatched.",
       fixPreview:
         "Install the pinned version to ~/.agentmemory/bin — won't touch your PATH.",
       moreInfo:
@@ -317,14 +356,19 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         "When agentmemory needs the pin and PATH doesn't have it, it falls back to the " +
         "private install. If neither exists, run the installer.",
       manualOnly: true,
-      check: async () => {
+      check: async (ctx) => {
         const bin = effects.findIiiBinary();
         if (!bin) return { ok: true, detail: "iii not on PATH (handled elsewhere)" };
         const localBin = effects.localBinIiiPath();
-        return {
-          ok: bin === localBin,
-          detail: bin === localBin ? undefined : `iii at: ${bin}`,
-        };
+        if (bin === localBin) return { ok: true };
+        const privateVersion = effects.iiiBinaryVersion(localBin);
+        if (privateVersion === ctx.pinnedVersion) {
+          return {
+            ok: true,
+            detail: `private install pinned; PATH iii at ${bin} stays untouched`,
+          };
+        }
+        return { ok: false, detail: `iii at: ${bin}` };
       },
       fix: async () =>
         effects.runIiiInstaller().then((r) => ({
@@ -369,7 +413,7 @@ export function dryRunPlan(
     if (status.ok) continue;
     n++;
     lines.push(`${n}. [${diagnostic.id}] ${diagnostic.message}`);
-    lines.push(`   would fix: ${diagnostic.fixPreview}`);
+    lines.push(`   ${canAutoFix(diagnostic, status) ? "would fix" : "manual fix"}: ${status.manualFix ?? diagnostic.fixPreview}`);
     if (status.detail) lines.push(`   detail: ${status.detail}`);
   }
   if (lines.length === 0) {

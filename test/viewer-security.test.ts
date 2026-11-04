@@ -22,11 +22,7 @@ describe("viewer document security", () => {
     expect(rendered.html).not.toContain("__AGENTMEMORY_VIEWER_NONCE__");
   });
 
-  it("does not loosen img-src with bare data: URI allowance (#447)", () => {
-    // #313 added `data:` so an inline-SVG favicon could load. #447 reverts
-    // that by self-hosting the favicon at /favicon.svg — `data:` would
-    // also allow any data:image/png;base64,... and (in some browsers)
-    // data:text/html;base64,..., which the viewer never needs.
+  it("does not loosen img-src with bare data: URI allowance", () => {
     const rendered = renderViewerDocument();
     expect(rendered.found).toBe(true);
     if (!rendered.found) return;
@@ -210,7 +206,7 @@ describe("viewer request handler DNS rebinding defence (e2e)", () => {
     }
   });
 
-  it("serves /favicon.svg with image/svg+xml so the tight CSP can drop data: (#447)", async () => {
+  it("serves /favicon.svg with image/svg+xml so the tight CSP can drop data:", async () => {
     const { port } = await spinUpViewer();
     const res = await request(port, `localhost:${port}`, "/favicon.svg");
     expect(res.status).toBe(200);

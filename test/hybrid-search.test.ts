@@ -143,7 +143,7 @@ describe("HybridSearch", () => {
     expect(results).toEqual([]);
   });
 
-  it("falls back to KV.memories when an indexed entry is a saved memory (#265)", async () => {
+  it("falls back to KV.memories when an indexed entry is a saved memory", async () => {
     // mem::remember writes to KV.memories under the synthetic sessionId
     // "memory" — the BM25 index sees that synthetic sessionId, but
     // KV.observations("memory") never has anything.

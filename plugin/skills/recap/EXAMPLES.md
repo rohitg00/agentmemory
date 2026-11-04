@@ -7,7 +7,7 @@ User: "Recap this week."
 Window: last 7 days. Invocation:
 
 ```json
-memory_sessions { "limit": 30 }
+memory_sessions { "project": "app", "limit": 30 }
 ```
 
 Response (after filtering to cwd and the 7-day window):
@@ -28,7 +28,7 @@ Response (after filtering to cwd and the 7-day window):
 Per session, pull highlights:
 
 ```json
-memory_recall { "query": "jwt-refresh-rotation auth-flow", "limit": 3 }
+memory_recall { "query": "jwt-refresh-rotation auth-flow", "project": "app", "limit": 3 }
 ```
 
 Present:
@@ -47,7 +47,9 @@ Present:
 
 User: "recap 3"
 
-Treat as `last 3`. Call `memory_sessions { "limit": 3 }`, group by date, same format.
+Treat as `last 3`. Call `memory_sessions { "project": "app", "limit": 3 }`
+using the recorded project identifier, then group by date. If the identifier is
+unknown, page through results and filter by directory before selecting three.
 
 ## 3. Empty window
 

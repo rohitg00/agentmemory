@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   CompressedObservation,
   Memory,
@@ -63,7 +63,7 @@ function parseMemoryXml(
 }
 
 export function registerConsolidateFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
 ): void {

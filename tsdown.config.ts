@@ -15,7 +15,23 @@ const hookEntries = [
   "src/hooks/session-end.ts",
   "src/hooks/post-commit.ts",
   "src/hooks/antigravity-bridge.ts",
+  "src/hooks/_capture.ts",
 ];
+
+// Cursor gets a thin adapter rather than its own hook copies: two CLI
+// entrypoints that resolve the workspace Cursor fails to report, then
+// delegate to the canonical hooks above. workspace.ts/delegate.ts are not
+// entries — they inline into each CLI, so the emitted files stay
+// self-contained like every other hook, and the canonical .mjs they spawn
+// sit exactly one directory up from plugin/scripts/cursor/.
+const cursorEntries = ["src/hooks/cursor/run-hook.ts", "src/hooks/cursor/run-detached.ts"];
+
+const sharedCaptureModule = {
+  name: "agentmemory-shared-capture",
+  resolveId(source: string) {
+    return source === "./_capture.js" ? { id: "./_capture.mjs", external: true } : null;
+  },
+};
 
 const shared = {
   format: ["esm"] as const,
@@ -67,18 +83,60 @@ export default defineConfig([
     clean: false,
     sourcemap: false,
   },
+  {
+    name: "pi-extension",
+    entry: ["integrations/pi/index.ts"],
+    outDir: "integrations/pi/dist",
+    ...shared,
+    deps: { neverBundle: ["typebox"] },
+    dts: false,
+    clean: true,
+    sourcemap: false,
+  },
+  {
+    entry: ["integrations/omp/index.ts"],
+    outDir: "integrations/omp/dist",
+    ...shared,
+    dts: false,
+    clean: true,
+    sourcemap: false,
+  },
+  {
+    entry: ["src/integrations/dsh.ts"],
+    outDir: "dist/integrations",
+    ...shared,
+    clean: false,
+    sourcemap: false,
+  },
   // One entry per config block prevents tsdown from hoisting shared
   // helpers into hashed chunks across hooks.
+  {
+    entry: ["src/mcp/plugin-bridge.ts"],
+    outDir: "plugin/scripts",
+    ...shared,
+    dts: false,
+    clean: false,
+    sourcemap: false,
+  },
   ...hookEntries.map((entry) => ({
     entry: [entry],
     outDir: "dist/hooks",
     ...shared,
+    plugins: [sharedCaptureModule],
     clean: false,
     sourcemap: false,
   })),
   ...hookEntries.map((entry) => ({
     entry: [entry],
     outDir: "plugin/scripts",
+    ...shared,
+    plugins: [sharedCaptureModule],
+    clean: false,
+    sourcemap: false,
+  })),
+  ...cursorEntries.map((entry) => ({
+    entry: [entry],
+    outDir: "plugin/scripts/cursor",
     ...shared,
     clean: false,
     sourcemap: false,

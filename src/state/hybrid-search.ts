@@ -1,4 +1,5 @@
 import { SearchIndex } from "./search-index.js";
+import type { SearchLayer } from "./search-layer.js";
 import { VectorIndex } from "./vector-index.js";
 import type {
   EmbeddingProvider,
@@ -13,14 +14,19 @@ import { KV } from "./schema.js";
 import {
   GraphRetrieval,
   type GraphRetrievalResult,
+  type GraphQuery,
+  type GraphObservationAuthorization,
 } from "../functions/graph-retrieval.js";
 import { extractEntitiesFromQuery } from "../functions/query-expansion.js";
 import { rerank } from "./reranker.js";
+import { logger } from "../logger.js";
 
 const RRF_K = 60;
+const GRAPH_BUDGET_MS = 500;
 
 export class HybridSearch {
   private graphRetrieval: GraphRetrieval;
+  private lastGraphTimeoutWarningAt = -Infinity;
 
   constructor(
     private bm25: SearchIndex,
@@ -32,17 +38,19 @@ export class HybridSearch {
     private graphWeight = 0.3,
     private rerankEnabled = process.env.RERANK_ENABLED === "true",
   ) {
-    this.graphRetrieval = new GraphRetrieval(kv);
+    this.graphRetrieval = new GraphRetrieval(kv, (id) => this.bm25.layerOf(id), (id) => this.bm25.sessionOf(id));
   }
 
-  async search(query: string, limit = 20): Promise<HybridSearchResult[]> {
-    return this.tripleStreamSearch(query, limit);
+  async search(query: string, limit = 20, targetLayer: SearchLayer = "all", authorizeGraph?: GraphObservationAuthorization): Promise<HybridSearchResult[]> {
+    return this.tripleStreamSearch(query, limit, targetLayer, this.graphRetrieval.createQuery(authorizeGraph));
   }
 
   async searchWithExpansion(
     query: string,
     limit: number,
     expansion: QueryExpansion,
+    targetLayer: SearchLayer = "all",
+    authorizeGraph?: GraphObservationAuthorization,
   ): Promise<HybridSearchResult[]> {
     const allQueries = [
       query,
@@ -55,8 +63,10 @@ export class HybridSearch {
       ...extractEntitiesFromQuery(query),
     ];
 
+    const graphQuery = this.graphRetrieval.createQuery(authorizeGraph);
+    const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
     const resultSets = await Promise.all(
-      allQueries.map((q) => this.tripleStreamSearch(q, limit, allEntities)),
+      allQueries.map((q) => this.tripleStreamSearch(q, retrievalLimit, targetLayer, graphQuery, allEntities, false)),
     );
 
     const merged = new Map<string, HybridSearchResult>();
@@ -69,21 +79,25 @@ export class HybridSearch {
       }
     }
 
-    return Array.from(merged.values())
+    const combined = Array.from(merged.values())
       .sort(
         (a, b) =>
           b.combinedScore - a.combinedScore ||
-          (a.obsId < b.obsId ? -1 : a.obsId > b.obsId ? 1 : 0),
-      )
-      .slice(0, limit);
+          (a.observation.id < b.observation.id ? -1 : a.observation.id > b.observation.id ? 1 : 0),
+      );
+    return this.rerankResults(query, combined, limit);
   }
 
   private async tripleStreamSearch(
     query: string,
     limit: number,
+    targetLayer: SearchLayer,
+    graphQuery: GraphQuery,
     entityHints?: string[],
+    applyReranking = true,
   ): Promise<HybridSearchResult[]> {
-    const bm25Results = this.bm25.search(query, limit * 2);
+    const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
+    const bm25Results = this.bm25.search(query, retrievalLimit * 2, targetLayer);
 
     let vectorResults: Array<{
       obsId: string;
@@ -95,7 +109,7 @@ export class HybridSearch {
     if (this.vector && this.embeddingProvider && this.vector.size > 0) {
       try {
         queryEmbedding = await this.embeddingProvider.embed(query);
-        vectorResults = this.vector.search(queryEmbedding, limit * 2);
+        vectorResults = this.vector.search(queryEmbedding, retrievalLimit * 2, targetLayer, (id) => this.bm25.layerOf(id));
       } catch {
         // fall through to BM25-only
       }
@@ -105,29 +119,10 @@ export class HybridSearch {
       entityHints && entityHints.length > 0
         ? entityHints
         : extractEntitiesFromQuery(query);
-    let graphResults: GraphRetrievalResult[] = [];
-    if (entities.length > 0) {
-      try {
-        graphResults = await this.graphRetrieval.searchByEntities(
-          entities,
-          2,
-          limit,
-        );
-      } catch {
-        // graph search is best-effort
-      }
-    }
-
     const topVectorObs = vectorResults.slice(0, 5).map((r) => r.obsId);
-    if (topVectorObs.length > 0) {
-      try {
-        const expansionResults =
-          await this.graphRetrieval.expandFromChunks(topVectorObs, 1, 5);
-        graphResults = [...graphResults, ...expansionResults];
-      } catch {
-        // expansion is best-effort
-      }
-    }
+    const graphResults = this.graphWeight > 0
+      ? await this.graphResults(graphQuery, entities, topVectorObs, retrievalLimit, targetLayer)
+      : [];
 
     const scores = new Map<
       string,
@@ -186,7 +181,7 @@ export class HybridSearch {
           bm25Rank: Infinity,
           vectorRank: Infinity,
           graphRank: i + 1,
-          sessionId: r.sessionId,
+          sessionId: r.sessionId || this.bm25.sessionOf(r.obsId) || "",
           bm25Score: 0,
           vectorScore: 0,
           graphScore: r.score,
@@ -240,22 +235,59 @@ export class HybridSearch {
     }));
 
     const retrievalDepth = Math.max(limit, 20);
-    const rerankWindow = 20;
     const diversified = this.diversifyBySession(combined, retrievalDepth);
     const enriched = await this.enrichResults(diversified, retrievalDepth);
 
-    if (this.rerankEnabled && enriched.length > 1) {
+    return applyReranking ? this.rerankResults(query, enriched, limit) : enriched.slice(0, limit);
+  }
+
+  private async graphResults(
+    query: GraphQuery,
+    entities: string[],
+    observations: string[],
+    limit: number,
+    layer: SearchLayer,
+  ): Promise<GraphRetrievalResult[]> {
+    if (!entities.length && !observations.length) return [];
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const work = Promise.all([
+        entities.length ? query.searchByEntities(entities, 2, limit, layer).catch(() => []) : [],
+        observations.length ? query.expandFromChunks(observations, 1, 5, layer).catch(() => []) : [],
+      ]).then((results) => results.flat());
+      const results = await Promise.race([
+        work,
+        new Promise<GraphRetrievalResult[]>((resolve) => {
+          timer = setTimeout(() => {
+            query.cancel();
+            if (Date.now() - this.lastGraphTimeoutWarningAt >= 60_000) {
+              this.lastGraphTimeoutWarningAt = Date.now();
+              logger.warn("Graph enrichment exceeded its budget; returning keyword and vector results", { budgetMs: GRAPH_BUDGET_MS });
+            }
+            resolve([]);
+          }, GRAPH_BUDGET_MS);
+        }),
+      ]);
+      const diagnostic = query.diagnostics();
+      if ((diagnostic.status !== "ready" || diagnostic.truncated) && Date.now() - this.lastGraphTimeoutWarningAt >= 60_000) {
+        this.lastGraphTimeoutWarningAt = Date.now();
+        logger.warn("Graph enrichment is unavailable or partial", diagnostic);
+      }
+      return results;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  private async rerankResults(query: string, results: HybridSearchResult[], limit: number): Promise<HybridSearchResult[]> {
+    if (this.rerankEnabled && results.length > 1) {
       try {
-        const head = enriched.slice(0, rerankWindow);
-        const tail = enriched.slice(rerankWindow);
-        const reranked = await rerank(query, head, rerankWindow);
-        return reranked.concat(tail).slice(0, limit);
+        return (await rerank(query, results, 20)).slice(0, limit);
       } catch {
-        return enriched.slice(0, limit);
+        return results.slice(0, limit);
       }
     }
-
-    return enriched.slice(0, limit);
+    return results.slice(0, limit);
   }
 
   private diversifyBySession(
@@ -312,7 +344,7 @@ export class HybridSearch {
         const obs = await this.kv
           .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
           .catch(() => null);
-        if (obs) return obs;
+        if (obs) return { observation: obs, layer: "observation" as const };
         // Fallback: indexed entry may originate from mem::remember, which
         // writes to KV.memories with a synthetic sessionId ("memory" or the
         // memory's first associated session). Coerce the Memory record into
@@ -320,15 +352,16 @@ export class HybridSearch {
         const mem = await this.kv
           .get<Memory>(KV.memories, r.obsId)
           .catch(() => null);
-        return mem ? memoryToObservation(mem) : null;
+        return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null;
       }),
     );
     const enriched: HybridSearchResult[] = [];
     for (let i = 0; i < sliced.length; i++) {
-      const obs = observations[i];
-      if (obs) {
+      const resolved = observations[i];
+      if (resolved) {
         enriched.push({
-          observation: obs,
+          observation: resolved.observation,
+          layer: resolved.layer,
           bm25Score: sliced[i].bm25Score,
           vectorScore: sliced[i].vectorScore,
           graphScore: sliced[i].graphScore,

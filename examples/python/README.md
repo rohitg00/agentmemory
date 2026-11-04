@@ -3,19 +3,19 @@
 agentmemory registers its core operations as iii functions (`mem::remember`,
 `mem::observe`, `mem::context`, `mem::smart-search`, `mem::forget`). Any
 language with an iii SDK can call them directly over the WebSocket transport
-on `ws://localhost:49134` — no separate REST client needed.
+on `ws://127.0.0.1:49134` — no separate REST client needed.
 
 This example uses the official Python SDK.
 
 ## Install
 
 ```bash
-pip install iii-sdk
+pip install iii-sdk==0.25.0
 ```
 
 ## Quickstart
 
-Start the agentmemory daemon (defaults to `ws://localhost:49134`, REST on
+Start the agentmemory daemon (defaults to `ws://127.0.0.1:49134`, REST on
 `:3111`):
 
 ```bash
@@ -25,10 +25,12 @@ npx -y @agentmemory/agentmemory
 Then from Python:
 
 ```python
-from iii import register_worker
+import os
+from iii import InitOptions, register_worker
 
-iii = register_worker("ws://localhost:49134")
-iii.connect()
+engine_url = os.environ.get("AGENTMEMORY_III_URL", "ws://127.0.0.1:49134")
+namespace = os.environ.get("AGENTMEMORY_III_NAMESPACE", "agentmemory-3111")
+iii = register_worker(engine_url, InitOptions(namespace=namespace))
 
 iii.trigger({
     "function_id": "mem::remember",
@@ -45,6 +47,7 @@ hits = iii.trigger({
     "payload": {"project": "demo", "query": "how do tokens refresh", "limit": 5},
 })
 print(hits)
+iii.shutdown()
 ```
 
 ## Functions exposed
@@ -69,3 +72,7 @@ is lower latency.
   budget.
 
 Both scripts assume the daemon is already running.
+
+For a non-default local instance, set `AGENTMEMORY_III_URL` to its engine
+WebSocket URL and `AGENTMEMORY_III_NAMESPACE` to its namespace (for example,
+`ws://127.0.0.1:49834` and `agentmemory-3811` for `--instance 7`).

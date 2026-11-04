@@ -1,5 +1,7 @@
 #!/usr/bin/env node
+import { truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
+import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -7,16 +9,11 @@ function isSdkChildContext(payload: unknown): boolean {
   return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
 }
 
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
-
-function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
-}
+const OBSERVE_TIMEOUT_MS = 2000;
+const EXIT_CAP_MS = 2500;
 
 async function main() {
+  if (isDrainChild()) return runDrainChild();
   let input = "";
   for await (const chunk of process.stdin) {
     input += chunk;
@@ -37,29 +34,33 @@ async function main() {
   const agentType = data.agent_type || data.agentDisplayName || data.agentName;
   const lastMsg =
     typeof data.last_assistant_message === "string"
-      ? data.last_assistant_message.slice(0, 4000)
+      ? truncateText(data.last_assistant_message, 4000)
       : "";
 
   const cwd = hookCwd(data) || process.cwd();
 
-  fetch(`${REST_URL}/agentmemory/observe`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({
-      hookType: "subagent_stop",
-      sessionId,
-      project: resolveProject(cwd),
-      cwd,
-      timestamp: new Date().toISOString(),
-      data: {
-        agent_id: agentId,
-        agent_type: agentType,
-        last_message: lastMsg,
-      },
-    }),
-    signal: AbortSignal.timeout(2000),
-  }).catch(() => {});
-  setTimeout(() => process.exit(0), 500).unref();
+  const body = {
+    hookType: "subagent_stop",
+    sessionId,
+    project: resolveProject(cwd),
+    cwd,
+    timestamp: new Date().toISOString(),
+    data: {
+      agent_id: agentId,
+      agent_type: agentType,
+      last_message: lastMsg,
+    },
+  };
+  void captureObservation(
+    withEventId(
+      body,
+      {},
+      { ...body.data, stop_hook_active: data.stop_hook_active === true },
+      { stable: Boolean(data.agent_id) },
+    ),
+    OBSERVE_TIMEOUT_MS,
+  );
+  setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 
 main().catch(() => process.exit(0));
