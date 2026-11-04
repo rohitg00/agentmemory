@@ -1,10 +1,10 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { execFile } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, statSync, readdirSync, mkdirSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, statSync, readdirSync, mkdirSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { formatFatal, mcpCrashLogPath, reportFatal } from "../src/mcp/crash-log.js";
+import { MAX_CRASH_LINE_BYTES, MAX_CRASH_LOG_BYTES, boundCrashLine, writeAll, formatFatal, handleFatal, mcpCrashLogPath, reportFatal, rotateCrashLog, stderrWriteMayBlock } from "../src/mcp/crash-log.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 
 const dirs: string[] = [];
@@ -22,7 +22,7 @@ afterEach(() => {
 function runFixture(
   body: string,
   dataDir: string,
-  install = "installCrashHandlers(() => process.exit(1));",
+  install = "installCrashHandlers({ persist: () => {} });",
 ): Promise<{ code: number | null; stderr: string }> {
   const dir = tempDir();
   const fixture = join(dir, "fixture.ts");
@@ -84,7 +84,7 @@ describe("MCP shim crash diagnostics", () => {
         `.then(() => setTimeout(() => { throw new Error("boom-after-save"); }, 0));`,
       dataDir,
       `const kv = new InMemoryKV(${JSON.stringify(storePath)});\n` +
-        `installCrashHandlers(() => { kv.persist(); process.exit(1); });`,
+        `installCrashHandlers({ persist: () => kv.persist() });`,
     );
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("boom-after-save");
@@ -92,7 +92,7 @@ describe("MCP shim crash diagnostics", () => {
     expect(saved["mem:memories"]["m1"].content).toBe("kept across the crash");
   }, 90_000);
 
-  it("still runs the exit callback when the crash reason cannot be formatted", async () => {
+  it("still saves and exits when the crash reason cannot be formatted", async () => {
     const dataDir = tempDir();
     const marker = join(dataDir, "on-fatal-ran");
     const result = await runFixture(
@@ -101,7 +101,7 @@ describe("MCP shim crash diagnostics", () => {
         `setTimeout(() => { throw bad; }, 0);`,
       dataDir,
       `import { writeFileSync as markDone } from "node:fs";\n` +
-        `installCrashHandlers(() => { markDone(${JSON.stringify(marker)}, "1"); process.exit(1); });`,
+        `installCrashHandlers({ persist: () => markDone(${JSON.stringify(marker)}, "1") });`,
     );
     expect(result.code).toBe(1);
     expect(existsSync(marker)).toBe(true);
@@ -124,6 +124,181 @@ describe("MCP shim crash diagnostics", () => {
     const out = lines.join("");
     expect(out).toContain(`crash log not written to ${logPath}`);
     expect(out).not.toContain(`crash log: ${logPath}`);
+  });
+
+  it("saves the store and exits when stderr never drains", () => {
+    const dataDir = tempDir();
+    const order: string[] = [];
+    const neverDrains = (text: string) => {
+      order.push(`stderr:${text.slice(0, 22)}`);
+      return false;
+    };
+    handleFatal("uncaughtException", new Error("boom"), {
+      persist: () => order.push("persist"),
+      exit: (code) => order.push(`exit:${code}`),
+      write: neverDrains as (text: string) => void,
+      logPath: join(dataDir, "mcp-crash.log"),
+      stderrMayBlock: false,
+    });
+    expect(order[0]).toBe("persist");
+    expect(order.at(-1)).toBe("exit:1");
+    expect(order.filter((step) => step.startsWith("stderr:")).length).toBeGreaterThan(0);
+    expect(readFileSync(join(dataDir, "mcp-crash.log"), "utf8")).toContain("uncaughtException: Error: boom");
+  });
+
+  it("saves and exits without touching stderr when a stderr write could block", () => {
+    const dataDir = tempDir();
+    const order: string[] = [];
+    const blockingWrite = () => {
+      order.push("stderr");
+      throw new Error("a blocking stderr write must not be attempted");
+    };
+    handleFatal("uncaughtException", new Error("boom"), {
+      persist: () => order.push("persist"),
+      exit: (code) => order.push(`exit:${code}`),
+      write: blockingWrite,
+      logPath: join(dataDir, "mcp-crash.log"),
+      stderrMayBlock: true,
+    });
+    expect(order).toEqual(["persist", "exit:1"]);
+    expect(readFileSync(join(dataDir, "mcp-crash.log"), "utf8")).toContain("uncaughtException: Error: boom");
+  });
+
+  it("keeps a fallback crash record when stderr can block and the crash log cannot be written", () => {
+    const dataDir = tempDir();
+    const blocker = join(dataDir, "not-a-dir");
+    writeFileSync(blocker, "");
+    const fallback = join(dataDir, "fallback-crash.log");
+    const order: string[] = [];
+    handleFatal("uncaughtException", new Error("lost without a fallback"), {
+      persist: () => order.push("persist"),
+      exit: (code) => order.push(`exit:${code}`),
+      write: () => order.push("stderr"),
+      logPath: join(blocker, "mcp-crash.log"),
+      fallbackLogPath: fallback,
+      stderrMayBlock: true,
+    });
+    expect(order).toEqual(["persist", "exit:1"]);
+    const record = readFileSync(fallback, "utf8");
+    expect(record).toContain("uncaughtException: Error: lost without a fallback");
+    expect(record).toContain("crash log not written to");
+  });
+
+  it("bounds one oversized crash reason below the log cap", () => {
+    const dataDir = tempDir();
+    const logPath = join(dataDir, "mcp-crash.log");
+    reportFatal("uncaughtException", new Error("x".repeat(2 * MAX_CRASH_LOG_BYTES)), logPath, () => {});
+    expect(statSync(logPath).size).toBeLessThanOrEqual(MAX_CRASH_LINE_BYTES);
+    expect(readFileSync(logPath, "utf8")).toContain("(truncated)");
+  });
+
+  it("rotates before an append would push the log past the cap", () => {
+    const dataDir = tempDir();
+    const logPath = join(dataDir, "mcp-crash.log");
+    writeFileSync(logPath, "x".repeat(MAX_CRASH_LOG_BYTES - 10));
+    reportFatal("uncaughtException", new Error("does not fit in the last ten bytes"), logPath, () => {});
+    expect(existsSync(`${logPath}.1`)).toBe(true);
+    expect(statSync(logPath).size).toBeLessThan(MAX_CRASH_LOG_BYTES);
+  });
+
+  it.skipIf(process.platform === "win32")("keeps the fallback record bounded and owner-only", () => {
+    const dataDir = tempDir();
+    const blocker = join(dataDir, "not-a-dir");
+    writeFileSync(blocker, "");
+    const fallback = join(dataDir, "fallback-crash.log");
+    writeFileSync(fallback, "x".repeat(MAX_CRASH_LOG_BYTES));
+    chmodSync(fallback, 0o644);
+    handleFatal("uncaughtException", new Error("fallback again"), {
+      persist: () => {},
+      exit: () => {},
+      logPath: join(blocker, "mcp-crash.log"),
+      fallbackLogPath: fallback,
+      stderrMayBlock: true,
+    });
+    expect(statSync(`${fallback}.1`).mode & 0o777).toBe(0o600);
+    expect(statSync(fallback).mode & 0o777).toBe(0o600);
+    expect(statSync(fallback).size).toBeLessThan(MAX_CRASH_LOG_BYTES);
+    expect(readFileSync(fallback, "utf8")).toContain("fallback again");
+  });
+
+  it.skipIf(process.platform === "win32")("makes an existing permissive fallback owner-only before writing", () => {
+    const dataDir = tempDir();
+    const blocker = join(dataDir, "not-a-dir");
+    writeFileSync(blocker, "");
+    const fallback = join(dataDir, "fallback-crash.log");
+    writeFileSync(fallback, "older\n");
+    chmodSync(fallback, 0o644);
+    handleFatal("uncaughtException", new Error("private detail"), {
+      persist: () => {},
+      exit: () => {},
+      logPath: join(blocker, "mcp-crash.log"),
+      fallbackLogPath: fallback,
+      stderrMayBlock: true,
+    });
+    expect(statSync(fallback).mode & 0o777).toBe(0o600);
+  });
+
+  it("keeps a bounded line within a budget smaller than the truncation marker", () => {
+    expect(Buffer.byteLength(boundCrashLine("x".repeat(100), 10))).toBeLessThanOrEqual(10);
+    expect(boundCrashLine("x".repeat(100), 0)).toBe("");
+  });
+
+  it("finishes a short write and reports a write that stops making progress", () => {
+    const data = Buffer.from("crash record");
+    const chunks: string[] = [];
+    writeAll(3, data, (_fd, buffer, offset, length) => {
+      const n = Math.min(4, length);
+      chunks.push(buffer.subarray(offset, offset + n).toString());
+      return n;
+    });
+    expect(chunks.join("")).toBe("crash record");
+    let calls = 0;
+    expect(() => writeAll(3, data, () => (calls++ === 0 ? 5 : 0))).toThrow(/stopped after 5 of 12 bytes/);
+  });
+
+  it("does not fail when another process rotated the crash log first", () => {
+    const dataDir = tempDir();
+    const notices: string[] = [];
+    expect(() => rotateCrashLog(join(dataDir, "already-rotated.log"), notices)).not.toThrow();
+    expect(notices).toEqual([]);
+  });
+
+  it("treats only a Windows stderr pipe as a write that can block", () => {
+    expect(stderrWriteMayBlock("win32", false)).toBe(true);
+    expect(stderrWriteMayBlock("win32", true)).toBe(false);
+    expect(stderrWriteMayBlock("linux", false)).toBe(false);
+    expect(stderrWriteMayBlock("darwin", false)).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32")("makes a rotated crash log owner-only", () => {
+    const dataDir = tempDir();
+    const logPath = join(dataDir, "mcp-crash.log");
+    writeFileSync(logPath, "x".repeat(MAX_CRASH_LOG_BYTES));
+    chmodSync(logPath, 0o644);
+    reportFatal("uncaughtException", new Error("after rotation"), logPath, () => {});
+    expect(statSync(`${logPath}.1`).mode & 0o777).toBe(0o600);
+    expect(statSync(logPath).mode & 0o777).toBe(0o600);
+  });
+
+  it.skipIf(process.platform === "win32")("restricts an existing crash log before appending", () => {
+    const dataDir = tempDir();
+    const logPath = join(dataDir, "mcp-crash.log");
+    writeFileSync(logPath, "older entry\n", { mode: 0o644 });
+    chmodSync(logPath, 0o644);
+    reportFatal("uncaughtException", new Error("private detail"), logPath, () => {});
+    expect(statSync(logPath).mode & 0o777).toBe(0o600);
+    expect(readFileSync(logPath, "utf8")).toContain("private detail");
+  });
+
+  it("rotates the crash log once it reaches the size cap", () => {
+    const dataDir = tempDir();
+    const logPath = join(dataDir, "mcp-crash.log");
+    writeFileSync(logPath, "x".repeat(MAX_CRASH_LOG_BYTES));
+    reportFatal("uncaughtException", new Error("after rotation"), logPath, () => {});
+    expect(statSync(`${logPath}.1`).size).toBe(MAX_CRASH_LOG_BYTES);
+    const current = readFileSync(logPath, "utf8");
+    expect(current).toContain("after rotation");
+    expect(current.length).toBeLessThan(10_000);
   });
 });
 
