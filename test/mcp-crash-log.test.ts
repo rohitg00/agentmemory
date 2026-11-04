@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, statSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { MAX_CRASH_LOG_BYTES, formatFatal, handleFatal, mcpCrashLogPath, reportFatal, stderrWriteMayBlock } from "../src/mcp/crash-log.js";
+import { MAX_CRASH_LOG_BYTES, formatFatal, handleFatal, mcpCrashLogPath, reportFatal, rotateCrashLog, stderrWriteMayBlock } from "../src/mcp/crash-log.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 
 const dirs: string[] = [];
@@ -162,6 +162,33 @@ describe("MCP shim crash diagnostics", () => {
     });
     expect(order).toEqual(["persist", "exit:1"]);
     expect(readFileSync(join(dataDir, "mcp-crash.log"), "utf8")).toContain("uncaughtException: Error: boom");
+  });
+
+  it("keeps a fallback crash record when stderr can block and the crash log cannot be written", () => {
+    const dataDir = tempDir();
+    const blocker = join(dataDir, "not-a-dir");
+    writeFileSync(blocker, "");
+    const fallback = join(dataDir, "fallback-crash.log");
+    const order: string[] = [];
+    handleFatal("uncaughtException", new Error("lost without a fallback"), {
+      persist: () => order.push("persist"),
+      exit: (code) => order.push(`exit:${code}`),
+      write: () => order.push("stderr"),
+      logPath: join(blocker, "mcp-crash.log"),
+      fallbackLogPath: fallback,
+      stderrMayBlock: true,
+    });
+    expect(order).toEqual(["persist", "exit:1"]);
+    const record = readFileSync(fallback, "utf8");
+    expect(record).toContain("uncaughtException: Error: lost without a fallback");
+    expect(record).toContain("crash log not written to");
+  });
+
+  it("does not fail when another process rotated the crash log first", () => {
+    const dataDir = tempDir();
+    const notices: string[] = [];
+    expect(() => rotateCrashLog(join(dataDir, "already-rotated.log"), notices)).not.toThrow();
+    expect(notices).toEqual([]);
   });
 
   it("treats only a Windows stderr pipe as a write that can block", () => {

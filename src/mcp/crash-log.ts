@@ -1,5 +1,5 @@
 import { appendFileSync, chmodSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { redactCredentialUrls } from "../cli/engine-launch.js";
 
@@ -12,6 +12,7 @@ export interface FatalHooks {
   exit?: (code: number) => void;
   write?: StderrWriter;
   logPath?: string;
+  fallbackLogPath?: string;
   stderrMayBlock?: boolean;
 }
 
@@ -44,28 +45,57 @@ function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function appendCrashLog(line: string, logPath: string = mcpCrashLogPath()): string[] {
+export interface CrashLogResult {
+  written: boolean;
+  notices: string[];
+}
+
+export function rotateCrashLog(logPath: string, notices: string[]): void {
+  const rotated = `${logPath}.1`;
+  try {
+    renameSync(logPath, rotated);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw err;
+  }
+  try {
+    chmodSync(rotated, 0o600);
+  } catch (err) {
+    notices.push(`[@agentmemory/mcp] rotated crash log ${rotated} could not be made owner-only: ${describe(err)}\n`);
+  }
+}
+
+export function writeCrashLog(line: string, logPath: string = mcpCrashLogPath()): CrashLogResult {
+  const notices: string[] = [];
   try {
     mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
     if (existsSync(logPath)) {
       if (statSync(logPath).size >= MAX_CRASH_LOG_BYTES) {
-        renameSync(logPath, `${logPath}.1`);
-        try {
-          chmodSync(`${logPath}.1`, 0o600);
-        } catch {}
+        rotateCrashLog(logPath, notices);
       } else {
         try {
           chmodSync(logPath, 0o600);
         } catch (err) {
-          return [`[@agentmemory/mcp] crash log ${logPath} could not be made owner-only, so it was not written: ${describe(err)}\n`];
+          notices.push(`[@agentmemory/mcp] crash log ${logPath} could not be made owner-only, so it was not written: ${describe(err)}\n`);
+          return { written: false, notices };
         }
       }
     }
     appendFileSync(logPath, line, { mode: 0o600 });
-    return [`[@agentmemory/mcp] crash log: ${logPath}\n`];
+    notices.push(`[@agentmemory/mcp] crash log: ${logPath}\n`);
+    return { written: true, notices };
   } catch (err) {
-    return [`[@agentmemory/mcp] crash log not written to ${logPath}: ${describe(err)}\n`];
+    notices.push(`[@agentmemory/mcp] crash log not written to ${logPath}: ${describe(err)}\n`);
+    return { written: false, notices };
   }
+}
+
+export function appendCrashLog(line: string, logPath: string = mcpCrashLogPath()): string[] {
+  return writeCrashLog(line, logPath).notices;
+}
+
+export function fallbackCrashLogPath(): string {
+  return join(tmpdir(), "agentmemory-mcp-crash.log");
 }
 
 export function reportFatal(
@@ -86,14 +116,21 @@ export function reportFatal(
 
 export function handleFatal(kind: string, reason: unknown, hooks: FatalHooks): void {
   const line = safeFormat(kind, reason);
-  let notices: string[] = [];
+  const stderrMayBlock = hooks.stderrMayBlock ?? stderrWriteMayBlock();
+  let result: CrashLogResult = { written: false, notices: [] };
   try {
-    notices = appendCrashLog(line, hooks.logPath ?? mcpCrashLogPath());
+    result = writeCrashLog(line, hooks.logPath ?? mcpCrashLogPath());
   } catch {}
+  const notices = result.notices;
+  if (!result.written && stderrMayBlock) {
+    try {
+      appendFileSync(hooks.fallbackLogPath ?? fallbackCrashLogPath(), line + notices.join(""), { mode: 0o600 });
+    } catch {}
+  }
   try {
     hooks.persist();
   } catch {}
-  if (!(hooks.stderrMayBlock ?? stderrWriteMayBlock())) {
+  if (!stderrMayBlock) {
     const write = hooks.write ?? writeStderr;
     for (const text of [`[@agentmemory/mcp] fatal ${line}`, ...notices]) {
       try {
