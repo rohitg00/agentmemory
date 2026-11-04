@@ -59,6 +59,13 @@ describe("evaluateStatus", () => {
     expect(codes(report)).toContain("keyword-index-rebuilding");
   });
 
+  it("tells a missing embedding key apart from an unchosen provider", () => {
+    const missing = evaluateStatus(inputs({ embeddingHint: "EMBEDDING_PROVIDER=voyage is set, but VOYAGE_API_KEY is not." }));
+    expect(missing.problems.map((p) => p.code)).toContain("embedding-provider-key-missing");
+    const unchosen = evaluateStatus(inputs({ embeddingHint: "A voyage key is present, but cloud embeddings stay off until you choose them." }));
+    expect(unchosen.problems.map((p) => p.code)).toContain("embedding-provider-not-chosen");
+  });
+
   it("reports ok with no problems on a healthy install", () => {
     const report = evaluateStatus(inputs());
     expect(report.status).toBe("ok");

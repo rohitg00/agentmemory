@@ -1916,7 +1916,7 @@ async function runStatus() {
     }
 
     if (flagsRes) {
-      const provider = flagsRes.provider === "llm" ? pc.green("✓ llm") : pc.yellow("✗ noop (no key)");
+      const provider = flagsRes.provider === "llm" ? pc.green("✓ llm") : pc.yellow("✗ noop (LLM features off)");
       const embedding = embeddingStatusLabel(flagsRes.embeddingProvider);
       const embed = embedding ? pc.green(`✓ ${embedding}`) : pc.dim("bm25-only");
       const flagRows = (flagsRes.flags || []).map((f: { key: string; enabled: boolean; label: string }) =>
@@ -1925,6 +1925,8 @@ async function runStatus() {
       lines.push("");
       lines.push(`Provider:     ${provider}`);
       lines.push(`Embeddings:   ${embed}`);
+      if (typeof flagsRes.providerHint === "string") lines.push(pc.yellow(`  ${flagsRes.providerHint}`));
+      if (typeof flagsRes.embeddingHint === "string") lines.push(pc.yellow(`  ${flagsRes.embeddingHint}`));
       lines.push(`Flags:`);
       flagRows.forEach((r: string) => lines.push(r));
     }
@@ -2238,14 +2240,20 @@ async function passiveServerChecks(): Promise<DoctorCheck[]> {
     {
       name: "LLM provider",
       ok: hasLlm,
-      hint: hasLlm ? undefined : "set ANTHROPIC_API_KEY (or GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env",
+      hint: hasLlm
+        ? undefined
+        : typeof flags?.providerHint === "string"
+          ? flags.providerHint
+          : "set AGENTMEMORY_LLM_PROVIDER and that provider's key (for example ANTHROPIC_API_KEY) in ~/.agentmemory/.env",
     },
     {
       name: "Embedding provider",
       ok: hasEmbed,
       hint: hasEmbed
         ? undefined
-        : "Running BM25-only. Set EMBEDDING_PROVIDER=local for on-device semantic search, or add OPENAI_API_KEY / VOYAGE_API_KEY / COHERE_API_KEY / OLLAMA_HOST",
+        : typeof flags?.embeddingHint === "string"
+          ? flags.embeddingHint
+          : "Running BM25-only. Set EMBEDDING_PROVIDER=local for on-device semantic search, or EMBEDDING_PROVIDER=openai, voyage, cohere, gemini or openrouter with that provider's key",
     },
   );
 
@@ -2689,7 +2697,7 @@ async function runInit() {
       "All keys are commented out by default. Uncomment the ones you want.",
       "",
       "Common next steps:",
-      "  1. Pick an LLM provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / etc.)",
+      "  1. Optional: to send session content to an LLM for summaries, set AGENTMEMORY_LLM_PROVIDER and that provider's key (for example ANTHROPIC_API_KEY)",
       "  2. Run `npx @agentmemory/agentmemory doctor` to verify the daemon sees them",
       "  3. Run `npx @agentmemory/agentmemory` to start the worker",
     ].join("\n"),
@@ -2813,7 +2821,7 @@ async function runDemoBody(base: string) {
       : [
           c.dim(`Note: "database performance optimization" found nothing —`),
           c.dim(`set EMBEDDING_PROVIDER=local for on-device semantic recall,`),
-          c.dim(`or add an embedding API key in ~/.agentmemory/.env.`),
+          c.dim(`or set EMBEDDING_PROVIDER and its API key in ~/.agentmemory/.env.`),
         ]),
     "",
     `Viewer:        ${c.url(getViewerUrl())}`,

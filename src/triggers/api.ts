@@ -71,6 +71,8 @@ import {
   isContextInjectionEnabled,
   describeLlmRoute,
   detectLlmProviderKind,
+  llmOptInHint,
+  embeddingOptInHint,
   getAgentId,
   isAgentScopeIsolated,
   loadConfig,
@@ -438,7 +440,9 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
       llmRoute: describeLlmRoute(config.provider),
       functionMetrics: functionMetrics ?? [],
       provider: detectLlmProviderKind(),
+      providerHint: llmOptInHint(),
       embeddingProvider: describeEmbeddingProvider(),
+      embeddingHint: embeddingOptInHint(),
       flags: buildConfigFlags(),
       index: {
         bm25Documents: idx.size,
@@ -586,7 +590,9 @@ export function registerApiTriggers(
         body: {
           version: VERSION,
           provider: providerKind,
+          providerHint: llmOptInHint(),
           embeddingProvider,
+          embeddingHint: embeddingOptInHint(),
           flags,
         },
       };

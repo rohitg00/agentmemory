@@ -26,8 +26,7 @@
         "@agentmemory/mcp@0.9.31"
       ],
       "env": {
-        "AGENTMEMORY_URL": "${AGENTMEMORY_URL:-http://localhost:3111}",
-        "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET:-}"
+        "AGENTMEMORY_URL": "${AGENTMEMORY_URL:-http://localhost:3111}"
       }
     }
   }

@@ -69,7 +69,7 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
     expect(existsSync(join(pluginRoot, manifest.hooks))).toBe(true);
   });
 
-  it("plugin MCP server inherits remote agentmemory environment overrides", () => {
+  it("plugin MCP server takes its URL and secret from the user's plugin options", () => {
     const mcp = readJson<{
       mcpServers: Record<
         string,
@@ -81,7 +81,10 @@ describe("Codex plugin manifest (developers.openai.com/codex/plugins)", () => {
       >;
     }>(join(pluginRoot, ".mcp.json"));
 
-    expect(mcp.mcpServers.agentmemory?.env).toBeUndefined();
+    expect(mcp.mcpServers.agentmemory?.env).toEqual({
+      AGENTMEMORY_URL: "${user_config.agentmemory_url}",
+      AGENTMEMORY_SECRET: "${user_config.agentmemory_secret}",
+    });
     expect(mcp.mcpServers.agentmemory?.command).toBe("node");
     expect(mcp.mcpServers.agentmemory?.args).toEqual([
       "${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bridge.mjs",

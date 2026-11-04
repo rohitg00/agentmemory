@@ -73,7 +73,7 @@ function cleanEnv(targetHome = home) {
     III_REST_PORT: String(port), III_VIEWER_PORT: String(port + 2),
     III_ENGINE_PORT: String(port + 46023), AGENTMEMORY_METRICS_PORT: String(port + 6353),
     AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
-    OPENAI_API_KEY: "reflection-gate-synthetic-key", OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}`,
+    AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "reflection-gate-synthetic-key", OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}`,
     OPENAI_MODEL: "reflection-gate", OPENAI_TIMEOUT_MS: "5000",
   };
 }

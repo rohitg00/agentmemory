@@ -2,7 +2,7 @@
 import { readFileSync } from "node:fs";
 import { truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
-import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
+import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, transportBlocked, withEventId } from "./_capture.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -128,6 +128,11 @@ async function main() {
         ),
       ),
     );
+  }
+
+  if (transportBlocked()) {
+    setTimeout(() => process.exit(0), 1500).unref();
+    return;
   }
 
   fetch(`${REST_URL}/agentmemory/session/end`, {

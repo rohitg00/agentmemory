@@ -10,7 +10,7 @@ beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "doctor-env-file-"));
   mkdirSync(join(home, ".agentmemory"));
   writeFileSync(join(home, ".agentmemory", ".env"), "# no provider key here\n");
-  writeFileSync(join(home, "custom.env"), "ANTHROPIC_API_KEY=sk-ant-real-key-value\n");
+  writeFileSync(join(home, "custom.env"), "AGENTMEMORY_LLM_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-ant-real-key-value\n");
 });
 
 afterEach(() => {

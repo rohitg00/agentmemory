@@ -66,7 +66,7 @@ function cleanEnv() {
     III_ENGINE_PORT: String(port + 46023), AGENTMEMORY_METRICS_PORT: String(port + 6353), AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
     EMBEDDING_PROVIDER: "none", AGENTMEMORY_AUTO_COMPRESS: "true", AGENTMEMORY_FINALIZE_IDLE_MS: "0",
     AGENTMEMORY_SESSION_SWEEP_ENABLED: "false", GRAPH_EXTRACTION_ENABLED: "false", CONSOLIDATION_ENABLED: "false", AGENTMEMORY_REFLECT: "false",
-    OPENAI_API_KEY: "summary-gate-synthetic-key", OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}`,
+    AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "summary-gate-synthetic-key", OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}`,
     OPENAI_MODEL: "summary-recovery-fixture", OPENAI_TIMEOUT_MS: "60000",
   };
 }

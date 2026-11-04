@@ -124,6 +124,7 @@ describe("skill extraction runs inside the consolidation cooldown", () => {
 
   async function stop(env: Record<string, string | undefined>) {
     for (const key of [
+      "AGENTMEMORY_LLM_PROVIDER",
       "ANTHROPIC_API_KEY",
       "OPENAI_API_KEY",
       "GEMINI_API_KEY",
@@ -158,7 +159,7 @@ describe("skill extraction runs inside the consolidation cooldown", () => {
   }
 
   it("extracts a procedure from the session when consolidation is due and an LLM key is set", async () => {
-    const fired = await stop({ ANTHROPIC_API_KEY: "sk-test", CONSOLIDATION_ENABLED: "true" });
+    const fired = await stop({ AGENTMEMORY_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-test", CONSOLIDATION_ENABLED: "true" });
     expect(fired).toContain("mem::consolidate-pipeline");
     expect(fired).toContain("mem::skill-extract");
   });
@@ -169,7 +170,7 @@ describe("skill extraction runs inside the consolidation cooldown", () => {
   });
 
   it("never calls skill extraction when consolidation is off", async () => {
-    const fired = await stop({ ANTHROPIC_API_KEY: "sk-test", CONSOLIDATION_ENABLED: "false" });
+    const fired = await stop({ AGENTMEMORY_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-test", CONSOLIDATION_ENABLED: "false" });
     expect(fired).not.toContain("mem::skill-extract");
     expect(fired).not.toContain("mem::consolidate-pipeline");
   });
