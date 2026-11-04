@@ -9,6 +9,8 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
+  renameSync: vi.fn(),
+  rmSync: vi.fn(),
 }));
 
 vi.mock("../src/mcp/transport.js", () => ({
@@ -33,7 +35,7 @@ import {
   resetHandleForTests,
   setLivezProbe,
 } from "../src/mcp/rest-proxy.js";
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 
 const instantLocalFallbackProbe = vi.fn(async () => ({
   ok: false,
@@ -119,10 +121,11 @@ describe("InMemoryKV", () => {
     kvWithPersist.persist();
 
     expect(writeFileSync).toHaveBeenCalledWith(
-      "/tmp/test-kv.json",
+      `/tmp/test-kv.json.${process.pid}.tmp`,
       expect.any(String),
-      "utf-8",
+      { encoding: "utf-8", mode: 0o600 },
     );
+    expect(renameSync).toHaveBeenCalledWith(`/tmp/test-kv.json.${process.pid}.tmp`, "/tmp/test-kv.json");
     const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
     const parsed = JSON.parse(written);
     expect(parsed.scope1.key1).toEqual({ data: "test" });
@@ -176,10 +179,11 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.saved).toMatch(/^mem_/);
     expect(writeFileSync).toHaveBeenCalledWith(
-      "/tmp/test-handle.json",
+      `/tmp/test-handle.json.${process.pid}.tmp`,
       expect.any(String),
-      "utf-8",
+      { encoding: "utf-8", mode: 0o600 },
     );
+    expect(renameSync).toHaveBeenCalledWith(`/tmp/test-handle.json.${process.pid}.tmp`, "/tmp/test-handle.json");
   });
 
   it("memory_save without persist path does not call writeFileSync", async () => {
