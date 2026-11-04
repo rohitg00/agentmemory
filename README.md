@@ -557,51 +557,39 @@ Pi also supports an installable `@agentmemory/pi` package. See the [Pi package g
 
 Guides: [Pi](integrations/pi/), [Oh My Pi](integrations/omp/), [DSH](docs/dsh.md).
 
-<details>
-<summary><b>OpenClaw (paste this prompt)</b></summary>
+### OpenClaw (ClawHub)
 
-```text
-Install agentmemory for OpenClaw. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 54 memory tools:
+agentmemory is listed on ClawHub: [clawhub.ai/plugins/agentmemory](https://clawhub.ai/plugins/agentmemory).
 
-{
-  "mcpServers": {
-    "agentmemory": {
-      "command": "npx",
-      "args": ["-y", "@agentmemory/mcp"],
-      "env": {
-        "AGENTMEMORY_URL": "http://localhost:3111"
-      }
-    }
-  }
-}
+```bash
+# 1. start the memory server in a separate terminal
+npx -y @agentmemory/agentmemory@latest
 
-Restart OpenClaw. Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper memory-slot integration, copy `integrations/openclaw` to `~/.openclaw/extensions/agentmemory` and enable `plugins.slots.memory = "agentmemory"` in `~/.openclaw/openclaw.json`.
+# 2. install the plugin from ClawHub
+openclaw plugins install clawhub:agentmemory
 ```
 
-Full guide: [`integrations/openclaw/`](integrations/openclaw/)
+Then select agentmemory as the memory plugin and allow it to read conversations in `~/.openclaw/openclaw.json`: set `plugins.slots.memory` to `"agentmemory"` and `plugins.entries.agentmemory.hooks.allowConversationAccess` to `true`. Without conversation access, capture is blocked. Restart OpenClaw and run `openclaw config validate`.
 
-</details>
+`agentmemory connect openclaw` does the same from an installed package: it installs the plugin and skills, selects the memory slot and grants conversation access. Add `--with-mcp` for the full MCP tool set. Full guide: [`integrations/openclaw/`](integrations/openclaw/).
 
-<details>
-<summary><b>Hermes Agent (paste this prompt)</b></summary>
+### Hermes Agent (Hermes plugin catalog)
 
-```text
-Install agentmemory for Hermes. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 54 memory tools:
+agentmemory is listed in the Hermes plugin catalog: [hermes-agent.nousresearch.com/marketplace/agentmemory](https://hermes-agent.nousresearch.com/marketplace/agentmemory).
 
-mcp_servers:
-  agentmemory:
-    command: npx
-    args: ["-y", "@agentmemory/mcp"]
+```bash
+# 1. start the memory server in a separate terminal
+npx -y @agentmemory/agentmemory@latest
 
-memory:
-  provider: agentmemory
-
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+# 2. install the reviewed catalog entry, then select it as the memory provider
+hermes plugins install agentmemory
+hermes memory setup
+hermes memory status
 ```
 
-Full guide: [`integrations/hermes/`](integrations/hermes/)
+In `hermes memory setup`, select AgentMemory and enter the server URL and its secret. Hermes Desktop can install it from the link `hermes://plugin/install?catalog=agentmemory`. The catalog installs the commit that Hermes reviewed, so it can lag the latest npm release.
 
-</details>
+`agentmemory connect hermes` installs the provider and the bundled skills from the installed package instead. Add `--with-mcp` for the full MCP tool set. Full guide: [`integrations/hermes/`](integrations/hermes/).
 
 ### Other agents
 
@@ -653,14 +641,14 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (auto-merges). |
 | **GitHub Copilot CLI (MCP only)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` merges `mcpServers.agentmemory`; Copilot picks it up on next launch or `/mcp`. |
 | **GitHub Copilot CLI (full plugin)** | Copilot plugin install | `copilot plugin install rohitg00/agentmemory:plugin` for the plugin from the GitHub subdir. |
-| **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block. Deeper: `openclaw plugins install ./integrations/openclaw` claims OpenClaw's memory slot (auto-switches from `memory-core`); set `plugins.entries.agentmemory.hooks.allowConversationAccess=true` or turn capture is silently blocked. See [`integrations/openclaw`](integrations/openclaw/). |
+| **OpenClaw** | `~/.openclaw/openclaw.json` | `openclaw plugins install clawhub:agentmemory` installs the [ClawHub listing](https://clawhub.ai/plugins/agentmemory); `agentmemory connect openclaw` installs the same plugin and also selects `plugins.slots.memory` and grants `hooks.allowConversationAccess`, without which capture is blocked. Add `--with-mcp` for the full tool set. See [`integrations/openclaw`](integrations/openclaw/). |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
 | **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin add agentmemory@agentmemory`. Registers MCP + 6 lifecycle hooks + 17 skills. Trust hooks and verify capture in your host; see [Codex setup and validation](docs/plugins/codex-local.md). |
 | **OpenCode (MCP only)** | `opencode.json` | Different shape: top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 22 auto-capture hooks covering session lifecycle, messages, tools, errors. Project attribution is per-session, so one OpenCode process spanning several repositories files each session under its own project. Two slash commands (`/recall`, `/remember`). Copy `plugin/opencode/` into your OpenCode workspace and add the plugin entry to `opencode.json`. See [`plugin/opencode/README.md`](plugin/opencode/README.md) for the full hook table + gap analysis. |
 | **pi** | Active Pi agent directory, default `~/.pi/agent` | `agentmemory connect pi --with-mcp` installs native recall/capture, offline replay, 17 skills and the full MCP toolset. Or build `integrations/pi` and use `pi install ./integrations/pi`; after npm publication, `pi install npm:@agentmemory/pi`. Use one method and run `/reload`. See [setup and migration](integrations/pi/). |
 | **Oh My Pi (OMP)** | Active OMP agent directory, default `~/.omp/agent/config.yml` | `agentmemory connect omp --with-mcp` installs native recall/capture, offline replay, 17 skills and the full MCP toolset. Restart OMP and run `/agentmemory-status`. See [setup, profiles and commands](integrations/omp/). |
-| **Hermes Agent** | `$HERMES_HOME/config.yaml`, default `~/.hermes/config.yaml` | `agentmemory connect hermes` installs the native provider and skills. Configure its scoped credentials with `hermes memory setup`. Add `--with-mcp` for the wider tool surface. See [setup and scope](integrations/hermes/). |
+| **Hermes Agent** | `$HERMES_HOME/config.yaml`, default `~/.hermes/config.yaml` | `hermes plugins install agentmemory` installs the [Hermes catalog entry](https://hermes-agent.nousresearch.com/marketplace/agentmemory) at its reviewed commit. `agentmemory connect hermes` installs the native provider and skills. Configure its scoped credentials with `hermes memory setup`. Add `--with-mcp` for the wider tool surface. See [setup and scope](integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` writes the standard `mcpServers` block. Hook payload is field-compatible with Claude Code, so the existing 12-hook scripts work without modification; wire them via the `hooks` section in the same `settings.json`. |
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` installs MCP and capture hooks in the shared customization directory. See [Antigravity setup and limits](docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` uses the same MCP and hook configuration as current IDE versions. Existing installations should refresh with `--force`; see the [upgrade notes](docs/plugins/antigravity.md). |
