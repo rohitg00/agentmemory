@@ -1,11 +1,11 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const temp = mkdtempSync(join(tmpdir(), "compose-state-error-"));
 afterEach(() => rmSync(temp, { recursive: true, force: true }));
-import { composeEnvironment, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, type ComposeStatus } from "../src/cli/compose-control.js";
+import { composeCall, composeEnvironment, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, withQuietSdkDebug, type ComposeStatus } from "../src/cli/compose-control.js";
 
 describe("Compose control plane", () => {
   it("does not leak arbitrary machine credentials to the Compose daemon", () => {
@@ -107,5 +107,60 @@ describe("Compose control plane", () => {
   it("finds the owned project in a daemon status projects list", () => {
     const project = { file: "/tmp/worker-compose.yaml" };
     expect(ownedComposeProject({ projects: [project] }, "/tmp/worker-compose.yaml")).toBe(project);
+  });
+});
+
+describe("Compose control client output", () => {
+  function fakeRegister() {
+    return ((_url: string) => {
+      console.debug("[OTel] OpenTelemetry is disabled.");
+      return {
+        getConnectionState: () => {
+          console.debug("[iii] Worker registered with ID:", "w1");
+          return "connected";
+        },
+        getFatalError: () => null,
+        trigger: async () => ({ status: "ok" }),
+        shutdown: async () => {},
+      };
+    }) as unknown as Parameters<typeof composeCall>[1];
+  }
+
+  it("keeps the SDK's [OTel] and [iii] debug lines out of CLI output", async () => {
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    try {
+      const result = await composeCall<{ status: string }>(
+        { engineUrl: "ws://127.0.0.1:1", namespace: "n", functionId: "compose::status", file: "/tmp/f.yaml" },
+        fakeRegister(),
+      );
+      expect(result.status).toBe("ok");
+      expect(debug).not.toHaveBeenCalled();
+      console.debug("after");
+      expect(debug).toHaveBeenCalledWith("after");
+    } finally {
+      debug.mockRestore();
+    }
+  });
+
+  it("restores console.debug after overlapping calls finish in any order", async () => {
+    const original = console.debug;
+    let releaseFirst: () => void = () => {};
+    let releaseSecond: () => void = () => {};
+    const first = withQuietSdkDebug(() => new Promise<void>((resolve) => { releaseFirst = resolve; }));
+    const second = withQuietSdkDebug(() => new Promise<void>((resolve) => { releaseSecond = resolve; }));
+    releaseFirst();
+    await first;
+    expect(console.debug).not.toBe(original);
+    releaseSecond();
+    await second;
+    expect(console.debug).toBe(original);
+  });
+
+  it("restores console.debug when the call throws", async () => {
+    const original = console.debug;
+    await expect(withQuietSdkDebug(async () => {
+      throw new Error("boom");
+    })).rejects.toThrow("boom");
+    expect(console.debug).toBe(original);
   });
 });

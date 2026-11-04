@@ -402,7 +402,6 @@ class Instance {
     return {
       ...gate.baseEnv(this.home),
       OPENAI_API_KEY: "release-gate-fake-key",
-      OPENAI_API_KEY_FOR_LLM: "false",
       EMBEDDING_PROVIDER: "openai",
       OPENAI_BASE_URL: `http://127.0.0.1:${gate.fake.port}`,
       OPENAI_EMBEDDING_DIMENSIONS: String(gate.dims),

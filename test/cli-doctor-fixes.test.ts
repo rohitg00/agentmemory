@@ -10,6 +10,7 @@ import { III_PINNED_VERSION } from "../src/version.js";
 import {
   buildDiagnostics,
   canAutoFix,
+  doctorPromptsAllowed,
   DIAGNOSTIC_IDS,
   dryRunPlan,
   parseEnvFile,
@@ -34,7 +35,7 @@ function stubCtx(overrides: Partial<DoctorContext> = {}): DoctorContext {
 function stubEffects(overrides: Partial<DoctorEffects> = {}): DoctorEffects {
   return {
     envFileExists: () => true,
-    readEnvFile: () => ({ ANTHROPIC_API_KEY: "sk-ant-real-key-value" }),
+    readEnvFile: () => ({ AGENTMEMORY_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-real-key-value" }),
     processEnv: () => ({}),
     pidfileExists: () => false,
     pidfilePidIsAlive: () => null,
@@ -149,17 +150,20 @@ describe("doctor v2 diagnostic catalog", () => {
       const check = diagnostics.find((d) => d.id === "no-llm-provider-key")!;
       return check.check(stubCtx());
     };
-    expect(await statusFor({ OPENAI_API_KEY: "sk-real-openai-key" })).toEqual({
+    expect(await statusFor({ AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "sk-real-openai-key" })).toEqual({
       ok: true,
       detail: "found: OPENAI_API_KEY",
     });
     expect(
       await statusFor({
+        AGENTMEMORY_LLM_PROVIDER: "anthropic", 
         ANTHROPIC_API_KEY: "sk-ant-real-key-value",
         OPENAI_API_KEY: "sk-real-openai-key",
-        OPENAI_API_KEY_FOR_LLM: "false",
       }),
     ).toEqual({ ok: true, detail: "found: ANTHROPIC_API_KEY" });
+    const keyOnly = await statusFor({ OPENAI_API_KEY: "sk-real-openai-key" });
+    expect(keyOnly.ok).toBe(false);
+    expect(keyOnly.detail).toContain("AGENTMEMORY_LLM_PROVIDER=openai");
   });
 
   describe("no-llm-provider-key with a process environment", () => {
@@ -175,20 +179,17 @@ describe("doctor v2 diagnostic catalog", () => {
     };
 
     it("lets the environment override the same key in the file, as the daemon does", async () => {
-      const reservedInFile = {
-        OPENAI_API_KEY: "sk-real-openai-key",
-        OPENAI_API_KEY_FOR_LLM: "false",
-      };
-      expect((await statusFor(reservedInFile, {})).ok).toBe(false);
-      expect((await statusFor(reservedInFile, { OPENAI_API_KEY_FOR_LLM: "true" })).ok).toBe(true);
+      const keyInFile = { OPENAI_API_KEY: "sk-real-openai-key" };
+      expect((await statusFor(keyInFile, {})).ok).toBe(false);
+      expect((await statusFor(keyInFile, { AGENTMEMORY_LLM_PROVIDER: "openai" })).ok).toBe(true);
       expect(
-        (await statusFor({ ANTHROPIC_API_KEY: "sk-ant-real-key-value" }, { ANTHROPIC_API_KEY: "" }))
+        (await statusFor({ AGENTMEMORY_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-real-key-value" }, { ANTHROPIC_API_KEY: "" }))
           .ok,
       ).toBe(false);
     });
 
     it("names a key that only the environment provides, and says a daemon elsewhere misses it", async () => {
-      expect(await statusFor({}, { ANTHROPIC_API_KEY: "sk-ant-real-key-value" })).toEqual({
+      expect(await statusFor({}, { AGENTMEMORY_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-real-key-value" })).toEqual({
         ok: true,
         detail:
           "found: ANTHROPIC_API_KEY (environment); a daemon started elsewhere will not see it",
@@ -198,7 +199,7 @@ describe("doctor v2 diagnostic catalog", () => {
     it("marks a key the environment overrides, not just one the file lacks", async () => {
       expect(
         await statusFor(
-          { ANTHROPIC_API_KEY: "sk-ant-key-from-file" },
+          { AGENTMEMORY_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-key-from-file" },
           { ANTHROPIC_API_KEY: "sk-ant-key-from-shell" },
         ),
       ).toEqual({
@@ -210,8 +211,8 @@ describe("doctor v2 diagnostic catalog", () => {
 
     it("leaves a file key unmarked when only an unrelated flag comes from the environment", async () => {
       const status = await statusFor(
-        { OPENAI_API_KEY: "sk-real-openai-key", OPENAI_API_KEY_FOR_LLM: "false" },
-        { OPENAI_API_KEY_FOR_LLM: "true" },
+        { AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "sk-real-openai-key" },
+        { AGENTMEMORY_CAPTURE_SPOOL: "true" },
       );
       expect(status.ok).toBe(true);
       expect(status.detail).toBe("found: OPENAI_API_KEY");
@@ -219,7 +220,7 @@ describe("doctor v2 diagnostic catalog", () => {
 
     it("ignores an undefined environment value instead of blanking the file key", async () => {
       expect(
-        await statusFor({ ANTHROPIC_API_KEY: "sk-ant-real-key-value" }, {
+        await statusFor({ AGENTMEMORY_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-real-key-value" }, {
           ANTHROPIC_API_KEY: undefined,
         }),
       ).toEqual({ ok: true, detail: "found: ANTHROPIC_API_KEY" });
@@ -230,7 +231,7 @@ describe("doctor v2 diagnostic catalog", () => {
         stubEffects({
           envFileExists: () => false,
           readEnvFile: () => ({}),
-          processEnv: () => ({ ANTHROPIC_API_KEY: "sk-ant-real-key-value" }),
+          processEnv: () => ({ AGENTMEMORY_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-real-key-value" }),
         }),
       );
       const check = diagnostics.find((d) => d.id === "no-llm-provider-key")!;
@@ -253,7 +254,7 @@ describe("doctor v2 diagnostic catalog", () => {
       const status = await check.check(stubCtx());
       expect(status.ok).toBe(false);
       expect(status.detail).toContain("env-missing");
-      expect(await statusFor({}, {})).toEqual({ ok: false, detail: "no provider key set" });
+      expect(await statusFor({}, {})).toEqual({ ok: false, detail: "no provider chosen" });
     });
 
     it("keeps the agent-sdk label when the only key is reserved for embeddings", async () => {
@@ -269,7 +270,7 @@ describe("doctor v2 diagnostic catalog", () => {
       expect(
         (
           await statusFor(
-            { ANTHROPIC_API_KEY: "sk-ant-real-key-value" },
+            { AGENTMEMORY_LLM_PROVIDER: "anthropic", ANTHROPIC_API_KEY: "sk-ant-real-key-value" },
             { ANTHROPIC_API_KEY: "your-key-here" },
           )
         ).ok,
@@ -506,5 +507,15 @@ describe("realProviderKeys / placeholderProviderKeys", () => {
     expect(placeholderProviderKeys({ ANTHROPIC_API_KEY: "xxxx-xxxx" })).toEqual([
       "ANTHROPIC_API_KEY",
     ]);
+  });
+});
+
+describe("doctor prompts", () => {
+  it("prompts only in an interactive terminal without CI", () => {
+    expect(doctorPromptsAllowed({}, true, true)).toBe(true);
+    expect(doctorPromptsAllowed({ CI: "1" }, true, true)).toBe(false);
+    expect(doctorPromptsAllowed({}, false, true)).toBe(false);
+    expect(doctorPromptsAllowed({}, true, false)).toBe(false);
+    expect(doctorPromptsAllowed({}, undefined, undefined)).toBe(false);
   });
 });
