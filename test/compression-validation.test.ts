@@ -7,6 +7,7 @@ import { registerCompressFunction } from "../src/functions/compress.js";
 import { onLiveEvent } from "../src/viewer/live-events.js";
 import { buildSyntheticCompression } from "../src/functions/compress-synthetic.js";
 import { NoopProvider } from "../src/providers/noop.js";
+import { observationEmbedText } from "../src/state/memory-utils.js";
 import type { CompressedObservation, MemoryProvider, RawObservation } from "../src/types.js";
 
 const search = vi.hoisted(() => ({ add: vi.fn(), save: vi.fn(), vector: vi.fn() }));
@@ -211,6 +212,15 @@ describe("vector embed text for compressed observations", () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+
+  it("keeps concepts inside the embedding input when the narrative is long", () => {
+    const text = observationEmbedText({
+      title: "Login timeout",
+      narrative: "x".repeat(20_000),
+      concepts: ["登录超时"],
+    });
+    expect(text.slice(0, 16_000)).toContain("登录超时");
   });
 
   it("still embeds observations without concepts", async () => {
