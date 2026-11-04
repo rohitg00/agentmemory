@@ -1,12 +1,21 @@
-import { appendFileSync, chmodSync, mkdirSync, writeSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { redactCredentialUrls } from "../cli/engine-launch.js";
 
+export const MAX_CRASH_LOG_BYTES = 1024 * 1024;
+
 export type StderrWriter = (text: string) => void;
 
-export function writeStderrSync(text: string): void {
-  writeSync(2, text);
+export interface FatalHooks {
+  persist: () => void;
+  exit?: (code: number) => void;
+  write?: StderrWriter;
+  logPath?: string;
+}
+
+function writeStderr(text: string): void {
+  process.stderr.write(text);
 }
 
 export function mcpCrashLogPath(env: NodeJS.ProcessEnv = process.env): string {
@@ -18,48 +27,74 @@ export function formatFatal(kind: string, reason: unknown, now: Date = new Date(
   return redactCredentialUrls(`[${now.toISOString()}] pid=${process.pid} ${kind}: ${detail}\n`);
 }
 
-function emit(write: StderrWriter, text: string): void {
+function safeFormat(kind: string, reason: unknown): string {
   try {
-    write(text);
-  } catch {}
+    return formatFatal(kind, reason);
+  } catch {
+    return `[${new Date().toISOString()}] pid=${process.pid} ${kind}: (the error could not be formatted)\n`;
+  }
+}
+
+function describe(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+export function appendCrashLog(line: string, logPath: string = mcpCrashLogPath()): string[] {
+  try {
+    mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
+    if (existsSync(logPath)) {
+      if (statSync(logPath).size >= MAX_CRASH_LOG_BYTES) {
+        renameSync(logPath, `${logPath}.1`);
+      } else {
+        try {
+          chmodSync(logPath, 0o600);
+        } catch (err) {
+          return [`[@agentmemory/mcp] crash log ${logPath} could not be made owner-only, so it was not written: ${describe(err)}\n`];
+        }
+      }
+    }
+    appendFileSync(logPath, line, { mode: 0o600 });
+    return [`[@agentmemory/mcp] crash log: ${logPath}\n`];
+  } catch (err) {
+    return [`[@agentmemory/mcp] crash log not written to ${logPath}: ${describe(err)}\n`];
+  }
 }
 
 export function reportFatal(
   kind: string,
   reason: unknown,
   logPath: string = mcpCrashLogPath(),
-  write: StderrWriter = writeStderrSync,
+  write: StderrWriter = writeStderr,
 ): string {
-  const line = formatFatal(kind, reason);
-  emit(write, `[@agentmemory/mcp] fatal ${line}`);
-  try {
-    mkdirSync(dirname(logPath), { recursive: true, mode: 0o700 });
-    appendFileSync(logPath, line, { mode: 0o600 });
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    emit(write, `[@agentmemory/mcp] crash log not written to ${logPath}: ${detail}\n`);
-    return line;
+  const line = safeFormat(kind, reason);
+  const notices = appendCrashLog(line, logPath);
+  for (const text of [`[@agentmemory/mcp] fatal ${line}`, ...notices]) {
+    try {
+      write(text);
+    } catch {}
   }
-  try {
-    chmodSync(logPath, 0o600);
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    emit(write, `[@agentmemory/mcp] crash log ${logPath} could not be made owner-only: ${detail}\n`);
-  }
-  emit(write, `[@agentmemory/mcp] crash log: ${logPath}\n`);
   return line;
 }
 
-export function installCrashHandlers(onFatal: () => void): void {
-  const handle = (kind: string, reason: unknown) => {
+export function handleFatal(kind: string, reason: unknown, hooks: FatalHooks): void {
+  const line = safeFormat(kind, reason);
+  let notices: string[] = [];
+  try {
+    notices = appendCrashLog(line, hooks.logPath ?? mcpCrashLogPath());
+  } catch {}
+  try {
+    hooks.persist();
+  } catch {}
+  const write = hooks.write ?? writeStderr;
+  for (const text of [`[@agentmemory/mcp] fatal ${line}`, ...notices]) {
     try {
-      reportFatal(kind, reason);
-    } catch {
-      emit(writeStderrSync, `[@agentmemory/mcp] fatal ${kind}\n`);
-    } finally {
-      onFatal();
-    }
-  };
-  process.on("uncaughtException", (err) => handle("uncaughtException", err));
-  process.on("unhandledRejection", (reason) => handle("unhandledRejection", reason));
+      write(text);
+    } catch {}
+  }
+  (hooks.exit ?? ((code: number) => process.exit(code)))(1);
+}
+
+export function installCrashHandlers(hooks: FatalHooks): void {
+  process.on("uncaughtException", (err) => handleFatal("uncaughtException", err, hooks));
+  process.on("unhandledRejection", (reason) => handleFatal("unhandledRejection", reason, hooks));
 }
