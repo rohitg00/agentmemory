@@ -9,7 +9,7 @@ function readJson<T = unknown>(path: string): T {
   return JSON.parse(readFileSync(path, "utf-8")) as T;
 }
 
-type HookHandler = { type: string; command: string };
+type HookHandler = { type: string; command: string; args?: string[] };
 type HookEntry = { hooks: HookHandler[] };
 
 function hookCommands(path: string): string[] {
@@ -21,13 +21,24 @@ function hookCommands(path: string): string[] {
 
 describe("Plugin hook manifests", () => {
   it("quote plugin script paths so roots with spaces stay intact", () => {
-    for (const manifest of ["hooks.json", "hooks.codex.json"]) {
-      const commands = hookCommands(join(pluginRoot, "hooks", manifest));
-      expect(commands.length, `${manifest} should contain hook commands`).toBeGreaterThan(0);
+    const commands = hookCommands(join(pluginRoot, "hooks", "hooks.codex.json"));
+    expect(commands.length, "hooks.codex.json should contain hook commands").toBeGreaterThan(0);
 
-      for (const command of commands) {
-        expect(command).toMatch(/^node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/[^\s"]+\.mjs"$/);
-      }
+    for (const command of commands) {
+      expect(command).toMatch(/^node "\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/[^\s"]+\.mjs"$/);
+    }
+  });
+
+  it("runs Claude Code hooks in exec form with the plugin script as one argument", () => {
+    const manifest = readJson<{ hooks: Record<string, HookEntry[]> }>(join(pluginRoot, "hooks", "hooks.json"));
+    const handlers = Object.values(manifest.hooks).flatMap((entries) => entries.flatMap((entry) => entry.hooks));
+    expect(handlers.length).toBeGreaterThan(0);
+
+    for (const handler of handlers) {
+      expect(handler.command).toBe("node");
+      expect(handler.args).toHaveLength(1);
+      expect(handler.args?.[0]).toMatch(/^\$\{CLAUDE_PLUGIN_ROOT\}\/scripts\/[\w-]+\.mjs$/);
+      expect(existsSync(join(pluginRoot, handler.args![0]!.replace("${CLAUDE_PLUGIN_ROOT}/", "")))).toBe(true);
     }
   });
 });

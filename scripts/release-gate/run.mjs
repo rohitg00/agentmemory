@@ -365,7 +365,7 @@ class Gate {
     for (const entry of entries) {
       if (entry.matcher && toolName && !new RegExp(`^(?:${entry.matcher})$`).test(toolName)) continue;
       if (entry.matcher && !toolName) continue;
-      for (const h of entry.hooks ?? []) if (h.type === "command") commands.push(h.command);
+      for (const h of entry.hooks ?? []) if (h.type === "command") commands.push(h);
     }
     return commands;
   }
@@ -791,11 +791,15 @@ class Instance {
     const commands = gate.hookCommands(event, payload.tool_name);
     assert(commands.length > 0, `no bundled ${event} hook matches ${payload.tool_name ?? "this event"}`);
     const results = [];
-    for (const command of commands) {
-      const r = await run("sh", ["-c", command], {
+    const pluginRoot = join(gate.pkgDir, "plugin");
+    for (const handler of commands) {
+      const [file, argv] = handler.args
+        ? [handler.command, handler.args.map((arg) => arg.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot))]
+        : ["sh", ["-c", handler.command]];
+      const r = await run(file, argv, {
         env: {
           ...gate.baseEnv(this.home),
-          CLAUDE_PLUGIN_ROOT: join(gate.pkgDir, "plugin"),
+          CLAUDE_PLUGIN_ROOT: pluginRoot,
           CLAUDE_PROJECT_DIR: this.project,
           AGENTMEMORY_URL: `http://127.0.0.1:${this.port}`,
           AGENTMEMORY_DATA_DIR: this.dataDir,
