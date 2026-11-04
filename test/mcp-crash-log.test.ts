@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync, statSync,
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { MAX_CRASH_LOG_BYTES, formatFatal, handleFatal, mcpCrashLogPath, reportFatal, rotateCrashLog, stderrWriteMayBlock } from "../src/mcp/crash-log.js";
+import { MAX_CRASH_LINE_BYTES, MAX_CRASH_LOG_BYTES, formatFatal, handleFatal, mcpCrashLogPath, reportFatal, rotateCrashLog, stderrWriteMayBlock } from "../src/mcp/crash-log.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
 
 const dirs: string[] = [];
@@ -182,6 +182,60 @@ describe("MCP shim crash diagnostics", () => {
     const record = readFileSync(fallback, "utf8");
     expect(record).toContain("uncaughtException: Error: lost without a fallback");
     expect(record).toContain("crash log not written to");
+  });
+
+  it("bounds one oversized crash reason below the log cap", () => {
+    const dataDir = tempDir();
+    const logPath = join(dataDir, "mcp-crash.log");
+    reportFatal("uncaughtException", new Error("x".repeat(2 * MAX_CRASH_LOG_BYTES)), logPath, () => {});
+    expect(statSync(logPath).size).toBeLessThanOrEqual(MAX_CRASH_LINE_BYTES);
+    expect(readFileSync(logPath, "utf8")).toContain("(truncated)");
+  });
+
+  it("rotates before an append would push the log past the cap", () => {
+    const dataDir = tempDir();
+    const logPath = join(dataDir, "mcp-crash.log");
+    writeFileSync(logPath, "x".repeat(MAX_CRASH_LOG_BYTES - 10));
+    reportFatal("uncaughtException", new Error("does not fit in the last ten bytes"), logPath, () => {});
+    expect(existsSync(`${logPath}.1`)).toBe(true);
+    expect(statSync(logPath).size).toBeLessThan(MAX_CRASH_LOG_BYTES);
+  });
+
+  it.skipIf(process.platform === "win32")("keeps the fallback record bounded and owner-only", () => {
+    const dataDir = tempDir();
+    const blocker = join(dataDir, "not-a-dir");
+    writeFileSync(blocker, "");
+    const fallback = join(dataDir, "fallback-crash.log");
+    writeFileSync(fallback, "x".repeat(MAX_CRASH_LOG_BYTES));
+    chmodSync(fallback, 0o644);
+    handleFatal("uncaughtException", new Error("fallback again"), {
+      persist: () => {},
+      exit: () => {},
+      logPath: join(blocker, "mcp-crash.log"),
+      fallbackLogPath: fallback,
+      stderrMayBlock: true,
+    });
+    expect(statSync(`${fallback}.1`).mode & 0o777).toBe(0o600);
+    expect(statSync(fallback).mode & 0o777).toBe(0o600);
+    expect(statSync(fallback).size).toBeLessThan(MAX_CRASH_LOG_BYTES);
+    expect(readFileSync(fallback, "utf8")).toContain("fallback again");
+  });
+
+  it.skipIf(process.platform === "win32")("makes an existing permissive fallback owner-only before writing", () => {
+    const dataDir = tempDir();
+    const blocker = join(dataDir, "not-a-dir");
+    writeFileSync(blocker, "");
+    const fallback = join(dataDir, "fallback-crash.log");
+    writeFileSync(fallback, "older\n");
+    chmodSync(fallback, 0o644);
+    handleFatal("uncaughtException", new Error("private detail"), {
+      persist: () => {},
+      exit: () => {},
+      logPath: join(blocker, "mcp-crash.log"),
+      fallbackLogPath: fallback,
+      stderrMayBlock: true,
+    });
+    expect(statSync(fallback).mode & 0o777).toBe(0o600);
   });
 
   it("does not fail when another process rotated the crash log first", () => {
