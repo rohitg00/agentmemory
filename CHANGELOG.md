@@ -35,6 +35,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Orphaned index generations are reclaimed (#1256 by @inix-x), and the MCP graph stats resource reads a bounded snapshot instead of listing the whole graph (#1260 by @inix-x).
 - Facet tags are removed when lessons are deleted or observations forgotten (#1642 by @xh123637). The session sweep skips rows without an id (#1645 by @dmazhukov). Hook truncation keeps surrogate pairs whole (#1598 by @dmazhukov).
 - The Hermes project git probe no longer inherits the worker's stdin, which could hang on Windows (#1663). The Cline CLI MCP configuration uses its native settings path (#1633).
+- A superseded memory gets a strictly later `updatedAt`, so mesh sync carries the change to peers (#1665 by @egantz).
+- pi includes recalled lessons in search and can read a full lesson by ID, scoped to its project (#1605 by @YeChenglin8888).
+- `npm run build` works under the Windows `cmd.exe` shell (#1362 by @mattamundson).
+- `.env.example` names the Agent SDK route and documents `MAX_OBS_PER_SESSION` as a hard per-session cap (#1675, from #1503 by @Rex57).
 
 ### Known issues
 
