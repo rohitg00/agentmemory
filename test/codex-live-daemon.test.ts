@@ -7,6 +7,7 @@ import { createServer } from "node:net";
 import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { III_PINNED_VERSION } from "../src/version.js";
+import { getAllTools } from "../src/mcp/tools-registry.js";
 
 const root = resolve(__dirname, "..");
 const engineBin = [
@@ -209,7 +210,7 @@ describe.skipIf(!engineBin).each(["codex", "copilot", "antigravity"] as const)("
     await anonymous.body?.cancel();
     const claude = mcp(join(root, "dist/standalone.mjs"), sandbox, env);
     await claude.request("initialize", { protocolVersion: "2025-11-25" });
-    expect((await codex.request("tools/list")).result.tools).toHaveLength(54);
+    expect((await codex.request("tools/list")).result.tools).toHaveLength(getAllTools().filter((t) => !t.name.startsWith("memory_slot_")).length);
     expect((await codex.request("resources/list")).result.resources).toHaveLength(3);
     expect((await codex.request("resources/templates/list")).result.resourceTemplates).toHaveLength(3);
     expect((await codex.request("prompts/list")).result.prompts).toHaveLength(3);
