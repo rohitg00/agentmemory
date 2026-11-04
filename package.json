@@ -109,7 +109,7 @@
     "tsx": "^4.19.0",
     "typebox": "^1.4.3",
     "typescript": "^6.0.3",
-    "vitest": "^4.1.6",
+    "vitest": "^5.0.5",
     "ws": "^8.21.0"
   },
   "overrides": {
