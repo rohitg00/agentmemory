@@ -16,8 +16,6 @@ const EXIT_CAP_MS = 3500;
 const END_CAP_MS = 1500;
 const REPLY_MAX_CHARS = 4000;
 
-// stripPrivateData only matches a closed <private> block, so the whole reply
-// has to be redacted before anything shortens it.
 function boundReply(reply: string): { text: string; bytes?: number } {
   const safe = stripPrivateData(reply);
   if (safe.length <= REPLY_MAX_CHARS) return { text: safe };
