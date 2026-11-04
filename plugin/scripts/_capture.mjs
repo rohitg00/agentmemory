@@ -951,6 +951,7 @@ function startDrainChild() {
 	} catch {}
 }
 async function captureObservation(body, timeoutMs) {
+	if (transportBlocked()) return "dropped";
 	const eventId = body.eventId ?? deriveEventId(body.hookType, body.sessionId, null, body.data);
 	const payload = {
 		...body,

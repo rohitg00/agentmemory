@@ -294,10 +294,13 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
   }
 
   if (input.embeddingHint) {
+    const keyMissing = input.embeddingHint.startsWith("EMBEDDING_PROVIDER=");
     problems.push({
       level: "info",
-      code: "embedding-provider-not-chosen",
-      message: "A cloud embedding key is present, but no embedding provider is chosen, so search is keyword and graph only.",
+      code: keyMissing ? "embedding-provider-key-missing" : "embedding-provider-not-chosen",
+      message: keyMissing
+        ? "EMBEDDING_PROVIDER names a cloud provider whose key is missing, so search is keyword and graph only."
+        : "A cloud embedding key is present, but no embedding provider is chosen, so search is keyword and graph only.",
       fix: input.embeddingHint,
     });
   }

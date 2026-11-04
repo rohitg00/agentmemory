@@ -102,6 +102,7 @@ function startDrainChild(): void {
 }
 
 export async function captureObservation(body: ObserveBody, timeoutMs: number): Promise<CaptureOutcome> {
+  if (transportBlocked()) return "dropped";
   const eventId = body.eventId ?? deriveEventId(body.hookType, body.sessionId, null, body.data);
   const payload = { ...body, eventId } as unknown as Record<string, unknown>;
   let reason: string;

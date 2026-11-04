@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { join, resolve } from "node:path";
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import {
   detectEmbeddingProvider,
@@ -92,6 +92,27 @@ describe("hook token transport", () => {
   it("sends nothing to a remote http URL even without a secret", () => {
     expect(resolveHookEndpoint({ AGENTMEMORY_URL: "http://memory.example.com", AGENTMEMORY_SECRET: "" }).blocked).toBe(true);
     expect(resolveHookEndpoint({ AGENTMEMORY_URL: "http://127.0.0.1:3111", AGENTMEMORY_SECRET: "" }).blocked).toBe(false);
+  });
+
+  it("does not spool a capture it refused to send over remote http", async () => {
+    const spool = mkdtempSync(join(tmpdir(), "am-spool-"));
+    const saved = { url: process.env["AGENTMEMORY_URL"], dir: process.env["AGENTMEMORY_CAPTURE_SPOOL_DIR"] };
+    process.env["AGENTMEMORY_URL"] = "http://memory.example.com";
+    process.env["AGENTMEMORY_CAPTURE_SPOOL_DIR"] = spool;
+    try {
+      vi.resetModules();
+      const { captureObservation } = await import("../src/hooks/_capture.js");
+      const outcome = await captureObservation(
+        { hookType: "post_tool_use", sessionId: "s1", project: "p", cwd: "/tmp", timestamp: new Date().toISOString(), data: { secret: "body" } } as never,
+        1000,
+      );
+      expect(outcome).toBe("dropped");
+      expect(readdirSync(spool)).toEqual([]);
+    } finally {
+      if (saved.url === undefined) delete process.env["AGENTMEMORY_URL"]; else process.env["AGENTMEMORY_URL"] = saved.url;
+      if (saved.dir === undefined) delete process.env["AGENTMEMORY_CAPTURE_SPOOL_DIR"]; else process.env["AGENTMEMORY_CAPTURE_SPOOL_DIR"] = saved.dir;
+      vi.resetModules();
+    }
   });
 
   it("allows https and loopback URLs", () => {
