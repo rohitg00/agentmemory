@@ -2,6 +2,7 @@ import type { IndexLegStatus, IndexPersistenceStatus } from "../state/index-pers
 import type { VectorBackfillState } from "./search.js";
 import { describeGraphCompactBoot, type GraphCompactBootStatus } from "./graph-compact-boot.js";
 import type { CaptureStatus } from "./capture.js";
+import type { LlmUsageTotals } from "../providers/usage.js";
 import type { GraphIndexMigrationStatus } from "../state/graph-index-migration.js";
 
 export type StatusLevel = "ok" | "info" | "warn" | "error";
@@ -62,6 +63,7 @@ export interface StatusInputs {
   functionMetrics: FunctionMetricInput[];
   provider: string;
   embeddingProvider: string;
+  llmUsage?: LlmUsageTotals | null;
   flags: StatusFlag[];
   index: {
     bm25Documents: number;
@@ -117,6 +119,7 @@ export interface StatusReport {
     embeddings: string;
     circuitBreaker: StatusInputs["circuitBreaker"];
     offWithoutLlm: string[];
+    usage: LlmUsageTotals | null;
   };
   index: StatusInputs["index"] & { breakdown: IndexBreakdown | null };
   indexPersistence: IndexPersistenceStatus | null;
@@ -511,6 +514,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       embeddings: input.embeddingProvider,
       circuitBreaker: input.circuitBreaker,
       offWithoutLlm: noLlm ? OFF_WITHOUT_LLM : [],
+      usage: input.llmUsage ?? null,
     },
     index: { ...input.index, breakdown: indexBreakdown(input.index) },
     indexPersistence: persistence,
@@ -648,6 +652,17 @@ function processHealth(report: StatusReport): string {
     return "healthy (memory, CPU and engine checks only; the badge at the top covers every problem on this page)";
   }
   return status;
+}
+
+function describeLlmUsage(usage: LlmUsageTotals): string {
+  const tokens = `${usage.promptTokens.toLocaleString("en-US")} prompt + ${usage.completionTokens.toLocaleString("en-US")} completion tokens`;
+  const cost =
+    usage.costUsd === null
+      ? "cost not reported by the provider"
+      : usage.costUsd > 0 && usage.costUsd < 0.0001
+        ? "<$0.0001"
+        : `$${usage.costUsd.toFixed(4)}`;
+  return `${plural(usage.calls, "call")} · ${tokens} · ${cost}`;
 }
 
 function escapeHtml(value: unknown): string {
@@ -855,6 +870,7 @@ ${row("Viewer port", escapeHtml(ports.viewer ?? "not running"))}
 ${row("LLM", escapeHtml(report.provider.llm === "noop" ? "none configured" : (report.provider.route ?? report.provider.llm)))}
 ${report.provider.offWithoutLlm.length ? row("Off without an LLM", escapeHtml(report.provider.offWithoutLlm.join(", ")) + `<p class="note">${escapeHtml(LLM_KEY_FIX)}</p>`) : ""}
 ${row("Embeddings", escapeHtml(report.provider.embeddings === "none" ? "none (keyword search only)" : report.provider.embeddings))}
+${report.provider.usage && report.provider.usage.calls > 0 ? row("LLM usage since start", escapeHtml(describeLlmUsage(report.provider.usage))) : ""}
 ${row("Circuit breaker", escapeHtml(report.provider.circuitBreaker ? `${report.provider.circuitBreaker.state ?? "unknown"} (${report.provider.circuitBreaker.failures ?? 0} failures)` : "not in use"))}
 </table>
 <h2>Search index</h2><table>
