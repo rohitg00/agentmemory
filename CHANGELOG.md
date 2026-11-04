@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **iii installs itself on Windows.** A fresh `agentmemory` on win32 downloads the pinned iii zip, checks its SHA-256 and extracts it with the system `tar.exe`, falling back to PowerShell `Expand-Archive` (#1670).
 - MCP tools carry `readOnlyHint` and `destructiveHint` annotations, and the plugin README states what the hooks record, where it is kept and how to delete it. Privacy policy: https://agent-memory.dev/privacy (#1664).
 - `memory_lesson_save` accepts `sourceIds` (#1661).
+- Each published release builds a `linux/amd64` and `linux/arm64` image and pushes it to Docker Hub as `ghumarerohit/agentmemory:<version>`; `latest` follows the highest stable version (#1677).
 - The MCP stdio shim records why it exits in `mcp-crash.log` in the data directory (owner-only, rotated at 1 MiB) and saves its fallback store before writing to stderr (#1662, #1674).
 
 ### Fixed
@@ -34,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - An OpenAI reply cut off at `max_tokens` fails over instead of being stored as the result (#1495 by @Rex57).
 - Orphaned index generations are reclaimed (#1256 by @inix-x), and the MCP graph stats resource reads a bounded snapshot instead of listing the whole graph (#1260 by @inix-x).
 - Facet tags are removed when lessons are deleted or observations forgotten (#1642 by @xh123637). The session sweep skips rows without an id (#1645 by @dmazhukov). Hook truncation keeps surrogate pairs whole (#1598 by @dmazhukov).
+- Copilot CLI subagent reports are stored with their reply. The `subagentStop` hook reads Copilot's camelCase fields, so a report is no longer empty and a retry is no longer stored twice. The reply is redacted before it is cut to 4000 characters (#1599 by @dmazhukov).
 - The Hermes project git probe no longer inherits the worker's stdin, which could hang on Windows (#1663). The Cline CLI MCP configuration uses its native settings path (#1633).
 - A superseded memory gets a strictly later `updatedAt`, so mesh sync carries the change to peers (#1665 by @egantz).
 - pi includes recalled lessons in search and can read a full lesson by ID, scoped to its project (#1605 by @YeChenglin8888).
