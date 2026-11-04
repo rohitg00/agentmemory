@@ -45,7 +45,6 @@ function fixture(saved: Memory, legacy = false, failMemoryReads = false) {
     observation, sessionId: "memory", layer: "memory", combinedScore: 1,
     bm25Score: 1, vectorScore: 0, graphScore: 0,
   }]);
-  // The in-memory doubles implement only the SDK/KV methods this function exercises.
   registerSmartSearchFunction(sdk as unknown as IIIClient, kv as unknown as StateKV, search);
   return { call: (args: object) => handler(args), saved };
 }

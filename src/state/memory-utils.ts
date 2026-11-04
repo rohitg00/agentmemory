@@ -3,8 +3,6 @@ import type { CompressedObservation, Lesson, Memory } from "../types.js";
 // Wraps a Memory record in the CompressedObservation shape that
 // SearchIndex / VectorIndex / enrichment paths consume. Memories share
 // the same searchable fields as observations (title + content +
-// concepts + files). Keep the observation enum compatible and preserve the
-// original durable-memory type separately in memoryType. The synthetic sessionId
 // ("memory" or memory.sessionIds[0]) is what enrich-side fallbacks key
 // off of when looking up the source record in KV.memories.
 export function memoryToObservation(memory: Memory): CompressedObservation {
