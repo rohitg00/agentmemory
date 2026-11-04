@@ -13,6 +13,9 @@ import {
   iiiManualInstallCommand,
   installIiiArchive,
   sha256File,
+  installIiiZip,
+  powershellLiteral,
+  windowsZipExtractCommands,
 } from "../src/cli/engine-install.js";
 import { III_PINNED_VERSION } from "../src/version.js";
 
@@ -212,5 +215,117 @@ describe("iii engine auto-installer", () => {
     expect(existsSync(binPath)).toBe(false);
     expect(run(sha256File(tarball)).status).toBe(0);
     expect(existsSync(binPath)).toBe(true);
+  });
+});
+
+describe("iii engine Windows zip installer", () => {
+  const ZIP_ASSET = "iii-x86_64-pc-windows-msvc.zip";
+  const ZIP_BYTES = Buffer.from("fake windows iii zip");
+
+  function zipChecksums(bytes: Buffer = ZIP_BYTES) {
+    const dir = sandbox();
+    const file = join(dir, "probe.zip");
+    writeFileSync(file, bytes);
+    return { "9.9.9": { [ZIP_ASSET]: sha256File(file) } };
+  }
+
+  function zipOpts(binDir: string, extra: Record<string, unknown> = {}) {
+    return {
+      releaseUrl: "https://example.invalid/iii.zip",
+      version: "9.9.9",
+      asset: ZIP_ASSET,
+      binDir,
+      binPath: join(binDir, "iii.exe"),
+      env: { SystemRoot: "C:\\Windows" },
+      checksums: zipChecksums(),
+      download: async (_url: string, dest: string) => writeFileSync(dest, ZIP_BYTES),
+      ...extra,
+    };
+  }
+
+  it("extracts with System32 tar.exe first and PowerShell Expand-Archive second, without a shell", () => {
+    const steps = windowsZipExtractCommands("C:\\a\\.iii-download.zip", "C:\\a", { SystemRoot: "C:\\Windows" });
+    expect(steps).toHaveLength(2);
+    expect(steps[0].command).toMatch(/System32[\\/]tar\.exe$/);
+    expect(steps[0].args).toEqual(["-xf", "C:\\a\\.iii-download.zip", "-C", "C:\\a"]);
+    expect(steps[1].command).toMatch(/WindowsPowerShell[\\/]v1\.0[\\/]powershell\.exe$/);
+    expect(steps[1].args.slice(0, 3)).toEqual(["-NoProfile", "-NonInteractive", "-Command"]);
+    expect(steps[1].args[3]).toContain("Expand-Archive -LiteralPath 'C:\\a\\.iii-download.zip'");
+  });
+
+  it("quotes PowerShell paths so a quote in the profile path cannot end the string", () => {
+    expect(powershellLiteral("C:\\Users\\o'brien")).toBe("'C:\\Users\\o''brien'");
+  });
+
+  it("installs when the download matches the pinned SHA-256 and tar.exe extracts iii.exe", async () => {
+    const binDir = join(sandbox(), "bin");
+    const calls: string[] = [];
+    const outcome = await installIiiZip(zipOpts(binDir, {
+      run: (command: string) => {
+        calls.push(command);
+        writeFileSync(join(binDir, "iii.exe"), "bin");
+        return { status: 0 };
+      },
+    }));
+    expect(outcome).toEqual({ ok: true });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatch(/tar\.exe$/);
+    expect(existsSync(join(binDir, ".iii-download.zip"))).toBe(false);
+  });
+
+  it("falls back to Expand-Archive when tar.exe fails", async () => {
+    const binDir = join(sandbox(), "bin");
+    const calls: string[] = [];
+    const outcome = await installIiiZip(zipOpts(binDir, {
+      run: (command: string) => {
+        calls.push(command);
+        if (command.endsWith("tar.exe")) return { status: 1, stderr: "tar: unsupported" };
+        writeFileSync(join(binDir, "iii.exe"), "bin");
+        return { status: 0 };
+      },
+    }));
+    expect(outcome).toEqual({ ok: true });
+    expect(calls.map((c) => c.split(/[\\/]/).pop())).toEqual(["tar.exe", "powershell.exe"]);
+  });
+
+  it("never extracts a download whose SHA-256 does not match", async () => {
+    const binDir = join(sandbox(), "bin");
+    let ran = false;
+    const outcome = await installIiiZip(zipOpts(binDir, {
+      download: async (_url: string, dest: string) => writeFileSync(dest, Buffer.from("tampered")),
+      run: () => {
+        ran = true;
+        return { status: 0 };
+      },
+    }));
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.reason).toBe("checksum");
+    expect(ran).toBe(false);
+    expect(existsSync(join(binDir, ".iii-download.zip"))).toBe(false);
+  });
+
+  it("downloads nothing for an asset without a pinned SHA-256", async () => {
+    const binDir = join(sandbox(), "bin");
+    let downloaded = false;
+    const outcome = await installIiiZip(zipOpts(binDir, {
+      checksums: { "9.9.9": {} },
+      download: async () => {
+        downloaded = true;
+      },
+    }));
+    expect(outcome.ok === false && outcome.reason).toBe("no-checksum");
+    expect(downloaded).toBe(false);
+  });
+
+  it("reports an extract failure when neither extractor produces iii.exe", async () => {
+    const binDir = join(sandbox(), "bin");
+    const outcome = await installIiiZip(zipOpts(binDir, { run: () => ({ status: 0 }) }));
+    expect(outcome.ok === false && outcome.reason).toBe("extract");
+    expect(outcome.ok === false && outcome.detail).toContain("iii.exe is missing");
+  });
+
+  it("pins a SHA-256 for both Windows assets of the pinned release", () => {
+    expect(expectedIiiSha256(III_PINNED_VERSION, "iii-x86_64-pc-windows-msvc.zip")).toMatch(/^[0-9a-f]{64}$/);
+    expect(expectedIiiSha256(III_PINNED_VERSION, "iii-aarch64-pc-windows-msvc.zip")).toMatch(/^[0-9a-f]{64}$/);
   });
 });

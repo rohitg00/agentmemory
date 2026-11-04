@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 export const III_INSTALL_CONNECT_TIMEOUT_S = 15;
@@ -139,4 +139,125 @@ export function installIiiArchive(opts: {
     return { ok: false, reason: "extract", detail: describeInstallFailure(extract) };
   }
   return { ok: true };
+}
+
+export type ZipRunResult = {
+  status: number | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  error?: Error & { code?: string };
+  signal?: NodeJS.Signals | null;
+};
+
+export type ZipCommandRunner = (command: string, args: string[]) => ZipRunResult;
+
+export type ZipDownloader = (url: string, dest: string) => Promise<void>;
+
+export function iiiZipArchivePath(binDir: string): string {
+  return join(binDir, ".iii-download.zip");
+}
+
+export function powershellLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+export function windowsZipExtractCommands(
+  archive: string,
+  binDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] }[] {
+  const systemRoot = env["SystemRoot"] || env["SYSTEMROOT"] || "C:\\Windows";
+  const system32 = join(systemRoot, "System32");
+  return [
+    { command: join(system32, "tar.exe"), args: ["-xf", archive, "-C", binDir] },
+    {
+      command: join(system32, "WindowsPowerShell", "v1.0", "powershell.exe"),
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Expand-Archive -LiteralPath ${powershellLiteral(archive)} -DestinationPath ${powershellLiteral(binDir)} -Force`,
+      ],
+    },
+  ];
+}
+
+export async function downloadToFile(url: string, dest: string): Promise<void> {
+  const res = await fetch(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(III_INSTALL_MAX_TIME_S * 1000),
+  });
+  if (!res.ok) throw new Error(`download failed with HTTP ${res.status} ${res.statusText}`.trim());
+  writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+}
+
+function defaultZipRunner(command: string, args: string[]): ZipRunResult {
+  return spawnSync(command, args, {
+    stdio: "pipe",
+    encoding: "utf-8",
+    timeout: III_INSTALL_SPAWN_TIMEOUT_MS,
+    windowsHide: true,
+    shell: false,
+  });
+}
+
+export async function installIiiZip(opts: {
+  releaseUrl: string;
+  version: string;
+  asset: string;
+  binDir: string;
+  binPath: string;
+  env?: NodeJS.ProcessEnv;
+  checksums?: ChecksumTable;
+  download?: ZipDownloader;
+  run?: ZipCommandRunner;
+}): Promise<IiiInstallOutcome> {
+  const expected = expectedIiiSha256(opts.version, opts.asset, opts.checksums);
+  if (!expected) {
+    return {
+      ok: false,
+      reason: "no-checksum",
+      detail: `no pinned SHA-256 for ${opts.asset} in iii v${opts.version}, so the download cannot be verified`,
+    };
+  }
+  const download = opts.download ?? downloadToFile;
+  const run = opts.run ?? defaultZipRunner;
+  const archive = iiiZipArchivePath(opts.binDir);
+
+  try {
+    mkdirSync(opts.binDir, { recursive: true });
+    rmSync(archive, { force: true });
+    await download(opts.releaseUrl, archive);
+  } catch (err) {
+    rmSync(archive, { force: true });
+    return { ok: false, reason: "download", detail: err instanceof Error ? err.message : String(err) };
+  }
+
+  let actual: string;
+  try {
+    actual = sha256File(archive);
+  } catch (err) {
+    rmSync(archive, { force: true });
+    return { ok: false, reason: "download", detail: err instanceof Error ? err.message : String(err) };
+  }
+  if (actual !== expected) {
+    rmSync(archive, { force: true });
+    return {
+      ok: false,
+      reason: "checksum",
+      detail: `SHA-256 mismatch for ${opts.asset}: expected ${expected}, got ${actual}. The download was deleted and nothing was installed`,
+    };
+  }
+
+  const failures: string[] = [];
+  for (const step of windowsZipExtractCommands(archive, opts.binDir, opts.env)) {
+    const result = run(step.command, step.args);
+    if (result.status === 0 && existsSync(opts.binPath)) {
+      rmSync(archive, { force: true });
+      return { ok: true };
+    }
+    failures.push(`${step.command}: ${result.status === 0 ? `finished but ${opts.binPath} is missing` : describeInstallFailure(result)}`);
+  }
+  rmSync(archive, { force: true });
+  return { ok: false, reason: "extract", detail: failures.join("; ") };
 }

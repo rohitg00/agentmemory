@@ -57,7 +57,7 @@ import {
 } from "./cli/remove-plan.js";
 import { portFlagSuffix } from "./cli/ready-hint.js";
 import { embeddingStatusLabel } from "./cli/embedding-status.js";
-import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive } from "./cli/engine-install.js";
+import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive, installIiiZip } from "./cli/engine-install.js";
 import {
   runtimeConfigPath,
   redactCredentialUrls,
@@ -959,12 +959,30 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
   }
 
   if (IS_WINDOWS || isZipAsset) {
-    p.log.info(
-      `Auto-install unavailable on ${platform()} — ${asset} isn't tar-compatible. Install manually:\n` +
+    const binDir = agentmemoryBinDir();
+    const binPath = privateIiiPath();
+    const label = `Installing iii-engine v${IIPINNED_VERSION} (pinned)`;
+    const spinner = p.spinner();
+    spinner.start(label);
+    const outcome = await installIiiZip({
+      releaseUrl,
+      version: IIPINNED_VERSION,
+      asset: asset ?? "",
+      binDir,
+      binPath,
+    });
+    if (outcome.ok) {
+      spinner.stop(`${label} ${pc.green("✓")}`);
+      iiiProbeScan?.delete(binPath);
+      return { ok: true, binPath };
+    }
+    spinner.stop(`${label} ${pc.red("✗")}`);
+    p.log.warn(
+      `iii-engine auto-install failed: ${outcome.detail.slice(0, 300)}\n` +
+        `Install it manually, then re-run agentmemory:\n` +
         `  1. Download ${releaseUrl}\n` +
         `     Its SHA-256 must be ${expectedIiiSha256(IIPINNED_VERSION, asset ?? "") ?? `the value in ${releaseUrl.replace(/\.zip$/, ".sha256")}`}\n` +
-        `  2. Extract iii.exe and place it on PATH (e.g. %USERPROFILE%\\.local\\bin)\n` +
-        `Install the pinned iii binary from ${releaseUrl}`,
+        `  2. Extract iii.exe into ${binDir}`,
     );
     return { ok: false, binPath: null };
   }
