@@ -3,9 +3,6 @@ import type { CompressedObservation, Lesson, Memory } from "../types.js";
 // Wraps a Memory record in the CompressedObservation shape that
 // SearchIndex / VectorIndex / enrichment paths consume. Memories share
 // the same searchable fields as observations (title + content +
-// concepts + files); type is normalized to "decision" so memories stay
-// distinguishable in result metadata without colliding with observation
-// enums (file_read, command_run, …). The synthetic sessionId
 // ("memory" or memory.sessionIds[0]) is what enrich-side fallbacks key
 // off of when looking up the source record in KV.memories.
 export function memoryToObservation(memory: Memory): CompressedObservation {
@@ -14,6 +11,7 @@ export function memoryToObservation(memory: Memory): CompressedObservation {
     sessionId: memory.sessionIds?.[0] ?? "memory",
     timestamp: memory.createdAt,
     type: "decision",
+    memoryType: memory.type,
     title: memory.title,
     facts: [memory.content],
     narrative: memory.content,

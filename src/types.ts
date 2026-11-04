@@ -96,6 +96,7 @@ export interface CompressedObservation {
   sessionId: string;
   timestamp: string;
   type: ObservationType;
+  memoryType?: Memory["type"];
   title: string;
   subtitle?: string;
   facts: string[];
@@ -346,6 +347,7 @@ export interface CompactSearchResult {
   sessionId: string;
   title: string;
   type: ObservationType;
+  memoryType?: Memory["type"];
   score: number;
   timestamp: string;
   layer?: "memory" | "observation" | "lesson" | "insight";

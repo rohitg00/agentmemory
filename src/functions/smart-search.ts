@@ -248,14 +248,21 @@ export function registerSmartSearchFunction(
         }
       }
 
-      const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
-        obsId: r.observation.id,
-        layer: r.layer ?? getSearchIndex().layerOf(r.observation.id) ?? getSearchResultLayer(r.observation.id, r.sessionId),
-        sessionId: r.sessionId,
-        title: r.observation.title,
-        type: r.observation.type,
-        score: r.combinedScore,
-        timestamp: r.observation.timestamp,
+      const compact: CompactSearchResult[] = await Promise.all(filteredHybrid.map(async (r) => {
+        const layer = r.layer ?? getSearchIndex().layerOf(r.observation.id) ?? getSearchResultLayer(r.observation.id, r.sessionId);
+        const memoryType = layer === "memory"
+          ? (await kv.get<Memory>(KV.memories, r.observation.id).catch(() => null))?.type ?? r.observation.memoryType
+          : undefined;
+        return {
+          obsId: r.observation.id,
+          layer,
+          sessionId: r.sessionId,
+          title: r.observation.title,
+          type: r.observation.type,
+          ...(memoryType !== undefined && { memoryType }),
+          score: r.combinedScore,
+          timestamp: r.observation.timestamp,
+        };
       }));
 
       void recordAccessBatch(
