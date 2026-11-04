@@ -232,14 +232,20 @@ export function registerSmartSearchFunction(
 
       let filteredHybrid = await scopeResults(hybridResults);
       if ((filterAgentId || project) && filteredHybrid.length < limit && getSearchIndex().size > overFetchLimit) {
-        const deeper = await scopeResults(
-          await searchFn(data.query, SCOPED_RETRY_CANDIDATES, targetLayer, authorizeGraph),
-        );
-        const seen = new Set(deeper.map((result) => result.observation.id));
-        filteredHybrid = [
-          ...deeper,
-          ...filteredHybrid.filter((result) => !seen.has(result.observation.id)),
-        ].slice(0, limit);
+        try {
+          const deeper = await scopeResults(
+            await searchFn(data.query, SCOPED_RETRY_CANDIDATES, targetLayer, authorizeGraph),
+          );
+          const seen = new Set(deeper.map((result) => result.observation.id));
+          filteredHybrid = [
+            ...deeper,
+            ...filteredHybrid.filter((result) => !seen.has(result.observation.id)),
+          ].slice(0, limit);
+        } catch (err) {
+          logger.warn("Smart search deeper scoped ranking failed; keeping first-pass results", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
 
       const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
