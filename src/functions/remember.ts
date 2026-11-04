@@ -6,7 +6,7 @@ import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
-import { memoryToObservation } from "../state/memory-utils.js";
+import { memoryToObservation, supersededAt } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { deleteFacetsForTargets } from "./facets.js";
 import { recordAudit } from "./audit.js";
@@ -183,7 +183,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
 
         if (supersededMemory) {
           supersededMemory.isLatest = false;
-          supersededMemory.updatedAt = new Date().toISOString();
+          supersededMemory.updatedAt = supersededAt(supersededMemory.updatedAt, now);
           await kv.set(KV.memories, supersededMemory.id, supersededMemory);
           // The superseded version stays in KV (the viewer's version
           // chain reads it there) but leaves both search indexes:

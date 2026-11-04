@@ -1,6 +1,6 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { Memory, MemoryRelation } from "../types.js";
-import { memoryToObservation } from "../state/memory-utils.js";
+import { memoryToObservation, supersededAt } from "../state/memory-utils.js";
 import { memoryTitleFromContent } from "./remember.js";
 import {
   getSearchIndex,
@@ -201,7 +201,7 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
         };
 
         existing.isLatest = false;
-        existing.updatedAt = new Date().toISOString();
+        existing.updatedAt = supersededAt(existing.updatedAt, now);
         await kv.set(KV.memories, existing.id, existing);
         try {
           getSearchIndex().remove(existing.id);

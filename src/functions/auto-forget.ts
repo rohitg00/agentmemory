@@ -3,6 +3,7 @@ import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { supersededAt } from "../state/memory-utils.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { recordAudit } from "./audit.js";
@@ -141,7 +142,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
                     ? memA
                     : memB;
                 older.isLatest = false;
-                older.updatedAt = new Date().toISOString();
+                older.updatedAt = supersededAt(older.updatedAt, new Date().toISOString());
                 await kv.set(KV.memories, older.id, older);
                 await recordAudit(kv, "forget", "mem::auto-forget", [older.id], {
                   resource: "memory",

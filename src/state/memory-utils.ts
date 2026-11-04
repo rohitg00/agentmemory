@@ -1,5 +1,12 @@
 import type { CompressedObservation, Lesson, Memory } from "../types.js";
 
+export function supersededAt(previous: string | undefined, now: string): string {
+  const prior = previous ? Date.parse(previous) : Number.NaN;
+  const current = Date.parse(now);
+  if (Number.isNaN(prior) || current > prior) return now;
+  return new Date(prior + 1).toISOString();
+}
+
 // Wraps a Memory record in the CompressedObservation shape that
 // SearchIndex / VectorIndex / enrichment paths consume. Memories share
 // the same searchable fields as observations (title + content +
