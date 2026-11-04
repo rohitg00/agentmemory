@@ -175,6 +175,16 @@ describe("event::session::stopped graph-extract is incremental", () => {
 
     expect(batches(h.trigger)[1]).toEqual(["c"]);
   });
+
+  it("extracts without creating a session row when the session record is missing", async () => {
+    const h = harness();
+    h.kv.scope("mem:sessions").delete(SID);
+    h.land(obs("a", "2026-01-01T00:00:01.000Z"));
+    await h.stop();
+
+    expect(batches(h.trigger)).toEqual([["a"]]);
+    expect(h.kv.scope("mem:sessions").has(SID)).toBe(false);
+  });
 });
 
 // The fallback branch. Most of these assert the PRE-FIX behaviour (extract

@@ -18,12 +18,6 @@ import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 // the per-turn session-stop fan-out.
 const CONSOLIDATION_MARKER_KEY = "consolidation:lastRun";
 
-// Order-independent fingerprint of an observation set: tells whether the
-// already-extracted half of a session still looks the way it did at the last
-// graph extract. Over ids, not counts or timestamps — evict's per-project cap
-// (evict.ts, age- and status-independent) can delete an observation from the
-// live session in the same window a late compression lands another, and if the
-// two share a millisecond only the ids tell the sets apart.
 const observationFingerprint = (obs: CompressedObservation[]): string =>
   fingerprintId("gx", obs.map((o) => o.id).sort().join(","));
 
@@ -79,21 +73,6 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       );
       const compressed = observations.filter((o) => o.title);
       if (compressed.length > 0) {
-        // /session/end is posted by the per-turn Stop hook, so this handler
-        // runs every agent turn. Re-sending the whole session each time makes
-        // persistGraphDelta re-merge turns 1..N-1 on turn N — quadratic engine
-        // calls, and per #843 every kv.set stays resident in the engine, so
-        // that is quadratic permanent heap. Send only what landed since the
-        // last extract.
-        //
-        // The digest is what makes the timestamp watermark safe. Rows keep
-        // their capture time, not the write time, so one can become
-        // extractable below the watermark: a legacy untitled row titled late
-        // by mem::compression-retry, or a row restored by
-        // import/replay into a live session. Evict can also remove one at any
-        // point. Whenever the already-extracted half no
-        // longer fingerprints the same, we re-send the whole session rather
-        // than skip it. Missing a memory is worse than re-merging one.
         const session = await kv
           .get<Session>(KV.sessions, data.sessionId)
           .catch(() => null);
@@ -105,8 +84,6 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
           if (observationFingerprint(seen) === mark) {
             batch = compressed.filter((o) => o.timestamp > at);
           } else {
-            // Otherwise the fallback is silent: a session stuck re-extracting
-            // itself every turn looks exactly like a healthy one.
             logger.info("graph-extract watermark stale, re-extracting session", {
               sessionId: data.sessionId,
               atOrBelow: seen.length,
@@ -115,29 +92,16 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
           }
         }
         if (batch.length > 0) {
-          // Off the dispatched batch, so a future cap cannot advance the
-          // watermark past an observation nobody sent.
           const newest = batch.reduce(
             (max, o) => (o.timestamp > max ? o.timestamp : max),
             "",
           );
-          // Same node and edge sets either way — pinned by
-          // graph-heuristic-extract.test.ts. Provenance narrows, which is the
-          // real change: mergeNode/mergeEdge union the whole batch's obsIds,
-          // so a whole-session batch stamped every node and edge with every
-          // observation id in the session.
-          //
-          // Accepted is not done. A throw skips the watermark write and
-          // retries next turn (pinned by graph-extract-incremental.test.ts),
-          // but completion is unobservable through TriggerAction.Void(), so an
-          // extract that fails downstream leaves its delta out of the graph
-          // until POST /agentmemory/graph/build.
           await sdk.trigger({
             function_id: "mem::graph-extract",
             payload: { observations: batch },
             action: TriggerAction.Void(),
           });
-          await kv.update(KV.sessions, data.sessionId, [
+          if (session) await kv.update(KV.sessions, data.sessionId, [
             { type: "set", path: "graphExtractedAt", value: newest },
             {
               type: "set",
