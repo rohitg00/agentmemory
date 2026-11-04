@@ -396,6 +396,12 @@ describe("iii engine Windows zip installer", () => {
     expect(leftoverArchives(binDir)).toEqual([]);
   });
 
+  it("reports a missing executable without waiting for a close event", async () => {
+    const result = await runInstallCommand(join(sandbox(), "no-such-tool.exe"), []);
+    expect(result.status).toBeNull();
+    expect(result.error?.code).toBe("ENOENT");
+  });
+
   it("kills a running install command when the CLI exits", async () => {
     const before = process.listenerCount("exit");
     const pending = runInstallCommand(process.execPath, ["-e", "setTimeout(() => {}, 5000)"]);

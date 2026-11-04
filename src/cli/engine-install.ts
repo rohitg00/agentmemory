@@ -277,7 +277,10 @@ export function runInstallCommand(command: string, args: string[]): Promise<ZipR
     }, III_INSTALL_SPAWN_TIMEOUT_MS);
     child.stdout?.on("data", (chunk) => { stdout += chunk; });
     child.stderr?.on("data", (chunk) => { stderr += chunk; });
+    let spawnError: (Error & { code?: string }) | undefined;
     child.on("error", (error: Error & { code?: string }) => {
+      spawnError = error;
+      if (child.pid !== undefined) return;
       clearTimeout(timer);
       process.off("exit", killOnExit);
       done({ status: null, stdout, stderr, error });
@@ -285,6 +288,10 @@ export function runInstallCommand(command: string, args: string[]): Promise<ZipR
     child.on("close", (status, signal) => {
       clearTimeout(timer);
       process.off("exit", killOnExit);
+      if (spawnError && status === null && !timedOut) {
+        done({ status: null, stdout, stderr, signal, error: spawnError });
+        return;
+      }
       if (timedOut) {
         done({ status: null, stdout, stderr, signal, error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }) });
         return;
