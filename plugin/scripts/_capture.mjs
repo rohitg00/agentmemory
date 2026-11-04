@@ -282,7 +282,7 @@ function resolveDataDir(options = {}) {
 }
 //#endregion
 //#region src/functions/privacy.ts
-const PRIVATE_TAG_RE = /<private>[\s\S]*?<\/private>/gi;
+const PRIVATE_TAG_RE = /<private\b[^>]*>[\s\S]*?(?:<\/private\s*>|$)/gi;
 const SECRET_PATTERN_SOURCES = [
 	/(?:api[_-]?key|secret|token|password|credential|auth)[\s]*[=:]\s*["']?[A-Za-z0-9_\-/.+]{20,}["']?/gi,
 	/Bearer\s+[A-Za-z0-9._\-+/=]{20,}/gi,

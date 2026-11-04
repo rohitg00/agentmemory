@@ -8,6 +8,15 @@ describe("stripPrivateData", () => {
     );
   });
 
+  it("strips an unclosed private tag through the end of the text", () => {
+    expect(stripPrivateData("keep <private>secret to the end")).toBe("keep [REDACTED]");
+  });
+
+  it("strips a private tag that carries attributes", () => {
+    expect(stripPrivateData('a <private reason="x">secret</private> b')).toBe("a [REDACTED] b");
+    expect(stripPrivateData("a <privateKey>value</privateKey> b")).toBe("a <privateKey>value</privateKey> b");
+  });
+
   it("strips private tags case-insensitive", () => {
     expect(stripPrivateData("<Private>data</Private>")).toBe("[REDACTED]");
   });

@@ -33,7 +33,8 @@ async function main() {
   const agentId = data.agent_id || data.agentId || data.agentName;
   const agentType = data.agent_type || data.agentType || data.agentDisplayName || data.agentName;
   const reply = data.last_assistant_message ?? data.response;
-  const lastMsg = typeof reply === "string" ? truncateText(stripPrivateData(reply), 4000) : "";
+  const redactedReply = typeof reply === "string" ? stripPrivateData(reply) : "";
+  const lastMsg = truncateText(redactedReply, 4000);
 
   const cwd = hookCwd(data) || process.cwd();
 
@@ -53,7 +54,7 @@ async function main() {
     withEventId(
       body,
       {},
-      { ...body.data, stop_hook_active: data.stop_hook_active === true },
+      { ...body.data, last_message: redactedReply, stop_hook_active: data.stop_hook_active === true },
       { stable: Boolean(data.agent_id || data.agentId) },
     ),
     OBSERVE_TIMEOUT_MS,
