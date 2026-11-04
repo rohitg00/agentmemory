@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
 import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
 
@@ -33,7 +34,7 @@ async function main() {
   const agentType = data.agent_type || data.agentDisplayName || data.agentName;
   const lastMsg =
     typeof data.last_assistant_message === "string"
-      ? data.last_assistant_message.slice(0, 4000)
+      ? truncateText(data.last_assistant_message, 4000)
       : "";
 
   const cwd = hookCwd(data) || process.cwd();
