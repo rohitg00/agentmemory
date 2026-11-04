@@ -44,3 +44,12 @@ export function lessonToObservation(l: Lesson): CompressedObservation {
     importance: l.confidence,
   };
 }
+
+export function observationEmbedText(
+  record: Pick<CompressedObservation, "title" | "narrative" | "concepts">,
+): string {
+  return [record.title, ...(record.concepts || []), record.narrative || ""]
+    .filter((part) => part && part.trim())
+    .join(" ")
+    .trim();
+}
