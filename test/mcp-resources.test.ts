@@ -375,7 +375,6 @@ describe("MCP graph/stats resource over live graph state", () => {
     registerExportImportFunction(sdk as never, kv);
     registerMcpEndpoints(sdk as never, kv);
     const call = (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload });
-    // Clears the spy first: reset, import and restore legitimately list scopes.
     const readStats = async () => {
       listed.length = 0;
       const result = await call("mcp::resources::read", makeReq({ uri: "agentmemory://graph/stats" }));
