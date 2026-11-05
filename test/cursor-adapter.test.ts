@@ -256,6 +256,36 @@ describe("built shims against a local server", () => {
       expected: { agent_type: "Explore", last_message: "Canonical reply" },
     },
     {
+      name: "existing response and agentType aliases",
+      fields: {
+        subagent_type: "explore",
+        summary: "Cursor summary",
+        agentType: "Explore",
+        response: "Existing reply",
+      },
+      expected: { agent_type: "Explore", last_message: "Existing reply" },
+    },
+    {
+      name: "an existing response alongside a non-string summary",
+      fields: { subagent_type: "explore", summary: { text: "Preview" }, response: "Existing reply" },
+      expected: { agent_type: "explore", last_message: "Existing reply" },
+    },
+    {
+      name: "an explicitly empty response alias",
+      fields: { subagent_type: "explore", summary: "Cursor summary", response: "" },
+      expected: { agent_type: "explore", last_message: "" },
+    },
+    {
+      name: "the agentDisplayName fallback after empty type fields",
+      fields: { subagent_type: "explore", agent_type: "", agentType: "", agentDisplayName: "Explorer" },
+      expected: { agent_type: "Explorer", last_message: "" },
+    },
+    {
+      name: "the agentName type fallback",
+      fields: { subagent_type: "explore", agentName: "named-agent" },
+      expected: { agent_type: "named-agent", last_message: "" },
+    },
+    {
       name: "an explicitly empty canonical reply",
       fields: { subagent_type: "explore", summary: "Cursor summary", last_assistant_message: "" },
       expected: { agent_type: "explore", last_message: "" },
