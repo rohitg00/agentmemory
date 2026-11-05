@@ -556,7 +556,7 @@ async function listWithRetry<T>(kv: StateKV, scope: string, label: string, deadl
   return null
 }
 
-type KeywordRebuildResult = { documents: number; vectorJobs: VectorBackfillJob[]; fullBackfillPending: number }
+type KeywordRebuildResult = { documents: number; vectorJobs: VectorBackfillJob[]; fullBackfillPending: number; historicalVectorGaps: number }
 
 export async function rebuildKeywordIndex(
   kv: StateKV,
@@ -589,6 +589,7 @@ async function runKeywordRebuild(
   const backfillCap = backfillActive ? getVectorBackfillMax() : 0
   const vectorJobs: VectorBackfillJob[] = []
   let fullBackfillPending = 0
+  let historicalVectorGaps = 0
   const consider = (
     id: string,
     sessionId: string,
@@ -597,7 +598,10 @@ async function runKeywordRebuild(
     kind: "memory" | "observation",
   ): void => {
     if (!backfillEligible || vi?.has(id)) return
-    if (!Number.isNaN(cutoff) && !(Date.parse(timestamp ?? '') > cutoff)) return
+    if (!Number.isNaN(cutoff) && !(Date.parse(timestamp ?? '') > cutoff)) {
+      historicalVectorGaps++
+      return
+    }
     if (backfillGated || (wholeStoreBackfill && vectorJobs.length >= backfillCap)) {
       fullBackfillPending++
       return
@@ -627,7 +631,7 @@ async function runKeywordRebuild(
   if (sessions === null) {
     bm25RebuildIncomplete = true
     if (memoriesLoaded) memoryIndexReady = true
-    return { documents, vectorJobs, fullBackfillPending }
+    return { documents, vectorJobs, fullBackfillPending, historicalVectorGaps }
   }
   const failedSessions: string[] = []
   for (let batch = 0; batch < sessions.length; batch += 10) {
@@ -654,7 +658,7 @@ async function runKeywordRebuild(
     logger.warn('rebuildKeywordIndex: failed to load observations for sessions', { failedSessions })
   }
   if (memoriesLoaded) memoryIndexReady = true
-  return { documents, vectorJobs, fullBackfillPending }
+  return { documents, vectorJobs, fullBackfillPending, historicalVectorGaps }
 }
 
 const BACKFILL_SAVE_EVERY_BATCHES = 10
