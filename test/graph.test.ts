@@ -157,6 +157,181 @@ describe("Graph Functions", () => {
     expect(edges[0].weight).toBeCloseTo(0.9, 5);
   });
 
+  it("ignores reasoning text before the final entities block", async () => {
+    mockProvider.compress.mockResolvedValueOnce(`I should output the XML now.
+Example:
+<entities>
+<entity type="concept" name="exact name"/>
+</entities>
+Final answer:
+<entities>
+<entity type="file" name="src/index.ts"/>
+<entity type="function" name="main"/>
+</entities>
+<relationships>
+<relationship type="uses" source="src/index.ts" target="main" weight="0.9"/>
+</relationships>`);
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number; edgesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(2);
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+    expect(nodes.map((n) => n.name).sort()).toEqual(["main", "src/index.ts"]);
+    expect(nodes.some((n) => n.name === "exact name")).toBe(false);
+  });
+
+  it("rejects reasoning-like names and caps oversized properties", async () => {
+    const longName = "x".repeat(600);
+    const properties = Array.from(
+      { length: 35 },
+      (_, i) => `<property key="p${i}">${i === 0 ? "y".repeat(600) : "v"}</property>`,
+    ).join("");
+    mockProvider.compress.mockResolvedValueOnce(`<entities>
+<entity type="concept" name="line one
+line two"/>
+<entity type="concept" name="${longName}"/>
+<entity type="concept" name="valid">${properties}</entity>
+</entities>`);
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(1);
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0].name).toBe("valid");
+    expect(Object.keys(nodes[0].properties ?? {})).toHaveLength(32);
+    expect((nodes[0].properties ?? {})["p0"]).toHaveLength(512);
+  });
+
+  it("does not fall back to reasoning when the final wrappers are empty", async () => {
+    mockProvider.compress.mockResolvedValueOnce(`Reasoning example:
+<entities><entity type="concept" name="exact name"/></entities>
+<entities></entities>
+<relationships></relationships>`);
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number; edgesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(0);
+    expect(result.edgesAdded).toBe(0);
+    expect(await kv.list<GraphNode>("mem:graph:nodes")).toHaveLength(0);
+  });
+
+  it("keeps bare entities when only relationships use a wrapper", async () => {
+    mockProvider.compress.mockResolvedValueOnce(`<entity type="file" name="src/index.ts"/>
+<entity type="function" name="main"/>
+<relationships>
+<relationship type="uses" source="src/index.ts" target="main" weight="0.9"/>
+</relationships>`);
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number; edgesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(2);
+    expect(result.edgesAdded).toBe(1);
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+    expect(nodes.map((n) => n.name).sort()).toEqual(["main", "src/index.ts"]);
+  });
+
+  it("stops adding properties when the property block exceeds its byte budget", async () => {
+    const properties = Array.from(
+      { length: 35 },
+      (_, i) => `<property key="p${i}">${"y".repeat(512)}</property>`,
+    ).join("");
+    mockProvider.compress.mockResolvedValueOnce(
+      `<entities><entity type="concept" name="valid">${properties}</entity></entities>`,
+    );
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(1);
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+    const props = nodes[0].properties ?? {};
+    expect(Object.keys(props).length).toBeLessThan(32);
+    expect(Buffer.byteLength(JSON.stringify(props))).toBeLessThanOrEqual(
+      8 * 1024,
+    );
+  });
+
+  it("accepts whitespace in the final wrapper opening tags", async () => {
+    mockProvider.compress.mockResolvedValueOnce(`<entities >
+<entity type="file" name="src/index.ts"/>
+<entity type="function" name="main"/>
+</entities>
+<relationships >
+<relationship type="uses" source="src/index.ts" target="main" weight="0.9"/>
+</relationships>`);
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number; edgesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(2);
+    expect(result.edgesAdded).toBe(1);
+  });
+
+  it("budgets escaped property values by serialized size", async () => {
+    const value = '\\"'.repeat(300);
+    const properties = Array.from(
+      { length: 20 },
+      (_, i) => `<property key="p${i}">${value}</property>`,
+    ).join("");
+    mockProvider.compress.mockResolvedValueOnce(
+      `<entities><entity type="concept" name="valid">${properties}</entity></entities>`,
+    );
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(1);
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+    const props = nodes[0].properties ?? {};
+    expect(Object.keys(props).length).toBeLessThan(20);
+    expect(Buffer.byteLength(JSON.stringify(props))).toBeLessThanOrEqual(
+      8 * 1024,
+    );
+  });
+
+  it("rejects entity and relationship types outside the schema", async () => {
+    mockProvider.compress.mockResolvedValueOnce(`<entities>
+<entity type="file|function|concept|error|decision|pattern|library|person" name="bad"/>
+<entity type="file" name="src/index.ts"/>
+<entity type="function" name="main"/>
+</entities>
+<relationships>
+<relationship type="not_a_type" source="src/index.ts" target="main"/>
+<relationship type="uses" source="src/index.ts" target="main" weight="0.9"/>
+</relationships>`);
+
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [testObs],
+    })) as { success: boolean; nodesAdded: number; edgesAdded: number };
+
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBe(2);
+    expect(result.edgesAdded).toBe(1);
+    const nodes = await kv.list<GraphNode>("mem:graph:nodes");
+    expect(nodes.map((n) => n.name).sort()).toEqual(["main", "src/index.ts"]);
+    const edges = await kv.list<GraphEdge>("mem:graph:edges");
+    expect(edges).toHaveLength(1);
+  });
+
   it("graph-query with search returns matching nodes", async () => {
     await sdk.trigger("mem::graph-extract", { observations: [testObs] });
 
