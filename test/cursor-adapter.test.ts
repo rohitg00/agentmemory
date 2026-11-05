@@ -239,6 +239,137 @@ describe("built shims against a local server", () => {
     rmSync(workspace, { recursive: true, force: true });
   }, 30000);
 
+  it.each([
+    {
+      name: "Cursor summary and subagent type",
+      fields: { subagent_type: "explore", summary: "Found authenticateUser in auth.ts" },
+      expected: { agent_type: "explore", last_message: "Found authenticateUser in auth.ts" },
+    },
+    {
+      name: "canonical fields when both forms are present",
+      fields: {
+        subagent_type: "explore",
+        summary: "Cursor summary",
+        agent_type: "Explore",
+        last_assistant_message: "Canonical reply",
+      },
+      expected: { agent_type: "Explore", last_message: "Canonical reply" },
+    },
+    {
+      name: "existing response and agentType aliases",
+      fields: {
+        subagent_type: "explore",
+        summary: "Cursor summary",
+        agentType: "Explore",
+        response: "Existing reply",
+      },
+      expected: { agent_type: "Explore", last_message: "Existing reply" },
+    },
+    {
+      name: "an existing response alongside a non-string summary",
+      fields: { subagent_type: "explore", summary: { text: "Preview" }, response: "Existing reply" },
+      expected: { agent_type: "explore", last_message: "Existing reply" },
+    },
+    {
+      name: "an explicitly empty response alias",
+      fields: { subagent_type: "explore", summary: "Cursor summary", response: "" },
+      expected: { agent_type: "explore", last_message: "" },
+    },
+    {
+      name: "the agentDisplayName fallback after empty type fields",
+      fields: { subagent_type: "explore", agent_type: "", agentType: "", agentDisplayName: "Explorer" },
+      expected: { agent_type: "Explorer", last_message: "" },
+    },
+    {
+      name: "the agentName type fallback",
+      fields: { subagent_type: "explore", agentName: "named-agent" },
+      expected: { agent_type: "named-agent", last_message: "" },
+    },
+    {
+      name: "an explicitly empty canonical reply",
+      fields: { subagent_type: "explore", summary: "Cursor summary", last_assistant_message: "" },
+      expected: { agent_type: "explore", last_message: "" },
+    },
+    {
+      name: "a missing summary",
+      fields: { subagent_type: "explore" },
+      expected: { agent_type: "explore", last_message: "" },
+    },
+    {
+      name: "a non-string summary",
+      fields: { subagent_type: "explore", summary: { text: "Not a string" } },
+      expected: { agent_type: "explore", last_message: "" },
+    },
+  ])("subagentStop preserves $name through the built adapter", async ({ fields, expected }) => {
+    const workspace = mkdtempSync(join(tmpdir(), "am-cursor-subagent-")).replace(/\\/g, "/");
+    const sessionId = uniqueId("shim-subagent");
+    try {
+      const { code, stderr } = await runShim(
+        "run-hook.mjs",
+        ["subagentStop"],
+        { conversation_id: sessionId, workspace_roots: [workspace], status: "completed", ...fields },
+        {
+          ...hookEnv(),
+          HOME: join(workspace, "home"),
+          USERPROFILE: join(workspace, "home"),
+          AGENTMEMORY_CAPTURE_SPOOL_DIR: join(workspace, "spool"),
+        },
+      );
+      expect(code).toBe(0);
+      expect(stderr).toBe("");
+      const hits = server.captures.filter((c) =>
+        (c.body as { sessionId?: string })?.sessionId === sessionId,
+      );
+      expect(hits).toHaveLength(1);
+      expect(hits[0].url).toBe("/agentmemory/observe");
+      expect(hits[0].body).toMatchObject({
+        hookType: "subagent_stop",
+        sessionId,
+        project: basename(workspace),
+        cwd: workspace,
+        data: expected,
+      });
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  it("subagentStop redacts the Cursor summary before truncating it", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "am-cursor-subagent-")).replace(/\\/g, "/");
+    const sessionId = uniqueId("shim-private-summary");
+    try {
+      const { code } = await runShim(
+        "run-hook.mjs",
+        ["subagentStop"],
+        {
+          conversation_id: sessionId,
+          workspace_roots: [workspace],
+          subagent_type: "explore",
+          summary: "A".repeat(3980) + "<private>fixture-private-value" + "x".repeat(100) + "</private>" + "B".repeat(100),
+        },
+        {
+          ...hookEnv(),
+          HOME: join(workspace, "home"),
+          USERPROFILE: join(workspace, "home"),
+          AGENTMEMORY_CAPTURE_SPOOL_DIR: join(workspace, "spool"),
+        },
+      );
+      expect(code).toBe(0);
+      const hit = server.captures.find((c) =>
+        (c.body as { sessionId?: string })?.sessionId === sessionId,
+      );
+      expect(hit).toBeDefined();
+      const body = hit!.body as { data: { agent_type: string; last_message: string } };
+      expect(body.data.agent_type).toBe("explore");
+      expect(body.data.last_message).toHaveLength(4000);
+      expect(body.data.last_message.startsWith("A".repeat(3980))).toBe(true);
+      expect(body.data.last_message).not.toContain("fixture-private-value");
+      expect(body.data.last_message).not.toContain("<private>");
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  }, 15000);
+
   it("run-detached delivers a large payload through its background worker", async () => {
     const workspace = mkdtempSync(join(tmpdir(), "am-cursor-ws-"));
     const sessionId = uniqueId("shim-stop");
