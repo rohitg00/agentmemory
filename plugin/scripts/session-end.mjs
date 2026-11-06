@@ -112,29 +112,34 @@ function extractTranscriptPrompts(data) {
 }
 const WORKER_ENV = "AGENTMEMORY_SESSION_END_WORKER";
 function handOff(input) {
-	if (process.env[WORKER_ENV] === "1" || !process.argv[1]) return false;
-	try {
-		const child = spawn(process.execPath, [process.argv[1]], {
-			detached: true,
-			stdio: [
-				"pipe",
-				"ignore",
-				"ignore"
-			],
-			windowsHide: true,
-			env: {
-				...process.env,
-				[WORKER_ENV]: "1"
-			}
-		});
-		child.on("error", () => {});
-		child.stdin.on("error", () => {});
-		child.stdin.end(input);
-		child.unref();
-		return true;
-	} catch {
-		return false;
-	}
+	if (process.env[WORKER_ENV] === "1" || !process.argv[1]) return Promise.resolve(false);
+	return new Promise((resolve) => {
+		try {
+			const child = spawn(process.execPath, [process.argv[1]], {
+				detached: true,
+				stdio: [
+					"pipe",
+					"ignore",
+					"ignore"
+				],
+				windowsHide: true,
+				env: {
+					...process.env,
+					[WORKER_ENV]: "1"
+				}
+			});
+			child.on("error", () => resolve(false));
+			child.stdin.on("error", () => resolve(false));
+			child.once("spawn", () => {
+				child.stdin.end(input, () => {
+					child.unref();
+					resolve(true);
+				});
+			});
+		} catch {
+			resolve(false);
+		}
+	});
 }
 async function main() {
 	if (isDrainChild()) return runDrainChild();
@@ -148,7 +153,7 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
-	if (data.hook_event_name === "SessionEnd" && handOff(input)) return;
+	if (data.hook_event_name === "SessionEnd" && await handOff(input)) return;
 	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
 	const transcriptPrompts = extractTranscriptPrompts(data);
 	if (transcriptPrompts.length > 0) {

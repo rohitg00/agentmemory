@@ -118,18 +118,18 @@ describe("session-end transcript prompt backfill", () => {
     observeDelayMs = 2500;
     const started = Date.now();
     const code = await runHook({ session_id: "ses_handoff", hook_event_name: "SessionEnd", transcript_path: transcript });
-    observeDelayMs = 0;
     expect(code).toBe(0);
     expect(Date.now() - started).toBeLessThan(1500);
     const deadline = Date.now() + 10_000;
     while (!posts.some((p) => p.path.includes("/session/end")) && Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 50));
     }
+    observeDelayMs = 0;
     const prompts = posts.filter((p) => p.path.includes("/observe")).map((p) => (p.body.data as { prompt: string }).prompt);
     expect(prompts).toEqual(["handoff prompt"]);
     const end = posts.find((p) => p.path.includes("/session/end"));
     expect(end?.body).toMatchObject({ sessionId: "ses_handoff", final: true });
-  });
+  }, 20_000);
 
   it("runs the Claude Code SessionEnd work inline inside the detached worker", async () => {
     posts.length = 0;
