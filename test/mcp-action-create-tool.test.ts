@@ -84,6 +84,20 @@ describe("memory_action_create MCP tool", () => {
     expect(seen?.createdBy).toBe("agent-a");
   });
 
+  it("rejects a non-string agentId without creating an action", async () => {
+    const res = await callTool(sdk, { title: "Ship it", agentId: 42 });
+    expect(res.status_code).toBe(400);
+    expect(seen).toBeUndefined();
+  });
+
+  it("rejects an agentId longer than 128 characters instead of shortening it", async () => {
+    const res = await callTool(sdk, { title: "Ship it", agentId: "a".repeat(129) });
+    expect(res.status_code).toBe(400);
+    expect(seen).toBeUndefined();
+    await callTool(sdk, { title: "Ship it", agentId: "a".repeat(128) });
+    expect(seen?.createdBy).toBe("a".repeat(128));
+  });
+
   it("lists agentId in the tool schema", async () => {
     const { getAllTools } = await import("../src/mcp/tools-registry.js");
     const tool = getAllTools().find((t) => t.name === "memory_action_create")!;
