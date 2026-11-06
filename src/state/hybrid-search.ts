@@ -23,6 +23,7 @@ import { logger } from "../logger.js";
 
 const RRF_K = 60;
 const GRAPH_BUDGET_MS = 500;
+const MIN_FUSION_POOL = 40;
 
 export interface HybridSearchRequest {
   embedding?: { query: string; value: Promise<Float32Array> };
@@ -103,7 +104,8 @@ export class HybridSearch {
     request?: HybridSearchRequest,
   ): Promise<HybridSearchResult[]> {
     const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
-    const bm25Results = this.bm25.search(query, retrievalLimit * 2, targetLayer);
+    const poolLimit = Math.max(retrievalLimit * 2, MIN_FUSION_POOL);
+    const bm25Results = this.bm25.search(query, poolLimit, targetLayer);
 
     let vectorResults: Array<{
       obsId: string;
@@ -128,7 +130,7 @@ export class HybridSearch {
         } else {
           queryEmbedding = await this.embeddingProvider.embed(query);
         }
-        vectorResults = this.vector.search(queryEmbedding, retrievalLimit * 2, targetLayer, (id) => this.bm25.layerOf(id));
+        vectorResults = this.vector.search(queryEmbedding, poolLimit, targetLayer, (id) => this.bm25.layerOf(id));
       } catch {
         // fall through to BM25-only
       }
@@ -327,6 +329,11 @@ export class HybridSearch {
     const sessionCounts = new Map<string, number>();
 
     for (const r of results) {
+      if (r.obsId.startsWith("mem_")) {
+        selected.push(r);
+        if (selected.length >= limit) break;
+        continue;
+      }
       const count = sessionCounts.get(r.sessionId) || 0;
       if (count >= maxPerSession) continue;
       selected.push(r);

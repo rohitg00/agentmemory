@@ -3,7 +3,8 @@ import { VectorIndex } from "../src/state/vector-index.js";
 import { HybridSearch } from "../src/state/hybrid-search.js";
 import { KV } from "../src/state/schema.js";
 import { SearchIndex } from "../src/state/search-index.js";
-import type { CompressedObservation, EmbeddingProvider } from "../src/types.js";
+import type { CompressedObservation, EmbeddingProvider, Memory } from "../src/types.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 
 function makeObs(
   overrides: Partial<CompressedObservation> = {},
@@ -52,6 +53,42 @@ describe("HybridSearch", () => {
   beforeEach(() => {
     bm25 = new SearchIndex();
     kv = mockKV();
+  });
+
+  it("does not cap saved memories at three by their shared synthetic session", async () => {
+    for (let i = 1; i <= 6; i++) {
+      const memory: Memory = {
+        id: `mem_${i}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        type: "fact",
+        title: `quasar policy ${i}`,
+        content: `quasar quasar quasar policy rule ${i}`,
+        concepts: [],
+        files: [],
+        sessionIds: [],
+        strength: 7,
+        version: 1,
+        isLatest: true,
+      };
+      await kv.set(KV.memories, memory.id, memory);
+      bm25.add(memoryToObservation(memory), "memory");
+    }
+    for (let i = 1; i <= 5; i++) {
+      const obs = makeObs({ id: `obs_${i}`, sessionId: `ses_${i}`, title: `quasar note ${i}`, narrative: `quasar mention ${i}`, facts: [], concepts: [], files: [] });
+      bm25.add(obs);
+      await kv.set(KV.observations(obs.sessionId), obs.id, obs);
+    }
+    const hybrid = new HybridSearch(bm25, null, null, kv as never, 0.4, 0.6, 0, false);
+    const results = await hybrid.search("quasar policy", 6);
+    expect(results.map((r) => r.observation.id).filter((id) => id.startsWith("mem_"))).toHaveLength(6);
+  });
+
+  it("fuses from a fixed minimum candidate pool when the limit is small", async () => {
+    const search = vi.spyOn(bm25, "search");
+    const hybrid = new HybridSearch(bm25, null, null, kv as never, 0.4, 0.6, 0, false);
+    await hybrid.search("anything", 5);
+    expect(search.mock.calls[0]![1]).toBeGreaterThanOrEqual(40);
   });
 
   it("reuses query embeddings only within a recall request", async () => {
