@@ -146,6 +146,24 @@ describe("truncateCaptureOutput redacts structured values before serializing", (
     expect(out).not.toContain("hidden");
   });
 
+  it("removes a private block that opens in one field and closes in the next", () => {
+    const value = { a: "start <private>", b: "hidden-value</private> end", pad: "y".repeat(200) };
+    expect(truncateCaptureOutput(value, 80) as string).not.toContain("hidden");
+    expect(truncateJson(value, 80)).not.toContain("hidden");
+  });
+
+  it("redacts a credential in a key that a line break separates from its scheme", () => {
+    const key = "Bearer\n" + "A".repeat(32);
+    const value = { [key]: "x", pad: "y".repeat(200) };
+    expect(truncateJson(value, 100)).not.toContain("A".repeat(32));
+    expect(truncateCaptureOutput(value, 100) as string).not.toContain("A".repeat(32));
+  });
+
+  it("keeps escaped backslashes and line breaks in the cut JSON", () => {
+    const out = truncateJson({ a: "one\ntwo\\nthree", pad: "y".repeat(200) }, 60);
+    expect(out.startsWith('{"a":"one\\ntwo\\\\nthree"')).toBe(true);
+  });
+
   it("truncateJson leaves short JSON unchanged and redacts long JSON before cutting", () => {
     expect(truncateJson({ a: 1 }, 100)).toBe('{"a":1}');
     const out = truncateJson({ log: "<private\n>hidden-value</private>" + "y".repeat(200) }, 60);

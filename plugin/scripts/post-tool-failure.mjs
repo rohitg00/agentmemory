@@ -55,29 +55,6 @@ function stripPrivateData(input) {
 	}
 	return result;
 }
-function scrubRecord(value, options = {}) {
-	if (typeof value === "string") return stripPrivateData(value);
-	if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options));
-	if (value !== null && typeof value === "object") {
-		const proto = Object.getPrototypeOf(value);
-		if (proto !== Object.prototype && proto !== null) return value;
-		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? stripPrivateData(key) : key, item]);
-		const reserved = new Set(entries.map(([key]) => key));
-		const used = /* @__PURE__ */ new Set();
-		return Object.fromEntries(entries.map(([key, item]) => {
-			let unique = key;
-			if (used.has(unique)) {
-				let suffix = 2;
-				do
-					unique = `${key}_${suffix++}`;
-				while (reserved.has(unique) || used.has(unique));
-			}
-			used.add(unique);
-			return [unique, scrubRecord(item, options)];
-		}));
-	}
-	return value;
-}
 //#endregion
 //#region src/hooks/_capture-filter.ts
 const DEFAULT_DENY_PATTERNS = [
@@ -128,10 +105,18 @@ function truncateText(value, max) {
 	if (value.length <= max) return value;
 	return cut(stripPrivateData(value), max);
 }
+const JSON_WHITESPACE_ESCAPES = {
+	n: "\n",
+	r: "\r",
+	t: "	"
+};
+function redactSerialized(serialized) {
+	return stripPrivateData(serialized.replace(/\\([\\nrt])/g, (escape, c) => JSON_WHITESPACE_ESCAPES[c] ?? escape)).replace(/[\n\r\t]/g, (c) => JSON.stringify(c).slice(1, -1));
+}
 function truncateJson(value, max) {
 	const str = JSON.stringify(value);
 	if (str.length <= max) return str;
-	return cut(stripPrivateData(JSON.stringify(scrubRecord(value))), max);
+	return cut(redactSerialized(str), max);
 }
 //#endregion
 //#region src/hooks/_project.ts

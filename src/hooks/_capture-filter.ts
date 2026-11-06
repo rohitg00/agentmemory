@@ -1,4 +1,4 @@
-import { scrubRecord, stripPrivateData } from "../functions/privacy.js";
+import { stripPrivateData } from "../functions/privacy.js";
 
 const DEFAULT_DENY_PATTERNS = [
   "memory_*",
@@ -73,10 +73,17 @@ export function truncateText(value: string, max: number): string {
   return cut(stripPrivateData(value), max);
 }
 
+const JSON_WHITESPACE_ESCAPES: Record<string, string> = { n: "\n", r: "\r", t: "\t" };
+
+function redactSerialized(serialized: string): string {
+  const unescaped = serialized.replace(/\\([\\nrt])/g, (escape, c: string) => JSON_WHITESPACE_ESCAPES[c] ?? escape);
+  return stripPrivateData(unescaped).replace(/[\n\r\t]/g, (c) => JSON.stringify(c).slice(1, -1));
+}
+
 export function truncateJson(value: unknown, max: number): string {
   const str = JSON.stringify(value);
   if (str.length <= max) return str;
-  return cut(stripPrivateData(JSON.stringify(scrubRecord(value))), max);
+  return cut(redactSerialized(str), max);
 }
 
 function truncateWithSuffix(value: string, max: number, suffix: string): string {
@@ -91,7 +98,7 @@ export function truncateCaptureOutput(value: unknown, max: number): unknown {
   }
   if (typeof value === "object" && value !== null) {
     const str = JSON.stringify(value);
-    if (str.length > max) return truncateWithSuffix(JSON.stringify(scrubRecord(value)), max, "...[truncated]");
+    if (str.length > max) return truncateWithSuffix(redactSerialized(str), max, "...[truncated]");
     return value;
   }
   return value;

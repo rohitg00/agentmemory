@@ -55,29 +55,6 @@ function stripPrivateData(input) {
 	}
 	return result;
 }
-function scrubRecord(value, options = {}) {
-	if (typeof value === "string") return stripPrivateData(value);
-	if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options));
-	if (value !== null && typeof value === "object") {
-		const proto = Object.getPrototypeOf(value);
-		if (proto !== Object.prototype && proto !== null) return value;
-		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? stripPrivateData(key) : key, item]);
-		const reserved = new Set(entries.map(([key]) => key));
-		const used = /* @__PURE__ */ new Set();
-		return Object.fromEntries(entries.map(([key, item]) => {
-			let unique = key;
-			if (used.has(unique)) {
-				let suffix = 2;
-				do
-					unique = `${key}_${suffix++}`;
-				while (reserved.has(unique) || used.has(unique));
-			}
-			used.add(unique);
-			return [unique, scrubRecord(item, options)];
-		}));
-	}
-	return value;
-}
 //#endregion
 //#region src/hooks/_capture-filter.ts
 const DEFAULT_DENY_PATTERNS = [
@@ -130,6 +107,14 @@ function cut(value, max) {
 	const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
 	return value.slice(0, end);
 }
+const JSON_WHITESPACE_ESCAPES = {
+	n: "\n",
+	r: "\r",
+	t: "	"
+};
+function redactSerialized(serialized) {
+	return stripPrivateData(serialized.replace(/\\([\\nrt])/g, (escape, c) => JSON_WHITESPACE_ESCAPES[c] ?? escape)).replace(/[\n\r\t]/g, (c) => JSON.stringify(c).slice(1, -1));
+}
 function truncateWithSuffix(value, max, suffix) {
 	const safe = stripPrivateData(value);
 	if (safe.length <= max) return safe;
@@ -138,7 +123,8 @@ function truncateWithSuffix(value, max, suffix) {
 function truncateCaptureOutput(value, max) {
 	if (typeof value === "string" && value.length > max) return truncateWithSuffix(value, max, "\n[...truncated]");
 	if (typeof value === "object" && value !== null) {
-		if (JSON.stringify(value).length > max) return truncateWithSuffix(JSON.stringify(scrubRecord(value)), max, "...[truncated]");
+		const str = JSON.stringify(value);
+		if (str.length > max) return truncateWithSuffix(redactSerialized(str), max, "...[truncated]");
 		return value;
 	}
 	return value;
