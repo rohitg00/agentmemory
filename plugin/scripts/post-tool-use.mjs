@@ -46,8 +46,10 @@ const SECRET_PATTERN_SOURCES = [
 const PRIVATE_KEY_BLOCK_RE = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/g;
 const URL_CREDENTIALS_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]*:[^\s/?#@"'<>]+@/gi;
 function stripPrivateData(input) {
-	let result = redactPrivateBlocks(input);
-	result = result.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
+	return stripSecrets(redactPrivateBlocks(input));
+}
+function stripSecrets(input) {
+	let result = input.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
 	result = result.replace(new RegExp(URL_CREDENTIALS_RE.source, URL_CREDENTIALS_RE.flags), "$1[REDACTED_SECRET]@");
 	for (const source of SECRET_PATTERN_SOURCES) {
 		const pattern = new RegExp(source.source, source.flags);
@@ -112,6 +114,16 @@ const JSON_WHITESPACE_ESCAPES = {
 	r: "\r",
 	t: "	"
 };
+function scrubSecrets(value) {
+	if (typeof value === "string") return stripSecrets(value);
+	if (Array.isArray(value)) return value.map(scrubSecrets);
+	if (value !== null && typeof value === "object") {
+		const proto = Object.getPrototypeOf(value);
+		if (proto !== Object.prototype && proto !== null) return value;
+		return Object.fromEntries(Object.entries(value).map(([key, item]) => [stripSecrets(key), scrubSecrets(item)]));
+	}
+	return value;
+}
 function redactSerialized(serialized) {
 	return stripPrivateData(serialized.replace(/\\([\\nrt])/g, (escape, c) => JSON_WHITESPACE_ESCAPES[c] ?? escape)).replace(/[\n\r\t]/g, (c) => JSON.stringify(c).slice(1, -1));
 }
@@ -123,8 +135,7 @@ function truncateWithSuffix(value, max, suffix) {
 function truncateCaptureOutput(value, max) {
 	if (typeof value === "string" && value.length > max) return truncateWithSuffix(value, max, "\n[...truncated]");
 	if (typeof value === "object" && value !== null) {
-		const str = JSON.stringify(value);
-		if (str.length > max) return truncateWithSuffix(redactSerialized(str), max, "...[truncated]");
+		if (JSON.stringify(value).length > max) return truncateWithSuffix(redactSerialized(JSON.stringify(scrubSecrets(value))), max, "...[truncated]");
 		return value;
 	}
 	return value;

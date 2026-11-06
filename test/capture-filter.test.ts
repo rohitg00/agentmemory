@@ -159,6 +159,12 @@ describe("truncateCaptureOutput redacts structured values before serializing", (
     expect(truncateCaptureOutput(value, 100) as string).not.toContain("A".repeat(32));
   });
 
+  it("redacts a quoted credential whose quote JSON escapes", () => {
+    const value = { cmd: 'secret="' + "B".repeat(32) + '"', pad: "y".repeat(200) };
+    expect(truncateJson(value, 100)).not.toContain("B".repeat(20));
+    expect(truncateCaptureOutput(value, 100) as string).not.toContain("B".repeat(20));
+  });
+
   it("keeps escaped backslashes and line breaks in the cut JSON", () => {
     const out = truncateJson({ a: "one\ntwo\\nthree", pad: "y".repeat(200) }, 60);
     expect(out.startsWith('{"a":"one\\ntwo\\\\nthree"')).toBe(true);

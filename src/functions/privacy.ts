@@ -51,8 +51,11 @@ const URL_CREDENTIALS_RE =
   /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]*:[^\s/?#@"'<>]+@/gi;
 
 export function stripPrivateData(input: string): string {
-  let result = redactPrivateBlocks(input);
-  result = result.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
+  return stripSecrets(redactPrivateBlocks(input));
+}
+
+export function stripSecrets(input: string): string {
+  let result = input.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
   result = result.replace(new RegExp(URL_CREDENTIALS_RE.source, URL_CREDENTIALS_RE.flags), "$1[REDACTED_SECRET]@");
   for (const source of SECRET_PATTERN_SOURCES) {
     const pattern = new RegExp(source.source, source.flags);
