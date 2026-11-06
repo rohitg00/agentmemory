@@ -104,11 +104,18 @@ export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
   return orphans;
 }
 
+const OBSERVATION_SCAN_BATCH = 16;
+
 async function listObservationIds(kv: StateKV): Promise<Set<string> | null> {
   try {
     const sessions = await kv.list<{ id: string }>(KV.sessions);
-    const lists = await Promise.all(sessions.map((session) => kv.list<{ id: string }>(KV.observations(session.id))));
-    return new Set(lists.flat().map((obs) => obs.id));
+    const ids = new Set<string>();
+    for (let start = 0; start < sessions.length; start += OBSERVATION_SCAN_BATCH) {
+      const batch = sessions.slice(start, start + OBSERVATION_SCAN_BATCH);
+      const lists = await Promise.all(batch.map((session) => kv.list<{ id: string }>(KV.observations(session.id))));
+      for (const list of lists) for (const obs of list) ids.add(obs.id);
+    }
+    return ids;
   } catch {
     return null;
   }
