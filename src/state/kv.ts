@@ -1,5 +1,6 @@
 import type { IIIClient } from 'iii-sdk'
-import { withKeyedLock } from './keyed-mutex.js'
+import { isKeyedLockHeld, withKeyedLock } from './keyed-mutex.js'
+import { KV } from './schema.js'
 import { resolveGraphScope, notifyGraphGenerationChange } from './graph-generation.js'
 import { ensureGraphConsistency, noteGraphSnapshotWrite } from './graph-consistency.js'
 import { withGraphIndexMutation, withGraphSnapshotIndexBarrier, withGraphSnapshotUnknownMutation } from './graph-retrieval-index.js'
@@ -139,9 +140,15 @@ export class StateKV {
         noteGraphSnapshotWrite(this, scope, key)
       }
     }
-    const orderedWrite = () => this.backend === 'redis'
-      ? withKeyedLock(`state-update:${scope}\u0000${key}`, write)
-      : write()
+    const orderedWrite = () => {
+      const facetScope = scope === KV.memories || scope === KV.semantic || scope === KV.facets
+      const lockKey = `state-update:${scope}\u0000${key}`
+      // Facet healing holds these keys across its liveness recheck and delete.
+      if (facetScope && isKeyedLockHeld(lockKey)) return write()
+      return this.backend === 'redis' || facetScope
+        ? withKeyedLock(lockKey, write)
+        : write()
+    }
     const result = await withGraphIndexMutation(this, scope, key, () =>
       knownValue
         ? withGraphSnapshotIndexBarrier(this, scope, key, knownValue.value, orderedWrite)

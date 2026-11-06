@@ -1,12 +1,13 @@
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
-import { withKeyedLock } from "../state/keyed-mutex.js";
+import { withKeyedLock, withKeyedLocks } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
 import type {
   Action,
   ActionEdge,
   DiagnosticCheck,
+  Facet,
   Insight,
   Lease,
   Lesson,
@@ -38,10 +39,56 @@ const ALL_CATEGORIES = [
   "crystals",
   "insights",
   "mesh",
+  "facets",
 ];
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
 const ONE_HOUR_MS = 60 * 60 * 1000;
+
+type FacetInspection = {
+  facet: Facet;
+  state: "live" | "orphan" | "unsupported" | "unverified";
+  error?: string;
+};
+
+async function memoryFacetTargetExists(kv: StateKV, targetId: string): Promise<boolean> {
+  const [memory, semantic] = await Promise.all([
+    kv.get(KV.memories, targetId),
+    kv.get(KV.semantic, targetId),
+  ]);
+  return memory !== null || semantic !== null;
+}
+
+async function inspectMemoryFacets(kv: StateKV): Promise<FacetInspection[]> {
+  const facets = await kv.list<Facet>(KV.facets);
+  const targets = new Map<string, Omit<FacetInspection, "facet">>();
+  const inspections: FacetInspection[] = [];
+  for (const facet of facets) {
+    // Other memory-like targets have different liveness contracts, including
+    // lessons, observations and core memory. Absence here cannot prove deletion.
+    if (facet.targetType !== "memory" || !/^(mem|sem)_.+/.test(facet.targetId)) {
+      inspections.push({ facet, state: "unsupported" });
+      continue;
+    }
+    let target = targets.get(facet.targetId);
+    if (!target) {
+      try {
+        target = { state: await memoryFacetTargetExists(kv, facet.targetId) ? "live" : "orphan" };
+      } catch (error) {
+        target = { state: "unverified", error: error instanceof Error ? error.message : String(error) };
+      }
+      targets.set(facet.targetId, target);
+    }
+    inspections.push({ facet, ...target });
+  }
+  return inspections;
+}
+
+function sameFacet(left: Facet, right: Facet): boolean {
+  return left.id === right.id && left.targetId === right.targetId &&
+    left.targetType === right.targetType && left.dimension === right.dimension &&
+    left.value === right.value && left.createdAt === right.createdAt;
+}
 
 export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::diagnose", 
@@ -620,6 +667,22 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
         }
       }
 
+      if (categories.includes("facets")) {
+        const inspections = await inspectMemoryFacets(kv);
+        for (const { facet, state, error } of inspections) {
+          if (state === "live") continue;
+          const message = state === "orphan"
+            ? `Facet ${facet.id} targets missing memory ${facet.targetId}`
+            : state === "unsupported"
+              ? `Facet ${facet.id} skipped: only memory facets with mem_ or sem_ target IDs are checked`
+              : `Facet ${facet.id} target ${facet.targetId} could not be verified: ${error}`;
+          checks.push({ name: `facet-${state}:${facet.id}`, category: "facets", status: "warn", message, fixable: state === "orphan" });
+        }
+        if (inspections.every(({ state }) => state === "live")) {
+          checks.push({ name: "facets-ok", category: "facets", status: "pass", message: `All ${inspections.length} supported memory facets have live targets`, fixable: false });
+        }
+      }
+
       const summary = {
         pass: checks.filter((c) => c.status === "pass").length,
         warn: checks.filter((c) => c.status === "warn").length,
@@ -640,6 +703,7 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
 
       let fixed = 0;
       let skipped = 0;
+      let success = true;
       const details: string[] = [];
       const now = Date.now();
 
@@ -1057,7 +1121,55 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
         }
       }
 
-      return { success: true, fixed, skipped, details };
+      if (categories.includes("facets")) {
+        for (const { facet, state, error } of await inspectMemoryFacets(kv)) {
+          if (state === "live") continue;
+          if (state !== "orphan") {
+            skipped++;
+            if (state === "unverified") success = false;
+            details.push(state === "unsupported"
+              ? `Skipped facet ${facet.id}: only memory facets with mem_ or sem_ target IDs are supported`
+              : `Skipped facet ${facet.id}: target ${facet.targetId} could not be verified: ${error}`);
+            continue;
+          }
+          if (dryRun) {
+            fixed++;
+            details.push(`[dry-run] Would delete orphaned memory facet ${facet.id} (${facet.targetId})`);
+            continue;
+          }
+          let removed: boolean;
+          try {
+            removed = await withKeyedLocks([
+              `state-update:${KV.memories}\u0000${facet.targetId}`,
+              `state-update:${KV.semantic}\u0000${facet.targetId}`,
+              `state-update:${KV.facets}\u0000${facet.id}`,
+            ], async () => {
+              if (await memoryFacetTargetExists(kv, facet.targetId)) return false;
+              const fresh = await kv.get<Facet>(KV.facets, facet.id);
+              if (!fresh || !sameFacet(facet, fresh)) return false;
+              await kv.delete(KV.facets, facet.id);
+              return true;
+            });
+          } catch (error) {
+            success = false;
+            skipped++;
+            details.push(`Failed to heal facet ${facet.id}: ${error instanceof Error ? error.message : String(error)}`);
+            continue;
+          }
+          if (!removed) {
+            skipped++;
+            details.push(`Skipped facet ${facet.id}: facet or target changed after inspection`);
+            continue;
+          }
+          fixed++;
+          await recordAudit(kv, "heal", "mem::heal", [facet.id], {
+            entityType: "facet", reason: "orphaned-memory-facet", action: "delete", targetId: facet.targetId,
+          });
+          details.push(`Deleted orphaned memory facet ${facet.id} (${facet.targetId})`);
+        }
+      }
+
+      return { success, fixed, skipped, details };
     },
   );
 }

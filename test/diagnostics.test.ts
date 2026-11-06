@@ -195,11 +195,8 @@ describe("Diagnostics Functions", () => {
       };
 
       expect(result.success).toBe(true);
-      // 15 = 8 original (actions, leases, sentinels, sketches, signals,
-      // sessions, memories, mesh) + 6 added in #lesson-visibility
-      // (lessons, summaries, semantic, procedural, crystals, insights) +
-      // 1 added in #memory-project-scope (memory-project-coverage).
-      expect(result.summary.pass).toBe(15);
+      expect(result.summary.pass).toBe(16);
+      expect(result.checks).toContainEqual(expect.objectContaining({ category: "facets", status: "pass" }));
       expect(result.summary.warn).toBe(0);
       expect(result.summary.fail).toBe(0);
       expect(result.summary.fixable).toBe(0);

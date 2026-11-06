@@ -790,7 +790,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_diagnose",
     description:
-      "Run health checks across all subsystems (actions, leases, sentinels, sketches, signals, sessions, memories, mesh). Identifies stuck, orphaned, and inconsistent state.",
+      "Run health checks across subsystems, including orphaned memory facets. The facets category checks memory targets with mem_ or sem_ IDs; other facet targets are reported as skipped.",
     inputSchema: {
       type: "object",
       properties: {
@@ -804,7 +804,7 @@ export const V051_TOOLS: McpToolDef[] = [
   {
     name: "memory_heal",
     description:
-      "Auto-fix all fixable issues found by diagnostics. Unblocks stuck actions, expires stale leases, cleans up orphaned data.",
+      "Auto-fix fixable diagnostic issues, including orphaned memory facets (mem_ or sem_ targets only). Other facet targets are skipped. Use dryRun to preview. For facets, fixed counts candidates in dry runs and deletions otherwise.",
     inputSchema: {
       type: "object",
       properties: {

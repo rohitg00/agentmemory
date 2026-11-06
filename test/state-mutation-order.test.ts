@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StateKV, applyUpdateOps, type StateBackend } from "../src/state/kv.js";
 import { pinGraphState, setGraphGenerationListener } from "../src/state/graph-generation.js";
 import { KV } from "../src/state/schema.js";
+import { registerDiagnosticsFunction } from "../src/functions/diagnostics.js";
+import type { IIIClient } from "iii-sdk";
 
 type Op = { type: string; path: string; value?: unknown };
 type Request = { function_id: string; payload: { scope: string; key: string; value?: unknown; ops?: Op[] } };
@@ -42,6 +44,7 @@ function setup(backend: StateBackend = "redis") {
       const old = read(p.scope, p.key);
       let result: unknown;
       if (id === "state::get") result = old;
+      else if (id === "state::list") result = structuredClone([...rows.get(p.scope)?.values() ?? []]);
       else if (id === "state::set") {
         write(p.scope, p.key, p.value);
         result = { old_value: old, new_value: p.value };
@@ -74,6 +77,80 @@ function setup(backend: StateBackend = "redis") {
 }
 
 afterEach(() => setGraphGenerationListener(null));
+
+describe.each(["file", "redis"] as const)("facet healing mutation ordering (%s)", backend => {
+  const facet = { id: "fct_race", targetId: "mem_restored", targetType: "memory", dimension: "tool", value: "original", createdAt: "2026-11-01T00:00:00Z" };
+  async function fixture() {
+    const f = setup(backend);
+    const handlers = new Map<string, (data: unknown) => Promise<unknown>>();
+    registerDiagnosticsFunction({
+      registerFunction: (id: string, handler: (data: unknown) => Promise<unknown>) => handlers.set(id, handler),
+    } as unknown as IIIClient, f.kv);
+    await f.kv.set(KV.facets, facet.id, facet);
+    const heal = () => handlers.get("mem::heal")!({ categories: ["facets"], dryRun: false });
+    return { ...f, heal };
+  }
+  const writes = [
+    { scope: KV.memories, key: facet.targetId, value: { id: facet.targetId } },
+    { scope: KV.semantic, key: facet.targetId, value: { id: facet.targetId } },
+    { scope: KV.facets, key: facet.id, value: { ...facet, targetId: "mem_other", value: "replacement" } },
+  ];
+
+  it.each(writes)("keeps a later $scope write outside the recheck/delete interval", async ({ scope, key, value }) => {
+    const f = await fixture();
+    const other = new StateKV(f.sdk as never, { backend });
+    const gate = f.pause("state::get", KV.facets, facet.id, { after: true });
+    const healing = f.heal();
+    await gate.entered;
+    let completed = false;
+    const writing = other.set(scope, key, value).then(() => { completed = true; });
+    try {
+      await nextTurn();
+      expect(completed).toBe(false);
+      expect(f.read(KV.memories, facet.targetId)).toBeNull();
+      expect(f.read(KV.semantic, facet.targetId)).toBeNull();
+      expect(f.read(KV.facets, facet.id)).toEqual(facet);
+      await other.set(scope, "independent", { id: "independent" });
+      expect(f.read(scope, "independent")).toEqual({ id: "independent" });
+    } finally {
+      gate.release();
+      await Promise.all([healing, writing]);
+    }
+    expect(await healing).toMatchObject({ success: true, fixed: 1 });
+    expect(f.read(scope, key)).toEqual(value);
+  });
+
+  it.each(writes)("rechecks after an earlier $scope write completes", async ({ scope, key, value }) => {
+    const f = await fixture();
+    const gate = f.pause("state::set", scope, key);
+    const writing = f.kv.set(scope, key, value);
+    await gate.entered;
+    const healing = f.heal();
+    try {
+      await nextTurn();
+      expect(f.sdk.trigger.mock.calls.some(([r]) => r.function_id === "state::delete")).toBe(false);
+    } finally {
+      gate.release();
+      await Promise.all([healing, writing]);
+    }
+    expect(await healing).toMatchObject({ success: true, fixed: 0, skipped: 1 });
+    expect(f.read(scope, key)).toEqual(value);
+    expect(f.read(KV.facets, facet.id)).not.toBeNull();
+  });
+
+  it("releases the locks after a failed deletion so restoration can finish", async () => {
+    const f = await fixture();
+    const gate = f.pause("state::delete", KV.facets, facet.id, { error: "delete unavailable" });
+    const healing = f.heal();
+    await gate.entered;
+    const restoring = f.kv.set(KV.memories, facet.targetId, { id: facet.targetId });
+    gate.release();
+    await expect(healing).resolves.toMatchObject({ success: false, fixed: 0, skipped: 1 });
+    await restoring;
+    expect(f.read(KV.memories, facet.targetId)).not.toBeNull();
+    expect(f.read(KV.facets, facet.id)).toEqual(facet);
+  });
+});
 
 describe("Redis StateKV mutation ordering", () => {
   it.each(["set", "delete"] as const)("keeps a later %s after an in-flight local update", async (operation) => {

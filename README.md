@@ -956,6 +956,10 @@ Three tool surfaces, smallest to largest: `AGENTMEMORY_TOOLS=core` trims visibil
 
 </details>
 
+To inspect historical orphaned tags, call `memory_diagnose` with `categories: "facets"`, then preview `memory_heal` with `categories: "facets", dryRun: "true"`. Set `dryRun: "false"` to delete the orphaned facets. This category is also included when categories are omitted. REST callers use `categories: ["facets"]` on `POST /agentmemory/diagnostics`, and add a boolean `dryRun` on `POST /agentmemory/diagnostics/heal`.
+
+The sweep only handles `targetType: "memory"` with `mem_` or `sem_` IDs, checking both the memory and semantic stores. Other targets, including lessons, observations, actions, core memory and custom IDs, are retained and reported as skipped. Unverifiable targets are retained. Per-target read or delete failures set `success` to `false`; scan and audit failures surface as errors. For this category, `fixed` counts facets (candidates in dry runs, deletions otherwise), and each deletion records an audit entry. Within one worker, the recheck and deletion share per-record locks with memory, semantic and facet writes. These locks do not coordinate direct engine state writes or other worker processes.
+
 ### 6 Resources · 3 Prompts · 17 Skills
 
 | Type | Name | Description |
