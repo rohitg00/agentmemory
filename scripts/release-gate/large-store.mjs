@@ -323,7 +323,7 @@ async function probe(name, path, body, { allowRefusal = false } = {}) {
     result.error = String(cause?.message ?? cause).slice(0, 500);
   }
   result.latencyMs = Math.round(performance.now() - started);
-  result.ok = (result.status >= 200 && result.status < 300 && !result.error) || (allowRefusal && result.refused === true);
+  result.ok = (result.status >= 200 && result.status < 300 && !result.error) || (allowRefusal && result.status === 413 && result.refused === true);
   delete result.json;
   probes.push(result);
   console.log(JSON.stringify(result));
