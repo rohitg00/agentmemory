@@ -356,6 +356,7 @@ describe("MCP graph/stats resource over live graph state", () => {
         if (!id.startsWith("state::")) return handlers.get(id)!(payload);
         const rows = store.get(payload.scope) ?? new Map<string, unknown>();
         if (id === "state::get") return structuredClone(rows.get(payload.key) ?? null);
+        if (id === "state::list_keys") return { keys: [...rows.keys()] };
         if (id === "state::list") {
           listed.push(payload.scope);
           return structuredClone([...rows.values()]);
