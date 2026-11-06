@@ -57,6 +57,7 @@ async function main() {
 
   if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
+  if (typeof data.cursor_version === "string") return;
 
   const toolName =
     typeof data.tool_name === "string"

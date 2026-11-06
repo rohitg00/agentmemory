@@ -106,8 +106,18 @@ describe("pre-tool-use context output", () => {
     expect(JSON.parse(stdout).hookSpecificOutput.additionalContext).toBe(CONTEXT);
   });
 
-  it.each(["0.5", "1e6", "6000ms", "3000000000"])("ignores the malformed or out-of-range timeout %s", async (value) => {
+  it.each(["0.5", "3000000000"])("falls back to the default instead of aborting at once for %s", async (value) => {
     const { stdout } = await runPreToolUse(claudePayload, { AGENTMEMORY_ENRICH_TIMEOUT_MS: value }, 100);
     expect(JSON.parse(stdout).hookSpecificOutput.additionalContext).toBe(CONTEXT);
+  });
+
+  it.each(["1e6", "6000ms"])("keeps the 2 s default for the malformed value %s", async (value) => {
+    const { stdout } = await runPreToolUse(claudePayload, { AGENTMEMORY_ENRICH_TIMEOUT_MS: value }, 2500);
+    expect(stdout).toBe("");
+  });
+
+  it("writes nothing for Cursor, whose preToolUse response has no context field", async () => {
+    const { stdout } = await runPreToolUse({ ...claudePayload, hook_event_name: "preToolUse", cursor_version: "1.7.0" });
+    expect(stdout).toBe("");
   });
 });
