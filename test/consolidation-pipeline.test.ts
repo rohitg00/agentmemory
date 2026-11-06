@@ -230,6 +230,60 @@ describe("Consolidation Pipeline", () => {
     expect(stored[0].triggerCondition).toBe("when writing tests");
   });
 
+  it("counts re-saved pattern memories with no session attribution as recurring", async () => {
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn().mockResolvedValue(
+        `<procedures><procedure name="Saved Workflow" trigger="when saving"><step>Save it</step></procedure></procedures>`,
+      ),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 2; i++) {
+      await kv.set("mem:memories", `mem_${i}`, { ...makePattern(i), sessionIds: [], version: 2 });
+    }
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "procedural",
+    })) as { success: boolean; results: Record<string, unknown> };
+
+    expect(provider.summarize).toHaveBeenCalledOnce();
+    expect(result.results.procedural).toMatchObject({ newProcedures: 1 });
+  });
+
+  it("still skips single-save pattern memories with no session attribution", async () => {
+    const provider = { name: "test", compress: vi.fn(), summarize: vi.fn() };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 3; i++) {
+      await kv.set("mem:memories", `mem_${i}`, { ...makePattern(i), sessionIds: [] });
+    }
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "procedural",
+    })) as { success: boolean; results: Record<string, unknown> };
+
+    expect(provider.summarize).not.toHaveBeenCalled();
+    expect(result.results.procedural).toMatchObject({ skipped: true });
+  });
+
+  it("does not count duplicate session ids twice", async () => {
+    const provider = { name: "test", compress: vi.fn(), summarize: vi.fn() };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 3; i++) {
+      await kv.set("mem:memories", `mem_${i}`, { ...makePattern(i), sessionIds: ["ses_1", "ses_1"] });
+    }
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "procedural",
+    })) as { success: boolean; results: Record<string, unknown> };
+
+    expect(provider.summarize).not.toHaveBeenCalled();
+    expect(result.results.procedural).toMatchObject({ skipped: true });
+  });
+
   it("consolidation records an audit entry", async () => {
     const provider = {
       name: "test",
