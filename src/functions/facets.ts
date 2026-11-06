@@ -106,11 +106,9 @@ export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
 
 async function listObservationIds(kv: StateKV): Promise<Set<string> | null> {
   try {
-    const ids = new Set<string>();
-    for (const session of await kv.list<{ id: string }>(KV.sessions)) {
-      for (const obs of await kv.list<{ id: string }>(KV.observations(session.id))) ids.add(obs.id);
-    }
-    return ids;
+    const sessions = await kv.list<{ id: string }>(KV.sessions);
+    const lists = await Promise.all(sessions.map((session) => kv.list<{ id: string }>(KV.observations(session.id))));
+    return new Set(lists.flat().map((obs) => obs.id));
   } catch {
     return null;
   }
