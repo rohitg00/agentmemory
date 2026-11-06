@@ -188,6 +188,7 @@ export function registerConsolidateFunction(
               updatedAt: now,
               ...parsed,
               version: (existingMatch.version || 1) + 1,
+              recurrence: (existingMatch.recurrence ?? 1) + 1,
               parentId: existingMatch.id,
               supersedes: [
                 existingMatch.id,

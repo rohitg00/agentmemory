@@ -241,7 +241,7 @@ describe("Consolidation Pipeline", () => {
     registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
 
     for (let i = 0; i < 2; i++) {
-      await kv.set("mem:memories", `mem_${i}`, { ...makePattern(i), sessionIds: [], version: 2 });
+      await kv.set("mem:memories", `mem_${i}`, { ...makePattern(i), sessionIds: [], version: 2, recurrence: 2 });
     }
 
     const result = (await sdk.trigger("mem::consolidate-pipeline", {
@@ -250,6 +250,22 @@ describe("Consolidation Pipeline", () => {
 
     expect(provider.summarize).toHaveBeenCalledOnce();
     expect(result.results.procedural).toMatchObject({ newProcedures: 1 });
+  });
+
+  it("does not treat edited pattern memories as recurring", async () => {
+    const provider = { name: "test", compress: vi.fn(), summarize: vi.fn() };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    for (let i = 0; i < 3; i++) {
+      await kv.set("mem:memories", `mem_${i}`, { ...makePattern(i), sessionIds: [], version: 3 });
+    }
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      tier: "procedural",
+    })) as { success: boolean; results: Record<string, unknown> };
+
+    expect(provider.summarize).not.toHaveBeenCalled();
+    expect(result.results.procedural).toMatchObject({ skipped: true });
   });
 
   it("still skips single-save pattern memories with no session attribution", async () => {

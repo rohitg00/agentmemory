@@ -4,9 +4,9 @@ export const PROCEDURAL_MIN_PATTERNS = 2;
 export const PROCEDURAL_MIN_SESSIONS_PER_PATTERN = 2;
 export const CONSOLIDATION_COUNTS_REUSE_MS = 30_000;
 
-export function patternFrequency(memory: { sessionIds?: string[]; version?: number }): number {
+export function patternFrequency(memory: { sessionIds?: string[]; recurrence?: number }): number {
   const sessions = new Set(memory.sessionIds ?? []).size;
-  const saves = Number.isSafeInteger(memory.version) && (memory.version as number) > 0 ? (memory.version as number) : 1;
+  const saves = Number.isSafeInteger(memory.recurrence) && (memory.recurrence as number) > 0 ? (memory.recurrence as number) : 1;
   return Math.max(sessions, saves);
 }
 
