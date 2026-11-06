@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: deploy/Dockerfile
       args:
-        III_VERSION: "${III_VERSION:-0.25.0}"
+        III_VERSION: "${III_VERSION:-0.25.1}"
         STATE_VERSION: "${STATE_VERSION:-0.22.20}"
         HTTP_VERSION: "${HTTP_VERSION:-0.22.7}"
     restart: unless-stopped

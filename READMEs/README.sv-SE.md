@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory körs på Windows 10/11. WSL2 följer Linux-vägen och kan installera den fastlåsta enginen automatiskt. Native Windows kräver att den fastlåsta iii-engine v0.25.0-binären installeras manuellt: ladda ner rätt arkiv från [iii v0.25.0-utgåvan](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verifiera kontrollsumman och placera `iii.exe` på `PATH` (till exempel `%USERPROFILE%\.local\bin\iii.exe`). CLI:n packar inte upp Windows-ZIP-filen automatiskt.
+agentmemory körs på Windows 10/11. WSL2 följer Linux-vägen och kan installera den fastlåsta enginen automatiskt. Native Windows kräver att den fastlåsta iii-engine v0.25.1-binären installeras manuellt: ladda ner rätt arkiv från [iii v0.25.1-utgåvan](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifiera kontrollsumman och placera `iii.exe` på `PATH` (till exempel `%USERPROFILE%\.local\bin\iii.exe`). CLI:n packar inte upp Windows-ZIP-filen automatiskt.
 
 Automatiserad MCP-inkoppling på native Windows stöder bara `agentmemory connect copilot-cli`. För andra native Windows-agenter använder du det manuella MCP-blocket från [Andra agenter](#other-agents). Kör `connect` i WSL endast om målagenten är installerad i samma WSL-miljö.
 

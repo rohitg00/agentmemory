@@ -663,7 +663,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory toimii Windows 10/11:ssä. WSL2 noudattaa Linuxin polkua ja voi asentaa kiinnitetyn moottorin automaattisesti. Natiivi Windows vaatii iii-engine v0.25.0:n kiinnitetyn binäärin asentamisen käsin; lataa sopiva paketti [iii v0.25.0 -julkaisusivulta](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), tarkista sen tarkistussumma ja sijoita `iii.exe` `PATH`-polkuun (esimerkiksi `%USERPROFILE%\.local\bin\iii.exe`). CLI ei pura Windows-ZIP-pakettia automaattisesti.
+agentmemory toimii Windows 10/11:ssä. WSL2 noudattaa Linuxin polkua ja voi asentaa kiinnitetyn moottorin automaattisesti. Natiivi Windows vaatii iii-engine v0.25.1:n kiinnitetyn binäärin asentamisen käsin; lataa sopiva paketti [iii v0.25.1 -julkaisusivulta](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), tarkista sen tarkistussumma ja sijoita `iii.exe` `PATH`-polkuun (esimerkiksi `%USERPROFILE%\.local\bin\iii.exe`). CLI ei pura Windows-ZIP-pakettia automaattisesti.
 
 Natiivin Windowsin automaattinen MCP-kytkentä tukee vain komentoa `agentmemory connect copilot-cli`. Muiden natiivien Windows-agenttien kanssa käytä manuaalista MCP-lohkoa kohdasta [Muut agentit](#other-agents). Suorita `connect` WSL:ssä vain, kun kohdeagentti on asennettu samaan WSL-ympäristöön.
 

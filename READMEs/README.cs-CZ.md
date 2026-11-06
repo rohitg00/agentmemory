@@ -663,7 +663,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory běží na Windows 10/11. WSL2 používá cestu pro Linux a může pinned engine nainstalovat automaticky. Nativní Windows vyžaduje ručně nainstalovanou binárku iii-engine v0.25.0; stáhněte odpovídající archiv ze [stránky vydání iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), ověřte kontrolní součet a umístěte `iii.exe` do `PATH` (například `%USERPROFILE%\.local\bin\iii.exe`). CLI ZIP pro Windows automaticky nerozbaluje.
+agentmemory běží na Windows 10/11. WSL2 používá cestu pro Linux a může pinned engine nainstalovat automaticky. Nativní Windows vyžaduje ručně nainstalovanou binárku iii-engine v0.25.1; stáhněte odpovídající archiv ze [stránky vydání iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), ověřte kontrolní součet a umístěte `iii.exe` do `PATH` (například `%USERPROFILE%\.local\bin\iii.exe`). CLI ZIP pro Windows automaticky nerozbaluje.
 
 Automatizované zapojení MCP na nativním Windows podporuje pouze `agentmemory connect copilot-cli`. U ostatních nativních agentů použijte manuální blok MCP ze sekce [Další agenti](#other-agents). `connect` ve WSL spouštějte pouze tehdy, pokud je cílový agent nainstalován ve stejném prostředí WSL.
 

@@ -1,6 +1,6 @@
 # Shared build for local Compose and every deployment platform.
 # Update these four pins together when promoting the runtime.
-ARG III_VERSION=0.25.0
+ARG III_VERSION=0.25.1
 ARG STATE_VERSION=0.22.20
 ARG HTTP_VERSION=0.22.7
 
