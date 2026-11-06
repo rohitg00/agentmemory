@@ -15,7 +15,7 @@ const KEYS = [
   "OPENAI_BASE_URL",
   "OPENROUTER_API_KEY",
   "OPENROUTER_MODEL",
-  "OPENAI_API_KEY_FOR_LLM",
+  "AGENTMEMORY_LLM_PROVIDER",
   "AGENTMEMORY_SUPPRESS_COST_WARNING",
   "AGENTMEMORY_ENV_FILE",
 ];
@@ -48,7 +48,7 @@ describe("premium-model cost warning", () => {
 
   it("warns once for a premium OPENAI_MODEL, naming that variable", async () => {
     const warnings = await warningsFor(
-      { OPENAI_API_KEY: "k", OPENAI_BASE_URL: "https://openrouter.ai/api/v1", OPENAI_MODEL: "anthropic/claude-sonnet-5" },
+      { AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k", OPENAI_BASE_URL: "https://openrouter.ai/api/v1", OPENAI_MODEL: "anthropic/claude-sonnet-5" },
       2,
     );
     expect(warnings).toHaveLength(1);
@@ -57,12 +57,12 @@ describe("premium-model cost warning", () => {
 
   it("stays quiet for the default and for cheap OpenAI-compatible models", async () => {
     expect(await warningsFor({ OPENAI_API_KEY: "k" })).toHaveLength(0);
-    expect(await warningsFor({ OPENAI_API_KEY: "k", OPENAI_MODEL: "deepseek/deepseek-v4.1-flash:floor" })).toHaveLength(0);
+    expect(await warningsFor({ AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k", OPENAI_MODEL: "deepseek/deepseek-v4.1-flash:floor" })).toHaveLength(0);
   });
 
   it("is silenced by AGENTMEMORY_SUPPRESS_COST_WARNING", async () => {
     const warnings = await warningsFor({
-      OPENAI_API_KEY: "k",
+      AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k",
       OPENAI_MODEL: "gpt-4o",
       AGENTMEMORY_SUPPRESS_COST_WARNING: "1",
     });
@@ -71,7 +71,7 @@ describe("premium-model cost warning", () => {
 
   it("warns about premium models on the active OPENAI-compatible route", async () => {
     const warnings = await warningsFor({
-      OPENAI_API_KEY: "k",
+      AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k",
       OPENAI_BASE_URL: "https://openrouter.ai/api/v1",
       OPENAI_MODEL: "anthropic/claude-opus-5",
     });

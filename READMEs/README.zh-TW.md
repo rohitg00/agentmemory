@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="設計文件:這份 gist 獲得 1.6k 顆星 / 230 次 fork" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="設計文件:這份 gist 獲得 1.7k 顆星 / 240 次 fork" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 個 MCP 工具" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 個自動 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 個外部資料庫" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ 測試通過" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ 測試通過" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -628,7 +628,7 @@ Hermes、OpenClaw、Pi 和 Oh My Pi 的連接器預設安裝原生整合和 skil
 | **Antigravity CLI**(`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` 使用與目前 IDE 版本相同的 MCP 和 hook 設定。既有安裝應使用 `--force` 刷新;參見[升級說明](../docs/plugins/antigravity.md)。 |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` 會寫入使用者層級的設定。工作區層級的覆寫請放在你程式碼旁的 `.kiro/settings/mcp.json`。 |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` 會寫入標準的 `mcpServers` 區塊。Warp 也會自動從 `.claude/skills/` 探索 skills;一旦安裝了 Claude Code 外掛,9 個 agentmemory skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`lesson`、`commit-context`、`commit-history`、`session-history`)就會原生出現在 Warp 的斜線指令選單中。 |
-| **Cline(CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` 會寫入標準的 `mcpServers` 區塊。VS Code 擴充功能使用者:透過 Cline Settings → MCP Servers → Edit JSON 貼上同一個區塊。 |
+| **Cline(CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` 會寫入標準的 `mcpServers` 區塊。VS Code 擴充功能使用者:透過 Cline Settings → MCP Servers → Edit JSON 貼上同一個區塊。 |
 | **Continue.dev** | `~/.continue/config.yaml`(建議)或 `config.json`(舊版) | `agentmemory connect continue` 在沒有設定時建立 `config.yaml`，或更新既有 `config.json`。既有 YAML 會保留不動，以保護註解和錨點；指令會印出應貼到 `mcpServers:` 下的設定區塊。Continue 的 `mcpServers` 使用陣列。 |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` 會寫入 `context_servers`(Zed 自己的鍵,**不是** `mcpServers`)。遠端 MCP 伺服器可改用 `{"url": "..."}` 接上。 |
 | **Droid(Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` 會寫入標準的 `mcpServers` 區塊。專案層級的覆寫請放在 `<repo>/.factory/mcp.json`。傳入 `--with-hooks` 以取得原生自動擷取。 |
@@ -1163,7 +1163,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-連接埠 `3111` 上有 146 個端點。REST API 預設綁定 `127.0.0.1`。受保護的端點需要 `Authorization: Bearer <secret>`,而網狀同步端點要求兩端都明確設定 `AGENTMEMORY_SECRET`。
+連接埠 `3111` 上有 147 個端點。REST API 預設綁定 `127.0.0.1`。受保護的端點需要 `Authorization: Bearer <secret>`,而網狀同步端點要求兩端都明確設定 `AGENTMEMORY_SECRET`。
 
 驗證預設開啟。未設定 `AGENTMEMORY_SECRET` 時，CLI 首次啟動會將隨機密鑰儲存到 `~/.agentmemory/secret`，並鏡像到所選資料目錄的 `secret`，權限為 `0600`。內建客戶端連接本機伺服器時優先讀取此共用檔案，只向回環 URL 傳送儲存的密鑰。明確設定的 `AGENTMEMORY_SECRET` 優先；遠端客戶端需透過環境變數設定密鑰。Docker 部署會產生自己的密鑰。
 
@@ -1244,7 +1244,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

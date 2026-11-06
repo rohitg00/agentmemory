@@ -5,6 +5,7 @@ import {
   getEnvVar,
   loadEmbeddingConfig,
   loadFallbackConfig,
+  embeddingOptInHint,
   loadClaudeBridgeConfig,
   loadTeamConfig,
   loadSnapshotConfig,
@@ -30,6 +31,7 @@ import {
   createImageEmbeddingProvider,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
+import { assertStateReady, waitForStateReady } from "./state/state-readiness.js";
 import { VectorIndex } from "./state/vector-index.js";
 import type { SearchLayer } from "./state/search-layer.js";
 import { HybridSearch } from "./state/hybrid-search.js";
@@ -193,6 +195,10 @@ function resolveWorkerSecret(): string {
   }
 }
 
+// Revisions whose release failed while superseding an incremental backfill.
+// Shutdown retries; failures stay owned here instead of being dropped.
+const unreleasedSupersededRevisions: Array<{ id: string; revision: { release(): void } }> = [];
+
 async function main() {
   // Fold ~/.agentmemory/.env into process.env before anything reads config
   // or raw process.env. Only-if-unset, so real process.env still wins.
@@ -203,7 +209,7 @@ async function main() {
   const fallbackConfig = loadFallbackConfig();
 
   const provider =
-    fallbackConfig.providers.length > 0
+    fallbackConfig.providers.length > 0 && config.provider.provider !== "noop"
       ? createFallbackProvider(config.provider, fallbackConfig)
       : createProvider(config.provider);
 
@@ -221,6 +227,8 @@ async function main() {
     );
   } else {
     bootLog(`Embedding provider: none (BM25-only mode)`);
+    const embeddingHint = embeddingOptInHint();
+    if (embeddingHint) bootLog(embeddingHint);
   }
   if (imageEmbeddingProvider) {
     bootLog(
@@ -260,6 +268,16 @@ async function main() {
     stateBackend = getStateBackend();
   } catch {}
   const kv = new StateKV(sdk, { backend: stateBackend });
+  const stateReadiness = await waitForStateReady(sdk, {
+    onWaiting: (error) =>
+      bootWarn(`Waiting for the state worker to register state::get and state::list (${error})`),
+  });
+  assertStateReady(stateReadiness);
+  if (stateReadiness.attempts > 1) {
+    bootLog(
+      `State worker ready after ${stateReadiness.waitedMs}ms (${stateReadiness.attempts} attempts)`,
+    );
+  }
   const secret = resolveWorkerSecret();
   const metricsStore = new MetricsStore(kv);
   const dedupMap = new DedupMap();
@@ -439,8 +457,8 @@ async function main() {
     graphWeight,
   );
 
-  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3]) =>
-    hybridSearch.search(query, limit, targetLayer, authorizeGraph);
+  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3], request?: Parameters<HybridSearch["search"]>[4]) =>
+    hybridSearch.search(query, limit, targetLayer, authorizeGraph, request);
   registerSmartSearchFunction(sdk, kv, hybridRanker);
   setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);
@@ -534,7 +552,28 @@ async function main() {
 
   const keywordStart = Date.now();
   try {
-    const keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
+    let keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
+    let supersededReleaseFailed = false;
+    if (typeof vectorBackfillSince === "string" && !indexPersistence.isRecoveryPaused() && keyword.historicalVectorGaps > 0) {
+      for (const job of keyword.vectorJobs) {
+        const revision = job.revision;
+        if (!revision) continue;
+        try {
+          revision.release();
+        } catch (err) {
+          supersededReleaseFailed = true;
+          unreleasedSupersededRevisions.push({ id: job.id, revision });
+          bootWarn(`Failed to release superseded vector revision ${job.id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      // Jobs are superseded only after every watch is released. A failed release
+      // stays in unreleasedSupersededRevisions; do not rebuild or embed over it.
+      keyword.vectorJobs = [];
+      if (!supersededReleaseFailed) {
+        vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, true);
+        if (vectorBackfillSince === null) keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
+      }
+    }
     bootLog(
       `Rebuilt BM25 index from stored content (${keyword.documents} docs in ${Date.now() - keywordStart} ms)`,
     );
@@ -544,24 +583,24 @@ async function main() {
     const activeIds = new Set(keyword.vectorJobs.map((job) => job.id));
     const hasVector = (id: string) => Boolean(vectorIndex?.has(id));
     const countRemaining = () => bm25Index.countMissingDocuments(hasVector, vectorBackfillSince, activeIds);
-    setPendingVectorBackfillCount(indexPersistence.isRecoveryPaused() ? countRemaining() : pending);
-    if (indexPersistence.isRecoveryPaused()) {
+    setPendingVectorBackfillCount(indexPersistence.isRecoveryPaused() || supersededReleaseFailed ? countRemaining() : pending);
+    if (supersededReleaseFailed || indexPersistence.isRecoveryPaused()) {
       setVectorBackfillState("paused");
     } else if (vectorBackfillSince !== undefined) {
-      setVectorBackfillState(keyword.fullBackfillPending > 0 && !optedIn ? "waiting-for-opt-in" : backlogScanComplete ? "idle" : "paused");
+      setVectorBackfillState(!backlogScanComplete ? "paused" : keyword.fullBackfillPending > 0 && !optedIn ? "waiting-for-opt-in" : "idle");
     }
     if (keyword.fullBackfillPending > 0) {
       bootLog(optedIn
         ? `Vector backfill has ${keyword.fullBackfillPending} additional documents beyond this start's limit; restart to resume.`
         : `Vector backfill needs ${keyword.fullBackfillPending} embeddings (set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`);
     }
-    if (vectorBackfillSince !== undefined && backlogScanComplete && pending === 0) {
+    if (!supersededReleaseFailed && vectorBackfillSince !== undefined && backlogScanComplete && pending === 0) {
       if (!(await indexPersistence.completeBackfill(() => countRemaining() === 0))) {
         setPendingVectorBackfillCount(countRemaining());
         setVectorBackfillState("paused");
       }
     }
-    if (keyword.vectorJobs.length > 0 && !(await indexPersistence.beginBackfill())) {
+    if (keyword.vectorJobs.length > 0 && (!backlogScanComplete || !(await indexPersistence.beginBackfill()))) {
       setVectorBackfillState("paused");
       activeIds.clear();
       for (const job of keyword.vectorJobs) job.revision?.release();
@@ -602,7 +641,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 146 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 147 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -750,6 +789,16 @@ async function main() {
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
+    for (let i = 0; i < unreleasedSupersededRevisions.length; ) {
+      const held = unreleasedSupersededRevisions[i];
+      try {
+        held.revision.release();
+        unreleasedSupersededRevisions.splice(i, 1);
+      } catch (err) {
+        console.warn(`[agentmemory] Failed to release superseded vector revision ${held.id}:`, err);
+        i++;
+      }
+    }
     const hardExit = setTimeout(async () => {
       console.warn(
         `[agentmemory] Shutdown still blocked after ${SHUTDOWN_HARD_EXIT_MS}ms; exiting now.`,

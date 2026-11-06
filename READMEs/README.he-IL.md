@@ -52,7 +52,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="מסמך עיצוב: 1.6 אלף כוכבים / 230 forks על ה-gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="מסמך עיצוב: 1.7 אלף כוכבים / 240 forks על ה-gist" /></a>
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 כלי MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks אוטומטיים" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 מסדי נתונים חיצוניים" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ בדיקות עוברות" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ בדיקות עוברות" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -639,7 +639,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` משתמש באותה תצורת MCP ו-hooks כמו גרסאות ה-IDE הנוכחיות. התקנות קיימות צריכות לרפרש עם `--force`; ראו את [הערות השדרוג](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` כותב את התצורה בשכבת המשתמש. override-ים בשכבת ה-workspace נכנסים ב-`.kiro/settings/mcp.json` לצד הקוד שלכם. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` כותב את בלוק ה-`mcpServers` הסטנדרטי. Warp גם מגלה אוטומטית skills מ-`.claude/skills/`; כשה-plugin של Claude Code מותקן, 9 ה-skills של agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) מופיעים באופן מובנה בפלטת פקודות ה-slash של Warp. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` כותב את בלוק ה-`mcpServers` הסטנדרטי. למשתמשי ה-extension של VS Code: הדביקו את אותו בלוק דרך Cline Settings → MCP Servers → Edit JSON. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` כותב את בלוק ה-`mcpServers` הסטנדרטי. למשתמשי ה-extension של VS Code: הדביקו את אותו בלוק דרך Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (מועדף) או `config.json` (legacy) | `agentmemory connect continue` יוצר `config.yaml` כשאין הגדרות, או מעדכן `config.json` קיים. עבור YAML קיים הוא מציג בלוק להוספה תחת `mcpServers:`, כדי לשמור הערות ועוגנים. Continue משתמש במערך ולא באובייקט. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` כותב תחת `context_servers` (המפתח של Zed, לא `mcpServers`). שרתי MCP מרוחקים אפשר לחווט במקום זאת דרך `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` כותב את בלוק ה-`mcpServers` הסטנדרטי. override-ים בתחום פרויקט נכנסים ב-`<repo>/.factory/mcp.json`. העבירו `--with-hooks` ללכידה אוטומטית מובנית. |
@@ -1161,7 +1161,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
+147 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
 
 **אימות (Authentication) פעיל כברירת מחדל.** אם `AGENTMEMORY_SECRET` לא מוגדר, בהפעלה הראשונה ה-CLI יוצר סוד אקראי ב-`~/.agentmemory/secret` עם הרשאות `0600`, ומעתיק אותו גם לתיקיית הנתונים שנבחרה. כל לקוח מצורף קורא אותו משם כשהוא מדבר עם שרת מקומי: ה-CLI, המציג, ה-hooks תחת `plugin/scripts`, שרת ה-MCP וה-shim `@agentmemory/mcp`, התצורות שנכתבות על ידי `agentmemory connect`, והאינטגרציות המצורפות של OpenCode, Pi, OpenClaw, Hermes וה-filesystem-watcher. ה-secret המאוחסן נשלח רק ל-URLs של loopback (`localhost`, `127.0.0.0/8`, `::1`). `AGENTMEMORY_SECRET` מפורש גובר תמיד, ולקוחות מרוחקים עדיין צריכים אותו מוגדר. Docker וה-entrypoints של `deploy/` כבר מייצרים ומייצאים את ה-secret שלהם. כדי לקרוא ל-API ביד:
 
@@ -1242,7 +1242,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

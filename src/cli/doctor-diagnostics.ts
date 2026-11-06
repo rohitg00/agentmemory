@@ -16,7 +16,7 @@
 //   agentmemory doctor --all       # apply every available fix without prompting (CI)
 //   agentmemory doctor --dry-run   # show what each fix WOULD do; execute nothing
 
-import { detectLlmProviderKind, parseEnvContent } from "../config.js";
+import { detectLlmProviderKind, embeddingOptInHint, LLM_PROVIDER_KEYS, llmOptInHint, parseEnvContent } from "../config.js";
 
 export type DiagnosticStatus = {
   ok: boolean;
@@ -66,10 +66,19 @@ export function canAutoFix(d: Diagnostic, status?: DiagnosticStatus): boolean {
   return !d.manualOnly && !status?.manualFix;
 }
 
+export function doctorPromptsAllowed(
+  env: NodeJS.ProcessEnv,
+  stdinIsTTY: boolean | undefined,
+  stdoutIsTTY: boolean | undefined,
+): boolean {
+  return Boolean(stdinIsTTY) && Boolean(stdoutIsTTY) && !env["CI"];
+}
+
 // Diagnostic ids are stable for testing and machine-readable doctor output.
 export const DIAGNOSTIC_IDS = [
   "env-missing",
   "no-llm-provider-key",
+  "embedding-provider-not-chosen",
   "engine-version-mismatch",
   "viewer-unreachable",
   "stale-pidfile",
@@ -185,15 +194,16 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     },
     {
       id: "no-llm-provider-key",
-      message: "No LLM provider API key found in ~/.agentmemory/.env or the environment.",
-      fixPreview: "Open ~/.agentmemory/.env in $EDITOR and paste your key, then re-check.",
+      message: "No LLM provider chosen for agentmemory in ~/.agentmemory/.env or the environment.",
+      fixPreview:
+        "Open ~/.agentmemory/.env in $EDITOR, set AGENTMEMORY_LLM_PROVIDER and that provider's key, then re-check.",
       moreInfo:
-        "Set at least one of: ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, " +
-        "GOOGLE_API_KEY, OPENROUTER_API_KEY, MINIMAX_API_KEY. Placeholder values count as missing. " +
-        "OPENAI_API_KEY counts only while OPENAI_API_KEY_FOR_LLM is not false, and " +
-        "AGENTMEMORY_ALLOW_AGENT_SDK=true needs no key. A value exported in the environment " +
-        "wins over the file, but only for a daemon started from that environment, and " +
-        "counts even when the file is absent.",
+        "agentmemory sends session content to an LLM provider only after you choose one: set " +
+        "AGENTMEMORY_LLM_PROVIDER to anthropic, openai, gemini, openrouter or minimax, and set that " +
+        "provider's key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY or GOOGLE_API_KEY, " +
+        "OPENROUTER_API_KEY, MINIMAX_API_KEY). A key alone never turns LLM use on. Placeholder " +
+        "values count as missing. AGENTMEMORY_ALLOW_AGENT_SDK=true needs no key. A value exported " +
+        "in the environment wins over the file, but only for a daemon started from that environment.",
       check: async () => {
         const file = effects.readEnvFile();
         const env: Record<string, string> = { ...file };
@@ -202,26 +212,44 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         }
         for (const k of placeholderProviderKeys(env)) delete env[k];
         if (detectLlmProviderKind(env) !== "llm") {
+          const hint = llmOptInHint(env);
+          if (hint) return { ok: false, detail: hint };
           return {
             ok: false,
             detail: effects.envFileExists()
-              ? "no provider key set"
-              : "no provider key set (run env-missing fix first)",
+              ? "no provider chosen"
+              : "no provider chosen (run env-missing fix first)",
           };
         }
-        const real = realProviderKeys(env).filter(
-          (k) =>
-            detectLlmProviderKind({
-              [k]: env[k],
-              OPENAI_API_KEY_FOR_LLM: env.OPENAI_API_KEY_FOR_LLM,
-            }) === "llm",
-        );
+        const selected = (env.AGENTMEMORY_LLM_PROVIDER ?? "").trim().toLowerCase();
+        const selectedKeys: readonly string[] =
+          selected in LLM_PROVIDER_KEYS ? LLM_PROVIDER_KEYS[selected as keyof typeof LLM_PROVIDER_KEYS] : [];
+        const real = realProviderKeys(env).filter((k) => selectedKeys.includes(k));
         const fromEnv = real.filter((k) => file[k] !== env[k]);
         const named = real.map((k) => (fromEnv.includes(k) ? `${k} (environment)` : k));
         if (named.length === 0) return { ok: true, detail: "agent-sdk fallback, no API key" };
         const caveat =
           fromEnv.length > 0 ? "; a daemon started elsewhere will not see it" : "";
         return { ok: true, detail: `found: ${named.join(", ")}${caveat}` };
+      },
+      fix: (ctx) => effects.openEditor(ctx.envPath),
+    },
+    {
+      id: "embedding-provider-not-chosen",
+      message: "Cloud embeddings are not set up: EMBEDDING_PROVIDER does not choose a present key, or names a provider whose key is missing.",
+      fixPreview:
+        "Open ~/.agentmemory/.env in $EDITOR and set EMBEDDING_PROVIDER (local, openai, voyage, cohere, gemini or openrouter).",
+      moreInfo:
+        "Cloud embeddings send memory text to that provider, so agentmemory uses them only when " +
+        "EMBEDDING_PROVIDER names the provider. A key alone never turns them on. " +
+        "EMBEDDING_PROVIDER=local runs on-device. Without a provider, search is keyword and graph only.",
+      check: async () => {
+        const env: Record<string, string> = { ...effects.readEnvFile() };
+        for (const [k, v] of Object.entries(effects.processEnv())) {
+          if (v !== undefined) env[k] = v;
+        }
+        const hint = embeddingOptInHint(env);
+        return hint ? { ok: false, detail: hint } : { ok: true };
       },
       fix: (ctx) => effects.openEditor(ctx.envPath),
     },

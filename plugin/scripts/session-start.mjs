@@ -90,6 +90,60 @@ function canonicalSecretPath() {
 	return join(homedir(), ".agentmemory", "secret");
 }
 //#endregion
+//#region src/hooks/_endpoint.ts
+const OPTION_PREFIX = "CLAUDE_PLUGIN_OPTION_";
+const DEFAULT_URL = "http://localhost:3111";
+function filled(value) {
+	const trimmed = value?.trim();
+	if (!trimmed || trimmed.startsWith("${") && trimmed.endsWith("}")) return void 0;
+	return value;
+}
+function hookSetting(name, env = process.env) {
+	const optionKey = `${OPTION_PREFIX}${name}`;
+	const option = filled(env[optionKey])?.trim();
+	if (option) return option;
+	if (name === "AGENTMEMORY_SECRET" && optionKey in env) return void 0;
+	return filled(env[name]);
+}
+function resolveSettingSecret(url, env = process.env) {
+	const secretEnv = { ...env };
+	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
+	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
+	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
+	return resolveClientSecret(url, secretEnv);
+}
+function secretTransportAllowed(url) {
+	try {
+		return new URL(url).protocol === "https:" || isLoopbackUrl(url);
+	} catch {
+		return false;
+	}
+}
+function resolveHookEndpoint(env = process.env) {
+	const url = hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL;
+	const secret = resolveSettingSecret(url, env);
+	const blocked = !secretTransportAllowed(url);
+	return {
+		url,
+		secret: blocked ? "" : secret,
+		blocked
+	};
+}
+let blockedNoticeShown = false;
+function reportBlockedTransport(endpoint) {
+	if (!endpoint.blocked) return false;
+	if (!blockedNoticeShown) {
+		blockedNoticeShown = true;
+		process.stderr.write("[agentmemory] AGENTMEMORY_URL must use HTTPS unless it is a loopback address. Nothing was sent.\n");
+	}
+	return true;
+}
+function hookAuthHeaders(endpoint) {
+	const h = { "Content-Type": "application/json" };
+	if (endpoint.secret) h["Authorization"] = `Bearer ${endpoint.secret}`;
+	return h;
+}
+//#endregion
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -134,14 +188,12 @@ function isSdkChildContext(payload) {
 	return payload.entrypoint === "sdk-ts";
 }
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = resolveClientSecret(REST_URL);
+const ENDPOINT = resolveHookEndpoint();
+const REST_URL = ENDPOINT.url;
 const INJECT_TIMEOUT_MS = 1500;
 const REGISTER_TIMEOUT_MS = 800;
 function authHeaders() {
-	const h = { "Content-Type": "application/json" };
-	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-	return h;
+	return hookAuthHeaders(ENDPOINT);
 }
 function isPlainTextHost() {
 	return Boolean(process.env["FACTORY_PROJECT_DIR"] || process.env["DROID_PLUGIN_ROOT"]);
@@ -170,6 +222,7 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
+	if (reportBlockedTransport(ENDPOINT)) return;
 	const sessionId = data.session_id || data.sessionId || data.conversation_id || `ses_${Date.now().toString(36)}`;
 	const cwd = hookCwd(data) || process.cwd();
 	const project = resolveProject(cwd);

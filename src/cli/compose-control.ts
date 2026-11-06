@@ -1,4 +1,4 @@
-import { chmodSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { spawn, type ChildProcess } from "node:child_process";
 import { createConnection } from "node:net";
@@ -44,7 +44,7 @@ export function composeStateRegistryFailure(dataDir: string, file: string): stri
       const state = JSON.parse(readFileSync(stateFile, "utf8")) as { compose_path?: string; containers?: Record<string, { status?: string; last_error?: string }> };
       const errors = Object.entries(state.containers ?? {}).filter(([, value]) => value.status === "failed").map(([name, value]) => `${name}: ${value.last_error ?? "failed"}`);
       const message = errors.join("\n");
-      if (state.compose_path !== file) continue;
+      if (!sameComposeFile(state.compose_path, file)) continue;
       if (message && composeRegistryFailureMessage(message)) return message;
     }
   } catch {}
@@ -65,8 +65,41 @@ export type ComposeStatus = ComposeProjectStatus & {
   projects?: Array<{ file?: string; state_dir?: string; [key: string]: unknown }>;
 };
 
-export function ownedComposeProject(status: ComposeStatus, file: string): ComposeProjectStatus | null {
-  return status.file === file ? status : status.projects?.find((item) => item.file === file) ?? null;
+export type PathCanonicalizer = (value: string) => string;
+
+function defaultCanonicalizer(windows: boolean): PathCanonicalizer {
+  return (value) => {
+    try { return windows ? realpathSync.native(value) : realpathSync(value); } catch { return value; }
+  };
+}
+
+function normalizeWindowsPath(value: string): string {
+  let out = value;
+  if (out.startsWith("\\\\?\\UNC\\")) out = `\\\\${out.slice("\\\\?\\UNC\\".length)}`;
+  else if (out.startsWith("\\\\?\\")) out = out.slice("\\\\?\\".length);
+  return out.replace(/\//g, "\\").toLowerCase();
+}
+
+export function sameComposeFile(
+  left: string | undefined,
+  right: string,
+  windows = process.platform === "win32",
+  canonicalize: PathCanonicalizer = defaultCanonicalizer(windows),
+): boolean {
+  if (!left) return false;
+  if (!windows) return left === right || canonicalize(left) === canonicalize(right);
+  if (normalizeWindowsPath(left) === normalizeWindowsPath(right)) return true;
+  return normalizeWindowsPath(canonicalize(left)) === normalizeWindowsPath(canonicalize(right));
+}
+
+export function ownedComposeProject(
+  status: ComposeStatus,
+  file: string,
+  windows = process.platform === "win32",
+  canonicalize: PathCanonicalizer = defaultCanonicalizer(windows),
+): ComposeProjectStatus | null {
+  if (sameComposeFile(status.file, file, windows, canonicalize)) return status;
+  return status.projects?.find((item) => sameComposeFile(item.file, file, windows, canonicalize)) ?? null;
 }
 
 function cleanDaemonEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -126,14 +159,43 @@ export function composeEnvironment(env: NodeJS.ProcessEnv, stateDir: string): No
   };
 }
 
-export async function composeCall<T>(options: {
+type ComposeCallOptions = {
   engineUrl: string;
   namespace: string;
   functionId: "compose::down" | "compose::status";
   file: string;
   timeoutMs?: number;
-}): Promise<T> {
-  const client = registerWorker(options.engineUrl, {
+};
+
+let quietDepth = 0;
+let savedDebug: typeof console.debug | null = null;
+
+export async function withQuietSdkDebug<T>(run: () => Promise<T>): Promise<T> {
+  if (quietDepth === 0) {
+    savedDebug = console.debug;
+    console.debug = () => {};
+  }
+  quietDepth++;
+  try {
+    return await run();
+  } finally {
+    quietDepth--;
+    if (quietDepth === 0 && savedDebug) {
+      console.debug = savedDebug;
+      savedDebug = null;
+    }
+  }
+}
+
+export async function composeCall<T>(
+  options: ComposeCallOptions,
+  register: typeof registerWorker = registerWorker,
+): Promise<T> {
+  return withQuietSdkDebug(() => composeCallWithClient<T>(options, register));
+}
+
+async function composeCallWithClient<T>(options: ComposeCallOptions, register: typeof registerWorker): Promise<T> {
+  const client = register(options.engineUrl, {
     workerName: "agentmemory-cli",
     namespace: options.namespace,
     invocationTimeoutMs: options.timeoutMs ?? 30_000,

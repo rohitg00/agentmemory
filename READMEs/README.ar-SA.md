@@ -52,7 +52,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.6k stars / 230 forks on the gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.7k stars / 240 forks on the gist" /></a>
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -639,7 +639,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | يستخدم `agentmemory connect antigravity-cli --with-hooks` نفس إعدادات MCP والخطافات المستخدمة في إصدارات IDE الحالية. ينبغي للتثبيتات الحالية التحديث باستخدام `--force`؛ راجع [ملاحظات الترقية](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | يكتب `agentmemory connect kiro` الإعدادات على مستوى المستخدم. وتوضع تجاوزات مساحة العمل في `.kiro/settings/mcp.json` بجانب شفرتك. |
 | **Warp** | `~/.warp/.mcp.json` | يكتب `agentmemory connect warp` كتلة `mcpServers` القياسية. يكتشف Warp أيضًا المهارات تلقائيًا من `.claude/skills/`؛ وبمجرد تثبيت إضافة Claude Code، تظهر مهارات agentmemory التسع (`remember` و`recall` و`recap` و`handoff` و`forget` و`lesson` و`commit-context` و`commit-history` و`session-history`) أصليًا في لوحة أوامر الشرطة في Warp. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | يكتب `agentmemory connect cline` كتلة `mcpServers` القياسية. لمستخدمي إضافة VS Code: الصق الكتلة نفسها عبر Cline Settings ← MCP Servers ← Edit JSON. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | يكتب `agentmemory connect cline` كتلة `mcpServers` القياسية. لمستخدمي إضافة VS Code: الصق الكتلة نفسها عبر Cline Settings ← MCP Servers ← Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (مفضّل) أو `config.json` (قديم) | ينشئ `agentmemory connect continue` ملف `config.yaml` عند غياب الإعدادات، أو يعدّل `config.json` الموجود. بالنسبة إلى YAML موجود، يعرض الكتلة لإضافتها تحت `mcpServers:` للحفاظ على التعليقات والمراسي. يستخدم Continue مصفوفة لا كائنًا. |
 | **Zed** | `~/.config/zed/settings.json` | يكتب `agentmemory connect zed` تحت `context_servers` (مفتاح Zed الخاص، وليس `mcpServers`). يمكن ربط خوادم MCP البعيدة بدلًا من ذلك عبر `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | يكتب `agentmemory connect droid` كتلة `mcpServers` القياسية. وتوضع تجاوزات نطاق المشروع في `<repo>/.factory/mcp.json`. مرّر `--with-hooks` لالتقاط تلقائي أصلي. |
@@ -1161,7 +1161,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
+147 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
 
 **المصادقة مُفعّلة افتراضيًا.** إذا لم يُضبط `AGENTMEMORY_SECRET`، ينشئ CLI عند التشغيل الأول سرًا عشوائيًا في `~/.agentmemory/secret` بصلاحيات `0600` وينسخه أيضًا إلى مجلد البيانات المحدد. يقرأ كل عميل مضمّن هذا السر عند الاتصال بخادم محلي: CLI والعارض والخطافات تحت `plugin/scripts` وخادم MCP ووسيط `@agentmemory/mcp` والإعدادات التي يكتبها `agentmemory connect` وتكاملات OpenCode وPi وOpenClaw وHermes ومراقب نظام الملفات المضمّنة. لا يُرسل السر المحفوظ إلا إلى عناوين loopback (`localhost` و`127.0.0.0/8` و`::1`). وتكون الأولوية دائمًا لقيمة `AGENTMEMORY_SECRET` الصريحة، كما يجب ضبط السر في بيئة العملاء البعيدين. تنشئ عمليات الاستضافة الذاتية عبر Docker من المستودع ونقاط دخول [`deploy/`](../deploy/) سرها وتصدّره. لاستدعاء API يدويًا:
 
@@ -1242,7 +1242,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -1,4 +1,4 @@
-import { resolveClientSecret } from "../secret-store.js";
+import { hookSetting, resolveSettingSecret } from "../hooks/_endpoint.js";
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
 const CALL_TIMEOUT_MS = 15_000;
@@ -53,10 +53,7 @@ let probeInFlight: { url: string; forceProxy: boolean; promise: Promise<Handle> 
 // (DNS failure). Strip any literal placeholder we see so the fallback
 // engages instead.
 export function resolveEnvOrEmpty(name: string): string {
-  const raw = process.env[name];
-  if (!raw) return "";
-  if (raw.startsWith("${") && raw.endsWith("}")) return "";
-  return raw;
+  return hookSetting(name) ?? "";
 }
 
 function baseUrl(): string {
@@ -74,7 +71,7 @@ function baseUrl(): string {
 }
 
 function authHeader(url: string): Record<string, string> {
-  const secret = resolveClientSecret(url);
+  const secret = resolveSettingSecret(url);
   return secret ? { authorization: `Bearer ${secret}` } : {};
 }
 

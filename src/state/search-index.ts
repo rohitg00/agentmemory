@@ -12,6 +12,10 @@ interface IndexEntry {
   timestamp?: string;
 }
 
+const USER_PROMPT_TERM_CAP = 2000;
+const ASSISTANT_RESPONSE_TERM_CAP = 1000;
+const TOOL_OUTPUT_TERM_CAP = 1000;
+
 export interface SearchIndexRevision {
   isCurrent(): boolean;
   release(): void;
@@ -350,6 +354,20 @@ export class SearchIndex {
       ...obs.files,
       obs.type,
     ];
+    if (obs.source?.userPrompt) {
+      parts.push(obs.source.userPrompt.slice(0, USER_PROMPT_TERM_CAP));
+    }
+    if (obs.source?.assistantResponse) {
+      parts.push(
+        obs.source.assistantResponse.slice(0, ASSISTANT_RESPONSE_TERM_CAP),
+      );
+    }
+    if (
+      obs.source?.toolName === "conversation" &&
+      typeof obs.source.toolOutput === "string"
+    ) {
+      parts.push(obs.source.toolOutput.slice(0, TOOL_OUTPUT_TERM_CAP));
+    }
     return this.tokenize(parts.join(" ").toLowerCase());
   }
 

@@ -11,7 +11,7 @@ import {
   setVectorIndex,
 } from "../src/functions/search.js";
 import { registerSmartSearchFunction } from "../src/functions/smart-search.js";
-import { HybridSearch } from "../src/state/hybrid-search.js";
+import { HybridSearch, type HybridSearchRequest } from "../src/state/hybrid-search.js";
 import { memoryToObservation } from "../src/state/memory-utils.js";
 import { KV } from "../src/state/schema.js";
 import { SearchIndex } from "../src/state/search-index.js";
@@ -60,7 +60,7 @@ function fixture() {
   const vector = new VectorIndex();
   const embedding = { name: "fixed", dimensions: 2, embed: async () => new Float32Array([1, 0]), embedBatch: async () => [] };
   const hybrid = new HybridSearch(index, vector, embedding, kv as never, 0.4, 0.6, 0);
-  const search = vi.fn((query: string, limit: number, targetLayer?: "all" | "memory" | "observation", authorizeGraph?: GraphObservationAuthorization) => hybrid.search(query, limit, targetLayer, authorizeGraph));
+  const search = vi.fn((query: string, limit: number, targetLayer?: "all" | "memory" | "observation", authorizeGraph?: GraphObservationAuthorization, request?: HybridSearchRequest) => hybrid.search(query, limit, targetLayer, authorizeGraph, request));
   registerSearchFunction(sdk as never, kv as never);
   registerSmartSearchFunction(sdk as never, kv as never, search);
   return {
@@ -120,7 +120,7 @@ describe("recall layer selection", () => {
     setHybridRanker(f.search);
     const recall = await f.call("mem::search", { query: "quasar policy", limit: 1, targetLayer: "memory" });
     expect(recall.results[0]).toMatchObject({ layer: "memory", observation: { id: "mem_decision" } });
-    expect(f.search).toHaveBeenLastCalledWith("quasar policy", 1, "memory", expect.any(Function));
+    expect(f.search).toHaveBeenLastCalledWith("quasar policy", 1, "memory", expect.any(Function), expect.any(Object));
     const smart = await f.call("mem::smart-search", { query: "quasar policy", limit: 1, targetLayer: "memory" });
     expect(smart.results).toEqual([expect.objectContaining({ obsId: "mem_decision", layer: "memory" })]);
     expect(smart).not.toHaveProperty("lessons");

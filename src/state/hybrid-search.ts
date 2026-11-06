@@ -24,6 +24,11 @@ import { logger } from "../logger.js";
 const RRF_K = 60;
 const GRAPH_BUDGET_MS = 500;
 
+export interface HybridSearchRequest {
+  embedding?: { query: string; value: Promise<Float32Array> };
+  candidateCount?: number;
+}
+
 export class HybridSearch {
   private graphRetrieval: GraphRetrieval;
   private lastGraphTimeoutWarningAt = -Infinity;
@@ -41,8 +46,8 @@ export class HybridSearch {
     this.graphRetrieval = new GraphRetrieval(kv, (id) => this.bm25.layerOf(id), (id) => this.bm25.sessionOf(id));
   }
 
-  async search(query: string, limit = 20, targetLayer: SearchLayer = "all", authorizeGraph?: GraphObservationAuthorization): Promise<HybridSearchResult[]> {
-    return this.tripleStreamSearch(query, limit, targetLayer, this.graphRetrieval.createQuery(authorizeGraph));
+  async search(query: string, limit = 20, targetLayer: SearchLayer = "all", authorizeGraph?: GraphObservationAuthorization, request?: HybridSearchRequest): Promise<HybridSearchResult[]> {
+    return this.tripleStreamSearch(query, limit, targetLayer, this.graphRetrieval.createQuery(authorizeGraph), undefined, true, request);
   }
 
   async searchWithExpansion(
@@ -95,6 +100,7 @@ export class HybridSearch {
     graphQuery: GraphQuery,
     entityHints?: string[],
     applyReranking = true,
+    request?: HybridSearchRequest,
   ): Promise<HybridSearchResult[]> {
     const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
     const bm25Results = this.bm25.search(query, retrievalLimit * 2, targetLayer);
@@ -108,7 +114,20 @@ export class HybridSearch {
 
     if (this.vector && this.embeddingProvider && this.vector.size > 0) {
       try {
-        queryEmbedding = await this.embeddingProvider.embed(query);
+        if (request) {
+          if (!request.embedding || request.embedding.query !== query) {
+            request.embedding = { query, value: this.embeddingProvider.embed(query) };
+          }
+          const embedding = request.embedding;
+          try {
+            queryEmbedding = await embedding.value;
+          } catch (error) {
+            if (request.embedding === embedding) request.embedding = undefined;
+            throw error;
+          }
+        } else {
+          queryEmbedding = await this.embeddingProvider.embed(query);
+        }
         vectorResults = this.vector.search(queryEmbedding, retrievalLimit * 2, targetLayer, (id) => this.bm25.layerOf(id));
       } catch {
         // fall through to BM25-only
@@ -234,6 +253,7 @@ export class HybridSearch {
       combinedScore,
     }));
 
+    if (request) request.candidateCount = combined.length;
     const retrievalDepth = Math.max(limit, 20);
     const diversified = this.diversifyBySession(combined, retrievalDepth);
     const enriched = await this.enrichResults(diversified, retrievalDepth);

@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
+import { VectorIndex } from "../src/state/vector-index.js";
 import { HybridSearch } from "../src/state/hybrid-search.js";
+import { KV } from "../src/state/schema.js";
 import { SearchIndex } from "../src/state/search-index.js";
 import type { CompressedObservation, EmbeddingProvider } from "../src/types.js";
 
@@ -50,6 +52,46 @@ describe("HybridSearch", () => {
   beforeEach(() => {
     bm25 = new SearchIndex();
     kv = mockKV();
+  });
+
+  it("reuses query embeddings only within a recall request", async () => {
+    const obs = makeObs();
+    bm25.add(obs);
+    await kv.set(KV.observations(obs.sessionId), obs.id, obs);
+    const vector = new VectorIndex();
+    vector.add(obs.id, obs.sessionId, new Float32Array([1, 0]));
+    const embed = vi.fn(async () => new Float32Array([1, 0]));
+    const provider = { name: "test", dimensions: 2, embed, embedBatch: vi.fn() };
+    const hybrid = new HybridSearch(bm25, vector, provider, kv as never, 0.4, 0.6, 0);
+    const request = {};
+    await hybrid.search("auth", 100, "all", undefined, request);
+    await hybrid.search("auth", 200, "all", undefined, request);
+    expect(embed).toHaveBeenCalledTimes(1);
+    await hybrid.search("auth", 100, "all", undefined, {});
+    expect(embed).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a failed embedding and then reuses the recovered request embedding", async () => {
+    const bm25Obs = makeObs({ id: "obs_bm25" });
+    const vectorObs = makeObs({ id: "obs_vector" });
+    bm25.add(bm25Obs);
+    await kv.set(KV.observations(bm25Obs.sessionId), bm25Obs.id, bm25Obs);
+    await kv.set(KV.observations(vectorObs.sessionId), vectorObs.id, vectorObs);
+    const vector = new VectorIndex();
+    vector.add(vectorObs.id, vectorObs.sessionId, new Float32Array([1, 0]));
+    const embed = vi.fn<() => Promise<Float32Array>>()
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockResolvedValue(new Float32Array([1, 0]));
+    const provider = { name: "test", dimensions: 2, embed, embedBatch: vi.fn() };
+    const hybrid = new HybridSearch(bm25, vector, provider, kv as never, 0.4, 0.6, 0);
+    const request = {};
+    const first = await hybrid.search("auth", 100, "all", undefined, request);
+    expect(first.map((hit) => hit.observation.id)).not.toContain(vectorObs.id);
+    const recovered = await hybrid.search("auth", 200, "all", undefined, request);
+    expect(recovered.map((hit) => hit.observation.id)).toContain(vectorObs.id);
+    expect(embed).toHaveBeenCalledTimes(2);
+    await hybrid.search("auth", 400, "all", undefined, request);
+    expect(embed).toHaveBeenCalledTimes(2);
   });
 
   it("returns BM25-only results when no vector index is provided", async () => {

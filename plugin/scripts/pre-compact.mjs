@@ -3,6 +3,15 @@ import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { execSync } from "node:child_process";
+//#region src/hooks/_capture-filter.ts
+function preCompactBudget() {
+	const raw = process.env["AGENTMEMORY_PRE_COMPACT_BUDGET"];
+	if (raw?.trim() === "0") return 0;
+	if (!raw?.trim()) return 1500;
+	const parsed = Number.parseInt(raw, 10);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1500;
+}
+//#endregion
 //#region src/secret-store.ts
 const SECRET_KEY = "AGENTMEMORY_SECRET";
 function agentmemoryHomeDir() {
@@ -90,13 +99,58 @@ function canonicalSecretPath() {
 	return join(homedir(), ".agentmemory", "secret");
 }
 //#endregion
-//#region src/hooks/_capture-filter.ts
-function preCompactBudget() {
-	const raw = process.env["AGENTMEMORY_PRE_COMPACT_BUDGET"];
-	if (raw?.trim() === "0") return 0;
-	if (!raw?.trim()) return 1500;
-	const parsed = Number.parseInt(raw, 10);
-	return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1500;
+//#region src/hooks/_endpoint.ts
+const OPTION_PREFIX = "CLAUDE_PLUGIN_OPTION_";
+const DEFAULT_URL = "http://localhost:3111";
+function filled(value) {
+	const trimmed = value?.trim();
+	if (!trimmed || trimmed.startsWith("${") && trimmed.endsWith("}")) return void 0;
+	return value;
+}
+function hookSetting(name, env = process.env) {
+	const optionKey = `${OPTION_PREFIX}${name}`;
+	const option = filled(env[optionKey])?.trim();
+	if (option) return option;
+	if (name === "AGENTMEMORY_SECRET" && optionKey in env) return void 0;
+	return filled(env[name]);
+}
+function resolveSettingSecret(url, env = process.env) {
+	const secretEnv = { ...env };
+	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
+	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
+	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
+	return resolveClientSecret(url, secretEnv);
+}
+function secretTransportAllowed(url) {
+	try {
+		return new URL(url).protocol === "https:" || isLoopbackUrl(url);
+	} catch {
+		return false;
+	}
+}
+function resolveHookEndpoint(env = process.env) {
+	const url = hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL;
+	const secret = resolveSettingSecret(url, env);
+	const blocked = !secretTransportAllowed(url);
+	return {
+		url,
+		secret: blocked ? "" : secret,
+		blocked
+	};
+}
+let blockedNoticeShown = false;
+function reportBlockedTransport(endpoint) {
+	if (!endpoint.blocked) return false;
+	if (!blockedNoticeShown) {
+		blockedNoticeShown = true;
+		process.stderr.write("[agentmemory] AGENTMEMORY_URL must use HTTPS unless it is a loopback address. Nothing was sent.\n");
+	}
+	return true;
+}
+function hookAuthHeaders(endpoint) {
+	const h = { "Content-Type": "application/json" };
+	if (endpoint.secret) h["Authorization"] = `Bearer ${endpoint.secret}`;
+	return h;
 }
 //#endregion
 //#region src/hooks/_project.ts
@@ -142,12 +196,11 @@ function isSdkChildContext(payload) {
 	if (!payload || typeof payload !== "object") return false;
 	return payload.entrypoint === "sdk-ts";
 }
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = resolveClientSecret(REST_URL);
+const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
+const ENDPOINT = resolveHookEndpoint();
+const REST_URL = ENDPOINT.url;
 function authHeaders() {
-	const h = { "Content-Type": "application/json" };
-	if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-	return h;
+	return hookAuthHeaders(ENDPOINT);
 }
 async function main() {
 	let input = "";
@@ -160,6 +213,7 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
+	if (reportBlockedTransport(ENDPOINT)) return;
 	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
 	const project = resolveProject(hookCwd(data));
 	if (process.env["CLAUDE_MEMORY_BRIDGE"] === "true") try {
@@ -170,6 +224,7 @@ async function main() {
 			signal: AbortSignal.timeout(5e3)
 		});
 	} catch {}
+	if (!INJECT_CONTEXT) return;
 	const budget = preCompactBudget();
 	if (budget === 0) return;
 	try {
