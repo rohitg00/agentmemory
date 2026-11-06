@@ -728,6 +728,7 @@ export function registerMcpEndpoints(
               tags,
               parentId: args.parentId,
               edges: edges.length > 0 ? edges : undefined,
+              createdBy: typeof args.agentId === "string" && args.agentId.trim() ? args.agentId.trim().slice(0, 128) : getAgentId(),
             } });
             return {
               status_code: 200,
