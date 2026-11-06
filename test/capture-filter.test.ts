@@ -116,6 +116,29 @@ describe("truncateText", () => {
   });
 });
 
+describe("truncation redacts before cutting", () => {
+  const token = "ghp_" + "A".repeat(40);
+
+  it("truncateText leaves text within the limit unchanged", () => {
+    expect(truncateText(`short ${token}`, 100)).toBe(`short ${token}`);
+  });
+
+  it("truncateText does not keep the start of a token the cut lands in", () => {
+    const out = truncateText("x".repeat(10) + " " + token + " tail", 20);
+    expect(out).not.toContain("ghp_");
+    expect(out.length).toBeLessThanOrEqual(20);
+  });
+
+  it("truncateCaptureOutput redacts strings and JSON before cutting", () => {
+    const str = truncateCaptureOutput("x".repeat(10) + " " + token + "y".repeat(100), 40) as string;
+    expect(str).not.toContain("ghp_");
+    expect(str.length).toBeLessThanOrEqual(40);
+    const json = truncateCaptureOutput({ out: "x".repeat(10) + " " + token + "y".repeat(100) }, 40) as string;
+    expect(json).not.toContain("ghp_");
+    expect(json.length).toBeLessThanOrEqual(40);
+  });
+});
+
 describe("truncateCaptureOutput", () => {
   it("leaves short strings alone", () => {
     expect(truncateCaptureOutput("hello", 20)).toBe("hello");

@@ -1,3 +1,5 @@
+import { stripPrivateData } from "../functions/privacy.js";
+
 const DEFAULT_DENY_PATTERNS = [
   "memory_*",
   "toolsearch",
@@ -60,27 +62,30 @@ export function captureOutputMax(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 8000;
 }
 
-export function truncateText(value: string, max: number): string {
+function cut(value: string, max: number): string {
   if (value.length <= max) return value;
   const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
   return value.slice(0, end);
 }
 
+export function truncateText(value: string, max: number): string {
+  if (value.length <= max) return value;
+  return cut(stripPrivateData(value), max);
+}
+
+function truncateWithSuffix(value: string, max: number, suffix: string): string {
+  const safe = stripPrivateData(value);
+  if (safe.length <= max) return safe;
+  return max <= suffix.length ? suffix.slice(0, max) : cut(safe, max - suffix.length) + suffix;
+}
+
 export function truncateCaptureOutput(value: unknown, max: number): unknown {
   if (typeof value === "string" && value.length > max) {
-    const suffix = "\n[...truncated]";
-    return max <= suffix.length
-      ? suffix.slice(0, max)
-      : truncateText(value, max - suffix.length) + suffix;
+    return truncateWithSuffix(value, max, "\n[...truncated]");
   }
   if (typeof value === "object" && value !== null) {
     const str = JSON.stringify(value);
-    if (str.length > max) {
-      const suffix = "...[truncated]";
-      return max <= suffix.length
-        ? suffix.slice(0, max)
-        : truncateText(str, max - suffix.length) + suffix;
-    }
+    if (str.length > max) return truncateWithSuffix(str, max, "...[truncated]");
     return value;
   }
   return value;

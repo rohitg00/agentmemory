@@ -3,6 +3,59 @@ import { execSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
+//#region src/functions/privacy.ts
+const PRIVATE_TAG_TOKEN_RE = /<private(?=\s|>)[^>]*>|<\/private\s*>/gi;
+function redactPrivateBlocks(input) {
+	const tokens = new RegExp(PRIVATE_TAG_TOKEN_RE.source, PRIVATE_TAG_TOKEN_RE.flags);
+	let out = "";
+	let cursor = 0;
+	let depth = 0;
+	for (let match = tokens.exec(input); match; match = tokens.exec(input)) {
+		const closing = match[0].startsWith("</");
+		if (depth === 0) {
+			if (closing) continue;
+			out += input.slice(cursor, match.index);
+			depth = 1;
+		} else if (closing) {
+			depth -= 1;
+			if (depth === 0) {
+				out += "[REDACTED]";
+				cursor = match.index + match[0].length;
+			}
+		} else depth += 1;
+	}
+	if (depth > 0) return `${out}[REDACTED]`;
+	return out + input.slice(cursor);
+}
+const SECRET_PATTERN_SOURCES = [
+	/(?:api[_-]?key|secret|token|password|credential|auth)[\s]*[=:]\s*["']?[A-Za-z0-9_\-/.+]{20,}["']?/gi,
+	/Bearer\s+[A-Za-z0-9._\-+/=]{20,}/gi,
+	/(?<![\p{L}\p{N}\p{M}_])sk-proj-[A-Za-z0-9\-_]{20,}/gu,
+	/(?<![\p{L}\p{N}\p{M}_])(?:sk|pk|rk|ak)-[A-Za-z0-9][A-Za-z0-9\-_]{19,}/gu,
+	/(?<![\p{L}\p{N}\p{M}_])sk-ant-[A-Za-z0-9\-_]{20,}/gu,
+	/gh[pus]_[A-Za-z0-9]{36,}/g,
+	/github_pat_[A-Za-z0-9_]{22,}/g,
+	/xoxb-[A-Za-z0-9\-]+/g,
+	/AKIA[0-9A-Z]{16}/g,
+	/AIza[A-Za-z0-9\-_]{35}/g,
+	/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+	/npm_[A-Za-z0-9]{36}/g,
+	/glpat-[A-Za-z0-9\-_]{20,}/g,
+	/dop_v1_[A-Za-z0-9]{64}/g
+];
+const PRIVATE_KEY_BLOCK_RE = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/g;
+const URL_CREDENTIALS_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]*:[^\s/?#@"'<>]+@/gi;
+function stripPrivateData(input) {
+	let result = redactPrivateBlocks(input);
+	result = result.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
+	result = result.replace(new RegExp(URL_CREDENTIALS_RE.source, URL_CREDENTIALS_RE.flags), "$1[REDACTED_SECRET]@");
+	for (const source of SECRET_PATTERN_SOURCES) {
+		const pattern = new RegExp(source.source, source.flags);
+		result = result.replace(pattern, "[REDACTED_SECRET]");
+	}
+	return result;
+}
+//#endregion
 //#region src/hooks/_capture-filter.ts
 const DEFAULT_DENY_PATTERNS = [
 	"memory_*",
@@ -49,22 +102,21 @@ function captureOutputMax() {
 	const parsed = Number.parseInt(raw, 10);
 	return Number.isFinite(parsed) && parsed > 0 ? parsed : 8e3;
 }
-function truncateText(value, max) {
+function cut(value, max) {
 	if (value.length <= max) return value;
 	const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
 	return value.slice(0, end);
 }
+function truncateWithSuffix(value, max, suffix) {
+	const safe = stripPrivateData(value);
+	if (safe.length <= max) return safe;
+	return max <= suffix.length ? suffix.slice(0, max) : cut(safe, max - suffix.length) + suffix;
+}
 function truncateCaptureOutput(value, max) {
-	if (typeof value === "string" && value.length > max) {
-		const suffix = "\n[...truncated]";
-		return max <= 15 ? suffix.slice(0, max) : truncateText(value, max - 15) + suffix;
-	}
+	if (typeof value === "string" && value.length > max) return truncateWithSuffix(value, max, "\n[...truncated]");
 	if (typeof value === "object" && value !== null) {
 		const str = JSON.stringify(value);
-		if (str.length > max) {
-			const suffix = "...[truncated]";
-			return max <= 14 ? suffix.slice(0, max) : truncateText(str, max - 14) + suffix;
-		}
+		if (str.length > max) return truncateWithSuffix(str, max, "...[truncated]");
 		return value;
 	}
 	return value;
