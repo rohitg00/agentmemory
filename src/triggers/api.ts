@@ -524,6 +524,46 @@ function statusViewerUrl(req: HttpRequest, viewerPort: number | null): string {
   return "/agentmemory/viewer#health";
 }
 
+const RECORD_PAGE_BYTES = SAFE_PAYLOAD_BYTES - 1024 * 1024;
+
+async function listRecordPage<T extends { id: string }>(
+  kv: StateKV,
+  scope: string,
+  params: HttpRequest["query_params"],
+): Promise<{ items: T[]; nextCursor?: string }> {
+  const query = parseListQuery(params);
+  const limit = query.limit ?? LIST_PAGE_MAX;
+  let items: T[];
+  let more: boolean;
+  if (typeof kv.listPage === "function") {
+    const page = await kv.listPage<T>(scope, { limit, cursor: query.cursor });
+    items = page.items;
+    more = page.nextCursor !== undefined;
+  } else {
+    const sorted = sortByKeyDesc(await collectAll<T>(kv, scope), (item) => item.id, (item) => item.id);
+    const page = pageAfterCursor(sorted, (item) => item.id, (item) => item.id, query.cursor, limit);
+    items = page.page;
+    more = page.nextCursor !== null;
+  }
+  let bytes = 0;
+  let kept = 0;
+  while (kept < items.length) {
+    const size = payloadByteLength(items[kept]) + 1;
+    if (kept > 0 && bytes + size > RECORD_PAGE_BYTES) break;
+    bytes += size;
+    kept++;
+  }
+  if (kept < items.length) {
+    items = items.slice(0, kept);
+    more = true;
+  }
+  const last = items[items.length - 1];
+  return {
+    items,
+    ...(more && last ? { nextCursor: encodeCursor({ key: last.id, id: last.id }) } : {}),
+  };
+}
+
 export function registerApiTriggers(
   sdk: IIIClient,
   kv: StateKV,
@@ -2856,8 +2896,8 @@ export function registerApiTriggers(
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const semantic = await collectAll<import("../types.js").SemanticMemory>(kv, KV.semantic);
-      return { status_code: 200, body: { semantic } };
+      const page = await listRecordPage<import("../types.js").SemanticMemory>(kv, KV.semantic, req.query_params);
+      return { status_code: 200, body: { semantic: page.items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) } };
     },
   );
   sdk.registerTrigger({
@@ -2870,8 +2910,8 @@ export function registerApiTriggers(
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const procedural = await collectAll<import("../types.js").ProceduralMemory>(kv, KV.procedural);
-      return { status_code: 200, body: { procedural } };
+      const page = await listRecordPage<import("../types.js").ProceduralMemory>(kv, KV.procedural, req.query_params);
+      return { status_code: 200, body: { procedural: page.items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) } };
     },
   );
   sdk.registerTrigger({
