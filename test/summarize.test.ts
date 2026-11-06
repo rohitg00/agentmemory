@@ -496,3 +496,66 @@ describe("mem::summarize without an LLM provider", () => {
     expect(record).not.toHaveBeenCalled();
   });
 });
+
+describe("mem::summarize deadline", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    delete process.env.SUMMARIZE_CHUNK_SIZE;
+    delete process.env.SUMMARIZE_CHUNK_CONCURRENCY;
+    delete process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  function slowProvider(delayMs: number, responses: string[]) {
+    const provider = makeProvider(responses);
+    const inner = provider.summarize;
+    provider.summarize = async (system: string, user: string) => {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return inner(system, user);
+    };
+    return provider;
+  }
+
+  async function runChunked(delayMs: number) {
+    process.env.SUMMARIZE_CHUNK_SIZE = "10";
+    process.env.SUMMARIZE_CHUNK_CONCURRENCY = "1";
+    const responses = [
+      ...Array.from({ length: 4 }, (_, i) => summaryXml({ title: `chunk ${i}` })),
+      summaryXml({ title: "merged" }),
+    ];
+    const provider = slowProvider(delayMs, responses);
+    const { handler } = await setupHandler({ sessionId: "ses_slow", obsCount: 40, provider });
+    vi.useFakeTimers();
+    const pending = handler({ sessionId: "ses_slow" }) as Promise<any>;
+    await vi.advanceTimersByTimeAsync(10 * delayMs);
+    return { result: await pending, provider };
+  }
+
+  it("keeps the default 120 s budget for a multi-chunk session", async () => {
+    const { result } = await runChunked(30_000);
+    expect(result).toMatchObject({ success: false });
+    expect(result.error).toMatch(/summary_timeout|too_many_chunks_skipped/);
+  });
+
+  it("AGENTMEMORY_SUMMARY_TIMEOUT_MS extends the budget so slow chunked sessions finish", async () => {
+    process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = "600000";
+    const { result, provider } = await runChunked(30_000);
+    expect(result).toMatchObject({ success: true });
+    expect(result.summary.title).toBe("merged");
+    expect(provider.calls).toHaveLength(5);
+  });
+
+  it("ignores an invalid AGENTMEMORY_SUMMARY_TIMEOUT_MS", async () => {
+    const { getSummaryTimeoutMs, getSummaryTriggerTimeoutMs } = await import("../src/functions/summary-state.js");
+    process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = "nope";
+    expect(getSummaryTimeoutMs()).toBe(120_000);
+    process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = "300000";
+    expect(getSummaryTimeoutMs()).toBe(300_000);
+    expect(getSummaryTriggerTimeoutMs()).toBeGreaterThan(300_000);
+  });
+});
