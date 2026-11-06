@@ -369,11 +369,11 @@ export class HybridSearch {
     const enriched: HybridSearchResult[] = [];
     let next = 0;
     while (next < results.length && enriched.length < limit) {
-      const batch = results.slice(next, next + limit - enriched.length);
+      const batch = results.slice(next, next + limit);
       next += batch.length;
       enriched.push(...(await this.enrichBatch(batch)));
     }
-    return enriched;
+    return enriched.slice(0, limit);
   }
 
   private async enrichBatch(
