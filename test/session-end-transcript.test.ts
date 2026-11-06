@@ -8,14 +8,16 @@ import { join } from "node:path";
 let server: Server;
 let port: number;
 const posts: Array<{ path: string; body: Record<string, unknown> }> = [];
+let observeDelayMs = 0;
 
 function runHook(
   payload: Record<string, unknown>,
   script = "plugin/scripts/session-end.mjs",
+  extraEnv: Record<string, string> = {},
 ): Promise<number> {
   return new Promise((resolve) => {
     const child = spawn("node", [script], {
-      env: { ...process.env, AGENTMEMORY_URL: `http://127.0.0.1:${port}` },
+      env: { ...process.env, AGENTMEMORY_URL: `http://127.0.0.1:${port}`, ...extraEnv },
     });
     child.on("exit", (code) => resolve(code ?? 1));
     child.stdin.write(JSON.stringify(payload));
@@ -37,8 +39,10 @@ describe("session-end transcript prompt backfill", () => {
         } catch {
           posts.push({ path: req.url ?? "", body: {} });
         }
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end("{}");
+        setTimeout(() => {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end("{}");
+        }, (req.url ?? "").includes("/observe") ? observeDelayMs : 0);
       });
     });
     await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -105,6 +109,40 @@ describe("session-end transcript prompt backfill", () => {
     for (let i = 0; i < posts.length; i++) {
       if (posts[i].path.includes("/observe")) expect(i).toBeLessThan(endIndex);
     }
+  });
+
+  it("hands the work to a detached worker so the hook exits inside the 1.5 s SessionEnd budget", async () => {
+    posts.length = 0;
+    const transcript = join(dir, "handoff.jsonl");
+    writeFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user", content: "handoff prompt" } }) + "\n");
+    observeDelayMs = 2500;
+    const started = Date.now();
+    const code = await runHook({ session_id: "ses_handoff", hook_event_name: "SessionEnd", transcript_path: transcript });
+    observeDelayMs = 0;
+    expect(code).toBe(0);
+    expect(Date.now() - started).toBeLessThan(1500);
+    const deadline = Date.now() + 10_000;
+    while (!posts.some((p) => p.path.includes("/session/end")) && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const prompts = posts.filter((p) => p.path.includes("/observe")).map((p) => (p.body.data as { prompt: string }).prompt);
+    expect(prompts).toEqual(["handoff prompt"]);
+    const end = posts.find((p) => p.path.includes("/session/end"));
+    expect(end?.body).toMatchObject({ sessionId: "ses_handoff", final: true });
+  });
+
+  it("runs the Claude Code SessionEnd work inline inside the detached worker", async () => {
+    posts.length = 0;
+    const transcript = join(dir, "worker.jsonl");
+    writeFileSync(transcript, JSON.stringify({ type: "user", message: { role: "user", content: "worker prompt" } }) + "\n");
+    const code = await runHook(
+      { session_id: "ses_worker", hook_event_name: "SessionEnd", transcript_path: transcript },
+      undefined,
+      { AGENTMEMORY_SESSION_END_WORKER: "1" },
+    );
+    expect(code).toBe(0);
+    expect(posts.filter((p) => p.path.includes("/observe")).map((p) => (p.body.data as { prompt: string }).prompt)).toEqual(["worker prompt"]);
+    expect(posts.some((p) => p.path.includes("/session/end"))).toBe(true);
   });
 
   it("posts prompts from a Claude Code transcript, skipping tool results", async () => {

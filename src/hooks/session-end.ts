@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
@@ -91,6 +92,27 @@ function extractTranscriptPrompts(data: Record<string, unknown>): TranscriptProm
   return prompts;
 }
 
+const WORKER_ENV = "AGENTMEMORY_SESSION_END_WORKER";
+
+function handOff(input: string): boolean {
+  if (process.env[WORKER_ENV] === "1" || !process.argv[1]) return false;
+  try {
+    const child = spawn(process.execPath, [process.argv[1]], {
+      detached: true,
+      stdio: ["pipe", "ignore", "ignore"],
+      windowsHide: true,
+      env: { ...process.env, [WORKER_ENV]: "1" },
+    });
+    child.on("error", () => {});
+    child.stdin.on("error", () => {});
+    child.stdin.end(input);
+    child.unref();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   if (isDrainChild()) return runDrainChild();
   let input = "";
@@ -107,6 +129,7 @@ async function main() {
 
   if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
+  if (data.hook_event_name === "SessionEnd" && handOff(input)) return;
 
   const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
 
