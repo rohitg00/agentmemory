@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { readFileSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
 
 export const III_INSTALL_CONNECT_TIMEOUT_S = 15;
 export const III_INSTALL_MAX_TIME_S = 300;
@@ -11,14 +11,14 @@ export const III_INSTALL_SPAWN_TIMEOUT_MS =
 type ChecksumTable = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
 export const III_RELEASE_SHA256: ChecksumTable = {
-  "0.22.1": {
-    "iii-aarch64-apple-darwin.tar.gz": "2b309019b909a896cae874dc947e2cdf877b4f3c51dd026b79850af858517fa4",
-    "iii-x86_64-apple-darwin.tar.gz": "6d33940db2d3ad6a9aef9837aa5b89bf5c5e4acd0679e8178fec258af229d7e1",
-    "iii-x86_64-unknown-linux-gnu.tar.gz": "34d4bd2ec1873e6114bb836be7db9cb3f410d0d63353d240917f0bc9c30df13b",
-    "iii-aarch64-unknown-linux-gnu.tar.gz": "87efc60210c1580ef2e11b13c679a4dad91917a9d80f737c5ba7e3475b3ca413",
-    "iii-armv7-unknown-linux-gnueabihf.tar.gz": "af5dfc45149678c647e5adaca55c055428eebfa73d65884b052c30c98abcfd19",
-    "iii-x86_64-pc-windows-msvc.zip": "d862bf7cf1e864f3290c8a6fc17c308c6ecac097cb2666e4a739efc0040aae96",
-    "iii-aarch64-pc-windows-msvc.zip": "4777a48cee3fc1a742daee929e3d943df09e4ddd3357d27a33d31c9dc9e520ac",
+  "0.25.0": {
+    "iii-aarch64-apple-darwin.tar.gz": "5f23087a41ce1cf86f9859d2f430d1809a1e048094e69b1df0cdf1ebefc2a985",
+    "iii-x86_64-apple-darwin.tar.gz": "e2ac4ef109ddbf459b4683171c6b5b9c8366b16dac2e1f8c4fe08b4a4e19d49a",
+    "iii-x86_64-unknown-linux-gnu.tar.gz": "4c4d14063eb55d79663db553e960497731420df6d78eca3aafe670e2fbaba8e2",
+    "iii-aarch64-unknown-linux-gnu.tar.gz": "5e52d4738a0beb609f4d32970d37be7c00d4848ee9d06300248498a00ea4bf0e",
+    "iii-armv7-unknown-linux-gnueabihf.tar.gz": "9ee840351ff62c889b929b618f8cbb2d66d616cecf82cde7c26d4618aa137508",
+    "iii-x86_64-pc-windows-msvc.zip": "b80ea5c3408879380b6ce95f7b2855ce161d68642aeec8f7b54f104794cbb322",
+    "iii-aarch64-pc-windows-msvc.zip": "2b1e222b90ee18ed143186e8b307d8ad2076f44ea00fa7a7d071bd3c87cde002",
   },
 };
 
@@ -139,4 +139,241 @@ export function installIiiArchive(opts: {
     return { ok: false, reason: "extract", detail: describeInstallFailure(extract) };
   }
   return { ok: true };
+}
+
+export type ZipRunResult = {
+  status: number | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  error?: Error & { code?: string };
+  signal?: NodeJS.Signals | null;
+};
+
+export type ZipCommandRunner = (command: string, args: string[]) => ZipRunResult | Promise<ZipRunResult>;
+
+export type ZipDownloader = (url: string, dest: string) => Promise<void>;
+
+export function iiiZipArchivePath(binDir: string): string {
+  return join(binDir, `.iii-download-${process.pid}-${randomBytes(4).toString("hex")}.zip`);
+}
+
+function removeQuietly(path: string): void {
+  try {
+    rmSync(path, { force: true, recursive: true });
+  } catch {}
+}
+
+export const STALE_INSTALL_FILE_MS = 15 * 60 * 1000;
+
+export function removeStaleInstallFiles(binDir: string, now: number = Date.now()): string[] {
+  const removed: string[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(binDir);
+  } catch {
+    return removed;
+  }
+  for (const name of entries) {
+    if (!name.startsWith(".iii-download-") && !name.startsWith(".iii-staging-")) continue;
+    const path = join(binDir, name);
+    try {
+      if (now - statSync(path).mtimeMs < STALE_INSTALL_FILE_MS) continue;
+    } catch {
+      continue;
+    }
+    removeQuietly(path);
+    if (!existsSync(path)) removed.push(name);
+  }
+  return removed;
+}
+
+const PROXY_ENV_KEYS = ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"];
+
+export function proxyConfigured(env: NodeJS.ProcessEnv): boolean {
+  return PROXY_ENV_KEYS.some((key) => Boolean(env[key]?.trim()));
+}
+
+export function windowsCurlDownloadCommand(
+  url: string,
+  dest: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] } {
+  const systemRoot = env["SystemRoot"] || env["SYSTEMROOT"] || "C:\\Windows";
+  return {
+    command: join(systemRoot, "System32", "curl.exe"),
+    args: [
+      "-fsSL",
+      "--connect-timeout",
+      String(III_INSTALL_CONNECT_TIMEOUT_S),
+      "--max-time",
+      String(III_INSTALL_MAX_TIME_S),
+      "-o",
+      dest,
+      url,
+    ],
+  };
+}
+
+export function powershellLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+export function windowsZipExtractCommands(
+  archive: string,
+  binDir: string,
+  env: NodeJS.ProcessEnv = process.env,
+): { command: string; args: string[] }[] {
+  const systemRoot = env["SystemRoot"] || env["SYSTEMROOT"] || "C:\\Windows";
+  const system32 = join(systemRoot, "System32");
+  return [
+    { command: join(system32, "tar.exe"), args: ["-xf", archive, "-C", binDir] },
+    {
+      command: join(system32, "WindowsPowerShell", "v1.0", "powershell.exe"),
+      args: [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Expand-Archive -LiteralPath ${powershellLiteral(archive)} -DestinationPath ${powershellLiteral(binDir)} -Force`,
+      ],
+    },
+  ];
+}
+
+export async function downloadToFile(
+  url: string,
+  dest: string,
+  env: NodeJS.ProcessEnv = process.env,
+  run: ZipCommandRunner = runInstallCommand,
+): Promise<void> {
+  if (proxyConfigured(env)) {
+    const step = windowsCurlDownloadCommand(url, dest, env);
+    const result = await run(step.command, step.args);
+    if (result.status !== 0) throw new Error(describeInstallFailure(result));
+    return;
+  }
+  const res = await fetch(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(III_INSTALL_MAX_TIME_S * 1000),
+  });
+  if (!res.ok) throw new Error(`download failed with HTTP ${res.status} ${res.statusText}`.trim());
+  writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+}
+
+export function runInstallCommand(command: string, args: string[]): Promise<ZipRunResult> {
+  return new Promise((done) => {
+    let stdout = "";
+    let stderr = "";
+    let timedOut = false;
+    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true, shell: false });
+    const killOnExit = () => {
+      try {
+        child.kill();
+      } catch {}
+    };
+    process.once("exit", killOnExit);
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill();
+    }, III_INSTALL_SPAWN_TIMEOUT_MS);
+    child.stdout?.on("data", (chunk) => { stdout += chunk; });
+    child.stderr?.on("data", (chunk) => { stderr += chunk; });
+    let spawnError: (Error & { code?: string }) | undefined;
+    child.on("error", (error: Error & { code?: string }) => {
+      spawnError = error;
+      if (child.pid !== undefined) return;
+      clearTimeout(timer);
+      process.off("exit", killOnExit);
+      done({ status: null, stdout, stderr, error });
+    });
+    child.on("close", (status, signal) => {
+      clearTimeout(timer);
+      process.off("exit", killOnExit);
+      if (spawnError && status === null && !timedOut) {
+        done({ status: null, stdout, stderr, signal, error: spawnError });
+        return;
+      }
+      if (timedOut) {
+        done({ status: null, stdout, stderr, signal, error: Object.assign(new Error("timed out"), { code: "ETIMEDOUT" }) });
+        return;
+      }
+      done({ status, stdout, stderr, signal });
+    });
+  });
+}
+
+export async function installIiiZip(opts: {
+  releaseUrl: string;
+  version: string;
+  asset: string;
+  binDir: string;
+  binPath: string;
+  env?: NodeJS.ProcessEnv;
+  checksums?: ChecksumTable;
+  download?: ZipDownloader;
+  run?: ZipCommandRunner;
+}): Promise<IiiInstallOutcome> {
+  const expected = expectedIiiSha256(opts.version, opts.asset, opts.checksums);
+  if (!expected) {
+    return {
+      ok: false,
+      reason: "no-checksum",
+      detail: `no pinned SHA-256 for ${opts.asset} in iii v${opts.version}, so the download cannot be verified`,
+    };
+  }
+  const run = opts.run ?? runInstallCommand;
+  const download = opts.download ?? ((url: string, dest: string) => downloadToFile(url, dest, opts.env ?? process.env, run));
+  const archive = iiiZipArchivePath(opts.binDir);
+
+  try {
+    mkdirSync(opts.binDir, { recursive: true });
+    removeStaleInstallFiles(opts.binDir);
+    await download(opts.releaseUrl, archive);
+  } catch (err) {
+    removeQuietly(archive);
+    return { ok: false, reason: "download", detail: err instanceof Error ? err.message : String(err) };
+  }
+
+  let actual: string;
+  try {
+    actual = sha256File(archive);
+  } catch (err) {
+    removeQuietly(archive);
+    return { ok: false, reason: "download", detail: err instanceof Error ? err.message : String(err) };
+  }
+  if (actual !== expected) {
+    removeQuietly(archive);
+    return {
+      ok: false,
+      reason: "checksum",
+      detail: `SHA-256 mismatch for ${opts.asset}: expected ${expected}, got ${actual}. The download was deleted and nothing was installed`,
+    };
+  }
+
+  const staging = join(opts.binDir, `.iii-staging-${process.pid}-${randomBytes(4).toString("hex")}`);
+  const staged = join(staging, basename(opts.binPath));
+  const failures: string[] = [];
+  try {
+    for (const step of windowsZipExtractCommands(archive, staging, opts.env)) {
+      removeQuietly(staging);
+      mkdirSync(staging, { recursive: true });
+      const result = await run(step.command, step.args);
+      if (result.status === 0 && existsSync(staged)) {
+        try {
+          renameSync(staged, opts.binPath);
+          return { ok: true };
+        } catch (err) {
+          failures.push(`could not move ${staged} to ${opts.binPath}: ${err instanceof Error ? err.message : String(err)}`);
+          break;
+        }
+      }
+      failures.push(`${step.command}: ${result.status === 0 ? `finished but ${basename(opts.binPath)} is missing from the archive` : describeInstallFailure(result)}`);
+    }
+    return { ok: false, reason: "extract", detail: failures.join("; ") };
+  } catch (err) {
+    failures.push(err instanceof Error ? err.message : String(err));
+    return { ok: false, reason: "extract", detail: failures.join("; ") };
+  } finally {
+    removeQuietly(staging);
+    removeQuietly(archive);
+  }
 }

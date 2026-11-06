@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
@@ -380,10 +380,10 @@ describe("capture status problems", () => {
     const report = evaluateStatus({
       now: new Date(),
       version: "0",
-      engineVersion: "0",
+      enginePinnedVersion: "0",
       uptimeSeconds: 1,
       stateBackend: "file",
-      ports: { rest: 4811, streams: null, viewer: null },
+      ports: { rest: 4811, viewer: null },
       health: null,
       circuitBreaker: null,
       functionMetrics: [],
@@ -465,6 +465,26 @@ describe("acceptance durability across a restart", () => {
     expect(captureDurableAfterMs("file", ["save_interval_ms: 2000"])).toBe(3500);
     expect(captureDurableAfterMs("file", [])).toBe(6500);
     expect(captureDurableAfterMs("redis", ["save_interval_ms: 2000"])).toBe(1500);
+  });
+
+  it("keeps Docker captures until its Compose state override has flushed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "am-docker-flush-"));
+    vi.stubEnv("AGENTMEMORY_DATA_DIR", dir);
+    vi.stubEnv("AGENTMEMORY_ENV_FILE", join(dir, "missing.env"));
+    vi.stubEnv("AGENTMEMORY_STATE_BACKEND", "file");
+    vi.stubEnv("AGENTMEMORY_STATE_SAVE_INTERVAL_MS", "30000");
+    mkdirSync(join(dir, "config"));
+    writeFileSync(join(dir, "config", "state.yaml"), "id: state\nvalue:\n  triggers_enabled: true\n");
+    writeFileSync(join(dir, "worker-compose.runtime.yaml"), [
+      "containers:", "  state:", "    config_override:", "      adapter:", "        name: kv", "        config:",
+      "          store_method: file_based", '          save_interval_ms: "${AGENTMEMORY_STATE_SAVE_INTERVAL_MS:-2000}"', "",
+    ].join("\n"));
+    try {
+      const { serverDurableAfterMs } = await import("../src/functions/capture.js");
+      expect(serverDurableAfterMs()).toBe(31500);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("re-sends observations a client kept from the previous boot and keeps them under the new boot", async () => {

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { III_PINNED_VERSION } from "../src/version.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -12,10 +13,6 @@ import {
   startAuditMigration,
 } from "../src/functions/audit.js";
 import { KV, generateId } from "../src/state/schema.js";
-import {
-  resetViewerStreamTracker,
-  seedViewerStreamTracker,
-} from "../src/state/viewer-stream.js";
 import { evaluateStatus, type StatusInputs } from "../src/functions/status.js";
 
 type Call = { function_id: string; payload: Record<string, unknown> };
@@ -278,40 +275,15 @@ describe("audit migration on the redis backend", () => {
   });
 });
 
-describe("viewer stream seeding on the redis backend", () => {
-  beforeEach(() => resetViewerStreamTracker());
-  afterEach(() => {
-    delete process.env.AGENTMEMORY_VIEWER_STREAM_MAX;
-    resetViewerStreamTracker();
-  });
-
-  it("prunes the oldest items even though redis lists them in arbitrary order", async () => {
-    process.env.AGENTMEMORY_VIEWER_STREAM_MAX = "200";
-    const base = Date.UTC(2026, 8, 1);
-    const ids = Array.from({ length: 203 }, (_, i) => `obs_${(base + i * 1000).toString(36)}_${"b".repeat(12)}`);
-    const items = shuffled(ids).map((id) => ({ observation: { id, timestamp: "not-a-date" } }));
-    const deleted: string[] = [];
-    const sdk = {
-      trigger: vi.fn(async (req: { function_id: string; payload: { item_id?: string } }) => {
-        if (req.function_id === "stream::list") return items;
-        if (req.payload.item_id) deleted.push(req.payload.item_id);
-        return {};
-      }),
-    };
-    await expect(seedViewerStreamTracker(sdk as never, { unorderedListing: true })).resolves.toBe(203);
-    expect(deleted.sort()).toEqual(ids.slice(0, 3).sort());
-  });
-});
-
 describe("status on the redis backend", () => {
   function inputs(overrides: Partial<StatusInputs>): StatusInputs {
     return {
       now: new Date("2026-09-28T00:00:00.000Z"),
       version: "0.0.0",
-      engineVersion: "0.22.1",
+      enginePinnedVersion: III_PINNED_VERSION,
       uptimeSeconds: 10,
       stateBackend: "redis",
-      ports: { rest: 3111, streams: 3112, viewer: 3113 },
+      ports: { rest: 3111, viewer: 3113 },
       health: { status: "healthy", alerts: [] },
       circuitBreaker: null,
       functionMetrics: [],
@@ -355,103 +327,5 @@ describe("status on the redis backend", () => {
     const report = evaluateStatus(inputs({ auditLegacy: { status: "too-large", sizeBytes: 1 } }));
     const problem = report.problems.find((p) => p.code === "audit-legacy-frozen");
     expect(problem?.fix).toContain("DEL state:mem:audit");
-  });
-});
-
-describe("redis event relay probe", () => {
-  function fakeSocketFactory(behaviour: { open: boolean; relay: boolean }) {
-    const sockets: Array<{ joined: unknown[]; deliver: (data: unknown) => void }> = [];
-    const create = () => {
-      const socket = {
-        readyState: 0,
-        onopen: null as null | (() => void),
-        onmessage: null as null | ((e: { data: unknown }) => void),
-        onclose: null as null | (() => void),
-        onerror: null as null | (() => void),
-        joined: [] as unknown[],
-        send(data: string) {
-          socket.joined.push(JSON.parse(data));
-        },
-        close() {
-          socket.readyState = 3;
-        },
-        deliver(data: unknown) {
-          socket.onmessage?.({ data: JSON.stringify(data) });
-        },
-      };
-      sockets.push(socket);
-      setTimeout(() => {
-        if (behaviour.open) {
-          socket.readyState = 1;
-          socket.onopen?.();
-        } else {
-          socket.onerror?.();
-        }
-      }, 1);
-      return socket;
-    };
-    const sdk = {
-      trigger: vi.fn(async (req: { function_id: string; payload: { data: { nonce: string } } }) => {
-        if (behaviour.relay) {
-          setTimeout(() => {
-            for (const s of sockets) s.deliver({ type: "stream", event: { type: "event", event: { type: "relay.probe", data: req.payload.data } } });
-          }, 1);
-        }
-        return null;
-      }),
-    };
-    return { create, sdk, sockets };
-  }
-
-  it("reports ok when the probe event comes back over the stream", async () => {
-    const { createStreamRelayProbe } = await import("../src/health/stream-relay-probe.js");
-    const f = fakeSocketFactory({ open: true, relay: true });
-    const probe = createStreamRelayProbe(f.sdk as never, { url: "ws://x", timeoutMs: 200, createSocket: f.create as never });
-    expect(await probe.check()).toBe("ok");
-    expect(await probe.check()).toBe("ok");
-    expect(f.sockets).toHaveLength(1);
-    expect(f.sockets[0]!.joined[0]).toMatchObject({ type: "join", data: { streamName: "mem-live", groupId: "relay-probe" } });
-    probe.close();
-  });
-
-  it("reports down when the engine accepts the event but never relays it", async () => {
-    const { createStreamRelayProbe } = await import("../src/health/stream-relay-probe.js");
-    const f = fakeSocketFactory({ open: true, relay: false });
-    const probe = createStreamRelayProbe(f.sdk as never, { url: "ws://x", timeoutMs: 100, createSocket: f.create as never });
-    expect(await probe.check()).toBe("down");
-    probe.close();
-  });
-
-  it("reports down when the send itself fails and unknown when the stream port is closed", async () => {
-    const { createStreamRelayProbe } = await import("../src/health/stream-relay-probe.js");
-    const f = fakeSocketFactory({ open: true, relay: false });
-    f.sdk.trigger.mockRejectedValueOnce(new Error("Failed to publish event to Redis"));
-    const probe = createStreamRelayProbe(f.sdk as never, { url: "ws://x", timeoutMs: 100, createSocket: f.create as never });
-    expect(await probe.check()).toBe("down");
-    const closed = fakeSocketFactory({ open: false, relay: true });
-    const probe2 = createStreamRelayProbe(closed.sdk as never, { url: "ws://x", timeoutMs: 100, createSocket: closed.create as never });
-    expect(await probe2.check()).toBe("unknown");
-    probe.close();
-    probe2.close();
-  });
-
-  it("turns a dead relay into a degraded health alert with a restart fix", async () => {
-    const { evaluateHealth } = await import("../src/health/thresholds.js");
-    const { describeHealthAlert } = await import("../src/functions/status.js");
-    const result = evaluateHealth({
-      connectionState: "connected",
-      workers: [],
-      memory: { heapUsed: 1, heapTotal: 100, rss: 1, external: 0 },
-      cpu: { userMicros: 0, systemMicros: 0, percent: 1 },
-      eventLoopLagMs: 1,
-      uptimeSeconds: 1,
-      streamRelay: "down",
-      status: "healthy",
-      alerts: [],
-    } as never);
-    expect(result.status).toBe("degraded");
-    expect(result.alerts).toContain("stream_relay_down");
-    const described = describeHealthAlert("stream_relay_down");
-    expect(described.fix).toContain("Restart agentmemory");
   });
 });

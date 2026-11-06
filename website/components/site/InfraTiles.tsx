@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { src } from "@/lib/site";
+
 import { Reveal } from "./client";
 import s from "./InfraTiles.module.css";
 
@@ -30,13 +30,13 @@ function Gauge() {
       })}
       <path d={arc(0, 0.28)} className={s.fill} pathLength={1} />
       <text x="150" y="128" textAnchor="middle" className={s.readout}>
-        14 ms
+        Local
       </text>
       <text x="30" y="166" className={s.scale}>
-        0
+        BM25
       </text>
       <text x="270" y="166" className={s.scale} textAnchor="end">
-        50 ms
+        vectors
       </text>
     </svg>
   );
@@ -111,21 +111,21 @@ export function InfraTiles() {
     <section className={s.section} aria-label="How agentmemory runs">
       <div className={`wrap ${s.row}`}>
         <Reveal className={s.tile}>
-          <h3 className="mono">Recall in 14 ms</h3>
-          <p>Median hybrid search over BM25, local vectors and the graph. No network round trip.</p>
+          <h3 className="mono">Keyless recall</h3>
+          <p>Keyword search works without an API key. Enable local embeddings to add semantic retrieval.</p>
           <div className={s.art}>
             <Gauge />
           </div>
           <code className={s.call}>
             memory_smart_search(&quot;auth refresh&quot;)<span className={s.caret} />
           </code>
-          <a className="src" href={src.agentLife} target="_blank" rel="noreferrer">
-            p50, coding-agent-life-v1 on v0.9.26
+          <a className="src" href="/benchmarks" target="_blank" rel="noreferrer">
+            retrieval evaluation
           </a>
         </Reveal>
         <Reveal className={s.tile} delay={80}>
           <h3 className="mono">Isolated on your machine</h3>
-          <p>Binds to 127.0.0.1 with auth on by default. Nothing leaves unless you add a provider.</p>
+          <p>Binds to 127.0.0.1 with auth on by default. Memory text stays local unless you configure a remote service.</p>
           <div className={s.art}>
             <Isometric />
           </div>
@@ -135,7 +135,7 @@ export function InfraTiles() {
         </Reveal>
         <Reveal className={s.tile} delay={160}>
           <h3 className="mono">Survives compaction</h3>
-          <p>When your agent compacts its context, the PreCompact hook puts memory back before the next turn.</p>
+          <p>On supported integrations, enable the PreCompact hook to restore memory context around compaction.</p>
           <div className={s.art}>
             <Compaction />
           </div>

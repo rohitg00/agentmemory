@@ -31,18 +31,18 @@ curl -fsS -X POST http://localhost:3111/agentmemory/smart-search \
 
 ## Auth
 
-Protected endpoints require bearer authentication by default, including localhost. Liveness is public. The example uses an explicit environment secret or the generated local secret file; if the daemon uses a secret from its `.env`, load that value locally without displaying it. For a remote daemon, require an explicit credential for that endpoint and HTTPS. Never forward a local-file secret or follow an authenticated redirect to another host. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
+Every endpoint except liveness requires `Authorization: Bearer <secret>`, including on localhost. The server always has a secret: `AGENTMEMORY_SECRET` when you set one, otherwise one it generates at first start. Requests without the header get `401`. Liveness is public. The example uses an explicit environment secret or the generated local secret file; if the daemon uses a secret from its `.env`, load that value locally without displaying it. For a remote daemon, require an explicit credential for that endpoint and HTTPS. Never forward a local-file secret or follow an authenticated redirect to another host. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 
 ## Conventions
 
 - Save returns `201`, reads return `200`, validation errors return `400`.
 - Use documented fields only. A successful response does not prove an unsupported field was applied.
-- The port is configurable with `--port` or `--instance`; streams, viewer, and engine derive from it.
+- The REST port defaults to `3111` and is configurable with `--port` or `--instance`. The viewer defaults to `3113`; the internal engine WebSocket defaults to `49134`.
 
 ## See also
 
 - agentmemory-mcp-tools for the MCP equivalents.
-- agentmemory-config for the port quartet and the secret.
+- agentmemory-config for local configuration and the secret.
 
 ## Reference
 

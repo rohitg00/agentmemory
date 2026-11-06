@@ -5,6 +5,7 @@ import {
   getEnvVar,
   loadEmbeddingConfig,
   loadFallbackConfig,
+  embeddingOptInHint,
   loadClaudeBridgeConfig,
   loadTeamConfig,
   loadSnapshotConfig,
@@ -15,6 +16,7 @@ import {
   isContextInjectionEnabled,
   isDropStaleIndexEnabled,
   getVectorBackfillMax,
+  isVectorBackfillAllEnabled,
   getAuditRetentionMonths,
   getStateBackend,
   isSessionSweepEnabled,
@@ -29,6 +31,7 @@ import {
   createImageEmbeddingProvider,
 } from "./providers/index.js";
 import { StateKV } from "./state/kv.js";
+import { assertStateReady, waitForStateReady } from "./state/state-readiness.js";
 import { VectorIndex } from "./state/vector-index.js";
 import type { SearchLayer } from "./state/search-layer.js";
 import { HybridSearch } from "./state/hybrid-search.js";
@@ -37,7 +40,6 @@ import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, runStartupCleanup, se
 import { registerPrivacyFunction, withWriteScrubbing } from "./functions/privacy.js";
 import { registerObserveFunction } from "./functions/observe.js";
 import { registerCaptureFunctions } from "./functions/capture.js";
-import { seedViewerStreamTracker } from "./state/viewer-stream.js";
 import { registerImageQuotaCleanup } from "./functions/image-quota-cleanup.js";
 import { registerVisionSearchFunctions } from "./functions/vision-search.js";
 import { registerSlotsFunctions, isSlotsEnabled, isReflectEnabled } from "./functions/slots.js";
@@ -45,9 +47,9 @@ import { registerDiskSizeManager } from "./functions/disk-size-manager.js";
 import { registerCompressFunction } from "./functions/compress.js";
 import {
   registerSearchFunction,
-  backfillVectors,
   backfillVectorBacklog,
   isBm25RebuildIncomplete,
+  isMemoryIndexReady,
   rebuildKeywordIndex,
   markKeywordRebuildPending,
   getSearchIndex,
@@ -80,6 +82,7 @@ import { registerExportImportFunction } from "./functions/export-import.js";
 import { registerEnrichFunction } from "./functions/enrich.js";
 import { registerClaudeBridgeFunction } from "./functions/claude-bridge.js";
 import { registerGraphFunction } from "./functions/graph.js";
+import { registerGraphIndexMigrationFunctions } from "./state/graph-index-migration.js";
 import { GRAPH_COMPACT_BOOT_DELAY_MS, runGraphCompactOnBoot, setGraphCompactBootDisabled } from "./functions/graph-compact-boot.js";
 import { registerGraphImportFunction } from "./functions/graph-import.js";
 import { registerConsolidationPipelineFunction } from "./functions/consolidation-pipeline.js";
@@ -117,13 +120,13 @@ import { registerReplayFunctions } from "./functions/replay.js";
 import { registerApiTriggers } from "./triggers/api.js";
 import { registerEventTriggers } from "./triggers/events.js";
 import { registerViewerStreamTriggers } from "./triggers/viewer-streams.js";
+import { registerViewerSse } from "./triggers/viewer-sse.js";
 import { registerMcpEndpoints } from "./mcp/server.js";
 import { getAllTools } from "./mcp/tools-registry.js";
 import { startViewerServer } from "./viewer/server.js";
 import { MetricsStore } from "./eval/metrics-store.js";
 import { DedupMap } from "./functions/dedup.js";
 import { registerHealthMonitor } from "./health/monitor.js";
-import { createStreamRelayProbe } from "./health/stream-relay-probe.js";
 import { initMetrics, OTEL_CONFIG } from "./telemetry/setup.js";
 import { VERSION } from "./version.js";
 import { bootLog, bootWarn } from "./logger.js";
@@ -136,6 +139,9 @@ function workerPidfilePath(): string {
   return runtimeMetadataPath("worker.pid");
 }
 function writeWorkerPidfile(): void {
+  // Worker Compose owns the entire process lifecycle. Its supervised container
+  // PID is authoritative; do not create a second ownership record.
+  if (process.env["III_COMPOSE_FILE"]) return;
   try {
     const p = workerPidfilePath();
     mkdirSync(dirname(p), { recursive: true });
@@ -145,6 +151,7 @@ function writeWorkerPidfile(): void {
   }
 }
 function clearWorkerPidfile(): void {
+  if (process.env["III_COMPOSE_FILE"]) return;
   try {
     unlinkSync(workerPidfilePath());
   } catch {}
@@ -187,6 +194,10 @@ function resolveWorkerSecret(): string {
   }
 }
 
+// Revisions whose release failed while superseding an incremental backfill.
+// Shutdown retries; failures stay owned here instead of being dropped.
+const unreleasedSupersededRevisions: Array<{ id: string; revision: { release(): void } }> = [];
+
 async function main() {
   // Fold ~/.agentmemory/.env into process.env before anything reads config
   // or raw process.env. Only-if-unset, so real process.env still wins.
@@ -197,7 +208,7 @@ async function main() {
   const fallbackConfig = loadFallbackConfig();
 
   const provider =
-    fallbackConfig.providers.length > 0
+    fallbackConfig.providers.length > 0 && config.provider.provider !== "noop"
       ? createFallbackProvider(config.provider, fallbackConfig)
       : createProvider(config.provider);
 
@@ -215,6 +226,8 @@ async function main() {
     );
   } else {
     bootLog(`Embedding provider: none (BM25-only mode)`);
+    const embeddingHint = embeddingOptInHint();
+    if (embeddingHint) bootLog(embeddingHint);
   }
   if (imageEmbeddingProvider) {
     bootLog(
@@ -224,7 +237,6 @@ async function main() {
   bootLog(
     `REST API: http://localhost:${config.restPort}/agentmemory/*`,
   );
-  bootLog(`Streams: ws://localhost:${config.streamsPort}`);
 
   const sdk = withWriteScrubbing(registerWorker(config.engineUrl, {
     workerName: "agentmemory",
@@ -255,6 +267,16 @@ async function main() {
     stateBackend = getStateBackend();
   } catch {}
   const kv = new StateKV(sdk, { backend: stateBackend });
+  const stateReadiness = await waitForStateReady(sdk, {
+    onWaiting: (error) =>
+      bootWarn(`Waiting for the state worker to register state::get and state::list (${error})`),
+  });
+  assertStateReady(stateReadiness);
+  if (stateReadiness.attempts > 1) {
+    bootLog(
+      `State worker ready after ${stateReadiness.waitedMs}ms (${stateReadiness.attempts} attempts)`,
+    );
+  }
   const secret = resolveWorkerSecret();
   const metricsStore = new MetricsStore(kv);
   const dedupMap = new DedupMap();
@@ -320,6 +342,7 @@ async function main() {
   }
 
   registerGraphFunction(sdk, kv, provider);
+  const graphIndexMigration = registerGraphIndexMigrationFunctions(sdk, kv);
   registerGraphImportFunction(sdk, kv);
   bootLog(
     `Knowledge graph: structural extraction on (LLM relations ${isGraphExtractionEnabled() ? "enabled" : "off"})`,
@@ -433,8 +456,8 @@ async function main() {
     graphWeight,
   );
 
-  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer) =>
-    hybridSearch.search(query, limit, targetLayer);
+  const hybridRanker = (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: Parameters<HybridSearch["search"]>[3], request?: Parameters<HybridSearch["search"]>[4]) =>
+    hybridSearch.search(query, limit, targetLayer, authorizeGraph, request);
   registerSmartSearchFunction(sdk, kv, hybridRanker);
   setHybridRanker(hybridRanker);
   registerRecentSearchesSweepFunction(sdk, kv);
@@ -443,22 +466,19 @@ async function main() {
   registerApiTriggers(sdk, kv, secret, metricsStore, provider);
   registerEventTriggers(sdk, kv);
   registerViewerStreamTriggers(sdk, kv, { secret, metricsStore, provider });
+  registerViewerSse(sdk);
   registerMcpEndpoints(sdk, kv, secret);
 
-  const healthMonitor = registerHealthMonitor(sdk, kv, {
-    streamRelayProbe:
-      kv.backend === "redis"
-        ? createStreamRelayProbe(sdk, { url: `ws://localhost:${config.streamsPort}` })
-        : undefined,
-  });
+  const healthMonitor = registerHealthMonitor(sdk, kv);
 
-  const indexPersistence = new IndexPersistence(kv, vectorIndex);
+  const indexPersistence = new IndexPersistence(kv, vectorIndex, { requireRecoveryPlan: true });
   setIndexPersistence(indexPersistence);
 
   const loaded = await indexPersistence.load().catch((err) => {
     console.warn(`[agentmemory] Failed to load persisted vector index:`, err);
     return null;
   });
+  let vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, isVectorBackfillAllEnabled());
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
     // Persisted vectors carry whatever dimension the provider had when
     // they were written. If the active provider declares a different
@@ -483,6 +503,7 @@ async function main() {
       const distinct = Array.from(seenDimensions).sort((a, b) => a - b).join(", ");
       const dropStale = isDropStaleIndexEnabled();
       if (dropStale) {
+        vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, true);
         for (const [obsId] of loaded.vector.entries()) vectorIndex.markRemoved(obsId);
         console.warn(
           `[agentmemory] Persisted vector index has ${mismatches.length} of ` +
@@ -516,6 +537,8 @@ async function main() {
 
   if (vectorIndex && loaded && loaded.state !== "unavailable") {
     const replay = await indexPersistence.replayPendingLog(embeddingProvider?.dimensions ?? 0);
+    if (replay.skipped > 0) vectorBackfillSince = null;
+    if (indexPersistence.isRecoveryPaused()) vectorBackfillSince = undefined;
     if (replay.entries > 0) {
       bootLog(
         `Recovered ${replay.added} vectors and ${replay.removed} removals written after the last index save, without calling the embedding provider` +
@@ -526,78 +549,86 @@ async function main() {
 
   const auditMigration = startAuditMigration(kv).catch(() => {});
 
-  const vectorCountShortfall =
-    Boolean(loaded?.vector) &&
-    loaded?.expectedCount !== undefined &&
-    loaded.vector!.size < loaded.expectedCount;
-  let vectorBackfillSince =
-    !loaded || loaded.state === "unavailable"
-      ? undefined
-      : loaded.state === "none" || vectorCountShortfall
-        ? null
-        : loaded.savedAt;
-  const incrementalBackfill = typeof vectorBackfillSince === "string" && Boolean(vectorIndex && embeddingProvider);
-  if (incrementalBackfill) {
-    const since = vectorBackfillSince as string;
-    const marker = await indexPersistence.readBackfillMarker();
-    if (marker !== null && Date.parse(marker) < Date.parse(since)) vectorBackfillSince = marker;
-    await indexPersistence.markBackfillSince(vectorBackfillSince as string).catch((err) => {
-      bootWarn(`Could not save the vector backfill marker: ${err instanceof Error ? err.message : String(err)}`);
-    });
-  }
   const keywordStart = Date.now();
   try {
-    const keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
+    let keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
+    let supersededReleaseFailed = false;
+    if (typeof vectorBackfillSince === "string" && !indexPersistence.isRecoveryPaused() && keyword.historicalVectorGaps > 0) {
+      for (const job of keyword.vectorJobs) {
+        const revision = job.revision;
+        if (!revision) continue;
+        try {
+          revision.release();
+        } catch (err) {
+          supersededReleaseFailed = true;
+          unreleasedSupersededRevisions.push({ id: job.id, revision });
+          bootWarn(`Failed to release superseded vector revision ${job.id}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      // Jobs are superseded only after every watch is released. A failed release
+      // stays in unreleasedSupersededRevisions; do not rebuild or embed over it.
+      keyword.vectorJobs = [];
+      if (!supersededReleaseFailed) {
+        vectorBackfillSince = await indexPersistence.prepareBackfill(loaded, true);
+        if (vectorBackfillSince === null) keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
+      }
+    }
     bootLog(
       `Rebuilt BM25 index from stored content (${keyword.documents} docs in ${Date.now() - keywordStart} ms)`,
     );
-    setPendingVectorBackfillCount(keyword.vectorJobs.length + keyword.fullBackfillPending);
-    setVectorBackfillState(keyword.fullBackfillPending > 0 ? "waiting-for-opt-in" : "idle");
+    const pending = keyword.vectorJobs.length + keyword.fullBackfillPending;
+    const backlogScanComplete = !isBm25RebuildIncomplete() && isMemoryIndexReady();
+    const optedIn = isVectorBackfillAllEnabled();
+    const activeIds = new Set(keyword.vectorJobs.map((job) => job.id));
+    const hasVector = (id: string) => Boolean(vectorIndex?.has(id));
+    const countRemaining = () => bm25Index.countMissingDocuments(hasVector, vectorBackfillSince, activeIds);
+    setPendingVectorBackfillCount(indexPersistence.isRecoveryPaused() || supersededReleaseFailed ? countRemaining() : pending);
+    if (supersededReleaseFailed || indexPersistence.isRecoveryPaused()) {
+      setVectorBackfillState("paused");
+    } else if (vectorBackfillSince !== undefined) {
+      setVectorBackfillState(!backlogScanComplete ? "paused" : keyword.fullBackfillPending > 0 && !optedIn ? "waiting-for-opt-in" : "idle");
+    }
     if (keyword.fullBackfillPending > 0) {
-      bootLog(
-        `Vector backfill needs ${keyword.fullBackfillPending} embeddings but a full backfill was not started ` +
-          `(set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`,
-      );
+      bootLog(optedIn
+        ? `Vector backfill has ${keyword.fullBackfillPending} additional documents beyond this start's limit; restart to resume.`
+        : `Vector backfill needs ${keyword.fullBackfillPending} embeddings (set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`);
     }
-    const backlogScanComplete = !isBm25RebuildIncomplete();
-    if (incrementalBackfill && backlogScanComplete && keyword.vectorJobs.length === 0) {
-      await indexPersistence.clearBackfillMarker().catch(() => {});
+    if (!supersededReleaseFailed && vectorBackfillSince !== undefined && backlogScanComplete && pending === 0) {
+      if (!(await indexPersistence.completeBackfill(() => countRemaining() === 0))) {
+        setPendingVectorBackfillCount(countRemaining());
+        setVectorBackfillState("paused");
+      }
     }
-    if (incrementalBackfill && keyword.vectorJobs.length > 0) {
+    if (keyword.vectorJobs.length > 0 && (!backlogScanComplete || !(await indexPersistence.beginBackfill()))) {
+      setVectorBackfillState("paused");
+      activeIds.clear();
+      for (const job of keyword.vectorJobs) job.revision?.release();
+    } else if (keyword.vectorJobs.length > 0) {
       setVectorBackfillState("running");
-      bootLog(
-        `Re-embedding ${keyword.vectorJobs.length} vectors missing since the last index save, ${getVectorBackfillMax()} per batch in the background`,
-      );
-      void backfillVectorBacklog(keyword.vectorJobs)
+      bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors, ${getVectorBackfillMax()} per batch in the background`);
+      void backfillVectorBacklog(keyword.vectorJobs, {
+        remainingAfter: keyword.fullBackfillPending,
+        remainingCount: countRemaining,
+      })
         .then(async (result) => {
-          if (result.complete && backlogScanComplete) await indexPersistence.clearBackfillMarker().catch(() => {});
-          setVectorBackfillState(result.complete ? "idle" : "paused");
+          const complete = result.complete && backlogScanComplete && await indexPersistence.completeBackfill(() => countRemaining() === 0);
+          const remaining = countRemaining();
+          setPendingVectorBackfillCount(remaining);
+          setVectorBackfillState(complete ? "idle" : "paused");
           if (result.added > 0) bootLog(`Vector index backfilled: ${result.added} entries`);
-          if (!result.complete) {
-            bootWarn(
-              `Vector backfill stopped with ${result.remaining} documents still missing a vector. They are retried on the next start.`,
-            );
-          }
+          if (!complete) bootWarn(`Vector recovery remains incomplete (${remaining} documents pending); it resumes on the next start.`);
         })
         .catch((err) => {
           setVectorBackfillState("paused");
           console.warn(`[agentmemory] Failed to backfill vectors:`, err);
-        });
-    } else if (keyword.vectorJobs.length > 0) {
-      setVectorBackfillState("running");
-      bootLog(`Backfilling ${keyword.vectorJobs.length} missing vectors in the background`);
-      void backfillVectors(keyword.vectorJobs)
-        .then((count) => {
-          setPendingVectorBackfillCount(keyword.fullBackfillPending);
-          setVectorBackfillState(keyword.fullBackfillPending > 0 ? "waiting-for-opt-in" : "idle");
-          if (count > 0) bootLog(`Vector index backfilled: ${count} entries`);
         })
-        .catch((err) => {
-          setVectorBackfillState("idle");
-          console.warn(`[agentmemory] Failed to backfill vectors:`, err);
+        .finally(() => {
+          activeIds.clear();
+          for (const job of keyword.vectorJobs) job.revision?.release();
         });
     }
   } catch (err) {
+    setVectorBackfillState("paused");
     console.warn(`[agentmemory] Failed to rebuild the BM25 index:`, err);
   }
 
@@ -609,7 +640,7 @@ async function main() {
     `Ready. ${embeddingProvider ? "Triple-stream (BM25+Vector+Graph)" : "BM25+Graph"} search active.`,
   );
   bootLog(
-    `REST API: 138 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
+    `REST API: 147 endpoints at http://localhost:${config.restPort}/agentmemory/*`,
   );
   bootLog(
     `MCP surface (opt-in via \`npx @agentmemory/mcp\`): ${getAllTools().length} tools · 6 resources · 3 prompts`,
@@ -642,6 +673,10 @@ async function main() {
     secret,
     config.restPort,
   );
+
+  void graphIndexMigration.resumeOnBoot().catch(() => {
+    bootWarn("Graph index migration could not resume. Run agentmemory graph-index status for recovery instructions.");
+  });
 
   if (isGraphCompactOnBootEnabled()) {
     const graphCompactTimer = setTimeout(() => {
@@ -710,7 +745,6 @@ async function main() {
   }, 60 * 60 * 1000);
   recentSearchesSweepTimer.unref();
 
-  void seedViewerStreamTracker(sdk, { unorderedListing: kv.backend === "redis" }).catch(() => {});
 
   if (isSessionSweepEnabled()) {
     const sessionSweepTimer = setInterval(async () => {
@@ -725,17 +759,22 @@ async function main() {
   }
 
   const finalizeIdleMs = getFinalizeIdleMs();
-  if (finalizeIdleMs > 0) {
-    const sessionFinalizeTimer = setInterval(async () => {
-      try {
-        await sdk.trigger({ function_id: "mem::session-finalize", payload: {} });
-      } catch (err) {
-        bootLog(`Session finalize failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }, FINALIZE_TICK_MS);
-    sessionFinalizeTimer.unref();
-    bootLog(`Session finalize: idle sessions complete after ${Math.round(finalizeIdleMs / 1000)}s`);
-  }
+  let finalizeRunning = false;
+  const runSessionFinalize = async () => {
+    if (finalizeRunning) return;
+    finalizeRunning = true;
+    try {
+      await sdk.trigger({ function_id: "mem::session-finalize", payload: {} });
+    } catch (err) {
+      bootLog(`Session finalize failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      finalizeRunning = false;
+    }
+  };
+  const sessionFinalizeTimer = setInterval(runSessionFinalize, FINALIZE_TICK_MS);
+  sessionFinalizeTimer.unref();
+  void runSessionFinalize();
+  bootLog(`Session finalize: ${finalizeIdleMs > 0 ? `idle sessions complete after ${Math.round(finalizeIdleMs / 1000)}s` : "idle finalization disabled"}; pending summaries recover at startup and every ${FINALIZE_TICK_MS / 1000}s`);
 
   if (isConsolidationEnabled()) {
     const consolidationTimer = setInterval(async () => {
@@ -749,6 +788,16 @@ async function main() {
 
   const shutdown = async () => {
     console.log(`\n[agentmemory] Shutting down...`);
+    for (let i = 0; i < unreleasedSupersededRevisions.length; ) {
+      const held = unreleasedSupersededRevisions[i];
+      try {
+        held.revision.release();
+        unreleasedSupersededRevisions.splice(i, 1);
+      } catch (err) {
+        console.warn(`[agentmemory] Failed to release superseded vector revision ${held.id}:`, err);
+        i++;
+      }
+    }
     const hardExit = setTimeout(async () => {
       console.warn(
         `[agentmemory] Shutdown still blocked after ${SHUTDOWN_HARD_EXIT_MS}ms; exiting now.`,
@@ -760,6 +809,8 @@ async function main() {
     healthMonitor.stop();
     dedupMap.stop();
     capture.stop();
+    clearInterval(sessionFinalizeTimer);
+    await settleWithin(graphIndexMigration.stop(), SHUTDOWN_FLUSH_TIMEOUT_MS);
     indexPersistence.stop();
     const viewerClosed = new Promise<void>((resolve) =>
       viewerServer.close(() => resolve()),

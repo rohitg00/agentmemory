@@ -10,6 +10,7 @@ import { StateKV } from "../state/kv.js";
 import { safeAudit } from "./audit.js";
 import { withKeyedLocks } from "../state/keyed-mutex.js";
 import { stableStringify } from "../capture/event-id.js";
+import { supersededAt } from "../state/memory-utils.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
 
@@ -195,8 +196,10 @@ export function registerConsolidateFunction(
               if (child.title.toLowerCase() !== parent.title.toLowerCase() ||
                   child.version !== (parent.version || 1) + 1 ||
                   !child.supersedes?.includes(parent.id)) continue;
-              await kv.set(KV.memories, parent.id, { ...parent, isLatest: false });
+              const updatedAt = supersededAt(parent.updatedAt, new Date().toISOString());
+              await kv.set(KV.memories, parent.id, { ...parent, isLatest: false, updatedAt });
               parent.isLatest = false;
+              parent.updatedAt = updatedAt;
               await safeAudit(kv, "evolve", "mem::consolidate", [parent.id], {
                 action: "complete_publication", newId: child.id,
               });
@@ -233,7 +236,7 @@ export function registerConsolidateFunction(
             }
             if (previous) {
               try {
-                await kv.set(KV.memories, previous.id, { ...previous, isLatest: false });
+                await kv.set(KV.memories, previous.id, { ...previous, isLatest: false, updatedAt: supersededAt(previous.updatedAt, now) });
               } catch (error) {
                 // A write can commit before its acknowledgement fails.
                 await kv.set(KV.memories, previous.id, previous);

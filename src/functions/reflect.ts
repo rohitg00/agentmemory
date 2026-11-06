@@ -1,4 +1,5 @@
-import { pinGraphState } from "../state/graph-generation.js";
+import { createGraphIndexReader } from "../state/graph-retrieval-index.js";
+import { lookupObservationSession } from "../state/obs-index.js";
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
@@ -10,6 +11,9 @@ import type {
   Lesson,
   Crystal,
   MemoryProvider,
+  CompressedObservation,
+  Memory,
+  Session,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
@@ -103,6 +107,71 @@ function reinforceInsight(insight: Insight): void {
   insight.updatedAt = now;
 }
 
+async function reflectionGraph(state: StateKV, project?: string): Promise<{
+  nodes: GraphNode[]; edges: GraphEdge[]; diagnostic: { status: string; truncated: boolean };
+}> {
+  const controller = new AbortController();
+  const empty = (status: string) => ({ nodes: [], edges: [], diagnostic: { status, truncated: true } });
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const work = (async () => {
+    const reader = await createGraphIndexReader(state, { signal: controller.signal, maxReads: 256, maxBytes: 512 * 1024 });
+    if (!reader) return empty("unavailable");
+    const read = reader.read.bind(reader);
+    const sources = new Map<string, Promise<boolean>>();
+    const backed = async (row: GraphNode | GraphEdge): Promise<boolean> => {
+      for (const id of row.sourceObservationIds) {
+        if (reader.remainingReads <= 8) return false;
+        let source = sources.get(id);
+        if (!source) {
+          source = (async () => {
+            const memory = await read<Memory>(KV.memories, id);
+            if (memory) {
+              if (memory.isLatest === false) return false;
+              if (!project) return true;
+              if (memory.project !== undefined) return memory.project === project;
+              return (await read<Session>(KV.sessions, memory.sessionIds?.[0] ?? "memory"))?.project === project;
+            }
+            const sessionId = await lookupObservationSession({ get: read } as StateKV, id);
+            if (!sessionId) return false;
+            const observation = await read<CompressedObservation>(KV.observations(sessionId), id);
+            if (observation?.id !== id || observation.sessionId !== sessionId) return false;
+            return !project || (await read<Session>(KV.sessions, sessionId))?.project === project;
+          })();
+          sources.set(id, source);
+        }
+        if (await source) return true;
+      }
+      return false;
+    };
+    const inventory = await reader.posting("nodes", "", { limit: 64 });
+    let truncated = Boolean(inventory.cursor) || reader.status.incompleteRecords > 0;
+    const nodes: GraphNode[] = [];
+    for (const id of inventory.ids) {
+      if (reader.remainingReads <= 32) { truncated = true; break; }
+      const node = await reader.getNode(id);
+      if (node && node.type === "concept" && !node.stale && await backed(node)) nodes.push(node);
+    }
+    const selected = new Set(nodes.map((node) => node.id));
+    const edges = new Map<string, GraphEdge>();
+    for (const node of nodes) {
+      if (reader.remainingReads <= 8) { truncated = true; break; }
+      const adjacency = await reader.posting("adjacency", node.id, { limit: 16 });
+      truncated ||= Boolean(adjacency.cursor);
+      for (const id of adjacency.ids) {
+        const edge = await reader.getEdge(id);
+        if (edge && !edge.stale && edge.isLatest !== false && selected.has(edge.sourceNodeId) && selected.has(edge.targetNodeId) && await backed(edge)) edges.set(id, edge);
+      }
+    }
+    if (!await reader.finish()) return empty("changed");
+    return { nodes, edges: [...edges.values()], diagnostic: { status: "ready", truncated: truncated || reader.exhausted } };
+  })().catch(() => empty("unavailable"));
+  try {
+    return await Promise.race([work, new Promise<ReturnType<typeof empty>>((resolve) => {
+      timer = setTimeout(() => { controller.abort(); resolve(empty("timeout")); }, 500);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
 function buildGraphClusters(
   nodes: GraphNode[],
   edges: GraphEdge[],
@@ -115,7 +184,7 @@ function buildGraphClusters(
 
   const edgeMap = new Map<string, Set<string>>();
   for (const edge of edges) {
-    if (edge.stale) continue;
+    if (edge.stale || edge.isLatest === false) continue;
     if (!edgeMap.has(edge.sourceNodeId))
       edgeMap.set(edge.sourceNodeId, new Set());
     if (!edgeMap.has(edge.targetNodeId))
@@ -135,10 +204,11 @@ function buildGraphClusters(
 
   const visited = new Set<string>();
   const clusters: string[][] = [];
-  const conceptNodeIds = new Set(conceptNodes.map((n) => n.id));
+  const nodeById = new Map(conceptNodes.map((n) => [n.id, n]));
 
   for (const seed of sorted) {
-    if (visited.has(seed.id) || clusters.length >= maxClusters) break;
+    if (clusters.length >= maxClusters) break;
+    if (visited.has(seed.id)) continue;
 
     const cluster: string[] = [];
     const queue = [seed.id];
@@ -152,9 +222,9 @@ function buildGraphClusters(
         if (seen.has(current)) continue;
         seen.add(current);
 
-        if (conceptNodeIds.has(current)) {
-          const node = conceptNodes.find((n) => n.id === current);
-          if (node) cluster.push(node.name);
+        const node = nodeById.get(current);
+        if (node) {
+          cluster.push(node.name);
           visited.add(current);
         }
 
@@ -237,15 +307,14 @@ export function registerReflectFunctions(
   const kv = state;
   sdk.registerFunction("mem::reflect", 
     async (data: { maxClusters?: number; project?: string }) => {
-      const kv = await pinGraphState(state);
+      const kv = state;
       const maxClusters = Math.min(data?.maxClusters ?? 10, 20);
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
 
-      const [graphNodes, graphEdges, semanticMemories, lessons, crystals] =
+      const [graph, semanticMemories, lessons, crystals] =
         await Promise.all([
-          kv.list<GraphNode>(KV.graphNodes).catch(() => []),
-          kv.list<GraphEdge>(KV.graphEdges).catch(() => []),
+          reflectionGraph(kv, data?.project),
           kv.list<SemanticMemory>(KV.semantic).catch(() => []),
           kv.list<Lesson>(KV.lessons).catch(() => []),
           kv.list<Crystal>(KV.crystals).catch(() => []),
@@ -257,12 +326,13 @@ export function registerReflectFunctions(
       }
 
       let conceptClusters = buildGraphClusters(
-        graphNodes,
-        graphEdges,
+        graph.nodes,
+        graph.edges,
         maxClusters,
       );
 
-      const usedFallback = conceptClusters.length === 0;
+      const clusterStrategy = conceptClusters.length === 0 ? "jaccard" : "graph";
+      const usedFallback = clusterStrategy === "jaccard";
       if (usedFallback) {
         conceptClusters = buildJaccardClusters(
           semanticMemories,
@@ -409,6 +479,7 @@ export function registerReflectFunctions(
           reinforced,
           clustersProcessed: conceptClusters.length - clustersSkipped,
           clustersSkipped,
+          clusterStrategy,
           usedFallback,
           rejectedInsights,
           failedClusters,
@@ -421,9 +492,12 @@ export function registerReflectFunctions(
         reinforced,
         clustersProcessed: conceptClusters.length - clustersSkipped,
         clustersSkipped,
+        clusterStrategy,
+        /** @deprecated Use clusterStrategy to identify the clustering algorithm. */
         usedFallback,
         rejectedInsights,
         failedClusters,
+        graph: { ...graph.diagnostic, nodes: graph.nodes.length, edges: graph.edges.length },
       };
     },
   );

@@ -5,28 +5,41 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerReflectFunctions } from "../src/functions/reflect.js";
-import { fingerprintId } from "../src/state/schema.js";
+import { initializeGraphIndex, reconcileGraphIndexRecord } from "../src/state/graph-retrieval-index.js";
+import { indexObservationSession } from "../src/state/obs-index.js";
+import { KV, fingerprintId } from "../src/state/schema.js";
 import type { Insight, GraphNode, GraphEdge, SemanticMemory, Lesson, Crystal } from "../src/types.js";
+import { currentAuditScope } from "./helpers/mocks.js";
 
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
-  return {
+  const kv = {
     get: async <T>(scope: string, key: string): Promise<T | null> => {
       return (store.get(scope)?.get(key) as T) ?? null;
     },
     set: async <T>(scope: string, key: string, data: T): Promise<T> => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
+      if (scope === KV.graphNodes || scope === KV.graphEdges) {
+        const row = data as GraphNode | GraphEdge;
+        for (const id of row.sourceObservationIds ?? []) {
+          await indexObservationSession(kv as never, id, "session");
+          await kv.set(KV.observations("session"), id, { id, sessionId: "session", title: "source" });
+        }
+        await reconcileGraphIndexRecord(kv as never, scope === KV.graphNodes ? "node" : "edge", row.id, row);
+      }
       return data;
     },
     delete: async (scope: string, key: string): Promise<void> => {
       store.get(scope)?.delete(key);
     },
     list: async <T>(scope: string): Promise<T[]> => {
+      if (scope === KV.graphNodes || scope === KV.graphEdges) throw new Error("Unbounded graph read forbidden");
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
   };
+  return kv;
 }
 
 function mockSdk() {
@@ -53,7 +66,7 @@ function makeConceptNode(name: string): GraphNode {
     type: "concept",
     name,
     properties: {},
-    sourceObservationIds: [],
+    sourceObservationIds: [`obs_${name}`],
     createdAt: "2026-04-01T00:00:00Z",
   };
 }
@@ -65,7 +78,7 @@ function makeEdge(src: string, tgt: string): GraphEdge {
     sourceNodeId: `node_${src}`,
     targetNodeId: `node_${tgt}`,
     weight: 1,
-    sourceObservationIds: [],
+    sourceObservationIds: [`obs_${src}`],
     createdAt: "2026-04-01T00:00:00Z",
   };
 }
@@ -127,9 +140,10 @@ describe("Reflect", () => {
   let kv: ReturnType<typeof mockKV>;
   let provider: { name: string; compress: ReturnType<typeof vi.fn>; summarize: ReturnType<typeof vi.fn> };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     sdk = mockSdk();
     kv = mockKV();
+    await initializeGraphIndex(kv as never, { status: "ready" });
     provider = {
       name: "test",
       compress: vi.fn(),
@@ -354,11 +368,13 @@ describe("Reflect", () => {
         success: boolean;
         newInsights: number;
         clustersProcessed: number;
+        clusterStrategy: "graph" | "jaccard";
       };
 
       expect(result.success).toBe(true);
       expect(result.newInsights).toBe(0);
       expect(result.clustersProcessed).toBe(0);
+      expect(result.clusterStrategy).toBe("jaccard");
     });
 
     it("synthesizes insights from graph concept clusters", async () => {
@@ -376,16 +392,31 @@ describe("Reflect", () => {
       const result = (await sdk.trigger("mem::reflect", {})) as {
         success: boolean;
         newInsights: number;
+        clusterStrategy: "graph" | "jaccard";
+        usedFallback: boolean;
       };
 
       expect(result.success).toBe(true);
       expect(result.newInsights).toBe(2);
+      expect(result.clusterStrategy).toBe("graph");
+      expect(result.usedFallback).toBe(false);
       expect(provider.summarize).toHaveBeenCalled();
 
       const insights = await kv.list<Insight>("mem:insights");
       expect(insights.length).toBe(2);
       expect(insights[0].title).toBeTruthy();
       expect(insights[0].sourceConceptCluster.length).toBeGreaterThan(0);
+
+      const auditRows = await kv.list<{
+        operation: string;
+        details: Record<string, unknown>;
+      }>(currentAuditScope());
+      const reflectAudit = auditRows.find((row) => row.operation === "reflect");
+      expect(reflectAudit?.details).toMatchObject({
+        clusterStrategy: "graph",
+        usedFallback: false,
+      });
+      expect(reflectAudit?.details.clusterStrategy).toBe(result.clusterStrategy);
     });
 
     it("skips clusters with fewer than 3 supporting items", async () => {
@@ -429,6 +460,71 @@ describe("Reflect", () => {
       expect(after[0].reinforcements).toBe(1);
     });
 
+    it("clusters every disconnected concept group instead of stopping at a visited seed", async () => {
+      await kv.set("mem:graph:nodes", "node_alpha", makeConceptNode("alpha"));
+      await kv.set("mem:graph:nodes", "node_beta", makeConceptNode("beta"));
+      await kv.set("mem:graph:nodes", "node_gamma", makeConceptNode("gamma"));
+      await kv.set("mem:graph:nodes", "node_delta", makeConceptNode("delta"));
+      await kv.set("mem:graph:nodes", "node_epsilon", makeConceptNode("epsilon"));
+      await kv.set("mem:graph:edges", "edge_ab", makeEdge("alpha", "beta"));
+      await kv.set("mem:graph:edges", "edge_bg", makeEdge("beta", "gamma"));
+      await kv.set("mem:graph:edges", "edge_ga", makeEdge("gamma", "alpha"));
+      await kv.set("mem:graph:edges", "edge_de", makeEdge("delta", "epsilon"));
+
+      await kv.set("mem:semantic", "sem_a1", makeSemantic("alpha beta gamma pipeline", "sem_a1"));
+      await kv.set("mem:semantic", "sem_a2", makeSemantic("alpha caching layer", "sem_a2"));
+      await kv.set("mem:semantic", "sem_a3", makeSemantic("beta gamma queue", "sem_a3"));
+      await kv.set("mem:semantic", "sem_b1", makeSemantic("delta epsilon storage", "sem_b1"));
+      await kv.set("mem:semantic", "sem_b2", makeSemantic("delta epsilon index", "sem_b2"));
+      await kv.set("mem:semantic", "sem_b3", makeSemantic("epsilon delta flush", "sem_b3"));
+      provider.summarize
+        .mockResolvedValueOnce('<insights><insight confidence="0.8" title="Pipeline caching" sources="F1,F2">The alpha pipeline includes a caching layer.</insight></insights>')
+        .mockResolvedValueOnce('<insights><insight confidence="0.8" title="Storage indexing" sources="F1,F2">Delta and epsilon provide storage and indexing.</insight></insights>');
+
+      const result = (await sdk.trigger("mem::reflect", {})) as {
+        clustersProcessed: number;
+        newInsights: number;
+      };
+
+      expect(result.clustersProcessed).toBe(2);
+      expect(result.newInsights).toBe(2);
+      expect(provider.summarize).toHaveBeenCalledTimes(2);
+      expect(await kv.list<Insight>("mem:insights")).toMatchObject([
+        { title: "Pipeline caching", sourceMemoryIds: ["sem_a1", "sem_a2"] },
+        { title: "Storage indexing", sourceMemoryIds: ["sem_b1", "sem_b2"] },
+      ]);
+    });
+
+    it("stops at the maxClusters bound even when more groups exist", async () => {
+      await kv.set("mem:graph:nodes", "node_alpha", makeConceptNode("alpha"));
+      await kv.set("mem:graph:nodes", "node_beta", makeConceptNode("beta"));
+      await kv.set("mem:graph:nodes", "node_gamma", makeConceptNode("gamma"));
+      await kv.set("mem:graph:nodes", "node_delta", makeConceptNode("delta"));
+      await kv.set("mem:graph:nodes", "node_epsilon", makeConceptNode("epsilon"));
+      await kv.set("mem:graph:edges", "edge_ab", makeEdge("alpha", "beta"));
+      await kv.set("mem:graph:edges", "edge_bg", makeEdge("beta", "gamma"));
+      await kv.set("mem:graph:edges", "edge_ga", makeEdge("gamma", "alpha"));
+      await kv.set("mem:graph:edges", "edge_de", makeEdge("delta", "epsilon"));
+
+      await kv.set("mem:semantic", "sem_a1", makeSemantic("alpha beta gamma pipeline", "sem_a1"));
+      await kv.set("mem:semantic", "sem_a2", makeSemantic("alpha caching layer", "sem_a2"));
+      await kv.set("mem:semantic", "sem_a3", makeSemantic("beta gamma queue", "sem_a3"));
+      await kv.set("mem:semantic", "sem_b1", makeSemantic("delta epsilon storage", "sem_b1"));
+      await kv.set("mem:semantic", "sem_b2", makeSemantic("delta epsilon index", "sem_b2"));
+      await kv.set("mem:semantic", "sem_b3", makeSemantic("epsilon delta flush", "sem_b3"));
+      provider.summarize.mockResolvedValue('<insights><insight confidence="0.8" title="Pipeline caching" sources="F1,F2">The alpha pipeline includes a caching layer.</insight></insights>');
+
+      const result = (await sdk.trigger("mem::reflect", { maxClusters: 1 })) as {
+        clustersProcessed: number;
+      };
+
+      expect(result.clustersProcessed).toBe(1);
+      expect(provider.summarize).toHaveBeenCalledTimes(1);
+      expect(await kv.list<Insight>("mem:insights")).toMatchObject([
+        { title: "Pipeline caching", sourceMemoryIds: ["sem_a1", "sem_a2"] },
+      ]);
+    });
+
     it("falls back to Jaccard grouping when graph is empty", async () => {
       await kv.set("mem:semantic", "sem_1", makeSemantic("security validation is important", "sem_1"));
       await kv.set("mem:semantic", "sem_2", makeSemantic("security testing prevents bugs", "sem_2"));
@@ -438,10 +534,26 @@ describe("Reflect", () => {
       const result = (await sdk.trigger("mem::reflect", {})) as {
         success: boolean;
         usedFallback: boolean;
+        clusterStrategy: "graph" | "jaccard";
+        clustersProcessed: number;
       };
 
       expect(result.success).toBe(true);
       expect(result.usedFallback).toBe(true);
+      expect(result.clusterStrategy).toBe("jaccard");
+      expect(result.clustersProcessed).toBeGreaterThan(0);
+      expect(provider.summarize).toHaveBeenCalled();
+
+      const auditRows = await kv.list<{
+        operation: string;
+        details: Record<string, unknown>;
+      }>(currentAuditScope());
+      const reflectAudit = auditRows.find((row) => row.operation === "reflect");
+      expect(reflectAudit?.details).toMatchObject({
+        clusterStrategy: "jaccard",
+        usedFallback: true,
+      });
+      expect(reflectAudit?.details.clusterStrategy).toBe(result.clusterStrategy);
     });
 
     it("handles LLM failure gracefully", async () => {
@@ -457,11 +569,16 @@ describe("Reflect", () => {
       const result = (await sdk.trigger("mem::reflect", {})) as {
         success: boolean;
         newInsights: number;
+        clusterStrategy: "graph" | "jaccard";
+        usedFallback: boolean;
+        failedClusters: number;
       };
 
       expect(result.success).toBe(false);
-      expect(result).toMatchObject({ failedClusters: 1 });
+      expect(result.failedClusters).toBe(1);
       expect(result.newInsights).toBe(0);
+      expect(result.clusterStrategy).toBe("graph");
+      expect(result.usedFallback).toBe(false);
     });
   });
 
@@ -559,6 +676,58 @@ describe("Reflect", () => {
 
       const after = await kv.get<Insight>("mem:insights", "ins_weak");
       expect(after!.deleted).toBe(true);
+    });
+  });
+});
+
+describe("bounded reflection graph context", () => {
+  async function fixture() {
+    const kv = mockKV();
+    await initializeGraphIndex(kv as never, { status: "ready" });
+    await kv.set(KV.graphNodes, "node_security", makeConceptNode("security"));
+    await kv.set(KV.graphNodes, "node_validation", makeConceptNode("validation"));
+    await kv.set(KV.graphEdges, "edge", makeEdge("security", "validation"));
+    const sdk = mockSdk();
+    const summarize = vi.fn(async () => "<insights></insights>");
+    registerReflectFunctions(sdk as never, kv as never, { name: "fixture", summarize } as never);
+    return { kv, sdk, summarize };
+  }
+
+  it("skips unmigrated graph state without enumerating canonical graph scopes", async () => {
+    const f = await fixture();
+    await f.kv.delete(KV.graphRetrievalControl, "current");
+    const list = vi.spyOn(f.kv, "list");
+    const result = await f.sdk.trigger("mem::reflect", {});
+    expect(result).toMatchObject({ usedFallback: true, graph: { status: "unavailable", nodes: 0, edges: 0 } });
+    expect(list.mock.calls.some(([scope]) => scope === KV.graphNodes || scope === KV.graphEdges)).toBe(false);
+  });
+
+  it("excludes foreign and forgotten graph provenance before forming project clusters", async () => {
+    const f = await fixture();
+    await f.kv.set(KV.sessions, "session", { id: "session", project: "private" });
+    expect(await f.sdk.trigger("mem::reflect", { project: "public" })).toMatchObject({ graph: { nodes: 0, edges: 0 } });
+    expect(await f.sdk.trigger("mem::reflect", { project: "private" })).toMatchObject({ graph: { nodes: 2, edges: 1 } });
+    await f.kv.delete(KV.observations("session"), "obs_security");
+    expect(await f.sdk.trigger("mem::reflect", { project: "private" })).toMatchObject({ graph: { nodes: 1, edges: 0 } });
+  });
+
+  it("reports partial inventory and remains within its point-read budget", async () => {
+    const f = await fixture();
+    for (let i = 0; i < 100; i++) await f.kv.set(KV.graphNodes, `node_${i}`, makeConceptNode(String(i)));
+    const get = vi.spyOn(f.kv, "get");
+    const result = await f.sdk.trigger("mem::reflect", {});
+    expect(result.graph.truncated).toBe(true);
+    expect(result.graph.nodes).toBeLessThanOrEqual(64);
+    expect(get.mock.calls.length).toBeLessThanOrEqual(258);
+  });
+
+  it("reports incomplete projections even when the inventory fits in one page", async () => {
+    const f = await fixture();
+    await f.kv.set(KV.graphNodes, "node_security", {
+      ...makeConceptNode("security"), properties: { description: "x".repeat(513) },
+    });
+    expect(await f.sdk.trigger("mem::reflect", {})).toMatchObject({
+      graph: { status: "ready", truncated: true, nodes: 2, edges: 1 },
     });
   });
 });

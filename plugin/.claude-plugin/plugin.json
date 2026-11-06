@@ -1,7 +1,7 @@
 {
   "name": "agentmemory",
-  "version": "0.9.30",
-  "description": "Persistent memory for AI coding agents -- captures tool usage, compresses via LLM, injects context into future sessions. 12 hooks, 54 MCP tools, 17 skills, real-time viewer.",
+  "version": "0.9.32",
+  "description": "Persistent local memory for Claude. Hooks record prompts, tool calls and replies to a separately installed agentmemory server on your machine; skills and 54 MCP tools search and manage that memory. No outside AI provider is used unless you enable one.",
   "author": {
     "name": "Rohit Ghumare",
     "url": "https://github.com/rohitg00"
@@ -9,5 +9,18 @@
   "license": "Apache-2.0",
   "homepage": "https://github.com/rohitg00/agentmemory",
   "repository": "https://github.com/rohitg00/agentmemory",
-  "skills": ["./skills/"]
+  "skills": ["./skills/"],
+  "userConfig": {
+    "agentmemory_url": {
+      "type": "string",
+      "title": "agentmemory server URL",
+      "description": "Where the hooks and MCP server reach your agentmemory server. Leave empty to use AGENTMEMORY_URL from your environment when it is set, otherwise http://localhost:3111. A remote server must use https."
+    },
+    "agentmemory_secret": {
+      "type": "string",
+      "title": "agentmemory server secret",
+      "description": "Only needed for a remote agentmemory server. Leave empty for a server on this machine; the plugin then reads the local server's own secret and never sends it off this machine.",
+      "sensitive": true
+    }
+  }
 }

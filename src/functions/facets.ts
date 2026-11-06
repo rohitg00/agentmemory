@@ -1,7 +1,81 @@
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
+import { lookupObservationSession } from "../state/obs-index.js";
 import { KV, generateId } from "../state/schema.js";
-import type { Facet } from "../types.js";
+import type { Facet, Lesson } from "../types.js";
+import { logger } from "../logger.js";
+
+interface TargetLiveness {
+  observation: boolean;
+  record: boolean;
+}
+
+async function targetLiveness(kv: StateKV, id: string): Promise<TargetLiveness> {
+  let observation = false;
+  if (id.startsWith("obs_")) {
+    const sessionId = await lookupObservationSession(kv, id);
+    observation = !!sessionId && !!(await kv.get(KV.observations(sessionId), id));
+  }
+  if (id.startsWith("lsn_") || id.startsWith("lesson_")) {
+    const lesson = await kv.get<Lesson>(KV.lessons, id);
+    if (lesson && !lesson.deleted) return { observation, record: true };
+  }
+  const [mem, sem] = await Promise.all([
+    kv.get(KV.memories, id),
+    kv.get(KV.semantic, id),
+  ]);
+  return { observation, record: !!(mem || sem) };
+}
+
+function facetTargetLive(facet: Facet, liveness: TargetLiveness | undefined): boolean {
+  if (!liveness) return false;
+  if (facet.targetType === "observation") return liveness.observation;
+  return liveness.record || liveness.observation;
+}
+
+export async function deleteFacetsForTargets(
+  kv: StateKV,
+  targetIds: Iterable<string>,
+  options?: { targetTypes?: readonly string[] },
+): Promise<void> {
+  const ids = new Set(targetIds);
+  ids.delete("");
+  if (ids.size === 0) return;
+  const targetTypes = new Set(options?.targetTypes ?? ["memory"]);
+  try {
+    const live = new Map<string, TargetLiveness>();
+    await Promise.all(
+      [...ids].map(async (id) => {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            live.set(id, await targetLiveness(kv, id));
+            return;
+          } catch {
+            if (attempt === 1) {
+              live.set(id, { observation: true, record: true });
+              logger.warn("Facet cleanup skipped unverifiable target", {
+                targetId: id,
+              });
+            }
+          }
+        }
+      }),
+    );
+    const all = await kv.list<Facet>(KV.facets);
+    const matches = all.filter(
+      (f) =>
+        ids.has(f.targetId) &&
+        targetTypes.has(f.targetType) &&
+        !facetTargetLive(f, live.get(f.targetId)),
+    );
+    await Promise.all(matches.map((f) => kv.delete(KV.facets, f.id)));
+  } catch (err) {
+    logger.warn("Facet cleanup failed", {
+      targetIds: ids.size,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
 
 export function registerFacetsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::facet-tag", 

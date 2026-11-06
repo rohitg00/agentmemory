@@ -1,3 +1,6 @@
+import { createGraphIndexReader, graphEdgeLookupKey, normalizeGraphIndexText } from "../state/graph-retrieval-index.js";
+import { persistGraphRecords } from "../state/graph-ingestion.js";
+import { readIndexedEntity } from "./graph-index-temporal.js";
 import { pinGraphState } from "../state/graph-generation.js";
 import type { IIIClient } from "iii-sdk";
 import type {
@@ -191,15 +194,19 @@ export function registerTemporalGraphFunctions(
         const { nodes, edges } = parseTemporalGraphXml(response, obsIds);
 
         await withKeyedLock("graph:persist", async () => {
-          const existingNodes = await kv.list<GraphNode>(KV.graphNodes);
-          const existingEdges = await kv.list<GraphEdge>(KV.graphEdges);
-
           const idRemap = new Map<string, string>();
           for (const node of nodes) {
-            const existing = existingNodes.find(
-              (n) =>
-                n.name === node.name && n.type === node.type,
-            );
+            const reader = await createGraphIndexReader(kv);
+            if (!reader) throw new Error("Graph index unavailable; run agentmemory graph-index migrate --allow-legacy-scan");
+            const names = await reader.posting("name", normalizeGraphIndexText(node.name), { limit: 64 });
+            let existing: GraphNode | null = null;
+            for (const id of names.ids) {
+              const candidate = await reader.getNode(id);
+              if (candidate && !candidate.stale && candidate.name === node.name && candidate.type === node.type && (!existing || candidate.id < existing.id)) {
+                existing = await kv.get<GraphNode>(KV.graphNodes, id);
+              }
+            }
+            if (names.cursor || reader.exhausted || !await reader.finish()) throw new Error("Temporal node reconciliation exceeded the graph read budget or changed revision");
             if (existing) {
               const oldId = node.id;
               const merged = {
@@ -218,13 +225,12 @@ export function registerTemporalGraphFunctions(
                 ],
               };
               if (merged.aliases.length === 0) delete (merged as any).aliases;
-              await kv.set(KV.graphNodes, existing.id, merged);
+              await persistGraphRecords(kv, [merged], []);
               node.id = existing.id;
               idRemap.set(oldId, existing.id);
             } else {
               node.sourceObservationIds = boundSources([], node.sourceObservationIds ?? []);
-              await kv.set(KV.graphNodes, node.id, node);
-              existingNodes.push(node);
+              await persistGraphRecords(kv, [node], []);
             }
           }
 
@@ -235,13 +241,30 @@ export function registerTemporalGraphFunctions(
             if (idRemap.has(edge.targetNodeId)) {
               edge.targetNodeId = idRemap.get(edge.targetNodeId)!;
             }
-            const existingKey = `${edge.sourceNodeId}|${edge.targetNodeId}|${edge.type}`;
-            const existingEdge = existingEdges.find(
-              (e) =>
-                `${e.sourceNodeId}|${e.targetNodeId}|${e.type}` ===
-                existingKey,
-            );
-
+            const reader = await createGraphIndexReader(kv);
+            if (!reader) throw new Error("Graph index unavailable during temporal reconciliation");
+            let cursor: string | undefined;
+            let existingEdge: GraphEdge | null = null;
+            do {
+              const page = await reader.posting("edgeKey", graphEdgeLookupKey(edge), { cursor, limit: 64 });
+              for (const id of page.ids) {
+                const candidate = await reader.getEdge(id);
+                if (candidate && !candidate.stale && candidate.isLatest !== false &&
+                    candidate.sourceNodeId === edge.sourceNodeId && candidate.targetNodeId === edge.targetNodeId && candidate.type === edge.type &&
+                    (!existingEdge || (candidate.version ?? 1) > (existingEdge.version ?? 1) ||
+                      (candidate.version ?? 1) === (existingEdge.version ?? 1) && candidate.id < existingEdge.id)) {
+                  const canonical = await reader.read<GraphEdge>(KV.graphEdges, id);
+                  if (reader.exhausted) break;
+                  if (!canonical || canonical.id !== id || canonical.stale || canonical.isLatest === false || graphEdgeLookupKey(canonical) !== graphEdgeLookupKey(edge)) {
+                    throw new Error("Temporal edge reconciliation found a missing or changed canonical predecessor");
+                  }
+                  existingEdge = canonical;
+                }
+              }
+              cursor = page.cursor ?? undefined;
+            } while (cursor && !reader.exhausted);
+            if (cursor || reader.exhausted || !await reader.finish()) throw new Error("Temporal edge reconciliation exceeded the graph read budget or changed revision");
+            edge.sourceObservationIds = boundSources([], edge.sourceObservationIds ?? []);
             if (existingEdge) {
               const updatedOld = {
                 ...existingEdge,
@@ -250,16 +273,12 @@ export function registerTemporalGraphFunctions(
                   existingEdge.tvalidEnd || new Date().toISOString(),
                 supersededBy: edge.id,
               };
-              await kv.set(KV.graphEdges, existingEdge.id, updatedOld);
-
-              await kv.set(KV.graphEdgeHistory, existingEdge.id, updatedOld);
-
               edge.version = (existingEdge.version || 1) + 1;
+              await persistGraphRecords(kv, [], [updatedOld, edge]);
+              await kv.set(KV.graphEdgeHistory, existingEdge.id, updatedOld);
+            } else {
+              await persistGraphRecords(kv, [], [edge]);
             }
-
-            edge.sourceObservationIds = boundSources([], edge.sourceObservationIds ?? []);
-            await kv.set(KV.graphEdges, edge.id, edge);
-            existingEdges.push(edge);
           }
         });
 
@@ -285,37 +304,13 @@ export function registerTemporalGraphFunctions(
       entityName: string;
       asOf?: string;
       includeHistory?: boolean;
-    }): Promise<TemporalState | { error: string }> => {
+    }): Promise<(TemporalState & { truncated: boolean }) | { error: string }> => {
       const kv = await pinGraphState(state);
-      const allNodes = await kv.list<GraphNode>(KV.graphNodes);
-      const allEdges = await kv.list<GraphEdge>(KV.graphEdges);
-
-      const entity = allNodes.find(
-        (n) =>
-          n.name.toLowerCase() === data.entityName.toLowerCase() ||
-          (n.aliases &&
-            n.aliases.some(
-              (a) =>
-                a.toLowerCase() === data.entityName.toLowerCase(),
-            )),
-      );
-
-      if (!entity) {
-        return { error: `Entity "${data.entityName}" not found` } as any;
-      }
-
-      const relatedEdges = allEdges.filter(
-        (e) => e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
-      );
-
-      const historicalEdges = await kv
-        .list<GraphEdge>(KV.graphEdgeHistory)
-        .catch(() => [] as GraphEdge[]);
-      const entityHistory = historicalEdges.filter(
-        (e) => e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
-      );
-
-      const allEntityEdges = [...relatedEdges, ...entityHistory];
+      if (data.asOf !== undefined && !Number.isFinite(Date.parse(data.asOf))) return { error: "Invalid asOf timestamp" };
+      const indexed = await readIndexedEntity(kv, data.entityName);
+      if ("error" in indexed) return indexed;
+      const { entity, relatedEdges, entityHistory, truncated } = indexed;
+      const allEntityEdges = [...new Map([...entityHistory, ...relatedEdges].map(edge => [edge.id, edge])).values()];
 
       if (data.asOf) {
         const asOfTime = new Date(data.asOf).getTime();
@@ -340,6 +335,7 @@ export function registerTemporalGraphFunctions(
 
         return {
           entity,
+          truncated,
           currentEdges,
           historicalEdges: historical,
           timeline: buildTimeline(allEntityEdges),
@@ -352,8 +348,9 @@ export function registerTemporalGraphFunctions(
 
       return {
         entity,
+        truncated,
         currentEdges,
-        historicalEdges: data.includeHistory ? entityHistory : [],
+        historicalEdges: data.includeHistory ? allEntityEdges.filter(edge => edge.isLatest === false) : [],
         timeline: buildTimeline(allEntityEdges),
       };
     },
@@ -366,27 +363,13 @@ export function registerTemporalGraphFunctions(
       to?: string;
     }) => {
       const kv = await pinGraphState(state);
-      const allNodes = await kv.list<GraphNode>(KV.graphNodes);
-      const allEdges = await kv.list<GraphEdge>(KV.graphEdges);
-      const historicalEdges = await kv
-        .list<GraphEdge>(KV.graphEdgeHistory)
-        .catch(() => [] as GraphEdge[]);
-
-      const entity = allNodes.find(
-        (n) => n.name.toLowerCase() === data.entityName.toLowerCase(),
-      );
-      if (!entity) return { error: "Entity not found" };
-
-      const allEntityEdges = [
-        ...allEdges.filter(
-          (e) =>
-            e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
-        ),
-        ...historicalEdges.filter(
-          (e) =>
-            e.sourceNodeId === entity.id || e.targetNodeId === entity.id,
-        ),
-      ];
+      if ((data.from !== undefined && !Number.isFinite(Date.parse(data.from))) ||
+          (data.to !== undefined && !Number.isFinite(Date.parse(data.to)))) return { error: "Invalid temporal range" };
+      if (data.from && data.to && Date.parse(data.from) > Date.parse(data.to)) return { error: "Temporal range is reversed" };
+      const indexed = await readIndexedEntity(kv, data.entityName, false);
+      if ("error" in indexed) return indexed;
+      const { entity, relatedEdges, entityHistory, truncated } = indexed;
+      const allEntityEdges = [...new Map([...entityHistory, ...relatedEdges].map(edge => [edge.id, edge])).values()];
 
       allEntityEdges.sort(
         (a, b) =>
@@ -422,6 +405,7 @@ export function registerTemporalGraphFunctions(
 
       return {
         entity: entity.name,
+        truncated,
         totalChanges: changes.length,
         changes,
       };

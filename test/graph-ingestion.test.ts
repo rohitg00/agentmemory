@@ -1,9 +1,11 @@
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StateKV, applyUpdateOps } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
 import { pinGraphState, setGraphGenerationListener } from "../src/state/graph-generation.js";
 import { persistGraphDelta, registerGraphFunction } from "../src/functions/graph.js";
 import { persistGraphRecords } from "../src/state/graph-ingestion.js";
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { registerViewerStreamTriggers } from "../src/triggers/viewer-streams.js";
 import { resetViewerCounts } from "../src/state/viewer-counts.js";
 import { setAuditRecordedListener } from "../src/functions/audit.js";
@@ -36,12 +38,12 @@ function setup(backend: "file" | "redis" = "file") {
   const handlers = new Map<string, (data?: any) => Promise<any>>();
   const calls: Array<{ id: string; payload: Payload }> = [];
   const sent: any[] = [];
+  const unsubscribeEvents = onLiveEvent((event) => sent.push({ type: event.type, data: structuredClone(event.data) }));
   let intercept: ((id: string, payload: Payload) => Promise<void> | void) | undefined;
   const sdk = {
     registerFunction: (id: string, fn: (data?: any) => Promise<any>) => handlers.set(id, fn),
     registerTrigger: vi.fn(),
     trigger: async ({ function_id: id, payload }: { function_id: string; payload: any }): Promise<any> => {
-      if (id === "stream::send") { sent.push(structuredClone(payload)); return {}; }
       if (!id.startsWith("state::")) return handlers.get(id)!(payload);
       calls.push({ id, payload: structuredClone(payload) });
       await intercept?.(id, payload);
@@ -66,9 +68,10 @@ function setup(backend: "file" | "redis" = "file") {
   };
   const kv = new StateKV(sdk as never, { backend });
   registerGraphFunction(sdk as never, kv, { name: "noop" } as never);
+  registerViewerStreamTriggers(sdk as never, kv);
   const call = (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload });
   const snapshot = async (view = kv) => (await view.get<GraphSnapshot>(KV.graphSnapshot, "current"))!;
-  return { kv, sdk, store, calls, sent, call, snapshot, intercept: (fn?: typeof intercept) => { intercept = fn; } };
+  return { kv, sdk, store, calls, sent, call, snapshot, unsubscribeEvents, intercept: (fn?: typeof intercept) => { intercept = fn; } };
 }
 
 async function degrees(kv: StateKV, ids: string[]) {
@@ -226,8 +229,9 @@ describe("raw graph ingestion reconciliation", () => {
     expect(await kv.get(KV.graphNodes, "added")).toMatchObject({ id: "added" });
   });
 
-  it("serves a clean committed snapshot while a larger ingestion is still planning its next batch", async () => {
+  it("serves committed index counts while a larger ingestion is still planning its next batch", async () => {
     const { kv, call, intercept } = setup();
+    await initializeGraphIndex(kv, { status: "ready" });
     const entered = deferred();
     const release = deferred();
     intercept(async (id, p) => {
@@ -281,6 +285,7 @@ describe("raw graph ingestion reconciliation", () => {
 
   it("does not cache old clean state while an invalidated journal write is still in flight", async () => {
     const { kv, call, snapshot, intercept } = setup();
+    await initializeGraphIndex(kv, { status: "ready" });
     await persistGraphRecords(kv, [node("before")], [], { mode: "merge" });
     const entered = deferred();
     const release = deferred();
@@ -297,7 +302,7 @@ describe("raw graph ingestion reconciliation", () => {
     const reading = call("mem::graph-stats").then((result) => { observed = result; });
     try {
       await new Promise<void>((done) => setImmediate(done));
-      expect(observed).toMatchObject({ totalNodes: 1 });
+      expect(observed).toMatchObject({ available: false, totalNodes: null });
     } finally {
       release.resolve();
       await Promise.all([failed, reading]);
@@ -307,6 +312,7 @@ describe("raw graph ingestion reconciliation", () => {
     expect(recovered.pendingMutation).toBeUndefined();
     expect(recovered.stats.totalNodes).toBe(2);
     expect(await kv.get(KV.graphNodes, "after")).toMatchObject({ id: "after" });
+    expect(await call("mem::graph-stats")).toMatchObject({ available: true, totalNodes: 2 });
   });
 
   it("matches a raw-record oracle through a deterministic sequence of overlapping mutations", async () => {

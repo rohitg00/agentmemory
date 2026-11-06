@@ -2,6 +2,7 @@ import type { IndexLegStatus, IndexPersistenceStatus } from "../state/index-pers
 import type { VectorBackfillState } from "./search.js";
 import { describeGraphCompactBoot, type GraphCompactBootStatus } from "./graph-compact-boot.js";
 import type { CaptureStatus } from "./capture.js";
+import type { GraphIndexMigrationStatus } from "../state/graph-index-migration.js";
 
 export type StatusLevel = "ok" | "info" | "warn" | "error";
 
@@ -29,21 +30,24 @@ export interface StatusFlag {
 }
 
 export interface GraphStatsInput {
-  totalNodes?: number;
-  totalEdges?: number;
+  totalNodes?: number | null;
+  totalEdges?: number | null;
+  available?: boolean;
+  coverage?: "complete" | "partial" | "unknown";
   fromSnapshot?: boolean;
   updatedAt?: string;
   dirty?: boolean;
   warning?: string;
+  fromIndex?: boolean;
 }
 
 export interface StatusInputs {
   now: Date;
   version: string;
-  engineVersion: string;
+  enginePinnedVersion: string;
   uptimeSeconds: number;
   stateBackend: "file" | "redis";
-  ports: { rest: number | null; streams: number | null; viewer: number | null };
+  ports: { rest: number | null; viewer: number | null };
   health: {
     status?: string;
     alerts?: string[];
@@ -57,7 +61,9 @@ export interface StatusInputs {
   llmRoute?: string | null;
   functionMetrics: FunctionMetricInput[];
   provider: string;
+  providerHint?: string | null;
   embeddingProvider: string;
+  embeddingHint?: string | null;
   flags: StatusFlag[];
   index: {
     bm25Documents: number;
@@ -75,6 +81,7 @@ export interface StatusInputs {
   graph: GraphStatsInput | null;
   graphExtractionEnabled: boolean;
   graphCompaction?: GraphCompactBootStatus | null;
+  graphIndex?: GraphIndexMigrationStatus | null;
   auditLegacy: { status: string; sizeBytes?: number } | null;
   indexPersistence?: IndexPersistenceStatus | null;
   stateStore?: { ok: boolean; latencyMs?: number } | null;
@@ -99,7 +106,7 @@ export interface StatusReport {
   checkedAt: string;
   service: {
     version: string;
-    engineVersion: string;
+    enginePinnedVersion: string;
     uptimeSeconds: number;
     stateBackend: StatusInputs["stateBackend"];
     stateStore: { ok: boolean; latencyMs?: number } | null;
@@ -109,7 +116,9 @@ export interface StatusReport {
   provider: {
     llm: string;
     route: string | null;
+    hint: string | null;
     embeddings: string;
+    embeddingHint: string | null;
     circuitBreaker: StatusInputs["circuitBreaker"];
     offWithoutLlm: string[];
   };
@@ -117,6 +126,7 @@ export interface StatusReport {
   indexPersistence: IndexPersistenceStatus | null;
   graph: (GraphStatsInput & { ageSeconds: number | null; extractionEnabled: boolean }) | null;
   graphCompaction: GraphCompactBootStatus | null;
+  graphIndex: GraphIndexMigrationStatus | null;
   capture: CaptureStatus | null;
   observeDedup: ObserveDedupStatus | null;
   functions: Array<FunctionMetricInput & { failureRate: number; offWithoutLlm: boolean }>;
@@ -139,7 +149,7 @@ const FUNCTION_FIXES: Record<string, string> = {
 };
 
 export const LLM_KEY_FIX =
-  "Add one LLM provider key (for example ANTHROPIC_API_KEY or OPENAI_API_KEY) to ~/.agentmemory/.env and restart.";
+  "Set AGENTMEMORY_LLM_PROVIDER and that provider's key (for example AGENTMEMORY_LLM_PROVIDER=anthropic and ANTHROPIC_API_KEY) in ~/.agentmemory/.env and restart.";
 
 export const OFF_WITHOUT_LLM = [
   "session summaries",
@@ -175,13 +185,7 @@ export function describeHealthAlert(slug: string): { level: "warn" | "error"; me
       fix: "It usually clears after an import or index rebuild finishes. If it persists, restart agentmemory.",
     };
   }
-  if (slug === "stream_relay_down") {
-    return {
-      level: "warn",
-      message: "Live updates are not reaching the viewer: the engine stopped relaying stream events, which happens after Redis restarts or drops the connection. Data is still saved.",
-      fix: "Restart agentmemory (npx @agentmemory/agentmemory stop, then start) so the engine subscribes to Redis again, then reload the viewer.",
-    };
-  }
+
   if (slug === "connection_reconnecting") {
     return {
       level: "warn",
@@ -285,7 +289,19 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       level: "info",
       code: "no-llm-provider",
       message: "No LLM provider is configured, so summaries, consolidation and graph extraction stay off. Search still works.",
-      fix: LLM_KEY_FIX,
+      fix: input.providerHint || LLM_KEY_FIX,
+    });
+  }
+
+  if (input.embeddingHint) {
+    const keyMissing = input.embeddingHint.startsWith("EMBEDDING_PROVIDER=");
+    problems.push({
+      level: "info",
+      code: keyMissing ? "embedding-provider-key-missing" : "embedding-provider-not-chosen",
+      message: keyMissing
+        ? "EMBEDDING_PROVIDER names a cloud provider whose key is missing, so search is keyword and graph only."
+        : "A cloud embedding key is present, but no embedding provider is chosen, so search is keyword and graph only.",
+      fix: input.embeddingHint,
     });
   }
 
@@ -391,14 +407,14 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
   if (input.graph) {
     const ageSeconds = secondsBetween(input.now, input.graph.updatedAt);
     graph = { ...input.graph, ageSeconds, extractionEnabled: input.graphExtractionEnabled };
-    if (input.graphExtractionEnabled && !input.graph.fromSnapshot) {
+    if (input.graphExtractionEnabled && !input.graph.fromSnapshot && !input.graph.fromIndex && !input.graphIndex) {
       problems.push({
         level: "warn",
         code: "graph-no-snapshot",
-        message: "Graph extraction is on but no graph snapshot exists, so graph counts read as zero.",
+        message: "Graph extraction is on but no graph snapshot exists, so graph counts are unavailable.",
         fix: "Use Rebuild Graph in the viewer, or POST /agentmemory/graph/snapshot-rebuild.",
       });
-    } else if (input.graph.fromSnapshot && ageSeconds !== null && ageSeconds > GRAPH_SNAPSHOT_STALE_SECONDS) {
+    } else if (!input.graph.fromIndex && input.graph.fromSnapshot && ageSeconds !== null && ageSeconds > GRAPH_SNAPSHOT_STALE_SECONDS) {
       const age = ageSeconds >= 2 * 86400 ? `${Math.floor(ageSeconds / 86400)} days` : `${Math.round(ageSeconds / 3600)} hours`;
       problems.push({
         level: "info",
@@ -415,6 +431,20 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
         fix: "No action needed: the next graph write settles the counts.",
       });
     }
+  }
+
+  const graphIndex = input.graphIndex ?? null;
+  if (input.graphIndex === null || graphIndex?.state === "unavailable") {
+    problems.push({ level: "info", code: "graph-index-unavailable", message: "The bounded graph index could not be checked. Keyword and vector search remain available.", fix: "Run agentmemory graph-index status and check the state store." });
+  } else if (graphIndex && !graphIndex.ready) {
+    problems.push({
+      level: graphIndex.state === "paused" ? "warn" : "info",
+      code: "graph-index-not-ready",
+      message: `Graph retrieval is unavailable while its index is ${graphIndex.state}. Keyword search, vector search and capture remain available.`,
+      fix: graphIndex.action,
+    });
+  } else if (graphIndex?.coverage === "partial") {
+    problems.push({ level: "warn", code: "graph-index-partial", message: `${graphIndex.incompleteRecords ?? "Some"} graph records exceed index limits; graph retrieval has partial coverage.`, fix: graphIndex.action });
   }
 
   const compaction = input.graphCompaction ?? null;
@@ -484,7 +514,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     checkedAt: input.now.toISOString(),
     service: {
       version: input.version,
-      engineVersion: input.engineVersion,
+      enginePinnedVersion: input.enginePinnedVersion,
       uptimeSeconds: input.uptimeSeconds,
       stateBackend: input.stateBackend,
       stateStore: input.stateStore ?? null,
@@ -494,7 +524,9 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     provider: {
       llm: input.provider,
       route: input.provider === "noop" ? null : (input.llmRoute ?? null),
+      hint: input.providerHint ?? null,
       embeddings: input.embeddingProvider,
+      embeddingHint: input.embeddingHint ?? null,
       circuitBreaker: input.circuitBreaker,
       offWithoutLlm: noLlm ? OFF_WITHOUT_LLM : [],
     },
@@ -502,6 +534,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     indexPersistence: persistence,
     graph,
     graphCompaction: compaction,
+    graphIndex,
     capture: input.capture ?? null,
     observeDedup: input.observeDedup ?? null,
     functions,
@@ -825,7 +858,7 @@ a{color:inherit}
 @media (max-width:640px){th{width:110px}table.list{table-layout:fixed}table.list th,table.list td{padding:6px 4px;font-size:12px}}
 </style></head><body><main>
 <header><h1>agentmemory</h1><span class="badge ${report.status}">${report.status}</span>
-<span class="meta">v${escapeHtml(report.service.version)} · engine ${escapeHtml(report.service.engineVersion)} · checked ${escapeHtml(report.checkedAt)} · <a href="?format=json">json</a></span></header>
+<span class="meta">v${escapeHtml(report.service.version)} · engine pinned ${escapeHtml(report.service.enginePinnedVersion)} · checked ${escapeHtml(report.checkedAt)} · <a href="?format=json">json</a></span></header>
 <p class="lead ${report.status}">${escapeHtml(report.headline)}</p>
 <p class="live">A snapshot from when this page loaded. <a href="${escapeHtml(viewerUrl)}">Open the live version in the viewer &rarr;</a> From a terminal: <code>curl -s ${escapeHtml(CURL_AUTH_HEADER)} ${ports.rest ? `http://localhost:${escapeHtml(ports.rest)}` : ""}/agentmemory/status</code> returns this report as JSON.</p>
 <h2>Problems</h2><ul class="problems">${problems}</ul>
@@ -834,7 +867,6 @@ ${row("Engine connection", escapeHtml(report.health?.connectionState ?? "unknown
 ${row("Uptime", escapeHtml(formatDuration(report.service.uptimeSeconds)))}
 ${row("State backend", escapeHtml(report.service.stateBackend))}
 ${row("REST port", escapeHtml(ports.rest ?? "unknown"))}
-${row("Streams port", escapeHtml(ports.streams ?? "unknown"))}
 ${row("Viewer port", escapeHtml(ports.viewer ?? "not running"))}
 </table>
 <h2>LLM and embeddings</h2><table>
@@ -861,10 +893,11 @@ ${report.observeDedup ? row("Repeats skipped", escapeHtml(`${report.observeDedup
 <h2>Knowledge graph</h2><table>
 ${graph
   ? row("Extraction", graph.extractionEnabled ? "on" : "off") +
-    row("Nodes / edges", escapeHtml(`${graph.totalNodes ?? 0} / ${graph.totalEdges ?? 0}`)) +
-    row("Snapshot age", escapeHtml(graph.fromSnapshot ? formatDuration(graph.ageSeconds) : "no snapshot"))
+    row("Nodes / edges", escapeHtml(`${graph.totalNodes ?? "unknown"} / ${graph.totalEdges ?? "unknown"}`)) +
+    row(graph.fromIndex ? "Count source" : "Snapshot age", escapeHtml(graph.fromIndex ? "maintained index" : graph.fromSnapshot ? formatDuration(graph.ageSeconds) : "no snapshot"))
   : row("Graph", "unavailable")}
 ${report.graphCompaction ? row("Provenance compaction", escapeHtml(describeGraphCompactBoot(report.graphCompaction))) : ""}
+${report.graphIndex ? row("Retrieval index", escapeHtml(`${report.graphIndex.state}, ${report.graphIndex.coverage} coverage`)) : ""}
 </table>
 <h2>Features</h2><table class="list"><tr><th>Feature</th><th>Setting</th><th>State</th><th>How to change</th></tr>${flags}</table>
 <h2>Process</h2><table>

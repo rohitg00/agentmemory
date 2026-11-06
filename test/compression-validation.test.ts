@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseCompressionXml } from "../src/prompts/compression-output.js";
+import { COMPRESSION_SYSTEM } from "../src/prompts/compression.js";
 import { compressWithRetry } from "../src/eval/self-correct.js";
 import { CompressOutputSchema } from "../src/eval/schemas.js";
 import { registerCompressFunction } from "../src/functions/compress.js";
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { buildSyntheticCompression } from "../src/functions/compress-synthetic.js";
 import { NoopProvider } from "../src/providers/noop.js";
+import { observationEmbedText } from "../src/state/memory-utils.js";
 import type { CompressedObservation, MemoryProvider, RawObservation } from "../src/types.js";
 
 const search = vi.hoisted(() => ({ add: vi.fn(), save: vi.fn(), vector: vi.fn() }));
@@ -31,6 +34,7 @@ const raw: RawObservation = {
 function rig(provider: MemoryProvider, previous: RawObservation | CompressedObservation = raw) {
   let stored = structuredClone(previous);
   const kv = {
+    get: vi.fn(async () => structuredClone(stored)),
     list: vi.fn(async () => [structuredClone(stored)]),
     set: vi.fn(async (_scope: string, _id: string, value: CompressedObservation) => {
       stored = structuredClone(value);
@@ -40,7 +44,7 @@ function rig(provider: MemoryProvider, previous: RawObservation | CompressedObse
   const trigger = vi.fn(async () => undefined);
   const record = vi.fn(async () => undefined);
   let handler!: (data: { observationId: string; sessionId: string; raw: RawObservation }) => Promise<unknown>;
-  registerCompressFunction({ trigger, registerFunction: (_id: string, fn: typeof handler) => { handler = fn; } } as never,
+  registerCompressFunction({ trigger, registerFunction: (_id: string, fn: typeof handler) => { if (_id === "mem::compress") handler = fn; } } as never,
     kv as never, provider, { record } as never);
   return {
     call: () => handler({ observationId: raw.id, sessionId: raw.sessionId, raw }),
@@ -100,10 +104,10 @@ describe("compression output boundaries", () => {
   ])("rejects %s before persistence", async (_name, response) => {
     const provider = providerReturning(response);
     const r = rig(provider);
-    expect(await r.call()).toEqual({ success: false, error: "parse_failed" });
+    expect(await r.call()).toEqual({ success: false, error: "parse_failed", retryable: true });
     expect(provider.compress).toHaveBeenCalledTimes(2);
-    expect(r.stored()).toEqual(raw);
-    expect(r.kv.set).not.toHaveBeenCalled();
+    expect(r.stored()).toMatchObject({ ...raw, compression: { status: "failed" } });
+    expect((r.stored() as CompressedObservation).compression?.status).toBe("failed");
     expect(search.add).not.toHaveBeenCalled();
     expect(search.vector).not.toHaveBeenCalled();
     expect(r.trigger).not.toHaveBeenCalled();
@@ -123,22 +127,24 @@ describe("compression validation and retry", () => {
   ])("retains an existing valid summary and source after %s exhausts retries", async (_name, response) => {
     const previous = { ...buildSyntheticCompression(raw), ...CompressOutputSchema.parse(parseCompressionXml(xml)), confidence: 0.9 };
     const r = rig(providerReturning(response), previous);
-    expect(await r.call()).toEqual({ success: false, error: "validation_failed" });
-    expect(r.stored()).toEqual(previous);
-    expect(r.kv.set).not.toHaveBeenCalled();
+    expect(await r.call()).toEqual({ success: false, error: "validation_failed", retryable: true });
+    expect(r.stored()).toMatchObject({ ...previous, compression: { status: "failed" } });
+    expect((r.stored() as CompressedObservation).compression?.status).toBe("failed");
     expect(r.trigger).not.toHaveBeenCalled();
-    expect(search.add).not.toHaveBeenCalled();
+    expect(search.add).toHaveBeenCalledWith(expect.objectContaining({ source: { ...buildSyntheticCompression(raw).source } }));
     expect(r.record).toHaveBeenCalledExactlyOnceWith("mem::compress", expect.any(Number), false);
   });
 
   it("persists only a successful retry and preserves the original evidence", async () => {
     const provider = providerReturning(xml.replace("Updated configuration", "x".repeat(900)), xml);
     const r = rig(provider, buildSyntheticCompression(raw));
+    const unsubscribe = onLiveEvent((event) => { if (event.type === "compressed_observation") r.trigger(event); });
     expect(await r.call()).toMatchObject({ success: true, compressed: { title: "Updated configuration" } });
+    unsubscribe();
     expect(provider.compress).toHaveBeenCalledTimes(2);
-    expect(r.kv.set).toHaveBeenCalledTimes(1);
+    expect((r.stored() as CompressedObservation).compression?.status).toBe("complete");
     expect((r.stored() as CompressedObservation).source?.toolOutput).toBe(raw.toolOutput);
-    expect(search.add).toHaveBeenCalledTimes(1);
+    expect(search.add).toHaveBeenLastCalledWith(expect.objectContaining({ title: "Updated configuration" }));
     expect(r.trigger).toHaveBeenCalledTimes(1);
     expect(r.record).toHaveBeenCalledExactlyOnceWith("mem::compress", expect.any(Number), true, expect.any(Number));
   });
@@ -158,9 +164,9 @@ describe("compression validation and retry", () => {
     const previous = buildSyntheticCompression(raw);
     expect(previous.facts).toEqual([]);
     const r = rig(new NoopProvider(), previous);
-    expect(await r.call()).toEqual({ success: false, error: "parse_failed" });
-    expect(r.stored()).toEqual(previous);
-    expect(r.kv.set).not.toHaveBeenCalled();
+    expect(await r.call()).toEqual({ success: false, error: "parse_failed", retryable: true });
+    expect(r.stored()).toMatchObject({ ...previous, compression: { status: "failed" } });
+    expect((r.stored() as CompressedObservation).compression?.status).toBe("failed");
   });
 
   it("leaves stored evidence intact if the retry provider call throws", async () => {
@@ -169,9 +175,9 @@ describe("compression validation and retry", () => {
       .mockResolvedValueOnce("invalid")
       .mockRejectedValueOnce(new Error("provider unavailable"));
     const r = rig(provider);
-    expect(await r.call()).toEqual({ success: false, error: "compression_failed" });
-    expect(r.stored()).toEqual(raw);
-    expect(r.kv.set).not.toHaveBeenCalled();
+    expect(await r.call()).toEqual({ success: false, error: "compression_failed", retryable: true });
+    expect(r.stored()).toMatchObject({ ...raw, compression: { status: "failed" } });
+    expect((r.stored() as CompressedObservation).compression?.status).toBe("failed");
     expect(provider.compress).toHaveBeenCalledTimes(2);
     expect(r.record).toHaveBeenCalledExactlyOnceWith("mem::compress", expect.any(Number), false);
   });
@@ -182,4 +188,51 @@ describe("compression validation and retry", () => {
     expect(result).toEqual({ valid: false, errors: ["invalid"], retried: false });
     expect(provider.compress).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("vector embed text for compressed observations", () => {
+  const zhXml = xml.replace(
+    "<concepts><concept>configuration</concept></concepts>",
+    "<concepts><concept>configuration</concept><concept>登录超时</concept></concepts>",
+  );
+
+  it("embeds concepts alongside title and narrative", async () => {
+    const r = rig(providerReturning(zhXml));
+    const result = await r.call();
+    expect(result).toMatchObject({ success: true });
+    expect(search.vector).toHaveBeenCalledTimes(1);
+    expect(search.vector).toHaveBeenCalledWith(
+      raw.id,
+      raw.sessionId,
+      expect.stringContaining("登录超时"),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("keeps concepts inside the embedding input when the narrative is long", () => {
+    const text = observationEmbedText({
+      title: "Login timeout",
+      narrative: "x".repeat(20_000),
+      concepts: ["登录超时"],
+    });
+    expect(text.slice(0, 16_000)).toContain("登录超时");
+  });
+
+  it("still embeds observations without concepts", async () => {
+    const r = rig(providerReturning(xml.replace(/<concepts>.*?<\/concepts>/, "<concepts />")));
+    const result = await r.call();
+    expect(result).toMatchObject({ success: true });
+    expect(search.vector).toHaveBeenCalledWith(
+      raw.id,
+      raw.sessionId,
+      expect.stringMatching(/^Updated configuration Updated the server configuration/),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+});
+
+it("tells the compression model to keep search terms in the user's language", () => {
+  expect(COMPRESSION_SYSTEM).toMatch(/user's language/);
 });

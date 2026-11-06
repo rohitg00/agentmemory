@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const roots: string[] = [];
+const PYTHON = execFileSync("python3", ["-c", "import sys; print(sys.executable)"], { encoding: "utf8" }).trim();
 const token = (payload: unknown) => `synthetic.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.signature`;
 
 afterEach(() => {
@@ -17,7 +18,7 @@ function fixture() {
   const auth = join(root, "auth.json");
   const out = join(root, "evidence");
   const pkg = join(root, "missing-package");
-  const run = () => spawnSync("python3", [
+  const run = () => spawnSync(PYTHON, [
     resolve("test/hermes-live-model.py"),
     "--package", pkg,
     "--host", join(root, "unused-host"),

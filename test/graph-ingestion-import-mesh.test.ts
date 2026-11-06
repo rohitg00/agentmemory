@@ -1,3 +1,5 @@
+import { onLiveEvent } from "../src/viewer/live-events.js";
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { StateKV, applyUpdateOps } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
@@ -33,13 +35,14 @@ function deferred() {
 async function rig(rotated = true) {
   const store = new Map<string, Map<string, unknown>>();
   const handlers = new Map<string, (data: any) => Promise<any>>();
+  const sent: any[] = [];
+  const unsubscribeEvents = onLiveEvent((event) => sent.push({ type: event.type, data: structuredClone(event.data) }));
   const triggers: Array<{ type: string; function_id: string; config: { scope?: string } }> = [];
   let intercept: ((id: string, payload: any) => Promise<void>) | undefined;
   const sdk = {
     registerFunction: (id: string, fn: (data: any) => Promise<any>) => handlers.set(id, fn),
     registerTrigger: (trigger: typeof triggers[number]) => triggers.push(trigger),
     trigger: async ({ function_id: id, payload }: { function_id: string; payload: any }): Promise<any> => {
-      if (id === "stream::send") return {};
       if (!id.startsWith("state::")) return handlers.get(id)!(payload);
       await intercept?.(id, payload);
       const rows = store.get(payload.scope) ?? new Map<string, unknown>();
@@ -67,8 +70,9 @@ async function rig(rotated = true) {
   registerViewerStreamTriggers(sdk as never, kv);
   const call = (id: string, payload: any = {}) => sdk.trigger({ function_id: id, payload });
   if (rotated) await call("mem::graph-reset");
+  else await initializeGraphIndex(kv, { status: "ready" });
   await getViewerCounts(kv);
-  return { kv, call, store, intercept: (fn?: typeof intercept) => { intercept = fn; } };
+  return { kv, call, store, sent, unsubscribeEvents, intercept: (fn?: typeof intercept) => { intercept = fn; } };
 }
 
 async function expectGraph(r: Awaited<ReturnType<typeof rig>>, ids: string[], edgeCount: number) {

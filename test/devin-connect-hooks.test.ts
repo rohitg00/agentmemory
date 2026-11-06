@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { resolve } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import {
   buildMergedHooks,
@@ -118,5 +119,44 @@ describe("hook payload compatibility with Devin CLI", () => {
     };
     expect(parsed.hookSpecificOutput?.hookEventName).toBe("SessionStart");
     expect(typeof parsed.hookSpecificOutput?.additionalContext).toBe("string");
+  });
+});
+
+describe("Devin plugin package", () => {
+  const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
+  const manifest = readJson(join(PLUGIN_ROOT, ".devin-plugin", "plugin.json"));
+  const pluginHooks = readJson(join(PLUGIN_ROOT, "hooks.json")) as HookManifest;
+
+  it("ships the Devin hook set at the plugin root, where Devin loads plugin hooks first", () => {
+    expect(pluginHooks).toEqual(readJson(join(PLUGIN_ROOT, "hooks", "hooks.devin.json")));
+    expect(Object.keys(pluginHooks.hooks).sort()).toEqual([...DEVIN_EVENTS].sort());
+  });
+
+  it("points every plugin hook at a bundled script", () => {
+    for (const entries of Object.values(pluginHooks.hooks)) {
+      for (const entry of entries) {
+        for (const handler of entry.hooks) {
+          const script = /\$\{CLAUDE_PLUGIN_ROOT\}\/(scripts\/[\w-]+\.mjs)/.exec(handler.command)?.[1];
+          expect(script).toBeDefined();
+          expect(existsSync(join(PLUGIN_ROOT, script!))).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("gives the marketplace card a name and a bundled logo", () => {
+    expect(manifest.displayName).toBe("agentmemory");
+    expect(existsSync(join(PLUGIN_ROOT, manifest.logo))).toBe(true);
+  });
+
+  it("pins the MCP server to the released package version", () => {
+    const { version } = readJson(resolve(PLUGIN_ROOT, "..", "package.json"));
+    expect(manifest.version).toBe(version);
+    expect(manifest.mcpServers.agentmemory.args).toContain(`@agentmemory/mcp@${version}`);
+  });
+
+  it("states that cloud sessions are not supported", () => {
+    expect(manifest.description).toMatch(/Devin CLI and Devin Desktop/);
+    expect(manifest.description).toMatch(/Not supported in cloud sessions/);
   });
 });

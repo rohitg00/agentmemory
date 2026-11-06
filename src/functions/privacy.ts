@@ -1,13 +1,38 @@
 import type { IIIClient } from "iii-sdk";
 
-const PRIVATE_TAG_RE = /<private>[\s\S]*?<\/private>/gi;
+const PRIVATE_TAG_TOKEN_RE = /<private(?=\s|>)[^>]*>|<\/private\s*>/gi;
+
+function redactPrivateBlocks(input: string): string {
+  const tokens = new RegExp(PRIVATE_TAG_TOKEN_RE.source, PRIVATE_TAG_TOKEN_RE.flags);
+  let out = "";
+  let cursor = 0;
+  let depth = 0;
+  for (let match = tokens.exec(input); match; match = tokens.exec(input)) {
+    const closing = match[0].startsWith("</");
+    if (depth === 0) {
+      if (closing) continue;
+      out += input.slice(cursor, match.index);
+      depth = 1;
+    } else if (closing) {
+      depth -= 1;
+      if (depth === 0) {
+        out += "[REDACTED]";
+        cursor = match.index + match[0].length;
+      }
+    } else {
+      depth += 1;
+    }
+  }
+  if (depth > 0) return `${out}[REDACTED]`;
+  return out + input.slice(cursor);
+}
 
 const SECRET_PATTERN_SOURCES = [
   /(?:api[_-]?key|secret|token|password|credential|auth)[\s]*[=:]\s*["']?[A-Za-z0-9_\-/.+]{20,}["']?/gi,
   /Bearer\s+[A-Za-z0-9._\-+/=]{20,}/gi,
-  /sk-proj-[A-Za-z0-9\-_]{20,}/g,
-  /(?:sk|pk|rk|ak)-[A-Za-z0-9][A-Za-z0-9\-_]{19,}/g,
-  /sk-ant-[A-Za-z0-9\-_]{20,}/g,
+  /(?<![\p{L}\p{N}\p{M}_])sk-proj-[A-Za-z0-9\-_]{20,}/gu,
+  /(?<![\p{L}\p{N}\p{M}_])(?:sk|pk|rk|ak)-[A-Za-z0-9][A-Za-z0-9\-_]{19,}/gu,
+  /(?<![\p{L}\p{N}\p{M}_])sk-ant-[A-Za-z0-9\-_]{20,}/gu,
   /gh[pus]_[A-Za-z0-9]{36,}/g,
   /github_pat_[A-Za-z0-9_]{22,}/g,
   /xoxb-[A-Za-z0-9\-]+/g,
@@ -26,7 +51,7 @@ const URL_CREDENTIALS_RE =
   /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]*:[^\s/?#@"'<>]+@/gi;
 
 export function stripPrivateData(input: string): string {
-  let result = input.replace(PRIVATE_TAG_RE, "[REDACTED]");
+  let result = redactPrivateBlocks(input);
   result = result.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
   result = result.replace(new RegExp(URL_CREDENTIALS_RE.source, URL_CREDENTIALS_RE.flags), "$1[REDACTED_SECRET]@");
   for (const source of SECRET_PATTERN_SOURCES) {
@@ -36,17 +61,29 @@ export function stripPrivateData(input: string): string {
   return result;
 }
 
-export function scrubRecord<T>(value: T): T {
+export function scrubRecord<T>(value: T, options: { scrubKeys?: boolean } = {}): T {
   if (typeof value === "string") return stripPrivateData(value) as T;
-  if (Array.isArray(value)) return value.map((item) => scrubRecord(item)) as T;
+  if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options)) as T;
   if (value !== null && typeof value === "object") {
     const proto = Object.getPrototypeOf(value);
     if (proto !== Object.prototype && proto !== null) return value;
-    const out: Record<string, unknown> = {};
-    for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
-      out[key] = scrubRecord(item);
-    }
-    return out as T;
+    const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+      options.scrubKeys ? stripPrivateData(key) : key,
+      item,
+    ] as const);
+    const reserved = new Set(entries.map(([key]) => key));
+    const used = new Set<string>();
+    return Object.fromEntries(
+      entries.map(([key, item]) => {
+        let unique = key;
+        if (used.has(unique)) {
+          let suffix = 2;
+          do { unique = `${key}_${suffix++}`; } while (reserved.has(unique) || used.has(unique));
+        }
+        used.add(unique);
+        return [unique, scrubRecord(item, options)];
+      }),
+    ) as T;
   }
   return value;
 }

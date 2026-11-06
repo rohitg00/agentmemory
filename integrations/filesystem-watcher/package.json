@@ -1,6 +1,6 @@
 {
   "name": "@agentmemory/fs-watcher",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Filesystem connector for agentmemory — emits observations on file changes.",
   "type": "module",
   "bin": {

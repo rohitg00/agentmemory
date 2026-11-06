@@ -1,3 +1,4 @@
+import { onLiveEvent } from "../src/viewer/live-events.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -142,10 +143,14 @@ describe("retained observation source", () => {
       expect(JSON.stringify(response)).not.toContain(tail);
     }
     expect(buildSummaryPrompt([observation])).not.toContain(tail);
-    const updates = sdk.trigger.mock.calls.map(([input]) => input)
-      .filter((input) => input.function_id === "stream::set");
+    const updates: unknown[] = [];
+    const unsubscribe = onLiveEvent((event) => updates.push(event));
+    await observe("post_tool_use", { tool_name: "Read", tool_input: { file_path: "config.ts" }, tool_output: tail });
+    unsubscribe();
     expect(updates.length).toBeGreaterThan(0);
-    expect(JSON.stringify(updates)).not.toContain(tail);
+    const compressedEvent = updates.find((event) => (event as any).type === "compressed_observation") as any;
+    expect(compressedEvent.data.observation.source).toBeUndefined();
+    expect(compressedEvent.data.observation.sourceObservation).toBeUndefined();
   });
 
   it("preserves source when model compression succeeds without returning it to the model caller or viewer", async () => {
@@ -164,10 +169,39 @@ describe("retained observation source", () => {
     expect(saved.narrative).not.toContain(tail);
     expect(provider.compress).toHaveBeenCalledOnce();
     expect(JSON.stringify(vi.mocked(provider.compress).mock.calls)).not.toContain(tail);
-    const updates = r.sdk.trigger.mock.calls.map(([input]) => input)
-      .filter((input) => input.function_id === "stream::send" && (input.payload as any).type === "compressed_observation");
-    expect(updates.length).toBe(1);
-    expect(JSON.stringify(updates)).not.toContain(tail);
+    const updates: unknown[] = [];
+    const unsubscribe = onLiveEvent((event) => updates.push(event));
+    await r.observe("post_tool_use", { tool_name: "Read", tool_input: { file_path: "config.ts" }, tool_output: `${"detail ".repeat(1000)}${tail}` });
+    unsubscribe();
+    const compressedEvents = updates.filter((event) => (event as any).type === "compressed_observation");
+    expect(compressedEvents.length).toBeGreaterThanOrEqual(1);
+    expect(JSON.stringify(compressedEvents)).not.toContain(tail);
+  });
+
+  it("makes a captured stop reply searchable and keeps it as the replay response", async () => {
+    const { observe, call } = rig();
+    const reply = "We decided to use bge-m3 for Spanish embeddings because it handles accents.";
+    const saved = await observe("stop", { last_assistant_message: reply });
+    expect(saved.source?.assistantResponse).toBe(reply);
+    expect(saved.narrative).toContain(reply);
+    expect(JSON.stringify(await call("mem::search", { query: "Spanish embeddings accents" }))).toContain(saved.id);
+  });
+
+  it("gives the compression model the reply of a stop observation", async () => {
+    const r = rig();
+    vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
+    const provider: MemoryProvider = {
+      name: "test", summarize: vi.fn(),
+      compress: vi.fn(async () => "<observation><type>decision</type><title>Chose bge-m3 embeddings</title><facts><fact>bge-m3 for Spanish</fact></facts><narrative>The agent chose bge-m3.</narrative><concepts><concept>embeddings</concept></concepts><files></files><importance>7</importance></observation>"),
+    };
+    registerCompressFunction(r.sdk as never, r.kv as never, provider);
+    const reply = "We decided to use bge-m3 for Spanish embeddings.";
+    const saved = await r.observe("stop", { last_assistant_message: reply });
+    const prompt = vi.mocked(provider.compress).mock.calls[0][1];
+    expect(prompt).toContain(`Assistant response:\n${reply}`);
+    expect(prompt.split(reply).length - 1).toBe(1);
+    expect(saved.title).toBe("Chose bge-m3 embeddings");
+    expect(saved.source?.assistantResponse).toBe(reply);
   });
 
   it("leaves sanitized stored source intact when model compression fails", async () => {

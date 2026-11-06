@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { readFileSync } from "node:fs";
+import { III_PINNED_VERSION } from "../src/version.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -129,13 +130,35 @@ async function maxIds(kv: KV): Promise<number> {
   return max;
 }
 
-const fast = { sliceSize: 3, pauseMs: 0, retryDelayMs: 0, sleep: async () => {} };
+const fast = { allowLegacyScan: true, sliceSize: 3, pauseMs: 0, retryDelayMs: 0, sleep: async () => {} };
 const marker = (kv: KV) => kv.get<GraphCompactBootProgress>(CONFIG, GRAPH_COMPACT_BOOT_KEY);
 
 beforeEach(() => resetGraphCompactBootStatus());
 afterEach(() => vi.unstubAllEnvs());
 
 describe("graph compaction on boot", () => {
+  it("defers legacy enumeration without reading any graph scope during normal startup", async () => {
+    const kv = mockKV();
+    await seed(kv, 4, 2, 1);
+    kv.calls.get.length = 0;
+    kv.calls.set.length = 0;
+    const status = await runGraphCompactOnBoot(kv as never);
+    expect(status.state).toBe("deferred");
+    expect(kv.calls).toEqual({ get: [], set: [], list: [] });
+    expect(describeGraphCompactBoot(status)).toMatch(/explicit maintenance/);
+  });
+
+  it("does not resume an old bulk compaction marker implicitly after restart", async () => {
+    const kv = mockKV();
+    await kv.set(CONFIG, GRAPH_COMPACT_BOOT_KEY, {
+      version: GRAPH_COMPACT_BOOT_VERSION, cap: MAX_GRAPH_SOURCE_OBSERVATIONS,
+      status: "running", phase: "nodes", offset: 100,
+    });
+    kv.calls.get.length = 0;
+    kv.calls.set.length = 0;
+    expect((await runGraphCompactOnBoot(kv as never)).state).toBe("deferred");
+    expect(kv.calls).toEqual({ get: [], set: [], list: [] });
+  });
   it("trims nodes, edges, edge history and the snapshot to the cap and marks it done", async () => {
     const kv = mockKV();
     await seed(kv, 10, 7, 5);
@@ -337,10 +360,10 @@ describe("graph compaction in /agentmemory/status", () => {
   const base: StatusInputs = {
     now: new Date("2026-10-01T12:00:00.000Z"),
     version: "0.9.30",
-    engineVersion: "0.22.1",
+    enginePinnedVersion: III_PINNED_VERSION,
     uptimeSeconds: 10,
     stateBackend: "file",
-    ports: { rest: 4611, streams: 4612, viewer: 4613 },
+    ports: { rest: 4611, viewer: 4613 },
     health: null,
     circuitBreaker: null,
     functionMetrics: [],

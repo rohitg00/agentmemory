@@ -29,14 +29,22 @@ describe("createEmbeddingProvider", () => {
     expect(provider).toBeNull();
   });
 
-  it("returns GeminiEmbeddingProvider when GEMINI_API_KEY is set", () => {
+  it("returns no provider when only a cloud key is set", () => {
+    process.env["GEMINI_API_KEY"] = "test-key-123";
+    process.env["OPENAI_API_KEY"] = "test-key-456";
+    expect(createEmbeddingProvider()).toBeNull();
+  });
+
+  it("returns GeminiEmbeddingProvider when EMBEDDING_PROVIDER=gemini", () => {
+    process.env["EMBEDDING_PROVIDER"] = "gemini";
     process.env["GEMINI_API_KEY"] = "test-key-123";
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(GeminiEmbeddingProvider);
     expect(provider!.name).toBe("gemini");
   });
 
-  it("returns OpenAIEmbeddingProvider when OPENAI_API_KEY is set", () => {
+  it("returns OpenAIEmbeddingProvider when EMBEDDING_PROVIDER=openai", () => {
+    process.env["EMBEDDING_PROVIDER"] = "openai";
     process.env["OPENAI_API_KEY"] = "test-key-456";
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);

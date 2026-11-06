@@ -5,6 +5,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Session } from "../types.js";
 import { logger } from "../logger.js";
 import { getFinalizeIdleMs } from "../config.js";
+import { requestSummaryRefresh } from "./summary-state.js";
 
 export const FINALIZE_DUE_KEY = "finalize:due";
 export const FINALIZE_TICK_MS = 30_000;
@@ -68,7 +69,7 @@ export function registerSessionFinalizeFunction(sdk: IIIClient, kv: StateKV): vo
       const due = await readDue(kv);
       const dueCount = Object.keys(due).length;
       const ready = Object.entries(due)
-        .filter(([, at]) => at <= now)
+        .filter(([, at]) => idleMs > 0 && at <= now)
         .sort((a, b) => a[1] - b[1])
         .slice(0, FINALIZE_BATCH);
 
@@ -85,6 +86,7 @@ export function registerSessionFinalizeFunction(sdk: IIIClient, kv: StateKV): vo
             }
             const idleUntil = lastActivityMs(session) + idleMs;
             if (idleUntil > now) return idleUntil;
+            await requestSummaryRefresh(kv, sessionId);
             await kv.update(KV.sessions, sessionId, [
               { type: "set", path: "endedAt", value: new Date(now).toISOString() },
               { type: "set", path: "status", value: "completed" },
@@ -132,6 +134,7 @@ export function registerSessionFinalizeFunction(sdk: IIIClient, kv: StateKV): vo
           failed,
         });
       }
+      await sdk.trigger({ function_id: "mem::summary-recover", payload: { now } });
       return {
         success: failed === 0,
         due: dueCount,

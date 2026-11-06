@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
 import type { HookType, RawObservation } from "../types.js";
-import { generateId } from "../state/schema.js";
+import { fingerprintId, generateId } from "../state/schema.js";
 
 interface JsonlEntry {
   type?: string;
@@ -143,12 +143,17 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
 
   const observations: RawObservation[] = [];
 
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
+    let produced = 0;
+    const nextId = () =>
+      fingerprintId("obs", `${entry.uuid ?? `${sessionId}:${index}`}:${produced++}`);
     if (entry.sessionId && !sessionId) sessionId = entry.sessionId;
     if (typeof entry.cwd === "string" && entry.cwd.trim() && !cwd) cwd = entry.cwd;
-    const ts = entry.timestamp || new Date().toISOString();
-    if (!firstTs) firstTs = ts;
-    lastTs = ts;
+    if (entry.timestamp) {
+      if (!firstTs) firstTs = entry.timestamp;
+      lastTs = entry.timestamp;
+    }
+    const ts = entry.timestamp || lastTs || new Date().toISOString();
 
     const role = entry.message?.role;
     const content = entry.message?.content;
@@ -158,7 +163,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
       if (toolResults.length > 0) {
         for (const result of toolResults) {
           observations.push({
-            id: generateId("obs"),
+            id: nextId(),
             sessionId: sessionId || "imported",
             timestamp: ts,
             hookType: (result.isError ? "post_tool_failure" : "post_tool_use") as HookType,
@@ -172,7 +177,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
         const text = toText(content);
         if (text.trim().length > 0) {
           observations.push({
-            id: generateId("obs"),
+            id: nextId(),
             sessionId: sessionId || "imported",
             timestamp: ts,
             hookType: "prompt_submit" as HookType,
@@ -186,7 +191,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
       const tools = extractToolUses(content);
       if (text.trim().length > 0) {
         observations.push({
-          id: generateId("obs"),
+          id: nextId(),
           sessionId: sessionId || "imported",
           timestamp: ts,
           hookType: "stop" as HookType,
@@ -196,7 +201,7 @@ export function parseJsonlText(text: string, fallbackSessionId?: string): Parsed
       }
       for (const tool of tools) {
         observations.push({
-          id: generateId("obs"),
+          id: nextId(),
           sessionId: sessionId || "imported",
           timestamp: ts,
           hookType: "pre_tool_use" as HookType,

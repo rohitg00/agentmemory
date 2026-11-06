@@ -1,5 +1,6 @@
 import { pinGraphState } from "../state/graph-generation.js";
 import { persistGraphRecords, validateGraphRecords } from "../state/graph-ingestion.js";
+import { MAX_IMPORT_OBS_PER_SESSION } from "../config.js";
 import type { IIIClient } from "iii-sdk";
 import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type {
@@ -55,20 +56,22 @@ const IMPORT_CHUNK_SIZE = 20;
 // Run `fn` over `items` in fixed-size chunks, awaiting each chunk before
 // starting the next. Preserves ordering guarantees across chunks (chunk N
 // fully settles before chunk N+1 begins) while parallelizing within a
-// chunk. Errors propagate — a failing item rejects the whole import, same
-// as the original serial loops.
+// chunk. Settle sibling writes before propagating a failure so mutation
+// locks are not released while state writes are still pending.
 async function runChunked<T>(
   items: readonly T[],
   fn: (item: T) => Promise<void>,
 ): Promise<void> {
   for (let i = 0; i < items.length; i += IMPORT_CHUNK_SIZE) {
     const chunk = items.slice(i, i + IMPORT_CHUNK_SIZE);
-    await Promise.all(chunk.map(fn));
+    const results = await Promise.allSettled(chunk.map(fn));
+    const failure = results.find((result) => result.status === "rejected");
+    if (failure?.status === "rejected") throw failure.reason;
   }
 }
 
 const EXPORT_OVERSIZE_HINT =
-  "narrow the range with ?maxSessions / ?offset, or export fewer collections; the non-session collections (memories, graph, semantic, actions, lessons, ...) are not yet paginated";
+  "narrow the range with ?maxSessions / ?offset, page the rest with ?collectionLimit / ?collectionOffset, or ask for a subset with ?collections=";
 
 const EXPORT_COLLECTIONS: ReadonlyArray<readonly [keyof ExportData, string]> = [
   ["graphNodes", KV.graphNodes],
@@ -89,6 +92,23 @@ const EXPORT_COLLECTIONS: ReadonlyArray<readonly [keyof ExportData, string]> = [
   ["accessLogs", KV.accessLog],
 ];
 
+const EXPORT_COLLECTION_NAMES: ReadonlySet<string> = new Set([
+  "sessions",
+  "memories",
+  "summaries",
+  ...EXPORT_COLLECTIONS.map(([field]) => field),
+]);
+
+function parseCollections(raw: unknown): ReadonlySet<string> | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  const names = Array.isArray(raw) ? raw : String(raw).split(",");
+  return new Set(
+    names
+      .map((name) => String(name).trim())
+      .filter((name) => EXPORT_COLLECTION_NAMES.has(name)),
+  );
+}
+
 export class ExportBudget {
   bytes = 0;
 
@@ -106,12 +126,40 @@ export class ExportBudget {
 
 export function registerExportImportFunction(sdk: IIIClient, state: StateKV): void {
   sdk.registerFunction("mem::export",
-    async (data?: { maxSessions?: number; offset?: number }) => {
+    async (data?: {
+      maxSessions?: number;
+      offset?: number;
+      collectionLimit?: number;
+      collectionOffset?: number;
+      collections?: string[] | string;
+    }) => {
       const kv = await pinGraphState(state);
       const rawMax = Number(data?.maxSessions);
       const maxSessions = Number.isFinite(rawMax) && rawMax > 0 ? Math.min(Math.floor(rawMax), 1000) : undefined;
       const rawOffset = Number(data?.offset);
       const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? Math.floor(rawOffset) : 0;
+      const rawCollectionLimit = Number(data?.collectionLimit);
+      const collectionLimit =
+        Number.isFinite(rawCollectionLimit) && rawCollectionLimit > 0
+          ? Math.floor(rawCollectionLimit)
+          : undefined;
+      const rawCollectionOffset = Number(data?.collectionOffset);
+      const collectionOffset =
+        Number.isFinite(rawCollectionOffset) && rawCollectionOffset >= 0
+          ? Math.floor(rawCollectionOffset)
+          : 0;
+
+      const selection = parseCollections(data?.collections);
+      const isSelected = (name: string): boolean =>
+        selection === undefined || selection.has(name);
+
+      const collectionTotals: Record<string, number> = {};
+      const sliceCollection = <T>(name: string, rows: T[]): T[] => {
+        collectionTotals[name] = rows.length;
+        if (!isSelected(name)) return [];
+        if (collectionLimit === undefined) return rows;
+        return rows.slice(collectionOffset, collectionOffset + collectionLimit);
+      };
 
       const budget = new ExportBudget();
       const refuse = (collection: string) => {
@@ -128,15 +176,19 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         kv.list<T>(scope).catch(() => [] as T[]);
 
       const allSessions = await kv.list<Session>(KV.sessions);
-      const paginatedSessions = maxSessions !== undefined
+      const sessionWindow = maxSessions !== undefined
         ? allSessions.slice(offset, offset + maxSessions)
         : allSessions;
+      const paginatedSessions = isSelected("sessions") ? sessionWindow : [];
       if (!budget.fits(paginatedSessions)) return refuse("sessions");
 
-      const memories = await kv.list<Memory>(KV.memories);
+      const memories = sliceCollection("memories", await kv.list<Memory>(KV.memories));
       if (!budget.fits(memories)) return refuse("memories");
 
-      const summaries = await kv.list<SessionSummary>(KV.summaries);
+      const summaries = sliceCollection(
+        "summaries",
+        await kv.list<SessionSummary>(KV.summaries),
+      );
       if (!budget.fits(summaries)) return refuse("summaries");
 
       const observations: Record<string, CompressedObservation[]> = {};
@@ -161,9 +213,20 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       }
       if (!budget.fits(profiles)) return refuse("profiles");
 
+      const partial = collectionLimit !== undefined || selection !== undefined;
+      const exportedMemoryIds = new Set(memories.map((m) => m.id));
+      const accessLogsFor = (rows: AccessLogExport[]): AccessLogExport[] => {
+        collectionTotals["accessLogs"] = rows.length;
+        if (!isSelected("accessLogs")) return [];
+        return rows.filter((row) => exportedMemoryIds.has(row.memoryId));
+      };
       const collections: Partial<ExportData> = {};
       for (const [field, scope] of EXPORT_COLLECTIONS) {
-        const items = await optional<unknown>(scope);
+        const rows = await optional<unknown>(scope);
+        const items =
+          field === "accessLogs" && partial
+            ? accessLogsFor(rows as AccessLogExport[])
+            : sliceCollection(field, rows);
         if (items.length === 0) continue;
         if (!budget.fits(items, field)) return refuse(field);
         (collections as Record<string, unknown>)[field] = items;
@@ -189,6 +252,23 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         };
       }
 
+      if (partial) {
+        exportData.collectionPagination = {
+          offset: collectionOffset,
+          ...(collectionLimit !== undefined ? { limit: collectionLimit } : {}),
+          ...(selection !== undefined ? { collections: [...selection] } : {}),
+          totals: collectionTotals,
+          hasMore:
+            collectionLimit !== undefined &&
+            Object.entries(collectionTotals).some(
+              ([name, total]) =>
+                name !== "accessLogs" &&
+                isSelected(name) &&
+                collectionOffset + collectionLimit < total,
+            ),
+        };
+      }
+
       const oversized = checkPayloadFrameSize(exportData, EXPORT_OVERSIZE_HINT);
       if (oversized) {
         logger.warn("Export exceeds transport frame limit", {
@@ -207,6 +287,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         observations: totalObs,
         memories: memories.length,
         summaries: summaries.length,
+        collections: selection && [...selection],
       });
 
       return exportData;
@@ -229,18 +310,28 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       const strategy = data.strategy || "merge";
       const importData = data.exportData;
 
-      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27", "0.9.28", "0.9.29", "0.9.30"]);
+      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27", "0.9.28", "0.9.29", "0.9.30", "0.9.31", "0.9.32"]);
       if (!supportedVersions.has(importData.version)) {
         return {
           success: false,
           error: `Unsupported export version: ${importData.version}`,
         };
       }
+      const sessionPage = importData.pagination;
+      const partialSessions =
+        sessionPage !== undefined &&
+        ((sessionPage.offset ?? 0) > 0 || sessionPage.hasMore === true);
+      if (strategy === "replace" && (importData.collectionPagination || partialSessions)) {
+        return {
+          success: false,
+          error:
+            "replace needs a complete export; this one is a page or a selection of collections",
+        };
+      }
 
       const MAX_SESSIONS = 10_000;
       const MAX_MEMORIES = 50_000;
       const MAX_SUMMARIES = 10_000;
-      const MAX_OBS_PER_SESSION = 5_000;
       const MAX_TOTAL_OBSERVATIONS = 500_000;
       const MAX_ACCESS_LOGS = 50_000;
 
@@ -289,14 +380,18 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       }
 
       let totalObservations = 0;
-      for (const [, obs] of Object.entries(importData.observations)) {
+      for (const [sessionId, obs] of Object.entries(importData.observations)) {
         if (!Array.isArray(obs)) {
           return { success: false, error: "observation values must be arrays" };
         }
-        if (obs.length > MAX_OBS_PER_SESSION) {
+        if (obs.length > MAX_IMPORT_OBS_PER_SESSION) {
           return {
             success: false,
-            error: `Too many observations per session (max ${MAX_OBS_PER_SESSION})`,
+            error:
+              `Too many observations in session ${sessionId}: ${obs.length} ` +
+              `(max ${MAX_IMPORT_OBS_PER_SESSION}). MAX_OBS_PER_SESSION may be ` +
+              `configured above this import ceiling; lower it to at most ` +
+              `${MAX_IMPORT_OBS_PER_SESSION} or split the session before exporting.`,
           };
         }
         totalObservations += obs.length;
@@ -312,6 +407,35 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       } catch (error) {
         return { success: false, error: error instanceof Error ? error.message : String(error) };
       }
+      const badRow = (rows: readonly unknown[], key: string) =>
+        rows.findIndex((row) => {
+          const id = row && typeof row === "object" ? (row as Record<string, unknown>)[key] : undefined;
+          return typeof id !== "string" || id.length === 0;
+        });
+      for (const [sessionId, obs] of Object.entries(importData.observations)) {
+        const index = badRow(obs, "id");
+        if (index >= 0) {
+          return { success: false, error: `observations.${sessionId}[${index}] must be an object with a string id` };
+        }
+      }
+      const rowKeys: Record<string, string> = { summaries: "sessionId", profiles: "project", accessLogs: "memoryId" };
+      for (const section of ["sessions", "memories", "summaries", "profiles", ...EXPORT_COLLECTIONS.map(([field]) => field)] as const) {
+        const rows = importData[section];
+        if (rows !== undefined && !Array.isArray(rows)) {
+          return { success: false, error: `${section} must be an array` };
+        }
+        const key = rowKeys[section] ?? "id";
+        const index = badRow(rows ?? [], key);
+        if (index >= 0) {
+          return { success: false, error: `${section}[${index}] must be an object with a string ${key}` };
+        }
+      }
+      if ((importData.accessLogs?.length ?? 0) > MAX_ACCESS_LOGS) {
+        return {
+          success: false,
+          error: `Too many access logs (max ${MAX_ACCESS_LOGS})`,
+        };
+      }
 
       const stats = {
         sessions: 0,
@@ -324,7 +448,8 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       };
 
       const replaceSessions = strategy === "replace" ? await kv.list<Session>(KV.sessions) : [];
-      const sessionKeys = [...obsBuckets, ...importData.sessions.map((session) => session.id), ...replaceSessions.map((session) => session.id)]
+      const sessionKeys = [...obsBuckets, ...importData.sessions.map((session) => session.id),
+        ...importData.summaries.map((summary) => summary.sessionId), ...replaceSessions.map((session) => session.id)]
         .map((id) => `obs:${id}`);
       const indexObs: CompressedObservation[] = [];
       const indexMems: Memory[] = [];
@@ -349,6 +474,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           const obsDeletes: Array<{ sessionId: string; obsId: string; captureKey?: string }> = [];
           await runChunked(existing, async (session) => {
             await kv.delete(KV.sessions, session.id);
+            await kv.delete(KV.summaryRepairs, session.id);
             await removeSessionFromProjectIndex(
               kv,
               session.project,
@@ -470,6 +596,20 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           });
         }
 
+        await runChunked(importData.summaries, async (summary) => {
+          if (strategy === "skip") {
+            const existing = await kv
+              .get<SessionSummary>(KV.summaries, summary.sessionId)
+              .catch(() => null);
+            if (existing) {
+              stats.skipped++;
+              return;
+            }
+          }
+          await kv.set(KV.summaries, summary.sessionId, summary);
+          stats.summaries++;
+        });
+
         return null;
       });
       if (preflightError) return preflightError;
@@ -492,20 +632,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         await kv.set(KV.memories, memory.id, memory);
         stats.memories++;
         indexMems.push(memory);
-      });
-
-      await runChunked(importData.summaries, async (summary) => {
-        if (strategy === "skip") {
-          const existing = await kv
-            .get<SessionSummary>(KV.summaries, summary.sessionId)
-            .catch(() => null);
-          if (existing) {
-            stats.skipped++;
-            return;
-          }
-        }
-        await kv.set(KV.summaries, summary.sessionId, summary);
-        stats.summaries++;
       });
 
       if (strategy === "replace" || importData.graphNodes || importData.graphEdges) {
@@ -649,15 +775,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         });
       }
       if (importData.accessLogs) {
-        if (!Array.isArray(importData.accessLogs)) {
-          return { success: false, error: "accessLogs must be an array" };
-        }
-        if (importData.accessLogs.length > MAX_ACCESS_LOGS) {
-          return {
-            success: false,
-            error: `Too many access logs (max ${MAX_ACCESS_LOGS})`,
-          };
-        }
         const memoryIds = new Set<string>(
           importData.memories.map((m) => m.id),
         );

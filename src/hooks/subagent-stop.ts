@@ -1,6 +1,7 @@
 #!/usr/bin/env node
+import { truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
-import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
+import { captureObservation, isDrainChild, runDrainChild, stripPrivateData, withEventId } from "./_capture.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -29,30 +30,32 @@ async function main() {
   if (isSdkChildContext(data)) return;
 
   const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
-  const agentId = data.agent_id || data.agentName;
-  const agentType = data.agent_type || data.agentDisplayName || data.agentName;
-  const lastMsg =
-    typeof data.last_assistant_message === "string"
-      ? data.last_assistant_message.slice(0, 4000)
-      : "";
+  const agentId = data.agent_id || data.agentId || data.agentName;
+  const agentType = data.agent_type || data.agentType || data.agentDisplayName || data.agentName;
+  const reply = data.last_assistant_message ?? data.response;
+  const redactedReply = typeof reply === "string" ? stripPrivateData(reply) : "";
+  const lastMsg = truncateText(redactedReply, 4000);
 
   const cwd = hookCwd(data) || process.cwd();
 
+  const body = {
+    hookType: "subagent_stop",
+    sessionId,
+    project: resolveProject(cwd),
+    cwd,
+    timestamp: new Date().toISOString(),
+    data: {
+      agent_id: agentId,
+      agent_type: agentType,
+      last_message: lastMsg,
+    },
+  };
   void captureObservation(
     withEventId(
-      {
-        hookType: "subagent_stop",
-        sessionId,
-        project: resolveProject(cwd),
-        cwd,
-        timestamp: new Date().toISOString(),
-        data: {
-          agent_id: agentId,
-          agent_type: agentType,
-          last_message: lastMsg,
-        },
-      },
-      data,
+      body,
+      {},
+      { ...body.data, last_message: redactedReply, stop_hook_active: data.stop_hook_active === true },
+      { stable: Boolean(data.agent_id || data.agentId) },
     ),
     OBSERVE_TIMEOUT_MS,
   );

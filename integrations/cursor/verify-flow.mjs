@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+/**
+ * End-to-end smoke test for the Cursor plugin hook pipeline against a live
+ * agentmemory daemon.
+ *
+ * Every assertion polls the daemon rather than sleeping for a fixed time.
+ * The hook processes are deliberately not synchronous with the work they
+ * cause: the canonical hooks fire-and-forget their HTTP calls and exit on a
+ * short timer, and run-detached.mjs returns as soon as its background worker
+ * is spawned. A fixed sleep therefore proves nothing -- too short and a
+ * healthy pipeline reports FAIL, too long and a broken one still has time to
+ * look healthy. Polling for the state change is the only honest check.
+ */
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { authHeader, requireConnection } from './_env.mjs';
+
+const INTEGRATION_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
+const REPO_ROOT = resolve(INTEGRATION_ROOT, '../..');
+const CURSOR_SCRIPTS = join(REPO_ROOT, 'plugin', 'scripts', 'cursor');
+
+const POLL_INTERVAL_MS = 1000;
+const POLL_TIMEOUT_MS = 90000;
+
+const { url, secret } = requireConnection();
+const authHeaders = authHeader(secret);
+
+function runHook(script, args, payload) {
+  const r = spawnSync(process.execPath, [join(CURSOR_SCRIPTS, script), ...args], {
+    input: JSON.stringify(payload),
+    encoding: 'utf-8',
+    timeout: 60000,
+    env: { ...process.env, AGENTMEMORY_URL: url, AGENTMEMORY_SECRET: secret }
+  });
+  return { status: r.status, stderr: r.stderr?.trim().slice(0, 300) ?? '' };
+}
+
+async function fetchSession(id) {
+  const r = await fetch(`${url}/agentmemory/sessions`, {
+    headers: authHeaders,
+    redirect: "error",
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!r.ok) throw new Error(`GET /agentmemory/sessions -> ${r.status}`);
+  const data = await r.json();
+  return data.sessions?.find((s) => s.id === id) ?? null;
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Poll until `predicate(session)` holds. Returns the last session seen. */
+async function waitFor(id, predicate, timeoutMs = POLL_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  for (;;) {
+    last = await fetchSession(id);
+    if (last && predicate(last)) return { session: last, ok: true, waitedMs: 0 };
+    if (Date.now() >= deadline) return { session: last, ok: false };
+    await sleep(POLL_INTERVAL_MS);
+  }
+}
+
+if (!existsSync(join(CURSOR_SCRIPTS, 'run-hook.mjs'))) {
+  console.error(`Missing Cursor shim at ${CURSOR_SCRIPTS}. Run \`npm run build\` first.`);
+  process.exit(1);
+}
+
+const workspace = mkdtempSync(join(tmpdir(), 'am-cursor-verify-'));
+process.on('exit', () => rmSync(workspace, { recursive: true, force: true }));
+const repoRootNorm = workspace.replace(/\\/g, '/');
+const expectedProject = process.env.AGENTMEMORY_PROJECT_NAME?.trim() || basename(workspace);
+const sessionId = `cursor-plugin-verify-${Date.now()}`;
+const basePayload = {
+  session_id: sessionId,
+  workspace_roots: [repoRootNorm],
+  cwd: repoRootNorm
+};
+
+console.log('=== agentmemory Cursor plugin verify ===\n');
+console.log(`Shim scripts: ${CURSOR_SCRIPTS}`);
+console.log(`Session id:   ${sessionId}\n`);
+
+// A non-2xx /livez means the daemon is up but rejecting us (usually a bad
+// secret). Continuing past it turns one clear error into four confusing ones.
+let livez;
+try {
+  livez = await fetch(`${url}/agentmemory/livez`, {
+    headers: authHeaders,
+    redirect: "error",
+    signal: AbortSignal.timeout(15000)
+  });
+} catch (e) {
+  console.error(`livez: unreachable (${e.message})`);
+  process.exit(1);
+}
+if (!livez.ok) {
+  console.error(`livez: HTTP ${livez.status} -- check AGENTMEMORY_URL / AGENTMEMORY_SECRET`);
+  process.exit(1);
+}
+console.log('livez: ok');
+
+const results = [];
+function record(name, ok, detail) {
+  results.push({ name, ok, detail });
+  console.log(`  ${ok ? 'PASS' : 'FAIL'}  ${name}${detail ? ` -- ${detail}` : ''}`);
+}
+
+// 1. sessionStart: the session must show up on the daemon at all.
+console.log('\n[1/4] sessionStart');
+let r = runHook('run-hook.mjs', ['sessionStart'], basePayload);
+console.log(`  shim exit ${r.status}${r.stderr ? ` (${r.stderr})` : ''}`);
+let w = await waitFor(sessionId, (s) => Boolean(s));
+record('session registered', w.ok, w.session ? `project=${w.session.project}` : 'never appeared');
+record(
+  'resolver picked the test workspace, not .cursor',
+  w.session?.project === expectedProject,
+  `got ${w.session?.project ?? '(none)'}`
+);
+
+// 2. One tool event must be recorded; a different retry would hide a lost event.
+console.log('\n[2/4] postToolUse');
+r = runHook('run-hook.mjs', ['postToolUse'], {
+  ...basePayload,
+  tool_name: 'Read',
+  tool_input: { path: join(REPO_ROOT, 'package.json') },
+  tool_output: 'verify-flow smoke test'
+});
+record('tool hook completed', r.status === 0, r.stderr);
+w = await waitFor(sessionId, (s) => (s.observationCount ?? 0) >= 1);
+record('observation captured', w.ok, `obs=${w.session?.observationCount ?? 0}`);
+
+// Stop captures the reply and schedules idle finalization; it is not sessionEnd.
+console.log('\n[3/4] stop (detached)');
+const observationsBeforeStop = w.session?.observationCount ?? 0;
+r = runHook('run-detached.mjs', ['stop'], {
+  ...basePayload,
+  last_assistant_message: 'Cursor detached stop smoke test'
+});
+console.log(`  parent exit ${r.status}${r.stderr ? ` (${r.stderr})` : ''} (worker continues in background)`);
+w = await waitFor(sessionId, (s) => (s.observationCount ?? 0) > observationsBeforeStop);
+record(
+  'detached worker captured the reply',
+  r.status === 0 && w.ok,
+  `obs=${w.session?.observationCount ?? 0}`
+);
+
+// Use a separate session so the stop hook cannot satisfy the sessionEnd check.
+if (process.argv.includes('--with-session-end')) {
+  console.log('\n[4/4] sessionEnd');
+  const endId = `${sessionId}-end`;
+  const payload = { ...basePayload, session_id: endId };
+  runHook('run-hook.mjs', ['sessionStart'], payload);
+  const started = await waitFor(endId, () => true);
+  record('sessionEnd fixture registered', started.ok);
+  r = runHook('run-detached.mjs', ['sessionEnd'], { ...payload, reason: 'window_close' });
+  record('sessionEnd worker spawned', r.status === 0, r.stderr);
+  const ended = await waitFor(endId, (s) => s.status === 'completed' || Boolean(s.endedAt));
+  record('sessionEnd closed its own session', ended.ok);
+} else {
+  console.log('\n[4/4] sessionEnd skipped (pass --with-session-end to exercise it)');
+}
+
+const failed = results.filter((x) => !x.ok);
+console.log(`\n${results.length - failed.length}/${results.length} checks passed.`);
+if (failed.length) {
+  console.error(`FAILED: ${failed.map((f) => f.name).join(', ')}`);
+  process.exit(1);
+}
+console.log('Cursor hook pipeline OK.');

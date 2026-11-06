@@ -129,6 +129,19 @@ async function setup(sessionId: string) {
 }
 
 describe("mem::summarize watermark", () => {
+  it.each([3, 5])("includes newly imported observations at or before the watermark (%s)", async (minute) => {
+    const t = await setup("ses_imported");
+    await t.addObs(1, 5, (i) => i);
+    await t.handler({ sessionId: "ses_imported" });
+    const late = makeObs(99, "ses_imported", at(minute));
+    await t.kv.set("obs:ses_imported", late.id, late);
+    const result = await t.handler({ sessionId: "ses_imported" });
+    expect(result).toMatchObject({ success: true });
+    expect(result).not.toHaveProperty("unchanged", true);
+    expect(t.provider.calls[1].user).toContain("obs 99");
+    expect((await t.stored()).observationCount).toBe(6);
+  });
+
   it("records how far the stored summary reaches", async () => {
     const t = await setup("ses_first");
     await t.addObs(1, 5, (i) => i);
