@@ -134,6 +134,9 @@ describe("plugin bridge reads Claude Code plugin settings", () => {
 
 describe("plugin bridge call timeout", () => {
   it("uses the shared MCP call timeout instead of a fixed 15 s", async () => {
+    vi.stubEnv("AGENTMEMORY_CALL_TIMEOUT_MS", "");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_CALL_TIMEOUT_MS", "");
+    vi.stubEnv("AGENTMEMORY_ENV_FILE", "");
     const timeout = vi.spyOn(AbortSignal, "timeout");
     try {
       await createPluginBridge()("tools/list", {});
