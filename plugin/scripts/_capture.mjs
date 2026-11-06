@@ -344,12 +344,13 @@ function stripSecrets(input) {
 	return result;
 }
 function scrubRecord(value, options = {}) {
-	if (typeof value === "string") return stripPrivateData(value);
+	const strip = options.strip ?? stripPrivateData;
+	if (typeof value === "string") return strip(value);
 	if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options));
 	if (value !== null && typeof value === "object") {
 		const proto = Object.getPrototypeOf(value);
 		if (proto !== Object.prototype && proto !== null) return value;
-		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? stripPrivateData(key) : key, item]);
+		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? strip(key) : key, item]);
 		const reserved = new Set(entries.map(([key]) => key));
 		const used = /* @__PURE__ */ new Set();
 		return Object.fromEntries(entries.map(([key, item]) => {

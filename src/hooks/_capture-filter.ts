@@ -1,4 +1,4 @@
-import { stripPrivateData, stripSecrets } from "../functions/privacy.js";
+import { scrubRecord, stripPrivateData, stripSecrets } from "../functions/privacy.js";
 
 const DEFAULT_DENY_PATTERNS = [
   "memory_*",
@@ -76,14 +76,7 @@ export function truncateText(value: string, max: number): string {
 const JSON_WHITESPACE_ESCAPES: Record<string, string> = { n: "\n", r: "\r", t: "\t" };
 
 function scrubSecrets(value: unknown): unknown {
-  if (typeof value === "string") return stripSecrets(value);
-  if (Array.isArray(value)) return value.map(scrubSecrets);
-  if (value !== null && typeof value === "object") {
-    const proto = Object.getPrototypeOf(value);
-    if (proto !== Object.prototype && proto !== null) return value;
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [stripSecrets(key), scrubSecrets(item)]));
-  }
-  return value;
+  return scrubRecord(value, { scrubKeys: true, strip: stripSecrets });
 }
 
 function redactSerialized(serialized: string): string {

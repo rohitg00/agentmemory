@@ -57,6 +57,30 @@ function stripSecrets(input) {
 	}
 	return result;
 }
+function scrubRecord(value, options = {}) {
+	const strip = options.strip ?? stripPrivateData;
+	if (typeof value === "string") return strip(value);
+	if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options));
+	if (value !== null && typeof value === "object") {
+		const proto = Object.getPrototypeOf(value);
+		if (proto !== Object.prototype && proto !== null) return value;
+		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? strip(key) : key, item]);
+		const reserved = new Set(entries.map(([key]) => key));
+		const used = /* @__PURE__ */ new Set();
+		return Object.fromEntries(entries.map(([key, item]) => {
+			let unique = key;
+			if (used.has(unique)) {
+				let suffix = 2;
+				do
+					unique = `${key}_${suffix++}`;
+				while (reserved.has(unique) || used.has(unique));
+			}
+			used.add(unique);
+			return [unique, scrubRecord(item, options)];
+		}));
+	}
+	return value;
+}
 //#endregion
 //#region src/hooks/_capture-filter.ts
 const DEFAULT_DENY_PATTERNS = [
@@ -113,14 +137,10 @@ const JSON_WHITESPACE_ESCAPES = {
 	t: "	"
 };
 function scrubSecrets(value) {
-	if (typeof value === "string") return stripSecrets(value);
-	if (Array.isArray(value)) return value.map(scrubSecrets);
-	if (value !== null && typeof value === "object") {
-		const proto = Object.getPrototypeOf(value);
-		if (proto !== Object.prototype && proto !== null) return value;
-		return Object.fromEntries(Object.entries(value).map(([key, item]) => [stripSecrets(key), scrubSecrets(item)]));
-	}
-	return value;
+	return scrubRecord(value, {
+		scrubKeys: true,
+		strip: stripSecrets
+	});
 }
 function redactSerialized(serialized) {
 	return stripPrivateData(serialized.replace(/\\([\\nrt])/g, (escape, c) => JSON_WHITESPACE_ESCAPES[c] ?? escape)).replace(/[\n\r\t]/g, (c) => JSON.stringify(c).slice(1, -1));

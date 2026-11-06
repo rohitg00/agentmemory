@@ -165,6 +165,18 @@ describe("truncateCaptureOutput redacts structured values before serializing", (
     expect(truncateCaptureOutput(value, 100) as string).not.toContain("B".repeat(20));
   });
 
+  it("redacts a credential that a vertical tab separates from its scheme", () => {
+    const value = { header: "Bearer\u000b" + "C".repeat(32), pad: "y".repeat(200) };
+    expect(truncateJson(value, 100)).not.toContain("C".repeat(20));
+  });
+
+  it("keeps every field when two keys redact to the same text", () => {
+    const value = { ["token=" + "A".repeat(24)]: "first", ["token=" + "B".repeat(24)]: "second", pad: "y".repeat(200) };
+    const out = truncateJson(value, 150);
+    expect(out).toContain("first");
+    expect(out).toContain("second");
+  });
+
   it("keeps escaped backslashes and line breaks in the cut JSON", () => {
     const out = truncateJson({ a: "one\ntwo\\nthree", pad: "y".repeat(200) }, 60);
     expect(out.startsWith('{"a":"one\\ntwo\\\\nthree"')).toBe(true);
