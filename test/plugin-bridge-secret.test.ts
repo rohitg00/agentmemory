@@ -131,3 +131,18 @@ describe("plugin bridge reads Claude Code plugin settings", () => {
     expect(authorization()).toBeUndefined();
   });
 });
+
+describe("plugin bridge call timeout", () => {
+  it("uses the shared MCP call timeout instead of a fixed 15 s", async () => {
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      await createPluginBridge()("tools/list", {});
+      expect(timeout).toHaveBeenLastCalledWith(190_000);
+      vi.stubEnv("AGENTMEMORY_CALL_TIMEOUT_MS", "600000");
+      await createPluginBridge()("tools/list", {});
+      expect(timeout).toHaveBeenLastCalledWith(600_000);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+});
