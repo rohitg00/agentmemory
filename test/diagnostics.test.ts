@@ -195,11 +195,12 @@ describe("Diagnostics Functions", () => {
       };
 
       expect(result.success).toBe(true);
-      // 15 = 8 original (actions, leases, sentinels, sketches, signals,
+      // 16 = 8 original (actions, leases, sentinels, sketches, signals,
       // sessions, memories, mesh) + 6 added in #lesson-visibility
       // (lessons, summaries, semantic, procedural, crystals, insights) +
-      // 1 added in #memory-project-scope (memory-project-coverage).
-      expect(result.summary.pass).toBe(15);
+      // 1 added in #memory-project-scope (memory-project-coverage) +
+      // facets-ok.
+      expect(result.summary.pass).toBe(16);
       expect(result.summary.warn).toBe(0);
       expect(result.summary.fail).toBe(0);
       expect(result.summary.fixable).toBe(0);
@@ -490,6 +491,44 @@ describe("Diagnostics Functions", () => {
       expect(
         result.checks.some((c) => c.category === "actions"),
       ).toBe(false);
+    });
+  });
+
+  describe("orphan facets", () => {
+    const facet = (id: string, targetId: string, targetType: "memory" | "action") => ({
+      id, targetId, targetType, dimension: "tool", value: "x", createdAt: new Date().toISOString(),
+    });
+
+    beforeEach(async () => {
+      const memory = { id: "mem_live", title: "live", content: "c", type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, isLatest: true, createdAt: "", updatedAt: "" };
+      await kv.set(KV.memories, memory.id, memory);
+      const action = makeAction({ id: "act_live" } as Partial<Action>);
+      await kv.set(KV.actions, action.id, action);
+      for (const f of [
+        facet("fct_1", "mem_live", "memory"),
+        facet("fct_2", "mem_gone", "memory"),
+        facet("fct_3", action.id, "action"),
+        facet("fct_4", "act_gone", "action"),
+      ]) await kv.set(KV.facets, f.id, f);
+    });
+
+    it("diagnose reports facets whose target was deleted", async () => {
+      const result = (await sdk.trigger("mem::diagnose", { categories: ["facets"] })) as { checks: DiagnosticCheck[] };
+      expect(result.checks).toEqual([expect.objectContaining({ name: "orphan-facets", status: "warn", fixable: true })]);
+    });
+
+    it("heal dry run reports orphan facets without removing them", async () => {
+      const result = (await sdk.trigger("mem::heal", { categories: ["facets"], dryRun: true })) as { fixed: number };
+      expect(result.fixed).toBe(2);
+      expect((await kv.list(KV.facets)).length).toBe(4);
+    });
+
+    it("heal removes only facets whose target was deleted", async () => {
+      const result = (await sdk.trigger("mem::heal", { categories: ["facets"] })) as { fixed: number };
+      expect(result.fixed).toBe(2);
+      expect((await kv.list<{ id: string }>(KV.facets)).map((f) => f.id).sort()).toEqual(["fct_1", "fct_3"]);
+      const after = (await sdk.trigger("mem::diagnose", { categories: ["facets"] })) as { checks: DiagnosticCheck[] };
+      expect(after.checks[0]!.name).toBe("facets-ok");
     });
   });
 

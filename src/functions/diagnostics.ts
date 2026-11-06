@@ -3,6 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
+import { findOrphanFacets } from "./facets.js";
 import type {
   Action,
   ActionEdge,
@@ -38,6 +39,7 @@ const ALL_CATEGORIES = [
   "crystals",
   "insights",
   "mesh",
+  "facets",
 ];
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -620,6 +622,27 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
         }
       }
 
+      if (categories.includes("facets")) {
+        const orphans = await findOrphanFacets(kv);
+        checks.push(
+          orphans.length > 0
+            ? {
+                name: "orphan-facets",
+                category: "facets",
+                status: "warn",
+                message: `${orphans.length} facets point at deleted targets`,
+                fixable: true,
+              }
+            : {
+                name: "facets-ok",
+                category: "facets",
+                status: "pass",
+                message: "Every facet points at a live target",
+                fixable: false,
+              },
+        );
+      }
+
       const summary = {
         pass: checks.filter((c) => c.status === "pass").length,
         warn: checks.filter((c) => c.status === "warn").length,
@@ -1054,6 +1077,26 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
               skipped++;
             }
           }
+        }
+      }
+
+      if (categories.includes("facets")) {
+        for (const facet of await findOrphanFacets(kv)) {
+          const label = `facet ${facet.dimension}:${facet.value} on deleted ${facet.targetType} ${facet.targetId}`;
+          if (dryRun) {
+            details.push(`[dry-run] Would remove ${label}`);
+            fixed++;
+            continue;
+          }
+          await kv.delete(KV.facets, facet.id);
+          await recordAudit(kv, "heal", "mem::heal", [facet.id], {
+            entityType: "facet",
+            reason: "orphan-facet",
+            targetId: facet.targetId,
+            action: "delete",
+          });
+          details.push(`Removed ${label}`);
+          fixed++;
         }
       }
 

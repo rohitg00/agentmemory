@@ -77,6 +77,27 @@ export async function deleteFacetsForTargets(
   }
 }
 
+export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
+  const facets = await kv.list<Facet>(KV.facets);
+  const actionIds = facets.some((f) => f.targetType === "action")
+    ? new Set((await kv.list<{ id: string }>(KV.actions)).map((a) => a.id))
+    : new Set<string>();
+  const live = new Map<string, TargetLiveness | null>();
+  const orphans: Facet[] = [];
+  for (const facet of facets) {
+    if (facet.targetType === "action") {
+      if (!actionIds.has(facet.targetId)) orphans.push(facet);
+      continue;
+    }
+    if (!live.has(facet.targetId)) {
+      live.set(facet.targetId, await targetLiveness(kv, facet.targetId).catch(() => null));
+    }
+    const liveness = live.get(facet.targetId);
+    if (liveness && !facetTargetLive(facet, liveness)) orphans.push(facet);
+  }
+  return orphans;
+}
+
 export function registerFacetsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::facet-tag", 
     async (data: {
