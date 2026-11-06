@@ -3,7 +3,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
-import { findOrphanFacets } from "./facets.js";
+import { findOrphanFacets, isFacetStillOrphan } from "./facets.js";
 import type {
   Action,
   ActionEdge,
@@ -1086,6 +1086,10 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
           if (dryRun) {
             details.push(`[dry-run] Would remove ${label}`);
             fixed++;
+            continue;
+          }
+          if (!(await isFacetStillOrphan(kv, facet))) {
+            skipped++;
             continue;
           }
           await kv.delete(KV.facets, facet.id);

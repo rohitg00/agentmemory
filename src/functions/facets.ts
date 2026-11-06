@@ -83,6 +83,7 @@ export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
     ? new Set((await kv.list<{ id: string }>(KV.actions)).map((a) => a.id))
     : new Set<string>();
   const live = new Map<string, TargetLiveness | null>();
+  let observationIds: Set<string> | null | undefined;
   const orphans: Facet[] = [];
   for (const facet of facets) {
     if (facet.targetType === "action") {
@@ -93,9 +94,33 @@ export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
       live.set(facet.targetId, await targetLiveness(kv, facet.targetId).catch(() => null));
     }
     const liveness = live.get(facet.targetId);
-    if (liveness && !facetTargetLive(facet, liveness)) orphans.push(facet);
+    if (!liveness || facetTargetLive(facet, liveness)) continue;
+    if (facet.targetId.startsWith("obs_")) {
+      if (observationIds === undefined) observationIds = await listObservationIds(kv);
+      if (!observationIds || observationIds.has(facet.targetId)) continue;
+    }
+    orphans.push(facet);
   }
   return orphans;
+}
+
+async function listObservationIds(kv: StateKV): Promise<Set<string> | null> {
+  try {
+    const ids = new Set<string>();
+    for (const session of await kv.list<{ id: string }>(KV.sessions)) {
+      for (const obs of await kv.list<{ id: string }>(KV.observations(session.id))) ids.add(obs.id);
+    }
+    return ids;
+  } catch {
+    return null;
+  }
+}
+
+export async function isFacetStillOrphan(kv: StateKV, facet: Facet): Promise<boolean> {
+  if (!(await kv.get<Facet>(KV.facets, facet.id))) return false;
+  if (facet.targetType === "action") return !(await kv.get(KV.actions, facet.targetId));
+  const liveness = await targetLiveness(kv, facet.targetId).catch(() => null);
+  return !!liveness && !facetTargetLive(facet, liveness);
 }
 
 export function registerFacetsFunction(sdk: IIIClient, kv: StateKV): void {
