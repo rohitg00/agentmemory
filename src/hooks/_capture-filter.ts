@@ -1,4 +1,4 @@
-import { stripPrivateData } from "../functions/privacy.js";
+import { scrubRecord, stripPrivateData } from "../functions/privacy.js";
 
 const DEFAULT_DENY_PATTERNS = [
   "memory_*",
@@ -73,6 +73,12 @@ export function truncateText(value: string, max: number): string {
   return cut(stripPrivateData(value), max);
 }
 
+export function truncateJson(value: unknown, max: number): string {
+  const str = JSON.stringify(value);
+  if (str.length <= max) return str;
+  return cut(stripPrivateData(JSON.stringify(scrubRecord(value))), max);
+}
+
 function truncateWithSuffix(value: string, max: number, suffix: string): string {
   const safe = stripPrivateData(value);
   if (safe.length <= max) return safe;
@@ -85,7 +91,7 @@ export function truncateCaptureOutput(value: unknown, max: number): unknown {
   }
   if (typeof value === "object" && value !== null) {
     const str = JSON.stringify(value);
-    if (str.length > max) return truncateWithSuffix(str, max, "...[truncated]");
+    if (str.length > max) return truncateWithSuffix(JSON.stringify(scrubRecord(value)), max, "...[truncated]");
     return value;
   }
   return value;

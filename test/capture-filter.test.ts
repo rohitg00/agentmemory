@@ -5,6 +5,7 @@ import {
   preCompactBudget,
   shouldCaptureTool,
   truncateCaptureOutput,
+  truncateJson,
   truncateText,
 } from "../src/hooks/_capture-filter.js";
 
@@ -136,6 +137,20 @@ describe("truncation redacts before cutting", () => {
     const json = truncateCaptureOutput({ out: "x".repeat(10) + " " + token + "y".repeat(100) }, 40) as string;
     expect(json).not.toContain("ghp_");
     expect(json.length).toBeLessThanOrEqual(40);
+  });
+});
+
+describe("truncateCaptureOutput redacts structured values before serializing", () => {
+  it("removes a private block whose tag spans a line break", () => {
+    const out = truncateCaptureOutput({ log: "<private\n>hidden-value</private>" + "y".repeat(200) }, 60) as string;
+    expect(out).not.toContain("hidden");
+  });
+
+  it("truncateJson leaves short JSON unchanged and redacts long JSON before cutting", () => {
+    expect(truncateJson({ a: 1 }, 100)).toBe('{"a":1}');
+    const out = truncateJson({ log: "<private\n>hidden-value</private>" + "y".repeat(200) }, 60);
+    expect(out).not.toContain("hidden");
+    expect(out.length).toBeLessThanOrEqual(60);
   });
 });
 

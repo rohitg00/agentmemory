@@ -55,6 +55,29 @@ function stripPrivateData(input) {
 	}
 	return result;
 }
+function scrubRecord(value, options = {}) {
+	if (typeof value === "string") return stripPrivateData(value);
+	if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options));
+	if (value !== null && typeof value === "object") {
+		const proto = Object.getPrototypeOf(value);
+		if (proto !== Object.prototype && proto !== null) return value;
+		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? stripPrivateData(key) : key, item]);
+		const reserved = new Set(entries.map(([key]) => key));
+		const used = /* @__PURE__ */ new Set();
+		return Object.fromEntries(entries.map(([key, item]) => {
+			let unique = key;
+			if (used.has(unique)) {
+				let suffix = 2;
+				do
+					unique = `${key}_${suffix++}`;
+				while (reserved.has(unique) || used.has(unique));
+			}
+			used.add(unique);
+			return [unique, scrubRecord(item, options)];
+		}));
+	}
+	return value;
+}
 //#endregion
 //#region src/hooks/_capture-filter.ts
 const DEFAULT_DENY_PATTERNS = [
@@ -104,6 +127,11 @@ function cut(value, max) {
 function truncateText(value, max) {
 	if (value.length <= max) return value;
 	return cut(stripPrivateData(value), max);
+}
+function truncateJson(value, max) {
+	const str = JSON.stringify(value);
+	if (str.length <= max) return str;
+	return cut(stripPrivateData(JSON.stringify(scrubRecord(value))), max);
 }
 //#endregion
 //#region src/hooks/_project.ts
@@ -178,8 +206,8 @@ async function main() {
 		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 		data: {
 			tool_name: toolName,
-			tool_input: typeof toolInput === "string" ? truncateText(toolInput, 4e3) : truncateText(JSON.stringify(toolInput ?? ""), 4e3),
-			error: typeof error === "string" ? truncateText(error, 4e3) : truncateText(JSON.stringify(error ?? ""), 4e3)
+			tool_input: typeof toolInput === "string" ? truncateText(toolInput, 4e3) : truncateJson(toolInput ?? "", 4e3),
+			error: typeof error === "string" ? truncateText(error, 4e3) : truncateJson(error ?? "", 4e3)
 		}
 	}, data), OBSERVE_TIMEOUT_MS);
 	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
