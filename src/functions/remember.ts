@@ -6,7 +6,7 @@ import { StateKV } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
-import { memoryToObservation } from "../state/memory-utils.js";
+import { memoryToObservation, observationEmbedText, supersededAt } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { deleteFacetsForTargets } from "./facets.js";
 import { recordAudit } from "./audit.js";
@@ -183,6 +183,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
 
         if (supersededMemory) {
           supersededMemory.isLatest = false;
+          supersededMemory.updatedAt = supersededAt(supersededMemory.updatedAt, now);
           await kv.set(KV.memories, supersededMemory.id, supersededMemory);
           // The superseded version stays in KV (the viewer's version
           // chain reads it there) but leaves both search indexes:
@@ -210,7 +211,11 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       await vectorIndexAddGuarded(
         memory.id,
         memory.sessionIds?.[0] ?? "memory",
-        memory.title + " " + memory.content,
+        observationEmbedText({
+          title: memory.title,
+          narrative: memory.content,
+          concepts: memory.concepts,
+        }),
         { kind: "memory", logId: memory.id },
         (embedding, isCurrent) =>
           withKeyedLock("mem:remember", async () => {
@@ -401,6 +406,12 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           } catch (err) {
             recordFailure(`summary:${sessionId}`, err);
           }
+        });
+      }
+
+      if (deletedObservationIds.length > 0) {
+        await deleteFacetsForTargets(kv, deletedObservationIds, {
+          targetTypes: ["memory", "observation"],
         });
       }
 

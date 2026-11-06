@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { parseCompressionXml } from "../src/prompts/compression-output.js";
+import { COMPRESSION_SYSTEM } from "../src/prompts/compression.js";
 import { compressWithRetry } from "../src/eval/self-correct.js";
 import { CompressOutputSchema } from "../src/eval/schemas.js";
 import { registerCompressFunction } from "../src/functions/compress.js";
 import { onLiveEvent } from "../src/viewer/live-events.js";
 import { buildSyntheticCompression } from "../src/functions/compress-synthetic.js";
 import { NoopProvider } from "../src/providers/noop.js";
+import { observationEmbedText } from "../src/state/memory-utils.js";
 import type { CompressedObservation, MemoryProvider, RawObservation } from "../src/types.js";
 
 const search = vi.hoisted(() => ({ add: vi.fn(), save: vi.fn(), vector: vi.fn() }));
@@ -186,4 +188,51 @@ describe("compression validation and retry", () => {
     expect(result).toEqual({ valid: false, errors: ["invalid"], retried: false });
     expect(provider.compress).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("vector embed text for compressed observations", () => {
+  const zhXml = xml.replace(
+    "<concepts><concept>configuration</concept></concepts>",
+    "<concepts><concept>configuration</concept><concept>登录超时</concept></concepts>",
+  );
+
+  it("embeds concepts alongside title and narrative", async () => {
+    const r = rig(providerReturning(zhXml));
+    const result = await r.call();
+    expect(result).toMatchObject({ success: true });
+    expect(search.vector).toHaveBeenCalledTimes(1);
+    expect(search.vector).toHaveBeenCalledWith(
+      raw.id,
+      raw.sessionId,
+      expect.stringContaining("登录超时"),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("keeps concepts inside the embedding input when the narrative is long", () => {
+    const text = observationEmbedText({
+      title: "Login timeout",
+      narrative: "x".repeat(20_000),
+      concepts: ["登录超时"],
+    });
+    expect(text.slice(0, 16_000)).toContain("登录超时");
+  });
+
+  it("still embeds observations without concepts", async () => {
+    const r = rig(providerReturning(xml.replace(/<concepts>.*?<\/concepts>/, "<concepts />")));
+    const result = await r.call();
+    expect(result).toMatchObject({ success: true });
+    expect(search.vector).toHaveBeenCalledWith(
+      raw.id,
+      raw.sessionId,
+      expect.stringMatching(/^Updated configuration Updated the server configuration/),
+      expect.anything(),
+      expect.anything(),
+    );
+  });
+});
+
+it("tells the compression model to keep search terms in the user's language", () => {
+  expect(COMPRESSION_SYSTEM).toMatch(/user's language/);
 });

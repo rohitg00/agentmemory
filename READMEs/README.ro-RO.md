@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Document de design: 1.6k stele / 230 fork-uri pe gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Document de design: 1.7k stele / 240 fork-uri pe gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 de instrumente MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook-uri automate" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 baze de date externe" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ teste trecute" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ teste trecute" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -637,7 +637,7 @@ Intrarea agentmemory este **același bloc de server MCP** pe fiecare host care f
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` folosește aceeași configurație MCP și de hook-uri ca versiunile IDE actuale. Instalările existente ar trebui să se reîmprospăteze cu `--force`; vezi [notele de actualizare](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` scrie configurația la nivel de utilizator. Suprascrierile la nivel de workspace se pun în `.kiro/settings/mcp.json`, alături de codul tău. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` scrie blocul standard `mcpServers`. Warp detectează automat și skill-urile din `.claude/skills/`; odată instalat plugin-ul Claude Code, cele 9 skill-uri agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) apar nativ în paleta de comenzi slash a Warp. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` scrie blocul standard `mcpServers`. Utilizatorii extensiei VS Code: lipește același bloc prin Cline Settings → MCP Servers → Edit JSON. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` scrie blocul standard `mcpServers`. Utilizatorii extensiei VS Code: lipește același bloc prin Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferat) sau `config.json` (vechi/legacy) | `agentmemory connect continue` creează `config.yaml` când lipsește configurarea sau modifică `config.json` existent. Pentru YAML existent afișează blocul de adăugat la `mcpServers:`, păstrând comentariile și ancorele. Continue folosește o listă, nu un obiect. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` scrie sub `context_servers` (cheia specifică Zed, NU `mcpServers`). Serverele MCP la distanță pot fi conectate, în schimb, prin `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` scrie blocul standard `mcpServers`. Suprascrierile la nivel de proiect se pun în `<repo>/.factory/mcp.json`. Transmite `--with-hooks` pentru captare automată nativă. |
@@ -1154,7 +1154,7 @@ Referința completă [`.env.example`](../.env.example) include furnizori, filtre
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 de endpoint-uri pe portul `3111`. API-ul REST se leagă implicit la `127.0.0.1`. Endpoint-urile protejate necesită `Authorization: Bearer <secret>`, iar endpoint-urile de sincronizare mesh necesită un `AGENTMEMORY_SECRET` setat explicit pe ambii parteneri (peers).
+147 de endpoint-uri pe portul `3111`. API-ul REST se leagă implicit la `127.0.0.1`. Endpoint-urile protejate necesită `Authorization: Bearer <secret>`, iar endpoint-urile de sincronizare mesh necesită un `AGENTMEMORY_SECRET` setat explicit pe ambii parteneri (peers).
 
 **Autentificarea este activată implicit.** Dacă `AGENTMEMORY_SECRET` nu este setat, CLI-ul generează la prima pornire un secret aleatoriu în `~/.agentmemory/secret`, cu permisiuni `0600`, și îl copiază și în directorul de date selectat. Toți clienții incluși îl citesc de acolo când comunică cu un server local: CLI-ul, vizualizatorul, hook-urile din `plugin/scripts`, serverul MCP și shim-ul `@agentmemory/mcp`, configurațiile scrise de `agentmemory connect` și integrările incluse OpenCode, Pi, OpenClaw, Hermes și filesystem-watcher. Secretul stocat este trimis doar către URL-uri loopback (`localhost`, `127.0.0.0/8`, `::1`). Un `AGENTMEMORY_SECRET` explicit are întotdeauna prioritate, iar clienții la distanță trebuie să seteze secretul în mediul lor. Implementările Docker self-host pornite din repository și entrypoint-urile `deploy/` își generează și exportă propriul secret. Pentru a apela API-ul manual:
 
@@ -1235,7 +1235,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

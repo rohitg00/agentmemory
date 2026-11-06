@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.6k stars / 230 forks on the gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.7k stars / 240 forks on the gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -627,7 +627,7 @@ agentmemory-oppføringen er **samme MCP-server-blokk** på tvers av alle verter 
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` bruker samme MCP- og hook-konfigurasjon som nåværende IDE-versjoner. Eksisterende installasjoner bør oppdateres med `--force`; se [oppgraderingsnotatene](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` skriver brukernivå-konfigurasjonen. Arbeidsområde-overstyringer går i `.kiro/settings/mcp.json` ved siden av koden din. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` skriver standard `mcpServers`-blokk. Warp oppdager også automatisk skills fra `.claude/skills/`; når Claude Code-pluginen er installert vises de 9 agentmemory-skillene (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) naturlig i Warps slash-kommando-palett. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` skriver standard `mcpServers`-blokk. VS Code-utvidelsesbrukere: lim inn samme blokk via Cline Settings → MCP Servers → Edit JSON. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` skriver standard `mcpServers`-blokk. VS Code-utvidelsesbrukere: lim inn samme blokk via Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (foretrukket) eller `config.json` (eldre) | `agentmemory connect continue` oppretter en manglende `config.yaml` eller endrer eksisterende `config.json`. Hvis YAML-filen finnes, vises blokken for `mcpServers:` slik at kommentarer og ankere bevares. Continue bruker et array, ikke et objekt. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` skriver under `context_servers` (Zeds nøkkel, IKKE `mcpServers`). Eksterne MCP-servere kan kobles til via `{"url": "..."}` i stedet. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` skriver standard `mcpServers`-blokk. Prosjektavgrensede overstyringer går i `<repo>/.factory/mcp.json`. Send `--with-hooks` for native auto-fangst. |
@@ -1166,7 +1166,7 @@ Den fullstendige referansen er [`.env.example`](../.env.example), med legitimasj
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endepunkter på port `3111`. REST-API-en bindes til `127.0.0.1` som standard. Beskyttede endepunkter krever `Authorization: Bearer <secret>`, og mesh-synkroniseringsendepunkter krever en uttrykkelig satt `AGENTMEMORY_SECRET` på begge sider.
+147 endepunkter på port `3111`. REST-API-en bindes til `127.0.0.1` som standard. Beskyttede endepunkter krever `Authorization: Bearer <secret>`, og mesh-synkroniseringsendepunkter krever en uttrykkelig satt `AGENTMEMORY_SECRET` på begge sider.
 
 **Autentisering er på som standard.** Hvis `AGENTMEMORY_SECRET` verken er satt i skallet eller i `~/.agentmemory/.env`, oppretter CLI-en en tilfeldig hemmelighet ved første start i `~/.agentmemory/secret` og en kopi kalt `secret` i den valgte datamappen, med filmodus `0600`. Alle medfølgende klienter leser den derfra når de snakker med en lokal server: CLI-en, viewer, hookene under `plugin/scripts`, MCP-serveren og `@agentmemory/mcp`-shimmen, konfigurasjonene skrevet av `agentmemory connect` og de medfølgende OpenCode-, Pi-, OpenClaw-, Hermes- og filsystemovervåker-integrasjonene. Den lagrede hemmeligheten sendes bare til loopback-URL-er (`localhost`, `127.0.0.0/8`, `::1`). En uttrykkelig `AGENTMEMORY_SECRET` vinner alltid, og eksterne klienter trenger hemmeligheten i miljøet sitt. Docker-basert selvhosting fra repoet og `deploy/`-entrypointene genererer og eksporterer sin egen hemmelighet. Slik kaller du API-et manuelt:
 
@@ -1247,7 +1247,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.6k stars / 230 forks on the gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.7k stars / 240 forks on the gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -637,7 +637,7 @@ agentmemory girdisi, `mcpServers` şeklini kullanan her host'ta (Cursor, Claude 
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks`, güncel IDE sürümleriyle aynı MCP ve hook yapılandırmasını kullanır. Mevcut kurulumlar `--force` ile yenilenmelidir; bkz. [yükseltme notları](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro`, kullanıcı seviyesindeki yapılandırmayı yazar. Workspace geçersiz kılmaları, kodunuzun yanındaki `.kiro/settings/mcp.json` içine gider. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp`, standart `mcpServers` bloğunu yazar. Warp, ayrıca `.claude/skills/`'ten skill'leri otomatik keşfeder; Claude Code eklentisi kurulduğunda 9 agentmemory skill'i (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`), Warp'ın slash-komut paletinde yerli olarak görünür. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline`, standart `mcpServers` bloğunu yazar. VS Code eklenti kullanıcıları: aynı bloğu Cline Settings → MCP Servers → Edit JSON üzerinden yapıştırın. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline`, standart `mcpServers` bloğunu yazar. VS Code eklenti kullanıcıları: aynı bloğu Cline Settings → MCP Servers → Edit JSON üzerinden yapıştırın. |
 | **Continue.dev** | `~/.continue/config.yaml` (tercih edilen) veya `config.json` (eski/legacy) | `agentmemory connect continue`, yapılandırma yoksa `config.yaml` oluşturur veya mevcut `config.json` dosyasını değiştirir. Mevcut YAML için yorumları ve çapaları koruyarak `mcpServers:` altına eklenecek bloğu gösterir. Continue nesne yerine dizi kullanır. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed`, `context_servers` altına yazar (Zed'in key'i, `mcpServers` DEĞİL). Uzak MCP sunucuları, bunun yerine `{"url": "..."}` üzerinden bağlanabilir. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid`, standart `mcpServers` bloğunu yazar. Proje kapsamlı geçersiz kılmalar `<repo>/.factory/mcp.json` içine gider. Yerel otomatik yakalama için `--with-hooks` geçirin. |
@@ -1159,7 +1159,7 @@ Tam [`.env.example`](../.env.example) sağlayıcıları, kayıt filtrelerini, sa
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-`3111` portunda 146 endpoint. REST API, varsayılan olarak `127.0.0.1`'e bağlanır. Korumalı endpoint'ler `Authorization: Bearer <secret>` gerektirir ve mesh sync endpoint'leri her iki peer'da da açıkça ayarlanmış bir `AGENTMEMORY_SECRET` gerektirir.
+`3111` portunda 147 endpoint. REST API, varsayılan olarak `127.0.0.1`'e bağlanır. Korumalı endpoint'ler `Authorization: Bearer <secret>` gerektirir ve mesh sync endpoint'leri her iki peer'da da açıkça ayarlanmış bir `AGENTMEMORY_SECRET` gerektirir.
 
 **Kimlik doğrulama varsayılan olarak açıktır.** `AGENTMEMORY_SECRET` ayarlanmamışsa CLI ilk başlatmada `~/.agentmemory/secret` dosyasında `0600` izinleriyle rastgele bir sır oluşturur ve seçilen veri dizinine de kopyalar. Paketli istemciler yerel sunucuya bağlanırken buradan okur; secret yalnız loopback URL’lerine (`localhost`, `127.0.0.0/8`, `::1`) gönderilir. Uzak istemciler secret’ı kendi ortamında sağlamalıdır. Docker self-host ve `deploy/` kendi secret’larını üretir. API’yi elle çağırmak için:
 
@@ -1241,7 +1241,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -1,6 +1,6 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { Memory, MemoryRelation } from "../types.js";
-import { memoryToObservation } from "../state/memory-utils.js";
+import { memoryToObservation, observationEmbedText, supersededAt } from "../state/memory-utils.js";
 import { memoryTitleFromContent } from "./remember.js";
 import {
   getSearchIndex,
@@ -201,6 +201,7 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
         };
 
         existing.isLatest = false;
+        existing.updatedAt = supersededAt(existing.updatedAt, now);
         await kv.set(KV.memories, existing.id, existing);
         try {
           getSearchIndex().remove(existing.id);
@@ -225,7 +226,11 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
         await vectorIndexAddGuarded(
           evolved.id,
           evolved.sessionIds?.[0] ?? "memory",
-          evolved.title + " " + evolved.content,
+          observationEmbedText({
+            title: evolved.title,
+            narrative: evolved.content,
+            concepts: evolved.concepts,
+          }),
           { kind: "memory", logId: evolved.id },
         );
         await safeAudit(kv, "evolve", "mem::evolve", [evolved.id], {

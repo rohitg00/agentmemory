@@ -15,13 +15,15 @@ describe("buildMergedHooks against plugin/hooks/hooks.json (Claude Code)", () =>
     expect(findPluginRoot()).toBe(PLUGIN_ROOT);
   });
 
-  it("rewrites ${CLAUDE_PLUGIN_ROOT} to absolute pluginRoot in every command", () => {
+  it("rewrites ${CLAUDE_PLUGIN_ROOT} to absolute pluginRoot in every exec-form argument", () => {
     const merged = buildMergedHooks(null, PLUGIN_ROOT, "hooks.json");
     for (const entries of Object.values(merged.hooks)) {
       for (const entry of entries) {
         for (const handler of entry.hooks) {
-          expect(handler.command).not.toContain("${CLAUDE_PLUGIN_ROOT}");
-          expect(handler.command).toContain(`${PLUGIN_ROOT}/scripts/`);
+          expect(handler.command).toBe("node");
+          expect(handler.args).toHaveLength(1);
+          expect(handler.args![0]).not.toContain("${CLAUDE_PLUGIN_ROOT}");
+          expect(handler.args![0]).toContain(`${PLUGIN_ROOT}/scripts/`);
         }
       }
     }
@@ -57,7 +59,7 @@ describe("buildMergedHooks against plugin/hooks/hooks.json (Claude Code)", () =>
     expect(
       sessionStart.some((e) =>
         e.hooks.some((h) =>
-          h.command.includes(`${PLUGIN_ROOT}/scripts/session-start.mjs`),
+          h.args?.includes(`${PLUGIN_ROOT}/scripts/session-start.mjs`),
         ),
       ),
     ).toBe(true);
@@ -73,6 +75,19 @@ describe("buildMergedHooks against plugin/hooks/hooks.json (Claude Code)", () =>
       { matcher: "Bash", hooks: [user] },
       ...ours,
     ]);
+  });
+
+  it("replaces an earlier shell-form agentmemory install with the exec form", () => {
+    const existing: HookManifest = {
+      hooks: {
+        SessionStart: [
+          { hooks: [{ type: "command", command: `node "${PLUGIN_ROOT}/scripts/session-start.mjs"` }] },
+        ],
+      },
+    };
+    expect(buildMergedHooks(existing, PLUGIN_ROOT, "hooks.json").hooks["SessionStart"]).toEqual(
+      buildMergedHooks(null, PLUGIN_ROOT, "hooks.json").hooks["SessionStart"],
+    );
   });
 
   it("re-install strips previous agentmemory entries (idempotent)", () => {

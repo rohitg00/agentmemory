@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="설계 문서: gist 기준 1.6k stars / 230 forks" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="설계 문서: gist 기준 1.7k stars / 240 forks" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -628,7 +628,7 @@ agentmemory 항목은 `mcpServers` 형태를 사용하는 모든 호스트(Curso
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks`는 현재 IDE 버전과 동일한 MCP 및 hook 설정을 사용합니다. 기존 설치는 `--force`로 갱신해야 합니다. [업그레이드 노트](../docs/plugins/antigravity.md) 참고. |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro`는 사용자 수준 설정을 작성합니다. workspace 재정의는 코드 옆의 `.kiro/settings/mcp.json`에 둡니다. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp`는 표준 `mcpServers` 블록을 작성합니다. Warp는 `.claude/skills/`에서 skill도 자동으로 탐색합니다. Claude Code 플러그인을 설치하면 8개의 agentmemory skill(`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`)이 Warp의 슬래시 명령 팔레트에 네이티브로 나타납니다. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline`은 표준 `mcpServers` 블록을 작성합니다. VS Code 확장 사용자는 Cline Settings → MCP Servers → Edit JSON을 통해 동일한 블록을 붙여넣으십시오. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline`은 표준 `mcpServers` 블록을 작성합니다. VS Code 확장 사용자는 Cline Settings → MCP Servers → Edit JSON을 통해 동일한 블록을 붙여넣으십시오. |
 | **Continue.dev** | `~/.continue/config.yaml` (권장) 또는 `config.json` (레거시) | `agentmemory connect continue`는 설정이 없으면 `config.yaml`을 만들고 기존 `config.json`은 수정합니다. 기존 YAML은 주석과 앵커를 보존하기 위해 변경하지 않고 `mcpServers:` 아래에 붙일 블록을 출력합니다. Continue의 `mcpServers`는 배열입니다. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed`는 `context_servers`(Zed의 키이며 `mcpServers`가 아닙니다) 아래에 작성합니다. 원격 MCP 서버는 대신 `{"url": "..."}`로 연결할 수 있습니다. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid`는 표준 `mcpServers` 블록을 작성합니다. 프로젝트 범위 재정의는 `<repo>/.factory/mcp.json`에 둡니다. 네이티브 자동 캡처를 위해서는 `--with-hooks`를 전달하십시오. |
@@ -1173,7 +1173,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-포트 `3111`의 엔드포인트 146개. REST API는 기본적으로 `127.0.0.1`에 바인딩됩니다. 보호된 엔드포인트는 `Authorization: Bearer <secret>`을 요구하며, mesh sync 엔드포인트는 양쪽 피어 모두에 `AGENTMEMORY_SECRET`이 명시적으로 설정되어 있어야 합니다.
+포트 `3111`의 엔드포인트 147개. REST API는 기본적으로 `127.0.0.1`에 바인딩됩니다. 보호된 엔드포인트는 `Authorization: Bearer <secret>`을 요구하며, mesh sync 엔드포인트는 양쪽 피어 모두에 `AGENTMEMORY_SECRET`이 명시적으로 설정되어 있어야 합니다.
 
 인증은 기본적으로 활성화됩니다. `AGENTMEMORY_SECRET`이 없으면 CLI가 처음 시작할 때 임의의 비밀값을 `~/.agentmemory/secret`에 저장하고 선택한 데이터 디렉터리의 `secret`에도 복사합니다. 권한은 `0600`입니다. 번들 클라이언트는 로컬 연결 시 이 공통 파일을 우선하며 저장된 비밀값은 루프백 URL에만 보냅니다. 명시적인 `AGENTMEMORY_SECRET`이 우선하고 원격 클라이언트는 환경 변수로 설정해야 합니다. Docker 배포는 자체 비밀값을 생성합니다.
 
@@ -1254,7 +1254,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

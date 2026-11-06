@@ -4,7 +4,17 @@ The native provider adds automatic recall, conversation capture, and three memor
 
 ## Setup
 
-Start AgentMemory in a separate terminal, then connect the installed package to Hermes:
+agentmemory is listed in the [Hermes plugin catalog](https://hermes-agent.nousresearch.com/marketplace/agentmemory). Start AgentMemory in a separate terminal, then install the reviewed catalog entry:
+
+```bash
+hermes plugins install agentmemory
+hermes memory setup
+hermes memory status
+```
+
+Hermes Desktop installs the same entry from `hermes://plugin/install?catalog=agentmemory`. The catalog pins the commit that Hermes reviewed, so it can lag the latest npm release.
+
+To install the provider and the bundled skills from your installed AgentMemory package instead, connect it to Hermes:
 
 ```bash
 agentmemory

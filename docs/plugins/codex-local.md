@@ -8,6 +8,10 @@ features such as embeddings, reflection, and team operations still need their
 normal runtime configuration. Six optional hooks provide automatic capture on
 Codex versions that support and trust them.
 
+## Official listing
+
+Agent Memory is listed in the [OpenAI plugin directory](https://chatgpt.com/plugins/plugins_6ac50a1b89948191906ff15c72357972). The listed package contains the 17 skills only. Run `agentmemory connect codex` to wire the MCP server so the skills can call the memory tools. The plugin described below adds the MCP bridge and hooks in one package.
+
 ## Build and try the current source
 
 Use Node.js 20+ and the system `zip` utility on macOS or Linux. From the repository:

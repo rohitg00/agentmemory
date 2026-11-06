@@ -198,4 +198,16 @@ export class StateKV {
     if (this.backend !== 'redis' || !Array.isArray(values)) return values
     return orderLikeInsertion(values)
   }
+
+  async listGroups(): Promise<string[]> {
+    const result = await this.sdk.trigger<Record<string, never>, { groups?: unknown } | null>({
+      function_id: 'state::list_groups',
+      payload: {},
+    })
+    const groups = result?.groups
+    if (!Array.isArray(groups) || !groups.every((group) => typeof group === 'string')) {
+      throw new Error('state::list_groups returned an unexpected shape')
+    }
+    return groups
+  }
 }

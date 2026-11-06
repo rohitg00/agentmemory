@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="ডিজাইন ডক: গিস্টে 1.6k স্টার / 230 ফর্ক" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="ডিজাইন ডক: গিস্টে 1.7k স্টার / 240 ফর্ক" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP টুল" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 অটো হুক" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 এক্সটার্নাল ডিবি" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ টেস্ট পাস" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ টেস্ট পাস" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -630,7 +630,7 @@ Hermes, OpenClaw, Pi ও Oh My Pi কানেক্টর ডিফল্টভ
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` বর্তমান IDE ভার্সনের মতো একই MCP এবং হুক কনফিগারেশন ব্যবহার করে। বিদ্যমান ইনস্টলেশনগুলো `--force` দিয়ে রিফ্রেশ করা উচিত; দেখুন [আপগ্রেড নোটস](../docs/plugins/antigravity.md)। |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` ইউজার-লেভেল কনফিগ লেখে। ওয়ার্কস্পেস ওভাররাইড আপনার কোডের পাশে `.kiro/settings/mcp.json`-এ যায়। |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। Warp `.claude/skills/` থেকেও স্কিল অটো-ডিসকভার করে; Claude Code প্লাগইন ইনস্টল হলে agentmemory-র 8টি স্কিল (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) Warp-এর স্ল্যাশ-কমান্ড প্যালেটে নেটিভভাবে দেখা যায়। |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। VS Code এক্সটেনশন ইউজাররা: Cline Settings → MCP Servers → Edit JSON-এর মাধ্যমে একই ব্লক পেস্ট করুন। |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। VS Code এক্সটেনশন ইউজাররা: Cline Settings → MCP Servers → Edit JSON-এর মাধ্যমে একই ব্লক পেস্ট করুন। |
 | **Continue.dev** | `~/.continue/config.yaml` (পছন্দনীয়) বা `config.json` (লেগ্যাসি) | `agentmemory connect continue` কনফিগারেশন না থাকলে `config.yaml` তৈরি করে অথবা বর্তমান `config.json` আপডেট করে। বিদ্যমান YAML-এর comment ও anchor বাঁচাতে সেটি না বদলে `mcpServers:`-এর নিচে বসানোর block দেখায়। Continue-এর `mcpServers` একটি array। |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` `context_servers`-এর নিচে লেখে (Zed-র কি, `mcpServers` নয়)। রিমোট MCP সার্ভার এর বদলে `{"url": "..."}` দিয়েও ওয়্যার করা যায়। |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` স্ট্যান্ডার্ড `mcpServers` ব্লক লেখে। প্রজেক্ট-স্কোপড ওভাররাইড যায় `<repo>/.factory/mcp.json`-এ। নেটিভ অটো-ক্যাপচারের জন্য `--with-hooks` পাস করুন। |
@@ -1174,7 +1174,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-`3111` পোর্টে 146 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
+`3111` পোর্টে 147 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
 
 প্রমাণীকরণ ডিফল্টভাবে চালু। `AGENTMEMORY_SECRET` নির্ধারিত না থাকলে CLI প্রথমবার একটি random secret `~/.agentmemory/secret`-এ রাখে এবং নির্বাচিত ডেটা ডিরেক্টরির `secret`-এ কপি করে; অনুমতি `0600`। সঙ্গে থাকা ক্লায়েন্ট লোকাল সংযোগে মূল ফাইলটিকে অগ্রাধিকার দেয় এবং সংরক্ষিত secret শুধু loopback URL-এ পাঠায়। স্পষ্ট `AGENTMEMORY_SECRET` অগ্রাধিকার পায়; রিমোট ক্লায়েন্টকে environment-এ সেট করতে হয়। Docker নিজস্ব secret তৈরি করে।
 
@@ -1255,7 +1255,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

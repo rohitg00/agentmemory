@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Designový dokument: 1.6k hvězd / 230 forků na gistu" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Designový dokument: 1.7k hvězd / 240 forků na gistu" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP nástrojů" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatických hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externích databází" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ testů úspěšně proběhlo" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ testů úspěšně proběhlo" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -637,7 +637,7 @@ Položka agentmemory je **stejný blok serveru MCP** na všech hostitelích, kte
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` používá stejnou konfiguraci MCP a hooků jako aktuální verze IDE. Stávající instalace by měly provést refresh pomocí `--force`; viz [poznámky k upgradu](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` zapíše konfiguraci na úrovni uživatele. Přepisy na úrovni workspace patří do `.kiro/settings/mcp.json` vedle vašeho kódu. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` zapíše standardní blok `mcpServers`. Warp také automaticky vyhledává skills z `.claude/skills/`; po instalaci pluginu Claude Code se 9 skills agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) objeví nativně v paletě slash příkazů Warp. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` zapíše standardní blok `mcpServers`. Uživatelé rozšíření VS Code: vložte stejný blok přes Cline Settings → MCP Servers → Edit JSON. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` zapíše standardní blok `mcpServers`. Uživatelé rozšíření VS Code: vložte stejný blok přes Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferované) nebo `config.json` (starší) | `agentmemory connect continue` vytvoří `config.yaml`, pokud konfigurace chybí, nebo upraví existující `config.json`. U existujícího YAML vypíše blok k vložení pod `mcpServers:`, aby zachoval komentáře a kotvy. Continue používá pole, nikoli objekt. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` zapíše pod `context_servers` (klíč Zed, NE `mcpServers`). Vzdálené servery MCP lze zapojit místo toho přes `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` zapíše standardní blok `mcpServers`. Přepisy na úrovni projektu patří do `<repo>/.factory/mcp.json`. Pro nativní automatické zachycení přidejte `--with-hooks`. |
@@ -1160,7 +1160,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpointů na portu `3111`. REST API se ve výchozím stavu váže na `127.0.0.1`. Chráněné endpointy vyžadují `Authorization: Bearer <secret>`, a endpointy pro mesh sync vyžadují explicitně nastavené `AGENTMEMORY_SECRET` na obou stranách.
+147 endpointů na portu `3111`. REST API se ve výchozím stavu váže na `127.0.0.1`. Chráněné endpointy vyžadují `Authorization: Bearer <secret>`, a endpointy pro mesh sync vyžadují explicitně nastavené `AGENTMEMORY_SECRET` na obou stranách.
 
 **Autentizace je ve výchozím stavu zapnutá.** Pokud `AGENTMEMORY_SECRET` není nastaveno, CLI při prvním spuštění vygeneruje náhodný secret v `~/.agentmemory/secret` s oprávněním `0600` a zkopíruje jej také do vybraného datového adresáře. Všichni zabalení klienti jej načítají odtud při komunikaci s lokálním serverem: CLI, viewer, hooks v `plugin/scripts`, server MCP a shim `@agentmemory/mcp`, konfigurace zapsané pomocí `agentmemory connect` a zabalené integrace OpenCode, Pi, OpenClaw, Hermes a filesystem-watcher. Uložený secret se odesílá pouze na loopback URL (`localhost`, `127.0.0.0/8`, `::1`). Výslovně nastavená `AGENTMEMORY_SECRET` má vždy přednost a vzdálení klienti ji musí mít ve svém prostředí. Self-host nasazení Dockeru z repozitáře a entrypointy `deploy/` generují a exportují vlastní secret. Pro ruční volání API:
 
@@ -1241,7 +1241,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Σημείωμα σχεδίασης: 1.6k stars / 230 forks στο gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Σημείωμα σχεδίασης: 1.7k stars / 240 forks στο gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 εργαλεία MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 αυτόματα hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 εξωτερικές βάσεις δεδομένων" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ επιτυχημένες δοκιμές" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ επιτυχημένες δοκιμές" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -637,7 +637,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | Το `agentmemory connect antigravity-cli --with-hooks` χρησιμοποιεί την ίδια ρύθμιση MCP και hooks με τις τρέχουσες εκδόσεις IDE. Οι υπάρχουσες εγκαταστάσεις πρέπει να ανανεωθούν με `--force`· δείτε τις [σημειώσεις αναβάθμισης](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | Το `agentmemory connect kiro` γράφει τις ρυθμίσεις σε επίπεδο χρήστη. Οι παρακάμψεις workspace μπαίνουν στο `.kiro/settings/mcp.json` δίπλα στον κώδικά σας. |
 | **Warp** | `~/.warp/.mcp.json` | Το `agentmemory connect warp` γράφει το τυπικό block `mcpServers`. Το Warp επίσης ανακαλύπτει αυτόματα skills από το `.claude/skills/`· μόλις εγκατασταθεί το plugin του Claude Code, τα 9 skills του agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) εμφανίζονται εγγενώς στην παλέτα εντολών slash του Warp. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | Το `agentmemory connect cline` γράφει το τυπικό block `mcpServers`. Χρήστες της extension VS Code: επικολλήστε το ίδιο block μέσω Cline Settings → MCP Servers → Edit JSON. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | Το `agentmemory connect cline` γράφει το τυπικό block `mcpServers`. Χρήστες της extension VS Code: επικολλήστε το ίδιο block μέσω Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (προτιμώμενο) ή `config.json` (παλαιό) | Το `agentmemory connect continue` δημιουργεί `config.yaml` αν λείπουν οι ρυθμίσεις ή αλλάζει υπάρχον `config.json`. Για υπάρχον YAML εμφανίζει το block προς προσθήκη στο `mcpServers:`, διατηρώντας σχόλια και anchors. Το Continue χρησιμοποιεί πίνακα, όχι αντικείμενο. |
 | **Zed** | `~/.config/zed/settings.json` | Το `agentmemory connect zed` γράφει κάτω από το `context_servers` (το κλειδί του Zed, ΟΧΙ `mcpServers`). Απομακρυσμένοι διακομιστές MCP μπορούν να συνδεθούν εναλλακτικά μέσω `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | Το `agentmemory connect droid` γράφει το τυπικό block `mcpServers`. Οι παρακάμψεις σε επίπεδο project μπαίνουν στο `<repo>/.factory/mcp.json`. Περάστε `--with-hooks` για εγγενή αυτόματη καταγραφή. |
@@ -1160,7 +1160,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints στη θύρα `3111`. Το REST API συνδέεται στο `127.0.0.1` από προεπιλογή. Τα προστατευμένα endpoints απαιτούν `Authorization: Bearer <secret>`, και τα endpoints mesh sync απαιτούν ένα ρητά ρυθμισμένο `AGENTMEMORY_SECRET` και στους δύο peers.
+147 endpoints στη θύρα `3111`. Το REST API συνδέεται στο `127.0.0.1` από προεπιλογή. Τα προστατευμένα endpoints απαιτούν `Authorization: Bearer <secret>`, και τα endpoints mesh sync απαιτούν ένα ρητά ρυθμισμένο `AGENTMEMORY_SECRET` και στους δύο peers.
 
 **Η πιστοποίηση είναι ενεργή από προεπιλογή.** Όταν δεν ορίζεται `AGENTMEMORY_SECRET`, στην πρώτη εκκίνηση το CLI δημιουργεί τυχαίο μυστικό στο `~/.agentmemory/secret` με δικαιώματα `0600` και το αντιγράφει και στον επιλεγμένο κατάλογο δεδομένων. Κάθε ενσωματωμένος client το διαβάζει από εκεί όταν μιλά με έναν τοπικό διακομιστή: το CLI, το viewer, τα hooks κάτω από το `plugin/scripts`, ο διακομιστής MCP και το shim `@agentmemory/mcp`, οι ρυθμίσεις που γράφει το `agentmemory connect`, και οι ενσωματωμένες ενσωματώσεις OpenCode, Pi, OpenClaw, Hermes, και filesystem-watcher. Το αποθηκευμένο secret αποστέλλεται μόνο σε loopback URLs (`localhost`, `127.0.0.0/8`, `::1`). Ένα ρητό `AGENTMEMORY_SECRET` υπερισχύει πάντα, και οι απομακρυσμένοι clients εξακολουθούν να το χρειάζονται ρυθμισμένο. Το Docker και τα entrypoints του `deploy/` δημιουργούν και εξάγουν ήδη το δικό τους secret. Για να καλέσετε το API χειροκίνητα:
 
@@ -1241,7 +1241,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Документ проекта: 1.6k звёзд / 230 форков в гисте" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Документ проекта: 1.7k звёзд / 240 форков в гисте" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,000+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -637,7 +637,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` использует ту же конфигурацию MCP и хуков, что и текущие версии IDE. Существующие установки следует обновить с `--force`; см. [заметки об обновлении](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` записывает конфиг на уровне пользователя. Переопределения на уровне workspace — в `.kiro/settings/mcp.json` рядом с кодом. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` записывает стандартный блок `mcpServers`. Warp также автоматически обнаруживает skill'ы из `.claude/skills/`; как только установлен плагин Claude Code, 9 skill'ов agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) нативно появляются в палитре slash-команд Warp. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` записывает стандартный блок `mcpServers`. Пользователи расширения VS Code: вставьте тот же блок через Cline Settings → MCP Servers → Edit JSON. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` записывает стандартный блок `mcpServers`. Пользователи расширения VS Code: вставьте тот же блок через Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (предпочтительно) или `config.json` (legacy) | `agentmemory connect continue` создаёт `config.yaml`, если настройки отсутствуют, или меняет существующий `config.json`. Для существующего YAML выводит блок для `mcpServers:`, сохраняя комментарии и якоря. Continue использует массив, а не объект. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` пишет под `context_servers` (ключ Zed, НЕ `mcpServers`). Удалённые MCP-серверы можно вместо этого подключить через `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` записывает стандартный блок `mcpServers`. Переопределения на уровне проекта — в `<repo>/.factory/mcp.json`. Передайте `--with-hooks` для нативного авто-захвата. |
@@ -1160,7 +1160,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 эндпоинтов на порту `3111`. REST API по умолчанию слушает на `127.0.0.1`. Защищённые эндпоинты требуют `Authorization: Bearer <secret>`, а эндпоинты mesh-синхронизации требуют явно заданного `AGENTMEMORY_SECRET` на обоих узлах.
+147 эндпоинтов на порту `3111`. REST API по умолчанию слушает на `127.0.0.1`. Защищённые эндпоинты требуют `Authorization: Bearer <secret>`, а эндпоинты mesh-синхронизации требуют явно заданного `AGENTMEMORY_SECRET` на обоих узлах.
 
 **Аутентификация включена по умолчанию.** Если `AGENTMEMORY_SECRET` не задан, при первом запуске CLI создаёт случайный секрет в `~/.agentmemory/secret` с правами `0600` и копирует его также в выбранный каталог данных. Каждый встроенный клиент читает его оттуда, когда говорит с локальным сервером: CLI, просмотрщик, хуки из `plugin/scripts`, MCP-сервер и shim `@agentmemory/mcp`, конфиги, записанные `agentmemory connect`, и встроенные интеграции OpenCode, Pi, OpenClaw, Hermes и filesystem-watcher. Сохранённый секрет отправляется только на loopback-адреса (`localhost`, `127.0.0.0/8`, `::1`). Явно заданный `AGENTMEMORY_SECRET` всегда выигрывает, и удалённым клиентам он всё равно нужен. Docker и entrypoint'ы `deploy/` уже генерируют и экспортируют собственный секрет. Чтобы вызвать API вручную:
 
@@ -1241,7 +1241,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

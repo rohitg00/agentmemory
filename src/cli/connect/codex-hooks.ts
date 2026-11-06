@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-type HookHandler = { type: string; command?: string; [key: string]: unknown };
+type HookHandler = { type: string; command?: string; args?: string[]; [key: string]: unknown };
 type HookEntry = { matcher?: string; hooks: HookHandler[] };
 export type HookManifest = { hooks: Record<string, HookEntry[]> };
 
@@ -70,13 +70,11 @@ export function buildMergedHooks(
   for (const [event, entries] of Object.entries(ours.hooks)) {
     const resolvedEntries: HookEntry[] = entries.map((entry) => {
       const next: HookEntry = {
-        hooks: entry.hooks.map((handler) => ({
-          ...handler,
-          command: handler.command?.replace(
-            /\$\{CLAUDE_PLUGIN_ROOT\}/g,
-            () => pluginRoot,
-          ),
-        })),
+        hooks: entry.hooks.map((handler) => {
+          const resolved: HookHandler = { ...handler, command: withPluginRoot(handler.command, pluginRoot) };
+          if (handler.args) resolved.args = handler.args.map((arg) => withPluginRoot(arg, pluginRoot)!);
+          return resolved;
+        }),
       };
       if (entry.matcher !== undefined) next.matcher = entry.matcher;
       return next;
@@ -87,12 +85,16 @@ export function buildMergedHooks(
   return out;
 }
 
+function withPluginRoot(value: string | undefined, pluginRoot: string): string | undefined {
+  return value?.replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, () => pluginRoot);
+}
+
 function isAgentmemoryHandler(handler: HookHandler, scriptsDir: string): boolean {
-  return (
-    typeof handler.command === "string" &&
-    normalizePathForCommandMatch(handler.command).includes(
-      normalizePathForCommandMatch(scriptsDir),
-    )
+  const parts = [handler.command, ...(Array.isArray(handler.args) ? handler.args : [])];
+  return parts.some(
+    (part) =>
+      typeof part === "string" &&
+      normalizePathForCommandMatch(part).includes(normalizePathForCommandMatch(scriptsDir)),
   );
 }
 

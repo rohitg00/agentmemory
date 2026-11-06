@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="เอกสารออกแบบ: 1.6k stars / 230 forks บน gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="เอกสารออกแบบ: 1.7k stars / 240 forks บน gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 เครื่องมือ MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook อัตโนมัติ" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="ไม่ต้องพึ่ง external DB เลย" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 4,000+ รายการ" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 4,400+ รายการ" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -622,7 +622,7 @@ npx skills add rohitg00/agentmemory -y -a '*'   # install to every installed age
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` ใช้ config ของ MCP และ hook แบบเดียวกับ IDE เวอร์ชันปัจจุบัน การติดตั้งที่มีอยู่แล้วควร refresh ด้วย `--force`; ดู [upgrade notes](../docs/plugins/antigravity.md) |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` เขียน config ระดับ user การ override ระดับ workspace ไปอยู่ที่ `.kiro/settings/mcp.json` ข้าง ๆ โค้ดของคุณ |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` เขียน `mcpServers` block แบบมาตรฐาน Warp ยัง auto-discover skill จาก `.claude/skills/` ด้วย เมื่อติดตั้ง Claude Code plugin แล้ว skill ทั้ง 9 ตัวของ agentmemory (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) จะปรากฏใน slash-command palette ของ Warp โดยตรง |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` เขียน `mcpServers` block แบบมาตรฐาน ผู้ใช้ VS Code extension: paste block เดียวกันผ่าน Cline Settings → MCP Servers → Edit JSON |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` เขียน `mcpServers` block แบบมาตรฐาน ผู้ใช้ VS Code extension: paste block เดียวกันผ่าน Cline Settings → MCP Servers → Edit JSON |
 | **Continue.dev** | `~/.continue/config.yaml` (แนะนำ) หรือ `config.json` (รุ่นเก่า) | `agentmemory connect continue` สร้าง `config.yaml` เมื่อยังไม่มีคอนฟิก หรืออัปเดต `config.json` ที่มีอยู่ สำหรับ YAML เดิมจะเก็บ comment และ anchor ไว้โดยไม่แก้ไฟล์ แต่แสดงบล็อกให้วางใต้ `mcpServers:` ซึ่ง Continue ใช้รูปแบบ array |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` เขียนไว้ใต้ `context_servers` (key ของ Zed ไม่ใช่ `mcpServers`) MCP server แบบ remote เชื่อมต่อผ่าน `{"url": "..."}` ได้เช่นกัน |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` เขียน `mcpServers` block แบบมาตรฐาน การ override ระดับ project ไปอยู่ที่ `<repo>/.factory/mcp.json` ใส่ `--with-hooks` เพื่อ auto-capture แบบ native |
@@ -1161,7 +1161,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
+147 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
 
 เปิดการยืนยันตัวตนตามค่าเริ่มต้น หากไม่ตั้ง `AGENTMEMORY_SECRET` CLI จะสร้างรหัสลับสุ่มครั้งแรกที่ `~/.agentmemory/secret` และคัดลอกไปยัง `secret` ในไดเรกทอรีข้อมูลที่เลือก โดยใช้สิทธิ์ `0600` ไคลเอนต์ที่รวมมาจะอ่านไฟล์หลักนี้ก่อนเมื่อเชื่อมต่อในเครื่อง และส่งรหัสลับที่บันทึกไว้เฉพาะ URL แบบ loopback ค่า `AGENTMEMORY_SECRET` ที่ระบุเองมีลำดับความสำคัญสูงกว่า ไคลเอนต์ระยะไกลต้องตั้งผ่าน environment ส่วน Docker สร้างรหัสลับของตนเอง
 
@@ -1242,7 +1242,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,000+ tests
+npm test                  # 4,400+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
