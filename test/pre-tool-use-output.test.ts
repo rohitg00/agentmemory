@@ -105,4 +105,9 @@ describe("pre-tool-use context output", () => {
     const { stdout } = await runPreToolUse(claudePayload, { AGENTMEMORY_ENRICH_TIMEOUT_MS: "6000" }, 2500);
     expect(JSON.parse(stdout).hookSpecificOutput.additionalContext).toBe(CONTEXT);
   });
+
+  it.each(["0.5", "1e6", "6000ms", "3000000000"])("ignores the malformed or out-of-range timeout %s", async (value) => {
+    const { stdout } = await runPreToolUse(claudePayload, { AGENTMEMORY_ENRICH_TIMEOUT_MS: value }, 100);
+    expect(JSON.parse(stdout).hookSpecificOutput.additionalContext).toBe(CONTEXT);
+  });
 });

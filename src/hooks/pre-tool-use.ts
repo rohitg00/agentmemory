@@ -18,9 +18,12 @@ function authHeaders(): Record<string, string> {
   return hookAuthHeaders(ENDPOINT);
 }
 
+const MAX_TIMER_MS = 2_147_483_647;
+
 function enrichTimeoutMs(): number {
-  const n = Number(hookSetting("AGENTMEMORY_ENRICH_TIMEOUT_MS"));
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_ENRICH_TIMEOUT_MS;
+  const raw = hookSetting("AGENTMEMORY_ENRICH_TIMEOUT_MS")?.trim() ?? "";
+  const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+  return n >= 1 && n <= MAX_TIMER_MS ? n : DEFAULT_ENRICH_TIMEOUT_MS;
 }
 
 function isPlainTextHost(): boolean {
