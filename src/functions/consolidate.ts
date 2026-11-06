@@ -188,7 +188,8 @@ export function registerConsolidateFunction(
               updatedAt: now,
               ...parsed,
               version: (existingMatch.version || 1) + 1,
-              recurrence: (existingMatch.recurrence ?? 1) + 1,
+              recurrence: (existingMatch.recurrence ?? 1) +
+                (obsIds.some((id) => !(existingMatch.sourceObservationIds ?? []).includes(id)) ? 1 : 0),
               parentId: existingMatch.id,
               supersedes: [
                 existingMatch.id,
