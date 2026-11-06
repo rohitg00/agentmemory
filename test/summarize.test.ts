@@ -552,8 +552,10 @@ describe("mem::summarize deadline", () => {
 
   it("ignores an invalid AGENTMEMORY_SUMMARY_TIMEOUT_MS", async () => {
     const { getSummaryTimeoutMs, getSummaryTriggerTimeoutMs } = await import("../src/functions/summary-state.js");
-    process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = "nope";
-    expect(getSummaryTimeoutMs()).toBe(120_000);
+    for (const bad of ["nope", "600s", "1e6", "0.5", "0", "2592000000"]) {
+      process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = bad;
+      expect(getSummaryTimeoutMs()).toBe(120_000);
+    }
     process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = "300000";
     expect(getSummaryTimeoutMs()).toBe(300_000);
     expect(getSummaryTriggerTimeoutMs()).toBeGreaterThan(300_000);

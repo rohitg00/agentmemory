@@ -7,11 +7,12 @@ import { isKeyedLockHeld, withKeyedLock } from "../state/keyed-mutex.js";
 export const SUMMARY_TIMEOUT_MS = 120_000;
 const SUMMARY_TRIGGER_HEADROOM_MS = 60_000;
 
+const MAX_TIMER_MS = 2_147_483_647;
+
 export function getSummaryTimeoutMs(): number {
-  const raw = process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS;
-  if (!raw) return SUMMARY_TIMEOUT_MS;
-  const n = parseInt(raw, 10);
-  return Number.isFinite(n) && n > 0 ? n : SUMMARY_TIMEOUT_MS;
+  const raw = process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS?.trim() ?? "";
+  const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+  return n >= 1 && n <= MAX_TIMER_MS - SUMMARY_TRIGGER_HEADROOM_MS ? n : SUMMARY_TIMEOUT_MS;
 }
 
 export function getSummaryTriggerTimeoutMs(): number {
