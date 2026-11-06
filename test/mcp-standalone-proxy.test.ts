@@ -516,6 +516,27 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
     delete process.env["AGENTMEMORY_TOOLS"];
   });
 
+  it("gives proxied calls the worker invocation budget and honours AGENTMEMORY_CALL_TIMEOUT_MS", async () => {
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      return new Response(JSON.stringify({ sessions: [] }), { status: 200 });
+    });
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      await handleToolCall("memory_sessions", { limit: 1 });
+      expect(timeout).toHaveBeenLastCalledWith(180_000);
+      process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = "900000";
+      await handleToolCall("memory_sessions", { limit: 1 });
+      expect(timeout).toHaveBeenLastCalledWith(900_000);
+      process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = "bogus";
+      await handleToolCall("memory_sessions", { limit: 1 });
+      expect(timeout).toHaveBeenLastCalledWith(180_000);
+    } finally {
+      timeout.mockRestore();
+      delete process.env["AGENTMEMORY_CALL_TIMEOUT_MS"];
+    }
+  });
+
   it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {
     process.env["AGENTMEMORY_PROBE_TIMEOUT_MS"] = "50";
     let probeStarted = 0;
