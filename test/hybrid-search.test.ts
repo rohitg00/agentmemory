@@ -84,11 +84,32 @@ describe("HybridSearch", () => {
     expect(results.map((r) => r.observation.id).filter((id) => id.startsWith("mem_"))).toHaveLength(6);
   });
 
-  it("fuses from a fixed minimum candidate pool when the limit is small", async () => {
-    const search = vi.spyOn(bm25, "search");
+  it("ranks a record first when it scores well in both keyword and vector search, even for a one-result search", async () => {
+    const keywordOnly = makeObs({ id: "obs_keyword", sessionId: "ses_k", title: "zephyr zephyr zephyr", narrative: "zephyr zephyr zephyr", facts: [], concepts: [], files: [] });
+    const keywordSecond = makeObs({ id: "obs_keyword2", sessionId: "ses_k2", title: "zephyr zephyr notes", narrative: "zephyr zephyr notes", facts: [], concepts: [], files: [] });
+    const both = makeObs({ id: "obs_both", sessionId: "ses_b", title: "zephyr notes notes", narrative: "zephyr notes notes", facts: [], concepts: [], files: [] });
+    const vectorOnly = makeObs({ id: "obs_vector", sessionId: "ses_v", title: "unrelated", narrative: "unrelated", facts: [], concepts: [], files: [] });
+    for (const obs of [keywordOnly, keywordSecond, both]) bm25.add(obs);
+    for (const obs of [keywordOnly, keywordSecond, both, vectorOnly]) await kv.set(KV.observations(obs.sessionId), obs.id, obs);
+    const vector = new VectorIndex();
+    vector.add(vectorOnly.id, vectorOnly.sessionId, new Float32Array([1, 0]));
+    vector.add(both.id, both.sessionId, new Float32Array([0.9, 0.1]));
+    const provider = { name: "test", dimensions: 2, embed: vi.fn(async () => new Float32Array([1, 0])), embedBatch: vi.fn() };
+    const hybrid = new HybridSearch(bm25, vector, provider, kv as never, 0.4, 0.6, 0, false);
+    const results = await hybrid.search("zephyr", 1);
+    expect(results.map((r) => r.observation.id)).toEqual(["obs_both"]);
+  });
+
+  it("returns a valid lower-ranked record when stale index entries fill the first enrichment pass", async () => {
+    for (let i = 0; i < 25; i++) {
+      bm25.add(makeObs({ id: `obs_stale_${i}`, sessionId: `ses_stale_${i}`, title: "nebula nebula nebula", narrative: "nebula nebula nebula", facts: [], concepts: [], files: [] }));
+    }
+    const valid = makeObs({ id: "obs_valid", sessionId: "ses_valid", title: "nebula notes notes", narrative: "nebula notes notes", facts: [], concepts: [], files: [] });
+    bm25.add(valid);
+    await kv.set(KV.observations(valid.sessionId), valid.id, valid);
     const hybrid = new HybridSearch(bm25, null, null, kv as never, 0.4, 0.6, 0, false);
-    await hybrid.search("anything", 5);
-    expect(search.mock.calls[0]![1]).toBeGreaterThanOrEqual(40);
+    const results = await hybrid.search("nebula", 5);
+    expect(results.map((r) => r.observation.id)).toEqual(["obs_valid"]);
   });
 
   it("reuses query embeddings only within a recall request", async () => {

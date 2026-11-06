@@ -257,7 +257,7 @@ export class HybridSearch {
 
     if (request) request.candidateCount = combined.length;
     const retrievalDepth = Math.max(limit, 20);
-    const diversified = this.diversifyBySession(combined, retrievalDepth);
+    const diversified = this.diversifyBySession(combined, combined.length);
     const enriched = await this.enrichResults(diversified, retrievalDepth);
 
     return applyReranking ? this.rerankResults(query, enriched, limit) : enriched.slice(0, limit);
@@ -342,9 +342,10 @@ export class HybridSearch {
     }
 
     if (selected.length < limit) {
+      const picked = new Set(selected.map((s) => s.obsId));
       for (const r of results) {
         if (selected.length >= limit) break;
-        if (!selected.some(s => s.obsId === r.obsId)) {
+        if (!picked.has(r.obsId)) {
           selected.push(r);
         }
       }
@@ -365,7 +366,27 @@ export class HybridSearch {
     }>,
     limit: number,
   ): Promise<HybridSearchResult[]> {
-    const sliced = results.slice(0, limit);
+    const enriched: HybridSearchResult[] = [];
+    let next = 0;
+    while (next < results.length && enriched.length < limit) {
+      const batch = results.slice(next, next + limit - enriched.length);
+      next += batch.length;
+      enriched.push(...(await this.enrichBatch(batch)));
+    }
+    return enriched;
+  }
+
+  private async enrichBatch(
+    sliced: Array<{
+      obsId: string;
+      sessionId: string;
+      bm25Score: number;
+      vectorScore: number;
+      graphScore: number;
+      combinedScore: number;
+      graphContext?: string;
+    }>,
+  ): Promise<HybridSearchResult[]> {
     const observations = await Promise.all(
       sliced.map(async (r) => {
         const obs = await this.kv
