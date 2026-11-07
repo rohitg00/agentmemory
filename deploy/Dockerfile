@@ -27,7 +27,7 @@ RUN apt-get update \
  && find /var/lib/apt/lists -mindepth 1 -delete
 
 COPY --from=iii-engine /app/iii /usr/local/bin/iii
-RUN iii --version 2>&1 | grep -qF "${III_VERSION}" \
+RUN iii --version 2>&1 | grep -qE "(^|[^0-9.])${III_VERSION}([^0-9.]|$)" \
  || { echo "iiidev/iii:${III_VERSION} does not contain iii ${III_VERSION}" >&2; exit 1; }
 
 WORKDIR /opt/agentmemory
