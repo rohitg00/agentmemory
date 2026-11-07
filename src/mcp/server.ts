@@ -711,6 +711,13 @@ export function registerMcpEndpoints(
                 body: { error: "title is required" },
               };
             }
+            if (args.agentId !== undefined && typeof args.agentId !== "string") {
+              return { status_code: 400, body: { error: "agentId must be a string" } };
+            }
+            const creatorId = typeof args.agentId === "string" ? args.agentId.trim() : "";
+            if (creatorId.length > 128) {
+              return { status_code: 400, body: { error: "agentId must be at most 128 characters" } };
+            }
             const edges: Array<{ type: string; targetActionId: string }> = [];
             if (typeof args.requires === "string" && args.requires.trim()) {
               for (const id of args.requires.split(",").map((s: string) => s.trim()).filter(Boolean)) {
@@ -728,6 +735,7 @@ export function registerMcpEndpoints(
               tags,
               parentId: args.parentId,
               edges: edges.length > 0 ? edges : undefined,
+              createdBy: creatorId || getAgentId(),
             } });
             return {
               status_code: 200,

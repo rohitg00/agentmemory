@@ -7,7 +7,7 @@ agentmemory exposes 54 MCP tools. 8 are in the lean core set (`--tools core` or 
 
 | Tool | Core | Parameters | Purpose |
 | --- | --- | --- | --- |
-| `memory_action_create` |  | `title`*: string, `description`: string, `priority`: number, `project`: string, `tags`: string, `parentId`: string, `requires`: string | Create an actionable work item with typed dependencies. Actions track what agents need to do and how work items relate to each other. |
+| `memory_action_create` |  | `title`*: string, `description`: string, `priority`: number, `project`: string, `tags`: string, `parentId`: string, `requires`: string, `agentId`: string | Create an actionable work item with typed dependencies. Actions track what agents need to do and how work items relate to each other. |
 | `memory_action_update` |  | `actionId`*: string, `status`: string, `result`: string, `priority`: number | Update an action's status, priority, or details. Set status to 'done' to complete it and unblock dependent actions. |
 | `memory_audit` |  | `operation`: string, `limit`: number | View the audit trail of memory operations. |
 | `memory_checkpoint` |  | `operation`*: string, `name`: string, `checkpointId`: string, `status`: string, `type`: string, `linkedActionIds`: string | Create or resolve an external checkpoint (CI result, approval, deploy status) that gates action progress. |
