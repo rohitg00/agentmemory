@@ -3681,6 +3681,7 @@ export function registerApiTriggers(
       const rawLimit = Number(req.query_params?.["limit"]);
       const pageLimit = Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.min(Math.floor(rawLimit), 5000) : 500;
       const cursorRaw = req.query_params?.["cursor"] as string | undefined;
+      const paged = req.query_params?.["limit"] !== undefined || cursorRaw !== undefined;
       const sinceTime = since ? new Date(since).getTime() : 0;
       const df = <T>(items: T[], field: "updatedAt" | "createdAt") =>
         items.filter((i) => new Date((i as Record<string, unknown>)[field] as string).getTime() > sinceTime);
@@ -3739,6 +3740,15 @@ export function registerApiTriggers(
         if (unexportable) {
           return { status_code: 413, body: oversizedPayloadError(SAFE_PAYLOAD_BYTES + 1, `use ?since, ?project, or ?collections to exclude the oversized ${name} record`) };
         }
+      }
+      if (!paged) {
+        const full = Object.fromEntries(collections);
+        const oversized = checkPayloadFrameSize(
+          full,
+          "use ?limit and ?cursor to page, ?since to fetch only changes after a timestamp, or ?project to scope the export",
+        );
+        if (oversized) return { status_code: 413, body: oversized };
+        return { status_code: 200, body: full };
       }
       let limit = pageLimit;
       let body: Record<string, unknown> = {};

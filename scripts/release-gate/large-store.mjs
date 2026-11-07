@@ -422,7 +422,7 @@ try {
     const started = performance.now();
     let cursor, pages = 0, totalBytes = 0, lastStatus = 0, meshError;
     do {
-      const res = await response(`/mesh/export${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+      const res = await response(`/mesh/export?limit=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
       lastStatus = res.status;
       const text = await res.text();
       totalBytes += text.length;

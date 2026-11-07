@@ -334,7 +334,10 @@ describe("Mesh Functions", () => {
       expect(result.results[0].errors).toEqual([]);
       expect(pushed.map((m) => m.id)).toEqual(["m-alpha"]);
       expect(pullUrls).toHaveLength(2);
-      for (const url of pullUrls) expect(new URL(url).searchParams.get("project")).toBe("alpha");
+      for (const url of pullUrls) {
+        expect(new URL(url).searchParams.get("project")).toBe("alpha");
+        expect(new URL(url).searchParams.get("limit")).toBe("500");
+      }
 
       vi.unstubAllGlobals();
     });

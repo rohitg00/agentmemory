@@ -225,3 +225,30 @@ describe("api::mesh-export cursor keys", () => {
     expect(rows.map((r) => r.id)).toEqual([longId, "z-1"]);
   });
 });
+
+describe("api::mesh-export single-request callers", () => {
+  it("returns every row without nextCursor when the caller sends neither limit nor cursor", async () => {
+    const kv = mockKV();
+    for (let i = 0; i < 600; i++) await kv.set(KV.memories, `m-${String(i).padStart(4, "0")}`, memory(`m-${String(i).padStart(4, "0")}`, "alpha"));
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+    const res = await meshExport(sdk, "alpha");
+    expect(res.status_code).toBe(200);
+    expect((res.body.memories as Memory[]).length).toBe(600);
+    expect(res.body.nextCursor).toBeUndefined();
+  });
+
+  it("returns 413 instead of a partial page when the single response exceeds the frame limit", async () => {
+    const kv = mockKV();
+    const third = Math.ceil(SAFE_PAYLOAD_BYTES / 3);
+    for (let i = 0; i < 4; i++) await kv.set(KV.memories, `m-${i}`, memory(`m-${i}`, "alpha", "y".repeat(third)));
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+    const res = await meshExport(sdk, "alpha");
+    expect(res.status_code).toBe(413);
+    expect((res.body as { oversized?: boolean }).oversized).toBe(true);
+    const paged = await meshExport(sdk, "alpha", { limit: "500" });
+    expect(paged.status_code).toBe(200);
+    expect(paged.body.nextCursor).toBeTruthy();
+  }, 30_000);
+});

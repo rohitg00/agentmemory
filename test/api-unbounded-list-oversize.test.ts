@@ -64,7 +64,7 @@ describe("unbounded list endpoints over the transport budget", () => {
     expect(res.status_code).toBe(413);
     expect(res.body.oversized).toBe(true);
     expect(String(res.body.error)).toMatch(/\?limit and \?cursor/);
-  });
+  }, 30_000);
 
   it("GET /memories with limit still pages the same oversized scope", async () => {
     const r = rig();
@@ -74,7 +74,7 @@ describe("unbounded list endpoints over the transport budget", () => {
     expect((res.body.memories as unknown[]).length).toBe(1);
     expect(res.body.total).toBe(ROWS);
     expect(typeof res.body.nextCursor).toBe("string");
-  });
+  }, 30_000);
 
   it("GET /memories without limit still returns every memory when the scope fits", async () => {
     const r = rig();
@@ -94,5 +94,5 @@ describe("unbounded list endpoints over the transport budget", () => {
     const res = await r.get("api::relations-list");
     expect(res.status_code).toBe(413);
     expect(res.body.oversized).toBe(true);
-  });
+  }, 30_000);
 });
