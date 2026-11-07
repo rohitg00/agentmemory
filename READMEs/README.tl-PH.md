@@ -656,7 +656,7 @@ Pinapatakbo ng `npm start` ang kaparehong local server ng naka-install na CLI. N
 
 ### Windows
 
-Tumatakbo ang agentmemory sa Windows 10/11. Awtomatikong nag-i-install ng engine ang WSL2 gamit ang Linux path. Sa native Windows, manu-manong i-install ang pinned na iii-engine v0.25.0: i-download ang archive mula sa [iii v0.25.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), tiyakin ang checksum, at ilagay ang `iii.exe` sa `PATH`. Hindi awtomatikong nag-e-extract ng ZIP ang CLI
+Tumatakbo ang agentmemory sa Windows 10/11. Awtomatikong nag-i-install ng engine ang WSL2 gamit ang Linux path. Sa native Windows, manu-manong i-install ang pinned na iii-engine v0.25.1: i-download ang archive mula sa [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), tiyakin ang checksum, at ilagay ang `iii.exe` sa `PATH`. Hindi awtomatikong nag-e-extract ng ZIP ang CLI
 
 Native Windows MCP automation ay para lamang sa `agentmemory connect copilot-cli`; gamitin ang manual MCP block sa [Other agents](#other-agents) para sa iba. Sa WSL, patakbuhin ang `connect` lamang kung naroon din ang target agent
 

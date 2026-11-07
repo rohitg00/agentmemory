@@ -655,7 +655,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory funziona su Windows 10/11. WSL2 segue il percorso Linux e può installare automaticamente l'engine fissato. Su Windows nativo, installare manualmente il binario iii-engine v0.25.0 fissato: scaricare l'archivio corrispondente dalla [pagina della release iii 0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verificarne il checksum e mettere `iii.exe` nel `PATH` (ad esempio `%USERPROFILE%\.local\bin\iii.exe`). La CLI non estrae automaticamente lo ZIP Windows.
+agentmemory funziona su Windows 10/11. WSL2 segue il percorso Linux e può installare automaticamente l'engine fissato. Su Windows nativo, installare manualmente il binario iii-engine v0.25.1 fissato: scaricare l'archivio corrispondente dalla [pagina della release iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verificarne il checksum e mettere `iii.exe` nel `PATH` (ad esempio `%USERPROFILE%\.local\bin\iii.exe`). La CLI non estrae automaticamente lo ZIP Windows.
 
 La configurazione MCP automatica su Windows nativo supporta solo `agentmemory connect copilot-cli`. Per gli altri agenti Windows nativi, usare il blocco MCP manuale da [Altri agenti](#other-agents). Eseguire `connect` in WSL solo se l'agente di destinazione è installato nello stesso ambiente WSL.
 

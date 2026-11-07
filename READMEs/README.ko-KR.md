@@ -654,7 +654,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory는 Windows 10/11에서 실행됩니다. WSL2는 Linux 경로를 따르며 고정 엔진을 자동 설치할 수 있습니다. 네이티브 Windows에서는 고정된 iii-engine v0.25.0 바이너리를 수동 설치하십시오: [iii v0.25.0 릴리스 페이지](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0)에서 맞는 아카이브를 다운로드하고 checksum을 확인한 뒤 `iii.exe`를 `PATH`에 두십시오(예: `%USERPROFILE%\.local\bin\iii.exe`). CLI는 Windows ZIP을 자동으로 압축 해제하지 않습니다.
+agentmemory는 Windows 10/11에서 실행됩니다. WSL2는 Linux 경로를 따르며 고정 엔진을 자동 설치할 수 있습니다. 네이티브 Windows에서는 고정된 iii-engine v0.25.1 바이너리를 수동 설치하십시오: [iii v0.25.1 릴리스 페이지](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1)에서 맞는 아카이브를 다운로드하고 checksum을 확인한 뒤 `iii.exe`를 `PATH`에 두십시오(예: `%USERPROFILE%\.local\bin\iii.exe`). CLI는 Windows ZIP을 자동으로 압축 해제하지 않습니다.
 
 네이티브 Windows 자동 MCP 연결은 `agentmemory connect copilot-cli`만 지원합니다. 다른 네이티브 Windows 에이전트는 [다른 에이전트](#other-agents)의 수동 MCP 블록을 사용하십시오. 대상 에이전트도 같은 WSL 환경에 설치된 경우에만 WSL에서 `connect`를 실행하십시오.
 

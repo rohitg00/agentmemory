@@ -653,7 +653,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory kjører på Windows 10/11. WSL2 følger Linux-stien og kan installere den fastlåste engine-en automatisk. Native Windows krever at den fastlåste iii-engine v0.25.0-binærfilen installeres manuelt; last ned det tilsvarende arkivet fra [iii v0.25.0-utgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), kontroller kontrollsummen og legg `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI-en pakker ikke ut Windows-ZIP-filen automatisk.
+agentmemory kjører på Windows 10/11. WSL2 følger Linux-stien og kan installere den fastlåste engine-en automatisk. Native Windows krever at den fastlåste iii-engine v0.25.1-binærfilen installeres manuelt; last ned det tilsvarende arkivet fra [iii v0.25.1-utgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), kontroller kontrollsummen og legg `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI-en pakker ikke ut Windows-ZIP-filen automatisk.
 
 Automatisert native Windows-MCP-tilkobling støtter bare `agentmemory connect copilot-cli`. For andre native Windows-agenter bruker du den manuelle MCP-blokken fra [Andre agenter](#other-agents). Kjør `connect` i WSL bare når målagenten er installert i det samme WSL-miljøet.
 

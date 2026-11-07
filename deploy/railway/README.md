@@ -1,6 +1,6 @@
 # Railway
 
-Connect the GitHub repository with its root directory left at the repository root; the shared Dockerfile needs root-level `package.json` and source files in its build context. In service settings, set the Config-as-Code path to `/deploy/railway/railway.json` (Railway resolves this path independently of the selected root directory). This config selects `deploy/Dockerfile` while the build context remains the repository root. Add a persistent volume mounted at `/data` before starting the service. The service runs iii 0.25.0 Worker Compose and serves the health endpoint at `/agentmemory/livez`.
+Connect the GitHub repository with its root directory left at the repository root; the shared Dockerfile needs root-level `package.json` and source files in its build context. In service settings, set the Config-as-Code path to `/deploy/railway/railway.json` (Railway resolves this path independently of the selected root directory). This config selects `deploy/Dockerfile` while the build context remains the repository root. Add a persistent volume mounted at `/data` before starting the service. The service runs iii 0.25.1 Worker Compose and serves the health endpoint at `/agentmemory/livez`.
 
 The REST API listens on `3111`; Railway's generated HTTP domain exposes that service. Read the secret with `railway ssh --service agentmemory -- 'cat /data/secret'` and send it as `Authorization: Bearer <secret>`.
 

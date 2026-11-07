@@ -663,7 +663,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory Windows 10/11’de çalışır. WSL2 Linux yolunu izleyerek engine’i otomatik kurabilir. Yerel Windows’ta iii-engine v0.25.0 elle kurulmalıdır: arşivi [iii v0.25.0 sürüm sayfasından](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) indirin, checksum’u doğrulayın ve `iii.exe` dosyasını `PATH` üzerine koyun. CLI Windows ZIP’ini otomatik açmaz
+agentmemory Windows 10/11’de çalışır. WSL2 Linux yolunu izleyerek engine’i otomatik kurabilir. Yerel Windows’ta iii-engine v0.25.1 elle kurulmalıdır: arşivi [iii v0.25.1 sürüm sayfasından](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) indirin, checksum’u doğrulayın ve `iii.exe` dosyasını `PATH` üzerine koyun. CLI Windows ZIP’ini otomatik açmaz
 
 Yerel Windows’ta otomatik MCP yapılandırması yalnızca `agentmemory connect copilot-cli` için vardır; diğerleri için [Other agents](#other-agents) bölümünü kullanın. WSL’de `connect` yalnızca hedef agent aynı WSL ortamındaysa çalıştırılmalıdır
 
