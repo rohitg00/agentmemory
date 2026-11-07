@@ -2,6 +2,7 @@ import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { recordAudit } from "./audit.js";
 import type {
   Action,
@@ -1037,6 +1038,8 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
                 fresh.isLatest = false;
                 fresh.updatedAt = new Date().toISOString();
                 await kv.set(KV.memories, fresh.id, fresh);
+                getSearchIndex().remove(fresh.id);
+                vectorIndexRemove(fresh.id);
                 await recordAudit(kv, "heal", "mem::heal", [fresh.id], {
                   entityType: "memory",
                   reason: "superseded-memory-mark-non-latest",
@@ -1056,6 +1059,8 @@ export function registerDiagnosticsFunction(sdk: IIIClient, kv: StateKV): void {
           }
         }
       }
+
+      if (fixed > 0) await flushIndexSave();
 
       return { success: true, fixed, skipped, details };
     },

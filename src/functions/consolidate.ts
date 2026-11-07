@@ -7,7 +7,18 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
-import { supersededAt } from "../state/memory-utils.js";
+import {
+  memoryToObservation,
+  observationEmbedText,
+  supersededAt,
+} from "../state/memory-utils.js";
+import {
+  getSearchIndex,
+  scheduleIndexSave,
+  flushIndexSave,
+  vectorIndexAddGuarded,
+  vectorIndexRemove,
+} from "./search.js";
 import { recordAudit } from "./audit.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
@@ -169,19 +180,12 @@ export function registerConsolidateFunction(
           // preserves the pre-existing behavior and may evolve any memory.
           const existingMatch = existingMemories.find(
             (m) =>
+              m.isLatest !== false &&
               m.title.toLowerCase() === parsed.title.toLowerCase() &&
               (!scopedProject || !m.project || m.project === scopedProject),
           );
 
           if (existingMatch) {
-            existingMatch.isLatest = false;
-            existingMatch.updatedAt = supersededAt(existingMatch.updatedAt, now);
-            await kv.set(KV.memories, existingMatch.id, existingMatch);
-            await recordAudit(kv, "evolve", "mem::consolidate", [existingMatch.id], {
-              action: "mark_non_latest",
-              concept,
-            });
-
             const evolved: Memory = {
               id: generateId("mem"),
               createdAt: now,
@@ -198,6 +202,29 @@ export function registerConsolidateFunction(
               ...(scopedProject !== undefined && { project: scopedProject }),
             };
             await kv.set(KV.memories, evolved.id, evolved);
+            await indexConsolidatedMemory(evolved);
+            try {
+              const superseded: Memory = {
+                ...existingMatch,
+                isLatest: false,
+                updatedAt: supersededAt(existingMatch.updatedAt, now),
+              };
+              await kv.set(KV.memories, existingMatch.id, superseded);
+              Object.assign(existingMatch, superseded);
+              getSearchIndex().remove(existingMatch.id);
+              vectorIndexRemove(existingMatch.id);
+            } catch (supersedeErr) {
+              await kv.delete(KV.memories, evolved.id).catch(() => {});
+              getSearchIndex().remove(evolved.id);
+              vectorIndexRemove(evolved.id);
+              await flushIndexSave().catch(() => {});
+              throw supersedeErr;
+            }
+            existingMemories.push(evolved);
+            await recordAudit(kv, "evolve", "mem::consolidate", [existingMatch.id], {
+              action: "mark_non_latest",
+              concept,
+            });
             await recordAudit(kv, "evolve", "mem::consolidate", [evolved.id], {
               action: "evolve_memory",
               oldId: existingMatch.id,
@@ -218,6 +245,8 @@ export function registerConsolidateFunction(
               ...(scopedProject !== undefined && { project: scopedProject }),
             };
             await kv.set(KV.memories, memory.id, memory);
+            await indexConsolidatedMemory(memory);
+            existingMemories.push(memory);
             await recordAudit(kv, "remember", "mem::consolidate", [memory.id], {
               action: "create_memory",
               concept,
@@ -233,11 +262,35 @@ export function registerConsolidateFunction(
         }
       }
 
+      if (consolidated > 0) await flushIndexSave();
+
       logger.info("Consolidation complete", {
         consolidated,
         totalObs: allObs.length,
       });
       return { consolidated, totalObservations: allObs.length };
     },
+  );
+}
+
+async function indexConsolidatedMemory(memory: Memory): Promise<void> {
+  try {
+    getSearchIndex().add(memoryToObservation(memory), "memory");
+    scheduleIndexSave();
+  } catch (err) {
+    logger.warn("Failed to index consolidated memory into BM25", {
+      memId: memory.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+  await vectorIndexAddGuarded(
+    memory.id,
+    memory.sessionIds?.[0] ?? "memory",
+    observationEmbedText({
+      title: memory.title,
+      narrative: memory.content,
+      concepts: memory.concepts,
+    }),
+    { kind: "memory", logId: memory.id },
   );
 }

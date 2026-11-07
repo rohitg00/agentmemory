@@ -842,7 +842,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       // queries return underfilled pages when same-agent matches
       // rank lower than cross-agent ones in the hybrid score.
       const filtering = !!(projectFilter || cwdFilter || filterAgentId)
-      let fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
+      let fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : Math.max(effectiveLimit * 4, effectiveLimit + 20)
       // Hybrid results carry the observation the ranker already loaded,
       // so the load pass below doesn't refetch every record it just
       // enriched.
@@ -894,7 +894,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         hybridRequest.candidateCount = undefined
         if (useHybridRanker && hybridRanker) {
           try {
-            const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph, hybridRequest)
+            const hybrid = await hybridRanker(query, filtering ? fetchLimit : effectiveLimit, targetLayer, authorizeGraph, hybridRequest)
             results = hybrid.map((r) => ({
               obsId: r.observation.id,
               sessionId: r.sessionId,
@@ -950,7 +950,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
                   const mem = await kv
                     .get<Memory>(KV.memories, r.obsId)
                     .catch(() => null)
-                  return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
+                  return mem && mem.isLatest !== false ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
                 })()
                 observationCache.set(key, pending)
               }

@@ -210,7 +210,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
         const ranker = vi.fn(hybrid.search.bind(hybrid));
         setHybridRanker(ranker);
         expect(await recall({ limit: 1 })).toEqual([matching.id]);
-        expect(ranker.mock.calls.map((call) => call[1])).toEqual([100, 200]);
+        expect(ranker.mock.calls.map((call) => call[1])).toEqual([100]);
       });
     }
 
