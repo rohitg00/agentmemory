@@ -40,7 +40,12 @@ import {
 import { withKeyedLocks } from "../state/keyed-mutex.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
-import { indexRecords } from "./search.js";
+import {
+  indexRecords,
+  getSearchIndex,
+  vectorIndexRemove,
+  flushIndexSave,
+} from "./search.js";
 import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
 import { budgetImportedObservationSources } from "./observation-source-budget.js";
@@ -491,10 +496,15 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
             await markCaptureEventDeleted(kv, { id: d.obsId, sessionId: d.sessionId, captureKey: d.captureKey });
             await kv.delete(KV.observations(d.sessionId), d.obsId);
             await unindexObservationSession(kv, d.obsId).catch(() => {});
+            getSearchIndex().remove(d.obsId);
+            vectorIndexRemove(d.obsId);
           });
-          await runChunked(await kv.list<Memory>(KV.memories), (m) =>
-            kv.delete(KV.memories, m.id),
-          );
+          await runChunked(await kv.list<Memory>(KV.memories), async (m) => {
+            await kv.delete(KV.memories, m.id);
+            getSearchIndex().remove(m.id);
+            vectorIndexRemove(m.id);
+          });
+          await flushIndexSave();
           await runChunked(
             await kv.list<SessionSummary>(KV.summaries),
             (s) => kv.delete(KV.summaries, s.sessionId),
