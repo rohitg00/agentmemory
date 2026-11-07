@@ -18,8 +18,11 @@ import {
   type HookManifest,
 } from "./codex-hooks.js";
 
-const CLAUDE_DIR = join(homedir(), ".claude");
-const CLAUDE_JSON = join(homedir(), ".claude.json");
+const CLAUDE_CONFIG_DIR = process.env["CLAUDE_CONFIG_DIR"];
+const CLAUDE_DIR = CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+const CLAUDE_JSON = CLAUDE_CONFIG_DIR
+  ? join(CLAUDE_DIR, ".claude.json")
+  : join(homedir(), ".claude.json");
 const CLAUDE_SETTINGS = join(CLAUDE_DIR, "settings.json");
 
 type ClaudeMcpEntry = typeof AGENTMEMORY_MCP_BLOCK;
