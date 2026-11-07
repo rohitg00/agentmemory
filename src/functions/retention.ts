@@ -7,6 +7,7 @@ import type {
 } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import type { AccessLog } from "./access-tracker.js";
 import {
   emptyAccessLog,
@@ -18,7 +19,6 @@ import { deleteFacetsForTargets } from "./facets.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
 import { getAuditRetentionMonths } from "../config.js";
-
 const DEFAULT_DECAY: DecayConfig = {
   lambda: 0.01,
   sigma: 0.3,
@@ -135,8 +135,8 @@ export function registerRetentionFunctions(
       const { config } = resolved;
 
       const [memories, semanticMems, allLogs] = await Promise.all([
-        kv.list<Memory>(KV.memories),
-        kv.list<SemanticMemory>(KV.semantic),
+        collectAll<Memory>(kv, KV.memories),
+        collectAll<SemanticMemory>(kv, KV.semantic),
         kv.list<unknown>(KV.accessLog).catch(() => [] as unknown[]),
       ]);
       const logsById = new Map<string, AccessLog>();
