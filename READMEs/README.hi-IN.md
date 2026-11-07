@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Plugin install के बिना Claude Code (MCP-standalone path)
 
-अगर आप `/plugin install` का उपयोग करने के बजाय `~/.claude.json` के माध्यम से सीधे agentmemory का MCP server connect करते हैं, तो Claude Code कभी भी `${CLAUDE_PLUGIN_ROOT}` resolve नहीं करता और आपको hook scripts को `~/.claude/settings.json` में absolute paths पर point करना पड़ता है। ये paths आमतौर पर agentmemory version को embed करते हैं (जैसे `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), इसलिए अगला upgrade चुपचाप हर hook को तोड़ देता है।
+अगर आप `/plugin install` का उपयोग करने के बजाय `~/.claude.json` (डिफ़ॉल्ट पथ) के माध्यम से सीधे agentmemory का MCP server connect करते हैं, तो Claude Code कभी भी `${CLAUDE_PLUGIN_ROOT}` resolve नहीं करता और आपको hook scripts को `~/.claude/settings.json` (डिफ़ॉल्ट पथ) में absolute paths पर point करना पड़ता है। ये paths आमतौर पर agentmemory version को embed करते हैं (जैसे `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), इसलिए अगला upgrade चुपचाप हर hook को तोड़ देता है।
 
 Workaround:
 
@@ -452,7 +452,9 @@ Workaround:
 agentmemory connect claude-code --with-hooks
 ```
 
-यह वही hook commands को `~/.claude/settings.json` में merge करता है, current installed `@agentmemory/agentmemory` package की bundled `plugin/` directory पर resolve किए गए absolute paths के साथ। agentmemory upgrade करने के बाद paths refresh करने के लिए command फिर से चलाएँ। उसी file में user entries preserved रहती हैं; केवल पिछली agentmemory entries replace होती हैं। `/plugin install` path अनुशंसित approach बनी रहती है।
+यह कमांड MCP सर्वर को कॉन्फ़िगर करता है और साथ आए hooks को Claude Code के उपयोगकर्ता कॉन्फ़िगरेशन में मिलाता है। यदि `CLAUDE_CONFIG_DIR` सेट नहीं है या खाली है, तो यह MCP के लिए `~/.claude.json` और hooks के लिए `~/.claude/settings.json` का उपयोग करता है। कस्टम डायरेक्टरी के लिए इस कमांड और Claude Code दोनों में `CLAUDE_CONFIG_DIR` का एक ही गैर-खाली मान सेट करें; तब फ़ाइलें क्रमशः `$CLAUDE_CONFIG_DIR/.claude.json` और `$CLAUDE_CONFIG_DIR/settings.json` होंगी। Claude Code के लॉन्च वातावरण में यह मान होना चाहिए, भले ही कनेक्टर इसे AgentMemory की `.env` से पढ़ता हो।
+
+Hook कमांड इंस्टॉल किए गए पैकेज की साथ आई `plugin/` डायरेक्टरी के ऐब्सोल्यूट पथ इस्तेमाल करते हैं। agentmemory अपग्रेड करने के बाद इन पथों को रीफ़्रेश करने के लिए कमांड फिर से चलाएँ। कॉन्फ़िगरेशन फ़ाइलों में उपयोगकर्ता की प्रविष्टियाँ बनी रहती हैं; केवल पिछली agentmemory प्रविष्टियाँ बदली जाती हैं। `/plugin install` का उपयोग करना अब भी अनुशंसित तरीका है।
 Remote या protected deployments के लिए, Claude Code को `AGENTMEMORY_URL` और `AGENTMEMORY_SECRET` set के साथ launch करें। Plugin दोनों values को अपने bundled MCP server के माध्यम से pass करता है; जब `AGENTMEMORY_URL` खाली होता है, तो MCP shim `http://localhost:3111` का उपयोग करता है।
 
 ### Codex CLI (Codex plugin platform)
@@ -1256,7 +1258,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

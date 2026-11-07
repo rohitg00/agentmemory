@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -448,7 +448,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code بدون تثبيت الإضافة (مسار MCP القائم بذاته)
 
-إذا ربطت خادم MCP الخاص بـ agentmemory عبر `~/.claude.json` مباشرة بدلًا من استخدام `/plugin install`، فإن Claude Code لن يحلّ `${CLAUDE_PLUGIN_ROOT}` مطلقًا، وستحتاج إلى توجيه نصوص الخطافات إلى مسارات مطلقة في `~/.claude/settings.json`. وتُضمِّن تلك المسارات عادة إصدار agentmemory (مثل `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`)، فتنكسر جميع الخطافات بصمت عند الترقية التالية.
+إذا ربطت خادم MCP الخاص بـ agentmemory عبر `~/.claude.json` (المسار الافتراضي) مباشرة بدلًا من استخدام `/plugin install`، فإن Claude Code لن يحلّ `${CLAUDE_PLUGIN_ROOT}` مطلقًا، وستحتاج إلى توجيه نصوص الخطافات إلى مسارات مطلقة في `~/.claude/settings.json` (المسار الافتراضي). وتُضمِّن تلك المسارات عادة إصدار agentmemory (مثل `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`)، فتنكسر جميع الخطافات بصمت عند الترقية التالية.
 
 الحل البديل:
 
@@ -456,7 +456,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-يُدمج هذا الأمر نفس أوامر الخطافات في `~/.claude/settings.json` بمسارات مطلقة تُحلَّل إلى دليل `plugin/` المُضمَّن في حزمة `@agentmemory/agentmemory` المثبَّتة حاليًا. أعد تشغيل الأمر بعد ترقية agentmemory لتحديث المسارات. تُحفظ إدخالات المستخدم في نفس الملف؛ ويُستبدل إدخالات agentmemory السابقة فقط. يظل استخدام مسار `/plugin install` هو الأسلوب المُوصى به.
+يضبط هذا الأمر خادم MCP ويدمج الخطافات المضمّنة في إعدادات مستخدم Claude Code. عندما لا يكون `CLAUDE_CONFIG_DIR` مضبوطًا أو تكون قيمته فارغة، يستخدم `~/.claude.json` لإعدادات MCP و`~/.claude/settings.json` للخطافات. لاستخدام دليل مخصص، اضبط `CLAUDE_CONFIG_DIR` على القيمة غير الفارغة نفسها عند تشغيل هذا الأمر وClaude Code؛ وعندها يكون الملفان `$CLAUDE_CONFIG_DIR/.claude.json` و`$CLAUDE_CONFIG_DIR/settings.json`، على الترتيب. يجب أن يتلقى Claude Code هذه القيمة في بيئة تشغيله، حتى إذا قرأها الموصل من ملف `.env` الخاص بـ AgentMemory.
+
+تستخدم أوامر الخطافات مسارات مطلقة إلى دليل `plugin/` المضمّن في الحزمة المثبّتة. أعد تشغيل الأمر بعد ترقية agentmemory لتحديث تلك المسارات. تُحفظ إدخالات المستخدم في ملفات الإعدادات؛ ولا تُستبدل إلا إدخالات agentmemory السابقة. يظل استخدام `/plugin install` هو النهج الموصى به.
 بالنسبة للنشر عن بُعد أو المحمي، شغّل Claude Code مع ضبط `AGENTMEMORY_URL` و`AGENTMEMORY_SECRET`. تُمرّر الإضافة كلتا القيمتين إلى خادم MCP المُضمَّن بها؛ وعندما يكون `AGENTMEMORY_URL` فارغًا، يستخدم وسيط MCP (shim) عنوان `http://localhost:3111`.
 
 ### Codex CLI (منصة إضافات Codex)
@@ -1242,7 +1244,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

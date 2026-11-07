@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -109,6 +110,7 @@ describe("connect claude-code --with-hooks", () => {
     home = mkdtempSync(join(tmpdir(), "am-claude-hooks-"));
     vi.stubEnv("HOME", home);
     vi.stubEnv("USERPROFILE", home);
+    vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
     vi.resetModules();
   });
 
@@ -137,5 +139,149 @@ describe("connect claude-code --with-hooks", () => {
       promptEntry,
       ...buildMergedHooks(null, PLUGIN_ROOT, "hooks.json").hooks["Stop"]!,
     ]);
+  });
+
+  it("detects Claude Code in CLAUDE_CONFIG_DIR without a default directory", async () => {
+    const configDir = join(home, "custom Claude config");
+    mkdirSync(configDir);
+    vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
+
+    const { adapter } = await import("../src/cli/connect/claude-code.js");
+    expect(adapter.detect()).toBe(true);
+    expect(existsSync(join(home, ".claude"))).toBe(false);
+  });
+
+  it("uses a profile override set after the adapter was imported for detection, MCP and hooks", async () => {
+    const { adapter } = await import("../src/cli/connect/claude-code.js");
+    const configDir = join(home, "late Claude config");
+    mkdirSync(configDir);
+    vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
+
+    expect(adapter.detect()).toBe(true);
+    expect(await adapter.install({ dryRun: false, force: false, withHooks: true })).toMatchObject({
+      kind: "installed",
+      mutatedPath: join(configDir, ".claude.json"),
+    });
+    expect(JSON.parse(readFileSync(join(configDir, "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
+    expect(existsSync(join(home, ".claude.json"))).toBe(false);
+    expect(existsSync(join(home, ".claude"))).toBe(false);
+  });
+
+  describe.skipIf(process.platform === "win32")("CLI env-file hydration", () => {
+    it.each([
+      { source: "default .env", customEnvFile: false, shellOverride: false },
+      { source: "AGENTMEMORY_ENV_FILE", customEnvFile: true, shellOverride: false },
+      { source: "shell overriding the env file", customEnvFile: true, shellOverride: true },
+    ])("installs MCP and hooks using $source", ({ customEnvFile, shellOverride }) => {
+      const fileProfile = join(home, "env-file Claude config");
+      const shellProfile = join(home, "shell Claude config");
+      const selected = shellOverride ? shellProfile : fileProfile;
+      mkdirSync(fileProfile);
+      mkdirSync(shellProfile);
+      mkdirSync(join(home, ".agentmemory"));
+      const envFile = customEnvFile
+        ? join(home, "custom.env")
+        : join(home, ".agentmemory", ".env");
+      writeFileSync(envFile, `CLAUDE_CONFIG_DIR="${fileProfile}"\n`);
+
+      const result = spawnSync(process.execPath, [
+        resolve(__dirname, "..", "dist", "cli.mjs"),
+        "connect", "claude-code", "--with-hooks", "--no-guidelines",
+      ], {
+        cwd: home,
+        env: {
+          ...process.env,
+          AGENTMEMORY_ENV_FILE: customEnvFile ? envFile : undefined,
+          CLAUDE_CONFIG_DIR: shellOverride ? shellProfile : undefined,
+          CI: "1",
+          NO_COLOR: "1",
+        },
+        encoding: "utf-8",
+        timeout: 10000,
+      });
+
+      expect(result.status, result.stderr).toBe(0);
+      expect(result.stdout).toContain(`wired into ${join(selected, ".claude.json")}`);
+      expect(JSON.parse(readFileSync(join(selected, ".claude.json"), "utf-8")).mcpServers.agentmemory).toBeDefined();
+      expect(JSON.parse(readFileSync(join(selected, "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
+      expect(existsSync(join(shellOverride ? fileProfile : shellProfile, ".claude.json"))).toBe(false);
+      expect(existsSync(join(home, ".claude.json"))).toBe(false);
+      expect(existsSync(join(home, ".claude"))).toBe(false);
+    }, 15000);
+  });
+
+  it("merges MCP and hooks in CLAUDE_CONFIG_DIR and leaves default files untouched", async () => {
+    const configDir = join(home, "custom Claude config");
+    const configPath = join(configDir, ".claude.json");
+    const settingsPath = join(configDir, "settings.json");
+    const existingServer = { command: "existing-server", args: [] };
+    const userHook = { hooks: [{ type: "command", command: "echo user-hook" }] };
+    mkdirSync(configDir);
+    mkdirSync(join(home, ".claude"));
+    writeFileSync(configPath, JSON.stringify({ mcpServers: { existing: existingServer }, theme: "dark" }));
+    writeFileSync(settingsPath, JSON.stringify({ env: { KEEP: "yes" }, hooks: { SessionStart: [userHook] } }));
+    writeFileSync(join(home, ".claude.json"), '{"keep":"default MCP"}');
+    writeFileSync(join(home, ".claude", "settings.json"), '{"keep":"default settings"}');
+    vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
+
+    const { adapter } = await import("../src/cli/connect/claude-code.js");
+    const options = { dryRun: false, force: false, withHooks: true };
+    const result = await adapter.install(options);
+
+    expect(result).toMatchObject({ kind: "installed", mutatedPath: configPath });
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    expect(config.theme).toBe("dark");
+    expect(config.mcpServers.existing).toEqual(existingServer);
+    expect(config.mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
+    const settings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+    expect(settings.env).toEqual({ KEEP: "yes" });
+    expect(settings.hooks.SessionStart).toEqual([
+      userHook,
+      ...buildMergedHooks(null, PLUGIN_ROOT, "hooks.json").hooks.SessionStart!,
+    ]);
+    expect(readFileSync(join(home, ".claude.json"), "utf-8")).toBe('{"keep":"default MCP"}');
+    expect(readFileSync(join(home, ".claude", "settings.json"), "utf-8")).toBe('{"keep":"default settings"}');
+
+    const installedSettings = readFileSync(settingsPath, "utf-8");
+    expect((await adapter.install(options)).kind).toBe("already-wired");
+    expect(readFileSync(settingsPath, "utf-8")).toBe(installedSettings);
+  });
+
+  it("reports the custom MCP path on a dry run without writing files", async () => {
+    const configDir = join(home, "custom Claude config");
+    mkdirSync(configDir);
+    vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
+
+    const { adapter } = await import("../src/cli/connect/claude-code.js");
+    const result = await adapter.install({ dryRun: true, force: false, withHooks: true });
+
+    expect(result).toMatchObject({ kind: "installed", mutatedPath: join(configDir, ".claude.json") });
+    expect(existsSync(join(configDir, ".claude.json"))).toBe(false);
+    expect(existsSync(join(configDir, "settings.json"))).toBe(false);
+    expect(existsSync(join(home, ".claude.json"))).toBe(false);
+  });
+
+  it("puts MCP inside an explicitly configured default .claude directory", async () => {
+    const configDir = join(home, ".claude");
+    mkdirSync(configDir);
+    vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
+
+    const { adapter } = await import("../src/cli/connect/claude-code.js");
+    const result = await adapter.install({ dryRun: false, force: false });
+
+    expect(result).toMatchObject({ kind: "installed", mutatedPath: join(configDir, ".claude.json") });
+    expect(JSON.parse(readFileSync(join(configDir, ".claude.json"), "utf-8")).mcpServers.agentmemory).toBeDefined();
+    expect(existsSync(join(home, ".claude.json"))).toBe(false);
+  });
+
+  it.each([undefined, ""])("keeps legacy paths when CLAUDE_CONFIG_DIR is %s", async (override) => {
+    vi.stubEnv("CLAUDE_CONFIG_DIR", override);
+
+    const { adapter } = await import("../src/cli/connect/claude-code.js");
+    const result = await adapter.install({ dryRun: false, force: false, withHooks: true });
+
+    expect(result).toMatchObject({ kind: "installed", mutatedPath: join(home, ".claude.json") });
+    expect(JSON.parse(readFileSync(join(home, ".claude.json"), "utf-8")).mcpServers.agentmemory).toBeDefined();
+    expect(JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
   });
 });

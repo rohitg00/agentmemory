@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 εργαλεία MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 αυτόματα hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 εξωτερικές βάσεις δεδομένων" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ επιτυχημένες δοκιμές" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ επιτυχημένες δοκιμές" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -446,7 +446,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code χωρίς εγκατάσταση plugin (αυτόνομη διαδρομή MCP)
 
-Αν συνδέσετε τον διακομιστή MCP του agentmemory μέσω του `~/.claude.json` απευθείας αντί να χρησιμοποιήσετε το `/plugin install`, το Claude Code δεν επιλύει ποτέ το `${CLAUDE_PLUGIN_ROOT}` και πρέπει να δείξετε τα scripts των hooks σε απόλυτες διαδρομές στο `~/.claude/settings.json`. Αυτές οι διαδρομές συνήθως ενσωματώνουν την έκδοση του agentmemory (π.χ. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), οπότε η επόμενη αναβάθμιση χαλάει σιωπηλά κάθε hook.
+Αν συνδέσετε τον διακομιστή MCP του agentmemory μέσω του `~/.claude.json` (προεπιλεγμένη διαδρομή) απευθείας αντί να χρησιμοποιήσετε το `/plugin install`, το Claude Code δεν επιλύει ποτέ το `${CLAUDE_PLUGIN_ROOT}` και πρέπει να δείξετε τα scripts των hooks σε απόλυτες διαδρομές στο `~/.claude/settings.json` (προεπιλεγμένη διαδρομή). Αυτές οι διαδρομές συνήθως ενσωματώνουν την έκδοση του agentmemory (π.χ. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), οπότε η επόμενη αναβάθμιση χαλάει σιωπηλά κάθε hook.
 
 Λύση παράκαμψης:
 
@@ -454,7 +454,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-Αυτό συγχωνεύει τις ίδιες εντολές hook στο `~/.claude/settings.json` με απόλυτες διαδρομές που αναλύονται στον ενσωματωμένο κατάλογο `plugin/` του πακέτου `@agentmemory/agentmemory` που είναι τρέχουσα εγκατεστημένο. Εκτελέστε ξανά την εντολή μετά την αναβάθμιση του agentmemory για να ανανεωθούν οι διαδρομές. Οι καταχωρήσεις του χρήστη στο ίδιο αρχείο διατηρούνται· αντικαθίστανται μόνο οι προηγούμενες καταχωρήσεις του agentmemory. Η χρήση της διαδρομής `/plugin install` παραμένει η συνιστώμενη προσέγγιση.
+Αυτή η εντολή ρυθμίζει τον διακομιστή MCP και συγχωνεύει τα ενσωματωμένα hooks στη διαμόρφωση χρήστη του Claude Code. Αν το `CLAUDE_CONFIG_DIR` δεν έχει οριστεί ή είναι κενό, χρησιμοποιεί το `~/.claude.json` για το MCP και το `~/.claude/settings.json` για τα hooks. Για προσαρμοσμένο κατάλογο, ορίστε την ίδια μη κενή τιμή του `CLAUDE_CONFIG_DIR` για αυτή την εντολή και το Claude Code, οπότε τα αρχεία θα είναι `$CLAUDE_CONFIG_DIR/.claude.json` και `$CLAUDE_CONFIG_DIR/settings.json`, αντίστοιχα. Το Claude Code πρέπει να λάβει αυτή την τιμή στο περιβάλλον εκκίνησής του, ακόμη και αν ο connector τη διαβάζει από το `.env` του AgentMemory.
+
+Οι εντολές των hooks χρησιμοποιούν απόλυτες διαδρομές προς τον ενσωματωμένο κατάλογο `plugin/` του εγκατεστημένου πακέτου. Εκτελέστε ξανά την εντολή μετά την αναβάθμιση του agentmemory για να ενημερώσετε αυτές τις διαδρομές. Οι καταχωρίσεις χρήστη στα αρχεία διαμόρφωσης διατηρούνται και αντικαθίστανται μόνο οι προηγούμενες καταχωρίσεις του agentmemory. Η χρήση του `/plugin install` παραμένει η προτεινόμενη προσέγγιση.
 Για απομακρυσμένες ή προστατευμένες αναπτύξεις, εκκινήστε το Claude Code με ρυθμισμένα τα `AGENTMEMORY_URL` και `AGENTMEMORY_SECRET`. Το plugin περνάει και τις δύο τιμές στον ενσωματωμένο διακομιστή MCP του· όταν το `AGENTMEMORY_URL` είναι άδειο, το MCP shim χρησιμοποιεί το `http://localhost:3111`.
 
 ### Codex CLI (πλατφόρμα plugin του Codex)
@@ -1241,7 +1243,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

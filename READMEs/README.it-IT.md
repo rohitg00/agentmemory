@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -441,7 +441,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code senza l'installazione del plugin (percorso MCP standalone)
 
-Se collegi il server MCP di agentmemory tramite `~/.claude.json` direttamente invece di usare `/plugin install`, Claude Code non risolve mai `${CLAUDE_PLUGIN_ROOT}` e devi puntare gli script degli hook a percorsi assoluti in `~/.claude/settings.json`. Questi percorsi di solito incorporano la versione di agentmemory (ad es. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), quindi il prossimo aggiornamento rompe silenziosamente ogni hook.
+Se collegi il server MCP di agentmemory tramite `~/.claude.json` (percorso predefinito) direttamente invece di usare `/plugin install`, Claude Code non risolve mai `${CLAUDE_PLUGIN_ROOT}` e devi puntare gli script degli hook a percorsi assoluti in `~/.claude/settings.json` (percorso predefinito). Questi percorsi di solito incorporano la versione di agentmemory (ad es. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), quindi il prossimo aggiornamento rompe silenziosamente ogni hook.
 
 Soluzione alternativa:
 
@@ -449,7 +449,9 @@ Soluzione alternativa:
 agentmemory connect claude-code --with-hooks
 ```
 
-Questo unisce gli stessi comandi degli hook in `~/.claude/settings.json` con percorsi assoluti risolti verso la directory `plugin/` incorporata nel pacchetto `@agentmemory/agentmemory` attualmente installato. Riesegui il comando dopo aver aggiornato agentmemory per aggiornare i percorsi. Le voci dell'utente nello stesso file vengono preservate; vengono sostituite solo le voci precedenti di agentmemory. Usare il percorso `/plugin install` resta l'approccio consigliato.
+Questo comando configura il server MCP e unisce gli hook inclusi alla configurazione utente di Claude Code. Se `CLAUDE_CONFIG_DIR` non è impostata o è vuota, usa `~/.claude.json` per MCP e `~/.claude/settings.json` per gli hook. Per una directory personalizzata, imposta `CLAUDE_CONFIG_DIR` sullo stesso valore non vuoto sia per questo comando sia per Claude Code; i file saranno quindi rispettivamente `$CLAUDE_CONFIG_DIR/.claude.json` e `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code deve ricevere questo valore nel proprio ambiente di avvio, anche se il connettore lo legge dal file `.env` di AgentMemory.
+
+I comandi degli hook usano percorsi assoluti verso la directory `plugin/` inclusa nel pacchetto installato. Riesegui il comando dopo aver aggiornato agentmemory per aggiornare questi percorsi. Le voci utente nei file di configurazione vengono preservate; vengono sostituite solo le precedenti voci di agentmemory. L’uso di `/plugin install` rimane l’approccio consigliato.
 Per deployment remoti o protetti, avvia Claude Code con `AGENTMEMORY_URL` e `AGENTMEMORY_SECRET` impostati. Il plugin passa entrambi i valori al suo server MCP incorporato; quando `AGENTMEMORY_URL` è vuoto, lo shim MCP usa `http://localhost:3111`.
 
 ### Codex CLI (piattaforma plugin di Codex)
@@ -1249,7 +1251,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
