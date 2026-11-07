@@ -150,6 +150,14 @@ describe("truncateCaptureOutput redacts structured values before serializing", (
     }
   });
 
+  it("keeps values whose key only contains a secret word inside another word", () => {
+    const value = { tokenization: "words", secretary: "office", access_token: "T".repeat(40), pad: "y".repeat(200) };
+    const out = truncateJson(value, 120);
+    expect(out).toContain("words");
+    expect(out).toContain("office");
+    expect(out).not.toContain("TTTT");
+  });
+
   it("leaves a short value with a secret-like key unchanged", () => {
     const value = { password: "short" };
     expect(truncateJson(value, 100)).toBe(JSON.stringify(value));

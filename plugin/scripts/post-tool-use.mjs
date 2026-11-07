@@ -138,9 +138,21 @@ const JSON_WHITESPACE_ESCAPES = {
 	r: "\r",
 	t: "	"
 };
-const SECRET_KEY_RE = /api[_-]?key|secret|token|password|passwd|credential|^auth(?:orization)?$/i;
+const SECRET_KEY_WORDS = new Set([
+	"apikey",
+	"secret",
+	"token",
+	"password",
+	"passwd",
+	"credential",
+	"credentials",
+	"auth",
+	"authorization"
+]);
 function isSecretKeyName(key) {
-	return /^[\w.-]{1,64}$/.test(key) && SECRET_KEY_RE.test(key);
+	if (!/^[\w.-]{1,64}$/.test(key)) return false;
+	const words = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().split(/[_.-]+/);
+	return words.some((word, i) => SECRET_KEY_WORDS.has(word) || word === "api" && words[i + 1] === "key");
 }
 function redactSecretKeys(value) {
 	if (Array.isArray(value)) return value.map(redactSecretKeys);
