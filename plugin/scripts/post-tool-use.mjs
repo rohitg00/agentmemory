@@ -138,8 +138,19 @@ const JSON_WHITESPACE_ESCAPES = {
 	r: "\r",
 	t: "	"
 };
+const SECRET_KEY_RE = /api[_-]?key|secret|token|password|passwd|credential|^auth(?:orization)?$/i;
+function isSecretKeyName(key) {
+	return /^[\w.-]{1,64}$/.test(key) && SECRET_KEY_RE.test(key);
+}
+function redactSecretKeys(value) {
+	if (Array.isArray(value)) return value.map(redactSecretKeys);
+	if (value === null || typeof value !== "object") return value;
+	const proto = Object.getPrototypeOf(value);
+	if (proto !== Object.prototype && proto !== null) return value;
+	return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, typeof item === "string" && item && isSecretKeyName(key) ? "[REDACTED_SECRET]" : redactSecretKeys(item)]));
+}
 function scrubSecrets(value) {
-	return scrubRecord(value, {
+	return scrubRecord(redactSecretKeys(value), {
 		scrubKeys: true,
 		strip: stripSecrets
 	});

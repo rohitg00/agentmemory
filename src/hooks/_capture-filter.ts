@@ -75,8 +75,27 @@ export function truncateText(value: string, max: number): string {
 
 const JSON_WHITESPACE_ESCAPES: Record<string, string> = { n: "\n", r: "\r", t: "\t" };
 
+const SECRET_KEY_RE = /api[_-]?key|secret|token|password|passwd|credential|^auth(?:orization)?$/i;
+
+function isSecretKeyName(key: string): boolean {
+  return /^[\w.-]{1,64}$/.test(key) && SECRET_KEY_RE.test(key);
+}
+
+function redactSecretKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSecretKeys);
+  if (value === null || typeof value !== "object") return value;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+      key,
+      typeof item === "string" && item && isSecretKeyName(key) ? "[REDACTED_SECRET]" : redactSecretKeys(item),
+    ]),
+  );
+}
+
 function scrubSecrets(value: unknown): unknown {
-  return scrubRecord(value, { scrubKeys: true, strip: stripSecrets });
+  return scrubRecord(redactSecretKeys(value), { scrubKeys: true, strip: stripSecrets });
 }
 
 function redactSerialized(serialized: string): string {

@@ -141,6 +141,21 @@ describe("truncation redacts before cutting", () => {
 });
 
 describe("truncateCaptureOutput redacts structured values before serializing", () => {
+  it("redacts values under secret-like keys in both helpers", () => {
+    const value = { password: "A".repeat(100), nested: { apiKey: "K".repeat(40) }, note: "kept" };
+    for (const out of [truncateJson(value, 90), truncateCaptureOutput(value, 90) as string]) {
+      expect(out).not.toContain("AAAA");
+      expect(out).not.toContain("KKKK");
+      expect(out).toContain("[REDACTED_SECRET]");
+    }
+  });
+
+  it("leaves a short value with a secret-like key unchanged", () => {
+    const value = { password: "short" };
+    expect(truncateJson(value, 100)).toBe(JSON.stringify(value));
+    expect(truncateCaptureOutput(value, 100)).toBe(value);
+  });
+
   it("removes a private block whose tag spans a line break", () => {
     const out = truncateCaptureOutput({ log: "<private\n>hidden-value</private>" + "y".repeat(200) }, 60) as string;
     expect(out).not.toContain("hidden");
