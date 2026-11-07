@@ -116,4 +116,27 @@ describe("semantic and procedural list paging", () => {
     const { ids } = await walk(r, "api::semantic-list", "semantic", "50");
     expect(new Set(ids).size).toBe(4);
   });
+
+  it("keeps paging when every record selected for a page was deleted before its read", async () => {
+    const r = rig();
+    for (let i = 0; i < 4; i++) await r.kv.set(KV.semantic, fact(i).id, fact(i));
+    await r.kv.set(KV.semantic, fact(3).id, null);
+    await r.kv.set(KV.semantic, fact(2).id, null);
+    const first = await r.get("api::semantic-list", { limit: "2" });
+    expect(r.rowsOf(first, "semantic")).toHaveLength(0);
+    expect(typeof first.body.nextCursor).toBe("string");
+    const { ids } = await walk(r, "api::semantic-list", "semantic", "2");
+    expect(ids.sort()).toEqual([fact(0).id, fact(1).id].sort());
+  });
+
+  it("returns 413 when one record and its continuation cursor exceed the transport budget", async () => {
+    const r = rig();
+    const longId = "z".repeat(4096);
+    const base = { ...fact(0, 0), id: longId };
+    const fill = SAFE_PAYLOAD_BYTES - JSON.stringify({ semantic: [base] }).length - 64;
+    await r.kv.set(KV.semantic, longId, { ...base, fact: "f".repeat(fill) });
+    await r.kv.set(KV.semantic, "a1", { ...fact(1), id: "a1" });
+    const res = await r.get("api::semantic-list", { limit: "50" });
+    expect(res.status_code).toBe(413);
+  });
 });

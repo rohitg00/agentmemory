@@ -267,7 +267,7 @@ export function registerMeshFunction(
               let pages = 0;
               for (;;) {
                 const response = await fetch(
-                  `${peer.url}/agentmemory/mesh/export?since=${peer.lastSyncAt || ""}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+                  `${peer.url}/agentmemory/mesh/export?since=${peer.lastSyncAt || ""}${peer.syncFilter?.project ? `&project=${encodeURIComponent(peer.syncFilter.project)}` : ""}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
                   {
                     headers: {
                       Authorization: `Bearer ${meshAuthToken}`,
@@ -412,7 +412,10 @@ async function collectSyncData(
   const sinceTime = Number.isNaN(parsed) ? 0 : parsed;
 
   if (scopes.includes("memories")) {
-    const all = await collectAll<Memory>(kv, KV.memories);
+    let all = await collectAll<Memory>(kv, KV.memories);
+    if (syncFilter?.project) {
+      all = all.filter((m) => m.project === syncFilter.project);
+    }
     result.memories = deltaFilter(all, sinceTime, "updatedAt");
   }
 

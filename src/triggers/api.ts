@@ -535,10 +535,12 @@ async function listRecordPage<T extends { id: string }>(
   const limit = query.limit ?? LIST_PAGE_MAX;
   let items: T[];
   let more: boolean;
+  let storageCursor: string | undefined;
   if (typeof kv.listPage === "function") {
     const page = await kv.listPage<T>(scope, { limit, cursor: query.cursor });
     items = page.items;
     more = page.nextCursor !== undefined;
+    storageCursor = page.nextCursor;
   } else {
     const sorted = sortByKeyDesc(await collectAll<T>(kv, scope), (item) => item.id, (item) => item.id);
     const page = pageAfterCursor(sorted, (item) => item.id, (item) => item.id, query.cursor, limit);
@@ -556,12 +558,11 @@ async function listRecordPage<T extends { id: string }>(
   if (kept < items.length) {
     items = items.slice(0, kept);
     more = true;
+    storageCursor = undefined;
   }
   const last = items[items.length - 1];
-  return {
-    items,
-    ...(more && last ? { nextCursor: encodeCursor({ key: last.id, id: last.id }) } : {}),
-  };
+  const nextCursor = storageCursor ?? (more && last ? encodeCursor({ key: last.id, id: last.id }) : undefined);
+  return { items, ...(nextCursor ? { nextCursor } : {}) };
 }
 
 export function registerApiTriggers(
@@ -2897,7 +2898,10 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const page = await listRecordPage<import("../types.js").SemanticMemory>(kv, KV.semantic, req.query_params);
-      return { status_code: 200, body: { semantic: page.items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) } };
+      const body = { semantic: page.items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) };
+      const oversized = checkPayloadFrameSize(body, "use ?limit and ?cursor to page");
+      if (oversized) return { status_code: 413, body: oversized };
+      return { status_code: 200, body };
     },
   );
   sdk.registerTrigger({
@@ -2911,7 +2915,10 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const page = await listRecordPage<import("../types.js").ProceduralMemory>(kv, KV.procedural, req.query_params);
-      return { status_code: 200, body: { procedural: page.items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) } };
+      const body = { procedural: page.items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) };
+      const oversized = checkPayloadFrameSize(body, "use ?limit and ?cursor to page");
+      if (oversized) return { status_code: 413, body: oversized };
+      return { status_code: 200, body };
     },
   );
   sdk.registerTrigger({
@@ -3701,7 +3708,12 @@ export function registerApiTriggers(
           ["graphEdges", df(graphEdges, "createdAt")],
         );
       }
-      const rowId = (row: unknown) => String((row as { id?: unknown }).id ?? "");
+      const rowId = (row: unknown) => {
+        const r = row as { id?: unknown; sourceId?: unknown; targetId?: unknown; type?: unknown };
+        if (r.id !== undefined && r.id !== null) return String(r.id);
+        if (r.sourceId !== undefined) return `${String(r.sourceId)}:${String(r.targetId)}:${String(r.type)}`;
+        return "";
+      };
       for (const [, rows] of collections) {
         rows.sort((a, b) => (rowId(a) < rowId(b) ? -1 : rowId(a) > rowId(b) ? 1 : 0));
       }
@@ -3712,7 +3724,7 @@ export function registerApiTriggers(
           if (
             parsed && typeof parsed === "object" &&
             Number.isInteger(parsed.c) && parsed.c >= 0 && parsed.c < collections.length &&
-            (parsed.after === undefined || (typeof parsed.after === "string" && parsed.after.length <= 512))
+            (parsed.after === undefined || typeof parsed.after === "string")
           ) {
             cursorPos = { c: parsed.c, ...(parsed.after !== undefined ? { after: parsed.after } : {}) };
           }

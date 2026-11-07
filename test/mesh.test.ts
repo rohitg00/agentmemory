@@ -299,6 +299,46 @@ describe("Mesh Functions", () => {
       vi.unstubAllGlobals();
     });
 
+    it("scopes the push and every pull page to the peer project filter", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+      const base = { type: "pattern", title: "t", content: "c", createdAt: "2026-08-01T00:00:00Z", updatedAt: "2026-08-01T00:00:00Z", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, isLatest: true };
+      await authedKv.set(KV.memories, "m-alpha", { ...base, id: "m-alpha", project: "alpha" });
+      await authedKv.set(KV.memories, "m-beta", { ...base, id: "m-beta", project: "beta" });
+
+      const pushed: Array<{ id: string }> = [];
+      const pullUrls: string[] = [];
+      vi.stubGlobal("fetch", vi.fn(async (input: unknown, init?: { body?: string }) => {
+        const url = String(input);
+        if (url.endsWith("/mesh/receive")) {
+          pushed.push(...((JSON.parse(init!.body!) as { memories?: Array<{ id: string }> }).memories ?? []));
+          return new Response(JSON.stringify({ accepted: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        pullUrls.push(url);
+        const body = pullUrls.length === 1 ? { memories: [], nextCursor: "c1" } : { memories: [] };
+        return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      }));
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-scoped.example.com",
+        name: "peer-scoped",
+        syncFilter: { project: "alpha" },
+      })) as { success: boolean; peer: MeshPeer };
+
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "both",
+      })) as { success: boolean; results: Array<{ errors: string[] }> };
+
+      expect(result.results[0].errors).toEqual([]);
+      expect(pushed.map((m) => m.id)).toEqual(["m-alpha"]);
+      expect(pullUrls).toHaveLength(2);
+      for (const url of pullUrls) expect(new URL(url).searchParams.get("project")).toBe("alpha");
+
+      vi.unstubAllGlobals();
+    });
+
     it("stamps push-only success with the sync start time", async () => {
       const authedSdk = mockSdk();
       const authedKv = mockKV();
