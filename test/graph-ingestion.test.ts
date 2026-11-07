@@ -561,7 +561,7 @@ describe("raw graph ingestion reconciliation", () => {
     await persistGraphRecords(kv, [node("before")], [], { mode: "merge" });
     let sentOversized = false;
     intercept((id, p) => {
-      if (id === "state::set" && Buffer.byteLength(JSON.stringify(p), "utf8") > 16 * 1024 * 1024) {
+      if (id === "state::set" && Buffer.byteLength(JSON.stringify(p), "utf8") > 64 * 1024 * 1024) {
         sentOversized = true;
         throw new Error("Engine transport disconnected");
       }
