@@ -457,6 +457,7 @@ agentmemory connect claude-code --with-hooks
 ```
 
 يُدمج هذا الأمر نفس أوامر الخطافات في `~/.claude/settings.json` بمسارات مطلقة تُحلَّل إلى دليل `plugin/` المُضمَّن في حزمة `@agentmemory/agentmemory` المثبَّتة حاليًا. أعد تشغيل الأمر بعد ترقية agentmemory لتحديث المسارات. تُحفظ إدخالات المستخدم في نفس الملف؛ ويُستبدل إدخالات agentmemory السابقة فقط. يظل استخدام مسار `/plugin install` هو الأسلوب المُوصى به.
+إذا كانت قيمة `CLAUDE_CONFIG_DIR` غير فارغة، تُكتب الخطافات في `$CLAUDE_CONFIG_DIR/settings.json`؛ وإذا لم يُضبط المتغير أو كانت قيمته فارغة، يُستخدم المسار الافتراضي.
 بالنسبة للنشر عن بُعد أو المحمي، شغّل Claude Code مع ضبط `AGENTMEMORY_URL` و`AGENTMEMORY_SECRET`. تُمرّر الإضافة كلتا القيمتين إلى خادم MCP المُضمَّن بها؛ وعندما يكون `AGENTMEMORY_URL` فارغًا، يستخدم وسيط MCP (shim) عنوان `http://localhost:3111`.
 
 ### Codex CLI (منصة إضافات Codex)

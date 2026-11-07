@@ -451,6 +451,7 @@ agentmemory connect claude-code --with-hooks
 ```
 
 這會把同樣的 hook 指令合併到 `~/.claude/settings.json` 中,絕對路徑會解析到目前安裝的 `@agentmemory/agentmemory` 套件所捆綁的 `plugin/` 目錄。升級 agentmemory 後重新執行此指令以刷新路徑。同一檔案中既有的使用者條目會被保留;只有先前的 agentmemory 條目會被取代。仍然建議使用 `/plugin install` 路徑。
+若 `CLAUDE_CONFIG_DIR` 非空，hook 會寫入 `$CLAUDE_CONFIG_DIR/settings.json`；未設定或為空時仍使用預設路徑。
 若用於遠端或受保護的部署,啟動 Claude Code 時請設定 `AGENTMEMORY_URL` 和 `AGENTMEMORY_SECRET`。外掛會把這兩個值都傳給它捆綁的 MCP 伺服器;當 `AGENTMEMORY_URL` 為空時,MCP shim 會使用 `http://localhost:3111`。
 
 ### Codex CLI(Codex 外掛平台)

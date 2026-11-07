@@ -451,6 +451,7 @@ agentmemory connect claude-code --with-hooks
 ```
 
 이 명령은 현재 설치된 `@agentmemory/agentmemory` 패키지의 번들된 `plugin/` 디렉터리로 해석된 절대 경로를 사용해, 동일한 hook 명령을 `~/.claude/settings.json`에 병합합니다. agentmemory를 업그레이드한 뒤에는 동일한 명령을 다시 실행해서 경로를 갱신하십시오. 같은 파일의 사용자 항목은 보존되며, 이전 agentmemory 항목만 교체됩니다. `/plugin install` 경로를 사용하는 것이 여전히 권장되는 방식입니다.
+`CLAUDE_CONFIG_DIR`에 비어 있지 않은 값이 설정되어 있으면 hook은 `$CLAUDE_CONFIG_DIR/settings.json`에 기록되며, 설정되지 않았거나 비어 있으면 기본 경로를 사용합니다.
 원격 또는 보호된 배포의 경우, `AGENTMEMORY_URL`과 `AGENTMEMORY_SECRET`을 설정한 채로 Claude Code를 실행하십시오. 플러그인은 두 값을 모두 번들된 MCP 서버로 전달합니다. `AGENTMEMORY_URL`이 비어 있으면 MCP shim은 `http://localhost:3111`을 사용합니다.
 
 ### Codex CLI (Codex 플러그인 플랫폼)

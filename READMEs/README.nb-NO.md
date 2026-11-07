@@ -448,6 +448,7 @@ agentmemory connect claude-code --with-hooks
 ```
 
 Dette slår sammen de samme hook-kommandoene inn i `~/.claude/settings.json` med absolutte stier løst opp mot den medfølgende `plugin/`-katalogen til den installerte `@agentmemory/agentmemory`-pakken. Kjør kommandoen på nytt etter at du har oppgradert agentmemory for å oppdatere stiene. Brukeroppføringer i samme fil bevares; kun tidligere agentmemory-oppføringer byttes ut. Å bruke `/plugin install`-veien er fortsatt den anbefalte metoden.
+Hvis `CLAUDE_CONFIG_DIR` har en verdi som ikke er tom, skrives hooks til `$CLAUDE_CONFIG_DIR/settings.json`; hvis variabelen ikke er satt eller er tom, brukes standardstien.
 For eksterne eller beskyttede distribusjoner, start Claude Code med `AGENTMEMORY_URL` og `AGENTMEMORY_SECRET` satt. Pluginen sender begge verdiene videre til sin medfølgende MCP-server; når `AGENTMEMORY_URL` er tom, bruker MCP-shimmen `http://localhost:3111`.
 
 ### Codex CLI (Codex-plugin-plattformen)

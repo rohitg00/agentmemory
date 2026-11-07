@@ -457,6 +457,7 @@ agentmemory connect claude-code --with-hooks
 ```
 
 זה ממזג את אותן פקודות hook לתוך `~/.claude/settings.json` עם paths מוחלטים שנפתרים לתיקיית `plugin/` המצורפת של חבילת `@agentmemory/agentmemory` המותקנת כעת. יש להריץ את הפקודה מחדש אחרי שדרוג agentmemory כדי לרפרש את ה-paths. רשומות משתמש בקובץ עצמו נשמרות; רק רשומות agentmemory קודמות מוחלפות. השימוש בנתיב `/plugin install` נשאר הגישה המומלצת.
+אם הערך של `CLAUDE_CONFIG_DIR` אינו ריק, ה-hooks נכתבים אל `$CLAUDE_CONFIG_DIR/settings.json`; אם המשתנה אינו מוגדר או ריק, נעשה שימוש בנתיב ברירת המחדל.
 ל-deployments מרוחקים או מוגנים, הפעילו את Claude Code עם `AGENTMEMORY_URL` ו-`AGENTMEMORY_SECRET` מוגדרים. ה-plugin מעביר את שני הערכים לשרת ה-MCP המצורף שלו; כש-`AGENTMEMORY_URL` ריק, ה-shim של MCP משתמש ב-`http://localhost:3111`.
 
 ### Codex CLI (פלטפורמת plugin של Codex)

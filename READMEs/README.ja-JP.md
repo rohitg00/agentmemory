@@ -453,6 +453,7 @@ agentmemory connect claude-code --with-hooks
 ```
 
 同じ hook コマンドを `~/.claude/settings.json` にマージし、現在インストールされている `@agentmemory/agentmemory` パッケージの同梱 `plugin/` ディレクトリに解決された絶対パスを書き込みます。agentmemory をアップグレードしたら、このコマンドを再実行してパスを更新してください。同じファイル内のユーザーエントリは保持され、以前の agentmemory エントリだけが置き換えられます。`/plugin install` の経路が推奨アプローチであることに変わりはありません。
+`CLAUDE_CONFIG_DIR` に空でない値が設定されている場合、hook は `$CLAUDE_CONFIG_DIR/settings.json` に書き込まれ、未設定または空の場合は既定のパスが使われます。
 リモートや保護されたデプロイでは、`AGENTMEMORY_URL` と `AGENTMEMORY_SECRET` を設定して Claude Code を起動してください。プラグインはこの両方の値を同梱の MCP サーバーに渡します。`AGENTMEMORY_URL` が空の場合、MCP shim は `http://localhost:3111` にフォールバックします。
 
 ### Codex CLI(Codex プラグインプラットフォーム)

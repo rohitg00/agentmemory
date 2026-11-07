@@ -453,6 +453,7 @@ agentmemory connect claude-code --with-hooks
 ```
 
 Lệnh này gộp cùng các hook command đó vào `~/.claude/settings.json` với đường dẫn tuyệt đối được resolve tới thư mục `plugin/` đi kèm của package `@agentmemory/agentmemory` đang được cài. Chạy lại lệnh này sau khi nâng cấp agentmemory để làm mới các đường dẫn. Các entry của người dùng trong cùng file được giữ lại; chỉ các entry agentmemory trước đó bị thay thế. Dùng đường `/plugin install` vẫn là cách được khuyến nghị.
+Nếu `CLAUDE_CONFIG_DIR` có giá trị không rỗng, các hook được ghi vào `$CLAUDE_CONFIG_DIR/settings.json`; nếu biến chưa được đặt hoặc để trống, đường dẫn mặc định được sử dụng.
 Với các deployment từ xa hoặc được bảo vệ, hãy khởi chạy Claude Code với `AGENTMEMORY_URL` và `AGENTMEMORY_SECRET` đã được đặt. Plugin sẽ truyền cả hai giá trị này xuống MCP server đi kèm của nó; khi `AGENTMEMORY_URL` để trống, MCP shim dùng `http://localhost:3111`.
 
 ### Codex CLI (nền tảng plugin của Codex)
