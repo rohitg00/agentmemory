@@ -2,6 +2,9 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { handleToolCall, handleToolsList } from "../src/mcp/standalone.js";
 import { resetHandleForTests } from "../src/mcp/rest-proxy.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -514,6 +517,41 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
     const core = await handleToolsList();
     expect((core.tools as unknown[]).length).toBe(7);
     delete process.env["AGENTMEMORY_TOOLS"];
+  });
+
+  it("gives proxied calls more than the worker invocation budget and honours AGENTMEMORY_CALL_TIMEOUT_MS", async () => {
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      return new Response(JSON.stringify({ sessions: [] }), { status: 200 });
+    });
+    const saved = { call: process.env["AGENTMEMORY_CALL_TIMEOUT_MS"], file: process.env["AGENTMEMORY_ENV_FILE"] };
+    const dir = mkdtempSync(join(tmpdir(), "am-call-timeout-"));
+    const envFile = join(dir, "agentmemory.env");
+    delete process.env["AGENTMEMORY_CALL_TIMEOUT_MS"];
+    process.env["AGENTMEMORY_ENV_FILE"] = envFile;
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const lastTimeout = async () => {
+      await handleToolCall("memory_sessions", { limit: 1 });
+      return timeout.mock.lastCall?.[0];
+    };
+    try {
+      expect(await lastTimeout()).toBe(190_000);
+      writeFileSync(envFile, "AGENTMEMORY_CALL_TIMEOUT_MS=600000\n");
+      expect(await lastTimeout()).toBe(600_000);
+      process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = "900000";
+      expect(await lastTimeout()).toBe(900_000);
+      for (const bad of ["bogus", "0.5", "1e6", "600s", "2592000000"]) {
+        process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = bad;
+        expect(await lastTimeout()).toBe(190_000);
+      }
+    } finally {
+      timeout.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+      if (saved.call === undefined) delete process.env["AGENTMEMORY_CALL_TIMEOUT_MS"];
+      else process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = saved.call;
+      if (saved.file === undefined) delete process.env["AGENTMEMORY_ENV_FILE"];
+      else process.env["AGENTMEMORY_ENV_FILE"] = saved.file;
+    }
   });
 
   it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {
