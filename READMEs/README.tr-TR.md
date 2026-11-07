@@ -446,7 +446,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Eklenti kurulumu olmadan Claude Code (MCP-bağımsız yol)
 
-agentmemory'nin MCP sunucusunu `/plugin install` kullanmak yerine doğrudan `~/.claude.json` üzerinden bağlarsanız, Claude Code `${CLAUDE_PLUGIN_ROOT}`'u asla çözümlemez ve hook scriptlerini `~/.claude/settings.json` içinde absolute path'lere yöneltmeniz gerekir. Bu path'ler genellikle agentmemory sürümünü gömer (örn. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), bu yüzden bir sonraki yükseltme her hook'u sessizce bozar.
+agentmemory'nin MCP sunucusunu `/plugin install` kullanmak yerine doğrudan `~/.claude.json` (varsayılan yol) üzerinden bağlarsanız, Claude Code `${CLAUDE_PLUGIN_ROOT}`'u asla çözümlemez ve hook scriptlerini `~/.claude/settings.json` (varsayılan yol) içinde absolute path'lere yöneltmeniz gerekir. Bu path'ler genellikle agentmemory sürümünü gömer (örn. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), bu yüzden bir sonraki yükseltme her hook'u sessizce bozar.
 
 Geçici çözüm:
 
@@ -454,8 +454,9 @@ Geçici çözüm:
 agentmemory connect claude-code --with-hooks
 ```
 
-Bu, aynı hook komutlarını, şu anda kurulu olan `@agentmemory/agentmemory` paketinin paketlenmiş `plugin/` dizinine çözümlenen absolute path'lerle `~/.claude/settings.json` içine birleştirir. Path'leri yenilemek için agentmemory'yi yükselttikten sonra komutu yeniden çalıştırın. Aynı dosyadaki kullanıcı girdileri korunur; yalnızca önceki agentmemory girdileri değiştirilir. `/plugin install` yolunu kullanmak, önerilen yaklaşım olmayı sürdürür.
-`CLAUDE_CONFIG_DIR` boş olmayan bir değere ayarlanmışsa hook'lar `$CLAUDE_CONFIG_DIR/settings.json` dosyasına yazılır; değişken ayarlanmamışsa veya boşsa varsayılan yol kullanılır.
+Bu komut MCP sunucusunu yapılandırır ve paketle gelen hook’ları Claude Code’un kullanıcı yapılandırmasına birleştirir. `CLAUDE_CONFIG_DIR` ayarlanmamışsa veya boşsa MCP için `~/.claude.json`, hook’lar için `~/.claude/settings.json` kullanılır. Özel bir dizin kullanmak için `CLAUDE_CONFIG_DIR` değerini hem bu komut hem de Claude Code için aynı, boş olmayan değere ayarlayın; dosyalar sırasıyla `$CLAUDE_CONFIG_DIR/.claude.json` ve `$CLAUDE_CONFIG_DIR/settings.json` olur. Bağlayıcı değeri AgentMemory’nin `.env` dosyasından okusa bile Claude Code bu değeri kendi başlatma ortamında almalıdır.
+
+Hook komutları, kurulu paketin içerdiği `plugin/` dizinine giden mutlak yolları kullanır. Bu yolları yenilemek için agentmemory’yi yükselttikten sonra komutu yeniden çalıştırın. Yapılandırma dosyalarındaki kullanıcı girdileri korunur; yalnızca önceki agentmemory girdileri değiştirilir. `/plugin install` kullanımı önerilen yaklaşım olmaya devam eder.
 Uzak veya korumalı dağıtımlar için Claude Code'u `AGENTMEMORY_URL` ve `AGENTMEMORY_SECRET` ayarlanmış şekilde başlatın. Eklenti, her iki değeri de paketlenmiş MCP sunucusuna iletir; `AGENTMEMORY_URL` boş olduğunda MCP shim'i `http://localhost:3111`'i kullanır.
 
 ### Codex CLI (Codex eklenti platformu)

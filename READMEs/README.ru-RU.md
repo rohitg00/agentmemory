@@ -446,7 +446,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code без установки плагина (путь MCP-standalone)
 
-Если подключать MCP-сервер agentmemory через `~/.claude.json` напрямую, минуя `/plugin install`, Claude Code никогда не разрешит `${CLAUDE_PLUGIN_ROOT}`, и в `~/.claude/settings.json` придётся прописывать абсолютные пути к скриптам хуков. Эти пути обычно включают версию agentmemory (например, `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), так что следующее обновление тихо ломает каждый хук.
+Если подключать MCP-сервер agentmemory через `~/.claude.json` (путь по умолчанию) напрямую, минуя `/plugin install`, Claude Code никогда не разрешит `${CLAUDE_PLUGIN_ROOT}`, и в `~/.claude/settings.json` (путь по умолчанию) придётся прописывать абсолютные пути к скриптам хуков. Эти пути обычно включают версию agentmemory (например, `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), так что следующее обновление тихо ломает каждый хук.
 
 Обходное решение:
 
@@ -454,8 +454,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-Это вливает те же команды хуков в `~/.claude/settings.json` с абсолютными путями, разрешёнными в каталог `plugin/` текущего установленного пакета `@agentmemory/agentmemory`. После обновления agentmemory запустите команду ещё раз, чтобы освежить пути. Записи пользователя в этом файле сохраняются; заменяются только предыдущие записи agentmemory. Рекомендуемым способом остаётся путь через `/plugin install`.
-Если `CLAUDE_CONFIG_DIR` имеет непустое значение, хуки записываются в `$CLAUDE_CONFIG_DIR/settings.json`; если переменная не задана или пуста, используется путь по умолчанию.
+Эта команда настраивает MCP-сервер и добавляет поставляемые с пакетом хуки в пользовательскую конфигурацию Claude Code. Если `CLAUDE_CONFIG_DIR` не задана или пуста, для MCP используется `~/.claude.json`, а для хуков — `~/.claude/settings.json`. Чтобы использовать свой каталог, задайте одинаковое непустое значение `CLAUDE_CONFIG_DIR` для этой команды и Claude Code; тогда файлы будут находиться в `$CLAUDE_CONFIG_DIR/.claude.json` и `$CLAUDE_CONFIG_DIR/settings.json` соответственно. Claude Code должен получить это значение в своём окружении при запуске, даже если коннектор читает его из файла `.env` AgentMemory.
+
+Команды хуков используют абсолютные пути к каталогу `plugin/` из установленного пакета. После обновления agentmemory запустите команду ещё раз, чтобы обновить эти пути. Пользовательские записи в файлах конфигурации сохраняются; заменяются только предыдущие записи agentmemory. Использование `/plugin install` остаётся рекомендуемым способом.
 Для удалённых или защищённых развёртываний запускайте Claude Code с заданными `AGENTMEMORY_URL` и `AGENTMEMORY_SECRET`. Плагин пробрасывает оба значения во встроенный MCP-сервер; если `AGENTMEMORY_URL` пуст, MCP-shim использует `http://localhost:3111`.
 
 ### Codex CLI (платформа плагинов Codex)

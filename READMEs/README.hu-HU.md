@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code a plugin telepítése nélkül (önálló MCP útvonal)
 
-Ha az agentmemory MCP szerverét közvetlenül a `~/.claude.json`-ban kötöd be, a `/plugin install` használata helyett, a Claude Code soha nem oldja fel a `${CLAUDE_PLUGIN_ROOT}`-ot, és a hook-szkripteket abszolút elérési utakra kell mutatnod a `~/.claude/settings.json`-ban. Ezek az útvonalak jellemzően beágyazzák az agentmemory verziószámát (pl. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), így a következő frissítés némán elront minden hookot.
+Ha az agentmemory MCP szerverét közvetlenül a `~/.claude.json` (alapértelmezett útvonal)-ban kötöd be, a `/plugin install` használata helyett, a Claude Code soha nem oldja fel a `${CLAUDE_PLUGIN_ROOT}`-ot, és a hook-szkripteket abszolút elérési utakra kell mutatnod a `~/.claude/settings.json` (alapértelmezett útvonal)-ban. Ezek az útvonalak jellemzően beágyazzák az agentmemory verziószámát (pl. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), így a következő frissítés némán elront minden hookot.
 
 Megoldás:
 
@@ -452,8 +452,9 @@ Megoldás:
 agentmemory connect claude-code --with-hooks
 ```
 
-Ez ugyanazokat a hook-parancsokat olvasztja be a `~/.claude/settings.json`-ba, abszolút elérési utakkal, amelyek a jelenleg telepített `@agentmemory/agentmemory` csomag becsomagolt `plugin/` mappájára mutatnak. Futtasd újra a parancsot az agentmemory frissítése után, hogy felfrissítsd az útvonalakat. A felhasználó saját bejegyzései ugyanabban a fájlban megmaradnak; csak a korábbi agentmemory-bejegyzések kerülnek lecserélésre. A `/plugin install` útvonal marad az ajánlott megközelítés.
-Ha a `CLAUDE_CONFIG_DIR` értéke nem üres, a hookok a `$CLAUDE_CONFIG_DIR/settings.json` fájlba kerülnek; ha a változó nincs beállítva vagy üres, az alapértelmezett útvonal marad érvényben.
+Ez a parancs beállítja az MCP-kiszolgálót, és beolvasztja a mellékelt hookokat a Claude Code felhasználói konfigurációjába. Ha a `CLAUDE_CONFIG_DIR` nincs beállítva vagy üres, az MCP-hez a `~/.claude.json`, a hookokhoz pedig a `~/.claude/settings.json` fájlt használja. Egyéni könyvtár használatához állítsd a `CLAUDE_CONFIG_DIR` változót ugyanarra a nem üres értékre ennél a parancsnál és a Claude Code-nál is; ekkor az MCP fájlja `$CLAUDE_CONFIG_DIR/.claude.json`, a hookoké pedig `$CLAUDE_CONFIG_DIR/settings.json` lesz. A Claude Code-nak az indítási környezetében meg kell kapnia ezt az értéket akkor is, ha a csatlakozó az AgentMemory `.env` fájljából olvassa be.
+
+A hook-parancsok a telepített csomaghoz mellékelt `plugin/` könyvtárra mutató abszolút útvonalakat használnak. Az agentmemory frissítése után futtasd újra a parancsot az útvonalak frissítéséhez. A konfigurációs fájlok felhasználói bejegyzései megmaradnak; csak a korábbi agentmemory-bejegyzések cserélődnek le. Továbbra is a `/plugin install` használata az ajánlott megoldás.
 Távoli vagy védett telepítésekhez indítsd el a Claude Code-ot az `AGENTMEMORY_URL` és az `AGENTMEMORY_SECRET` beállításával. A plugin mindkét értéket továbbadja a becsomagolt MCP szerverének; amikor az `AGENTMEMORY_URL` üres, az MCP shim a `http://localhost:3111`-et használja.
 
 ### Codex CLI (Codex plugin platform)

@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### প্লাগইন ইনস্টল ছাড়া Claude Code (MCP-স্ট্যান্ডঅ্যালোন পাথ)
 
-আপনি `/plugin install` ব্যবহার না করে সরাসরি `~/.claude.json`-এর মাধ্যমে agentmemory-র MCP সার্ভার ওয়্যার করলে, Claude Code কখনো `${CLAUDE_PLUGIN_ROOT}` রিজলভ করে না এবং আপনাকে `~/.claude/settings.json`-এ হুক স্ক্রিপ্টগুলো অ্যাবসোলিউট পাথে পয়েন্ট করতে হয়। সেই পাথগুলোতে সাধারণত agentmemory-র ভার্সন এমবেড থাকে (যেমন `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), তাই পরের আপগ্রেড নিঃশব্দে প্রতিটি হুক ভেঙে দেয়।
+আপনি `/plugin install` ব্যবহার না করে সরাসরি `~/.claude.json` (ডিফল্ট পথ)-এর মাধ্যমে agentmemory-র MCP সার্ভার ওয়্যার করলে, Claude Code কখনো `${CLAUDE_PLUGIN_ROOT}` রিজলভ করে না এবং আপনাকে `~/.claude/settings.json` (ডিফল্ট পথ)-এ হুক স্ক্রিপ্টগুলো অ্যাবসোলিউট পাথে পয়েন্ট করতে হয়। সেই পাথগুলোতে সাধারণত agentmemory-র ভার্সন এমবেড থাকে (যেমন `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), তাই পরের আপগ্রেড নিঃশব্দে প্রতিটি হুক ভেঙে দেয়।
 
 ওয়ার্কঅ্যারাউন্ড:
 
@@ -452,8 +452,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-এটি একই হুক কমান্ডগুলো `~/.claude/settings.json`-এ মার্জ করে, বর্তমানে ইনস্টল করা `@agentmemory/agentmemory` প্যাকেজের বান্ডলড `plugin/` ডিরেক্টরির অ্যাবসোলিউট পাথ দিয়ে। পাথ রিফ্রেশ করতে agentmemory আপগ্রেড করার পর কমান্ডটি আবার চালান। একই ফাইলের ইউজার এন্ট্রিগুলো রক্ষিত থাকে; শুধু আগের agentmemory এন্ট্রিগুলো রিপ্লেস হয়। `/plugin install` পাথটি এখনও সুপারিশকৃত পদ্ধতি।
-`CLAUDE_CONFIG_DIR`-এ খালি নয় এমন মান সেট করা থাকলে hook-গুলো `$CLAUDE_CONFIG_DIR/settings.json`-এ লেখা হয়; ভেরিয়েবলটি সেট করা না থাকলে বা খালি থাকলে ডিফল্ট পথ ব্যবহার করা হয়।
+এই কমান্ড MCP সার্ভার কনফিগার করে এবং সঙ্গে থাকা hook-গুলো Claude Code-এর ব্যবহারকারী কনফিগারেশনে যুক্ত করে। `CLAUDE_CONFIG_DIR` সেট করা না থাকলে বা খালি থাকলে, এটি MCP-এর জন্য `~/.claude.json` এবং hook-এর জন্য `~/.claude/settings.json` ব্যবহার করে। কাস্টম ডিরেক্টরি ব্যবহার করতে এই কমান্ড এবং Claude Code উভয়ের জন্য `CLAUDE_CONFIG_DIR`-এ একই খালি নয় এমন মান সেট করুন; তখন ফাইল দুটি হবে যথাক্রমে `$CLAUDE_CONFIG_DIR/.claude.json` এবং `$CLAUDE_CONFIG_DIR/settings.json`। কানেক্টর AgentMemory-এর `.env` থেকে মানটি পড়লেও Claude Code চালু করার এনভায়রনমেন্টে এই মান থাকতে হবে।
+
+Hook কমান্ডগুলো ইনস্টল করা প্যাকেজের সঙ্গে থাকা `plugin/` ডিরেক্টরির অ্যাবসোলিউট পথ ব্যবহার করে। agentmemory আপগ্রেড করার পরে পথগুলো হালনাগাদ করতে কমান্ডটি আবার চালান। কনফিগারেশন ফাইলে ব্যবহারকারীর এন্ট্রিগুলো সংরক্ষিত থাকে; শুধু আগের agentmemory এন্ট্রিগুলো প্রতিস্থাপিত হয়। `/plugin install` ব্যবহার করাই সুপারিশকৃত পদ্ধতি।
 রিমোট বা প্রোটেক্টেড ডিপ্লয়মেন্টের জন্য, `AGENTMEMORY_URL` এবং `AGENTMEMORY_SECRET` সেট করে Claude Code লঞ্চ করুন। প্লাগইন দুটি ভ্যালুই তার বান্ডলড MCP সার্ভারে পাস করে; `AGENTMEMORY_URL` খালি থাকলে, MCP শিম `http://localhost:3111` ব্যবহার করে।
 
 ### Codex CLI (Codex প্লাগইন প্ল্যাটফর্ম)

@@ -439,7 +439,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code sem instalar o plugin (caminho MCP standalone)
 
-Se você cabear o servidor MCP do agentmemory via `~/.claude.json` diretamente em vez de usar `/plugin install`, o Claude Code nunca resolve `${CLAUDE_PLUGIN_ROOT}` e você tem que apontar os scripts de hook para caminhos absolutos em `~/.claude/settings.json`. Esses caminhos tipicamente embutem a versão do agentmemory (ex.: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), então a próxima atualização quebra silenciosamente todos os hooks.
+Se você cabear o servidor MCP do agentmemory via `~/.claude.json` (caminho padrão) diretamente em vez de usar `/plugin install`, o Claude Code nunca resolve `${CLAUDE_PLUGIN_ROOT}` e você tem que apontar os scripts de hook para caminhos absolutos em `~/.claude/settings.json` (caminho padrão). Esses caminhos tipicamente embutem a versão do agentmemory (ex.: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), então a próxima atualização quebra silenciosamente todos os hooks.
 
 Contorno:
 
@@ -447,8 +447,9 @@ Contorno:
 agentmemory connect claude-code --with-hooks
 ```
 
-Isso mescla os mesmos comandos de hook em `~/.claude/settings.json` com caminhos absolutos resolvidos para o diretório `plugin/` empacotado do pacote `@agentmemory/agentmemory` atualmente instalado. Rode o comando novamente após atualizar o agentmemory para atualizar os caminhos. Entradas de usuário no mesmo arquivo são preservadas; apenas entradas anteriores do agentmemory são substituídas. Usar o caminho `/plugin install` continua sendo a abordagem recomendada.
-Se `CLAUDE_CONFIG_DIR` tiver um valor não vazio, os hooks serão gravados em `$CLAUDE_CONFIG_DIR/settings.json`; se a variável não estiver definida ou estiver vazia, o caminho padrão será usado.
+Este comando configura o servidor MCP e mescla os hooks incluídos à configuração de usuário do Claude Code. Se `CLAUDE_CONFIG_DIR` não estiver definida ou estiver vazia, ele usa `~/.claude.json` para MCP e `~/.claude/settings.json` para hooks. Para usar um diretório personalizado, defina `CLAUDE_CONFIG_DIR` com o mesmo valor não vazio para este comando e para o Claude Code; os arquivos serão então `$CLAUDE_CONFIG_DIR/.claude.json` e `$CLAUDE_CONFIG_DIR/settings.json`, respectivamente. O Claude Code deve receber esse valor no ambiente em que é iniciado, mesmo que o conector o leia do arquivo `.env` do AgentMemory.
+
+Os comandos dos hooks usam caminhos absolutos para o diretório `plugin/` incluído no pacote instalado. Execute o comando novamente após atualizar o agentmemory para atualizar esses caminhos. As entradas de usuário nos arquivos de configuração são preservadas; apenas as entradas anteriores do agentmemory são substituídas. O uso de `/plugin install` continua sendo a abordagem recomendada.
 Para deploys remotos ou protegidos, inicie o Claude Code com `AGENTMEMORY_URL` e `AGENTMEMORY_SECRET` definidos. O plugin repassa ambos os valores para seu servidor MCP empacotado; quando `AGENTMEMORY_URL` está vazio, o shim MCP usa `http://localhost:3111`.
 
 ### Codex CLI (plataforma de plugins do Codex)
