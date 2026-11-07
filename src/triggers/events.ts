@@ -1,6 +1,6 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { CompressedObservation, Memory, Session } from "../types.js";
-import { KV } from "../state/schema.js";
+import { KV, fingerprintId } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { emitLiveEvent } from "../viewer/live-events.js";
 import { isReflectEnabled } from "../functions/slots.js";
@@ -10,13 +10,23 @@ import {
   getConsolidationCooldownMs,
   isAgentScopeIsolated,
   isConsolidationEnabled,
+  isGraphExtractionEnabled,
 } from "../config.js";
+import { getGraphGeneration } from "../state/graph-generation.js";
 import { logger } from "../logger.js";
 import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 
 // Global marker recording when corpus consolidation last ran, used to debounce
 // the per-turn session-stop fan-out.
 const CONSOLIDATION_MARKER_KEY = "consolidation:lastRun";
+
+const observationFingerprint = (obs: CompressedObservation[], context: string): string =>
+  fingerprintId("gx", `${context}|${obs.map((o) => o.id).sort().join(",")}`);
+
+async function graphExtractContext(kv: StateKV): Promise<string> {
+  const generation = await getGraphGeneration(kv).catch(() => null);
+  return `${generation ?? "legacy"}|${isGraphExtractionEnabled() ? "llm" : "heuristic"}`;
+}
 
 async function consolidationDueUnserialized(kv: StateKV): Promise<boolean> {
   const cooldownMs = getConsolidationCooldownMs();
@@ -70,7 +80,44 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       );
       const compressed = observations.filter((o) => o.title);
       if (compressed.length > 0) {
-        fireVoid("mem::graph-extract", { observations: compressed });
+        const session = await kv
+          .get<Session>(KV.sessions, data.sessionId)
+          .catch(() => null);
+        const at = session?.graphExtractedAt;
+        const mark = session?.graphExtractedDigest;
+        const context = await graphExtractContext(kv);
+        let batch = compressed;
+        if (typeof at === "string") {
+          const seen = compressed.filter((o) => o.timestamp <= at);
+          if (observationFingerprint(seen, context) === mark) {
+            batch = compressed.filter((o) => o.timestamp > at);
+          } else {
+            logger.info("graph-extract watermark stale, re-extracting session", {
+              sessionId: data.sessionId,
+              atOrBelow: seen.length,
+              total: compressed.length,
+            });
+          }
+        }
+        if (batch.length > 0) {
+          const newest = batch.reduce(
+            (max, o) => (o.timestamp > max ? o.timestamp : max),
+            "",
+          );
+          await sdk.trigger({
+            function_id: "mem::graph-extract",
+            payload: { observations: batch },
+            action: TriggerAction.Void(),
+          });
+          if (session) await kv.update(KV.sessions, data.sessionId, [
+            { type: "set", path: "graphExtractedAt", value: newest },
+            {
+              type: "set",
+              path: "graphExtractedDigest",
+              value: observationFingerprint(compressed, context),
+            },
+          ]);
+        }
       }
     } catch (err) {
       logger.warn("graph-extract trigger failed", {

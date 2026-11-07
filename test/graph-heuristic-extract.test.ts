@@ -73,6 +73,47 @@ describe("extractGraphHeuristics", () => {
     expect(edges.length).toBeLessThanOrEqual(12);
   });
 
+  // event::session::stopped now sends one batch per turn instead of the whole
+  // session. persistGraphDelta merges batches by (type, name) and by edge key,
+  // so splitting a batch must change neither set. Node ids are random, so
+  // compare by name.
+  function shape(results: Array<ReturnType<typeof extractGraphHeuristics>>) {
+    const prov = new Map<string, Set<string>>();
+    const edges = new Set<string>();
+    for (const r of results) {
+      const named = new Map(r.nodes.map((n) => [n.id, `${n.type}:${n.name}`]));
+      for (const n of r.nodes) {
+        const key = `${n.type}:${n.name}`;
+        const ids = prov.get(key) ?? new Set<string>();
+        for (const id of n.sourceObservationIds) ids.add(id);
+        prov.set(key, ids);
+      }
+      for (const e of r.edges) {
+        const pair = [named.get(e.sourceNodeId)!, named.get(e.targetNodeId)!];
+        edges.add(pair.sort().join("|"));
+      }
+    }
+    return {
+      nodes: [...prov]
+        .map(([key, ids]) => `${key}=${[...ids].sort().join(",")}`)
+        .sort(),
+      edges: [...edges].sort(),
+    };
+  }
+
+  it("builds the same graph whether observations arrive together or one batch at a time", () => {
+    // One shared entity so the merge and provenance union are exercised, and
+    // disjoint ones on either side so any link drawn ACROSS observations
+    // (the only way splitting could change the set) shows up as an edge the
+    // split calls cannot produce.
+    const o1 = obs("o1", ["src/auth.ts", "src/db.ts"], ["authentication"]);
+    const o2 = obs("o2", ["src/db.ts", "src/cache.ts"], ["caching"]);
+
+    expect(
+      shape([extractGraphHeuristics([o1]), extractGraphHeuristics([o2])]),
+    ).toEqual(shape([extractGraphHeuristics([o1, o2])]));
+  });
+
   it("never emits self edges or duplicate pairs", () => {
     const { edges } = extractGraphHeuristics([
       obs("o1", ["a.ts"], ["a"]),
@@ -96,7 +137,7 @@ describe("keyless graph extraction wiring", () => {
     const events = readFileSync("src/triggers/events.ts", "utf-8");
     const stopped = events.slice(events.indexOf("event::session::stopped"));
     const gate = stopped.indexOf("isGraphExtractionEnabled()");
-    const fire = stopped.indexOf('fireVoid("mem::graph-extract"');
+    const fire = stopped.indexOf('"mem::graph-extract"');
     expect(fire).toBeGreaterThan(-1);
     expect(gate === -1 || gate > fire).toBe(true);
   });
