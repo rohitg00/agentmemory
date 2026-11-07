@@ -2852,18 +2852,18 @@ export function registerApiTriggers(
         }
       }
 
-      return {
-        status_code: 200,
-        body: {
-          memories: sliced,
-          total: filtered.length,
-          offset,
-          limit: limit ?? null,
-          nextCursor,
-          ...(searchMode ? { search: { query: listQuery.q, mode: searchMode } } : {}),
-          ...(facets ? { facets } : {}),
-        },
+      const body = {
+        memories: sliced,
+        total: filtered.length,
+        offset,
+        limit: limit ?? null,
+        nextCursor,
+        ...(searchMode ? { search: { query: listQuery.q, mode: searchMode } } : {}),
+        ...(facets ? { facets } : {}),
       };
+      const oversized = checkPayloadFrameSize(body, "use ?limit and ?cursor to page");
+      if (oversized) return { status_code: 413, body: oversized };
+      return { status_code: 200, body };
     },
   );
   sdk.registerTrigger({
@@ -2947,7 +2947,10 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       const relations = await collectAll<import("../types.js").MemoryRelation>(kv, KV.relations);
-      return { status_code: 200, body: { relations } };
+      const body = { relations };
+      const oversized = checkPayloadFrameSize(body, "export relations with /mesh/export, which pages");
+      if (oversized) return { status_code: 413, body: oversized };
+      return { status_code: 200, body };
     },
   );
   sdk.registerTrigger({
