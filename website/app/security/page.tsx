@@ -127,7 +127,7 @@ export default function SecurityPage() {
         <h2>Supply chain</h2>
         <ul>
           <li>
-            The iii engine is pinned to one version (<code>0.25.0</code>) and runs workers under Worker Compose; registry workers <code>state@0.22.20</code> and <code>http@0.22.7</code> provide state and REST. The installer checks the downloaded archive
+            The iii engine is pinned to one version (<code>0.25.0</code>) and runs workers under Worker Compose; registry workers <code>state@0.22.22</code> and <code>http@0.22.8</code> provide state and REST. The installer checks the downloaded archive
             against a SHA-256 recorded in the package before it extracts it.
           </li>
           <li>

@@ -4,7 +4,7 @@ You are a coding agent. Follow this runbook top to bottom to install agentmemory
 
 ## What you are installing
 
-agentmemory is a local memory server for coding agents. Its CLI starts an iii Worker Compose runtime using the pinned iii 0.25.0 engine and registry workers `state@0.22.20` and `http@0.22.7`. The default listeners are REST/MCP HTTP on port 3111, the viewer on 3113, and the internal engine WebSocket on 49134. The viewer receives live updates as SSE through `GET /agentmemory/viewer/events` on the REST port.
+agentmemory is a local memory server for coding agents. Its CLI starts an iii Worker Compose runtime using the pinned iii 0.25.0 engine and registry workers `state@0.22.22` and `http@0.22.8`. The default listeners are REST/MCP HTTP on port 3111, the viewer on 3113, and the internal engine WebSocket on 49134. The viewer receives live updates as SSE through `GET /agentmemory/viewer/events` on the REST port.
 
 The CLI downloads the pinned engine into `~/.agentmemory/bin` on macOS/Linux. Native Windows needs a manually installed pinned `iii.exe`; WSL2 follows the Linux path. Persistent state defaults to `~/Library/Application Support/agentmemory` on macOS, `$XDG_DATA_HOME/agentmemory` or `~/.local/share/agentmemory` on Linux, and `%APPDATA%\agentmemory` on Windows. Override the directory with `--data-dir <path>` or `AGENTMEMORY_DATA_DIR`, and reuse the same override on every restart. `AGENTMEMORY_ENV_FILE` selects a non-default env file. Instance 0 reuses an existing `./data/state_store.db` when present. `--instance N` creates an isolated directory and port set for another runtime.
 

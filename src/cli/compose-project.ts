@@ -17,8 +17,8 @@ export interface StateBackendOptions {
 
 /** Registry versions are pinned here so every generated project uses one reviewed set. */
 export const COMPOSE_WORKER_VERSIONS = {
-  state: "0.22.20",
-  http: "0.22.7",
+  state: "0.22.22",
+  http: "0.22.8",
 } as const;
 
 export const COMPOSE_STOP_TIMEOUT_SECONDS = 20;
@@ -87,6 +87,7 @@ const AGENTMEMORY_WORKER_ENV_ALLOWLIST = new Set([
   "AGENTMEMORY_VECTOR_BACKFILL", "AGENTMEMORY_SLOTS", "AGENTMEMORY_PROVIDER", "AGENTMEMORY_VERBOSE",
   "OBSIDIAN_AUTO_EXPORT", "AUTO_FORGET_ENABLED", "AUTO_FORGET_INTERVAL_MS", "LESSON_DECAY_ENABLED",
   "INSIGHT_DECAY_ENABLED", "REBUILD_EMBED_BATCH_SIZE", "RERANK_ENABLED",
+  "AGENTMEMORY_LOCAL_DISPATCH",
 ]);
 
 const COMPOSE_RESERVED_ENV = new Set([
