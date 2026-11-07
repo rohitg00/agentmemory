@@ -10,9 +10,13 @@ interface TargetLiveness {
   record: boolean;
 }
 
-async function targetLiveness(kv: StateKV, id: string): Promise<TargetLiveness> {
+function checksObservation(id: string, targetType?: string): boolean {
+  return targetType === "observation" || id.startsWith("obs_");
+}
+
+async function targetLiveness(kv: StateKV, id: string, observationTarget = checksObservation(id)): Promise<TargetLiveness> {
   let observation = false;
-  if (id.startsWith("obs_")) {
+  if (observationTarget) {
     const sessionId = await lookupObservationSession(kv, id);
     observation = !!sessionId && !!(await kv.get(KV.observations(sessionId), id));
   }
@@ -48,7 +52,7 @@ export async function deleteFacetsForTargets(
       [...ids].map(async (id) => {
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            live.set(id, await targetLiveness(kv, id));
+            live.set(id, await targetLiveness(kv, id, targetTypes.has("observation") || checksObservation(id)));
             return;
           } catch {
             if (attempt === 1) {
@@ -90,12 +94,14 @@ export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
       if (!actionIds.has(facet.targetId)) orphans.push(facet);
       continue;
     }
-    if (!live.has(facet.targetId)) {
-      live.set(facet.targetId, await targetLiveness(kv, facet.targetId).catch(() => null));
+    const observationTarget = checksObservation(facet.targetId, facet.targetType);
+    const cacheKey = `${observationTarget ? "o" : "r"}:${facet.targetId}`;
+    if (!live.has(cacheKey)) {
+      live.set(cacheKey, await targetLiveness(kv, facet.targetId, observationTarget).catch(() => null));
     }
-    const liveness = live.get(facet.targetId);
+    const liveness = live.get(cacheKey);
     if (!liveness || facetTargetLive(facet, liveness)) continue;
-    if (facet.targetId.startsWith("obs_")) {
+    if (observationTarget) {
       if (observationIds === undefined) observationIds = await listObservationIds(kv);
       if (!observationIds || observationIds.has(facet.targetId)) continue;
     }
@@ -126,9 +132,10 @@ async function listObservationIds(kv: StateKV): Promise<Set<string> | null> {
 export async function isFacetStillOrphan(kv: StateKV, facet: Facet): Promise<boolean> {
   if (!(await kv.get<Facet>(KV.facets, facet.id))) return false;
   if (facet.targetType === "action") return !(await kv.get(KV.actions, facet.targetId));
-  const liveness = await targetLiveness(kv, facet.targetId).catch(() => null);
+  const observationTarget = checksObservation(facet.targetId, facet.targetType);
+  const liveness = await targetLiveness(kv, facet.targetId, observationTarget).catch(() => null);
   if (!liveness || facetTargetLive(facet, liveness)) return false;
-  if (facet.targetId.startsWith("obs_")) {
+  if (observationTarget) {
     const present = await kv.get(KV.observations(UNSESSIONED_OBSERVATION_SCOPE), facet.targetId).then(
       (value) => value != null,
       () => true,
