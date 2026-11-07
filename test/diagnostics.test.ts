@@ -536,6 +536,14 @@ describe("Diagnostics Functions", () => {
       expect(after.checks[0]!.name).toBe("facets-ok");
     });
 
+    it("heal keeps a facet on a migrated observation that has no session record", async () => {
+      await kv.set(KV.facets, "fct_7", facet("fct_7", "obs_migrated", "observation"));
+      await kv.set(KV.observations("migrated"), "obs_migrated", { id: "obs_migrated", sessionId: "migrated" });
+      await sdk.trigger("mem::heal", { categories: ["facets"] });
+      expect((await kv.list<{ id: string }>(KV.facets)).map((f) => f.id)).toContain("fct_7");
+      expect(await isFacetStillOrphan(kv as never, facet("fct_7", "obs_migrated", "observation"))).toBe(false);
+    });
+
     it("heal keeps a facet whose target comes back before the delete", async () => {
       const orphan = facet("fct_2", "mem_gone", "memory");
       expect(await isFacetStillOrphan(kv as never, orphan)).toBe(true);

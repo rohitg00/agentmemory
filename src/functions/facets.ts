@@ -105,14 +105,16 @@ export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
 }
 
 const OBSERVATION_SCAN_BATCH = 16;
+const UNSESSIONED_OBSERVATION_SCOPE = "migrated";
 
 async function listObservationIds(kv: StateKV): Promise<Set<string> | null> {
   try {
     const sessions = await kv.list<{ id: string }>(KV.sessions);
+    const scopes = [...new Set([...sessions.map((session) => session.id), UNSESSIONED_OBSERVATION_SCOPE])];
     const ids = new Set<string>();
-    for (let start = 0; start < sessions.length; start += OBSERVATION_SCAN_BATCH) {
-      const batch = sessions.slice(start, start + OBSERVATION_SCAN_BATCH);
-      const lists = await Promise.all(batch.map((session) => kv.list<{ id: string }>(KV.observations(session.id))));
+    for (let start = 0; start < scopes.length; start += OBSERVATION_SCAN_BATCH) {
+      const batch = scopes.slice(start, start + OBSERVATION_SCAN_BATCH);
+      const lists = await Promise.all(batch.map((scope) => kv.list<{ id: string }>(KV.observations(scope))));
       for (const list of lists) for (const obs of list) ids.add(obs.id);
     }
     return ids;
@@ -125,7 +127,15 @@ export async function isFacetStillOrphan(kv: StateKV, facet: Facet): Promise<boo
   if (!(await kv.get<Facet>(KV.facets, facet.id))) return false;
   if (facet.targetType === "action") return !(await kv.get(KV.actions, facet.targetId));
   const liveness = await targetLiveness(kv, facet.targetId).catch(() => null);
-  return !!liveness && !facetTargetLive(facet, liveness);
+  if (!liveness || facetTargetLive(facet, liveness)) return false;
+  if (facet.targetId.startsWith("obs_")) {
+    const present = await kv.get(KV.observations(UNSESSIONED_OBSERVATION_SCOPE), facet.targetId).then(
+      (value) => value != null,
+      () => true,
+    );
+    if (present) return false;
+  }
+  return true;
 }
 
 export function registerFacetsFunction(sdk: IIIClient, kv: StateKV): void {
