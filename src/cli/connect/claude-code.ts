@@ -18,12 +18,15 @@ import {
   type HookManifest,
 } from "./codex-hooks.js";
 
-const CLAUDE_CONFIG_DIR = process.env["CLAUDE_CONFIG_DIR"];
-const CLAUDE_DIR = CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
-const CLAUDE_JSON = CLAUDE_CONFIG_DIR
-  ? join(CLAUDE_DIR, ".claude.json")
-  : join(homedir(), ".claude.json");
-const CLAUDE_SETTINGS = join(CLAUDE_DIR, "settings.json");
+function claudeConfigPaths() {
+  const configDir = process.env["CLAUDE_CONFIG_DIR"];
+  const dir = configDir || join(homedir(), ".claude");
+  return {
+    dir,
+    mcp: configDir ? join(dir, ".claude.json") : join(homedir(), ".claude.json"),
+    settings: join(dir, "settings.json"),
+  };
+}
 
 type ClaudeMcpEntry = typeof AGENTMEMORY_MCP_BLOCK;
 type ClaudeConfig = {
@@ -48,10 +51,11 @@ export const adapter: ConnectAdapter = {
     "→ Using MCP. Hooks are also available — see https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it.",
 
   detect(): boolean {
-    return existsSync(CLAUDE_DIR);
+    return existsSync(claudeConfigPaths().dir);
   },
 
   async install(opts: ConnectOptions): Promise<ConnectResult> {
+    const { dir: CLAUDE_DIR, mcp: CLAUDE_JSON } = claudeConfigPaths();
     const existing = readJsonSafe<ClaudeConfig>(CLAUDE_JSON);
     const next: ClaudeConfig = existing ? { ...existing } : {};
     const servers: Record<string, ClaudeMcpEntry> = {
@@ -119,6 +123,7 @@ export const adapter: ConnectAdapter = {
 };
 
 function installClaudeHooks(opts: ConnectOptions): ConnectResult {
+  const { dir: CLAUDE_DIR, settings: CLAUDE_SETTINGS } = claudeConfigPaths();
   let pluginRoot: string;
   try {
     pluginRoot = findPluginRoot();
