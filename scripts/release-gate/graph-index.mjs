@@ -186,7 +186,7 @@ async function relay(p) {
         let summary = p.traceSummary.get(p.phase);
         if (!summary) p.traceSummary.set(p.phase, summary = { graphOperations: 0, maxGraphResponseBytes: 0, maxReadLatencyMs: 0, canonicalLists: [], snapshotOperations: 0 });
         summary.graphOperations++;
-        if (record.operation === "state::list" && canonicalScopes.some((scope) => record.scope.startsWith(scope))) summary.canonicalLists.push(record.scope);
+        if ((record.operation === "state::list" || record.operation === "state::list_keys") && canonicalScopes.some((scope) => record.scope.startsWith(scope))) summary.canonicalLists.push(record.scope);
         if (record.scope.startsWith(scopes.snapshot)) summary.snapshotOperations++;
         inFlight.set(message.invocation_id, { record, summary, started: performance.now() });
         // A durable sealed descriptor exists before the first manifest read. Hold only this request to make the crash deterministic.
