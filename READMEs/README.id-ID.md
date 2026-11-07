@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory berjalan di Windows 10/11. WSL2 mengikuti jalur Linux dan dapat memasang engine yang dipatok secara otomatis. Pada Windows native, pasang biner iii-engine v0.25.0 yang dipatok secara manual: unduh arsip yang sesuai dari [halaman rilis iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verifikasi checksum, lalu letakkan `iii.exe` di `PATH` (misalnya `%USERPROFILE%\.local\bin\iii.exe`). CLI tidak mengekstrak ZIP Windows secara otomatis.
+agentmemory berjalan di Windows 10/11. WSL2 mengikuti jalur Linux dan dapat memasang engine yang dipatok secara otomatis. Pada Windows native, pasang biner iii-engine v0.25.1 yang dipatok secara manual: unduh arsip yang sesuai dari [halaman rilis iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifikasi checksum, lalu letakkan `iii.exe` di `PATH` (misalnya `%USERPROFILE%\.local\bin\iii.exe`). CLI tidak mengekstrak ZIP Windows secara otomatis.
 
 Wiring MCP otomatis di Windows native hanya mendukung `agentmemory connect copilot-cli`. Untuk agen Windows native lainnya, gunakan blok MCP manual dari [Agen lainnya](#other-agents). Jalankan `connect` di WSL hanya jika agen target juga dipasang di lingkungan WSL yang sama.
 

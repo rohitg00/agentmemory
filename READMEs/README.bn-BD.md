@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory Windows 10/11-এ চলে। WSL2 Linux-এর পথ অনুসরণ করে এবং পিন করা engine স্বয়ংক্রিয়ভাবে ইনস্টল করতে পারে। নেটিভ Windows-এর জন্য পিন করা iii-engine 0.25.0 বাইনারি ম্যানুয়ালি ইনস্টল করতে হবে; [iii 0.25.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) থেকে মিলে যাওয়া archive ডাউনলোড করে checksum যাচাই করুন, তারপর `iii.exe` `PATH`-এ রাখুন (যেমন `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP স্বয়ংক্রিয়ভাবে extract করে না।
+agentmemory Windows 10/11-এ চলে। WSL2 Linux-এর পথ অনুসরণ করে এবং পিন করা engine স্বয়ংক্রিয়ভাবে ইনস্টল করতে পারে। নেটিভ Windows-এর জন্য পিন করা iii-engine 0.25.1 বাইনারি ম্যানুয়ালি ইনস্টল করতে হবে; [iii 0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) থেকে মিলে যাওয়া archive ডাউনলোড করে checksum যাচাই করুন, তারপর `iii.exe` `PATH`-এ রাখুন (যেমন `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP স্বয়ংক্রিয়ভাবে extract করে না।
 
 নেটিভ Windows-এ স্বয়ংক্রিয় MCP wiring কেবল `agentmemory connect copilot-cli` সাপোর্ট করে। অন্য নেটিভ Windows এজেন্টের জন্য [Other agents](#other-agents) থেকে ম্যানুয়াল MCP block ব্যবহার করুন। লক্ষ্য এজেন্টটি একই WSL পরিবেশে ইনস্টল থাকলেই কেবল WSL-এর ভিতরে `connect` চালান।
 

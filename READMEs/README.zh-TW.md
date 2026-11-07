@@ -654,7 +654,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory 可在 Windows 10/11 執行；WSL2 可依 Linux 流程自動安裝 engine。原生 Windows 需手動安裝 iii-engine v0.25.0：從 [iii v0.25.0 發行頁面](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) 下載相符封存檔、驗證 checksum，並將 `iii.exe` 放入 `PATH`。CLI 不會自動解壓 ZIP
+agentmemory 可在 Windows 10/11 執行；WSL2 可依 Linux 流程自動安裝 engine。原生 Windows 需手動安裝 iii-engine v0.25.1：從 [iii v0.25.1 發行頁面](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) 下載相符封存檔、驗證 checksum，並將 `iii.exe` 放入 `PATH`。CLI 不會自動解壓 ZIP
 
 原生 Windows 僅支援 `agentmemory connect copilot-cli` 自動設定 MCP；其他 agent 請使用 [Other agents](#other-agents) 的手動設定。只有目標 agent 也安裝在相同 WSL 環境時，才在 WSL 執行 `connect`
 

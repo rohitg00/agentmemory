@@ -648,7 +648,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory รองรับ Windows 10/11; WSL2 ใช้ขั้นตอน Linux และติดตั้ง engine อัตโนมัติได้ Windows แบบ native ต้องติดตั้งไบนารี iii-engine v0.25.0 ด้วยตนเอง ดาวน์โหลด archive จาก [หน้า release iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), ตรวจ checksum และวาง `iii.exe` บน `PATH` (เช่น `%USERPROFILE%\.local\bin\iii.exe`) CLI ไม่แตก Windows ZIP ให้อัตโนมัติ
+agentmemory รองรับ Windows 10/11; WSL2 ใช้ขั้นตอน Linux และติดตั้ง engine อัตโนมัติได้ Windows แบบ native ต้องติดตั้งไบนารี iii-engine v0.25.1 ด้วยตนเอง ดาวน์โหลด archive จาก [หน้า release iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), ตรวจ checksum และวาง `iii.exe` บน `PATH` (เช่น `%USERPROFILE%\.local\bin\iii.exe`) CLI ไม่แตก Windows ZIP ให้อัตโนมัติ
 
 การตั้งค่า MCP อัตโนมัติบน Windows รองรับเฉพาะ `agentmemory connect copilot-cli`; สำหรับ agent อื่นให้ใช้ MCP block ใน [Other agents](#other-agents) เรียก `connect` ใน WSL เมื่อ agent เป้าหมายติดตั้งใน WSL เดียวกันเท่านั้น
 

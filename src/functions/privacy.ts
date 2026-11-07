@@ -51,8 +51,11 @@ const URL_CREDENTIALS_RE =
   /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]*:[^\s/?#@"'<>]+@/gi;
 
 export function stripPrivateData(input: string): string {
-  let result = redactPrivateBlocks(input);
-  result = result.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
+  return stripSecrets(redactPrivateBlocks(input));
+}
+
+export function stripSecrets(input: string): string {
+  let result = input.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
   result = result.replace(new RegExp(URL_CREDENTIALS_RE.source, URL_CREDENTIALS_RE.flags), "$1[REDACTED_SECRET]@");
   for (const source of SECRET_PATTERN_SOURCES) {
     const pattern = new RegExp(source.source, source.flags);
@@ -61,14 +64,18 @@ export function stripPrivateData(input: string): string {
   return result;
 }
 
-export function scrubRecord<T>(value: T, options: { scrubKeys?: boolean } = {}): T {
-  if (typeof value === "string") return stripPrivateData(value) as T;
+export function scrubRecord<T>(
+  value: T,
+  options: { scrubKeys?: boolean; strip?: (input: string) => string } = {},
+): T {
+  const strip = options.strip ?? stripPrivateData;
+  if (typeof value === "string") return strip(value) as T;
   if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options)) as T;
   if (value !== null && typeof value === "object") {
     const proto = Object.getPrototypeOf(value);
     if (proto !== Object.prototype && proto !== null) return value;
     const entries = Object.entries(value as Record<string, unknown>).map(([key, item]) => [
-      options.scrubKeys ? stripPrivateData(key) : key,
+      options.scrubKeys ? strip(key) : key,
       item,
     ] as const);
     const reserved = new Set(entries.map(([key]) => key));
