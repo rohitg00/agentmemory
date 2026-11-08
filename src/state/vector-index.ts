@@ -37,13 +37,15 @@ export class VectorIndex {
   private vectors: Map<string, VectorEntry> = new Map();
   private changes: Map<string, boolean> = new Map();
   private listener: VectorChangeListener | null = null;
-  private removedIds: Set<string> | null = null;
+  private touched: Set<string> | null = null;
+  private replaying = false;
 
   setChangeListener(listener: VectorChangeListener | null): void {
     this.listener = listener;
   }
 
   add(obsId: string, sessionId: string, embedding: Float32Array): void {
+    if (this.skipForLiveChange(obsId)) return;
     const entry = { embedding, sessionId };
     this.vectors.set(obsId, entry);
     this.changes.set(obsId, true);
@@ -51,7 +53,7 @@ export class VectorIndex {
   }
 
   remove(obsId: string): void {
-    this.removedIds?.add(obsId);
+    if (this.skipForLiveChange(obsId)) return;
     if (this.vectors.delete(obsId)) {
       this.changes.set(obsId, false);
       this.listener?.(obsId, null);
@@ -159,6 +161,15 @@ export class VectorIndex {
   }
 
   clear(): void {
+    if (this.replaying && this.touched) {
+      for (const obsId of [...this.vectors.keys()]) {
+        if (this.touched.has(obsId)) continue;
+        this.vectors.delete(obsId);
+        this.changes.set(obsId, false);
+      }
+      this.listener?.(null, null);
+      return;
+    }
     const hadVectors = this.vectors.size > 0;
     for (const obsId of this.vectors.keys()) this.changes.set(obsId, false);
     this.vectors.clear();
@@ -180,25 +191,37 @@ export class VectorIndex {
     this.changes = new Map(other.changes);
   }
 
-  trackRemovals(enabled: boolean): void {
-    this.removedIds = enabled ? (this.removedIds ?? new Set()) : null;
+  trackLiveChanges(): void {
+    this.touched ??= new Set();
   }
 
-  snapshotLive(): Map<string, VectorEntry> {
-    return new Map(this.vectors);
-  }
-
-  restoreLive(live: Map<string, VectorEntry>): void {
-    for (const obsId of this.removedIds ?? []) {
-      if (!live.has(obsId)) this.vectors.delete(obsId);
+  finishLiveTracking(): void {
+    if (!this.touched) return;
+    for (const obsId of this.touched) {
+      if (!this.vectors.has(obsId)) this.changes.set(obsId, false);
     }
-    for (const [obsId, entry] of live) this.vectors.set(obsId, entry);
+    this.touched = null;
+  }
+
+  beginReplay(): void {
+    this.replaying = true;
+  }
+
+  endReplay(): void {
+    this.replaying = false;
+  }
+
+  private skipForLiveChange(obsId: string): boolean {
+    if (!this.touched) return false;
+    if (this.replaying) return this.touched.has(obsId);
+    this.touched.add(obsId);
+    return false;
   }
 
   mergeMissingFrom(other: VectorIndex): number {
     let merged = 0;
     for (const [obsId, entry] of other.entries()) {
-      if (this.vectors.has(obsId) || this.changes.get(obsId) === false || this.removedIds?.has(obsId)) continue;
+      if (this.vectors.has(obsId) || this.changes.get(obsId) === false || this.touched?.has(obsId)) continue;
       this.vectors.set(obsId, { embedding: new Float32Array(entry.embedding), sessionId: entry.sessionId });
       merged++;
     }
