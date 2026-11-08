@@ -3826,7 +3826,12 @@ export function registerApiTriggers(
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       try {
-        const result = await sdk.trigger({ function_id: "mem::flow-compress", payload: req.body || {} });
+        const body = req.body ?? {};
+        const result = await sdk.trigger({ function_id: "mem::flow-compress", payload: {
+          runId: body.runId,
+          actionIds: body.actionIds,
+          project: body.project,
+        } });
         return { status_code: 200, body: result };
       } catch {
         return {
