@@ -141,6 +141,74 @@ describe("mem::evict bulk removal", () => {
   });
 });
 
+
+describe("mem::import replace read failures", () => {
+  it("deletes nothing when an observation scope read fails", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+
+    await kv.set(KV.sessions, "ses_old", makeStaleSession("ses_old", "proj-old"));
+    await kv.set(KV.memories, "mem_old", { id: "mem_old", type: "pattern", project: "proj-old" });
+    await kv.set(KV.observations("ses_old"), "o1", { id: "o1" });
+    const origList = kv.list.getMockImplementation()!;
+    kv.list.mockImplementation(async (scope: string) => {
+      if (scope === KV.observations("ses_old")) throw new Error("payload_too_large");
+      return origList(scope);
+    });
+
+    const exportData: ExportData = {
+      version: "0.9.28",
+      exportedAt: new Date().toISOString(),
+      sessions: [{ id: "ses_old", project: "proj-old", cwd: "/x", startedAt: new Date().toISOString(), status: "active", observationCount: 0 }],
+      observations: {},
+      memories: [],
+      summaries: [],
+    };
+    let threw = false;
+    const result = await sdk.trigger({
+      function_id: "mem::import",
+      payload: { exportData, strategy: "replace" },
+    }).then((r) => r as { success: boolean }).catch((err) => { threw = true; return { success: false, error: String(err) }; });
+
+    expect(result.success === false || threw).toBe(true);
+    expect(await kv.get(KV.sessions, "ses_old")).not.toBeNull();
+    expect(await kv.get(KV.memories, "mem_old")).not.toBeNull();
+  });
+
+  it("deletes nothing when a later collection read fails", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+
+    await kv.set(KV.sessions, "ses_old", makeStaleSession("ses_old", "proj-old"));
+    await kv.set(KV.memories, "mem_old", { id: "mem_old", type: "pattern", project: "proj-old" });
+    const origList = kv.list.getMockImplementation()!;
+    kv.list.mockImplementation(async (scope: string) => {
+      if (scope === KV.actions) throw new Error("storage exploded");
+      return origList(scope);
+    });
+
+    const exportData: ExportData = {
+      version: "0.9.28",
+      exportedAt: new Date().toISOString(),
+      sessions: [{ id: "ses_old", project: "proj-old", cwd: "/x", startedAt: new Date().toISOString(), status: "active", observationCount: 0 }],
+      observations: {},
+      memories: [],
+      summaries: [],
+    };
+    let threw = false;
+    const result = await sdk.trigger({
+      function_id: "mem::import",
+      payload: { exportData, strategy: "replace" },
+    }).then((r) => r as { success: boolean }).catch((err) => { threw = true; return { success: false, error: String(err) }; });
+
+    expect(result.success === false || threw).toBe(true);
+    expect(await kv.get(KV.sessions, "ses_old")).not.toBeNull();
+    expect(await kv.get(KV.memories, "mem_old")).not.toBeNull();
+  });
+});
+
 describe("mem::import replace strategy bulk removal", () => {
   it("clears 100 sessions from one project with at most one sessions listing", async () => {
     const sdk = mockSdk();

@@ -1,6 +1,7 @@
 import type { IIIClient } from "iii-sdk";
 import type { HttpRequest } from "@iii-dev/helpers/http";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import type { SessionSummary, Memory, Session } from "../types.js";
 import { getAllTools, getVisibleTools } from "./tools-registry.js";
@@ -11,7 +12,6 @@ import { checkAuth, slotsDisabledResponse } from "../triggers/api.js";
 import { isSlotsEnabled } from "../functions/slots.js";
 import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
-
 type McpResponse = {
   status_code: number;
   headers?: Record<string, string>;
@@ -1406,7 +1406,7 @@ export function registerMcpEndpoints(
       try {
         if (uri === "agentmemory://status") {
           const sessions = await kv.list<Session>(KV.sessions);
-          const memories = await kv.list<Memory>(KV.memories);
+          const memories = await collectAll<Memory>(kv, KV.memories);
           const healthData = await kv.list(KV.health).catch(() => []);
           return {
             status_code: 200,
@@ -1494,7 +1494,7 @@ export function registerMcpEndpoints(
         }
 
         if (uri === "agentmemory://memories/latest") {
-          const memories = await kv.list<Memory>(KV.memories);
+          const memories = await collectAll<Memory>(kv, KV.memories);
           const latest = memories
             .filter((m) => m.isLatest)
             .sort(
@@ -1710,7 +1710,7 @@ export function registerMcpEndpoints(
                 payload: { query: taskDesc, limit: 10 },
               })
               .catch(() => ({ results: [] }));
-            const memories = await kv.list<Memory>(KV.memories);
+            const memories = await collectAll<Memory>(kv, KV.memories);
             const isolated = isAgentScopeIsolated();
             const activeAgentId = isolated ? getAgentId() : undefined;
             const relevant =

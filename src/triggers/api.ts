@@ -7,8 +7,8 @@ import { AUDIT_MIGRATION_STATE_KEY } from "../functions/audit.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { isSearchLayer, type SearchLayer } from "../state/search-layer.js";
-import { checkPayloadFrameSize } from "../state/frame-guard.js";
-import { StateKV } from "../state/kv.js";
+import { checkPayloadFrameSize, oversizedPayloadError, payloadByteLength, SAFE_PAYLOAD_BYTES } from "../state/frame-guard.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { pinGraphState } from "../state/graph-generation.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { getLatestHealth } from "../health/monitor.js";
@@ -32,6 +32,7 @@ import {
 } from "../functions/search.js";
 import {
   LIST_PAGE_MAX,
+  decodeCursor,
   encodeCursor,
   matchesText,
   pageAfterCursor,
@@ -476,10 +477,10 @@ export function createConsolidationStatusReader(kv: StateKV) {
   const counts = singleFlight(async () => {
     const [summaries, memories, semantic, procedural, relations] = await Promise.all([
       kv.list(KV.summaries).catch(() => []),
-      kv.list<import("../types.js").Memory>(KV.memories).catch(() => []),
-      kv.list(KV.semantic).catch(() => []),
-      kv.list(KV.procedural).catch(() => []),
-      kv.list(KV.relations).catch(() => []),
+      collectAll<import("../types.js").Memory>(kv, KV.memories).catch(() => []),
+      collectAll(kv, KV.semantic).catch(() => []),
+      collectAll(kv, KV.procedural).catch(() => []),
+      collectAll(kv, KV.relations).catch(() => []),
     ]);
     return {
       summaries: summaries.length,
@@ -521,6 +522,47 @@ function statusViewerUrl(req: HttpRequest, viewerPort: number | null): string {
   const host = typeof hostHeader === "string" ? hostHeader.replace(/:\d+$/, "") : "";
   if (viewerPort && host && /^[A-Za-z0-9.\-[\]:]+$/.test(host)) return `http://${host}:${viewerPort}/#health`;
   return "/agentmemory/viewer#health";
+}
+
+const RECORD_PAGE_BYTES = SAFE_PAYLOAD_BYTES - 1024 * 1024;
+
+async function listRecordPage<T extends { id: string }>(
+  kv: StateKV,
+  scope: string,
+  params: HttpRequest["query_params"],
+): Promise<{ items: T[]; nextCursor?: string }> {
+  const query = parseListQuery(params);
+  const limit = query.limit ?? LIST_PAGE_MAX;
+  let items: T[];
+  let more: boolean;
+  let storageCursor: string | undefined;
+  if (typeof kv.listPage === "function") {
+    const page = await kv.listPage<T>(scope, { limit, cursor: query.cursor });
+    items = page.items;
+    more = page.nextCursor !== undefined;
+    storageCursor = page.nextCursor;
+  } else {
+    const sorted = sortByKeyDesc(await collectAll<T>(kv, scope), (item) => item.id, (item) => item.id);
+    const page = pageAfterCursor(sorted, (item) => item.id, (item) => item.id, query.cursor, limit);
+    items = page.page;
+    more = page.nextCursor !== null;
+  }
+  let bytes = 0;
+  let kept = 0;
+  while (kept < items.length) {
+    const size = payloadByteLength(items[kept]) + 1;
+    if (kept > 0 && bytes + size > RECORD_PAGE_BYTES) break;
+    bytes += size;
+    kept++;
+  }
+  if (kept < items.length) {
+    items = items.slice(0, kept);
+    more = true;
+    storageCursor = undefined;
+  }
+  const last = items[items.length - 1];
+  const nextCursor = storageCursor ?? (more && last ? encodeCursor({ key: last.id, id: last.id }) : undefined);
+  return { items, ...(nextCursor ? { nextCursor } : {}) };
 }
 
 export function registerApiTriggers(
@@ -2685,7 +2727,7 @@ export function registerApiTriggers(
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const memories = await kv.list<import("../types.js").Memory>(KV.memories);
+      const memories = await collectAll<import("../types.js").Memory>(kv, KV.memories);
       const latest = req.query_params?.["latest"] === "true";
       // agentId filter. Request param wins, env AGENT_ID (when
       // scope=isolated) is the fallback. Shared mode keeps the tag but
@@ -2810,18 +2852,18 @@ export function registerApiTriggers(
         }
       }
 
-      return {
-        status_code: 200,
-        body: {
-          memories: sliced,
-          total: filtered.length,
-          offset,
-          limit: limit ?? null,
-          nextCursor,
-          ...(searchMode ? { search: { query: listQuery.q, mode: searchMode } } : {}),
-          ...(facets ? { facets } : {}),
-        },
+      const body = {
+        memories: sliced,
+        total: filtered.length,
+        offset,
+        limit: limit ?? null,
+        nextCursor,
+        ...(searchMode ? { search: { query: listQuery.q, mode: searchMode } } : {}),
+        ...(facets ? { facets } : {}),
       };
+      const oversized = checkPayloadFrameSize(body, "use ?limit and ?cursor to page");
+      if (oversized) return { status_code: 413, body: oversized };
+      return { status_code: 200, body };
     },
   );
   sdk.registerTrigger({
@@ -2855,8 +2897,11 @@ export function registerApiTriggers(
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const semantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
-      return { status_code: 200, body: { semantic } };
+      const page = await listRecordPage<import("../types.js").SemanticMemory>(kv, KV.semantic, req.query_params);
+      const body = { semantic: page.items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) };
+      const oversized = checkPayloadFrameSize(body, "use ?limit and ?cursor to page");
+      if (oversized) return { status_code: 413, body: oversized };
+      return { status_code: 200, body };
     },
   );
   sdk.registerTrigger({
@@ -2869,8 +2914,11 @@ export function registerApiTriggers(
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const procedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
-      return { status_code: 200, body: { procedural } };
+      const page = await listRecordPage<import("../types.js").ProceduralMemory>(kv, KV.procedural, req.query_params);
+      const body = { procedural: page.items, ...(page.nextCursor ? { nextCursor: page.nextCursor } : {}) };
+      const oversized = checkPayloadFrameSize(body, "use ?limit and ?cursor to page");
+      if (oversized) return { status_code: 413, body: oversized };
+      return { status_code: 200, body };
     },
   );
   sdk.registerTrigger({
@@ -2898,8 +2946,11 @@ export function registerApiTriggers(
     async (req: HttpRequest): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      const relations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
-      return { status_code: 200, body: { relations } };
+      const relations = await collectAll<import("../types.js").MemoryRelation>(kv, KV.relations);
+      const body = { relations };
+      const oversized = checkPayloadFrameSize(body, "export relations with /mesh/export, which pages");
+      if (oversized) return { status_code: 413, body: oversized };
+      return { status_code: 200, body };
     },
   );
   sdk.registerTrigger({
@@ -3627,42 +3678,122 @@ export function registerApiTriggers(
         }
       }
       const project = req.query_params?.["project"] as string | undefined;
+      const rawLimit = Number(req.query_params?.["limit"]);
+      const pageLimit = Number.isFinite(rawLimit) && rawLimit >= 1 ? Math.min(Math.floor(rawLimit), 5000) : 500;
+      const cursorRaw = req.query_params?.["cursor"] as string | undefined;
+      const paged = req.query_params?.["limit"] !== undefined || cursorRaw !== undefined;
       const sinceTime = since ? new Date(since).getTime() : 0;
       const df = <T>(items: T[], field: "updatedAt" | "createdAt") =>
         items.filter((i) => new Date((i as Record<string, unknown>)[field] as string).getTime() > sinceTime);
-      let memories = await kv.list<import("../types.js").Memory>(KV.memories);
+      let memories = await collectAll<import("../types.js").Memory>(kv, KV.memories);
       let actions = await kv.list<import("../types.js").Action>(KV.actions);
       if (project) {
         memories = memories.filter((m) => m.project === project);
         actions = actions.filter((a) => a.project === project);
       }
-      const body: Record<string, unknown> = {
-        memories: df(memories, "updatedAt"),
-        actions: df(actions, "updatedAt"),
-      };
+      const collections: Array<[string, unknown[]]> = [
+        ["memories", df(memories, "updatedAt")],
+        ["actions", df(actions, "updatedAt")],
+      ];
       if (!project) {
         const graphState = await pinGraphState(kv);
-        const semantic = await kv.list<import("../types.js").SemanticMemory>(KV.semantic);
-        const procedural = await kv.list<import("../types.js").ProceduralMemory>(KV.procedural);
-        const relations = await kv.list<import("../types.js").MemoryRelation>(KV.relations);
-        const graphNodes = await graphState.list<import("../types.js").GraphNode>(KV.graphNodes);
-        const graphEdges = await graphState.list<import("../types.js").GraphEdge>(KV.graphEdges);
-        body.semantic = df(semantic, "updatedAt");
-        body.procedural = df(procedural, "updatedAt");
-        body.relations = df(relations, "createdAt");
-        body.graphNodes = graphNodes.filter(
-          (n) => new Date(n.updatedAt || n.createdAt).getTime() > sinceTime,
+        const semantic = await collectAll<import("../types.js").SemanticMemory>(kv, KV.semantic);
+        const procedural = await collectAll<import("../types.js").ProceduralMemory>(kv, KV.procedural);
+        const relations = await collectAll<import("../types.js").MemoryRelation>(kv, KV.relations);
+        const graphNodes = await collectAll<import("../types.js").GraphNode>(graphState, KV.graphNodes);
+        const graphEdges = await collectAll<import("../types.js").GraphEdge>(graphState, KV.graphEdges);
+        collections.push(
+          ["semantic", df(semantic, "updatedAt")],
+          ["procedural", df(procedural, "updatedAt")],
+          ["relations", df(relations, "createdAt")],
+          ["graphNodes", graphNodes.filter(
+            (n) => new Date(n.updatedAt || n.createdAt).getTime() > sinceTime,
+          )],
+          ["graphEdges", df(graphEdges, "createdAt")],
         );
-        body.graphEdges = df(graphEdges, "createdAt");
       }
-      // Fail an over-frame export with 413 instead of dropping the worker.
-      const oversized = checkPayloadFrameSize(
-        body,
-        "use ?since to fetch only changes after a timestamp, or ?project to scope the export",
-      );
-      if (oversized) {
-        return { status_code: 413, body: oversized };
+      const rowId = (row: unknown) => {
+        const r = row as { id?: unknown; sourceId?: unknown; targetId?: unknown; type?: unknown };
+        if (r.id !== undefined && r.id !== null) return String(r.id);
+        if (r.sourceId !== undefined) return `${String(r.sourceId)}:${String(r.targetId)}:${String(r.type)}`;
+        return "";
+      };
+      for (const [, rows] of collections) {
+        rows.sort((a, b) => (rowId(a) < rowId(b) ? -1 : rowId(a) > rowId(b) ? 1 : 0));
       }
+      let cursorPos: { c: number; after?: string } | null = null;
+      if (cursorRaw) {
+        try {
+          const parsed = JSON.parse(Buffer.from(cursorRaw, "base64url").toString("utf8"));
+          if (
+            parsed && typeof parsed === "object" &&
+            Number.isInteger(parsed.c) && parsed.c >= 0 && parsed.c < collections.length &&
+            (parsed.after === undefined || typeof parsed.after === "string")
+          ) {
+            cursorPos = { c: parsed.c, ...(parsed.after !== undefined ? { after: parsed.after } : {}) };
+          }
+        } catch {}
+        if (!cursorPos) return { status_code: 400, body: { error: "invalid_cursor" } };
+      }
+      for (const [name, rows] of collections) {
+        const unexportable = rows.some((row) => payloadByteLength(row) > SAFE_PAYLOAD_BYTES);
+        if (unexportable) {
+          return { status_code: 413, body: oversizedPayloadError(SAFE_PAYLOAD_BYTES + 1, `use ?since, ?project, or ?collections to exclude the oversized ${name} record`) };
+        }
+      }
+      if (!paged) {
+        const full = Object.fromEntries(collections);
+        const oversized = checkPayloadFrameSize(
+          full,
+          "use ?limit and ?cursor to page, ?since to fetch only changes after a timestamp, or ?project to scope the export",
+        );
+        if (oversized) return { status_code: 413, body: oversized };
+        return { status_code: 200, body: full };
+      }
+      let limit = pageLimit;
+      let body: Record<string, unknown> = {};
+      let nextCursor: string | undefined;
+      for (;;) {
+        body = Object.fromEntries(collections.map(([name]) => [name, []]));
+        nextCursor = undefined;
+        let remaining = limit;
+        let ci = cursorPos ? cursorPos.c : 0;
+        let after = cursorPos?.after;
+        for (; ci < collections.length && remaining > 0; ci++) {
+          const [name, rows] = collections[ci]!;
+          let start = 0;
+          if (after !== undefined) {
+            const resumeAfter = after;
+            start = rows.findIndex((row) => rowId(row) > resumeAfter);
+            if (start < 0) { after = undefined; continue; }
+          }
+          const take = Math.min(remaining, rows.length - start);
+          const slice = take > 0 ? rows.slice(start, start + take) : [];
+          body[name] = slice;
+          remaining -= take;
+          after = undefined;
+          if (start + take < rows.length) {
+            nextCursor = Buffer.from(JSON.stringify({ c: ci, after: rowId(slice[slice.length - 1]) })).toString("base64url");
+            break;
+          }
+        }
+        if (!nextCursor && remaining === 0) {
+          for (let c = ci; c < collections.length; c++) {
+            if (collections[c]![1].length > 0) {
+              nextCursor = Buffer.from(JSON.stringify({ c })).toString("base64url");
+              break;
+            }
+          }
+        }
+        const oversized = checkPayloadFrameSize(
+          body,
+          "use ?since to fetch only changes after a timestamp, ?cursor to page, or ?project to scope the export",
+        );
+        if (!oversized) break;
+        if (limit <= 1) return { status_code: 413, body: oversized };
+        limit = Math.max(1, Math.floor(limit / 2));
+      }
+      if (nextCursor) body.nextCursor = nextCursor;
       return { status_code: 200, body };
     },
   );

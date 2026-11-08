@@ -37,7 +37,7 @@ function isRetryableProbeError(error: unknown): boolean {
   ) {
     return true;
   }
-  return /Function state::(?:get|list) not found|timed out|timeout|ETIMEDOUT/i.test(
+  return /Function state::(?:get|list|list_keys) not found|timed out|timeout|ETIMEDOUT/i.test(
     errorMessage(error),
   );
 }
@@ -70,6 +70,11 @@ export async function waitForStateReady(
       await sdk.trigger({
         function_id: "state::get",
         payload: { scope, key: READINESS_PROBE_KEY },
+        timeoutMs: probeTimeoutMs(),
+      });
+      await sdk.trigger({
+        function_id: "state::list_keys",
+        payload: { scope },
         timeoutMs: probeTimeoutMs(),
       });
       return { ready: true, waitedMs: Math.round(now() - startedAt), attempts };
