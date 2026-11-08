@@ -116,7 +116,7 @@ export class HybridSearch {
       try {
         if (request) {
           if (!request.embedding || request.embedding.query !== query) {
-            request.embedding = { query, value: this.embeddingProvider.embed(query) };
+            request.embedding = { query, value: (this.embeddingProvider.embedQuery?.(query) ?? this.embeddingProvider.embed(query)) };
           }
           const embedding = request.embedding;
           try {
@@ -126,7 +126,7 @@ export class HybridSearch {
             throw error;
           }
         } else {
-          queryEmbedding = await this.embeddingProvider.embed(query);
+          queryEmbedding = await (this.embeddingProvider.embedQuery?.(query) ?? this.embeddingProvider.embed(query));
         }
         vectorResults = this.vector.search(queryEmbedding, retrievalLimit * 2, targetLayer, (id) => this.bm25.layerOf(id));
       } catch {

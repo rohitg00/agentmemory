@@ -24,6 +24,17 @@ const options = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("Worker Compose project", () => {
+  it("forwards all local embedding settings to the application worker", () => {
+    const settings = {
+      LOCAL_EMBEDDING_MODEL: "test/model", LOCAL_EMBEDDING_DIMENSIONS: "3",
+      LOCAL_EMBEDDING_POOLING: "cls", LOCAL_EMBEDDING_QUERY_PREFIX: "query: ",
+      LOCAL_EMBEDDING_DOCUMENT_PREFIX: "passage: ", LOCAL_EMBEDDING_CACHE_DIR: "model-cache",
+      LOCAL_EMBEDDING_BATCH_SIZE: "2",
+    };
+    const app = parse(renderWorkerCompose(options({ workerEnvironment: settings }))).containers.agentmemory;
+    expect(app.environment).toMatchObject(settings);
+  });
+
   it("pins registry workers and configures the isolated engine, state and HTTP", () => {
     const text = renderWorkerCompose(options());
     expect(text).toContain("namespace: agentmemory-3511");

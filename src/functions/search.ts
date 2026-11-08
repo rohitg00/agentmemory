@@ -123,7 +123,7 @@ export async function rankMemoryIds(
   let semantic: Array<{ obsId: string }> = []
   if (vectorIndex && vectorIndex.size > 0 && currentEmbeddingProvider) {
     try {
-      const embedding = await currentEmbeddingProvider.embed(query)
+      const embedding = await (currentEmbeddingProvider.embedQuery?.(query) ?? currentEmbeddingProvider.embed(query))
       semantic = vectorIndex
         .search(embedding, fetchLimit, "memory", (id) => getSearchIndex().layerOf(id))
     } catch (err) {

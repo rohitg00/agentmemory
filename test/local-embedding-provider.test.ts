@@ -21,7 +21,7 @@ describe("LocalEmbeddingProvider (package unavailable)", () => {
 describe("LocalEmbeddingProvider (with loaded pipeline)", () => {
   function mockSuccessModule() {
     const extractor = vi.fn(async (texts: string[]) => ({
-      tolist: () => texts.map(() => [0.1, 0.2, 0.3]),
+      tolist: () => texts.map(() => Array(384).fill(0.1)),
     }));
     const pipeline = vi.fn(() => Promise.resolve(extractor));
     vi.doMock("@huggingface/transformers", () => ({ pipeline }));
@@ -46,7 +46,7 @@ describe("LocalEmbeddingProvider (with loaded pipeline)", () => {
       normalize: true,
     });
     expect(vec).toBeInstanceOf(Float32Array);
-    expect(vec).toEqual(new Float32Array([0.1, 0.2, 0.3]));
+    expect(vec).toEqual(new Float32Array(Array(384).fill(0.1)));
   });
 
   it("embedBatch returns one Float32Array per input text", async () => {
