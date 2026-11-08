@@ -1,5 +1,16 @@
 const VALID_TAG = /^[a-zA-Z_][a-zA-Z0-9_-]*$/;
 
+export function escapeXmlText(s: string): string {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+export function escapeXml(s: string): string {
+  return escapeXmlText(s).replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+}
+
 export function getXmlTag(xml: string, tag: string): string {
   if (!VALID_TAG.test(tag)) return "";
   const match = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`));

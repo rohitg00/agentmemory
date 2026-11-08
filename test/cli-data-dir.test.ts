@@ -73,11 +73,26 @@ describe("resolveDataDir", () => {
     });
   });
 
+  it("accepts both instance flag forms", () => {
+    const options = {
+      env: {},
+      cwd: "/repo/project",
+      home: "/home/alex",
+      platform: "linux" as const,
+    };
+    expect(resolveDataDir({ ...options, args: ["--instance", "2"] })).toEqual(
+      resolveDataDir({ ...options, args: ["--instance=2"] }),
+    );
+    expect(resolveDataDir({ ...options, args: ["--instance=2"] }).dataDir).toBe(
+      join("/home/alex", ".local", "share", "agentmemory", "instance-2"),
+    );
+  });
+
   it("adopts legacy data without sharing it with another instance", () => {
     const cwd = mkdtempSync(join(tmpdir(), "agentmemory-data-"));
     mkdirSync(join(cwd, ".git"));
     mkdirSync(join(cwd, "data"));
-    writeFileSync(join(cwd, "data", "iii-config.yaml"), "");
+    writeFileSync(join(cwd, "data", "iii-config.yaml"), ""); // Legacy marker recognized during data-dir migration.
     const home = "/home/alex";
     const base = { cwd, home, platform: "linux" as const };
     const defaultDir = join(home, ".local", "share", "agentmemory");

@@ -87,6 +87,9 @@ function truncate(text: string, max: number): string {
 function bodyFor(obs: RawObservation, kind: TimelineEventKind): string | undefined {
   if (kind === "prompt") return obs.userPrompt;
   if (kind === "response") return obs.assistantResponse;
+  if (kind === "hook" && obs.raw != null) {
+    return typeof obs.raw === "string" ? obs.raw : JSON.stringify(obs.raw);
+  }
   return undefined;
 }
 

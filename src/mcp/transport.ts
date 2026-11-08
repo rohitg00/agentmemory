@@ -17,6 +17,15 @@ export type RequestHandler = (
   params: Record<string, unknown>,
 ) => Promise<unknown>;
 
+let activeStdioTransports = 0;
+
+export class JsonRpcError extends Error {
+  constructor(public readonly code: number, message: string) {
+    super(message);
+    this.name = "JsonRpcError";
+  }
+}
+
 export interface StdioMessageParser {
   push: (chunk: Buffer | string) => void;
   isFramed: () => boolean;
@@ -126,7 +135,7 @@ export async function processLine(
       jsonrpc: "2.0",
       id: request.id as string | number,
       error: {
-        code: -32603,
+        code: err instanceof JsonRpcError ? err.code : -32603,
         message: err instanceof Error ? err.message : String(err),
       },
     });
@@ -227,6 +236,7 @@ export function createStdioTransport(handler: RequestHandler): {
 } {
   let parser: StdioMessageParser | null = null;
   let queue = Promise.resolve();
+  let active = false;
 
   const writeResponse = (response: JsonRpcResponse) => {
     const formatted = formatResponse(response, parser?.isFramed() ?? false);
@@ -243,6 +253,10 @@ export function createStdioTransport(handler: RequestHandler): {
 
   return {
     start() {
+      if (active) return;
+      active = true;
+      activeStdioTransports += 1;
+      process.env["AGENTMEMORY_MCP_STDIO__"] = "1";
       parser = createMessageParser((message) => {
         queue = queue.then(() => processLine(message, handler, writeResponse));
         void queue.catch((err) => {
@@ -257,6 +271,13 @@ export function createStdioTransport(handler: RequestHandler): {
     },
     stop() {
       process.stdin.off("data", onData);
+      if (active) {
+        active = false;
+        activeStdioTransports -= 1;
+        if (activeStdioTransports === 0) {
+          delete process.env["AGENTMEMORY_MCP_STDIO__"];
+        }
+      }
       parser = null;
     },
   };

@@ -49,17 +49,13 @@ export interface Prefs {
   // globally?" prompt on first npx run. We never ask again on this
   // machine so the prompt stays a one-time DX nudge, not a nag.
   skipGlobalInstall: boolean;
-  // Set to true when the user declines the "install iii console?"
-  // prompt. iii console is first-class engine UI but optional at the
-  // install step — once the user says no, we stop asking.
-  skipConsoleInstall: boolean;
   // ISO timestamp of the first time onboarding completed. Set once,
   // never updated, so we can show "you joined agentmemory N days ago"
   // copy in /status later without keeping a separate file.
   firstRunAt: string | null;
   // Set to true once the user has answered the context-injection prompt
   // (either way). We never re-ask after this so the prompt stays a
-  // one-time choice, matching the skipGlobalInstall / skipConsoleInstall
+  // one-time choice, matching the skipGlobalInstall
   // never-nag pattern.
   injectContextChosen: boolean;
 }
@@ -72,7 +68,6 @@ const DEFAULTS: Prefs = {
   skipSplash: false,
   skipNpxHint: false,
   skipGlobalInstall: false,
-  skipConsoleInstall: false,
   firstRunAt: null,
   injectContextChosen: false,
 };

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { hookAuthHeaders, reportBlockedTransport, resolveHookEndpoint } from "./_endpoint.js";
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -12,14 +13,12 @@ function isSdkChildContext(payload: unknown): boolean {
   return (payload as { entrypoint?: unknown }).entrypoint === "sdk-ts";
 }
 
-const REST_URL = process.env["AGENTMEMORY_URL"] || "http://localhost:3111";
-const SECRET = process.env["AGENTMEMORY_SECRET"] || "";
+const ENDPOINT = resolveHookEndpoint();
+const REST_URL = ENDPOINT.url;
 const TIMEOUT_MS = 1500;
 
 function authHeaders(): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  if (SECRET) h["Authorization"] = `Bearer ${SECRET}`;
-  return h;
+  return hookAuthHeaders(ENDPOINT);
 }
 
 async function git(args: string[], cwd: string): Promise<string | null> {
@@ -83,6 +82,7 @@ async function main() {
     files,
   };
 
+  if (reportBlockedTransport(ENDPOINT)) return;
   try {
     await fetch(`${REST_URL}/agentmemory/session/commit`, {
       method: "POST",

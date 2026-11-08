@@ -85,7 +85,7 @@ function makeHit(obsId: string, sessionId = "ses_1"): HybridSearchResult {
   } as HybridSearchResult;
 }
 
-describe("Smart-search followup-rate diagnostic (#771)", () => {
+describe("Smart-search followup-rate diagnostic", () => {
   let sdk: any;
   let kv: ReturnType<typeof mockKV>;
   let searchResults: HybridSearchResult[];

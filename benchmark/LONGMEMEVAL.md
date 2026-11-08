@@ -1,4 +1,6 @@
-# LongMemEval-S Benchmark Results
+# Historical LongMemEval-S Benchmark Results
+
+This report uses historical **any-hit@k** scoring and an older input pipeline. It is not a 0.9.31 strict-recall result. See the [current evaluation and receipts](../docs/benchmarks/2026-10-28-retrieval-evaluation.md); the metrics and denominators differ.
 
 [LongMemEval](https://arxiv.org/abs/2410.10813) (ICLR 2025) is an academic benchmark for evaluating long-term memory in chat assistants. It tests 5 core abilities: information extraction, multi-session reasoning, temporal reasoning, knowledge updates, and abstention.
 

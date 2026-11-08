@@ -1,0 +1,79 @@
+.panel {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.panel::before,
+.panel::after {
+  content: "";
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-color: var(--ink);
+  border-style: solid;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.panel::before {
+  top: 6px;
+  left: 6px;
+  border-width: 1px 0 0 1px;
+}
+
+.panel::after {
+  bottom: 6px;
+  right: 6px;
+  border-width: 0 1px 1px 0;
+}
+
+.head,
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 10px 16px;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.head {
+  border-bottom: 1px solid var(--line);
+}
+
+.foot {
+  border-top: 1px solid var(--line);
+}
+
+.field {
+  position: relative;
+  height: clamp(320px, 42vw, 470px);
+  background-image: radial-gradient(var(--line) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: 12px 12px;
+}
+
+.field canvas {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .hint {
+    display: none;
+  }
+  .field canvas {
+    cursor: default;
+  }
+}
+
+@media (max-width: 520px) {
+  .head span:last-child {
+    display: none;
+  }
+}

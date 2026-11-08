@@ -61,4 +61,4 @@ session. From `git show`: it changed token rotation in refresh.ts."
 
 ## Troubleshooting
 
-See ../_shared/TROUBLESHOOTING.md if `memory_commit_lookup` is not available.
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if `memory_commit_lookup` is not available.

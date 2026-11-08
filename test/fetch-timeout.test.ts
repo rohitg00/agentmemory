@@ -112,6 +112,11 @@ describe("fetchWithTimeout bounded retry (total deadline)", () => {
   //    initial request past HARD_BUDGET_CAP_MS (170s) and the iii 180s
   //    invocation timeout before any retry logic ran.
   it("caps the first attempt at the hard budget, not the raw caller timeout", async () => {
+    vi.spyOn(AbortSignal, "timeout").mockImplementation(ms => {
+      const controller = new AbortController();
+      setTimeout(() => controller.abort(new DOMException("Timed out", "TimeoutError")), ms);
+      return controller.signal;
+    });
     const signals: AbortSignal[] = [];
     const capturing = ((_url: string, init?: RequestInit) => {
       const signal = init!.signal as AbortSignal;
@@ -432,15 +437,7 @@ describe("Provider hang regression — OpenRouterEmbeddingProvider", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────
-// #446 — OpenAI LLM provider env-var precedence
-//
-// v0.9.17 shipped OPENAI_TIMEOUT_MS (OpenAI-scoped). PR #379 then
-// shipped AGENTMEMORY_LLM_TIMEOUT_MS (shared). The provider now
-// honours both: OPENAI_TIMEOUT_MS wins for back-compat, with
-// AGENTMEMORY_LLM_TIMEOUT_MS as the global fall-back.
-// ─────────────────────────────────────────────────────────────
-describe("OpenAIProvider timeout env precedence (#446)", () => {
+describe("OpenAIProvider timeout env precedence", () => {
   beforeEach(() => {
     delete process.env["OPENAI_TIMEOUT_MS"];
     delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
@@ -511,13 +508,7 @@ describe("OpenAIProvider timeout env precedence (#446)", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────
-// #627 — OpenAI provider must read message.reasoning_content
-// DeepSeek V4 / Qwen3 / GLM / Kimi return reasoning_content (with
-// underscore); only checking `reasoning` left thinking-model output
-// dropped on the floor and tripped the compress circuit breaker.
-// ─────────────────────────────────────────────────────────────
-describe("OpenAIProvider thinking-model fallback (#627)", () => {
+describe("OpenAIProvider thinking-model fallback", () => {
   beforeEach(() => {
     delete process.env["OPENAI_TIMEOUT_MS"];
     delete process.env["AGENTMEMORY_LLM_TIMEOUT_MS"];
@@ -559,6 +550,39 @@ describe("OpenAIProvider thinking-model fallback (#627)", () => {
     const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
     const out = await provider.compress("system", "user");
     expect(out).toBe("older shape");
+  });
+
+  const emptyReasoningReplies = [null, "", " \n "].flatMap((content) =>
+    (["reasoning", "reasoning_content"] as const).map((field) => ({ content, field })),
+  );
+
+  it.each(
+    emptyReasoningReplies.flatMap((reply) => (["compress", "summarize"] as const).map((method) => ({ ...reply, method }))),
+  )("$method rejects a reply cut at max_tokens with content $content and only $field", async ({ content, field, method }) => {
+    mockOpenAIResponse({
+      choices: [{ finish_reason: "length", message: { content, [field]: "The user is asking me to reply with" } }],
+    });
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 16);
+    await expect(provider[method]("system", "user")).rejects.toThrow(/max_tokens \(16\)/);
+  });
+
+  it.each(emptyReasoningReplies)(
+    "keeps the $field fallback when the reply finished normally with content $content",
+    async ({ content, field }) => {
+      mockOpenAIResponse({
+        choices: [{ finish_reason: "stop", message: { content, [field]: "complete answer" } }],
+      });
+      const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 1024);
+      expect(await provider.summarize("system", "user")).toBe("complete answer");
+    },
+  );
+
+  it("returns nonempty content even when the reply hit max_tokens", async () => {
+    mockOpenAIResponse({
+      choices: [{ finish_reason: "length", message: { content: "partial but real", reasoning: "ignore" } }],
+    });
+    const provider = new OpenAIProvider("test-key", "gpt-5.6-luna", 16);
+    expect(await provider.compress("system", "user")).toBe("partial but real");
   });
 
   it("content wins over both reasoning fields when present", async () => {
