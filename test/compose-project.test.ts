@@ -54,6 +54,29 @@ describe("Worker Compose project", () => {
     expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe(value);
   });
 
+  it.each(["LOCAL_EMBEDDING_CACHE_DIR=model-cache", "export LOCAL_EMBEDDING_CACHE_DIR='model-cache with spaces'"])(
+    "resolves an effective cache value from the env file: %s", (line) => {
+      mkdirSync(root, { recursive: true });
+      const envFile = join(root, "model.env");
+      writeFileSync(envFile, `${line}\nUNRELATED_SETTING=kept-in-file\n`);
+      const cwd = join(root, "project");
+      const result = writeWorkerCompose(options({ envFile, cwd, workerEnvironment: {} }));
+      const env = parse(result.text).containers.agentmemory.environment;
+      const relative = line.startsWith("export ") ? "model-cache with spaces" : "model-cache";
+      expect(env.LOCAL_EMBEDDING_CACHE_DIR).toBe(join(cwd, relative));
+      expect(env).not.toHaveProperty("UNRELATED_SETTING");
+    },
+  );
+
+  it("keeps process-environment cache precedence over the env file", () => {
+    mkdirSync(root, { recursive: true });
+    const envFile = join(root, "model.env");
+    writeFileSync(envFile, "export LOCAL_EMBEDDING_CACHE_DIR=file-cache\n");
+    const cwd = join(root, "project");
+    const result = writeWorkerCompose(options({ envFile, cwd, workerEnvironment: { LOCAL_EMBEDDING_CACHE_DIR: "process-cache" } }));
+    expect(parse(result.text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe(join(cwd, "process-cache"));
+  });
+
   it("pins registry workers and configures the isolated engine, state and HTTP", () => {
     const text = renderWorkerCompose(options());
     expect(text).toContain("namespace: agentmemory-3511");

@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, readFileSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { parse, stringify } from "yaml";
+import { parse as parseDotenv } from "dotenv";
 import { MAX_STARTUP_TIMEOUT_MS } from "./readiness.js";
 import { getStateSaveIntervalMs } from "../config.js";
 
@@ -422,10 +423,15 @@ export function writeWorkerCompose(options: ComposeProjectOptions): { file: stri
       chmodSync(join(projectDir, "iii.worker.yaml"), 0o600);
     }
   }
-  const text = renderWorkerCompose(options);
+  const envFileContents = options.envFile ? readFileSync(options.envFile, "utf8") : "";
+  const cacheDir = options.workerEnvironment?.LOCAL_EMBEDDING_CACHE_DIR ??
+    (options.envFile ? parseDotenv(envFileContents).LOCAL_EMBEDDING_CACHE_DIR : undefined);
+  const text = renderWorkerCompose(cacheDir === undefined ? options : {
+    ...options, workerEnvironment: { ...options.workerEnvironment, LOCAL_EMBEDDING_CACHE_DIR: cacheDir },
+  });
   if (options.envFile) {
     const filteredPath = join(paths.directory, ".agentmemory-filtered.env");
-    const entries = readFileSync(options.envFile, "utf8").split(/\r?\n/).filter((line) => {
+    const entries = envFileContents.split(/\r?\n/).filter((line) => {
       const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/);
       return !match || !COMPOSE_RESERVED_ENV.has(match[1]!);
     });
