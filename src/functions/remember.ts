@@ -166,6 +166,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           sessionIds: [],
           strength: 7,
           version: supersededId ? supersededVersion + 1 : 1,
+          ...(supersededMemory ? { recurrence: (supersededMemory.recurrence ?? 1) + 1 } : {}),
           parentId: supersededId,
           supersedes: supersededId ? [supersededId] : [],
           sourceObservationIds: (data.sourceObservationIds || []).filter(

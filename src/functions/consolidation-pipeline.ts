@@ -16,7 +16,7 @@ import {
   buildProceduralExtractionPrompt,
 } from "../prompts/consolidation.js";
 import { recordAudit } from "./audit.js";
-import { CONSOLIDATION_LAST_RUN_KEY } from "./consolidation-status.js";
+import { CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, patternFrequency } from "./consolidation-status.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
 function applyDecay(
@@ -189,9 +189,9 @@ export function registerConsolidationPipelineFunction(
           .filter((m) => m.isLatest && m.type === "pattern")
           .map((m) => ({
             content: m.content,
-            frequency: m.sessionIds.length || 1,
+            frequency: patternFrequency(m),
           }))
-          .filter((p) => p.frequency >= 2);
+          .filter((p) => p.frequency >= PROCEDURAL_MIN_SESSIONS_PER_PATTERN);
 
         if (patterns.length >= 2) {
           const prompt = buildProceduralExtractionPrompt(patterns);
