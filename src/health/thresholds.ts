@@ -11,13 +11,13 @@ interface ThresholdConfig {
 }
 
 const DEFAULTS: ThresholdConfig = {
-  eventLoopLagWarnMs: 100,
-  eventLoopLagCriticalMs: 500,
-  cpuWarnPercent: 80,
-  cpuCriticalPercent: 90,
-  memoryWarnPercent: 80,
-  memoryCriticalPercent: 95,
-  memoryRssFloorBytes: 512 * 1024 * 1024,
+  eventLoopLagWarnMs: parseInt(process.env["AGENTMEMORY_HEALTH_EVENTLOOP_WARN_MS"] || "100", 10),
+  eventLoopLagCriticalMs: parseInt(process.env["AGENTMEMORY_HEALTH_EVENTLOOP_CRITICAL_MS"] || "500", 10),
+  cpuWarnPercent: parseInt(process.env["AGENTMEMORY_HEALTH_CPU_WARN_PCT"] || "80", 10),
+  cpuCriticalPercent: parseInt(process.env["AGENTMEMORY_HEALTH_CPU_CRITICAL_PCT"] || "90", 10),
+  memoryWarnPercent: parseInt(process.env["AGENTMEMORY_HEALTH_MEM_WARN_PCT"] || "80", 10),
+  memoryCriticalPercent: parseInt(process.env["AGENTMEMORY_HEALTH_MEM_CRITICAL_PCT"] || "95", 10),
+  memoryRssFloorBytes: parseInt(process.env["AGENTMEMORY_HEALTH_MEM_RSS_FLOOR_MB"] || "512", 10) * 1024 * 1024,
 };
 
 export function evaluateHealth(
