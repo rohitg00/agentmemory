@@ -1,7 +1,9 @@
 import { hookSetting, resolveSettingSecret } from "../hooks/_endpoint.js";
+import { readEnvFileValue } from "../secret-store.js";
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
-const CALL_TIMEOUT_MS = 15_000;
+const DEFAULT_CALL_TIMEOUT_MS = 190_000;
+const MAX_TIMER_MS = 2_147_483_647;
 const LOCAL_MODE_TTL_MS = 30_000;
 
 function probeTimeoutMs(): number {
@@ -9,6 +11,13 @@ function probeTimeoutMs(): number {
   if (!raw) return DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
   const n = Number(raw);
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
+}
+
+export function callTimeoutMs(): number {
+  const name = "AGENTMEMORY_CALL_TIMEOUT_MS";
+  const raw = (resolveEnvOrEmpty(name) || readEnvFileValue(name)).trim();
+  const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+  return n >= 1 && n <= MAX_TIMER_MS ? n : DEFAULT_CALL_TIMEOUT_MS;
 }
 
 export function isProxyRequired(): boolean {
@@ -164,7 +173,7 @@ export async function resolveHandle(): Promise<Handle> {
               ...authHeader(url),
               ...(init?.headers as Record<string, string> | undefined),
             },
-            signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+            signal: AbortSignal.timeout(callTimeoutMs()),
             redirect: "error",
           });
           if (!res.ok) {
