@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -403,6 +403,66 @@ describe("connect claude-code --with-hooks", () => {
       expect(JSON.parse(readFileSync(join(selected, "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
       expect(existsSync(join(home, ".claude.json"))).toBe(false);
       expect(existsSync(join(home, ".claude"))).toBe(false);
+    }, 15000);
+
+    it.each(["existing", "missing"])("uses the %s normalized profile for a symlink followed by ..", (profile) => {
+      const alias = join(home, "alias");
+      const target = join(home, "target");
+      const normalizedProfile = join(alias, "profile");
+      const targetProfile = join(target, "profile");
+      mkdirSync(alias);
+      mkdirSync(join(target, "child"), { recursive: true });
+      symlinkSync(join(target, "child"), join(alias, "link"), "dir");
+      const configDir = `${alias}/link/../profile`;
+      const existingProfile = profile === "existing" ? normalizedProfile : targetProfile;
+      mkdirSync(existingProfile);
+      mkdirSync(join(home, ".claude"));
+      const original = '{"keep":"original configuration"}';
+      for (const path of [
+        join(existingProfile, ".claude.json"),
+        join(existingProfile, "settings.json"),
+        join(home, ".claude.json"),
+        join(home, ".claude", "settings.json"),
+      ]) {
+        writeFileSync(path, original);
+      }
+
+      const result = spawnSync(process.execPath, [
+        resolve(__dirname, "..", "dist", "cli.mjs"),
+        "connect", "claude-code", "--with-hooks", "--no-guidelines",
+      ], {
+        cwd: home,
+        env: {
+          ...process.env,
+          AGENTMEMORY_ENV_FILE: undefined,
+          CLAUDE_CONFIG_DIR: configDir,
+          CI: "1",
+          NO_COLOR: "1",
+        },
+        encoding: "utf-8",
+        timeout: 10000,
+      });
+
+      expect(result.status, result.stderr).toBe(0);
+      const output = result.stdout + result.stderr;
+      if (profile === "existing") {
+        expect(output).toContain(`wired into ${join(normalizedProfile, ".claude.json")}`);
+        const config = JSON.parse(readFileSync(join(normalizedProfile, ".claude.json"), "utf-8"));
+        const settings = JSON.parse(readFileSync(join(normalizedProfile, "settings.json"), "utf-8"));
+        expect(config.mcpServers.agentmemory).toBeDefined();
+        expect(settings.hooks.SessionStart).toBeDefined();
+        expect(config.keep).toBe("original configuration");
+        expect(settings.keep).toBe("original configuration");
+        expect(existsSync(targetProfile)).toBe(false);
+      } else {
+        expect(output).toContain("not detected on this machine (skipping)");
+        expect(output).not.toContain("wired into");
+        expect(existsSync(normalizedProfile)).toBe(false);
+        expect(readFileSync(join(targetProfile, ".claude.json"), "utf-8")).toBe(original);
+        expect(readFileSync(join(targetProfile, "settings.json"), "utf-8")).toBe(original);
+      }
+      expect(readFileSync(join(home, ".claude.json"), "utf-8")).toBe(original);
+      expect(readFileSync(join(home, ".claude", "settings.json"), "utf-8")).toBe(original);
     }, 15000);
 
     it.skipIf(process.getuid?.() === 0)("warns and skips an inaccessible profile without changing either profile", () => {

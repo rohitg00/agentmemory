@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, normalize, resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { isEnvFileValue } from "../../config.js";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
@@ -22,7 +22,7 @@ import {
 function claudeConfigPaths() {
   const rawConfigDir = process.env["CLAUDE_CONFIG_DIR"];
   const configDir = rawConfigDir?.trim() ? rawConfigDir : undefined;
-  const dir = configDir || join(homedir(), ".claude");
+  const dir = configDir ? normalize(configDir) : join(homedir(), ".claude");
   return {
     rawConfigDir,
     configDir,
