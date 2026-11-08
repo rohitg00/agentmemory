@@ -44,9 +44,6 @@ export class ClipEmbeddingProvider implements EmbeddingProvider {
   private async getTextExtractor(): Promise<ClipTextEncoder> {
     if (this.textExtractor) return this.textExtractor;
     const t = await loadTransformers();
-    // The generic "feature-extraction" pipeline loads the full dual-encoder,
-    // which demands pixel_values and breaks text-only calls (#1249). The
-    // projection head is also what puts text in the image vectors' 512-d space.
     const tokenizer = await t.AutoTokenizer.from_pretrained(this.modelId);
     const model = await t.CLIPTextModelWithProjection.from_pretrained(this.modelId, {
       dtype: "q8",
