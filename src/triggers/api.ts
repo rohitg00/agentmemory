@@ -8,6 +8,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { isSearchLayer, type SearchLayer } from "../state/search-layer.js";
 import { checkPayloadFrameSize, oversizedPayloadError, payloadByteLength, SAFE_PAYLOAD_BYTES } from "../state/frame-guard.js";
+import { insightHttpResponse } from "../state/insight-response.js";
 import { StateKV, collectAll } from "../state/kv.js";
 import { getDuplicateWorkers } from "../runtime/duplicates.js";
 import { stateWorkerStatus } from "../runtime/state-worker.js";
@@ -4288,9 +4289,9 @@ export function registerApiTriggers(
     const body = (req.body as Record<string, unknown>) || {};
     const result = await sdk.trigger({ function_id: "mem::reflect", payload: {
       project: typeof body.project === "string" ? body.project : undefined,
-      maxClusters: typeof body.maxClusters === "number" ? body.maxClusters : undefined,
+      maxClusters: body.maxClusters,
     } });
-    return { status_code: 200, body: result };
+    return insightHttpResponse(result);
   });
   getBindings(sdk).http({ type: "http", function_id: "api::reflect", config: { api_path: "/agentmemory/reflect", http_method: "POST" } });
 
@@ -4317,7 +4318,7 @@ export function registerApiTriggers(
       minConfidence,
       limit,
     } });
-    return { status_code: 200, body: result };
+    return insightHttpResponse(result);
   });
   getBindings(sdk).http({ type: "http", function_id: "api::insight-list", config: { api_path: "/agentmemory/insights", http_method: "GET" } });
 
@@ -4329,10 +4330,10 @@ export function registerApiTriggers(
     const result = await sdk.trigger({ function_id: "mem::insight-search", payload: {
       query: body.query,
       project: typeof body.project === "string" ? body.project : undefined,
-      minConfidence: typeof body.minConfidence === "number" ? body.minConfidence : undefined,
-      limit: typeof body.limit === "number" ? body.limit : undefined,
+      minConfidence: body.minConfidence,
+      limit: body.limit,
     } });
-    return { status_code: 200, body: result };
+    return insightHttpResponse(result);
   });
   getBindings(sdk).http({ type: "http", function_id: "api::insight-search", config: { api_path: "/agentmemory/insights/search", http_method: "POST" } });
 }
