@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import * as p from "@clack/prompts";
+import { isEnvFileValue } from "../../config.js";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
@@ -19,9 +20,10 @@ import {
 } from "./codex-hooks.js";
 
 function claudeConfigPaths() {
-  const configDir = process.env["CLAUDE_CONFIG_DIR"];
+  const configDir = process.env["CLAUDE_CONFIG_DIR"]?.trim();
   const dir = configDir || join(homedir(), ".claude");
   return {
+    configDir,
     dir,
     mcp: configDir ? join(dir, ".claude.json") : join(homedir(), ".claude.json"),
     settings: join(dir, "settings.json"),
@@ -55,7 +57,12 @@ export const adapter: ConnectAdapter = {
   },
 
   async install(opts: ConnectOptions): Promise<ConnectResult> {
-    const { dir: CLAUDE_DIR, mcp: CLAUDE_JSON } = claudeConfigPaths();
+    const { configDir, dir: CLAUDE_DIR, mcp: CLAUDE_JSON } = claudeConfigPaths();
+    if (configDir && isEnvFileValue("CLAUDE_CONFIG_DIR")) {
+      p.log.warn(
+        `CLAUDE_CONFIG_DIR was loaded only from agentmemory's env file. Launch Claude Code with the same CLAUDE_CONFIG_DIR value (${configDir}) so it reads the same MCP and hook configuration.`,
+      );
+    }
     const existing = readJsonSafe<ClaudeConfig>(CLAUDE_JSON);
     const next: ClaudeConfig = existing ? { ...existing } : {};
     const servers: Record<string, ClaudeMcpEntry> = {

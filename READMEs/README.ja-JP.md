@@ -452,7 +452,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-このコマンドは MCP サーバーを設定し、同梱の hook を Claude Code のユーザー設定にマージします。`CLAUDE_CONFIG_DIR` が未設定または空の場合、MCP には `~/.claude.json`、hook には `~/.claude/settings.json` を使います。カスタムディレクトリを使う場合は、このコマンドと Claude Code の両方に同じ空でない `CLAUDE_CONFIG_DIR` の値を設定してください。その場合、ファイルはそれぞれ `$CLAUDE_CONFIG_DIR/.claude.json` と `$CLAUDE_CONFIG_DIR/settings.json` になります。コネクターが AgentMemory の `.env` から値を読み込む場合でも、Claude Code 自身の起動環境にこの値を設定する必要があります。
+このコマンドは MCP サーバーを設定し、同梱の hook を Claude Code のユーザー設定にマージします。`CLAUDE_CONFIG_DIR` が未設定、または前後の空白を除去すると空になる場合、MCP には `~/.claude.json`、hook には `~/.claude/settings.json` を使います。カスタムディレクトリを使う場合は、このコマンドと Claude Code の両方に同じ空でない `CLAUDE_CONFIG_DIR` の値を設定してください。その場合、ファイルはそれぞれ `$CLAUDE_CONFIG_DIR/.claude.json` と `$CLAUDE_CONFIG_DIR/settings.json` になります。コネクターが AgentMemory の `.env` から値を読み込む場合でも、Claude Code 自身の起動環境にこの値を設定する必要があります。このコマンドを実行する前にカスタムディレクトリを作成してください。存在しない場合、Claude Code は未検出としてスキップされます。
 
 Hook コマンドは、インストール済みパッケージに同梱された `plugin/` ディレクトリへの絶対パスを使います。agentmemory のアップグレード後にコマンドを再実行して、これらのパスを更新してください。設定ファイル内のユーザーのエントリは保持され、以前の agentmemory のエントリだけが置き換えられます。引き続き `/plugin install` の利用を推奨します。
 リモートや保護されたデプロイでは、`AGENTMEMORY_URL` と `AGENTMEMORY_SECRET` を設定して Claude Code を起動してください。プラグインはこの両方の値を同梱の MCP サーバーに渡します。`AGENTMEMORY_URL` が空の場合、MCP shim は `http://localhost:3111` にフォールバックします。

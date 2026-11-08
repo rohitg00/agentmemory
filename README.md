@@ -482,7 +482,7 @@ Workaround:
 agentmemory connect claude-code --with-hooks
 ```
 
-This command configures the MCP server and merges the bundled hooks into Claude Code’s user configuration. When `CLAUDE_CONFIG_DIR` is unset or empty, it uses `~/.claude.json` for MCP and `~/.claude/settings.json` for hooks. For a custom directory, set `CLAUDE_CONFIG_DIR` to the same non-empty value for this command and Claude Code; the files are then `$CLAUDE_CONFIG_DIR/.claude.json` and `$CLAUDE_CONFIG_DIR/settings.json`, respectively. Claude Code must receive this value in its launch environment, even if the connector reads it from AgentMemory’s `.env`.
+This command configures the MCP server and merges the bundled hooks into Claude Code’s user configuration. When `CLAUDE_CONFIG_DIR` is unset or empty after trimming surrounding whitespace, it uses `~/.claude.json` for MCP and `~/.claude/settings.json` for hooks. For a custom directory, set `CLAUDE_CONFIG_DIR` to the same non-empty value for this command and Claude Code; the files are then `$CLAUDE_CONFIG_DIR/.claude.json` and `$CLAUDE_CONFIG_DIR/settings.json`, respectively. Claude Code must receive this value in its launch environment, even if the connector reads it from AgentMemory’s `.env`. Create the custom directory before running this command; otherwise, the connector skips Claude Code as not detected.
 
 Hook commands use absolute paths to the installed package’s bundled `plugin/` directory. Re-run the command after upgrading agentmemory to refresh those paths. User entries in the configuration files are preserved; only previous agentmemory entries are replaced. Using `/plugin install` remains the recommended approach.
 
