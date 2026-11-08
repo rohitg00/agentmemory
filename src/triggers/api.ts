@@ -59,7 +59,7 @@ import { isValidEventId } from "../capture/event-id.js";
 import { getCaptureController, type CaptureResult } from "../functions/capture.js";
 import { withoutObservationSource } from "../functions/observation-source.js";
 import { clearSessionFinalize, scheduleSessionFinalize } from "../functions/session-finalize.js";
-import { requestSummaryRefresh } from "../functions/summary-state.js";
+import { getSummaryTriggerTimeoutMs, requestSummaryRefresh } from "../functions/summary-state.js";
 import { registerCompressionApi } from "./compression.js";
 import {
   getFinalizeIdleMs,
@@ -1285,6 +1285,7 @@ export function registerApiTriggers(
       const result = await sdk.trigger({
         function_id: "mem::summarize",
         payload: { sessionId },
+        timeoutMs: getSummaryTriggerTimeoutMs(),
       });
       return { status_code: 200, body: result };
     },
