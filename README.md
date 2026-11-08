@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,500+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,600+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1112,6 +1112,10 @@ Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `cont
 
 Local embeddings ship as an optional dependency but are not enabled by default. Set `EMBEDDING_PROVIDER=local` to opt into `Xenova/all-MiniLM-L6-v2` (384-dim). The first embedding request downloads the model; inference is on-device afterward. Without that setting or a remote embedding key, vectors stay disabled, `mem::search` uses BM25, and `smart-search` can still add existing graph matches.
 
+Local Transformers.js models can be selected with `LOCAL_EMBEDDING_MODEL`, `LOCAL_EMBEDDING_DIMENSIONS`, `LOCAL_EMBEDDING_POOLING` and `LOCAL_EMBEDDING_DTYPE` (defaults: the model above, `384`, `mean`, `q8`). Optional `LOCAL_EMBEDDING_QUERY_PREFIX` and `LOCAL_EMBEDDING_DOCUMENT_PREFIX` preserve exact prefixes, including trailing spaces. `LOCAL_EMBEDDING_CACHE_DIR` selects the pipeline cache and `LOCAL_EMBEDDING_BATCH_SIZE` bounds extraction batches. Use settings and a Transformers.js export compatible with the selected model.
+
+Startup records the local document-embedding configuration before generating vectors. Changing the model, dimensions, pooling, dtype or document prefix refuses restoration of both checkpoints and pending vectors, even when dimensions match. Older local indexes without this identity also require an explicit rebuild: back up the store, set `AGENTMEMORY_DROP_STALE_INDEX=true` for one restart, then unset it. This removes derived vectors while retaining memories and observations. Set `AGENTMEMORY_VECTOR_BACKFILL=all` to run the full backfill; otherwise it waits for explicit opt-in. Query-prefix, cache-directory and batch-size changes do not require document vectors to be rebuilt.
+
 ### Cost-aware model selection
 
 Start keyless for capture and keyword recall. Enable `EMBEDDING_PROVIDER=local` for on-device semantic search after the initial model download. LLM-written compression requires a provider and `AGENTMEMORY_AUTO_COMPRESS=true`; it can make a request for each captured observation, so check your provider's current pricing before enabling it.
@@ -1137,6 +1141,8 @@ Two modes:
 | `isolated` | yes | yes | Strict separation. Architect never sees developer's observations / memories / sessions. |
 
 What gets tagged when `AGENT_ID` is set: `Session.agentId`, `RawObservation.agentId`, `CompressedObservation.agentId`, `Memory.agentId`. The role flows from `api::session::start` → `mem::observe` → `mem::compress` → KV.
+
+`GET /agentmemory/sessions` also filters by time with `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` (ISO 8601, for example `2026-10-09` or `2026-10-09T12:00:00Z`; a value without a zone is read as UTC, and a `+` in an offset must be URL-encoded as `%2B`; after is inclusive, before is exclusive). Sessions with no value for the filtered field are excluded, and an invalid timestamp returns 400.
 
 What gets filtered in isolated mode: `mem::smart-search`, `/agentmemory/memories`, `/agentmemory/observations`, `/agentmemory/sessions`. Each endpoint accepts `?agentId=<role>` to override per-request, and `?agentId=*` to opt out of the env scope entirely. `/memories` also accepts `?includeOrphans=true` to surface pre-AGENT_ID memories whose `agentId` is undefined.
 
@@ -1198,6 +1204,8 @@ EMBEDDING_PROVIDER=local
 
 # Optional automatic context injection through the shared hooks
 # AGENTMEMORY_INJECT_CONTEXT=true
+# How long the PreToolUse hook waits for that context, in ms (default 2000)
+# AGENTMEMORY_ENRICH_TIMEOUT_MS=2000
 
 # Optional outside LLM for summaries and consolidation. A key alone does nothing;
 # this line selects the provider whose key agentmemory may use.
@@ -1307,7 +1315,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,500+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

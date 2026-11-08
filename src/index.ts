@@ -36,6 +36,7 @@ import { VectorIndex } from "./state/vector-index.js";
 import type { SearchLayer } from "./state/search-layer.js";
 import { HybridSearch } from "./state/hybrid-search.js";
 import { IndexPersistence } from "./state/index-persistence.js";
+import { ensureEmbeddingIdentity } from "./state/embedding-identity.js";
 import { SHUTDOWN_FLUSH_TIMEOUT_MS, SHUTDOWN_HARD_EXIT_MS, runStartupCleanup, settleWithin } from "./shutdown.js";
 import { registerPrivacyFunction, withWriteScrubbing } from "./functions/privacy.js";
 import { withRegistrationDefaults } from "./runtime/registration.js";
@@ -273,6 +274,7 @@ async function main() {
       bootWarn(`Waiting for the state worker to register state::get and state::list (${error})`),
   });
   assertStateReady(stateReadiness);
+  await ensureEmbeddingIdentity(kv, embeddingProvider, isDropStaleIndexEnabled());
   if (stateReadiness.attempts > 1) {
     bootLog(
       `State worker ready after ${stateReadiness.waitedMs}ms (${stateReadiness.attempts} attempts)`,

@@ -1,4 +1,5 @@
 import type { EmbeddingProvider } from "../../types.js";
+import type { DataType } from "@huggingface/transformers";
 
 type FeatureExtractor = (
   texts: string[],
@@ -20,14 +21,23 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
   readonly name = this.model === "Xenova/all-MiniLM-L6-v2" ? "local" : `local:${this.model}`;
   readonly dimensions = positiveInteger("LOCAL_EMBEDDING_DIMENSIONS", 384);
   readonly pooling = process.env.LOCAL_EMBEDDING_POOLING?.trim() || "mean";
+  readonly dtype = (process.env.LOCAL_EMBEDDING_DTYPE?.trim() || "q8") as DataType;
   private readonly batchSize = positiveInteger("LOCAL_EMBEDDING_BATCH_SIZE", Number.MAX_SAFE_INTEGER);
   private readonly queryPrefix = process.env.LOCAL_EMBEDDING_QUERY_PREFIX || "";
   private readonly documentPrefix = process.env.LOCAL_EMBEDDING_DOCUMENT_PREFIX || "";
   private extractor: Promise<FeatureExtractor> | null = null;
 
+  /** Query instructions and loading options do not change stored document embeddings. */
+  get indexIdentity(): string {
+    return JSON.stringify(["local-v1", this.model, this.dimensions, this.pooling, this.dtype, this.documentPrefix]);
+  }
+
   constructor() {
     if (!["mean", "cls", "first_token", "last_token", "eos"].includes(this.pooling)) {
       throw new Error("LOCAL_EMBEDDING_POOLING must be mean, cls, first_token, last_token, or eos");
+    }
+    if (!["auto", "fp32", "fp16", "q8", "int8", "uint8", "q4", "bnb4", "q4f16", "q2", "q2f16", "q1", "q1f16"].includes(this.dtype)) {
+      throw new Error("LOCAL_EMBEDDING_DTYPE must be a supported Transformers.js dtype");
     }
   }
 
@@ -85,7 +95,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
       throw err;
     }
     return await transformers.pipeline("feature-extraction", this.model, {
-      dtype: "q8",
+      dtype: this.dtype,
       ...(process.env.LOCAL_EMBEDDING_CACHE_DIR ? { cache_dir: process.env.LOCAL_EMBEDDING_CACHE_DIR } : {}),
     }) as FeatureExtractor;
   }

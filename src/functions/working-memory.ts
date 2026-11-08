@@ -1,7 +1,7 @@
 import type { IIIClient } from "iii-sdk";
 import type { Memory, CompressedObservation, ContextBlock } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import { logger } from "../logger.js";
@@ -132,7 +132,7 @@ export function registerWorkingMemoryFunctions(
 
       const archivalLines: string[] = [];
 
-      const memories = await kv.list<Memory>(KV.memories);
+      const memories = await collectAll<Memory>(kv, KV.memories);
       const active = memories
         .filter((m) => m.isLatest !== false)
         .sort((a, b) => {

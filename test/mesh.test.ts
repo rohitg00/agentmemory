@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerMeshFunction } from "../src/functions/mesh.js";
+import { KV } from "../src/state/schema.js";
 import type {
   MeshPeer,
   Memory,
@@ -232,6 +233,179 @@ describe("Mesh Functions", () => {
       );
 
       vi.unstubAllGlobals();
+    });
+
+    it("aborts when the peer repeats the same cursor and leaves lastSyncAt untouched", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      vi.stubGlobal("fetch", vi.fn(async () =>
+        new Response(JSON.stringify({ memories: [], nextCursor: "cA" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ));
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-loop.example.com",
+        name: "peer-loop",
+      })) as { success: boolean; peer: MeshPeer };
+      await authedKv.set(KV.mesh, regResult.peer.id, { ...regResult.peer, lastSyncAt: "2026-01-01T00:00:00.000Z" });
+
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "pull",
+      })) as { success: boolean; results: Array<{ errors: string[] }> };
+
+      expect(result.results[0].errors.some((e) => e.includes("cursor did not advance"))).toBe(true);
+      const peer = await authedKv.get<MeshPeer>(KV.mesh, regResult.peer.id);
+      expect(peer!.lastSyncAt).toBe("2026-01-01T00:00:00.000Z");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("does not advance lastSyncAt when the push fails but the pull succeeds", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      vi.stubGlobal("fetch", vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes("/mesh/receive")) {
+          return new Response("boom", { status: 500 });
+        }
+        return new Response(JSON.stringify({ memories: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }));
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-pushfail.example.com",
+        name: "peer-pushfail",
+      })) as { success: boolean; peer: MeshPeer };
+      await authedKv.set(KV.mesh, regResult.peer.id, { ...regResult.peer, lastSyncAt: "2026-01-01T00:00:00.000Z" });
+
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "both",
+      })) as { success: boolean; results: Array<{ errors: string[]; pulled?: number }> };
+
+      expect(result.results[0].errors.some((e) => e.includes("push failed"))).toBe(true);
+      const peer = await authedKv.get<MeshPeer>(KV.mesh, regResult.peer.id);
+      expect(peer!.lastSyncAt).toBe("2026-01-01T00:00:00.000Z");
+
+      vi.unstubAllGlobals();
+    });
+
+    it("scopes the push and every pull page to the peer project filter", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+      const base = { type: "pattern", title: "t", content: "c", createdAt: "2026-08-01T00:00:00Z", updatedAt: "2026-08-01T00:00:00Z", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, isLatest: true };
+      await authedKv.set(KV.memories, "m-alpha", { ...base, id: "m-alpha", project: "alpha" });
+      await authedKv.set(KV.memories, "m-beta", { ...base, id: "m-beta", project: "beta" });
+
+      const pushed: Array<{ id: string }> = [];
+      const pullUrls: string[] = [];
+      vi.stubGlobal("fetch", vi.fn(async (input: unknown, init?: { body?: string }) => {
+        const url = String(input);
+        if (url.endsWith("/mesh/receive")) {
+          pushed.push(...((JSON.parse(init!.body!) as { memories?: Array<{ id: string }> }).memories ?? []));
+          return new Response(JSON.stringify({ accepted: 0 }), { status: 200, headers: { "Content-Type": "application/json" } });
+        }
+        pullUrls.push(url);
+        const body = pullUrls.length === 1 ? { memories: [], nextCursor: "c1" } : { memories: [] };
+        return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+      }));
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-scoped.example.com",
+        name: "peer-scoped",
+        syncFilter: { project: "alpha" },
+      })) as { success: boolean; peer: MeshPeer };
+
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "both",
+      })) as { success: boolean; results: Array<{ errors: string[] }> };
+
+      expect(result.results[0].errors).toEqual([]);
+      expect(pushed.map((m) => m.id)).toEqual(["m-alpha"]);
+      expect(pullUrls).toHaveLength(2);
+      for (const url of pullUrls) {
+        expect(new URL(url).searchParams.get("project")).toBe("alpha");
+        expect(new URL(url).searchParams.get("limit")).toBe("500");
+      }
+
+      vi.unstubAllGlobals();
+    });
+
+    it("stamps push-only success with the sync start time", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      const start = new Date("2026-03-02T12:00:00.000Z");
+      vi.useFakeTimers({ now: start });
+      vi.stubGlobal("fetch", vi.fn(async () => {
+        vi.setSystemTime(new Date("2026-03-02T12:04:00.000Z"));
+        return new Response(JSON.stringify({ accepted: 0 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }));
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-push.example.com",
+        name: "peer-push",
+      })) as { success: boolean; peer: MeshPeer };
+
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "push",
+      })) as { success: boolean; results: Array<{ errors: string[] }> };
+
+      expect(result.results[0].errors).toEqual([]);
+      const peer = await authedKv.get<MeshPeer>(KV.mesh, regResult.peer.id);
+      expect(peer!.lastSyncAt).toBe("2026-03-02T12:00:00.000Z");
+
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    });
+
+    it("stamps lastSyncAt with the sync start time after a successful pull", async () => {
+      const authedSdk = mockSdk();
+      const authedKv = mockKV();
+      registerMeshFunction(authedSdk as never, authedKv as never, "mesh-secret");
+
+      const start = new Date("2026-03-01T12:00:00.000Z");
+      vi.useFakeTimers({ now: start });
+      vi.stubGlobal("fetch", vi.fn(async () => {
+        vi.setSystemTime(new Date("2026-03-01T12:05:00.000Z"));
+        return new Response(JSON.stringify({ memories: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }));
+
+      const regResult = (await authedSdk.trigger("mem::mesh-register", {
+        url: "https://peer-time.example.com",
+        name: "peer-time",
+      })) as { success: boolean; peer: MeshPeer };
+
+      const result = (await authedSdk.trigger("mem::mesh-sync", {
+        peerId: regResult.peer.id,
+        direction: "pull",
+      })) as { success: boolean; results: Array<{ errors: string[] }> };
+
+      expect(result.results[0].errors).toEqual([]);
+      const peer = await authedKv.get<MeshPeer>(KV.mesh, regResult.peer.id);
+      expect(peer!.lastSyncAt).toBe("2026-03-01T12:00:00.000Z");
+
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
     });
   });
 

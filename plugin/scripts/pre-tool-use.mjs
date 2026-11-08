@@ -26,7 +26,7 @@ function unquote(value) {
 	const hash = value.indexOf(" #");
 	return hash === -1 ? value : value.slice(0, hash).trim();
 }
-function readEnvFileSecret() {
+function readEnvFileValue(name) {
 	let content;
 	try {
 		content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
@@ -40,10 +40,13 @@ function readEnvFileSecret() {
 		if (trimmed.startsWith("#")) continue;
 		const eq = trimmed.indexOf("=");
 		if (eq === -1) continue;
-		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== SECRET_KEY) continue;
-		found = usable(unquote(trimmed.slice(eq + 1).trim()));
+		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== name) continue;
+		found = unquote(trimmed.slice(eq + 1).trim());
 	}
 	return found;
+}
+function readEnvFileSecret() {
+	return usable(readEnvFileValue(SECRET_KEY));
 }
 function readSecretFile(path) {
 	try {
@@ -152,8 +155,25 @@ function isSdkChildContext(payload) {
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 const ENDPOINT = resolveHookEndpoint();
 const REST_URL = ENDPOINT.url;
+const DEFAULT_ENRICH_TIMEOUT_MS = 2e3;
 function authHeaders() {
 	return hookAuthHeaders(ENDPOINT);
+}
+const MAX_TIMER_MS = 2147483647;
+function enrichTimeoutMs() {
+	const raw = hookSetting("AGENTMEMORY_ENRICH_TIMEOUT_MS")?.trim() ?? "";
+	const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+	return n >= 1 && n <= MAX_TIMER_MS ? n : DEFAULT_ENRICH_TIMEOUT_MS;
+}
+function isPlainTextHost() {
+	return Boolean(process.env["FACTORY_PROJECT_DIR"] || process.env["DROID_PLUGIN_ROOT"]);
+}
+function contextPayload(data, context) {
+	if (data.hook_event_name !== "PreToolUse" || isPlainTextHost()) return context;
+	return JSON.stringify({ hookSpecificOutput: {
+		hookEventName: "PreToolUse",
+		additionalContext: context
+	} });
 }
 async function main() {
 	if (!INJECT_CONTEXT) return;
@@ -168,6 +188,7 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
+	if (typeof data.cursor_version === "string") return;
 	const toolName = typeof data.tool_name === "string" ? data.tool_name : typeof data.toolName === "string" ? data.toolName : void 0;
 	if (!toolName) return;
 	const normalizedToolName = toolName.toLowerCase();
@@ -213,11 +234,11 @@ async function main() {
 				toolName,
 				...project !== void 0 && { project }
 			}),
-			signal: AbortSignal.timeout(2e3)
+			signal: AbortSignal.timeout(enrichTimeoutMs())
 		});
 		if (res.ok) {
 			const result = await res.json();
-			if (result.context) process.stdout.write(result.context);
+			if (result.context) process.stdout.write(contextPayload(data, result.context));
 		}
 	} catch {}
 }

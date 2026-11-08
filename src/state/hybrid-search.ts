@@ -23,6 +23,7 @@ import { logger } from "../logger.js";
 
 const RRF_K = 60;
 const GRAPH_BUDGET_MS = 500;
+const MIN_FUSION_POOL = 40;
 
 export interface HybridSearchRequest {
   embedding?: { query: string; value: Promise<Float32Array> };
@@ -103,7 +104,8 @@ export class HybridSearch {
     request?: HybridSearchRequest,
   ): Promise<HybridSearchResult[]> {
     const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
-    const bm25Results = this.bm25.search(query, retrievalLimit * 2, targetLayer);
+    const poolLimit = Math.max(retrievalLimit * 2, MIN_FUSION_POOL);
+    const bm25Results = this.bm25.search(query, poolLimit, targetLayer);
 
     let vectorResults: Array<{
       obsId: string;
@@ -128,7 +130,7 @@ export class HybridSearch {
         } else {
           queryEmbedding = await (this.embeddingProvider.embedQuery?.(query) ?? this.embeddingProvider.embed(query));
         }
-        vectorResults = this.vector.search(queryEmbedding, retrievalLimit * 2, targetLayer, (id) => this.bm25.layerOf(id));
+        vectorResults = this.vector.search(queryEmbedding, poolLimit, targetLayer, (id) => this.bm25.layerOf(id));
       } catch {
         // fall through to BM25-only
       }
@@ -255,7 +257,7 @@ export class HybridSearch {
 
     if (request) request.candidateCount = combined.length;
     const retrievalDepth = Math.max(limit, 20);
-    const diversified = this.diversifyBySession(combined, retrievalDepth);
+    const diversified = this.diversifyBySession(combined, combined.length);
     const enriched = await this.enrichResults(diversified, retrievalDepth);
 
     return applyReranking ? this.rerankResults(query, enriched, limit) : enriched.slice(0, limit);
@@ -327,6 +329,11 @@ export class HybridSearch {
     const sessionCounts = new Map<string, number>();
 
     for (const r of results) {
+      if (r.obsId.startsWith("mem_")) {
+        selected.push(r);
+        if (selected.length >= limit) break;
+        continue;
+      }
       const count = sessionCounts.get(r.sessionId) || 0;
       if (count >= maxPerSession) continue;
       selected.push(r);
@@ -335,9 +342,10 @@ export class HybridSearch {
     }
 
     if (selected.length < limit) {
+      const picked = new Set(selected.map((s) => s.obsId));
       for (const r of results) {
         if (selected.length >= limit) break;
-        if (!selected.some(s => s.obsId === r.obsId)) {
+        if (!picked.has(r.obsId)) {
           selected.push(r);
         }
       }
@@ -358,7 +366,27 @@ export class HybridSearch {
     }>,
     limit: number,
   ): Promise<HybridSearchResult[]> {
-    const sliced = results.slice(0, limit);
+    const enriched: HybridSearchResult[] = [];
+    let next = 0;
+    while (next < results.length && enriched.length < limit) {
+      const batch = results.slice(next, next + limit);
+      next += batch.length;
+      enriched.push(...(await this.enrichBatch(batch)));
+    }
+    return enriched.slice(0, limit);
+  }
+
+  private async enrichBatch(
+    sliced: Array<{
+      obsId: string;
+      sessionId: string;
+      bm25Score: number;
+      vectorScore: number;
+      graphScore: number;
+      combinedScore: number;
+      graphContext?: string;
+    }>,
+  ): Promise<HybridSearchResult[]> {
     const observations = await Promise.all(
       sliced.map(async (r) => {
         const obs = await this.kv

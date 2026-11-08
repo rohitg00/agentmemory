@@ -1,6 +1,13 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+beforeEach(() => {
+  for (const key of ["MODEL", "DIMENSIONS", "POOLING", "DTYPE", "BATCH_SIZE", "QUERY_PREFIX", "DOCUMENT_PREFIX", "CACHE_DIR"]) {
+    vi.stubEnv(`LOCAL_EMBEDDING_${key}`, undefined);
+  }
+});
 
 afterEach(() => {
+  vi.unstubAllEnvs();
   vi.doUnmock("@huggingface/transformers");
   vi.resetModules();
 });

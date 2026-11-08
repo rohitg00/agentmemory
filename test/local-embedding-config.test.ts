@@ -1,8 +1,13 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocalEmbeddingProvider } from "../src/providers/embedding/local.js";
 import { withDimensionGuard } from "../src/providers/embedding/index.js";
 const mock = vi.hoisted(() => ({ extractor: vi.fn(), pipeline: vi.fn() }));
 vi.mock("@huggingface/transformers", () => ({ pipeline: mock.pipeline }));
+beforeEach(() => {
+  for (const key of ["MODEL", "DIMENSIONS", "POOLING", "DTYPE", "BATCH_SIZE", "QUERY_PREFIX", "DOCUMENT_PREFIX", "CACHE_DIR"]) {
+    vi.stubEnv(`LOCAL_EMBEDDING_${key}`, undefined);
+  }
+});
 afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks(); });
 function configure() {
   vi.stubEnv("LOCAL_EMBEDDING_MODEL", "test/chinese");
@@ -54,6 +59,15 @@ describe("local model configuration", () => {
     await expect(provider.embed("test")).rejects.toThrow("model unavailable");
     expect(await provider.embed("test")).toHaveLength(3);
     expect(mock.pipeline).toHaveBeenCalledTimes(2);
+  });
+  it("passes the selected dtype with the cache directory", async () => {
+    configure(); vi.stubEnv("LOCAL_EMBEDDING_DTYPE", "fp32"); vi.stubEnv("LOCAL_EMBEDDING_CACHE_DIR", "model-cache");
+    await new LocalEmbeddingProvider().embed("test");
+    expect(mock.pipeline).toHaveBeenCalledWith("feature-extraction", "test/chinese", { dtype: "fp32", cache_dir: "model-cache" });
+  });
+  it("rejects an unsupported dtype before loading", () => {
+    vi.stubEnv("LOCAL_EMBEDDING_DTYPE", "bogus");
+    expect(() => new LocalEmbeddingProvider()).toThrow("DTYPE");
   });
   it("checks query dimensions through the wrapper", async () => {
     const provider = withDimensionGuard({

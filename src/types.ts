@@ -146,6 +146,7 @@ export interface Memory {
   sessionIds: string[];
   strength: number;
   version: number;
+  recurrence?: number;
   parentId?: string;
   supersedes?: string[];
   relatedIds?: string[];
@@ -316,6 +317,7 @@ export interface MemorySlot {
 export interface EmbeddingProvider {
   name: string;
   dimensions: number;
+  indexIdentity?: string;
   embed(text: string): Promise<Float32Array>;
   embedQuery?(text: string): Promise<Float32Array>;
   embedBatch(texts: string[]): Promise<Float32Array[]>;
