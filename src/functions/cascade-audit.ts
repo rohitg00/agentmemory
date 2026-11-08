@@ -121,6 +121,10 @@ async function deleteTargetGone(kv: StateKV, item: PendingDelete): Promise<boole
   return true;
 }
 
+function contradictFloor(base: number, penalties: Record<string, number>): number {
+  return Math.max(0.05, base - Object.values(penalties).reduce((sum, p) => sum + p, 0));
+}
+
 const KIND_TARGET_TYPE: Record<string, string | null> = { memory: "memory", observation: "observation", lesson: "memory" };
 
 export async function flushDeleteCascade(): Promise<void> {
@@ -137,14 +141,21 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     pendingSessions.clear();
     if (items.length === 0 && sessions.length === 0) return;
     try {
-      const gone = (await Promise.all(items.map((item) => deleteTargetGone(kv, item).catch(() => false))))
-        .map((ok, i) => (ok ? items[i]! : null))
-        .filter((item): item is PendingDelete => item !== null);
-      await Promise.all(gone.map(async (item) => {
+      const checks = await Promise.all(items.map((item) => deleteTargetGone(kv, item).then(
+        (isGone) => (isGone ? "gone" : "live"),
+        () => "retry",
+      )));
+      const byType = new Map<string, string[]>();
+      items.forEach((item, i) => {
+        if (checks[i] === "retry") {
+          pendingDeletes.set(`${item.kind}:${item.id}`, item);
+          return;
+        }
         const targetType = KIND_TARGET_TYPE[item.kind];
-        if (!targetType) return;
-        await deleteFacetsCascade(kv, [item.id], targetType);
-      }));
+        if (checks[i] !== "gone" || !targetType) return;
+        byType.set(targetType, [...(byType.get(targetType) ?? []), item.id]);
+      });
+      for (const [targetType, ids] of byType) await deleteFacetsCascade(kv, ids, targetType);
       const reconciled: string[] = [];
       for (const sessionId of sessions) {
         await withKeyedLock(`obs:${sessionId}`, async () => {
@@ -269,9 +280,13 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
             }
           }
         } else if (rel.type === "contradicts") {
-          const before = target.confidence;
-          target.confidence = Math.max(0.05, target.confidence - (rel.confidence ?? 0.5) * 0.3);
-          next.contradictDeltas = { ...(next.contradictDeltas ?? {}), [relationId]: before - target.confidence };
+          const base = next.contradictBase ?? target.confidence;
+          const penalties = next.contradictPenalties ?? {};
+          const before = contradictFloor(base, penalties);
+          const updated = { ...penalties, [relationId]: (rel.confidence ?? 0.5) * 0.3 };
+          target.confidence = Math.max(0.05, target.confidence + contradictFloor(base, updated) - before);
+          next.contradictBase = base;
+          next.contradictPenalties = updated;
         } else if (rel.type === "extends") {
           const related = target.relatedIds ?? [];
           if (!related.includes(rel.sourceId)) {
@@ -289,12 +304,11 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
         return { skipped: "no_mark" as const };
       }
       delete mark.sources[relationId];
-      if (rel.type === "contradicts" && mark.contradictDeltas) {
-        const delta = mark.contradictDeltas[relationId];
-        if (delta !== undefined) {
-          target.confidence = Math.min(1, target.confidence + delta);
-          delete mark.contradictDeltas[relationId];
-        }
+      if (rel.type === "contradicts" && mark.contradictPenalties && mark.contradictBase !== undefined) {
+        const before = contradictFloor(mark.contradictBase, mark.contradictPenalties);
+        delete mark.contradictPenalties[relationId];
+        const after = contradictFloor(mark.contradictBase, mark.contradictPenalties);
+        target.confidence = Math.min(1, target.confidence + after - before);
       }
       if (Object.keys(mark.sources).length > 0) {
         await kv.set(KV.memories, rel.targetId, target);

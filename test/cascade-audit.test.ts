@@ -23,10 +23,14 @@ vi.mock("../src/functions/audit.js", () => ({
 
 const removedBm25: string[] = [];
 const removedVector: string[] = [];
+const addedBm25: string[] = [];
+const addedVector: string[] = [];
 vi.mock("../src/functions/search.js", () => ({
-  getSearchIndex: () => ({ remove: (id: string) => removedBm25.push(id) }),
+  getSearchIndex: () => ({ remove: (id: string) => removedBm25.push(id), add: (obs: { id: string }) => addedBm25.push(obs.id) }),
   getVectorIndex: () => ({ size: 0 }),
   vectorIndexRemove: (id: string) => { removedVector.push(id); },
+  vectorIndexAddGuarded: async (id: string) => { addedVector.push(id); },
+  scheduleIndexSave: () => {},
   isMemoryIndexReady: () => true,
 }));
 
@@ -214,8 +218,23 @@ describe("event::graph::edge-reaction", () => {
     await fn(created("rA"));
     expect(removedBm25).toContain("tgt");
     expect(removedVector).toContain("tgt");
+    addedBm25.length = 0; addedVector.length = 0;
     await fn(deleted("rA"));
     expect(mem(kv).isLatest).toBe(true);
+    expect(addedBm25).toContain("tgt");
+    expect(addedVector).toContain("tgt");
+  });
+
+  it("contradicts: undoing one relation keeps the floor a remaining relation still holds", async () => {
+    const { kv, fn } = seeded();
+    kv.store[KV.memories].set("tgt", { ...base, confidence: 0.2 });
+    await fn(created("rA", { type: "contradicts", confidence: 0.5 }));
+    await fn(created("rB", { type: "contradicts", sourceId: "srcB", confidence: 0.5 }));
+    expect(mem(kv).confidence).toBeCloseTo(0.05);
+    await fn(deleted("rA", { type: "contradicts" }));
+    expect(mem(kv).confidence).toBeCloseTo(0.05);
+    await fn(deleted("rB", { type: "contradicts", sourceId: "srcB" }));
+    expect(mem(kv).confidence).toBeCloseTo(0.2);
   });
 
   it("supersedes cycle guard via reverse mark", async () => {
@@ -286,6 +305,25 @@ describe("delete cascade batcher resilience", () => {
     registerCascadeFunctions(sdk as never, kv as never);
     return { kv, fn: sdk.functions.get("mem::on-record-deleted")! };
   }
+
+  it("scans the facet scope once per target type for a batch of deletes", async () => {
+    const { kv, fn } = seededDelete();
+    for (const id of ["m1", "m2", "m3"]) await fn({ event_type: "state:deleted", scope: KV.memories, key: id });
+    kv.list.mockClear();
+    await flushDeleteCascade();
+    expect(kv.list.mock.calls.filter((c) => c[0] === KV.facets)).toHaveLength(1);
+  });
+
+  it("retries facet cleanup for a target whose read failed", async () => {
+    const { kv, fn } = seededDelete();
+    kv.store[KV.facets].set("f1", { id: "f1", targetId: "m1", targetType: "memory", dimension: "d", value: "v", createdAt: "t" });
+    kv.get.mockRejectedValueOnce(new Error("state worker restarting"));
+    await fn({ event_type: "state:deleted", scope: KV.memories, key: "m1" });
+    await flushDeleteCascade();
+    expect(kv.store[KV.facets].has("f1")).toBe(true);
+    await flushDeleteCascade();
+    expect(kv.store[KV.facets].has("f1")).toBe(false);
+  });
 
   it("a failed flush logs, requeues sessions, and reconciles on the next flush", async () => {
     const { kv, fn } = seededDelete();
