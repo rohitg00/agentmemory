@@ -371,7 +371,6 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
   const explicitWorkerEnvironment = Object.entries(options.workerEnvironment ?? {})
     .filter(([key, value]) => value !== undefined && AGENTMEMORY_WORKER_ENV_ALLOWLIST.has(key) && !COMPOSE_RESERVED_ENV.has(key))
     .map(([key, value]) => {
-      if (!key.startsWith("LOCAL_EMBEDDING_")) return [key, value] as const;
       const path = windows ? win32 : { isAbsolute, resolve };
       const forwardedValue = key === "LOCAL_EMBEDDING_CACHE_DIR" && value && !path.isAbsolute(value)
         ? path.resolve(options.cwd ?? process.cwd(), value)

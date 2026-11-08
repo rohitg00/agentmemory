@@ -1112,7 +1112,16 @@ Reasoning-class models (`o1`-style with `<think>` blocks) can return empty `cont
 
 Local embeddings ship as an optional dependency but are not enabled by default. Set `EMBEDDING_PROVIDER=local` to opt into `Xenova/all-MiniLM-L6-v2` (384-dim). The first embedding request downloads the model; inference is on-device afterward. Without that setting or a remote embedding key, vectors stay disabled, `mem::search` uses BM25, and `smart-search` can still add existing graph matches.
 
-Local Transformers.js models can be selected with `LOCAL_EMBEDDING_MODEL`, `LOCAL_EMBEDDING_DIMENSIONS`, `LOCAL_EMBEDDING_POOLING` and `LOCAL_EMBEDDING_DTYPE` (defaults: the model above, `384`, `mean`, `q8`). Optional `LOCAL_EMBEDDING_QUERY_PREFIX` and `LOCAL_EMBEDDING_DOCUMENT_PREFIX` preserve exact prefixes, including trailing spaces. `LOCAL_EMBEDDING_CACHE_DIR` selects the pipeline cache and `LOCAL_EMBEDDING_BATCH_SIZE` bounds extraction batches. Use settings and a Transformers.js export compatible with the selected model. The native CLI preserves literal text in these values, including `$` and `${...}`; relative cache paths resolve from the CLI directory.
+Local Transformers.js models can be selected with `LOCAL_EMBEDDING_MODEL`, `LOCAL_EMBEDDING_DIMENSIONS`, `LOCAL_EMBEDDING_POOLING` and `LOCAL_EMBEDDING_DTYPE` (defaults: the model above, `384`, `mean`, `q8`). Optional `LOCAL_EMBEDDING_QUERY_PREFIX` and `LOCAL_EMBEDDING_DOCUMENT_PREFIX` preserve exact prefixes, including trailing spaces. `LOCAL_EMBEDDING_CACHE_DIR` selects the pipeline cache and `LOCAL_EMBEDDING_BATCH_SIZE` bounds extraction batches. Use settings and a Transformers.js export compatible with the selected model. The native CLI forwards process environment values literally, including `$` and `${...}`; relative cache paths resolve from the CLI directory.
+
+In `~/.agentmemory/.env`, quote prefixes that require trailing spaces. For E5-style inputs, for example:
+
+```dotenv
+LOCAL_EMBEDDING_QUERY_PREFIX="query: "
+LOCAL_EMBEDDING_DOCUMENT_PREFIX="passage: "
+```
+
+Unquoted env-file values are trimmed before the provider reads them.
 
 Startup records the local document-embedding configuration before generating vectors. Changing the model, dimensions, pooling, dtype, document prefix or configured cache directory refuses restoration of both checkpoints and pending vectors, even when dimensions match. Older local indexes without this identity also require an explicit rebuild: back up the store, set `AGENTMEMORY_DROP_STALE_INDEX=true` for one restart, then unset it. This removes derived vectors while retaining memories and observations. Set `AGENTMEMORY_VECTOR_BACKFILL=all` to run the full backfill; otherwise it waits for explicit opt-in. Query-prefix and batch-size changes do not require document vectors to be rebuilt. A cache-directory change conservatively requires rebuilding because it may select different artifacts under the same model ID. This configuration identity does not fingerprint weight files or pin mutable upstream model revisions. For Docker, use a cache path inside the container, such as `/data/models`, and mount or persist that location.
 

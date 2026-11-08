@@ -43,7 +43,7 @@ describe("Worker Compose project", () => {
     expect(text).toContain("model-cache\\n雪");
   });
 
-  it("preserves literal local embedding values without changing legacy interpolation", () => {
+  it("preserves literal process environment values after cache path normalization", () => {
     const text = renderWorkerCompose(options({ cwd: join(root, "caller$directory"), workerEnvironment: {
       LOCAL_EMBEDDING_CACHE_DIR: "${HOME}/$MODELS/$$/cache",
       LOCAL_EMBEDDING_DOCUMENT_PREFIX: "${DOCUMENT_PREFIX}",
@@ -56,7 +56,7 @@ describe("Worker Compose project", () => {
     expect(env.LOCAL_EMBEDDING_DOCUMENT_PREFIX).toBe("$${DOCUMENT_PREFIX}");
     expect(env.LOCAL_EMBEDDING_QUERY_PREFIX).toBe("query: $${HOME} $$$$ ");
     expect(env.LOCAL_EMBEDDING_MODEL).toBe("models/$${MODEL}");
-    expect(env.OPENAI_BASE_URL).toBe("${ENDPOINT}");
+    expect(env.OPENAI_BASE_URL).toBe("$${ENDPOINT}");
   });
 
   it("escapes literal dollars in absolute Windows cache paths", () => {

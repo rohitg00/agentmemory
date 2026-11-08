@@ -1,9 +1,10 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import { EventEmitter } from "node:events";
 import { prepareProbe, probeLifetime, stopProbe } from "./helpers/compose-probe-lifetime.js";
 
 it("stops the owned probe when its Compose parent has already exited", async () => {
@@ -36,5 +37,37 @@ it("stops the owned probe when its Compose parent has already exited", async () 
       }
       rmSync(root, { recursive: true, force: true });
     }
+  }
+}, 15000);
+
+
+it.each(["parent", "probe", "both"])("preserves cleanup diagnostics: %s", async (failure) => {
+  const root = mkdtempSync(join(tmpdir(), "agentmemory-probe-errors-"));
+  const killFailure = Object.assign(new Error("process-group kill denied"), { code: "EPERM" });
+  const child = Object.assign(new EventEmitter(), {
+    exitCode: null, signalCode: null, pid: 123456, kill: vi.fn(() => true),
+  }) as unknown as ChildProcess;
+  const kill = vi.spyOn(process, "kill").mockImplementation((pid) => {
+    if (pid < 0) throw killFailure;
+    if (failure === "parent") throw Object.assign(new Error("probe already exited"), { code: "ESRCH" });
+    return true;
+  });
+  try {
+    prepareProbe(root);
+    writeFileSync(join(root, "probe-pid"), "123456");
+    let caught: unknown;
+    try { await stopProbe(failure === "probe" ? undefined : child, root, 1); }
+    catch (error) { caught = error; }
+    if (failure === "parent") expect(caught).toBe(killFailure);
+    else if (failure === "probe") expect(caught).toHaveProperty("message", "Test probe did not exit after its lifetime ended");
+    else {
+      expect(caught).toBeInstanceOf(AggregateError);
+      expect((caught as AggregateError).errors).toEqual([
+        killFailure, expect.objectContaining({ message: "Test probe did not exit after its lifetime ended" }),
+      ]);
+    }
+  } finally {
+    kill.mockRestore();
+    rmSync(root, { recursive: true, force: true });
   }
 }, 15000);

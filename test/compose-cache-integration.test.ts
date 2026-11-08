@@ -46,6 +46,7 @@ describe.skipIf(skipped)("pinned Compose literal cache path round trip", () => {
         cache: join(cwd, value),
         document: source === "env-file" ? "passage: ${HOME} $$ " : "passage: ${AGENTMEMORY_TEST_UNDEFINED} $$ ",
         query: "query: ${HOME} $$ ",
+        endpoint: "https://literal.example/${AGENTMEMORY_TEST_UNDEFINED}/$$",
       };
       const envFile = join(root, "worker.env");
       writeFileSync(envFile, `export LOCAL_EMBEDDING_CACHE_DIR='${source === "env-file" ? value : "ignored-cache"}'\n`);
@@ -57,7 +58,8 @@ describe.skipIf(skipped)("pinned Compose literal cache path round trip", () => {
         const { registerWorker } = sdkModule;
         const worker = registerWorker(process.env.III_URL, { workerName: "agentmemory" });
         const received = { cache: process.env.LOCAL_EMBEDDING_CACHE_DIR,
-          document: process.env.LOCAL_EMBEDDING_DOCUMENT_PREFIX, query: process.env.LOCAL_EMBEDDING_QUERY_PREFIX };
+          document: process.env.LOCAL_EMBEDDING_DOCUMENT_PREFIX, query: process.env.LOCAL_EMBEDDING_QUERY_PREFIX,
+          endpoint: process.env.OPENAI_BASE_URL };
         worker.registerFunction("test::env", async () => received);
         writeFileSync(${JSON.stringify(`${snapshot}.tmp`)}, JSON.stringify(received));
         renameSync(${JSON.stringify(`${snapshot}.tmp`)}, ${JSON.stringify(snapshot)});
@@ -70,6 +72,7 @@ describe.skipIf(skipped)("pinned Compose literal cache path round trip", () => {
           ...(source === "process" ? { LOCAL_EMBEDDING_CACHE_DIR: value } : {}),
           LOCAL_EMBEDDING_DOCUMENT_PREFIX: expected.document,
           LOCAL_EMBEDDING_QUERY_PREFIX: expected.query,
+          OPENAI_BASE_URL: expected.endpoint,
         },
       });
       const header = project.text.slice(0, project.text.indexOf("containers:\n"));
