@@ -4238,7 +4238,7 @@ export function registerApiTriggers(
     }
     return { status_code: 200, body: { success: true, lesson } };
   });
-  sdk.registerTrigger({ type: "http", function_id: "api::lesson-get", config: { api_path: "/agentmemory/lessons/get", http_method: "POST" } });
+  getBindings(sdk).http({ type: "http", function_id: "api::lesson-get", config: { api_path: "/agentmemory/lessons/get", http_method: "POST" } });
 
   sdk.registerFunction("api::lesson-strengthen",  async (req: HttpRequest) => {
     const denied = checkAuth(req, secret);

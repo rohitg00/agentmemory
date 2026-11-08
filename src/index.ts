@@ -743,6 +743,7 @@ async function main() {
           bm25Incomplete: isBm25RebuildIncomplete(),
           persistencePaused: indexPersistence.isRecoveryPaused(),
           lastRecoveryFailed: indexRecoveryFailed,
+          checkpointSaveFailed: Boolean(indexPersistence.status().vector?.lastError),
         }),
         runIndexRecovery,
       });
