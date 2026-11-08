@@ -43,6 +43,23 @@ describe("Worker Compose project", () => {
     expect(text).toContain("model-cache\\n雪");
   });
 
+  it("escapes dollar signs in normalized cache paths without changing other settings", () => {
+    const text = renderWorkerCompose(options({ cwd: join(root, "caller$directory"), workerEnvironment: {
+      LOCAL_EMBEDDING_CACHE_DIR: "${HOME}/$MODELS/$$/cache",
+      LOCAL_EMBEDDING_DOCUMENT_PREFIX: "${DOCUMENT_PREFIX}",
+    } }));
+    const env = parse(text).containers.agentmemory.environment;
+    expect(env.LOCAL_EMBEDDING_CACHE_DIR).toBe(join(root, "caller$$directory", "$${HOME}/$$MODELS/$$$$/cache"));
+    expect(env.LOCAL_EMBEDDING_DOCUMENT_PREFIX).toBe("${DOCUMENT_PREFIX}");
+  });
+
+  it("escapes literal dollars in absolute Windows cache paths", () => {
+    const text = renderWorkerCompose(options({ windows: true, workerEnvironment: {
+      LOCAL_EMBEDDING_CACHE_DIR: "C:\\$models\\${HOME}\\cache",
+    } }));
+    expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe("C:\\$$models\\$${HOME}\\cache");
+  });
+
   it("resolves Windows cache paths against the CLI directory", () => {
     const text = renderWorkerCompose(options({ windows: true, cwd: "C:\\project", nodeBin: "C:\\node\\node.exe", workerEnvironment: { LOCAL_EMBEDDING_CACHE_DIR: "model-cache" } }));
     expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe("C:\\project\\model-cache");

@@ -51,7 +51,7 @@ jobs:
           engine_pin=$(node --import tsx --input-type=module -e 'import { III_PINNED_VERSION } from "./src/version.ts"; console.log(III_PINNED_VERSION)')
           engine_bin="$HOME/.cache/agentmemory-release-gate/iii-${engine_pin}-linux-x64"
           test -x "$engine_bin"
-          AGENTMEMORY_TEST_III="$engine_bin" AGENTMEMORY_REQUIRE_LIVE_TESTS=1 npx vitest run test/compose-supervision-integration.test.ts test/codex-live-daemon.test.ts
+          AGENTMEMORY_TEST_III="$engine_bin" AGENTMEMORY_REQUIRE_LIVE_TESTS=1 npx vitest run test/compose-supervision-integration.test.ts test/codex-live-daemon.test.ts test/compose-cache-integration.test.ts
       - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
       - name: Test packaged vector recovery
         shell: bash
