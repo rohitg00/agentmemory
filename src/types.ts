@@ -167,6 +167,7 @@ export interface Memory {
   files: string[];
   sessionIds: string[];
   strength: number;
+  confidence?: number;
   version: number;
   recurrence?: number;
   parentId?: string;

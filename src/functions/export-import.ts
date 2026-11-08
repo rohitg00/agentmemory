@@ -291,7 +291,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
   );
 
   const rebuildAfterReplace = singleFlight(async () => {
-    await rebuildKeywordIndex(kv);
+    await rebuildKeywordIndex(state);
   });
   sdk.registerFunction("mem::import", 
     async (data: {

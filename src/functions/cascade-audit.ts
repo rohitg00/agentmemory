@@ -1,13 +1,12 @@
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
-import { collectAll } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { AuditEntry, Memory, MemoryRelation, RelationReactionMark, Session } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { deleteFacetsCascade } from "./facets.js";
 import { getSearchIndex, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove } from "./search.js";
-import { memoryToObservation } from "../state/memory-utils.js";
+import { memoryToObservation, observationEmbedText } from "../state/memory-utils.js";
 import { singleFlight } from "../runtime/recovery.js";
 import { logger } from "../logger.js";
 
@@ -280,11 +279,11 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
             }
           }
         } else if (rel.type === "contradicts") {
-          const base = next.contradictBase ?? target.confidence;
+          const base = next.contradictBase ?? target.confidence ?? 1;
           const penalties = next.contradictPenalties ?? {};
           const before = contradictFloor(base, penalties);
           const updated = { ...penalties, [relationId]: (rel.confidence ?? 0.5) * 0.3 };
-          target.confidence = Math.max(0.05, target.confidence + contradictFloor(base, updated) - before);
+          target.confidence = Math.max(0.05, (target.confidence ?? base) + contradictFloor(base, updated) - before);
           next.contradictBase = base;
           next.contradictPenalties = updated;
         } else if (rel.type === "extends") {
@@ -308,7 +307,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
         const before = contradictFloor(mark.contradictBase, mark.contradictPenalties);
         delete mark.contradictPenalties[relationId];
         const after = contradictFloor(mark.contradictBase, mark.contradictPenalties);
-        target.confidence = Math.min(1, target.confidence + after - before);
+        target.confidence = Math.min(1, (target.confidence ?? mark.contradictBase) + after - before);
       }
       if (Object.keys(mark.sources).length > 0) {
         await kv.set(KV.memories, rel.targetId, target);
@@ -321,7 +320,12 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
       if (mark.confidenceBefore !== undefined) target.confidence = mark.confidenceBefore;
       if (restoredLatest) {
         try { getSearchIndex().add(memoryToObservation(target), "memory"); scheduleIndexSave(); } catch {}
-        try { void vectorIndexAddGuarded(rel.targetId, memoryToObservation(target)); } catch {}
+        void vectorIndexAddGuarded(
+          rel.targetId,
+          target.sessionIds?.[0] ?? "memory",
+          observationEmbedText({ title: target.title, narrative: target.content, concepts: target.concepts }),
+          { kind: "memory", logId: rel.targetId },
+        ).catch(() => {});
       }
       if (mark.relatedIdsAdded?.length) {
         const added = new Set(mark.relatedIdsAdded);

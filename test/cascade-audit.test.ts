@@ -25,11 +25,12 @@ const removedBm25: string[] = [];
 const removedVector: string[] = [];
 const addedBm25: string[] = [];
 const addedVector: string[] = [];
+const addedVectorCalls: unknown[][] = [];
 vi.mock("../src/functions/search.js", () => ({
   getSearchIndex: () => ({ remove: (id: string) => removedBm25.push(id), add: (obs: { id: string }) => addedBm25.push(obs.id) }),
   getVectorIndex: () => ({ size: 0 }),
   vectorIndexRemove: (id: string) => { removedVector.push(id); },
-  vectorIndexAddGuarded: async (id: string) => { addedVector.push(id); },
+  vectorIndexAddGuarded: async (...args: unknown[]) => { addedVector.push(args[0] as string); addedVectorCalls.push(args); return true; },
   scheduleIndexSave: () => {},
   isMemoryIndexReady: () => true,
 }));
@@ -223,6 +224,22 @@ describe("event::graph::edge-reaction", () => {
     expect(mem(kv).isLatest).toBe(true);
     expect(addedBm25).toContain("tgt");
     expect(addedVector).toContain("tgt");
+    const call = addedVectorCalls.find((args) => args[0] === "tgt")!;
+    expect(call).toHaveLength(4);
+    expect(typeof call[1]).toBe("string");
+    expect(String(call[2])).toContain("c");
+    expect(call[3]).toEqual({ kind: "memory", logId: "tgt" });
+  });
+
+  it("contradicts on a memory without a stored confidence starts from 1 and stays finite", async () => {
+    const { kv, fn } = seeded();
+    const plain = { ...base } as Record<string, unknown>;
+    delete plain.confidence;
+    kv.store[KV.memories].set("tgt", plain);
+    await fn(created("rA", { type: "contradicts", confidence: 0.5 }));
+    expect(mem(kv).confidence).toBeCloseTo(0.85);
+    await fn(deleted("rA", { type: "contradicts" }));
+    expect(Number.isFinite(mem(kv).confidence)).toBe(true);
   });
 
   it("contradicts: undoing one relation keeps the floor a remaining relation still holds", async () => {
