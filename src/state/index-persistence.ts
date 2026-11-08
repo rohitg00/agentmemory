@@ -312,6 +312,7 @@ export class IndexPersistence {
     }
     const valid = (Array.isArray(rows) ? rows : []).filter(isPendingVectorRow).sort((a, b) => a.q - b.q);
     this.logSuppressed = true;
+    vector.beginReplay();
     try {
       for (const row of valid) {
         result.entries++;
@@ -347,6 +348,7 @@ export class IndexPersistence {
         result.added++;
       }
     } finally {
+      vector.endReplay();
       this.logSuppressed = false;
     }
     if (result.skipped > 0) {

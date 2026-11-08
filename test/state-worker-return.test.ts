@@ -178,7 +178,7 @@ describe("VectorIndex.mergeMissingFrom", () => {
 
   it("does not restore a checkpoint vector deleted while it was absent from the live index", () => {
     const live = new VectorIndex();
-    live.trackRemovals(true);
+    live.trackLiveChanges();
     live.remove("deleted-early");
     const checkpoint = new VectorIndex();
     checkpoint.add("deleted-early", "s", new Float32Array([3]));
@@ -240,27 +240,55 @@ describe("shouldRearmIndex", () => {
 });
 
 describe("checkpoint retry keeps live vectors", () => {
-  it("restores live entries and deletions that a pending-log replay overwrote", () => {
+  it("pending-log replay leaves vectors added or deleted live during the outage alone", () => {
     const live = new VectorIndex();
-    live.trackRemovals(true);
+    live.trackLiveChanges();
     live.add("fresh", "s", new Float32Array([9]));
-    live.add("gone", "s", new Float32Array([4]));
     live.remove("gone");
-    const snapshot = live.snapshotLive();
-    live.loadPersisted("fresh", "s", new Float32Array([1]));
-    live.loadPersisted("gone", "s", new Float32Array([4]));
-    live.restoreLive(snapshot);
+    live.beginReplay();
+    live.add("fresh", "s", new Float32Array([1]));
+    live.add("gone", "s", new Float32Array([4]));
+    live.add("other", "s", new Float32Array([5]));
+    live.endReplay();
     expect(Array.from(live.get("fresh")!.embedding)).toEqual([9]);
     expect(live.has("gone")).toBe(false);
+    expect(live.has("other")).toBe(true);
   });
 
-  it("stops holding removed ids once tracking ends", () => {
+  it("keeps a vector re-added after a live delete", () => {
     const live = new VectorIndex();
-    live.trackRemovals(true);
-    live.remove("a");
-    live.trackRemovals(false);
+    live.trackLiveChanges();
+    live.add("x", "s", new Float32Array([1]));
+    live.remove("x");
+    live.add("x", "s", new Float32Array([2]));
+    live.beginReplay();
+    live.remove("x");
+    live.endReplay();
+    expect(Array.from(live.get("x")!.embedding)).toEqual([2]);
+  });
+
+  it("a replayed clear keeps live-changed vectors", () => {
+    const live = new VectorIndex();
+    live.trackLiveChanges();
+    live.add("live", "s", new Float32Array([1]));
+    live.loadPersisted("old", "s", new Float32Array([2]));
+    live.beginReplay();
+    live.clear();
+    live.endReplay();
+    expect(live.has("live")).toBe(true);
+    expect(live.has("old")).toBe(false);
+  });
+
+  it("queues live deletions for persistence and drops the tracking set when tracking ends", () => {
+    const live = new VectorIndex();
+    live.trackLiveChanges();
+    live.remove("absent");
+    live.takeChanges();
+    live.finishLiveTracking();
+    expect(live.takeChanges().get("absent")).toBe(false);
     const checkpoint = new VectorIndex();
-    checkpoint.add("a", "s", new Float32Array([1]));
+    checkpoint.add("later", "s", new Float32Array([1]));
+    live.remove("later");
     expect(live.mergeMissingFrom(checkpoint)).toBe(1);
   });
 });
