@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { onStateWorkerReturn, stateWorkerStatus } from "../src/runtime/state-worker.js";
 import { IndexPersistence } from "../src/state/index-persistence.js";
 import { VectorIndex } from "../src/state/vector-index.js";
-import { rearmIndexRecovery, shouldRearmIndex } from "../src/runtime/recovery.js";
+import { rearmIndexRecovery, shouldRearmIndex, backfillFailedOutright } from "../src/runtime/recovery.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -178,6 +178,7 @@ describe("VectorIndex.mergeMissingFrom", () => {
 
   it("does not restore a checkpoint vector deleted while it was absent from the live index", () => {
     const live = new VectorIndex();
+    live.trackRemovals(true);
     live.remove("deleted-early");
     const checkpoint = new VectorIndex();
     checkpoint.add("deleted-early", "s", new Float32Array([3]));
@@ -235,5 +236,39 @@ describe("shouldRearmIndex", () => {
     expect(shouldRearmIndex({ ...none, persistencePaused: true })).toBe(true);
     expect(shouldRearmIndex({ ...none, lastRecoveryFailed: true })).toBe(true);
     expect(shouldRearmIndex({ ...none, checkpointSaveFailed: true })).toBe(true);
+  });
+});
+
+describe("checkpoint retry keeps live vectors", () => {
+  it("restores live entries and deletions that a pending-log replay overwrote", () => {
+    const live = new VectorIndex();
+    live.trackRemovals(true);
+    live.add("fresh", "s", new Float32Array([9]));
+    live.add("gone", "s", new Float32Array([4]));
+    live.remove("gone");
+    const snapshot = live.snapshotLive();
+    live.loadPersisted("fresh", "s", new Float32Array([1]));
+    live.loadPersisted("gone", "s", new Float32Array([4]));
+    live.restoreLive(snapshot);
+    expect(Array.from(live.get("fresh")!.embedding)).toEqual([9]);
+    expect(live.has("gone")).toBe(false);
+  });
+
+  it("stops holding removed ids once tracking ends", () => {
+    const live = new VectorIndex();
+    live.trackRemovals(true);
+    live.remove("a");
+    live.trackRemovals(false);
+    const checkpoint = new VectorIndex();
+    checkpoint.add("a", "s", new Float32Array([1]));
+    expect(live.mergeMissingFrom(checkpoint)).toBe(1);
+  });
+});
+
+describe("backfillFailedOutright", () => {
+  it("re-arms only when a batch embedded nothing and some embeddings failed", () => {
+    expect(backfillFailedOutright({ added: 0, failed: 2 })).toBe(true);
+    expect(backfillFailedOutright({ added: 1, failed: 1 })).toBe(false);
+    expect(backfillFailedOutright({ added: 2, failed: 0 })).toBe(false);
   });
 });
