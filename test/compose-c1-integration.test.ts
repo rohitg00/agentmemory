@@ -48,22 +48,22 @@ describe.skipIf(skipped)("pinned Compose C1 environment round trip", () => {
       const pkg = join(root, "worker");
       const snapshot = join(root, "received.json");
       mkdirSync(join(pkg, "dist"), { recursive: true });
-      const value = `first\n${String.fromCharCode(...Array.from({ length: 32 }, (_, i) => 0x80 + i))}\r\nquote'\"\\\tend\n`;
+      const value = `first\n${String.fromCharCode(...Array.from({ length: 32 }, (_, i) => 0x80 + i))}\u2028\u2029\r\nquote'\"\\\tend\n`;
       const sdk = pathToFileURL(createRequire(import.meta.url).resolve("iii-sdk")).href;
       writeFileSync(join(pkg, "dist/index.mjs"), `
         import sdkModule from ${JSON.stringify(sdk)};
-        import { writeFileSync } from "node:fs";
+        import { renameSync, writeFileSync } from "node:fs";
         const { registerWorker } = sdkModule;
         const worker = registerWorker(process.env.III_URL, { workerName: "agentmemory" });
         worker.registerFunction("test::env", async () => process.env.OPENAI_BASE_URL);
-        writeFileSync(${JSON.stringify(snapshot)}, JSON.stringify(process.env.OPENAI_BASE_URL));
+        writeFileSync(${JSON.stringify(`${snapshot}.tmp`)}, JSON.stringify(process.env.OPENAI_BASE_URL));
+        renameSync(${JSON.stringify(`${snapshot}.tmp`)}, ${JSON.stringify(snapshot)});
       `);
       const ports = { restPort: await freePort(), viewerPort: await freePort(), enginePort: await freePort() };
       const project = writeWorkerCompose({
         ports, projectRoot: pkg, dataDir: join(root, "data"), homeDir: join(root, "home"),
         nodeBin: process.execPath, workerEnvironment: { OPENAI_BASE_URL: value },
       });
-      // Keep the generated scalar untouched while replacing registry workers with one local probe.
       const header = project.text.slice(0, project.text.indexOf("containers:\n"));
       const app = project.text.slice(project.text.indexOf("  agentmemory:\n"))
         .replace("    start_after: [state, http]", "    start_after: []");

@@ -33,6 +33,14 @@ describe("Worker Compose project", () => {
       }
     },
   );
+  it.each(["first\u2028second", "first\u2029second", "first\n\u2028\u2029second"])(
+    "escapes Unicode line and paragraph separators: %j", (value) => {
+      const text = renderWorkerCompose(options({ workerEnvironment: { OPENAI_BASE_URL: value } }));
+      expect(text).not.toMatch(/[\u2028\u2029]/);
+      expect(text).toContain(`OPENAI_BASE_URL: ${JSON.stringify(value).replace(/[\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16)}`)}`);
+      expect(parse(text).containers.agentmemory.environment.OPENAI_BASE_URL).toBe(value);
+    },
+  );
   it.each(["first\nsecond", "first\rsecond", "first\r\nsecond", "\nleading\n\ntrailing\n", "quote'\"\\\nnext\tline"])(
     "preserves multiline configuration values through YAML parsing: %j", (value) => {
       const text = renderWorkerCompose(options({ workerEnvironment: { OPENAI_BASE_URL: value } }));
