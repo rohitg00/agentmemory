@@ -27,9 +27,9 @@ export async function checkDuplicateWorkers(sdk: IIIClient): Promise<DuplicateWo
     const matches: string[] = [];
     for (const entry of entries) {
       if (typeof entry === "string") continue;
-      const w = entry as { worker_id?: string; worker_name?: string; name?: string; workerName?: string };
+      const w = entry as { worker_id?: string; id?: string; worker_name?: string; name?: string; workerName?: string };
       const name = w.worker_name ?? w.workerName ?? w.name;
-      if (name === "agentmemory") matches.push(w.worker_id ?? w.worker_name ?? "unknown");
+      if (name === "agentmemory") matches.push(w.worker_id ?? w.id ?? "unknown");
     }
     if (matches.length > 1) {
       last = { count: matches.length, workerIds: matches };

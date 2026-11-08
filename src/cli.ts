@@ -2116,7 +2116,7 @@ function buildDoctorEffects(): DoctorEffects {
       try {
         const base = getBaseUrl();
         const res = await fetch(`${base}/agentmemory/status`, {
-          headers: bearerHeaders(resolveClientSecret(base)),
+          headers: bearerHeaders(base),
           signal: AbortSignal.timeout(3000),
         });
         return res.ok ? (await res.json()) as never : null;
