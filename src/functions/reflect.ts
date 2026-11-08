@@ -367,8 +367,10 @@ export function registerReflectFunctions(
         ]);
 
       let activeLessons = lessons.filter((l) => !l.deleted);
+      let scopedCrystals = crystals;
       if (data?.project) {
         activeLessons = activeLessons.filter((l) => l.project === data.project);
+        scopedCrystals = crystals.filter((c) => c.project === data.project);
       }
 
       let conceptClusters = buildGraphClusters(
@@ -415,7 +417,7 @@ export function registerReflectFunctions(
           ),
         ), (l) => ({ source: `L${INSIGHT_MAX_SOURCES}`, content: l.content, confidence: l.confidence }));
 
-        const clusterCrystals = selectEvidence(crystals.filter((c) =>
+        const clusterCrystals = selectEvidence(scopedCrystals.filter((c) =>
           (c.lessons || []).some((l) =>
             conceptNames.some((cn) =>
               l.toLowerCase().includes(cn.toLowerCase()),

@@ -89,6 +89,18 @@ describe("reflection budgets", () => {
     expect(Buffer.byteLength(REFLECT_SYSTEM + prompt)).toBeLessThanOrEqual(REFLECT_MAX_PROMPT_BYTES);
   });
 
+  it("keeps crystals from other projects out of a project-scoped reflection", async () => {
+    await f.seed(3);
+    await f.kv.set(KV.lessons, "lesson", { id: "lesson", content: "security lesson", confidence: 0.8, tags: ["security"], project: "a" });
+    await f.kv.set(KV.crystals, "own", { id: "own", narrative: "security outcome own", lessons: ["security"], project: "a" });
+    await f.kv.set(KV.crystals, "foreign", { id: "foreign", narrative: "security outcome foreign", lessons: ["security"], project: "b" });
+    await f.call("mem::reflect", { project: "a" });
+    const prompts = f.provider.summarize.mock.calls.map((call) => String(call[1]));
+    expect(prompts.length).toBeGreaterThan(0);
+    expect(prompts.join("\n")).toContain("security outcome own");
+    expect(prompts.join("\n")).not.toContain("security outcome foreign");
+  });
+
   it("bounds all evidence types by serialized UTF-8 bytes while keeping later small records", async () => {
     await f.seed(0);
     for (let i = 0; i < 50; i++) {
