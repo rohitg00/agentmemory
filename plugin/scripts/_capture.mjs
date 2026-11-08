@@ -27,7 +27,7 @@ function unquote(value) {
 	const hash = value.indexOf(" #");
 	return hash === -1 ? value : value.slice(0, hash).trim();
 }
-function readEnvFileSecret() {
+function readEnvFileValue(name) {
 	let content;
 	try {
 		content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
@@ -41,10 +41,13 @@ function readEnvFileSecret() {
 		if (trimmed.startsWith("#")) continue;
 		const eq = trimmed.indexOf("=");
 		if (eq === -1) continue;
-		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== SECRET_KEY) continue;
-		found = usable(unquote(trimmed.slice(eq + 1).trim()));
+		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== name) continue;
+		found = unquote(trimmed.slice(eq + 1).trim());
 	}
 	return found;
+}
+function readEnvFileSecret() {
+	return usable(readEnvFileValue(SECRET_KEY));
 }
 function readSecretFile(path) {
 	try {
@@ -93,12 +96,24 @@ function canonicalSecretPath() {
 //#region src/hooks/_endpoint.ts
 const OPTION_PREFIX = "CLAUDE_PLUGIN_OPTION_";
 const DEFAULT_URL = "http://localhost:3111";
+function filled(value) {
+	const trimmed = value?.trim();
+	if (!trimmed || trimmed.startsWith("${") && trimmed.endsWith("}")) return void 0;
+	return value;
+}
 function hookSetting(name, env = process.env) {
 	const optionKey = `${OPTION_PREFIX}${name}`;
-	const option = env[optionKey]?.trim();
+	const option = filled(env[optionKey])?.trim();
 	if (option) return option;
 	if (name === "AGENTMEMORY_SECRET" && optionKey in env) return void 0;
-	return env[name];
+	return filled(env[name]);
+}
+function resolveSettingSecret(url, env = process.env) {
+	const secretEnv = { ...env };
+	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
+	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
+	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
+	return resolveClientSecret(url, secretEnv);
 }
 function secretTransportAllowed(url) {
 	try {
@@ -109,11 +124,7 @@ function secretTransportAllowed(url) {
 }
 function resolveHookEndpoint(env = process.env) {
 	const url = hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL;
-	const secretEnv = { ...env };
-	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
-	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
-	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
-	const secret = resolveClientSecret(url, secretEnv);
+	const secret = resolveSettingSecret(url, env);
 	const blocked = !secretTransportAllowed(url);
 	return {
 		url,
@@ -282,7 +293,29 @@ function resolveDataDir(options = {}) {
 }
 //#endregion
 //#region src/functions/privacy.ts
-const PRIVATE_TAG_RE = /<private>[\s\S]*?<\/private>/gi;
+const PRIVATE_TAG_TOKEN_RE = /<private(?=\s|>)[^>]*>|<\/private\s*>/gi;
+function redactPrivateBlocks(input) {
+	const tokens = new RegExp(PRIVATE_TAG_TOKEN_RE.source, PRIVATE_TAG_TOKEN_RE.flags);
+	let out = "";
+	let cursor = 0;
+	let depth = 0;
+	for (let match = tokens.exec(input); match; match = tokens.exec(input)) {
+		const closing = match[0].startsWith("</");
+		if (depth === 0) {
+			if (closing) continue;
+			out += input.slice(cursor, match.index);
+			depth = 1;
+		} else if (closing) {
+			depth -= 1;
+			if (depth === 0) {
+				out += "[REDACTED]";
+				cursor = match.index + match[0].length;
+			}
+		} else depth += 1;
+	}
+	if (depth > 0) return `${out}[REDACTED]`;
+	return out + input.slice(cursor);
+}
 const SECRET_PATTERN_SOURCES = [
 	/(?:api[_-]?key|secret|token|password|credential|auth)[\s]*[=:]\s*["']?[A-Za-z0-9_\-/.+]{20,}["']?/gi,
 	/Bearer\s+[A-Za-z0-9._\-+/=]{20,}/gi,
@@ -302,8 +335,10 @@ const SECRET_PATTERN_SOURCES = [
 const PRIVATE_KEY_BLOCK_RE = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/g;
 const URL_CREDENTIALS_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]*:[^\s/?#@"'<>]+@/gi;
 function stripPrivateData(input) {
-	let result = input.replace(PRIVATE_TAG_RE, "[REDACTED]");
-	result = result.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
+	return stripSecrets(redactPrivateBlocks(input));
+}
+function stripSecrets(input) {
+	let result = input.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
 	result = result.replace(new RegExp(URL_CREDENTIALS_RE.source, URL_CREDENTIALS_RE.flags), "$1[REDACTED_SECRET]@");
 	for (const source of SECRET_PATTERN_SOURCES) {
 		const pattern = new RegExp(source.source, source.flags);
@@ -312,12 +347,13 @@ function stripPrivateData(input) {
 	return result;
 }
 function scrubRecord(value, options = {}) {
-	if (typeof value === "string") return stripPrivateData(value);
+	const strip = options.strip ?? stripPrivateData;
+	if (typeof value === "string") return strip(value);
 	if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options));
 	if (value !== null && typeof value === "object") {
 		const proto = Object.getPrototypeOf(value);
 		if (proto !== Object.prototype && proto !== null) return value;
-		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? stripPrivateData(key) : key, item]);
+		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? strip(key) : key, item]);
 		const reserved = new Set(entries.map(([key]) => key));
 		const used = /* @__PURE__ */ new Set();
 		return Object.fromEntries(entries.map(([key, item]) => {

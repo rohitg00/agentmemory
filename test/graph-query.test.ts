@@ -59,6 +59,10 @@ async function rig() {
         await afterList?.(payload.scope);
         return result;
       }
+      if (id === "state::list_keys") {
+        lists.push(payload.scope);
+        return { keys: [...rows.keys()] };
+      }
       if (id === "state::list") {
         lists.push(payload.scope);
         const result = structuredClone([...rows.values()]);

@@ -28,7 +28,7 @@ import { importOrigin } from "../types.js";
 import { normalizeAccessLog } from "./access-tracker.js";
 import { KV } from "../state/schema.js";
 import { checkPayloadFrameSize, oversizedPayloadError, payloadByteLength, SAFE_PAYLOAD_BYTES } from "../state/frame-guard.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import {
   addSessionToProjectIndex,
   removeSessionFromProjectIndex,
@@ -163,7 +163,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
       const budget = new ExportBudget();
       const refuse = (collection: string) => {
-        logger.warn("Export exceeds transport frame limit", {
+        logger.warn("Export exceeds transport message limit", {
           bytesSoFar: budget.bytes,
           collection,
         });
@@ -172,9 +172,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           stoppedAt: collection,
         };
       };
-      const optional = async <T>(scope: string): Promise<T[]> =>
-        kv.list<T>(scope).catch(() => [] as T[]);
-
       const allSessions = await kv.list<Session>(KV.sessions);
       const sessionWindow = maxSessions !== undefined
         ? allSessions.slice(offset, offset + maxSessions)
@@ -182,7 +179,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       const paginatedSessions = isSelected("sessions") ? sessionWindow : [];
       if (!budget.fits(paginatedSessions)) return refuse("sessions");
 
-      const memories = sliceCollection("memories", await kv.list<Memory>(KV.memories));
+      const memories = sliceCollection("memories", await collectAll<Memory>(kv, KV.memories));
       if (!budget.fits(memories)) return refuse("memories");
 
       const summaries = sliceCollection(
@@ -193,9 +190,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
       const observations: Record<string, CompressedObservation[]> = {};
       for (const session of paginatedSessions) {
-        const obs = await optional<CompressedObservation>(
-          KV.observations(session.id),
-        );
+        const obs = await collectAll<CompressedObservation>(kv, KV.observations(session.id));
         if (obs.length === 0) continue;
         if (!budget.fits(obs, session.id)) return refuse("observations");
         observations[session.id] = obs;
@@ -222,7 +217,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       };
       const collections: Partial<ExportData> = {};
       for (const [field, scope] of EXPORT_COLLECTIONS) {
-        const rows = await optional<unknown>(scope);
+        const rows = await collectAll<unknown>(kv, scope);
         const items =
           field === "accessLogs" && partial
             ? accessLogsFor(rows as AccessLogExport[])
@@ -271,7 +266,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
       const oversized = checkPayloadFrameSize(exportData, EXPORT_OVERSIZE_HINT);
       if (oversized) {
-        logger.warn("Export exceeds transport frame limit", {
+        logger.warn("Export exceeds transport message limit", {
           bytes: oversized.bytes,
         });
         return oversized;
@@ -310,7 +305,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       const strategy = data.strategy || "merge";
       const importData = data.exportData;
 
-      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27", "0.9.28", "0.9.29", "0.9.30", "0.9.31"]);
+      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27", "0.9.28", "0.9.29", "0.9.30", "0.9.31", "0.9.32"]);
       if (!supportedVersions.has(importData.version)) {
         return {
           success: false,
@@ -468,11 +463,36 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
         if (strategy === "replace") {
           const existing = replaceSessions;
+          const obsBySession: Array<{ session: Session; obs: CompressedObservation[] }> = [];
+          for (let i = 0; i < existing.length; i += IMPORT_CHUNK_SIZE) {
+            const chunk = existing.slice(i, i + IMPORT_CHUNK_SIZE);
+            obsBySession.push(...(await Promise.all(chunk.map(async (session) => ({
+              session,
+              obs: await collectAll<CompressedObservation>(kv, KV.observations(session.id)),
+            })))));
+          }
+          const memories = await collectAll<Memory>(kv, KV.memories);
+          const summaries = await kv.list<SessionSummary>(KV.summaries);
+          const actions = await kv.list<Action>(KV.actions);
+          const actionEdges = await kv.list<ActionEdge>(KV.actionEdges);
+          const routines = await kv.list<Routine>(KV.routines);
+          const signals = await kv.list<Signal>(KV.signals);
+          const checkpoints = await kv.list<Checkpoint>(KV.checkpoints);
+          const sentinels = await kv.list<Sentinel>(KV.sentinels);
+          const sketches = await kv.list<Sketch>(KV.sketches);
+          const crystals = await kv.list<Crystal>(KV.crystals);
+          const facets = await kv.list<Facet>(KV.facets);
+          const lessons = await kv.list<Lesson>(KV.lessons);
+          const insights = await collectAll<Insight>(kv, KV.insights);
+          const semanticRows = await collectAll<{ id: string }>(kv, KV.semantic);
+          const proceduralRows = await collectAll<{ id: string }>(kv, KV.procedural);
+          const profiles = await kv.list<ProjectProfile>(KV.profiles);
+          const accessLogs = await kv.list<AccessLogExport>(KV.accessLog);
           // Collect observation deletes across all sessions, then run them in
           // one bounded pass: a runChunked nested inside a runChunked callback
           // multiplies in-flight deletes to chunk-size squared.
           const obsDeletes: Array<{ sessionId: string; obsId: string; captureKey?: string }> = [];
-          await runChunked(existing, async (session) => {
+          await runChunked(obsBySession, async ({ session, obs }) => {
             await kv.delete(KV.sessions, session.id);
             await kv.delete(KV.summaryRepairs, session.id);
             await removeSessionFromProjectIndex(
@@ -480,9 +500,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
               session.project,
               session.id,
             ).catch(() => {});
-            const obs = await kv
-              .list<CompressedObservation>(KV.observations(session.id))
-              .catch(() => []);
             for (const o of obs) {
               obsDeletes.push({ sessionId: session.id, obsId: o.id, captureKey: o.captureKey });
             }
@@ -492,72 +509,55 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
             await kv.delete(KV.observations(d.sessionId), d.obsId);
             await unindexObservationSession(kv, d.obsId).catch(() => {});
           });
-          await runChunked(await kv.list<Memory>(KV.memories), (m) =>
+          await runChunked(memories, (m) =>
             kv.delete(KV.memories, m.id),
           );
-          await runChunked(
-            await kv.list<SessionSummary>(KV.summaries),
-            (s) => kv.delete(KV.summaries, s.sessionId),
-          );
-          await runChunked(await kv.list<Action>(KV.actions).catch(() => []), (a) =>
+          await runChunked(summaries, (s) => kv.delete(KV.summaries, s.sessionId));
+          await runChunked(actions, (a) =>
             kv.delete(KV.actions, a.id),
           );
-          await runChunked(
-            await kv.list<ActionEdge>(KV.actionEdges).catch(() => []),
-            (e) => kv.delete(KV.actionEdges, e.id),
+          await runChunked(actionEdges, (e) =>
+            kv.delete(KV.actionEdges, e.id),
           );
-          await runChunked(
-            await kv.list<Routine>(KV.routines).catch(() => []),
-            (r) => kv.delete(KV.routines, r.id),
+          await runChunked(routines, (r) =>
+            kv.delete(KV.routines, r.id),
           );
-          await runChunked(
-            await kv.list<Signal>(KV.signals).catch(() => []),
-            (s) => kv.delete(KV.signals, s.id),
+          await runChunked(signals, (s) =>
+            kv.delete(KV.signals, s.id),
           );
-          await runChunked(
-            await kv.list<Checkpoint>(KV.checkpoints).catch(() => []),
-            (c) => kv.delete(KV.checkpoints, c.id),
+          await runChunked(checkpoints, (c) =>
+            kv.delete(KV.checkpoints, c.id),
           );
-          await runChunked(
-            await kv.list<Sentinel>(KV.sentinels).catch(() => []),
-            (s) => kv.delete(KV.sentinels, s.id),
+          await runChunked(sentinels, (s) =>
+            kv.delete(KV.sentinels, s.id),
           );
-          await runChunked(
-            await kv.list<Sketch>(KV.sketches).catch(() => []),
-            (s) => kv.delete(KV.sketches, s.id),
+          await runChunked(sketches, (s) =>
+            kv.delete(KV.sketches, s.id),
           );
-          await runChunked(
-            await kv.list<Crystal>(KV.crystals).catch(() => []),
-            (c) => kv.delete(KV.crystals, c.id),
+          await runChunked(crystals, (c) =>
+            kv.delete(KV.crystals, c.id),
           );
-          await runChunked(
-            await kv.list<Facet>(KV.facets).catch(() => []),
-            (f) => kv.delete(KV.facets, f.id),
+          await runChunked(facets, (f) =>
+            kv.delete(KV.facets, f.id),
           );
-          await runChunked(
-            await kv.list<Lesson>(KV.lessons).catch(() => []),
-            (l) => kv.delete(KV.lessons, l.id),
+          await runChunked(lessons, (l) =>
+            kv.delete(KV.lessons, l.id),
           );
           resetLessonIndex();
-          await runChunked(
-            await kv.list<Insight>(KV.insights).catch(() => []),
-            (i) => kv.delete(KV.insights, i.id),
+          await runChunked(insights, (i) =>
+            kv.delete(KV.insights, i.id),
           );
-          await runChunked(
-            await kv.list<{ id: string }>(KV.semantic).catch(() => []),
-            (s) => kv.delete(KV.semantic, s.id),
+          await runChunked(semanticRows, (s) =>
+            kv.delete(KV.semantic, s.id),
           );
-          await runChunked(
-            await kv.list<{ id: string }>(KV.procedural).catch(() => []),
-            (p) => kv.delete(KV.procedural, p.id),
+          await runChunked(proceduralRows, (p) =>
+            kv.delete(KV.procedural, p.id),
           );
-          await runChunked(
-            await kv.list<ProjectProfile>(KV.profiles).catch(() => []),
-            (profile) => kv.delete(KV.profiles, profile.project),
+          await runChunked(profiles, (profile) =>
+            kv.delete(KV.profiles, profile.project),
           );
-          await runChunked(
-            await kv.list<AccessLogExport>(KV.accessLog).catch(() => []),
-            (a) => kv.delete(KV.accessLog, a.memoryId),
+          await runChunked(accessLogs, (a) =>
+            kv.delete(KV.accessLog, a.memoryId),
           );
         }
 

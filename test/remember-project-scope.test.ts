@@ -188,6 +188,12 @@ describe("mem::remember — cross-project dedup isolation", () => {
       },
     }) as { memory: { id: string } };
 
+    const stored = await kv.get<{ updatedAt: string }>("mem:memories", first.memory.id);
+    await kv.set("mem:memories", first.memory.id, {
+      ...stored,
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    });
+
     const second = await sdk.trigger({
       function_id: "mem::remember",
       payload: {
@@ -199,8 +205,12 @@ describe("mem::remember — cross-project dedup isolation", () => {
 
     expect(second.memory.supersedes).toContain(first.memory.id);
 
-    const original = await kv.get<{ isLatest: boolean }>("mem:memories", first.memory.id);
+    const original = await kv.get<{ isLatest: boolean; updatedAt: string }>(
+      "mem:memories",
+      first.memory.id,
+    );
     expect(original?.isLatest).toBe(false);
+    expect(original?.updatedAt).not.toBe("2020-01-01T00:00:00.000Z");
   });
 
   it("allows an unscoped memory to be superseded by a scoped one (legacy compat)", async () => {

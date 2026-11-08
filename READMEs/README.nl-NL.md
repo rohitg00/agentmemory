@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design-document: 1.6k stars / 230 forks op de gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design-document: 1.7k stars / 240 forks op de gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,600+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -651,7 +651,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory draait op Windows 10/11. WSL2 volgt het Linux-pad en kan de vastgezette engine automatisch installeren. Native Windows vereist handmatige installatie van de vastgezette iii-engine v0.25.0-binary; download het passende archief van de [iii v0.25.0-releasepagina](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), controleer de checksum en plaats `iii.exe` op `PATH` (bijvoorbeeld `%USERPROFILE%\.local\bin\iii.exe`). De CLI pakt de Windows ZIP niet automatisch uit.
+agentmemory draait op Windows 10/11. WSL2 volgt het Linux-pad en kan de vastgezette engine automatisch installeren. Native Windows vereist handmatige installatie van de vastgezette iii-engine v0.25.1-binary; download het passende archief van de [iii v0.25.1-releasepagina](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), controleer de checksum en plaats `iii.exe` op `PATH` (bijvoorbeeld `%USERPROFILE%\.local\bin\iii.exe`). De CLI pakt de Windows ZIP niet automatisch uit.
 
 Geautomatiseerde MCP-koppeling op native Windows ondersteunt alleen `agentmemory connect copilot-cli`. Gebruik voor andere native Windows-agents het handmatige MCP-blok uit [Other agents](#other-agents). Voer `connect` binnen WSL alleen uit wanneer de doelagent in dezelfde WSL-omgeving is geïnstalleerd.
 
@@ -1162,7 +1162,7 @@ De volledige referentie staat in [`.env.example`](../.env.example), met provider
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints op poort `3111`. De REST API bindt standaard aan `127.0.0.1`. Beschermde endpoints vereisen `Authorization: Bearer <secret>`, en mesh-sync-endpoints vereisen een expliciet ingestelde `AGENTMEMORY_SECRET` op beide peers.
+147 endpoints op poort `3111`. De REST API bindt standaard aan `127.0.0.1`. Beschermde endpoints vereisen `Authorization: Bearer <secret>`, en mesh-sync-endpoints vereisen een expliciet ingestelde `AGENTMEMORY_SECRET` op beide peers.
 
 **Authenticatie staat standaard aan.** Als `AGENTMEMORY_SECRET` niet in de shell of in `~/.agentmemory/.env` staat, maakt de CLI bij de eerste start een willekeurig secret in `~/.agentmemory/secret` en een kopie met de naam `secret` in de geselecteerde gegevensmap, met bestandsmodus `0600`. Elke gebundelde client leest het daar wanneer die met een lokale server communiceert: de CLI, viewer, hooks onder `plugin/scripts`, MCP-server en `@agentmemory/mcp`-shim, configs geschreven door `agentmemory connect`, en de gebundelde OpenCode-, Pi-, OpenClaw-, Hermes- en filesystem-watcher-integraties. Het opgeslagen secret wordt alleen verstuurd naar loopback-URL's (`localhost`, `127.0.0.0/8`, `::1`). Een expliciete `AGENTMEMORY_SECRET` wint altijd, en externe clients hebben het secret in hun omgeving nodig. Docker self-host deployments vanuit de repository en de `deploy/`-entrypoints genereren en exporteren hun eigen secret. Zo roep je de API handmatig aan:
 
@@ -1243,7 +1243,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

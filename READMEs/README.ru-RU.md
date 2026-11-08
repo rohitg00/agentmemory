@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Документ проекта: 1.6k звёзд / 230 форков в гисте" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Документ проекта: 1.7k звёзд / 240 форков в гисте" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,600+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -664,7 +664,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory работает на Windows 10/11. В WSL2 используется путь Linux, и закреплённый движок устанавливается автоматически. Для нативной работы в Windows требуется вручную установить закреплённый бинарь iii-engine v0.25.0: скачайте подходящий архив со [страницы релиза iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), проверьте контрольную сумму и поместите `iii.exe` в `PATH` (например, `%USERPROFILE%\.local\bin\iii.exe`). CLI не распаковывает Windows ZIP автоматически.
+agentmemory работает на Windows 10/11. В WSL2 используется путь Linux, и закреплённый движок устанавливается автоматически. Для нативной работы в Windows требуется вручную установить закреплённый бинарь iii-engine v0.25.1: скачайте подходящий архив со [страницы релиза iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), проверьте контрольную сумму и поместите `iii.exe` в `PATH` (например, `%USERPROFILE%\.local\bin\iii.exe`). CLI не распаковывает Windows ZIP автоматически.
 
 Автоматизированное подключение MCP в нативной Windows поддерживает только `agentmemory connect copilot-cli`. Для других нативных Windows-агентов используйте ручной блок MCP из раздела [Другие агенты](#other-agents). Запускайте `connect` внутри WSL только если целевой агент установлен в той же среде WSL.
 
@@ -1160,7 +1160,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 эндпоинтов на порту `3111`. REST API по умолчанию слушает на `127.0.0.1`. Защищённые эндпоинты требуют `Authorization: Bearer <secret>`, а эндпоинты mesh-синхронизации требуют явно заданного `AGENTMEMORY_SECRET` на обоих узлах.
+147 эндпоинтов на порту `3111`. REST API по умолчанию слушает на `127.0.0.1`. Защищённые эндпоинты требуют `Authorization: Bearer <secret>`, а эндпоинты mesh-синхронизации требуют явно заданного `AGENTMEMORY_SECRET` на обоих узлах.
 
 **Аутентификация включена по умолчанию.** Если `AGENTMEMORY_SECRET` не задан, при первом запуске CLI создаёт случайный секрет в `~/.agentmemory/secret` с правами `0600` и копирует его также в выбранный каталог данных. Каждый встроенный клиент читает его оттуда, когда говорит с локальным сервером: CLI, просмотрщик, хуки из `plugin/scripts`, MCP-сервер и shim `@agentmemory/mcp`, конфиги, записанные `agentmemory connect`, и встроенные интеграции OpenCode, Pi, OpenClaw, Hermes и filesystem-watcher. Сохранённый секрет отправляется только на loopback-адреса (`localhost`, `127.0.0.0/8`, `::1`). Явно заданный `AGENTMEMORY_SECRET` всегда выигрывает, и удалённым клиентам он всё равно нужен. Docker и entrypoint'ы `deploy/` уже генерируют и экспортируют собственный секрет. Чтобы вызвать API вручную:
 
@@ -1241,7 +1241,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

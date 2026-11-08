@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Dokumen desain: 1.6k star / 230 fork pada gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Dokumen desain: 1.7k star / 240 fork pada gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 tool MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook otomatis" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 DB eksternal" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ pengujian lolos" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,600+ pengujian lolos" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory berjalan di Windows 10/11. WSL2 mengikuti jalur Linux dan dapat memasang engine yang dipatok secara otomatis. Pada Windows native, pasang biner iii-engine v0.25.0 yang dipatok secara manual: unduh arsip yang sesuai dari [halaman rilis iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verifikasi checksum, lalu letakkan `iii.exe` di `PATH` (misalnya `%USERPROFILE%\.local\bin\iii.exe`). CLI tidak mengekstrak ZIP Windows secara otomatis.
+agentmemory berjalan di Windows 10/11. WSL2 mengikuti jalur Linux dan dapat memasang engine yang dipatok secara otomatis. Pada Windows native, pasang biner iii-engine v0.25.1 yang dipatok secara manual: unduh arsip yang sesuai dari [halaman rilis iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifikasi checksum, lalu letakkan `iii.exe` di `PATH` (misalnya `%USERPROFILE%\.local\bin\iii.exe`). CLI tidak mengekstrak ZIP Windows secara otomatis.
 
 Wiring MCP otomatis di Windows native hanya mendukung `agentmemory connect copilot-cli`. Untuk agen Windows native lainnya, gunakan blok MCP manual dari [Agen lainnya](#other-agents). Jalankan `connect` di WSL hanya jika agen target juga dipasang di lingkungan WSL yang sama.
 
@@ -1175,7 +1175,7 @@ Referensi lengkap ada di [`.env.example`](../.env.example), termasuk penyedia, f
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoint di port `3111`. REST API terbind ke `127.0.0.1` secara default. Endpoint yang terlindungi membutuhkan `Authorization: Bearer <secret>`, dan endpoint mesh sync membutuhkan `AGENTMEMORY_SECRET` yang diset secara eksplisit di kedua peer.
+147 endpoint di port `3111`. REST API terbind ke `127.0.0.1` secara default. Endpoint yang terlindungi membutuhkan `Authorization: Bearer <secret>`, dan endpoint mesh sync membutuhkan `AGENTMEMORY_SECRET` yang diset secara eksplisit di kedua peer.
 
 Autentikasi aktif secara default. Jika `AGENTMEMORY_SECRET` tidak disetel, CLI membuat rahasia acak saat pertama dijalankan di `~/.agentmemory/secret` dan menyalinnya ke `secret` dalam direktori data terpilih, dengan mode `0600`. Klien bawaan mengutamakan file kanonis ini untuk koneksi lokal dan hanya mengirim rahasia tersimpan ke URL loopback. `AGENTMEMORY_SECRET` eksplisit selalu diutamakan; klien remote harus mengaturnya melalui environment. Deployment Docker membuat rahasianya sendiri.
 
@@ -1256,7 +1256,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

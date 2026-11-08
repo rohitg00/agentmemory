@@ -637,12 +637,7 @@ const transport = createStdioTransport(async (method, params) => {
   }
 });
 
-installCrashHandlers(() => {
-  try {
-    kv.persist();
-  } catch {}
-  process.exit(1);
-});
+installCrashHandlers({ persist: () => kv.persist() });
 
 process.stderr.write(
   `[@agentmemory/mcp] Standalone MCP server v${SERVER_INFO.version} starting...\n`,

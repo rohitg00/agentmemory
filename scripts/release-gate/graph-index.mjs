@@ -124,7 +124,7 @@ async function profile(name, instance = 0, sharedHome) {
     "containers:",
     "  state:",
     "    worker: 'package://api.workers.iii.dev/state'",
-    "    version: '0.22.20'",
+    "    version: '0.22.22'",
     "    config_name: state",
     "    config_override:",
     "      adapter:",
@@ -135,7 +135,7 @@ async function profile(name, instance = 0, sharedHome) {
     "          save_interval_ms: 2000",
     "  http:",
     "    worker: 'package://api.workers.iii.dev/http'",
-    "    version: '0.22.7'",
+    "    version: '0.22.8'",
     "    config_name: http",
     "    config_override:",
     "      host: 127.0.0.1",
@@ -186,7 +186,7 @@ async function relay(p) {
         let summary = p.traceSummary.get(p.phase);
         if (!summary) p.traceSummary.set(p.phase, summary = { graphOperations: 0, maxGraphResponseBytes: 0, maxReadLatencyMs: 0, canonicalLists: [], snapshotOperations: 0 });
         summary.graphOperations++;
-        if (record.operation === "state::list" && canonicalScopes.some((scope) => record.scope.startsWith(scope))) summary.canonicalLists.push(record.scope);
+        if ((record.operation === "state::list" || record.operation === "state::list_keys") && canonicalScopes.some((scope) => record.scope.startsWith(scope))) summary.canonicalLists.push(record.scope);
         if (record.scope.startsWith(scopes.snapshot)) summary.snapshotOperations++;
         inFlight.set(message.invocation_id, { record, summary, started: performance.now() });
         // A durable sealed descriptor exists before the first manifest read. Hold only this request to make the crash deterministic.

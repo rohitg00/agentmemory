@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.6k stars / 230 forks on the gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.7k stars / 240 forks on the gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,600+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -332,14 +332,14 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-### What's new in 0.9.31
+### What's new in 0.9.32
 
-- **More focused recall:** project and agent scopes, saved-memory retrieval, explicit context budgets and full-source expansion.
-- **Less repeated work:** incremental session summaries skip unchanged observations; exports page through stored data.
-- **More native integrations:** installable Pi package, OMP and DeepSeek Harness plugins, and improved Cursor workspace attribution.
-- **Safer recovery:** compression, import validation and runtime recovery fixes, with status and activity visible in the viewer.
+- **Providers are opt-in:** a key alone sends nothing out. Set `AGENTMEMORY_LLM_PROVIDER` for LLM features and `EMBEDDING_PROVIDER` for cloud embeddings.
+- **Native Windows works:** Worker Compose starts, iii installs itself, and `doctor` never waits on a prompt in scripts.
+- **Reliable boot:** agentmemory waits for the state worker, so slow starts keep their search index and vectors.
+- **Better recall:** CJK queries, scoped smart-search and project isolation fixes.
 
-[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.31).
+[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.32).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-benchmarks.svg"><img src="assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
@@ -483,9 +483,12 @@ agentmemory connect claude-code --with-hooks
 ```
 
 This merges the same hook commands into `~/.claude/settings.json` with absolute paths resolved to the bundled `plugin/` directory of the currently installed `@agentmemory/agentmemory` package. Re-run the command after upgrading agentmemory to refresh the paths. User entries in the same file are preserved; only previous agentmemory entries are replaced. Using the `/plugin install` path remains the recommended approach.
-For remote or protected deployments, launch Claude Code with `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` set. The plugin passes both values through to its bundled MCP server; when `AGENTMEMORY_URL` is empty, the MCP shim uses `http://localhost:3111`.
+
+For a remote server with the plugin, enter its `https://` URL and secret in the plugin settings that Claude Code asks for when you enable the plugin. The hooks and the bundled MCP server read both from there. With the URL setting empty, they use `AGENTMEMORY_URL` from your environment, then `http://localhost:3111`; with the secret setting empty, they send only the local server's own secret, and only to a loopback address. With `agentmemory connect claude-code` there are no plugin settings: set `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` in the environment that starts Claude Code.
 
 ### Codex CLI (Codex plugin platform)
+
+Agent Memory is listed in the [OpenAI plugin directory](https://chatgpt.com/plugins/plugins_6ac50a1b89948191906ff15c72357972). That listing adds the 17 skills only. Start the memory server and wire its MCP server with `agentmemory connect codex` so the skills can call the memory tools. For the MCP server, hooks and skills in one plugin, use the repository marketplace below.
 
 ```bash
 # 1. start the memory server in a separate terminal
@@ -557,51 +560,39 @@ Pi also supports an installable `@agentmemory/pi` package. See the [Pi package g
 
 Guides: [Pi](integrations/pi/), [Oh My Pi](integrations/omp/), [DSH](docs/dsh.md).
 
-<details>
-<summary><b>OpenClaw (paste this prompt)</b></summary>
+### OpenClaw (ClawHub)
 
-```text
-Install agentmemory for OpenClaw. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then add this to my OpenClaw MCP config so agentmemory is available with all 54 memory tools:
+agentmemory is listed on ClawHub: [clawhub.ai/plugins/agentmemory](https://clawhub.ai/plugins/agentmemory).
 
-{
-  "mcpServers": {
-    "agentmemory": {
-      "command": "npx",
-      "args": ["-y", "@agentmemory/mcp"],
-      "env": {
-        "AGENTMEMORY_URL": "http://localhost:3111"
-      }
-    }
-  }
-}
+```bash
+# 1. start the memory server in a separate terminal
+npx -y @agentmemory/agentmemory@latest
 
-Restart OpenClaw. Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper memory-slot integration, copy `integrations/openclaw` to `~/.openclaw/extensions/agentmemory` and enable `plugins.slots.memory = "agentmemory"` in `~/.openclaw/openclaw.json`.
+# 2. install the plugin from ClawHub
+openclaw plugins install clawhub:agentmemory
 ```
 
-Full guide: [`integrations/openclaw/`](integrations/openclaw/)
+Then select agentmemory as the memory plugin and allow it to read conversations in `~/.openclaw/openclaw.json`: set `plugins.slots.memory` to `"agentmemory"` and `plugins.entries.agentmemory.hooks.allowConversationAccess` to `true`. Without conversation access, capture is blocked. Restart OpenClaw and run `openclaw config validate`.
 
-</details>
+`agentmemory connect openclaw` does the same from an installed package: it installs the plugin and skills, selects the memory slot and grants conversation access. Add `--with-mcp` for the full MCP tool set. Full guide: [`integrations/openclaw/`](integrations/openclaw/).
 
-<details>
-<summary><b>Hermes Agent (paste this prompt)</b></summary>
+### Hermes Agent (Hermes plugin catalog)
 
-```text
-Install agentmemory for Hermes. Run `npx -y @agentmemory/agentmemory@latest` in a separate terminal to start the memory server on localhost:3111. Then add this to ~/.hermes/config.yaml so Hermes can use agentmemory as an MCP server with all 54 memory tools:
+agentmemory is listed in the Hermes plugin catalog: [hermes-agent.nousresearch.com/marketplace/agentmemory](https://hermes-agent.nousresearch.com/marketplace/agentmemory).
 
-mcp_servers:
-  agentmemory:
-    command: npx
-    args: ["-y", "@agentmemory/mcp"]
+```bash
+# 1. start the memory server in a separate terminal
+npx -y @agentmemory/agentmemory@latest
 
-memory:
-  provider: agentmemory
-
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+# 2. install the reviewed catalog entry, then select it as the memory provider
+hermes plugins install agentmemory
+hermes memory setup
+hermes memory status
 ```
 
-Full guide: [`integrations/hermes/`](integrations/hermes/)
+In `hermes memory setup`, select AgentMemory and enter the server URL and its secret. Hermes Desktop can install it from the link `hermes://plugin/install?catalog=agentmemory`. The catalog installs the commit that Hermes reviewed, so it can lag the latest npm release.
 
-</details>
+`agentmemory connect hermes` installs the provider and the bundled skills from the installed package instead. Add `--with-mcp` for the full MCP tool set. Full guide: [`integrations/hermes/`](integrations/hermes/).
 
 ### Other agents
 
@@ -653,14 +644,15 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Gemini CLI** | `~/.gemini/settings.json` | `gemini mcp add agentmemory npx -y @agentmemory/mcp --scope user` (auto-merges). |
 | **GitHub Copilot CLI (MCP only)** | `~/.copilot/mcp-config.json` | `agentmemory connect copilot-cli` merges `mcpServers.agentmemory`; Copilot picks it up on next launch or `/mcp`. |
 | **GitHub Copilot CLI (full plugin)** | Copilot plugin install | `copilot plugin install rohitg00/agentmemory:plugin` for the plugin from the GitHub subdir. |
-| **OpenClaw** | OpenClaw MCP config | Same `mcpServers` block. Deeper: `openclaw plugins install ./integrations/openclaw` claims OpenClaw's memory slot (auto-switches from `memory-core`); set `plugins.entries.agentmemory.hooks.allowConversationAccess=true` or turn capture is silently blocked. See [`integrations/openclaw`](integrations/openclaw/). |
+| **OpenClaw** | `~/.openclaw/openclaw.json` | `openclaw plugins install clawhub:agentmemory` installs the [ClawHub listing](https://clawhub.ai/plugins/agentmemory); `agentmemory connect openclaw` installs the same plugin and also selects `plugins.slots.memory` and grants `hooks.allowConversationAccess`, without which capture is blocked. Add `--with-mcp` for the full tool set. See [`integrations/openclaw`](integrations/openclaw/). |
 | **Codex CLI (MCP only)** | `.codex/config.toml` | TOML shape: `codex mcp add agentmemory -- npx -y @agentmemory/mcp`, or add `[mcp_servers.agentmemory]` manually. |
+| **Codex CLI (skills, official listing)** | [OpenAI plugin directory](https://chatgpt.com/plugins/plugins_6ac50a1b89948191906ff15c72357972) | Adds the 17 skills. Pair it with `agentmemory connect codex` for the MCP server. |
 | **Codex CLI (full plugin)** | Codex plugin marketplace | `codex plugin marketplace add rohitg00/agentmemory` then `codex plugin add agentmemory@agentmemory`. Registers MCP + 6 lifecycle hooks + 17 skills. Trust hooks and verify capture in your host; see [Codex setup and validation](docs/plugins/codex-local.md). |
 | **OpenCode (MCP only)** | `opencode.json` | Different shape: top-level `mcp` key, command as array: `{"mcp": {"agentmemory": {"type": "local", "command": ["npx", "-y", "@agentmemory/mcp"], "enabled": true}}}`. |
 | **OpenCode (full plugin)** | `plugin/opencode/` | 22 auto-capture hooks covering session lifecycle, messages, tools, errors. Project attribution is per-session, so one OpenCode process spanning several repositories files each session under its own project. Two slash commands (`/recall`, `/remember`). Copy `plugin/opencode/` into your OpenCode workspace and add the plugin entry to `opencode.json`. See [`plugin/opencode/README.md`](plugin/opencode/README.md) for the full hook table + gap analysis. |
 | **pi** | Active Pi agent directory, default `~/.pi/agent` | `agentmemory connect pi --with-mcp` installs native recall/capture, offline replay, 17 skills and the full MCP toolset. Or build `integrations/pi` and use `pi install ./integrations/pi`; after npm publication, `pi install npm:@agentmemory/pi`. Use one method and run `/reload`. See [setup and migration](integrations/pi/). |
 | **Oh My Pi (OMP)** | Active OMP agent directory, default `~/.omp/agent/config.yml` | `agentmemory connect omp --with-mcp` installs native recall/capture, offline replay, 17 skills and the full MCP toolset. Restart OMP and run `/agentmemory-status`. See [setup, profiles and commands](integrations/omp/). |
-| **Hermes Agent** | `$HERMES_HOME/config.yaml`, default `~/.hermes/config.yaml` | `agentmemory connect hermes` installs the native provider and skills. Configure its scoped credentials with `hermes memory setup`. Add `--with-mcp` for the wider tool surface. See [setup and scope](integrations/hermes/). |
+| **Hermes Agent** | `$HERMES_HOME/config.yaml`, default `~/.hermes/config.yaml` | `hermes plugins install agentmemory` installs the [Hermes catalog entry](https://hermes-agent.nousresearch.com/marketplace/agentmemory) at its reviewed commit. `agentmemory connect hermes` installs the native provider and skills. Configure its scoped credentials with `hermes memory setup`. Add `--with-mcp` for the wider tool surface. See [setup and scope](integrations/hermes/). |
 | **Qwen Code** | `~/.qwen/settings.json` | `agentmemory connect qwen` writes the standard `mcpServers` block. Hook payload is field-compatible with Claude Code, so the existing 12-hook scripts work without modification; wire them via the `hooks` section in the same `settings.json`. |
 | **Antigravity IDE / 2.0** | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity --with-hooks` installs MCP and capture hooks in the shared customization directory. See [Antigravity setup and limits](docs/plugins/antigravity.md). |
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` uses the same MCP and hook configuration as current IDE versions. Existing installations should refresh with `--force`; see the [upgrade notes](docs/plugins/antigravity.md). |
@@ -694,7 +686,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory runs on Windows 10/11. WSL2 follows the Linux path and can install the pinned engine automatically. Native Windows requires the pinned iii-engine v0.25.0 binary installed manually; download the matching archive from the [iii v0.25.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verify its checksum, and place `iii.exe` on `PATH` (for example `%USERPROFILE%\.local\bin\iii.exe`). The CLI does not extract the Windows ZIP automatically.
+agentmemory runs on Windows 10/11. WSL2 follows the Linux path and can install the pinned engine automatically. Native Windows also installs the pinned iii-engine v0.25.1 automatically: the CLI downloads the Windows ZIP, verifies its SHA-256 and extracts `iii.exe` into `%USERPROFILE%\.agentmemory\bin`. If that fails, download the matching archive from the [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verify its checksum, and extract `iii.exe` into the same directory.
 
 Native Windows automated MCP wiring supports only `agentmemory connect copilot-cli`. For other native Windows agents, use the manual MCP block from [Other agents](#other-agents). Run `connect` inside WSL only when the target agent is installed in that same WSL environment.
 
@@ -1146,6 +1138,8 @@ Two modes:
 
 What gets tagged when `AGENT_ID` is set: `Session.agentId`, `RawObservation.agentId`, `CompressedObservation.agentId`, `Memory.agentId`. The role flows from `api::session::start` → `mem::observe` → `mem::compress` → KV.
 
+`GET /agentmemory/sessions` also filters by time with `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` (ISO 8601, for example `2026-10-09` or `2026-10-09T12:00:00Z`; a value without a zone is read as UTC, and a `+` in an offset must be URL-encoded as `%2B`; after is inclusive, before is exclusive). Sessions with no value for the filtered field are excluded, and an invalid timestamp returns 400.
+
 What gets filtered in isolated mode: `mem::smart-search`, `/agentmemory/memories`, `/agentmemory/observations`, `/agentmemory/sessions`. Each endpoint accepts `?agentId=<role>` to override per-request, and `?agentId=*` to opt out of the env scope entirely. `/memories` also accepts `?includeOrphans=true` to surface pre-AGENT_ID memories whose `agentId` is undefined.
 
 Per-call override at the SDK / REST layer: every mutating endpoint (`/session/start`, `/remember`) accepts an `agentId` field in the request body that wins over the env. Useful for runtimes routing many roles through one server process. The MCP `memory_save` tool exposes the same `agentId` field, the standalone stdio server forwards both `agentId` and `project`, and saved memories carry `agentId` into the search index, so agent-scoped search covers memories as well as observations.
@@ -1206,6 +1200,8 @@ EMBEDDING_PROVIDER=local
 
 # Optional automatic context injection through the shared hooks
 # AGENTMEMORY_INJECT_CONTEXT=true
+# How long the PreToolUse hook waits for that context, in ms (default 2000)
+# AGENTMEMORY_ENRICH_TIMEOUT_MS=2000
 
 # Optional outside LLM for summaries and consolidation. A key alone does nothing;
 # this line selects the provider whose key agentmemory may use.
@@ -1229,7 +1225,7 @@ The complete reference is [`.env.example`](.env.example), including provider cre
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-api.svg"><img src="assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>`, and mesh sync endpoints require an explicitly set `AGENTMEMORY_SECRET` on both peers.
+147 endpoints on port `3111`. The REST API binds to `127.0.0.1` by default. Protected endpoints require `Authorization: Bearer <secret>`, and mesh sync endpoints require an explicitly set `AGENTMEMORY_SECRET` on both peers.
 
 **Authentication is on by default.** When `AGENTMEMORY_SECRET` is not set (in the shell or in `~/.agentmemory/.env`), the CLI generates a random secret on first start and stores it at `~/.agentmemory/secret`, mirrored to the selected data directory as `secret`, with mode `0600` (the platform-specific default data directory is described above). Bundled clients read the canonical secret first when they talk to a local server: the CLI, the viewer, the hooks under `plugin/scripts`, the MCP server and the `@agentmemory/mcp` shim, the configs written by `agentmemory connect`, and the bundled OpenCode, Pi, OpenClaw, Hermes and filesystem-watcher integrations. The stored secret is only sent to loopback URLs (`localhost`, `127.0.0.0/8`, `::1`). An explicit `AGENTMEMORY_SECRET` always wins, and remote clients need the secret set in their environment. Repository-based Docker self-host deployments and the `deploy/` entrypoints generate and export their own secret. To call the API by hand:
 
@@ -1315,7 +1311,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

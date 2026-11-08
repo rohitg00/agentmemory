@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Documento de design: 1.6k stars / 230 forks no gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Documento de design: 1.7k stars / 240 forks no gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,600+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -653,7 +653,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory roda no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar o engine fixado automaticamente. O Windows nativo exige a instalação manual do binário iii-engine v0.25.0 fixado; baixe o arquivo correspondente na [página de releases do iii 0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), confira o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai o ZIP do Windows automaticamente.
+agentmemory roda no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar o engine fixado automaticamente. O Windows nativo exige a instalação manual do binário iii-engine v0.25.1 fixado; baixe o arquivo correspondente na [página de releases do iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), confira o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai o ZIP do Windows automaticamente.
 
 A configuração MCP automatizada no Windows nativo dá suporte apenas a `agentmemory connect copilot-cli`. Para os outros agentes nativos do Windows, use o bloco MCP manual em [Outros agentes](#other-agents). Rode `connect` no WSL somente quando o agente de destino estiver instalado no mesmo ambiente WSL.
 
@@ -1166,7 +1166,7 @@ A referência completa está em [`.env.example`](../.env.example): credenciais, 
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints na porta `3111`. A REST API faz bind em `127.0.0.1` por padrão. Endpoints protegidos exigem `Authorization: Bearer <secret>`, e endpoints de mesh sync exigem um `AGENTMEMORY_SECRET` explicitamente definido em ambos os peers.
+147 endpoints na porta `3111`. A REST API faz bind em `127.0.0.1` por padrão. Endpoints protegidos exigem `Authorization: Bearer <secret>`, e endpoints de mesh sync exigem um `AGENTMEMORY_SECRET` explicitamente definido em ambos os peers.
 
 **A autenticação vem ativada por padrão.** Quando `AGENTMEMORY_SECRET` não está definida na shell nem em `~/.agentmemory/.env`, a CLI gera um segredo aleatório na primeira execução em `~/.agentmemory/secret` e grava uma cópia chamada `secret` no diretório de dados selecionado, com permissões `0600`. Todos os clientes empacotados o leem de lá ao falar com um servidor local: CLI, viewer, hooks em `plugin/scripts`, servidor MCP e shim `@agentmemory/mcp`, configurações escritas por `agentmemory connect` e integrações empacotadas de OpenCode, Pi, OpenClaw, Hermes e filesystem-watcher. O secret armazenado só é enviado para URLs de loopback (`localhost`, `127.0.0.0/8`, `::1`). Um `AGENTMEMORY_SECRET` explícito sempre prevalece, e clientes remotos precisam ter o secret definido em seu ambiente. Deploys self-hosted com Docker baseados no repositório e os entrypoints de `deploy/` geram e exportam seu próprio secret. Para chamar a API manualmente:
 
@@ -1247,7 +1247,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

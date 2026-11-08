@@ -75,3 +75,77 @@ describe("plugin bridge uses the daemon's local credential resolution", () => {
     },
   );
 });
+
+function requestedUrl() {
+  return String(vi.mocked(fetch).mock.lastCall?.[0]);
+}
+
+describe("plugin bridge reads Claude Code plugin settings", () => {
+  it("prefers the plugin URL and secret settings over the environment", async () => {
+    vi.stubEnv("AGENTMEMORY_URL", "https://env.example");
+    vi.stubEnv("AGENTMEMORY_SECRET", "env-test-secret");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL", "https://chosen.example");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET", "chosen-test-secret");
+    await createPluginBridge()("tools/list", {});
+    expect(requestedUrl()).toBe("https://chosen.example/agentmemory/mcp/tools");
+    expect(authorization()).toBe("Bearer chosen-test-secret");
+  });
+
+  it("falls back to AGENTMEMORY_URL when the URL setting is empty", async () => {
+    vi.stubEnv("AGENTMEMORY_URL", "https://env.example");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL", "");
+    await createPluginBridge()("tools/list", {});
+    expect(requestedUrl()).toBe("https://env.example/agentmemory/mcp/tools");
+  });
+
+  it("uses http://localhost:3111 when both URL sources are empty", async () => {
+    vi.stubEnv("AGENTMEMORY_URL", "");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL", "");
+    await createPluginBridge()("tools/list", {});
+    expect(requestedUrl()).toBe("http://localhost:3111/agentmemory/mcp/tools");
+  });
+
+  it("does not send the environment secret when the secret setting is empty", async () => {
+    vi.stubEnv("AGENTMEMORY_URL", "https://env.example");
+    vi.stubEnv("AGENTMEMORY_SECRET", "env-test-secret");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET", "");
+    await createPluginBridge()("tools/list", {});
+    expect(authorization()).toBeUndefined();
+  });
+
+  it("still reads the local secret for a loopback URL when the secret setting is empty", async () => {
+    store("secret", "generated-test-secret\n");
+    vi.stubEnv("AGENTMEMORY_SECRET", "env-test-secret");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET", "");
+    await createPluginBridge()("tools/list", {});
+    expect(authorization()).toBe("Bearer generated-test-secret");
+  });
+
+  it("ignores unsubstituted placeholders in the plugin settings", async () => {
+    vi.stubEnv("AGENTMEMORY_URL", "https://env.example");
+    vi.stubEnv("AGENTMEMORY_SECRET", "env-test-secret");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL", "${user_config.agentmemory_url}");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET", "${user_config.agentmemory_secret}");
+    await createPluginBridge()("tools/list", {});
+    expect(requestedUrl()).toBe("https://env.example/agentmemory/mcp/tools");
+    expect(authorization()).toBeUndefined();
+  });
+});
+
+describe("plugin bridge call timeout", () => {
+  it("uses the shared MCP call timeout instead of a fixed 15 s", async () => {
+    vi.stubEnv("AGENTMEMORY_CALL_TIMEOUT_MS", "");
+    vi.stubEnv("CLAUDE_PLUGIN_OPTION_AGENTMEMORY_CALL_TIMEOUT_MS", "");
+    vi.stubEnv("AGENTMEMORY_ENV_FILE", "");
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    try {
+      await createPluginBridge()("tools/list", {});
+      expect(timeout).toHaveBeenLastCalledWith(190_000);
+      vi.stubEnv("AGENTMEMORY_CALL_TIMEOUT_MS", "600000");
+      await createPluginBridge()("tools/list", {});
+      expect(timeout).toHaveBeenLastCalledWith(600_000);
+    } finally {
+      timeout.mockRestore();
+    }
+  });
+});

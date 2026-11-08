@@ -58,7 +58,7 @@ import {
 } from "./cli/remove-plan.js";
 import { portFlagSuffix } from "./cli/ready-hint.js";
 import { embeddingStatusLabel } from "./cli/embedding-status.js";
-import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive } from "./cli/engine-install.js";
+import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive, installIiiZip } from "./cli/engine-install.js";
 import {
   runtimeConfigPath,
   redactCredentialUrls,
@@ -960,12 +960,30 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
   }
 
   if (IS_WINDOWS || isZipAsset) {
-    p.log.info(
-      `Auto-install unavailable on ${platform()} — ${asset} isn't tar-compatible. Install manually:\n` +
+    const binDir = agentmemoryBinDir();
+    const binPath = privateIiiPath();
+    const label = `Installing iii-engine v${IIPINNED_VERSION} (pinned)`;
+    const spinner = p.spinner();
+    spinner.start(label);
+    const outcome = await installIiiZip({
+      releaseUrl,
+      version: IIPINNED_VERSION,
+      asset: asset ?? "",
+      binDir,
+      binPath,
+    });
+    if (outcome.ok) {
+      spinner.stop(`${label} ${pc.green("✓")}`);
+      iiiProbeScan?.delete(binPath);
+      return { ok: true, binPath };
+    }
+    spinner.stop(`${label} ${pc.red("✗")}`);
+    p.log.warn(
+      `iii-engine auto-install failed: ${outcome.detail.slice(0, 300)}\n` +
+        `Install it manually, then re-run agentmemory:\n` +
         `  1. Download ${releaseUrl}\n` +
         `     Its SHA-256 must be ${expectedIiiSha256(IIPINNED_VERSION, asset ?? "") ?? `the value in ${releaseUrl.replace(/\.zip$/, ".sha256")}`}\n` +
-        `  2. Extract iii.exe and place it on PATH (e.g. %USERPROFILE%\\.local\\bin)\n` +
-        `Install the pinned iii binary from ${releaseUrl}`,
+        `  2. Extract iii.exe into ${binDir}`,
     );
     return { ok: false, binPath: null };
   }
@@ -1484,7 +1502,7 @@ function installInstructions(): string[] {
       `     1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`,
       `     2. Download iii-x86_64-pc-windows-msvc.zip (or iii-aarch64-pc-windows-msvc.zip on ARM)`,
       verify,
-      "     3. Extract iii.exe to %USERPROFILE%\\.local\\bin\\iii.exe (or add to PATH)",
+      "     3. Extract iii.exe to %USERPROFILE%\\.agentmemory\\bin\\iii.exe (or add to PATH)",
       "     4. Re-run: npx @agentmemory/agentmemory",
       "",
       "Or skip the engine entirely (standalone MCP):  npx @agentmemory/agentmemory mcp",
@@ -2733,7 +2751,17 @@ async function startServerForDemo(): Promise<() => Promise<void>> {
 
   return async () => {
     if (importedStartupWorker && readWorkerPidfile() === process.pid) clearWorkerPidfile();
-    if (startedEngine) await cleanupFailedStartup();
+    if (!startedEngine) return;
+    if (IS_WINDOWS && spawnedComposeDaemon) {
+      const state = readEngineState();
+      if (state?.kind !== "compose" || state.composePid !== spawnedComposeDaemon.pid) {
+        throw new Error("Demo Compose lifecycle state no longer matches the daemon it started. Lifecycle state was preserved.");
+      }
+      // SIGTERM terminates the daemon directly on Windows, leaving its workers behind.
+      await stopComposeRuntime(state, true);
+      return;
+    }
+    await cleanupFailedStartup();
   };
 }
 
@@ -3142,6 +3170,40 @@ function findEnginePidsByPort(port: number): number[] {
   }
 }
 
+async function stopComposeRuntime(state: ComposeEngineState, running: boolean): Promise<void> {
+  const pid = state.composePid;
+  const ownedDaemonAlive = pid !== undefined && pidAlive(pid);
+  if (ownedDaemonAlive && !composePidMatches(pid, state)) {
+    throw new Error(`Recorded Compose pid ${pid} does not match the saved daemon identity; refusing to invoke Compose control or signal it. Lifecycle state was preserved.`);
+  }
+  if (running && !ownedDaemonAlive) {
+    throw new Error("The REST endpoint is responding, but the recorded Compose daemon is not alive. Refusing to stop or clear an engine that may be unrelated; restore the owning daemon or inspect the endpoint manually.");
+  }
+  if (running && ownedDaemonAlive) {
+    try {
+      await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: composeDownTimeoutMs() });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("ENGINE_RESTART_REQUIRED")) {
+        throw new Error(`compose::down failed for ${state.file}: ${message}. Lifecycle state was preserved.`);
+      }
+      p.log.warn("Compose requested an engine restart while stopping; terminating its verified owning daemon to finish shutdown.");
+    }
+  }
+  if (ownedDaemonAlive) {
+    const childrenStopped = await terminateComposeChildren(state);
+    if (!childrenStopped) {
+      throw new Error(`One or more child workers of Compose ${pid} did not stop; lifecycle state was preserved.`);
+    }
+    if (!(await signalAndWait(pid, "SIGTERM", 20_000))) {
+      throw new Error(`Worker Compose daemon pid ${pid} did not stop; lifecycle state was preserved. Inspect ${state.logFile}.`);
+    }
+  }
+  clearEnginePidfile();
+  clearWorkerPidfile();
+  clearEngineState();
+}
+
 async function runStop(): Promise<void> {
   const savedState = readEngineState();
   if (savedState?.kind === "docker") {
@@ -3162,41 +3224,7 @@ async function runStop(): Promise<void> {
   const force = args.includes("--force");
 
   if (state?.kind === "compose") {
-    const ownedDaemonAlive = Boolean(state.composePid && pidAlive(state.composePid));
-    if (ownedDaemonAlive && !composePidMatches(state.composePid!, state)) {
-      p.log.error(`Recorded Compose pid ${state.composePid} does not match the saved daemon identity; refusing to invoke Compose control or signal it. Lifecycle state was preserved.`);
-      process.exit(1);
-    }
-    if (running && !ownedDaemonAlive) {
-      p.log.error("The REST endpoint is responding, but the recorded Compose daemon is not alive. Refusing to stop or clear an engine that may be unrelated; restore the owning daemon or inspect the endpoint manually.");
-      process.exit(1);
-    }
-    if (running && ownedDaemonAlive) {
-      try {
-        await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: composeDownTimeoutMs() });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!message.includes("ENGINE_RESTART_REQUIRED")) {
-          p.log.error(`compose::down failed for ${state.file}: ${message}. Lifecycle state was preserved.`);
-          process.exit(1);
-        }
-        p.log.warn("Compose requested an engine restart while stopping; terminating its verified owning daemon to finish shutdown.");
-      }
-    }
-    if (ownedDaemonAlive) {
-      const childrenStopped = await terminateComposeChildren(state);
-      if (!childrenStopped) {
-        p.log.error(`One or more child workers of Compose ${state.composePid} did not stop; lifecycle state was preserved.`);
-        process.exit(1);
-      }
-      if (!(await signalAndWait(state.composePid!, "SIGTERM", 20_000))) {
-        p.log.error(`Worker Compose daemon pid ${state.composePid} did not stop; lifecycle state was preserved. Inspect ${state.logFile}.`);
-        process.exit(1);
-      }
-    }
-    clearEnginePidfile();
-    clearWorkerPidfile();
-    clearEngineState();
+    await stopComposeRuntime(state, running);
     p.outro("Stopped Worker Compose, engine, and agentmemory workers. Data was preserved.");
     return;
   }
@@ -3657,7 +3685,7 @@ async function runConsole(): Promise<void> {
   p.note([
     `AgentMemory viewer: ${getViewerUrl()} (start agentmemory first if it is offline).`,
     "Use agentmemory status for runtime health and worker status.",
-    "Engine console migration: https://github.com/iii-hq/iii/blob/iii/v0.25.0/docs/using-iii/console.mdx",
+    "Engine console migration: https://github.com/iii-hq/iii/blob/iii/v0.25.1/docs/using-iii/console.mdx",
   ].join("\n"), "Console migration");
 }
 

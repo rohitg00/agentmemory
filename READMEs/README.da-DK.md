@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white" alt="Designdokument: 1.6k stjerner / 230 forks på gist'en" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white" alt="Designdokument: 1.7k stjerner / 240 forks på gist'en" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-værktøjer" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiske hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 eksterne databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ beståede tests" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,600+ beståede tests" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -655,7 +655,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory kører på Windows 10/11. WSL2 følger Linux-vejen og kan installere den fastlåste engine automatisk. Native Windows kræver, at den fastlåste iii-engine v0.25.0-binary installeres manuelt; download det tilsvarende arkiv fra [iii v0.25.0-udgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verificér checksum, og placér `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI’en pakker ikke Windows-ZIP’en ud automatisk.
+agentmemory kører på Windows 10/11. WSL2 følger Linux-vejen og kan installere den fastlåste engine automatisk. Native Windows kræver, at den fastlåste iii-engine v0.25.1-binary installeres manuelt; download det tilsvarende arkiv fra [iii v0.25.1-udgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verificér checksum, og placér `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI’en pakker ikke Windows-ZIP’en ud automatisk.
 
 Automatisk MCP-opsætning på native Windows understøtter kun `agentmemory connect copilot-cli`. Brug den manuelle MCP-blok fra [Andre agenter](#other-agents) til andre native Windows-agenter. Kør kun `connect` i WSL, hvis målagenten er installeret i samme WSL-miljø.
 
@@ -1168,7 +1168,7 @@ Den fulde reference er [`.env.example`](../.env.example) med legitimationsoplysn
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints på port `3111`. REST API'et binder til `127.0.0.1` som standard. Beskyttede endpoints kræver `Authorization: Bearer <secret>`, og mesh-sync-endpoints kræver en eksplicit sat `AGENTMEMORY_SECRET` på begge peers.
+147 endpoints på port `3111`. REST API'et binder til `127.0.0.1` som standard. Beskyttede endpoints kræver `Authorization: Bearer <secret>`, og mesh-sync-endpoints kræver en eksplicit sat `AGENTMEMORY_SECRET` på begge peers.
 
 **Autentificering er slået til som standard.** Hvis `AGENTMEMORY_SECRET` hverken er sat i shellen eller i `~/.agentmemory/.env`, opretter CLI’en en tilfældig hemmelighed ved første start i `~/.agentmemory/secret` og en kopi med navnet `secret` i den valgte datamappe, med filtilstanden `0600`. Alle medfølgende klienter læser den derfra, når de taler med en lokal server: CLI’en, viewer, hooks under `plugin/scripts`, MCP-serveren og `@agentmemory/mcp`-shimmen, konfigurationerne skrevet af `agentmemory connect`, og de medfølgende OpenCode-, Pi-, OpenClaw-, Hermes- og filesystem-watcher-integrationer. Den lagrede secret sendes kun til loopback-URL’er (`localhost`, `127.0.0.0/8`, `::1`). En eksplicit `AGENTMEMORY_SECRET` vinder altid, og eksterne klienter skal have den i deres miljø. Docker-self-hosting fra repositoryet og `deploy/`-entrypoints genererer og eksporterer deres egen secret. Sådan kaldes API’et manuelt:
 
@@ -1249,7 +1249,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

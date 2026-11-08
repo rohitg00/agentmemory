@@ -2,11 +2,11 @@ import { TriggerAction, type IIIClient } from "iii-sdk";
 import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, Session } from "../types.js";
 import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
-import { memoryToObservation, observationEmbedText } from "../state/memory-utils.js";
+import { memoryToObservation, observationEmbedText, supersededAt } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { deleteFacetsForTargets } from "./facets.js";
 import { recordAudit } from "./audit.js";
@@ -108,7 +108,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
             );
             candidateMemories = loaded.filter((m): m is Memory => m !== null);
           } else {
-            candidateMemories = await kv.list<Memory>(KV.memories);
+            candidateMemories = await collectAll<Memory>(kv, KV.memories);
           }
         } catch (err) {
           // Candidate generation is an optimization; a failure here must
@@ -116,7 +116,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           logger.warn("supersession candidate lookup failed, using full scan", {
             error: err instanceof Error ? err.message : JSON.stringify(err),
           });
-          candidateMemories = await kv.list<Memory>(KV.memories);
+          candidateMemories = await collectAll<Memory>(kv, KV.memories);
         }
         let supersededId: string | undefined;
         let supersededVersion = 1;
@@ -166,6 +166,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           sessionIds: [],
           strength: 7,
           version: supersededId ? supersededVersion + 1 : 1,
+          ...(supersededMemory ? { recurrence: (supersededMemory.recurrence ?? 1) + 1 } : {}),
           parentId: supersededId,
           supersedes: supersededId ? [supersededId] : [],
           sourceObservationIds: (data.sourceObservationIds || []).filter(
@@ -183,6 +184,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
 
         if (supersededMemory) {
           supersededMemory.isLatest = false;
+          supersededMemory.updatedAt = supersededAt(supersededMemory.updatedAt, now);
           await kv.set(KV.memories, supersededMemory.id, supersededMemory);
           // The superseded version stays in KV (the viewer's version
           // chain reads it there) but leaves both search indexes:
@@ -337,12 +339,15 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       if (data.memoryId) {
         const memoryId = data.memoryId;
         await attempt(memoryId, async () => {
-          const mem = await kv.get<Memory>(KV.memories, memoryId);
+          const mem = await withKeyedLock("mem:remember", async () => {
+            const current = await kv.get<Memory>(KV.memories, memoryId);
+            if (current) await kv.delete(KV.memories, memoryId);
+            return current;
+          });
           if (!mem) {
             await deleteFacetsForTargets(kv, [memoryId]);
             return false;
           }
-          await kv.delete(KV.memories, memoryId);
           deletedMemoryIds.push(memoryId);
           getSearchIndex().remove(memoryId);
           vectorIndexRemove(memoryId);

@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="เอกสารออกแบบ: 1.6k stars / 230 forks บน gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="เอกสารออกแบบ: 1.7k stars / 240 forks บน gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 เครื่องมือ MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook อัตโนมัติ" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="ไม่ต้องพึ่ง external DB เลย" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 4,100+ รายการ" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 4,600+ รายการ" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -648,7 +648,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory รองรับ Windows 10/11; WSL2 ใช้ขั้นตอน Linux และติดตั้ง engine อัตโนมัติได้ Windows แบบ native ต้องติดตั้งไบนารี iii-engine v0.25.0 ด้วยตนเอง ดาวน์โหลด archive จาก [หน้า release iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), ตรวจ checksum และวาง `iii.exe` บน `PATH` (เช่น `%USERPROFILE%\.local\bin\iii.exe`) CLI ไม่แตก Windows ZIP ให้อัตโนมัติ
+agentmemory รองรับ Windows 10/11; WSL2 ใช้ขั้นตอน Linux และติดตั้ง engine อัตโนมัติได้ Windows แบบ native ต้องติดตั้งไบนารี iii-engine v0.25.1 ด้วยตนเอง ดาวน์โหลด archive จาก [หน้า release iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), ตรวจ checksum และวาง `iii.exe` บน `PATH` (เช่น `%USERPROFILE%\.local\bin\iii.exe`) CLI ไม่แตก Windows ZIP ให้อัตโนมัติ
 
 การตั้งค่า MCP อัตโนมัติบน Windows รองรับเฉพาะ `agentmemory connect copilot-cli`; สำหรับ agent อื่นให้ใช้ MCP block ใน [Other agents](#other-agents) เรียก `connect` ใน WSL เมื่อ agent เป้าหมายติดตั้งใน WSL เดียวกันเท่านั้น
 
@@ -1161,7 +1161,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
+147 endpoint บนพอร์ต `3111` REST API จะ bind กับ `127.0.0.1` โดย default endpoint ที่ป้องกันไว้ต้องมี `Authorization: Bearer <secret>` และ endpoint ของ mesh sync ต้องตั้งค่า `AGENTMEMORY_SECRET` ไว้อย่างชัดเจนทั้งสองฝั่ง
 
 เปิดการยืนยันตัวตนตามค่าเริ่มต้น หากไม่ตั้ง `AGENTMEMORY_SECRET` CLI จะสร้างรหัสลับสุ่มครั้งแรกที่ `~/.agentmemory/secret` และคัดลอกไปยัง `secret` ในไดเรกทอรีข้อมูลที่เลือก โดยใช้สิทธิ์ `0600` ไคลเอนต์ที่รวมมาจะอ่านไฟล์หลักนี้ก่อนเมื่อเชื่อมต่อในเครื่อง และส่งรหัสลับที่บันทึกไว้เฉพาะ URL แบบ loopback ค่า `AGENTMEMORY_SECRET` ที่ระบุเองมีลำดับความสำคัญสูงกว่า ไคลเอนต์ระยะไกลต้องตั้งผ่าน environment ส่วน Docker สร้างรหัสลับของตนเอง
 
@@ -1242,7 +1242,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

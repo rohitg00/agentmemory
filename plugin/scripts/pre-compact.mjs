@@ -36,7 +36,7 @@ function unquote(value) {
 	const hash = value.indexOf(" #");
 	return hash === -1 ? value : value.slice(0, hash).trim();
 }
-function readEnvFileSecret() {
+function readEnvFileValue(name) {
 	let content;
 	try {
 		content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
@@ -50,10 +50,13 @@ function readEnvFileSecret() {
 		if (trimmed.startsWith("#")) continue;
 		const eq = trimmed.indexOf("=");
 		if (eq === -1) continue;
-		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== SECRET_KEY) continue;
-		found = usable(unquote(trimmed.slice(eq + 1).trim()));
+		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== name) continue;
+		found = unquote(trimmed.slice(eq + 1).trim());
 	}
 	return found;
+}
+function readEnvFileSecret() {
+	return usable(readEnvFileValue(SECRET_KEY));
 }
 function readSecretFile(path) {
 	try {
@@ -102,12 +105,24 @@ function canonicalSecretPath() {
 //#region src/hooks/_endpoint.ts
 const OPTION_PREFIX = "CLAUDE_PLUGIN_OPTION_";
 const DEFAULT_URL = "http://localhost:3111";
+function filled(value) {
+	const trimmed = value?.trim();
+	if (!trimmed || trimmed.startsWith("${") && trimmed.endsWith("}")) return void 0;
+	return value;
+}
 function hookSetting(name, env = process.env) {
 	const optionKey = `${OPTION_PREFIX}${name}`;
-	const option = env[optionKey]?.trim();
+	const option = filled(env[optionKey])?.trim();
 	if (option) return option;
 	if (name === "AGENTMEMORY_SECRET" && optionKey in env) return void 0;
-	return env[name];
+	return filled(env[name]);
+}
+function resolveSettingSecret(url, env = process.env) {
+	const secretEnv = { ...env };
+	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
+	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
+	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
+	return resolveClientSecret(url, secretEnv);
 }
 function secretTransportAllowed(url) {
 	try {
@@ -118,11 +133,7 @@ function secretTransportAllowed(url) {
 }
 function resolveHookEndpoint(env = process.env) {
 	const url = hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL;
-	const secretEnv = { ...env };
-	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
-	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
-	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
-	const secret = resolveClientSecret(url, secretEnv);
+	const secret = resolveSettingSecret(url, env);
 	const blocked = !secretTransportAllowed(url);
 	return {
 		url,

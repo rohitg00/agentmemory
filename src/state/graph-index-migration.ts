@@ -129,9 +129,13 @@ function readPage(value: unknown, job: GraphIndexMigration): GraphIndexManifestP
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof GraphIndexMigrationError || error instanceof GraphIndexError
-    ? error.message
-    : "Graph index migration stopped after a storage failure. Check the server and resume when storage is available.";
+  if (error instanceof GraphIndexMigrationError || error instanceof GraphIndexError) return error.message;
+  const base = "Graph index migration stopped after a storage failure. Check the server and resume when storage is available.";
+  const record = error as { code?: unknown; message?: unknown };
+  const detail = typeof record?.code === "string"
+    ? `${record.code}: ${typeof record.message === "string" ? record.message : String(error)}`
+    : typeof record?.message === "string" ? record.message : String(error);
+  return `${base} (${detail.slice(0, 300)})`;
 }
 
 export async function getGraphIndexMigrationStatus(kv: StateKV): Promise<GraphIndexMigrationStatus> {
@@ -279,7 +283,7 @@ export class GraphIndexMigrationController {
       job.phase = phase;
       await this.assertActive(state, job);
       await this.save(state, job);
-      const rows = await state.list<{ id?: unknown }>(SCOPES[phase]);
+      const keys = await state.listKeys(SCOPES[phase]);
       await this.assertActive(state, job);
       let ids: string[] = [];
       const flush = async () => {
@@ -288,12 +292,12 @@ export class GraphIndexMigrationController {
         await state.set(KV.graphIndexManifest, graphIndexManifestKey(job.jobId, phase, page.page), page);
         job.pages[phase]++; job.totals[phase] += ids.length; ids = [];
       };
-      for (const row of rows) {
-        if (!row || !validId(row.id)) throw new GraphIndexMigrationError("invalid-state", "A legacy graph record has an invalid or oversized ID; repair it before migrating.");
-        if (ids.length >= GRAPH_INDEX_MANIFEST_MAX_IDS || Buffer.byteLength(JSON.stringify(ids)) + Buffer.byteLength(JSON.stringify(row.id)) + 256 > GRAPH_INDEX_MANIFEST_MAX_BYTES) {
+      for (const id of keys) {
+        if (!validId(id)) throw new GraphIndexMigrationError("invalid-state", "A legacy graph record has an invalid or oversized ID; repair it before migrating.");
+        if (ids.length >= GRAPH_INDEX_MANIFEST_MAX_IDS || Buffer.byteLength(JSON.stringify(ids)) + Buffer.byteLength(JSON.stringify(id)) + 256 > GRAPH_INDEX_MANIFEST_MAX_BYTES) {
           await flush(); await this.assertActive(state, job); await yieldToEventLoop();
         }
-        ids.push(row.id);
+        ids.push(id);
       }
       await flush();
     }

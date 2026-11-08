@@ -3,7 +3,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 //#region src/version.ts
-const VERSION = "0.9.31";
+const VERSION = "0.9.32";
 //#endregion
 //#region src/secret-store.ts
 const SECRET_KEY = "AGENTMEMORY_SECRET";
@@ -29,7 +29,7 @@ function unquote(value) {
 	const hash = value.indexOf(" #");
 	return hash === -1 ? value : value.slice(0, hash).trim();
 }
-function readEnvFileSecret() {
+function readEnvFileValue(name) {
 	let content;
 	try {
 		content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
@@ -43,10 +43,13 @@ function readEnvFileSecret() {
 		if (trimmed.startsWith("#")) continue;
 		const eq = trimmed.indexOf("=");
 		if (eq === -1) continue;
-		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== SECRET_KEY) continue;
-		found = usable(unquote(trimmed.slice(eq + 1).trim()));
+		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== name) continue;
+		found = unquote(trimmed.slice(eq + 1).trim());
 	}
 	return found;
+}
+function readEnvFileSecret() {
+	return usable(readEnvFileValue(SECRET_KEY));
 }
 function readSecretFile(path) {
 	try {
@@ -92,12 +95,39 @@ function canonicalSecretPath() {
 	return join(homedir(), ".agentmemory", "secret");
 }
 //#endregion
+//#region src/hooks/_endpoint.ts
+const OPTION_PREFIX = "CLAUDE_PLUGIN_OPTION_";
+function filled(value) {
+	const trimmed = value?.trim();
+	if (!trimmed || trimmed.startsWith("${") && trimmed.endsWith("}")) return void 0;
+	return value;
+}
+function hookSetting(name, env = process.env) {
+	const optionKey = `${OPTION_PREFIX}${name}`;
+	const option = filled(env[optionKey])?.trim();
+	if (option) return option;
+	if (name === "AGENTMEMORY_SECRET" && optionKey in env) return void 0;
+	return filled(env[name]);
+}
+function resolveSettingSecret(url, env = process.env) {
+	const secretEnv = { ...env };
+	const explicit = hookSetting("AGENTMEMORY_SECRET", env);
+	if (explicit === void 0) delete secretEnv["AGENTMEMORY_SECRET"];
+	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
+	return resolveClientSecret(url, secretEnv);
+}
+//#endregion
 //#region src/mcp/rest-proxy.ts
+const DEFAULT_CALL_TIMEOUT_MS = 19e4;
+const MAX_TIMER_MS = 2147483647;
+function callTimeoutMs() {
+	const name = "AGENTMEMORY_CALL_TIMEOUT_MS";
+	const raw = (resolveEnvOrEmpty(name) || readEnvFileValue(name)).trim();
+	const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+	return n >= 1 && n <= MAX_TIMER_MS ? n : DEFAULT_CALL_TIMEOUT_MS;
+}
 function resolveEnvOrEmpty(name) {
-	const raw = process.env[name];
-	if (!raw) return "";
-	if (raw.startsWith("${") && raw.endsWith("}")) return "";
-	return raw;
+	return hookSetting(name) ?? "";
 }
 //#endregion
 //#region src/mcp/transport.ts
@@ -307,7 +337,7 @@ function createPluginBridge() {
 		"[::1]"
 	].includes(base.hostname) || /^127(?:\.\d{1,3}){3}$/.test(base.hostname);
 	function resolveSecret() {
-		const secret = resolveClientSecret(base.href);
+		const secret = resolveSettingSecret(base.href);
 		if (secret && base.protocol !== "https:" && !loopback) throw new Error("AGENTMEMORY_URL requires HTTPS when AGENTMEMORY_SECRET is set, except for loopback URLs.");
 		return secret;
 	}
@@ -324,7 +354,7 @@ function createPluginBridge() {
 				},
 				body: body === void 0 ? void 0 : JSON.stringify(body),
 				redirect: "error",
-				signal: AbortSignal.timeout(15e3)
+				signal: AbortSignal.timeout(callTimeoutMs())
 			});
 		} catch {
 			throw new Error(`Agent Memory daemon is unreachable or timed out. ${SETUP} No fallback store was used; check state before retrying a write.`);

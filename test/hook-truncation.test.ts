@@ -159,4 +159,15 @@ describe("hook truncation at a surrogate pair", () => {
     expect(whole).toContain(SMILE);
     expect(count(whole, "x")).toBe(kept - 2);
   });
+
+  it.each(sites.map((site) => [site.name, site] as const))("%s redacts a secret before cutting through it", async (_name, site) => {
+    const kept = count(await sent(site, "x".repeat(LONG)), "x");
+    const token = await sent(site, "x".repeat(kept - 12) + " ghp_" + "A".repeat(40) + " " + "x".repeat(LONG));
+    expect(token).not.toContain("ghp_");
+    expect(token).not.toContain("AAAA");
+    const bearer = await sent(site, "x".repeat(kept - 12) + " Bearer " + "B".repeat(40) + " " + "x".repeat(LONG));
+    expect(bearer).not.toContain("BBBB");
+    const block = await sent(site, "x".repeat(kept - 12) + " <private>hidden-value</private> " + "x".repeat(LONG));
+    expect(block).not.toContain("hidden");
+  });
 });

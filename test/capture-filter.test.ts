@@ -5,6 +5,7 @@ import {
   preCompactBudget,
   shouldCaptureTool,
   truncateCaptureOutput,
+  truncateJson,
   truncateText,
 } from "../src/hooks/_capture-filter.js";
 
@@ -113,6 +114,104 @@ describe("truncateText", () => {
 
   it("drops a surrogate pair that the limit would split", () => {
     expect(truncateText("ab\u{1F600}c", 3)).toBe("ab");
+  });
+});
+
+describe("truncation redacts before cutting", () => {
+  const token = "ghp_" + "A".repeat(40);
+
+  it("truncateText leaves text within the limit unchanged", () => {
+    expect(truncateText(`short ${token}`, 100)).toBe(`short ${token}`);
+  });
+
+  it("truncateText does not keep the start of a token the cut lands in", () => {
+    const out = truncateText("x".repeat(10) + " " + token + " tail", 20);
+    expect(out).not.toContain("ghp_");
+    expect(out.length).toBeLessThanOrEqual(20);
+  });
+
+  it("truncateCaptureOutput redacts strings and JSON before cutting", () => {
+    const str = truncateCaptureOutput("x".repeat(10) + " " + token + "y".repeat(100), 40) as string;
+    expect(str).not.toContain("ghp_");
+    expect(str.length).toBeLessThanOrEqual(40);
+    const json = truncateCaptureOutput({ out: "x".repeat(10) + " " + token + "y".repeat(100) }, 40) as string;
+    expect(json).not.toContain("ghp_");
+    expect(json.length).toBeLessThanOrEqual(40);
+  });
+});
+
+describe("truncateCaptureOutput redacts structured values before serializing", () => {
+  it("redacts values under secret-like keys in both helpers", () => {
+    const value = { password: "A".repeat(100), nested: { apiKey: "K".repeat(40) }, note: "kept" };
+    for (const out of [truncateJson(value, 90), truncateCaptureOutput(value, 90) as string]) {
+      expect(out).not.toContain("AAAA");
+      expect(out).not.toContain("KKKK");
+      expect(out).toContain("[REDACTED_SECRET]");
+    }
+  });
+
+  it("keeps values whose key only contains a secret word inside another word", () => {
+    const value = { tokenization: "words", secretary: "office", access_token: "T".repeat(40), accesstoken: "U".repeat(40), apiKey2: "V".repeat(40), pad: "y".repeat(200) };
+    const out = truncateJson(value, 200);
+    expect(out).toContain("words");
+    expect(out).toContain("office");
+    expect(out).not.toContain("TTTT");
+    expect(out).not.toContain("UUUU");
+    expect(out).not.toContain("VVVV");
+  });
+
+  it("leaves a short value with a secret-like key unchanged", () => {
+    const value = { password: "short" };
+    expect(truncateJson(value, 100)).toBe(JSON.stringify(value));
+    expect(truncateCaptureOutput(value, 100)).toBe(value);
+  });
+
+  it("removes a private block whose tag spans a line break", () => {
+    const out = truncateCaptureOutput({ log: "<private\n>hidden-value</private>" + "y".repeat(200) }, 60) as string;
+    expect(out).not.toContain("hidden");
+  });
+
+  it("removes a private block that opens in one field and closes in the next", () => {
+    const value = { a: "start <private>", b: "hidden-value</private> end", pad: "y".repeat(200) };
+    expect(truncateCaptureOutput(value, 80) as string).not.toContain("hidden");
+    expect(truncateJson(value, 80)).not.toContain("hidden");
+  });
+
+  it("redacts a credential in a key that a line break separates from its scheme", () => {
+    const key = "Bearer\n" + "A".repeat(32);
+    const value = { [key]: "x", pad: "y".repeat(200) };
+    expect(truncateJson(value, 100)).not.toContain("A".repeat(32));
+    expect(truncateCaptureOutput(value, 100) as string).not.toContain("A".repeat(32));
+  });
+
+  it("redacts a quoted credential whose quote JSON escapes", () => {
+    const value = { cmd: 'secret="' + "B".repeat(32) + '"', pad: "y".repeat(200) };
+    expect(truncateJson(value, 100)).not.toContain("B".repeat(20));
+    expect(truncateCaptureOutput(value, 100) as string).not.toContain("B".repeat(20));
+  });
+
+  it("redacts a credential that a vertical tab separates from its scheme", () => {
+    const value = { header: "Bearer\u000b" + "C".repeat(32), pad: "y".repeat(200) };
+    expect(truncateJson(value, 100)).not.toContain("C".repeat(20));
+  });
+
+  it("keeps every field when two keys redact to the same text", () => {
+    const value = { ["token=" + "A".repeat(24)]: "first", ["token=" + "B".repeat(24)]: "second", pad: "y".repeat(200) };
+    const out = truncateJson(value, 150);
+    expect(out).toContain("first");
+    expect(out).toContain("second");
+  });
+
+  it("keeps escaped backslashes and line breaks in the cut JSON", () => {
+    const out = truncateJson({ a: "one\ntwo\\nthree", pad: "y".repeat(200) }, 60);
+    expect(out.startsWith('{"a":"one\\ntwo\\\\nthree"')).toBe(true);
+  });
+
+  it("truncateJson leaves short JSON unchanged and redacts long JSON before cutting", () => {
+    expect(truncateJson({ a: 1 }, 100)).toBe('{"a":1}');
+    const out = truncateJson({ log: "<private\n>hidden-value</private>" + "y".repeat(200) }, 60);
+    expect(out).not.toContain("hidden");
+    expect(out.length).toBeLessThanOrEqual(60);
   });
 });
 
