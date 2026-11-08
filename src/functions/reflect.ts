@@ -362,8 +362,8 @@ export function registerReflectFunctions(
         await Promise.all([
           reflectionGraph(kv, data?.project),
           collectAll<SemanticMemory>(kv, KV.semantic).catch(() => []),
-          kv.list<Lesson>(KV.lessons).catch(() => []),
-          kv.list<Crystal>(KV.crystals).catch(() => []),
+          collectAll<Lesson>(kv, KV.lessons).catch(() => []),
+          collectAll<Crystal>(kv, KV.crystals).catch(() => []),
         ]);
 
       let activeLessons = lessons.filter((l) => !l.deleted);

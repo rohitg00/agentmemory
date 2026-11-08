@@ -20,7 +20,7 @@ Each cluster retains at most 32 distinct concept names, each fitting 128 bytes o
 
 Insight results and their REST/MCP envelopes are checked against the 60 MiB transport safety budget (`SAFE_PAYLOAD_BYTES`). An oversized response returns a small refusal with HTTP 413, including when escaping JSON inside an MCP text response expands its size. Reduce the limit or narrow the project/search filter. Oversized legacy records are preserved in storage.
 
-These limits bound model input, newly accepted provenance and outgoing insight responses. They do not bound reflection's clustering work. State reads page through scopes larger than the transport limit, so reflection reads such a store in pages. Other list and export endpoints retain their own contracts.
+These limits bound model input, newly accepted provenance and outgoing insight responses. They do not bound reflection's clustering work. Reflection reads semantic memories, lessons and crystals in pages, so a scope larger than the transport limit is still read. A scope whose read fails is treated as empty for that run. Other list and export endpoints retain their own contracts.
 
 ## Test the packaged runtime
 
