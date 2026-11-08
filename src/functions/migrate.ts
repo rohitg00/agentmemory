@@ -4,6 +4,7 @@ import { homedir } from "node:os";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV, collectAll } from "../state/kv.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
+import { indexObservationSession } from "../state/obs-index.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import type {
   Memory,
@@ -194,6 +195,7 @@ export function registerMigrateFunction(sdk: IIIClient, kv: StateKV): void {
             importance: row.importance || 5,
           };
           await kv.set(KV.observations(sessionId), obs.id, obs);
+          await indexObservationSession(kv, obs.id, sessionId);
           obsCount++;
         }
 

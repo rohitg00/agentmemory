@@ -4,6 +4,16 @@ The native plugin recalls relevant project memories before a turn and captures c
 
 ## Install and configure
 
+agentmemory is listed on [ClawHub](https://clawhub.ai/plugins/agentmemory):
+
+```bash
+openclaw plugins install clawhub:agentmemory
+```
+
+After a ClawHub install, set `plugins.slots.memory` to `"agentmemory"` and `plugins.entries.agentmemory.hooks.allowConversationAccess` to `true` in your OpenClaw configuration, then restart OpenClaw.
+
+The connector installs the same plugin from your installed AgentMemory package and applies both settings for you:
+
 ```bash
 npm install -g @agentmemory/agentmemory
 agentmemory connect openclaw --dry-run

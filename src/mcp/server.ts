@@ -3,19 +3,14 @@ import type { HttpRequest } from "@iii-dev/helpers/http";
 import type { StateKV } from "../state/kv.js";
 import { collectAll } from "../state/kv.js";
 import { KV } from "../state/schema.js";
-import { pinGraphState } from "../state/graph-generation.js";
-import type {
-  SessionSummary,
-  Memory,
-  Session,
-  GraphNode,
-  GraphEdge,
-} from "../types.js";
-import { getVisibleTools } from "./tools-registry.js";
+import type { SessionSummary, Memory, Session } from "../types.js";
+import { getAllTools, getVisibleTools } from "./tools-registry.js";
 import { parseSearchExpansionIds } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
 import { isSearchLayer } from "../state/search-layer.js";
-import { checkAuth } from "../triggers/api.js";
+import { checkAuth, slotsDisabledResponse } from "../triggers/api.js";
+import { isSlotsEnabled } from "../functions/slots.js";
+import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 import { getBindings } from "../runtime/bindings.js";
 type McpResponse = {
@@ -46,16 +41,26 @@ function parseCsvList(value: unknown): string[] {
   return [];
 }
 
+const SLOT_TOOL_NAMES = new Set(
+  getAllTools().filter((t) => t.name.startsWith("memory_slot_")).map((t) => t.name),
+);
+
+function isSlotTool(name: string): boolean {
+  return SLOT_TOOL_NAMES.has(name);
+}
+
 export function registerMcpEndpoints(
   sdk: IIIClient,
   kv: StateKV,
   secret?: string,
 ): void {
-  sdk.registerFunction("mcp::tools::list", 
+  const slotsEnabled = isSlotsEnabled();
+  sdk.registerFunction("mcp::tools::list",
     async (req: HttpRequest): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
-      return { status_code: 200, body: { tools: getVisibleTools() } };
+      const tools = getVisibleTools().filter((t) => slotsEnabled || !isSlotTool(t.name));
+      return { status_code: 200, body: { tools } };
     },
   );
   getBindings(sdk).http({
@@ -76,6 +81,8 @@ export function registerMcpEndpoints(
       }
 
       const { name, arguments: args = {} } = req.body;
+
+      if (isSlotTool(name) && !slotsEnabled) return slotsDisabledResponse();
 
       try {
         switch (name) {
@@ -705,6 +712,13 @@ export function registerMcpEndpoints(
                 body: { error: "title is required" },
               };
             }
+            if (args.agentId !== undefined && typeof args.agentId !== "string") {
+              return { status_code: 400, body: { error: "agentId must be a string" } };
+            }
+            const creatorId = typeof args.agentId === "string" ? args.agentId.trim() : "";
+            if (creatorId.length > 128) {
+              return { status_code: 400, body: { error: "agentId must be at most 128 characters" } };
+            }
             const edges: Array<{ type: string; targetActionId: string }> = [];
             if (typeof args.requires === "string" && args.requires.trim()) {
               for (const id of args.requires.split(",").map((s: string) => s.trim()).filter(Boolean)) {
@@ -722,6 +736,7 @@ export function registerMcpEndpoints(
               tags,
               parentId: args.parentId,
               edges: edges.length > 0 ? edges : undefined,
+              createdBy: creatorId || getAgentId(),
             } });
             return {
               status_code: 200,
@@ -1138,6 +1153,10 @@ export function registerMcpEndpoints(
             const lessonTags = typeof args.tags === "string" && args.tags.trim()
               ? args.tags.split(",").map((t: string) => t.trim()).filter(Boolean)
               : [];
+            const lessonSourceIds = normalizeLessonSourceIds(args.sourceIds);
+            if (!lessonSourceIds) {
+              return { status_code: 400, body: { error: `sourceIds must be an array of at most ${LESSON_SOURCE_IDS_MAX} ids (session, memory, observation or crystal ids) without spaces` } };
+            }
             const lessonSaveResult = await sdk.trigger({ function_id: "mem::lesson-save", payload: {
               content: args.content,
               context: args.context || "",
@@ -1145,6 +1164,7 @@ export function registerMcpEndpoints(
               project: args.project,
               tags: lessonTags,
               source: "manual",
+              sourceIds: lessonSourceIds,
             } });
             return { status_code: 200, body: { content: [{ type: "text", text: JSON.stringify(lessonSaveResult, null, 2) }] } };
           }
@@ -1514,15 +1534,10 @@ export function registerMcpEndpoints(
 
         if (uri === "agentmemory://graph/stats") {
           try {
-            const graphState = await pinGraphState(kv);
-            const nodes = await collectAll<GraphNode>(graphState, KV.graphNodes);
-            const edges = await collectAll<GraphEdge>(graphState, KV.graphEdges);
-            const nodesByType: Record<string, number> = {};
-            for (const n of nodes)
-              nodesByType[n.type] = (nodesByType[n.type] || 0) + 1;
-            const edgesByType: Record<string, number> = {};
-            for (const e of edges)
-              edgesByType[e.type] = (edgesByType[e.type] || 0) + 1;
+            const stats = await sdk.trigger({
+              function_id: "mem::graph-stats",
+              payload: {},
+            });
             return {
               status_code: 200,
               body: {
@@ -1530,12 +1545,7 @@ export function registerMcpEndpoints(
                   {
                     uri,
                     mimeType: "application/json",
-                    text: JSON.stringify({
-                      totalNodes: nodes.length,
-                      totalEdges: edges.length,
-                      nodesByType,
-                      edgesByType,
-                    }),
+                    text: JSON.stringify(stats),
                   },
                 ],
               },
@@ -1549,8 +1559,15 @@ export function registerMcpEndpoints(
                     uri,
                     mimeType: "application/json",
                     text: JSON.stringify({
-                      totalNodes: 0,
-                      totalEdges: 0,
+                      totalNodes: null,
+                      totalEdges: null,
+                      nodesByType: {},
+                      edgesByType: {},
+                      fromSnapshot: false,
+                      fromIndex: false,
+                      available: false,
+                      coverage: "unknown",
+                      warning: "Graph stats are unavailable. Check agentmemory graph-index status.",
                     }),
                   },
                 ],

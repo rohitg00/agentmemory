@@ -3,9 +3,9 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC = join(__dirname, "../src");
-const UNBOUNDED = "(insights|semantic|procedural|graphNodes|graphEdges|memories|audit|relations|auditMonth)";
+const UNBOUNDED = "(insights|semantic|procedural|graphNodes|graphEdges|graphEdgeHistory|memories|audit|relations|auditMonth)";
 const callRe = new RegExp(
-  "\\w+\\.list(?:<[^>]*>)?\\(\\s*KV\\." + UNBOUNDED + "(\\b|\\()",
+  "\\w+\\s*\\.list(?:<[^>]*>)?\\(\\s*KV\\." + UNBOUNDED + "(\\b|\\()",
 );
 
 const ALLOWLIST: Record<string, string> = {

@@ -223,6 +223,29 @@ describe("mem::session-sweep", () => {
     expect((await kv.get<Session>(KV.sessions, "s-bad"))!.status).toBe("active");
   });
 
+  it("skips stale active rows without a non-empty string id and abandons the rest", async () => {
+    kv.set(KV.sessions, "s-old", session({ id: "s-old", updatedAt: new Date(nowMs - 30 * H).toISOString() }));
+    const { id: _id, ...noId } = session({ updatedAt: new Date(nowMs - 30 * H).toISOString() });
+    const unusable = [noId, { ...noId, id: null }, { ...noId, id: 42 }, { ...noId, id: "" }];
+    unusable.forEach((row, i) => kv.set(KV.sessions, `row-${i}`, row));
+    const realGet = kv.get;
+    const sessionGetKeys: unknown[] = [];
+    kv.get = async <T>(scope: string, key: unknown): Promise<T | null> => {
+      if (scope === KV.sessions) sessionGetKeys.push(key);
+      if (typeof key !== "string") {
+        throw new Error("deserialization_error: Failed to deserialize input for state::get: missing field `key`");
+      }
+      return realGet<T>(scope, key);
+    };
+    const sweep = await sdk.trigger({ function_id: "mem::session-sweep", payload: {} });
+    expect(sweep).toMatchObject({ success: true, abandoned: 1, failed: 0 });
+    expect(sessionGetKeys.filter((key) => typeof key !== "string" || key === "")).toEqual([]);
+    expect((await realGet<Session>(KV.sessions, "s-old"))!.status).toBe("abandoned");
+    for (const i of unusable.keys()) {
+      expect((await realGet<Session>(KV.sessions, `row-${i}`))!.status).toBe("active");
+    }
+  });
+
   it("writes one audit entry into the current month scope listing the abandoned sessions", async () => {
     kv.set(KV.sessions, "s-a", session({ id: "s-a", updatedAt: new Date(nowMs - 30 * H).toISOString() }));
     kv.set(KV.sessions, "s-b", session({ id: "s-b", startedAt: new Date(nowMs - 40 * H).toISOString() }));

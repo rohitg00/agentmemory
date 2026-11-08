@@ -365,7 +365,7 @@ class Gate {
     for (const entry of entries) {
       if (entry.matcher && toolName && !new RegExp(`^(?:${entry.matcher})$`).test(toolName)) continue;
       if (entry.matcher && !toolName) continue;
-      for (const h of entry.hooks ?? []) if (h.type === "command") commands.push(h.command);
+      for (const h of entry.hooks ?? []) if (h.type === "command") commands.push(h);
     }
     return commands;
   }
@@ -402,7 +402,6 @@ class Instance {
     return {
       ...gate.baseEnv(this.home),
       OPENAI_API_KEY: "release-gate-fake-key",
-      OPENAI_API_KEY_FOR_LLM: "false",
       EMBEDDING_PROVIDER: "openai",
       OPENAI_BASE_URL: `http://127.0.0.1:${gate.fake.port}`,
       OPENAI_EMBEDDING_DIMENSIONS: String(gate.dims),
@@ -630,8 +629,8 @@ class Instance {
         childProcessStarted: false,
         required: true,
         configurationRss: "No separate PID/RSS exists; configuration is loaded in-process inside iii-engine. Its RSS is the iii-engine entry in startupRss.",
-        pinSupported: "No per-dependency exact version selector is supported for engine-kind graph nodes in this Compose runtime. The active implementation is the engine-bundled configuration worker in the pinned iii 0.25.0, not the independent configuration@latest registry binary.",
-        explanation: "The published state/http manifests declare configuration: latest. The registry resolver returns dependency graph nodes in the same response; iii-compose::expand_graph omits nodes with kind=engine because they are supplied by the engine. Their dependency is satisfied by engine.workers.configuration (fs adapter), which Compose includes in engine-config.yaml. It is required by workers that use typed configuration, but is not downloaded/started as a child by Compose. Public registry info for configuration@latest currently reports 0.24.5; that is separate from the built-in configuration implementation in iii 0.25.0. It has no separate child RSS. No exact per-package dependency pin is available in this runtime; changing the engine pin is the control over the bundled implementation.",
+        pinSupported: `No per-dependency exact version selector is supported for engine-kind graph nodes in this Compose runtime. The active implementation is the engine-bundled configuration worker in the pinned iii ${gate.info.enginePin}, not the independent configuration@latest registry binary.`,
+        explanation: `The published state/http manifests declare configuration: latest. The registry resolver returns dependency graph nodes in the same response; iii-compose::expand_graph omits nodes with kind=engine because they are supplied by the engine. Their dependency is satisfied by engine.workers.configuration (fs adapter), which Compose includes in engine-config.yaml. It is required by workers that use typed configuration, but is not downloaded/started as a child by Compose. Public registry info for configuration@latest currently reports 0.24.5; that is separate from the built-in configuration implementation in iii ${gate.info.enginePin}. It has no separate child RSS. No exact per-package dependency pin is available in this runtime; changing the engine pin is the control over the bundled implementation.`,
       };
       writeFileSync(join(OUT, `configuration-${this.name}.json`), JSON.stringify(metadata, null, 2) + "\n");
       return metadata;
@@ -792,11 +791,15 @@ class Instance {
     const commands = gate.hookCommands(event, payload.tool_name);
     assert(commands.length > 0, `no bundled ${event} hook matches ${payload.tool_name ?? "this event"}`);
     const results = [];
-    for (const command of commands) {
-      const r = await run("sh", ["-c", command], {
+    const pluginRoot = join(gate.pkgDir, "plugin");
+    for (const handler of commands) {
+      const [file, argv] = handler.args
+        ? [handler.command, handler.args.map((arg) => arg.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginRoot))]
+        : ["sh", ["-c", handler.command]];
+      const r = await run(file, argv, {
         env: {
           ...gate.baseEnv(this.home),
-          CLAUDE_PLUGIN_ROOT: join(gate.pkgDir, "plugin"),
+          CLAUDE_PLUGIN_ROOT: pluginRoot,
           CLAUDE_PROJECT_DIR: this.project,
           AGENTMEMORY_URL: `http://127.0.0.1:${this.port}`,
           AGENTMEMORY_DATA_DIR: this.dataDir,

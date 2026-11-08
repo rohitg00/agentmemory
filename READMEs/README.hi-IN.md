@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.6k stars / 230 forks on the gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.7k stars / 240 forks on the gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -630,7 +630,7 @@ agentmemory entry, `mcpServers` shape का उपयोग करने वा
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` current IDE versions जैसा ही MCP और hook configuration उपयोग करता है। मौजूदा installations को `--force` से refresh करना चाहिए; देखें [upgrade notes](../docs/plugins/antigravity.md)। |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` user-level config लिखता है। Workspace overrides आपके code के बगल में `.kiro/settings/mcp.json` में जाते हैं। |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` standard `mcpServers` block लिखता है। Warp `.claude/skills/` से skills भी auto-discover करता है; Claude Code plugin install होने के बाद 9 agentmemory skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) Warp की slash-command palette में natively दिखती हैं। |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` standard `mcpServers` block लिखता है। VS Code extension users: वही block Cline Settings → MCP Servers → Edit JSON के माध्यम से paste करें। |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` standard `mcpServers` block लिखता है। VS Code extension users: वही block Cline Settings → MCP Servers → Edit JSON के माध्यम से paste करें। |
 | **Continue.dev** | `~/.continue/config.yaml` (preferred) या `config.json` (legacy) | `agentmemory connect continue` कॉन्फ़िगरेशन न होने पर `config.yaml` बनाता है या मौजूद `config.json` अपडेट करता है। पहले से मौजूद YAML के comments और anchors बचाने के लिए उसे नहीं बदलता, बल्कि `mcpServers:` के नीचे पेस्ट करने का block दिखाता है। Continue का `mcpServers` एक array है। |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` `context_servers` (Zed की key, `mcpServers` नहीं) के अंतर्गत लिखता है। Remote MCP servers इसके बजाय `{"url": "..."}` के माध्यम से wired हो सकते हैं। |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` standard `mcpServers` block लिखता है। Project-scoped overrides `<repo>/.factory/mcp.json` में जाते हैं। Native auto-capture के लिए `--with-hooks` pass करें। |
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory Windows 10/11 पर चलता है। WSL2 Linux path अपनाता है और pinned engine को automatically install कर सकता है। Native Windows पर pinned iii-engine v0.25.0 binary manually install करें: [iii v0.25.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) से सही archive download करें, checksum verify करें और `iii.exe` को `PATH` में रखें (उदाहरण: `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP को automatically extract नहीं करता।
+agentmemory Windows 10/11 पर चलता है। WSL2 Linux path अपनाता है और pinned engine को automatically install कर सकता है। Native Windows पर pinned iii-engine v0.25.1 binary manually install करें: [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) से सही archive download करें, checksum verify करें और `iii.exe` को `PATH` में रखें (उदाहरण: `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP को automatically extract नहीं करता।
 
 Native Windows में automated MCP wiring केवल `agentmemory connect copilot-cli` को support करती है। अन्य native Windows agents के लिए [Other agents](#other-agents) वाला manual MCP block इस्तेमाल करें। `connect` को WSL में तभी चलाएँ जब target agent भी उसी WSL environment में installed हो।
 
@@ -1175,7 +1175,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-Port `3111` पर 146 endpoints। REST API default रूप से `127.0.0.1` से bind होता है। Protected endpoints `Authorization: Bearer <secret>` की आवश्यकता रखते हैं, और mesh sync endpoints दोनों peers पर एक explicitly set `AGENTMEMORY_SECRET` की आवश्यकता रखते हैं।
+Port `3111` पर 147 endpoints। REST API default रूप से `127.0.0.1` से bind होता है। Protected endpoints `Authorization: Bearer <secret>` की आवश्यकता रखते हैं, और mesh sync endpoints दोनों peers पर एक explicitly set `AGENTMEMORY_SECRET` की आवश्यकता रखते हैं।
 
 प्रमाणीकरण डिफ़ॉल्ट रूप से चालू है। `AGENTMEMORY_SECRET` सेट न होने पर CLI पहली बार एक random secret `~/.agentmemory/secret` में रखता है और चुनी हुई डेटा डायरेक्टरी के `secret` में उसकी प्रति बनाता है; permissions `0600` होती हैं। साथ आए क्लाइंट लोकल कनेक्शन में इस मूल फ़ाइल को प्राथमिकता देते हैं और सेव किया secret सिर्फ loopback URL को भेजते हैं। स्पष्ट `AGENTMEMORY_SECRET` प्राथमिकता रखता है; रिमोट क्लाइंट को इसे environment में सेट करना होता है। Docker अपना secret बनाता है।
 
@@ -1256,7 +1256,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

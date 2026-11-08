@@ -52,7 +52,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="ڈیزائن دستاویز: گسٹ پر 1.6k سٹارز / 230 فورکس" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="ڈیزائن دستاویز: گسٹ پر 1.7k سٹارز / 240 فورکس" /></a>
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP ٹولز" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 خودکار ہکس" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 خارجی ڈیٹابیسز" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ ٹیسٹس پاس ہو رہے ہیں" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ ٹیسٹس پاس ہو رہے ہیں" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -632,7 +632,7 @@ agentmemory کا entry ہر اس host پر **ایک ہی MCP سرور بلاک**
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` موجودہ IDE ورژنز جیسی ہی MCP اور hook configuration استعمال کرتا ہے۔ موجودہ انسٹالیشنز کو `--force` کے ساتھ ریفریش کرنا چاہیے؛ دیکھیں [اپ گریڈ نوٹس](../docs/plugins/antigravity.md)۔ |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` user-level کنفیگ لکھتا ہے۔ Workspace overrides آپ کے کوڈ کے ساتھ `.kiro/settings/mcp.json` میں جاتے ہیں۔ |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` معیاری `mcpServers` بلاک لکھتا ہے۔ Warp `.claude/skills/` سے اسکلز کو بھی خودکار طور پر دریافت کرتا ہے؛ ایک بار Claude Code plugin انسٹال ہونے پر 9 agentmemory اسکلز (`remember`، `recall`، `recap`، `handoff`، `forget`، `lesson`، `commit-context`، `commit-history`، `session-history`) Warp کے slash-command palette میں نیٹیو طور پر ظاہر ہوتی ہیں۔ |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` معیاری `mcpServers` بلاک لکھتا ہے۔ VS Code extension صارفین: وہی بلاک Cline Settings → MCP Servers → Edit JSON کے ذریعے پیسٹ کریں۔ |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` معیاری `mcpServers` بلاک لکھتا ہے۔ VS Code extension صارفین: وہی بلاک Cline Settings → MCP Servers → Edit JSON کے ذریعے پیسٹ کریں۔ |
 | **Continue.dev** | `~/.continue/config.yaml` (ترجیحی) یا `config.json` (legacy) | `agentmemory connect continue` ترتیب نہ ہونے پر `config.yaml` بناتا ہے یا موجودہ `config.json` اپ ڈیٹ کرتا ہے۔ موجودہ YAML کے comments اور anchors محفوظ رکھنے کے لیے اسے تبدیل نہیں کرتا، بلکہ `mcpServers:` کے نیچے چسپاں کرنے کا بلاک دکھاتا ہے۔ Continue کا `mcpServers` ایک array ہے۔ |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` `context_servers` کے تحت لکھتا ہے (Zed کی اپنی key، `mcpServers` نہیں)۔ ریموٹ MCP سرورز کو بجائے `{"url": "..."}` کے ذریعے جوڑا جا سکتا ہے۔ |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` معیاری `mcpServers` بلاک لکھتا ہے۔ Project-scoped overrides `<repo>/.factory/mcp.json` میں جاتے ہیں۔ نیٹیو auto-capture کے لیے `--with-hooks` پاس کریں۔ |
@@ -658,7 +658,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory Windows 10/11 پر چلتا ہے؛ WSL2 Linux طریقے سے engine خود انسٹال کر سکتا ہے۔ Native Windows پر iii-engine v0.25.0 binary دستی طور پر انسٹال کریں: [iii v0.25.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) سے archive ڈاؤن لوڈ، checksum کی تصدیق، اور `iii.exe` کو `PATH` پر رکھیں۔ CLI ZIP خود نہیں کھولتا
+agentmemory Windows 10/11 پر چلتا ہے؛ WSL2 Linux طریقے سے engine خود انسٹال کر سکتا ہے۔ Native Windows پر iii-engine v0.25.1 binary دستی طور پر انسٹال کریں: [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) سے archive ڈاؤن لوڈ، checksum کی تصدیق، اور `iii.exe` کو `PATH` پر رکھیں۔ CLI ZIP خود نہیں کھولتا
 
 Native Windows پر MCP خودکار wiring صرف `agentmemory connect copilot-cli` کے لیے ہے؛ دوسرے agents کے لیے [Other agents](#other-agents) کا دستی MCP block استعمال کریں۔ WSL میں `connect` تب چلائیں جب target agent وہیں نصب ہو
 
@@ -1165,7 +1165,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-پورٹ `3111` پر 146 اینڈ پوائنٹس۔ REST API ڈیفالٹ کے طور پر `127.0.0.1` سے bind ہوتا ہے۔ محفوظ اینڈ پوائنٹس کو `Authorization: Bearer <secret>` درکار ہے، اور mesh sync اینڈ پوائنٹس کو دونوں peers پر واضح طور پر سیٹ کیا گیا `AGENTMEMORY_SECRET` درکار ہے۔
+پورٹ `3111` پر 147 اینڈ پوائنٹس۔ REST API ڈیفالٹ کے طور پر `127.0.0.1` سے bind ہوتا ہے۔ محفوظ اینڈ پوائنٹس کو `Authorization: Bearer <secret>` درکار ہے، اور mesh sync اینڈ پوائنٹس کو دونوں peers پر واضح طور پر سیٹ کیا گیا `AGENTMEMORY_SECRET` درکار ہے۔
 
 توثیق بطور طے شدہ فعال ہے۔ `AGENTMEMORY_SECRET` مقرر نہ ہو تو CLI پہلی بار بے ترتیب راز `~/.agentmemory/secret` میں محفوظ کرتا ہے اور منتخب ڈیٹا ڈائریکٹری کے `secret` میں اس کی نقل رکھتا ہے؛ اجازت `0600` ہوتی ہے۔ ساتھ آنے والے کلائنٹس مقامی رابطے میں اس اصل فائل کو ترجیح دیتے ہیں اور محفوظ راز صرف loopback URL کو بھیجتے ہیں۔ واضح `AGENTMEMORY_SECRET` مقدم ہے؛ دور کے کلائنٹس اسے environment میں مقرر کریں۔ Docker اپنا راز بناتا ہے۔
 
@@ -1246,7 +1246,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

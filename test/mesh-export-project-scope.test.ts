@@ -188,3 +188,67 @@ describe("api::mesh-export page boundary", () => {
     expect(page2.body.nextCursor).toBeUndefined();
   });
 });
+
+describe("api::mesh-export cursor keys", () => {
+  async function walkExport(sdk: ReturnType<typeof mockSdk>, key: string) {
+    const rows: Array<Record<string, unknown>> = [];
+    let cursor: string | undefined;
+    for (let pages = 0; pages < 50; pages++) {
+      const res = await meshExport(sdk, undefined, { limit: "1", ...(cursor ? { cursor } : {}) });
+      expect(res.status_code).toBe(200);
+      rows.push(...((res.body[key] as Array<Record<string, unknown>>) ?? []));
+      cursor = res.body.nextCursor as string | undefined;
+      if (!cursor) break;
+    }
+    return rows;
+  }
+
+  it("pages relations that have no id without skipping the rest of the collection", async () => {
+    const kv = mockKV();
+    for (const [s, t] of [["a", "b"], ["b", "c"], ["c", "d"]]) {
+      await kv.set(KV.relations, `${s}:${t}:related`, { type: "related", sourceId: s, targetId: t, createdAt: "2026-08-01T00:00:00Z" });
+    }
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+    const rows = await walkExport(sdk, "relations");
+    expect(rows.map((r) => r.sourceId).sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("accepts the cursor it emits after a record id longer than 512 characters", async () => {
+    const kv = mockKV();
+    const longId = `m-${"x".repeat(600)}`;
+    await kv.set(KV.memories, longId, memory(longId, "alpha"));
+    await kv.set(KV.memories, "z-1", memory("z-1", "alpha"));
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+    const rows = await walkExport(sdk, "memories");
+    expect(rows.map((r) => r.id)).toEqual([longId, "z-1"]);
+  });
+});
+
+describe("api::mesh-export single-request callers", () => {
+  it("returns every row without nextCursor when the caller sends neither limit nor cursor", async () => {
+    const kv = mockKV();
+    for (let i = 0; i < 600; i++) await kv.set(KV.memories, `m-${String(i).padStart(4, "0")}`, memory(`m-${String(i).padStart(4, "0")}`, "alpha"));
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+    const res = await meshExport(sdk, "alpha");
+    expect(res.status_code).toBe(200);
+    expect((res.body.memories as Memory[]).length).toBe(600);
+    expect(res.body.nextCursor).toBeUndefined();
+  });
+
+  it("returns 413 instead of a partial page when the single response exceeds the frame limit", async () => {
+    const kv = mockKV();
+    const third = Math.ceil(SAFE_PAYLOAD_BYTES / 3);
+    for (let i = 0; i < 4; i++) await kv.set(KV.memories, `m-${i}`, memory(`m-${i}`, "alpha", "y".repeat(third)));
+    const sdk = mockSdk();
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+    const res = await meshExport(sdk, "alpha");
+    expect(res.status_code).toBe(413);
+    expect((res.body as { oversized?: boolean }).oversized).toBe(true);
+    const paged = await meshExport(sdk, "alpha", { limit: "500" });
+    expect(paged.status_code).toBe(200);
+    expect(paged.body.nextCursor).toBeTruthy();
+  }, 30_000);
+});

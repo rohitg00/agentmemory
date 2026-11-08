@@ -697,7 +697,7 @@ export async function compactGraphProvenance(
   }
   if (scope === undefined || scope === "history") {
     const h = await trimScope<GraphEdge>(
-      async () => (await kv.list<GraphEdge>(KV.graphEdgeHistory)).map((r) => r?.id),
+      async () => (await collectAll<GraphEdge>(kv, KV.graphEdgeHistory)).map((r) => r?.id),
       KV.graphEdgeHistory,
     );
     result.historyScanned = h.scanned;

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IndexPersistence } from "../src/state/index-persistence.js";
 import { VectorIndex } from "../src/state/vector-index.js";
-import { backfillVectorBacklog, getPendingVectorBackfillCount, getSearchIndex, indexRecords, rebuildKeywordIndex, setEmbeddingProvider, setIndexPersistence, setVectorIndex, vectorIndexRemove } from "../src/functions/search.js";
+import { backfillVectorBacklog, getPendingVectorBackfillCount, getSearchIndex, indexRecords, isBm25RebuildIncomplete, rebuildKeywordIndex, setEmbeddingProvider, setIndexPersistence, setVectorIndex, vectorIndexRemove } from "../src/functions/search.js";
 import type { CompressedObservation } from "../src/types.js";
 import { KV } from "../src/state/schema.js";
 
@@ -48,6 +48,135 @@ afterEach(() => {
 });
 
 describe("vector recovery across checkpoints", () => {
+  it("counts historical gaps by eligible ID, including undated latest memories and observations", async () => {
+    const kv = storage(); await seed(kv, 0);
+    const first = await boot(kv);
+    const cutoff = "2026-01-01T00:00:00Z";
+    const rows = [
+      { id: "equal", timestamp: cutoff },
+      { id: "undated" },
+      { id: "invalid", timestamp: "invalid" },
+      { id: "newer", timestamp: "2099-01-01T00:00:00Z" },
+      { id: "no_title", title: "" },
+      { id: "no_narrative", narrative: "" },
+    ];
+    for (const row of rows) await kv.set(KV.observations("session"), row.id, { sessionId: "session", title: "fixture", narrative: "record", type: "discovery", facts: [], concepts: [], files: [], ...row });
+    for (const row of [
+      { id: "latest", createdAt: cutoff }, { id: "undated_memory" }, { id: "invalid_memory", createdAt: "invalid" },
+      { id: "superseded", isLatest: false }, { id: "no_title_memory", title: "" }, { id: "no_content", content: "" },
+    ]) await kv.set(KV.memories, row.id, { title: "fixture", content: "record", type: "discovery", facts: [], concepts: [], files: [], ...row });
+    for (let i = 0; i < 10; i++) first.vector.add(`stale_${i}`, "session", new Float32Array([1, 1, 1]));
+    let scan = await rebuildKeywordIndex(kv as never, cutoff);
+    expect(scan.historicalVectorGaps).toBe(6);
+    expect(scan.documents).toBe(7);
+    expect(scan.vectorJobs.map((job) => job.id)).toEqual(["newer"]);
+    for (const job of scan.vectorJobs) job.revision?.release();
+    for (const id of ["equal", "undated", "invalid", "latest", "undated_memory", "invalid_memory"]) first.vector.add(id, "session", new Float32Array([1, 1, 1]));
+    scan = await rebuildKeywordIndex(kv as never, cutoff);
+    expect(scan.historicalVectorGaps).toBe(0); expect(scan.vectorJobs.map((job) => job.id)).toEqual(["newer"]);
+    for (const job of scan.vectorJobs) job.revision?.release();
+    first.vector.add("newer", "session", new Float32Array([1, 1, 1]));
+    expect(await rebuildKeywordIndex(kv as never, cutoff)).toMatchObject({ historicalVectorGaps: 0, vectorJobs: [] });
+    first.vector.remove("equal");
+    setEmbeddingProvider(null);
+    expect(await rebuildKeywordIndex(kv as never, cutoff)).toMatchObject({ historicalVectorGaps: 0, vectorJobs: [] });
+    setEmbeddingProvider(first.embedding); setVectorIndex(null);
+    expect(await rebuildKeywordIndex(kv as never, cutoff)).toMatchObject({ historicalVectorGaps: 0, vectorJobs: [] });
+  });
+
+  it("pauses historical gap promotion without executing the superseded incremental jobs when marker writes fail", async () => {
+    const kv = storage(); await seed(kv);
+    const original = await boot(kv);
+    original.vector.add("obs_0", "session", new Float32Array([1, 1, 1]));
+    await original.persistence.save(); original.persistence.stop();
+    await kv.set(KV.observations("session"), "newer", { id: "newer", sessionId: "session", title: "fixture", narrative: "record", timestamp: "2099-01-01T00:00:00Z", type: "discovery", facts: [], concepts: [], files: [] });
+    let fail = false;
+    const faulty = { ...kv, set: async <T>(scope: string, key: string, value: T) => {
+      if (fail && key === "vectors:backfill") throw new Error("promotion unavailable");
+      return kv.set(scope, key, value);
+    } };
+    const first = await boot(faulty);
+    const since = await first.persistence.prepareBackfill(first.loaded);
+    const scan = await rebuildKeywordIndex(faulty as never, since);
+    expect(scan.historicalVectorGaps).toBe(2); expect(scan.vectorJobs.map((job) => job.id)).toEqual(["newer"]);
+    for (const job of scan.vectorJobs) job.revision?.release();
+    fail = true;
+    expect(await first.persistence.prepareBackfill(first.loaded, true)).toBeUndefined();
+    expect(first.persistence.isRecoveryPaused()).toBe(true);
+    expect(await rebuildKeywordIndex(faulty as never, undefined)).toMatchObject({ historicalVectorGaps: 0, vectorJobs: [] });
+    expect(first.embedding.embedBatch).not.toHaveBeenCalled();
+  });
+
+  it("retains known historical gaps and recovery intent when keyword scans are incomplete", async () => {
+    const kv = storage(); await seed(kv);
+    const faulty = { ...kv, list: async <T>(scope: string): Promise<T[]> => {
+      if (scope === KV.memories) throw new Error("scan unavailable");
+      return kv.list<T>(scope);
+    } };
+    const first = await boot(faulty);
+    const scan = await rebuildKeywordIndex(faulty as never, "2026-01-01T00:00:00Z");
+    expect(scan.historicalVectorGaps).toBe(3); expect(isBm25RebuildIncomplete()).toBe(true);
+    const since = await first.persistence.prepareBackfill(first.loaded, true);
+    const replacement = await rebuildKeywordIndex(faulty as never, since);
+    expect(replacement.fullBackfillPending).toBe(3); expect(replacement.vectorJobs).toHaveLength(0);
+    expect(isBm25RebuildIncomplete()).toBe(true);
+    expect(await first.persistence.readBackfillMarker()).toBeNull();
+    expect(first.embedding.embedBatch).not.toHaveBeenCalled();
+  });
+
+  it("already selects whole-store recovery when the recorded checkpoint count exceeds loadable vectors", async () => {
+    const kv = storage(); await seed(kv);
+    const first = await boot(kv);
+    first.vector.add("obs_0", "session", new Float32Array([1, 1, 1]));
+    await first.persistence.save(); first.persistence.stop();
+    const meta = (await kv.get<Record<string, unknown>>(KV.bm25Index, "vectors:meta"))!;
+    delete meta.backfillSince;
+    await kv.set(KV.bm25Index, "vectors:meta", { ...meta, count: 2 });
+    await kv.delete(KV.bm25Index, "vectors:backfill");
+    const restarted = await boot(kv);
+    expect(restarted.loaded.expectedCount).toBe(2); expect(restarted.vector.size).toBe(1);
+    expect(await restarted.persistence.prepareBackfill(restarted.loaded)).toBeNull();
+  });
+
+  it("promotes matching-count partial checkpoints before opt-in and repairs historical gaps across capped restarts", async () => {
+    const kv = storage(); await seed(kv);
+    const original = await boot(kv);
+    original.vector.add("obs_0", "session", new Float32Array([1, 1, 1]));
+    await original.persistence.save(); original.persistence.stop();
+    const meta = (await kv.get<Record<string, unknown>>(KV.bm25Index, "vectors:meta"))!;
+    delete meta.backfillSince;
+    await kv.set(KV.bm25Index, "vectors:meta", meta);
+    await kv.delete(KV.bm25Index, "vectors:backfill");
+    const first = await boot(kv);
+    expect(first.loaded.expectedCount).toBe(1); expect(first.vector.size).toBe(1);
+    let since = await first.persistence.prepareBackfill(first.loaded);
+    expect(typeof since).toBe("string");
+    let scan = await rebuildKeywordIndex(kv as never, since);
+    expect(scan).toMatchObject({ historicalVectorGaps: 2, vectorJobs: [], fullBackfillPending: 0 });
+    for (const job of scan.vectorJobs) job.revision?.release();
+    since = await first.persistence.prepareBackfill(first.loaded, true);
+    expect(since).toBeNull(); expect(await first.persistence.readBackfillMarker()).toBeNull();
+    scan = await rebuildKeywordIndex(kv as never, since);
+    expect(scan.vectorJobs).toHaveLength(0); expect(scan.fullBackfillPending).toBe(2);
+    expect(getSearchIndex().countMissingDocuments((id) => first.vector.has(id), since)).toBe(2);
+    expect(first.embedding.embedBatch).not.toHaveBeenCalled();
+    vi.stubEnv("AGENTMEMORY_VECTOR_BACKFILL", "all");
+    vi.stubEnv("AGENTMEMORY_VECTOR_BACKFILL_MAX", "1");
+    scan = await rebuildKeywordIndex(kv as never, since);
+    expect(scan.vectorJobs.map((job) => job.id)).toEqual(["obs_1"]);
+    expect(await backfillVectorBacklog(scan.vectorJobs, { pauseMs: 0, remainingAfter: scan.fullBackfillPending })).toMatchObject({ added: 1, remaining: 1, complete: false });
+    for (const job of scan.vectorJobs) job.revision?.release();
+    await first.persistence.save(); first.persistence.stop();
+    const restarted = await boot(kv);
+    since = await restarted.persistence.prepareBackfill(restarted.loaded);
+    expect(since).toBeNull();
+    scan = await rebuildKeywordIndex(kv as never, since);
+    expect(scan.vectorJobs.map((job) => job.id)).toEqual(["obs_2"]);
+    expect(await backfillVectorBacklog(scan.vectorJobs, { pauseMs: 0 })).toMatchObject({ added: 1, complete: true });
+    expect(await restarted.persistence.completeBackfill(() => getSearchIndex().countMissingDocuments((id) => restarted.vector.has(id), since) === 0)).toBe(true);
+    expect(restarted.vector.size).toBe(3);
+  });
+
   it("retains a whole-store backlog beyond the cap and resumes old rows after a checkpoint and restart", async () => {
     vi.stubEnv("AGENTMEMORY_VECTOR_BACKFILL", "all");
     vi.stubEnv("AGENTMEMORY_VECTOR_BACKFILL_MAX", "2");

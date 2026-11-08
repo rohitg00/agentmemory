@@ -4,6 +4,21 @@ import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { isKeyedLockHeld, withKeyedLock } from "../state/keyed-mutex.js";
 
+export const SUMMARY_TIMEOUT_MS = 120_000;
+const SUMMARY_TRIGGER_HEADROOM_MS = 60_000;
+
+const MAX_TIMER_MS = 2_147_483_647;
+
+export function getSummaryTimeoutMs(): number {
+  const raw = process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS?.trim() ?? "";
+  const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+  return n >= 1 && n <= MAX_TIMER_MS - SUMMARY_TRIGGER_HEADROOM_MS ? n : SUMMARY_TIMEOUT_MS;
+}
+
+export function getSummaryTriggerTimeoutMs(): number {
+  return getSummaryTimeoutMs() + SUMMARY_TRIGGER_HEADROOM_MS;
+}
+
 export function summaryObservations(observations: CompressedObservation[]): CompressedObservation[] {
   return observations.filter((row) => row.title).sort((a, b) =>
     (a.compressedAt ?? a.timestamp).localeCompare(b.compressedAt ?? b.timestamp) || a.id.localeCompare(b.id));

@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, readFileSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { parse, stringify } from "yaml";
 import { MAX_STARTUP_TIMEOUT_MS } from "./readiness.js";
 import { getStateSaveIntervalMs } from "../config.js";
@@ -20,6 +20,13 @@ export const COMPOSE_WORKER_VERSIONS = {
   state: "0.22.22",
   http: "0.22.8",
 } as const;
+
+export const COMPOSE_STOP_TIMEOUT_SECONDS = 20;
+const COMPOSE_CONTAINER_COUNT = Object.keys(COMPOSE_WORKER_VERSIONS).length + 1;
+
+export function composeDownTimeoutMs(): number {
+  return (COMPOSE_STOP_TIMEOUT_SECONDS * COMPOSE_CONTAINER_COUNT + 30) * 1000;
+}
 
 export function composeNamespace(restPort: number): string {
   // A distinct namespace per REST port prevents two separately managed engine
@@ -45,7 +52,7 @@ export function composeProjectPaths(dataDir: string): {
 }
 
 const AGENTMEMORY_WORKER_ENV_ALLOWLIST = new Set([
-  "EMBEDDING_PROVIDER", "OPENAI_API_KEY", "OPENAI_API_KEY_FOR_LLM", "OPENAI_BASE_URL",
+  "EMBEDDING_PROVIDER", "AGENTMEMORY_LLM_PROVIDER", "OPENAI_API_KEY", "OPENAI_BASE_URL",
   "OPENAI_MODEL", "OPENAI_EMBEDDING_API_KEY", "OPENAI_EMBEDDING_BASE_URL",
   "OPENAI_EMBEDDING_MODEL", "OPENAI_EMBEDDING_DIMENSIONS", "ANTHROPIC_API_KEY",
   "ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "GEMINI_API_KEY", "GEMINI_MODEL",
@@ -71,7 +78,8 @@ const AGENTMEMORY_WORKER_ENV_ALLOWLIST = new Set([
   "AGENTMEMORY_CAPTURE_SPOOL", "AGENTMEMORY_CAPTURE_SPOOL_DIR",
   "AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES", "AGENTMEMORY_CAPTURE_SPOOL_MAX_AGE_HOURS",
   "AGENTMEMORY_IMPORT_ROOT", "AGENTMEMORY_EXPORT_ROOT", "AGENTMEMORY_GRAPH_WEIGHT",
-  "SUMMARIZE_CHUNK_SIZE", "SUMMARIZE_CHUNK_CONCURRENCY", "CONSOLIDATION_DECAY_DAYS",
+  "SUMMARIZE_CHUNK_SIZE", "SUMMARIZE_CHUNK_CONCURRENCY", "AGENTMEMORY_SUMMARY_TIMEOUT_MS",
+  "CONSOLIDATION_DECAY_DAYS",
   "CONSOLIDATION_INTERVAL_MS", "AGENTMEMORY_CONSOLIDATION_COOLDOWN_MS",
   "AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS", "GRAPH_EXTRACTION_BATCH_SIZE", "AGENTMEMORY_LLM_NOTHINK",
   "AGENTMEMORY_REFLECT", "AGENTMEMORY_IMAGE_EMBEDDINGS", "AGENTMEMORY_IMAGE_STORE_MAX_BYTES",
@@ -122,22 +130,44 @@ function restartPolicyLines(indent: string, enabled: boolean): string[] {
   ];
 }
 
-export function shellQuote(value: string, windows: boolean): string {
+export function shellQuote(value: string): string {
   if (/[\u0000-\u001f\u007f]/.test(value)) throw new Error("A shell command argument contains an unsupported control character.");
-  if (windows) {
-    // Windows paths cannot contain quotes. Doubling percent signs keeps literal
-    // percent characters in cmd.exe; quotes protect whitespace and metacharacters.
-    if (value.includes('"')) throw new Error("Windows shell arguments cannot contain a double quote.");
-    return `"${value.replace(/%/g, "%%")}"`;
-  }
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }
 
-export function shellCommand(program: string, args: string[], windows: boolean): string {
-  const command = [program, ...args].map((part) => shellQuote(part, windows)).join(" ");
-  // cmd.exe /C treats an initial quote specially. The outer quote pair makes
-  // the quoted executable and its arguments one command string.
-  return windows ? `"${command}"` : command;
+export function shellCommand(program: string, args: string[]): string {
+  return [program, ...args].map((part) => shellQuote(part)).join(" ");
+}
+
+const WINDOWS_RUN_SAFE = /^[A-Za-z0-9._:\\/-]+$/;
+const WINDOWS_EXE_SAFE = /^[A-Za-z0-9._-]+$/;
+
+function windowsWorkerScript(script: string): string {
+  if (!WINDOWS_RUN_SAFE.test(script)) {
+    throw new Error(`On Windows, AGENTMEMORY_WORKER_BIN_DIR must be a path without spaces or cmd metacharacters; got ${JSON.stringify(script)}.`);
+  }
+  return script;
+}
+
+function windowsNodeRun(nodeBin: string): string {
+  const base = win32.basename(nodeBin);
+  if (!WINDOWS_EXE_SAFE.test(base)) {
+    throw new Error(`The Node executable name must not contain spaces or cmd metacharacters on Windows; got ${JSON.stringify(nodeBin)}.`);
+  }
+  return `${base} dist/index.mjs`;
+}
+
+function windowsWorkerPath(nodeBin: string, inherited: string | undefined): string {
+  const entries = [win32.dirname(nodeBin), ...(inherited ?? "").split(";")]
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  const seen = new Set<string>();
+  return entries.filter((entry) => {
+    const key = entry.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).join(";");
 }
 
 function yamlString(value: string): string {
@@ -231,9 +261,10 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
   const { restPort, viewerPort, enginePort } = options.ports;
   const paths = composeProjectPaths(options.dataDir);
   const namespace = composeNamespace(restPort);
+  const windows = options.windows ?? process.platform === "win32";
   const workerBinDir = options.workerBinDir
     ? options.workerBinDirIsAbsolute
-      ? resolve(options.workerBinDir)
+      ? (windows ? win32.resolve(options.workerBinDir) : resolve(options.workerBinDir))
       : localWorkerDirectory(options.workerBinDir, options.cwd ?? process.cwd(), options.projectRoot)
     : null;
   const startupSeconds = Math.ceil((options.startupTimeoutMs ?? 300_000) / 1000);
@@ -247,14 +278,14 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
       ? `path://${localWorkerProjectDir(paths, name)}`
       : `package://api.workers.iii.dev/${name}`;
   const workerScript = (name: keyof typeof COMPOSE_WORKER_VERSIONS): string =>
-    workerBinDir ? join(workerBinDir, name) : "";
+    workerBinDir ? (windows ? win32.join(workerBinDir, name) : join(workerBinDir, name)) : "";
   const filteredEnvFile = options.envFile
     ? join(paths.directory, ".agentmemory-filtered.env")
     : undefined;
   const lines = [
     `namespace: ${namespace}`,
     "startup_timeout: 60s",
-    "stop_timeout: 20s",
+    `stop_timeout: ${COMPOSE_STOP_TIMEOUT_SECONDS}s`,
     "required_default: true",
     "engine:",
     `  url: ws://127.0.0.1:${enginePort}`,
@@ -277,7 +308,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
     ...(!workerBinDir ? [`    version: ${yamlString(COMPOSE_WORKER_VERSIONS.state)}`] : []),
     "    config_name: state",
     ...restartPolicyLines("    ", restartEnabled),
-    ...(workerBinDir ? [`    scripts:`, `      run: ${yamlString(shellCommand(stateScript, [], options.windows ?? process.platform === "win32"))}`] : []),
+    ...(workerBinDir ? [`    scripts:`, `      run: ${yamlString(windows ? windowsWorkerScript(stateScript) : shellCommand(stateScript, []))}`] : []),
     "    config_override:",
     "      adapter:",
     "        name: kv",
@@ -307,7 +338,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
     ...(!workerBinDir ? [`    version: ${yamlString(COMPOSE_WORKER_VERSIONS.http)}`] : []),
     "    config_name: http",
     ...restartPolicyLines("    ", restartEnabled),
-    ...(workerBinDir ? [`    scripts:`, `      run: ${yamlString(shellCommand(httpScript, [], options.windows ?? process.platform === "win32"))}`] : []),
+    ...(workerBinDir ? [`    scripts:`, `      run: ${yamlString(windows ? windowsWorkerScript(httpScript) : shellCommand(httpScript, []))}`] : []),
     "    config_override:",
     "      host: 127.0.0.1",
     `      port: ${restPort}`,
@@ -329,7 +360,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
     "    config_name: agentmemory",
     ...restartPolicyLines("    ", restartEnabled),
     "    scripts:",
-    `      run: ${yamlString(shellCommand(options.nodeBin, ["dist/index.mjs"], options.windows ?? process.platform === "win32"))}`,
+    `      run: ${yamlString(windows ? windowsNodeRun(options.nodeBin) : shellCommand(options.nodeBin, ["dist/index.mjs"]))}`,
   );
   if (filteredEnvFile) lines.push(`    env_file: [${yamlString(filteredEnvFile)}]`);
   const explicitWorkerEnvironment = Object.entries(options.workerEnvironment ?? {})
@@ -338,8 +369,9 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
   lines.push(
     "    environment:",
     ...explicitWorkerEnvironment.map(([key, value]) => `      ${key}: ${yamlString(value!)}`),
+    ...(windows ? [`      NoDefaultCurrentDirectoryInExePath: ${yamlString("1")}`] : []),
     `      HOME: ${yamlString(options.homeDir)}`,
-    `      PATH: ${yamlString(`${dirname(options.nodeBin)}:/usr/local/bin:/usr/bin:/bin`)}`,
+    `      PATH: ${yamlString(windows ? windowsWorkerPath(options.nodeBin, options.workerEnvironment?.PATH ?? process.env.PATH) : `${dirname(options.nodeBin)}:/usr/local/bin:/usr/bin:/bin`)}`,
     `      AGENTMEMORY_DATA_DIR: ${yamlString(options.dataDir)}`,
     `      AGENTMEMORY_RUNTIME_DIR: ${yamlString(options.dataDir)}`,
     ...(filteredEnvFile ? [`      AGENTMEMORY_ENV_FILE: ${yamlString(filteredEnvFile)}`] : []),

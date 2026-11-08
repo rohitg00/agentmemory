@@ -44,6 +44,22 @@ export function sameResolvedExecutable(actual: string, expected: string, windows
   }
 }
 
+export type ComposeProcessIdentity = "match" | "foreign" | "unknown";
+
+export function classifyComposeProcess(
+  inspected: { command: string; executable: string } | null,
+  expected: { namespace: string; file: string; binPath: string },
+  windows = false,
+): ComposeProcessIdentity {
+  if (!inspected || !inspected.command) return "unknown";
+  const ownedCommand = inspected.command.includes("compose --namespace") &&
+    inspected.command.includes(expected.namespace) &&
+    inspected.command.includes(expected.file);
+  if (!ownedCommand) return "foreign";
+  if (inspected.executable && sameResolvedExecutable(inspected.executable, expected.binPath, windows)) return "match";
+  return "unknown";
+}
+
 export function readUnixProcessExecutable(pid: number, os: "darwin" | "linux"): string {
   if (!Number.isSafeInteger(pid) || pid <= 0) return "";
   if (os === "darwin") return readMacProcessExecutable(pid);
