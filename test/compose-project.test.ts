@@ -28,11 +28,30 @@ describe("Worker Compose project", () => {
     const settings = {
       LOCAL_EMBEDDING_MODEL: "test/model", LOCAL_EMBEDDING_DIMENSIONS: "3",
       LOCAL_EMBEDDING_POOLING: "cls", LOCAL_EMBEDDING_QUERY_PREFIX: "query: ",
-      LOCAL_EMBEDDING_DOCUMENT_PREFIX: "passage: ", LOCAL_EMBEDDING_CACHE_DIR: "model-cache",
+      LOCAL_EMBEDDING_DOCUMENT_PREFIX: "passage: ", LOCAL_EMBEDDING_CACHE_DIR: join(root, "model-cache"),
       LOCAL_EMBEDDING_BATCH_SIZE: "2", LOCAL_EMBEDDING_DTYPE: "fp32",
     };
     const app = parse(renderWorkerCompose(options({ workerEnvironment: settings }))).containers.agentmemory;
     expect(app.environment).toMatchObject(settings);
+  });
+
+  it("resolves a relative model cache against the CLI directory and escapes line breaks", () => {
+    const cwd = join(root, "project");
+    const value = "model-cache\n雪";
+    const text = renderWorkerCompose(options({ cwd, workerEnvironment: { LOCAL_EMBEDDING_CACHE_DIR: value } }));
+    expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe(join(cwd, value));
+    expect(text).toContain("model-cache\\n雪");
+  });
+
+  it("resolves Windows cache paths against the CLI directory", () => {
+    const text = renderWorkerCompose(options({ windows: true, cwd: "C:\\project", nodeBin: "C:\\node\\node.exe", workerEnvironment: { LOCAL_EMBEDDING_CACHE_DIR: "model-cache" } }));
+    expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe("C:\\project\\model-cache");
+  });
+
+  it("preserves an absolute cache path when forwarding to the worker", () => {
+    const value = join(root, "cache");
+    const text = renderWorkerCompose(options({ cwd: join(root, "other"), workerEnvironment: { LOCAL_EMBEDDING_CACHE_DIR: value } }));
+    expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe(value);
   });
 
   it("pins registry workers and configures the isolated engine, state and HTTP", () => {

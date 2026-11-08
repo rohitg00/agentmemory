@@ -52,7 +52,7 @@ describe("persisted embedding identity", () => {
     expect(restored.has("obs_pending")).toBe(true);
   });
 
-  it.each([["MODEL", "other/model"], ["POOLING", "cls"], ["DTYPE", "fp32"], ["DOCUMENT_PREFIX", "passage: "]])(
+  it.each([["MODEL", "other/model"], ["POOLING", "cls"], ["DTYPE", "fp32"], ["DOCUMENT_PREFIX", "passage: "], ["CACHE_DIR", "other-cache"]])(
     "refuses same-dimension vectors after changing %s without deleting them", async (key, value) => {
       const kv = mockKV();
       await ensureEmbeddingIdentity(kv as never, new LocalEmbeddingProvider(), false);
@@ -63,13 +63,12 @@ describe("persisted embedding identity", () => {
     },
   );
 
-  it("does not rebuild document vectors for query-prefix, batch or cache changes", async () => {
+  it("does not rebuild document vectors for query-prefix or batch changes", async () => {
     const kv = mockKV();
     await ensureEmbeddingIdentity(kv as never, new LocalEmbeddingProvider(), false);
     await kv.set(KV.bm25Index, "vectors:meta", { v: 3 });
     vi.stubEnv("LOCAL_EMBEDDING_QUERY_PREFIX", "query: ");
     vi.stubEnv("LOCAL_EMBEDDING_BATCH_SIZE", "2");
-    vi.stubEnv("LOCAL_EMBEDDING_CACHE_DIR", "cache");
     await expect(ensureEmbeddingIdentity(kv as never, new LocalEmbeddingProvider(), false)).resolves.toBeUndefined();
   });
 
@@ -103,5 +102,45 @@ describe("persisted embedding identity", () => {
     kv.delete = vi.fn().mockRejectedValue(new Error("disk unavailable"));
     await expect(ensureEmbeddingIdentity(kv as never, new LocalEmbeddingProvider(), true)).rejects.toThrow("disk unavailable");
     await expect(ensureEmbeddingIdentity(kv as never, new LocalEmbeddingProvider(), false)).rejects.toThrow("unknown");
+  });
+
+  it("overlaps independent deletions with bounded concurrency and adopts identity only after they finish", async () => {
+    const kv = mockKV();
+    for (let i = 0; i < 70; i++) await kv.set(KV.vectorPendingLog, `obs_${i}`, {});
+    const remove = kv.delete;
+    let active = 0;
+    let peak = 0;
+    kv.delete = async (scope, key) => {
+      active++; peak = Math.max(peak, active);
+      expect(await kv.get(KV.bm25Index, "vectors:embedding-identity")).toBeNull();
+      await new Promise((resolve) => setTimeout(resolve, 1));
+      await remove(scope, key);
+      active--;
+    };
+    await ensureEmbeddingIdentity(kv as never, new LocalEmbeddingProvider(), true);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(32);
+    expect(active).toBe(0);
+    expect(await kv.listKeys(KV.vectorPendingLog)).toEqual([]);
+    expect(await kv.get(KV.bm25Index, "vectors:embedding-identity")).not.toBeNull();
+  });
+
+  it("settles an in-flight deletion batch before surfacing an error", async () => {
+    const kv = mockKV();
+    for (let i = 0; i < 40; i++) await kv.set(KV.vectorPendingLog, `obs_${i}`, {});
+    const remove = kv.delete;
+    let active = 0;
+    kv.delete = async (scope, key) => {
+      active++;
+      try {
+        if (key === "obs_0") throw new Error("delete failed");
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        await remove(scope, key);
+      } finally { active--; }
+    };
+    await expect(ensureEmbeddingIdentity(kv as never, new LocalEmbeddingProvider(), true)).rejects.toThrow("delete failed");
+    expect(active).toBe(0);
+    expect(await kv.get(KV.bm25Index, "vectors:embedding-identity")).toBeNull();
+    expect(await kv.get(KV.vectorPendingLog, "obs_39")).not.toBeNull();
   });
 });

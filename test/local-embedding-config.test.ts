@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { LocalEmbeddingProvider } from "../src/providers/embedding/local.js";
 import { withDimensionGuard } from "../src/providers/embedding/index.js";
+import { resolve } from "node:path";
 const mock = vi.hoisted(() => ({ extractor: vi.fn(), pipeline: vi.fn() }));
 vi.mock("@huggingface/transformers", () => ({ pipeline: mock.pipeline }));
 beforeEach(() => {
@@ -51,7 +52,7 @@ describe("local model configuration", () => {
   it("passes the configured cache directory to the pipeline", async () => {
     configure(); vi.stubEnv("LOCAL_EMBEDDING_CACHE_DIR", "model-cache");
     await new LocalEmbeddingProvider().embed("test");
-    expect(mock.pipeline).toHaveBeenCalledWith("feature-extraction", "test/chinese", { dtype: "q8", cache_dir: "model-cache" });
+    expect(mock.pipeline).toHaveBeenCalledWith("feature-extraction", "test/chinese", { dtype: "q8", cache_dir: resolve("model-cache") });
   });
   it("retries loading after a pipeline initialization failure", async () => {
     configure(); mock.pipeline.mockRejectedValueOnce(new Error("model unavailable"));
@@ -63,7 +64,16 @@ describe("local model configuration", () => {
   it("passes the selected dtype with the cache directory", async () => {
     configure(); vi.stubEnv("LOCAL_EMBEDDING_DTYPE", "fp32"); vi.stubEnv("LOCAL_EMBEDDING_CACHE_DIR", "model-cache");
     await new LocalEmbeddingProvider().embed("test");
-    expect(mock.pipeline).toHaveBeenCalledWith("feature-extraction", "test/chinese", { dtype: "fp32", cache_dir: "model-cache" });
+    expect(mock.pipeline).toHaveBeenCalledWith("feature-extraction", "test/chinese", { dtype: "fp32", cache_dir: resolve("model-cache") });
+  });
+  it("loads from the same cache location used to establish its identity", async () => {
+    configure(); vi.stubEnv("LOCAL_EMBEDDING_CACHE_DIR", "first-cache");
+    const provider = new LocalEmbeddingProvider();
+    const identity = provider.indexIdentity;
+    vi.stubEnv("LOCAL_EMBEDDING_CACHE_DIR", "second-cache");
+    expect(provider.indexIdentity).toBe(identity);
+    await provider.embed("test");
+    expect(mock.pipeline).toHaveBeenCalledWith("feature-extraction", "test/chinese", { dtype: "q8", cache_dir: resolve("first-cache") });
   });
   it("rejects an unsupported dtype before loading", () => {
     vi.stubEnv("LOCAL_EMBEDDING_DTYPE", "bogus");

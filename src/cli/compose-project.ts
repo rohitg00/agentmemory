@@ -170,9 +170,13 @@ function windowsWorkerPath(nodeBin: string, inherited: string | undefined): stri
   }).join(";");
 }
 
+/** Compose reparses YAML; literal C1 characters can be rejected or silently folded. */
 function yamlString(value: string): string {
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) {
     throw new Error("A Compose path or configuration value contains an unsupported control character.");
+  }
+  if (/[\r\n\u0080-\u009f]/.test(value)) {
+    return JSON.stringify(value).replace(/[\u0080-\u009f]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
   }
   return `'${value.replace(/'/g, "''")}'`;
 }
@@ -365,6 +369,12 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
   if (filteredEnvFile) lines.push(`    env_file: [${yamlString(filteredEnvFile)}]`);
   const explicitWorkerEnvironment = Object.entries(options.workerEnvironment ?? {})
     .filter(([key, value]) => value !== undefined && AGENTMEMORY_WORKER_ENV_ALLOWLIST.has(key) && !COMPOSE_RESERVED_ENV.has(key))
+    .map(([key, value]) => {
+      const path = windows ? win32 : { isAbsolute, resolve };
+      return [key, key === "LOCAL_EMBEDDING_CACHE_DIR" && value && !path.isAbsolute(value)
+        ? path.resolve(options.cwd ?? process.cwd(), value)
+        : value] as const;
+    })
     .sort(([left], [right]) => left.localeCompare(right));
   lines.push(
     "    environment:",

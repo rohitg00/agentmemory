@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from "../../types.js";
 import type { DataType } from "@huggingface/transformers";
+import { resolve } from "node:path";
 
 type FeatureExtractor = (
   texts: string[],
@@ -22,14 +23,15 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
   readonly dimensions = positiveInteger("LOCAL_EMBEDDING_DIMENSIONS", 384);
   readonly pooling = process.env.LOCAL_EMBEDDING_POOLING?.trim() || "mean";
   readonly dtype = (process.env.LOCAL_EMBEDDING_DTYPE?.trim() || "q8") as DataType;
+  readonly cacheDir = process.env.LOCAL_EMBEDDING_CACHE_DIR ? resolve(process.env.LOCAL_EMBEDDING_CACHE_DIR) : undefined;
   private readonly batchSize = positiveInteger("LOCAL_EMBEDDING_BATCH_SIZE", Number.MAX_SAFE_INTEGER);
   private readonly queryPrefix = process.env.LOCAL_EMBEDDING_QUERY_PREFIX || "";
   private readonly documentPrefix = process.env.LOCAL_EMBEDDING_DOCUMENT_PREFIX || "";
   private extractor: Promise<FeatureExtractor> | null = null;
 
-  /** Query instructions and loading options do not change stored document embeddings. */
+  /** A different cache may contain different artifacts under the same model identifier. */
   get indexIdentity(): string {
-    return JSON.stringify(["local-v1", this.model, this.dimensions, this.pooling, this.dtype, this.documentPrefix]);
+    return JSON.stringify(["local-v2", this.model, this.dimensions, this.pooling, this.dtype, this.documentPrefix, this.cacheDir ?? null]);
   }
 
   constructor() {
@@ -96,7 +98,7 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
     }
     return await transformers.pipeline("feature-extraction", this.model, {
       dtype: this.dtype,
-      ...(process.env.LOCAL_EMBEDDING_CACHE_DIR ? { cache_dir: process.env.LOCAL_EMBEDDING_CACHE_DIR } : {}),
+      ...(this.cacheDir ? { cache_dir: this.cacheDir } : {}),
     }) as FeatureExtractor;
   }
 }

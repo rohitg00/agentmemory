@@ -7,6 +7,15 @@ import { safeAudit } from "../functions/audit.js";
 const IDENTITY_KEY = "vectors:embedding-identity";
 const VECTOR_KEYS = ["vectors", "vectors:manifest", "vectors:meta"];
 const VECTOR_SCOPE_PREFIXES = [`${KV.bm25Index}:vec:`, `${KV.bm25Index}:vectors:`];
+const DELETE_CONCURRENCY = 32;
+
+async function deleteKeys(kv: StateKV, scope: string, keys: string[]): Promise<void> {
+  for (let offset = 0; offset < keys.length; offset += DELETE_CONCURRENCY) {
+    const results = await Promise.allSettled(keys.slice(offset, offset + DELETE_CONCURRENCY).map((key) => kv.delete(scope, key)));
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed?.status === "rejected") throw failed.reason;
+  }
+}
 
 /** Refuse unverified vectors before startup can migrate checkpoints or replay pending writes. */
 export async function ensureEmbeddingIdentity(
@@ -37,10 +46,10 @@ export async function ensureEmbeddingIdentity(
   if (hasVectors) {
     await kv.set(KV.bm25Index, "vectors:backfill", { v: 2, since: null });
     for (const scope of vectorScopes) {
-      for (const key of await kv.listKeys(scope)) await kv.delete(scope, key);
+      await deleteKeys(kv, scope, await kv.listKeys(scope));
     }
-    for (const key of pending) await kv.delete(KV.vectorPendingLog, key);
-    for (const key of VECTOR_KEYS) await kv.delete(KV.bm25Index, key);
+    await deleteKeys(kv, KV.vectorPendingLog, pending);
+    await deleteKeys(kv, KV.bm25Index, VECTOR_KEYS);
     await safeAudit(kv, "index_persist", "mem::embedding-identity", [], {
       action: "rebuild", vectorScopes: vectorScopes.length, pendingEntries: pending.length,
     });
