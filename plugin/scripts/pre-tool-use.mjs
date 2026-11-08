@@ -260,7 +260,8 @@ async function main() {
 	}
 	const rawSessionId = data.session_id || data.sessionId || data.conversation_id;
 	const sessionId = typeof rawSessionId === "string" && rawSessionId.length > 0 ? rawSessionId : "unknown";
-	const project = (typeof data.project === "string" && data.project.trim().length > 0 ? data.project.trim() : void 0) ?? resolveProject(hookCwd(data) || process.cwd());
+	const project = ((typeof data.project === "string" && data.project.trim().length > 0 ? data.project.trim() : void 0) ?? resolveProject(hookCwd(data) || process.cwd())).trim();
+	if (!project) return;
 	try {
 		const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
 			method: "POST",

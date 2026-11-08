@@ -1,17 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
-// Claude Code's PreToolUse payload has no `project` field — only session_id,
-// cwd, tool_name and tool_input. The hook used to read data.project only, so
-// every /agentmemory/enrich call went out unscoped and mem::enrich searched
-// the whole corpus, injecting other projects' observations into this
-// project's tool turns. It must resolve the project from cwd like every
-// other project-aware hook.
 
 let server: Server;
 let port: number;
@@ -29,9 +21,6 @@ function runHook(
         ...process.env,
         AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
         AGENTMEMORY_INJECT_CONTEXT: "true",
-        // Keep the fixture's basename as the identity regardless of whether
-        // the developer running the suite has remote-identity mode on.
-        AGENTMEMORY_PROJECT_FROM_REMOTE: "0",
         AGENTMEMORY_PROJECT_NAME: "",
         ...env,
       },
@@ -130,6 +119,18 @@ describe("pre-tool-use enrich is project-scoped", () => {
 
     expect(posts.length).toBe(1);
     expect(posts[0]!.body.project).toBe("explicit-project");
+  });
+
+  it("skips enrich when the resolved project is empty", async () => {
+    posts = [];
+    await runHook({
+      session_id: "s6",
+      cwd: "/",
+      tool_name: "Read",
+      tool_input: { file_path: "/etc/hosts" },
+    });
+
+    expect(posts.length).toBe(0);
   });
 
   it("stays a no-op when AGENTMEMORY_INJECT_CONTEXT is not true", async () => {

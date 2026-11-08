@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { hookAuthHeaders, hookSetting, reportBlockedTransport, resolveHookEndpoint } from "./_endpoint.js";
-
 import { resolveProject, hookCwd } from "./_project.js";
 
 function isSdkChildContext(payload: unknown): boolean {
@@ -104,18 +103,12 @@ async function main() {
     typeof rawSessionId === "string" && rawSessionId.length > 0
       ? rawSessionId
       : "unknown";
-  // Claude Code's PreToolUse payload carries no `project` field — only
-  // session_id, cwd, tool_name and tool_input — so trusting data.project
-  // alone left every /enrich call unscoped, and mem::enrich then searched
-  // the whole corpus. On a machine with several active projects that
-  // injects another project's observations into this one's tool turns.
-  // Resolve from cwd like every other project-aware hook does, keeping an
-  // explicit data.project as an override for hosts that do supply one.
   const explicitProject =
     typeof data.project === "string" && data.project.trim().length > 0
       ? data.project.trim()
       : undefined;
-  const project = explicitProject ?? resolveProject(hookCwd(data) || process.cwd());
+  const project = (explicitProject ?? resolveProject(hookCwd(data) || process.cwd())).trim();
+  if (!project) return;
 
   try {
     const res = await fetch(`${REST_URL}/agentmemory/enrich`, {
