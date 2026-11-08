@@ -178,6 +178,16 @@ export class VectorIndex {
     this.changes = new Map(other.changes);
   }
 
+  mergeMissingFrom(other: VectorIndex): number {
+    let merged = 0;
+    for (const [obsId, entry] of other.entries()) {
+      if (this.vectors.has(obsId) || this.changes.get(obsId) === false) continue;
+      this.vectors.set(obsId, { embedding: new Float32Array(entry.embedding), sessionId: entry.sessionId });
+      merged++;
+    }
+    return merged;
+  }
+
   serialize(): string {
     const data: Array<[string, { embedding: string; sessionId: string }]> = [];
     for (const [obsId, entry] of this.vectors) {

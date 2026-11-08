@@ -130,7 +130,11 @@ describe("Relations Functions", () => {
 
   describe("mem::evolve", () => {
     it("marks old memory as not latest and creates new version", async () => {
-      const original = makeMemory({ id: "mem_old", version: 1 });
+      const original = makeMemory({
+        id: "mem_old",
+        version: 1,
+        updatedAt: "2020-01-01T00:00:00.000Z",
+      });
       await kv.set("mem:memories", "mem_old", original);
 
       const result = (await sdk.trigger("mem::evolve", {
@@ -148,6 +152,7 @@ describe("Relations Functions", () => {
 
       const old = await kv.get<Memory>("mem:memories", "mem_old");
       expect(old!.isLatest).toBe(false);
+      expect(old!.updatedAt).not.toBe("2020-01-01T00:00:00.000Z");
     });
 
     it("returns error when memory not found", async () => {

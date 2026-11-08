@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design-Dokument: 1.6k stars / 230 forks im Gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design-Dokument: 1.7k stars / 240 forks im Gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-Tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 Auto-Hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externe DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ bestandene Tests" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,600+ bestandene Tests" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -627,7 +627,7 @@ Der agentmemory-Eintrag ist der **gleiche MCP-Server-Block** für jeden Host, de
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` verwendet dieselbe MCP- und Hook-Konfiguration wie aktuelle IDE-Versionen. Bestehende Installationen sollten mit `--force` aktualisieren; siehe die [Upgrade-Hinweise](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` schreibt die Konfig auf Benutzerebene. Workspace-Overrides liegen in `.kiro/settings/mcp.json` neben Ihrem Code. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` schreibt den standardmäßigen `mcpServers`-Block. Warp entdeckt außerdem Skills aus `.claude/skills/` automatisch; sobald das Claude-Code-Plugin installiert ist, erscheinen die 9 agentmemory-Skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) nativ in Warps Slash-Command-Palette. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` schreibt den standardmäßigen `mcpServers`-Block. Nutzer der VS-Code-Extension: Fügen Sie denselben Block über Cline Settings → MCP Servers → Edit JSON ein. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` schreibt den standardmäßigen `mcpServers`-Block. Nutzer der VS-Code-Extension: Fügen Sie denselben Block über Cline Settings → MCP Servers → Edit JSON ein. |
 | **Continue.dev** | `~/.continue/config.yaml` (bevorzugt) oder `config.json` (Legacy) | `agentmemory connect continue` erstellt eine fehlende `config.yaml` oder aktualisiert eine vorhandene `config.json`. Bei bestehender YAML-Datei zeigt der Adapter den Block für `mcpServers:` zum Einfügen an; Kommentare und Anker bleiben erhalten. Continue verwendet dort ein Array, kein Objekt. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` schreibt unter `context_servers` (Zeds Schlüssel, NICHT `mcpServers`). Remote-MCP-Server können stattdessen via `{"url": "..."}` verdrahtet werden. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` schreibt den standardmäßigen `mcpServers`-Block. Projektbezogene Overrides liegen in `<repo>/.factory/mcp.json`. Übergeben Sie `--with-hooks` für native Auto-Erfassung. |
@@ -653,7 +653,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory läuft unter Windows 10/11. WSL2 folgt dem Linux-Pfad und kann die gepinnte Engine automatisch installieren. Unter nativem Windows muss das gepinnte iii-engine-Binary v0.25.0 manuell installiert werden: Laden Sie das passende Archiv von der [iii-v0.25.0-Release-Seite](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) herunter, prüfen Sie die Prüfsumme und legen Sie `iii.exe` auf den `PATH` (zum Beispiel `%USERPROFILE%\.local\bin\iii.exe`). Die CLI entpackt das Windows-ZIP nicht automatisch.
+agentmemory läuft unter Windows 10/11. WSL2 folgt dem Linux-Pfad und kann die gepinnte Engine automatisch installieren. Unter nativem Windows muss das gepinnte iii-engine-Binary v0.25.1 manuell installiert werden: Laden Sie das passende Archiv von der [iii-v0.25.1-Release-Seite](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) herunter, prüfen Sie die Prüfsumme und legen Sie `iii.exe` auf den `PATH` (zum Beispiel `%USERPROFILE%\.local\bin\iii.exe`). Die CLI entpackt das Windows-ZIP nicht automatisch.
 
 Die automatisierte MCP-Verdrahtung unter nativem Windows unterstützt nur `agentmemory connect copilot-cli`. Für andere native Windows-Agenten verwenden Sie den manuellen MCP-Block unter [Andere Agenten](#other-agents). Führen Sie `connect` in WSL nur aus, wenn der Ziel-Agent in derselben WSL-Umgebung installiert ist.
 
@@ -1166,7 +1166,7 @@ Die vollständige Referenz steht in [`.env.example`](../.env.example), einschlie
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 Endpunkte auf Port `3111`. Die REST API bindet sich standardmäßig an `127.0.0.1`. Geschützte Endpunkte verlangen `Authorization: Bearer <secret>`, und Mesh-Sync-Endpunkte erfordern ein explizit gesetztes `AGENTMEMORY_SECRET` auf beiden Peers.
+147 Endpunkte auf Port `3111`. Die REST API bindet sich standardmäßig an `127.0.0.1`. Geschützte Endpunkte verlangen `Authorization: Bearer <secret>`, und Mesh-Sync-Endpunkte erfordern ein explizit gesetztes `AGENTMEMORY_SECRET` auf beiden Peers.
 
 **Authentifizierung ist standardmäßig aktiv.** Wenn `AGENTMEMORY_SECRET` weder in der Shell noch in `~/.agentmemory/.env` gesetzt ist, erzeugt die CLI beim ersten Start ein zufälliges Secret unter `~/.agentmemory/secret` und spiegelt es als `secret` in das ausgewählte Datenverzeichnis, jeweils mit Dateimodus `0600`. Jeder mitgelieferte Client liest es von dort, wenn er mit einem lokalen Server spricht: die CLI, der Viewer, die Hooks unter `plugin/scripts`, der MCP-Server und das `@agentmemory/mcp`-Shim, die von `agentmemory connect` geschriebenen Konfigs sowie die mitgelieferten Integrationen für OpenCode, Pi, OpenClaw, Hermes und den Filesystem-Watcher. Das gespeicherte Secret wird nur an Loopback-URLs gesendet (`localhost`, `127.0.0.0/8`, `::1`). Ein explizites `AGENTMEMORY_SECRET` gewinnt immer, und Remote-Clients benötigen es trotzdem gesetzt. Docker und die `deploy/`-Entrypoints erzeugen und exportieren bereits ihr eigenes Secret. Um die API von Hand aufzurufen:
 
@@ -1247,7 +1247,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

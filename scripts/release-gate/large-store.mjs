@@ -291,7 +291,7 @@ async function response(path, body) {
     signal: AbortSignal.timeout(probeTimeoutMs),
   });
 }
-async function probe(name, path, body) {
+async function probe(name, path, body, { allowRefusal = false } = {}) {
   const started = performance.now();
   const result = { name, method: body === undefined ? "GET" : "POST", path };
   try {
@@ -317,13 +317,15 @@ async function probe(name, path, body) {
       const detail = json && typeof json === "object" ? json.error ?? json.message : undefined;
       if (detail) result.error = String(typeof detail === "string" ? detail : JSON.stringify(detail)).slice(0, 500);
       else if (json && typeof json === "object" && json.success === false) result.error = "success:false";
-    } catch {}
+    } catch {
+      if (/^\s*\{\s*"success"\s*:\s*false\b/.test(text)) result.error = "success:false";
+    }
     if (!result.error && res.status >= 400) result.error = `HTTP ${res.status}`;
   } catch (cause) {
     result.error = String(cause?.message ?? cause).slice(0, 500);
   }
   result.latencyMs = Math.round(performance.now() - started);
-  result.ok = (result.status >= 200 && result.status < 300 && !result.error) || result.refused === true;
+  result.ok = (result.status >= 200 && result.status < 300 && !result.error) || (allowRefusal && result.status === 413 && result.refused === true);
   delete result.json;
   probes.push(result);
   console.log(JSON.stringify(result));
@@ -417,12 +419,12 @@ try {
   probes.push(migrateFinal);
   console.log(JSON.stringify(migrateFinal));
 
-  await probe("export", "/export");
+  await probe("export", "/export", undefined, { allowRefusal: true });
   {
     const started = performance.now();
     let cursor, pages = 0, totalBytes = 0, lastStatus = 0, meshError;
     do {
-      const res = await response(`/mesh/export${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`);
+      const res = await response(`/mesh/export?limit=500${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`);
       lastStatus = res.status;
       const text = await res.text();
       totalBytes += text.length;

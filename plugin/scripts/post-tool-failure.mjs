@@ -3,6 +3,85 @@ import { execSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
+//#region src/functions/privacy.ts
+const PRIVATE_TAG_TOKEN_RE = /<private(?=\s|>)[^>]*>|<\/private\s*>/gi;
+function redactPrivateBlocks(input) {
+	const tokens = new RegExp(PRIVATE_TAG_TOKEN_RE.source, PRIVATE_TAG_TOKEN_RE.flags);
+	let out = "";
+	let cursor = 0;
+	let depth = 0;
+	for (let match = tokens.exec(input); match; match = tokens.exec(input)) {
+		const closing = match[0].startsWith("</");
+		if (depth === 0) {
+			if (closing) continue;
+			out += input.slice(cursor, match.index);
+			depth = 1;
+		} else if (closing) {
+			depth -= 1;
+			if (depth === 0) {
+				out += "[REDACTED]";
+				cursor = match.index + match[0].length;
+			}
+		} else depth += 1;
+	}
+	if (depth > 0) return `${out}[REDACTED]`;
+	return out + input.slice(cursor);
+}
+const SECRET_PATTERN_SOURCES = [
+	/(?:api[_-]?key|secret|token|password|credential|auth)[\s]*[=:]\s*["']?[A-Za-z0-9_\-/.+]{20,}["']?/gi,
+	/Bearer\s+[A-Za-z0-9._\-+/=]{20,}/gi,
+	/(?<![\p{L}\p{N}\p{M}_])sk-proj-[A-Za-z0-9\-_]{20,}/gu,
+	/(?<![\p{L}\p{N}\p{M}_])(?:sk|pk|rk|ak)-[A-Za-z0-9][A-Za-z0-9\-_]{19,}/gu,
+	/(?<![\p{L}\p{N}\p{M}_])sk-ant-[A-Za-z0-9\-_]{20,}/gu,
+	/gh[pus]_[A-Za-z0-9]{36,}/g,
+	/github_pat_[A-Za-z0-9_]{22,}/g,
+	/xoxb-[A-Za-z0-9\-]+/g,
+	/AKIA[0-9A-Z]{16}/g,
+	/AIza[A-Za-z0-9\-_]{35}/g,
+	/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+	/npm_[A-Za-z0-9]{36}/g,
+	/glpat-[A-Za-z0-9\-_]{20,}/g,
+	/dop_v1_[A-Za-z0-9]{64}/g
+];
+const PRIVATE_KEY_BLOCK_RE = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/g;
+const URL_CREDENTIALS_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]*:[^\s/?#@"'<>]+@/gi;
+function stripPrivateData(input) {
+	return stripSecrets(redactPrivateBlocks(input));
+}
+function stripSecrets(input) {
+	let result = input.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
+	result = result.replace(new RegExp(URL_CREDENTIALS_RE.source, URL_CREDENTIALS_RE.flags), "$1[REDACTED_SECRET]@");
+	for (const source of SECRET_PATTERN_SOURCES) {
+		const pattern = new RegExp(source.source, source.flags);
+		result = result.replace(pattern, "[REDACTED_SECRET]");
+	}
+	return result;
+}
+function scrubRecord(value, options = {}) {
+	const strip = options.strip ?? stripPrivateData;
+	if (typeof value === "string") return strip(value);
+	if (Array.isArray(value)) return value.map((item) => scrubRecord(item, options));
+	if (value !== null && typeof value === "object") {
+		const proto = Object.getPrototypeOf(value);
+		if (proto !== Object.prototype && proto !== null) return value;
+		const entries = Object.entries(value).map(([key, item]) => [options.scrubKeys ? strip(key) : key, item]);
+		const reserved = new Set(entries.map(([key]) => key));
+		const used = /* @__PURE__ */ new Set();
+		return Object.fromEntries(entries.map(([key, item]) => {
+			let unique = key;
+			if (used.has(unique)) {
+				let suffix = 2;
+				do
+					unique = `${key}_${suffix++}`;
+				while (reserved.has(unique) || used.has(unique));
+			}
+			used.add(unique);
+			return [unique, scrubRecord(item, options)];
+		}));
+	}
+	return value;
+}
+//#endregion
 //#region src/hooks/_capture-filter.ts
 const DEFAULT_DENY_PATTERNS = [
 	"memory_*",
@@ -42,6 +121,56 @@ function shouldCaptureTool(toolName) {
 	const allow = parseEnvList(process.env["AGENTMEMORY_CAPTURE_ALLOW"]);
 	if (allow) return matchesAny(toolName, allow);
 	return !matchesAny(toolName, [...DEFAULT_DENY_PATTERNS, ...parseEnvList(process.env["AGENTMEMORY_CAPTURE_DENY"]) ?? []]);
+}
+function cut(value, max) {
+	if (value.length <= max) return value;
+	const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
+	return value.slice(0, end);
+}
+function truncateText(value, max) {
+	if (value.length <= max) return value;
+	return cut(stripPrivateData(value), max);
+}
+const JSON_WHITESPACE_ESCAPES = {
+	n: "\n",
+	r: "\r",
+	t: "	"
+};
+const SECRET_KEY_SUFFIXES = [
+	"apikey",
+	"secret",
+	"token",
+	"password",
+	"passwd",
+	"credential",
+	"credentials"
+];
+const SECRET_KEY_WORDS = new Set(["auth", "authorization"]);
+function isSecretKeyName(key) {
+	if (!/^[\w.-]{1,64}$/.test(key)) return false;
+	const words = key.replace(/([a-z])([A-Z])/g, "$1_$2").replace(/([A-Za-z])(\d)/g, "$1_$2").toLowerCase().split(/[_.\-\d]+/).filter(Boolean);
+	return words.some((word, i) => SECRET_KEY_WORDS.has(word) || SECRET_KEY_SUFFIXES.some((suffix) => word.endsWith(suffix)) || word === "api" && words[i + 1] === "key");
+}
+function redactSecretKeys(value) {
+	if (Array.isArray(value)) return value.map(redactSecretKeys);
+	if (value === null || typeof value !== "object") return value;
+	const proto = Object.getPrototypeOf(value);
+	if (proto !== Object.prototype && proto !== null) return value;
+	return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, typeof item === "string" && item && isSecretKeyName(key) ? "[REDACTED_SECRET]" : redactSecretKeys(item)]));
+}
+function scrubSecrets(value) {
+	return scrubRecord(redactSecretKeys(value), {
+		scrubKeys: true,
+		strip: stripSecrets
+	});
+}
+function redactSerialized(serialized) {
+	return stripPrivateData(serialized.replace(/\\([\\nrt])/g, (escape, c) => JSON_WHITESPACE_ESCAPES[c] ?? escape)).replace(/[\n\r\t]/g, (c) => JSON.stringify(c).slice(1, -1));
+}
+function truncateJson(value, max) {
+	const str = JSON.stringify(value);
+	if (str.length <= max) return str;
+	return cut(redactSerialized(JSON.stringify(scrubSecrets(value))), max);
 }
 //#endregion
 //#region src/hooks/_project.ts
@@ -116,8 +245,8 @@ async function main() {
 		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 		data: {
 			tool_name: toolName,
-			tool_input: typeof toolInput === "string" ? toolInput.slice(0, 4e3) : JSON.stringify(toolInput ?? "").slice(0, 4e3),
-			error: typeof error === "string" ? error.slice(0, 4e3) : JSON.stringify(error ?? "").slice(0, 4e3)
+			tool_input: typeof toolInput === "string" ? truncateText(toolInput, 4e3) : truncateJson(toolInput ?? "", 4e3),
+			error: typeof error === "string" ? truncateText(error, 4e3) : truncateJson(error ?? "", 4e3)
 		}
 	}, data), OBSERVE_TIMEOUT_MS);
 	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();

@@ -61,7 +61,9 @@ export interface StatusInputs {
   llmRoute?: string | null;
   functionMetrics: FunctionMetricInput[];
   provider: string;
+  providerHint?: string | null;
   embeddingProvider: string;
+  embeddingHint?: string | null;
   flags: StatusFlag[];
   index: {
     bm25Documents: number;
@@ -89,7 +91,7 @@ export interface StatusInputs {
 }
 
 export interface StatusRuntimeInfo {
-  bindings: { state: string; http: string; observers: number; routesViaTrigger: number; reasons: string[] };
+  bindings: { state: string; http: string; observers: number; failedObservers?: number; routesViaTrigger: number; reasons: string[] };
   duplicateWorkers: { count: number; workerIds: string[] } | null;
   stateWorker: { ready: boolean; waitedMs: number; lastReturnAt?: string };
 }
@@ -121,7 +123,9 @@ export interface StatusReport {
   provider: {
     llm: string;
     route: string | null;
+    hint: string | null;
     embeddings: string;
+    embeddingHint: string | null;
     circuitBreaker: StatusInputs["circuitBreaker"];
     offWithoutLlm: string[];
   };
@@ -153,7 +157,7 @@ const FUNCTION_FIXES: Record<string, string> = {
 };
 
 export const LLM_KEY_FIX =
-  "Add one LLM provider key (for example ANTHROPIC_API_KEY or OPENAI_API_KEY) to ~/.agentmemory/.env and restart.";
+  "Set AGENTMEMORY_LLM_PROVIDER and that provider's key (for example AGENTMEMORY_LLM_PROVIDER=anthropic and ANTHROPIC_API_KEY) in ~/.agentmemory/.env and restart.";
 
 export const OFF_WITHOUT_LLM = [
   "session summaries",
@@ -279,6 +283,16 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     problems.push({ level: d.level, code: "health-alert", message: d.message, fix: d.fix });
   }
 
+  const failedObservers = input.runtime?.bindings.failedObservers ?? 0;
+  if (failedObservers > 0) {
+    problems.push({
+      level: "error",
+      code: "observer-rejected",
+      message: `${failedObservers} route or state observer${failedObservers === 1 ? " was" : "s were"} rejected by the engine, so those endpoints or reactions are not active.`,
+      fix: "Check runtime.bindings.reasons in /agentmemory/status for the conflicting route, remove the conflict, then restart agentmemory.",
+    });
+  }
+
   if (input.circuitBreaker?.state === "open") {
     problems.push({
       level: "error",
@@ -293,7 +307,19 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       level: "info",
       code: "no-llm-provider",
       message: "No LLM provider is configured, so summaries, consolidation and graph extraction stay off. Search still works.",
-      fix: LLM_KEY_FIX,
+      fix: input.providerHint || LLM_KEY_FIX,
+    });
+  }
+
+  if (input.embeddingHint) {
+    const keyMissing = input.embeddingHint.startsWith("EMBEDDING_PROVIDER=");
+    problems.push({
+      level: "info",
+      code: keyMissing ? "embedding-provider-key-missing" : "embedding-provider-not-chosen",
+      message: keyMissing
+        ? "EMBEDDING_PROVIDER names a cloud provider whose key is missing, so search is keyword and graph only."
+        : "A cloud embedding key is present, but no embedding provider is chosen, so search is keyword and graph only.",
+      fix: input.embeddingHint,
     });
   }
 
@@ -516,7 +542,9 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     provider: {
       llm: input.provider,
       route: input.provider === "noop" ? null : (input.llmRoute ?? null),
+      hint: input.providerHint ?? null,
       embeddings: input.embeddingProvider,
+      embeddingHint: input.embeddingHint ?? null,
       circuitBreaker: input.circuitBreaker,
       offWithoutLlm: noLlm ? OFF_WITHOUT_LLM : [],
     },

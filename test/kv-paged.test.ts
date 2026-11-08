@@ -84,7 +84,7 @@ describe("StateKV paged reads", () => {
     const sdk = fakeSdk(store);
     sdk.trigger = async (req: Call) => {
       if (req.function_id === "state::list_keys") return { keys: [...store.get(KV.graphNodes)!.keys(), "dead"] };
-      if (req.function_id === "state::get") return store.get((req.payload as any).scope)?.get((req.payload as any).key) ?? null;
+      if (req.function_id === "state::get") return store.get((req.payload as { scope: string; key: string }).scope)?.get((req.payload as { scope: string; key: string }).key) ?? null;
       if (req.function_id === "engine::functions::list") return [];
       throw new Error("unexpected");
     };
@@ -105,12 +105,12 @@ describe("StateKV paged reads", () => {
     };
     seed(store, KV.memories, entries);
     const kv = new StateKV(fakeSdk(store) as never);
-    const first = await kv.listPage(KV.memories, { limit: 2 });
+    const first = await kv.listPage<{ id: string }>(KV.memories, { limit: 2 });
     expect(first.total).toBe(4);
-    expect(first.items.map((i: any) => i.id)).toEqual([id("5", "b"), id("3", "c")]);
+    expect(first.items.map((i) => i.id)).toEqual([id("5", "b"), id("3", "c")]);
     expect(first.nextCursor).toBeTruthy();
-    const second = await kv.listPage(KV.memories, { limit: 2, cursor: first.nextCursor });
-    expect(second.items.map((i: any) => i.id)).toEqual([id("1", "a"), "plain"]);
+    const second = await kv.listPage<{ id: string }>(KV.memories, { limit: 2, cursor: first.nextCursor });
+    expect(second.items.map((i) => i.id)).toEqual([id("1", "a"), "plain"]);
     expect(second.nextCursor).toBeUndefined();
   });
 
@@ -119,8 +119,8 @@ describe("StateKV paged reads", () => {
     const a = id("1", "a"), b = id("3", "b"), c = id("5", "c");
     seed(store, KV.memories, { [a]: { id: a }, [b]: { id: b }, [c]: { id: c } });
     const kv = new StateKV(fakeSdk(store) as never);
-    const page = await kv.listPage(KV.memories, { limit: 3, order: "asc", cursor: encodeCursor({ key: id("4", "gone") }) });
-    expect(page.items.map((i: any) => i.id)).toEqual([c]);
+    const page = await kv.listPage<{ id: string }>(KV.memories, { limit: 3, order: "asc", cursor: encodeCursor({ key: id("4", "gone") }) });
+    expect(page.items.map((i) => i.id)).toEqual([c]);
   });
 
   it("applies graph scope resolution through the pinned view", async () => {

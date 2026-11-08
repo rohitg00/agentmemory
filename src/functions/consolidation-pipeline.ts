@@ -16,7 +16,7 @@ import {
   buildProceduralExtractionPrompt,
 } from "../prompts/consolidation.js";
 import { recordAudit } from "./audit.js";
-import { CONSOLIDATION_LAST_RUN_KEY } from "./consolidation-status.js";
+import { CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, patternFrequency } from "./consolidation-status.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
 function applyDecay(
@@ -86,7 +86,7 @@ export function registerConsolidationPipelineFunction(
   sdk.registerFunction("mem::consolidate-pipeline", 
     async (data?: { tier?: string; force?: boolean; project?: string }) => {
       if (!data?.force && !isConsolidationEnabled()) {
-        return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or configure an LLM provider (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY / GEMINI_API_KEY / GOOGLE_API_KEY / MINIMAX_API_KEY, or AGENTMEMORY_ALLOW_AGENT_SDK=true). OPENAI_BASE_URL alone only points an OpenAI key at another server; it is not a provider." };
+        return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or choose an LLM provider (AGENTMEMORY_LLM_PROVIDER=anthropic, openai, gemini, openrouter or minimax with that provider's key, or AGENTMEMORY_ALLOW_AGENT_SDK=true). A provider key alone does not turn on LLM use." };
       }
       const tier = data?.tier || "all";
       const decayDays = getConsolidationDecayDays();
@@ -189,9 +189,9 @@ export function registerConsolidationPipelineFunction(
           .filter((m) => m.isLatest && m.type === "pattern")
           .map((m) => ({
             content: m.content,
-            frequency: m.sessionIds.length || 1,
+            frequency: patternFrequency(m),
           }))
-          .filter((p) => p.frequency >= 2);
+          .filter((p) => p.frequency >= PROCEDURAL_MIN_SESSIONS_PER_PATTERN);
 
         if (patterns.length >= 2) {
           const prompt = buildProceduralExtractionPrompt(patterns);

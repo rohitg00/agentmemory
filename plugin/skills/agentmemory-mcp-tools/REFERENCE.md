@@ -7,7 +7,7 @@ agentmemory exposes 54 MCP tools. 8 are in the lean core set (`--tools core` or 
 
 | Tool | Core | Parameters | Purpose |
 | --- | --- | --- | --- |
-| `memory_action_create` |  | `title`*: string, `description`: string, `priority`: number, `project`: string, `tags`: string, `parentId`: string, `requires`: string | Create an actionable work item with typed dependencies. Actions track what agents need to do and how work items relate to each other. |
+| `memory_action_create` |  | `title`*: string, `description`: string, `priority`: number, `project`: string, `tags`: string, `parentId`: string, `requires`: string, `agentId`: string | Create an actionable work item with typed dependencies. Actions track what agents need to do and how work items relate to each other. |
 | `memory_action_update` |  | `actionId`*: string, `status`: string, `result`: string, `priority`: number | Update an action's status, priority, or details. Set status to 'done' to complete it and unblock dependent actions. |
 | `memory_audit` |  | `operation`: string, `limit`: number | View the audit trail of memory operations. |
 | `memory_checkpoint` |  | `operation`*: string, `name`: string, `checkpointId`: string, `status`: string, `type`: string, `linkedActionIds`: string | Create or resolve an external checkpoint (CI result, approval, deploy status) that gates action progress. |
@@ -30,7 +30,7 @@ agentmemory exposes 54 MCP tools. 8 are in the lean core set (`--tools core` or 
 | `memory_lease` |  | `actionId`*: string, `agentId`*: string, `operation`*: string, `result`: string, `ttlMs`: number | Acquire, release, or renew an exclusive lease on an action. Prevents multiple agents from working on the same thing. |
 | `memory_lesson_delete` |  | `lessonId`*: string | Soft-delete a lesson by id. Deleted lessons are excluded from recall and list; re-saving the same content creates a fresh lesson. |
 | `memory_lesson_recall` |  | `query`*: string, `project`: string, `minConfidence`: number, `limit`: number | Search lessons by query. Returns lessons sorted by confidence and recency. Use to check what the agent has learned before making decisions. |
-| `memory_lesson_save` | yes | `content`*: string, `context`: string, `confidence`: number, `project`: string, `tags`: string | Save a lesson learned from this session. Lessons have confidence scores that strengthen when reinforced and decay when not used. Duplicate content auto-strengthens the existing lesson. |
+| `memory_lesson_save` | yes | `content`*: string, `context`: string, `confidence`: number, `project`: string, `tags`: string, `sourceIds`: array | Save a lesson learned from this session. Lessons have confidence scores that strengthen when reinforced and decay when not used. Duplicate content auto-strengthens the existing lesson. |
 | `memory_mesh_sync` |  | `peerId`: string, `direction`: string | Sync memories and actions with peer agentmemory instances for multi-agent collaboration. |
 | `memory_next` |  | `project`: string, `agentId`: string | Get the single most important next action to work on. Combines dependency resolution, priority, and recency into a score. |
 | `memory_obsidian_export` |  | `vaultDir`: string, `types`: string | Export memories, lessons, and crystals as Obsidian-compatible Markdown files with YAML frontmatter and wikilinks for graph view. |

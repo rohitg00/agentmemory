@@ -1,5 +1,5 @@
 {
-  "version": "0.9.31",
+  "version": "0.9.32",
   "facts": {
     "mcpTools": [
       "54"
@@ -11,7 +11,7 @@
       "7"
     ],
     "restEndpoints": [
-      "146"
+      "147"
     ],
     "skills": [
       "17"
@@ -20,20 +20,20 @@
       "12"
     ],
     "tests": [
-      "4100+"
+      "4600+"
     ],
     "functions": [
-      "327"
+      "328"
     ],
     "sourceFiles": [
-      "262"
+      "265"
     ],
     "loc": [
-      "59000"
+      "61000"
     ],
     "kvScopes": [
       "66"
     ]
   },
-  "engineVersion": "0.25.0"
+  "engineVersion": "0.25.1"
 }

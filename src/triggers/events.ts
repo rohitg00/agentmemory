@@ -12,6 +12,7 @@ import {
   isConsolidationEnabled,
 } from "../config.js";
 import { logger } from "../logger.js";
+import { getSummaryTriggerTimeoutMs } from "../functions/summary-state.js";
 import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 
 import { getBindings } from "../runtime/bindings.js";
@@ -50,6 +51,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
     const summary = await sdk.trigger<typeof data, { unchanged?: boolean } | undefined>({
       function_id: "mem::summarize",
       payload: data,
+      timeoutMs: getSummaryTriggerTimeoutMs(),
     });
     if (summary?.unchanged === true) return summary;
     if (getBindings(sdk).pipeline === "observe") return summary;

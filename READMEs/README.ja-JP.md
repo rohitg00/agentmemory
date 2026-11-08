@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="設計ドキュメント: gist で 1.6k スター / 230 フォーク" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="設計ドキュメント: gist で 1.7k スター / 240 フォーク" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP ツール" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 自動 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="外部 DB 0 個" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ 件のテストが成功" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,600+ 件のテストが成功" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -630,7 +630,7 @@ agentmemory のエントリは、`mcpServers` の形式を使うすべてのホ�
 | **Antigravity CLI**(`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` は現在の IDE バージョンと同じ MCP と hook の設定を使います。既存のインストールは `--force` で更新してください。[アップグレードノート](../docs/plugins/antigravity.md)を参照。 |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` がユーザーレベルの設定を書き込みます。ワークスペース単位の上書きは、コードの隣にある `.kiro/settings/mcp.json` に書いてください。 |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` が標準の `mcpServers` ブロックを書き込みます。Warp は `.claude/skills/` からも skills を自動検出します。Claude Code プラグインをインストールすれば、9 つの agentmemory skills(`remember`、`recall`、`recap`、`handoff`、`forget`、`lesson`、`commit-context`、`commit-history`、`session-history`)が Warp のスラッシュコマンドパレットにネイティブで表示されます。 |
-| **Cline(CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` が標準の `mcpServers` ブロックを書き込みます。VS Code 拡張を使う場合は、Cline Settings → MCP Servers → Edit JSON に同じブロックを貼り付けてください。 |
+| **Cline(CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` が標準の `mcpServers` ブロックを書き込みます。VS Code 拡張を使う場合は、Cline Settings → MCP Servers → Edit JSON に同じブロックを貼り付けてください。 |
 | **Continue.dev** | `~/.continue/config.yaml`(推奨)または `config.json`(レガシー) | `agentmemory connect continue` は設定がなければ `config.yaml` を作成し、既存の `config.json` は更新します。既存の YAML はコメントとアンカーを維持するため書き換えず、`mcpServers:` に貼るブロックを表示します。Continue の `mcpServers` は配列です。 |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` は `context_servers`(`mcpServers` ではなく Zed 独自のキー)の下に書き込みます。リモート MCP サーバーは、代わりに `{"url": "..."}` で配線できます。 |
 | **Droid(Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` が標準の `mcpServers` ブロックを書き込みます。プロジェクト単位の上書きは `<repo>/.factory/mcp.json` に書いてください。`--with-hooks` を渡すとネイティブ自動キャプチャが使えます。 |
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory は Windows 10/11 で動作します。WSL2 は Linux の経路に従い、ピン留めされたエンジンを自動インストールできます。ネイティブ Windows では、ピン留めされた iii-engine v0.25.0 バイナリを手動でインストールしてください。[iii v0.25.0 リリースページ](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0)から該当アーカイブをダウンロードして checksum を確認し、`iii.exe` を `PATH` に配置します(例: `%USERPROFILE%\.local\bin\iii.exe`)。CLI は Windows ZIP を自動展開しません。
+agentmemory は Windows 10/11 で動作します。WSL2 は Linux の経路に従い、ピン留めされたエンジンを自動インストールできます。ネイティブ Windows では、ピン留めされた iii-engine v0.25.1 バイナリを手動でインストールしてください。[iii v0.25.1 リリースページ](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1)から該当アーカイブをダウンロードして checksum を確認し、`iii.exe` を `PATH` に配置します(例: `%USERPROFILE%\.local\bin\iii.exe`)。CLI は Windows ZIP を自動展開しません。
 
 ネイティブ Windows の自動 MCP 接続は `agentmemory connect copilot-cli` のみをサポートします。それ以外のネイティブ Windows エージェントには[その他のエージェント](#other-agents)の手動 MCP ブロックを使用してください。`connect` を WSL 内で実行するのは、対象エージェントも同じ WSL 環境にインストールされている場合に限ります。
 
@@ -1174,7 +1174,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-ポート `3111` 上の 146 エンドポイント。REST API はデフォルトで `127.0.0.1` にバインドします。保護されたエンドポイントは `Authorization: Bearer <secret>` を要求し、mesh sync エンドポイントは両ピアで明示的に設定された `AGENTMEMORY_SECRET` を要求します。
+ポート `3111` 上の 147 エンドポイント。REST API はデフォルトで `127.0.0.1` にバインドします。保護されたエンドポイントは `Authorization: Bearer <secret>` を要求し、mesh sync エンドポイントは両ピアで明示的に設定された `AGENTMEMORY_SECRET` を要求します。
 
 認証はデフォルトで有効です。`AGENTMEMORY_SECRET` が未設定なら、CLI は初回起動時にランダムなシークレットを `~/.agentmemory/secret` に保存し、選択したデータディレクトリの `secret` にも複製します。権限は `0600` です。同梱クライアントはローカル接続時にこの共通ファイルを優先し、保存されたシークレットを送るのはループバック URL だけです。明示的な `AGENTMEMORY_SECRET` が優先され、リモート接続には環境変数で指定します。Docker デプロイは独自のシークレットを生成します。
 
@@ -1255,7 +1255,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -194,6 +194,39 @@ describe("Bindings", () => {
     process.env.AGENTMEMORY_ROUTE_MAX_IN_FLIGHT = undefined;
   });
 
+  it("counts routes bound through registerTrigger in trigger mode", async () => {
+    const sdk = fakeSdk(["state::get", "http::x"]);
+    const b = new Bindings(sdk as never);
+    b.http(ROUTE);
+    await b.activate();
+    expect(b.modes.http).toBe("trigger");
+    expect(b.describe().routesViaTrigger).toBe(1);
+  });
+
+  it("bounds each function-list probe by the remaining detection time", async () => {
+    const sdk = fakeSdk(["state::get", "http::x", "http::on-request", "state::on-changed"]);
+    const b = new Bindings(sdk as never);
+    await b.activate();
+    const probe = sdk.trigger.mock.calls.find((c) => c[0].function_id === "engine::functions::list")![0] as { timeoutMs?: number };
+    expect(probe.timeoutMs).toBeGreaterThan(0);
+    expect(probe.timeoutMs).toBeLessThanOrEqual(30_000);
+  });
+
+  it("reports a rejected observer as failed instead of active", async () => {
+    const sdk = fakeSdk(["state::get", "http::x", "http::on-request"]);
+    const b = new Bindings(sdk as never);
+    const handle = makeHandle();
+    handle.ready = vi.fn(() => Promise.reject(Object.assign(new Error("conflict"), { code: "HTTP_ROUTE_CONFLICT" })));
+    sdk.observe.mockReturnValueOnce(handle as never);
+    b.http(ROUTE);
+    await b.activate();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const report = b.describe();
+    expect(report.failedObservers).toBe(1);
+    expect(report.observers).toBe(0);
+    expect(report.reasons.join("\n")).toContain("POST /agentmemory/x observer rejected: HTTP_ROUTE_CONFLICT");
+  });
+
   it("per-sdk singleton", () => {
     const sdk = { registerTrigger: vi.fn(), trigger: vi.fn() };
     expect(getBindings(sdk as never)).toBe(getBindings(sdk as never));
