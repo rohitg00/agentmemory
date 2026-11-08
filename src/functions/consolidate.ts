@@ -65,14 +65,16 @@ function parseMemoryXml(
   };
 }
 
-function consolidationKey(
-  concept: string,
-  sources: Array<CompressedObservation & { sid: string }>,
-): string {
-  const ordered = [...sources].sort((a, b) =>
-    a.sid === b.sid ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.sid < b.sid ? -1 : 1,
-  );
-  return fingerprintId("cons", stableStringify({ concept, sources: ordered }));
+function consolidationKey(sources: Array<CompressedObservation & { sid: string }>): string {
+  const evidence = sources
+    .map((o) => ({ sid: o.sid, id: o.id, type: o.type, title: o.title, narrative: o.narrative, files: o.files, importance: o.importance }))
+    .sort((a, b) => (a.sid === b.sid ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.sid < b.sid ? -1 : 1));
+  return fingerprintId("cons", stableStringify(evidence));
+}
+
+function sameIds(left: string[] | undefined, right: string[]): boolean {
+  const ids = new Set(left);
+  return ids.size === right.length && right.every((id) => ids.has(id));
 }
 
 export function registerConsolidateFunction(
@@ -165,7 +167,7 @@ export function registerConsolidateFunction(
 
           const now = new Date().toISOString();
           const obsIds = [...new Set(top.map((o) => o.id))];
-          const sourceKey = consolidationKey(concept, top);
+          const sourceKey = consolidationKey(top);
           const scopedProject =
             typeof data.project === "string" && data.project.trim().length > 0
               ? data.project.trim()
@@ -185,7 +187,8 @@ export function registerConsolidateFunction(
             const memories = await collectAll<Memory>(kv, KV.memories);
             const candidates = memories.filter((memory) =>
               memory.isLatest !== false &&
-              (!scopedProject || !memory.project || memory.project === scopedProject),
+              memory.agentId === undefined &&
+              (!scopedProject || memory.project === scopedProject),
             );
             const children = new Map<string, Memory[]>();
             for (const memory of candidates) {
@@ -210,18 +213,24 @@ export function registerConsolidateFunction(
               });
             }
             const heads = candidates.filter((memory) => memory.isLatest !== false);
-            if (heads.some((memory) => memory.consolidationKey === sourceKey)) return false;
+            if (heads.some((memory) =>
+              memory.consolidationKeys
+                ? memory.consolidationKeys[concept] === sourceKey
+                : sameIds(memory.sourceObservationIds, obsIds) && sameIds(memory.sessionIds, sessionIds),
+            )) return false;
 
-            const previous = heads.find((memory) =>
+            const sameTitle = heads.filter((memory) =>
               memory.title.toLowerCase() === parsed.title.toLowerCase(),
             );
+            if (sameTitle.length > 1) return false;
+            const previous = sameTitle[0];
             const memory: Memory = {
               id: generateId("mem"),
               createdAt: now,
               updatedAt: now,
               ...parsed,
               sourceObservationIds: obsIds,
-              consolidationKey: sourceKey,
+              consolidationKeys: { ...previous?.consolidationKeys, [concept]: sourceKey },
               version: previous ? (previous.version || 1) + 1 : 1,
               isLatest: true,
               ...(previous && {

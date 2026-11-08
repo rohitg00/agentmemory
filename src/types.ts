@@ -151,7 +151,7 @@ export interface Memory {
   supersedes?: string[];
   relatedIds?: string[];
   sourceObservationIds?: string[];
-  consolidationKey?: string;
+  consolidationKeys?: Record<string, string>;
   isLatest: boolean;
   forgetAfter?: string;
   imageRef?: string;

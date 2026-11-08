@@ -23,7 +23,7 @@ function fixture() {
   };
   const functions = new Map<string, (data: unknown) => Promise<unknown>>();
   const sdk = { registerFunction: (id: string, handler: (data: unknown) => Promise<unknown>) => functions.set(id, handler) };
-  const compress = vi.fn(async () => xml("Shared title"));
+  const compress = vi.fn(async (_system: string, _prompt: string) => xml("Shared title"));
   registerConsolidateFunction(sdk as never, kv as never, { compress } as unknown as MemoryProvider);
   const run = (project = "app") => functions.get("mem::consolidate")!({ project, minObservations: 1 });
   const memories = () => kv.list<Memory>(KV.memories);
@@ -320,5 +320,69 @@ describe("consolidation publication", () => {
     expect(await f.run()).toMatchObject({ consolidated: 1 });
     expect(await f.run()).toMatchObject({ consolidated: 0 });
     expect(await f.memories()).toHaveLength(1);
+  });
+
+  it("recognises a memory published before consolidation keys existed", async () => {
+    const f = fixture();
+    await seed(f);
+    await f.kv.set(KV.memories, "legacy", memory("legacy", {
+      sourceObservationIds: ["session-a-auth-0", "session-a-auth-1", "session-a-auth-2"],
+      sessionIds: ["session-a"],
+    }));
+    expect(await f.run()).toMatchObject({ consolidated: 0 });
+    expect(await f.memories()).toHaveLength(1);
+  });
+
+  it("keeps both concepts settled when they produce the same title", async () => {
+    const f = fixture();
+    const session: Session = { id: "session-a", project: "app", cwd: "/synthetic", startedAt: "2026-01-01T00:00:00Z", status: "completed", observationCount: 3 };
+    await f.kv.set(KV.sessions, session.id, session);
+    for (let i = 0; i < 3; i++) {
+      await f.kv.set(KV.observations(session.id), `shared-${i}`, {
+        id: `shared-${i}`, sessionId: session.id, timestamp: session.startedAt, type: "decision", title: `shared ${i}`,
+        narrative: `Evidence ${i}`, facts: [], concepts: ["auth", "tokens"], files: [], importance: 8,
+      } satisfies CompressedObservation);
+    }
+    expect(await f.run()).toMatchObject({ consolidated: 2 });
+    const count = (await f.memories()).length;
+    expect(await f.run()).toMatchObject({ consolidated: 0 });
+    expect(await f.memories()).toHaveLength(count);
+  });
+
+  it("ignores compression bookkeeping when deciding whether evidence changed", async () => {
+    const f = fixture();
+    await seed(f);
+    expect(await f.run()).toMatchObject({ consolidated: 1 });
+    const row = await f.kv.get<CompressedObservation>(KV.observations("session-a"), "session-a-auth-0");
+    await f.kv.set(KV.observations("session-a"), row!.id, { ...row!, compressedAt: "2026-02-01T00:00:00Z", compression: { revision: "r2", attempts: 2 } } as CompressedObservation);
+    expect(await f.run()).toMatchObject({ consolidated: 0 });
+  });
+
+  it("does not extend a lineage that already has two latest heads with the same title", async () => {
+    const f = fixture();
+    await seed(f);
+    await f.kv.set(KV.memories, "a", memory("a"));
+    await f.kv.set(KV.memories, "b", memory("b"));
+    expect(await f.run()).toMatchObject({ consolidated: 0 });
+    expect((await f.memories()).filter((m) => m.isLatest !== false).map((m) => m.id).sort()).toEqual(["a", "b"]);
+  });
+
+  it("leaves an agent-owned memory with the same title as the latest version", async () => {
+    const f = fixture();
+    await seed(f);
+    await f.kv.set(KV.memories, "owned", memory("owned", { agentId: "agent-1" }));
+    expect(await f.run()).toMatchObject({ consolidated: 1 });
+    const owned = await f.kv.get<Memory>(KV.memories, "owned");
+    expect(owned!.isLatest).toBe(true);
+    const created = (await f.memories()).find((m) => m.id !== "owned")!;
+    expect(created.parentId).toBeUndefined();
+  });
+
+  it("does not demote a global memory during a project-scoped run", async () => {
+    const f = fixture();
+    await seed(f);
+    await f.kv.set(KV.memories, "global", memory("global", { project: undefined }));
+    expect(await f.run()).toMatchObject({ consolidated: 1 });
+    expect((await f.kv.get<Memory>(KV.memories, "global"))!.isLatest).toBe(true);
   });
 });
