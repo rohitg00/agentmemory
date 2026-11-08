@@ -134,7 +134,7 @@ import { bootLog, bootWarn } from "./logger.js";
 import { runtimeMetadataPath } from "./runtime-paths.js";
 import { getBindings } from "./runtime/bindings.js";
 import { waitForStateWorker, onStateWorkerReturn } from "./runtime/state-worker.js";
-import { singleFlight, shouldRearmIndex, rearmIndexRecovery } from "./runtime/recovery.js";
+import { singleFlight, shouldRearmIndex, rearmIndexRecovery, backfillFailedOutright } from "./runtime/recovery.js";
 import { checkDuplicateWorkers } from "./runtime/duplicates.js";
 import { ensureServerSecret, explicitSecret, secretFilePath } from "./secret-store.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
@@ -491,6 +491,7 @@ async function main() {
     });
     let checkpointBackfillSince = await indexPersistence.prepareBackfill(loaded, isVectorBackfillAllEnabled());
     let mismatchBlocked = false;
+    const liveBeforeRetry = !boot && vectorIndex ? vectorIndex.snapshotLive() : null;
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
     // Persisted vectors carry whatever dimension the provider had when
     // they were written. If the active provider declares a different
@@ -576,12 +577,14 @@ async function main() {
       );
     }
   }
+    if (liveBeforeRetry && vectorIndex) vectorIndex.restoreLive(liveBeforeRetry);
     return { loaded, vectorBackfillSince: checkpointBackfillSince, mismatchBlocked };
   };
 
   const bootCheckpoint = await restoreVectorCheckpoint(true);
   let vectorBackfillSince = bootCheckpoint.vectorBackfillSince;
   const bootCheckpointUnavailable = !bootCheckpoint.loaded || bootCheckpoint.loaded.state === "unavailable";
+  if (bootCheckpointUnavailable) vectorIndex?.trackRemovals(true);
 
   const auditMigration = startAuditMigration(kv).catch(() => {});
 
@@ -653,6 +656,7 @@ async function main() {
             const remaining = countRemaining();
             setPendingVectorBackfillCount(remaining);
             setVectorBackfillState(complete ? "idle" : "paused");
+            if (backfillFailedOutright(result)) indexRecoveryFailed = true;
             if (result.added > 0) bootLog(`Vector index backfilled: ${result.added} entries`);
             if (!complete) bootWarn(`Vector recovery remains incomplete (${remaining} documents pending); it resumes on the next start.`);
           })
@@ -719,6 +723,7 @@ async function main() {
           const retry = await restoreVectorCheckpoint(false);
           checkpointLoaded = retry.loaded;
           vectorBackfillSince = retry.vectorBackfillSince;
+          vectorIndex?.trackRemovals(false);
           return true;
         },
         indexNeedsRearm: () => shouldRearmIndex({
