@@ -1,12 +1,11 @@
 {
   "mcpServers": {
     "agentmemory": {
-      "command": "npx",
-      "args": ["-y", "@agentmemory/mcp"],
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bridge.mjs"],
       "env": {
-        "AGENTMEMORY_URL": "${AGENTMEMORY_URL:-http://localhost:3111}",
-        "AGENTMEMORY_SECRET": "${AGENTMEMORY_SECRET:-}",
-        "AGENTMEMORY_TOOLS": "${AGENTMEMORY_TOOLS:-all}"
+        "CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL": "${user_config.agentmemory_url}",
+        "CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET": "${user_config.agentmemory_secret}"
       }
     }
   }

@@ -100,7 +100,7 @@ function makeSemantic(
   };
 }
 
-describe("RetentionScoring with access log (issue #119)", () => {
+describe("RetentionScoring with access log", () => {
   it("episodic memories with recorded reads get higher reinforcementBoost than untouched ones", async () => {
     const { registerRetentionFunctions } = await import(
       "../src/functions/retention.js"

@@ -10,7 +10,7 @@ import {
 // at 8 essentials with no indication the other 46 existed. Default
 // flipped to "all"; the lean set is still accessible via
 // AGENTMEMORY_TOOLS=core.
-describe("MCP tool surface default (#553)", () => {
+describe("MCP tool surface default", () => {
   const ORIG = process.env["AGENTMEMORY_TOOLS"];
   beforeEach(() => {
     delete process.env["AGENTMEMORY_TOOLS"];
@@ -50,18 +50,19 @@ describe("MCP tool surface default (#553)", () => {
     }
   });
 
-  it("plugin .mcp.json provides default env interpolation so CC parse never fails (#510)", () => {
-    const raw = readFileSync("plugin/.mcp.json", "utf-8");
-    const cfg = JSON.parse(raw) as {
-      mcpServers: { agentmemory: { env: Record<string, string> } };
-    };
-    const env = cfg.mcpServers.agentmemory.env;
-    // Per Claude Code MCP docs: ${VAR} without a default fails config
-    // parse when VAR is unset, silently dropping the server. ${VAR:-x}
-    // form is what unblocks fresh installs that haven't exported
-    // AGENTMEMORY_URL.
-    expect(env["AGENTMEMORY_URL"]).toMatch(/\$\{AGENTMEMORY_URL:-/);
-    expect(env["AGENTMEMORY_SECRET"]).toMatch(/\$\{AGENTMEMORY_SECRET:-/);
-    expect(env["AGENTMEMORY_TOOLS"]).toMatch(/\$\{AGENTMEMORY_TOOLS:-all\}/);
+  it("plugin MCP uses its bundled bridge and the user's plugin options", () => {
+    const cfg = JSON.parse(readFileSync("plugin/.mcp.json", "utf-8"));
+    expect(cfg.mcpServers.agentmemory).toEqual({
+      command: "node",
+      args: ["${CLAUDE_PLUGIN_ROOT}/scripts/plugin-bridge.mjs"],
+      env: {
+        CLAUDE_PLUGIN_OPTION_AGENTMEMORY_URL: "${user_config.agentmemory_url}",
+        CLAUDE_PLUGIN_OPTION_AGENTMEMORY_SECRET: "${user_config.agentmemory_secret}",
+      },
+    });
+    const manifest = JSON.parse(readFileSync("plugin/.claude-plugin/plugin.json", "utf-8"));
+    expect(manifest.userConfig.agentmemory_secret).toMatchObject({ type: "string", sensitive: true });
+    expect(manifest.userConfig.agentmemory_url).toMatchObject({ type: "string" });
+    expect(manifest.userConfig.agentmemory_url).not.toHaveProperty("default");
   });
 });

@@ -19,7 +19,7 @@ import type { Session } from "../src/types.js";
 // that would drop the worker is never shipped.
 
 describe("frame-guard", () => {
-  it("keeps the safe cap under the 16 MiB frame limit with headroom", () => {
+  it("keeps the safe cap under the 64 MiB frame limit with headroom", () => {
     expect(SAFE_PAYLOAD_BYTES).toBeLessThan(FRAME_LIMIT_BYTES_FOR_TEST);
     expect(FRAME_LIMIT_BYTES_FOR_TEST - SAFE_PAYLOAD_BYTES).toBeGreaterThanOrEqual(
       1024 * 1024,

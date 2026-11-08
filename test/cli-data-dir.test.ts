@@ -92,7 +92,7 @@ describe("resolveDataDir", () => {
     const cwd = mkdtempSync(join(tmpdir(), "agentmemory-data-"));
     mkdirSync(join(cwd, ".git"));
     mkdirSync(join(cwd, "data"));
-    writeFileSync(join(cwd, "data", "iii-config.yaml"), "");
+    writeFileSync(join(cwd, "data", "iii-config.yaml"), ""); // Legacy marker recognized during data-dir migration.
     const home = "/home/alex";
     const base = { cwd, home, platform: "linux" as const };
     const defaultDir = join(home, ".local", "share", "agentmemory");

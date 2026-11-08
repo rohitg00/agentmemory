@@ -1,23 +1,38 @@
-import { watch, promises as fsp, statSync } from "node:fs";
-import { resolve, relative, join, extname, sep, basename } from "node:path";
+import { watch, promises as fsp, readFileSync, realpathSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { resolve, relative, join, extname, sep, basename, dirname } from "node:path";
 import { randomBytes } from "node:crypto";
 import { execFileSync } from "node:child_process";
 
-// Same resolution order as the hooks' resolveProject (git toplevel basename,
+// Same resolution order as the hooks' resolveProject (git repository basename,
 // then directory basename) so a watched subdirectory scopes to the repository
 // name instead of the subdirectory name.
 function deriveProjectName(dir) {
   try {
-    const top = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd: dir,
-      stdio: ["ignore", "pipe", "ignore"],
-      encoding: "utf8",
-    }).trim();
-    if (top) return basename(top);
+    const [top, gitDir, commonDir] = execFileSync(
+      "git",
+      ["rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir"],
+      {
+        cwd: dir,
+        stdio: ["ignore", "pipe", "ignore"],
+        encoding: "utf8",
+      },
+    )
+      .trim()
+      .split(/\r?\n/);
+    if (top) return basename(repositoryRoot(dir, top, gitDir, commonDir));
   } catch {
     // not a git repo
   }
   return basename(dir);
+}
+
+function repositoryRoot(dir, top, gitDir, commonDir) {
+  if (!gitDir || !commonDir) return top;
+  const physical = realpathSync(dir);
+  const common = resolve(physical, commonDir);
+  if (resolve(physical, gitDir) === common || basename(common) !== ".git") return top;
+  return dirname(common);
 }
 
 const TEXT_EXTENSIONS = new Set([
@@ -134,11 +149,59 @@ function redactSensitivePreview(preview) {
   return redactPemBlocks(preview).split("\n").map(redactSensitiveLine).join("\n");
 }
 
+function usableSecret(value) {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  if (!trimmed || (trimmed.startsWith("${") && trimmed.endsWith("}"))) return "";
+  return trimmed;
+}
+
+function readAgentmemoryFile(name) {
+  try {
+    return readFileSync(join(homedir(), ".agentmemory", name), "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function envFileSecret() {
+  let found = "";
+  for (const line of readAgentmemoryFile(".env").split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== "AGENTMEMORY_SECRET") continue;
+    let value = trimmed.slice(eq + 1).trim();
+    const quote = value[0];
+    const close = quote === '"' || quote === "'" ? value.indexOf(quote, 1) : -1;
+    if (close > 0) value = value.slice(1, close);
+    else if (value.includes(" #")) value = value.slice(0, value.indexOf(" #"));
+    found = usableSecret(value);
+  }
+  return found;
+}
+
+function isLoopbackUrl(url) {
+  try {
+    const host = new URL(url).hostname.replace(/^\[|\]$/g, "").toLowerCase();
+    return host === "localhost" || host === "::1" || /^127(?:\.\d{1,3}){3}$/.test(host);
+  } catch {
+    return false;
+  }
+}
+
+export function resolveSecret(url, explicit) {
+  const configured = usableSecret(explicit);
+  if (configured) return configured;
+  if (!isLoopbackUrl(url)) return "";
+  return envFileSecret() || usableSecret(readAgentmemoryFile("secret"));
+}
+
 export class FilesystemWatcher {
   constructor(config = {}) {
     this.roots = (config.roots || []).map((r) => resolve(r));
     this.baseUrl = (config.baseUrl || "http://localhost:3111").replace(/\/+$/, "");
-    this.secret = config.secret;
+    this.secret = resolveSecret(this.baseUrl, config.secret);
     this.project =
       config.project ||
       (this.roots[0] ? deriveProjectName(this.roots[0]) : "filesystem-watcher");

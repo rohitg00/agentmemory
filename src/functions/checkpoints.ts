@@ -1,11 +1,11 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Action, ActionEdge, Checkpoint } from "../types.js";
 import { recordAudit } from "./audit.js";
 
-export function registerCheckpointsFunction(sdk: ISdk, kv: StateKV): void {
+export function registerCheckpointsFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::checkpoint-create", 
     async (data: {
       name: string;

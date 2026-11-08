@@ -30,7 +30,7 @@ function wire() {
     registerFunction: vi.fn((id: string, cb) => {
       handlers[id] = cb;
     }),
-  } as unknown as import("iii-sdk").ISdk;
+  } as unknown as import("iii-sdk").IIIClient;
   registerSlotsFunctions(sdk, kv as never);
   return { kv, handlers };
 }

@@ -1,34 +1,67 @@
 import type { HybridSearchResult } from "../types.js";
 
-let pipeline: any = null;
-let pipelineLoading: Promise<any> | null = null;
-let pipelineUnavailable = false;
+const MODEL = "Xenova/ms-marco-MiniLM-L-6-v2";
+const MAX_TOKENS = 512;
+const LOAD_RETRY_MS = 60_000;
+type ScorePair = (query: string, document: string) => Promise<number>;
 
-async function loadPipeline(): Promise<any> {
-  if (pipelineUnavailable) return null;
-  if (pipeline) return pipeline;
-  if (pipelineLoading) return pipelineLoading;
+let scorer: ScorePair | null = null;
+let scorerLoading: Promise<ScorePair | null> | null = null;
+let retryAfter = 0;
 
-  pipelineLoading = (async () => {
+async function loadScorer(): Promise<ScorePair | null> {
+  if (scorer) return scorer;
+  if (scorerLoading) return scorerLoading;
+  if (Date.now() < retryAfter) return null;
+
+  scorerLoading = (async () => {
     try {
-      const { pipeline: createPipeline } = await import(
+      const { AutoTokenizer, AutoModelForSequenceClassification, Tensor } = await import(
         "@huggingface/transformers"
       );
-      pipeline = await createPipeline(
-        "text-classification",
-        "Xenova/ms-marco-MiniLM-L-6-v2",
-        { dtype: "q8" },
-      );
-      return pipeline;
+      const tokenizer = await AutoTokenizer.from_pretrained(MODEL);
+      const model = await AutoModelForSequenceClassification.from_pretrained(MODEL, { dtype: "q8" });
+      scorer = async (query, document) => {
+        const encoded = tokenizer(query, {
+          text_pair: document,
+          return_tensor: false,
+          return_token_type_ids: true,
+        });
+        const length = encoded.input_ids.length;
+        const boundary = encoded.token_type_ids.indexOf(1);
+        if (boundary < 2 || boundary >= length) throw new Error("Invalid BERT pair encoding");
+
+        // This model uses [CLS] query [SEP] document [SEP]. Transformers.js
+        // slices combined sequences, so truncate content while retaining both segments.
+        let queryLength = boundary - 2;
+        let documentLength = length - boundary - 1;
+        while (queryLength + documentLength > MAX_TOKENS - 3) {
+          if (queryLength > documentLength) queryLength--;
+          else documentLength--;
+        }
+        const inputs = Object.fromEntries(Object.entries(encoded).map(([key, values]) => {
+          const tokens = [
+            ...values.slice(0, queryLength + 1), values[boundary - 1],
+            ...values.slice(boundary, boundary + documentLength), values[length - 1],
+          ];
+          return [key, new Tensor("int64", BigInt64Array.from(tokens, BigInt), [1, tokens.length])];
+        }));
+        const { logits } = await model(inputs);
+        if (logits?.dims.length !== 2 || logits.dims[0] !== 1 || logits.dims[1] !== 1
+          || logits.data.length !== 1 || !Number.isFinite(logits.data[0])) {
+          throw new Error("Invalid cross-encoder score");
+        }
+        return Number(logits.data[0]);
+      };
+      return scorer;
     } catch {
-      pipeline = null;
-      pipelineUnavailable = true;
+      retryAfter = Date.now() + LOAD_RETRY_MS;
       return null;
     } finally {
-      pipelineLoading = null;
+      scorerLoading = null;
     }
   })();
-  return pipelineLoading;
+  return scorerLoading;
 }
 
 export async function rerank(
@@ -36,39 +69,29 @@ export async function rerank(
   results: HybridSearchResult[],
   topK = 20,
 ): Promise<HybridSearchResult[]> {
-  if (results.length <= 1) return results;
+  if (results.length <= 1 || !query.trim() || !Number.isSafeInteger(topK) || topK <= 1) return results;
 
-  const reranker = await loadPipeline();
-  if (!reranker) return results;
-
-  const candidates = results.slice(0, Math.min(results.length, topK));
-
-  const pairs = candidates.map((r) => ({
-    text: `${query} [SEP] ${r.observation.title || ""} ${r.observation.narrative || ""}`.slice(0, 512),
-    result: r,
-  }));
-
-  const scores: Array<{ result: HybridSearchResult; rerankScore: number }> = [];
-
-  for (const pair of pairs) {
-    try {
-      const output = await reranker(pair.text);
-      const score = Array.isArray(output) ? output[0]?.score ?? 0 : 0;
-      scores.push({ result: pair.result, rerankScore: score });
-    } catch {
-      scores.push({ result: pair.result, rerankScore: pair.result.combinedScore });
+  const scorePair = await loadScorer();
+  if (!scorePair) return results;
+  const candidates = results.slice(0, topK);
+  const scores: Array<{ result: HybridSearchResult; score: number; position: number }> = [];
+  try {
+    for (const [position, result] of candidates.entries()) {
+      const document = `${result.observation.title || ""} ${result.observation.narrative || ""}`.trim();
+      scores.push({ result, score: await scorePair(query, document), position });
     }
+  } catch {
+    // A partially scored window cannot compare model logits with hybrid scores.
+    return results;
   }
-
-  scores.sort((a, b) => b.rerankScore - a.rerankScore);
-
-  return scores.map((s, i) => ({
-    ...s.result,
-    combinedScore: s.rerankScore,
+  scores.sort((a, b) => b.score - a.score || a.position - b.position);
+  return scores.map(({ result, score }, i) => ({
+    ...result,
+    rerankScore: score,
     rerankPosition: i + 1,
-  }));
+  })).concat(results.slice(candidates.length));
 }
 
 export function isRerankerAvailable(): boolean {
-  return pipeline !== null;
+  return scorer !== null;
 }
