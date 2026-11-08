@@ -105,7 +105,9 @@ export function onStateWorkerReturn(
   for (const handle of bindings.stateHandles) {
     let wasPending = handle.state === "pending" || handle.state === "suspended";
     handle.onStateChange((next) => {
+      if (next === "pending" || next === "suspended") stateWorkerStatus.ready = false;
       if (next === "active" && wasPending) {
+        stateWorkerStatus.ready = true;
         state.lastReturnAt = new Date().toISOString();
         stateWorkerStatus.lastReturnAt = state.lastReturnAt;
         logger.info("State worker observer active again; running re-arm", { observerId: handle.id });
@@ -119,6 +121,7 @@ export function onStateWorkerReturn(
       if ((payload as { event?: string })?.event !== "worker_connected") return { handled: false };
       try {
         await probeOnce(client, 2000);
+        stateWorkerStatus.ready = true;
         state.lastReturnAt = new Date().toISOString();
         stateWorkerStatus.lastReturnAt = state.lastReturnAt;
         logger.info("State worker reconnected; running re-arm");
@@ -136,6 +139,7 @@ export function onStateWorkerReturn(
     if (bindings.modes.state === "observe" || stopped) return;
     try {
       await probeOnce(client, 2000);
+      stateWorkerStatus.ready = true;
       if (!state.probeReady) {
         state.probeReady = true;
         state.lastReturnAt = new Date().toISOString();
@@ -145,6 +149,7 @@ export function onStateWorkerReturn(
       }
     } catch {
       state.probeReady = false;
+      stateWorkerStatus.ready = false;
     }
   };
   return {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { onStateWorkerReturn, stateWorkerStatus } from "../src/runtime/state-worker.js";
 import { IndexPersistence } from "../src/state/index-persistence.js";
 import { VectorIndex } from "../src/state/vector-index.js";
-import { rearmIndexRecovery } from "../src/runtime/recovery.js";
+import { rearmIndexRecovery, shouldRearmIndex } from "../src/runtime/recovery.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -184,5 +184,44 @@ describe("VectorIndex.mergeMissingFrom", () => {
     checkpoint.add("gone", "s", new Float32Array([1]));
     expect(live.mergeMissingFrom(checkpoint)).toBe(0);
     expect(live.has("gone")).toBe(false);
+  });
+});
+
+describe("reported state-worker readiness", () => {
+  afterEach(() => { stateWorkerStatus.ready = true; });
+
+  it("follows trigger-mode probe outcomes", async () => {
+    stateWorkerStatus.ready = true;
+    const sdk = fakeSdk();
+    const rearm = onStateWorkerReturn(sdk as never, fakeBindings(fakeHandle("active"), "trigger") as never, vi.fn());
+    sdk.trigger.mockRejectedValueOnce(new Error("function_not_found"));
+    await rearm.probeTick();
+    expect(stateWorkerStatus.ready).toBe(false);
+    await rearm.probeTick();
+    expect(stateWorkerStatus.ready).toBe(true);
+    rearm.stop();
+  });
+
+  it("follows observer state changes in observe mode", () => {
+    stateWorkerStatus.ready = true;
+    const handle = fakeHandle("active");
+    const rearm = onStateWorkerReturn(fakeSdk() as never, fakeBindings(handle) as never, vi.fn());
+    handle.emit("pending");
+    expect(stateWorkerStatus.ready).toBe(false);
+    handle.emit("active");
+    expect(stateWorkerStatus.ready).toBe(true);
+    rearm.stop();
+  });
+});
+
+describe("shouldRearmIndex", () => {
+  it("does not re-run recovery for a backfill paused at its per-start cap", () => {
+    expect(shouldRearmIndex({ bm25Incomplete: false, persistencePaused: false, lastRecoveryFailed: false })).toBe(false);
+  });
+
+  it("re-runs recovery after an incomplete keyword rebuild, a paused checkpoint or a failed run", () => {
+    expect(shouldRearmIndex({ bm25Incomplete: true, persistencePaused: false, lastRecoveryFailed: false })).toBe(true);
+    expect(shouldRearmIndex({ bm25Incomplete: false, persistencePaused: true, lastRecoveryFailed: false })).toBe(true);
+    expect(shouldRearmIndex({ bm25Incomplete: false, persistencePaused: false, lastRecoveryFailed: true })).toBe(true);
   });
 });
