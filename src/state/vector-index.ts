@@ -181,6 +181,7 @@ export class VectorIndex {
       string,
       { embedding: Float32Array; sessionId: string }
     >;
+    const live = this.vectors;
     this.vectors = new Map();
     for (const [obsId, entry] of src) {
       this.vectors.set(obsId, {
@@ -188,7 +189,14 @@ export class VectorIndex {
         sessionId: entry.sessionId,
       });
     }
+    const liveChanges = this.changes;
     this.changes = new Map(other.changes);
+    for (const obsId of this.touched ?? []) {
+      const entry = live.get(obsId);
+      if (entry) this.vectors.set(obsId, entry);
+      else this.vectors.delete(obsId);
+      this.changes.set(obsId, liveChanges.get(obsId) ?? Boolean(entry));
+    }
   }
 
   trackLiveChanges(): void {
