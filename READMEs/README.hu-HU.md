@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP eszköz" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatikus hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 külső adatbázis" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ sikeres teszt" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ sikeres teszt" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -661,7 +661,7 @@ Az `npm start` ugyanazt a helyi szervert indítja, mint a telepített CLI. A kö
 
 ### Windows
 
-Az agentmemory Windows 10/11 rendszeren fut. A WSL2 a Linux útvonalat követi, és automatikusan telepítheti a rögzített motort. Natív Windowson kézzel telepítse a rögzített iii-engine v0.25.0 binárist: töltse le a megfelelő archívumot az [iii v0.25.0 kiadási oldaláról](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), ellenőrizze az ellenőrzőösszeget, majd helyezze az `iii.exe` fájlt a `PATH`-ra (például `%USERPROFILE%\.local\bin\iii.exe`). A CLI nem bontja ki automatikusan a Windows ZIP-et.
+Az agentmemory Windows 10/11 rendszeren fut. A WSL2 a Linux útvonalat követi, és automatikusan telepítheti a rögzített motort. Natív Windowson kézzel telepítse a rögzített iii-engine v0.25.1 binárist: töltse le a megfelelő archívumot az [iii v0.25.1 kiadási oldaláról](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), ellenőrizze az ellenőrzőösszeget, majd helyezze az `iii.exe` fájlt a `PATH`-ra (például `%USERPROFILE%\.local\bin\iii.exe`). A CLI nem bontja ki automatikusan a Windows ZIP-et.
 
 A natív Windows automatizált MCP-kapcsolat csak az `agentmemory connect copilot-cli` parancsot támogatja. Más natív Windows-ügynökökhöz használja az [Egyéb ügynökök](#other-agents) kézi MCP-blokkját. A `connect` parancsot csak akkor futtassa WSL-ben, ha a célügynök is ugyanabban a WSL-környezetben van telepítve.
 
@@ -1239,7 +1239,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

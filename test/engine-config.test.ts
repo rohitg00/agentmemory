@@ -3,7 +3,7 @@ import { COMPOSE_WORKER_VERSIONS, renderWorkerCompose } from "../src/cli/compose
 
 describe("native Worker Compose runtime configuration", () => {
   it("pins state/http workers at the reviewed registry versions", () => {
-    expect(COMPOSE_WORKER_VERSIONS).toEqual({ state: "0.22.20", http: "0.22.7" });
+    expect(COMPOSE_WORKER_VERSIONS).toEqual({ state: "0.22.22", http: "0.22.8" });
   });
 
   it("renders instance-specific worker ports and persistent state storage", () => {
@@ -16,9 +16,9 @@ describe("native Worker Compose runtime configuration", () => {
       linux: false,
     });
     expect(rendered).toContain("worker: 'package://api.workers.iii.dev/state'");
-    expect(rendered).toContain("version: '0.22.20'");
+    expect(rendered).toContain("version: '0.22.22'");
     expect(rendered).toContain("worker: 'package://api.workers.iii.dev/http'");
-    expect(rendered).toContain("version: '0.22.7'");
+    expect(rendered).toContain("version: '0.22.8'");
     expect(rendered).toContain("port: 3211");
     expect(rendered).toContain("port: 49234");
     expect(rendered).toContain("file_path: '/tmp/agentmemory/state_store.db'");

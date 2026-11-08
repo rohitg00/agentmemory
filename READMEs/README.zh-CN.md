@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 个 MCP 工具" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 个自动 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 个外部数据库" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ 项测试通过" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ 项测试通过" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory 支持 Windows 10/11；WSL2 可按 Linux 流程自动安装 engine。原生 Windows 需手动安装 iii-engine v0.25.0：从 [iii v0.25.0 发布页](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) 下载对应归档、验证校验和，并将 `iii.exe` 放到 `PATH`。CLI 不会自动解压 ZIP
+agentmemory 支持 Windows 10/11；WSL2 可按 Linux 流程自动安装 engine。原生 Windows 需手动安装 iii-engine v0.25.1：从 [iii v0.25.1 发布页](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) 下载对应归档、验证校验和，并将 `iii.exe` 放到 `PATH`。CLI 不会自动解压 ZIP
 
 原生 Windows 仅为 `agentmemory connect copilot-cli` 提供自动 MCP 配置；其他 agent 请使用 [Other agents](#other-agents) 中的手动配置。仅当目标 agent 也安装在同一 WSL 环境时，才在 WSL 中运行 `connect`
 
@@ -1252,7 +1252,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

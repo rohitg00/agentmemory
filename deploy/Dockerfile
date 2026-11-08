@@ -1,8 +1,8 @@
 # Shared build for local Compose and every deployment platform.
 # Update these four pins together when promoting the runtime.
-ARG III_VERSION=0.25.0
-ARG STATE_VERSION=0.22.20
-ARG HTTP_VERSION=0.22.7
+ARG III_VERSION=0.25.1
+ARG STATE_VERSION=0.22.22
+ARG HTTP_VERSION=0.22.8
 
 FROM node:24-slim AS agent-build
 ARG III_VERSION
@@ -27,7 +27,7 @@ RUN apt-get update \
  && find /var/lib/apt/lists -mindepth 1 -delete
 
 COPY --from=iii-engine /app/iii /usr/local/bin/iii
-RUN iii --version 2>&1 | grep -qF "${III_VERSION}" \
+RUN iii --version 2>&1 | tr -s " \t" "\n" | grep -qxF "${III_VERSION}" \
  || { echo "iiidev/iii:${III_VERSION} does not contain iii ${III_VERSION}" >&2; exit 1; }
 
 WORKDIR /opt/agentmemory

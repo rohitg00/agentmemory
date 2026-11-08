@@ -5,8 +5,8 @@ import type {
   Session,
   MemoryProvider,
 } from "../types.js";
-import { KV, generateId } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { KV, fingerprintId, generateId } from "../state/schema.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { safeAudit } from "./audit.js";
 import { withKeyedLocks } from "../state/keyed-mutex.js";
 import { stableStringify } from "../capture/event-id.js";
@@ -65,9 +65,14 @@ function parseMemoryXml(
   };
 }
 
-function sameIds(left: string[] | undefined, right: string[]): boolean {
-  const ids = new Set(left);
-  return ids.size === right.length && right.every((id) => ids.has(id));
+function consolidationKey(
+  concept: string,
+  sources: Array<CompressedObservation & { sid: string }>,
+): string {
+  const ordered = [...sources].sort((a, b) =>
+    a.sid === b.sid ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.sid < b.sid ? -1 : 1,
+  );
+  return fingerprintId("cons", stableStringify({ concept, sources: ordered }));
 }
 
 export function registerConsolidateFunction(
@@ -160,6 +165,7 @@ export function registerConsolidateFunction(
 
           const now = new Date().toISOString();
           const obsIds = [...new Set(top.map((o) => o.id))];
+          const sourceKey = consolidationKey(concept, top);
           const scopedProject =
             typeof data.project === "string" && data.project.trim().length > 0
               ? data.project.trim()
@@ -176,7 +182,7 @@ export function registerConsolidateFunction(
               const current = await kv.get<CompressedObservation>(KV.observations(sid), original.id);
               if (!current || stableStringify(current) !== stableStringify(original)) return false;
             }
-            const memories = await kv.list<Memory>(KV.memories);
+            const memories = await collectAll<Memory>(kv, KV.memories);
             const candidates = memories.filter((memory) =>
               memory.isLatest !== false &&
               (!scopedProject || !memory.project || memory.project === scopedProject),
@@ -188,7 +194,6 @@ export function registerConsolidateFunction(
               siblings.push(memory);
               children.set(memory.parentId, siblings);
             }
-            // Complete an interrupted successor publication only for unambiguous lineage.
             for (const parent of candidates) {
               const successors = children.get(parent.id);
               if (successors?.length !== 1) continue;
@@ -205,10 +210,7 @@ export function registerConsolidateFunction(
               });
             }
             const heads = candidates.filter((memory) => memory.isLatest !== false);
-            if (heads.some((memory) =>
-              sameIds(memory.sourceObservationIds, obsIds) &&
-              sameIds(memory.sessionIds, sessionIds),
-            )) return false;
+            if (heads.some((memory) => memory.consolidationKey === sourceKey)) return false;
 
             const previous = heads.find((memory) =>
               memory.title.toLowerCase() === parsed.title.toLowerCase(),
@@ -219,16 +221,18 @@ export function registerConsolidateFunction(
               updatedAt: now,
               ...parsed,
               sourceObservationIds: obsIds,
+              consolidationKey: sourceKey,
               version: previous ? (previous.version || 1) + 1 : 1,
               isLatest: true,
               ...(previous && {
+                recurrence: (previous.recurrence ?? 1) +
+                  (obsIds.some((id) => !(previous.sourceObservationIds ?? []).includes(id)) ? 1 : 0),
                 parentId: previous.id,
                 supersedes: [previous.id, ...(previous.supersedes || [])],
               }),
               ...(scopedProject !== undefined && { project: scopedProject }),
             };
 
-            // Keep the previous version readable until its successor is stored.
             try {
               await kv.set(KV.memories, memory.id, memory);
             } catch (error) {
@@ -238,7 +242,6 @@ export function registerConsolidateFunction(
               try {
                 await kv.set(KV.memories, previous.id, { ...previous, isLatest: false, updatedAt: supersededAt(previous.updatedAt, now) });
               } catch (error) {
-                // A write can commit before its acknowledgement fails.
                 await kv.set(KV.memories, previous.id, previous);
                 await kv.delete(KV.memories, memory.id);
                 throw error;

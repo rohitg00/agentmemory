@@ -1,6 +1,6 @@
 # Upgrading the AgentMemory runtime to iii 0.25
 
-This release pins the engine, `iii-sdk` and `@iii-dev/helpers` to 0.25.0. Worker Compose starts the existing `state@0.22.20` and `http@0.22.7` registry workers with AgentMemory. Their versions are independent of the engine version.
+This release pins the engine, `iii-sdk` and `@iii-dev/helpers` to 0.25.0. Worker Compose starts the existing `state@0.22.22` and `http@0.22.8` registry workers with AgentMemory. Their versions are independent of the engine version.
 
 ## Before upgrading
 
@@ -24,6 +24,7 @@ Existing file state remains at `state_store.db`; this upgrade does not convert o
 - `/agentmemory/status` reports the configured engine pin as `service.enginePinnedVersion`, replacing the old `engineVersion` field. This is the supported version, not a probe of an arbitrary remote engine.
 - `registerTrigger` and `registerTriggerType` remain supported by iii 0.25, with deprecation warnings. HTTP and state providers still use these APIs; their warnings do not mean route registration failed.
 - iii 0.25 can dispatch calls to a worker's own functions locally. Engine-side spans differ for those calls; SDK tracing and state-worker persistence still apply.
+- Local dispatch is on by default, so AgentMemory's internal calls to its own functions run in-process and produce only the SDK's execute span, not an engine call span. Set `AGENTMEMORY_LOCAL_DISPATCH=false` for full engine traces at the cost of a round trip per call.
 
 ## Retired engine console
 

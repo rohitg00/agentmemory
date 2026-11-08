@@ -283,4 +283,42 @@ describe("consolidation publication", () => {
     await f.run();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it("publishes a distinct insight for each concept that shares the same observations", async () => {
+    const f = fixture();
+    const session: Session = { id: "session-a", project: "app", cwd: "/synthetic", startedAt: "2026-01-01T00:00:00Z", status: "completed", observationCount: 3 };
+    await f.kv.set(KV.sessions, session.id, session);
+    for (let i = 0; i < 3; i++) {
+      const id = `shared-${i}`;
+      await f.kv.set(KV.observations(session.id), id, {
+        id, sessionId: session.id, timestamp: session.startedAt, type: "decision", title: `shared ${i}`,
+        narrative: `Evidence ${i}`, facts: [], concepts: ["auth", "tokens"], files: [], importance: 8,
+      } satisfies CompressedObservation);
+    }
+    f.compress.mockImplementation(async (_system: string, prompt: string) =>
+      xml(prompt.startsWith('Concept: "auth"') ? "Auth insight" : "Token insight"));
+    expect(await f.run()).toMatchObject({ consolidated: 2 });
+    const titles = (await f.memories()).filter((m) => m.isLatest !== false).map((m) => m.title).sort();
+    expect(titles).toEqual(["Auth insight", "Token insight"]);
+  });
+
+  it("publishes a new version when an observation is recompressed in place", async () => {
+    const f = fixture();
+    await seed(f);
+    expect(await f.run()).toMatchObject({ consolidated: 1 });
+    const row = await f.kv.get<CompressedObservation>(KV.observations("session-a"), "session-a-auth-0");
+    await f.kv.set(KV.observations("session-a"), row!.id, { ...row!, narrative: "Recompressed evidence" });
+    expect(await f.run()).toMatchObject({ consolidated: 1 });
+    const latest = (await f.memories()).filter((m) => m.isLatest !== false);
+    expect(latest).toHaveLength(1);
+    expect(latest[0].version).toBe(2);
+  });
+
+  it("skips a rerun when the concept and its source contents are unchanged", async () => {
+    const f = fixture();
+    await seed(f);
+    expect(await f.run()).toMatchObject({ consolidated: 1 });
+    expect(await f.run()).toMatchObject({ consolidated: 0 });
+    expect(await f.memories()).toHaveLength(1);
+  });
 });

@@ -20,20 +20,20 @@
       "12"
     ],
     "tests": [
-      "4400+"
+      "4500+"
     ],
     "functions": [
       "323"
     ],
     "sourceFiles": [
-      "257"
+      "258"
     ],
     "loc": [
-      "59000"
+      "60000"
     ],
     "kvScopes": [
       "65"
     ]
   },
-  "engineVersion": "0.25.0"
+  "engineVersion": "0.25.1"
 }

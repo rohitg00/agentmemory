@@ -41,6 +41,13 @@ describe("buildMergedHooks against plugin/hooks/hooks.json (Claude Code)", () =>
     ).toBe(true);
   });
 
+  it("gives SessionEnd more time than Claude Code's 1.5 s default so the transcript back-fill and exit timer can finish", () => {
+    const merged = buildMergedHooks(null, PLUGIN_ROOT, "hooks.json");
+    const handler = merged.hooks["SessionEnd"]![0]!.hooks[0]!;
+    expect(handler.args![0]).toContain("session-end.mjs");
+    expect(handler.timeout).toBeGreaterThanOrEqual(10);
+  });
+
   it("appends to existing user hooks without dropping them", () => {
     const existing: HookManifest = {
       hooks: {

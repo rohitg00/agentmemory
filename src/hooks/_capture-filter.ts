@@ -1,3 +1,5 @@
+import { scrubRecord, stripPrivateData, stripSecrets } from "../functions/privacy.js";
+
 const DEFAULT_DENY_PATTERNS = [
   "memory_*",
   "toolsearch",
@@ -60,27 +62,79 @@ export function captureOutputMax(): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 8000;
 }
 
-export function truncateText(value: string, max: number): string {
+function cut(value: string, max: number): string {
   if (value.length <= max) return value;
   const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
   return value.slice(0, end);
 }
 
+export function truncateText(value: string, max: number): string {
+  if (value.length <= max) return value;
+  return cut(stripPrivateData(value), max);
+}
+
+const JSON_WHITESPACE_ESCAPES: Record<string, string> = { n: "\n", r: "\r", t: "\t" };
+
+const SECRET_KEY_SUFFIXES = ["apikey", "secret", "token", "password", "passwd", "credential", "credentials"];
+const SECRET_KEY_WORDS = new Set(["auth", "authorization"]);
+
+function isSecretKeyName(key: string): boolean {
+  if (!/^[\w.-]{1,64}$/.test(key)) return false;
+  const words = key
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .replace(/([A-Za-z])(\d)/g, "$1_$2")
+    .toLowerCase()
+    .split(/[_.\-\d]+/)
+    .filter(Boolean);
+  return words.some(
+    (word, i) =>
+      SECRET_KEY_WORDS.has(word) ||
+      SECRET_KEY_SUFFIXES.some((suffix) => word.endsWith(suffix)) ||
+      (word === "api" && words[i + 1] === "key"),
+  );
+}
+
+function redactSecretKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSecretKeys);
+  if (value === null || typeof value !== "object") return value;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+      key,
+      typeof item === "string" && item && isSecretKeyName(key) ? "[REDACTED_SECRET]" : redactSecretKeys(item),
+    ]),
+  );
+}
+
+function scrubSecrets(value: unknown): unknown {
+  return scrubRecord(redactSecretKeys(value), { scrubKeys: true, strip: stripSecrets });
+}
+
+function redactSerialized(serialized: string): string {
+  const unescaped = serialized.replace(/\\([\\nrt])/g, (escape, c: string) => JSON_WHITESPACE_ESCAPES[c] ?? escape);
+  return stripPrivateData(unescaped).replace(/[\n\r\t]/g, (c) => JSON.stringify(c).slice(1, -1));
+}
+
+export function truncateJson(value: unknown, max: number): string {
+  const str = JSON.stringify(value);
+  if (str.length <= max) return str;
+  return cut(redactSerialized(JSON.stringify(scrubSecrets(value))), max);
+}
+
+function truncateWithSuffix(value: string, max: number, suffix: string): string {
+  const safe = stripPrivateData(value);
+  if (safe.length <= max) return safe;
+  return max <= suffix.length ? suffix.slice(0, max) : cut(safe, max - suffix.length) + suffix;
+}
+
 export function truncateCaptureOutput(value: unknown, max: number): unknown {
   if (typeof value === "string" && value.length > max) {
-    const suffix = "\n[...truncated]";
-    return max <= suffix.length
-      ? suffix.slice(0, max)
-      : truncateText(value, max - suffix.length) + suffix;
+    return truncateWithSuffix(value, max, "\n[...truncated]");
   }
   if (typeof value === "object" && value !== null) {
     const str = JSON.stringify(value);
-    if (str.length > max) {
-      const suffix = "...[truncated]";
-      return max <= suffix.length
-        ? suffix.slice(0, max)
-        : truncateText(str, max - suffix.length) + suffix;
-    }
+    if (str.length > max) return truncateWithSuffix(redactSerialized(JSON.stringify(scrubSecrets(value))), max, "...[truncated]");
     return value;
   }
   return value;

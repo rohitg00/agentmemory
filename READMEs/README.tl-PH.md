@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tool" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 awtomatikong hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 panlabas na DB" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ pumapasang test" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ pumapasang test" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -656,7 +656,7 @@ Pinapatakbo ng `npm start` ang kaparehong local server ng naka-install na CLI. N
 
 ### Windows
 
-Tumatakbo ang agentmemory sa Windows 10/11. Awtomatikong nag-i-install ng engine ang WSL2 gamit ang Linux path. Sa native Windows, manu-manong i-install ang pinned na iii-engine v0.25.0: i-download ang archive mula sa [iii v0.25.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), tiyakin ang checksum, at ilagay ang `iii.exe` sa `PATH`. Hindi awtomatikong nag-e-extract ng ZIP ang CLI
+Tumatakbo ang agentmemory sa Windows 10/11. Awtomatikong nag-i-install ng engine ang WSL2 gamit ang Linux path. Sa native Windows, manu-manong i-install ang pinned na iii-engine v0.25.1: i-download ang archive mula sa [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), tiyakin ang checksum, at ilagay ang `iii.exe` sa `PATH`. Hindi awtomatikong nag-e-extract ng ZIP ang CLI
 
 Native Windows MCP automation ay para lamang sa `agentmemory connect copilot-cli`; gamitin ang manual MCP block sa [Other agents](#other-agents) para sa iba. Sa WSL, patakbuhin ang `connect` lamang kung naroon din ang target agent
 
@@ -1251,7 +1251,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

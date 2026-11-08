@@ -9,25 +9,65 @@ import net from "node:net";
 import { arch, homedir, platform, tmpdir } from "node:os";
 import { dirname, join, resolve, delimiter } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { runCommand } from "./command.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
-const options = { tarball: null, out: null, only: null, keep: false, delayMs: 48_000, skipBuild: false, workerBinDir: process.env.AGENTMEMORY_WORKER_BIN_DIR ?? null };
+const options = { tarball: null, out: null, only: null, keep: false, delayMs: 48_000, skipBuild: false, workerBinDir: process.env.AGENTMEMORY_WORKER_BIN_DIR ?? null, repeat: null };
 for (let i = 2; i < process.argv.length; i++) {
   const arg = process.argv[i];
   if (arg === "--tarball") options.tarball = resolve(process.argv[++i]);
   else if (arg === "--out") options.out = resolve(process.argv[++i]);
   else if (arg === "--only") options.only = new Set(process.argv[++i].split(","));
   else if (arg === "--delay-ms") options.delayMs = Number(process.argv[++i]);
+  else if (arg === "--repeat") options.repeat = Number(process.argv[++i]);
   else if (arg === "--keep") options.keep = true;
   else if (arg === "--skip-build") options.skipBuild = true;
   else if (arg === "--worker-bin-dir") options.workerBinDir = resolve(process.argv[++i]);
   else if (arg === "--worker-bin-dir") options.workerBinDir = resolve(process.argv[++i]);
   else if (arg === "--help") {
-    console.log("Usage: node scripts/release-gate/startup.mjs [--tarball file.tgz] [--out dir] [--only names] [--delay-ms 48000] [--skip-build] [--worker-bin-dir directory] [--keep]");
+    console.log("Usage: node scripts/release-gate/startup.mjs [--tarball file.tgz] [--out dir] [--only names] [--delay-ms 48000] [--skip-build] [--worker-bin-dir directory] [--keep] [--repeat N]");
     process.exit(0);
   } else throw new Error(`Unknown argument ${arg}`);
 }
 assert(Number.isSafeInteger(options.delayMs) && options.delayMs > 0 && options.delayMs <= 300_000, "--delay-ms must be 1..300000");
+assert(options.repeat === null || (Number.isSafeInteger(options.repeat) && options.repeat > 0), "--repeat must be a positive integer");
+if (options.repeat) {
+  const self = fileURLToPath(import.meta.url);
+  const childArgs = process.argv.slice(2).flatMap((arg, index, argv) =>
+    arg === "--repeat" ? [] : argv[index - 1] === "--repeat" ? [] : arg === "--out" ? [] : argv[index - 1] === "--out" ? [] : [arg]);
+  const repeatOut = options.out ?? mkdtempSync(join(tmpdir(), "agentmemory-startup-repeat-"));
+  mkdirSync(repeatOut, { recursive: true });
+  console.log(`Repeat runs: ${repeatOut}`);
+  const runs = [];
+  const active = new Set();
+  let interrupted = null;
+  const forward = (signal) => {
+    const escalate = interrupted !== null;
+    interrupted = signal;
+    for (const pid of active) {
+      try { process.kill(-pid, escalate ? "SIGKILL" : "SIGTERM"); } catch {}
+    }
+  };
+  process.on("SIGINT", () => forward("SIGINT"));
+  process.on("SIGTERM", () => forward("SIGTERM"));
+  process.on("SIGHUP", () => forward("SIGHUP"));
+  for (let run = 1; run <= options.repeat && !interrupted; run++) {
+    const runOut = join(repeatOut, `run-${run}`);
+    console.log(`\n=== run ${run}/${options.repeat}: ${runOut} ===`);
+    const result = await runCommand(process.execPath, [self, ...childArgs, "--out", runOut], { env: process.env, cwd: repo, timeoutMs: 3_600_000, children: active });
+    process.stdout.write(result.output);
+    let summary;
+    try { summary = JSON.parse(readFileSync(join(runOut, "summary.json"), "utf8")); } catch {}
+    const passed = summary?.scenarios?.filter((s) => s.status === "pass").length ?? 0;
+    const total = summary?.scenarios?.length ?? 0;
+    const ok = result.code === 0 && Boolean(summary?.ok);
+    runs.push({ run, ok, code: result.code, passed, total, out: runOut, timedOut: result.timedOut });
+  }
+  console.log("\nrun  result  passed  out");
+  for (const r of runs) console.log(`${String(r.run).padEnd(5)} ${(r.ok ? "pass" : "fail").padEnd(7)} ${`${r.passed}/${r.total}`.padEnd(7)} ${r.out}`);
+  writeFileSync(join(repeatOut, "repeat-summary.json"), JSON.stringify({ repeat: options.repeat, runs, interrupted }, null, 2) + "\n");
+  process.exit(interrupted ? 130 : runs.every((r) => r.ok) ? 0 : 1);
+}
 const root = mkdtempSync(join(tmpdir(), "am-startup-"));
 const out = options.out ?? mkdtempSync(join(tmpdir(), "agentmemory-startup-gate-"));
 mkdirSync(out, { recursive: true });
@@ -189,7 +229,7 @@ class Instance {
       "containers:",
       "  state:",
       `    worker: ${quote(localWorkers ? `path://${join(this.data, "local-workers/state")}` : "package://api.workers.iii.dev/state")}`,
-      ...(!localWorkers ? ["    version: '0.22.20'"] : []),
+      ...(!localWorkers ? ["    version: '0.22.22'"] : []),
       "    config_name: state",
       ...(localWorkers ? ["    scripts:", `      run: ${quote(join(localWorkers, "state"))}`] : []),
       "    config_override:",
@@ -201,7 +241,7 @@ class Instance {
       `          file_path: ${quote(join(this.data, "state_store.db"))}`,
       "  http:",
       `    worker: ${quote(localWorkers ? `path://${join(this.data, "local-workers/http")}` : "package://api.workers.iii.dev/http")}`,
-      ...(!localWorkers ? ["    version: '0.22.7'"] : []),
+      ...(!localWorkers ? ["    version: '0.22.8'"] : []),
       "    config_name: http",
       ...(localWorkers ? ["    scripts:", `      run: ${quote(join(localWorkers, "http"))}`] : []),
       "    config_override:",
