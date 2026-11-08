@@ -412,4 +412,22 @@ describe("consolidation publication", () => {
     await f.kv.set(KV.observations("session-a"), row!.id, { ...row!, narrative: "Recompressed evidence" });
     expect(await f.run()).toMatchObject({ consolidated: 1 });
   });
+
+  it("records the legacy adoption after releasing the publication locks", async () => {
+    const f = fixture();
+    await seed(f);
+    await f.kv.set(KV.memories, "legacy", memory("legacy", {
+      sourceObservationIds: ["session-a-auth-0", "session-a-auth-1", "session-a-auth-2"],
+      sessionIds: ["session-a"],
+    }));
+    let lockFree = false;
+    vi.mocked(safeAudit).mockImplementationOnce(async () => {
+      lockFree = await Promise.race([
+        withKeyedLock("mem:remember", async () => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 200)),
+      ]);
+    });
+    await f.run();
+    expect(lockFree).toBe(true);
+  });
 });

@@ -178,6 +178,7 @@ export function registerConsolidateFunction(
               : undefined;
 
           const publicationLocks = ["mem:remember", ...sessionIds.map((sid) => `obs:${sid}`)];
+          let adoptedId: string | undefined;
           const published = await withKeyedLocks(publicationLocks, async () => {
             for (const sid of sessionIds) {
               const current = await kv.get<Session>(KV.sessions, sid);
@@ -225,7 +226,7 @@ export function registerConsolidateFunction(
             );
             if (legacy) {
               await kv.set(KV.memories, legacy.id, { ...legacy, consolidationKeys: { [concept]: sourceKey } });
-              await safeAudit(kv, "evolve", "mem::consolidate", [legacy.id], { action: "adopt_legacy", concept });
+              adoptedId = legacy.id;
               return false;
             }
 
@@ -273,6 +274,9 @@ export function registerConsolidateFunction(
             });
             return true;
           });
+          if (adoptedId) {
+            await safeAudit(kv, "evolve", "mem::consolidate", [adoptedId], { action: "adopt_legacy", concept });
+          }
           if (published) consolidated++;
         } catch (err) {
           logger.warn("Consolidation failed for concept", {
