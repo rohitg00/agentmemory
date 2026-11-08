@@ -1,11 +1,8 @@
 import type { MemoryProvider, CircuitBreakerState } from "../types.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
-import { getCircuitBreakerOptions } from "../config.js";
 
 export class ResilientProvider implements MemoryProvider {
-  // Thresholds come from config so a deployment sitting behind a flaky
-  // proxy can widen them without a rebuild.
-  private breaker = new CircuitBreaker(getCircuitBreakerOptions());
+  private breaker = new CircuitBreaker();
   name: string;
 
   constructor(private inner: MemoryProvider) {
