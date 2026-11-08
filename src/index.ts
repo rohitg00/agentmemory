@@ -485,6 +485,7 @@ async function main() {
   setIndexPersistence(indexPersistence);
 
   const restoreVectorCheckpoint = async (boot: boolean) => {
+    if (boot) vectorIndex?.trackLiveChanges();
     const loaded = await indexPersistence.load().catch((err) => {
       console.warn(`[agentmemory] Failed to load persisted vector index:`, err);
       return null;
@@ -582,7 +583,7 @@ async function main() {
   const bootCheckpoint = await restoreVectorCheckpoint(true);
   let vectorBackfillSince = bootCheckpoint.vectorBackfillSince;
   const bootCheckpointUnavailable = !bootCheckpoint.loaded || bootCheckpoint.loaded.state === "unavailable";
-  if (bootCheckpointUnavailable) vectorIndex?.trackLiveChanges();
+  if (!bootCheckpointUnavailable) vectorIndex?.finishLiveTracking();
 
   const auditMigration = startAuditMigration(kv).catch(() => {});
 

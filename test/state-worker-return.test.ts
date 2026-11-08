@@ -300,3 +300,26 @@ describe("backfillFailedOutright", () => {
     expect(backfillFailedOutright({ added: 2, failed: 0 })).toBe(false);
   });
 });
+
+describe("boot checkpoint load with live writes", () => {
+  it("keeps vectors written live while the boot checkpoint was loading", () => {
+    const live = new VectorIndex();
+    live.trackLiveChanges();
+    live.add("obs_a", "s", new Float32Array([9]));
+    live.remove("obs_b");
+    const checkpoint = new VectorIndex();
+    checkpoint.add("obs_a", "s", new Float32Array([1]));
+    checkpoint.add("obs_b", "s", new Float32Array([2]));
+    checkpoint.add("obs_c", "s", new Float32Array([3]));
+    live.restoreFrom(checkpoint);
+    live.beginReplay();
+    live.add("obs_a", "s", new Float32Array([1]));
+    live.endReplay();
+    expect(Array.from(live.get("obs_a")!.embedding)).toEqual([9]);
+    expect(live.has("obs_b")).toBe(false);
+    expect(live.has("obs_c")).toBe(true);
+    const pending = live.takeChanges();
+    expect(pending.get("obs_a")).toBe(true);
+    expect(pending.get("obs_b")).toBe(false);
+  });
+});
