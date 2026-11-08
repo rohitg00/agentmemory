@@ -1,13 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { ResilientProvider, isPayloadRejection } from "../src/providers/resilient.js";
 import type { MemoryProvider } from "../src/types.js";
-
-/**
- * Azure Prompt Shields rejects tool output that looks like a jailbreak — which
- * includes benign material such as a SECURITY.md explaining prompt injection.
- * Those rejections must not open the circuit breaker, or one awkward file
- * takes every unrelated compression down with it for the recovery timeout.
- */
 
 const CONTENT_FILTER_ERROR = new Error(
   'OpenAI API error (400): {"error":{"message":"The response was filtered due to ' +
@@ -45,10 +38,14 @@ describe("isPayloadRejection", () => {
         new Error('OpenAI API error (400): {"error":{"code":"ResponsibleAIPolicyViolation"}}'),
       ),
     ).toBe(true);
+    expect(
+      isPayloadRejection(
+        new Error('openrouter API error (400): {"error":{"code":"content_filter"}}'),
+      ),
+    ).toBe(true);
   });
 
   it("does not treat the filter code alone as a rejection", () => {
-    // No status means no evidence that the provider rejected this payload.
     expect(isPayloadRejection(new Error("ResponsibleAIPolicyViolation"))).toBe(false);
   });
 
@@ -59,8 +56,6 @@ describe("isPayloadRejection", () => {
   });
 
   it("does not excuse a gateway failure that merely quotes the filter body", () => {
-    // A 502 from an Azure gateway that echoes the upstream body. The tokens are
-    // present, the status is not 400: the provider is genuinely unhealthy.
     expect(isPayloadRejection(GATEWAY_ECHO_ERROR)).toBe(false);
   });
 });
@@ -77,14 +72,12 @@ describe("ResilientProvider — content filter vs circuit breaker", () => {
   });
 
   it("lets an unrelated call through after filtered ones", async () => {
-    // fails with content_filter three times, succeeds from the fourth call on
     const provider = new ResilientProvider(providerThatFails(CONTENT_FILTER_ERROR, 3));
 
     for (let i = 0; i < 3; i++) {
       await expect(provider.compress("sys", "bad")).rejects.toThrow(/content_filter/);
     }
 
-    // Before this change the fourth call threw circuit_breaker_open instead.
     await expect(provider.compress("sys", "harmless")).resolves.toBe("<observation/>");
   });
 
