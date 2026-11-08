@@ -26,6 +26,10 @@ export async function rearmIndexRecovery(steps: RearmSteps): Promise<void> {
   if (restored || steps.indexNeedsRearm()) await steps.runIndexRecovery();
 }
 
+export function backfillFailedOutright(result: { added: number; failed: number }): boolean {
+  return result.failed > 0 && result.added === 0;
+}
+
 export function shouldRearmIndex(input: RearmConditions): boolean {
   return input.bm25Incomplete || input.persistencePaused || input.lastRecoveryFailed || input.checkpointSaveFailed;
 }

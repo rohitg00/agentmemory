@@ -37,7 +37,7 @@ export class VectorIndex {
   private vectors: Map<string, VectorEntry> = new Map();
   private changes: Map<string, boolean> = new Map();
   private listener: VectorChangeListener | null = null;
-  private removedIds = new Set<string>();
+  private removedIds: Set<string> | null = null;
 
   setChangeListener(listener: VectorChangeListener | null): void {
     this.listener = listener;
@@ -51,7 +51,7 @@ export class VectorIndex {
   }
 
   remove(obsId: string): void {
-    this.removedIds.add(obsId);
+    this.removedIds?.add(obsId);
     if (this.vectors.delete(obsId)) {
       this.changes.set(obsId, false);
       this.listener?.(obsId, null);
@@ -171,7 +171,6 @@ export class VectorIndex {
       { embedding: Float32Array; sessionId: string }
     >;
     this.vectors = new Map();
-    this.removedIds.clear();
     for (const [obsId, entry] of src) {
       this.vectors.set(obsId, {
         embedding: new Float32Array(entry.embedding),
@@ -181,10 +180,25 @@ export class VectorIndex {
     this.changes = new Map(other.changes);
   }
 
+  trackRemovals(enabled: boolean): void {
+    this.removedIds = enabled ? (this.removedIds ?? new Set()) : null;
+  }
+
+  snapshotLive(): Map<string, VectorEntry> {
+    return new Map(this.vectors);
+  }
+
+  restoreLive(live: Map<string, VectorEntry>): void {
+    for (const obsId of this.removedIds ?? []) {
+      if (!live.has(obsId)) this.vectors.delete(obsId);
+    }
+    for (const [obsId, entry] of live) this.vectors.set(obsId, entry);
+  }
+
   mergeMissingFrom(other: VectorIndex): number {
     let merged = 0;
     for (const [obsId, entry] of other.entries()) {
-      if (this.vectors.has(obsId) || this.changes.get(obsId) === false || this.removedIds.has(obsId)) continue;
+      if (this.vectors.has(obsId) || this.changes.get(obsId) === false || this.removedIds?.has(obsId)) continue;
       this.vectors.set(obsId, { embedding: new Float32Array(entry.embedding), sessionId: entry.sessionId });
       merged++;
     }
