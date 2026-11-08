@@ -6,7 +6,7 @@ import type {
   ProjectProfile,
 } from "../types.js";
 import { KV } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { logger } from "../logger.js";
 
 export function registerProfileFunction(sdk: IIIClient, kv: StateKV): void {
@@ -92,8 +92,7 @@ export function registerProfileFunction(sdk: IIIClient, kv: StateKV): void {
         }
       }
 
-      const memories = await kv
-        .list<Memory>(KV.memories)
+      const memories = await collectAll<Memory>(kv, KV.memories)
         .catch(() => [] as Memory[]);
       for (const memory of memories) {
         if (memory.project !== project || memory.isLatest === false) continue;

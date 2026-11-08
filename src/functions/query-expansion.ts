@@ -1,6 +1,7 @@
 import type { IIIClient } from "iii-sdk";
 import type { MemoryProvider, QueryExpansion } from "../types.js";
 import { logger } from "../logger.js";
+import { segmentCjk } from "../state/cjk-segmenter.js";
 
 const QUERY_EXPANSION_SYSTEM = `You are a query expansion engine for a memory retrieval system. Given a user query, generate diverse reformulations to maximize recall.
 
@@ -129,12 +130,19 @@ export function registerQueryExpansionFunction(
   );
 }
 
+const CJK_RUN = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
+
 export function extractEntitiesFromQuery(query: string): string[] {
   const entities: string[] = [];
   const quoted = query.match(/"([^"]+)"/g);
   if (quoted) {
     for (const q of quoted) {
       entities.push(q.replace(/"/g, ""));
+    }
+  }
+  for (const run of query.matchAll(CJK_RUN)) {
+    for (const seg of segmentCjk(run[0])) {
+      if (seg.trim().length >= 2) entities.push(seg.trim());
     }
   }
   const capitalized = query.match(/\b[A-Z][a-zA-Z0-9_.-]+\b/g);

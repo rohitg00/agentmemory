@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Designdokument: 1.6k stjärnor / 230 forks på gisten" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Designdokument: 1.7k stjärnor / 240 forks på gisten" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-verktyg" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiska hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externa databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ godkända tester" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,600+ godkända tester" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -629,7 +629,7 @@ agentmemory-posten är **samma MCP-serverblock** på alla värdar som använder 
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | `agentmemory connect antigravity-cli --with-hooks` använder samma MCP- och hook-konfiguration som nuvarande IDE-versioner. Befintliga installationer bör uppdateras med `--force`; se [uppgraderingsanteckningarna](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | `agentmemory connect kiro` skriver konfigurationen på användarnivå. Arbetsyteöverskrivningar läggs i `.kiro/settings/mcp.json` bredvid din kod. |
 | **Warp** | `~/.warp/.mcp.json` | `agentmemory connect warp` skriver det vanliga `mcpServers`-blocket. Warp upptäcker också automatiskt skills från `.claude/skills/`; när Claude Code-pluginet är installerat visas agentmemorys 9 skills (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) naturligt i Warps snabbkommando-palett. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | `agentmemory connect cline` skriver det vanliga `mcpServers`-blocket. VS Code-tilläggsanvändare: klistra in samma block via Cline Settings → MCP Servers → Edit JSON. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | `agentmemory connect cline` skriver det vanliga `mcpServers`-blocket. VS Code-tilläggsanvändare: klistra in samma block via Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (att föredra) eller `config.json` (äldre) | `agentmemory connect continue` skapar en saknad `config.yaml` eller ändrar befintlig `config.json`. Om YAML-filen finns visas blocket för `mcpServers:` så att kommentarer och ankare bevaras. Continue använder en array, inte ett objekt. |
 | **Zed** | `~/.config/zed/settings.json` | `agentmemory connect zed` skriver under `context_servers` (Zeds nyckel, INTE `mcpServers`). Fjärranslutna MCP-servrar kan istället kopplas in via `{"url": "..."}`. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | `agentmemory connect droid` skriver det vanliga `mcpServers`-blocket. Projektbegränsade överskrivningar läggs i `<repo>/.factory/mcp.json`. Ange `--with-hooks` för inbyggd auto-infångning. |
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory körs på Windows 10/11. WSL2 följer Linux-vägen och kan installera den fastlåsta enginen automatiskt. Native Windows kräver att den fastlåsta iii-engine v0.25.0-binären installeras manuellt: ladda ner rätt arkiv från [iii v0.25.0-utgåvan](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verifiera kontrollsumman och placera `iii.exe` på `PATH` (till exempel `%USERPROFILE%\.local\bin\iii.exe`). CLI:n packar inte upp Windows-ZIP-filen automatiskt.
+agentmemory körs på Windows 10/11. WSL2 följer Linux-vägen och kan installera den fastlåsta enginen automatiskt. Native Windows kräver att den fastlåsta iii-engine v0.25.1-binären installeras manuellt: ladda ner rätt arkiv från [iii v0.25.1-utgåvan](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifiera kontrollsumman och placera `iii.exe` på `PATH` (till exempel `%USERPROFILE%\.local\bin\iii.exe`). CLI:n packar inte upp Windows-ZIP-filen automatiskt.
 
 Automatiserad MCP-inkoppling på native Windows stöder bara `agentmemory connect copilot-cli`. För andra native Windows-agenter använder du det manuella MCP-blocket från [Andra agenter](#other-agents). Kör `connect` i WSL endast om målagenten är installerad i samma WSL-miljö.
 
@@ -1168,7 +1168,7 @@ Den fullständiga referensen finns i [`.env.example`](../.env.example): autentis
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints på port `3111`. REST API:et binder till `127.0.0.1` som standard. Skyddade endpoints kräver `Authorization: Bearer <secret>`, och mesh-synk-endpoints kräver en explicit satt `AGENTMEMORY_SECRET` på båda parterna.
+147 endpoints på port `3111`. REST API:et binder till `127.0.0.1` som standard. Skyddade endpoints kräver `Authorization: Bearer <secret>`, och mesh-synk-endpoints kräver en explicit satt `AGENTMEMORY_SECRET` på båda parterna.
 
 **Autentisering är aktiverad som standard.** Om `AGENTMEMORY_SECRET` inte är angiven i skalet eller i `~/.agentmemory/.env` skapar CLI:n en slumpmässig hemlighet vid första starten i `~/.agentmemory/secret` och en kopia med namnet `secret` i den valda datamappen, med filbehörigheten `0600`. Alla medföljande klienter läser den därifrån när de ansluter till en lokal server: CLI:n, viewern, hookarna under `plugin/scripts`, MCP-servern och `@agentmemory/mcp`-shimmen, konfigurationerna skrivna av `agentmemory connect` samt de medföljande integrationerna för OpenCode, Pi, OpenClaw, Hermes och filsystemsbevakaren. Den lagrade hemligheten skickas bara till loopback-URL:er (`localhost`, `127.0.0.0/8`, `::1`). En explicit `AGENTMEMORY_SECRET` har alltid företräde; fjärrklienter behöver hemligheten i sin miljö. Docker-baserad self-hosting från repot och startpunkterna i `deploy/` genererar och exporterar en egen hemlighet. För att anropa API:et för hand:
 
@@ -1249,7 +1249,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

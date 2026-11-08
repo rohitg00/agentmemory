@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.6k stars / 230 forks sa gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.7k stars / 240 forks sa gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tool" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 awtomatikong hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 panlabas na DB" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ pumapasang test" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,600+ pumapasang test" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -630,7 +630,7 @@ Ang entry ng agentmemory ay ang **parehong MCP server block** sa bawat host na g
 | **Antigravity CLI** (`agy`) | `~/.gemini/config/mcp_config.json` | Ginagamit ng `agentmemory connect antigravity-cli --with-hooks` ang parehong MCP at hook configuration ng kasalukuyang mga bersyon ng IDE. Dapat i-refresh ng mga umiiral na installation gamit ang `--force`; tingnan ang [upgrade notes](../docs/plugins/antigravity.md). |
 | **Kiro** | `~/.kiro/settings/mcp.json` | Isinusulat ng `agentmemory connect kiro` ang user-level config. Ang workspace override ay sa `.kiro/settings/mcp.json`, katabi ng iyong code. |
 | **Warp** | `~/.warp/.mcp.json` | Isinusulat ng `agentmemory connect warp` ang standard na `mcpServers` block. Awtomatikong nadidiskubre din ng Warp ang mga skill mula sa `.claude/skills/`; kapag naka-install na ang Claude Code plugin, lumalabas nang native ang 9 agentmemory skill (`remember`, `recall`, `recap`, `handoff`, `forget`, `lesson`, `commit-context`, `commit-history`, `session-history`) sa slash-command palette ng Warp. |
-| **Cline (CLI)** | `~/.cline/mcp.json` | Isinusulat ng `agentmemory connect cline` ang standard na `mcpServers` block. Para sa VS Code extension user: i-paste ang parehong block sa Cline Settings → MCP Servers → Edit JSON. |
+| **Cline (CLI)** | `~/.cline/data/settings/cline_mcp_settings.json` | Isinusulat ng `agentmemory connect cline` ang standard na `mcpServers` block. Para sa VS Code extension user: i-paste ang parehong block sa Cline Settings → MCP Servers → Edit JSON. |
 | **Continue.dev** | `~/.continue/config.yaml` (preferred) o `config.json` (legacy) | Gumagawa ang `agentmemory connect continue` ng `config.yaml` kung wala pang configuration o ina-update ang kasalukuyang `config.json`. Hindi nito binabago ang umiiral na YAML upang mapanatili ang comments at anchors; ipinapakita ang block na ilalagay sa ilalim ng `mcpServers:`. Array ang gamit ng Continue para sa `mcpServers`. |
 | **Zed** | `~/.config/zed/settings.json` | Isinusulat ng `agentmemory connect zed` sa ilalim ng `context_servers` (ang key ng Zed, HINDI `mcpServers`). Maaaring i-wire ang remote MCP server gamit ang `{"url": "..."}` sa halip. |
 | **Droid (Factory.ai)** | `~/.factory/mcp.json` | Isinusulat ng `agentmemory connect droid` ang standard na `mcpServers` block. Ang project-scoped override ay sa `<repo>/.factory/mcp.json`. Ipasa ang `--with-hooks` para sa native auto-capture. |
@@ -656,7 +656,7 @@ Pinapatakbo ng `npm start` ang kaparehong local server ng naka-install na CLI. N
 
 ### Windows
 
-Tumatakbo ang agentmemory sa Windows 10/11. Awtomatikong nag-i-install ng engine ang WSL2 gamit ang Linux path. Sa native Windows, manu-manong i-install ang pinned na iii-engine v0.25.0: i-download ang archive mula sa [iii v0.25.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), tiyakin ang checksum, at ilagay ang `iii.exe` sa `PATH`. Hindi awtomatikong nag-e-extract ng ZIP ang CLI
+Tumatakbo ang agentmemory sa Windows 10/11. Awtomatikong nag-i-install ng engine ang WSL2 gamit ang Linux path. Sa native Windows, manu-manong i-install ang pinned na iii-engine v0.25.1: i-download ang archive mula sa [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), tiyakin ang checksum, at ilagay ang `iii.exe` sa `PATH`. Hindi awtomatikong nag-e-extract ng ZIP ang CLI
 
 Native Windows MCP automation ay para lamang sa `agentmemory connect copilot-cli`; gamitin ang manual MCP block sa [Other agents](#other-agents) para sa iba. Sa WSL, patakbuhin ang `connect` lamang kung naroon din ang target agent
 
@@ -1170,7 +1170,7 @@ Nasa [`.env.example`](../.env.example) ang buong reference, kasama ang provider,
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 na endpoint sa port `3111`. Nagbibind ang REST API sa `127.0.0.1` bilang default. Kinakailangan ng mga protected endpoint ang `Authorization: Bearer <secret>`, at kinakailangan ng mga mesh sync endpoint ang tahasang naka-set na `AGENTMEMORY_SECRET` sa dalawang peer.
+147 na endpoint sa port `3111`. Nagbibind ang REST API sa `127.0.0.1` bilang default. Kinakailangan ng mga protected endpoint ang `Authorization: Bearer <secret>`, at kinakailangan ng mga mesh sync endpoint ang tahasang naka-set na `AGENTMEMORY_SECRET` sa dalawang peer.
 
 Naka-on ang authentication bilang default. Kapag walang `AGENTMEMORY_SECRET`, gumagawa ang CLI ng random secret sa unang start sa `~/.agentmemory/secret` at kinokopya sa `secret` ng napiling data directory, na may mode `0600`. Inuuna ng bundled clients ang canonical file sa local connection at ipinapadala lang ang naka-save na secret sa loopback URL. Mas mataas ang prayoridad ng explicit na `AGENTMEMORY_SECRET`; dapat itong itakda ng remote clients sa environment. Gumagawa ang Docker deployment ng sarili nitong secret.
 
@@ -1251,7 +1251,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

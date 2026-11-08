@@ -1,31 +1,62 @@
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
+import { lookupObservationSession } from "../state/obs-index.js";
 import { KV, generateId } from "../state/schema.js";
-import type { Facet } from "../types.js";
+import type { Facet, Lesson } from "../types.js";
 import { logger } from "../logger.js";
+
+interface TargetLiveness {
+  observation: boolean;
+  record: boolean;
+}
+
+function checksObservation(id: string, targetType?: string): boolean {
+  return targetType === "observation" || id.startsWith("obs_");
+}
+
+async function targetLiveness(kv: StateKV, id: string, observationTarget = checksObservation(id)): Promise<TargetLiveness> {
+  let observation = false;
+  if (observationTarget) {
+    const sessionId = await lookupObservationSession(kv, id);
+    observation = !!sessionId && !!(await kv.get(KV.observations(sessionId), id));
+  }
+  if (id.startsWith("lsn_") || id.startsWith("lesson_")) {
+    const lesson = await kv.get<Lesson>(KV.lessons, id);
+    if (lesson && !lesson.deleted) return { observation, record: true };
+  }
+  const [mem, sem] = await Promise.all([
+    kv.get(KV.memories, id),
+    kv.get(KV.semantic, id),
+  ]);
+  return { observation, record: !!(mem || sem) };
+}
+
+function facetTargetLive(facet: Facet, liveness: TargetLiveness | undefined): boolean {
+  if (!liveness) return false;
+  if (facet.targetType === "observation") return liveness.observation;
+  return liveness.record || liveness.observation;
+}
 
 export async function deleteFacetsForTargets(
   kv: StateKV,
   targetIds: Iterable<string>,
+  options?: { targetTypes?: readonly string[] },
 ): Promise<void> {
   const ids = new Set(targetIds);
   ids.delete("");
   if (ids.size === 0) return;
+  const targetTypes = new Set(options?.targetTypes ?? ["memory"]);
   try {
-    const live = new Set<string>();
+    const live = new Map<string, TargetLiveness>();
     await Promise.all(
       [...ids].map(async (id) => {
         for (let attempt = 0; attempt < 2; attempt++) {
           try {
-            const [mem, sem] = await Promise.all([
-              kv.get(KV.memories, id),
-              kv.get(KV.semantic, id),
-            ]);
-            if (mem || sem) live.add(id);
+            live.set(id, await targetLiveness(kv, id, targetTypes.has("observation") || checksObservation(id)));
             return;
           } catch {
             if (attempt === 1) {
-              live.add(id);
+              live.set(id, { observation: true, record: true });
               logger.warn("Facet cleanup skipped unverifiable target", {
                 targetId: id,
               });
@@ -38,8 +69,8 @@ export async function deleteFacetsForTargets(
     const matches = all.filter(
       (f) =>
         ids.has(f.targetId) &&
-        !live.has(f.targetId) &&
-        f.targetType === "memory",
+        targetTypes.has(f.targetType) &&
+        !facetTargetLive(f, live.get(f.targetId)),
     );
     await Promise.all(matches.map((f) => kv.delete(KV.facets, f.id)));
   } catch (err) {
@@ -61,6 +92,70 @@ export async function deleteFacetsCascade(
   const all = await kv.list<Facet>(KV.facets);
   const matches = all.filter((f) => ids.has(f.targetId) && (targetType === undefined || f.targetType === targetType));
   await Promise.all(matches.map((f) => kv.delete(KV.facets, f.id)));
+}
+
+export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
+  const facets = await kv.list<Facet>(KV.facets);
+  const actionIds = facets.some((f) => f.targetType === "action")
+    ? new Set((await kv.list<{ id: string }>(KV.actions)).map((a) => a.id))
+    : new Set<string>();
+  const live = new Map<string, TargetLiveness | null>();
+  let observationIds: Set<string> | null | undefined;
+  const orphans: Facet[] = [];
+  for (const facet of facets) {
+    if (facet.targetType === "action") {
+      if (!actionIds.has(facet.targetId)) orphans.push(facet);
+      continue;
+    }
+    const observationTarget = checksObservation(facet.targetId, facet.targetType);
+    const cacheKey = `${observationTarget ? "o" : "r"}:${facet.targetId}`;
+    if (!live.has(cacheKey)) {
+      live.set(cacheKey, await targetLiveness(kv, facet.targetId, observationTarget).catch(() => null));
+    }
+    const liveness = live.get(cacheKey);
+    if (!liveness || facetTargetLive(facet, liveness)) continue;
+    if (observationTarget) {
+      if (observationIds === undefined) observationIds = await listObservationIds(kv);
+      if (!observationIds || observationIds.has(facet.targetId)) continue;
+    }
+    orphans.push(facet);
+  }
+  return orphans;
+}
+
+const OBSERVATION_SCAN_BATCH = 16;
+const UNSESSIONED_OBSERVATION_SCOPE = "migrated";
+
+async function listObservationIds(kv: StateKV): Promise<Set<string> | null> {
+  try {
+    const sessions = await kv.list<{ id: string }>(KV.sessions);
+    const scopes = [...new Set([...sessions.map((session) => session.id), UNSESSIONED_OBSERVATION_SCOPE])];
+    const ids = new Set<string>();
+    for (let start = 0; start < scopes.length; start += OBSERVATION_SCAN_BATCH) {
+      const batch = scopes.slice(start, start + OBSERVATION_SCAN_BATCH);
+      const lists = await Promise.all(batch.map((scope) => kv.list<{ id: string }>(KV.observations(scope))));
+      for (const list of lists) for (const obs of list) ids.add(obs.id);
+    }
+    return ids;
+  } catch {
+    return null;
+  }
+}
+
+export async function isFacetStillOrphan(kv: StateKV, facet: Facet): Promise<boolean> {
+  if (!(await kv.get<Facet>(KV.facets, facet.id))) return false;
+  if (facet.targetType === "action") return !(await kv.get(KV.actions, facet.targetId));
+  const observationTarget = checksObservation(facet.targetId, facet.targetType);
+  const liveness = await targetLiveness(kv, facet.targetId, observationTarget).catch(() => null);
+  if (!liveness || facetTargetLive(facet, liveness)) return false;
+  if (observationTarget) {
+    const present = await kv.get(KV.observations(UNSESSIONED_OBSERVATION_SCOPE), facet.targetId).then(
+      (value) => value != null,
+      () => true,
+    );
+    if (present) return false;
+  }
+  return true;
 }
 
 export function registerFacetsFunction(sdk: IIIClient, kv: StateKV): void {

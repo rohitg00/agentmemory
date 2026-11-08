@@ -21,6 +21,10 @@ const PENDING_LOG_SAVE_THRESHOLD = 500;
 const EARLY_SAVE_MIN_GAP_MS = 5_000;
 const BACKFILL_MARKER_KEY = "vectors:backfill";
 const MEMORY_ID_PREFIX = "mem_";
+const LEGACY_SHARD_SCOPE_PREFIXES = [`${KV.bm25Index}:bm25:`, `${KV.bm25Index}:vectors:`];
+const LEGACY_SHARD_KEY = "data";
+const LEGACY_SHARD_SUFFIX = /^((?:[0-9a-z]+-[0-9a-f]{32})|(?:idx_[0-9a-z]+_[0-9a-f]{12})):\d{5}$/;
+const ORPHAN_SWEEP_KEY = "legacy:sweep";
 
 function auditIndexPersistEnabled(): boolean {
   const raw = process.env.AGENTMEMORY_AUDIT_INDEX_PERSIST;
@@ -157,6 +161,12 @@ function isValidShardDescriptor(
     Number.isInteger(candidate.chars) &&
     (candidate.chars as number) >= 0
   );
+}
+
+function legacyShardGeneration(scope: string): string | null | undefined {
+  const prefix = LEGACY_SHARD_SCOPE_PREFIXES.find((candidate) => scope.startsWith(candidate));
+  if (!prefix) return undefined;
+  return LEGACY_SHARD_SUFFIX.exec(scope.slice(prefix.length))?.[1] ?? null;
 }
 
 function isPersistedVector(row: unknown): row is PersistedVector {
@@ -573,7 +583,7 @@ export class IndexPersistence {
 
   async load(): Promise<VectorLoadResult> {
     if (!this.vector) {
-      await this.removeLegacyBm25Snapshot();
+      await this.finishLegacyCleanup();
       return { vector: null, state: "none", savedAt: null };
     }
 
@@ -591,7 +601,7 @@ export class IndexPersistence {
       this.hasVectorCheckpoint = loaded.size > 0;
       this.checkpointBackfillSince = meta.backfillSince;
       await this.removeLegacyVectorSnapshotIfPresent();
-      await this.removeLegacyBm25Snapshot();
+      await this.finishLegacyCleanup();
       const expectedCount = Number.isInteger(meta.count) ? meta.count : undefined;
       this.vectorCountShortfall =
         expectedCount !== undefined && loaded.size < expectedCount
@@ -798,7 +808,7 @@ export class IndexPersistence {
     if (!manifest.ok || !legacyKey.ok) return { vector: null, state: "unavailable", savedAt: null };
     const legacyPresent = manifest.value != null || (typeof legacyKey.value === "string" && legacyKey.value.length > 0);
     if (!legacyPresent) {
-      await this.removeLegacyBm25Snapshot();
+      await this.finishLegacyCleanup();
       return { vector: null, state: "none", savedAt: null };
     }
 
@@ -826,7 +836,7 @@ export class IndexPersistence {
     }
 
     await this.removeLegacyVectorSnapshot(manifest.value);
-    await this.removeLegacyBm25Snapshot();
+    await this.finishLegacyCleanup();
     await this.auditIndexPersistence("migrate", [statePath(KV.bm25Index, VECTOR_META_KEY)], {
       vectors: legacy.size,
       buckets: this.bucketCountInUse(),
@@ -870,6 +880,74 @@ export class IndexPersistence {
     if (legacy != null) await this.deleteKey(KV.bm25Index, LEGACY_BM25_KEY, "legacy_bm25_cleanup");
   }
 
+  private async finishLegacyCleanup(): Promise<void> {
+    await this.removeLegacyBm25Snapshot();
+    await this.sweepOrphanedGenerations();
+  }
+
+  private async sweepOrphanedGenerations(): Promise<void> {
+    try {
+      if ((await this.kv.get(KV.bm25Index, ORPHAN_SWEEP_KEY)) != null) return;
+      const candidates = new Map<string, string>();
+      for (const scope of await this.kv.listGroups()) {
+        const generation = legacyShardGeneration(scope);
+        if (generation === undefined) continue;
+        if (generation === null) {
+          logger.warn("index persistence: orphan sweep skipped, unrecognized legacy shard scope", { scope });
+          return;
+        }
+        candidates.set(scope, generation);
+      }
+      const named = await this.namedLegacyGenerations();
+      if (!named) return;
+      const orphans = [...candidates].filter(([, generation]) => !named.has(generation));
+      const failures = await inBatches(orphans, WRITE_CONCURRENCY, async ([scope]) => {
+        if (!(await this.deleteKey(scope, LEGACY_SHARD_KEY, "orphan_generation_sweep"))) throw new Error(scope);
+      });
+      const summary = {
+        generations: new Set(orphans.map(([, generation]) => generation)).size,
+        shards: orphans.length,
+        failed: failures.length,
+      };
+      if (failures.length > 0) {
+        logger.warn("index persistence: orphan sweep left shards behind; the next boot retries", summary);
+        return;
+      }
+      if (candidates.size > orphans.length) {
+        if (orphans.length > 0) logger.info("index persistence: swept orphaned legacy index generations", summary);
+        return;
+      }
+      await this.kv.set(KV.bm25Index, ORPHAN_SWEEP_KEY, { v: 1, at: new Date(this.now()).toISOString(), ...summary });
+      await this.auditIndexPersistence("sweep", [statePath(KV.bm25Index, ORPHAN_SWEEP_KEY)], summary);
+      logger.info("index persistence: swept orphaned legacy index generations", summary);
+    } catch (err) {
+      logger.warn("index persistence: orphan sweep failed; the next boot retries", { message: errorMessage(err) });
+    }
+  }
+
+  private async namedLegacyGenerations(): Promise<Set<string> | null> {
+    const named = new Set<string>();
+    for (const [key, label] of [[LEGACY_BM25_MANIFEST_KEY, "bm25"], [LEGACY_VECTOR_MANIFEST_KEY, "vector"]] as const) {
+      const read = await this.readIndexValue<IndexShardManifest>(KV.bm25Index, key, label, "manifest");
+      if (!read.ok) return null;
+      const manifest = read.value;
+      if (manifest == null) continue;
+      const generations = typeof manifest === "object" && Array.isArray(manifest.shards)
+        ? manifest.shards
+            .filter((shard) => typeof shard?.scope === "string" && shard.scope.length > 0)
+            .map((shard) => legacyShardGeneration(shard.scope))
+        : [];
+      if (typeof manifest === "object" && typeof manifest.generation === "string") generations.push(manifest.generation);
+      const usable = generations.filter((generation): generation is string => !!generation);
+      for (const generation of usable) named.add(generation);
+      if (usable.length === 0) {
+        logger.warn("index persistence: orphan sweep skipped, a legacy manifest names no generation", { key });
+        return null;
+      }
+    }
+    return named;
+  }
+
   private logFailure(err: unknown): void {
     const now = this.now();
     if (now - this.lastFailureLogAt < FAILURE_LOG_THROTTLE_MS) return;
@@ -897,7 +975,7 @@ export class IndexPersistence {
     });
   }
 
-  private async deleteKey(scope: string, key: string, reason: string): Promise<void> {
+  private async deleteKey(scope: string, key: string, reason: string): Promise<boolean> {
     let result = "deleted";
     let error: string | undefined;
     try {
@@ -913,10 +991,13 @@ export class IndexPersistence {
       result,
       error,
     });
+    return error === undefined;
   }
 
   private async deleteShards(shards: IndexShardManifest["shards"], reason: string): Promise<void> {
-    await inBatches(shards, WRITE_CONCURRENCY, (shard) => this.deleteKey(shard.scope, shard.key, reason));
+    await inBatches(shards, WRITE_CONCURRENCY, async (shard) => {
+      await this.deleteKey(shard.scope, shard.key, reason);
+    });
   }
 
   private async loadShardedData(legacyKey: string, manifestKey: string, label: string): Promise<string | null> {

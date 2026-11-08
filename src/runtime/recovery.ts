@@ -14,6 +14,17 @@ export interface RearmConditions {
   vectorBackfillErrorCode?: string;
 }
 
+export interface RearmSteps {
+  retryCheckpoint: () => Promise<boolean>;
+  indexNeedsRearm: () => boolean;
+  runIndexRecovery: () => Promise<unknown>;
+}
+
+export async function rearmIndexRecovery(steps: RearmSteps): Promise<void> {
+  const restored = await steps.retryCheckpoint();
+  if (restored || steps.indexNeedsRearm()) await steps.runIndexRecovery();
+}
+
 export function shouldRearmIndex(input: RearmConditions): boolean {
   if (input.bm25Incomplete) return true;
   if (input.vectorBackfillState === "paused" || input.vectorBackfillState === "failed") {

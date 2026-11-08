@@ -40,6 +40,7 @@ export interface BindingReport {
   state: "observe" | "trigger";
   http: "observe" | "trigger";
   observers: number;
+  failedObservers: number;
   routesViaTrigger: number;
   reasons: string[];
 }
@@ -47,7 +48,7 @@ export interface BindingReport {
 interface SdkLike {
   registerTrigger?: (spec: unknown) => unknown;
   observe?: (source: unknown, target: string, options?: Record<string, unknown>) => ObserverHandle;
-  trigger: (input: { function_id: string; payload: unknown }) => Promise<unknown>;
+  trigger: (input: { function_id: string; payload: unknown; timeoutMs?: number }) => Promise<unknown>;
 }
 
 const instances = new WeakMap<object, Bindings>();
@@ -70,6 +71,7 @@ export class Bindings {
   private readonly stateBoundHandles: ObserverHandle[] = [];
   private readonly reasons: string[] = [];
   private routesViaTriggerCount = 0;
+  private failedObserverCount = 0;
   modes: BindingModes = { state: "trigger", http: "trigger" };
   private resolved = false;
 
@@ -138,6 +140,7 @@ export class Bindings {
 
   private bindHttp(spec: HttpTriggerSpec): void {
     if (this.modes.http === "observe") return this.observeHttp(spec);
+    this.routesViaTriggerCount++;
     this.sdk.registerTrigger?.(spec);
   }
 
@@ -181,6 +184,8 @@ export class Bindings {
     this.boundHandles.push(handle);
     void handle.ready().catch((err: unknown) => {
       const code = (err as { code?: string })?.code;
+      this.failedObserverCount++;
+      this.reasons.push(`route ${method} ${config.api_path} observer rejected: ${code ?? String(err)}`);
       logger.error(`HTTP observer failed for route ${method} ${config.api_path}`, { error: code ?? String(err) });
     });
   }
@@ -202,13 +207,15 @@ export class Bindings {
     this.stateBoundHandles.push(handle);
     void handle.ready().catch((err: unknown) => {
       const code = (err as { code?: string })?.code;
+      this.failedObserverCount++;
+      this.reasons.push(`state observer ${spec.function_id} rejected: ${code ?? String(err)}`);
       logger.error(`State observer failed for ${spec.function_id}`, { scope: spec.scope, error: code ?? String(err) });
     });
   }
 
-  private async probeFunctions(): Promise<Set<string>> {
+  private async probeFunctions(timeoutMs: number): Promise<Set<string>> {
     try {
-      const listed = await this.sdk.trigger({ function_id: "engine::functions::list", payload: {} });
+      const listed = await this.sdk.trigger({ function_id: "engine::functions::list", payload: {}, timeoutMs });
       const entries = Array.isArray(listed)
         ? listed
         : (((listed as { functions?: unknown[] })?.functions ?? []) as unknown[]);
@@ -228,7 +235,7 @@ export class Bindings {
     let delay = 250;
     let functions = new Set<string>();
     while (Date.now() < deadline) {
-      functions = await this.probeFunctions();
+      functions = await this.probeFunctions(Math.max(1, deadline - Date.now()));
       const stateProvider = functions.has("state::get");
       const httpProvider = [...functions].some((name) => name.startsWith("http::"));
       if ((stateProvider || forced === "observe") && (httpProvider || forced === "observe")) {
@@ -288,7 +295,8 @@ export class Bindings {
     return {
       state: this.modes.state,
       http: this.modes.http,
-      observers: this.boundHandles.length,
+      observers: this.boundHandles.length - this.failedObserverCount,
+      failedObservers: this.failedObserverCount,
       routesViaTrigger: this.routesViaTriggerCount,
       reasons: [...this.reasons],
     };

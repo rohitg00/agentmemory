@@ -1,12 +1,78 @@
+export type McpToolAnnotations = {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+};
+
 export type McpToolDef = {
   name: string;
   description: string;
   inputSchema: {
     type: "object";
-    properties: Record<string, { type: string; description: string; enum?: string[] }>;
+    properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string } }>;
     required?: string[];
   };
+  annotations?: McpToolAnnotations;
 };
+
+export const READ_ONLY_TOOLS = new Set([
+  "memory_recall",
+  "memory_file_history",
+  "memory_patterns",
+  "memory_sessions",
+  "memory_smart_search",
+  "memory_vision_search",
+  "memory_timeline",
+  "memory_export",
+  "memory_relations",
+  "memory_commit_lookup",
+  "memory_commits",
+  "memory_graph_query",
+  "memory_team_feed",
+  "memory_audit",
+  "memory_frontier",
+  "memory_next",
+  "memory_diagnose",
+  "memory_facet_query",
+  "memory_verify",
+  "memory_lesson_recall",
+  "memory_insight_list",
+  "memory_slot_list",
+  "memory_slot_get",
+]);
+
+export const DESTRUCTIVE_TOOLS = new Set([
+  "memory_action_update",
+  "memory_compress_file",
+  "memory_claude_bridge_sync",
+  "memory_governance_delete",
+  "memory_heal",
+  "memory_lesson_delete",
+  "memory_obsidian_export",
+  "memory_slot_replace",
+  "memory_slot_delete",
+]);
+
+const IDEMPOTENT_WRITE_TOOLS = new Set([
+  "memory_governance_delete",
+  "memory_lesson_delete",
+  "memory_slot_replace",
+  "memory_slot_delete",
+  "memory_claude_bridge_sync",
+]);
+
+const OPEN_WORLD_TOOLS = new Set(["memory_mesh_sync"]);
+
+export function toolAnnotations(name: string): McpToolAnnotations {
+  const readOnly = READ_ONLY_TOOLS.has(name);
+  return {
+    readOnlyHint: readOnly,
+    destructiveHint: !readOnly && DESTRUCTIVE_TOOLS.has(name),
+    idempotentHint: readOnly || IDEMPOTENT_WRITE_TOOLS.has(name),
+    openWorldHint: OPEN_WORLD_TOOLS.has(name),
+  };
+}
 
 export const CORE_TOOLS: McpToolDef[] = [
   {
@@ -446,6 +512,7 @@ export const V050_TOOLS: McpToolDef[] = [
           description:
             "Comma-separated action IDs that must complete before this",
         },
+        agentId: { type: "string", description: "Agent creating the action" },
       },
       required: ["title"],
     },
@@ -835,6 +902,11 @@ export const V070_TOOLS: McpToolDef[] = [
         },
         project: { type: "string", description: "Project this lesson is about" },
         tags: { type: "string", description: "Comma-separated tags" },
+        sourceIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ids of the session, memory, observation or crystal this lesson came from (max 50)",
+        },
       },
       required: ["content"],
     },
@@ -1016,7 +1088,7 @@ export function getAllTools(): McpToolDef[] {
     ...V070_TOOLS,
     ...V073_TOOLS,
     ...V010_SLOTS_TOOLS,
-  ];
+  ].map((tool) => ({ ...tool, annotations: toolAnnotations(tool.name) }));
 }
 
 // default switched from "core" (8 essential tools) to "all"

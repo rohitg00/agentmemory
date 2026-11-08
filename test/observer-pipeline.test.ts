@@ -203,6 +203,71 @@ describe("post-session-graph delta marker", () => {
   });
 });
 
+describe("post-session-graph marker validity", () => {
+  async function setup(opts: { extract?: unknown; generation?: string | null; obs: Array<Record<string, unknown>>; mark?: GraphExtractMark }) {
+    const { registerPostSessionFunctions } = await import("../src/functions/post-session.js");
+    const functions = new Map<string, (d: unknown) => Promise<unknown>>();
+    const sdk = {
+      trigger: vi.fn(async (req: { function_id: string; payload: unknown }) => (req.function_id === "mem::graph-extract" ? opts.extract ?? { success: true } : {})),
+      registerFunction: (id: string, h: (d: unknown) => Promise<unknown>) => { functions.set(id, h); },
+    };
+    const marks = new Map<string, GraphExtractMark>();
+    if (opts.mark) marks.set("s1", opts.mark);
+    const kv = {
+      get: vi.fn(async (scope: string, k: string) => (scope === KV.graphExtractMarks ? marks.get(k) ?? null : opts.generation ?? null)),
+      set: vi.fn(async (_s: string, k: string, v: GraphExtractMark) => { marks.set(k, v); }),
+      iterate: async function* () { yield opts.obs; },
+      backend: "file",
+    };
+    registerPostSessionFunctions(sdk as never, kv as never);
+    const extracted = () => sdk.trigger.mock.calls
+      .filter((c) => c[0].function_id === "mem::graph-extract")
+      .flatMap((c) => (c[0].payload as { observations: Array<{ id: string; files?: string[] }> }).observations);
+    return { functions, marks, extracted };
+  }
+  const mark = (graphGeneration?: string | null): GraphExtractMark => ({
+    sessionId: "s1", lastObservationTimestamp: "2026-02-01T00:00:00Z", extractedCount: 1, updatedAt: "2026-02-01T00:00:00Z",
+    ...(graphGeneration !== undefined ? { graphGeneration } : {}),
+  });
+
+  it("keeps the marker when graph extraction reports success false", async () => {
+    const t = await setup({ extract: { success: false, error: "llm down" }, obs: [{ id: "o2", title: "x", timestamp: "2026-03-01T00:00:00Z" }], mark: mark() });
+    const result = await t.functions.get("mem::post-session-graph")!({ sessionId: "s1" });
+    expect(result).toEqual({ extracted: 0, error: "llm down" });
+    expect(t.marks.get("s1")!.lastObservationTimestamp).toBe("2026-02-01T00:00:00Z");
+  });
+
+  it("re-extracts the whole session after a graph reset changes the generation", async () => {
+    const t = await setup({
+      generation: "22222222-2222-4222-8222-222222222222",
+      obs: [{ id: "o1", title: "old", timestamp: "2026-01-01T00:00:00Z" }, { id: "o2", title: "new", timestamp: "2026-03-01T00:00:00Z" }],
+      mark: mark("11111111-1111-4111-8111-111111111111"),
+    });
+    await t.functions.get("mem::post-session-graph")!({ sessionId: "s1" });
+    expect(t.extracted().map((o) => o.id)).toEqual(["o1", "o2"]);
+    expect(t.marks.get("s1")!.graphGeneration).toBe("22222222-2222-4222-8222-222222222222");
+  });
+
+  it("re-extracts an observation compressed after the marker", async () => {
+    const t = await setup({
+      obs: [{ id: "o1", title: "late", timestamp: "2026-01-01T00:00:00Z", compressedAt: "2026-04-01T00:00:00Z" }],
+      mark: mark(),
+    });
+    await t.functions.get("mem::post-session-graph")!({ sessionId: "s1" });
+    expect(t.extracted().map((o) => o.id)).toEqual(["o1"]);
+    expect(t.marks.get("s1")!.lastObservationTimestamp).toBe("2026-04-01T00:00:00Z");
+  });
+
+  it("passes a saved memory's files to graph extraction", async () => {
+    const t = await setup({ obs: [] });
+    await t.functions.get("mem::post-remember-graph")!({
+      input: { content: "uses the parser" },
+      output: { success: true, memory: { id: "m1", title: "t", type: "fact", createdAt: "2026-01-01T00:00:00Z", concepts: [], files: ["src/parser.ts"] } },
+    });
+    expect(t.extracted()[0].files).toEqual(["src/parser.ts"]);
+  });
+});
+
 describe("compression sweep", () => {
   it("selects only old pending/failed observations, bounded, single-flight", async () => {
     const { createCompressionSweep } = await import("../src/functions/compression-sweep.js");
