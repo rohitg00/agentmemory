@@ -12,6 +12,10 @@ import { III_PINNED_VERSION } from "../src/version.js";
 const engine = process.env.AGENTMEMORY_TEST_III;
 const version = engine ? spawnSync(engine, ["--version"], { encoding: "utf8", timeout: 3000 }) : null;
 const available = version?.status === 0 && version.stdout.trim() === III_PINNED_VERSION;
+const skipped = !available || process.platform === "win32" || process.env.AGENTMEMORY_SKIP_LIVE_TESTS === "1";
+if (process.env.AGENTMEMORY_REQUIRE_LIVE_TESTS === "1" && skipped) {
+  throw new Error(`Required Compose C1 test needs iii ${III_PINNED_VERSION} and live tests enabled on macOS or Linux`);
+}
 
 async function freePort(): Promise<number> {
   const server = createServer();
@@ -35,7 +39,7 @@ async function stop(child: ChildProcess): Promise<void> {
   }
 }
 
-describe.skipIf(!available || process.platform === "win32")("pinned Compose C1 environment round trip", () => {
+describe.skipIf(skipped)("pinned Compose C1 environment round trip", () => {
   it("delivers all C1 characters and line breaks unchanged to a real worker", async () => {
     const root = mkdtempSync(join(tmpdir(), "agentmemory-compose-c1-"));
     const pkg = join(root, "worker");
