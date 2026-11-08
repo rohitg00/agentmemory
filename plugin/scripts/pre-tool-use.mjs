@@ -155,8 +155,25 @@ function isSdkChildContext(payload) {
 const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 const ENDPOINT = resolveHookEndpoint();
 const REST_URL = ENDPOINT.url;
+const DEFAULT_ENRICH_TIMEOUT_MS = 2e3;
 function authHeaders() {
 	return hookAuthHeaders(ENDPOINT);
+}
+const MAX_TIMER_MS = 2147483647;
+function enrichTimeoutMs() {
+	const raw = hookSetting("AGENTMEMORY_ENRICH_TIMEOUT_MS")?.trim() ?? "";
+	const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+	return n >= 1 && n <= MAX_TIMER_MS ? n : DEFAULT_ENRICH_TIMEOUT_MS;
+}
+function isPlainTextHost() {
+	return Boolean(process.env["FACTORY_PROJECT_DIR"] || process.env["DROID_PLUGIN_ROOT"]);
+}
+function contextPayload(data, context) {
+	if (data.hook_event_name !== "PreToolUse" || isPlainTextHost()) return context;
+	return JSON.stringify({ hookSpecificOutput: {
+		hookEventName: "PreToolUse",
+		additionalContext: context
+	} });
 }
 async function main() {
 	if (!INJECT_CONTEXT) return;
@@ -171,6 +188,7 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
+	if (typeof data.cursor_version === "string") return;
 	const toolName = typeof data.tool_name === "string" ? data.tool_name : typeof data.toolName === "string" ? data.toolName : void 0;
 	if (!toolName) return;
 	const normalizedToolName = toolName.toLowerCase();
@@ -216,11 +234,11 @@ async function main() {
 				toolName,
 				...project !== void 0 && { project }
 			}),
-			signal: AbortSignal.timeout(2e3)
+			signal: AbortSignal.timeout(enrichTimeoutMs())
 		});
 		if (res.ok) {
 			const result = await res.json();
-			if (result.context) process.stdout.write(result.context);
+			if (result.context) process.stdout.write(contextPayload(data, result.context));
 		}
 	} catch {}
 }
