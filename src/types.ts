@@ -1,3 +1,11 @@
+export interface GraphExtractMark {
+  sessionId: string;
+  lastObservationTimestamp: string;
+  extractedCount: number;
+  updatedAt: string;
+  graphGeneration?: string | null;
+}
+
 export interface Session {
   id: string;
   project: string;

@@ -38,7 +38,7 @@ async function consolidationDueUnserialized(kv: StateKV): Promise<boolean> {
 // check through an in-process chain so exactly one concurrent caller wins.
 let consolidationCheckChain: Promise<unknown> = Promise.resolve();
 
-function consolidationDue(kv: StateKV): Promise<boolean> {
+export function consolidationDue(kv: StateKV): Promise<boolean> {
   const result = consolidationCheckChain.then(() =>
     consolidationDueUnserialized(kv),
   );
@@ -54,6 +54,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       timeoutMs: getSummaryTriggerTimeoutMs(),
     });
     if (summary?.unchanged === true) return summary;
+    if (getBindings(sdk).pipeline === "observe") return summary;
     const fireVoid = (function_id: string, payload: unknown) =>
       sdk
         .trigger({ function_id, payload, action: TriggerAction.Void() })
