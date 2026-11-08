@@ -339,12 +339,15 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       if (data.memoryId) {
         const memoryId = data.memoryId;
         await attempt(memoryId, async () => {
-          const mem = await kv.get<Memory>(KV.memories, memoryId);
+          const mem = await withKeyedLock("mem:remember", async () => {
+            const current = await kv.get<Memory>(KV.memories, memoryId);
+            if (current) await kv.delete(KV.memories, memoryId);
+            return current;
+          });
           if (!mem) {
             await deleteFacetsForTargets(kv, [memoryId]);
             return false;
           }
-          await kv.delete(KV.memories, memoryId);
           deletedMemoryIds.push(memoryId);
           getSearchIndex().remove(memoryId);
           vectorIndexRemove(memoryId);
