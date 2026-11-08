@@ -86,6 +86,31 @@ function hasRealValue(v: string | undefined): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
+const PLACEHOLDER_KEY_VALUES = new Set(["your-key-here", "changeme", "todo"]);
+
+function hasRealKey(value: string | undefined): boolean {
+  const v = value?.trim().toLowerCase();
+  return (
+    !!v &&
+    !v.endsWith("...") &&
+    !PLACEHOLDER_KEY_VALUES.has(v) &&
+    !/^x+$/.test(v.replace(/[-_]/g, ""))
+  );
+}
+
+function hasRealOpenAIKey(env: Record<string, string | undefined>): boolean {
+  return /^http:\/\//i.test(env["OPENAI_BASE_URL"]?.trim() ?? "")
+    ? !!env["OPENAI_API_KEY"]?.trim()
+    : hasRealKey(env["OPENAI_API_KEY"]);
+}
+
+export function isRealProviderKey(
+  env: Record<string, string | undefined>,
+  key: string,
+): boolean {
+  return key === "OPENAI_API_KEY" ? hasRealOpenAIKey(env) : hasRealKey(env[key]);
+}
+
 // Hydrate ~/.agentmemory/.env into process.env at boot. loadEnvFile() is
 // otherwise only consumed via getMergedEnv(), which the many modules that
 // read raw process.env["X"] never call — so .env-only values were silently
@@ -152,7 +177,7 @@ function selectedLlmProviderValue(env: Record<string, string | undefined>): stri
 }
 
 function llmProviderHasKey(env: Record<string, string | undefined>, name: LlmProviderName): boolean {
-  return LLM_PROVIDER_KEYS[name].some((k) => hasRealValue(env[k]));
+  return LLM_PROVIDER_KEYS[name].some((k) => isRealProviderKey(env, k));
 }
 
 export function envFileLabel(path: string = ENV_FILE): string {
@@ -174,7 +199,7 @@ export function llmOptInHint(env: Record<string, string | undefined> = getMerged
   if (env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true") return null;
   const withKey = LLM_PROVIDER_NAMES.filter((name) => llmProviderHasKey(env, name));
   if (withKey.length === 0) return null;
-  const keys = withKey.flatMap((name) => LLM_PROVIDER_KEYS[name].filter((k) => hasRealValue(env[k])));
+  const keys = withKey.flatMap((name) => LLM_PROVIDER_KEYS[name].filter((k) => isRealProviderKey(env, k)));
   return `Found ${keys.join(", ")}, but agentmemory sends nothing to an LLM provider until you choose one for it. To turn on LLM summaries and compression, add AGENTMEMORY_LLM_PROVIDER=${withKey[0]} to ${envFileLabel()}.`;
 }
 
@@ -220,7 +245,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
           baseURL: env["ANTHROPIC_BASE_URL"],
         };
       case "gemini":
-        if (!hasRealValue(env["GEMINI_API_KEY"])) {
+        if (!hasRealKey(env["GEMINI_API_KEY"])) {
           process.stderr.write(
             "[agentmemory] GOOGLE_API_KEY detected — treating as GEMINI_API_KEY. " +
               "Set GEMINI_API_KEY in ~/.agentmemory/.env to silence this warning.\n",
@@ -315,6 +340,11 @@ function getMergedEnv(
 
 export function getEnvVar(key: string): string | undefined {
   return getMergedEnv()[key];
+}
+
+export function getProviderKey(key: string): string | undefined {
+  const env = getMergedEnv();
+  return isRealProviderKey(env, key) ? env[key] : undefined;
 }
 
 export function isSessionSweepEnabled(): boolean {

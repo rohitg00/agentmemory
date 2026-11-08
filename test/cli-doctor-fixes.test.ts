@@ -266,7 +266,7 @@ describe("doctor v2 diagnostic catalog", () => {
       ).toEqual({ ok: true, detail: "agent-sdk fallback, no API key" });
     });
 
-    it("treats a placeholder exported in the environment as missing, unlike the daemon", async () => {
+    it("treats a placeholder exported in the environment as missing, like the daemon", async () => {
       expect(
         (
           await statusFor(
@@ -275,6 +275,21 @@ describe("doctor v2 diagnostic catalog", () => {
           )
         ).ok,
       ).toBe(false);
+    });
+
+    it("names a placeholder OpenAI key behind a plain-http base URL, like the daemon", async () => {
+      expect(
+        await statusFor(
+          { AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "xxx" },
+          { OPENAI_BASE_URL: "http://localhost:11434/v1" },
+        ),
+      ).toEqual({ ok: true, detail: "found: OPENAI_API_KEY" });
+      expect(
+        await statusFor(
+          { AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "xxx", OPENAI_BASE_URL: "http://localhost:11434/v1" },
+          {},
+        ),
+      ).toEqual({ ok: true, detail: "found: OPENAI_API_KEY" });
     });
   });
 
