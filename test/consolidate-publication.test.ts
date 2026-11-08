@@ -385,4 +385,29 @@ describe("consolidation publication", () => {
     expect(await f.run()).toMatchObject({ consolidated: 1 });
     expect((await f.kv.get<Memory>(KV.memories, "global"))!.isLatest).toBe(true);
   });
+
+  it("publishes when only compression bookkeeping changes while the model runs", async () => {
+    const f = fixture();
+    await seed(f);
+    f.compress.mockImplementation(async () => {
+      const row = await f.kv.get<CompressedObservation>(KV.observations("session-a"), "session-a-auth-0");
+      await f.kv.set(KV.observations("session-a"), row!.id, { ...row!, compression: { revision: "retry", attempts: 2 } } as CompressedObservation);
+      return xml("Shared title");
+    });
+    expect(await f.run()).toMatchObject({ consolidated: 1 });
+  });
+
+  it("adopts a legacy memory once and publishes when its evidence later changes", async () => {
+    const f = fixture();
+    await seed(f);
+    await f.kv.set(KV.memories, "legacy", memory("legacy", {
+      sourceObservationIds: ["session-a-auth-0", "session-a-auth-1", "session-a-auth-2"],
+      sessionIds: ["session-a"],
+    }));
+    expect(await f.run()).toMatchObject({ consolidated: 0 });
+    expect((await f.kv.get<Memory>(KV.memories, "legacy"))!.consolidationKeys?.auth).toBeTruthy();
+    const row = await f.kv.get<CompressedObservation>(KV.observations("session-a"), "session-a-auth-0");
+    await f.kv.set(KV.observations("session-a"), row!.id, { ...row!, narrative: "Recompressed evidence" });
+    expect(await f.run()).toMatchObject({ consolidated: 1 });
+  });
 });

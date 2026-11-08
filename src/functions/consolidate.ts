@@ -65,11 +65,15 @@ function parseMemoryXml(
   };
 }
 
+function evidence(o: CompressedObservation) {
+  return { id: o.id, type: o.type, title: o.title, narrative: o.narrative, files: o.files, importance: o.importance, concepts: o.concepts };
+}
+
 function consolidationKey(sources: Array<CompressedObservation & { sid: string }>): string {
-  const evidence = sources
-    .map((o) => ({ sid: o.sid, id: o.id, type: o.type, title: o.title, narrative: o.narrative, files: o.files, importance: o.importance }))
+  const rows = sources
+    .map((o) => ({ sid: o.sid, ...evidence(o) }))
     .sort((a, b) => (a.sid === b.sid ? (a.id < b.id ? -1 : a.id > b.id ? 1 : 0) : a.sid < b.sid ? -1 : 1));
-  return fingerprintId("cons", stableStringify(evidence));
+  return fingerprintId("cons", stableStringify(rows));
 }
 
 function sameIds(left: string[] | undefined, right: string[]): boolean {
@@ -182,7 +186,7 @@ export function registerConsolidateFunction(
             }
             for (const { sid, ...original } of top) {
               const current = await kv.get<CompressedObservation>(KV.observations(sid), original.id);
-              if (!current || stableStringify(current) !== stableStringify(original)) return false;
+              if (!current || stableStringify(evidence(current)) !== stableStringify(evidence(original))) return false;
             }
             const memories = await collectAll<Memory>(kv, KV.memories);
             const candidates = memories.filter((memory) =>
@@ -213,11 +217,16 @@ export function registerConsolidateFunction(
               });
             }
             const heads = candidates.filter((memory) => memory.isLatest !== false);
-            if (heads.some((memory) =>
-              memory.consolidationKeys
-                ? memory.consolidationKeys[concept] === sourceKey
-                : sameIds(memory.sourceObservationIds, obsIds) && sameIds(memory.sessionIds, sessionIds),
-            )) return false;
+            if (heads.some((memory) => memory.consolidationKeys?.[concept] === sourceKey)) return false;
+            const legacy = heads.find((memory) =>
+              !memory.consolidationKeys &&
+              sameIds(memory.sourceObservationIds, obsIds) &&
+              sameIds(memory.sessionIds, sessionIds),
+            );
+            if (legacy) {
+              await kv.set(KV.memories, legacy.id, { ...legacy, consolidationKeys: { [concept]: sourceKey } });
+              return false;
+            }
 
             const sameTitle = heads.filter((memory) =>
               memory.title.toLowerCase() === parsed.title.toLowerCase(),
