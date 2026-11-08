@@ -274,10 +274,10 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
     let probeCount = 0;
     const refusal = {
       success: false,
-      error: "Response is 20.0 MiB, over the ~15 MiB engine transport frame limit; narrow the range",
+      error: "Response is 70.0 MiB, over the ~60 MiB engine transport message limit; narrow the range",
       oversized: true,
-      bytes: 20 * 1024 * 1024,
-      limitBytes: 15 * 1024 * 1024,
+      bytes: 70 * 1024 * 1024,
+      limitBytes: 60 * 1024 * 1024,
     };
     installFetch((url) => {
       if (url.endsWith("/agentmemory/livez")) {

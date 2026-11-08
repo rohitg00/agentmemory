@@ -2,7 +2,7 @@ import type { IIIClient } from "iii-sdk";
 import { resolve } from "node:path";
 import { homedir } from "node:os";
 import { KV, generateId } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { indexObservationSession } from "../state/obs-index.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
@@ -23,7 +23,7 @@ export async function inferMemoryProjects(
   kv: StateKV,
   dryRun = false,
 ): Promise<{ updated: number; skipped: number; ambiguous: number }> {
-  const memories = await kv.list<Memory>(KV.memories);
+  const memories = await collectAll<Memory>(kv, KV.memories);
   const sessionCache = new Map<string, Session | null>();
 
   const loadSession = async (sid: string): Promise<Session | null> => {

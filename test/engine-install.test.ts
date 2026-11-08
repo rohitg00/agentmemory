@@ -111,6 +111,14 @@ describe("iii engine auto-installer", () => {
     }
   });
 
+  it("keeps the previous engine release auto-installable for a version override", () => {
+    expect(expectedIiiSha256("0.25.0", "iii-x86_64-unknown-linux-gnu.tar.gz")).toMatch(/^[0-9a-f]{64}$/);
+    expect(expectedIiiSha256("0.25.0", "iii-x86_64-pc-windows-msvc.zip")).toMatch(/^[0-9a-f]{64}$/);
+    expect(expectedIiiSha256("0.25.0", "iii-x86_64-unknown-linux-gnu.tar.gz")).not.toBe(
+      expectedIiiSha256(III_PINNED_VERSION, "iii-x86_64-unknown-linux-gnu.tar.gz"),
+    );
+  });
+
   it("leaves no partial binary or archive behind when the download times out", () => {
     const dir = sandbox();
     const bin = fakeCurl(

@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -665,7 +665,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-يعمل agentmemory على Windows 10/11. يتبع WSL2 مسار Linux ويمكنه تثبيت المحرك المثبّت تلقائيًا. يتطلب Windows الأصلي تثبيت ملف iii-engine 0.25.0 المثبّت يدويًا؛ نزّل الأرشيف المطابق من [صفحة إصدار iii 0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0)، وتحقق من بصمته، وضع `iii.exe` على `PATH` (مثل `%USERPROFILE%\.local\bin\iii.exe`). لا يستخرج CLI ملف ZIP الخاص بـ Windows تلقائيًا.
+يعمل agentmemory على Windows 10/11. يتبع WSL2 مسار Linux ويمكنه تثبيت المحرك المثبّت تلقائيًا. يتطلب Windows الأصلي تثبيت ملف iii-engine 0.25.1 المثبّت يدويًا؛ نزّل الأرشيف المطابق من [صفحة إصدار iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1)، وتحقق من بصمته، وضع `iii.exe` على `PATH` (مثل `%USERPROFILE%\.local\bin\iii.exe`). لا يستخرج CLI ملف ZIP الخاص بـ Windows تلقائيًا.
 
 لا يدعم الربط الآلي لـ MCP على Windows الأصلي إلا `agentmemory connect copilot-cli`. أما وكلاء Windows الأصليون الآخرون، فاستخدم كتلة MCP اليدوية من [وكلاء آخرون](#other-agents). شغّل `connect` داخل WSL فقط عندما يكون الوكيل المستهدف مثبتًا في بيئة WSL نفسها.
 
@@ -1242,7 +1242,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

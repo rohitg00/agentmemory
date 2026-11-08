@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP ツール" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 自動 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="外部 DB 0 個" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ 件のテストが成功" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ 件のテストが成功" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory は Windows 10/11 で動作します。WSL2 は Linux の経路に従い、ピン留めされたエンジンを自動インストールできます。ネイティブ Windows では、ピン留めされた iii-engine v0.25.0 バイナリを手動でインストールしてください。[iii v0.25.0 リリースページ](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0)から該当アーカイブをダウンロードして checksum を確認し、`iii.exe` を `PATH` に配置します(例: `%USERPROFILE%\.local\bin\iii.exe`)。CLI は Windows ZIP を自動展開しません。
+agentmemory は Windows 10/11 で動作します。WSL2 は Linux の経路に従い、ピン留めされたエンジンを自動インストールできます。ネイティブ Windows では、ピン留めされた iii-engine v0.25.1 バイナリを手動でインストールしてください。[iii v0.25.1 リリースページ](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1)から該当アーカイブをダウンロードして checksum を確認し、`iii.exe` を `PATH` に配置します(例: `%USERPROFILE%\.local\bin\iii.exe`)。CLI は Windows ZIP を自動展開しません。
 
 ネイティブ Windows の自動 MCP 接続は `agentmemory connect copilot-cli` のみをサポートします。それ以外のネイティブ Windows エージェントには[その他のエージェント](#other-agents)の手動 MCP ブロックを使用してください。`connect` を WSL 内で実行するのは、対象エージェントも同じ WSL 環境にインストールされている場合に限ります。
 
@@ -1255,7 +1255,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

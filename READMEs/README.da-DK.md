@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-værktøjer" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiske hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 eksterne databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ beståede tests" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,500+ beståede tests" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -655,7 +655,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory kører på Windows 10/11. WSL2 følger Linux-vejen og kan installere den fastlåste engine automatisk. Native Windows kræver, at den fastlåste iii-engine v0.25.0-binary installeres manuelt; download det tilsvarende arkiv fra [iii v0.25.0-udgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verificér checksum, og placér `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI’en pakker ikke Windows-ZIP’en ud automatisk.
+agentmemory kører på Windows 10/11. WSL2 følger Linux-vejen og kan installere den fastlåste engine automatisk. Native Windows kræver, at den fastlåste iii-engine v0.25.1-binary installeres manuelt; download det tilsvarende arkiv fra [iii v0.25.1-udgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verificér checksum, og placér `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI’en pakker ikke Windows-ZIP’en ud automatisk.
 
 Automatisk MCP-opsætning på native Windows understøtter kun `agentmemory connect copilot-cli`. Brug den manuelle MCP-blok fra [Andre agenter](#other-agents) til andre native Windows-agenter. Kør kun `connect` i WSL, hvis målagenten er installeret i samme WSL-miljø.
 
@@ -1249,7 +1249,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,500+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

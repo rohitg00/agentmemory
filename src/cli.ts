@@ -3675,7 +3675,7 @@ async function runConsole(): Promise<void> {
   p.note([
     `AgentMemory viewer: ${getViewerUrl()} (start agentmemory first if it is offline).`,
     "Use agentmemory status for runtime health and worker status.",
-    "Engine console migration: https://github.com/iii-hq/iii/blob/iii/v0.25.0/docs/using-iii/console.mdx",
+    "Engine console migration: https://github.com/iii-hq/iii/blob/iii/v0.25.1/docs/using-iii/console.mdx",
   ].join("\n"), "Console migration");
 }
 

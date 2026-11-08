@@ -15,6 +15,7 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import type { SearchIndexRevision } from "../state/search-index.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
@@ -23,7 +24,6 @@ import { persistGraphRecords, validateGraphRecords } from "../state/graph-ingest
 import { flushIndexSave, getSearchIndex, indexRecords, vectorIndexRemove } from "./search.js";
 import { VERSION } from "../version.js";
 import { logger } from "../logger.js";
-
 const COMMIT_HASH_RE = /^[0-9a-f]{7,40}$/i;
 
 const execFileAsync = promisify(execFile);
@@ -68,9 +68,9 @@ export function registerSnapshotFunction(
         const ts = new Date().toISOString();
 
         const sessions = await kv.list<Session>(KV.sessions);
-        const memories = await kv.list<Memory>(KV.memories);
-        const graphNodes = await kv.list<GraphNode>(KV.graphNodes);
-        const graphEdges = await kv.list<GraphEdge>(KV.graphEdges);
+        const memories = await collectAll<Memory>(kv, KV.memories);
+        const graphNodes = await collectAll<GraphNode>(kv, KV.graphNodes);
+        const graphEdges = await collectAll<GraphEdge>(kv, KV.graphEdges);
         const accessLogs = await kv
           .list<AccessLogExport>(KV.accessLog)
           .catch(() => [] as AccessLogExport[]);

@@ -322,7 +322,7 @@ describe("retained observation source", () => {
   it("refuses a replay result that expands beyond the transport frame", async () => {
     const r = rig();
     const template = buildSyntheticCompression(raw({ toolName: "tool".repeat(10000) }));
-    for (let i = 0; i < 500; i++) {
+    for (let i = 0; i < 2000; i++) {
       const row = { ...template, id: `large-label-${i}` };
       await r.kv.set(KV.observations(row.sessionId), row.id, row);
     }
