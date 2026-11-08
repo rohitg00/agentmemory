@@ -26,5 +26,14 @@ describe("duplicate worker detection", () => {
     const daemonStatus = cli.slice(cli.indexOf("daemonStatus: async () =>"), cli.indexOf("runInit: async () =>"));
     expect(daemonStatus).toContain("headers: bearerHeaders(base)");
     expect(daemonStatus).not.toContain("bearerHeaders(resolveClientSecret(");
+    const timeout = Number(/AbortSignal\.timeout\((\d+)\)/.exec(daemonStatus)?.[1]);
+    expect(timeout).toBeGreaterThan(5000);
+  });
+});
+
+describe("route bindings in api.ts", () => {
+  it("registers every HTTP route through Bindings", () => {
+    const api = readFileSync("src/triggers/api.ts", "utf-8");
+    expect(api).not.toMatch(/sdk\.registerTrigger\(\{\s*type:\s*"http"/);
   });
 });
