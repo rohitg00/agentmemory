@@ -1200,8 +1200,8 @@ EMBEDDING_PROVIDER=local
 
 # Optional automatic context injection through the shared hooks
 # AGENTMEMORY_INJECT_CONTEXT=true
-# How long the PreToolUse hook waits for that context, in ms (default 2000)
-# AGENTMEMORY_ENRICH_TIMEOUT_MS=2000
+# Set the PreToolUse timeout in the hook process environment, not this server file:
+# AGENTMEMORY_ENRICH_TIMEOUT_MS=2000 (default 2000 ms)
 
 # Optional outside LLM for summaries and consolidation. A key alone does nothing;
 # this line selects the provider whose key agentmemory may use.
