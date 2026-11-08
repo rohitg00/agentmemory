@@ -81,6 +81,19 @@ export async function deleteFacetsForTargets(
   }
 }
 
+export async function deleteFacetsCascade(
+  kv: StateKV,
+  targetIds: Iterable<string>,
+  targetType?: string,
+): Promise<void> {
+  const ids = new Set(targetIds);
+  ids.delete("");
+  if (ids.size === 0) return;
+  const all = await kv.list<Facet>(KV.facets);
+  const matches = all.filter((f) => ids.has(f.targetId) && (targetType === undefined || f.targetType === targetType));
+  await Promise.all(matches.map((f) => kv.delete(KV.facets, f.id)));
+}
+
 export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
   const facets = await kv.list<Facet>(KV.facets);
   const actionIds = facets.some((f) => f.targetType === "action")

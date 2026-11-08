@@ -1,3 +1,17 @@
+export interface RelationReactionMark {
+  targetId: string;
+  type: MemoryRelation["type"];
+  sources: Record<string, string>;
+  isLatestBefore?: boolean;
+  strengthBefore?: number;
+  confidenceBefore?: number;
+  contradictBase?: number;
+  contradictPenalties?: Record<string, number>;
+  relatedIdsAdded?: string[];
+  firstAppliedAt: string;
+  lastAppliedAt: string;
+}
+
 export interface GraphExtractMark {
   sessionId: string;
   lastObservationTimestamp: string;
@@ -153,6 +167,7 @@ export interface Memory {
   files: string[];
   sessionIds: string[];
   strength: number;
+  confidence?: number;
   version: number;
   recurrence?: number;
   parentId?: string;
@@ -740,6 +755,14 @@ export interface AuditEntry {
     | "core_add"
     | "core_remove"
     | "auto_page"
+    | "compress-failed"
+    | "summarize-failed"
+    | "graph-extract-failed"
+    | "consolidate-failed"
+    | "reflect-failed"
+    | "skill-extract-failed"
+    | "cascade"
+    | "relation_reaction"
     | "vision_embed"
     | "slot_append"
     | "slot_replace"
