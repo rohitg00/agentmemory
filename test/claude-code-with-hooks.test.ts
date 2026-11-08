@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -276,6 +276,14 @@ describe("connect claude-code --with-hooks", () => {
       if (padding === "none" || padding === "trailing") {
         expect(output).not.toContain("CLAUDE_CONFIG_DIR is relative");
       }
+      if (padding === "none") {
+        expect(output).not.toContain("CLAUDE_CONFIG_DIR contains leading or trailing whitespace");
+      } else {
+        expect(output).toContain(`Using the path exactly as provided: ${JSON.stringify(selectedValue)}`);
+        expect(output).toContain("If this is unintended, correct CLAUDE_CONFIG_DIR and rerun this command.");
+        expect(output.match(/CLAUDE_CONFIG_DIR contains leading or trailing whitespace/g)).toHaveLength(1);
+        expect(output.indexOf("CLAUDE_CONFIG_DIR contains leading or trailing whitespace")).toBeLessThan(output.indexOf("wired into"));
+      }
       expect(result.stdout).toContain(`wired into ${join(selectedValue, ".claude.json")}`);
       expect(JSON.parse(readFileSync(join(selected, ".claude.json"), "utf-8")).mcpServers.agentmemory).toBeDefined();
       expect(JSON.parse(readFileSync(join(selected, "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
@@ -316,6 +324,7 @@ describe("connect claude-code --with-hooks", () => {
       expect(result.status, result.stderr).toBe(0);
       const output = result.stdout + result.stderr;
       expect(output).not.toContain("CLAUDE_CONFIG_DIR was loaded only");
+      expect(output).not.toContain("CLAUDE_CONFIG_DIR contains leading or trailing whitespace");
       if (source === "shell") {
         expect(output).toContain("CLAUDE_CONFIG_DIR contains only whitespace.");
         expect(output).toContain("Unset CLAUDE_CONFIG_DIR before launching Claude Code");
@@ -394,6 +403,52 @@ describe("connect claude-code --with-hooks", () => {
       expect(JSON.parse(readFileSync(join(selected, "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
       expect(existsSync(join(home, ".claude.json"))).toBe(false);
       expect(existsSync(join(home, ".claude"))).toBe(false);
+    }, 15000);
+
+    it.skipIf(process.getuid?.() === 0)("warns and skips an inaccessible profile without changing either profile", () => {
+      const parent = join(home, "inaccessible");
+      const configDir = join(parent, "Claude config");
+      const configPath = join(configDir, ".claude.json");
+      const settingsPath = join(configDir, "settings.json");
+      const defaultConfig = join(home, ".claude.json");
+      const defaultSettings = join(home, ".claude", "settings.json");
+      mkdirSync(configDir, { recursive: true });
+      mkdirSync(join(home, ".claude"));
+      const original = '{"keep":"original configuration"}';
+      for (const path of [configPath, settingsPath, defaultConfig, defaultSettings]) {
+        writeFileSync(path, original);
+      }
+
+      chmodSync(parent, 0o000);
+      try {
+        const result = spawnSync(process.execPath, [
+          resolve(__dirname, "..", "dist", "cli.mjs"),
+          "connect", "claude-code", "--with-hooks", "--no-guidelines",
+        ], {
+          cwd: home,
+          env: {
+            ...process.env,
+            AGENTMEMORY_ENV_FILE: undefined,
+            CLAUDE_CONFIG_DIR: configDir,
+            CI: "1",
+            NO_COLOR: "1",
+          },
+          encoding: "utf-8",
+          timeout: 10000,
+        });
+
+        expect(result.status, result.stderr).toBe(0);
+        const output = result.stdout + result.stderr;
+        expect(output).toContain(`Cannot inspect Claude Code configuration directory ${JSON.stringify(configDir)} (EACCES)`);
+        expect(output).toContain("Check directory permissions and retry.");
+        expect(output).toContain("not detected on this machine (skipping)");
+        expect(output).not.toContain("wired into");
+      } finally {
+        chmodSync(parent, 0o700);
+      }
+      for (const path of [configPath, settingsPath, defaultConfig, defaultSettings]) {
+        expect(readFileSync(path, "utf-8")).toBe(original);
+      }
     }, 15000);
   });
 

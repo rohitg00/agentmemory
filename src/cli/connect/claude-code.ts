@@ -56,7 +56,17 @@ export const adapter: ConnectAdapter = {
 
   detect(): boolean {
     const { configDir, dir } = claudeConfigPaths();
-    const detected = statSync(dir, { throwIfNoEntry: false })?.isDirectory() ?? false;
+    let detected: boolean;
+    try {
+      detected = statSync(dir, { throwIfNoEntry: false })?.isDirectory() ?? false;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EACCES" && code !== "EPERM") throw err;
+      p.log.warn(
+        `Cannot inspect Claude Code configuration directory ${JSON.stringify(dir)} (${code}). Check directory permissions and retry.`,
+      );
+      return false;
+    }
     if (!detected && configDir) {
       p.log.warn(
         `Claude Code configuration path ${JSON.stringify(configDir)} is not an existing directory. Create it or correct CLAUDE_CONFIG_DIR; check for unintended leading or trailing whitespace.`,
@@ -75,6 +85,11 @@ export const adapter: ConnectAdapter = {
     } else if (rawConfigDir && !configDir && !fromEnvFile) {
       p.log.warn(
         "CLAUDE_CONFIG_DIR contains only whitespace. AgentMemory will use the default Claude Code profile. Unset CLAUDE_CONFIG_DIR before launching Claude Code so it uses the same profile.",
+      );
+    }
+    if (configDir && configDir !== configDir.trim()) {
+      p.log.warn(
+        `CLAUDE_CONFIG_DIR contains leading or trailing whitespace. Using the path exactly as provided: ${JSON.stringify(configDir)}. If this is unintended, correct CLAUDE_CONFIG_DIR and rerun this command.`,
       );
     }
     if (configDir && !isAbsolute(configDir)) {
