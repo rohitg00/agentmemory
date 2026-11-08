@@ -3,6 +3,72 @@ import { execSync } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.mjs";
+//#region src/functions/privacy.ts
+const PRIVATE_TAG_TOKEN_RE = /<private(?=\s|>)[^>]*>|<\/private\s*>/gi;
+function redactPrivateBlocks(input) {
+	const tokens = new RegExp(PRIVATE_TAG_TOKEN_RE.source, PRIVATE_TAG_TOKEN_RE.flags);
+	let out = "";
+	let cursor = 0;
+	let depth = 0;
+	for (let match = tokens.exec(input); match; match = tokens.exec(input)) {
+		const closing = match[0].startsWith("</");
+		if (depth === 0) {
+			if (closing) continue;
+			out += input.slice(cursor, match.index);
+			depth = 1;
+		} else if (closing) {
+			depth -= 1;
+			if (depth === 0) {
+				out += "[REDACTED]";
+				cursor = match.index + match[0].length;
+			}
+		} else depth += 1;
+	}
+	if (depth > 0) return `${out}[REDACTED]`;
+	return out + input.slice(cursor);
+}
+const SECRET_PATTERN_SOURCES = [
+	/(?:api[_-]?key|secret|token|password|credential|auth)[\s]*[=:]\s*["']?[A-Za-z0-9_\-/.+]{20,}["']?/gi,
+	/Bearer\s+[A-Za-z0-9._\-+/=]{20,}/gi,
+	/(?<![\p{L}\p{N}\p{M}_])sk-proj-[A-Za-z0-9\-_]{20,}/gu,
+	/(?<![\p{L}\p{N}\p{M}_])(?:sk|pk|rk|ak)-[A-Za-z0-9][A-Za-z0-9\-_]{19,}/gu,
+	/(?<![\p{L}\p{N}\p{M}_])sk-ant-[A-Za-z0-9\-_]{20,}/gu,
+	/gh[pus]_[A-Za-z0-9]{36,}/g,
+	/github_pat_[A-Za-z0-9_]{22,}/g,
+	/xoxb-[A-Za-z0-9\-]+/g,
+	/AKIA[0-9A-Z]{16}/g,
+	/AIza[A-Za-z0-9\-_]{35}/g,
+	/eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g,
+	/npm_[A-Za-z0-9]{36}/g,
+	/glpat-[A-Za-z0-9\-_]{20,}/g,
+	/dop_v1_[A-Za-z0-9]{64}/g
+];
+const PRIVATE_KEY_BLOCK_RE = /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/g;
+const URL_CREDENTIALS_RE = /\b([a-z][a-z0-9+.-]*:\/\/)[^\s/?#@:"'<>]*:[^\s/?#@"'<>]+@/gi;
+function stripPrivateData(input) {
+	return stripSecrets(redactPrivateBlocks(input));
+}
+function stripSecrets(input) {
+	let result = input.replace(new RegExp(PRIVATE_KEY_BLOCK_RE.source, PRIVATE_KEY_BLOCK_RE.flags), "[REDACTED_SECRET]");
+	result = result.replace(new RegExp(URL_CREDENTIALS_RE.source, URL_CREDENTIALS_RE.flags), "$1[REDACTED_SECRET]@");
+	for (const source of SECRET_PATTERN_SOURCES) {
+		const pattern = new RegExp(source.source, source.flags);
+		result = result.replace(pattern, "[REDACTED_SECRET]");
+	}
+	return result;
+}
+//#endregion
+//#region src/hooks/_capture-filter.ts
+function cut(value, max) {
+	if (value.length <= max) return value;
+	const end = /[\uD800-\uDBFF]/.test(value[max - 1] ?? "") ? max - 1 : max;
+	return value.slice(0, end);
+}
+function truncateText(value, max) {
+	if (value.length <= max) return value;
+	return cut(stripPrivateData(value), max);
+}
+//#endregion
 //#region src/hooks/_project.ts
 function resolveProject(cwd) {
 	const explicit = process.env["AGENTMEMORY_PROJECT_NAME"];
@@ -71,11 +137,11 @@ async function main() {
 		data: {
 			task_id: data.task_id,
 			task_subject: data.task_subject,
-			task_description: typeof data.task_description === "string" ? data.task_description.slice(0, 2e3) : "",
+			task_description: typeof data.task_description === "string" ? truncateText(data.task_description, 2e3) : "",
 			teammate_name: data.teammate_name,
 			team_name: data.team_name
 		}
-	}, data), OBSERVE_TIMEOUT_MS);
+	}, {}, void 0, { stable: Boolean(data.task_id) }), OBSERVE_TIMEOUT_MS);
 	setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();
 }
 main().catch(() => process.exit(0));

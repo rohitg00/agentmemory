@@ -2,6 +2,9 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { handleToolCall, handleToolsList } from "../src/mcp/standalone.js";
 import { resetHandleForTests } from "../src/mcp/rest-proxy.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -274,10 +277,10 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
     let probeCount = 0;
     const refusal = {
       success: false,
-      error: "Response is 20.0 MiB, over the ~15 MiB engine transport frame limit; narrow the range",
+      error: "Response is 70.0 MiB, over the ~60 MiB engine transport message limit; narrow the range",
       oversized: true,
-      bytes: 20 * 1024 * 1024,
-      limitBytes: 15 * 1024 * 1024,
+      bytes: 70 * 1024 * 1024,
+      limitBytes: 60 * 1024 * 1024,
     };
     installFetch((url) => {
       if (url.endsWith("/agentmemory/livez")) {
@@ -309,6 +312,54 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
     const sessionsRes = await handleToolCall("memory_sessions", { limit: 5 });
     expect(JSON.parse(sessionsRes.content[0].text).sessions).toEqual([]);
     expect(probeCount).toBe(1);
+  });
+
+  it("forwards memory_export paging arguments to /agentmemory/export", async () => {
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      if (url.includes("/agentmemory/export")) {
+        return new Response(JSON.stringify({ version: "0.9.29" }), { status: 200 });
+      }
+      return new Response("", { status: 404 });
+    });
+
+    await handleToolCall("memory_export", {
+      maxSessions: 2,
+      offset: 4,
+      collectionLimit: 10,
+      collectionOffset: 20,
+      collections: "",
+    });
+
+    const exportUrl = new URL(urls.find((u) => u.includes("/agentmemory/export"))!);
+    expect(Object.fromEntries(exportUrl.searchParams)).toEqual({
+      maxSessions: "2",
+      offset: "4",
+      collectionLimit: "10",
+      collectionOffset: "20",
+      collections: "",
+    });
+  });
+
+  it("drops memory_export arguments that are not usable page bounds", async () => {
+    const urls: string[] = [];
+    installFetch((url) => {
+      urls.push(url);
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      return new Response(JSON.stringify({ version: "0.9.29" }), { status: 200 });
+    });
+
+    await handleToolCall("memory_export", {
+      maxSessions: 0,
+      offset: -1,
+      collectionLimit: "many",
+      collectionOffset: 1.5,
+    });
+
+    const exportUrl = new URL(urls.find((u) => u.includes("/agentmemory/export"))!);
+    expect(exportUrl.search).toBe("");
   });
 
   it("forwards non-essential tools to /agentmemory/mcp/call", async () => {
@@ -390,7 +441,8 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
       return new Response("not found", { status: 404 });
     });
     try {
-      await handleToolCall("memory_save", { content: "force-proxy" });
+      const result = await handleToolCall("memory_save", { content: "force-proxy" });
+      expect(JSON.parse(result.content[0].text)).toEqual({ id: "m-1", action: "created" });
       expect(calls.some((u) => u.endsWith("/agentmemory/livez"))).toBe(false);
       expect(calls.some((u) => u.endsWith("/agentmemory/remember"))).toBe(true);
     } finally {
@@ -465,6 +517,41 @@ describe("@agentmemory/mcp standalone — server proxy", () => {
     const core = await handleToolsList();
     expect((core.tools as unknown[]).length).toBe(7);
     delete process.env["AGENTMEMORY_TOOLS"];
+  });
+
+  it("gives proxied calls more than the worker invocation budget and honours AGENTMEMORY_CALL_TIMEOUT_MS", async () => {
+    installFetch((url) => {
+      if (url.endsWith("/agentmemory/livez")) return new Response("ok", { status: 200 });
+      return new Response(JSON.stringify({ sessions: [] }), { status: 200 });
+    });
+    const saved = { call: process.env["AGENTMEMORY_CALL_TIMEOUT_MS"], file: process.env["AGENTMEMORY_ENV_FILE"] };
+    const dir = mkdtempSync(join(tmpdir(), "am-call-timeout-"));
+    const envFile = join(dir, "agentmemory.env");
+    delete process.env["AGENTMEMORY_CALL_TIMEOUT_MS"];
+    process.env["AGENTMEMORY_ENV_FILE"] = envFile;
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    const lastTimeout = async () => {
+      await handleToolCall("memory_sessions", { limit: 1 });
+      return timeout.mock.lastCall?.[0];
+    };
+    try {
+      expect(await lastTimeout()).toBe(190_000);
+      writeFileSync(envFile, "AGENTMEMORY_CALL_TIMEOUT_MS=600000\n");
+      expect(await lastTimeout()).toBe(600_000);
+      process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = "900000";
+      expect(await lastTimeout()).toBe(900_000);
+      for (const bad of ["bogus", "0.5", "1e6", "600s", "2592000000"]) {
+        process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = bad;
+        expect(await lastTimeout()).toBe(190_000);
+      }
+    } finally {
+      timeout.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+      if (saved.call === undefined) delete process.env["AGENTMEMORY_CALL_TIMEOUT_MS"];
+      else process.env["AGENTMEMORY_CALL_TIMEOUT_MS"] = saved.call;
+      if (saved.file === undefined) delete process.env["AGENTMEMORY_ENV_FILE"];
+      else process.env["AGENTMEMORY_ENV_FILE"] = saved.file;
+    }
   });
 
   it("AGENTMEMORY_PROBE_TIMEOUT_MS overrides the default probe timeout", async () => {

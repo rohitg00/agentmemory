@@ -101,3 +101,32 @@ describe("api::export refusal status", () => {
     expect(res.body.version).toBeUndefined();
   });
 });
+
+describe("api::export collection paging parameters", () => {
+  it("forwards collectionLimit, collectionOffset and collections to mem::export", async () => {
+    const kv = mockKV();
+    for (let i = 0; i < 7; i++) {
+      await kv.set(KV.memories, `m${i}`, { ...hugeMemory(), id: `m${i}`, content: "small" });
+    }
+    for (let i = 0; i < 3; i++) {
+      await kv.set(KV.graphNodes, `n${i}`, { id: `n${i}` });
+    }
+    const sdk = mockSdk();
+    registerExportImportFunction(sdk as never, kv as never);
+    registerApiTriggers(sdk as never, kv as never, SECRET);
+
+    const res = await sdk._fns.get("api::export")!({
+      headers: { authorization: `Bearer ${SECRET}` },
+      query_params: { collectionLimit: "3", collectionOffset: "6", collections: "memories" },
+    });
+
+    expect(res.status_code).toBe(200);
+    expect((res.body.memories as Memory[]).map((m) => m.id)).toEqual(["m6"]);
+    expect(res.body.graphNodes).toBeUndefined();
+    expect(res.body.collectionPagination).toMatchObject({
+      offset: 6,
+      limit: 3,
+      collections: ["memories"],
+    });
+  });
+});

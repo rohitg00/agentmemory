@@ -20,6 +20,7 @@ import { adapter as kiro } from "./kiro.js";
 import { adapter as openclaw } from "./openclaw.js";
 import { adapter as opencode } from "./opencode.js";
 import { adapter as openhuman } from "./openhuman.js";
+import { adapter as omp } from "./omp.js";
 import { adapter as pi } from "./pi.js";
 import { adapter as qwen } from "./qwen.js";
 import { adapter as warp } from "./warp.js";
@@ -46,6 +47,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   openclaw,
   hermes,
   pi,
+  omp,
   openhuman,
 ];
 
@@ -237,7 +239,7 @@ function summarize(
   }
 
   const wiredAny = results.some(
-    (r) => !["hermes", "hermes-agent", "openclaw", "claw"].includes(r.name) && (r.result.kind === "installed" || r.result.kind === "already-wired"),
+    (r) => !["hermes", "hermes-agent", "openclaw", "claw", "omp", "pi"].includes(r.name) && (r.result.kind === "installed" || r.result.kind === "already-wired"),
   );
   if (wiredAny) {
     p.log.info(

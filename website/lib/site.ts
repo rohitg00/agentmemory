@@ -8,7 +8,9 @@ export const AGENT_INSTALL_PROMPT =
   "Retrieve and follow the instructions at: https://raw.githubusercontent.com/rohitg00/agentmemory/main/INSTALL_FOR_AGENTS.md";
 
 export const src = {
-  longmemeval: `${REPO_URL}/blob/main/benchmark/LONGMEMEVAL.md`,
+  longmemeval: `${REPO_URL}/blob/main/docs/benchmarks/2026-10-28-retrieval-evaluation.md`,
+  evaluation: `${REPO_URL}/blob/main/eval/README.md`,
+  recall: `${REPO_URL}/blob/main/docs/recall.md`,
   tokens: `${REPO_URL}/blob/main/benchmark/REAL-EMBEDDINGS.md`,
   agentLife: `${REPO_URL}/blob/main/docs/benchmarks/2026-05-20-coding-agent-life-v1.md`,
   gate: `${REPO_URL}/tree/main/scripts/release-gate`,
@@ -21,6 +23,7 @@ export const src = {
   changelog: `${REPO_URL}/blob/main/CHANGELOG.md`,
   paper: "https://arxiv.org/abs/2410.10813",
   dataset: "https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned",
+  wiki: "https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2",
 };
 
 export const NAV = [
@@ -51,10 +54,11 @@ export const AGENTS: Agent[] = [
   { name: "Devin", logo: "/devin.png", href: "https://devin.ai", support: "plugin", detail: "6 hooks, skills, MCP", connect: "devin" },
   { name: "OpenClaw", logo: "https://github.com/openclaw.png", href: "https://github.com/openclaw/openclaw", support: "plugin", detail: "gateway plugin, MCP", connect: "openclaw" },
   { name: "Hermes", logo: "https://github.com/NousResearch.png", href: "https://github.com/NousResearch", support: "plugin", detail: "Python plugin, MCP", connect: "hermes" },
-  { name: "pi", logo: "https://raw.githubusercontent.com/rohitg00/agentmemory/main/assets/agents/pi.svg", href: `${REPO_URL}/tree/main/integrations/pi`, support: "plugin", detail: "native plugin, MCP", connect: "pi" },
+  { name: "pi", logo: "https://raw.githubusercontent.com/rohitg00/agentmemory/main/assets/agents/pi.svg", href: `${REPO_URL}/tree/main/integrations/pi`, support: "plugin", detail: "installable package, capture, recall, skills", connect: "pi" },
+  { name: "Oh My Pi", logo: "https://raw.githubusercontent.com/rohitg00/agentmemory/main/assets/agents/pi.svg", href: `${REPO_URL}/tree/main/integrations/omp`, support: "plugin", detail: "capture, recall, skills, optional MCP", connect: "omp" },
   { name: "OpenHuman", logo: "https://raw.githubusercontent.com/tinyhumansai/openhuman/main/app/src-tauri/icons/128x128.png", href: "https://github.com/tinyhumansai/openhuman", support: "plugin", detail: "native Memory backend", connect: "openhuman" },
   { name: "Gemini CLI", logo: "https://github.com/google-gemini.png", href: "https://github.com/google-gemini/gemini-cli", support: "mcp", detail: "MCP server", connect: "gemini-cli" },
-  { name: "Antigravity", logo: "https://svgl.app/library/antigravity.svg", href: "https://antigravity.google", support: "mcp", detail: "MCP, hooks", connect: "antigravity" },
+  { name: "Antigravity", logo: "https://svgl.app/library/antigravity.svg", href: "https://antigravity.google", support: "plugin", detail: "MCP, hooks", connect: "antigravity --with-hooks" },
   { name: "Claude Desktop", logo: "https://github.com/anthropics.png", href: "https://claude.ai/download", support: "mcp", detail: "MCP server" },
   { name: "Warp", logo: "https://svgl.app/library/warp.svg", href: "https://www.warp.dev", support: "mcp", detail: "MCP server", connect: "warp" },
   { name: "Zed", logo: "https://svgl.app/library/zed-logo_dark.svg", href: "https://zed.dev", support: "mcp", detail: "MCP server", connect: "zed" },
@@ -63,29 +67,13 @@ export const AGENTS: Agent[] = [
   { name: "Droid", logo: "https://www.factory.ai/favicon.svg", href: "https://docs.factory.ai/cli", support: "mcp", detail: "MCP server", connect: "droid" },
   { name: "Kiro", logo: "https://kiro.dev/favicon.ico", href: "https://kiro.dev", support: "mcp", detail: "MCP server", connect: "kiro" },
   { name: "Qwen Code", logo: "https://svgl.app/library/qwen_dark.svg", href: "https://github.com/QwenLM/qwen-code", support: "mcp", detail: "MCP server", connect: "qwen" },
-  { name: "DeepSeek Harness", logo: "https://svgl.app/library/deepseek.svg", href: "https://github.com/deepseek-ai/deepseek-harness", support: "mcp", detail: "MCP server", connect: "dsh" },
+  { name: "DeepSeek Harness", logo: "https://svgl.app/library/deepseek.svg", href: "https://github.com/deepseek-ai/deepseek-harness", support: "plugin", detail: "native capture and recall, MCP", connect: "dsh --with-hooks" },
   { name: "Roo Code", logo: "https://github.com/RooCodeInc.png", href: "https://github.com/RooCodeInc/Roo-Code", support: "mcp", detail: "MCP server" },
   { name: "Kilo Code", logo: "https://github.com/Kilo-Org.png", href: "https://github.com/Kilo-Org/kilocode", support: "mcp", detail: "MCP server" },
   { name: "Goose", logo: "https://github.com/block.png", href: "https://github.com/block/goose", support: "mcp", detail: "MCP server" },
   { name: "Aider", logo: "https://github.com/Aider-AI.png", href: "https://github.com/Aider-AI/aider", support: "rest", detail: "REST API" },
 ];
 
-export const LONGMEMEVAL = {
-  questions: 500,
-  hybrid: { r5: 95.2, r10: 98.6, r20: 99.4, ndcg10: 87.9, mrr: 88.2 },
-  bm25: { r5: 86.2, r10: 94.6, r20: 98.6, ndcg10: 73.0, mrr: 71.5 },
-  byType: [
-    { type: "knowledge-update", count: 78, r5: 98.7, r10: 100.0, h5: 77, h10: 78 },
-    { type: "multi-session", count: 133, r5: 97.7, r10: 100.0, h5: 130, h10: 133 },
-    { type: "single-session-assistant", count: 56, r5: 96.4, r10: 98.2, h5: 54, h10: 55 },
-    { type: "temporal-reasoning", count: 133, r5: 95.5, r10: 97.7, h5: 127, h10: 130 },
-    { type: "single-session-user", count: 70, r5: 90.0, r10: 97.1, h5: 63, h10: 68 },
-    { type: "single-session-preference", count: 30, r5: 83.3, r10: 96.7, h5: 25, h10: 29 },
-  ],
-  embedding: "all-MiniLM-L6-v2, 384 dimensions, local",
-};
-
-export const TOKENS = { fullContext: 19462, agentmemory: 1571, savedPct: 92 };
 
 export const GATE_SCENARIOS = [
   { id: "install", what: "The packed artifact installs and reports its identity" },
@@ -101,6 +89,7 @@ export const GATE_SCENARIOS = [
 ];
 
 export const FEATURED = [
+  { name: "OpenUK", sub: "AI Openness 2026 case study", href: "https://openuk.uk/report/aiopenness2026/" },
   { name: "AlphaSignal", sub: "Technical deep-dive, 180K subscribers", href: "https://alphasignalai.substack.com/p/how-agentmemory-works-and-how-to" },
   { name: "Agentic AI Foundation", sub: "Linux Foundation backed", href: "https://aaif.io/" },
   {
@@ -111,6 +100,26 @@ export const FEATURED = [
       light: "https://trendshift.io/api/badge/repositories/25123",
       dark: "https://trendshift.io/api/badge/repositories/25123",
       alt: "rohitg00/agentmemory on Trendshift",
+    },
+  },
+  {
+    name: "Trendshift weekly",
+    sub: "#1 Repository of the Week, TypeScript",
+    href: "https://trendshift.io/repositories/25123",
+    badge: {
+      light: "https://trendshift.io/api/badge/trendshift/repositories/25123/weekly?language=TypeScript",
+      dark: "https://trendshift.io/api/badge/trendshift/repositories/25123/weekly?language=TypeScript",
+      alt: "agentmemory, #1 TypeScript Repository of the Week on Trendshift",
+    },
+  },
+  {
+    name: "Trendshift monthly",
+    sub: "#5 Repository of the Month, TypeScript",
+    href: "https://trendshift.io/repositories/25123",
+    badge: {
+      light: "https://trendshift.io/api/badge/trendshift/repositories/25123/monthly?language=TypeScript",
+      dark: "https://trendshift.io/api/badge/trendshift/repositories/25123/monthly?language=TypeScript",
+      alt: "agentmemory, #5 TypeScript Repository of the Month on Trendshift",
     },
   },
   {
@@ -134,14 +143,73 @@ export const QUOTES = [
   { name: "Pranav Prakash", context: "Two weeks of daily use", quote: "Been using it for 2 weeks, and I definitely see improvements.", href: PH },
 ];
 
+export interface Paper {
+  title: string;
+  authors: string;
+  venue: string;
+  date: string;
+  href: string;
+  cites: "LLM Wiki v2" | "agentmemory";
+  quote?: string;
+  note?: string;
+}
+
+export const RESEARCH: Paper[] = [
+  {
+    title: "Memory as Metabolism: A Design for Companion Knowledge Systems",
+    authors: "Stefan Miteski",
+    venue: "arXiv 2604.12034",
+    date: "Apr 2026",
+    href: "https://arxiv.org/abs/2604.12034",
+    cites: "LLM Wiki v2",
+    quote: "This is the closest practitioner-level prior art to the governance profile this paper proposes.",
+  },
+  {
+    title: "The Missing Knowledge Layer in Cognitive Architectures for AI Agents",
+    authors: "Michaël Roynard",
+    venue: "arXiv 2604.11364",
+    date: "Apr 2026",
+    href: "https://arxiv.org/abs/2604.11364",
+    cites: "LLM Wiki v2",
+    quote: "Closest informal statement of the four-layer thesis.",
+  },
+  {
+    title: "Managed Memory Is Still Not Governed State: Production Lessons from LLM Wiki v2",
+    authors: "Peter Bell",
+    venue: "Zenodo 19545947",
+    date: "Apr 2026",
+    href: "https://doi.org/10.5281/zenodo.19545947",
+    cites: "LLM Wiki v2",
+    quote: "Karpathy’s original pattern gives compiled memory. LLM Wiki v2 gives managed memory.",
+  },
+  {
+    title: "Beyond Memory: A Templated Substrate for Heterogeneous Collaborative Knowledge Work with LLM Agents",
+    authors: "Priscila Saboia Moreira, Christopher R. Sweet",
+    venue: "arXiv 2607.24759",
+    date: "May 2026",
+    href: "https://arxiv.org/abs/2607.24759",
+    cites: "LLM Wiki v2",
+    quote: "LLM Wiki v2 (rohitg00, 2026) adds confidence scoring and explicit supersession of stale claims by higher-confidence successor pages.",
+  },
+  {
+    title: "TOKI: A Bitemporal Operator Algebra for Contradiction Resolution in LLM-Agent Persistent Memory",
+    authors: "Ziming Wang",
+    venue: "arXiv 2606.06240",
+    date: "Jun 2026",
+    href: "https://arxiv.org/abs/2606.06240",
+    cites: "agentmemory",
+    note: "Cites agentmemory v0.9.17 and names it as a future integration for testing the paper’s contradiction predicates.",
+  },
+];
+
 export const FAQ = [
   {
     q: "What does agentmemory actually store?",
-    a: "Observations from your agent's sessions: the prompts you typed, the tools it called and a bounded copy of their output, and the session summaries built from them. Consolidation turns related observations into memories, lessons and graph facts. Everything lives in a data folder on your machine, for example ~/Library/Application Support/agentmemory on macOS.",
+    a: "Observations from your agent's sessions: the prompts you typed, the tools it called and a bounded copy of their output, and the session summaries built from them. Consolidation turns related observations into memories, lessons and graph facts. By default, records live in a data folder on your machine, for example ~/Library/Application Support/agentmemory on macOS.",
   },
   {
     q: "Does anything leave my machine?",
-    a: "Not by default. With no provider configured, recall runs on BM25 keyword search and nothing is sent anywhere. If you add an LLM or an embedding provider, agentmemory sends that provider the text it needs. Local embeddings send nothing. There is no telemetry.",
+    a: "Memory text stays local when you use local storage and keyless search or local models. Keyless search does not guarantee local storage: a configured remote Redis backend stores memory records remotely. Installation, updates and the first local model download need network access. Configured remote LLM or embedding services receive the text they process. AgentMemory starts its runtime with usage telemetry disabled.",
   },
   {
     q: "Do I need an API key?",

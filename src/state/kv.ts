@@ -1,7 +1,9 @@
 import type { IIIClient } from 'iii-sdk'
 import { withKeyedLock } from './keyed-mutex.js'
+import { decodeCursor, encodeCursor } from './list-query.js'
 import { resolveGraphScope, notifyGraphGenerationChange } from './graph-generation.js'
 import { ensureGraphConsistency, noteGraphSnapshotWrite } from './graph-consistency.js'
+import { withGraphIndexMutation, withGraphSnapshotIndexBarrier, withGraphSnapshotUnknownMutation } from './graph-retrieval-index.js'
 
 export type StateBackend = 'file' | 'redis'
 
@@ -103,6 +105,14 @@ export function orderLikeInsertion<T>(values: T[]): T[] {
     .map((entry) => entry.value)
 }
 
+export async function collectAll<T = unknown>(kv: StateKV, scope: string): Promise<T[]> {
+  if (typeof kv.iterate !== 'function') return kv.list<T>(scope)
+  const out: T[] = []
+  for await (const page of kv.iterate<T>(scope)) out.push(...page)
+  if (kv.backend === 'redis') return orderLikeInsertion(out)
+  return out
+}
+
 export class StateKV {
   readonly backend: StateBackend
 
@@ -122,71 +132,69 @@ export class StateKV {
     })
   }
 
-  async set<T = unknown>(scope: string, key: string, value: T): Promise<T> {
+  private async mutate<T>(
+    scope: string,
+    key: string,
+    operation: (resolvedScope: string) => Promise<T>,
+    knownValue?: { value: unknown },
+  ): Promise<T> {
     scope = await resolveGraphScope(this, scope)
     await ensureGraphConsistency(this, scope)
-    noteGraphSnapshotWrite(this, scope, key)
-    let result: T
-    try {
-      result = await this.sdk.trigger<{ scope: string; key: string; value: T }, T>({
-        function_id: 'state::set',
-        payload: { scope, key, value },
-      })
-    } finally {
+    const write = async () => {
       noteGraphSnapshotWrite(this, scope, key)
+      try {
+        return await operation(scope)
+      } finally {
+        noteGraphSnapshotWrite(this, scope, key)
+      }
     }
+    const orderedWrite = () => this.backend === 'redis'
+      ? withKeyedLock(`state-update:${scope}\u0000${key}`, write)
+      : write()
+    const result = await withGraphIndexMutation(this, scope, key, () =>
+      knownValue
+        ? withGraphSnapshotIndexBarrier(this, scope, key, knownValue.value, orderedWrite)
+        : withGraphSnapshotUnknownMutation(this, scope, key, orderedWrite),
+    )
     await notifyGraphGenerationChange(this, scope, key)
     return result
+  }
+
+  async set<T = unknown>(scope: string, key: string, value: T): Promise<T> {
+    return this.mutate(scope, key, (resolvedScope) =>
+      this.sdk.trigger<{ scope: string; key: string; value: T }, T>({
+        function_id: 'state::set',
+        payload: { scope: resolvedScope, key, value },
+      }),
+      { value },
+    )
   }
 
   async update<T = unknown>(scope: string, key: string, ops: UpdateOp[]): Promise<T> {
-    scope = await resolveGraphScope(this, scope)
-    await ensureGraphConsistency(this, scope)
-    noteGraphSnapshotWrite(this, scope, key)
-    if (this.backend === 'redis' && canApplyLocally(ops)) {
-      return withKeyedLock(`state-update:${scope}\u0000${key}`, async () => {
-        // Keep both halves on the scope resolved before acquiring the lock.
-        let result: UpdateResult
-        try {
-          const oldValue = await this.sdk.trigger<{ scope: string; key: string }, unknown>({
-            function_id: 'state::get', payload: { scope, key },
-          })
-          const newValue = applyUpdateOps(oldValue, ops)
-          await this.sdk.trigger({ function_id: 'state::set', payload: { scope, key, value: newValue } })
-          result = { old_value: oldValue, new_value: newValue, errors: [] }
-        } finally {
-          noteGraphSnapshotWrite(this, scope, key)
-        }
-        await notifyGraphGenerationChange(this, scope, key)
+    return this.mutate(scope, key, async (resolvedScope) => {
+      if (this.backend === 'redis' && canApplyLocally(ops)) {
+        const oldValue = await this.sdk.trigger<{ scope: string; key: string }, unknown>({
+          function_id: 'state::get', payload: { scope: resolvedScope, key },
+        })
+        const newValue = applyUpdateOps(oldValue, ops)
+        await this.sdk.trigger({ function_id: 'state::set', payload: { scope: resolvedScope, key, value: newValue } })
+        const result: UpdateResult = { old_value: oldValue, new_value: newValue, errors: [] }
         return result as T
-      })
-    }
-    let result: T
-    try {
-      result = await this.sdk.trigger<{ scope: string; key: string; ops: UpdateOp[] }, T>({
+      }
+      return this.sdk.trigger<{ scope: string; key: string; ops: UpdateOp[] }, T>({
         function_id: 'state::update',
-        payload: { scope, key, ops },
+        payload: { scope: resolvedScope, key, ops },
       })
-    } finally {
-      noteGraphSnapshotWrite(this, scope, key)
-    }
-    await notifyGraphGenerationChange(this, scope, key)
-    return result
+    })
   }
 
   async delete(scope: string, key: string): Promise<void> {
-    scope = await resolveGraphScope(this, scope)
-    await ensureGraphConsistency(this, scope)
-    noteGraphSnapshotWrite(this, scope, key)
-    try {
+    await this.mutate(scope, key, async (resolvedScope) => {
       await this.sdk.trigger<{ scope: string; key: string }, void>({
         function_id: 'state::delete',
-        payload: { scope, key },
+        payload: { scope: resolvedScope, key },
       })
-    } finally {
-      noteGraphSnapshotWrite(this, scope, key)
-    }
-    await notifyGraphGenerationChange(this, scope, key)
+    })
   }
 
   async list<T = unknown>(scope: string): Promise<T[]> {
@@ -198,5 +206,118 @@ export class StateKV {
     })
     if (this.backend !== 'redis' || !Array.isArray(values)) return values
     return orderLikeInsertion(values)
+  }
+
+  async listKeys(scope: string): Promise<string[]> {
+    scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    return this.rawListKeys(scope)
+  }
+
+  private async rawListKeys(scope: string): Promise<string[]> {
+    const result = await this.sdk.trigger<{ scope: string }, unknown>({
+      function_id: 'state::list_keys',
+      payload: { scope },
+    })
+    if (Array.isArray(result)) return result as string[]
+    const keys = (result as { keys?: unknown })?.keys
+    return Array.isArray(keys) ? (keys as string[]) : []
+  }
+
+  async getMany<T = unknown>(
+    scope: string,
+    keys: string[],
+    opts: { concurrency?: number } = {},
+  ): Promise<Array<T | null>> {
+    scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    const concurrency = Math.min(64, Math.max(1, Math.floor(opts.concurrency ?? 16)))
+    return this.rawGetMany<T>(scope, keys, concurrency)
+  }
+
+  private async rawGetMany<T = unknown>(
+    scope: string,
+    keys: string[],
+    concurrency: number,
+  ): Promise<Array<T | null>> {
+    const out: Array<T | null> = new Array(keys.length).fill(null)
+    for (let start = 0; start < keys.length; start += concurrency) {
+      const slice = keys.slice(start, start + concurrency)
+      const values = await Promise.all(
+        slice.map((key) =>
+          this.sdk.trigger<{ scope: string; key: string }, T | null>({
+            function_id: 'state::get',
+            payload: { scope, key },
+          }),
+        ),
+      )
+      for (let i = 0; i < slice.length; i++) out[start + i] = values[i] ?? null
+    }
+    return out
+  }
+
+  async *iterate<T = unknown>(
+    scope: string,
+    opts: { pageSize?: number } = {},
+  ): AsyncGenerator<T[]> {
+    const pageSize = Math.min(1000, Math.max(1, Math.floor(opts.pageSize ?? 200)))
+    scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    const keys = await this.rawListKeys(scope)
+    for (let start = 0; start < keys.length; start += pageSize) {
+      const values = await this.rawGetMany<T>(scope, keys.slice(start, start + pageSize), 16)
+      let page = values.filter((value): value is T => value !== null && value !== undefined)
+      if (this.backend === 'redis') page = orderLikeInsertion(page)
+      if (page.length) yield page
+    }
+  }
+
+  async listPage<T = unknown>(
+    scope: string,
+    opts: { limit: number; cursor?: string; order?: 'desc' | 'asc' },
+  ): Promise<{ items: T[]; nextCursor?: string; total: number }> {
+    const limit = Math.max(1, Math.floor(opts.limit))
+    const direction = opts.order === 'asc' ? 1 : -1
+    scope = await resolveGraphScope(this, scope)
+    await ensureGraphConsistency(this, scope)
+    const keys = await this.rawListKeys(scope)
+    const ranked = keys.map((key) => ({ key, at: generatedIdTime(key) }))
+    const rank = (entry: { key: string; at: number | null }) =>
+      entry.at === null ? Number.NEGATIVE_INFINITY : entry.at
+    const compare = (a: { key: string; at: number | null }, b: { key: string; at: number | null }) => {
+      if (rank(a) !== rank(b)) return (rank(a) - rank(b)) * direction
+      return (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) * direction
+    }
+    ranked.sort(compare)
+    const position = decodeCursor(opts.cursor)
+    let start = 0
+    if (position?.key) {
+      const at = generatedIdTime(position.key)
+      start = ranked.findIndex((entry) => compare(entry, { key: position.key!, at }) > 0)
+      if (start < 0) start = ranked.length
+    }
+    const pageKeys = ranked.slice(start, start + limit).map((entry) => entry.key)
+    const values = await this.rawGetMany<T>(scope, pageKeys, 16)
+    const items = values.filter((value): value is T => value !== null && value !== undefined)
+    const hasMore = start + pageKeys.length < ranked.length
+    return {
+      items,
+      total: ranked.length,
+      ...(hasMore && pageKeys.length
+        ? { nextCursor: encodeCursor({ key: pageKeys[pageKeys.length - 1]! }) }
+        : {}),
+    }
+  }
+
+  async listGroups(): Promise<string[]> {
+    const result = await this.sdk.trigger<Record<string, never>, { groups?: unknown } | null>({
+      function_id: 'state::list_groups',
+      payload: {},
+    })
+    const groups = result?.groups
+    if (!Array.isArray(groups) || !groups.every((group) => typeof group === 'string')) {
+      throw new Error('state::list_groups returned an unexpected shape')
+    }
+    return groups
   }
 }

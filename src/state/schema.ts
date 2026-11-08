@@ -6,6 +6,7 @@ export const KV = {
   observations: (sessionId: string) => `mem:obs:${sessionId}`,
   memories: "mem:memories",
   summaries: "mem:summaries",
+  summaryRepairs: "mem:summary:repairs",
   config: "mem:config",
   metrics: "mem:metrics",
   health: "mem:health",
@@ -23,6 +24,10 @@ export const KV = {
   graphEdgeKey: "mem:graph:edge-key",
   graphNodeDegree: "mem:graph:node-degree",
   graphMembership: "mem:graph:membership",
+  graphRetrievalControl: "mem:graph:retrieval-control",
+  graphRetrievalData: "mem:graph:retrieval-data",
+  graphIndexMigration: "mem:graph:index-migration",
+  graphIndexManifest: "mem:graph:index-manifest",
   semantic: "mem:semantic",
   procedural: "mem:procedural",
   teamShared: (teamId: string) => `mem:team:${teamId}:shared`,
@@ -63,11 +68,6 @@ export const KV = {
   captureInbox: "mem:capture:inbox",
   captureEvents: (shard: string) => `mem:capture:events:${shard}`,
   capturePrompts: "mem:capture:prompts",
-} as const;
-
-export const STREAM = {
-  name: "mem-live",
-  viewerGroup: "viewer",
 } as const;
 
 export function generateId(prefix: string): string {

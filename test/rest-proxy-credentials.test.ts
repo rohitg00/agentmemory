@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createServer, type Server } from "node:http";
 import { resetHandleForTests, resolveHandle, setLivezProbe } from "../src/mcp/rest-proxy.js";
 
 describe("MCP proxy credential origins", () => {
@@ -113,6 +114,48 @@ describe("MCP proxy credential origins", () => {
     if (handle.mode !== "proxy") throw new Error("expected proxy mode");
     await handle.call("/agentmemory/remember", { method: "POST", body: '{"content":"synthetic"}', redirect: "follow" });
     expect(redirects).toEqual(["error", "error"]);
+  });
+
+  it.each(["probe", "write"])("does not send local credentials or data to a redirected %s destination", async (phase) => {
+    const redirected: string[] = [];
+    const authorization: Array<string | undefined> = [];
+    const destination = createServer((req, res) => {
+      redirected.push(req.url ?? "");
+      res.end("{}");
+    });
+    const listen = async (server: Server) => {
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+      const address = server.address();
+      if (!address || typeof address === "string") throw new Error("missing server address");
+      return `http://127.0.0.1:${address.port}`;
+    };
+    const destinationUrl = await listen(destination);
+    const origin = createServer((req, res) => {
+      authorization.push(req.headers.authorization);
+      if (phase === "write" && req.url === "/agentmemory/livez") res.end("{}");
+      else {
+        res.writeHead(307, { location: `${destinationUrl}/redirected` });
+        res.end();
+      }
+    });
+    try {
+      vi.stubEnv("AGENTMEMORY_URL", await listen(origin));
+      vi.stubEnv("AGENTMEMORY_SECRET", "synthetic-local-secret");
+      const handle = await resolveHandle();
+      if (phase === "probe") expect(handle.mode).toBe("local");
+      else {
+        if (handle.mode !== "proxy") throw new Error("expected proxy mode");
+        await expect(handle.call("/agentmemory/remember", {
+          method: "POST", body: '{"content":"synthetic"}', redirect: "follow",
+        })).rejects.toThrow();
+      }
+      expect(authorization).toEqual(Array(phase === "probe" ? 1 : 2).fill("Bearer synthetic-local-secret"));
+      expect(redirected).toEqual([]);
+    } finally {
+      origin.closeAllConnections();
+      destination.closeAllConnections();
+      await Promise.all([origin, destination].map(server => new Promise<void>(resolve => server.close(() => resolve()))));
+    }
   });
 
   it.each([

@@ -139,6 +139,16 @@ describe("hydrateProcessEnvFromFile", () => {
     expect(process.env["HYDRATE_WINS"]).toBe("from-process");
   });
 
+  it("returns process.env as it was before the file was copied in", async () => {
+    writeEnv("HYDRATE_ONLY=from-file\nHYDRATE_WINS=from-file");
+    process.env["HYDRATE_WINS"] = "from-process";
+    const cfg = await freshConfig();
+    const before = cfg.hydrateProcessEnvFromFile();
+    expect(process.env["HYDRATE_ONLY"]).toBe("from-file");
+    expect(before["HYDRATE_ONLY"]).toBeUndefined();
+    expect(before["HYDRATE_WINS"]).toBe("from-process");
+  });
+
   it("exposes a .env-only key via getEnvVar and, after hydrate, via raw process.env", async () => {
     writeEnv("HYDRATE_ONLY=from-file");
     const cfg = await freshConfig();

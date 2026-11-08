@@ -5,6 +5,7 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerActionsFunction } from "../src/functions/actions.js";
+import { KV } from "../src/state/schema.js";
 import type { Action, ActionEdge } from "../src/types.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
 
@@ -390,6 +391,52 @@ describe("Actions Functions", () => {
 
       expect(result.success).toBe(true);
       expect(result.actions.length).toBe(2);
+    });
+
+    it("preserves direct function limits above the REST page cap", async () => {
+      const now = new Date().toISOString();
+      for (let i = 0; i < 501; i++) {
+        const action = {
+          id: `act_limit_${i}`,
+          title: `Limit action ${i}`,
+          status: "pending",
+          priority: 5,
+          createdAt: now,
+          updatedAt: now,
+          createdBy: "test",
+          tags: [],
+          sourceObservationIds: [],
+          sourceMemoryIds: [],
+        } as Action;
+        await kv.set(KV.actions, action.id, action);
+      }
+
+      const result = (await sdk.trigger("mem::action-list", { limit: 502 })) as {
+        actions: Action[];
+      };
+
+      expect(result.actions).toHaveLength(502);
+    });
+
+    it("pages actions beyond the first 50 rows", async () => {
+      for (let i = 0; i < 55; i++) {
+        await sdk.trigger("mem::action-create", { title: `Page action ${i}` });
+      }
+
+      const first = (await sdk.trigger("mem::action-list", { limit: 50 })) as {
+        actions: Action[];
+        nextCursor: string | null;
+      };
+      expect(first.actions).toHaveLength(50);
+      expect(first.nextCursor).toEqual(expect.any(String));
+
+      const second = (await sdk.trigger("mem::action-list", {
+        limit: 50,
+        cursor: first.nextCursor,
+      })) as { actions: Action[]; nextCursor: string | null };
+      expect(second.actions).toHaveLength(8);
+      expect(second.nextCursor).toBeNull();
+      expect(new Set([...first.actions, ...second.actions].map((action) => action.id)).size).toBe(58);
     });
   });
 

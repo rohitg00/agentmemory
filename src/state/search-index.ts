@@ -9,7 +9,12 @@ interface IndexEntry {
   sessionId: string;
   termCount: number;
   layer: SearchResultLayer;
+  timestamp?: string;
 }
+
+const USER_PROMPT_TERM_CAP = 2000;
+const ASSISTANT_RESPONSE_TERM_CAP = 1000;
+const TOOL_OUTPUT_TERM_CAP = 1000;
 
 export interface SearchIndexRevision {
   isCurrent(): boolean;
@@ -45,6 +50,7 @@ export class SearchIndex {
       sessionId: obs.sessionId,
       termCount,
       layer,
+      timestamp: obs.timestamp,
     });
     this.docTermCounts.set(obs.id, termFreq);
     this.totalDocLength += termCount;
@@ -111,6 +117,17 @@ export class SearchIndex {
 
   layerOf(id: string): SearchResultLayer | undefined {
     return this.entries.get(id)?.layer;
+  }
+
+  countMissingDocuments(hasDocument: (id: string) => boolean, since?: string | null, activeIds?: ReadonlySet<string>): number {
+    const cutoff = typeof since === "string" ? Date.parse(since) : Number.NaN;
+    let missing = 0;
+    for (const entry of this.entries.values()) {
+      if (entry.layer !== "observation" && entry.layer !== "memory") continue;
+      if (Number.isFinite(cutoff) && !(Date.parse(entry.timestamp ?? "") > cutoff) && !activeIds?.has(entry.obsId)) continue;
+      if (!hasDocument(entry.obsId)) missing++;
+    }
+    return missing;
   }
 
   observationCountsBySession(): Map<string, number> {
@@ -337,6 +354,20 @@ export class SearchIndex {
       ...obs.files,
       obs.type,
     ];
+    if (obs.source?.userPrompt) {
+      parts.push(obs.source.userPrompt.slice(0, USER_PROMPT_TERM_CAP));
+    }
+    if (obs.source?.assistantResponse) {
+      parts.push(
+        obs.source.assistantResponse.slice(0, ASSISTANT_RESPONSE_TERM_CAP),
+      );
+    }
+    if (
+      obs.source?.toolName === "conversation" &&
+      typeof obs.source.toolOutput === "string"
+    ) {
+      parts.push(obs.source.toolOutput.slice(0, TOOL_OUTPUT_TERM_CAP));
+    }
     return this.tokenize(parts.join(" ").toLowerCase());
   }
 

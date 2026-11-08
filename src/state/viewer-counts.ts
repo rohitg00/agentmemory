@@ -1,5 +1,7 @@
 import type { StateKV } from "./kv.js";
 import { KV } from "./schema.js";
+import { getGraphGeneration, pinGraphStateGeneration } from "./graph-generation.js";
+import { getGraphIndexStatus } from "./graph-retrieval-index.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
 import type {
   GraphSnapshot,
@@ -19,14 +21,13 @@ export interface ViewerCounts {
   crystals: number;
   semantic: number;
   procedural: number;
-  graphNodes: number;
-  graphEdges: number;
+  graphNodes: number | null;
+  graphEdges: number | null;
   updatedAt: string;
 }
 
 export type CountedKind = "lessons" | "actions" | "crystals" | "semantic" | "procedural";
 
-const GRAPH_SNAPSHOT_KEY = "current";
 const EMIT_DELAY_MS = 500;
 const MAX_LOAD_ATTEMPTS = 2;
 
@@ -59,8 +60,31 @@ async function listOrEmpty<T>(kv: StateKV, scope: string): Promise<T[]> {
   return Array.isArray(rows) ? rows : [];
 }
 
+export async function readViewerGraphMetadata(kv: StateKV): Promise<{
+  generation: string | null;
+  stats: GraphSnapshot["stats"] | null;
+  updatedAt: string | null;
+  graphIndex: { status: string; incomplete: boolean };
+}> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const generation = await getGraphGeneration(kv);
+    const control = await getGraphIndexStatus(pinGraphStateGeneration(kv, generation));
+    if (generation !== await getGraphGeneration(kv)) continue;
+    const ready = control?.status === "ready" && !control.pending && !control.batchPending;
+    return {
+      generation,
+      stats: ready ? { totalNodes: control.nodes, totalEdges: control.edges,
+        nodesByType: control.nodesByType, edgesByType: control.edgesByType } : null,
+      updatedAt: control?.updatedAt ?? null,
+      graphIndex: { status: control?.pending || control?.batchPending ? "dirty" : control?.status ?? "needs-migration",
+        incomplete: (control?.incompleteRecords ?? 0) > 0 },
+    };
+  }
+  throw new Error("Graph generation changed while reading index metadata");
+}
+
 async function readCounts(kv: StateKV): Promise<ViewerCounts> {
-  const [sessions, memories, lessons, actions, crystals, semantic, procedural, snapshot] =
+  const [sessions, memories, lessons, actions, crystals, semantic, procedural, graph] =
     await Promise.all([
       listOrEmpty<Session>(kv, KV.sessions),
       listOrEmpty<Memory>(kv, KV.memories),
@@ -69,7 +93,7 @@ async function readCounts(kv: StateKV): Promise<ViewerCounts> {
       listOrEmpty<unknown>(kv, KV.crystals),
       listOrEmpty<unknown>(kv, KV.semantic),
       listOrEmpty<unknown>(kv, KV.procedural),
-      kv.get<GraphSnapshot>(KV.graphSnapshot, GRAPH_SNAPSHOT_KEY).catch(() => null),
+      readViewerGraphMetadata(kv).catch(() => null),
     ]);
   const scopedSessions = sessions.filter(inAgentScope);
   const scopedMemories = memories.filter(inAgentScope);
@@ -84,14 +108,17 @@ async function readCounts(kv: StateKV): Promise<ViewerCounts> {
     crystals: crystals.length,
     semantic: semantic.length,
     procedural: procedural.length,
-    graphNodes: snapshot?.stats?.totalNodes ?? 0,
-    graphEdges: snapshot?.stats?.totalEdges ?? 0,
+    graphNodes: graph?.stats?.totalNodes ?? null,
+    graphEdges: graph?.stats?.totalEdges ?? null,
     updatedAt: new Date().toISOString(),
   };
 }
 
 export async function getViewerCounts(kv: StateKV): Promise<ViewerCounts> {
-  if (counts) return { ...counts };
+  if (counts) {
+    noteGraphStats((await readViewerGraphMetadata(kv).catch(() => null))?.stats);
+    if (counts) return { ...counts };
+  }
   if (!loading) {
     loading = (async () => {
       let result = await readCounts(kv);
@@ -174,11 +201,11 @@ export function noteRowChange(kind: CountedKind, before: unknown, after: unknown
 }
 
 export function noteGraphStats(stats: GraphSnapshot["stats"] | null | undefined): void {
-  if (!stats) return;
   applyDelta((c) => {
-    if (c.graphNodes === stats.totalNodes && c.graphEdges === stats.totalEdges) return false;
-    c.graphNodes = stats.totalNodes;
-    c.graphEdges = stats.totalEdges;
+    const nodes = stats?.totalNodes ?? null, edges = stats?.totalEdges ?? null;
+    if (c.graphNodes === nodes && c.graphEdges === edges) return false;
+    c.graphNodes = nodes;
+    c.graphEdges = edges;
     return true;
   });
 }

@@ -182,6 +182,7 @@ function HandoffScene() {
         </L>
       </Win>
       <div className={`${s.step} ${s.night}`} style={st(3)}>
+        <span className="flow-arrow" aria-hidden="true" />
         <span className="mono">overnight</span>
       </div>
       <Win title="tuesday 09:12" logo={LOGO.claude}>

@@ -29,9 +29,7 @@ function Card({ agent, index }: { agent: Agent; index: number }) {
           {agent.detail !== LABEL[agent.support] ? <span className={s.detail}>{agent.detail}</span> : <span />}
           {cmd ? (
             <CopyButton text={cmd} label={`Copy ${cmd}`} className={s.cmd}>
-              <code>
-                agentmemory connect <span className={s.slug}>{agent.connect}</span>
-              </code>
+              <code>{cmd}</code>
             </CopyButton>
           ) : (
             <span className={`mono ${s.cmdNone}`}>add the MCP block below</span>
@@ -46,7 +44,7 @@ export function Agents() {
   const plugins = AGENTS.filter((a) => a.support === "plugin");
   const rest = AGENTS.filter((a) => a.support !== "plugin");
   const groups = [
-    { title: "Native plugins", note: "Hooks capture automatically. Nothing to remember to call.", items: plugins, offset: 0 },
+    { title: "Native plugins", note: "Capture requires an installed native plugin or hooks. Use --with-hooks where hook capture is opt-in.", items: plugins, offset: 0 },
     { title: "MCP and REST", note: "Any MCP client gets the memory tools. Anything that speaks HTTP can use the REST API.", items: rest, offset: plugins.length },
   ];
   return (
@@ -58,8 +56,7 @@ export function Agents() {
             {AGENTS.length} agents. One memory.
           </h2>
           <p>
-            Switch agents mid-project and the memory comes with you. Every agent below reads and writes the same store on
-            your machine.
+            Switch agents mid-project and the memory comes with you. Every agent below reads and writes the same memory store.
           </p>
         </div>
         {groups.map((g) => (

@@ -146,12 +146,12 @@ describe("search indexing async write ownership", () => {
     getSearchIndex().add(observation("changed", "newer"));
     getSearchIndex().remove("deleted");
     const result = await backfillVectorBacklog(rebuilt.vectorJobs, { pauseMs: 0 });
-    expect(result).toEqual({ added: 0, failed: 0, remaining: 0, complete: true });
-    expect(getPendingVectorBackfillCount()).toBe(0);
+    expect(result).toEqual({ added: 0, failed: 0, remaining: 1, complete: false });
+    expect(getPendingVectorBackfillCount()).toBe(1);
     expect(embedding.embedBatch).not.toHaveBeenCalled();
   });
 
-  it("completes an entirely superseded in-flight backlog even when its provider rejects", async () => {
+  it("retains edited rows without replacement vectors when a superseded in-flight provider rejects", async () => {
     getSearchIndex().add(observation("a")); getSearchIndex().add(observation("b"));
     const pending = deferred<Float32Array[]>();
     const entered = deferred<void>();
@@ -161,8 +161,8 @@ describe("search indexing async write ownership", () => {
     await entered.promise;
     getSearchIndex().remove("a"); getSearchIndex().add(observation("b", "newer"));
     pending.reject(new Error("provider offline"));
-    expect(await backlog).toEqual({ added: 0, failed: 0, remaining: 0, complete: true });
-    expect(getPendingVectorBackfillCount()).toBe(0);
+    expect(await backlog).toEqual({ added: 0, failed: 0, remaining: 1, complete: false });
+    expect(getPendingVectorBackfillCount()).toBe(1);
     expect(vectors.size).toBe(0);
     jobs.forEach((j) => j.revision.release());
   });

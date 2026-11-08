@@ -7,7 +7,7 @@ import type {
   MemoryProvider,
 } from "../types.js";
 import { KV, generateId, fingerprintId } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
 
@@ -243,7 +243,7 @@ export function registerSkillExtractFunctions(
   sdk.registerFunction("mem::skill-list", 
     async (data: { limit?: number }) => {
       const limit = data?.limit ?? 50;
-      const skills = await kv.list<ProceduralMemory>(KV.procedural);
+      const skills = await collectAll<ProceduralMemory>(kv, KV.procedural);
       const sorted = skills.sort((a, b) => b.strength - a.strength);
       return {
         success: true,
@@ -263,7 +263,7 @@ export function registerSkillExtractFunctions(
       const query = data.query.toLowerCase();
       const terms = query.split(/\s+/).filter((t) => t.length > 2);
 
-      const skills = await kv.list<ProceduralMemory>(KV.procedural);
+      const skills = await collectAll<ProceduralMemory>(kv, KV.procedural);
 
       const scored = skills
         .map((skill) => {

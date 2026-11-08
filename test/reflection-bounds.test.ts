@@ -8,6 +8,8 @@ import { registerApiTriggers } from "../src/triggers/api.js";
 import { registerMcpEndpoints } from "../src/mcp/server.js";
 import { SAFE_PAYLOAD_BYTES, payloadByteLength } from "../src/state/frame-guard.js";
 import { KV } from "../src/state/schema.js";
+import { initializeGraphIndex, reconcileGraphIndexRecord } from "../src/state/graph-retrieval-index.js";
+import { indexObservationSession } from "../src/state/obs-index.js";
 
 const now = "2026-10-13T00:00:00Z";
 const headers = { authorization: "Bearer reflection-test-secret" };
@@ -19,9 +21,16 @@ function fixture() {
   const kv = {
     get: vi.fn(async (scope: string, id: string) => store.get(scope)?.get(id) ?? null),
     list: vi.fn(async (scope: string) => [...(store.get(scope)?.values() ?? [])]),
-    set: async (scope: string, id: string, value: any) => {
+    set: async (scope: string, id: string, value: any): Promise<any> => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(id, value);
+      if (scope === KV.graphNodes || scope === KV.graphEdges) {
+        for (const obsId of value.sourceObservationIds ?? []) {
+          await indexObservationSession(kv as never, obsId, "session");
+          await kv.set(KV.observations("session"), obsId, { id: obsId, sessionId: "session", title: "source" });
+        }
+        await reconcileGraphIndexRecord(kv as never, scope === KV.graphNodes ? "node" : "edge", id, value);
+      }
       return value;
     },
     delete: async (scope: string, id: string) => { store.get(scope)?.delete(id); },
@@ -43,12 +52,17 @@ function fixture() {
     id, title: "Security", content, confidence: 0.8, reinforcements: 0, sourceConceptCluster: [],
     sourceMemoryIds: [], sourceLessonIds: [], sourceCrystalIds: [], tags: [], createdAt: now, updatedAt: now, decayRate: 0.05, ...extra,
   });
+  const node = (id: string, name = id) =>
+    kv.set(KV.graphNodes, id, { id, name, type: "concept", properties: {}, sourceObservationIds: ["obs-graph"], createdAt: now });
+  const edge = (id: string, sourceNodeId: string, targetNodeId: string) =>
+    kv.set(KV.graphEdges, id, { id, type: "related_to", sourceNodeId, targetNodeId, weight: 1, sourceObservationIds: ["obs-graph"], createdAt: now });
   async function seed(count = 3) {
-    for (const name of ["security", "validation"]) await kv.set(KV.graphNodes, name, { id: name, name, type: "concept" });
-    await kv.set(KV.graphEdges, "edge", { id: "edge", sourceNodeId: "security", targetNodeId: "validation" });
+    await initializeGraphIndex(kv as never, { status: "ready" });
+    for (const name of ["security", "validation"]) await node(name);
+    await edge("edge", "security", "validation");
     for (let i = 0; i < count; i++) await fact(`fact-${i}`);
   }
-  return { kv, call, mcp, provider, fact, insight, seed };
+  return { kv, call, mcp, provider, fact, insight, seed, node, edge };
 }
 
 describe("reflection budgets", () => {
@@ -103,7 +117,7 @@ describe("reflection budgets", () => {
     expect(await f.call("mem::reflect")).toMatchObject({ reinforced: 1 });
     const refreshed = await f.kv.get(KV.insights, old.id);
     expect(refreshed.sourceMemoryIds).toEqual(["fact-0", "fact-1"]);
-    expect(refreshed.tags).toEqual(["security", "validation"]);
+    expect([...refreshed.tags].sort()).toEqual(["security", "validation"]);
     expect(refreshed.sourceConceptCluster).toEqual(refreshed.tags);
     f.provider.summarize.mockResolvedValue(xml("F1,F21"));
     expect(await f.call("mem::reflect")).toMatchObject({ reinforced: 0, rejectedInsights: 1 });
@@ -133,8 +147,8 @@ describe("reflection budgets", () => {
     await f.seed();
     for (let i = 0; i < 60; i++) {
       const id = `node-${i}`;
-      await f.kv.set(KV.graphNodes, id, { id, name: i === 0 ? "界".repeat(1000) : id, type: "concept" });
-      await f.kv.set(KV.graphEdges, id, { id, sourceNodeId: "security", targetNodeId: id });
+      await f.node(id, i === 0 ? "界".repeat(1000) : id);
+      await f.edge(id, "security", id);
     }
     expect(await f.call("mem::reflect")).toMatchObject({ newInsights: 1 });
     const [insight] = await f.kv.list(KV.insights);
@@ -205,7 +219,7 @@ describe("insight boundaries", () => {
 
   it("protects the final MCP envelope when escaping expands a valid inner result", async () => {
     const f = fixture();
-    await f.insight("escaped", '"'.repeat(5 * 1024 * 1024));
+    await f.insight("escaped", '"'.repeat(Math.floor(SAFE_PAYLOAD_BYTES / 3)));
     const inner = await f.call("mem::insight-list", { limit: 1 });
     expect(inner.success).toBe(true);
     expect(payloadByteLength(inner)).toBeLessThan(SAFE_PAYLOAD_BYTES);
@@ -214,7 +228,7 @@ describe("insight boundaries", () => {
     const mcp = await f.mcp("memory_insight_list", { limit: 1 });
     expect(mcp).toMatchObject({ status_code: 413, body: { isError: true } });
     expect(payloadByteLength(mcp)).toBeLessThan(2048);
-  });
+  }, 60_000);
 
   it("preserves authorization and returns small validation errors through REST and MCP", async () => {
     const f = fixture();

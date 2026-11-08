@@ -1,10 +1,10 @@
 import type { StateKV } from "../state/kv.js";
-import { pinGraphState } from "../state/graph-generation.js";
+import { createGraphIndexReader, getGraphIndexStatus } from "../state/graph-retrieval-index.js";
+import { lookupObservationSession } from "../state/obs-index.js";
 import { KV } from "../state/schema.js";
 import type { CompressedObservation, GraphEdge, GraphNode, Memory, Session } from "../types.js";
 import { getSearchIndex } from "./search.js";
 
-const EDGE_SCAN_BUDGET_MS = 6000;
 const MAX_RELATIONS = 200;
 const MAX_OBSERVATIONS = 40;
 const MAX_MEMORIES = 25;
@@ -23,8 +23,12 @@ export type GraphNodeDetail = {
   degree: number;
   relations: GraphNodeRelation[] | null;
   relationsTotal: number;
+  relationsTotalExact: boolean;
+  relationsCursor: string | null;
+  relationsTruncated: boolean;
   relationsWarning?: string;
   provenance: {
+    truncated: boolean;
     observationIds: string[];
     observations: Array<{ id: string; sessionId: string; title?: string; type?: string; timestamp?: string }>;
     sessions: Array<{ id: string; project?: string; agentId?: string; status?: string; startedAt?: string }>;
@@ -34,128 +38,109 @@ export type GraphNodeDetail = {
   };
 };
 
-function withBudget<T>(p: Promise<T>, ms: number): Promise<T | null> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(null), ms);
-    p.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      () => { clearTimeout(timer); resolve(null); },
-    );
-  });
-}
+export type GraphNodeUnavailable = { graphIndex: { status: string }; error: string };
 
 function matchesName(values: string[] | undefined, name: string): boolean {
-  if (!values || values.length === 0) return false;
   const lower = name.toLowerCase();
-  return values.some((v) => {
-    const s = String(v).toLowerCase();
-    return s === lower || s.endsWith("/" + lower) || lower.endsWith("/" + s);
+  return (values ?? []).some((value) => {
+    const text = String(value).toLowerCase();
+    return text === lower || text.endsWith("/" + lower) || lower.endsWith("/" + text);
   });
 }
 
-export async function describeGraphNode(kv: StateKV, nodeId: string): Promise<GraphNodeDetail | null> {
-  kv = await pinGraphState(kv);
-  const node = await kv.get<GraphNode>(KV.graphNodes, nodeId);
-  if (!node) return null;
-
-  const edges = await withBudget(kv.list<GraphEdge>(KV.graphEdges), EDGE_SCAN_BUDGET_MS);
-  let relations: GraphNodeRelation[] | null = null;
-  let relationsTotal = 0;
-  let relationsWarning: string | undefined;
-  const edgeObsIds: string[] = [];
-  if (edges) {
-    const touching = edges.filter(
-      (e) => !e.stale && e.isLatest !== false && (e.sourceNodeId === nodeId || e.targetNodeId === nodeId),
-    );
-    relationsTotal = touching.length;
-    touching.sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
-    const kept = touching.slice(0, MAX_RELATIONS);
-    const neighborIds = [...new Set(kept.map((e) => (e.sourceNodeId === nodeId ? e.targetNodeId : e.sourceNodeId)))];
-    const neighbors = new Map<string, GraphNode | null>();
-    await Promise.all(
-      neighborIds.map(async (id) => neighbors.set(id, await kv.get<GraphNode>(KV.graphNodes, id).catch(() => null))),
-    );
-    relations = kept.map((e) => {
-      const out = e.sourceNodeId === nodeId;
-      const n = neighbors.get(out ? e.targetNodeId : e.sourceNodeId) ?? null;
-      for (const id of e.sourceObservationIds ?? []) edgeObsIds.push(id);
-      return {
-        edgeId: e.id,
-        type: e.type,
-        direction: out ? "out" : "in",
-        weight: typeof e.weight === "number" ? e.weight : 0.5,
-        observationCount: (e.sourceObservationIds ?? []).length,
-        neighbor: n ? { id: n.id, name: n.name, type: n.type } : null,
-      };
-    });
-  } else {
-    relationsWarning = "Listing relations took too long on this graph; showing the node without them.";
+export async function describeGraphNode(
+  kv: StateKV,
+  nodeId: string,
+  options: { cursor?: string; limit?: number } = {},
+): Promise<GraphNodeDetail | GraphNodeUnavailable | null> {
+  const reader = await createGraphIndexReader(kv);
+  if (!reader) return { graphIndex: (await getGraphIndexStatus(kv)) ?? { status: "needs-migration" }, error: "Graph index is unavailable; run agentmemory graph-index status." };
+  const node = await reader.getNode(nodeId);
+  if (!node || node.stale) return null;
+  const limit = Math.max(1, Math.min(MAX_RELATIONS, options.limit ?? MAX_RELATIONS));
+  const page = await reader.posting("adjacency", nodeId, { cursor: options.cursor, limit });
+  const edges: GraphEdge[] = [];
+  for (const id of page.ids) {
+    const edge = await reader.getEdge(id);
+    if (edge && !edge.stale && edge.isLatest !== false && (edge.sourceNodeId === nodeId || edge.targetNodeId === nodeId)) edges.push(edge);
+  }
+  edges.sort((a, b) => b.weight - a.weight || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const relations: GraphNodeRelation[] = [];
+  const sourceIds = new Set(node.sourceObservationIds ?? []);
+  for (const edge of edges) {
+    const out = edge.sourceNodeId === nodeId;
+    const neighbor = await reader.getNode(out ? edge.targetNodeId : edge.sourceNodeId);
+    if (!neighbor || neighbor.stale) continue;
+    for (const id of edge.sourceObservationIds ?? []) {
+      if (sourceIds.size >= MAX_OBSERVATIONS) break;
+      sourceIds.add(id);
+    }
+    relations.push({ edgeId: edge.id, type: edge.type, direction: out ? "out" : "in", weight: edge.weight,
+      observationCount: edge.sourceObservationIds?.length ?? 0,
+      neighbor: { id: neighbor.id, name: neighbor.name, type: neighbor.type } });
   }
 
-  const storedDegree = await kv.get<number>(KV.graphNodeDegree, nodeId).catch(() => null);
-  const degree = typeof storedDegree === "number" ? storedDegree : relationsTotal;
-
-  const observationIds = [...new Set([...(node.sourceObservationIds ?? []), ...edgeObsIds])];
   const index = getSearchIndex();
+  const observationIds: string[] = [];
   const observations: GraphNodeDetail["provenance"]["observations"] = [];
   const sessionIds = new Set<string>();
-  for (const id of observationIds.slice(0, MAX_OBSERVATIONS)) {
-    const sessionId = index.sessionOf(id);
-    if (!sessionId || sessionId === "lesson" || id.startsWith("mem_")) continue;
-    sessionIds.add(sessionId);
-    const obs = await kv.get<CompressedObservation>(KV.observations(sessionId), id).catch(() => null);
-    observations.push({
-      id,
-      sessionId,
-      ...(obs?.title ? { title: obs.title } : {}),
-      ...(obs?.type ? { type: obs.type } : {}),
-      ...(obs?.timestamp ? { timestamp: obs.timestamp } : {}),
-    });
-  }
-
-  const sessions: GraphNodeDetail["provenance"]["sessions"] = [];
-  for (const sid of sessionIds) {
-    const s = await kv.get<Session>(KV.sessions, sid).catch(() => null);
-    sessions.push({
-      id: sid,
-      ...(s?.project ? { project: s.project } : {}),
-      ...(s?.agentId ? { agentId: s.agentId } : {}),
-      ...(s?.status ? { status: s.status } : {}),
-      ...(s?.startedAt ? { startedAt: s.startedAt } : {}),
-    });
-  }
-  const projects = [...new Set(sessions.map((s) => s.project).filter((p): p is string => !!p))].sort();
-
-  const obsSet = new Set(observationIds);
   const memories: GraphNodeDetail["provenance"]["memories"] = [];
-  const allMemories = await kv.list<Memory>(KV.memories).catch(() => [] as Memory[]);
-  for (const m of allMemories) {
-    if (!m || m.isLatest === false) continue;
-    const viaObs = (m.sourceObservationIds ?? []).some((id) => obsSet.has(id));
-    const viaName = !viaObs && (matchesName(m.concepts, node.name) || matchesName(m.files, node.name));
-    if (!viaObs && !viaName) continue;
-    memories.push({
-      id: m.id,
-      ...(m.title ? { title: m.title } : {}),
-      type: m.type,
-      ...(m.project ? { project: m.project } : {}),
-      via: viaObs ? "observation" : "name",
-    });
+  const read = reader.read.bind(reader);
+  for (const id of [...sourceIds].slice(0, MAX_OBSERVATIONS)) {
+    const layer = index.layerOf(id);
+    if (layer === "lesson" || layer === "insight") continue;
+    if (layer !== "memory") {
+      const sessionId = index.sessionOf(id) ?? await lookupObservationSession({ get: read } as StateKV, id);
+      if (sessionId) {
+        const obs = await read<CompressedObservation>(KV.observations(sessionId), id);
+        if (obs?.id === id && obs.sessionId === sessionId) {
+          observationIds.push(id);
+          sessionIds.add(sessionId);
+          observations.push({ id, sessionId, title: obs.title, type: obs.type, timestamp: obs.timestamp });
+          continue;
+        }
+        if (layer === "observation") continue;
+      }
+    }
+    const memory = await read<Memory>(KV.memories, id);
+    if (memory?.isLatest !== false && memory?.id === id) {
+      observationIds.push(id);
+      memories.push({ id, title: memory.title, type: memory.type, project: memory.project, via: "observation" });
+    }
+  }
+  if ((node.sourceObservationIds?.length ?? 0) > 0 && !observationIds.some((id) => node.sourceObservationIds.includes(id))) {
+    if (node.sourceObservationIds.length > MAX_OBSERVATIONS || reader.exhausted || node.indexIncomplete) {
+      return { graphIndex: { status: "partial" }, error: "Node provenance could not be verified within the read budget." };
+    }
+    return null;
+  }
+  const sessions: GraphNodeDetail["provenance"]["sessions"] = [];
+  for (const id of sessionIds) {
+    const session = await reader.read<Session>(KV.sessions, id);
+    if (session) sessions.push({ id, project: session.project, agentId: session.agentId, status: session.status, startedAt: session.startedAt });
+  }
+  const projects = [...new Set(sessions.map((session) => session.project).filter((project): project is string => !!project))].sort();
+  const sourceSet = new Set(observationIds);
+  const basename = node.name.split(/[\/\\]/).filter(Boolean).at(-1) ?? node.name;
+  for (const hit of index.search(`${node.name} ${basename.replace(/\.[^.]+$/, "")}`, MAX_MEMORIES, "memory")) {
+    if (memories.some((memory) => memory.id === hit.obsId)) continue;
+    const memory = await reader.read<Memory>(KV.memories, hit.obsId);
+    if (!memory || memory.isLatest === false) continue;
+    const viaObservation = (memory.sourceObservationIds ?? []).some((id) => sourceSet.has(id));
+    if (!viaObservation && !matchesName(memory.concepts, node.name) && !matchesName(memory.files, node.name)) continue;
+    memories.push({ id: memory.id, title: memory.title, type: memory.type, project: memory.project, via: viaObservation ? "observation" : "name" });
     if (memories.length >= MAX_MEMORIES) break;
   }
-
   const props = node.properties ?? {};
-  const structural =
-    typeof props.source === "string"
-      ? { source: props.source, ...(typeof props.sourceFile === "string" ? { sourceFile: props.sourceFile } : {}) }
-      : null;
-
+  const structural = typeof props.source === "string"
+    ? { source: props.source, ...(typeof props.sourceFile === "string" ? { sourceFile: props.sourceFile } : {}) } : null;
+  const truncated = Boolean(page.cursor || options.cursor || reader.exhausted || node.indexIncomplete);
+  if (!await reader.finish()) return { graphIndex: { status: "changed" }, error: "Graph changed during retrieval; retry the request." };
   return {
-    node,
-    degree,
-    relations,
-    relationsTotal,
-    ...(relationsWarning ? { relationsWarning } : {}),
-    provenance: { observationIds, observations, sessions, projects, memories, structural },
+    node: { ...node, sourceObservationIds: observationIds.filter((id) => node.sourceObservationIds.includes(id)) },
+    degree: page.total, relations, relationsTotal: truncated ? page.total : relations.length,
+    relationsTotalExact: !truncated, relationsCursor: page.cursor, relationsTruncated: truncated,
+    ...(truncated ? { relationsWarning: "Relations are a bounded page; counts include unfiltered adjacency entries when truncated." } : {}),
+    provenance: { truncated: true, observationIds, observations, sessions, projects, memories, structural },
   };
 }

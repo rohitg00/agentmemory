@@ -16,7 +16,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { resolveDataDir } from "../cli-data-dir.js";
-import { stripPrivateData } from "../functions/privacy.js";
+import { scrubRecord } from "../functions/privacy.js";
 
 export interface SpoolRecord {
   v: 1;
@@ -112,7 +112,8 @@ const IMAGE_PLACEHOLDER = "[image dropped from capture spool]";
 const BOOT_ID_RE = /^[A-Za-z0-9]{8,64}$/;
 const SENT_FILE_RE = /^([A-Za-z0-9]{8,64})-(\d+)\.jsonl$/;
 const SENT_BUCKET_MS = 1000;
-const MAX_DURABLE_AFTER_MS = 10 * 60_000;
+// Cover the maximum one-hour state flush interval plus its safety margin.
+const MAX_DURABLE_AFTER_MS = 61 * 60_000;
 
 function emptyStats(): SpoolStats {
   return { spooled: 0, dropped: 0, droppedBytes: 0, expired: 0, delivered: 0, duplicates: 0, rejected: 0 };
@@ -239,14 +240,6 @@ function fileSize(path: string): number {
   }
 }
 
-function sanitizeBody(body: Record<string, unknown>): Record<string, unknown> {
-  try {
-    return JSON.parse(stripPrivateData(JSON.stringify(body))) as Record<string, unknown>;
-  } catch {
-    return body;
-  }
-}
-
 function withoutImage(body: Record<string, unknown>): Record<string, unknown> {
   const data = body["data"];
   if (!data || typeof data !== "object" || Array.isArray(data)) return body;
@@ -334,7 +327,7 @@ export function appendSpool(
       spooledAt: new Date().toISOString(),
       reason,
       attempts: options.attempts ?? 0,
-      body: sanitizeBody(body),
+      body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true }),
     };
     let line = JSON.stringify(record) + "\n";
     if (Buffer.byteLength(line) > policy.maxRecordBytes) {
@@ -441,7 +434,7 @@ export function retainSent(
       spooledAt: new Date(now).toISOString(),
       reason: "sent",
       attempts: 0,
-      body: sanitizeBody(body),
+      body: scrubRecord(JSON.parse(JSON.stringify(body)), { scrubKeys: true }),
       bootId: mark.bootId,
     };
     let line = JSON.stringify(record) + "\n";

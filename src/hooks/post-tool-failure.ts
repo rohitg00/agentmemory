@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { shouldCaptureTool } from "./_capture-filter.js";
+import { shouldCaptureTool, truncateJson, truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
 import { captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
 
@@ -51,12 +51,12 @@ async function main() {
           tool_name: toolName,
           tool_input:
             typeof toolInput === "string"
-              ? toolInput.slice(0, 4000)
-              : JSON.stringify(toolInput ?? "").slice(0, 4000),
+              ? truncateText(toolInput, 4000)
+              : truncateJson(toolInput ?? "", 4000),
           error:
             typeof error === "string"
-              ? error.slice(0, 4000)
-              : JSON.stringify(error ?? "").slice(0, 4000),
+              ? truncateText(error, 4000)
+              : truncateJson(error ?? "", 4000),
         },
       },
       data,

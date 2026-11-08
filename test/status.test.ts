@@ -9,15 +9,16 @@ import {
   singleFlight,
   type StatusInputs,
 } from "../src/functions/status.js";
+import { III_PINNED_VERSION } from "../src/version.js";
 
 function inputs(overrides: Partial<StatusInputs> = {}): StatusInputs {
   return {
     now: new Date("2026-09-24T12:00:00.000Z"),
     version: "0.9.29",
-    engineVersion: "0.22.1",
+    enginePinnedVersion: III_PINNED_VERSION,
     uptimeSeconds: 125,
     stateBackend: "file",
-    ports: { rest: 3111, streams: 3112, viewer: 3113 },
+    ports: { rest: 3111, viewer: 3113 },
     health: { status: "healthy", alerts: [], notes: [], connectionState: "connected" },
     circuitBreaker: { state: "closed", failures: 0 },
     functionMetrics: [],
@@ -58,12 +59,19 @@ describe("evaluateStatus", () => {
     expect(codes(report)).toContain("keyword-index-rebuilding");
   });
 
+  it("tells a missing embedding key apart from an unchosen provider", () => {
+    const missing = evaluateStatus(inputs({ embeddingHint: "EMBEDDING_PROVIDER=voyage is set, but VOYAGE_API_KEY is not." }));
+    expect(missing.problems.map((p) => p.code)).toContain("embedding-provider-key-missing");
+    const unchosen = evaluateStatus(inputs({ embeddingHint: "A voyage key is present, but cloud embeddings stay off until you choose them." }));
+    expect(unchosen.problems.map((p) => p.code)).toContain("embedding-provider-not-chosen");
+  });
+
   it("reports ok with no problems on a healthy install", () => {
     const report = evaluateStatus(inputs());
     expect(report.status).toBe("ok");
     expect(report.problems).toEqual([]);
     expect(report.graph?.ageSeconds).toBe(60);
-    expect(report.service.engineVersion).toBe("0.22.1");
+    expect(report.service.enginePinnedVersion).toBe(III_PINNED_VERSION);
   });
 
   it("surfaces the active state backend, never the URL", () => {
@@ -179,6 +187,40 @@ describe("evaluateStatus", () => {
     const report = evaluateStatus(inputs({ provider: "noop" }));
     expect(report.status).toBe("info");
     expect(report.problems[0].code).toBe("no-llm-provider");
+  });
+
+  it("reports graph migration separately from empty graph data and snapshot rebuilds", () => {
+    const report = evaluateStatus(inputs({ graph: { fromSnapshot: false }, graphIndex: {
+      state: "needs-migration", ready: false, coverage: "unknown", action: "Run graph-index migrate --allow-legacy-scan",
+    } }));
+    expect(codes(report)).toEqual(["graph-index-not-ready"]);
+    expect(report.problems[0].fix).toContain("--allow-legacy-scan");
+    expect(renderStatusHtml(report, "n")).toContain("needs-migration, unknown coverage");
+  });
+
+  it("preserves unknown graph counts instead of displaying an empty graph", () => {
+    const report = evaluateStatus(inputs({ graph: { totalNodes: null, totalEdges: null, available: false, coverage: "unknown", fromIndex: false }, graphIndex: {
+      state: "needs-migration", ready: false, coverage: "unknown",
+    } }));
+    expect(report.graph).toMatchObject({ totalNodes: null, totalEdges: null, available: false });
+    const html = renderStatusHtml(report, "n");
+    expect(html).toContain("<th>Nodes / edges</th><td>unknown / unknown</td>");
+    expect(html).not.toContain("<th>Nodes / edges</th><td>0 / 0</td>");
+    const empty = evaluateStatus(inputs({ graph: { totalNodes: 0, totalEdges: 0, available: true, fromIndex: true } }));
+    expect(renderStatusHtml(empty, "n")).toContain("<th>Nodes / edges</th><td>0 / 0</td>");
+  });
+
+  it("surfaces partial and unavailable graph indexes without claiming complete coverage", () => {
+    const partial = evaluateStatus(inputs({ graphIndex: { state: "ready", ready: true, coverage: "partial", incompleteRecords: 3, action: "Inspect oversized records" } }));
+    expect(codes(partial)).toEqual(["graph-index-partial"]);
+    expect(partial.status).toBe("warn");
+    expect(partial.problems[0].message).toContain("3 graph records");
+    expect(codes(evaluateStatus(inputs({ graphIndex: null })))).toEqual(["graph-index-unavailable"]);
+  });
+
+  it("does not recommend legacy snapshot scans for an index-backed graph", () => {
+    const report = evaluateStatus(inputs({ graph: { fromIndex: true, totalNodes: 12, totalEdges: 2, updatedAt: "2020-01-01T00:00:00Z" }, graphIndex: { state: "ready", ready: true, coverage: "complete" } }));
+    expect(report.problems).toEqual([]);
   });
 
   it("reports a frozen legacy audit log only when the migration left it in place", () => {
@@ -456,6 +498,15 @@ describe("status wiring", () => {
   const viewer = readFileSync("src/viewer/index.html", "utf-8");
   const index = readFileSync("src/index.ts", "utf-8");
 
+  it("labels the reported build pin as pinned instead of claiming a live engine version", () => {
+    expect(api).toMatch(/enginePinnedVersion: III_PINNED_VERSION/);
+    expect(api).not.toMatch(/engineVersion: III_PINNED_VERSION/);
+    expect(viewer).toContain("engine pinned ' + r.service.enginePinnedVersion");
+    const report = evaluateStatus(inputs({ enginePinnedVersion: "0.24.6" }));
+    expect(report.service.enginePinnedVersion).toBe("0.24.6");
+    expect(report.service).not.toHaveProperty("engineVersion");
+  });
+
   it("registers GET /agentmemory/status behind the same auth check as the other endpoints", () => {
     expect(api).toMatch(/registerFunction\("api::status",\s*async \(req: HttpRequest\): Promise<Response> => \{\s*const authErr = checkAuth\(req, secret\);/);
     expect(api).toMatch(/api_path: "\/agentmemory\/status", http_method: "GET"/);
@@ -464,7 +515,8 @@ describe("status wiring", () => {
 
   it("time-boxes every status probe so a slow store cannot hang the page", () => {
     const reporter = api.slice(api.indexOf("export function createStatusReporter"), api.indexOf("export function createConsolidationStatusReader"));
-    expect(reporter.match(/valueWithin\(/g)?.length).toBe(6);
+    expect(reporter.match(/valueWithin\(/g)?.length).toBe(7);
+    expect(reporter).toContain("valueWithin(getGraphIndexMigrationStatus(kv), STATUS_CHECK_TIMEOUT_MS)");
     expect(reporter).toMatch(/valueWithin\(scan\.run\(\), STATUS_CHECK_TIMEOUT_MS\)/);
     expect(api).toMatch(/run: singleFlight\(async \(\) => \{\s*const value = await findUnindexedObservations\(kv\);/);
     const handler = api.slice(api.indexOf('registerFunction("api::status"'), api.indexOf('function_id: "api::status"'));

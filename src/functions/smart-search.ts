@@ -1,3 +1,4 @@
+import type { GraphObservationAuthorization } from "./graph-retrieval.js";
 import type { IIIClient } from "iii-sdk";
 import type {
   CompactLessonResult,
@@ -75,11 +76,12 @@ export function resetFollowupStatsForTests(): void {
 // Compact mode trims each lesson's content for at-a-glance display. The
 // full content is fetched via memory_lesson_recall when the caller needs it.
 const LESSON_CONTENT_PREVIEW_CHARS = 240;
+const SCOPED_RETRY_CANDIDATES = 1000;
 
 export function registerSmartSearchFunction(
   sdk: IIIClient,
   kv: StateKV,
-  searchFn: (query: string, limit: number, targetLayer?: SearchLayer) => Promise<HybridSearchResult[]>,
+  searchFn: (query: string, limit: number, targetLayer?: SearchLayer, authorizeGraph?: GraphObservationAuthorization) => Promise<HybridSearchResult[]>,
 ): void {
   sdk.registerFunction("mem::smart-search",
     async (data: {
@@ -197,37 +199,70 @@ export function registerSmartSearchFunction(
         ? Math.max(Math.min(limit * 10, 300), 100)
         : limit;
 
+      const authorizeGraph: GraphObservationAuthorization = async (record, sessionId, read) => {
+        if (filterAgentId !== undefined && record.agentId !== filterAgentId) return false;
+        if (!project) return true;
+        if ("content" in record && record.project !== undefined) return record.project === project;
+        return (await read<{ project?: string }>(KV.sessions, sessionId))?.project === project;
+      };
       const [hybridResults, lessons] = await Promise.all([
-        searchFn(data.query, overFetchLimit, targetLayer),
+        searchFn(data.query, overFetchLimit, targetLayer, authorizeGraph),
         includeLessons
           ? recallLessons(sdk, data.query, lessonLimit, project)
           : Promise.resolve([]),
       ]);
 
-      const layerResults = hybridResults.filter((result) => matchesSearchLayer(
-        result.observation.id,
-        result.sessionId,
-        targetLayer,
-        result.layer ?? getSearchIndex().layerOf(result.observation.id),
-      ));
-      const projectResults = matchesProject
-        ? await filterProjectResults(layerResults, (result) => matchesProject(result.observation.id, result.sessionId))
-        : layerResults;
+      const scopeResults = async (results: HybridSearchResult[]) => {
+        const layerResults = results.filter((result) => matchesSearchLayer(
+          result.observation.id,
+          result.sessionId,
+          targetLayer,
+          result.layer ?? getSearchIndex().layerOf(result.observation.id),
+        ));
+        const projectResults = matchesProject
+          ? await filterProjectResults(layerResults, (result) => matchesProject(result.observation.id, result.sessionId))
+          : layerResults;
 
-      const filteredHybrid = filterAgentId
-        ? projectResults
-            .filter((r) => r.observation.agentId === filterAgentId)
-            .slice(0, limit)
-        : projectResults.slice(0, limit);
+        return filterAgentId
+          ? projectResults
+              .filter((r) => r.observation.agentId === filterAgentId)
+              .slice(0, limit)
+          : projectResults.slice(0, limit);
+      };
 
-      const compact: CompactSearchResult[] = filteredHybrid.map((r) => ({
-        obsId: r.observation.id,
-        layer: r.layer ?? getSearchIndex().layerOf(r.observation.id) ?? getSearchResultLayer(r.observation.id, r.sessionId),
-        sessionId: r.sessionId,
-        title: r.observation.title,
-        type: r.observation.type,
-        score: r.combinedScore,
-        timestamp: r.observation.timestamp,
+      let filteredHybrid = await scopeResults(hybridResults);
+      if ((filterAgentId || project) && filteredHybrid.length < limit && getSearchIndex().size > overFetchLimit) {
+        try {
+          const deeper = await scopeResults(
+            await searchFn(data.query, SCOPED_RETRY_CANDIDATES, targetLayer, authorizeGraph),
+          );
+          const seen = new Set(deeper.map((result) => result.observation.id));
+          filteredHybrid = [
+            ...deeper,
+            ...filteredHybrid.filter((result) => !seen.has(result.observation.id)),
+          ].slice(0, limit);
+        } catch (err) {
+          logger.warn("Smart search deeper scoped ranking failed; keeping first-pass results", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      const compact: CompactSearchResult[] = await Promise.all(filteredHybrid.map(async (r) => {
+        const layer = r.layer ?? getSearchIndex().layerOf(r.observation.id) ?? getSearchResultLayer(r.observation.id, r.sessionId);
+        const memoryType = layer === "memory"
+          ? (await kv.get<Memory>(KV.memories, r.observation.id).catch(() => null))?.type ?? r.observation.memoryType
+          : undefined;
+        return {
+          obsId: r.observation.id,
+          layer,
+          sessionId: r.sessionId,
+          title: r.observation.title,
+          type: r.observation.type,
+          ...(memoryType !== undefined && { memoryType }),
+          score: r.combinedScore,
+          timestamp: r.observation.timestamp,
+        };
       }));
 
       void recordAccessBatch(

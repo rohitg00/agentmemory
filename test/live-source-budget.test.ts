@@ -46,8 +46,9 @@ function rig(mode: "observe" | "compress") {
   let nextId = 0;
   async function write(id = `live-${nextId++}`): Promise<CompressedObservation> {
     if (mode === "compress") {
+      if (!await kv.get(scope, id)) await kv.set(scope, id, raw(id));
       const result = await handlers.get("mem::compress")!({ observationId: id, sessionId, raw: raw(id) });
-      expect(result.success).toBe(true);
+      if (!result.success) expect(result.error).toBe("source_unavailable");
     } else {
       const result = await handlers.get("mem::observe")!({ sessionId, timestamp: raw(id).timestamp, hookType: "post_tool_use", data: { tool_name: "Read", tool_output: output } });
       id = result.observationId;
@@ -74,7 +75,7 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe.each(["observe", "compress"] as const)("live %s source budget", (mode) => {
-  it("truncates to the remaining session allowance, then omits source while preserving summaries", async () => {
+  it("truncates to the remaining session allowance, then preserves observations without adding source", async () => {
     const expected = withoutObservationSource(await rig(mode).write());
     const r = rig(mode);
     await r.seedSource();
@@ -83,7 +84,9 @@ describe.each(["observe", "compress"] as const)("live %s source budget", (mode) 
     expect(payloadByteLength(first.source)).toBeLessThan(payloadByteLength(buildSyntheticCompression(raw("unbounded")).source));
     const second = await r.write();
     expect(second.source).toBeUndefined();
-    expect(withoutObservationSource(second)).toEqual({ ...expected, id: second.id, compressedAt: second.compressedAt });
+    if (mode === "compress") {
+      expect(second).toEqual(raw(second.id));
+    } else expect(withoutObservationSource(second)).toEqual({ ...expected, id: second.id, compressedAt: second.compressedAt });
     const rows = await r.kv.list(scope);
     expect(sourceBytes(rows)).toBeLessThanOrEqual(SESSION_SOURCE_MAX_BYTES);
     expect(payloadByteLength({ result: rows })).toBeLessThan(SAFE_PAYLOAD_BYTES);
@@ -101,7 +104,7 @@ describe.each(["observe", "compress"] as const)("live %s source budget", (mode) 
     expect(payloadByteLength({ result: await r.kv.list(scope) })).toBeLessThan(SAFE_PAYLOAD_BYTES);
   });
 
-  it("preserves a completed summary when existing summaries leave no frame allowance", async () => {
+  it("preserves the observation when existing summaries leave no frame allowance", async () => {
     const expected = withoutObservationSource(await rig(mode).write());
     const r = rig(mode);
     const seed = withoutObservationSource(buildSyntheticCompression(raw("oversized-summary")));
@@ -109,7 +112,9 @@ describe.each(["observe", "compress"] as const)("live %s source budget", (mode) 
     await r.kv.set(scope, seed.id, seed);
     const saved = await r.write();
     expect(saved.source).toBeUndefined();
-    expect(withoutObservationSource(saved)).toEqual({ ...expected, id: saved.id, compressedAt: saved.compressedAt });
+    if (mode === "compress") {
+      expect(saved).toEqual(raw(saved.id));
+    } else expect(withoutObservationSource(saved)).toEqual({ ...expected, id: saved.id, compressedAt: saved.compressedAt });
   });
 });
 

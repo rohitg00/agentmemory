@@ -2,11 +2,12 @@ import type { IIIClient } from "iii-sdk";
 import type { Memory, GovernanceFilter, AuditEntry } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { recordAudit, safeAudit, queryAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
+import { deleteFacetsForTargets } from "./facets.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { logger } from "../logger.js";
-
 const BULK_FILTER_KEYS = ["type", "dateFrom", "dateTo", "project", "qualityBelow"];
 const BULK_CONTROL_KEYS = ["dryRun", "reason"];
 
@@ -58,6 +59,11 @@ export function registerGovernanceFunction(sdk: IIIClient, kv: StateKV): void {
           failures.push({ id, error: "delete_failed" });
         }
       }
+
+      // Sweeping notFound ids too lets a retried delete clean up after a
+      // partial failure or an older version; the helper itself skips ids that
+      // still resolve in either memory scope.
+      await deleteFacetsForTargets(kv, [...deletedIds, ...notFound]);
 
       const deleted = deletedIds.length;
       if (deleted > 0) await flushIndexSave();
@@ -128,7 +134,7 @@ export function registerGovernanceFunction(sdk: IIIClient, kv: StateKV): void {
         };
       }
 
-      const memories = await kv.list<Memory>(KV.memories);
+      const memories = await collectAll<Memory>(kv, KV.memories);
       let candidates = memories;
 
       if (data.type && data.type.length > 0) {
@@ -192,6 +198,8 @@ export function registerGovernanceFunction(sdk: IIIClient, kv: StateKV): void {
           }
         });
       }
+
+      await deleteFacetsForTargets(kv, [...successfulIds, ...notFound]);
 
       if (successfulIds.length > 0) await flushIndexSave();
 
