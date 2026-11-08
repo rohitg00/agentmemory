@@ -11,6 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const options = { tarball: null, out: null, skipBuild: false, keep: false };
+const SAFE_PAYLOAD_BYTES = 60 * 1024 * 1024;
 for (let i = 2; i < process.argv.length; i++) {
   const arg = process.argv[i];
   if (arg === "--tarball" || arg === "--out") {
@@ -441,26 +442,28 @@ async function main() {
   });
   await scenario("large-legacy-results-refuse-without-disconnecting-worker", async () => {
     const base = (await rest("/insights?project=count-proof&limit=1")).insights[0];
-    for (let i = 0; i < 18; i++) {
+    const largeRows = Math.ceil(SAFE_PAYLOAD_BYTES / (950 * 1024)) + 4;
+    for (let i = 0; i < largeRows; i++) {
       const row = { ...base, id: `large-${i}`, project: "large-proof", content: `checkpoint ${"x".repeat(950 * 1024)}` };
       await rest("/import", { exportData: { ...fixture(), insights: [row] }, strategy: "merge" });
     }
-    const result = await rest("/insights?project=large-proof", undefined, { expectedStatus: 413 });
+    const result = await rest(`/insights?project=large-proof&limit=${largeRows}`, undefined, { expectedStatus: 413 });
     assert.equal(result.oversized, true);
     await rest("/insights/search", { query: "checkpoint", project: "large-proof", limit: 500 }, { expectedStatus: 413 });
-    await rest("/mcp/call", { name: "memory_insight_list", arguments: { project: "large-proof" } }, { expectedStatus: 413 });
+    await rest("/mcp/call", { name: "memory_insight_list", arguments: { project: "large-proof", limit: largeRows } }, { expectedStatus: 413 });
     assert.equal((await rest("/insights?project=count-proof&limit=1")).insights.length, 1);
     assert.equal((await rest("/insights?project=large-proof&limit=1")).insights.length, 1);
   });
   await scenario("mcp-escaping-budget-with-small-inner-response", async () => {
     const base = (await rest("/insights?project=count-proof&limit=1")).insights[0];
-    for (let i = 0; i < 10; i++) {
+    const escapedRows = 48;
+    for (let i = 0; i < escapedRows; i++) {
       const row = { ...base, id: `escaped-${i}`, project: "escaped-proof", content: '"'.repeat(400 * 1024) };
       await rest("/import", { exportData: { ...fixture(), insights: [row] }, strategy: "merge" });
     }
     const raw = await rest("/insights?project=escaped-proof");
-    assert.equal(raw.insights.length, 10);
-    assert(Buffer.byteLength(JSON.stringify(raw)) < 15 * 1024 * 1024);
+    assert.equal(raw.insights.length, escapedRows);
+    assert(Buffer.byteLength(JSON.stringify(raw)) < SAFE_PAYLOAD_BYTES);
     const response = await rest("/mcp/call", { name: "memory_insight_list", arguments: { project: "escaped-proof" } }, { expectedStatus: 413 });
     assert.equal(response.isError, true);
     assert(Buffer.byteLength(JSON.stringify(response)) < 2048);

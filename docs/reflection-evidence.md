@@ -18,9 +18,9 @@ Each cluster retains at most 32 distinct concept names, each fitting 128 bytes o
 
 `maxClusters` defaults to 10 and is capped at 20. Insight list and search limits default to 50 and 10 respectively and are capped at 500. Supplied counts must be positive safe integers; `minConfidence` must be finite and between 0 and 1. Invalid options return a small error, with HTTP 400 through REST and daemon MCP.
 
-Insight results and their REST/MCP envelopes are checked against the existing 15 MiB transport safety budget. An oversized response returns a small refusal with HTTP 413, including when escaping JSON inside an MCP text response expands its size. Reduce the limit or narrow the project/search filter. Oversized legacy records are preserved in storage.
+Insight results and their REST/MCP envelopes are checked against the 60 MiB transport safety budget (`SAFE_PAYLOAD_BYTES`). An oversized response returns a small refusal with HTTP 413, including when escaping JSON inside an MCP text response expands its size. Reduce the limit or narrow the project/search filter. Oversized legacy records are preserved in storage.
 
-These limits bound model input, newly accepted provenance and outgoing insight responses. They do not paginate the engine's initial full-scope state reads or bound reflection's clustering work. A store exceeding the engine-to-worker read limit still requires storage-level pagination; response slicing cannot solve that problem. Other list and export endpoints retain their own contracts.
+These limits bound model input, newly accepted provenance and outgoing insight responses. They do not bound reflection's clustering work. State reads page through scopes larger than the transport limit, so reflection reads such a store in pages. Other list and export endpoints retain their own contracts.
 
 ## Test the packaged runtime
 

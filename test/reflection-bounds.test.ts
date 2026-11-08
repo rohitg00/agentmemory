@@ -16,12 +16,15 @@ const headers = { authorization: "Bearer reflection-test-secret" };
 const xml = (sources = "F1,F2", content = "Validate security boundaries.") =>
   `<insights><insight confidence="0.8" title="Boundary checks" sources="${sources}">${content}</insight></insights>`;
 
+type Row = Record<string, unknown> & { id: string; sourceObservationIds?: string[]; tags?: string[] };
+type Result = Record<string, unknown>;
+
 function fixture() {
-  const store = new Map<string, Map<string, any>>();
+  const store = new Map<string, Map<string, Row>>();
   const kv = {
     get: vi.fn(async (scope: string, id: string) => store.get(scope)?.get(id) ?? null),
     list: vi.fn(async (scope: string) => [...(store.get(scope)?.values() ?? [])]),
-    set: async (scope: string, id: string, value: any): Promise<any> => {
+    set: async (scope: string, id: string, value: Row): Promise<Row> => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(id, value);
       if (scope === KV.graphNodes || scope === KV.graphEdges) {
@@ -29,7 +32,7 @@ function fixture() {
           await indexObservationSession(kv as never, obsId, "session");
           await kv.set(KV.observations("session"), obsId, { id: obsId, sessionId: "session", title: "source" });
         }
-        await reconcileGraphIndexRecord(kv as never, scope === KV.graphNodes ? "node" : "edge", id, value);
+        await reconcileGraphIndexRecord(kv as never, scope === KV.graphNodes ? "node" : "edge", id, value as never);
       }
       return value;
     },
@@ -39,7 +42,7 @@ function fixture() {
   const sdk = {
     registerFunction: (id: string | { id: string }, fn: Function) => { fns.set(typeof id === "string" ? id : id.id, fn); },
     registerTrigger: () => {},
-    trigger: async ({ function_id, payload }: { function_id: string; payload?: unknown }): Promise<any> => fns.get(function_id)!(payload),
+    trigger: async ({ function_id, payload }: { function_id: string; payload?: unknown }): Promise<Result> => fns.get(function_id)!(payload),
   };
   const provider = { name: "test", compress: vi.fn(), summarize: vi.fn().mockResolvedValue(xml()) };
   registerReflectFunctions(sdk as never, kv as never, provider as never);
@@ -115,9 +118,9 @@ describe("reflection budgets", () => {
     await f.kv.set(KV.insights, old.id, { ...old, sourceMemoryIds: Array(1000).fill("legacy"), tags: Array(1000).fill("legacy"), sourceConceptCluster: Array(1000).fill("legacy") });
     f.provider.summarize.mockResolvedValue(xml("F1,F2,F1"));
     expect(await f.call("mem::reflect")).toMatchObject({ reinforced: 1 });
-    const refreshed = await f.kv.get(KV.insights, old.id);
+    const refreshed = (await f.kv.get(KV.insights, old.id))!;
     expect(refreshed.sourceMemoryIds).toEqual(["fact-0", "fact-1"]);
-    expect([...refreshed.tags].sort()).toEqual(["security", "validation"]);
+    expect([...refreshed.tags!].sort()).toEqual(["security", "validation"]);
     expect(refreshed.sourceConceptCluster).toEqual(refreshed.tags);
     f.provider.summarize.mockResolvedValue(xml("F1,F21"));
     expect(await f.call("mem::reflect")).toMatchObject({ reinforced: 0, rejectedInsights: 1 });
@@ -197,7 +200,7 @@ describe("insight boundaries", () => {
     for (const id of ["mem::insight-list", "mem::insight-search"]) {
       const result = await f.call(id, { query: "security", limit: 30000, project: "a", minConfidence: 1 });
       expect(result.insights).toHaveLength(INSIGHT_MAX_RESULTS);
-      expect(result.insights.every((i: any) => i.project === "a")).toBe(true);
+      expect((result.insights as Row[]).every((i) => i.project === "a")).toBe(true);
       expect((await f.call(id, { query: "security", minConfidence: 0, limit: 1 })).insights).toHaveLength(1);
     }
   });
