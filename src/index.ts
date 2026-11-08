@@ -60,7 +60,6 @@ import {
   setHybridRanker,
   setPendingVectorBackfillCount,
   setVectorBackfillState,
-  getVectorBackfillState,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSessionIndexMaintenanceFunction } from "./functions/session-index-maintenance.js";
@@ -588,7 +587,9 @@ async function main() {
 
   const keywordStart = Date.now();
   let checkpointLoaded = bootCheckpoint.loaded;
+  let indexRecoveryFailed = false;
   const runIndexRecovery = singleFlight(async () => {
+    indexRecoveryFailed = false;
     try {
       let keyword = await rebuildKeywordIndex(kv, vectorBackfillSince);
       let supersededReleaseFailed = false;
@@ -656,6 +657,7 @@ async function main() {
             if (!complete) bootWarn(`Vector recovery remains incomplete (${remaining} documents pending); it resumes on the next start.`);
           })
           .catch((err) => {
+            indexRecoveryFailed = true;
             setVectorBackfillState("paused");
             console.warn(`[agentmemory] Failed to backfill vectors:`, err);
           })
@@ -665,6 +667,7 @@ async function main() {
           });
       }
     } catch (err) {
+      indexRecoveryFailed = true;
       setVectorBackfillState("paused");
       console.warn(`[agentmemory] Failed to rebuild the BM25 index:`, err);
     }
@@ -720,9 +723,13 @@ async function main() {
         },
         indexNeedsRearm: () => shouldRearmIndex({
           bm25Incomplete: isBm25RebuildIncomplete(),
-          vectorBackfillState: getVectorBackfillState(),
+          persistencePaused: indexPersistence.isRecoveryPaused(),
+          lastRecoveryFailed: indexRecoveryFailed,
         }),
         runIndexRecovery,
+      });
+      await rebuildSessionIndexIfStale(kv).catch((err) => {
+        bootWarn(`Session index rebuild after state return failed: ${err instanceof Error ? err.message : String(err)}`);
       });
       await runCaptureRecovery();
       await checkDuplicateWorkers(sdk);
@@ -730,7 +737,10 @@ async function main() {
       bootWarn(`State-worker re-arm failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
-  const rearmTick = setInterval(() => { void rearm.probeTick(); }, 30_000);
+  const rearmTick = setInterval(() => {
+    void rearm.probeTick();
+    void checkDuplicateWorkers(sdk);
+  }, 30_000);
   rearmTick.unref();
   void checkDuplicateWorkers(sdk);
 

@@ -10,8 +10,8 @@ export function singleFlight<A extends unknown[], R>(fn: (...args: A) => Promise
 
 export interface RearmConditions {
   bm25Incomplete: boolean;
-  vectorBackfillState?: string;
-  vectorBackfillErrorCode?: string;
+  persistencePaused: boolean;
+  lastRecoveryFailed: boolean;
 }
 
 export interface RearmSteps {
@@ -26,10 +26,5 @@ export async function rearmIndexRecovery(steps: RearmSteps): Promise<void> {
 }
 
 export function shouldRearmIndex(input: RearmConditions): boolean {
-  if (input.bm25Incomplete) return true;
-  if (input.vectorBackfillState === "paused" || input.vectorBackfillState === "failed") {
-    const code = input.vectorBackfillErrorCode ?? "";
-    return code === "" || /payload_too_large|function_not_found|timeout|unavailable|not.ready/i.test(code);
-  }
-  return false;
+  return input.bm25Incomplete || input.persistencePaused || input.lastRecoveryFailed;
 }
