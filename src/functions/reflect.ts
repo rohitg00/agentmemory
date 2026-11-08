@@ -2,6 +2,7 @@ import { createGraphIndexReader } from "../state/graph-retrieval-index.js";
 import { lookupObservationSession } from "../state/obs-index.js";
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
 import type {
   Insight,
@@ -18,7 +19,6 @@ import type {
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
-
 interface ConceptCluster {
   concepts: string[];
   facts: Array<{ fact: string; confidence: number }>;
@@ -315,7 +315,7 @@ export function registerReflectFunctions(
       const [graph, semanticMemories, lessons, crystals] =
         await Promise.all([
           reflectionGraph(kv, data?.project),
-          kv.list<SemanticMemory>(KV.semantic).catch(() => []),
+          collectAll<SemanticMemory>(kv, KV.semantic).catch(() => []),
           kv.list<Lesson>(KV.lessons).catch(() => []),
           kv.list<Crystal>(KV.crystals).catch(() => []),
         ]);
@@ -510,7 +510,7 @@ export function registerReflectFunctions(
     }) => {
       const limit = data?.limit ?? 50;
       const minConfidence = data?.minConfidence ?? 0;
-      let items = await kv.list<Insight>(KV.insights);
+      let items = await collectAll<Insight>(kv, KV.insights);
 
       items = items.filter(
         (i) => !i.deleted && i.confidence >= minConfidence,
@@ -541,7 +541,7 @@ export function registerReflectFunctions(
       const minConfidence = data.minConfidence ?? 0.1;
       const limit = data.limit ?? 10;
 
-      let items = await kv.list<Insight>(KV.insights);
+      let items = await collectAll<Insight>(kv, KV.insights);
       items = items.filter(
         (i) => !i.deleted && i.confidence >= minConfidence,
       );
@@ -592,7 +592,7 @@ export function registerReflectFunctions(
 
   sdk.registerFunction("mem::insight-decay-sweep", 
     async () => {
-      const items = await kv.list<Insight>(KV.insights);
+      const items = await collectAll<Insight>(kv, KV.insights);
       let decayed = 0;
       let softDeleted = 0;
       const now = Date.now();

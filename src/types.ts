@@ -146,6 +146,7 @@ export interface Memory {
   sessionIds: string[];
   strength: number;
   version: number;
+  recurrence?: number;
   parentId?: string;
   supersedes?: string[];
   relatedIds?: string[];

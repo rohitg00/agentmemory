@@ -270,3 +270,28 @@ describe("mem::consolidate — cross-project existingMatch guard", () => {
     expect(memories[0].project).toBeUndefined();
   });
 });
+
+describe("mem::consolidate recurrence", () => {
+  async function evolve(sourceObservationIds: string[]) {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    const existing = { ...makeExistingMemory("mem_old", "synthesized memory title", "api"), recurrence: 2, sourceObservationIds };
+    await kv.set(KV.memories, existing.id, existing);
+    const session = makeSession("sess_api", "api");
+    await kv.set(KV.sessions, session.id, session);
+    for (let i = 0; i < 3; i++) {
+      await kv.set(KV.observations(session.id), `obs_${i}`, makeObs(`obs_${i}`, session.id, "auth"));
+    }
+    registerConsolidateFunction(sdk as never, kv as never, makeProvider("synthesized memory title") as never);
+    await sdk.trigger("mem::consolidate", { project: "api", minObservations: 1 });
+    return (await kv.list<Memory>(KV.memories)).find((m) => m.isLatest)!;
+  }
+
+  it("does not raise recurrence when a run evolves a memory from the same observations", async () => {
+    expect((await evolve(["obs_0", "obs_1", "obs_2"])).recurrence).toBe(2);
+  });
+
+  it("raises recurrence when the evolving run brings observations the memory has not seen", async () => {
+    expect((await evolve(["obs_0"])).recurrence).toBe(3);
+  });
+});

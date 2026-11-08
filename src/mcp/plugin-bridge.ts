@@ -2,7 +2,7 @@ import { pathToFileURL } from "node:url";
 import { realpathSync } from "node:fs";
 import { VERSION } from "../version.js";
 import { resolveSettingSecret } from "../hooks/_endpoint.js";
-import { resolveEnvOrEmpty } from "./rest-proxy.js";
+import { callTimeoutMs, resolveEnvOrEmpty } from "./rest-proxy.js";
 import { createStdioTransport, JsonRpcError, type RequestHandler } from "./transport.js";
 
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
@@ -37,7 +37,7 @@ export function createPluginBridge(): RequestHandler {
         },
         body: body === undefined ? undefined : JSON.stringify(body),
         redirect: "error",
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(callTimeoutMs()),
       });
     } catch {
       throw new Error(`Agent Memory daemon is unreachable or timed out. ${SETUP} No fallback store was used; check state before retrying a write.`);

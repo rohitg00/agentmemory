@@ -3,11 +3,11 @@ import { setImmediate as yieldToEventLoop } from "node:timers/promises";
 import { getGraphGeneration, pinGraphState } from "../state/graph-generation.js";
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { createGraphIndexReader, mutateIndexedGraphRecord } from "../state/graph-retrieval-index.js";
 import type { Memory, GraphCascadeProgress } from "../types.js";
 import { safeAudit } from "./audit.js";
-
 export function registerCascadeFunction(sdk: IIIClient, state: StateKV): void {
   sdk.registerFunction("mem::cascade-update", 
     async (data: { supersededMemoryId: string }) => {
@@ -116,7 +116,7 @@ export function registerCascadeFunction(sdk: IIIClient, state: StateKV): void {
         (superseded.concepts ?? []).map((c) => c.toLowerCase()),
       );
       if (supersededConcepts.size >= 2) {
-        const allMemories = await kv.list<Memory>(KV.memories);
+        const allMemories = await collectAll<Memory>(kv, KV.memories);
         for (const mem of allMemories) {
           if (mem.id === data.supersededMemoryId) continue;
           if (!mem.isLatest) continue;

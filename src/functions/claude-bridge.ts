@@ -8,10 +8,10 @@ import { dirname, join } from "node:path";
 import type { Memory, ClaudeBridgeConfig } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
 import { resolveProject } from "../hooks/_project.js";
-
 function hasIdenticalContent(path: string, content: string): boolean {
   let fd: number | undefined;
   try {
@@ -170,7 +170,7 @@ export function registerClaudeBridgeFunction(
 
       try {
         const project = resolveProject(config.projectPath);
-        const memories = await kv.list<Memory>(KV.memories);
+        const memories = await collectAll<Memory>(kv, KV.memories);
         const latestMemories = memories.filter(
           (m) => m.isLatest && (m.project === project || m.project === config.projectPath),
         );

@@ -78,7 +78,8 @@ const AGENTMEMORY_WORKER_ENV_ALLOWLIST = new Set([
   "AGENTMEMORY_CAPTURE_SPOOL", "AGENTMEMORY_CAPTURE_SPOOL_DIR",
   "AGENTMEMORY_CAPTURE_SPOOL_MAX_BYTES", "AGENTMEMORY_CAPTURE_SPOOL_MAX_AGE_HOURS",
   "AGENTMEMORY_IMPORT_ROOT", "AGENTMEMORY_EXPORT_ROOT", "AGENTMEMORY_GRAPH_WEIGHT",
-  "SUMMARIZE_CHUNK_SIZE", "SUMMARIZE_CHUNK_CONCURRENCY", "CONSOLIDATION_DECAY_DAYS",
+  "SUMMARIZE_CHUNK_SIZE", "SUMMARIZE_CHUNK_CONCURRENCY", "AGENTMEMORY_SUMMARY_TIMEOUT_MS",
+  "CONSOLIDATION_DECAY_DAYS",
   "CONSOLIDATION_INTERVAL_MS", "AGENTMEMORY_CONSOLIDATION_COOLDOWN_MS",
   "AGENTMEMORY_FOLLOWUP_WINDOW_SECONDS", "GRAPH_EXTRACTION_BATCH_SIZE", "AGENTMEMORY_LLM_NOTHINK",
   "AGENTMEMORY_REFLECT", "AGENTMEMORY_IMAGE_EMBEDDINGS", "AGENTMEMORY_IMAGE_STORE_MAX_BYTES",
@@ -166,11 +167,14 @@ function windowsWorkerPath(nodeBin: string, inherited: string | undefined): stri
   }).join(";");
 }
 
+/** Compose reparses YAML; literal C1 characters can be rejected or silently folded. */
 function yamlString(value: string): string {
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) {
     throw new Error("A Compose path or configuration value contains an unsupported control character.");
   }
-  if (value.includes("\n") || value.includes("\r")) return JSON.stringify(value);
+  if (/[\r\n\u0080-\u009f]/.test(value)) {
+    return JSON.stringify(value).replace(/[\u0080-\u009f]/g, (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, "0")}`);
+  }
   return `'${value.replace(/'/g, "''")}'`;
 }
 
