@@ -91,7 +91,7 @@ export interface StatusInputs {
 }
 
 export interface StatusRuntimeInfo {
-  bindings: { state: string; http: string; observers: number; routesViaTrigger: number; reasons: string[] };
+  bindings: { state: string; http: string; observers: number; failedObservers?: number; routesViaTrigger: number; reasons: string[] };
   duplicateWorkers: { count: number; workerIds: string[] } | null;
   stateWorker: { ready: boolean; waitedMs: number; lastReturnAt?: string };
 }
@@ -281,6 +281,16 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
   else if (described.length && !described.some((d) => d.level === "error")) described[0].level = "error";
   for (const d of described) {
     problems.push({ level: d.level, code: "health-alert", message: d.message, fix: d.fix });
+  }
+
+  const failedObservers = input.runtime?.bindings.failedObservers ?? 0;
+  if (failedObservers > 0) {
+    problems.push({
+      level: "error",
+      code: "observer-rejected",
+      message: `${failedObservers} route or state observer${failedObservers === 1 ? " was" : "s were"} rejected by the engine, so those endpoints or reactions are not active.`,
+      fix: "Check runtime.bindings.reasons in /agentmemory/status for the conflicting route, remove the conflict, then restart agentmemory.",
+    });
   }
 
   if (input.circuitBreaker?.state === "open") {

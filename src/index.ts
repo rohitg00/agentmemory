@@ -135,7 +135,7 @@ import { bootLog, bootWarn } from "./logger.js";
 import { runtimeMetadataPath } from "./runtime-paths.js";
 import { getBindings } from "./runtime/bindings.js";
 import { waitForStateWorker, onStateWorkerReturn } from "./runtime/state-worker.js";
-import { singleFlight, shouldRearmIndex } from "./runtime/recovery.js";
+import { singleFlight, shouldRearmIndex, rearmIndexRecovery } from "./runtime/recovery.js";
 import { checkDuplicateWorkers } from "./runtime/duplicates.js";
 import { ensureServerSecret, explicitSecret, secretFilePath } from "./secret-store.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
@@ -555,11 +555,14 @@ async function main() {
         await indexPersistence.prepareBackfill(null);
         mismatchBlocked = true;
       }
-    } else {
+    } else if (boot) {
       vectorIndex.restoreFrom(loaded.vector);
       bootLog(
         `Loaded persisted vector index (${vectorIndex.size} vectors)`,
       );
+    } else {
+      const merged = vectorIndex.mergeMissingFrom(loaded.vector);
+      bootLog(`Merged ${merged} persisted vectors into the live vector index`);
     }
   }
 
@@ -707,15 +710,20 @@ async function main() {
 
   const rearm = onStateWorkerReturn(sdk, bindings, async () => {
     try {
-      if (shouldRearmIndex({
-        bm25Incomplete: isBm25RebuildIncomplete(),
-        vectorBackfillState: getVectorBackfillState(),
-      })) await runIndexRecovery();
-      if (bootCheckpointUnavailable && indexPersistence.resumeAfterUnavailable()) {
-        const retry = await restoreVectorCheckpoint(false);
-        checkpointLoaded = retry.loaded;
-        vectorBackfillSince = retry.vectorBackfillSince;
-      }
+      await rearmIndexRecovery({
+        retryCheckpoint: async () => {
+          if (!bootCheckpointUnavailable || !indexPersistence.resumeAfterUnavailable()) return false;
+          const retry = await restoreVectorCheckpoint(false);
+          checkpointLoaded = retry.loaded;
+          vectorBackfillSince = retry.vectorBackfillSince;
+          return true;
+        },
+        indexNeedsRearm: () => shouldRearmIndex({
+          bm25Incomplete: isBm25RebuildIncomplete(),
+          vectorBackfillState: getVectorBackfillState(),
+        }),
+        runIndexRecovery,
+      });
       await runCaptureRecovery();
       await checkDuplicateWorkers(sdk);
     } catch (err) {

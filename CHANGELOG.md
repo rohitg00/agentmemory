@@ -6,12 +6,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-### Added
-
-- **Observe-native bindings** (#1623). HTTP routes and state subscriptions now attach engine observers (`http::on-request`, `state::on-changed`) via `iii.observe` when the providers support them, with `registerTrigger` fallback and `AGENTMEMORY_BINDINGS` (`auto` default, `observe`, `trigger`). `/agentmemory/status` reports `runtime.bindings`, `runtime.stateWorker` and `runtime.duplicateWorkers`; duplicate workers also raise a viewer alert and a `duplicate-workers` doctor diagnostic.
-- **State-worker readiness probe and re-arm** (#1631).
-- `AGENTMEMORY_ROUTE_MAX_IN_FLIGHT` (default 1024) raises the per-route observer delivery cap so bursty hook traffic no longer hits `OVERFLOW` at 64 concurrent requests. An `engine::on-workers-changed` observer (or health-tick probes in trigger mode) re-arms index and capture recovery when the state worker returns.
-
 ## [0.9.32] — 2026-11-04
 
 ### Upgrade notes

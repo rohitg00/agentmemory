@@ -3746,7 +3746,7 @@ export function registerApiTriggers(
       for (const [name, rows] of collections) {
         const unexportable = rows.some((row) => payloadByteLength(row) > SAFE_PAYLOAD_BYTES);
         if (unexportable) {
-          return { status_code: 413, body: oversizedPayloadError(SAFE_PAYLOAD_BYTES + 1, `use ?since, ?project, or ?collections to exclude the oversized ${name} record`) };
+          return { status_code: 413, body: oversizedPayloadError(SAFE_PAYLOAD_BYTES + 1, `use ?since or ?project to exclude the oversized ${name} record`) };
         }
       }
       if (!paged) {

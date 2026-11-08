@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { onStateWorkerReturn, stateWorkerStatus } from "../src/runtime/state-worker.js";
 import { IndexPersistence } from "../src/state/index-persistence.js";
 import { VectorIndex } from "../src/state/vector-index.js";
+import { rearmIndexRecovery } from "../src/runtime/recovery.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -140,5 +141,48 @@ describe("IndexPersistence.resumeAfterUnavailable", () => {
     });
     expect(since).not.toBeUndefined();
     expect(p.isRecoveryPaused()).toBe(false);
+  });
+});
+
+describe("state-worker re-arm order", () => {
+  it("rebuilds the index after a checkpoint retry even when the index looked complete", async () => {
+    const order: string[] = [];
+    await rearmIndexRecovery({
+      retryCheckpoint: async () => { order.push("checkpoint"); return true; },
+      indexNeedsRearm: () => false,
+      runIndexRecovery: async () => { order.push("index"); },
+    });
+    expect(order).toEqual(["checkpoint", "index"]);
+  });
+
+  it("skips index recovery when no checkpoint was retried and the index is complete", async () => {
+    const run = vi.fn(async () => {});
+    await rearmIndexRecovery({ retryCheckpoint: async () => false, indexNeedsRearm: () => false, runIndexRecovery: run });
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("VectorIndex.mergeMissingFrom", () => {
+  it("keeps vectors embedded after boot and adds only missing checkpoint entries", () => {
+    const live = new VectorIndex();
+    live.add("fresh", "s", new Float32Array([9, 9, 9]));
+    live.add("both", "s", new Float32Array([7, 7, 7]));
+    const checkpoint = new VectorIndex();
+    checkpoint.add("both", "s", new Float32Array([1, 1, 1]));
+    checkpoint.add("old", "s", new Float32Array([2, 2, 2]));
+    expect(live.mergeMissingFrom(checkpoint)).toBe(1);
+    expect(Array.from(live.get("fresh")!.embedding)).toEqual([9, 9, 9]);
+    expect(Array.from(live.get("both")!.embedding)).toEqual([7, 7, 7]);
+    expect(Array.from(live.get("old")!.embedding)).toEqual([2, 2, 2]);
+  });
+
+  it("does not bring back a vector removed after boot", () => {
+    const live = new VectorIndex();
+    live.add("gone", "s", new Float32Array([1]));
+    live.remove("gone");
+    const checkpoint = new VectorIndex();
+    checkpoint.add("gone", "s", new Float32Array([1]));
+    expect(live.mergeMissingFrom(checkpoint)).toBe(0);
+    expect(live.has("gone")).toBe(false);
   });
 });
