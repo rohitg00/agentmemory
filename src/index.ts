@@ -509,7 +509,6 @@ async function main() {
     });
     let checkpointBackfillSince = await indexPersistence.prepareBackfill(loaded, isVectorBackfillAllEnabled());
     let mismatchBlocked = false;
-    const liveBeforeRetry = !boot && vectorIndex ? vectorIndex.snapshotLive() : null;
   if (loaded?.vector && vectorIndex && loaded.vector.size > 0) {
     // Persisted vectors carry whatever dimension the provider had when
     // they were written. If the active provider declares a different
@@ -595,14 +594,13 @@ async function main() {
       );
     }
   }
-    if (liveBeforeRetry && vectorIndex) vectorIndex.restoreLive(liveBeforeRetry);
     return { loaded, vectorBackfillSince: checkpointBackfillSince, mismatchBlocked };
   };
 
   const bootCheckpoint = await restoreVectorCheckpoint(true);
   let vectorBackfillSince = bootCheckpoint.vectorBackfillSince;
   const bootCheckpointUnavailable = !bootCheckpoint.loaded || bootCheckpoint.loaded.state === "unavailable";
-  if (bootCheckpointUnavailable) vectorIndex?.trackRemovals(true);
+  if (bootCheckpointUnavailable) vectorIndex?.trackLiveChanges();
 
   const auditMigration = startAuditMigration(kv).catch(() => {});
 
@@ -741,7 +739,8 @@ async function main() {
           const retry = await restoreVectorCheckpoint(false);
           checkpointLoaded = retry.loaded;
           vectorBackfillSince = retry.vectorBackfillSince;
-          vectorIndex?.trackRemovals(false);
+          if (!retry.loaded || retry.loaded.state === "unavailable") return false;
+          vectorIndex?.finishLiveTracking();
           return true;
         },
         indexNeedsRearm: () => shouldRearmIndex({
