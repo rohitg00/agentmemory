@@ -1,18 +1,84 @@
+export type McpToolAnnotations = {
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+};
+
 export type McpToolDef = {
   name: string;
   description: string;
   inputSchema: {
     type: "object";
-    properties: Record<string, { type: string; description: string }>;
+    properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string } }>;
     required?: string[];
   };
+  annotations?: McpToolAnnotations;
 };
+
+export const READ_ONLY_TOOLS = new Set([
+  "memory_recall",
+  "memory_file_history",
+  "memory_patterns",
+  "memory_sessions",
+  "memory_smart_search",
+  "memory_vision_search",
+  "memory_timeline",
+  "memory_export",
+  "memory_relations",
+  "memory_commit_lookup",
+  "memory_commits",
+  "memory_graph_query",
+  "memory_team_feed",
+  "memory_audit",
+  "memory_frontier",
+  "memory_next",
+  "memory_diagnose",
+  "memory_facet_query",
+  "memory_verify",
+  "memory_lesson_recall",
+  "memory_insight_list",
+  "memory_slot_list",
+  "memory_slot_get",
+]);
+
+export const DESTRUCTIVE_TOOLS = new Set([
+  "memory_action_update",
+  "memory_compress_file",
+  "memory_claude_bridge_sync",
+  "memory_governance_delete",
+  "memory_heal",
+  "memory_lesson_delete",
+  "memory_obsidian_export",
+  "memory_slot_replace",
+  "memory_slot_delete",
+]);
+
+const IDEMPOTENT_WRITE_TOOLS = new Set([
+  "memory_governance_delete",
+  "memory_lesson_delete",
+  "memory_slot_replace",
+  "memory_slot_delete",
+  "memory_claude_bridge_sync",
+]);
+
+const OPEN_WORLD_TOOLS = new Set(["memory_mesh_sync"]);
+
+export function toolAnnotations(name: string): McpToolAnnotations {
+  const readOnly = READ_ONLY_TOOLS.has(name);
+  return {
+    readOnlyHint: readOnly,
+    destructiveHint: !readOnly && DESTRUCTIVE_TOOLS.has(name),
+    idempotentHint: readOnly || IDEMPOTENT_WRITE_TOOLS.has(name),
+    openWorldHint: OPEN_WORLD_TOOLS.has(name),
+  };
+}
 
 export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_recall",
     description:
-      "Search past session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before.",
+      "Search stored memories and session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before.",
     inputSchema: {
       type: "object",
       properties: {
@@ -30,8 +96,16 @@ export const CORE_TOOLS: McpToolDef[] = [
         },
         token_budget: {
           type: "number",
-          description: "Optional token budget to trim returned results",
+          description: "Optional estimated content token budget; response includes truncation and recovery metadata",
         },
+        targetLayer: {
+          type: "string",
+          enum: ["all", "memory", "observation"],
+          description: "Search all indexed layers (default), durable memories, or raw observations before ranking",
+        },
+        project: { type: "string", description: "Filter by project path" },
+        cwd: { type: "string", description: "Filter by session working directory" },
+        agentId: { type: "string", description: "Filter by owning agent; '*' reads across agents" },
       },
       required: ["query"],
     },
@@ -115,29 +189,49 @@ export const CORE_TOOLS: McpToolDef[] = [
       type: "object",
       properties: {
         project: { type: "string", description: "Project path to analyze" },
+        limit: {
+          type: "integer",
+          description:
+            "Most recent sessions to scan (default 50, max 500)",
+        },
       },
     },
   },
   {
     name: "memory_sessions",
     description:
-      "List recent sessions with their status and observation counts.",
-    inputSchema: { type: "object", properties: {} },
+      "List recent sessions with status, observation counts, summaries and a continuation cursor. Filters apply before pagination; retain them when requesting the next page.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project: { type: "string", description: "Exact project identifier used when sessions were started" },
+        agentId: { type: "string", description: "Filter by owning agent; '*' reads across agents" },
+        limit: { type: "integer", description: "Page size (default 20, max 100)" },
+        cursor: { type: "string", description: "nextCursor from the previous page; omit for the first page" },
+      },
+    },
   },
   {
     name: "memory_smart_search",
-    description: "Hybrid semantic+keyword search with progressive disclosure.",
+    description: "Hybrid semantic+keyword search with progressive disclosure. Pass query to search, or expandIds to recover full results.",
     inputSchema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Search query" },
         expandIds: {
           type: "string",
-          description: "Comma-separated observation IDs to expand",
+          description: "Comma-separated memory or observation IDs to expand; query is optional when provided",
         },
         limit: { type: "number", description: "Max results (default 10)" },
+        targetLayer: {
+          type: "string",
+          enum: ["all", "memory", "observation"],
+          description: "Search all indexed layers (default), durable memories, or raw observations before ranking",
+        },
+        project: { type: "string", description: "Filter by project path" },
+        agentId: { type: "string", description: "Filter by owning agent; '*' reads across agents" },
+        includeLessons: { type: "boolean", description: "Include lesson matches when targetLayer is all (default true)" },
       },
-      required: ["query"],
     },
   },
   {
@@ -195,8 +289,32 @@ export const CORE_TOOLS: McpToolDef[] = [
   },
   {
     name: "memory_export",
-    description: "Export all memory data as JSON.",
-    inputSchema: { type: "object", properties: {} },
+    description:
+      "Export memory data as JSON. Past the transport size limit the export is refused, so use the paging arguments on a large store.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        maxSessions: {
+          type: "number",
+          description: "Sessions per page (with their observations)",
+        },
+        offset: { type: "number", description: "Session offset" },
+        collectionLimit: {
+          type: "number",
+          description:
+            "Rows per page for memories, summaries, graphNodes, lessons and the other top-level collections; access logs follow the memories on the page. Sessions and their observations are paged only by maxSessions and offset, so pass collections to leave them out of each page",
+        },
+        collectionOffset: {
+          type: "number",
+          description: "Row offset for the top-level collections",
+        },
+        collections: {
+          type: "string",
+          description:
+            "Comma-separated collections to return, e.g. memories,lessons. Sessions and their observations come back only when the list names sessions, access logs only together with memories. Unknown names are ignored. Omit for everything. A paged or selected export cannot be imported with strategy replace.",
+        },
+      },
+    },
   },
   {
     name: "memory_relations",
@@ -394,6 +512,7 @@ export const V050_TOOLS: McpToolDef[] = [
           description:
             "Comma-separated action IDs that must complete before this",
         },
+        agentId: { type: "string", description: "Agent creating the action" },
       },
       required: ["title"],
     },
@@ -783,6 +902,11 @@ export const V070_TOOLS: McpToolDef[] = [
         },
         project: { type: "string", description: "Project this lesson is about" },
         tags: { type: "string", description: "Comma-separated tags" },
+        sourceIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ids of the session, memory, observation or crystal this lesson came from (max 50)",
+        },
       },
       required: ["content"],
     },
@@ -964,7 +1088,7 @@ export function getAllTools(): McpToolDef[] {
     ...V070_TOOLS,
     ...V073_TOOLS,
     ...V010_SLOTS_TOOLS,
-  ];
+  ].map((tool) => ({ ...tool, annotations: toolAnnotations(tool.name) }));
 }
 
 // default switched from "core" (8 essential tools) to "all"

@@ -1,0 +1,244 @@
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas: "one two" "three two";
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.step {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--s-2);
+  padding: var(--s-5);
+  border-left: 1px solid var(--line);
+  min-width: 0;
+}
+
+.step:nth-child(1) {
+  grid-area: one;
+  border-left: 0;
+}
+
+.step:nth-child(2) {
+  grid-area: two;
+}
+
+.step:nth-child(3) {
+  grid-area: three;
+  border-left: 0;
+  border-top: 1px solid var(--line);
+}
+
+.n {
+  font-size: var(--t-12);
+  color: var(--muted);
+  padding-top: 4px;
+}
+
+.stepBody {
+  display: grid;
+  gap: var(--s-3);
+  align-content: start;
+  min-width: 0;
+}
+
+.stepBody h3 {
+  font-size: var(--t-20);
+}
+
+.stepBody p {
+  font-size: var(--t-14);
+  color: var(--muted);
+}
+
+.stepBody p code {
+  font-size: 0.92em;
+  color: var(--ink);
+}
+
+.cmd {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  background: var(--bg);
+  text-align: left;
+  font-size: var(--t-12);
+  line-height: 1.6;
+  color: var(--ink);
+  transition: border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
+}
+
+.cmd:hover {
+  border-color: var(--ink);
+}
+
+.cmd:active {
+  transform: scale(0.98);
+}
+
+.cmd code {
+  flex: 1;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.prompt code {
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.cmd :global(.copy-state) {
+  flex: none;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.dollar {
+  color: var(--faint);
+  font-family: var(--font-mono), monospace;
+}
+
+.prompt code {
+  color: var(--ink-2);
+}
+
+.swap {
+  animation: swap var(--dur-2) var(--ease-out);
+}
+
+.picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: var(--t-12);
+  color: var(--muted);
+  transition: border-color var(--dur-1) ease, color var(--dur-1) ease, background-color var(--dur-1) ease,
+    transform var(--dur-1) var(--ease-out);
+}
+
+.chip:hover {
+  color: var(--ink);
+  border-color: var(--line-2);
+}
+
+.chip:active {
+  transform: scale(0.96);
+}
+
+.chip[aria-checked="true"] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+
+.mcp {
+  margin-top: var(--s-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.mcpHead {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--s-4);
+  padding: var(--s-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.mcpHead h3 {
+  font-size: var(--t-20);
+}
+
+.mcpHead p {
+  margin-top: 6px;
+  font-size: var(--t-14);
+  color: var(--muted);
+  max-width: 60ch;
+}
+
+.mcpHead p code {
+  font-size: 0.92em;
+  color: var(--ink);
+}
+
+.mcpHead :global(.copy-state) {
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.json {
+  margin: 0;
+  padding: var(--s-5);
+  overflow-x: auto;
+  font-size: var(--t-14);
+  line-height: 1.6;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+@keyframes swap {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (max-width: 960px) {
+  .steps {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "one" "two" "three";
+  }
+  .step,
+  .step:nth-child(3) {
+    border-left: 0;
+    border-top: 1px solid var(--line);
+  }
+  .step:nth-child(1) {
+    border-top: 0;
+  }
+}
+
+@media (max-width: 520px) {
+  .step {
+    padding: var(--s-4);
+  }
+  .json {
+    font-size: var(--t-12);
+    padding: var(--s-4);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swap {
+    animation: none;
+  }
+}

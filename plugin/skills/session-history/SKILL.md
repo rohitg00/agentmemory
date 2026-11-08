@@ -9,7 +9,7 @@ The user wants an overview of recent sessions on this project.
 ## Quick start
 
 ```json
-memory_sessions { "limit": 20 }
+memory_sessions { "project": "<current-project-id>", "limit": 20 }
 ```
 
 Expected output:
@@ -28,8 +28,13 @@ real answer, never a cue to invent past work.
 
 ## Workflow
 
-1. Call `memory_sessions` with `limit: 20` for a meaningful window.
-2. Present in reverse chronological order: session id (first 8), project, start
+1. Use the exact project identifier recorded by the host and pass it to
+   `memory_sessions`, with `agentId` when requested. If it is unknown, page
+   through sessions using `nextCursor` and match normalized `cwd` by directory
+   boundary before choosing the most recent 20. Never substitute another project.
+2. Preserve scope filters on every page; stop at the requested count or a null
+   `nextCursor`. State when the displayed history is a partial page. Present in
+   reverse chronological order: session id (first 8), project, start
    time, status.
 3. For sessions with observations, show the key highlights (type plus title).
 4. Note the total observation count per session.
@@ -46,6 +51,7 @@ observation count.
 ## Checklist
 
 - Every session shown came from the tool response.
+- Project/directory scope was checked before selecting the displayed window.
 - Order is reverse-chronological.
 - Per-session observation counts match the response.
 - No session or highlight was invented or merged.
@@ -58,4 +64,4 @@ observation count.
 
 ## Troubleshooting
 
-See ../_shared/TROUBLESHOOTING.md if `memory_sessions` is not available.
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) if `memory_sessions` is not available.

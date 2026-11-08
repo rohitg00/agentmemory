@@ -7,8 +7,14 @@ vi.mock("../src/logger.js", () => ({
 const fileStore = new Map<string, string>();
 const symlinkPaths = new Set<string>();
 const openEloopPaths = new Set<string>();
+const failWritePaths = new Set<string>();
+const matches = (set: Set<string>, path: string) =>
+  [...set].some((p) => path === p || path.startsWith(p.replace(/[^/]+$/, (name) => `.${name}.`)));
+
+const { constants: fsConstants } = await vi.importActual<typeof import("node:fs")>("node:fs");
 
 vi.mock("node:fs/promises", () => ({
+  realpath: vi.fn(async (path: string) => path),
   lstat: vi.fn(async (path: string) => {
     if (symlinkPaths.has(path)) {
       return { isSymbolicLink: () => true };
@@ -18,20 +24,33 @@ vi.mock("node:fs/promises", () => ({
         code: "ENOENT",
       });
     }
-    return { isSymbolicLink: () => false };
+    return { isSymbolicLink: () => false, mode: 0o644 };
   }),
-  open: vi.fn(async (path: string) => {
-    if (openEloopPaths.has(path)) {
+  open: vi.fn(async (path: string, flags?: number) => {
+    if (typeof flags === "number" && (flags & fsConstants.O_TRUNC) && fileStore.has(path)) fileStore.set(path, "");
+    if (matches(openEloopPaths, path)) {
       throw Object.assign(new Error("ELOOP: too many levels of symbolic links"), {
         code: "ELOOP",
       });
     }
     return {
       writeFile: vi.fn(async (content: string) => {
+        if (matches(failWritePaths, path)) {
+          throw Object.assign(new Error("ENOSPC: no space left on device"), { code: "ENOSPC" });
+        }
         fileStore.set(path, content);
       }),
       close: vi.fn(async () => {}),
     };
+  }),
+  rename: vi.fn(async (from: string, to: string) => {
+    const value = fileStore.get(from);
+    if (value === undefined) throw Object.assign(new Error("ENOENT"), { code: "ENOENT" });
+    fileStore.set(to, value);
+    fileStore.delete(from);
+  }),
+  rm: vi.fn(async (path: string) => {
+    fileStore.delete(path);
   }),
   readFile: vi.fn(async (path: string) => {
     const value = fileStore.get(path);
@@ -93,9 +112,11 @@ describe("mem::compress-file", () => {
   let summarize: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    process.env.AGENTMEMORY_IMPORT_ROOT = "/tmp";
     fileStore.clear();
     symlinkPaths.clear();
     openEloopPaths.clear();
+    failWritePaths.clear();
     sdk = mockSdk();
     kv = mockKV();
     summarize = vi.fn();
@@ -133,6 +154,21 @@ describe("mem::compress-file", () => {
     })) as { success: boolean; error: string };
     expect(result.success).toBe(false);
     expect(result.error).toContain("symlink");
+  });
+
+  it("keeps the original file when writing the compressed version fails", async () => {
+    const path = "/tmp/notes.md";
+    const original = "# Title\n\nVisit https://example.com\n\n```ts\nconst x = 1;\n```\n\nContent.";
+    fileStore.set(path, original);
+    summarize.mockResolvedValue("# Title\n\nVisit https://example.com\n\n```ts\nconst x = 1;\n```\n\nShort.");
+    failWritePaths.add(path);
+
+    const result = (await sdk.trigger("mem::compress-file", {
+      filePath: path,
+    })) as { success: boolean };
+    expect(result.success).toBe(false);
+    expect(fileStore.get(path)).toBe(original);
+    expect([...fileStore.keys()].filter((k) => k.endsWith(".tmp"))).toEqual([]);
   });
 
   it("rejects non-markdown paths", async () => {

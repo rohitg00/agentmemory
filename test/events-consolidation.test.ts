@@ -10,6 +10,7 @@ vi.mock("../src/config.js", () => ({
   isConsolidationEnabled: vi.fn(() => true),
   isGraphExtractionEnabled: vi.fn(() => false),
   getConsolidationCooldownMs: vi.fn(() => 300000),
+  detectLlmProviderKind: vi.fn(() => "noop"),
 }));
 
 vi.mock("../src/functions/slots.js", () => ({
@@ -111,6 +112,23 @@ describe("event::session::stopped consolidation fan-out", () => {
     expect((crystallizeCall![0] as { payload: unknown }).payload).toEqual({
       olderThanDays: 0,
     });
+  });
+
+  it("waits on mem::summarize for longer than the configured summary budget", async () => {
+    const previous = process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS;
+    process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = "600000";
+    try {
+      const { sdk, handlers, trigger } = mockSdk();
+      registerEventTriggers(sdk as never, mockKV() as never);
+      await handlers.get("event::session::stopped")!({ sessionId: "ses_1" });
+      const summarizeCall = trigger.mock.calls.find(
+        (c) => (c[0] as { function_id: string }).function_id === "mem::summarize",
+      );
+      expect((summarizeCall![0] as { timeoutMs?: number }).timeoutMs).toBeGreaterThan(600_000);
+    } finally {
+      if (previous === undefined) delete process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS;
+      else process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = previous;
+    }
   });
 
   it("skips consolidate-pipeline and auto-crystallize when consolidation disabled but still summarizes", async () => {

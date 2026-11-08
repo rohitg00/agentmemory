@@ -311,6 +311,16 @@ describe("antigravity bridge payload normalization", () => {
     );
   });
 
+  it("preserves native failures and the trajectory step used for replay deduplication", () => {
+    const out = normalizePayload("PostToolUse", {
+      stepIdx: 0,
+      toolCall: { name: "run_command", args: { CommandLine: "npm test" } },
+      error: "exit status 1",
+    });
+    expect(out["tool_use_id"]).toBe("step:0");
+    expect(out["tool_result"]).toBe("exit status 1");
+  });
+
   it("falls back to a placeholder session id rather than dropping the event", () => {
     expect(normalizePayload("Stop", {})["session_id"]).toBe("unknown");
   });
@@ -352,13 +362,11 @@ describe("antigravity bridge stdout contract", () => {
 
 describe("antigravity bridge event routing", () => {
   it("opens the session on the first invocation only", () => {
-    expect(targetsFor("PreInvocation", { invocationNum: 1 })).toEqual([
+    expect(targetsFor("PreInvocation", { invocationNum: 0 })).toEqual([
       "session-start.mjs",
-      "prompt-submit.mjs",
     ]);
-    expect(targetsFor("PreInvocation", { invocationNum: 4 })).toEqual([
-      "prompt-submit.mjs",
-    ]);
+    expect(targetsFor("PreInvocation", { invocationNum: 1 })).toEqual([]);
+    expect(targetsFor("PreInvocation", { invocationNum: 4 })).toEqual([]);
   });
 
   it("treats a missing invocationNum as the first invocation", () => {
@@ -366,7 +374,8 @@ describe("antigravity bridge event routing", () => {
   });
 
   it("closes the session on Stop", () => {
-    expect(targetsFor("Stop", {})).toEqual(["stop.mjs", "session-end.mjs"]);
+    expect(targetsFor("Stop", {})).toEqual(["session-end.mjs"]);
+    expect(targetsFor("Stop", { fullyIdle: false })).toEqual([]);
   });
 
   it("ignores PostInvocation to avoid double-capturing a turn", () => {

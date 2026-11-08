@@ -70,7 +70,7 @@ describe("vision-search", () => {
       registerFunction: vi.fn((id: string, cb) => {
         handlers[id] = cb;
       }),
-    } as unknown as import("iii-sdk").ISdk;
+    } as unknown as import("iii-sdk").IIIClient;
     registerVisionSearchFunctions(sdk, kv as never, fakeProvider);
     visionSearch = handlers["mem::vision-search"]!;
     visionEmbed = handlers["mem::vision-embed"]!;
@@ -166,7 +166,7 @@ describe("vision-search", () => {
       registerFunction: vi.fn((id: string, cb) => {
         handlers[id] = cb;
       }),
-    } as unknown as import("iii-sdk").ISdk;
+    } as unknown as import("iii-sdk").IIIClient;
     registerVisionSearchFunctions(sdk, kv as never, null);
     const res = (await handlers["mem::vision-search"]!({ queryText: "login" })) as {
       success: boolean;

@@ -1,4 +1,4 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type {
   SemanticMemory,
   ProceduralMemory,
@@ -8,6 +8,7 @@ import type {
 } from "../types.js";
 import { KV, generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import {
   SEMANTIC_MERGE_SYSTEM,
   buildSemanticMergePrompt,
@@ -15,14 +16,15 @@ import {
   buildProceduralExtractionPrompt,
 } from "../prompts/consolidation.js";
 import { recordAudit } from "./audit.js";
+import { CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, patternFrequency } from "./consolidation-status.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
-
 function applyDecay(
   items: Array<{
     strength: number;
     lastAccessedAt?: string;
     updatedAt: string;
+    lastDecayedAt?: string;
   }>,
   decayDays: number,
 ): void {
@@ -30,27 +32,61 @@ function applyDecay(
   const now = Date.now();
   for (const item of items) {
     const lastAccess = item.lastAccessedAt || item.updatedAt;
-    const daysSince =
-      (now - new Date(lastAccess).getTime()) / (1000 * 60 * 60 * 24);
+    const lastAccessTime = new Date(lastAccess).getTime();
+    const lastDecayedTime = item.lastDecayedAt
+      ? new Date(item.lastDecayedAt).getTime()
+      : -Infinity;
+    const anchor = Math.max(lastAccessTime, lastDecayedTime);
+    const daysSince = (now - anchor) / (1000 * 60 * 60 * 24);
     if (daysSince > decayDays) {
       const decayPeriods = Math.floor(daysSince / decayDays);
       item.strength = Math.max(
         0.1,
         item.strength * Math.pow(0.9, decayPeriods),
       );
+      item.lastDecayedAt = new Date(now).toISOString();
     }
   }
 }
 
+const DECAY_STRENGTH_EPSILON = 1e-9;
+
+function strengthChanged(before: number, after: number): boolean {
+  return Math.abs(after - before) > DECAY_STRENGTH_EPSILON;
+}
+
+async function decayAndWriteChanged<
+  T extends {
+    id: string;
+    strength: number;
+    lastAccessedAt?: string;
+    updatedAt: string;
+    lastDecayedAt?: string;
+  },
+>(
+  kv: StateKV,
+  scope: string,
+  items: T[],
+  decayDays: number,
+): Promise<{ scanned: number; written: number }> {
+  const before = items.map((item) => item.strength);
+  applyDecay(items, decayDays);
+  const dirty = items.filter((item, i) => strengthChanged(before[i], item.strength));
+  for (const item of dirty) {
+    await kv.set(scope, item.id, item);
+  }
+  return { scanned: items.length, written: dirty.length };
+}
+
 export function registerConsolidationPipelineFunction(
-  sdk: ISdk,
+  sdk: IIIClient,
   kv: StateKV,
   provider: MemoryProvider,
 ): void {
   sdk.registerFunction("mem::consolidate-pipeline", 
     async (data?: { tier?: string; force?: boolean; project?: string }) => {
       if (!data?.force && !isConsolidationEnabled()) {
-        return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or configure an LLM provider (ANTHROPIC_API_KEY / OPENAI_API_KEY / OPENROUTER_API_KEY / GEMINI_API_KEY / GOOGLE_API_KEY / MINIMAX_API_KEY / OPENAI_BASE_URL / AGENTMEMORY_PROVIDER=agent-sdk)" };
+        return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or choose an LLM provider (AGENTMEMORY_LLM_PROVIDER=anthropic, openai, gemini, openrouter or minimax with that provider's key, or AGENTMEMORY_ALLOW_AGENT_SDK=true). A provider key alone does not turn on LLM use." };
       }
       const tier = data?.tier || "all";
       const decayDays = getConsolidationDecayDays();
@@ -58,7 +94,7 @@ export function registerConsolidationPipelineFunction(
 
       if (tier === "all" || tier === "semantic") {
         const summaries = await kv.list<SessionSummary>(KV.summaries);
-        const existingSemantic = await kv.list<SemanticMemory>(KV.semantic);
+        const existingSemantic = await collectAll<SemanticMemory>(kv, KV.semantic);
 
         if (summaries.length >= 5) {
           const recentSummaries = summaries
@@ -148,14 +184,14 @@ export function registerConsolidationPipelineFunction(
       }
 
       if (tier === "all" || tier === "procedural") {
-        const memories = await kv.list<Memory>(KV.memories);
+        const memories = await collectAll<Memory>(kv, KV.memories);
         const patterns = memories
           .filter((m) => m.isLatest && m.type === "pattern")
           .map((m) => ({
             content: m.content,
-            frequency: m.sessionIds.length || 1,
+            frequency: patternFrequency(m),
           }))
-          .filter((p) => p.frequency >= 2);
+          .filter((p) => p.frequency >= PROCEDURAL_MIN_SESSIONS_PER_PATTERN);
 
         if (patterns.length >= 2) {
           const prompt = buildProceduralExtractionPrompt(patterns);
@@ -171,8 +207,8 @@ export function registerConsolidationPipelineFunction(
             let match;
             let newProcs = 0;
             const now = new Date().toISOString();
-            const existingProcs = await kv.list<ProceduralMemory>(
-              KV.procedural,
+            const existingProcs = await collectAll<ProceduralMemory>(
+              kv, KV.procedural,
             );
 
             while ((match = procRegex.exec(response)) !== null) {
@@ -229,21 +265,25 @@ export function registerConsolidationPipelineFunction(
       }
 
       if (tier === "all" || tier === "decay") {
-        const semantic = await kv.list<SemanticMemory>(KV.semantic);
-        applyDecay(semantic, decayDays);
-        for (const s of semantic) {
-          await kv.set(KV.semantic, s.id, s);
-        }
+        const semantic = await collectAll<SemanticMemory>(kv, KV.semantic);
+        const procedural = await collectAll<ProceduralMemory>(kv, KV.procedural);
 
-        const procedural = await kv.list<ProceduralMemory>(KV.procedural);
-        applyDecay(procedural, decayDays);
-        for (const p of procedural) {
-          await kv.set(KV.procedural, p.id, p);
-        }
+        const semanticResult = await decayAndWriteChanged(
+          kv,
+          KV.semantic,
+          semantic,
+          decayDays,
+        );
+        const proceduralResult = await decayAndWriteChanged(
+          kv,
+          KV.procedural,
+          procedural,
+          decayDays,
+        );
 
         results.decay = {
-          semantic: semantic.length,
-          procedural: procedural.length,
+          semantic: semanticResult,
+          procedural: proceduralResult,
         };
       }
 
@@ -262,6 +302,10 @@ export function registerConsolidationPipelineFunction(
         tier,
         results,
       });
+
+      await kv
+        .set(KV.config, CONSOLIDATION_LAST_RUN_KEY, { at: new Date().toISOString(), tier, results })
+        .catch(() => {});
 
       logger.info("Consolidation pipeline complete", { tier, results });
       return { success: true, results };

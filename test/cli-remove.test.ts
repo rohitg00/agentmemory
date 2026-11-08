@@ -14,6 +14,7 @@ import {
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { III_PINNED_VERSION } from "../src/version.js";
 
 let sandbox: string;
 
@@ -22,7 +23,7 @@ function ctx(overrides: Partial<RemoveContext> = {}): RemoveContext {
     home: sandbox,
     runtimeDir: join(sandbox, ".agentmemory"),
     dataDir: join(sandbox, ".agentmemory", "data"),
-    pinnedVersion: "0.11.2",
+    pinnedVersion: III_PINNED_VERSION,
     localBinIiiVersion: null,
     connectManifest: null,
     ...overrides,
@@ -125,7 +126,7 @@ describe("buildRemovePlan", () => {
   it("local-bin/iii is auto-fixable when version matches pinned", () => {
     touch(".local/bin/iii", "fakebin");
     const plan = buildRemovePlan(
-      ctx({ localBinIiiVersion: "0.11.2" }),
+      ctx({ localBinIiiVersion: III_PINNED_VERSION }),
       { force: false, keepData: false },
     );
     const item = plan.find((p) => p.id === "legacy-local-bin-iii")!;

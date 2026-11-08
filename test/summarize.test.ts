@@ -125,6 +125,7 @@ async function setupHandler(opts: {
   sessionId: string;
   obsCount: number;
   provider: MemoryProvider;
+  metricsStore?: unknown;
 }) {
   const sdk = mockSdk();
   const kv = mockKV();
@@ -141,7 +142,7 @@ async function setupHandler(opts: {
     const o = makeObs(i, opts.sessionId);
     await kv.set(`obs:${opts.sessionId}`, o.id, o);
   }
-  registerSummarizeFunction(sdk as any, kv as any, opts.provider);
+  registerSummarizeFunction(sdk as any, kv as any, opts.provider, opts.metricsStore as any);
   const handler = sdk.functions.get("mem::summarize")!;
   return { handler, kv };
 }
@@ -415,10 +416,6 @@ describe("mem::summarize chunking", () => {
     expect(maxInflight).toBe(2);
   });
 
-  // #783: markdown-wrapped XML used to silently fail parsing because
-  // the tag regex looked for <title> in the raw payload. stripXmlWrappers
-  // now peels ```xml ... ``` fences and conversational pre/postamble
-  // before the regex runs.
   it("parses a summary even when the LLM wraps XML in markdown fences", async () => {
     const wrappedXml = "Here's the summary:\n```xml\n" + summaryXml({
       title: "wrapped",
@@ -478,5 +475,89 @@ describe("mem::summarize chunking", () => {
 
     expect(result.success).toBe(false);
     expect(result.error).toBe("parse_failed");
+  });
+});
+
+describe("mem::summarize without an LLM provider", () => {
+  it("skips a wrapped noop provider without recording a failed call", async () => {
+    const { ResilientProvider } = await import("../src/providers/resilient.js");
+    const { NoopProvider } = await import("../src/providers/noop.js");
+    const record = vi.fn(async () => {});
+    const { handler } = await setupHandler({
+      sessionId: "ses_noop",
+      obsCount: 3,
+      provider: new ResilientProvider(new NoopProvider()),
+      metricsStore: { record },
+    });
+
+    const result = (await handler({ sessionId: "ses_noop" })) as { success: boolean; error?: string };
+
+    expect(result).toMatchObject({ success: false, error: "no_provider" });
+    expect(record).not.toHaveBeenCalled();
+  });
+});
+
+describe("mem::summarize deadline", () => {
+  const ORIGINAL_ENV = { ...process.env };
+
+  beforeEach(() => {
+    delete process.env.SUMMARIZE_CHUNK_SIZE;
+    delete process.env.SUMMARIZE_CHUNK_CONCURRENCY;
+    delete process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS;
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    process.env = { ...ORIGINAL_ENV };
+  });
+
+  function slowProvider(delayMs: number, responses: string[]) {
+    const provider = makeProvider(responses);
+    const inner = provider.summarize;
+    provider.summarize = async (system: string, user: string) => {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return inner(system, user);
+    };
+    return provider;
+  }
+
+  async function runChunked(delayMs: number) {
+    process.env.SUMMARIZE_CHUNK_SIZE = "10";
+    process.env.SUMMARIZE_CHUNK_CONCURRENCY = "1";
+    const responses = [
+      ...Array.from({ length: 4 }, (_, i) => summaryXml({ title: `chunk ${i}` })),
+      summaryXml({ title: "merged" }),
+    ];
+    const provider = slowProvider(delayMs, responses);
+    const { handler } = await setupHandler({ sessionId: "ses_slow", obsCount: 40, provider });
+    vi.useFakeTimers();
+    const pending = handler({ sessionId: "ses_slow" }) as Promise<any>;
+    await vi.advanceTimersByTimeAsync(10 * delayMs);
+    return { result: await pending, provider };
+  }
+
+  it("keeps the default 120 s budget for a multi-chunk session", async () => {
+    const { result } = await runChunked(30_000);
+    expect(result).toMatchObject({ success: false });
+    expect(result.error).toMatch(/summary_timeout|too_many_chunks_skipped/);
+  });
+
+  it("AGENTMEMORY_SUMMARY_TIMEOUT_MS extends the budget so slow chunked sessions finish", async () => {
+    process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = "600000";
+    const { result, provider } = await runChunked(30_000);
+    expect(result).toMatchObject({ success: true });
+    expect(result.summary.title).toBe("merged");
+    expect(provider.calls).toHaveLength(5);
+  });
+
+  it("ignores an invalid AGENTMEMORY_SUMMARY_TIMEOUT_MS", async () => {
+    const { getSummaryTimeoutMs, getSummaryTriggerTimeoutMs } = await import("../src/functions/summary-state.js");
+    for (const bad of ["nope", "600s", "1e6", "0.5", "0", "2592000000"]) {
+      process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = bad;
+      expect(getSummaryTimeoutMs()).toBe(120_000);
+    }
+    process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = "300000";
+    expect(getSummaryTimeoutMs()).toBe(300_000);
+    expect(getSummaryTriggerTimeoutMs()).toBeGreaterThan(300_000);
   });
 });
