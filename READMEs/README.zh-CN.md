@@ -452,7 +452,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-此命令会配置 MCP 服务器，并将包内的 hook 合并到 Claude Code 的用户配置中。`CLAUDE_CONFIG_DIR` 未设置，或去除首尾空白后为空时，MCP 使用 `~/.claude.json`，hook 使用 `~/.claude/settings.json`。若使用自定义目录，请为此命令和 Claude Code 设置相同且非空的 `CLAUDE_CONFIG_DIR`，此时两份配置文件分别为 `$CLAUDE_CONFIG_DIR/.claude.json` 和 `$CLAUDE_CONFIG_DIR/settings.json`。即使连接器从 AgentMemory 的 `.env` 读取该值，Claude Code 自身的启动环境中也必须设置该值。运行此命令前请先创建自定义目录；目录不存在时，连接器会以未检测到 Claude Code 为由跳过。
+此命令会配置 MCP 服务器，并将包内的 hook 合并到 Claude Code 的用户配置中。`CLAUDE_CONFIG_DIR` 未设置、为空或仅含空白时，MCP 使用 `~/.claude.json`，hook 使用 `~/.claude/settings.json`。其他目录值按原样使用，包括首尾空白。若使用自定义目录，请为此命令和 Claude Code 设置相同且非空的 `CLAUDE_CONFIG_DIR`，此时两份配置文件分别为 `$CLAUDE_CONFIG_DIR/.claude.json` 和 `$CLAUDE_CONFIG_DIR/settings.json`。即使连接器从 AgentMemory 的 `.env` 读取该值，Claude Code 自身的启动环境中也必须设置该值。运行此命令前请先创建自定义目录；目录不存在时，连接器会以未检测到 Claude Code 为由跳过。若 shell 中的值仅含空白，请在启动 Claude Code 前取消 `CLAUDE_CONFIG_DIR`，使其也使用默认配置。建议使用绝对路径。相对路径以工作目录为基准，因此两个命令必须从同一目录启动。
 
 Hook 命令使用绝对路径，指向已安装包内的 `plugin/` 目录。升级 agentmemory 后，请重新运行此命令以刷新这些路径。配置文件中的用户条目会保留，仅替换之前的 agentmemory 条目。仍推荐使用 `/plugin install`。
 对于远程或受保护的部署,启动 Claude Code 时设置好 `AGENTMEMORY_URL` 和 `AGENTMEMORY_SECRET`。插件会把这两个值传递给它捆绑的 MCP 服务器;当 `AGENTMEMORY_URL` 为空时,MCP shim 会使用 `http://localhost:3111`。

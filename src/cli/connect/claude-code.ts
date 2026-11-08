@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { isEnvFileValue } from "../../config.js";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
@@ -20,9 +20,11 @@ import {
 } from "./codex-hooks.js";
 
 function claudeConfigPaths() {
-  const configDir = process.env["CLAUDE_CONFIG_DIR"]?.trim();
+  const rawConfigDir = process.env["CLAUDE_CONFIG_DIR"];
+  const configDir = rawConfigDir?.trim() ? rawConfigDir : undefined;
   const dir = configDir || join(homedir(), ".claude");
   return {
+    rawConfigDir,
     configDir,
     dir,
     mcp: configDir ? join(dir, ".claude.json") : join(homedir(), ".claude.json"),
@@ -53,14 +55,31 @@ export const adapter: ConnectAdapter = {
     "→ Using MCP. Hooks are also available — see https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it.",
 
   detect(): boolean {
-    return existsSync(claudeConfigPaths().dir);
+    const { configDir, dir } = claudeConfigPaths();
+    const detected = statSync(dir, { throwIfNoEntry: false })?.isDirectory() ?? false;
+    if (!detected && configDir) {
+      p.log.warn(
+        `Claude Code configuration path ${JSON.stringify(configDir)} is not an existing directory. Create it or correct CLAUDE_CONFIG_DIR; check for unintended leading or trailing whitespace.`,
+      );
+    }
+    return detected;
   },
 
   async install(opts: ConnectOptions): Promise<ConnectResult> {
-    const { configDir, dir: CLAUDE_DIR, mcp: CLAUDE_JSON } = claudeConfigPaths();
-    if (configDir && isEnvFileValue("CLAUDE_CONFIG_DIR")) {
+    const { rawConfigDir, configDir, dir: CLAUDE_DIR, mcp: CLAUDE_JSON } = claudeConfigPaths();
+    const fromEnvFile = isEnvFileValue("CLAUDE_CONFIG_DIR");
+    if (configDir && fromEnvFile) {
       p.log.warn(
-        `CLAUDE_CONFIG_DIR was loaded only from agentmemory's env file. Launch Claude Code with the same CLAUDE_CONFIG_DIR value (${configDir}) so it reads the same MCP and hook configuration.`,
+        `CLAUDE_CONFIG_DIR was loaded only from agentmemory's env file. Launch Claude Code with the same CLAUDE_CONFIG_DIR value ${JSON.stringify(configDir)} so it reads the same MCP and hook configuration.`,
+      );
+    } else if (rawConfigDir && !configDir && !fromEnvFile) {
+      p.log.warn(
+        "CLAUDE_CONFIG_DIR contains only whitespace. AgentMemory will use the default Claude Code profile. Unset CLAUDE_CONFIG_DIR before launching Claude Code so it uses the same profile.",
+      );
+    }
+    if (configDir && !isAbsolute(configDir)) {
+      p.log.warn(
+        `CLAUDE_CONFIG_DIR is relative and resolves to ${JSON.stringify(resolve(configDir))} from this working directory. Set the same absolute path for agentmemory and Claude Code so they use the same profile.`,
       );
     }
     const existing = readJsonSafe<ClaudeConfig>(CLAUDE_JSON);

@@ -450,7 +450,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-이 명령은 MCP 서버를 구성하고 번들 hook을 Claude Code의 사용자 설정에 병합합니다. `CLAUDE_CONFIG_DIR`가 설정되지 않았거나 앞뒤 공백을 제거한 뒤 비어 있으면 MCP에는 `~/.claude.json`을, hook에는 `~/.claude/settings.json`을 사용합니다. 사용자 지정 디렉터리를 사용하려면 이 명령과 Claude Code 양쪽에 `CLAUDE_CONFIG_DIR`를 동일한 비어 있지 않은 값으로 설정하세요. 그러면 각각 `$CLAUDE_CONFIG_DIR/.claude.json`과 `$CLAUDE_CONFIG_DIR/settings.json`을 사용합니다. 커넥터가 AgentMemory의 `.env`에서 값을 읽더라도 Claude Code 자체의 실행 환경에 이 값이 전달되어야 합니다. 이 명령을 실행하기 전에 사용자 지정 디렉터리를 만드세요. 디렉터리가 없으면 커넥터는 Claude Code를 감지하지 못한 것으로 처리하고 건너뜁니다.
+이 명령은 MCP 서버를 구성하고 번들 hook을 Claude Code의 사용자 설정에 병합합니다. `CLAUDE_CONFIG_DIR`가 설정되지 않았거나 비어 있거나 공백만 포함하면 MCP에는 `~/.claude.json`을, hook에는 `~/.claude/settings.json`을 사용합니다. 그 밖의 디렉터리 값은 앞뒤 공백을 포함해 입력한 그대로 사용합니다. 사용자 지정 디렉터리를 사용하려면 이 명령과 Claude Code 양쪽에 `CLAUDE_CONFIG_DIR`를 동일한 비어 있지 않은 값으로 설정하세요. 그러면 각각 `$CLAUDE_CONFIG_DIR/.claude.json`과 `$CLAUDE_CONFIG_DIR/settings.json`을 사용합니다. 커넥터가 AgentMemory의 `.env`에서 값을 읽더라도 Claude Code 자체의 실행 환경에 이 값이 전달되어야 합니다. 이 명령을 실행하기 전에 사용자 지정 디렉터리를 만드세요. 디렉터리가 없으면 커넥터는 Claude Code를 감지하지 못한 것으로 처리하고 건너뜁니다. shell 값이 공백만 포함하면 Claude Code를 시작하기 전에 `CLAUDE_CONFIG_DIR`를 해제하여 Claude Code도 기본 프로필을 사용하도록 하세요. 절대 경로를 사용하세요. 상대 경로는 작업 디렉터리를 기준으로 해석되므로 두 명령을 같은 디렉터리에서 실행해야 합니다.
 
 Hook 명령은 설치된 패키지에 포함된 `plugin/` 디렉터리의 절대 경로를 사용합니다. agentmemory를 업그레이드한 후 명령을 다시 실행하여 경로를 갱신하세요. 설정 파일에 있는 사용자 항목은 유지되며, 이전 agentmemory 항목만 교체됩니다. `/plugin install` 사용을 계속 권장합니다.
 원격 또는 보호된 배포의 경우, `AGENTMEMORY_URL`과 `AGENTMEMORY_SECRET`을 설정한 채로 Claude Code를 실행하십시오. 플러그인은 두 값을 모두 번들된 MCP 서버로 전달합니다. `AGENTMEMORY_URL`이 비어 있으면 MCP shim은 `http://localhost:3111`을 사용합니다.

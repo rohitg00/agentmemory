@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -151,10 +151,14 @@ describe("connect claude-code --with-hooks", () => {
     expect(existsSync(join(home, ".claude"))).toBe(false);
   });
 
-  it("trims the profile override for detection, MCP and hooks while preserving spaces inside the path", async () => {
-    const configDir = join(home, "custom Claude config");
+  it.skipIf(process.platform === "win32")("preserves a literal trailing space instead of changing a different profile", async () => {
+    const configDir = join(home, "custom Claude config ");
+    const trimmedDir = configDir.trim();
     mkdirSync(configDir);
-    vi.stubEnv("CLAUDE_CONFIG_DIR", ` \t${configDir} \n`);
+    mkdirSync(trimmedDir);
+    writeFileSync(join(trimmedDir, ".claude.json"), '{"keep":"trimmed MCP"}');
+    writeFileSync(join(trimmedDir, "settings.json"), '{"keep":"trimmed settings"}');
+    vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
 
     const { adapter } = await import("../src/cli/connect/claude-code.js");
     expect(adapter.detect()).toBe(true);
@@ -163,6 +167,8 @@ describe("connect claude-code --with-hooks", () => {
       mutatedPath: join(configDir, ".claude.json"),
     });
     expect(JSON.parse(readFileSync(join(configDir, "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
+    expect(readFileSync(join(trimmedDir, ".claude.json"), "utf-8")).toBe('{"keep":"trimmed MCP"}');
+    expect(readFileSync(join(trimmedDir, "settings.json"), "utf-8")).toBe('{"keep":"trimmed settings"}');
     expect(existsSync(join(home, ".claude.json"))).toBe(false);
     expect(existsSync(join(home, ".claude"))).toBe(false);
   });
@@ -183,6 +189,22 @@ describe("connect claude-code --with-hooks", () => {
     expect(existsSync(join(home, ".claude"))).toBe(false);
   });
 
+  it.each(["custom", "default"])("skips a %s profile path that is a file", async (profile) => {
+    const configDir = join(home, profile === "custom" ? "Claude config" : ".claude");
+    writeFileSync(configDir, "keep this file");
+    if (profile === "custom") vi.stubEnv("CLAUDE_CONFIG_DIR", configDir);
+
+    const { resolveAdapter, runAdapter } = await import("../src/cli/connect/index.js");
+    expect(await runAdapter(resolveAdapter("claude-code")!, {
+      dryRun: false,
+      force: false,
+      withHooks: true,
+      guidelines: false,
+    })).toEqual({ kind: "skipped", reason: "not-detected" });
+    expect(readFileSync(configDir, "utf-8")).toBe("keep this file");
+    expect(existsSync(join(home, ".claude.json"))).toBe(false);
+  });
+
   it("uses a profile override set after the adapter was imported for detection, MCP and hooks", async () => {
     const { adapter } = await import("../src/cli/connect/claude-code.js");
     const configDir = join(home, "late Claude config");
@@ -201,22 +223,29 @@ describe("connect claude-code --with-hooks", () => {
 
   describe.skipIf(process.platform === "win32")("CLI env-file hydration", () => {
     it.each([
-      { source: "default .env", customEnvFile: false, shellOverride: false, matchingShell: false, paddedFile: false },
-      { source: "AGENTMEMORY_ENV_FILE", customEnvFile: true, shellOverride: false, matchingShell: false, paddedFile: false },
-      { source: "shell overriding the env file", customEnvFile: true, shellOverride: true, matchingShell: false, paddedFile: false },
-      { source: "matching shell and env-file values", customEnvFile: true, shellOverride: true, matchingShell: true, paddedFile: false },
-      { source: "a padded env-file value", customEnvFile: true, shellOverride: false, matchingShell: false, paddedFile: true },
-    ])("installs MCP and hooks using $source", ({ customEnvFile, shellOverride, matchingShell, paddedFile }) => {
+      { source: "default .env", customEnvFile: false, shellOverride: false, matchingShell: false, padding: "none" },
+      { source: "AGENTMEMORY_ENV_FILE", customEnvFile: true, shellOverride: false, matchingShell: false, padding: "none" },
+      { source: "shell overriding the env file", customEnvFile: true, shellOverride: true, matchingShell: false, padding: "none" },
+      { source: "matching shell and env-file values", customEnvFile: true, shellOverride: true, matchingShell: true, padding: "none" },
+      { source: "a literal env-file value with surrounding spaces", customEnvFile: true, shellOverride: false, matchingShell: false, padding: "both" },
+      { source: "a literal shell value with leading spaces", customEnvFile: true, shellOverride: true, matchingShell: false, padding: "leading" },
+      { source: "a literal shell value with trailing spaces", customEnvFile: true, shellOverride: true, matchingShell: false, padding: "trailing" },
+    ])("installs MCP and hooks using $source", ({ customEnvFile, shellOverride, matchingShell, padding }) => {
       const fileProfile = join(home, "env-file Claude config");
       const shellProfile = join(home, "shell Claude config");
-      const selected = shellOverride && !matchingShell ? shellProfile : fileProfile;
+      const withPadding = (value: string) =>
+        `${padding === "leading" || padding === "both" ? "  " : ""}${value}${padding === "trailing" || padding === "both" ? "  " : ""}`;
+      const fileValue = shellOverride ? fileProfile : withPadding(fileProfile);
+      const selectedValue = shellOverride && !matchingShell ? withPadding(shellProfile) : fileValue;
+      const selected = resolve(home, selectedValue);
       mkdirSync(fileProfile);
       mkdirSync(shellProfile);
+      mkdirSync(selected, { recursive: true });
       mkdirSync(join(home, ".agentmemory"));
       const envFile = customEnvFile
         ? join(home, "custom.env")
         : join(home, ".agentmemory", ".env");
-      writeFileSync(envFile, `CLAUDE_CONFIG_DIR="${paddedFile ? `  ${fileProfile}  ` : fileProfile}"\n`);
+      writeFileSync(envFile, `CLAUDE_CONFIG_DIR="${fileValue}"\n`);
 
       const result = spawnSync(process.execPath, [
         resolve(__dirname, "..", "dist", "cli.mjs"),
@@ -226,7 +255,7 @@ describe("connect claude-code --with-hooks", () => {
         env: {
           ...process.env,
           AGENTMEMORY_ENV_FILE: customEnvFile ? envFile : undefined,
-          CLAUDE_CONFIG_DIR: shellOverride ? selected : undefined,
+          CLAUDE_CONFIG_DIR: shellOverride ? selectedValue : undefined,
           CI: "1",
           NO_COLOR: "1",
         },
@@ -240,19 +269,27 @@ describe("connect claude-code --with-hooks", () => {
         expect(output).not.toContain("CLAUDE_CONFIG_DIR was loaded only");
       } else {
         expect(output).toContain("CLAUDE_CONFIG_DIR was loaded only from agentmemory's env file.");
-        expect(output).toContain(`Launch Claude Code with the same CLAUDE_CONFIG_DIR value (${selected})`);
+        expect(output).toContain(`Launch Claude Code with the same CLAUDE_CONFIG_DIR value ${JSON.stringify(selectedValue)}`);
         expect(output.match(/CLAUDE_CONFIG_DIR was loaded only/g)).toHaveLength(1);
         expect(output.indexOf("CLAUDE_CONFIG_DIR was loaded only")).toBeLessThan(output.indexOf("wired into"));
       }
-      expect(result.stdout).toContain(`wired into ${join(selected, ".claude.json")}`);
+      if (padding === "none" || padding === "trailing") {
+        expect(output).not.toContain("CLAUDE_CONFIG_DIR is relative");
+      }
+      expect(result.stdout).toContain(`wired into ${join(selectedValue, ".claude.json")}`);
       expect(JSON.parse(readFileSync(join(selected, ".claude.json"), "utf-8")).mcpServers.agentmemory).toBeDefined();
       expect(JSON.parse(readFileSync(join(selected, "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
-      expect(existsSync(join(selected === fileProfile ? shellProfile : fileProfile, ".claude.json"))).toBe(false);
+      for (const profile of [fileProfile, shellProfile]) {
+        if (profile !== selected) {
+          expect(existsSync(join(profile, ".claude.json"))).toBe(false);
+          expect(existsSync(join(profile, "settings.json"))).toBe(false);
+        }
+      }
       expect(existsSync(join(home, ".claude.json"))).toBe(false);
       expect(existsSync(join(home, ".claude"))).toBe(false);
     }, 15000);
 
-    it.each(["env file", "shell"])("keeps legacy paths without an override warning for a whitespace-only value from the %s", (source) => {
+    it.each(["env file", "shell"])("keeps legacy paths and warns only for a shell whitespace-only value from the %s", (source) => {
       const fileProfile = join(home, "env-file Claude config");
       mkdirSync(fileProfile);
       mkdirSync(join(home, ".claude"));
@@ -277,12 +314,86 @@ describe("connect claude-code --with-hooks", () => {
       });
 
       expect(result.status, result.stderr).toBe(0);
-      expect(result.stdout + result.stderr).not.toContain("CLAUDE_CONFIG_DIR was loaded only");
+      const output = result.stdout + result.stderr;
+      expect(output).not.toContain("CLAUDE_CONFIG_DIR was loaded only");
+      if (source === "shell") {
+        expect(output).toContain("CLAUDE_CONFIG_DIR contains only whitespace.");
+        expect(output).toContain("Unset CLAUDE_CONFIG_DIR before launching Claude Code");
+        expect(output.match(/CLAUDE_CONFIG_DIR contains only whitespace/g)).toHaveLength(1);
+      } else {
+        expect(output).not.toContain("CLAUDE_CONFIG_DIR contains only whitespace.");
+      }
       expect(result.stdout).toContain(`wired into ${join(home, ".claude.json")}`);
       expect(JSON.parse(readFileSync(join(home, ".claude.json"), "utf-8")).mcpServers.agentmemory).toBeDefined();
       expect(JSON.parse(readFileSync(join(home, ".claude", "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
       expect(existsSync(join(fileProfile, ".claude.json"))).toBe(false);
       expect(existsSync(join(fileProfile, "settings.json"))).toBe(false);
+    }, 15000);
+
+    it.each(["leading", "trailing"])("skips a missing literal profile with %s whitespace even when the trimmed directory exists", (padding) => {
+      const trimmedDir = join(home, "existing Claude config");
+      const configDir = padding === "leading" ? ` ${trimmedDir}` : `${trimmedDir} `;
+      mkdirSync(trimmedDir);
+
+      const result = spawnSync(process.execPath, [
+        resolve(__dirname, "..", "dist", "cli.mjs"),
+        "connect", "claude-code", "--with-hooks", "--no-guidelines",
+      ], {
+        cwd: home,
+        env: {
+          ...process.env,
+          AGENTMEMORY_ENV_FILE: undefined,
+          CLAUDE_CONFIG_DIR: configDir,
+          CI: "1",
+          NO_COLOR: "1",
+        },
+        encoding: "utf-8",
+        timeout: 10000,
+      });
+
+      expect(result.status, result.stderr).toBe(0);
+      const output = result.stdout + result.stderr;
+      expect(output).toContain(JSON.stringify(configDir));
+      expect(output).toContain("is not an existing directory");
+      expect(output).toContain("leading or trailing whitespace");
+      expect(output).toContain("not detected on this machine (skipping)");
+      expect(output).not.toContain("wired into");
+      expect(existsSync(resolve(home, configDir))).toBe(false);
+      expect(existsSync(join(trimmedDir, ".claude.json"))).toBe(false);
+      expect(existsSync(join(trimmedDir, "settings.json"))).toBe(false);
+    }, 15000);
+
+    it("warns before installing into a profile relative to the CLI working directory", () => {
+      const configDir = "relative Claude config";
+      const selected = join(home, configDir);
+      mkdirSync(selected);
+
+      const result = spawnSync(process.execPath, [
+        resolve(__dirname, "..", "dist", "cli.mjs"),
+        "connect", "claude-code", "--with-hooks", "--no-guidelines",
+      ], {
+        cwd: home,
+        env: {
+          ...process.env,
+          AGENTMEMORY_ENV_FILE: undefined,
+          CLAUDE_CONFIG_DIR: configDir,
+          CI: "1",
+          NO_COLOR: "1",
+        },
+        encoding: "utf-8",
+        timeout: 10000,
+      });
+
+      expect(result.status, result.stderr).toBe(0);
+      const output = result.stdout + result.stderr;
+      expect(output).toContain(`CLAUDE_CONFIG_DIR is relative and resolves to ${JSON.stringify(realpathSync(selected))}`);
+      expect(output).toContain("Set the same absolute path for agentmemory and Claude Code");
+      expect(output.match(/CLAUDE_CONFIG_DIR is relative/g)).toHaveLength(1);
+      expect(output.indexOf("CLAUDE_CONFIG_DIR is relative")).toBeLessThan(output.indexOf("wired into"));
+      expect(JSON.parse(readFileSync(join(selected, ".claude.json"), "utf-8")).mcpServers.agentmemory).toBeDefined();
+      expect(JSON.parse(readFileSync(join(selected, "settings.json"), "utf-8")).hooks.SessionStart).toBeDefined();
+      expect(existsSync(join(home, ".claude.json"))).toBe(false);
+      expect(existsSync(join(home, ".claude"))).toBe(false);
     }, 15000);
   });
 
