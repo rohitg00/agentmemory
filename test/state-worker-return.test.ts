@@ -176,6 +176,16 @@ describe("VectorIndex.mergeMissingFrom", () => {
     expect(Array.from(live.get("old")!.embedding)).toEqual([2, 2, 2]);
   });
 
+  it("does not restore a checkpoint vector deleted while it was absent from the live index", () => {
+    const live = new VectorIndex();
+    live.remove("deleted-early");
+    const checkpoint = new VectorIndex();
+    checkpoint.add("deleted-early", "s", new Float32Array([3]));
+    expect(live.mergeMissingFrom(checkpoint)).toBe(0);
+    expect(live.has("deleted-early")).toBe(false);
+    expect(live.pendingChanges).toBe(0);
+  });
+
   it("does not bring back a vector removed after boot", () => {
     const live = new VectorIndex();
     live.add("gone", "s", new Float32Array([1]));
@@ -216,12 +226,14 @@ describe("reported state-worker readiness", () => {
 
 describe("shouldRearmIndex", () => {
   it("does not re-run recovery for a backfill paused at its per-start cap", () => {
-    expect(shouldRearmIndex({ bm25Incomplete: false, persistencePaused: false, lastRecoveryFailed: false })).toBe(false);
+    expect(shouldRearmIndex({ bm25Incomplete: false, persistencePaused: false, lastRecoveryFailed: false, checkpointSaveFailed: false })).toBe(false);
   });
 
   it("re-runs recovery after an incomplete keyword rebuild, a paused checkpoint or a failed run", () => {
-    expect(shouldRearmIndex({ bm25Incomplete: true, persistencePaused: false, lastRecoveryFailed: false })).toBe(true);
-    expect(shouldRearmIndex({ bm25Incomplete: false, persistencePaused: true, lastRecoveryFailed: false })).toBe(true);
-    expect(shouldRearmIndex({ bm25Incomplete: false, persistencePaused: false, lastRecoveryFailed: true })).toBe(true);
+    const none = { bm25Incomplete: false, persistencePaused: false, lastRecoveryFailed: false, checkpointSaveFailed: false };
+    expect(shouldRearmIndex({ ...none, bm25Incomplete: true })).toBe(true);
+    expect(shouldRearmIndex({ ...none, persistencePaused: true })).toBe(true);
+    expect(shouldRearmIndex({ ...none, lastRecoveryFailed: true })).toBe(true);
+    expect(shouldRearmIndex({ ...none, checkpointSaveFailed: true })).toBe(true);
   });
 });

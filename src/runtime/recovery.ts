@@ -12,6 +12,7 @@ export interface RearmConditions {
   bm25Incomplete: boolean;
   persistencePaused: boolean;
   lastRecoveryFailed: boolean;
+  checkpointSaveFailed: boolean;
 }
 
 export interface RearmSteps {
@@ -26,5 +27,5 @@ export async function rearmIndexRecovery(steps: RearmSteps): Promise<void> {
 }
 
 export function shouldRearmIndex(input: RearmConditions): boolean {
-  return input.bm25Incomplete || input.persistencePaused || input.lastRecoveryFailed;
+  return input.bm25Incomplete || input.persistencePaused || input.lastRecoveryFailed || input.checkpointSaveFailed;
 }
