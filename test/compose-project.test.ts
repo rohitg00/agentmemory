@@ -43,14 +43,20 @@ describe("Worker Compose project", () => {
     expect(text).toContain("model-cache\\n雪");
   });
 
-  it("escapes dollar signs in normalized cache paths without changing other settings", () => {
+  it("preserves literal local embedding values without changing legacy interpolation", () => {
     const text = renderWorkerCompose(options({ cwd: join(root, "caller$directory"), workerEnvironment: {
       LOCAL_EMBEDDING_CACHE_DIR: "${HOME}/$MODELS/$$/cache",
       LOCAL_EMBEDDING_DOCUMENT_PREFIX: "${DOCUMENT_PREFIX}",
+      LOCAL_EMBEDDING_QUERY_PREFIX: "query: ${HOME} $$ ",
+      LOCAL_EMBEDDING_MODEL: "models/${MODEL}",
+      OPENAI_BASE_URL: "${ENDPOINT}",
     } }));
     const env = parse(text).containers.agentmemory.environment;
     expect(env.LOCAL_EMBEDDING_CACHE_DIR).toBe(join(root, "caller$$directory", "$${HOME}/$$MODELS/$$$$/cache"));
-    expect(env.LOCAL_EMBEDDING_DOCUMENT_PREFIX).toBe("${DOCUMENT_PREFIX}");
+    expect(env.LOCAL_EMBEDDING_DOCUMENT_PREFIX).toBe("$${DOCUMENT_PREFIX}");
+    expect(env.LOCAL_EMBEDDING_QUERY_PREFIX).toBe("query: $${HOME} $$$$ ");
+    expect(env.LOCAL_EMBEDDING_MODEL).toBe("models/$${MODEL}");
+    expect(env.OPENAI_BASE_URL).toBe("${ENDPOINT}");
   });
 
   it("escapes literal dollars in absolute Windows cache paths", () => {

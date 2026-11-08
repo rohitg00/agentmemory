@@ -9,6 +9,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { describe, expect, it } from "vitest";
 import { composeNamespace, writeWorkerCompose } from "../src/cli/compose-project.js";
 import { III_PINNED_VERSION } from "../src/version.js";
+import { prepareProbe, probeLifetime, stopProbe } from "./helpers/compose-probe-lifetime.js";
 
 const engine = process.env.AGENTMEMORY_TEST_III;
 const version = engine ? spawnSync(engine, ["--version"], { encoding: "utf8", timeout: 3000 }) : null;
@@ -29,45 +30,47 @@ async function freePort(): Promise<number> {
   return port;
 }
 
-async function stop(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  const exited = new Promise<void>((accept) => child.once("exit", () => accept()));
-  child.kill("SIGINT");
-  const result = await Promise.race([exited.then(() => true), sleep(5000).then(() => false)]);
-  if (!result && child.pid) {
-    try { process.kill(-child.pid, "SIGKILL"); } catch {}
-    await exited;
-  }
-}
 
 describe.skipIf(skipped)("pinned Compose literal cache path round trip", () => {
   it.each(["env-file", "process"])("preserves literal cache paths from %s through Compose interpolation", async (source) => {
     const root = mkdtempSync(join(tmpdir(), "agentmemory-compose-cache-"));
     let child: ChildProcess | undefined;
     try {
+      prepareProbe(root);
       const pkg = join(root, "worker");
       const snapshot = join(root, "received.json");
       mkdirSync(join(pkg, "dist"), { recursive: true });
       const value = "model-cache/${HOME}/$MODELS/$$/models";
       const cwd = join(root, "caller$directory");
-      const expected = join(cwd, value);
+      const expected = {
+        cache: join(cwd, value),
+        document: source === "env-file" ? "passage: ${HOME} $$ " : "passage: ${AGENTMEMORY_TEST_UNDEFINED} $$ ",
+        query: "query: ${HOME} $$ ",
+      };
       const envFile = join(root, "worker.env");
       writeFileSync(envFile, `export LOCAL_EMBEDDING_CACHE_DIR='${source === "env-file" ? value : "ignored-cache"}'\n`);
       const sdk = pathToFileURL(createRequire(import.meta.url).resolve("iii-sdk")).href;
       writeFileSync(join(pkg, "dist/index.mjs"), `
-        import sdkModule from ${JSON.stringify(sdk)};
-        import { renameSync, writeFileSync } from "node:fs";
+        import { existsSync, renameSync, writeFileSync } from "node:fs";
+        ${probeLifetime(root)}
+        const { default: sdkModule } = await import(${JSON.stringify(sdk)});
         const { registerWorker } = sdkModule;
         const worker = registerWorker(process.env.III_URL, { workerName: "agentmemory" });
-        worker.registerFunction("test::env", async () => process.env.LOCAL_EMBEDDING_CACHE_DIR);
-        writeFileSync(${JSON.stringify(`${snapshot}.tmp`)}, JSON.stringify(process.env.LOCAL_EMBEDDING_CACHE_DIR));
+        const received = { cache: process.env.LOCAL_EMBEDDING_CACHE_DIR,
+          document: process.env.LOCAL_EMBEDDING_DOCUMENT_PREFIX, query: process.env.LOCAL_EMBEDDING_QUERY_PREFIX };
+        worker.registerFunction("test::env", async () => received);
+        writeFileSync(${JSON.stringify(`${snapshot}.tmp`)}, JSON.stringify(received));
         renameSync(${JSON.stringify(`${snapshot}.tmp`)}, ${JSON.stringify(snapshot)});
       `);
       const ports = { restPort: await freePort(), viewerPort: await freePort(), enginePort: await freePort() };
       const project = writeWorkerCompose({
         ports, projectRoot: pkg, dataDir: join(root, "data"), homeDir: join(root, "home"),
         nodeBin: process.execPath, cwd, envFile,
-        workerEnvironment: source === "process" ? { LOCAL_EMBEDDING_CACHE_DIR: value } : {},
+        workerEnvironment: {
+          ...(source === "process" ? { LOCAL_EMBEDDING_CACHE_DIR: value } : {}),
+          LOCAL_EMBEDDING_DOCUMENT_PREFIX: expected.document,
+          LOCAL_EMBEDDING_QUERY_PREFIX: expected.query,
+        },
       });
       const header = project.text.slice(0, project.text.indexOf("containers:\n"));
       const app = project.text.slice(project.text.indexOf("  agentmemory:\n"))
@@ -83,7 +86,7 @@ describe.skipIf(skipped)("pinned Compose literal cache path round trip", () => {
       const deadline = Date.now() + 20000;
       while (Date.now() < deadline) {
         try {
-          expect(JSON.parse(readFileSync(snapshot, "utf8"))).toBe(expected);
+          expect(JSON.parse(readFileSync(snapshot, "utf8"))).toEqual(expected);
           return;
         } catch (error) {
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
@@ -93,8 +96,8 @@ describe.skipIf(skipped)("pinned Compose literal cache path round trip", () => {
       }
       throw new Error(`Worker environment snapshot timed out: ${logs}`);
     } finally {
-      if (child) await stop(child);
-      rmSync(root, { recursive: true, force: true });
+      try { await stopProbe(child, root); }
+      finally { rmSync(root, { recursive: true, force: true }); }
     }
   }, 30000);
 });
