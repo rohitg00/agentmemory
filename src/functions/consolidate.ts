@@ -225,6 +225,7 @@ export function registerConsolidateFunction(
             );
             if (legacy) {
               await kv.set(KV.memories, legacy.id, { ...legacy, consolidationKeys: { [concept]: sourceKey } });
+              await safeAudit(kv, "evolve", "mem::consolidate", [legacy.id], { action: "adopt_legacy", concept });
               return false;
             }
 

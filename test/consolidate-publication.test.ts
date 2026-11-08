@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerConsolidateFunction } from "../src/functions/consolidate.js";
 import { KV } from "../src/state/schema.js";
 import { withKeyedLock } from "../src/state/keyed-mutex.js";
+import { safeAudit } from "../src/functions/audit.js";
 import type { CompressedObservation, Memory, MemoryProvider, Session } from "../src/types.js";
 
 vi.mock("../src/logger.js", () => ({ logger: { info: vi.fn(), warn: vi.fn() } }));
@@ -406,6 +407,7 @@ describe("consolidation publication", () => {
     }));
     expect(await f.run()).toMatchObject({ consolidated: 0 });
     expect((await f.kv.get<Memory>(KV.memories, "legacy"))!.consolidationKeys?.auth).toBeTruthy();
+    expect(safeAudit).toHaveBeenCalledWith(f.kv, "evolve", "mem::consolidate", ["legacy"], { action: "adopt_legacy", concept: "auth" });
     const row = await f.kv.get<CompressedObservation>(KV.observations("session-a"), "session-a-auth-0");
     await f.kv.set(KV.observations("session-a"), row!.id, { ...row!, narrative: "Recompressed evidence" });
     expect(await f.run()).toMatchObject({ consolidated: 1 });
