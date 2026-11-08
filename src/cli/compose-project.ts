@@ -170,6 +170,7 @@ function yamlString(value: string): string {
   if (/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(value)) {
     throw new Error("A Compose path or configuration value contains an unsupported control character.");
   }
+  if (value.includes("\n") || value.includes("\r")) return JSON.stringify(value);
   return `'${value.replace(/'/g, "''")}'`;
 }
 

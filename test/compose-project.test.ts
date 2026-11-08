@@ -24,6 +24,13 @@ const options = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("Worker Compose project", () => {
+  it.each(["first\nsecond", "first\rsecond", "first\r\nsecond", "\nleading\n\ntrailing\n", "quote'\"\\\nnext\tline"])(
+    "preserves multiline configuration values through YAML parsing: %j", (value) => {
+      const text = renderWorkerCompose(options({ workerEnvironment: { OPENAI_BASE_URL: value } }));
+      expect(parse(text).containers.agentmemory.environment.OPENAI_BASE_URL).toBe(value);
+    },
+  );
+
   it("pins registry workers and configures the isolated engine, state and HTTP", () => {
     const text = renderWorkerCompose(options());
     expect(text).toContain("namespace: agentmemory-3511");
