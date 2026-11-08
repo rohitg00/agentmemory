@@ -120,6 +120,8 @@ async function deleteTargetGone(kv: StateKV, item: PendingDelete): Promise<boole
   return true;
 }
 
+const UNSET_MEMORY_CONFIDENCE = 0.5;
+
 function contradictFloor(base: number, penalties: Record<string, number>): number {
   return Math.max(0.05, base - Object.values(penalties).reduce((sum, p) => sum + p, 0));
 }
@@ -279,7 +281,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
             }
           }
         } else if (rel.type === "contradicts") {
-          const base = next.contradictBase ?? target.confidence ?? 1;
+          const base = next.contradictBase ?? target.confidence ?? UNSET_MEMORY_CONFIDENCE;
           const penalties = next.contradictPenalties ?? {};
           const before = contradictFloor(base, penalties);
           const updated = { ...penalties, [relationId]: (rel.confidence ?? 0.5) * 0.3 };

@@ -231,15 +231,16 @@ describe("event::graph::edge-reaction", () => {
     expect(call[3]).toEqual({ kind: "memory", logId: "tgt" });
   });
 
-  it("contradicts on a memory without a stored confidence starts from 1 and stays finite", async () => {
+  it("contradicts on a memory without a stored confidence starts from the default salience and stays finite", async () => {
     const { kv, fn } = seeded();
     const plain = { ...base } as Record<string, unknown>;
     delete plain.confidence;
     kv.store[KV.memories].set("tgt", plain);
     await fn(created("rA", { type: "contradicts", confidence: 0.5 }));
-    expect(mem(kv).confidence).toBeCloseTo(0.85);
+    expect(mem(kv).confidence).toBeCloseTo(0.35);
+    expect(mem(kv).confidence!).toBeLessThanOrEqual(0.5);
     await fn(deleted("rA", { type: "contradicts" }));
-    expect(Number.isFinite(mem(kv).confidence)).toBe(true);
+    expect(mem(kv).confidence).toBeCloseTo(0.5);
   });
 
   it("contradicts: undoing one relation keeps the floor a remaining relation still holds", async () => {
