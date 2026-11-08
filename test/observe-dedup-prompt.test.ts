@@ -16,7 +16,7 @@ function observePayload(hookType: string, data: unknown) {
   };
 }
 
-describe("observe dedup for hooks without tool_input (#1173)", () => {
+describe("observe dedup for hooks without tool_input", () => {
   beforeEach(() => {
     vi.resetModules();
   });
@@ -84,7 +84,7 @@ describe("observe dedup for hooks without tool_input (#1173)", () => {
     expect(second.deduplicated).toBe(true);
   });
 
-  it("keeps tool_input as the dedup key for tool hooks (response changes still dedup)", async () => {
+  it("keeps a repeated tool call when its output changed", async () => {
     const { registerObserveFunction } = await import("../src/functions/observe.js");
     const { DedupMap } = await import("../src/functions/dedup.js");
     const sdk = mockSdk({ looseTrigger: true });
@@ -109,6 +109,31 @@ describe("observe dedup for hooks without tool_input (#1173)", () => {
     )) as { deduplicated?: boolean };
 
     expect(first.observationId).toBeTruthy();
-    expect(second.deduplicated).toBe(true);
+    expect(second.deduplicated).toBeUndefined();
+    expect((second as { observationId?: string }).observationId).toBeTruthy();
+  });
+
+  it("still skips a repeated tool call with the same input and output, and counts it", async () => {
+    const { registerObserveFunction } = await import("../src/functions/observe.js");
+    const { DedupMap, getDedupSkippedCount } = await import("../src/functions/dedup.js");
+    const sdk = mockSdk({ looseTrigger: true });
+    const kv = mockKV();
+    registerObserveFunction(sdk as never, kv as never, new DedupMap());
+    const before = getDedupSkippedCount();
+
+    for (const field of ["tool_response", "tool_output", "output"]) {
+      const data = { tool_name: "Bash", tool_input: { command: `ls ${field}` }, [field]: "a.txt" };
+      const first = (await sdk.trigger("mem::observe", observePayload("post_tool_use", data))) as { observationId?: string };
+      const second = (await sdk.trigger("mem::observe", observePayload("post_tool_use", data))) as { deduplicated?: boolean };
+      const changed = (await sdk.trigger(
+        "mem::observe",
+        observePayload("post_tool_use", { ...data, [field]: "b.txt" }),
+      )) as { observationId?: string; deduplicated?: boolean };
+      expect(first.observationId).toBeTruthy();
+      expect(second.deduplicated).toBe(true);
+      expect(changed.deduplicated).toBeUndefined();
+      expect(changed.observationId).toBeTruthy();
+    }
+    expect(getDedupSkippedCount() - before).toBe(3);
   });
 });

@@ -1,0 +1,217 @@
+name: Docker image
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to build, without the leading v (for example 0.9.32)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: docker.io/ghumarerohit/agentmemory
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - name: Resolve version
+        id: v
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT" = "release" ]; then
+            tag="$RELEASE_TAG"
+            version="${RELEASE_TAG#v}"
+          else
+            version="${INPUT_VERSION#v}"
+            tag="v$version"
+          fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "Not a release version: $version" >&2
+            exit 1
+          fi
+          if [ "${#version}" -gt 128 ]; then
+            echo "Version is longer than the 128-character Docker tag limit: $version" >&2
+            exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: refs/tags/${{ steps.v.outputs.tag }}
+          persist-credentials: false
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=${{ steps.v.outputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.v.outputs.version }}
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build for smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: agentmemory-smoke:${{ steps.v.outputs.version }}
+          cache-from: type=gha,scope=docker-image
+          cache-to: type=gha,scope=docker-image,mode=max
+
+      - name: Smoke test
+        env:
+          SMOKE_IMAGE: agentmemory-smoke:${{ steps.v.outputs.version }}
+        run: |
+          docker run -d --name am-smoke -p 127.0.0.1:3111:3111 "$SMOKE_IMAGE"
+          for i in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:3111/agentmemory/livez >/dev/null; then
+              echo "livez ok after $((i * 2)) s"
+              docker rm -f am-smoke >/dev/null
+              exit 0
+            fi
+            if [ "$(docker inspect -f '{{.State.Running}}' am-smoke)" != "true" ]; then
+              echo "container exited" >&2
+              break
+            fi
+            sleep 2
+          done
+          docker logs am-smoke >&2 || true
+          docker rm -f am-smoke >/dev/null || true
+          exit 1
+
+      - name: Build multi-platform archive
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+          outputs: type=oci,dest=${{ runner.temp }}/image.tar
+          cache-from: type=gha,scope=docker-image
+          cache-to: type=gha,scope=docker-image,mode=max
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentmemory-image-${{ steps.v.outputs.version }}
+          path: ${{ runner.temp }}/image.tar
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: docker-hub
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: agentmemory-image-${{ needs.build.outputs.version }}
+          path: ${{ runner.temp }}/image
+
+      - name: Log in to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          printf '%s' "$DOCKERHUB_TOKEN" | skopeo login --username "$DOCKERHUB_USERNAME" --password-stdin docker.io
+          printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USERNAME" --password-stdin docker.io
+
+      - name: Push version tag
+        id: push
+        run: |
+          skopeo copy --all --preserve-digests \
+            --digestfile "$RUNNER_TEMP/digest" \
+            "oci-archive:$RUNNER_TEMP/image/image.tar" \
+            "docker://$IMAGE:$VERSION"
+          echo "digest=$(cat "$RUNNER_TEMP/digest")" >> "$GITHUB_OUTPUT"
+
+      - name: Verify platforms
+        run: |
+          platforms=$(docker buildx imagetools inspect --raw "$IMAGE:$VERSION" \
+            | jq -r '.manifests[].platform | "\(.os)/\(.architecture)"' | sort -u | tr '\n' ' ')
+          echo "platforms: $platforms"
+          for p in linux/amd64 linux/arm64; do
+            case " $platforms " in
+              *" $p "*) ;;
+              *) echo "missing $p in $IMAGE:$VERSION" >&2; exit 1 ;;
+            esac
+          done
+
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  latest:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: docker-hub
+    permissions:
+      contents: read
+    concurrency:
+      group: docker-hub-latest
+      cancel-in-progress: false
+    steps:
+      - name: Log in to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: printf '%s' "$DOCKERHUB_TOKEN" | skopeo login --username "$DOCKERHUB_USERNAME" --password-stdin docker.io
+
+      - name: Point latest at the newest stable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          tags=$(gh api --paginate "repos/$REPO/releases" \
+            --jq '.[] | select(.draft | not) | select(.prerelease | not) | .tag_name')
+          newest=$(printf '%s\n' "$tags" \
+            | sed 's/^v//' \
+            | { grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true; } \
+            | sort -t. -k1,1n -k2,2n -k3,3n \
+            | tail -n 1)
+          if [ -z "$newest" ]; then
+            echo "No stable release found; leaving latest unchanged."
+            exit 0
+          fi
+          if ! skopeo inspect --raw "docker://$IMAGE:$newest" >/dev/null 2>&1; then
+            echo "Image for the newest stable release ($newest) is not pushed yet; leaving latest unchanged."
+            exit 0
+          fi
+          skopeo copy --all --preserve-digests "docker://$IMAGE:$newest" "docker://$IMAGE:latest"
+          echo "latest -> $newest"

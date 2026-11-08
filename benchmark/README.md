@@ -1,6 +1,6 @@
 # benchmark/
 
-Two kinds of numbers live in this directory:
+Three kinds of numbers live in this directory:
 
 1. **Quality / retrieval** — `longmemeval-bench.ts`, `quality-eval.ts`,
    `real-embeddings-eval.ts`, `scale-eval.ts`. Recall, precision, token
@@ -10,6 +10,110 @@ Two kinds of numbers live in this directory:
 2. **Load shape** — `load-100k.ts`. p50 / p90 / p99 latency and
    throughput against a running daemon. This is the file you want when
    somebody asks "what's p99 at 100k memories under concurrency 100?".
+
+3. **Resource cost**: `capture-costs.ts`. Disk, resident memory, CPU,
+   hook cost, provider calls, agent-visible context and recovery cost of
+   the built capture path, each reported separately.
+
+## capture-costs.ts
+
+![Capture costs and crash recovery](../docs/benchmarks/capture-costs.svg)
+
+Runs the built `dist/` artifact (CLI, worker and the bundled hooks in
+`dist/hooks/`) in an isolated instance per run: a fresh `HOME`, a fresh
+`--data-dir`, REST/streams/viewer on 4900-4902, metrics on 4903, the
+engine on 50100 and an in-process fake OpenAI-compatible provider on
+4950. It refuses to start if any of those ports is already in use, and it
+only signals the processes it spawned (the CLI and its engine). Nothing
+here runs in the default test suite.
+
+```bash
+npm run build
+npm run bench:capture-costs
+BENCH_N=10000 BENCH_PROFILES=keyless npm run bench:capture-costs
+```
+
+Each `(profile, N)` run goes through the same phases serially: cold start
+on an empty store, capture of N observations, quiesce, idle sample,
+evidence check, agent-visible context probe, `SIGKILL` of the whole
+process tree, recovery boot, evidence check again, graceful stop and a
+warm start.
+
+### Profiles
+
+| profile | provider config | automatic processing |
+|---|---|---|
+| `keyless` | no keys; BM25 only | synthetic compression, no provider calls |
+| `embed` | fake embeddings (`BENCH_EMBED_DIMS`, default 768), `OPENAI_API_KEY_FOR_LLM=false` | compression off |
+| `embed-llm` | fake embeddings plus fake chat model | `AGENTMEMORY_AUTO_COMPRESS=true` |
+
+Context injection stays at its default (off) for the instance. The probe
+turns it on only in the environment of single hook processes to measure
+what an agent would receive.
+
+### What it reports
+
+- **Storage**: bytes on disk per state scope, grouped into source,
+  summary, index, queue, failed-delivery, diagnostic, config and stream.
+  Fixed overhead (empty instance) and growth are separate. The builtin
+  queue adapter keeps nothing on disk, so queue and failed-delivery bytes
+  read 0 on the file store.
+- **Memory and CPU**: process-tree RSS (engine and worker split) sampled
+  every 250 ms during capture, at idle, after recovery and after a warm
+  start; CPU seconds from `ps` for the capture and recovery windows.
+- **Capture**: latency of the real `post-tool-use` hook process for the
+  first `BENCH_HOOK_SAMPLE` observations (the hook spawns Node and posts
+  to `/agentmemory/observe`), its stdout and stderr bytes, then the
+  remaining observations posted to the same endpoint with the same body at
+  `BENCH_CONCURRENCY`.
+- **Provider calls**: requests, inputs, repeated inputs and returned usage
+  counted on the fake server for capture, the context probe, recovery and
+  warm start separately. Counters a run cannot observe are `unknown`.
+- **Agent-visible context**: bytes and the server's own token estimate
+  (`tokens_used`, `tokens`) for `/search` in full, compact and narrative
+  formats, `/smart-search` and `/context` at `BENCH_CONTEXT_BUDGET`, plus
+  stdout bytes of the `SessionStart` and `PreToolUse` hooks with injection
+  off and on. These are server estimates, not provider billing.
+- **Recovery and evidence**: time to `livez`, time to the BM25 rebuild log
+  line, rebuild duration and doc count, vectors loaded, backfill queued,
+  re-embedding requests, logical observation count, keyword hits for a
+  per-observation head marker and whether the stored source still holds
+  the tail marker (via `/agentmemory/replay/load`). A smaller store that
+  lost source fails the invariants.
+
+### Invariants and budgets
+
+Invariants run on every report: the logical observation count equals N
+before the kill and after recovery, every sampled source keeps its tail
+marker, no observe errors, zero hook stdout with injection off, and the
+`/context` estimate stays within the declared cap. A failing invariant
+exits 1.
+
+Budgets live in `benchmark/capture-costs-budgets.json`, keyed by profile
+and N, separately for storage, memory, latency and context. They were
+derived from repeated runs with `BENCH_REPEATS=2
+BENCH_WRITE_BUDGETS=<file>`, which takes the worst repeat and applies a
+per-metric headroom. Results show pass or fail per budget; set
+`BENCH_ENFORCE_BUDGETS=1` to exit 2 on a breach. Budgets are
+hardware-bound: re-derive them on the machine that enforces them.
+
+### Knobs
+
+`BENCH_N` (default `100,1000`), `BENCH_PROFILES`, `BENCH_REPEATS`,
+`BENCH_OBS_PER_SESSION` (100), `BENCH_HOOK_SAMPLE` (100),
+`BENCH_CONCURRENCY` (8), `BENCH_OUTPUT_BYTES` (`400,4000`),
+`BENCH_SEED`, `BENCH_EMBED_DIMS` (768), `BENCH_CONTEXT_BUDGET` (2000),
+`BENCH_SEARCH_LIMIT` (10), `BENCH_EVIDENCE_SAMPLE` (50), `BENCH_PORT`
+(4900), `BENCH_ENGINE_PORT` (50100), `BENCH_FAKE_PORT`, `BENCH_ROOT`,
+`BENCH_KEEP=1` (keep data dirs and CLI logs), `BENCH_OUT_DIR`,
+`BENCH_BUDGETS` (path or `off`), `BENCH_WRITE_BUDGETS` (derive budgets
+from this report), `BENCH_ENFORCE_BUDGETS=1`, `BENCH_MERGE` (comma list
+of report JSON files from one commit: merges them, rechecks invariants
+and budgets, and renders one table without starting an instance),
+`AGENTMEMORY_BENCH_III` (engine binary;
+defaults to a binary matching the pinned version in `~/.agentmemory/bin`
+or `~/.local/bin`). Tool outputs come from the same `mulberry32` corpus
+generator as `load-100k.ts` (`lib/corpus.ts`).
 
 ## load-100k.ts
 

@@ -29,6 +29,15 @@ describe("SearchIndex", () => {
     index = new SearchIndex();
   });
 
+  it("counts memory and lesson documents apart from observations", () => {
+    index.add(makeObs({ id: "obs_1" }));
+    index.add(makeObs({ id: "mem_1", sessionId: "memory" }), "memory");
+    index.add(makeObs({ id: "mem_2", sessionId: "ses_1" }), "memory");
+    index.add(makeObs({ id: "lsn_1", sessionId: "lesson" }), "lesson");
+
+    expect(index.documentKindCounts()).toEqual({ memories: 2, lessons: 1 });
+  });
+
   it("starts empty", () => {
     expect(index.size).toBe(0);
   });
@@ -80,6 +89,26 @@ describe("SearchIndex", () => {
       index.add(makeObs({ id: `obs_${i}`, title: `auth feature ${i}` }));
     }
     expect(index.search("auth", 5).length).toBe(5);
+  });
+
+  it("does not let multiple prefix variants outweigh an exact term", () => {
+    const common = { title: "", subtitle: "", concepts: [], facts: [], files: [] };
+    index.add(makeObs({ ...common, id: "exact", narrative: "redis alpha beta gamma" }));
+    index.add(makeObs({ ...common, id: "prefix", narrative: "redistool redisproxy rediscache redisserver" }));
+    const hits = index.search("redis");
+    expect(hits.map((hit) => hit.obsId)).toEqual(["exact", "prefix"]);
+    expect(hits[0].score).toBeGreaterThan(hits[1].score);
+  });
+
+  it("does not add prefix bonuses to a document already matching the exact term", () => {
+    const common = { title: "", subtitle: "", concepts: [], facts: [], files: [] };
+    index.add(makeObs({ ...common, id: "exact", narrative: "redis alpha beta gamma" }));
+    index.add(makeObs({ ...common, id: "other", narrative: "redistool redisproxy rediscache redisserver" }));
+    const before = index.search("redis").find((hit) => hit.obsId === "exact")!.score;
+    index.add(makeObs({ ...common, id: "exact", narrative: "redis redismonitor redislogger redisclient" }));
+    const after = index.search("redis").find((hit) => hit.obsId === "exact")!.score;
+    expect(after).toBeCloseTo(before);
+    expect(SearchIndex.deserialize(index.serialize()).search("redis")).toEqual(index.search("redis"));
   });
 
   it("clears the index", () => {
@@ -289,5 +318,123 @@ describe("SearchIndex", () => {
     ]);
     expect(segmentCjk("leading 项目")).toEqual(["leading", "项目"]);
     expect(segmentCjk("项目 trailing")).toEqual(["项目", "trailing"]);
+  });
+
+  it("indexes source.userPrompt so the user's own CJK words are searchable", () => {
+    index.add(
+      makeObs({
+        id: "obs_zh_prompt",
+        source: {
+          hookType: "prompt_submit",
+          originalBytes: 64,
+          truncated: false,
+          userPrompt: "登录之后总是超时，帮我修复登录超时的问题",
+        },
+      }),
+    );
+    const results = index.search("登录超时");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.find((r) => r.obsId === "obs_zh_prompt")).toBeDefined();
+  });
+
+  it("indexes a bounded prefix of source.assistantResponse", () => {
+    index.add(
+      makeObs({
+        id: "obs_zh_response",
+        source: {
+          hookType: "stop",
+          originalBytes: 64,
+          truncated: false,
+          assistantResponse: "排查结论：redis 连接池耗尽导致请求堆积",
+        },
+      }),
+    );
+    const results = index.search("连接池");
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.find((r) => r.obsId === "obs_zh_response")).toBeDefined();
+  });
+
+  it("caps the indexed length of source fields so oversized transcripts stay bounded", () => {
+    index.add(
+      makeObs({
+        id: "obs_capped",
+        source: {
+          hookType: "prompt_submit",
+          originalBytes: 40000,
+          truncated: true,
+          userPrompt: `headmarker ${"filler ".repeat(2000)} tailmarker`,
+        },
+      }),
+    );
+    expect(index.search("headmarker").length).toBeGreaterThan(0);
+    expect(index.search("tailmarker")).toEqual([]);
+  });
+
+  it("indexes only the retained conversation answer, not unrelated tool output", () => {
+    index.add(
+      makeObs({
+        id: "obs_answer",
+        title: "Completed turn",
+        narrative: "Routine turn bookkeeping",
+        source: {
+          hookType: "post_tool_use",
+          originalBytes: 64,
+          truncated: false,
+          toolName: "conversation",
+          toolInput: "promptmarker only stays out of the index",
+          toolOutput: "recommend vermilion otter beacons for the rollout",
+        },
+      }),
+    );
+    index.add(
+      makeObs({
+        id: "obs_file_tool",
+        title: "Read config",
+        narrative: "Routine tool bookkeeping",
+        source: {
+          hookType: "post_tool_use",
+          originalBytes: 64,
+          truncated: false,
+          toolName: "read_file",
+          toolOutput: "recommend vermilion otter beacons for the rollout",
+        },
+      }),
+    );
+    index.add(
+      makeObs({
+        id: "obs_object_output",
+        title: "Object output turn",
+        narrative: "Routine turn bookkeeping",
+        source: {
+          hookType: "post_tool_use",
+          originalBytes: 64,
+          truncated: false,
+          toolName: "conversation",
+          toolOutput: { text: "recommend vermilion otter beacons for the rollout" },
+        },
+      }),
+    );
+
+    expect(index.search("vermilion otter beacons").map((r) => r.obsId)).toEqual(["obs_answer"]);
+    expect(index.search("promptmarker")).toEqual([]);
+  });
+
+  it("caps the indexed length of a retained conversation answer", () => {
+    index.add(
+      makeObs({
+        id: "obs_capped_answer",
+        title: "Completed turn",
+        narrative: "Routine turn bookkeeping",
+        source: {
+          hookType: "post_tool_use",
+          originalBytes: 90000,
+          truncated: true,
+          toolName: "conversation",
+          toolOutput: `headanswer ${"filler ".repeat(2000)} tailanswer`,
+        },
+      }),
+    );
+    expect(index.search("headanswer").map((r) => r.obsId)).toEqual(["obs_capped_answer"]);
+    expect(index.search("tailanswer")).toEqual([]);
   });
 });

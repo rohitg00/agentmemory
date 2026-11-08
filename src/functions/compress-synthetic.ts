@@ -3,11 +3,7 @@ import type {
   CompressedObservation,
   ObservationType,
 } from "../types.js";
-
-// Zero-LLM compression path. Converts a RawObservation into a
-// CompressedObservation using only heuristics — no Claude call, no token
-// spend. This is the default as of 0.8.8 (#138); users who want richer
-// LLM-generated summaries set AGENTMEMORY_AUTO_COMPRESS=true.
+import { createObservationSource } from "./observation-source.js";
 
 function inferType(
   toolName: string | undefined,
@@ -41,18 +37,20 @@ function inferType(
   return "other";
 }
 
-function extractFiles(input: unknown): string[] {
+const SEARCH_TOOL_PATTERN = /grep|glob|search|find|^ls$|list/i;
+
+function extractFiles(toolName: string | undefined, input: unknown): string[] {
   if (!input || typeof input !== "object") return [];
   const o = input as Record<string, unknown>;
+  const isSearch =
+    (toolName !== undefined && SEARCH_TOOL_PATTERN.test(toolName)) ||
+    typeof o["pattern"] === "string" ||
+    typeof o["query"] === "string";
+  const keys = isSearch
+    ? ["file_path", "filepath", "filePath", "notebook_path"]
+    : ["file_path", "filepath", "path", "filePath", "file", "notebook_path"];
   const out = new Set<string>();
-  for (const key of [
-    "file_path",
-    "filepath",
-    "path",
-    "filePath",
-    "file",
-    "pattern",
-  ]) {
+  for (const key of keys) {
     const v = o[key];
     if (typeof v === "string" && v.length > 0 && v.length < 512) out.add(v);
   }
@@ -70,7 +68,18 @@ function stringifyForNarrative(v: unknown): string {
 }
 
 function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n - 1) + "\u2026" : s;
+  if (s.length <= n) return s;
+  const end = /[\uD800-\uDBFF]/.test(s[n - 2]) ? n - 2 : n - 1;
+  return s.slice(0, end) + "\u2026";
+}
+
+function keepEnds(s: string, n: number): string {
+  if (s.length <= n) return s;
+  let head = Math.ceil((n - 1) / 2);
+  let tail = s.length - (n - 1 - head);
+  if (/[\uD800-\uDBFF]/.test(s[head - 1])) head--;
+  if (/[\uDC00-\uDFFF]/.test(s[tail])) tail++;
+  return s.slice(0, head) + "\u2026" + s.slice(tail);
 }
 
 export function buildSyntheticCompression(
@@ -80,28 +89,38 @@ export function buildSyntheticCompression(
   const inputStr = stringifyForNarrative(raw.toolInput);
   const outputStr = stringifyForNarrative(raw.toolOutput);
   const promptStr = raw.userPrompt ?? "";
+  const responseStr = keepEnds(raw.assistantResponse ?? "", 400);
+  const source = createObservationSource(raw);
 
-  const narrativeParts = [promptStr, inputStr, outputStr].filter(
+  const narrativeParts = [promptStr, inputStr, outputStr, responseStr].filter(
     (s) => s.length > 0,
   );
+  const payload = source.payload;
+  if (narrativeParts.length === 0 && payload != null &&
+      (typeof payload !== "object" || Object.keys(payload).length > 0)) {
+    narrativeParts.push(stringifyForNarrative(payload));
+  }
 
   const result: CompressedObservation = {
     id: raw.id,
     sessionId: raw.sessionId,
     timestamp: raw.timestamp,
+    compressedAt: new Date().toISOString(),
     type: inferType(toolName, raw.hookType),
     title: truncate(toolName || "observation", 80),
     subtitle: inputStr ? truncate(inputStr, 120) : undefined,
     facts: [],
     narrative: truncate(narrativeParts.join(" | "), 400),
     concepts: [],
-    files: extractFiles(raw.toolInput),
+    files: extractFiles(raw.toolName, raw.toolInput),
     importance: 5,
     confidence: 0.3,
+    source,
   };
   if (raw.modality) result.modality = raw.modality;
   if (raw.imageData) result.imageData = raw.imageData;
   if (raw.agentId) result.agentId = raw.agentId;
   if (raw.origin) result.origin = raw.origin;
+  if (raw.captureKey) result.captureKey = raw.captureKey;
   return result;
 }

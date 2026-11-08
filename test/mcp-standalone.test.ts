@@ -9,6 +9,8 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
+  renameSync: vi.fn(),
+  rmSync: vi.fn(),
 }));
 
 vi.mock("../src/mcp/transport.js", () => ({
@@ -17,6 +19,8 @@ vi.mock("../src/mcp/transport.js", () => ({
 
 vi.mock("../src/config.js", () => ({
   getStandalonePersistPath: vi.fn(() => "/tmp/test-standalone.json"),
+  getAgentId: vi.fn(() => undefined),
+  isAgentScopeIsolated: vi.fn(() => false),
 }));
 
 import {
@@ -31,14 +35,8 @@ import {
   resetHandleForTests,
   setLivezProbe,
 } from "../src/mcp/rest-proxy.js";
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 
-// Issue #449: hard-coded fetch() against :3111 in the livez probe was racing
-// with vitest's mock setup, making this file the "10-11 pre-existing failures"
-// referenced in the last 5 release notes. Stub the probe with an instant
-// ok:false response so the shim takes the deterministic InMemoryKV fallback
-// path on every test. Guard the real network with a fetch trap so any
-// regression that bypasses the DI seam fails loudly instead of timing out.
 const instantLocalFallbackProbe = vi.fn(async () => ({
   ok: false,
   status: 0,
@@ -123,10 +121,11 @@ describe("InMemoryKV", () => {
     kvWithPersist.persist();
 
     expect(writeFileSync).toHaveBeenCalledWith(
-      "/tmp/test-kv.json",
+      `/tmp/test-kv.json.${process.pid}.tmp`,
       expect.any(String),
-      "utf-8",
+      { encoding: "utf-8", mode: 0o600 },
     );
+    expect(renameSync).toHaveBeenCalledWith(`/tmp/test-kv.json.${process.pid}.tmp`, "/tmp/test-kv.json");
     const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
     const parsed = JSON.parse(written);
     expect(parsed.scope1.key1).toEqual({ data: "test" });
@@ -163,7 +162,7 @@ describe("handleToolCall", () => {
     resetHandleForTests();
   });
 
-  it("livez probe stub is invoked instead of the real fetch (issue #449)", async () => {
+  it("livez probe stub is invoked instead of the real fetch", async () => {
     const kv = new InMemoryKV();
     await handleToolCall("memory_save", { content: "regression guard" }, kv);
     expect(instantLocalFallbackProbe).toHaveBeenCalledTimes(1);
@@ -180,10 +179,11 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.saved).toMatch(/^mem_/);
     expect(writeFileSync).toHaveBeenCalledWith(
-      "/tmp/test-handle.json",
+      `/tmp/test-handle.json.${process.pid}.tmp`,
       expect.any(String),
-      "utf-8",
+      { encoding: "utf-8", mode: 0o600 },
     );
+    expect(renameSync).toHaveBeenCalledWith(`/tmp/test-handle.json.${process.pid}.tmp`, "/tmp/test-handle.json");
   });
 
   it("memory_save without persist path does not call writeFileSync", async () => {
@@ -220,10 +220,11 @@ describe("handleToolCall", () => {
     );
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.results).toHaveLength(1);
-    expect(parsed.results[0].content).toBe("TypeScript is great");
+    expect(parsed.format).toBe("full");
+    expect(parsed.results[0].observation.narrative).toBe("TypeScript is great");
   });
 
-  it("memory_save accepts concepts/files as arrays (plugin skill format, #139)", async () => {
+  it("memory_save accepts concepts/files as arrays (plugin skill format)", async () => {
     const kv = new InMemoryKV();
     const result = await handleToolCall(
       "memory_save",
@@ -263,7 +264,7 @@ describe("handleToolCall", () => {
     expect(mem?.files).toEqual(["src/auth.ts"]);
   });
 
-  it("memory_smart_search falls back to substring match in the standalone shim (#139)", async () => {
+  it("memory_smart_search falls back to substring match in the standalone shim", async () => {
     const kv = new InMemoryKV();
     await handleToolCall(
       "memory_save",
@@ -285,7 +286,18 @@ describe("handleToolCall", () => {
     expect(parsed.results[0].content).toBe("Use bcrypt for password hashing");
   });
 
-  it("memory_smart_search rejects empty query to prevent match-all in forget flow (#139)", async () => {
+  it.each(["pattern", "preference", "architecture", "bug", "workflow", "fact"])("retains %s metadata in fallback compact and expanded search", async (type) => {
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_save", { content: "Synthetic type probe", type, project: "type-project" }, kv);
+    const compact = JSON.parse((await handleToolCall("memory_smart_search", { query: "Synthetic", project: "type-project" }, kv)).content[0].text);
+    expect(compact.results[0]).toMatchObject({ type: "decision", memoryType: type });
+    const id = compact.results[0].obsId;
+    const expanded = JSON.parse((await handleToolCall("memory_smart_search", { expandIds: id, project: "type-project" }, kv)).content[0].text);
+    expect(expanded.results[0].observation).toMatchObject({ id, type: "decision", memoryType: type });
+    expect((await kv.get<{ type: string }>("mem:memories", id))?.type).toBe(type);
+  });
+
+  it("memory_smart_search rejects empty query to prevent match-all in forget flow", async () => {
     const kv = new InMemoryKV();
     await handleToolCall("memory_save", { content: "anything" }, kv);
     await expect(
@@ -299,7 +311,7 @@ describe("handleToolCall", () => {
     ).rejects.toThrow("query is required");
   });
 
-  it("memory_smart_search searches files and concepts, not just title/content (#139)", async () => {
+  it("memory_smart_search searches files and concepts, not just title/content", async () => {
     const kv = new InMemoryKV();
     await handleToolCall(
       "memory_save",
@@ -338,7 +350,7 @@ describe("handleToolCall", () => {
     expect(byConcept.results).toHaveLength(1);
   });
 
-  it("memory_sessions honours the limit arg (#139)", async () => {
+  it("memory_sessions honours the limit arg", async () => {
     const kv = new InMemoryKV();
     for (let i = 0; i < 5; i++) {
       await kv.set("mem:sessions", `ses_${i}`, {
@@ -381,7 +393,7 @@ describe("handleToolCall", () => {
     expect(JSON.parse(huge.content[0].text).results).toHaveLength(100);
   });
 
-  it("memory_governance_delete removes memories by id array (#139)", async () => {
+  it("memory_governance_delete removes memories by id array", async () => {
     const kv = new InMemoryKV();
     const a = JSON.parse(
       (await handleToolCall("memory_save", { content: "one" }, kv)).content[0]
@@ -449,6 +461,98 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.deleted).toBe(1);
     expect(parsed.requested).toBe(2);
+  });
+
+  describe("local fallback writes", () => {
+    const serverUrl = "http://127.0.0.1:3999";
+    const originalUrl = process.env["AGENTMEMORY_URL"];
+
+    beforeEach(() => {
+      process.env["AGENTMEMORY_URL"] = serverUrl;
+    });
+
+    afterEach(() => {
+      if (originalUrl === undefined) delete process.env["AGENTMEMORY_URL"];
+      else process.env["AGENTMEMORY_URL"] = originalUrl;
+    });
+
+    it("memory_save tells the caller the memory went to the local file, not the server", async () => {
+      const kv = new InMemoryKV("/tmp/test-fallback.json");
+      const result = await handleToolCall("memory_save", { content: "fallback save" }, kv);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.saved).toMatch(/^mem_/);
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain(serverUrl);
+      expect(parsed.warning).not.toContain("/tmp/test-fallback.json");
+      expect(parsed.warning).not.toContain("lost");
+      expect(writeFileSync).toHaveBeenCalledTimes(1);
+    });
+
+    it("memory_save says the memory is lost on exit when there is no local file", async () => {
+      const kv = new InMemoryKV();
+      const parsed = JSON.parse(
+        (await handleToolCall("memory_save", { content: "no file" }, kv)).content[0].text,
+      );
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain(serverUrl);
+      expect(parsed.warning).toContain("lost when");
+    });
+
+    it("memory_save says the memory is lost on exit when writing the local file failed", async () => {
+      vi.mocked(writeFileSync).mockImplementationOnce(() => {
+        throw new Error("EACCES");
+      });
+      const kv = new InMemoryKV("/tmp/test-fallback.json");
+      const parsed = JSON.parse(
+        (await handleToolCall("memory_save", { content: "unwritable" }, kv)).content[0].text,
+      );
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain("lost when");
+      expect(writeFileSync).toHaveBeenCalledTimes(1);
+    });
+
+    it("memory_save marks the result local when the server stops answering mid-session", async () => {
+      setLivezProbe(async () => ({ ok: true, status: 200, statusText: "OK" }));
+      (globalThis as { fetch: typeof fetch }).fetch = vi.fn(async () => {
+        throw new DOMException("The operation was aborted due to timeout", "TimeoutError");
+      }) as unknown as typeof fetch;
+      const kv = new InMemoryKV("/tmp/test-fallback.json");
+      const parsed = JSON.parse(
+        (await handleToolCall("memory_save", { content: "hung server" }, kv)).content[0].text,
+      );
+      expect(parsed.saved).toMatch(/^mem_/);
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain(serverUrl);
+    });
+
+    it("memory_governance_delete marks the result local", async () => {
+      const kv = new InMemoryKV("/tmp/test-fallback.json");
+      const parsed = JSON.parse(
+        (await handleToolCall(
+          "memory_governance_delete",
+          { memoryIds: ["mem_on_server"] },
+          kv,
+        )).content[0].text,
+      );
+      expect(parsed.deleted).toBe(0);
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain(serverUrl);
+      expect(parsed.warning).not.toContain("lost");
+      expect(writeFileSync).toHaveBeenCalledTimes(1);
+    });
+
+    it("memory_governance_delete says the change is lost on exit when there is no local file", async () => {
+      const kv = new InMemoryKV();
+      const parsed = JSON.parse(
+        (await handleToolCall(
+          "memory_governance_delete",
+          { memoryIds: ["mem_on_server"] },
+          kv,
+        )).content[0].text,
+      );
+      expect(parsed.storage).toBe("local");
+      expect(parsed.warning).toContain("lost when");
+    });
   });
 });
 

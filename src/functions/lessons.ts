@@ -1,10 +1,11 @@
-import type { ISdk } from "iii-sdk";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
 import type { Lesson } from "../types.js";
 import { SearchIndex } from "../state/search-index.js";
 import { lessonToObservation } from "../state/memory-utils.js";
 import { recordAudit } from "./audit.js";
+import { deleteFacetsForTargets } from "./facets.js";
 
 // Dedicated BM25 index for lessons, with the full records cached
 // alongside it. Recall previously listed every lesson from KV and
@@ -39,7 +40,7 @@ async function ensureLessonIndex(kv: StateKV): Promise<SearchIndex> {
       if (generation !== lessonIndexGeneration) return;
       for (const l of all) {
         if (!l.deleted) {
-          idx.add(lessonToObservation(l));
+          idx.add(lessonToObservation(l), "lesson");
           lessonRecords.set(l.id, l);
         }
       }
@@ -63,7 +64,31 @@ function reinforceLesson(lesson: Lesson): void {
   lesson.updatedAt = now;
 }
 
-export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
+export const LESSON_SOURCE_IDS_MAX = 50;
+const LESSON_SOURCE_ID_MAX_LENGTH = 200;
+
+export function normalizeLessonSourceIds(value: unknown): string[] | null {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value) || value.length > LESSON_SOURCE_IDS_MAX) return null;
+  const ids: string[] = [];
+  for (const raw of value) {
+    if (typeof raw !== "string") return null;
+    const id = raw.trim();
+    if (!id || id.length > LESSON_SOURCE_ID_MAX_LENGTH || /\s/.test(id)) return null;
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+function mergeSourceIds(existing: string[] | undefined, incoming: string[] | undefined): string[] {
+  const merged = [...(existing || [])];
+  for (const id of incoming || []) {
+    if (!merged.includes(id)) merged.push(id);
+  }
+  return merged.slice(-LESSON_SOURCE_IDS_MAX);
+}
+
+export function registerLessonsFunctions(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::lesson-save", 
     async (data: {
       content: string;
@@ -88,11 +113,14 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
           existing.context = data.context;
           indexedTextChanged = true;
         }
+        if (data.sourceIds && data.sourceIds.length) {
+          existing.sourceIds = mergeSourceIds(existing.sourceIds, data.sourceIds);
+        }
         await kv.set(KV.lessons, existing.id, existing);
         lessonRecords.set(existing.id, existing);
         if (indexedTextChanged && lessonIndex) {
           lessonIndex.remove(existing.id);
-          lessonIndex.add(lessonToObservation(existing));
+          lessonIndex.add(lessonToObservation(existing), "lesson");
         }
         noteLessonMutation();
 
@@ -134,7 +162,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
 
       await kv.set(KV.lessons, lesson.id, lesson);
       lessonRecords.set(lesson.id, lesson);
-      if (lessonIndex) lessonIndex.add(lessonToObservation(lesson));
+      if (lessonIndex) lessonIndex.add(lessonToObservation(lesson), "lesson");
       noteLessonMutation();
 
       try {
@@ -279,6 +307,7 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       lessonRecords.delete(lesson.id);
       if (lessonIndex) lessonIndex.remove(lesson.id);
       noteLessonMutation();
+      await deleteFacetsForTargets(kv, [lesson.id]);
 
       try {
         await recordAudit(kv, "lesson_delete", "mem::lesson-delete", [
@@ -346,8 +375,10 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
       }
 
       await Promise.all(dirty.map((l) => kv.set(KV.lessons, l.id, l)));
+      const softDeletedIds: string[] = [];
       for (const l of dirty) {
         if (l.deleted) {
+          softDeletedIds.push(l.id);
           lessonRecords.delete(l.id);
           if (lessonIndex) lessonIndex.remove(l.id);
         } else {
@@ -355,6 +386,9 @@ export function registerLessonsFunctions(sdk: ISdk, kv: StateKV): void {
         }
       }
       if (dirty.length > 0) noteLessonMutation();
+      if (softDeletedIds.length > 0) {
+        await deleteFacetsForTargets(kv, softDeletedIds);
+      }
       await Promise.all(
         auditEvents.map((event) =>
           recordAudit(kv, "lesson_strengthen", "mem::lesson-decay-sweep", [event.id], {

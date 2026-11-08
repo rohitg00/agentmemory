@@ -1,0 +1,73 @@
+.logo {
+  flex: none;
+  color: var(--ink);
+}
+
+.lines line {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+}
+
+.point,
+.ring {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  a:hover > .logo .lines line {
+    animation: draw 420ms var(--ease-out) both;
+  }
+  a:hover > .logo .lines line:nth-child(2) {
+    animation-delay: 60ms;
+  }
+  a:hover > .logo .lines line:nth-child(3) {
+    animation-delay: 120ms;
+  }
+  a:hover > .logo .point {
+    animation: pop 420ms var(--ease-out) 260ms both;
+  }
+  a:hover > .logo .ring {
+    animation: ring 700ms var(--ease-out) 300ms both;
+  }
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes pop {
+  0% {
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes ring {
+  from {
+    transform: scale(0.7);
+    opacity: 0.8;
+  }
+  to {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  a:hover > .logo .lines line,
+  a:hover > .logo .point,
+  a:hover > .logo .ring {
+    animation: none;
+  }
+}

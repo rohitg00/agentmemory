@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "benchmark": "coding-memory-lifecycle-v1",
+  "startedAt": "2026-10-09T15:08:34.715Z",
+  "source": {
+    "revision": "df3d4a83b966d8d415cb9180d5a4724b07f729dc",
+    "dirty": true,
+    "contentSha256": "92dedec461c8a72db99237d9ecaffd0c6ee3b3c6072eb196ea9e7ac6f32d0093",
+    "dependencies": {
+      "@anthropic-ai/claude-agent-sdk": "0.3.295",
+      "@anthropic-ai/sdk": "0.100.1",
+      "@clack/prompts": "1.8.1",
+      "@huggingface/transformers": "4.3.1",
+      "@iii-dev/helpers": "0.22.1",
+      "@node-rs/jieba": "2.0.4",
+      "@types/node": "26.6.4",
+      "dotenv": "18.0.6",
+      "iii-sdk": "0.22.1",
+      "picocolors": "1.1.1",
+      "tiny-segmenter": "0.2.0",
+      "tsdown": "0.21.10",
+      "tsx": "4.23.15",
+      "typescript": "6.0.3",
+      "vitest": "4.1.11",
+      "zod": "4.6.5"
+    },
+    "installedLockSha256": "5f91fac54c5227649080944e92129a9b8f6efb9ae17d1c59d0891d1818d52cbd",
+    "builtArtifactSha256": "6a05eaca036ab987ba5264e809a690a6764ca01f8b6a649ccb49f5597a34dc81",
+    "engine": {
+      "version": "0.22.1",
+      "sha256": "6452e54b05e73bee301e05bd8b75c0a6eb1986d8cb37664c4465859612110ed2"
+    }
+  },
+  "fixture": {
+    "version": "coding-memory-lifecycle-v1",
+    "project": "orbit-eval",
+    "otherProject": "quartz-eval",
+    "oldPolicy": "Orbit dependency installation policy for development and continuous integration. Keep the dependency graph reproducible on every clean checkout. Review the lockfile when updating libraries. All contributors must use the approved installation command. Approved command: `npm ci`.",
+    "newPolicy": "Orbit dependency installation policy for development and continuous integration. Keep the dependency graph reproducible on every clean checkout. Review the lockfile when updating libraries. All contributors must use the approved installation command. Approved command: `pnpm install --frozen-lockfile`.",
+    "otherPolicy": "Quartz dependency installation policy. Approved command: `yarn install --immutable`.",
+    "disposable": "The temporary kestrel beacon for the preview environment is lavender. Delete this diagnostic note after testing.",
+    "captured": "Orbit release smoke checks must verify the lighthouse route before deployment."
+  },
+  "scope": "Local HTTP lifecycle assertions with a deterministic command reader; no LLM or command execution",
+  "planned": 11,
+  "provider": "noop",
+  "embeddings": false,
+  "consolidation": false
+}

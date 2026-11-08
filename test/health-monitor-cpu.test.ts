@@ -1,26 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
-import { cpus } from "node:os";
-import { normalizeCpuPercent, registerHealthMonitor } from "../src/health/monitor.js";
+import { availableParallelism } from "node:os";
+import { cpuCoreCount, normalizeCpuPercent, registerHealthMonitor } from "../src/health/monitor.js";
 import { KV } from "../src/state/schema.js";
 import type { HealthSnapshot } from "../src/types.js";
 
-// #1235: fix a deterministic core count for the producer-wiring test below,
-// independent of how many cores the machine running the suite actually has.
+const coreCount = vi.hoisted(() => ({ value: 8 }));
+
 vi.mock("node:os", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:os")>();
   return {
     ...actual,
-    cpus: () =>
-      Array.from({ length: 8 }, () => ({
-        model: "mock",
-        speed: 0,
-        times: { user: 0, nice: 0, sys: 0, idle: 0, irq: 0 },
-      })),
+    availableParallelism: () => coreCount.value,
   };
 });
 
 describe("normalizeCpuPercent", () => {
-  it("divides single-core percent by the core count (#1235)", () => {
+  it("divides single-core percent by the core count", () => {
     expect(normalizeCpuPercent(244, 16)).toBeCloseTo(15.25, 2);
   });
 
@@ -28,14 +23,26 @@ describe("normalizeCpuPercent", () => {
     expect(normalizeCpuPercent(50, 0)).toBe(50);
   });
 
-  it("uses the real core count by default", () => {
-    expect(normalizeCpuPercent(cpus().length * 100)).toBeCloseTo(100, 2);
+  it("uses the available parallelism by default", () => {
+    expect(normalizeCpuPercent(availableParallelism() * 100)).toBeCloseTo(100, 2);
   });
 });
 
-// #1235: mock KV mirrors test/index-persistence.test.ts's Map-backed mock,
-// enough surface for StateKV's get/set, cast past the class's private field
-// with `as never` the same way that file does.
+describe("cpuCoreCount", () => {
+  it("reports the available parallelism", () => {
+    expect(cpuCoreCount()).toBe(8);
+  });
+
+  it("clamps a zero parallelism to 1", () => {
+    coreCount.value = 0;
+    try {
+      expect(cpuCoreCount()).toBe(1);
+    } finally {
+      coreCount.value = 8;
+    }
+  });
+});
+
 function mockKV() {
   const store = new Map<string, Map<string, unknown>>();
   return {
@@ -67,16 +74,8 @@ async function waitForSnapshot(
   throw new Error("collectHealth did not persist a snapshot in time");
 }
 
-describe("registerHealthMonitor producer wiring (#1235)", () => {
+describe("registerHealthMonitor producer wiring", () => {
   it("persists a machine-relative cpu.percent with the divisor it used", async () => {
-    // Pin process.cpuUsage() and Date.now() so the single-core cpu delta
-    // and elapsed time collectHealth computes are exact, not host-dependent.
-    // Call order inside registerHealthMonitor/collectHealth (verified by
-    // reading src/health/monitor.ts): cpuUsage() for prevCpuUsage, then
-    // Date.now() for prevCpuTime, both synchronously before collectHealth()
-    // is invoked; then collectHealth's own cpuUsage()/Date.now() calls,
-    // still before its first await. So the queued values below land as:
-    // prev = {user:0}, current = {user:5_000_000}, elapsed = 1000ms.
     const cpuUsageSpy = vi
       .spyOn(process, "cpuUsage")
       .mockReturnValueOnce({ user: 0, system: 0 } as NodeJS.CpuUsage)
@@ -93,10 +92,6 @@ describe("registerHealthMonitor producer wiring (#1235)", () => {
     try {
       const snapshot = await waitForSnapshot(kv);
 
-      // 5_000_000us / 1000 / 1000ms * 100 = 500% single-core. If
-      // normalizeCpuPercent were bypassed (cpuPercent = singleCoreCpuPercent
-      // directly), this would read 500, not 62.5 -- this assertion fails
-      // under that regression.
       expect(snapshot.cpu.cores).toBe(8);
       expect(snapshot.cpu.percent).toBeCloseTo(62.5, 2);
     } finally {

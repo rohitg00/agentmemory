@@ -38,6 +38,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
@@ -54,7 +57,7 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node-version: [20, 22, 24, 26]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
       - uses: actions/setup-node@v6
@@ -69,4 +72,5 @@ jobs:
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - run: npm run build
       - run: npm run skills:check
+      - run: npx tsc --noEmit --project tsconfig.eval.json
       - run: npm test

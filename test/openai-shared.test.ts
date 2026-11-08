@@ -150,8 +150,8 @@ describe("_openai-shared — buildEmbeddingUrl", () => {
   });
 });
 
-describe("_openai-shared — non-OpenAI base URLs (#628, #646)", () => {
-  it("does not double /v1 when base URL already ends with /v1 (DeepSeek shape, #628)", () => {
+describe("_openai-shared — non-OpenAI base URLs", () => {
+  it("does not double /v1 when base URL already ends with /v1 (DeepSeek shape)", () => {
     expect(
       buildChatUrl("https://api.deepseek.com/v1", false, "2024-08-01-preview"),
     ).toBe("https://api.deepseek.com/v1/chat/completions");
@@ -160,7 +160,7 @@ describe("_openai-shared — non-OpenAI base URLs (#628, #646)", () => {
     ).toBe("https://api.deepseek.com/v1/embeddings");
   });
 
-  it("does not inject /v1 when provider uses non-OpenAI version segment (Zhipu /api/paas/v4, #646)", () => {
+  it("does not inject /v1 when provider uses non-OpenAI version segment (Zhipu /api/paas/v4)", () => {
     expect(
       buildChatUrl(
         "https://open.bigmodel.cn/api/paas/v4",
@@ -228,13 +228,7 @@ describe("_openai-shared — normalizeBaseUrl", () => {
   });
 });
 
-// ─────────────────────────────────────────────────────────────
-// OpenAIEmbeddingProvider — Azure transport (#371)
-// Verifies the embedding path now uses the shared Azure helpers:
-// hits /embeddings (not /v1/embeddings), includes api-version, uses
-// api-key header instead of Authorization: Bearer.
-// ─────────────────────────────────────────────────────────────
-describe("OpenAIEmbeddingProvider — Azure auto-detection (#371)", () => {
+describe("OpenAIEmbeddingProvider — Azure auto-detection", () => {
   const ORIGINAL_BASE = process.env["OPENAI_BASE_URL"];
   const ORIGINAL_VERSION = process.env["OPENAI_API_VERSION"];
 

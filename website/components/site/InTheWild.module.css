@@ -1,0 +1,245 @@
+.quotes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border-top: 1px solid var(--line);
+}
+
+.quote {
+  border-bottom: 1px solid var(--line);
+  padding: var(--s-6) var(--s-6) var(--s-6) 0;
+}
+
+.quote:nth-child(2n) {
+  padding-left: var(--s-6);
+  padding-right: 0;
+  border-left: 1px solid var(--line);
+}
+
+.quote figure {
+  margin: 0;
+  display: grid;
+  gap: var(--s-4);
+  height: 100%;
+  align-content: space-between;
+}
+
+.quote blockquote {
+  margin: 0;
+}
+
+.quote blockquote p {
+  font-size: var(--t-20);
+  line-height: 1.45;
+  color: var(--ink);
+  letter-spacing: -0.01em;
+  text-indent: -0.42em;
+}
+
+.quote blockquote p::before {
+  content: "\201C";
+}
+
+.quote blockquote p::after {
+  content: "\201D";
+}
+
+.quote figcaption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  font-size: var(--t-14);
+}
+
+.who {
+  color: var(--ink);
+  font-weight: 540;
+}
+
+.quote figcaption :global(.mono) {
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.featuredStrip {
+  padding: var(--s-6) 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.featured {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-3);
+}
+
+.featuredHead {
+  font-size: var(--t-12);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.marquee {
+  --fade: 56px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+  mask-image: linear-gradient(to right, transparent, #000 var(--fade), #000 calc(100% - var(--fade)), transparent);
+}
+
+.track {
+  display: flex;
+  width: max-content;
+  animation: marquee 56s linear infinite;
+}
+
+.set {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--s-2) 0 0;
+  display: flex;
+  gap: var(--s-2);
+}
+
+.item {
+  flex: none;
+}
+
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee:focus-within .track {
+  animation-play-state: paused;
+}
+
+.outlet {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  height: 64px;
+  padding: 0 var(--s-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  white-space: nowrap;
+  transition: border-color var(--dur-1) ease, transform var(--dur-1) var(--ease-out);
+}
+
+.outlet:active {
+  transform: scale(0.98);
+}
+
+.badgeOutlet {
+  padding: 0 var(--s-3);
+}
+
+.badgeOutlet img {
+  width: auto;
+  height: 46px;
+  max-width: none;
+  filter: grayscale(1);
+}
+
+.mark,
+.markWide {
+  flex: none;
+  object-fit: contain;
+  filter: grayscale(1);
+  opacity: 0.85;
+}
+
+.mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 5px;
+}
+
+.markWide {
+  width: 84px;
+  height: 20px;
+}
+
+:root[data-theme="dark"] .markWide {
+  filter: grayscale(1) invert(1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .markWide {
+    filter: grayscale(1) invert(1);
+  }
+}
+
+.outletText {
+  display: grid;
+  min-width: 0;
+}
+
+.outletName {
+  color: var(--ink);
+  font-size: var(--t-14);
+  font-weight: 540;
+}
+
+.outletText :global(.mono) {
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .marquee:hover .track {
+    animation-play-state: paused;
+  }
+  .outlet:hover {
+    border-color: var(--ink);
+  }
+}
+
+@media (max-width: 760px) {
+  .quotes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .quote,
+  .quote:nth-child(2n) {
+    padding: var(--s-5) 0;
+    border-left: 0;
+  }
+  .quote blockquote p {
+    font-size: var(--t-16);
+  }
+  .marquee {
+    --fade: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .track {
+    width: auto;
+    animation: none;
+  }
+  .set {
+    flex-wrap: wrap;
+    padding-right: 0;
+  }
+  .set[aria-hidden] {
+    display: none;
+  }
+  .item {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+  .outlet {
+    height: auto;
+    min-height: 64px;
+    padding-block: 10px;
+    white-space: normal;
+  }
+}
