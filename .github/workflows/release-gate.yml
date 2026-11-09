@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -49,7 +49,7 @@ jobs:
         shell: bash
         run: |
           engine_pin=$(node --import tsx --input-type=module -e 'import { III_PINNED_VERSION } from "./src/version.ts"; console.log(III_PINNED_VERSION)')
-          engine_bin="$HOME/.cache/agentmemory-release-gate/iii-${engine_pin}-linux-x64"
+          engine_bin="$HOME/.cache/agentmemory-release-gate/iii-${engine_pin}-linux-$(node -p process.arch)"
           test -x "$engine_bin"
           AGENTMEMORY_TEST_III="$engine_bin" AGENTMEMORY_REQUIRE_LIVE_TESTS=1 npx vitest run test/compose-supervision-integration.test.ts test/codex-live-daemon.test.ts test/compose-c1-integration.test.ts
       - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
@@ -76,7 +76,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: release-gate-${{ matrix.os }}
+          name: release-gate-${{ matrix.os }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/release-gate
             ${{ runner.temp }}/startup-gate
@@ -88,9 +88,13 @@ jobs:
           retention-days: 14
 
   windows-smoke:
-    name: windows smoke
-    runs-on: windows-latest
+    name: windows smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -119,7 +123,7 @@ jobs:
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: windows-smoke
+          name: windows-smoke-${{ matrix.os }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/windows-smoke
           if-no-files-found: ignore
           retention-days: 14
