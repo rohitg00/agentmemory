@@ -286,7 +286,7 @@ export interface HealthSnapshot {
     rss: number;
     external: number;
   };
-  cpu: { userMicros: number; systemMicros: number; percent: number };
+  cpu: { userMicros: number; systemMicros: number; percent: number; cores?: number };
   eventLoopLagMs: number;
   uptimeSeconds: number;
   kvConnectivity?: { status: string; latencyMs?: number; error?: string };
