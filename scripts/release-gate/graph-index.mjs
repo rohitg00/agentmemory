@@ -458,12 +458,11 @@ try {
       if (attempt > 0) await new Promise((done) => setTimeout(done, 1000));
       try {
         if ((await graphRecall()).results.some((row) => row.observation?.id === remembered.memory.id)) return;
-        lastError = undefined;
       } catch (error) {
         lastError = error;
       }
     }
-    assert.fail(lastError ? `${message}: ${lastError.message}` : message);
+    assert.fail(lastError ? `${message}; last request error: ${lastError.message}` : message);
   };
   await graphRecalls("Graph-only query must find captured memory through current provenance");
   assert.equal((await rest(primary, "/search", { query: "OnyxRestored", project: "different-project", targetLayer: "memory", limit: 5 })).results.length, 0);

@@ -432,7 +432,7 @@ async function main() {
     d.exitCode = result.code; d.ownedComposeStopped = true;
   });
   await scenario("cancel-external-startup", async (i, d) => {
-    await i.startEngine(i.config({ delayMs: 10_000, earlyPid: true }));
+    await i.startEngine(i.config({ delayMs: 120_000, earlyPid: true }));
     await poll("delayed Compose worker process", () => i.wrapperStarts()[0]?.pid, 10_000);
     i.start(["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "300000", AGENTMEMORY_VERBOSE: "1" });
     await poll("CLI worker readiness wait", () => {
