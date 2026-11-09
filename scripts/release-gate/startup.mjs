@@ -435,6 +435,7 @@ async function main() {
     await i.startEngine(i.config({ delayMs: 10_000, earlyPid: true }));
     await poll("delayed Compose worker process", () => i.wrapperStarts()[0]?.pid, 10_000);
     i.start(["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "300000" });
+    await poll("CLI startup output", () => i.cli.text.trim().length > 0, 5_000).catch(() => {});
     await sleep(1000);
     i.cli.kill("SIGTERM"); const result = await exited(i.cli, 6_000); assert.equal(result.code, 143, `Cancellation result ${JSON.stringify(result)}: ${i.cli.text.slice(-800)}`);
     assert(alive(i.composePid), "Cancellation stopped an external Compose project");
