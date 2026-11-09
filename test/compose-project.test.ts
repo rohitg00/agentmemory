@@ -24,6 +24,30 @@ const options = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("Worker Compose project", () => {
+  it.each(Array.from({ length: 32 }, (_, offset) => 0x80 + offset))(
+    "escapes C1 character U+%s in single-line and multiline scalars", (code) => {
+      for (const value of [`first${String.fromCharCode(code)}second`, `first\n${String.fromCharCode(code)}second`]) {
+        const text = renderWorkerCompose(options({ workerEnvironment: { OPENAI_BASE_URL: value } }));
+        expect(text).not.toMatch(/[\u0080-\u009f]/);
+        expect(parse(text).containers.agentmemory.environment.OPENAI_BASE_URL).toBe(value);
+      }
+    },
+  );
+  it.each(["first\u2028second", "first\u2029second", "first\n\u2028\u2029second"])(
+    "escapes Unicode line and paragraph separators: %j", (value) => {
+      const text = renderWorkerCompose(options({ workerEnvironment: { OPENAI_BASE_URL: value } }));
+      expect(text).not.toMatch(/[\u2028\u2029]/);
+      expect(text).toContain(`OPENAI_BASE_URL: ${JSON.stringify(value).replace(/[\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16)}`)}`);
+      expect(parse(text).containers.agentmemory.environment.OPENAI_BASE_URL).toBe(value);
+    },
+  );
+  it.each(["first\nsecond", "first\rsecond", "first\r\nsecond", "\nleading\n\ntrailing\n", "quote'\"\\\nnext\tline"])(
+    "preserves multiline configuration values through YAML parsing: %j", (value) => {
+      const text = renderWorkerCompose(options({ workerEnvironment: { OPENAI_BASE_URL: value } }));
+      expect(parse(text).containers.agentmemory.environment.OPENAI_BASE_URL).toBe(value);
+    },
+  );
+
   it("pins registry workers and configures the isolated engine, state and HTTP", () => {
     const text = renderWorkerCompose(options());
     expect(text).toContain("namespace: agentmemory-3511");
