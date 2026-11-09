@@ -41,6 +41,7 @@ function writeProviderNoticeOnce(text: string): void {
 // mutate the file between cases reset the module (clearing this via reload) or
 // call __resetEnvFileCache().
 let envFileCache: Record<string, string> | undefined;
+const hydratedEnvValues = new Map<string, string>();
 
 function loadEnvFile(): Record<string, string> {
   if (envFileCache) return envFileCache;
@@ -120,9 +121,17 @@ export function isRealProviderKey(
 export function hydrateProcessEnvFromFile(): Record<string, string | undefined> {
   const beforeHydration = { ...process.env };
   for (const [k, v] of Object.entries(loadEnvFile())) {
-    if (process.env[k] === undefined) process.env[k] = v;
+    if (process.env[k] === undefined) {
+      process.env[k] = v;
+      hydratedEnvValues.set(k, v);
+    }
   }
   return beforeHydration;
+}
+
+export function isEnvFileValue(key: string): boolean {
+  const hydrated = hydratedEnvValues.get(key);
+  return hydrated !== undefined && process.env[key] === hydrated;
 }
 
 // Warn once when a configured model is in the premium tier and likely to burn

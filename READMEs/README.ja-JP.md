@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### プラグインをインストールしない Claude Code(MCP スタンドアロン経路)
 
-`/plugin install` を使わず `~/.claude.json` から直接 agentmemory の MCP サーバーを配線する場合、Claude Code は `${CLAUDE_PLUGIN_ROOT}` を一切解決しないため、hook スクリプトを `~/.claude/settings.json` 内の絶対パスに向ける必要があります。これらのパスには通常 agentmemory のバージョンが埋め込まれる(例: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`)ため、次のアップグレードで全 hook が静かに壊れます。
+`/plugin install` を使わず `~/.claude.json`（既定のパス） から直接 agentmemory の MCP サーバーを配線する場合、Claude Code は `${CLAUDE_PLUGIN_ROOT}` を一切解決しないため、hook スクリプトを `~/.claude/settings.json`（既定のパス） 内の絶対パスに向ける必要があります。これらのパスには通常 agentmemory のバージョンが埋め込まれる(例: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`)ため、次のアップグレードで全 hook が静かに壊れます。
 
 回避策:
 
@@ -452,7 +452,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-同じ hook コマンドを `~/.claude/settings.json` にマージし、現在インストールされている `@agentmemory/agentmemory` パッケージの同梱 `plugin/` ディレクトリに解決された絶対パスを書き込みます。agentmemory をアップグレードしたら、このコマンドを再実行してパスを更新してください。同じファイル内のユーザーエントリは保持され、以前の agentmemory エントリだけが置き換えられます。`/plugin install` の経路が推奨アプローチであることに変わりはありません。
+このコマンドは MCP サーバーを設定し、同梱の hook を Claude Code のユーザー設定にマージします。`CLAUDE_CONFIG_DIR` が未設定、空、または空白のみの場合、MCP には `~/.claude.json`、hook には `~/.claude/settings.json` を使います。それ以外のディレクトリ値は、前後の空白を含めて指定どおりに使われます。カスタムディレクトリを使う場合は、このコマンドと Claude Code の両方に同じ空でない `CLAUDE_CONFIG_DIR` の値を設定してください。その場合、ファイルはそれぞれ `$CLAUDE_CONFIG_DIR/.claude.json` と `$CLAUDE_CONFIG_DIR/settings.json` になります。コネクターが AgentMemory の `.env` から値を読み込む場合でも、Claude Code 自身の起動環境にこの値を設定する必要があります。このコマンドを実行する前にカスタムディレクトリを作成してください。存在しない場合、Claude Code は未検出としてスキップされます。shell の値が空白のみの場合は、Claude Code の起動前に `CLAUDE_CONFIG_DIR` を解除し、Claude Code 側でも既定のプロファイルが使われるようにしてください。絶対パスを使ってください。相対パスは作業ディレクトリを基準に解決されるため、両方のコマンドを同じディレクトリから実行する必要があります。
+
+Hook コマンドは、インストール済みパッケージに同梱された `plugin/` ディレクトリへの絶対パスを使います。agentmemory のアップグレード後にコマンドを再実行して、これらのパスを更新してください。設定ファイル内のユーザーのエントリは保持され、以前の agentmemory のエントリだけが置き換えられます。引き続き `/plugin install` の利用を推奨します。
 リモートや保護されたデプロイでは、`AGENTMEMORY_URL` と `AGENTMEMORY_SECRET` を設定して Claude Code を起動してください。プラグインはこの両方の値を同梱の MCP サーバーに渡します。`AGENTMEMORY_URL` が空の場合、MCP shim は `http://localhost:3111` にフォールバックします。
 
 ### Codex CLI(Codex プラグインプラットフォーム)
