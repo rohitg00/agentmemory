@@ -40,6 +40,17 @@ describe("mem::remember supersession and recall hygiene", () => {
     expect(idx.has(second.memory.id)).toBe(true);
   });
 
+  it("counts each superseding save as a recurrence", async () => {
+    const { sdk } = await setup();
+    const content = "always run the migration dry run before applying schema changes";
+    const first = (await sdk.trigger("mem::remember", { content, type: "pattern" })) as { memory: { recurrence?: number } };
+    const second = (await sdk.trigger("mem::remember", { content: `${content} now`, type: "pattern" })) as { memory: { recurrence?: number } };
+    const third = (await sdk.trigger("mem::remember", { content: `${content} now ok`, type: "pattern" })) as { memory: { recurrence?: number } };
+    expect(first.memory.recurrence).toBeUndefined();
+    expect(second.memory.recurrence).toBe(2);
+    expect(third.memory.recurrence).toBe(3);
+  });
+
   it("reports a close-but-below-threshold match as similarTo without superseding", async () => {
     const { sdk } = await setup();
     const first = (await sdk.trigger("mem::remember", {

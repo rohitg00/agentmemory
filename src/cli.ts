@@ -2751,7 +2751,17 @@ async function startServerForDemo(): Promise<() => Promise<void>> {
 
   return async () => {
     if (importedStartupWorker && readWorkerPidfile() === process.pid) clearWorkerPidfile();
-    if (startedEngine) await cleanupFailedStartup();
+    if (!startedEngine) return;
+    if (IS_WINDOWS && spawnedComposeDaemon) {
+      const state = readEngineState();
+      if (state?.kind !== "compose" || state.composePid !== spawnedComposeDaemon.pid) {
+        throw new Error("Demo Compose lifecycle state no longer matches the daemon it started. Lifecycle state was preserved.");
+      }
+      // SIGTERM terminates the daemon directly on Windows, leaving its workers behind.
+      await stopComposeRuntime(state, true);
+      return;
+    }
+    await cleanupFailedStartup();
   };
 }
 
@@ -3160,6 +3170,40 @@ function findEnginePidsByPort(port: number): number[] {
   }
 }
 
+async function stopComposeRuntime(state: ComposeEngineState, running: boolean): Promise<void> {
+  const pid = state.composePid;
+  const ownedDaemonAlive = pid !== undefined && pidAlive(pid);
+  if (ownedDaemonAlive && !composePidMatches(pid, state)) {
+    throw new Error(`Recorded Compose pid ${pid} does not match the saved daemon identity; refusing to invoke Compose control or signal it. Lifecycle state was preserved.`);
+  }
+  if (running && !ownedDaemonAlive) {
+    throw new Error("The REST endpoint is responding, but the recorded Compose daemon is not alive. Refusing to stop or clear an engine that may be unrelated; restore the owning daemon or inspect the endpoint manually.");
+  }
+  if (running && ownedDaemonAlive) {
+    try {
+      await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: composeDownTimeoutMs() });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("ENGINE_RESTART_REQUIRED")) {
+        throw new Error(`compose::down failed for ${state.file}: ${message}. Lifecycle state was preserved.`);
+      }
+      p.log.warn("Compose requested an engine restart while stopping; terminating its verified owning daemon to finish shutdown.");
+    }
+  }
+  if (ownedDaemonAlive) {
+    const childrenStopped = await terminateComposeChildren(state);
+    if (!childrenStopped) {
+      throw new Error(`One or more child workers of Compose ${pid} did not stop; lifecycle state was preserved.`);
+    }
+    if (!(await signalAndWait(pid, "SIGTERM", 20_000))) {
+      throw new Error(`Worker Compose daemon pid ${pid} did not stop; lifecycle state was preserved. Inspect ${state.logFile}.`);
+    }
+  }
+  clearEnginePidfile();
+  clearWorkerPidfile();
+  clearEngineState();
+}
+
 async function runStop(): Promise<void> {
   const savedState = readEngineState();
   if (savedState?.kind === "docker") {
@@ -3180,41 +3224,7 @@ async function runStop(): Promise<void> {
   const force = args.includes("--force");
 
   if (state?.kind === "compose") {
-    const ownedDaemonAlive = Boolean(state.composePid && pidAlive(state.composePid));
-    if (ownedDaemonAlive && !composePidMatches(state.composePid!, state)) {
-      p.log.error(`Recorded Compose pid ${state.composePid} does not match the saved daemon identity; refusing to invoke Compose control or signal it. Lifecycle state was preserved.`);
-      process.exit(1);
-    }
-    if (running && !ownedDaemonAlive) {
-      p.log.error("The REST endpoint is responding, but the recorded Compose daemon is not alive. Refusing to stop or clear an engine that may be unrelated; restore the owning daemon or inspect the endpoint manually.");
-      process.exit(1);
-    }
-    if (running && ownedDaemonAlive) {
-      try {
-        await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: composeDownTimeoutMs() });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!message.includes("ENGINE_RESTART_REQUIRED")) {
-          p.log.error(`compose::down failed for ${state.file}: ${message}. Lifecycle state was preserved.`);
-          process.exit(1);
-        }
-        p.log.warn("Compose requested an engine restart while stopping; terminating its verified owning daemon to finish shutdown.");
-      }
-    }
-    if (ownedDaemonAlive) {
-      const childrenStopped = await terminateComposeChildren(state);
-      if (!childrenStopped) {
-        p.log.error(`One or more child workers of Compose ${state.composePid} did not stop; lifecycle state was preserved.`);
-        process.exit(1);
-      }
-      if (!(await signalAndWait(state.composePid!, "SIGTERM", 20_000))) {
-        p.log.error(`Worker Compose daemon pid ${state.composePid} did not stop; lifecycle state was preserved. Inspect ${state.logFile}.`);
-        process.exit(1);
-      }
-    }
-    clearEnginePidfile();
-    clearWorkerPidfile();
-    clearEngineState();
+    await stopComposeRuntime(state, running);
     p.outro("Stopped Worker Compose, engine, and agentmemory workers. Data was preserved.");
     return;
   }

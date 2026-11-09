@@ -198,7 +198,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
     });
 
     if (ranking === "hybrid") {
-      it("expands a real hybrid window shortened by a missing record", async () => {
+      it("fills a real hybrid window shortened by a missing record", async () => {
         for (let i = 0; i < 100; i++) {
           addMemory({ id: `mem_foreign_${i.toString().padStart(3, "0")}`, project: "project-b" });
         }
@@ -210,7 +210,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
         const ranker = vi.fn(hybrid.search.bind(hybrid));
         setHybridRanker(ranker);
         expect(await recall({ limit: 1 })).toEqual([matching.id]);
-        expect(ranker.mock.calls.map((call) => call[1])).toEqual([100, 200]);
+        expect(ranker.mock.calls.map((call) => call[1])).toEqual([100]);
       });
     }
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { hookAuthHeaders, reportBlockedTransport, resolveHookEndpoint } from "./_endpoint.js";
+import { hookAuthHeaders, hookSetting, reportBlockedTransport, resolveHookEndpoint } from "./_endpoint.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -12,8 +12,29 @@ const INJECT_CONTEXT = process.env["AGENTMEMORY_INJECT_CONTEXT"] === "true";
 const ENDPOINT = resolveHookEndpoint();
 const REST_URL = ENDPOINT.url;
 
+const DEFAULT_ENRICH_TIMEOUT_MS = 2000;
+
 function authHeaders(): Record<string, string> {
   return hookAuthHeaders(ENDPOINT);
+}
+
+const MAX_TIMER_MS = 2_147_483_647;
+
+function enrichTimeoutMs(): number {
+  const raw = hookSetting("AGENTMEMORY_ENRICH_TIMEOUT_MS")?.trim() ?? "";
+  const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+  return n >= 1 && n <= MAX_TIMER_MS ? n : DEFAULT_ENRICH_TIMEOUT_MS;
+}
+
+function isPlainTextHost(): boolean {
+  return Boolean(process.env["FACTORY_PROJECT_DIR"] || process.env["DROID_PLUGIN_ROOT"]);
+}
+
+function contextPayload(data: Record<string, unknown>, context: string): string {
+  if (data.hook_event_name !== "PreToolUse" || isPlainTextHost()) return context;
+  return JSON.stringify({
+    hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: context },
+  });
 }
 
 async function main() {
@@ -36,6 +57,7 @@ async function main() {
 
   if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
+  if (typeof data.cursor_version === "string") return;
 
   const toolName =
     typeof data.tool_name === "string"
@@ -96,13 +118,13 @@ async function main() {
         toolName,
         ...(project !== undefined && { project }),
       }),
-      signal: AbortSignal.timeout(2000),
+      signal: AbortSignal.timeout(enrichTimeoutMs()),
     });
 
     if (res.ok) {
       const result = (await res.json()) as { context?: string };
       if (result.context) {
-        process.stdout.write(result.context);
+        process.stdout.write(contextPayload(data, result.context));
       }
     }
   } catch {

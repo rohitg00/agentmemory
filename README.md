@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,500+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,600+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1140,6 +1140,8 @@ Two modes:
 
 What gets tagged when `AGENT_ID` is set: `Session.agentId`, `RawObservation.agentId`, `CompressedObservation.agentId`, `Memory.agentId`. The role flows from `api::session::start` → `mem::observe` → `mem::compress` → KV.
 
+`GET /agentmemory/sessions` also filters by time with `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` (ISO 8601, for example `2026-10-09` or `2026-10-09T12:00:00Z`; a value without a zone is read as UTC, and a `+` in an offset must be URL-encoded as `%2B`; after is inclusive, before is exclusive). Sessions with no value for the filtered field are excluded, and an invalid timestamp returns 400.
+
 What gets filtered in isolated mode: `mem::smart-search`, `/agentmemory/memories`, `/agentmemory/observations`, `/agentmemory/sessions`. Each endpoint accepts `?agentId=<role>` to override per-request, and `?agentId=*` to opt out of the env scope entirely. `/memories` also accepts `?includeOrphans=true` to surface pre-AGENT_ID memories whose `agentId` is undefined.
 
 Per-call override at the SDK / REST layer: every mutating endpoint (`/session/start`, `/remember`) accepts an `agentId` field in the request body that wins over the env. Useful for runtimes routing many roles through one server process. The MCP `memory_save` tool exposes the same `agentId` field, the standalone stdio server forwards both `agentId` and `project`, and saved memories carry `agentId` into the search index, so agent-scoped search covers memories as well as observations.
@@ -1200,6 +1202,8 @@ EMBEDDING_PROVIDER=local
 
 # Optional automatic context injection through the shared hooks
 # AGENTMEMORY_INJECT_CONTEXT=true
+# How long the PreToolUse hook waits for that context, in ms (default 2000)
+# AGENTMEMORY_ENRICH_TIMEOUT_MS=2000
 
 # Optional outside LLM for summaries and consolidation. A key alone does nothing;
 # this line selects the provider whose key agentmemory may use.
@@ -1309,7 +1313,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,500+ tests
+npm test                  # 4,600+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -22,6 +22,30 @@ function asClient(trigger: unknown): Pick<IIIClient, "trigger"> {
 }
 
 describe("waitForStateReady", () => {
+  it("waits for state::list_keys to register before reporting ready", async () => {
+    let clock = 0;
+    let keyProbes = 0;
+    const trigger = vi.fn(async (call: TriggerCall) => {
+      if (call.function_id === "state::list_keys") {
+        keyProbes += 1;
+        if (keyProbes === 1) throw missingFunction("state::list_keys");
+      }
+      return null;
+    });
+
+    const result = await waitForStateReady(asClient(trigger), {
+      timeoutMs: 1000,
+      intervalMs: 100,
+      now: () => clock,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+    });
+
+    expect(result).toEqual({ ready: true, waitedMs: 100, attempts: 2 });
+    expect(keyProbes).toBe(2);
+  });
+
   it("returns immediately when the state functions are registered", async () => {
     const trigger = vi.fn(async () => null);
 
@@ -30,7 +54,7 @@ describe("waitForStateReady", () => {
     expect(result).toEqual({ ready: true, waitedMs: 0, attempts: 1 });
     expect(
       trigger.mock.calls.map(([call]) => (call as TriggerCall).function_id),
-    ).toEqual(["state::list", "state::get"]);
+    ).toEqual(["state::list", "state::get", "state::list_keys"]);
     expect(trigger).toHaveBeenNthCalledWith(1, {
       function_id: "state::list",
       payload: { scope: KV.config },
@@ -62,7 +86,7 @@ describe("waitForStateReady", () => {
     });
 
     expect(result).toEqual({ ready: true, waitedMs: 100, attempts: 2 });
-    expect(trigger).toHaveBeenCalledTimes(3);
+    expect(trigger).toHaveBeenCalledTimes(4);
   });
 
   it("returns not-ready when every probe times out", async () => {
@@ -111,7 +135,7 @@ describe("waitForStateReady", () => {
 
     expect(result).toEqual({ ready: true, waitedMs: 200, attempts: 3 });
     expect(sleeps).toEqual([100, 100]);
-    expect(trigger).toHaveBeenCalledTimes(4);
+    expect(trigger).toHaveBeenCalledTimes(5);
     expect(trigger).toHaveBeenNthCalledWith(
       3,
       expect.objectContaining({

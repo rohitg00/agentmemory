@@ -48,6 +48,7 @@ async function rig(rotated = true) {
       const rows = store.get(payload.scope) ?? new Map<string, unknown>();
       if (id === "state::get") return structuredClone(rows.get(payload.key) ?? null);
       if (id === "state::list") return structuredClone([...rows.values()]);
+      if (id === "state::list_keys") return { keys: [...rows.keys()] };
       const before = structuredClone(rows.get(payload.key) ?? null);
       if (id === "state::delete") rows.delete(payload.key);
       else if (id === "state::set") rows.set(payload.key, structuredClone(payload.value));
