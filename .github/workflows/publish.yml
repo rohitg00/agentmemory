@@ -20,7 +20,7 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 180
     permissions:
       contents: read
       id-token: write
@@ -49,11 +49,10 @@ jobs:
           RELEASE_OUT: ${{ runner.temp }}/npm-release
           RELEASE_PACKAGES: ${{ github.event_name == 'release' && 'agentmemory,mcp' || inputs.packages }}
 
-      - name: Publish gated artifacts and verify registry provenance
+      - name: Stage gated artifacts, wait for approval and verify registry provenance
         run: npm run release:publish -- --manifest "$RELEASE_OUT/manifest.json"
         env:
           RELEASE_OUT: ${{ runner.temp }}/npm-release
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - if: always()
         uses: actions/upload-artifact@v7

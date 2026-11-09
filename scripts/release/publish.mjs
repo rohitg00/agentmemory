@@ -7,6 +7,8 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PACKAGES, REGISTRY, parsePackages, publicationPlan, publishSelected, verifyPublished } from "./registry.mjs";
 
+const APPROVAL_WINDOW_MS = 60 * 60_000;
+const APPROVAL_POLL_MS = 10_000;
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 function run(command, args, cwd = REPO, capture = false) {
   return execFileSync(command, args, { cwd, encoding: "utf8", stdio: capture ? ["ignore", "pipe", "inherit"] : "inherit", timeout: 1_800_000 });
@@ -97,9 +99,12 @@ async function main(argv) {
   }
   await publishSelected(manifest.artifacts.filter((artifact) => plan.publish.includes(artifact.key)), identity, {
     log: console.log,
+    propagationAttempts: APPROVAL_WINDOW_MS / APPROVAL_POLL_MS,
+    pollMs: APPROVAL_POLL_MS,
     publish: (artifact) => {
       assertGatedArtifacts(manifest, identity);
-      run("npm", ["publish", artifact.tarball, "--provenance", "--access", "public", "--ignore-scripts", "--registry", REGISTRY]);
+      run("npm", ["stage", "publish", artifact.tarball, "--provenance", "--access", "public", "--ignore-scripts", "--registry", REGISTRY]);
+      console.log(`Staged ${artifact.name}@${artifact.version}. Approve it with 2FA in the Staged Packages tab on npmjs.com or with npm stage approve. Waiting up to ${APPROVAL_WINDOW_MS / 60_000} minutes.`);
     },
   });
 }

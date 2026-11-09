@@ -105,7 +105,8 @@ export async function publishSelected(artifacts, identity, options) {
         if (!(error instanceof PendingProvenance)) throw error;
       }
       if (verified) break;
-      await (options.sleep ?? sleep)(5000);
+      if (attempt > 0 && attempt % 12 === 0) options.log?.(`Waiting for ${artifact.name}@${artifact.version} to go live`);
+      await (options.sleep ?? sleep)(options.pollMs ?? 5000);
     }
     assert(verified, `${artifact.name}@${artifact.version} did not become verifiable after publication`);
     options.log?.(`Verified published ${artifact.name}@${artifact.version}`);
