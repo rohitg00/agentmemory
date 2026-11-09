@@ -30,11 +30,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Consolidation keeps provenance and version heads across retries, and saved pattern memories reach the procedural tier (#1545, #1690). Reflection bounds its evidence and insight responses and keeps other projects' crystals out of a scoped reflection (#1544).
 - `health` reports CPU relative to the machine's cores, not one core (#1286 by @DanielCarmingham).
 - `agentmemory demo` stops the Compose workers it started on Windows (#1688 by @Mike-Animal-Counseling). Generated Compose values keep newlines (#1708 by @zhichao-poper).
+- Fresh installs retry the iii engine download up to three times within two minutes on network errors, timeouts and HTTP 408, 429 and 5xx responses, and wait as long as `Retry-After` asks (#1719).
 - `agentmemory connect` honors `CLAUDE_CONFIG_DIR` for Claude Code detection, MCP configuration and hooks (#1703 by @mothieras).
 
 ### Infrastructure
 
-- `@agentmemory/pi` 0.1.1 and `@agentmemory/fs-watcher` 0.2.0 (#1683). GitHub Actions bumps (#967, #1473). Config reference env count regenerated (#1705). The Windows release gate fails when its leftover-process query fails (#1711), and the CLIP tests check both towers (#1712).
+- `@agentmemory/pi` 0.1.1 and `@agentmemory/fs-watcher` 0.2.0 (#1683). GitHub Actions bumps (#967, #1473). Config reference env count regenerated (#1705). The Windows release gate fails when its leftover-process query fails (#1711), and the CLIP tests check both towers (#1712). The release gate runs the packed package on Linux x64 and arm64, macOS arm64 and Intel, and Windows x64 and arm64 (#1716).
 
 ## [0.9.32] — 2026-11-04
 
