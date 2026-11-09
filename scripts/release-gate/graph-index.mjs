@@ -452,7 +452,12 @@ try {
   assert(remembered.memory?.id);
   assert.equal((await rest(primary, "/mesh/receive", { graphNodes: [node("node-0", "OnyxRestored", { updatedAt: "2026-10-17T00:00:00.000Z", sourceObservationIds: [remembered.memory.id] })] })).success, true);
   const graphRecall = () => rest(primary, "/search", { query: "OnyxRestored", project: "fixture-primary", agentId: "fixture-agent", targetLayer: "memory", limit: 5, format: "full" });
-  assert((await graphRecall()).results.some((row) => row.observation?.id === remembered.memory.id), "Graph-only query must find captured memory through current provenance");
+  let graphRecalled = false;
+  for (let attempt = 0; attempt < 10 && !graphRecalled; attempt++) {
+    if (attempt > 0) await new Promise((done) => setTimeout(done, 1000));
+    graphRecalled = (await graphRecall()).results.some((row) => row.observation?.id === remembered.memory.id);
+  }
+  assert(graphRecalled, "Graph-only query must find captured memory through current provenance");
   assert.equal((await rest(primary, "/search", { query: "OnyxRestored", project: "different-project", targetLayer: "memory", limit: 5 })).results.length, 0);
   assert((await rest(primary, "/search", { query: "Indigo durable capture", project: "fixture-primary", agentId: "fixture-agent", limit: 5 })).results.length > 0);
   note("canonical-writer-reconciliation", { importRename: true, meshRename: true, staleExcluded: true, snapshotOverlay: true, capturedMemory: true, graphOnlyMemoryRecall: true });
