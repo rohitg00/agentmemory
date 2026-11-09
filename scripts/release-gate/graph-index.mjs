@@ -452,14 +452,20 @@ try {
   assert(remembered.memory?.id);
   assert.equal((await rest(primary, "/mesh/receive", { graphNodes: [node("node-0", "OnyxRestored", { updatedAt: "2026-10-17T00:00:00.000Z", sourceObservationIds: [remembered.memory.id] })] })).success, true);
   const graphRecall = () => rest(primary, "/search", { query: "OnyxRestored", project: "fixture-primary", agentId: "fixture-agent", targetLayer: "memory", limit: 5, format: "full" });
-  const graphRecalls = async () => {
+  const graphRecalls = async (message) => {
+    let lastError;
     for (let attempt = 0; attempt < 10; attempt++) {
       if (attempt > 0) await new Promise((done) => setTimeout(done, 1000));
-      if ((await graphRecall()).results.some((row) => row.observation?.id === remembered.memory.id)) return true;
+      try {
+        if ((await graphRecall()).results.some((row) => row.observation?.id === remembered.memory.id)) return;
+        lastError = undefined;
+      } catch (error) {
+        lastError = error;
+      }
     }
-    return false;
+    assert.fail(lastError ? `${message}: ${lastError.message}` : message);
   };
-  assert(await graphRecalls(), "Graph-only query must find captured memory through current provenance");
+  await graphRecalls("Graph-only query must find captured memory through current provenance");
   assert.equal((await rest(primary, "/search", { query: "OnyxRestored", project: "different-project", targetLayer: "memory", limit: 5 })).results.length, 0);
   assert((await rest(primary, "/search", { query: "Indigo durable capture", project: "fixture-primary", agentId: "fixture-agent", limit: 5 })).results.length > 0);
   note("canonical-writer-reconciliation", { importRename: true, meshRename: true, staleExcluded: true, snapshotOverlay: true, capturedMemory: true, graphOnlyMemoryRecall: true });
@@ -474,7 +480,7 @@ try {
   await measuredReads(primary, "cold-engine-query", [["graph-query", async () => assert((await find(primary, "OnyxRestored")).some((row) => row.id === "node-0"))]]);
   await measuredReads(primary, "repeated-engine-query", [["graph-query", async () => assert((await find(primary, "OnyxRestored")).some((row) => row.id === "node-0"))]]);
   primary.phase = "completed-restart-recall";
-  assert(await graphRecalls(), "Graph-only memory recall must survive a restart");
+  await graphRecalls("Graph-only memory recall must survive a restart");
   assert((await rest(primary, "/search", { query: "Indigo durable capture", project: "fixture-primary", agentId: "fixture-agent", limit: 5 })).results.length > 0);
   assert.equal((await rest(primary, "/search", { query: "Indigo durable capture", project: "different-project", limit: 5 })).results.length, 0);
   note("completed-restart-recall", ordinaryReads(primary, primary.phase));
@@ -500,7 +506,7 @@ try {
   assert.notEqual(rebuilt.buildId, indexed.buildId);
   assert.equal(rebuilt.nodes, nodeCount);
   await assertEdgeKey(primary, "node-0", "node-2", "uses", ["edge-0"]);
-  assert(await graphRecalls(), "Graph-only memory recall must survive an index rebuild");
+  await graphRecalls("Graph-only memory recall must survive an index rebuild");
   note("explicit-index-rebuild", { canonicalMemoryPreserved: true, exactEdgeKeyRestored: true });
 
   const secondary = await profile("secondary", 1, primary.home); secondary.phase = "named-instance-startup-status-search";
