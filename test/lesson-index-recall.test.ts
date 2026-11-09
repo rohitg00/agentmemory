@@ -61,6 +61,33 @@ describe("lesson recall through the lesson index", () => {
     expect(res.lessons[0].score).toBeGreaterThan(res.lessons[1].score);
   });
 
+  it.each([
+    { filter: "project", queryFilters: { project: "web" }, otherProject: "infra", otherConfidence: 0.9 },
+    { filter: "confidence", queryFilters: { minConfidence: 0.8 }, otherProject: "web", otherConfidence: 0.3 },
+  ])("recalls a matching lesson below the global candidate limit when filtered by $filter", async ({ queryFilters, otherProject, otherConfidence }) => {
+    const { sdk } = await setup();
+    for (let i = 0; i < 101; i++) {
+      await sdk.trigger("mem::lesson-save", {
+        content: `calibration reading ${i}`,
+        project: otherProject,
+        confidence: otherConfidence,
+      });
+    }
+    const saved = (await sdk.trigger("mem::lesson-save", {
+      content: "Review the operating instructions with the team and verify the machine is ready before starting.",
+      context: "calibration",
+      project: "web",
+      confidence: 0.9,
+    })) as { lesson: { id: string } };
+
+    const res = (await sdk.trigger("mem::lesson-recall", {
+      query: "calibration",
+      limit: 1,
+      ...queryFilters,
+    })) as { lessons: Array<{ id: string }> };
+    expect(res.lessons.map((lesson) => lesson.id)).toEqual([saved.lesson.id]);
+  });
+
   it("recalls lessons that existed before the index was built (lazy rebuild)", async () => {
     const { sdk, kv } = await setup();
     await kv.set("mem:lessons", "lsn_pre", {

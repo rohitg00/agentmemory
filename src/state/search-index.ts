@@ -177,6 +177,7 @@ export class SearchIndex {
     query: string,
     limit = 20,
     targetLayer: SearchLayer = "all",
+    accepts?: (obsId: string) => boolean,
   ): Array<{ obsId: string; sessionId: string; score: number }> {
     const rawTerms = this.tokenize(query.toLowerCase());
     if (rawTerms.length === 0) return [];
@@ -252,6 +253,12 @@ export class SearchIndex {
       }
       for (const [obsId, score] of prefixScores) {
         scores.set(obsId, (scores.get(obsId) ?? 0) + score);
+      }
+    }
+
+    if (accepts) {
+      for (const obsId of scores.keys()) {
+        if (!accepts(obsId)) scores.delete(obsId);
       }
     }
 
