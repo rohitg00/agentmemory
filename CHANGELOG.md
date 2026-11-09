@@ -6,6 +6,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.33] — 2026-11-09
+
+### Upgrade notes
+
+- agentmemory now pins iii 0.25.1 (engine, `iii-sdk` and `@iii-dev/helpers`) with state 0.22.22 and http 0.22.8. The first start after the upgrade installs them (#1634, #1694).
+- `GET /agentmemory/memories` and `GET /agentmemory/relations` without `limit` return 413 with a paging hint when the full list is larger than the transport limit, as `/semantic` and `/procedural` already did. Use `?limit=N` and `nextCursor`. The viewer and CLI already page (#1636).
+- Docker installs: the root and Coolify Compose files now forward `AGENTMEMORY_LLM_PROVIDER`. Docker installs that set only a key ran without LLM features since 0.9.32 (#1700).
+
+### Added
+
+- **State scopes above 64 MiB keep working.** Whole-scope reads page through `state::list_keys` instead of one frame, and mesh export pages when given `limit` or `cursor` (#1636). The transport cap is 64 MiB, up from 16 MiB (#1634).
+- `GET /agentmemory/sessions` filters by `startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` (#1527 by @yxtay).
+- `AGENTMEMORY_SUMMARY_TIMEOUT_MS` sets the summary budget for large chunked sessions on slow or local LLMs (default 120 s) (#1689).
+- `memory_diagnose` and `memory_heal` have a `facets` category that finds and removes facets whose target was deleted (#1698).
+
+### Fixed
+
+- **Search:** saved memories are no longer capped at three per search (#1696). Evicted memories leave the search indexes (#1601 by @DimitriChrysafis). Boot detects historical gaps in a partially embedded vector index (#1687 by @mvanhorn). CLIP text queries use the CLIP text tower, so text-to-image search returns matching images (#1250 by @anhtahaylove).
+- **Hooks:** PreToolUse sends its context in the hook envelope, so the model sees it (#1693). Enrichment is scoped to the current project (#1220 by @devon3000). The Claude Code SessionEnd hook has time to finish (#1692). Captured text is redacted before it is cut to length, and compound secret key names are redacted (#1695, #1701). Cursor subagent stop type and summary fields are mapped (#1684 by @mothieras).
+- **Providers:** placeholder keys such as `sk-...` count as unset when agentmemory picks the LLM provider (#1588 by @dmazhukov). A success clears the circuit breaker failure count (#1350 by @redeye1011), and content-filter rejections no longer open the breaker (#1277 by @dKaulig).
+- The MCP shim waits 180 s for proxied calls instead of 15 s, so long consolidate and reflect calls finish (#1691). `memory_action_create` records the creating agent (#1697).
+- Consolidation keeps provenance and version heads across retries, and saved pattern memories reach the procedural tier (#1545, #1690). Reflection bounds its evidence and insight responses and keeps other projects' crystals out of a scoped reflection (#1544).
+- `health` reports CPU relative to the machine's cores, not one core (#1286 by @DanielCarmingham).
+- `agentmemory demo` stops the Compose workers it started on Windows (#1688 by @Mike-Animal-Counseling). Generated Compose values keep newlines (#1708 by @zhichao-poper).
+
+### Infrastructure
+
+- `@agentmemory/pi` 0.1.1 and `@agentmemory/fs-watcher` 0.2.0 (#1683). GitHub Actions bumps (#967, #1473). Config reference env count regenerated (#1705).
+
 ## [0.9.32] — 2026-11-04
 
 ### Upgrade notes
@@ -343,7 +372,7 @@ Wave release closing several breaking regressions reported against v0.9.26, plus
 - `/agentmemory:forget` skill still calls `memory_governance_delete` which only touches `KV.memories` and never observations ([#833](https://github.com/rohitg00/agentmemory/issues/833)). Skill rewrite + new `memory_forget` MCP tool tracked separately.
 - `crypto.randomUUID()` global-only on Node <19 ([#715](https://github.com/rohitg00/agentmemory/issues/715)). Drop-in import fix tracked.
 
-[0.9.32]: https://github.com/rohitg00/agentmemory/compare/v0.9.31...v0.9.32
+[0.9.33]: https://github.com/rohitg00/agentmemory/compare/v0.9.32...v0.9.33
 [0.9.32]: https://github.com/rohitg00/agentmemory/compare/v0.9.31...v0.9.32
 [0.9.31]: https://github.com/rohitg00/agentmemory/compare/v0.9.30...v0.9.31
 [0.9.30]: https://github.com/rohitg00/agentmemory/compare/v0.9.29...v0.9.30
