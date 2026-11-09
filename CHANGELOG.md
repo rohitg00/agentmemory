@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - agentmemory now pins iii 0.25.1 (engine, `iii-sdk` and `@iii-dev/helpers`) with state 0.22.22 and http 0.22.8. The first start after the upgrade installs them (#1634, #1694).
 - `GET /agentmemory/memories` and `GET /agentmemory/relations` without `limit` return 413 with a paging hint when the full list is larger than the transport limit, as `/semantic` and `/procedural` already did. Use `?limit=N` and `nextCursor`. The viewer and CLI already page (#1636).
-- Docker installs: the root and Coolify Compose files now forward `AGENTMEMORY_LLM_PROVIDER`. Docker installs that set only a key ran without LLM features since 0.9.32 (#1700).
+- Docker installs: the root and Coolify Compose files now forward `AGENTMEMORY_LLM_PROVIDER`. A provider key alone does not turn on LLM features; set `AGENTMEMORY_LLM_PROVIDER` to the provider whose key you configured. Docker installs that set only a key ran without LLM summaries since 0.9.32 (#1700).
 
 ### Added
 
