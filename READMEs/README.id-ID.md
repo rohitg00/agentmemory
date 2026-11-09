@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code tanpa instalasi plugin (jalur MCP-standalone)
 
-Jika Anda menyambungkan server MCP agentmemory lewat `~/.claude.json` secara langsung tanpa memakai `/plugin install`, Claude Code tidak pernah meresolusi `${CLAUDE_PLUGIN_ROOT}` dan Anda harus mengarahkan script hook ke path absolut di `~/.claude/settings.json`. Path tersebut biasanya menyertakan versi agentmemory (misalnya `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), sehingga upgrade berikutnya diam-diam merusak setiap hook.
+Jika Anda menyambungkan server MCP agentmemory lewat `~/.claude.json` (jalur default) secara langsung tanpa memakai `/plugin install`, Claude Code tidak pernah meresolusi `${CLAUDE_PLUGIN_ROOT}` dan Anda harus mengarahkan script hook ke path absolut di `~/.claude/settings.json` (jalur default). Path tersebut biasanya menyertakan versi agentmemory (misalnya `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), sehingga upgrade berikutnya diam-diam merusak setiap hook.
 
 Solusinya:
 
@@ -452,7 +452,9 @@ Solusinya:
 agentmemory connect claude-code --with-hooks
 ```
 
-Ini menggabungkan perintah hook yang sama ke `~/.claude/settings.json` dengan path absolut yang diresolusi ke direktori `plugin/` bundel dari paket `@agentmemory/agentmemory` yang sedang terpasang. Jalankan ulang perintah ini setelah upgrade agentmemory untuk menyegarkan path-nya. Entri pengguna di file yang sama tetap dipertahankan; hanya entri agentmemory sebelumnya yang diganti. Jalur `/plugin install` tetap menjadi pendekatan yang direkomendasikan.
+Perintah ini mengonfigurasi server MCP dan menggabungkan hook bawaan ke konfigurasi pengguna Claude Code. Jika `CLAUDE_CONFIG_DIR` tidak diatur, kosong, atau hanya berisi whitespace, perintah ini menggunakan `~/.claude.json` untuk MCP dan `~/.claude/settings.json` untuk hook. Nilai direktori lainnya digunakan persis seperti yang diberikan, termasuk whitespace di awal dan akhir. Untuk direktori khusus, atur `CLAUDE_CONFIG_DIR` ke nilai tidak kosong yang sama untuk perintah ini dan Claude Code; file yang digunakan menjadi `$CLAUDE_CONFIG_DIR/.claude.json` dan `$CLAUDE_CONFIG_DIR/settings.json`, masing-masing. Claude Code harus menerima nilai ini di lingkungan saat dijalankan, meskipun konektor membacanya dari `.env` milik AgentMemory. Buat direktori khusus sebelum menjalankan perintah ini; jika tidak, konektor melewati Claude Code karena tidak terdeteksi. Jika nilai di shell hanya berisi whitespace, hapus `CLAUDE_CONFIG_DIR` dari lingkungan sebelum menjalankan Claude Code agar juga menggunakan profil default. Gunakan jalur absolut. Jalur relatif ditentukan berdasarkan direktori kerja, jadi kedua perintah harus dijalankan dari direktori yang sama.
+
+Perintah hook menggunakan jalur absolut ke direktori `plugin/` bawaan paket yang terpasang. Jalankan ulang perintah ini setelah memperbarui agentmemory untuk menyegarkan jalur tersebut. Entri pengguna dalam file konfigurasi tetap dipertahankan; hanya entri agentmemory sebelumnya yang diganti. Penggunaan `/plugin install` tetap menjadi pendekatan yang disarankan.
 Untuk deployment remote atau terlindungi, jalankan Claude Code dengan `AGENTMEMORY_URL` dan `AGENTMEMORY_SECRET` yang sudah diset. Plugin ini meneruskan kedua nilai itu ke server MCP bundelnya; ketika `AGENTMEMORY_URL` kosong, shim MCP memakai `http://localhost:3111`.
 
 ### Codex CLI (platform plugin Codex)

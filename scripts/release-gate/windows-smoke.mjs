@@ -159,12 +159,16 @@ function leftoverProcesses() {
   const ps = spawnSync("powershell.exe", [
     "-NoProfile", "-Command",
     [
+      "$ErrorActionPreference = 'Stop'",
       `$root = '${root.replace(/'/g, "''")}'`,
       `$byPath = Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -like "*$root*" -or $_.ExecutablePath -like "*$root*") } | ForEach-Object { "$($_.ProcessId) $($_.Name)" }`,
       `$byPort = Get-NetTCPConnection -State Listen -LocalPort 3911,3913,49950 -ErrorAction SilentlyContinue | ForEach-Object { "$($_.OwningProcess) port:$($_.LocalPort)" }`,
       `@($byPath) + @($byPort) | Where-Object { $_ }`,
     ].join("; "),
   ], { encoding: "utf8" });
+  if (ps.error || ps.status !== 0) {
+    throw new Error(`leftover process query failed (status ${ps.status}): ${ps.error?.message ?? (ps.stderr ?? "").slice(-400)}`);
+  }
   return (ps.stdout ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 }
 

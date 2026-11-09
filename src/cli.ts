@@ -2757,7 +2757,6 @@ async function startServerForDemo(): Promise<() => Promise<void>> {
       if (state?.kind !== "compose" || state.composePid !== spawnedComposeDaemon.pid) {
         throw new Error("Demo Compose lifecycle state no longer matches the daemon it started. Lifecycle state was preserved.");
       }
-      // SIGTERM terminates the daemon directly on Windows, leaving its workers behind.
       await stopComposeRuntime(state, true);
       return;
     }

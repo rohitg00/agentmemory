@@ -446,7 +446,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code bez instalace pluginu (cesta MCP-standalone)
 
-Pokud zapojíte server MCP agentmemory přímo přes `~/.claude.json` místo použití `/plugin install`, Claude Code nikdy nevyřeší `${CLAUDE_PLUGIN_ROOT}` a musíte nasměrovat skripty hooks na absolutní cesty v `~/.claude/settings.json`. Tyto cesty typicky obsahují verzi agentmemory (např. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), takže další upgrade tiše rozbije všechny hooks.
+Pokud zapojíte server MCP agentmemory přímo přes `~/.claude.json` (výchozí cesta) místo použití `/plugin install`, Claude Code nikdy nevyřeší `${CLAUDE_PLUGIN_ROOT}` a musíte nasměrovat skripty hooks na absolutní cesty v `~/.claude/settings.json` (výchozí cesta). Tyto cesty typicky obsahují verzi agentmemory (např. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), takže další upgrade tiše rozbije všechny hooks.
 
 Řešení:
 
@@ -454,7 +454,9 @@ Pokud zapojíte server MCP agentmemory přímo přes `~/.claude.json` místo pou
 agentmemory connect claude-code --with-hooks
 ```
 
-Toto sloučí stejné příkazy hooks do `~/.claude/settings.json` s absolutními cestami vyřešenými na balíčený adresář `plugin/` aktuálně nainstalovaného balíčku `@agentmemory/agentmemory`. Po upgradu agentmemory příkaz spusťte znovu, aby se cesty obnovily. Uživatelské položky ve stejném souboru zůstanou zachovány; nahrazeny jsou pouze předchozí položky agentmemory. Doporučovaným přístupem zůstává cesta přes `/plugin install`.
+Tento příkaz nastaví server MCP a sloučí přibalené hooky do uživatelské konfigurace Claude Code. Pokud `CLAUDE_CONFIG_DIR` není nastavena, je prázdná nebo obsahuje pouze bílé znaky, použije pro MCP soubor `~/.claude.json` a pro hooky `~/.claude/settings.json`. Ostatní hodnoty adresáře se používají přesně tak, jak byly zadány, včetně úvodních a koncových bílých znaků. Chcete-li použít vlastní adresář, nastavte pro tento příkaz i Claude Code stejnou neprázdnou hodnotu `CLAUDE_CONFIG_DIR`; MCP pak použije `$CLAUDE_CONFIG_DIR/.claude.json` a hooky `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code musí tuto hodnotu obdržet ve svém spouštěcím prostředí, i když ji konektor načítá ze souboru `.env` AgentMemory. Vlastní adresář vytvořte před spuštěním tohoto příkazu; jinak konektor Claude Code nerozpozná a přeskočí jej. Pokud hodnota v shellu obsahuje pouze bílé znaky, před spuštěním Claude Code zrušte nastavení `CLAUDE_CONFIG_DIR`, aby také použil výchozí profil. Použijte absolutní cestu. Relativní cesty se vyhodnocují vůči pracovnímu adresáři, takže oba příkazy musí být spuštěny ze stejného adresáře.
+
+Příkazy hooků používají absolutní cesty do adresáře `plugin/` přibaleného v nainstalovaném balíčku. Po aktualizaci agentmemory spusťte příkaz znovu, aby se tyto cesty obnovily. Uživatelské položky v konfiguračních souborech zůstanou zachovány; nahradí se pouze předchozí položky agentmemory. Doporučeným postupem zůstává `/plugin install`.
 Pro vzdálená nebo chráněná nasazení spusťte Claude Code s nastaveným `AGENTMEMORY_URL` a `AGENTMEMORY_SECRET`. Plugin obě hodnoty předá svému zabalenému serveru MCP; když je `AGENTMEMORY_URL` prázdné, shim MCP použije `http://localhost:3111`.
 
 ### Codex CLI (platforma pluginů Codex)
