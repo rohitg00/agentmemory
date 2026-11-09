@@ -151,6 +151,7 @@ export interface Memory {
   supersedes?: string[];
   relatedIds?: string[];
   sourceObservationIds?: string[];
+  consolidationKeys?: Record<string, string>;
   isLatest: boolean;
   forgetAfter?: string;
   imageRef?: string;
@@ -285,7 +286,7 @@ export interface HealthSnapshot {
     rss: number;
     external: number;
   };
-  cpu: { userMicros: number; systemMicros: number; percent: number };
+  cpu: { userMicros: number; systemMicros: number; percent: number; cores?: number };
   eventLoopLagMs: number;
   uptimeSeconds: number;
   kvConnectivity?: { status: string; latencyMs?: number; error?: string };

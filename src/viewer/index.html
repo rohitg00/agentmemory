@@ -7380,7 +7380,7 @@
       html += hrow('RSS', esc(mb(m.rss) + ' MB'), 'rss', 'Everything the process holds from the operating system, including code and buffers.');
       var lag = snap.eventLoopLagMs;
       html += hrow('Event loop delay', lag !== undefined ? esc(Number(lag).toFixed(1) + ' ms') : '-', 'eventLoop', 'How far behind the worker is. Under 100 ms is fine; above that requests answer slowly.');
-      if (snap.cpu) html += hrow('CPU', esc(Math.round(snap.cpu.percent || 0) + '%'), null, 'Share of one core used since the last report. Short bursts during imports are normal.');
+      if (snap.cpu) html += hrow('CPU', esc(Math.round(snap.cpu.percent || 0) + '%'), null, 'Share of all available CPU cores used since the last report' + (snap.cpu.cores ? ' (' + snap.cpu.cores + ' cores)' : '') + '. Short bursts during imports are normal.');
       (snap.notes || []).forEach(function(n) { html += '<div class="hnote" style="margin-top:6px;">' + esc(humanizeHealthFlag(n)) + '</div>'; });
       return html + '</div>';
     }

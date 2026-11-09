@@ -16,6 +16,7 @@ import {
 import { logger } from "../src/logger.js";
 import { VectorIndex } from "../src/state/vector-index.js";
 import { KV } from "../src/state/schema.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import type { EmbeddingProvider, Memory } from "../src/types.js";
 
 function mockKV() {
@@ -255,5 +256,21 @@ describe("mem::remember lock scope", () => {
       "vector-index add: embed failed — skipping",
       expect.anything(),
     );
+  });
+
+  it("waits for the mem:remember lock before deleting a memory", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerRememberFunction(sdk as never, kv as never);
+    await kv.set(KV.memories, "held", { id: "held", title: "t", content: "c", isLatest: true } as unknown as Memory);
+    let release!: () => void;
+    const held = withKeyedLock("mem:remember", () => new Promise<void>((resolve) => { release = resolve; }));
+    const forget = sdk.trigger({ function_id: "mem::forget", payload: { memoryId: "held" } });
+    await delay(20);
+    expect(await kv.get(KV.memories, "held")).not.toBeNull();
+    release();
+    await held;
+    await forget;
+    expect(await kv.get(KV.memories, "held")).toBeNull();
   });
 });

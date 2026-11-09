@@ -100,6 +100,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
     originalUserprofile = process.env["USERPROFILE"];
     process.env["HOME"] = tmpHome;
     process.env["USERPROFILE"] = tmpHome;
+    vi.stubEnv("CLAUDE_CONFIG_DIR", undefined);
     vi.resetModules();
   });
 
@@ -109,6 +110,7 @@ describe("agentmemory connect — claude-code adapter (mock filesystem)", () => 
     if (originalUserprofile !== undefined)
       process.env["USERPROFILE"] = originalUserprofile;
     else delete process.env["USERPROFILE"];
+    vi.unstubAllEnvs();
     rmSync(tmpHome, { recursive: true, force: true });
     vi.resetModules();
   });
