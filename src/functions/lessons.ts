@@ -192,7 +192,7 @@ export function registerLessonsFunctions(sdk: IIIClient, kv: StateKV): void {
       const fetchLimit = filtering
         ? Math.max(limit * 10, 100)
         : Math.max(limit * 5, 50);
-      const hits = idx.search(data.query, fetchLimit, "lesson", (id) => {
+      const hits = idx.search(data.query, fetchLimit, "all", (id) => {
         const lesson = lessonRecords.get(id);
         if (!lesson || lesson.deleted || lesson.confidence < minConfidence) return false;
         return !data.project || lesson.project === data.project;
