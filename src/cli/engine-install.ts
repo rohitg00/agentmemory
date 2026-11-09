@@ -276,26 +276,39 @@ export async function downloadToFile(
     if (result.status !== 0) throw new Error(describeInstallFailure(result));
     return;
   }
-  const started = Date.now();
+  const deadline = Date.now() + III_INSTALL_RETRY_MAX_TIME_S * 1000;
   for (let attempt = 0; ; attempt++) {
-    const retryable = attempt < III_INSTALL_RETRIES && Date.now() - started < III_INSTALL_RETRY_MAX_TIME_S * 1000;
-    let res: Response;
+    let res: Response | undefined;
+    let body: Buffer | undefined;
+    let failure: unknown;
     try {
       res = await request(url, { redirect: "follow", signal: AbortSignal.timeout(III_INSTALL_MAX_TIME_S * 1000) });
+      if (res.ok) body = Buffer.from(await res.arrayBuffer());
+      else await res.body?.cancel().catch(() => {});
     } catch (error) {
-      if (!retryable) throw error;
-      await sleep(III_INSTALL_RETRY_DELAY_S * 1000);
-      continue;
+      failure = error;
     }
-    if (res.ok) {
-      writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+    if (body) {
+      writeFileSync(dest, body);
       return;
     }
-    if (!retryable || !RETRYABLE_HTTP_STATUS.has(res.status)) {
-      throw new Error(`download failed with HTTP ${res.status} ${res.statusText}`.trim());
+    if (res && !res.ok) {
+      failure = new Error(`download failed with HTTP ${res.status} ${res.statusText}`.trim());
+      if (!RETRYABLE_HTTP_STATUS.has(res.status)) throw failure;
     }
-    await sleep(III_INSTALL_RETRY_DELAY_S * 1000);
+    const delayMs = retryDelayMs(res);
+    if (attempt >= III_INSTALL_RETRIES || Date.now() + delayMs >= deadline) throw failure;
+    await sleep(delayMs);
   }
+}
+
+function retryDelayMs(res: Response | undefined): number {
+  const fallback = III_INSTALL_RETRY_DELAY_S * 1000;
+  const header = res?.ok ? null : res?.headers.get("retry-after");
+  if (!header) return fallback;
+  const seconds = Number(header);
+  const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
+  return Number.isFinite(ms) ? Math.max(ms, fallback) : fallback;
 }
 
 export function runInstallCommand(command: string, args: string[]): Promise<ZipRunResult> {

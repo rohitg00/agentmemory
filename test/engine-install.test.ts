@@ -8,6 +8,7 @@ import {
   III_INSTALL_MAX_TIME_S,
   III_INSTALL_RETRIES,
   III_INSTALL_RETRY_DELAY_S,
+  III_INSTALL_RETRY_MAX_TIME_S,
   III_RELEASE_SHA256,
   describeInstallFailure,
   expectedIiiSha256,
@@ -492,6 +493,28 @@ describe("iii engine Windows zip installer", () => {
     const missing = (async () => { attempts++; return new Response("missing", { status: 404 }); }) as typeof fetch;
     await expect(downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, missing, async () => {})).rejects.toThrow("HTTP 404");
     expect(attempts).toBe(1);
+
+    const limited = [new Response("slow down", { status: 429, headers: { "retry-after": "30" } }), new Response("zip-bytes", { status: 200 })];
+    const waits: number[] = [];
+    await downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, (async () => limited.shift()!) as typeof fetch, async (ms) => { waits.push(ms); });
+    expect(waits).toEqual([30_000]);
+
+    attempts = 0;
+    const tooLong = (async () => { attempts++; return new Response("later", { status: 503, headers: { "retry-after": String(III_INSTALL_RETRY_MAX_TIME_S + 1) } }); }) as typeof fetch;
+    await expect(downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, tooLong, async () => {})).rejects.toThrow("HTTP 503");
+    expect(attempts).toBe(1);
+
+    attempts = 0;
+    const dropped = (async () => {
+      attempts++;
+      if (attempts > 1) return new Response("zip-bytes", { status: 200 });
+      const stream = new ReadableStream({ start(controller) { controller.error(new Error("socket hang up")); } });
+      return new Response(stream, { status: 200 });
+    }) as typeof fetch;
+    writeFileSync(dest, "");
+    await downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, dropped, async () => {});
+    expect(attempts).toBe(2);
+    expect(readFileSync(dest, "utf8")).toBe("zip-bytes");
   });
 
   it("pins a SHA-256 for both Windows assets of the pinned release", () => {
