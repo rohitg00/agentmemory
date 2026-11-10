@@ -1,4 +1,5 @@
 import type { Plugin } from "@opencode-ai/plugin";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
@@ -101,9 +102,11 @@ async function observe(
   sessionId: string,
   hookType: string,
   data: Record<string, unknown>,
+  eventId?: string,
 ): Promise<void> {
   const proj = projectFor(sessionId);
   await post("/observe", {
+    eventId,
     hookType,
     sessionId,
     project: proj.name,
@@ -810,6 +813,15 @@ const v1Hooks: Plugin = async (ctx) => {
   };
 };
 
+// This plugin is copied as a standalone file, so it cannot import server helpers.
+function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).filter((key) => record[key] !== undefined).sort()
+    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`).join(",")}}`;
+}
+
 async function v2Setup(ctx: any) {
   if (typeof ctx?.tool?.hook !== "function" || typeof ctx?.session?.hook !== "function" || typeof ctx?.event?.subscribe !== "function") {
     return;
@@ -818,8 +830,26 @@ async function v2Setup(ctx: any) {
   defaultProjectCwd = location?.directory ?? location?.project?.directory ?? process.cwd();
   defaultProjectName = resolveProjectName(defaultProjectCwd);
 
-  async function observeV2(sessionId: string, hookType: string, data: Record<string, unknown>): Promise<void> {
-    await observe(sessionId, hookType, data);
+  async function observeV2(
+    sessionId: string,
+    hookType: string,
+    data: Record<string, unknown>,
+    source?: { id?: unknown; eventID?: unknown; created?: unknown },
+    identityData: unknown = data,
+  ): Promise<void> {
+    const hostId = source?.id ?? source?.eventID;
+    const hostTime = source?.created;
+    const identity = typeof hostId === "string" && hostId
+      ? ["host", hostId]
+      : typeof hostTime === "number" && Number.isFinite(hostTime)
+        ? ["time", hostTime]
+        : null;
+    // Without a host identity, retain legacy dedup rather than suppress repeated
+    // prompts permanently. A shared host ID must still distinguish payload updates.
+    const eventId = identity
+      ? `evp_${createHash("sha256").update(canonicalJson([sessionId, hookType, identity, identityData])).digest("hex").slice(0, 32)}`
+      : undefined;
+    await observe(sessionId, hookType, data, eventId);
   }
 
   const shellSessions = new Map<string, string>();
@@ -848,7 +878,7 @@ async function v2Setup(ctx: any) {
 
   let lastConfigSnapshot: string | null = null;
 
-  async function snapshotConfig(): Promise<void> {
+  async function snapshotConfig(source?: { id?: unknown; eventID?: unknown; created?: unknown }): Promise<void> {
     const [agents, providers, mcp, modelDefault] = await Promise.all([
       ctx.agent?.list?.().catch(() => null),
       ctx.provider?.list?.().catch(() => null),
@@ -867,7 +897,7 @@ async function v2Setup(ctx: any) {
     const snapshot = JSON.stringify(payload);
     if (snapshot === lastConfigSnapshot) return;
     lastConfigSnapshot = snapshot;
-    if (activeSessionId) await observeV2(activeSessionId, "config_loaded", payload);
+    if (activeSessionId) await observeV2(activeSessionId, "config_loaded", payload, source ?? { id: "config_loaded" });
     else pendingConfig = payload;
   }
 
@@ -910,7 +940,7 @@ async function v2Setup(ctx: any) {
         tool_input: safeSlice(event?.input, 4000),
         tool_output: safeSlice(text || extractErrorMessage(event?.error) || extractErrorMessage(metadata?.error), 8000),
         duration_ms: duration,
-      });
+      }, event);
       if (callId) reportedToolCalls.add(`${sid}:${callId}`);
       return;
     }
@@ -926,7 +956,7 @@ async function v2Setup(ctx: any) {
       attachments: Array.isArray(output?.attachments)
         ? (output?.attachments as Array<Record<string, unknown>>).map((a) => a.filename || a.url)
         : [],
-    });
+    }, event);
     if (callId) reportedToolCalls.add(`${sid}:${callId}`);
   });
 
@@ -944,7 +974,7 @@ async function v2Setup(ctx: any) {
       agents: event?.prompt?.agents ?? [],
       skills: event?.prompt?.skills ?? [],
       delivery: event?.delivery ?? null,
-    });
+    }, { id: event?.messageID });
   });
 
   await ctx.session.hook("context", async (event: any) => {
@@ -1034,9 +1064,9 @@ async function v2Setup(ctx: any) {
 
       const startCtx = (startResult as any)?.context;
       if (typeof startCtx === "string" && startCtx.length > 0) startContextCache.set(sid0, startCtx);
-      await observeV2(sid0, "session_started", {});
+      await observeV2(sid0, "session_started", {}, { id: "session_started" });
       if (pendingConfig) {
-        await observeV2(sid0, "config_loaded", pendingConfig);
+        await observeV2(sid0, "config_loaded", pendingConfig, { id: "config_loaded" });
         pendingConfig = null;
       }
     }
@@ -1049,7 +1079,7 @@ async function v2Setup(ctx: any) {
           tool_name: "session.execution",
           tool_input: "",
           tool_output: safeSlice(extractErrorMessage(data.error ?? data), 8000),
-        });
+        }, event);
         return;
       }
 
@@ -1060,7 +1090,7 @@ async function v2Setup(ctx: any) {
           reason: (data.reason as string) ?? null,
           inputID: (data.inputID as string) ?? null,
           recent: safeSlice(data.recent, 8000),
-        });
+        }, event);
         return;
       }
 
@@ -1071,7 +1101,7 @@ async function v2Setup(ctx: any) {
           reason: (data.reason as string) ?? null,
           inputID: (data.inputID as string) ?? null,
           tool_output: safeSlice(extractErrorMessage(data.error ?? data.reason), 8000),
-        });
+        }, event);
         return;
       }
 
@@ -1081,7 +1111,7 @@ async function v2Setup(ctx: any) {
           messageID: (data.assistantMessageID as string) ?? null,
           agent: (data.agent as string) ?? null,
           model: data.model ? `${data.model.providerID ?? ""}/${data.model.id ?? ""}` : null,
-        });
+        }, event);
         return;
       }
 
@@ -1097,7 +1127,7 @@ async function v2Setup(ctx: any) {
           reasoning_tokens: tokens.reasoning ?? 0,
           cache_read: tokens.cache?.read ?? 0,
           cache_write: tokens.cache?.write ?? 0,
-        });
+        }, event);
         return;
       }
 
@@ -1106,16 +1136,18 @@ async function v2Setup(ctx: any) {
         await observeV2(sid0, "agent_selected", {
           name: (data.agent as string) ?? null,
           previous: (data.previous as string) ?? null,
-        });
+        }, event);
         return;
       }
 
       case "session.reasoning.ended": {
         if (!sid0) return;
+        const text = (data.text as string) ?? "";
+        if (!text) return;
         await observeV2(sid0, "reasoning", {
           messageID: (data.assistantMessageID as string) ?? null,
-          text: safeSlice(data.text, 4000),
-        });
+          text: text.slice(0, 4000),
+        }, event);
         return;
       }
 
@@ -1126,7 +1158,7 @@ async function v2Setup(ctx: any) {
         await observeV2(sid0, "notification", {
           notification_type: "instructions_updated",
           sources: sources.slice(0, 50),
-        });
+        }, event);
         return;
       }
 
@@ -1137,7 +1169,7 @@ async function v2Setup(ctx: any) {
         await observeV2(sid0, "assistant_message", {
           messageID: (data.assistantMessageID as string) ?? null,
           text: text.slice(0, 8000),
-        });
+        }, event);
         return;
       }
 
@@ -1167,7 +1199,7 @@ async function v2Setup(ctx: any) {
             tool_input: null,
             tool_output: safeSlice(data.status, 4000),
             duration_ms: null,
-          });
+          }, event);
         }
         return;
       }
@@ -1234,13 +1266,14 @@ async function v2Setup(ctx: any) {
         if (!sid0) return;
         const callId = String(data.id ?? "");
         if (callId && reportedToolCalls.has(`${sid0}:${callId}`)) return;
+        // Replays can arrive after the enrichment caches below have been cleared.
         await observeV2(sid0, "post_tool_failure", {
           tool_name: toolNames.get(callId) || null,
           call_id: callId || null,
           tool_input: safeSlice(toolCallInputs.get(callId), 4000),
           tool_output: safeSlice(extractErrorMessage(data.error), 8000),
           duration_ms: null,
-        });
+        }, event, data);
         if (callId) {
           toolNames.delete(callId);
           toolCallInputs.delete(callId);
@@ -1258,7 +1291,7 @@ async function v2Setup(ctx: any) {
           tool_call_id: (data.tool?.callID as string) ?? (data.callID as string) ?? null,
           title: (data.action as string) ?? (data.permission as string) ?? "",
           metadata: data.metadata ?? {},
-        });
+        }, event);
         return;
       }
 
@@ -1267,7 +1300,7 @@ async function v2Setup(ctx: any) {
         await observeV2(sid0, "permission_replied", {
           permission_id: (data.requestID as string) ?? (data.permissionID as string) ?? "",
           response: (data.reply as string) ?? (data.response as string) ?? "",
-        });
+        }, event);
         return;
       }
 
@@ -1294,7 +1327,7 @@ async function v2Setup(ctx: any) {
       case "model.updated":
       case "mcp.status.changed": {
         if (DEBUG) console.error("[agentmemory] config changed, re-snapshotting");
-        void snapshotConfig().catch(() => {});
+        void snapshotConfig(event).catch(() => {});
         return;
       }
     }
