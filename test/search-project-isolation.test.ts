@@ -292,7 +292,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       expect(sessionReads).toEqual([]);
     });
 
-    it("still reads sessions for directory-filtered explicitly scoped memories", async () => {
+    it("excludes explicitly scoped memories outside the requested directory", async () => {
       const session = addSession("project-a");
       addMemory({ project: "project-a", sessionIds: [session.id] });
       expect(await recall({ cwd: "/different/project" })).toEqual([]);
