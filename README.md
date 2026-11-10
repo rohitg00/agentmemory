@@ -332,14 +332,14 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-### What's new in 0.9.32
+### What's new in 0.9.33
 
-- **Providers are opt-in:** a key alone sends nothing out. Set `AGENTMEMORY_LLM_PROVIDER` for LLM features and `EMBEDDING_PROVIDER` for cloud embeddings.
-- **Native Windows works:** Worker Compose starts, iii installs itself, and `doctor` never waits on a prompt in scripts.
-- **Reliable boot:** agentmemory waits for the state worker, so slow starts keep their search index and vectors.
-- **Better recall:** CJK queries, scoped smart-search and project isolation fixes.
+- **Large stores keep working:** state reads page, so scopes above 64 MiB no longer fail, on iii 0.25.1.
+- **Better recall:** saved memories are no longer capped at three per search, and evicted memories leave the indexes.
+- **Hooks reach the model:** PreToolUse context arrives in the hook envelope, scoped to the current project.
+- **Steadier providers:** placeholder keys count as unset, and the circuit breaker resets on success.
 
-[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.32).
+[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.33).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-benchmarks.svg"><img src="assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
