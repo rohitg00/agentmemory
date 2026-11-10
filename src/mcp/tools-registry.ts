@@ -143,11 +143,20 @@ export const CORE_TOOLS: McpToolDef[] = [
         },
         concepts: {
           type: "string",
-          description: "Comma-separated key concepts",
+          description: "Comma-separated key concepts (an array of strings is also accepted)",
         },
         files: {
           type: "string",
-          description: "Comma-separated relevant file paths",
+          description: "Comma-separated relevant file paths (an array of strings is also accepted)",
+        },
+        ttlDays: {
+          type: "number",
+          description: "Forget this memory after this many days. Omit to keep it until it is removed.",
+        },
+        sourceObservationIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Ids of the observations this memory was derived from",
         },
         project: {
           type: "string",

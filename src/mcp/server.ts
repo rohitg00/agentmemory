@@ -7,6 +7,7 @@ import type { SessionSummary, Memory, Session } from "../types.js";
 import { getAllTools, getVisibleTools } from "./tools-registry.js";
 import { parseSearchExpansionIds } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
+import { normalizeRememberFields, normalizeStringList as parseCsvList } from "./remember-arguments.js";
 import { isSearchLayer } from "../state/search-layer.js";
 import { insightHttpResponse } from "../state/insight-response.js";
 import { checkAuth, slotsDisabledResponse } from "../triggers/api.js";
@@ -27,18 +28,6 @@ function asNumber(value: unknown, fallback?: number): number | undefined {
   const n = Number(value);
   if (Number.isFinite(n)) return n;
   return fallback;
-}
-
-function parseCsvList(value: unknown): string[] {
-  if (typeof value === "string") {
-    return value.split(",").map((v) => v.trim()).filter(Boolean);
-  }
-  if (Array.isArray(value)) {
-    return value
-      .map((v) => (typeof v === "string" ? v.trim() : ""))
-      .filter(Boolean);
-  }
-  return [];
 }
 
 const SLOT_TOOL_NAMES = new Set(
@@ -173,14 +162,6 @@ export function registerMcpEndpoints(
               };
             }
             const type = (args.type as string) || "fact";
-            const concepts =
-              typeof args.concepts === "string"
-                ? args.concepts.split(",").map((c: string) => c.trim()).filter(Boolean)
-                : [];
-            const files =
-              typeof args.files === "string"
-                ? args.files.split(",").map((f: string) => f.trim()).filter(Boolean)
-                : [];
 
             const project =
               typeof args.project === "string" && args.project.trim().length > 0
@@ -194,8 +175,7 @@ export function registerMcpEndpoints(
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
               type,
-              concepts,
-              files,
+              ...normalizeRememberFields(args),
               ...(project !== undefined && { project }),
               ...(saveAgentId !== undefined && { agentId: saveAgentId }),
             } });

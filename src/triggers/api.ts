@@ -55,6 +55,7 @@ import { getGraphCompactBootStatus } from "../functions/graph-compact-boot.js";
 import { getGraphIndexMigrationStatus } from "../state/graph-index-migration.js";
 import { GraphIndexError } from "../state/graph-retrieval-index.js";
 import { registerGraphIndexApi } from "./graph-index-api.js";
+import { normalizeRememberFields } from "../mcp/remember-arguments.js";
 import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { logger } from "../logger.js";
 import { getLiveEventsStats } from "../viewer/live-events.js";
@@ -1721,10 +1722,7 @@ export function registerApiTriggers(
         payload: {
           content: req.body.content,
           ...(req.body.type !== undefined && { type: req.body.type }),
-          ...(req.body.concepts !== undefined && { concepts: req.body.concepts }),
-          ...(req.body.files !== undefined && { files: req.body.files }),
-          ...(req.body.ttlDays !== undefined && { ttlDays: req.body.ttlDays }),
-          ...(req.body.sourceObservationIds !== undefined && { sourceObservationIds: req.body.sourceObservationIds }),
+          ...normalizeRememberFields(req.body),
           ...(req.body.project !== undefined && { project: req.body.project }),
           ...(typeof req.body.agentId === "string" && req.body.agentId.trim()
             ? { agentId: req.body.agentId.trim() }
