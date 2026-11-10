@@ -285,6 +285,27 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
       expect(sessionReads).not.toContain("session_10");
     });
 
+    it("recalls an explicitly matching memory when session reads fail", async () => {
+      const memory = addMemory({ project: "project-a", sessionIds: ["session_unavailable"] });
+      failSessionReads = true;
+      expect(await recall()).toEqual([memory.id]);
+      expect(sessionReads).toEqual([]);
+    });
+
+    it("still reads sessions for directory-filtered explicitly scoped memories", async () => {
+      const session = addSession("project-a");
+      addMemory({ project: "project-a", sessionIds: [session.id] });
+      expect(await recall({ cwd: "/different/project" })).toEqual([]);
+      expect(sessionReads).toEqual([session.id]);
+    });
+
+    it("still requires session ownership for memories without an explicit project", async () => {
+      addMemory({ sessionIds: ["session_unavailable"] });
+      failSessionReads = true;
+      await expect(recall()).rejects.toThrow("session store unavailable");
+      expect(sessionReads).toEqual(["session_unavailable"]);
+    });
+
     it("does not read sessions for agent-only filtering", async () => {
       const memory = addMemory({ project: "project-a", agentId: "agent-a" });
       failSessionReads = true;
@@ -305,6 +326,7 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
         });
         const keyword = vi.spyOn(getSearchIndex(), "search").mockReturnValue([]);
         expect(await recall({ limit: 2 })).toEqual([matching.id]);
+        expect(calls).toBe(2);
         expect(keyword).not.toHaveBeenCalled();
       });
     }
