@@ -62,6 +62,7 @@ export interface SpoolStats {
   lastDrainDuplicates?: number;
   lastDrainRejected?: number;
   lastDrainRemaining?: number;
+  lastDrainUnreadable?: number;
   lastDrainError?: string;
 }
 
@@ -96,6 +97,7 @@ export interface DrainResult {
   rejected: number;
   expired: number;
   corrupt: number;
+  unreadable: number;
   remaining: number;
   error?: string;
   skipped?: "locked" | "empty" | "disabled";
@@ -559,7 +561,7 @@ export async function drainSpool(
   options: { policy?: SpoolPolicy; dir?: string; maxRecords?: number; deadlineMs?: number } = {},
 ): Promise<DrainResult> {
   const policy = options.policy ?? spoolPolicy();
-  const result: DrainResult = { claimed: 0, delivered: 0, duplicates: 0, rejected: 0, expired: 0, corrupt: 0, remaining: 0 };
+  const result: DrainResult = { claimed: 0, delivered: 0, duplicates: 0, rejected: 0, expired: 0, corrupt: 0, unreadable: 0, remaining: 0 };
   const paths = spoolPaths(url, options.dir);
   if (!existsSync(paths.dir)) return { ...result, skipped: "empty" };
   try {
@@ -570,12 +572,16 @@ export async function drainSpool(
     const files = claimFiles(paths);
     if (files.length === 0) return { ...result, skipped: "empty" };
     const records: SpoolRecord[] = [];
+    const read: string[] = [];
     for (const file of files) {
       try {
         const parsed = parseLines(readFileSync(file, "utf-8"));
         records.push(...parsed.records);
         result.corrupt += parsed.corrupt;
-      } catch {}
+        read.push(file);
+      } catch {
+        result.unreadable++;
+      }
     }
     result.claimed = records.length;
     const seen = new Set<string>();
@@ -617,7 +623,7 @@ export async function drainSpool(
     }
     result.remaining = leftover.length;
     withLock(paths.lock, (locked) => (locked ? requeueLocked(paths, leftover) : requeueUnlocked(paths, leftover)), 2000);
-    for (const file of files) {
+    for (const file of read) {
       try {
         unlinkSync(file);
       } catch {}
@@ -632,6 +638,7 @@ export async function drainSpool(
       s.lastDrainDuplicates = result.duplicates;
       s.lastDrainRejected = result.rejected;
       s.lastDrainRemaining = result.remaining;
+      s.lastDrainUnreadable = result.unreadable;
       if (result.error) s.lastDrainError = result.error;
       else delete s.lastDrainError;
     });

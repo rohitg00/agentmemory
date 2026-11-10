@@ -82,6 +82,7 @@ export async function runCaptureCommand(options: CaptureCommandOptions): Promise
   log(`  limits: ${spool.maxBytes} bytes, ${spool.maxAgeHours} h`);
   log(`  totals: ${spool.stats.spooled} spooled, ${spool.stats.delivered} delivered, ${spool.stats.duplicates} duplicates, ${spool.stats.dropped} dropped, ${spool.stats.expired} expired`);
   if (spool.stats.lastDrainAt) log(`  last drain: ${spool.stats.lastDrainAt}`);
+  if (spool.stats.lastDrainUnreadable) log(`  unreadable spool files kept for retry: ${spool.stats.lastDrainUnreadable}`);
   if (spool.stats.lastDropAt) log(`  last drop: ${spool.stats.lastDropAt} (${spool.stats.lastDropReason ?? "unknown"})`);
 
   const server = output["server"] as {

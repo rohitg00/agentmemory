@@ -819,6 +819,7 @@ async function drainSpool(url, send, options = {}) {
 		rejected: 0,
 		expired: 0,
 		corrupt: 0,
+		unreadable: 0,
 		remaining: 0
 	};
 	const paths = spoolPaths(url, options.dir);
@@ -840,11 +841,15 @@ async function drainSpool(url, send, options = {}) {
 			skipped: "empty"
 		};
 		const records = [];
+		const read = [];
 		for (const file of files) try {
 			const parsed = parseLines(readFileSync(file, "utf-8"));
 			records.push(...parsed.records);
 			result.corrupt += parsed.corrupt;
-		} catch {}
+			read.push(file);
+		} catch {
+			result.unreadable++;
+		}
 		result.claimed = records.length;
 		const seen = /* @__PURE__ */ new Set();
 		const now = Date.now();
@@ -888,7 +893,7 @@ async function drainSpool(url, send, options = {}) {
 		}
 		result.remaining = leftover.length;
 		withLock(paths.lock, (locked) => locked ? requeueLocked(paths, leftover) : requeueUnlocked(paths, leftover), 2e3);
-		for (const file of files) try {
+		for (const file of read) try {
 			unlinkSync(file);
 		} catch {}
 		writeStats(paths, (s) => {
@@ -901,6 +906,7 @@ async function drainSpool(url, send, options = {}) {
 			s.lastDrainDuplicates = result.duplicates;
 			s.lastDrainRejected = result.rejected;
 			s.lastDrainRemaining = result.remaining;
+			s.lastDrainUnreadable = result.unreadable;
 			if (result.error) s.lastDrainError = result.error;
 			else delete s.lastDrainError;
 		});

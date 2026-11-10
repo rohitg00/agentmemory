@@ -191,6 +191,39 @@ describe("capture spool", () => {
     expect(seen).toEqual(["evc_jjjjjjjjjjjj"]);
     expect(existsSync(orphan)).toBe(false);
   });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "keeps a claimed file it cannot read and reports it",
+    async () => {
+      appendSpool(URL, "evc_kkkkkkkkkkkk", body("locked"), "timeout", { dir, policy });
+      const paths = spoolPaths(URL, dir);
+      const blocked = join(dir, `${paths.name}.draining-99998-1.jsonl`);
+      writeFileSync(blocked, readFileSync(paths.file, "utf-8"));
+      writeFileSync(paths.file, "");
+      appendSpool(URL, "evc_llllllllllll", body("readable"), "timeout", { dir, policy });
+      const { chmodSync, utimesSync } = await import("node:fs");
+      const old = new Date(Date.now() - 10 * 60_000);
+      utimesSync(blocked, old, old);
+      chmodSync(blocked, 0o000);
+      try {
+        const seen: string[] = [];
+        const result = await drainSpool(URL, async (rec) => (seen.push(rec.eventId), "delivered"), { dir, policy });
+        expect(seen).toEqual(["evc_llllllllllll"]);
+        expect(result).toMatchObject({ delivered: 1, unreadable: 1 });
+        expect(existsSync(blocked)).toBe(true);
+        expect(spoolSummary(URL, { dir, policy }).stats.lastDrainUnreadable).toBe(1);
+
+        chmodSync(blocked, 0o600);
+        utimesSync(blocked, old, old);
+        seen.length = 0;
+        await drainSpool(URL, async (rec) => (seen.push(rec.eventId), "delivered"), { dir, policy });
+        expect(seen).toEqual(["evc_kkkkkkkkkkkk"]);
+        expect(existsSync(blocked)).toBe(false);
+      } finally {
+        if (existsSync(blocked)) chmodSync(blocked, 0o600);
+      }
+    },
+  );
 });
 
 describe("capture spool retention until durable", () => {
