@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -9,7 +9,9 @@ vi.mock("../src/functions/audit.js", () => ({
   safeAudit: vi.fn(),
 }));
 
-import { getSearchIndex, registerSearchFunction, setEmbeddingProvider, setVectorIndex } from "../src/functions/search.js";
+import { getSearchIndex, indexMemory, registerSearchFunction, setHybridRanker, setEmbeddingProvider, setVectorIndex } from "../src/functions/search.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
+import { VectorIndex } from "../src/state/vector-index.js";
 import { HybridSearch } from "../src/state/hybrid-search.js";
 import { registerConsolidateFunction } from "../src/functions/consolidate.js";
 import { registerAutoForgetFunction } from "../src/functions/auto-forget.js";
@@ -128,10 +130,31 @@ function seedSessionWithObs(kv: ReturnType<typeof makeMockKV>, obs: CompressedOb
   ]);
 }
 
+let vectors: VectorIndex;
+
+function seedIndexed(memory: Memory) {
+  getSearchIndex().add(memoryToObservation(memory), "memory");
+  vectors.add(memory.id, memory.sessionIds[0] ?? "memory", new Float32Array([1, 0, 0]));
+}
+
 beforeEach(() => {
   getSearchIndex().clear();
+  setHybridRanker(null);
+  vectors = new VectorIndex();
+  setVectorIndex(vectors);
+  setEmbeddingProvider({
+    name: "test", dimensions: 3,
+    embed: async () => new Float32Array([0, 1, 0]),
+    embedBatch: async (texts) => texts.map(() => new Float32Array([0, 1, 0])),
+  });
+});
+
+afterEach(() => {
+  getSearchIndex().clear();
+  setHybridRanker(null);
   setVectorIndex(null);
   setEmbeddingProvider(null);
+  vi.restoreAllMocks();
 });
 
 describe("mem::consolidate keeps the search index in step", () => {
@@ -142,7 +165,7 @@ describe("mem::consolidate keeps the search index in step", () => {
 
     const existing = makeMemory("mem_old", "auth uses jwt");
     await kv.set(KV.memories, existing.id, existing);
-    getSearchIndex().add(memoryToObservation(existing), "memory");
+    seedIndexed(existing);
     await seedSessionWithObs(kv, [makeObs("o1", "auth"), makeObs("o2", "auth"), makeObs("o3", "auth")]);
 
     const result = await sdk.trigger("mem::consolidate", { minObservations: 1 });
@@ -153,7 +176,9 @@ describe("mem::consolidate keeps the search index in step", () => {
     expect(successor).toBeDefined();
 
     expect(getSearchIndex().has(existing.id)).toBe(false);
+    expect(vectors.has(existing.id)).toBe(false);
     expect(getSearchIndex().has(successor!.id)).toBe(true);
+    expect(vectors.has(successor!.id)).toBe(true);
   });
 
   it("keeps the predecessor latest and indexed when the successor write fails", async () => {
@@ -172,7 +197,7 @@ describe("mem::consolidate keeps the search index in step", () => {
     registerConsolidateFunction(sdk as never, kv as never, makeProvider() as never);
 
     await kv.set(KV.memories, existing.id, existing);
-    getSearchIndex().add(memoryToObservation(existing), "memory");
+    seedIndexed(existing);
     await seedSessionWithObs(kv, [makeObs("o1", "auth"), makeObs("o2", "auth"), makeObs("o3", "auth")]);
 
     const result = await sdk.trigger("mem::consolidate", { minObservations: 1 });
@@ -181,6 +206,7 @@ describe("mem::consolidate keeps the search index in step", () => {
     const predecessor = await kv.get<Memory>(KV.memories, existing.id);
     expect(predecessor?.isLatest).toBe(true);
     expect(getSearchIndex().has(existing.id)).toBe(true);
+    expect(vectors.has(existing.id)).toBe(true);
   });
 
   it("rolls back the successor when the predecessor write fails", async () => {
@@ -199,7 +225,7 @@ describe("mem::consolidate keeps the search index in step", () => {
     registerConsolidateFunction(sdk as never, kv as never, makeProvider() as never);
 
     await kv.set(KV.memories, existing.id, existing);
-    getSearchIndex().add(memoryToObservation(existing), "memory");
+    seedIndexed(existing);
     await seedSessionWithObs(kv, [makeObs("o1", "auth"), makeObs("o2", "auth"), makeObs("o3", "auth")]);
 
     const result = await sdk.trigger("mem::consolidate", { minObservations: 1 });
@@ -209,6 +235,7 @@ describe("mem::consolidate keeps the search index in step", () => {
     expect(memories.map((m) => m.id)).toEqual([existing.id]);
     expect(memories[0].isLatest).toBe(true);
     expect(getSearchIndex().has(existing.id)).toBe(true);
+    expect(vectors.has(existing.id)).toBe(true);
     expect(getSearchIndex().size).toBe(1);
   });
 
@@ -219,7 +246,7 @@ describe("mem::consolidate keeps the search index in step", () => {
 
     const existing = makeMemory("mem_old", "auth uses jwt");
     await kv.set(KV.memories, existing.id, existing);
-    getSearchIndex().add(memoryToObservation(existing), "memory");
+    seedIndexed(existing);
     await seedSessionWithObs(kv, [
       makeObs("a1", "auth"), makeObs("a2", "auth"), makeObs("a3", "auth"),
       makeObs("j1", "jwt"), makeObs("j2", "jwt"), makeObs("j3", "jwt"),
@@ -271,13 +298,15 @@ describe("mem::auto-forget unindexes the contradicted memory", () => {
     newer.createdAt = "2021-01-01T00:00:00.000Z";
     await kv.set(KV.memories, older.id, older);
     await kv.set(KV.memories, newer.id, newer);
-    getSearchIndex().add(memoryToObservation(older), "memory");
-    getSearchIndex().add(memoryToObservation(newer), "memory");
+    seedIndexed(older);
+    seedIndexed(newer);
 
     const result = await sdk.trigger("mem::auto-forget", { dryRun: false });
     expect(result.contradictions.length).toBe(1);
     expect(getSearchIndex().has(older.id)).toBe(false);
+    expect(vectors.has(older.id)).toBe(false);
     expect(getSearchIndex().has(newer.id)).toBe(true);
+    expect(vectors.has(newer.id)).toBe(true);
   });
 });
 
@@ -293,12 +322,13 @@ describe("mem::heal unindexes superseded memories it marks", () => {
     live.supersedes = [dead.id];
     await kv.set(KV.memories, dead.id, dead);
     await kv.set(KV.memories, live.id, live);
-    getSearchIndex().add(memoryToObservation(dead), "memory");
+    seedIndexed(dead);
 
     const result = await sdk.trigger("mem::heal", { categories: ["memories"], dryRun: false });
     expect(result.fixed).toBeGreaterThan(0);
     expect((await kv.get<Memory>(KV.memories, dead.id))?.isLatest).toBe(false);
     expect(getSearchIndex().has(dead.id)).toBe(false);
+    expect(vectors.has(dead.id)).toBe(false);
   });
 });
 
@@ -322,7 +352,8 @@ describe("mem::import replace unindexes wiped records", () => {
     await kv.set(KV.observations("ses_old"), obs.id, obs);
     await kv.set(KV.memories, mem.id, mem);
     getSearchIndex().add(obs);
-    getSearchIndex().add(memoryToObservation(mem), "memory");
+    vectors.add(obs.id, obs.sessionId, new Float32Array([1, 0, 0]));
+    seedIndexed(mem);
 
     const result = await sdk.trigger("mem::import", {
       strategy: "replace",
@@ -338,7 +369,9 @@ describe("mem::import replace unindexes wiped records", () => {
     expect(result.success).toBe(true);
 
     expect(getSearchIndex().has(obs.id)).toBe(false);
+    expect(vectors.has(obs.id)).toBe(false);
     expect(getSearchIndex().has(mem.id)).toBe(false);
+    expect(vectors.has(mem.id)).toBe(false);
   });
 });
 
@@ -351,7 +384,7 @@ describe("mem::search does not return superseded memories", () => {
     const dead = makeMemory("mem_dead", "superseded auth fact");
     dead.isLatest = false;
     await kv.set(KV.memories, dead.id, dead);
-    getSearchIndex().add(memoryToObservation(dead), "memory");
+    seedIndexed(dead);
 
     const result = await sdk.trigger("mem::search", { query: "superseded auth", limit: 10 });
     const hits = (result.results ?? []).filter((r: { observation?: { id?: string } }) => r.observation?.id === dead.id);
@@ -363,7 +396,7 @@ describe("mem::search does not return superseded memories", () => {
     const dead = makeMemory("mem_dead", "superseded auth fact");
     dead.isLatest = false;
     await kv.set(KV.memories, dead.id, dead);
-    getSearchIndex().add(memoryToObservation(dead), "memory");
+    seedIndexed(dead);
 
     const hybrid = new HybridSearch(getSearchIndex(), null, null, kv as never);
     const results = await hybrid.search("superseded auth", 10);
@@ -377,7 +410,7 @@ describe("mem::search does not return superseded memories", () => {
       dead.isLatest = false;
       dead.content = "alpha ".repeat(30);
       await kv.set(KV.memories, dead.id, dead);
-      getSearchIndex().add(memoryToObservation(dead), "memory");
+      seedIndexed(dead);
     }
     const liveIds: string[] = [];
     for (let i = 0; i < 10; i++) {
@@ -385,6 +418,7 @@ describe("mem::search does not return superseded memories", () => {
       liveIds.push(obs.id);
       await kv.set(KV.observations(obs.sessionId), obs.id, obs);
       getSearchIndex().add(obs);
+    vectors.add(obs.id, obs.sessionId, new Float32Array([1, 0, 0]));
     }
 
     const hybrid = new HybridSearch(getSearchIndex(), null, null, kv as never);
@@ -402,7 +436,7 @@ describe("mem::mesh-receive keeps the search index in step", () => {
 
     const stale = makeMemory("mem_stale", "auth uses sessions");
     await kv.set(KV.memories, stale.id, stale);
-    getSearchIndex().add(memoryToObservation(stale), "memory");
+    seedIndexed(stale);
 
     const later = new Date(Date.now() + 1000).toISOString();
     const fresh = makeMemory("mem_fresh", "auth uses jwt");
@@ -422,7 +456,7 @@ describe("mem::mesh-receive keeps the search index in step", () => {
 
     const current = makeMemory("mem_current", "auth uses jwt");
     await kv.set(KV.memories, current.id, current);
-    getSearchIndex().add(memoryToObservation(current), "memory");
+    seedIndexed(current);
 
     const older = new Date(Date.now() - 60_000).toISOString();
     await sdk.trigger("mem::mesh-receive", {
@@ -430,5 +464,105 @@ describe("mem::mesh-receive keeps the search index in step", () => {
     });
 
     expect(getSearchIndex().has(current.id)).toBe(true);
+  });
+});
+
+
+describe("delayed memory indexing", () => {
+  it("keeps the latest mesh version searchable when an older superseded callback runs late", async () => {
+    const kv = makeMockKV();
+    const older = makeMemory("mem_race", "old auth", false);
+    const latest = { ...older, title: "new auth", isLatest: true, updatedAt: "2099-01-01T00:00:00Z" };
+    await kv.set(KV.memories, latest.id, latest);
+    seedIndexed(latest);
+
+    await indexMemory(kv as never, older);
+
+    expect(getSearchIndex().has(latest.id)).toBe(true);
+    expect(vectors.has(latest.id)).toBe(true);
+    expect(getSearchIndex().search("new auth", 10).map((hit) => hit.obsId)).toContain(latest.id);
+  });
+
+  it("does not reindex a consolidation memory superseded before its callback runs", async () => {
+    const kv = makeMockKV();
+    const published = makeMemory("mem_published", "auth");
+    await kv.set(KV.memories, published.id, { ...published, isLatest: false });
+
+    await indexMemory(kv as never, published);
+
+    expect(getSearchIndex().has(published.id)).toBe(false);
+    expect(vectors.has(published.id)).toBe(false);
+  });
+
+  it("does not resurrect a deleted memory from a delayed callback", async () => {
+    const kv = makeMockKV();
+    await indexMemory(kv as never, makeMemory("mem_deleted", "auth"));
+    expect(getSearchIndex().has("mem_deleted")).toBe(false);
+    expect(vectors.has("mem_deleted")).toBe(false);
+  });
+
+  it.each(["mem:remember", "mem:memory:mem_race"])("guards the keyword read and add with %s", async (lock) => {
+    const inner = makeMockKV();
+    const memory = makeMemory("mem_race", "auth");
+    await inner.set(KV.memories, memory.id, memory);
+    let entered!: () => void;
+    let release!: () => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    let firstRead = true;
+    const kv = {
+      ...inner,
+      get: async <T>(scope: string, id: string): Promise<T | null> => {
+        const record = await inner.get<T>(scope, id);
+        if (firstRead && scope === KV.memories && id === memory.id) {
+          firstRead = false;
+          entered();
+          await pending;
+        }
+        return record;
+      },
+    };
+    const indexing = indexMemory(kv as never, memory);
+    await started;
+    const supersede = withKeyedLock(lock, async () => {
+      await inner.set(KV.memories, memory.id, { ...memory, isLatest: false });
+      getSearchIndex().remove(memory.id);
+      vectors.remove(memory.id);
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    release();
+    await Promise.all([indexing, supersede]);
+    expect(getSearchIndex().has(memory.id)).toBe(false);
+    expect(vectors.has(memory.id)).toBe(false);
+  });
+
+  it("lets a newer mesh write complete while the older embedding is pending", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    registerMeshFunction(sdk as never, kv as never);
+    let entered!: () => void;
+    let release!: (embedding: Float32Array) => void;
+    const started = new Promise<void>((resolve) => { entered = resolve; });
+    const pending = new Promise<Float32Array>((resolve) => { release = resolve; });
+    setEmbeddingProvider({
+      name: "controlled", dimensions: 3,
+      embed: vi.fn().mockImplementationOnce(() => { entered(); return pending; })
+        .mockResolvedValue(new Float32Array([0, 1, 0])),
+      embedBatch: async () => [],
+    });
+    const older = makeMemory("mem_race", "old auth");
+    const first = sdk.trigger("mem::mesh-receive", { memories: [older] });
+    await started;
+    try {
+      await sdk.trigger("mem::mesh-receive", {
+        memories: [{ ...older, title: "new auth", updatedAt: "2099-01-01T00:00:00Z" }],
+      });
+    } finally {
+      release(new Float32Array([1, 0, 0]));
+      await first;
+    }
+    expect(vectors.get(older.id)?.embedding).toEqual(new Float32Array([0, 1, 0]));
+    expect(getSearchIndex().search("new auth", 10).map((hit) => hit.obsId)).toContain(older.id);
   });
 });
