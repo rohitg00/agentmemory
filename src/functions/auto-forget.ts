@@ -3,7 +3,7 @@ import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV, collectAll } from "../state/kv.js";
-import { supersededAt } from "../state/memory-utils.js";
+import { sharesMemoryScope, supersededAt } from "../state/memory-utils.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { recordAudit } from "./audit.js";
@@ -51,11 +51,11 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
               result.ttlExpired.push(mem.id);
               deletedIds.add(mem.id);
               if (!dryRun) {
+                await kv.delete(KV.memories, mem.id);
+                facetIds.add(mem.id);
                 if (mem.imageRef) {
                   await decrementImageRef(kv, sdk, mem.imageRef);
                 }
-                await kv.delete(KV.memories, mem.id);
-                facetIds.add(mem.id);
                 await recordAudit(kv, "delete", "mem::auto-forget", [mem.id], {
                   resource: "memory",
                   reason: "auto-forget TTL",
@@ -114,6 +114,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
                 : `${memIds[j]}|${memIds[i]}`;
             if (compared.has(key)) continue;
             compared.add(key);
+            if (!sharesMemoryScope(memById.get(memIds[i])!, memById.get(memIds[j])!)) continue;
 
             const setA = tokenCache.get(memIds[i])!;
             const setB = tokenCache.get(memIds[j])!;

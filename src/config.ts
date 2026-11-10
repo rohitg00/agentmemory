@@ -616,6 +616,20 @@ export function getConsolidationIntervalMs(): number {
   return Number.isFinite(raw) && raw > 0 ? raw : CONSOLIDATION_INTERVAL_DEFAULT_MS;
 }
 
+export const AUTO_FORGET_INTERVAL_DEFAULT_MS = 3600000;
+export const AUTO_FORGET_INTERVAL_MIN_MS = 60000;
+
+export function getAutoForgetIntervalMs(): number {
+  const raw = getMergedEnv()["AUTO_FORGET_INTERVAL_MS"]?.trim();
+  if (!raw) return AUTO_FORGET_INTERVAL_DEFAULT_MS;
+  const parsed = Number(raw);
+  if (Number.isFinite(parsed) && parsed >= AUTO_FORGET_INTERVAL_MIN_MS) return Math.floor(parsed);
+  process.stderr.write(
+    `[agentmemory] AUTO_FORGET_INTERVAL_MS=${JSON.stringify(raw)} is not a number of milliseconds >= ${AUTO_FORGET_INTERVAL_MIN_MS}; using ${AUTO_FORGET_INTERVAL_DEFAULT_MS}.\n`,
+  );
+  return AUTO_FORGET_INTERVAL_DEFAULT_MS;
+}
+
 export function getConsolidationDecayDays(): number {
   return safeParseInt(getMergedEnv()["CONSOLIDATION_DECAY_DAYS"], 30);
 }

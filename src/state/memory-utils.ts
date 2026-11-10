@@ -9,6 +9,14 @@ export function supersededAt(previous: string | undefined, now: string): string 
   return new Date(Math.min(prior + 1, MAX_DATE_MS)).toISOString();
 }
 
+export function sharesMemoryScope(
+  a: Pick<Memory, "project" | "agentId">,
+  b: Pick<Memory, "project" | "agentId">,
+): boolean {
+  if ((a.agentId || undefined) !== (b.agentId || undefined)) return false;
+  return !(a.project && b.project && a.project !== b.project);
+}
+
 // Wraps a Memory record in the CompressedObservation shape that
 // SearchIndex / VectorIndex / enrichment paths consume. Memories share
 // the same searchable fields as observations (title + content +
