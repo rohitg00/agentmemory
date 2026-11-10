@@ -23,6 +23,7 @@ import { logger } from "../logger.js";
 
 const RRF_K = 60;
 const GRAPH_BUDGET_MS = 500;
+const MIN_FUSION_POOL = 40;
 
 export interface HybridSearchRequest {
   embedding?: { query: string; value: Promise<Float32Array> };
@@ -103,11 +104,8 @@ export class HybridSearch {
     request?: HybridSearchRequest,
   ): Promise<HybridSearchResult[]> {
     const retrievalLimit = this.rerankEnabled ? Math.max(limit, 20) : limit;
-    // Candidates are fetched deeper than the output window so entries that
-    // resolve to nothing downstream (missing or superseded records kept in a
-    // restored index) cannot starve live matches that ranked just below them.
-    const candidateDepth = Math.max(retrievalLimit * 4, retrievalLimit + 40);
-    const bm25Results = this.bm25.search(query, candidateDepth, targetLayer);
+    const poolLimit = Math.max(retrievalLimit * 2, MIN_FUSION_POOL);
+    const bm25Results = this.bm25.search(query, poolLimit, targetLayer);
 
     let vectorResults: Array<{
       obsId: string;
@@ -132,7 +130,7 @@ export class HybridSearch {
         } else {
           queryEmbedding = await this.embeddingProvider.embed(query);
         }
-        vectorResults = this.vector.search(queryEmbedding, candidateDepth, targetLayer, (id) => this.bm25.layerOf(id));
+        vectorResults = this.vector.search(queryEmbedding, poolLimit, targetLayer, (id) => this.bm25.layerOf(id));
       } catch {
         // fall through to BM25-only
       }
@@ -259,7 +257,7 @@ export class HybridSearch {
 
     if (request) request.candidateCount = combined.length;
     const retrievalDepth = Math.max(limit, 20);
-    const diversified = this.diversifyBySession(combined, Math.max(candidateDepth, retrievalDepth));
+    const diversified = this.diversifyBySession(combined, combined.length);
     const enriched = await this.enrichResults(diversified, retrievalDepth);
 
     return applyReranking ? this.rerankResults(query, enriched, limit) : enriched.slice(0, limit);
@@ -331,6 +329,11 @@ export class HybridSearch {
     const sessionCounts = new Map<string, number>();
 
     for (const r of results) {
+      if (r.obsId.startsWith("mem_")) {
+        selected.push(r);
+        if (selected.length >= limit) break;
+        continue;
+      }
       const count = sessionCounts.get(r.sessionId) || 0;
       if (count >= maxPerSession) continue;
       selected.push(r);
@@ -339,9 +342,10 @@ export class HybridSearch {
     }
 
     if (selected.length < limit) {
+      const picked = new Set(selected.map((s) => s.obsId));
       for (const r of results) {
         if (selected.length >= limit) break;
-        if (!selected.some(s => s.obsId === r.obsId)) {
+        if (!picked.has(r.obsId)) {
           selected.push(r);
         }
       }
@@ -363,39 +367,56 @@ export class HybridSearch {
     limit: number,
   ): Promise<HybridSearchResult[]> {
     const enriched: HybridSearchResult[] = [];
-    const batchSize = 16;
-    for (let offset = 0; offset < results.length && enriched.length < limit; offset += batchSize) {
-      const batch = results.slice(offset, offset + batchSize);
-      const observations = await Promise.all(
-        batch.map(async (r) => {
-          const obs = await this.kv
-            .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
-            .catch(() => null);
-          if (obs) return { observation: obs, layer: "observation" as const };
-          // Fallback: indexed entry may originate from mem::remember, which
-          // writes to KV.memories with a synthetic sessionId ("memory" or the
-          // memory's first associated session). Coerce the Memory record into
-          // a CompressedObservation so search/recall surface saved memories.
-          const mem = await this.kv
-            .get<Memory>(KV.memories, r.obsId)
-            .catch(() => null);
-          return mem && mem.isLatest !== false ? { observation: memoryToObservation(mem), layer: "memory" as const } : null;
-        }),
-      );
-      for (let i = 0; i < batch.length && enriched.length < limit; i++) {
-        const resolved = observations[i];
-        if (resolved) {
-          enriched.push({
-            observation: resolved.observation,
-            layer: resolved.layer,
-            bm25Score: batch[i].bm25Score,
-            vectorScore: batch[i].vectorScore,
-            graphScore: batch[i].graphScore,
-            combinedScore: batch[i].combinedScore,
-            sessionId: batch[i].sessionId,
-            graphContext: batch[i].graphContext,
-          });
-        }
+    let next = 0;
+    while (next < results.length && enriched.length < limit) {
+      const batch = results.slice(next, next + limit);
+      next += batch.length;
+      enriched.push(...(await this.enrichBatch(batch)));
+    }
+    return enriched.slice(0, limit);
+  }
+
+  private async enrichBatch(
+    sliced: Array<{
+      obsId: string;
+      sessionId: string;
+      bm25Score: number;
+      vectorScore: number;
+      graphScore: number;
+      combinedScore: number;
+      graphContext?: string;
+    }>,
+  ): Promise<HybridSearchResult[]> {
+    const observations = await Promise.all(
+      sliced.map(async (r) => {
+        const obs = await this.kv
+          .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
+          .catch(() => null);
+        if (obs) return { observation: obs, layer: "observation" as const };
+        // Fallback: indexed entry may originate from mem::remember, which
+        // writes to KV.memories with a synthetic sessionId ("memory" or the
+        // memory's first associated session). Coerce the Memory record into
+        // a CompressedObservation so search/recall surface saved memories.
+        const mem = await this.kv
+          .get<Memory>(KV.memories, r.obsId)
+          .catch(() => null);
+        return mem && mem.isLatest !== false ? { observation: memoryToObservation(mem), layer: "memory" as const } : null;
+      }),
+    );
+    const enriched: HybridSearchResult[] = [];
+    for (let i = 0; i < sliced.length; i++) {
+      const resolved = observations[i];
+      if (resolved) {
+        enriched.push({
+          observation: resolved.observation,
+          layer: resolved.layer,
+          bm25Score: sliced[i].bm25Score,
+          vectorScore: sliced[i].vectorScore,
+          graphScore: sliced[i].graphScore,
+          combinedScore: sliced[i].combinedScore,
+          sessionId: sliced[i].sessionId,
+          graphContext: sliced[i].graphContext,
+        });
       }
     }
     return enriched;

@@ -1,6 +1,6 @@
 {
   "name": "agentmemory",
-  "version": "0.9.32",
+  "version": "0.9.33",
   "description": "Persistent local memory for Claude. Hooks record prompts, tool calls and replies to a separately installed agentmemory server on your machine; skills and 54 MCP tools search and manage that memory. No outside AI provider is used unless you enable one.",
   "author": {
     "name": "Rohit Ghumare",

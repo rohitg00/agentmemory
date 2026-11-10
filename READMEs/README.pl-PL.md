@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 narzędzia MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatycznych hooków" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 zewnętrznych baz danych" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ zaliczonych testów" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ zaliczonych testów" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code bez instalacji pluginu (ścieżka samodzielnego MCP)
 
-Jeśli podłączasz serwer MCP agentmemory bezpośrednio przez `~/.claude.json` zamiast używać `/plugin install`, Claude Code nigdy nie rozwiąże `${CLAUDE_PLUGIN_ROOT}` i musisz wskazać skryptom hooków bezwzględne ścieżki w `~/.claude/settings.json`. Te ścieżki zwykle zawierają w sobie wersję agentmemory (np. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), więc kolejna aktualizacja po cichu psuje każdy hook.
+Jeśli podłączasz serwer MCP agentmemory bezpośrednio przez `~/.claude.json` (domyślna ścieżka) zamiast używać `/plugin install`, Claude Code nigdy nie rozwiąże `${CLAUDE_PLUGIN_ROOT}` i musisz wskazać skryptom hooków bezwzględne ścieżki w `~/.claude/settings.json` (domyślna ścieżka). Te ścieżki zwykle zawierają w sobie wersję agentmemory (np. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), więc kolejna aktualizacja po cichu psuje każdy hook.
 
 Rozwiązanie zastępcze:
 
@@ -452,7 +452,9 @@ Rozwiązanie zastępcze:
 agentmemory connect claude-code --with-hooks
 ```
 
-To scala te same komendy hooków do `~/.claude/settings.json`, z bezwzględnymi ścieżkami rozwiązanymi do dołączonego katalogu `plugin/` aktualnie zainstalowanego pakietu `@agentmemory/agentmemory`. Uruchom tę komendę ponownie po aktualizacji agentmemory, aby odświeżyć ścieżki. Wpisy użytkownika w tym samym pliku są zachowywane; zastępowane są tylko wcześniejsze wpisy agentmemory. Zalecanym podejściem pozostaje ścieżka `/plugin install`.
+Ta komenda konfiguruje serwer MCP i scala dołączone hooki z konfiguracją użytkownika Claude Code. Jeśli `CLAUDE_CONFIG_DIR` nie jest ustawiona, jest pusta lub zawiera tylko białe znaki, używa `~/.claude.json` dla MCP i `~/.claude/settings.json` dla hooków. Pozostałe wartości katalogu są używane dokładnie w podanej postaci, łącznie z białymi znakami na początku i końcu. Aby użyć własnego katalogu, ustaw `CLAUDE_CONFIG_DIR` na tę samą niepustą wartość dla tej komendy i Claude Code; pliki będą wtedy miały ścieżki odpowiednio `$CLAUDE_CONFIG_DIR/.claude.json` i `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code musi otrzymać tę wartość w swoim środowisku uruchomieniowym, nawet jeśli konektor odczytuje ją z pliku `.env` AgentMemory. Utwórz własny katalog przed uruchomieniem tej komendy; w przeciwnym razie konektor pominie Claude Code jako niewykryty. Jeśli wartość w powłoce zawiera tylko białe znaki, usuń `CLAUDE_CONFIG_DIR` ze środowiska przed uruchomieniem Claude Code, aby również używał profilu domyślnego. Użyj ścieżki bezwzględnej. Ścieżki względne są rozwiązywane względem katalogu roboczego, więc oba polecenia muszą być uruchamiane z tego samego katalogu.
+
+Komendy hooków używają bezwzględnych ścieżek do katalogu `plugin/` dołączonego do zainstalowanego pakietu. Po aktualizacji agentmemory uruchom komendę ponownie, aby odświeżyć te ścieżki. Wpisy użytkownika w plikach konfiguracyjnych są zachowywane; zastępowane są tylko poprzednie wpisy agentmemory. Zalecanym sposobem pozostaje użycie `/plugin install`.
 Dla zdalnych lub chronionych wdrożeń uruchom Claude Code z ustawionymi `AGENTMEMORY_URL` i `AGENTMEMORY_SECRET`. Plugin przekazuje obie wartości dalej do swojego dołączonego serwera MCP; gdy `AGENTMEMORY_URL` jest puste, shim MCP używa `http://localhost:3111`.
 
 ### Codex CLI (platforma pluginów Codex)
@@ -1239,7 +1241,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

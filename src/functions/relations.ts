@@ -9,7 +9,7 @@ import {
   vectorIndexRemove,
 } from "./search.js";
 import { KV, generateId } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { safeAudit } from "./audit.js";
 import { recordAccessBatch } from "./access-tracker.js";
@@ -285,8 +285,7 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
         ? Math.max(0, Math.min(1, rawMinConf))
         : 0;
 
-      const allRelations = await kv
-        .list<MemoryRelation>(KV.relations)
+      const allRelations = await collectAll<MemoryRelation>(kv, KV.relations)
         .catch(() => []);
 
       const visited = new Set<string>();

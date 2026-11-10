@@ -213,7 +213,7 @@ export const FAQ = [
   },
   {
     q: "Do I need an API key?",
-    a: "No. Keyless mode works out of the box with BM25 recall. Set EMBEDDING_PROVIDER=local for free on-device semantic recall, or add a provider key for LLM consolidation.",
+    a: "No. Keyless mode works out of the box with BM25 and graph recall. Set EMBEDDING_PROVIDER=local for free on-device semantic recall. For LLM consolidation, set AGENTMEMORY_LLM_PROVIDER and that provider's key; a key alone sends nothing out.",
   },
   {
     q: "Which agents does it work with?",

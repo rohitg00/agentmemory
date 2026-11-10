@@ -6,6 +6,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   III_INSTALL_CONNECT_TIMEOUT_S,
   III_INSTALL_MAX_TIME_S,
+  III_INSTALL_RETRIES,
+  III_INSTALL_RETRY_DELAY_S,
+  III_INSTALL_RETRY_MAX_TIME_S,
   III_RELEASE_SHA256,
   describeInstallFailure,
   expectedIiiSha256,
@@ -457,6 +460,61 @@ describe("iii engine Windows zip installer", () => {
     expect(calls[0].command).toMatch(/System32[\\/]curl\.exe$/);
     expect(calls[0].args).toEqual(expect.arrayContaining(["-o", "C:\\bin\\a.zip", "https://example.invalid/iii.zip", "--max-time"]));
     await expect(downloadToFile("https://example.invalid/iii.zip", "C:\\bin\\a.zip", { HTTPS_PROXY: "http://proxy:3128" }, () => ({ status: 22, stderr: "curl: (22) 407" }))).rejects.toThrow("407");
+  });
+
+  it("retries transient download failures before giving up", async () => {
+    expect(iiiDownloadShellCommand()).toContain(`--retry ${III_INSTALL_RETRIES} --retry-delay ${III_INSTALL_RETRY_DELAY_S}`);
+    expect(iiiManualInstallCommand("https://x/iii.tar.gz", "/b", "/b/iii", null)).toContain(`--retry ${III_INSTALL_RETRIES}`);
+    const curlCalls: string[][] = [];
+    await downloadToFile("https://example.invalid/iii.zip", "C:\\bin\\a.zip", { HTTPS_PROXY: "http://proxy:3128" }, (_command, args) => {
+      curlCalls.push(args);
+      return { status: 0 };
+    });
+    expect(curlCalls[0]).toEqual(expect.arrayContaining(["--retry", String(III_INSTALL_RETRIES), "--retry-delay", String(III_INSTALL_RETRY_DELAY_S)]));
+
+    const dir = mkdtempSync(join(tmpdir(), "am-retry-"));
+    const dest = join(dir, "iii.zip");
+    const statuses = [504, 503, 200];
+    const sleeps: number[] = [];
+    const request = (async () => {
+      const status = statuses.shift()!;
+      return new Response(status === 200 ? "zip-bytes" : "busy", { status });
+    }) as typeof fetch;
+    await downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, request, async (ms) => { sleeps.push(ms); });
+    expect(readFileSync(dest, "utf8")).toBe("zip-bytes");
+    expect(sleeps).toEqual([III_INSTALL_RETRY_DELAY_S * 1000, III_INSTALL_RETRY_DELAY_S * 1000]);
+
+    let attempts = 0;
+    const alwaysBusy = (async () => { attempts++; return new Response("busy", { status: 504 }); }) as typeof fetch;
+    await expect(downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, alwaysBusy, async () => {})).rejects.toThrow("HTTP 504");
+    expect(attempts).toBe(III_INSTALL_RETRIES + 1);
+
+    attempts = 0;
+    const missing = (async () => { attempts++; return new Response("missing", { status: 404 }); }) as typeof fetch;
+    await expect(downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, missing, async () => {})).rejects.toThrow("HTTP 404");
+    expect(attempts).toBe(1);
+
+    const limited = [new Response("slow down", { status: 429, headers: { "retry-after": "30" } }), new Response("zip-bytes", { status: 200 })];
+    const waits: number[] = [];
+    await downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, (async () => limited.shift()!) as typeof fetch, async (ms) => { waits.push(ms); });
+    expect(waits).toEqual([30_000]);
+
+    attempts = 0;
+    const tooLong = (async () => { attempts++; return new Response("later", { status: 503, headers: { "retry-after": String(III_INSTALL_RETRY_MAX_TIME_S + 1) } }); }) as typeof fetch;
+    await expect(downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, tooLong, async () => {})).rejects.toThrow("HTTP 503");
+    expect(attempts).toBe(1);
+
+    attempts = 0;
+    const dropped = (async () => {
+      attempts++;
+      if (attempts > 1) return new Response("zip-bytes", { status: 200 });
+      const stream = new ReadableStream({ start(controller) { controller.error(new Error("socket hang up")); } });
+      return new Response(stream, { status: 200 });
+    }) as typeof fetch;
+    writeFileSync(dest, "");
+    await downloadToFile("https://example.invalid/iii.zip", dest, {}, undefined, dropped, async () => {});
+    expect(attempts).toBe(2);
+    expect(readFileSync(dest, "utf8")).toBe("zip-bytes");
   });
 
   it("pins a SHA-256 for both Windows assets of the pinned release", () => {

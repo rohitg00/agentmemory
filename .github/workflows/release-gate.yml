@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, ubuntu-24.04-arm, macos-latest, macos-15-intel]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -49,9 +49,9 @@ jobs:
         shell: bash
         run: |
           engine_pin=$(node --import tsx --input-type=module -e 'import { III_PINNED_VERSION } from "./src/version.ts"; console.log(III_PINNED_VERSION)')
-          engine_bin="$HOME/.cache/agentmemory-release-gate/iii-${engine_pin}-linux-x64"
+          engine_bin="$HOME/.cache/agentmemory-release-gate/iii-${engine_pin}-linux-$(node -p process.arch)"
           test -x "$engine_bin"
-          AGENTMEMORY_TEST_III="$engine_bin" AGENTMEMORY_REQUIRE_LIVE_TESTS=1 npx vitest run test/compose-supervision-integration.test.ts test/codex-live-daemon.test.ts
+          AGENTMEMORY_TEST_III="$engine_bin" AGENTMEMORY_REQUIRE_LIVE_TESTS=1 npx vitest run test/compose-supervision-integration.test.ts test/codex-live-daemon.test.ts test/compose-c1-integration.test.ts
       - run: npm run test:startup:packaged -- --skip-build --out "${{ runner.temp }}/startup-gate"
       - name: Test packaged vector recovery
         shell: bash
@@ -74,9 +74,9 @@ jobs:
           archives=("$RUNNER_TEMP"/graph-index-pack/*.tgz)
           npm run test:graph-index:packaged -- --tarball "${archives[0]}" --out "$RUNNER_TEMP/graph-index-gate"
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: release-gate-${{ matrix.os }}
+          name: release-gate-${{ matrix.os }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/release-gate
             ${{ runner.temp }}/startup-gate
@@ -88,9 +88,13 @@ jobs:
           retention-days: 14
 
   windows-smoke:
-    name: windows smoke
-    runs-on: windows-latest
+    name: windows smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -117,9 +121,9 @@ jobs:
           node scripts/release-gate/windows-smoke.mjs --tarball $tarballs[0].FullName --out "$env:RUNNER_TEMP\windows-smoke"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: windows-smoke
+          name: windows-smoke-${{ matrix.os }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/windows-smoke
           if-no-files-found: ignore
           retention-days: 14

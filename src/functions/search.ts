@@ -4,7 +4,7 @@ import type { HybridSearchRequest } from "../state/hybrid-search.js";
 import type { IndexPersistenceStatus } from "../state/index-persistence.js";
 import type { CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
-import { StateKV } from '../state/kv.js'
+import { StateKV, collectAll } from '../state/kv.js'
 import { getSearchResultLayer, isSearchLayer, matchesSearchLayer, type SearchLayer, type SearchResultLayer } from "../state/search-layer.js";
 import { SearchIndex, type SearchIndexRevision } from '../state/search-index.js'
 import { VectorIndex } from '../state/vector-index.js'
@@ -200,6 +200,44 @@ const EMBED_MAX_CHARS = 16_000
 export function clipEmbedInput(text: string): string {
   if (text.length <= EMBED_MAX_CHARS) return text
   return text.slice(0, EMBED_MAX_CHARS)
+}
+
+export function unindexMemory(id: string): void {
+  try {
+    getSearchIndex().remove(id)
+  } catch {}
+  vectorIndexRemove(id)
+  scheduleIndexSave()
+}
+
+export async function indexMemory(kv: StateKV, memory: Memory): Promise<void> {
+  if (memory.isLatest === false) {
+    unindexMemory(memory.id)
+    return
+  }
+  try {
+    getSearchIndex().add(memoryToObservation(memory), "memory")
+    scheduleIndexSave()
+  } catch (err) {
+    logger.warn("Failed to index memory into BM25", {
+      memId: memory.id,
+      error: err instanceof Error ? err.message : String(err),
+    })
+  }
+  const sessionId = memory.sessionIds?.[0] ?? "memory"
+  await vectorIndexAddGuarded(
+    memory.id,
+    sessionId,
+    observationEmbedText({ title: memory.title, narrative: memory.content, concepts: memory.concepts }),
+    { kind: "memory", logId: memory.id },
+    async (embedding, isCurrent) => {
+      const current = await kv.get<Memory>(KV.memories, memory.id).catch(() => null)
+      if (!isCurrent() || !current || current.isLatest === false) return false
+      vectorIndex?.add(memory.id, sessionId, embedding)
+      scheduleIndexSave()
+      return true
+    },
+  )
 }
 
 export async function vectorIndexAddGuarded(
@@ -471,7 +509,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   let memories: Memory[] = []
   let memoriesLoaded = false
   try {
-    memories = await kv.list<Memory>(KV.memories)
+    memories = await collectAll<Memory>(kv, KV.memories)
     memoriesLoaded = true
   } catch (err) {
     logger.warn('rebuildIndex: failed to load memories', {
@@ -539,7 +577,7 @@ async function listWithRetry<T>(kv: StateKV, scope: string, label: string, deadl
   while (attempts < LIST_RETRY_ATTEMPTS) {
     attempts++
     try {
-      return await kv.list<T>(scope)
+      return await collectAll<T>(kv, scope)
     } catch (err) {
       lastErr = err
       if (!isStateNotReadyError(err)) break

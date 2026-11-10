@@ -38,6 +38,10 @@ docker run -d --name agentmemory \
 
 Keep `/data` on a persistent volume: it holds the memories, the generated secret (`docker exec agentmemory cat /data/secret`) and the worker cache. The container fetches the pinned `state` and `http` registry workers on first start, so it needs network access then. Set `AGENTMEMORY_SECRET`, `EMBEDDING_PROVIDER` and the other variables from the sections above with `-e`. The `latest` tag points at the image for the highest stable release version (semver order, prereleases and drafts excluded), so an older, backported or prerelease build never replaces it. Pin a version tag for deployments.
 
+## LLM and embedding providers
+
+A provider key alone turns nothing on. To use LLM summaries and compression, set `AGENTMEMORY_LLM_PROVIDER` (`anthropic`, `openai`, `gemini`, `openrouter` or `minimax`) and that provider's key. To use cloud embeddings, set `EMBEDDING_PROVIDER` and its key. All the Compose files above forward both selectors to the worker.
+
 ## Local embeddings
 
 Set `EMBEDDING_PROVIDER=local` to generate embeddings without an API key. The shared image includes `@huggingface/transformers` and its runtime dependencies; the image build checks that the package loads after pruning development dependencies. Only ONNX native binaries for the image's platform and architecture are retained; other runtime dependencies remain installed. Model weights are not bundled: the first embedding request downloads `Xenova/all-MiniLM-L6-v2` from Hugging Face and requires network access.

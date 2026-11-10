@@ -24,6 +24,30 @@ const options = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("Worker Compose project", () => {
+  it.each(Array.from({ length: 32 }, (_, offset) => 0x80 + offset))(
+    "escapes C1 character U+%s in single-line and multiline scalars", (code) => {
+      for (const value of [`first${String.fromCharCode(code)}second`, `first\n${String.fromCharCode(code)}second`]) {
+        const text = renderWorkerCompose(options({ workerEnvironment: { OPENAI_BASE_URL: value } }));
+        expect(text).not.toMatch(/[\u0080-\u009f]/);
+        expect(parse(text).containers.agentmemory.environment.OPENAI_BASE_URL).toBe(value);
+      }
+    },
+  );
+  it.each(["first\u2028second", "first\u2029second", "first\n\u2028\u2029second"])(
+    "escapes Unicode line and paragraph separators: %j", (value) => {
+      const text = renderWorkerCompose(options({ workerEnvironment: { OPENAI_BASE_URL: value } }));
+      expect(text).not.toMatch(/[\u2028\u2029]/);
+      expect(text).toContain(`OPENAI_BASE_URL: ${JSON.stringify(value).replace(/[\u2028\u2029]/g, (char) => `\\u${char.charCodeAt(0).toString(16)}`)}`);
+      expect(parse(text).containers.agentmemory.environment.OPENAI_BASE_URL).toBe(value);
+    },
+  );
+  it.each(["first\nsecond", "first\rsecond", "first\r\nsecond", "\nleading\n\ntrailing\n", "quote'\"\\\nnext\tline"])(
+    "preserves multiline configuration values through YAML parsing: %j", (value) => {
+      const text = renderWorkerCompose(options({ workerEnvironment: { OPENAI_BASE_URL: value } }));
+      expect(parse(text).containers.agentmemory.environment.OPENAI_BASE_URL).toBe(value);
+    },
+  );
+
   it("pins registry workers and configures the isolated engine, state and HTTP", () => {
     const text = renderWorkerCompose(options());
     expect(text).toContain("namespace: agentmemory-3511");
@@ -163,6 +187,35 @@ describe("Worker Compose project", () => {
     expect(app).toContain("OPENAI_API_KEY: 'fake-gate-key'");
     expect(app).toContain("OPENAI_BASE_URL: 'http://127.0.0.1:4555'");
     expect(text.slice(0, text.indexOf("containers:")).concat(text.slice(text.indexOf("  state:"), text.indexOf("  agentmemory:")))).not.toContain("fake-gate-key");
+  });
+
+  it("forwards every provider selector and gate wherever provider keys are forwarded", () => {
+    const selectors = {
+      AGENTMEMORY_LLM_PROVIDER: "anthropic",
+      EMBEDDING_PROVIDER: "openai",
+      AGENTMEMORY_ALLOW_AGENT_SDK: "true",
+      AGENTMEMORY_INJECT_CONTEXT: "true",
+      ANTHROPIC_MODEL: "model-a",
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:4556",
+      OPENAI_MODEL: "model-b",
+      OPENAI_BASE_URL: "http://127.0.0.1:4555",
+      GEMINI_MODEL: "model-c",
+      OPENROUTER_MODEL: "model-d",
+      MINIMAX_MODEL: "model-e",
+      MINIMAX_BASE_URL: "http://127.0.0.1:4557",
+    };
+    const native = parse(renderWorkerCompose(options({ workerEnvironment: selectors })));
+    expect(native.containers.agentmemory.environment).toMatchObject(selectors);
+    const files = {
+      "deploy/runtime/worker-compose.yaml": parse(readFileSync(new URL("../deploy/runtime/worker-compose.yaml", import.meta.url), "utf8")).containers.agentmemory.environment,
+      "docker-compose.yml": parse(readFileSync(new URL("../docker-compose.yml", import.meta.url), "utf8")).services.agentmemory.environment,
+      "deploy/coolify/docker-compose.yml": parse(readFileSync(new URL("../deploy/coolify/docker-compose.yml", import.meta.url), "utf8")).services.agentmemory.environment,
+    };
+    for (const [file, environment] of Object.entries(files)) {
+      for (const key of Object.keys(selectors)) {
+        expect(environment[key], `${file} forwards ${key}`).toBe("${" + key + ":-}");
+      }
+    }
   });
 
   it("preserves memory policy, provider and durability overrides in native and Docker workers", async () => {

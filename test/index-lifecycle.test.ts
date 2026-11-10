@@ -6,6 +6,7 @@ vi.mock("../src/logger.js", () => ({
 
 vi.mock("../src/functions/audit.js", () => ({
   recordAudit: vi.fn(),
+  safeAudit: vi.fn(),
 }));
 
 import { getSearchIndex, registerSearchFunction, setEmbeddingProvider, setVectorIndex } from "../src/functions/search.js";
@@ -14,6 +15,7 @@ import { registerConsolidateFunction } from "../src/functions/consolidate.js";
 import { registerAutoForgetFunction } from "../src/functions/auto-forget.js";
 import { registerDiagnosticsFunction } from "../src/functions/diagnostics.js";
 import { registerExportImportFunction } from "../src/functions/export-import.js";
+import { registerMeshFunction } from "../src/functions/mesh.js";
 import { memoryToObservation } from "../src/state/memory-utils.js";
 import { KV } from "../src/state/schema.js";
 import type { CompressedObservation, Memory, MemoryProvider, Session } from "../src/types.js";
@@ -185,11 +187,10 @@ describe("mem::consolidate keeps the search index in step", () => {
     const sdk = makeMockSdk();
     const inner = makeMockKV();
     const existing = makeMemory("mem_old", "auth uses jwt");
-    let seeded = false;
     const kv = {
       ...inner,
       set: async <T>(scope: string, key: string, data: T) => {
-        if (scope === KV.memories && key === existing.id && seeded) {
+        if (scope === KV.memories && key === existing.id && (data as Memory).isLatest === false) {
           throw new Error("write failed");
         }
         return inner.set(scope, key, data);
@@ -198,7 +199,6 @@ describe("mem::consolidate keeps the search index in step", () => {
     registerConsolidateFunction(sdk as never, kv as never, makeProvider() as never);
 
     await kv.set(KV.memories, existing.id, existing);
-    seeded = true;
     getSearchIndex().add(memoryToObservation(existing), "memory");
     await seedSessionWithObs(kv, [makeObs("o1", "auth"), makeObs("o2", "auth"), makeObs("o3", "auth")]);
 
@@ -209,6 +209,7 @@ describe("mem::consolidate keeps the search index in step", () => {
     expect(memories.map((m) => m.id)).toEqual([existing.id]);
     expect(memories[0].isLatest).toBe(true);
     expect(getSearchIndex().has(existing.id)).toBe(true);
+    expect(getSearchIndex().size).toBe(1);
   });
 
   it("chains a second group with the same title onto the new successor", async () => {
@@ -390,5 +391,44 @@ describe("mem::search does not return superseded memories", () => {
     const results = await hybrid.search("alpha", 10);
     expect(results).toHaveLength(10);
     expect(results.map((r) => r.observation.id).sort()).toEqual(liveIds.sort());
+  });
+});
+
+describe("mem::mesh-receive keeps the search index in step", () => {
+  it("indexes a received latest memory and unindexes a received superseded one", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    registerMeshFunction(sdk as never, kv as never);
+
+    const stale = makeMemory("mem_stale", "auth uses sessions");
+    await kv.set(KV.memories, stale.id, stale);
+    getSearchIndex().add(memoryToObservation(stale), "memory");
+
+    const later = new Date(Date.now() + 1000).toISOString();
+    const fresh = makeMemory("mem_fresh", "auth uses jwt");
+    const result = await sdk.trigger("mem::mesh-receive", {
+      memories: [fresh, { ...stale, isLatest: false, updatedAt: later }],
+    });
+
+    expect(result.accepted).toBe(2);
+    expect(getSearchIndex().has(fresh.id)).toBe(true);
+    expect(getSearchIndex().has(stale.id)).toBe(false);
+  });
+
+  it("leaves the index alone when last-write-wins rejects the item", async () => {
+    const sdk = makeMockSdk();
+    const kv = makeMockKV();
+    registerMeshFunction(sdk as never, kv as never);
+
+    const current = makeMemory("mem_current", "auth uses jwt");
+    await kv.set(KV.memories, current.id, current);
+    getSearchIndex().add(memoryToObservation(current), "memory");
+
+    const older = new Date(Date.now() - 60_000).toISOString();
+    await sdk.trigger("mem::mesh-receive", {
+      memories: [{ ...current, isLatest: false, updatedAt: older }],
+    });
+
+    expect(getSearchIndex().has(current.id)).toBe(true);
   });
 });

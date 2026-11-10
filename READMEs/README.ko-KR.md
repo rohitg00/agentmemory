@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -442,7 +442,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### 플러그인 설치 없이 Claude Code 사용 (MCP 독립형 경로)
 
-`/plugin install`을 사용하는 대신 `~/.claude.json`을 통해 agentmemory의 MCP 서버를 직접 연결하면, Claude Code는 `${CLAUDE_PLUGIN_ROOT}`를 해석하지 못하므로 `~/.claude/settings.json`의 hook 스크립트를 절대 경로로 지정해야 합니다. 이런 경로는 보통 agentmemory 버전을 포함하기 때문에(예: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), 다음 업그레이드에서 모든 hook이 조용히 깨질 수 있습니다.
+`/plugin install`을 사용하는 대신 `~/.claude.json` (기본 경로)을 통해 agentmemory의 MCP 서버를 직접 연결하면, Claude Code는 `${CLAUDE_PLUGIN_ROOT}`를 해석하지 못하므로 `~/.claude/settings.json` (기본 경로)의 hook 스크립트를 절대 경로로 지정해야 합니다. 이런 경로는 보통 agentmemory 버전을 포함하기 때문에(예: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), 다음 업그레이드에서 모든 hook이 조용히 깨질 수 있습니다.
 
 해결책:
 
@@ -450,7 +450,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-이 명령은 현재 설치된 `@agentmemory/agentmemory` 패키지의 번들된 `plugin/` 디렉터리로 해석된 절대 경로를 사용해, 동일한 hook 명령을 `~/.claude/settings.json`에 병합합니다. agentmemory를 업그레이드한 뒤에는 동일한 명령을 다시 실행해서 경로를 갱신하십시오. 같은 파일의 사용자 항목은 보존되며, 이전 agentmemory 항목만 교체됩니다. `/plugin install` 경로를 사용하는 것이 여전히 권장되는 방식입니다.
+이 명령은 MCP 서버를 구성하고 번들 hook을 Claude Code의 사용자 설정에 병합합니다. `CLAUDE_CONFIG_DIR`가 설정되지 않았거나 비어 있거나 공백만 포함하면 MCP에는 `~/.claude.json`을, hook에는 `~/.claude/settings.json`을 사용합니다. 그 밖의 디렉터리 값은 앞뒤 공백을 포함해 입력한 그대로 사용합니다. 사용자 지정 디렉터리를 사용하려면 이 명령과 Claude Code 양쪽에 `CLAUDE_CONFIG_DIR`를 동일한 비어 있지 않은 값으로 설정하세요. 그러면 각각 `$CLAUDE_CONFIG_DIR/.claude.json`과 `$CLAUDE_CONFIG_DIR/settings.json`을 사용합니다. 커넥터가 AgentMemory의 `.env`에서 값을 읽더라도 Claude Code 자체의 실행 환경에 이 값이 전달되어야 합니다. 이 명령을 실행하기 전에 사용자 지정 디렉터리를 만드세요. 디렉터리가 없으면 커넥터는 Claude Code를 감지하지 못한 것으로 처리하고 건너뜁니다. shell 값이 공백만 포함하면 Claude Code를 시작하기 전에 `CLAUDE_CONFIG_DIR`를 해제하여 Claude Code도 기본 프로필을 사용하도록 하세요. 절대 경로를 사용하세요. 상대 경로는 작업 디렉터리를 기준으로 해석되므로 두 명령을 같은 디렉터리에서 실행해야 합니다.
+
+Hook 명령은 설치된 패키지에 포함된 `plugin/` 디렉터리의 절대 경로를 사용합니다. agentmemory를 업그레이드한 후 명령을 다시 실행하여 경로를 갱신하세요. 설정 파일에 있는 사용자 항목은 유지되며, 이전 agentmemory 항목만 교체됩니다. `/plugin install` 사용을 계속 권장합니다.
 원격 또는 보호된 배포의 경우, `AGENTMEMORY_URL`과 `AGENTMEMORY_SECRET`을 설정한 채로 Claude Code를 실행하십시오. 플러그인은 두 값을 모두 번들된 MCP 서버로 전달합니다. `AGENTMEMORY_URL`이 비어 있으면 MCP shim은 `http://localhost:3111`을 사용합니다.
 
 ### Codex CLI (Codex 플러그인 플랫폼)
@@ -1254,7 +1256,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

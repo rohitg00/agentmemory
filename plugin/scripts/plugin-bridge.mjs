@@ -3,7 +3,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 //#region src/version.ts
-const VERSION = "0.9.32";
+const VERSION = "0.9.33";
 //#endregion
 //#region src/secret-store.ts
 const SECRET_KEY = "AGENTMEMORY_SECRET";
@@ -29,7 +29,7 @@ function unquote(value) {
 	const hash = value.indexOf(" #");
 	return hash === -1 ? value : value.slice(0, hash).trim();
 }
-function readEnvFileSecret() {
+function readEnvFileValue(name) {
 	let content;
 	try {
 		content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
@@ -43,10 +43,13 @@ function readEnvFileSecret() {
 		if (trimmed.startsWith("#")) continue;
 		const eq = trimmed.indexOf("=");
 		if (eq === -1) continue;
-		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== SECRET_KEY) continue;
-		found = usable(unquote(trimmed.slice(eq + 1).trim()));
+		if (trimmed.slice(0, eq).replace(/^export\s+/, "").trim() !== name) continue;
+		found = unquote(trimmed.slice(eq + 1).trim());
 	}
 	return found;
+}
+function readEnvFileSecret() {
+	return usable(readEnvFileValue(SECRET_KEY));
 }
 function readSecretFile(path) {
 	try {
@@ -115,6 +118,14 @@ function resolveSettingSecret(url, env = process.env) {
 }
 //#endregion
 //#region src/mcp/rest-proxy.ts
+const DEFAULT_CALL_TIMEOUT_MS = 19e4;
+const MAX_TIMER_MS = 2147483647;
+function callTimeoutMs() {
+	const name = "AGENTMEMORY_CALL_TIMEOUT_MS";
+	const raw = (resolveEnvOrEmpty(name) || readEnvFileValue(name)).trim();
+	const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+	return n >= 1 && n <= MAX_TIMER_MS ? n : DEFAULT_CALL_TIMEOUT_MS;
+}
 function resolveEnvOrEmpty(name) {
 	return hookSetting(name) ?? "";
 }
@@ -343,7 +354,7 @@ function createPluginBridge() {
 				},
 				body: body === void 0 ? void 0 : JSON.stringify(body),
 				redirect: "error",
-				signal: AbortSignal.timeout(15e3)
+				signal: AbortSignal.timeout(callTimeoutMs())
 			});
 		} catch {
 			throw new Error(`Agent Memory daemon is unreachable or timed out. ${SETUP} No fallback store was used; check state before retrying a write.`);

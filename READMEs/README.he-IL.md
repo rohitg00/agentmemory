@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 כלי MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks אוטומטיים" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 מסדי נתונים חיצוניים" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,400+ בדיקות עוברות" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ בדיקות עוברות" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -448,7 +448,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code בלי התקנת ה-plugin (נתיב MCP בלבד)
 
-אם אתם מחווטים את שרת ה-MCP של agentmemory ישירות דרך `~/.claude.json` במקום להשתמש ב-`/plugin install`, Claude Code לעולם לא פותר את `${CLAUDE_PLUGIN_ROOT}` ואתם חייבים להפנות את סקריפטי ה-hook ל-paths מוחלטים בתוך `~/.claude/settings.json`. ה-paths האלה בדרך כלל מטמיעים בתוכם את גרסת agentmemory (למשל `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), כך שהשדרוג הבא שובר בשקט כל hook.
+אם אתם מחווטים את שרת ה-MCP של agentmemory ישירות דרך `~/.claude.json` (נתיב ברירת המחדל) במקום להשתמש ב-`/plugin install`, Claude Code לעולם לא פותר את `${CLAUDE_PLUGIN_ROOT}` ואתם חייבים להפנות את סקריפטי ה-hook ל-paths מוחלטים בתוך `~/.claude/settings.json` (נתיב ברירת המחדל). ה-paths האלה בדרך כלל מטמיעים בתוכם את גרסת agentmemory (למשל `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), כך שהשדרוג הבא שובר בשקט כל hook.
 
 פתרון עוקף:
 
@@ -456,7 +456,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-זה ממזג את אותן פקודות hook לתוך `~/.claude/settings.json` עם paths מוחלטים שנפתרים לתיקיית `plugin/` המצורפת של חבילת `@agentmemory/agentmemory` המותקנת כעת. יש להריץ את הפקודה מחדש אחרי שדרוג agentmemory כדי לרפרש את ה-paths. רשומות משתמש בקובץ עצמו נשמרות; רק רשומות agentmemory קודמות מוחלפות. השימוש בנתיב `/plugin install` נשאר הגישה המומלצת.
+הפקודה מגדירה את שרת ה-MCP וממזגת את ה-hooks המצורפים לתצורת המשתמש של Claude Code. אם `CLAUDE_CONFIG_DIR` אינו מוגדר, ריק או מכיל רק תווי רווח, היא משתמשת ב-`~/.claude.json` עבור MCP וב-`~/.claude/settings.json` עבור hooks. ערכי תיקייה אחרים משמשים בדיוק כפי שהוזנו, כולל תווי רווח בתחילת הערך ובסופו. כדי להשתמש בתיקייה מותאמת אישית, הגדירו את `CLAUDE_CONFIG_DIR` לאותו ערך שאינו ריק גם עבור הפקודה הזו וגם עבור Claude Code; הקבצים יהיו אז `$CLAUDE_CONFIG_DIR/.claude.json` ו-`$CLAUDE_CONFIG_DIR/settings.json`, בהתאמה. Claude Code חייב לקבל את הערך בסביבת ההפעלה שלו, גם אם המחבר קורא אותו מקובץ `.env` של AgentMemory. צרו את התיקייה המותאמת אישית לפני הפעלת הפקודה; אחרת המחבר מדלג על Claude Code כי הוא לא זוהה. אם הערך ב-shell מכיל רק תווי רווח, הסירו את `CLAUDE_CONFIG_DIR` מהסביבה לפני הפעלת Claude Code כדי שגם הוא ישתמש בפרופיל ברירת המחדל. השתמשו בנתיב מוחלט. נתיבים יחסיים מפוענחים ביחס לתיקיית העבודה, ולכן יש להריץ את שתי הפקודות מאותה תיקייה.
+
+פקודות ה-hook משתמשות בנתיבים מוחלטים לתיקיית `plugin/` המצורפת לחבילה המותקנת. הפעילו שוב את הפקודה לאחר שדרוג agentmemory כדי לרענן את הנתיבים. רשומות המשתמש בקובצי התצורה נשמרות; רק רשומות קודמות של agentmemory מוחלפות. השימוש ב-`/plugin install` נותר הדרך המומלצת.
 ל-deployments מרוחקים או מוגנים, הפעילו את Claude Code עם `AGENTMEMORY_URL` ו-`AGENTMEMORY_SECRET` מוגדרים. ה-plugin מעביר את שני הערכים לשרת ה-MCP המצורף שלו; כש-`AGENTMEMORY_URL` ריק, ה-shim של MCP משתמש ב-`http://localhost:3111`.
 
 ### Codex CLI (פלטפורמת plugin של Codex)
@@ -1242,7 +1244,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,400+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

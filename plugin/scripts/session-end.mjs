@@ -1,6 +1,6 @@
 #!/usr/bin/env node
+import { execSync, spawn } from "node:child_process";
 import { readFileSync, realpathSync } from "node:fs";
-import { execSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
 import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, transportBlocked, withEventId } from "./_capture.mjs";
 //#region src/functions/privacy.ts
@@ -169,6 +169,37 @@ function extractTranscriptPrompts(data) {
 	}
 	return prompts;
 }
+const WORKER_ENV = "AGENTMEMORY_SESSION_END_WORKER";
+function handOff(input) {
+	if (process.env[WORKER_ENV] === "1" || !process.argv[1]) return Promise.resolve(false);
+	return new Promise((resolve) => {
+		try {
+			const child = spawn(process.execPath, [process.argv[1]], {
+				detached: true,
+				stdio: [
+					"pipe",
+					"ignore",
+					"ignore"
+				],
+				windowsHide: true,
+				env: {
+					...process.env,
+					[WORKER_ENV]: "1"
+				}
+			});
+			child.on("error", () => resolve(false));
+			child.stdin.on("error", () => resolve(false));
+			child.once("spawn", () => {
+				child.stdin.end(input, () => {
+					child.unref();
+					resolve(true);
+				});
+			});
+		} catch {
+			resolve(false);
+		}
+	});
+}
 async function main() {
 	if (isDrainChild()) return runDrainChild();
 	let input = "";
@@ -181,6 +212,7 @@ async function main() {
 	}
 	if (!data || typeof data !== "object") return;
 	if (isSdkChildContext(data)) return;
+	if (data.hook_event_name === "SessionEnd" && await handOff(input)) return;
 	const sessionId = data.session_id || data.sessionId || data.conversation_id || "unknown";
 	const transcriptPrompts = extractTranscriptPrompts(data);
 	if (transcriptPrompts.length > 0) {

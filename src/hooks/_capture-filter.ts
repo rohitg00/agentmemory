@@ -75,12 +75,23 @@ export function truncateText(value: string, max: number): string {
 
 const JSON_WHITESPACE_ESCAPES: Record<string, string> = { n: "\n", r: "\r", t: "\t" };
 
-const SECRET_KEY_WORDS = new Set(["apikey", "secret", "token", "password", "passwd", "credential", "credentials", "auth", "authorization"]);
+const SECRET_KEY_SUFFIXES = ["apikey", "secret", "token", "password", "passwd", "credential", "credentials"];
+const SECRET_KEY_WORDS = new Set(["auth", "authorization"]);
 
 function isSecretKeyName(key: string): boolean {
   if (!/^[\w.-]{1,64}$/.test(key)) return false;
-  const words = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().split(/[_.-]+/);
-  return words.some((word, i) => SECRET_KEY_WORDS.has(word) || (word === "api" && words[i + 1] === "key"));
+  const words = key
+    .replace(/([a-z])([A-Z])/g, "$1_$2")
+    .replace(/([A-Za-z])(\d)/g, "$1_$2")
+    .toLowerCase()
+    .split(/[_.\-\d]+/)
+    .filter(Boolean);
+  return words.some(
+    (word, i) =>
+      SECRET_KEY_WORDS.has(word) ||
+      SECRET_KEY_SUFFIXES.some((suffix) => word.endsWith(suffix)) ||
+      (word === "api" && words[i + 1] === "key"),
+  );
 }
 
 function redactSecretKeys(value: unknown): unknown {
