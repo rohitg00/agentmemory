@@ -15,6 +15,7 @@ export class CircuitBreaker {
   private failures = 0;
   private lastFailureAt: number | null = null;
   private openedAt: number | null = null;
+  private probeStartedAt: number | null = null;
 
   private readonly failureThreshold: number;
   private readonly failureWindowMs: number;
@@ -31,16 +32,19 @@ export class CircuitBreaker {
 
   get isAllowed(): boolean {
     if (this.state === "closed") return true;
+    const now = Date.now();
     if (this.state === "open") {
-      if (
-        this.openedAt &&
-        Date.now() - this.openedAt >= this.recoveryTimeoutMs
-      ) {
-        this.state = "half-open";
-        return true;
+      if (!this.openedAt || now - this.openedAt < this.recoveryTimeoutMs) {
+        return false;
       }
+      this.state = "half-open";
+    } else if (
+      this.probeStartedAt !== null &&
+      now - this.probeStartedAt < this.recoveryTimeoutMs
+    ) {
       return false;
     }
+    this.probeStartedAt = now;
     return true;
   }
 
@@ -50,6 +54,7 @@ export class CircuitBreaker {
     this.failures = 0;
     this.lastFailureAt = null;
     this.openedAt = null;
+    this.probeStartedAt = null;
   }
 
   recordFailure(): void {
@@ -57,6 +62,7 @@ export class CircuitBreaker {
     if (this.state === "half-open") {
       this.state = "open";
       this.openedAt = now;
+      this.probeStartedAt = null;
       return;
     }
     if (this.lastFailureAt && now - this.lastFailureAt > this.failureWindowMs) {

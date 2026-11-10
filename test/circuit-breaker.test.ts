@@ -178,6 +178,52 @@ describe("CircuitBreaker", () => {
     expect(cb.getState().state).toBe("half-open");
   });
 
+  it("lets only one probe through while half-open", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    expect(cb.isAllowed).toBe(true);
+    expect(cb.isAllowed).toBe(false);
+    expect(cb.isAllowed).toBe(false);
+    cb.recordSuccess();
+    expect(cb.getState().state).toBe("closed");
+    expect(cb.isAllowed).toBe(true);
+    expect(cb.isAllowed).toBe(true);
+  });
+
+  it("reopens with a fresh openedAt when the probe fails", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    expect(cb.isAllowed).toBe(true);
+    const probeAt = Date.now();
+    cb.recordFailure();
+    expect(cb.getState().state).toBe("open");
+    expect(cb.getState().openedAt).toBe(probeAt);
+    expect(cb.isAllowed).toBe(false);
+    vi.advanceTimersByTime(30_000);
+    expect(cb.isAllowed).toBe(true);
+    expect(cb.isAllowed).toBe(false);
+  });
+
+  it("releases a probe that never reports a result after the recovery timeout", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    expect(cb.isAllowed).toBe(true);
+    vi.advanceTimersByTime(29_999);
+    expect(cb.isAllowed).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(cb.isAllowed).toBe(true);
+    expect(cb.isAllowed).toBe(false);
+  });
+
   it("still opens after consecutive failures with no success between them", () => {
     const cb = new CircuitBreaker();
     cb.recordSuccess();
