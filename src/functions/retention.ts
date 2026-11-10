@@ -8,6 +8,7 @@ import type {
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { collectAll } from "../state/kv.js";
+import { deleteMemoryUnderLock } from "../state/memory-utils.js";
 import type { AccessLog } from "./access-tracker.js";
 import {
   emptyAccessLog,
@@ -373,10 +374,14 @@ export function registerRetentionFunctions(
             continue;
           }
 
-          if (mem.imageRef) {
-            await decrementImageRef(kv, sdk, mem.imageRef);
+          const imageRef = mem.imageRef;
+          const removed = await deleteMemoryUnderLock(kv, scope, candidate.memoryId, imageRef
+            ? () => decrementImageRef(kv, sdk, imageRef)
+            : undefined);
+          if (!removed) {
+            missingIds.push(candidate.memoryId);
+            continue;
           }
-          await kv.delete(scope, candidate.memoryId);
           evictedIds.push(candidate.memoryId);
           evicted++;
           if (resolvedSource === "semantic") evictedSemantic++;

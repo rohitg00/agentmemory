@@ -10,6 +10,7 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { deleteMemoryUnderLock } from "../state/memory-utils.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { isConsolidationEnabled } from "../config.js";
@@ -345,7 +346,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 evictedMemIds.add(mem.id);
               } else {
                 try {
-                  await kv.delete(KV.memories, mem.id);
+                  if (!(await deleteMemoryUnderLock(kv, KV.memories, mem.id))) continue;
                   deletedMemIds.add(mem.id);
                   stats.expiredMemories++;
                   evictedMemIds.add(mem.id);
@@ -385,7 +386,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 stats.nonLatestMemories++;
               } else {
                 try {
-                  await kv.delete(KV.memories, mem.id);
+                  if (!(await deleteMemoryUnderLock(kv, KV.memories, mem.id))) continue;
                   deletedMemIds.add(mem.id);
                   stats.nonLatestMemories++;
                 } catch (err) {
