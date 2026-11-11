@@ -4,17 +4,16 @@ import { withReentrantKeyedLock } from "./keyed-mutex.js";
 
 const MAX_DATE_MS = 8.64e15;
 
-export function deleteMemoryUnderLock(
+export function deleteMemoryUnderLock<T = Memory>(
   kv: StateKV,
   scope: string,
   id: string,
-  beforeDelete?: () => Promise<void>,
-): Promise<boolean> {
+): Promise<T | null> {
   return withReentrantKeyedLock("mem:remember", async () => {
-    if (!(await kv.get(scope, id))) return false;
-    if (beforeDelete) await beforeDelete();
+    const current = await kv.get<T>(scope, id);
+    if (!current) return null;
     await kv.delete(scope, id);
-    return true;
+    return current;
   });
 }
 

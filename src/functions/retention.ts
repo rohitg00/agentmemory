@@ -374,14 +374,12 @@ export function registerRetentionFunctions(
             continue;
           }
 
-          const imageRef = mem.imageRef;
-          const removed = await deleteMemoryUnderLock(kv, scope, candidate.memoryId, imageRef
-            ? () => decrementImageRef(kv, sdk, imageRef)
-            : undefined);
+          const removed = await deleteMemoryUnderLock(kv, scope, candidate.memoryId);
           if (!removed) {
             missingIds.push(candidate.memoryId);
             continue;
           }
+          if (removed.imageRef) await decrementImageRef(kv, sdk, removed.imageRef);
           evictedIds.push(candidate.memoryId);
           evicted++;
           if (resolvedSource === "semantic") evictedSemantic++;
@@ -395,6 +393,10 @@ export function registerRetentionFunctions(
         }
       }
 
+      for (const id of missingIds) {
+        if (await kv.get(KV.memories, id) || await kv.get(KV.semantic, id)) continue;
+        await kv.delete(KV.retentionScores, id);
+      }
       await deleteFacetsForTargets(kv, [...evictedIds, ...missingIds]);
 
       // Retention eviction is a structural delete path that removes

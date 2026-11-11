@@ -9,13 +9,23 @@ vi.mock("../src/config.js", async (importOriginal) => ({
   isConsolidationEnabled: () => false,
 }));
 
+const imageReleases: Array<{ path: string; lockHeld: boolean }> = [];
+vi.mock("../src/functions/image-refs.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/functions/image-refs.js")>()),
+  decrementImageRef: vi.fn(async (_kv: unknown, _sdk: unknown, path: string) => {
+    const { isKeyedLockHeld } = await import("../src/state/keyed-mutex.js");
+    imageReleases.push({ path, lockHeld: isKeyedLockHeld("mem:remember") });
+  }),
+}));
+
 import { registerGovernanceFunction } from "../src/functions/governance.js";
 import { registerRelationsFunction } from "../src/functions/relations.js";
 import { registerEvictFunction } from "../src/functions/evict.js";
 import { registerAutoForgetFunction } from "../src/functions/auto-forget.js";
+import { registerRetentionFunctions } from "../src/functions/retention.js";
 import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import { KV } from "../src/state/schema.js";
-import type { Memory } from "../src/types.js";
+import type { Memory, RetentionScore } from "../src/types.js";
 
 type Gate = { scope: string; key: string; reached: () => void; release: Promise<void> };
 
@@ -182,5 +192,110 @@ describe("memory delete paths hold the remember lock", () => {
 
     expect(result.ttlExpired).toEqual(["mem_af"]);
     expect(await kv.get(KV.memories, "mem_af")).toBeNull();
+  });
+
+  it("auto-forget releases the image of the record it deleted, outside the remember lock", async () => {
+    imageReleases.length = 0;
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerAutoForgetFunction(sdk as never, kv as never);
+    await kv.set(KV.memories, "mem_img", makeMemory("mem_img", { forgetAfter: "2020-01-01T00:00:00Z", imageRef: "old.png" }));
+
+    let release!: () => void;
+    let reached!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => { reached = resolve; });
+    const releasePromise = new Promise<void>((resolve) => { release = resolve; });
+    const holder = withKeyedLock("mem:remember", async () => {
+      reached();
+      await releasePromise;
+      const current = await kv.get<Memory>(KV.memories, "mem_img");
+      await kv.set(KV.memories, "mem_img", { ...current!, imageRef: "new.png" });
+    });
+    await reachedPromise;
+    const run = sdk.trigger("mem::auto-forget", {});
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    await holder;
+    await run;
+
+    expect(await kv.get(KV.memories, "mem_img")).toBeNull();
+    expect(imageReleases).toEqual([{ path: "new.png", lockHeld: false }]);
+  });
+});
+
+function score(memoryId: string, value: number): RetentionScore {
+  return {
+    memoryId,
+    source: "episodic",
+    score: value,
+    salience: value,
+    temporalDecay: 1,
+    reinforcementBoost: 0,
+    lastAccessed: "2026-01-01T00:00:00Z",
+    accessCount: 0,
+  };
+}
+
+describe("retention eviction holds the remember lock", () => {
+  it("waits for the lock holder and the memory stays deleted", async () => {
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerRetentionFunctions(sdk as never, kv as never);
+    await kv.set(KV.memories, "mem_ret", makeMemory("mem_ret"));
+    await kv.set(KV.retentionScores, "mem_ret", score("mem_ret", 0.01));
+
+    const holder = await holdRememberLockAndRewrite(kv, "mem_ret");
+    const evict = sdk.trigger("mem::retention-evict", { threshold: 0.5 });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(await kv.get(KV.memories, "mem_ret")).not.toBeNull();
+
+    holder.release();
+    await holder.done;
+    const result = (await evict) as { evicted: number };
+
+    expect(result.evicted).toBe(1);
+    expect(await kv.get(KV.memories, "mem_ret")).toBeNull();
+  });
+
+  it("drops the score of a memory deleted while eviction waited so it cannot hold a slot", async () => {
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerRetentionFunctions(sdk as never, kv as never);
+    await kv.set(KV.memories, "mem_a", makeMemory("mem_a"));
+    await kv.set(KV.memories, "mem_b", makeMemory("mem_b"));
+    await kv.set(KV.retentionScores, "mem_a", score("mem_a", 0.01));
+    await kv.set(KV.retentionScores, "mem_b", score("mem_b", 0.02));
+
+    const done = withKeyedLock("mem:remember", async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await kv.delete(KV.memories, "mem_a");
+    });
+    const first = (await sdk.trigger("mem::retention-evict", { threshold: 0.5, maxEvict: 1 })) as { evicted: number };
+    await done;
+
+    expect(first.evicted).toBe(0);
+    expect(await kv.get(KV.retentionScores, "mem_a")).toBeNull();
+
+    const second = (await sdk.trigger("mem::retention-evict", { threshold: 0.5, maxEvict: 1 })) as { evicted: number };
+    expect(second.evicted).toBe(1);
+    expect(await kv.get(KV.memories, "mem_b")).toBeNull();
+  });
+
+  it("keeps the score when the memory still lives in the other scope", async () => {
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerRetentionFunctions(sdk as never, kv as never);
+    await kv.set(KV.semantic, "mem_s", makeMemory("mem_s"));
+    await kv.set(KV.retentionScores, "mem_s", { ...score("mem_s", 0.01), source: undefined });
+
+    const done = withKeyedLock("mem:remember", async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      await kv.delete(KV.semantic, "mem_s");
+      await kv.set(KV.memories, "mem_s", makeMemory("mem_s"));
+    });
+    await sdk.trigger("mem::retention-evict", { threshold: 0.5, maxEvict: 1 });
+    await done;
+
+    expect(await kv.get(KV.retentionScores, "mem_s")).not.toBeNull();
   });
 });

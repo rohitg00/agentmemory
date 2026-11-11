@@ -51,11 +51,9 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
               result.ttlExpired.push(mem.id);
               deletedIds.add(mem.id);
               if (!dryRun) {
-                const imageRef = mem.imageRef;
-                const removed = await deleteMemoryUnderLock(kv, KV.memories, mem.id, imageRef
-                  ? () => decrementImageRef(kv, sdk, imageRef)
-                  : undefined);
+                const removed = await deleteMemoryUnderLock(kv, KV.memories, mem.id);
                 if (!removed) continue;
+                if (removed.imageRef) await decrementImageRef(kv, sdk, removed.imageRef);
                 facetIds.add(mem.id);
                 await recordAudit(kv, "delete", "mem::auto-forget", [mem.id], {
                   resource: "memory",
