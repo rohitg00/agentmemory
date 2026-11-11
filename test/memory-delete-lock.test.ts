@@ -234,6 +234,34 @@ describe("memory delete paths hold the remember lock", () => {
     expect(await kv.get(KV.memories, "mem_img")).toBeNull();
     expect(imageReleases).toEqual([{ path: "new.png", lockHeld: false }]);
   });
+
+  it("evict releases the image of the record it deleted, not the pre-lock snapshot", async () => {
+    imageReleases.length = 0;
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+    await kv.set(KV.memories, "mem_ev", makeMemory("mem_ev", { forgetAfter: "2020-01-01T00:00:00Z", imageRef: "old.png" }));
+
+    let release!: () => void;
+    let reached!: () => void;
+    const reachedPromise = new Promise<void>((resolve) => { reached = resolve; });
+    const releasePromise = new Promise<void>((resolve) => { release = resolve; });
+    const holder = withKeyedLock("mem:remember", async () => {
+      reached();
+      await releasePromise;
+      const current = await kv.get<Memory>(KV.memories, "mem_ev");
+      await kv.set(KV.memories, "mem_ev", { ...current!, imageRef: "new.png" });
+    });
+    await reachedPromise;
+    const run = sdk.trigger("mem::evict", {});
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    release();
+    await holder;
+    await run;
+
+    expect(await kv.get(KV.memories, "mem_ev")).toBeNull();
+    expect(imageReleases).toEqual([{ path: "new.png", lockHeld: false }]);
+  });
 });
 
 function score(memoryId: string, value: number): RetentionScore {
