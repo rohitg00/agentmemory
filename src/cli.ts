@@ -57,6 +57,7 @@ import {
   type RemoveOptions,
 } from "./cli/remove-plan.js";
 import { portFlagSuffix } from "./cli/ready-hint.js";
+import { explainZeroHits, readDemoStatus, searchDemo, waitForDemoSearchable, type DemoSearchResult } from "./cli/demo-search.js";
 import { embeddingStatusLabel } from "./cli/embedding-status.js";
 import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive, installIiiZip } from "./cli/engine-install.js";
 import {
@@ -2494,8 +2495,6 @@ type DemoSession = {
   observations: DemoObservation[];
 };
 
-type SearchResult = { query: string; hits: number; topTitle: string };
-
 function buildDemoSessions(): DemoSession[] {
   return [
     {
@@ -2552,25 +2551,6 @@ function buildDemoSessions(): DemoSession[] {
       ],
     },
   ];
-}
-
-async function postJson<T = unknown>(
-  url: string,
-  body: unknown,
-  timeoutMs = 5000,
-): Promise<T | null> {
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...bearerHeaders(url) },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return null;
-    return (await res.json().catch(() => null)) as T | null;
-  } catch {
-    return null;
-  }
 }
 
 async function postJsonStrict<T = unknown>(
@@ -2643,20 +2623,6 @@ async function seedDemoSession(
 
   await postJsonStrict(`${base}/agentmemory/session/end`, { sessionId: session.id, final: true });
   return stored;
-}
-
-async function runDemoSearch(base: string, query: string): Promise<SearchResult> {
-  const data = await postJson<{ results?: Array<{ title?: string }> }>(
-    `${base}/agentmemory/smart-search`,
-    { query, limit: 5 },
-    10000,
-  );
-  const items = data?.results ?? [];
-  return {
-    query,
-    hits: items.length,
-    topTitle: items[0]?.title ?? "(no results)",
-  };
 }
 
 // Prefer the packaged `.env.example` (next to `dist/cli.mjs`); fall back to
@@ -2808,28 +2774,58 @@ async function runDemoBody(base: string) {
 
   sSeed.stop(`Seeded ${totalObs} observations across ${sessions.length} sessions`);
 
-  const queries = [
-    "jwt auth middleware",
-    "database performance optimization",
-    "rate limiting",
-  ];
+  const expectedObs = sessions.reduce((n, s) => n + s.observations.length, 0);
+  const deps = { headers: (url: string) => bearerHeaders(url) };
+
+  const sWait = p.spinner();
+  sWait.start("Waiting for the demo observations to become searchable...");
+  const wait = await waitForDemoSearchable(base, demoProject, ["jwt middleware", "prisma", "rate limiting"], deps);
+  sWait.stop(
+    wait.ready
+      ? `Demo observations are searchable (${(wait.waitedMs / 1000).toFixed(1)} s)`
+      : `Demo observations were not searchable after ${Math.round(wait.waitedMs / 1000)} s`,
+  );
+
+  const semanticQuery = "database performance optimization";
+  const queries = ["jwt auth middleware", semanticQuery, "rate limiting"];
 
   const sQuery = p.spinner();
   sQuery.start(`Running ${queries.length} smart-search queries...`);
 
-  const results: SearchResult[] = [];
+  const results: DemoSearchResult[] = [];
   for (const query of queries) {
-    results.push(await runDemoSearch(base, query));
+    results.push(await searchDemo(base, query, undefined, deps));
   }
 
   sQuery.stop("Search complete");
 
+  const emptyQueries = results.filter((r) => r.hits === 0).map((r) => r.query);
+  const needsDiagnosis = !wait.ready || emptyQueries.some((q) => q !== semanticQuery);
+  const diagnosis = needsDiagnosis && emptyQueries.length > 0
+    ? explainZeroHits({
+        emptyQueries,
+        seeded: totalObs,
+        expected: expectedObs,
+        wait,
+        status: await readDemoStatus(base, deps),
+        invocation: isInvokedViaNpx() ? "npx @agentmemory/agentmemory" : "agentmemory",
+      })
+    : null;
+
   // Only claim the semantic-recall win when the search actually hit.
   // Without an embedding key this query returns 0 hits, and asserting
   // success over a visibly failed search reads as a lie.
-  const semanticHits =
-    results.find((r) => r.query === "database performance optimization")
-      ?.hits ?? 0;
+  const semanticHits = results.find((r) => r.query === semanticQuery)?.hits ?? 0;
+  const semanticNote = semanticHits > 0
+    ? [
+        c.accent(`Notice: searching "database performance optimization"`),
+        c.accent(`found the N+1 query fix — keyword matching can't do that.`),
+      ]
+    : [
+        c.dim(`Note: "database performance optimization" found nothing —`),
+        c.dim(`set EMBEDDING_PROVIDER=local for on-device semantic recall,`),
+        c.dim(`or set EMBEDDING_PROVIDER and its API key in ~/.agentmemory/.env.`),
+      ];
   const lines = [
     `Project:       ${demoProject}`,
     `Sessions:      ${sessions.length} seeded (${totalObs} observations)`,
@@ -2840,22 +2836,17 @@ async function runDemoBody(base: string) {
       `    ${c.dim("→")} ${c.ok(`${r.hits} hit(s)`)}, top: ${r.topTitle.slice(0, 60)}`,
     ]),
     "",
-    ...(semanticHits > 0
-      ? [
-          c.accent(`Notice: searching "database performance optimization"`),
-          c.accent(`found the N+1 query fix — keyword matching can't do that.`),
-        ]
-      : [
-          c.dim(`Note: "database performance optimization" found nothing —`),
-          c.dim(`set EMBEDDING_PROVIDER=local for on-device semantic recall,`),
-          c.dim(`or set EMBEDDING_PROVIDER and its API key in ~/.agentmemory/.env.`),
-        ]),
+    ...(diagnosis ? diagnosis.map((line) => c.warn(line)) : semanticNote),
     "",
     `Viewer:        ${c.url(getViewerUrl())}`,
     `Clean up with: ${c.dim(`curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`)}`,
   ];
 
   p.note(lines.join("\n"), "demo complete");
+  if (diagnosis) {
+    p.log.warn("The demo search did not find the seeded observations. See the reasons above.");
+    return;
+  }
   p.log.success("agentmemory is working. Point your agent at it and get back to coding.");
 }
 

@@ -1,0 +1,188 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  explainZeroHits,
+  readDemoStatus,
+  searchDemo,
+  waitForDemoSearchable,
+  type DemoWaitResult,
+} from "../src/cli/demo-search.js";
+
+const BASE = "http://localhost:3111";
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+function clock() {
+  let t = 0;
+  return {
+    now: () => t,
+    sleep: async (ms: number) => {
+      t += ms;
+    },
+  };
+}
+
+describe("demo search readiness", () => {
+  it("returns ready once every probe has hits after a few polls", async () => {
+    let searchCalls = 0;
+    const bodies: Array<Record<string, unknown>> = [];
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      searchCalls++;
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      bodies.push(body);
+      const ready = searchCalls > 4;
+      return json({ results: ready ? [{ title: `hit for ${body.query}` }] : [] });
+    });
+    const c = clock();
+    const wait = await waitForDemoSearchable(
+      BASE,
+      "/tmp/agentmemory-demo",
+      ["jwt middleware", "prisma"],
+      { fetch: fetchMock as unknown as typeof fetch, headers: () => ({ Authorization: "Bearer t" }), ...c },
+      { timeoutMs: 18_000, intervalMs: 500 },
+    );
+    expect(wait.ready).toBe(true);
+    expect(wait.pending).toEqual([]);
+    expect(wait.polls).toBe(3);
+    expect(wait.waitedMs).toBe(1_000);
+    expect(bodies.every((b) => b.project === "/tmp/agentmemory-demo")).toBe(true);
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer t");
+  });
+
+  it("stops polling a probe once it has hits", async () => {
+    const seen: string[] = [];
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { query: string };
+      seen.push(body.query);
+      const hit = body.query === "prisma" || seen.filter((q) => q === "rate limiting").length > 2;
+      return json({ results: hit ? [{ title: "x" }] : [] });
+    });
+    const c = clock();
+    const wait = await waitForDemoSearchable(BASE, "p", ["prisma", "rate limiting"], {
+      fetch: fetchMock as unknown as typeof fetch,
+      ...c,
+    });
+    expect(wait.ready).toBe(true);
+    expect(seen.filter((q) => q === "prisma")).toHaveLength(1);
+    expect(seen.filter((q) => q === "rate limiting")).toHaveLength(3);
+  });
+
+  it("gives up after the total timeout and reports the probes still empty", async () => {
+    const fetchMock = vi.fn(async () => json({ results: [] }));
+    const c = clock();
+    const wait = await waitForDemoSearchable(
+      BASE,
+      "p",
+      ["jwt middleware"],
+      { fetch: fetchMock as unknown as typeof fetch, ...c },
+      { timeoutMs: 18_000, intervalMs: 500 },
+    );
+    expect(wait.ready).toBe(false);
+    expect(wait.pending).toEqual(["jwt middleware"]);
+    expect(wait.waitedMs).toBeLessThanOrEqual(18_000);
+    expect(wait.polls).toBe(37);
+  });
+
+  it("treats a failed search request as zero hits", async () => {
+    const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit): Promise<Response> => {
+      throw new Error("ECONNREFUSED");
+    });
+    const result = await searchDemo(BASE, "rate limiting", undefined, { fetch: fetchMock as unknown as typeof fetch });
+    expect(result).toEqual({ query: "rate limiting", hits: 0, topTitle: "(no results)" });
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ query: "rate limiting", limit: 5 });
+  });
+});
+
+describe("demo zero-hit diagnosis", () => {
+  const timedOut: DemoWaitResult = { ready: false, polls: 36, waitedMs: 17_600, pending: ["jwt middleware"] };
+
+  it("prints the reasons from server status after the wait times out", async () => {
+    const fetchMock = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith("/agentmemory/status")) {
+        return json({
+          health: { connectionState: "reconnecting" },
+          provider: { embeddings: "none" },
+          index: { missingObservations: 4, bm25Incomplete: false, keywordRebuildRunning: true },
+          capture: { inbox: { pending: 2, retrying: 1, dead: 0, lastError: null } },
+        });
+      }
+      return json({ results: [] });
+    });
+    const status = await readDemoStatus(BASE, { fetch: fetchMock as unknown as typeof fetch });
+    const lines = explainZeroHits({
+      emptyQueries: ["jwt auth middleware", "rate limiting"],
+      seeded: 6,
+      expected: 6,
+      wait: timedOut,
+      status,
+      invocation: "agentmemory",
+    });
+    const text = lines.join("\n");
+    expect(lines[0]).toBe('No results for "jwt auth middleware", "rate limiting". Why:');
+    expect(text).toContain("still not searchable after 18 s");
+    expect(text).toContain('connection to iii-engine is "reconnecting"');
+    expect(text).toContain("3 observations accepted by the server are still waiting to be stored");
+    expect(text).toContain("keyword index is being rebuilt");
+    expect(text).toContain("4 stored observations are not in the search index");
+    expect(text).toContain("No embedding provider is set");
+    expect(lines[lines.length - 1]).toBe(
+      "Next: run agentmemory status for details, or agentmemory doctor to find and fix the cause.",
+    );
+  });
+
+  it("says the status could not be read when the status endpoint fails", async () => {
+    const fetchMock = vi.fn(async () => json({ error: "unauthorized" }, 401));
+    const status = await readDemoStatus(BASE, { fetch: fetchMock as unknown as typeof fetch });
+    expect(status).toEqual({ error: "HTTP 401" });
+    const lines = explainZeroHits({
+      emptyQueries: ["rate limiting"],
+      seeded: 0,
+      expected: 6,
+      wait: timedOut,
+      status,
+      invocation: "npx @agentmemory/agentmemory",
+    });
+    const text = lines.join("\n");
+    expect(text).toContain("The server accepted none of the demo observations.");
+    expect(text).toContain("server status could not be read (HTTP 401)");
+    expect(text).toContain("npx @agentmemory/agentmemory doctor");
+  });
+
+  it("reports an incomplete keyword index and dead letters", () => {
+    const lines = explainZeroHits({
+      emptyQueries: ["rate limiting"],
+      seeded: 5,
+      expected: 6,
+      wait: { ready: true, polls: 1, waitedMs: 0, pending: [] },
+      status: {
+        status: {
+          health: { connectionState: "connected" },
+          provider: { embeddings: "local (384 dims)" },
+          index: { missingObservations: 0, bm25Incomplete: true },
+          capture: { inbox: { pending: 0, retrying: 0, dead: 1, lastError: "disk full" } },
+        },
+      },
+      invocation: "agentmemory",
+    });
+    const text = lines.join("\n");
+    expect(text).toContain("accepted only 5 of 6");
+    expect(text).toContain("1 observation could not be stored: disk full");
+    expect(text).toContain("keyword index is incomplete");
+    expect(text).not.toContain("embedding provider");
+    expect(text).not.toContain("not searchable after");
+  });
+
+  it("falls back to a plain reason when the server reports nothing wrong", () => {
+    const lines = explainZeroHits({
+      emptyQueries: ["rate limiting"],
+      seeded: 6,
+      expected: 6,
+      wait: { ready: true, polls: 1, waitedMs: 0, pending: [] },
+      status: { status: { health: { connectionState: "connected" }, provider: { embeddings: "local (384 dims)" } } },
+      invocation: "agentmemory",
+    });
+    expect(lines[1]).toContain("reported no capture or index problem");
+  });
+});
