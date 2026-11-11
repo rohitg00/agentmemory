@@ -31,7 +31,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
     async (data: { dryRun?: boolean }): Promise<AutoForgetResult> => {
       const dryRun = data?.dryRun ?? false;
       const now = Date.now();
-      const { decrementImageRef } = await import("./image-refs.js");
+      const { decrementImageRef, releaseImageRef } = await import("./image-refs.js");
 
       const result: AutoForgetResult = {
         ttlExpired: [],
@@ -54,7 +54,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
                 await kv.delete(KV.memories, mem.id);
                 facetIds.add(mem.id);
                 if (mem.imageRef) {
-                  await decrementImageRef(kv, sdk, mem.imageRef);
+                  await releaseImageRef(kv, sdk, mem.id, mem.imageRef);
                 }
                 await recordAudit(kv, "delete", "mem::auto-forget", [mem.id], {
                   resource: "memory",

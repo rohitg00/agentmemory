@@ -618,14 +618,15 @@ export function getConsolidationIntervalMs(): number {
 
 export const AUTO_FORGET_INTERVAL_DEFAULT_MS = 3600000;
 export const AUTO_FORGET_INTERVAL_MIN_MS = 60000;
+export const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export function getAutoForgetIntervalMs(): number {
   const raw = getMergedEnv()["AUTO_FORGET_INTERVAL_MS"]?.trim();
   if (!raw) return AUTO_FORGET_INTERVAL_DEFAULT_MS;
   const parsed = Number(raw);
-  if (Number.isFinite(parsed) && parsed >= AUTO_FORGET_INTERVAL_MIN_MS) return Math.floor(parsed);
+  if (Number.isFinite(parsed) && parsed >= AUTO_FORGET_INTERVAL_MIN_MS && parsed <= MAX_TIMER_DELAY_MS) return Math.floor(parsed);
   process.stderr.write(
-    `[agentmemory] AUTO_FORGET_INTERVAL_MS=${JSON.stringify(raw)} is not a number of milliseconds >= ${AUTO_FORGET_INTERVAL_MIN_MS}; using ${AUTO_FORGET_INTERVAL_DEFAULT_MS}.\n`,
+    `[agentmemory] AUTO_FORGET_INTERVAL_MS=${JSON.stringify(raw)} is not a number of milliseconds between ${AUTO_FORGET_INTERVAL_MIN_MS} and ${MAX_TIMER_DELAY_MS}; using ${AUTO_FORGET_INTERVAL_DEFAULT_MS}.\n`,
   );
   return AUTO_FORGET_INTERVAL_DEFAULT_MS;
 }

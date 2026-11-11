@@ -3,6 +3,7 @@ import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { deleteImage, touchImage } from "../utils/image-store.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { logger } from "../logger.js";
 
 export async function getImageRefCount(kv: StateKV, filePath: string): Promise<number> {
   const count = await kv.get<number>(KV.imageRefs, filePath);
@@ -35,4 +36,16 @@ export async function decrementImageRef(kv: StateKV, sdk: IIIClient, filePath: s
       await kv.set(KV.imageRefs, filePath, current - 1);
     }
   });
+}
+
+export async function releaseImageRef(kv: StateKV, sdk: IIIClient, memoryId: string, filePath: string): Promise<void> {
+  try {
+    await decrementImageRef(kv, sdk, filePath);
+  } catch (err) {
+    logger.warn("Image reference release failed after memory delete", {
+      memoryId,
+      imageRef: filePath,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 }

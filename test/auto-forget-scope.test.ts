@@ -4,13 +4,16 @@ vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
-vi.mock("../src/functions/image-refs.js", () => ({
-  decrementImageRef: vi.fn(async () => {}),
+vi.mock("../src/utils/image-store.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/utils/image-store.js")>()),
+  deleteImage: vi.fn(async () => ({ deletedBytes: 0 })),
 }));
 
 import { registerAutoForgetFunction } from "../src/functions/auto-forget.js";
 import { registerRetentionFunctions } from "../src/functions/retention.js";
-import { decrementImageRef } from "../src/functions/image-refs.js";
+import { deleteImage } from "../src/utils/image-store.js";
+import { getSearchIndex } from "../src/functions/search.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 import { singleFlight } from "../src/functions/status.js";
 import { sharesMemoryScope } from "../src/state/memory-utils.js";
 import {
@@ -20,11 +23,13 @@ import {
 import { logger } from "../src/logger.js";
 import type { Memory } from "../src/types.js";
 
-function mockKV(failDeleteScope?: string) {
+function mockKV(failDeleteScope?: string, failGetScope?: string) {
   const store = new Map<string, Map<string, unknown>>();
   return {
-    get: async <T>(scope: string, key: string): Promise<T | null> =>
-      (store.get(scope)?.get(key) as T) ?? null,
+    get: async <T>(scope: string, key: string): Promise<T | null> => {
+      if (scope === failGetScope) throw new Error("get failed");
+      return (store.get(scope)?.get(key) as T) ?? null;
+    },
     set: async <T>(scope: string, key: string, data: T): Promise<T> => {
       if (!store.has(scope)) store.set(scope, new Map());
       store.get(scope)!.set(key, data);
@@ -162,7 +167,7 @@ describe("getAutoForgetIntervalMs", () => {
     expect(stderr).not.toHaveBeenCalled();
   });
 
-  it.each(["1h", "60m", "abc", "0", "-5", "59999"])(
+  it.each(["1h", "60m", "abc", "0", "-5", "59999", "2592000e3", "2147483648"])(
     "falls back to the default with a warning for %s",
     (value) => {
       process.env.AUTO_FORGET_INTERVAL_MS = value;
@@ -191,7 +196,7 @@ describe("auto-forget timer overlap", () => {
 
 describe("image refs are released only after the memory delete succeeds", () => {
   beforeEach(() => {
-    vi.mocked(decrementImageRef).mockClear();
+    vi.mocked(deleteImage).mockClear();
     vi.mocked(logger.warn).mockClear();
   });
 
@@ -205,7 +210,7 @@ describe("image refs are released only after the memory delete succeeds", () => 
       makeMemory({ id: "mem_img", forgetAfter: "2020-01-01T00:00:00Z", imageRef: "/tmp/img.png" }),
     );
     await expect(sdk.trigger("mem::auto-forget", {})).rejects.toThrow("delete failed");
-    expect(decrementImageRef).not.toHaveBeenCalled();
+    expect(deleteImage).not.toHaveBeenCalled();
     expect(await kv.get("mem:memories", "mem_img")).not.toBeNull();
   });
 
@@ -219,7 +224,7 @@ describe("image refs are released only after the memory delete succeeds", () => 
       makeMemory({ id: "mem_img", forgetAfter: "2020-01-01T00:00:00Z", imageRef: "/tmp/img.png" }),
     );
     await sdk.trigger("mem::auto-forget", {});
-    expect(decrementImageRef).toHaveBeenCalledTimes(1);
+    expect(deleteImage).toHaveBeenCalledWith("/tmp/img.png");
     expect(await kv.get("mem:memories", "mem_img")).toBeNull();
   });
 
@@ -246,11 +251,57 @@ describe("image refs are released only after the memory delete succeeds", () => 
       payload: { threshold: 1, dryRun: false },
     })) as { evicted: number };
     expect(result.evicted).toBe(0);
-    expect(decrementImageRef).not.toHaveBeenCalled();
+    expect(deleteImage).not.toHaveBeenCalled();
     expect(await kv.get("mem:memories", "mem_img")).not.toBeNull();
     expect(logger.warn).toHaveBeenCalledWith(
       "Retention delete failed",
       expect.objectContaining({ id: "mem_img" }),
+    );
+  });
+
+  it("auto-forget TTL finishes cleanup when the image release fails", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV(undefined, "mem:image-refs");
+    registerAutoForgetFunction(sdk as never, kv as never);
+    const mem = makeMemory({ id: "mem_img", forgetAfter: "2020-01-01T00:00:00Z", imageRef: "/tmp/img.png" });
+    await kv.set("mem:memories", "mem_img", mem);
+    getSearchIndex().add(memoryToObservation(mem), "memory");
+    await sdk.trigger("mem::auto-forget", {});
+    expect(await kv.get("mem:memories", "mem_img")).toBeNull();
+    expect(getSearchIndex().has("mem_img")).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Image reference release failed after memory delete",
+      expect.objectContaining({ memoryId: "mem_img", imageRef: "/tmp/img.png" }),
+    );
+  });
+
+  it("retention eviction finishes cleanup when the image release fails", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV(undefined, "mem:image-refs");
+    registerRetentionFunctions(sdk as never, kv as never);
+    const created = new Date(Date.now() - 500 * 24 * 60 * 60 * 1000).toISOString();
+    const mem = makeMemory({
+      id: "mem_img",
+      type: "fact",
+      createdAt: created,
+      updatedAt: created,
+      strength: 1,
+      imageRef: "/tmp/img.png",
+    });
+    await kv.set("mem:memories", "mem_img", mem);
+    getSearchIndex().add(memoryToObservation(mem), "memory");
+    await sdk.trigger({ function_id: "mem::retention-score", payload: {} });
+    const result = (await sdk.trigger({
+      function_id: "mem::retention-evict",
+      payload: { threshold: 1, dryRun: false },
+    })) as { evicted: number };
+    expect(result.evicted).toBe(1);
+    expect(await kv.get("mem:memories", "mem_img")).toBeNull();
+    expect(await kv.get("mem:retention", "mem_img")).toBeNull();
+    expect(getSearchIndex().has("mem_img")).toBe(false);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Image reference release failed after memory delete",
+      expect.objectContaining({ memoryId: "mem_img" }),
     );
   });
 });
