@@ -497,6 +497,35 @@ describe("doctor v2 diagnostic catalog", () => {
     expect(check.moreInfo).toContain("Docker");
   });
 
+  it("worker-not-connected keeps the selected port in the recovery command", async () => {
+    const diagnostics = buildDiagnostics(stubEffects({ workerConnection: async () => "engine-only" }));
+    const check = diagnostics.find((d) => d.id === "worker-not-connected")!;
+    const startCommand = "npx -y @agentmemory/agentmemory@latest --port 4111";
+    const status = await check.check({ ...stubCtx(), baseUrl: "http://localhost:4111", startCommand });
+    expect(status.manualFix).toContain(`start agentmemory with: ${startCommand}.`);
+    expect(failureReport(check, status).fix).toContain("--port 4111");
+  });
+
+  it("worker-not-connected points a managed Compose engine at the Compose failure report", async () => {
+    const diagnostics = buildDiagnostics(stubEffects({ workerConnection: async () => "managed-worker-down" }));
+    const check = diagnostics.find((d) => d.id === "worker-not-connected")!;
+    const status = await check.check(stubCtx());
+    expect(status.ok).toBe(false);
+    expect(status.detail).toContain("managed Worker Compose");
+    expect(status.manualFix).toContain("agentmemory status");
+    expect(status.manualFix).not.toContain("Stop the process");
+  });
+
+  it("worker-not-connected does not call an unrecognized service an engine", async () => {
+    const diagnostics = buildDiagnostics(stubEffects({ workerConnection: async () => "unrecognized" }));
+    const check = diagnostics.find((d) => d.id === "worker-not-connected")!;
+    const status = await check.check(stubCtx());
+    expect(status.ok).toBe(false);
+    expect(status.detail).toContain("iii engine port does not answer");
+    expect(status.manualFix).toContain("AGENTMEMORY_URL");
+    expect(status.manualFix).not.toContain("Stop the process");
+  });
+
   it("worker-not-connected passes when the worker answers or the server is down", async () => {
     for (const connection of ["connected", "unreachable"] as const) {
       const diagnostics = buildDiagnostics(stubEffects({ workerConnection: async () => connection }));

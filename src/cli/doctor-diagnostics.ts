@@ -24,7 +24,7 @@ import {
   llmOptInHint,
   parseEnvContent,
 } from "../config.js";
-import { ENGINE_ONLY_DOCKER_GUIDE, ENGINE_ONLY_FIX, type WorkerConnection } from "./worker-connection.js";
+import { DEFAULT_START_COMMAND, ENGINE_ONLY_DOCKER_GUIDE, engineOnlyFix, UNRECOGNIZED_SERVICE_FIX, type WorkerConnection } from "./worker-connection.js";
 
 export type DiagnosticStatus = {
   ok: boolean;
@@ -51,7 +51,10 @@ export type DoctorContext = {
   enginePath: string;
   /** Pinned engine version. */
   pinnedVersion: string;
+  startCommand?: string;
 };
+
+export type DoctorWorkerConnection = WorkerConnection | "managed-worker-down";
 
 export type Diagnostic = {
   /** Stable id. Used in --json and tests. */
@@ -152,7 +155,7 @@ export type DoctorEffects = {
   /** Run `iii --version`; null if it fails. */
   iiiBinaryVersion: (binPath: string) => string | null;
   externalEngineRunning: () => Promise<boolean>;
-  workerConnection: () => Promise<WorkerConnection>;
+  workerConnection: () => Promise<DoctorWorkerConnection>;
   /** Probe the viewer URL; true if it returns OK within timeoutMs. */
   viewerReachable: (timeoutMs?: number) => Promise<boolean>;
   /** Run init logic (copies .env.example). */
@@ -302,7 +305,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     {
       id: "worker-not-connected",
       message: "The iii engine is running, but the agentmemory worker is not connected to it.",
-      fixPreview: ENGINE_ONLY_FIX,
+      fixPreview: engineOnlyFix(),
       moreInfo:
         "The REST port answers, but /agentmemory/livez and /agentmemory/health return 404. " +
         "Only the agentmemory worker registers those routes, so the engine runs alone: status shows " +
@@ -312,13 +315,32 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
       manualOnly: true,
       check: async (ctx) => {
         const connection = await effects.workerConnection();
+        const startCommand = ctx.startCommand ?? DEFAULT_START_COMMAND;
         if (connection === "engine-only") {
-          return { ok: false, detail: `engine at ${ctx.baseUrl} has no agentmemory routes (404)` };
+          return {
+            ok: false,
+            detail: `engine at ${ctx.baseUrl} has no agentmemory routes (404)`,
+            manualFix: engineOnlyFix(startCommand),
+          };
+        }
+        if (connection === "managed-worker-down") {
+          return {
+            ok: false,
+            detail: `managed Worker Compose engine at ${ctx.baseUrl} has no agentmemory routes (404)`,
+            manualFix: `Run agentmemory status to see the Worker Compose failure report, then run agentmemory stop and start again with: ${startCommand}.`,
+          };
+        }
+        if (connection === "unrecognized") {
+          return {
+            ok: false,
+            detail: `server at ${ctx.baseUrl} returns 404 for the agentmemory routes and the iii engine port does not answer`,
+            manualFix: UNRECOGNIZED_SERVICE_FIX,
+          };
         }
         if (connection === "unreachable") return { ok: true, detail: "server not reachable (see Server reachable)" };
         return { ok: true };
       },
-      fix: async () => ({ ok: false, message: ENGINE_ONLY_FIX }),
+      fix: async (ctx) => ({ ok: false, message: engineOnlyFix(ctx.startCommand) }),
     },
     {
       id: "viewer-unreachable",
@@ -388,7 +410,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     {
       id: "iii-on-path-not-local-bin",
       message:
-        "agentmemory's own iii at ~/.agentmemory/bin/iii is missing or a different version, so an iii on your PATH is used instead.",
+        "agentmemory's own iii at ~/.agentmemory/bin/iii is missing or a different version, and another iii is on your PATH.",
       fixPreview:
         "Run npx -y @agentmemory/agentmemory@latest. It installs the pinned iii to ~/.agentmemory/bin/iii and does not change your PATH or the other iii.",
       moreInfo:
