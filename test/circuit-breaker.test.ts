@@ -234,4 +234,49 @@ describe("CircuitBreaker", () => {
     expect(cb.getState().state).toBe("open");
     expect(cb.isAllowed).toBe(false);
   });
+
+  function openAndExpireFirstProbe() {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    const first = cb.admit();
+    vi.advanceTimersByTime(30_000);
+    const second = cb.admit();
+    return { cb, first: first!, second: second! };
+  }
+
+  it("ignores a late failure from an expired probe while its replacement runs", () => {
+    const { cb, first, second } = openAndExpireFirstProbe();
+    expect(second).toBeGreaterThan(first);
+    cb.recordFailure(first);
+    expect(cb.getState().state).toBe("half-open");
+    cb.recordSuccess(second);
+    expect(cb.getState().state).toBe("closed");
+  });
+
+  it("ignores a late success from an expired probe", () => {
+    const { cb, first, second } = openAndExpireFirstProbe();
+    cb.recordSuccess(first);
+    expect(cb.getState().state).toBe("half-open");
+    expect(cb.admit()).toBeNull();
+    cb.recordFailure(second);
+    expect(cb.getState().state).toBe("open");
+  });
+
+  it("ignores an expired probe outcome after the current probe closed the breaker", () => {
+    const { cb, first, second } = openAndExpireFirstProbe();
+    cb.recordSuccess(second);
+    cb.recordFailure(first);
+    cb.recordFailure(first);
+    cb.recordFailure(first);
+    expect(cb.getState()).toMatchObject({ state: "closed", failures: 0 });
+  });
+
+  it("counts closed-state call outcomes as before", () => {
+    const cb = new CircuitBreaker();
+    for (let i = 0; i < 3; i++) cb.recordFailure(cb.admit()!);
+    expect(cb.getState().state).toBe("open");
+  });
 });
