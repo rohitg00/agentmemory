@@ -7,7 +7,7 @@ import type { SessionSummary, Memory, Session } from "../types.js";
 import { getAllTools, getVisibleTools } from "./tools-registry.js";
 import { parseSearchExpansionIds } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
-import { normalizeRememberFields, normalizeStringList as parseCsvList } from "./remember-arguments.js";
+import { normalizeRememberFields, normalizeStringList as parseCsvList, rememberFieldsError } from "./remember-arguments.js";
 import { isSearchLayer } from "../state/search-layer.js";
 import { insightHttpResponse } from "../state/insight-response.js";
 import { checkAuth, slotsDisabledResponse } from "../triggers/api.js";
@@ -161,6 +161,8 @@ export function registerMcpEndpoints(
                 body: { error: "content is required for memory_save" },
               };
             }
+            const fieldError = rememberFieldsError(args);
+            if (fieldError) return { status_code: 400, body: { error: fieldError } };
             const type = (args.type as string) || "fact";
 
             const project =

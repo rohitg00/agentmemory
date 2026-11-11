@@ -9,17 +9,18 @@ import { registerApiTriggers } from "../src/triggers/api.js";
 import { handleToolCall } from "../src/mcp/standalone.js";
 import { resetHandleForTests } from "../src/mcp/rest-proxy.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
-import { normalizeRememberFields } from "../src/mcp/remember-arguments.js";
+import { normalizeRememberFields, rememberFieldsError, TTL_TOO_LARGE, ttlExpiry } from "../src/mcp/remember-arguments.js";
 import { getAllTools } from "../src/mcp/tools-registry.js";
 import { mockKV, mockSdk as rememberSdk } from "./helpers/mocks.js";
 
 type Payload = Record<string, unknown>;
+type Response = { status_code: number; body: Record<string, unknown> };
 
 function captureSdk() {
-  const functions = new Map<string, (req: unknown) => Promise<any>>();
+  const functions = new Map<string, (req: unknown) => Promise<Response>>();
   const payloads: Payload[] = [];
   return {
-    registerFunction: (id: string | { id: string }, handler: (req: unknown) => Promise<any>) => {
+    registerFunction: (id: string | { id: string }, handler: (req: unknown) => Promise<Response>) => {
       functions.set(typeof id === "string" ? id : id.id, handler);
     },
     registerTrigger: () => {},
@@ -180,5 +181,94 @@ describe("memory_save arguments across surfaces", () => {
     const props = tool.inputSchema.properties as Record<string, { type: string; items?: { type: string } }>;
     expect(props["ttlDays"]).toMatchObject({ type: "number" });
     expect(props["sourceObservationIds"]).toMatchObject({ type: "array", items: { type: "string" } });
+  });
+});
+
+describe("memory_save argument validation", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    resetHandleForTests();
+    globalThis.fetch = originalFetch;
+    delete process.env["AGENTMEMORY_URL"];
+  });
+
+  const invalid: Array<[Payload, string]> = [
+    [{ sourceObservationIds: "obs_1" }, "sourceObservationIds must be an array"],
+    [{ concepts: 5 }, "concepts must be a comma-separated string or an array of strings"],
+    [{ files: ["src/a.ts", 3] }, "files must be a comma-separated string or an array of strings"],
+    [{ ttlDays: 1e9 }, TTL_TOO_LARGE],
+  ];
+
+  it("reports invalid list fields and unrepresentable ttlDays", () => {
+    for (const [fields, error] of invalid) expect(rememberFieldsError(fields)).toBe(error);
+    expect(rememberFieldsError({ concepts: "auth, jwt", files: ["src/a.ts"], sourceObservationIds: ["obs_1"], ttlDays: 0.5 })).toBeUndefined();
+    expect(ttlExpiry(1e9)).toBeNull();
+    expect(ttlExpiry(0.5, 0)).toBe(new Date(43_200_000).toISOString());
+  });
+
+  it("rejects invalid fields with 400 on REST and MCP without calling mem::remember", async () => {
+    for (const [fields, error] of invalid) {
+      const body = { content: "deploy decision", ...fields };
+      const rest = captureSdk();
+      registerApiTriggers(rest as never, kvStub as never);
+      const restRes = await rest.fn("api::remember")({ method: "POST", headers: { "content-type": "application/json" }, body });
+      expect(restRes).toEqual({ status_code: 400, body: { error } });
+      expect(rest.payloads).toHaveLength(0);
+      const mcp = captureSdk();
+      registerMcpEndpoints(mcp as never, kvStub as never);
+      const mcpRes = await mcp.fn("mcp::tools::call")({ headers: {}, body: { name: "memory_save", arguments: body } });
+      expect(mcpRes).toEqual({ status_code: 400, body: { error } });
+      expect(mcp.payloads).toHaveLength(0);
+    }
+  });
+
+  it("rejects invalid fields in the standalone server before saving", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    const localKv = new InMemoryKV(undefined);
+    for (const [fields, error] of invalid) {
+      await expect(handleToolCall("memory_save", { content: "deploy decision", ...fields }, localKv)).rejects.toThrow(error);
+    }
+    expect(await localKv.list("mem:memories")).toEqual([]);
+  });
+
+  it("mem::remember refuses a ttlDays whose expiry cannot be represented", async () => {
+    vi.resetModules();
+    const { registerRememberFunction } = await import("../src/functions/remember.js");
+    const sdk = rememberSdk({ looseTrigger: true });
+    registerRememberFunction(sdk as never, mockKV() as never);
+    expect(await sdk.trigger("mem::remember", { content: "temporary note", ttlDays: 1e9 })).toEqual({ success: false, error: TTL_TOO_LARGE });
+  });
+});
+
+describe("standalone local fallback expiry", () => {
+  const originalFetch = globalThis.fetch;
+
+  afterEach(() => {
+    vi.useRealTimers();
+    resetHandleForTests();
+    globalThis.fetch = originalFetch;
+  });
+
+  it("hides and prunes memories whose forgetAfter has passed", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    const localKv = new InMemoryKV(undefined);
+    vi.useFakeTimers({ now: new Date("2026-11-01T00:00:00Z"), toFake: ["Date"] });
+    await handleToolCall("memory_save", { content: "temporary note", ttlDays: 0.001 }, localKv);
+    await handleToolCall("memory_save", { content: "permanent note" }, localKv);
+    const recall = async () => JSON.parse((await handleToolCall("memory_recall", { query: "note" }, localKv)).content[0].text);
+    expect(JSON.stringify(await recall())).toContain("temporary note");
+    vi.setSystemTime(new Date("2026-11-01T00:05:00Z"));
+    const after = JSON.stringify(await recall());
+    expect(after).toContain("permanent note");
+    expect(after).not.toContain("temporary note");
+    const smart = JSON.stringify(JSON.parse((await handleToolCall("memory_smart_search", { query: "note" }, localKv)).content[0].text));
+    expect(smart).not.toContain("temporary note");
+    const stored = await localKv.list<{ content: string }>("mem:memories");
+    expect(stored.map((memory) => memory.content)).toEqual(["permanent note"]);
   });
 });

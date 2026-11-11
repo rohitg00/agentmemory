@@ -10,7 +10,7 @@ import { memoryToObservation } from "../state/memory-utils.js";
 import { buildRecallResponse } from "../functions/recall-response.js";
 import { parseSearchExpansionIds, type SearchExpansionId } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
-import { normalizeRememberFields, normalizeStringList } from "./remember-arguments.js";
+import { normalizeRememberFields, normalizeStringList, rememberFieldsError, ttlExpiry } from "./remember-arguments.js";
 import { pageAfterCursor, sortByKeyDesc } from "../state/list-query.js";
 import type { Memory, SearchResult, Session } from "../types.js";
 import { VERSION } from "../version.js";
@@ -138,6 +138,8 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.content = content;
       v.type = (args["type"] as string) || "fact";
+      const fieldError = rememberFieldsError(args);
+      if (fieldError) throw new Error(fieldError);
       Object.assign(v, normalizeRememberFields(args));
       // The tool schema exposes project (and now agentId); dropping them
       // here silently broke project/agent scoping through the stdio
@@ -332,6 +334,15 @@ function localFallbackNotice(persisted: boolean) {
   };
 }
 
+async function liveLocalMemories(kvInstance: InMemoryKV, now = Date.now()): Promise<Memory[]> {
+  const memories = await kvInstance.list<Memory>("mem:memories");
+  const expired = memories.filter((memory) => memory.forgetAfter && Date.parse(memory.forgetAfter) <= now);
+  if (expired.length === 0) return memories;
+  for (const memory of expired) await kvInstance.delete("mem:memories", memory.id);
+  kvInstance.persist();
+  return memories.filter((memory) => !expired.includes(memory));
+}
+
 async function handleLocal(
   v: Validated,
   kvInstance: InMemoryKV,
@@ -353,9 +364,7 @@ async function handleLocal(
         version: 1,
         isLatest: true,
         sessionIds: [],
-        ...(v.ttlDays !== undefined && {
-          forgetAfter: new Date(Date.now() + v.ttlDays * 86400000).toISOString(),
-        }),
+        ...(v.ttlDays !== undefined && { forgetAfter: ttlExpiry(v.ttlDays) ?? undefined }),
         ...(v.sourceObservationIds !== undefined && { sourceObservationIds: v.sourceObservationIds }),
         ...(v.project !== undefined && { project: v.project }),
         ...((v.agentId ?? getAgentId()) !== undefined && { agentId: v.agentId ?? getAgentId() }),
@@ -373,7 +382,7 @@ async function handleLocal(
       }
       const query = (v.query || "").toLowerCase();
       const limit = v.limit ?? DEFAULT_LIMIT;
-      const all = v.targetLayer === "observation" ? [] : await kvInstance.list<Memory>("mem:memories");
+      const all = v.targetLayer === "observation" ? [] : await liveLocalMemories(kvInstance);
       const sessions = v.project || v.cwd ? await kvInstance.list<Session>("mem:sessions") : [];
       const sessionsById = new Map(sessions.map((session) => [session.id, session]));
       const scoped = all.filter((memory) => {
@@ -448,7 +457,7 @@ async function handleLocal(
     }
 
     case "memory_export": {
-      const memories = await kvInstance.list("mem:memories");
+      const memories = await liveLocalMemories(kvInstance);
       const sessions = await kvInstance.list("mem:sessions");
       return textResponse({ version: VERSION, memories, sessions }, true);
     }
