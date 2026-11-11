@@ -12,9 +12,11 @@ import { DedupMap, recordDedupSkip } from "./dedup.js";
 import { afterKeyedLock, withKeyedLock } from "../state/keyed-mutex.js";
 import { getFinalizeIdleMs, isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
-import { isCaptureKey } from "../capture/event-record.js";
+import { isCaptureKey, markCaptureEventDeleted } from "../capture/event-record.js";
 import { claimBackfillPrompt, isBackfillPrompt, recordLivePrompt } from "../capture/prompt-ledger.js";
 import { getSearchIndex, getVectorIndex, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove } from "./search.js";
+import { unindexObservationSession } from "../state/obs-index.js";
+import { safeAudit } from "./audit.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
@@ -25,8 +27,74 @@ import { markCompressionDispatchFailed, pendingCompression } from "./compression
 import { requestSummaryRefresh } from "./summary-state.js";
 import { scheduleSessionFinalize } from "./session-finalize.js";
 
-/** Importance assumed for an observation that has not been compressed yet. */
-const DEFAULT_EVICTION_IMPORTANCE = 3;
+const DEFAULT_EVICTION_IMPORTANCE = 5;
+
+function byEvictionOrder(a: CompressedObservation, b: CompressedObservation): number {
+  const ia = a.importance ?? DEFAULT_EVICTION_IMPORTANCE;
+  const ib = b.importance ?? DEFAULT_EVICTION_IMPORTANCE;
+  if (ia !== ib) return ia - ib;
+  return new Date(a.timestamp ?? 0).getTime() - new Date(b.timestamp ?? 0).getTime();
+}
+
+async function evictForSessionCap(
+  sdk: IIIClient,
+  kv: StateKV,
+  sessionId: string,
+  incomingId: string,
+  existing: CompressedObservation[],
+  cap: number,
+): Promise<{ evicted: CompressedObservation[]; needed: number }> {
+  const needed = existing.length - cap + 1;
+  const candidates = existing.filter((o) => o?.id && o.id !== incomingId).sort(byEvictionOrder);
+  const evicted: CompressedObservation[] = [];
+  for (const victim of candidates) {
+    if (evicted.length >= needed) break;
+    try {
+      await markCaptureEventDeleted(kv, victim);
+      await kv.delete(KV.observations(sessionId), victim.id);
+    } catch (err) {
+      logger.warn("Session cap eviction delete failed", {
+        sessionId,
+        obsId: victim.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
+    evicted.push(victim);
+    getSearchIndex().remove(victim.id);
+    vectorIndexRemove(victim.id);
+  }
+  if (evicted.length === 0) return { evicted, needed };
+
+  scheduleIndexSave();
+  const { decrementImageRef } = await import("./image-refs.js");
+  for (const victim of evicted) {
+    await unindexObservationSession(kv, victim.id).catch(() => {});
+    const refs = new Set([victim.imageData, victim.imageRef].filter((r): r is string => typeof r === "string" && r.length > 0));
+    for (const ref of refs) {
+      await decrementImageRef(kv, sdk, ref).catch((err) => {
+        logger.warn("Session cap eviction image ref release failed", {
+          sessionId,
+          obsId: victim.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
+  }
+  await safeAudit(kv, "delete", "mem::observe", evicted.map((o) => o.id), {
+    resource: "observation",
+    reason: "session_observation_cap",
+    sessionId,
+    cap,
+    evicted: evicted.length,
+  });
+  logger.warn("Session observation cap reached, evicted lowest-value observations", {
+    sessionId,
+    cap,
+    evicted: evicted.length,
+  });
+  return { evicted, needed };
+}
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -190,7 +258,7 @@ export function registerObserveFunction(
       const promptRef = durable || typeof payload.eventId !== "string" ? obsId : payload.eventId;
 
       return withKeyedLock(`obs:${payload.sessionId}`, async () => {
-        const existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
+        let existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
         const stored = durable ? existing.find((o) => o?.id === obsId) : undefined;
         if (stored) {
           if (livePrompt) await recordLivePrompt(kv, payload.sessionId, livePrompt, promptRef);
@@ -201,45 +269,22 @@ export function registerObserveFunction(
           recordDedupSkip();
           return { deduplicated: true, sessionId: payload.sessionId };
         }
-        if (maxObservationsPerSession && maxObservationsPerSession > 0) {
-          if (existing.length >= maxObservationsPerSession) {
-            // Refusing the write silently drops the NEWEST observations of the
-            // longest sessions — exactly the part worth keeping. Evict the
-            // lowest-value rows instead so capture keeps working inside the
-            // same bound. Least valuable first: lowest importance, then oldest.
-            const victims = [...existing]
-              .sort((a, b) => {
-                const ia = a.importance ?? DEFAULT_EVICTION_IMPORTANCE;
-                const ib = b.importance ?? DEFAULT_EVICTION_IMPORTANCE;
-                if (ia !== ib) return ia - ib;
-                return (
-                  new Date(a.timestamp ?? 0).getTime() -
-                  new Date(b.timestamp ?? 0).getTime()
-                );
-              })
-              .slice(0, existing.length - maxObservationsPerSession + 1);
-
-            let evicted = 0;
-            for (const victim of victims) {
-              try {
-                await kv.delete(KV.observations(payload.sessionId), victim.id);
-                evicted++;
-                getSearchIndex().remove(victim.id);
-                vectorIndexRemove(victim.id);
-              } catch {
-                // A failed delete just leaves the cap tight for this write;
-                // the next observation retries the eviction.
-              }
-            }
-
-            logger.warn(
-              "Session observation cap reached — evicted lowest-value observations",
-              {
-                sessionId: payload.sessionId,
-                cap: maxObservationsPerSession,
-                evicted,
-              },
-            );
+        if (maxObservationsPerSession && maxObservationsPerSession > 0 && existing.length >= maxObservationsPerSession) {
+          const { evicted, needed } = await evictForSessionCap(
+            sdk,
+            kv,
+            payload.sessionId,
+            obsId,
+            existing,
+            maxObservationsPerSession,
+          );
+          const evictedIds = new Set(evicted.map((o) => o.id));
+          existing = existing.filter((o) => !evictedIds.has(o?.id));
+          if (evicted.length < needed) {
+            return {
+              success: false,
+              error: `Session observation limit reached (${maxObservationsPerSession}) and eviction freed ${evicted.length} of ${needed} slots`,
+            };
           }
         }
 
