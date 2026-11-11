@@ -145,6 +145,8 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
                 older.isLatest = false;
                 older.updatedAt = supersededAt(older.updatedAt, new Date().toISOString());
                 await kv.set(KV.memories, older.id, older);
+                getSearchIndex().remove(older.id);
+                vectorIndexRemove(older.id);
                 await recordAudit(kv, "forget", "mem::auto-forget", [older.id], {
                   resource: "memory",
                   reason: "auto-forget contradiction",
@@ -211,7 +213,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
         }
       }
 
-      if (!dryRun && (result.ttlExpired.length > 0 || result.lowValueObs.length > 0)) {
+      if (!dryRun && (result.ttlExpired.length > 0 || result.lowValueObs.length > 0 || result.contradictions.length > 0)) {
         await flushIndexSave();
       }
 
