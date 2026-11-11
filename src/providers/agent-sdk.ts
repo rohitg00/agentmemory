@@ -74,8 +74,11 @@ export class AgentSDKProvider implements MemoryProvider {
             // loads the host's settings, plugins and their hooks, MCP servers,
             // skills and built-in tool schemas (tens of thousands of prompt
             // tokens per call) and writes a transcript under ~/.claude/projects.
+            // settingSources: [] already keeps user, project and plugin MCP
+            // servers out. strictMcpConfig is left off on purpose: the CLI
+            // refuses to start with it when an organization's managed-mcp.json
+            // is present, and that file's servers load regardless.
             settingSources: [],
-            strictMcpConfig: true,
             tools: [],
             skills: [],
             persistSession: false,

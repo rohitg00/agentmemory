@@ -52,11 +52,16 @@ describe("AgentSDKProvider child session isolation", () => {
       systemPrompt: "sys",
       maxTurns: 1,
       settingSources: [],
-      strictMcpConfig: true,
       tools: [],
       skills: [],
       persistSession: false,
     });
+  });
+
+  it("does not request strict MCP mode, which the CLI refuses when an enterprise managed-mcp.json exists", async () => {
+    await new AgentSDKProvider().summarize("sys", "user");
+
+    expect(state.queryCalls[0].options).not.toHaveProperty("strictMcpConfig");
   });
 
   it("isolates compress calls the same way as summarize calls", async () => {
@@ -64,7 +69,6 @@ describe("AgentSDKProvider child session isolation", () => {
 
     expect(state.queryCalls[0].options).toMatchObject({
       settingSources: [],
-      strictMcpConfig: true,
       tools: [],
       skills: [],
       persistSession: false,
