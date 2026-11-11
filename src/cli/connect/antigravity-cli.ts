@@ -53,10 +53,10 @@ export function windowsShortPath(path: string): string | null {
         "-NoProfile",
         "-NonInteractive",
         "-Command",
-        "(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:AGENTMEMORY_LONG_PATH).ShortPath",
+        "(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:AGENTMEMORY_LONG_PATH__).ShortPath",
       ],
       {
-        env: { ...process.env, AGENTMEMORY_LONG_PATH: path },
+        env: { ...process.env, AGENTMEMORY_LONG_PATH__: path },
         encoding: "utf-8",
         stdio: ["ignore", "pipe", "ignore"],
         timeout: 15_000,
