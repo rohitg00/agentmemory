@@ -405,7 +405,7 @@ async function findObservation(
   sessionIdHint?: string,
 ): Promise<{ observation: CompressedObservation; layer: SearchResultLayer } | null> {
   const memory = await kv.get<Memory>(KV.memories, obsId);
-  if (memory) return { observation: memoryToObservation(memory), layer: "memory" };
+  if (memory && memory.isLatest !== false) return { observation: memoryToObservation(memory), layer: "memory" };
 
   if (sessionIdHint) {
     const obs = await kv
