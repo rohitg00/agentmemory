@@ -34,7 +34,7 @@ function hasPackage(config: Record<string, unknown>, configDir: string, target: 
 }
 
 export const adapter: ConnectAdapter = {
-  name: "pi", displayName: "Pi", category: "native",
+  name: "pi", displayName: "Pi", category: "native", autoCapture: "built-in",
   docs: "https://github.com/rohitg00/agentmemory/tree/main/integrations/pi",
   protocolNote: "Installs native recall, capture and skills. Add --with-mcp for the full memory toolset.",
   detect: () => existsSync(agentDir()) || existsSync(join(homedir(), ".pi")),

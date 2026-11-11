@@ -64,6 +64,7 @@ export const adapter: ConnectAdapter = {
   name: "codex",
   displayName: "Codex CLI",
   category: "native",
+  autoCapture: "plugin-or-with-hooks",
   docs: "https://github.com/rohitg00/agentmemory#codex-cli-codex-plugin-platform",
   protocolNote:
     "→ Using MCP. Hooks ship via the Codex plugin; on Codex Desktop, also pass --with-hooks to install the global hooks.json workaround.",

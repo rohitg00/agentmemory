@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import * as p from "@clack/prompts";
-import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
+import type { AutoCapture, ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
   backupFile,
@@ -23,6 +23,7 @@ export type JsonMcpAdapterConfig = {
   // JSON MCP config writer is MCP-only by construction; hosts that also
   // ship hooks (e.g. OpenClaw) pass "native".
   category?: "native" | "mcp";
+  autoCapture?: AutoCapture;
   // Wrapper key under which servers live. Default "mcpServers".
   // Zed uses "context_servers"; otherwise same shape.
   wrapperKey?: string;
@@ -47,10 +48,13 @@ export function createJsonMcpAdapter(
   config: JsonMcpAdapterConfig,
 ): ConnectAdapter {
   const wrapperKey = config.wrapperKey ?? "mcpServers";
+  const autoCapture: AutoCapture | undefined =
+    config.autoCapture ?? (config.installHooks ? "with-hooks" : undefined);
   return {
     name: config.name,
     displayName: config.displayName,
     category: config.category ?? "mcp",
+    ...(autoCapture !== undefined && { autoCapture }),
     ...(config.docs !== undefined && { docs: config.docs }),
     ...(config.protocolNote !== undefined && {
       protocolNote: config.protocolNote,

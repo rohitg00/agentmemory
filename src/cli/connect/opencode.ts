@@ -45,6 +45,7 @@ export const adapter: ConnectAdapter = {
   name: "opencode",
   displayName: "OpenCode",
   category: "mcp",
+  autoCapture: "plugin",
   docs: "https://github.com/rohitg00/agentmemory#other-agents",
   protocolNote:
     "Using MCP via ~/.config/opencode/opencode.json (top-level `mcp` key). For full auto-capture, also install the bundled plugin in plugin/opencode/.",

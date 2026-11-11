@@ -117,6 +117,35 @@ describe("evaluateStatus", () => {
     expect(problem?.fix).toMatch(/Restart agentmemory/);
   });
 
+  it("warns when no hook has ever reached the server", () => {
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 } }));
+    expect(codes(report)).toEqual(["no-hook-capture"]);
+    expect(report.status).toBe("warn");
+    const problem = report.problems[0];
+    expect(problem.message).toMatch(/nothing is captured automatically/);
+    expect(problem.message).toMatch(/memory_save/);
+    expect(problem.fix).toMatch(/--with-hooks/);
+  });
+
+  it("skips the no-hook warning while hook captures are in flight or the session count is unknown", () => {
+    const capture = {
+      policy: { maxAttempts: 5, retryIntervalMs: 10_000, dedupRetentionHours: 168, inboxMax: 10_000, deadMax: 1000, eventsMax: 100_000 },
+      inbox: { pending: 0, retrying: 0, dead: 0, oldestAcceptedAt: null, nextAttemptAt: null, lastError: null },
+      sinceStart: { accepted: 0, completed: 0, duplicates: 0, retried: 0, recovered: 0, deadLettered: 0, rejected: 0, pruned: 0 },
+      lastSweepAt: null,
+      lastPruneAt: null,
+      lastBootDrain: null,
+      spool: [],
+    } as unknown as NonNullable<StatusInputs["capture"]>;
+    const empty = { ...inputs().index, sessions: 0 };
+    expect(codes(evaluateStatus(inputs({ index: empty, capture })))).toContain("no-hook-capture");
+    const accepted = { ...capture, sinceStart: { ...capture.sinceStart, accepted: 2 } };
+    expect(codes(evaluateStatus(inputs({ index: empty, capture: accepted })))).not.toContain("no-hook-capture");
+    const pending = { ...capture, inbox: { ...capture.inbox!, pending: 1 } };
+    expect(codes(evaluateStatus(inputs({ index: empty, capture: pending })))).not.toContain("no-hook-capture");
+    expect(codes(evaluateStatus(inputs({ index: { ...empty, sessions: null } })))).not.toContain("no-hook-capture");
+  });
+
   it("notes when the index check timed out instead of claiming the index is fine", () => {
     const report = evaluateStatus(inputs({ index: { ...inputs().index, missingObservations: null, sessions: null } }));
     expect(codes(report)).toEqual(["index-check-unavailable"]);

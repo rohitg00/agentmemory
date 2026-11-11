@@ -50,6 +50,7 @@ export const adapter: ConnectAdapter = {
   name: "claude-code",
   displayName: "Claude Code",
   category: "native",
+  autoCapture: "plugin-or-with-hooks",
   docs: "https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it",
   protocolNote:
     "→ Using MCP. Hooks are also available — see https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it.",

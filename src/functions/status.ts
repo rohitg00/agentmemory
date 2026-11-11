@@ -487,6 +487,9 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
   problems.push(...captureProblems(input.capture ?? null, input.now, input.ports.rest));
+  if (input.index.sessions === 0 && !captureActivity(input.capture ?? null)) {
+    problems.push({ level: "warn", code: "no-hook-capture", ...NO_HOOK_CAPTURE });
+  }
 
   if (input.stateStore && !input.stateStore.ok) {
     problems.push({
@@ -553,6 +556,20 @@ export const CURL_AUTH_HEADER = '-H "Authorization: Bearer ${AGENTMEMORY_SECRET:
 
 export function captureRestBase(restPort: number | null): string {
   return `http://localhost:${restPort ?? 3111}/agentmemory`;
+}
+
+export const NO_HOOK_CAPTURE = {
+  message:
+    "No hook has reached this server yet: there are no sessions, so nothing is captured automatically. An agent connected with MCP only stores observations only when it calls memory_save.",
+  fix: "Install the agent's hooks: rerun npx @agentmemory/agentmemory connect <agent> --with-hooks, or install the agentmemory plugin for that agent. If you only just connected an agent, run one session and check again.",
+};
+
+function captureActivity(capture: CaptureStatus | null): boolean {
+  if (!capture) return false;
+  const inbox = capture.inbox;
+  const queued = inbox ? inbox.pending + inbox.retrying + inbox.dead : 0;
+  const spooled = capture.spool.reduce((n, s) => n + s.records, 0);
+  return capture.sinceStart.accepted > 0 || queued > 0 || spooled > 0;
 }
 
 function captureProblems(capture: CaptureStatus | null, now: Date, restPort: number | null): StatusProblem[] {

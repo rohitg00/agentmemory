@@ -22,6 +22,7 @@ export const adapter: ConnectAdapter = {
   name: "omp",
   displayName: "Oh My Pi",
   category: "native",
+  autoCapture: "built-in",
   docs: "https://github.com/rohitg00/agentmemory/tree/main/integrations/omp",
   protocolNote: "Installs native recall, capture and skills. Add --with-mcp for the full memory toolset.",
   detect: () => { try { const paths = ompPaths(); return existsSync(paths.agent) || existsSync(paths.root); } catch { return false; } },

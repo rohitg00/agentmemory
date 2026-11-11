@@ -100,6 +100,7 @@ export const adapter: ConnectAdapter = {
   protocolNote:
     "→ Using MCP via $DSH_HOME/cordis.patch.yml (the home-level patch layer every profile loads). Tools appear as mcp__agentmemory__*. Pass --with-hooks to also wire auto-capture with the bundled native DSH plugin.",
   category: "native",
+  autoCapture: "with-hooks",
   detect(): boolean {
     return existsSync(resolveDshHome());
   },
