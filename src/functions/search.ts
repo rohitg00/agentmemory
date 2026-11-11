@@ -14,6 +14,7 @@ import { buildRecallResponse, type RecallFormat } from "./recall-response.js";
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
 import { withoutObservationSource } from "./observation-source.js";
+import { withKeyedLocks } from "../state/keyed-mutex.js";
 import {
   getAgentId,
   getVectorBackfillMax,
@@ -200,6 +201,50 @@ const EMBED_MAX_CHARS = 16_000
 export function clipEmbedInput(text: string): string {
   if (text.length <= EMBED_MAX_CHARS) return text
   return text.slice(0, EMBED_MAX_CHARS)
+}
+
+export function unindexMemory(id: string): void {
+  try {
+    getSearchIndex().remove(id)
+  } catch {}
+  vectorIndexRemove(id)
+  scheduleIndexSave()
+}
+
+export async function indexMemory(kv: StateKV, memory: Memory): Promise<void> {
+  const locks = ["mem:remember", `mem:memory:${memory.id}`]
+  const snapshot = await withKeyedLocks(locks, async () => {
+    const current = await kv.get<Memory>(KV.memories, memory.id)
+    if (!current || current.isLatest === false) {
+      unindexMemory(memory.id)
+      return null
+    }
+    try {
+      getSearchIndex().add(memoryToObservation(current), "memory")
+      scheduleIndexSave()
+    } catch (err) {
+      logger.warn("Failed to index memory into BM25", {
+        memId: memory.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return current
+  })
+  if (!snapshot) return
+  const sessionId = snapshot.sessionIds?.[0] ?? "memory"
+  await vectorIndexAddGuarded(
+    memory.id,
+    sessionId,
+    observationEmbedText({ title: snapshot.title, narrative: snapshot.content, concepts: snapshot.concepts }),
+    { kind: "memory", logId: memory.id },
+    (embedding, isCurrent) => withKeyedLocks(locks, async () => {
+      const current = await kv.get<Memory>(KV.memories, memory.id).catch(() => null)
+      if (!isCurrent() || !current || current.isLatest === false || current.updatedAt !== snapshot.updatedAt) return false
+      vectorIndex?.add(memory.id, sessionId, embedding)
+      scheduleIndexSave()
+      return true
+    }),
+  )
 }
 
 export async function vectorIndexAddGuarded(
@@ -842,7 +887,8 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       // queries return underfilled pages when same-agent matches
       // rank lower than cross-agent ones in the hybrid score.
       const filtering = !!(projectFilter || cwdFilter || filterAgentId)
-      let fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
+      let fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : Math.max(effectiveLimit * 4, effectiveLimit + 20)
+      let hybridLimit = filtering ? fetchLimit : effectiveLimit
       // Hybrid results carry the observation the ranker already loaded,
       // so the load pass below doesn't refetch every record it just
       // enriched.
@@ -894,7 +940,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         hybridRequest.candidateCount = undefined
         if (useHybridRanker && hybridRanker) {
           try {
-            const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph, hybridRequest)
+            const hybrid = await hybridRanker(query, hybridLimit, targetLayer, authorizeGraph, hybridRequest)
             results = hybrid.map((r) => ({
               obsId: r.observation.id,
               sessionId: r.sessionId,
@@ -950,7 +996,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
                   const mem = await kv
                     .get<Memory>(KV.memories, r.obsId)
                     .catch(() => null)
-                  return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
+                  return mem && mem.isLatest !== false ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
                 })()
                 observationCache.set(key, pending)
               }
@@ -973,8 +1019,10 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
           }
           batchSize = Math.min(10, Math.max(effectiveLimit - enriched.length, batchSize * 2))
         }
-        if (!filtering || enriched.length >= effectiveLimit || (hybridRequest.candidateCount ?? results.length) < fetchLimit || fetchLimit >= MAX_CANDIDATES) break
+        const candidateLimit = useHybridRanker ? hybridLimit : fetchLimit
+        if (enriched.length >= effectiveLimit || (hybridRequest.candidateCount ?? results.length) < candidateLimit || fetchLimit >= MAX_CANDIDATES) break
         fetchLimit = Math.min(fetchLimit * 2, MAX_CANDIDATES)
+        hybridLimit = fetchLimit
       }
 
       const response = buildRecallResponse(enriched, format as RecallFormat, tokenBudget)

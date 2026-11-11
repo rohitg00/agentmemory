@@ -6,6 +6,7 @@ import { collectAll } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
+import { indexMemory } from "./search.js";
 import type {
   MeshPeer,
   Memory,
@@ -85,6 +86,7 @@ async function lwwMergeList<T extends { id: string }>(
   items: T[] | undefined,
   lockPrefix: string,
   tsField: "updatedAt" | "createdAt",
+  onWrite?: (item: T) => Promise<void>,
 ): Promise<number> {
   if (!items || !Array.isArray(items)) return 0;
   let count = 0;
@@ -105,7 +107,10 @@ async function lwwMergeList<T extends { id: string }>(
       }
       return false;
     });
-    if (wrote) count++;
+    if (wrote) {
+      count++;
+      if (onWrite) await onWrite(item);
+    }
   }
   return count;
 }
@@ -342,7 +347,7 @@ export function registerMeshFunction(
       }
       let accepted = 0;
 
-      accepted += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt");
+      accepted += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt", (memory) => indexMemory(kv, memory));
       accepted += await lwwMergeList(kv, KV.actions, data.actions, "mem:action", "updatedAt");
       accepted += await lwwMergeList(kv, KV.semantic, data.semantic, "mem:semantic", "updatedAt");
       accepted += await lwwMergeList(kv, KV.procedural, data.procedural, "mem:procedural", "updatedAt");
@@ -469,7 +474,7 @@ async function applySyncData(
   let applied = 0;
 
   if (scopes.includes("memories")) {
-    applied += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt");
+    applied += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt", (memory) => indexMemory(kv, memory));
   }
   if (scopes.includes("actions")) {
     applied += await lwwMergeList(kv, KV.actions, data.actions, "mem:action", "updatedAt");
