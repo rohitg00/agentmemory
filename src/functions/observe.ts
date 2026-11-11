@@ -258,7 +258,7 @@ export function registerObserveFunction(
       const promptRef = durable || typeof payload.eventId !== "string" ? obsId : payload.eventId;
 
       return withKeyedLock(`obs:${payload.sessionId}`, async () => {
-        let existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
+        const existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
         const stored = durable ? existing.find((o) => o?.id === obsId) : undefined;
         if (stored) {
           if (livePrompt) await recordLivePrompt(kv, payload.sessionId, livePrompt, promptRef);
@@ -268,24 +268,6 @@ export function registerObserveFunction(
         if (backfillPrompt && (await claimBackfillPrompt(kv, payload.sessionId, backfillPrompt, promptRef))) {
           recordDedupSkip();
           return { deduplicated: true, sessionId: payload.sessionId };
-        }
-        if (maxObservationsPerSession && maxObservationsPerSession > 0 && existing.length >= maxObservationsPerSession) {
-          const { evicted, needed } = await evictForSessionCap(
-            sdk,
-            kv,
-            payload.sessionId,
-            obsId,
-            existing,
-            maxObservationsPerSession,
-          );
-          const evictedIds = new Set(evicted.map((o) => o.id));
-          existing = existing.filter((o) => !evictedIds.has(o?.id));
-          if (evicted.length < needed) {
-            return {
-              success: false,
-              error: `Session observation limit reached (${maxObservationsPerSession}) and eviction freed ${evicted.length} of ${needed} slots`,
-            };
-          }
         }
 
         // Existing session is the source of truth for agentId (even
@@ -370,6 +352,27 @@ export function registerObserveFunction(
           throw error;
         }
 
+        let evictedCount = 0;
+        if (maxObservationsPerSession && maxObservationsPerSession > 0 && existing.length >= maxObservationsPerSession) {
+          const { evicted, needed } = await evictForSessionCap(
+            sdk,
+            kv,
+            payload.sessionId,
+            obsId,
+            existing,
+            maxObservationsPerSession,
+          );
+          evictedCount = evicted.length;
+          if (evicted.length < needed) {
+            logger.warn("Session observation cap eviction freed fewer slots than needed", {
+              sessionId: payload.sessionId,
+              cap: maxObservationsPerSession,
+              evicted: evicted.length,
+              needed,
+            });
+          }
+        }
+
         if (dedupMap && dedupHash) {
           dedupMap.record(dedupHash);
         }
@@ -388,7 +391,7 @@ export function registerObserveFunction(
             {
               type: "set",
               path: "observationCount",
-              value: (session.observationCount || 0) + 1,
+              value: Math.max(1, (session.observationCount || 0) + 1 - evictedCount),
             },
           ];
           if (session.status !== "active" && finalizeIdleMs > 0) {

@@ -212,20 +212,55 @@ describe("session observation cap evicts instead of refusing", () => {
     expect(removedFromBm25).toEqual(["obs_next"]);
   });
 
-  it("returns a cap error without writing or throwing when no row can be evicted", async () => {
+  it("keeps the incoming write and retries eviction later when no row can be evicted", async () => {
     const { sdk, kv } = await setup(1);
     await seed(kv, [{ id: "obs_stuck", importance: 1, ts: "2026-01-01T00:00:00.000Z" }]);
+    const realDelete = kv.delete.bind(kv);
     kv.delete = async () => {
       throw new Error("disk busy");
     };
 
     const result = await observeOnce(sdk, "cannot fit");
 
-    expect(result.success).toBe(false);
-    expect(result.observationId).toBeUndefined();
-    expect(result.error).toMatch(/^Session observation limit reached \(1\)/);
-    expect(storedIds(kv)).toEqual(["obs_stuck"]);
+    expect(typeof result.observationId).toBe("string");
+    expect(storedIds(kv).sort()).toEqual([result.observationId!, "obs_stuck"].sort());
     expect(removedFromBm25).toHaveLength(0);
+
+    kv.delete = realDelete;
+    const next = await observeOnce(sdk, "after recovery");
+
+    expect(storedIds(kv)).toEqual([next.observationId!]);
+  });
+
+  it("evicts nothing when the incoming write fails", async () => {
+    const { sdk, kv } = await setup(1);
+    await seed(kv, [{ id: "obs_keep", importance: 1, ts: "2026-01-01T00:00:00.000Z" }]);
+    const realSet = kv.set.bind(kv);
+    kv.set = (async (scope: string, key: string, value: unknown) => {
+      if (scope === SCOPE) throw new Error("write failed");
+      return realSet(scope, key, value);
+    }) as typeof kv.set;
+
+    await expect(observeOnce(sdk, "will fail")).rejects.toThrow("write failed");
+
+    expect(storedIds(kv)).toEqual(["obs_keep"]);
+    expect(removedFromBm25).toHaveLength(0);
+    expect(removedFromVector).toHaveLength(0);
+  });
+
+  it("keeps the session observation count equal to retained rows after eviction", async () => {
+    const { sdk, kv } = await setup(2);
+    await seed(kv, [
+      { id: "obs_a", importance: 1, ts: "2026-01-01T00:00:00.000Z" },
+      { id: "obs_b", importance: 5, ts: "2026-01-02T00:00:00.000Z" },
+    ]);
+    await kv.set("mem:sessions", SESSION, { id: SESSION, status: "active", observationCount: 2 });
+
+    await observeOnce(sdk, "third");
+
+    const session = await kv.get<{ observationCount: number }>("mem:sessions", SESSION);
+    expect(storedIds(kv)).toHaveLength(2);
+    expect(session?.observationCount).toBe(2);
   });
 
   it("keeps the cap when several observations arrive at once", async () => {
