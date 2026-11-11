@@ -115,7 +115,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::evict", 
     async (data: { dryRun?: boolean }): Promise<EvictionStats> => {
       const dryRun = data?.dryRun ?? false;
-      const { decrementImageRef } = await import("./image-refs.js");
+      const { releaseImageRef } = await import("./image-refs.js");
       let indexCleaned = false;
       const removeObservation = (
         sessionId: string,
@@ -271,8 +271,8 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 continue;
               }
               await unindexObservationSession(kv, o.id).catch(() => {});
-              if (removed.imageData) await decrementImageRef(kv, sdk, removed.imageData);
-              if (removed.imageRef && removed.imageRef !== removed.imageData) await decrementImageRef(kv, sdk, removed.imageRef);
+              if (removed.imageData) await releaseImageRef(kv, sdk, o.id, removed.imageData);
+              if (removed.imageRef && removed.imageRef !== removed.imageData) await releaseImageRef(kv, sdk, o.id, removed.imageRef);
               await recordAudit(kv, "delete", "mem::evict", [o.id], {
                 resource: "observation",
                 reason: "low_importance_old_observation",
@@ -319,8 +319,8 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 continue;
               }
               await unindexObservationSession(kv, o.id).catch(() => {});
-              if (removed.imageData) await decrementImageRef(kv, sdk, removed.imageData);
-              if (removed.imageRef && removed.imageRef !== removed.imageData) await decrementImageRef(kv, sdk, removed.imageRef);
+              if (removed.imageData) await releaseImageRef(kv, sdk, o.id, removed.imageData);
+              if (removed.imageRef && removed.imageRef !== removed.imageData) await releaseImageRef(kv, sdk, o.id, removed.imageRef);
               await recordAudit(kv, "delete", "mem::evict", [o.id], {
                 resource: "observation",
                 reason: "project_observation_cap",
@@ -362,7 +362,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 vectorIndexRemove(mem.id);
                 indexCleaned = true;
                 if (mem.imageRef) {
-                  await decrementImageRef(kv, sdk, mem.imageRef);
+                  await releaseImageRef(kv, sdk, mem.id, mem.imageRef);
                 }
                 await recordAudit(kv, "delete", "mem::evict", [mem.id], {
                   resource: "memory",
@@ -401,7 +401,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 vectorIndexRemove(mem.id);
                 indexCleaned = true;
                 if (mem.imageRef) {
-                  await decrementImageRef(kv, sdk, mem.imageRef);
+                  await releaseImageRef(kv, sdk, mem.id, mem.imageRef);
                 }
                 await recordAudit(kv, "delete", "mem::evict", [mem.id], {
                   resource: "memory",

@@ -31,7 +31,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
     async (data: { dryRun?: boolean }): Promise<AutoForgetResult> => {
       const dryRun = data?.dryRun ?? false;
       const now = Date.now();
-      const { decrementImageRef, releaseImageRef } = await import("./image-refs.js");
+      const { releaseImageRef } = await import("./image-refs.js");
 
       const result: AutoForgetResult = {
         ttlExpired: [],
@@ -197,9 +197,9 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
               }
               if (removed) {
                 await unindexObservationSession(kv, obs.id).catch(() => {});
-                if (removed.imageData) await decrementImageRef(kv, sdk, removed.imageData);
+                if (removed.imageData) await releaseImageRef(kv, sdk, obs.id, removed.imageData);
                 if (removed.imageRef && removed.imageRef !== removed.imageData) {
-                  await decrementImageRef(kv, sdk, removed.imageRef);
+                  await releaseImageRef(kv, sdk, obs.id, removed.imageRef);
                 }
                 await recordAudit(kv, "delete", "mem::auto-forget", [obs.id], {
                   resource: "observation",

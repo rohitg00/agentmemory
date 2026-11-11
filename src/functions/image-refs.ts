@@ -38,12 +38,12 @@ export async function decrementImageRef(kv: StateKV, sdk: IIIClient, filePath: s
   });
 }
 
-export async function releaseImageRef(kv: StateKV, sdk: IIIClient, memoryId: string, filePath: string): Promise<void> {
+export async function releaseImageRef(kv: StateKV, sdk: IIIClient, ownerId: string, filePath: string): Promise<void> {
   try {
     await decrementImageRef(kv, sdk, filePath);
   } catch (err) {
-    logger.warn("Image reference release failed after memory delete", {
-      memoryId,
+    logger.warn("Image reference release failed after delete", {
+      ownerId,
       imageRef: filePath,
       error: err instanceof Error ? err.message : String(err),
     });

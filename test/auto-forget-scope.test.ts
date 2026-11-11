@@ -270,8 +270,8 @@ describe("image refs are released only after the memory delete succeeds", () => 
     expect(await kv.get("mem:memories", "mem_img")).toBeNull();
     expect(getSearchIndex().has("mem_img")).toBe(false);
     expect(logger.warn).toHaveBeenCalledWith(
-      "Image reference release failed after memory delete",
-      expect.objectContaining({ memoryId: "mem_img", imageRef: "/tmp/img.png" }),
+      "Image reference release failed after delete",
+      expect.objectContaining({ ownerId: "mem_img", imageRef: "/tmp/img.png" }),
     );
   });
 
@@ -300,8 +300,8 @@ describe("image refs are released only after the memory delete succeeds", () => 
     expect(await kv.get("mem:retention", "mem_img")).toBeNull();
     expect(getSearchIndex().has("mem_img")).toBe(false);
     expect(logger.warn).toHaveBeenCalledWith(
-      "Image reference release failed after memory delete",
-      expect.objectContaining({ memoryId: "mem_img" }),
+      "Image reference release failed after delete",
+      expect.objectContaining({ ownerId: "mem_img" }),
     );
   });
 });
