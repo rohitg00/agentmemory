@@ -27,7 +27,9 @@ export class ResilientProvider implements MemoryProvider {
       this.breaker.recordSuccess(probe);
       return result;
     } catch (err) {
-      if (!isPayloadRejection(err)) {
+      if (isPayloadRejection(err)) {
+        this.breaker.releaseProbe(probe);
+      } else {
         this.breaker.recordFailure(probe);
       }
       throw err;

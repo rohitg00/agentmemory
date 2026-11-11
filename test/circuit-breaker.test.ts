@@ -274,6 +274,24 @@ describe("CircuitBreaker", () => {
     expect(cb.getState()).toMatchObject({ state: "closed", failures: 0 });
   });
 
+  it("releaseProbe frees only the current half-open probe without changing counters", () => {
+    vi.useFakeTimers();
+    try {
+      const cb = new CircuitBreaker({ failureThreshold: 1, recoveryTimeoutMs: 1000 });
+      cb.recordFailure(cb.admit()!);
+      vi.advanceTimersByTime(1000);
+      const probe = cb.admit()!;
+      expect(cb.admit()).toBeNull();
+      cb.releaseProbe(probe + 1);
+      expect(cb.admit()).toBeNull();
+      cb.releaseProbe(probe);
+      expect(cb.getState().state).toBe("half-open");
+      expect(cb.admit()).toBe(probe + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("counts closed-state call outcomes as before", () => {
     const cb = new CircuitBreaker();
     for (let i = 0; i < 3; i++) cb.recordFailure(cb.admit()!);

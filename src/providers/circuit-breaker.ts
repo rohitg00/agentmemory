@@ -68,6 +68,10 @@ export class CircuitBreaker {
     this.probeStartedAt = null;
   }
 
+  releaseProbe(probe: number): void {
+    if (this.state === "half-open" && probe === this.probeId) this.probeStartedAt = null;
+  }
+
   recordFailure(probe?: number): void {
     if (this.isStale(probe)) return;
     const now = Date.now();
