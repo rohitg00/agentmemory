@@ -74,6 +74,8 @@ export interface StatusInputs {
     missingObservations: number | null;
     sessions: number | null;
     bm25Incomplete: boolean;
+    bm25FailedSessions?: number;
+    bm25NextRetryAt?: string | null;
     keywordRebuildRunning?: boolean;
     pendingVectorBackfill: number;
     vectorBackfillState?: VectorBackfillState;
@@ -227,6 +229,13 @@ function describeBackfillState(state: VectorBackfillState): string {
   return state;
 }
 
+function bm25RetryDetail(index: { bm25FailedSessions?: number; bm25NextRetryAt?: string | null }): string {
+  const parts: string[] = [];
+  if (index.bm25FailedSessions) parts.push(`${index.bm25FailedSessions} sessions failed to load`);
+  if (index.bm25NextRetryAt) parts.push(`next retry at ${index.bm25NextRetryAt}`);
+  return parts.length ? ` (${parts.join(", ")})` : "";
+}
+
 function vectorBackfillFix(state: VectorBackfillState | undefined): string {
   if (state === "waiting-for-opt-in") {
     return "Backfill is paused. Set AGENTMEMORY_VECTOR_BACKFILL=all and restart to opt in. This calls the embedding provider and is capped per boot by AGENTMEMORY_VECTOR_BACKFILL_MAX.";
@@ -350,8 +359,8 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     problems.push({
       level: "error",
       code: "bm25-rebuild-incomplete",
-      message: "The keyword index could not load every session at boot, so some observations are missing from search until the next successful rebuild.",
-      fix: "Check the server log for the session listing failure. Restarting or the next cold-start search retries automatically.",
+      message: `The keyword index could not load every session at boot, so some observations are missing from search until the next successful rebuild${bm25RetryDetail(input.index)}.`,
+      fix: "No action needed: agentmemory retries the failed sessions in the background and clears this when they load. If it keeps failing, check the server log for the session listing error.",
     });
   }
 
@@ -881,7 +890,7 @@ ${row("Vector documents", escapeHtml(idx.vectorDocuments ?? "vector search off")
 ${row("Observations searchable", escapeHtml(idx.breakdown ? idx.breakdown.observations : idx.observationsIndexed))}
 ${row("Missing from index", escapeHtml(idx.missingObservations ?? "not checked"))}
 ${row("Sessions", escapeHtml(idx.sessions ?? "unknown"))}
-${row("Keyword index rebuild", idx.bm25Incomplete ? '<span class="warn">incomplete</span>' : "complete")}
+${row("Keyword index rebuild", idx.bm25Incomplete ? `<span class="warn">incomplete</span>${escapeHtml(bm25RetryDetail(idx))}` : "complete")}
 ${row("Pending vector backfill", escapeHtml(idx.pendingVectorBackfill))}
 ${idx.vectorBackfillState ? row("Vector backfill", escapeHtml(describeBackfillState(idx.vectorBackfillState))) : ""}
 ${indexPersistenceRows(report)}
