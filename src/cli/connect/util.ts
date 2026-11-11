@@ -54,8 +54,13 @@ export function isAgentmemoryMcpEntry(entry: unknown): boolean {
   return args.includes("@agentmemory/mcp");
 }
 
-export function isLegacyMcpCommand(command: unknown): boolean {
-  return command === "npx" && AGENTMEMORY_MCP_BLOCK.command !== "npx";
+export function isLegacyMcpCommand(command: unknown, args: unknown): boolean {
+  return (
+    AGENTMEMORY_MCP_BLOCK.command !== "npx" &&
+    command === "npx" &&
+    Array.isArray(args) &&
+    args.includes("@agentmemory/mcp")
+  );
 }
 
 export function toCommandPath(path: string): string {

@@ -111,7 +111,7 @@ export const adapter: ConnectAdapter = {
 
       const idx = servers.findIndex((s) => s?.name === "agentmemory");
       const alreadyHas = idx >= 0 && entryIsAgentmemory(servers[idx]);
-      const legacy = idx >= 0 && isLegacyMcpCommand(servers[idx]?.command);
+      const legacy = idx >= 0 && isLegacyMcpCommand(servers[idx]?.command, servers[idx]?.args);
       if (alreadyHas && !legacy && !opts.force) {
         logAlreadyWired("Continue", JSON_PATH);
         return { kind: "already-wired", mutatedPath: JSON_PATH };
@@ -127,7 +127,11 @@ export const adapter: ConnectAdapter = {
       const backupPath = backupFile(JSON_PATH, "continue");
       logBackup(backupPath);
 
-      const entry = buildEntry();
+      const fresh = buildEntry();
+      const entry =
+        legacy && !opts.force
+          ? { ...servers[idx], command: fresh.command, args: fresh.args }
+          : fresh;
       if (idx >= 0) servers[idx] = entry;
       else servers.push(entry);
       next.mcpServers = servers;

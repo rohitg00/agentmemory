@@ -37,14 +37,34 @@ function isWiredText(toml: string): boolean {
   return toml.includes(SECTION_HEADER);
 }
 
+const COMMAND_LINE = /^([ \t]*command[ \t]*=[ \t]*)(["'])(.*?)\2(?=[ \t]*(?:#.*)?$)/m;
+const ARGS_VALUE = /^([ \t]*args[ \t]*=[ \t]*)\[([^\]]*)\]/m;
+
+function sectionBounds(toml: string): { start: number; end: number } | null {
+  const header = toml.indexOf(SECTION_HEADER);
+  if (header < 0) return null;
+  const start = header + SECTION_HEADER.length;
+  const end = toml.slice(start).search(/^\s*\[/m);
+  return { start, end: end < 0 ? toml.length : start + end };
+}
+
 function hasLegacyCommand(toml: string): boolean {
-  const start = toml.indexOf(SECTION_HEADER);
-  if (start < 0) return false;
-  const rest = toml.slice(start + SECTION_HEADER.length);
-  const end = rest.search(/^\s*\[/m);
-  const section = end < 0 ? rest : rest.slice(0, end);
-  const match = section.match(/^\s*command\s*=\s*(["'])(.*?)\1\s*$/m);
-  return isLegacyMcpCommand(match?.[2]);
+  const bounds = sectionBounds(toml);
+  if (!bounds) return false;
+  const section = toml.slice(bounds.start, bounds.end);
+  const command = section.match(COMMAND_LINE)?.[3];
+  const args = section.match(ARGS_VALUE)?.[2];
+  const parsed = args === undefined ? undefined : [...args.matchAll(/(["'])(.*?)\1/g)].map((m) => m[2]);
+  return isLegacyMcpCommand(command, parsed);
+}
+
+function migrateLegacyCommand(toml: string): string {
+  const bounds = sectionBounds(toml)!;
+  const section = toml
+    .slice(bounds.start, bounds.end)
+    .replace(COMMAND_LINE, (_, prefix: string) => `${prefix}${JSON.stringify(AGENTMEMORY_MCP_BLOCK.command)}`)
+    .replace(ARGS_VALUE, (_, prefix: string) => `${prefix}[${AGENTMEMORY_MCP_BLOCK.args.map((arg) => JSON.stringify(arg)).join(", ")}]`);
+  return toml.slice(0, bounds.start) + section + toml.slice(bounds.end);
 }
 
 function stripExistingBlock(toml: string): string {
@@ -88,8 +108,9 @@ export const adapter: ConnectAdapter = {
     const exists = existsSync(CODEX_TOML);
     const current = exists ? readFileSync(CODEX_TOML, "utf-8") : "";
     const wired = isWiredText(current);
+    const legacy = wired && hasLegacyCommand(current);
 
-    if (wired && !hasLegacyCommand(current) && !opts.force) {
+    if (wired && !legacy && !opts.force) {
       logAlreadyWired("Codex CLI", CODEX_TOML);
       return { kind: "already-wired", mutatedPath: CODEX_TOML };
     }
@@ -110,10 +131,13 @@ export const adapter: ConnectAdapter = {
       mkdirSync(dirname(CODEX_TOML), { recursive: true });
     }
 
-    const cleaned = wired ? stripExistingBlock(current) : current;
-    const joiner = cleaned.length === 0 || cleaned.endsWith("\n") ? "" : "\n";
-    const next = `${cleaned}${joiner}${cleaned.length > 0 ? "\n" : ""}${TOML_BLOCK}`;
-    writeFileSync(CODEX_TOML, next, "utf-8");
+    if (legacy && !opts.force) {
+      writeFileSync(CODEX_TOML, migrateLegacyCommand(current), "utf-8");
+    } else {
+      const cleaned = wired ? stripExistingBlock(current) : current;
+      const joiner = cleaned.length === 0 || cleaned.endsWith("\n") ? "" : "\n";
+      writeFileSync(CODEX_TOML, `${cleaned}${joiner}${cleaned.length > 0 ? "\n" : ""}${TOML_BLOCK}`, "utf-8");
+    }
 
     const verify = readFileSync(CODEX_TOML, "utf-8");
     if (!isWiredText(verify)) {

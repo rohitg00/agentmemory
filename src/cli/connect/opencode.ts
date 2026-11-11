@@ -68,7 +68,7 @@ export const adapter: ConnectAdapter = {
 
     const alreadyHas = entryMatches(mcp["agentmemory"]);
     const command = mcp["agentmemory"]?.["command"];
-    const legacy = Array.isArray(command) && isLegacyMcpCommand(command[0]);
+    const legacy = Array.isArray(command) && isLegacyMcpCommand(command[0], command.slice(1));
     if (alreadyHas && !legacy && !opts.force) {
       logAlreadyWired(this.displayName, CONFIG_PATH);
       return { kind: "already-wired", mutatedPath: CONFIG_PATH };
@@ -89,7 +89,10 @@ export const adapter: ConnectAdapter = {
       mkdirSync(dirname(CONFIG_PATH), { recursive: true });
     }
 
-    mcp["agentmemory"] = { ...OPENCODE_ENTRY };
+    mcp["agentmemory"] =
+      legacy && !opts.force
+        ? { ...mcp["agentmemory"], command: [...OPENCODE_ENTRY.command] }
+        : { ...OPENCODE_ENTRY };
     next["mcp"] = mcp;
     writeJsonAtomic(CONFIG_PATH, next);
 

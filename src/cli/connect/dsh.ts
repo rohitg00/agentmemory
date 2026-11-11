@@ -63,6 +63,27 @@ function managedEntries(content: string, marker: string): YAMLMap[] {
   });
 }
 
+function isLegacyEntry(entry: YAMLMap): boolean {
+  const args = entry.getIn(["config", "args"]);
+  return isLegacyMcpCommand(entry.getIn(["config", "command"]), isSeq(args) ? args.toJSON() : args);
+}
+
+function migrateLegacyCommand(content: string): string {
+  const { doc, operations } = parsePatch(content);
+  for (const operation of operations.items) {
+    const entries = isMap(operation) ? operation.get("insert", true) : null;
+    if (!isSeq(entries)) continue;
+    for (const entry of entries.items) {
+      if (!isManaged(entry, MCP_MARKER) || !isLegacyEntry(entry)) continue;
+      const args = doc.createNode([...AGENTMEMORY_MCP_BLOCK.args]);
+      args.flow = true;
+      entry.setIn(["config", "command"], AGENTMEMORY_MCP_BLOCK.command);
+      entry.setIn(["config", "args"], args);
+    }
+  }
+  return doc.toString();
+}
+
 function hasBlock(content: string, marker: string): boolean {
   return managedEntries(content, marker).length > 0;
 }
@@ -114,9 +135,8 @@ export const adapter: ConnectAdapter = {
 
     const wantHooks = opts.withHooks === true;
     const mcpEntries = managedEntries(existing, MCP_MARKER);
-    const hasMcp =
-      mcpEntries.length > 0 &&
-      !mcpEntries.some((entry) => isLegacyMcpCommand(entry.getIn(["config", "command"])));
+    const legacyMcp = mcpEntries.some(isLegacyEntry);
+    const hasMcp = mcpEntries.length > 0 && !legacyMcp;
     const hooks = managedEntries(existing, HOOKS_MARKER);
     const pluginPath = wantHooks ? join(dirname(findPluginRoot()), "dist", "integrations", "dsh.mjs") : "";
     const hooksReady = hooks.length === 1 && hooks[0].get("name") === pluginPath && existsSync(pluginPath);
@@ -149,7 +169,9 @@ export const adapter: ConnectAdapter = {
       mkdirSync(dirname(configPath), { recursive: true });
     }
 
-    let next = hasMcp && !opts.force ? existing : upsertBlock(existing, MCP_MARKER, MCP_BLOCK);
+    let next = existing;
+    if (opts.force || mcpEntries.length === 0) next = upsertBlock(existing, MCP_MARKER, MCP_BLOCK);
+    else if (legacyMcp) next = migrateLegacyCommand(existing);
 
     if (wantHooks && (!hooksReady || opts.force)) {
       next = upsertBlock(next, HOOKS_MARKER, hooksBlock(pluginPath));

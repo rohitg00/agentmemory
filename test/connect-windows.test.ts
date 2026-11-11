@@ -206,6 +206,104 @@ describe("connect on Windows with a home directory that contains spaces", () => 
     expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
   });
 
+  it("only treats a bare npx launcher of @agentmemory/mcp as legacy", async () => {
+    const { isLegacyMcpCommand } = await import("../src/cli/connect/util.js");
+    expect(isLegacyMcpCommand("npx", ["-y", "@agentmemory/mcp"])).toBe(true);
+    expect(isLegacyMcpCommand("npx", ["-y", "@team/custom-mcp"])).toBe(false);
+    expect(isLegacyMcpCommand("npx", undefined)).toBe(false);
+    expect(isLegacyMcpCommand("cmd", WINDOWS_MCP.args)).toBe(false);
+  });
+
+  it("codex migrates a bare npx command that has a trailing TOML comment", async () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.agentmemory]\ncommand = "npx" # launcher\nargs = ["-y", "@agentmemory/mcp"] # pkg\n',
+    );
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const toml = readFileSync(join(home, ".codex", "config.toml"), "utf-8");
+    expect(toml).toContain('command = "cmd" # launcher');
+    expect(toml).toContain('args = ["/c", "npx", "-y", "@agentmemory/mcp"] # pkg');
+  });
+
+  it("codex leaves a custom npx package untouched without --force", async () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    const original = '[mcp_servers.agentmemory]\ncommand = "npx"\nargs = ["-y", "@team/custom-mcp"]\n';
+    writeFileSync(join(home, ".codex", "config.toml"), original);
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
+    expect(readFileSync(join(home, ".codex", "config.toml"), "utf-8")).toBe(original);
+  });
+
+  it("codex keeps existing env and options when it migrates the launcher", async () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.agentmemory]\ncommand = "npx"\nargs = ["-y", "@agentmemory/mcp"]\nstartup_timeout_sec = 30\n\n[mcp_servers.agentmemory.env]\nAGENTMEMORY_URL = "https://memory.example.com"\nAGENTMEMORY_SECRET = "s3cret"\n\n[other]\nkey = 1\n',
+    );
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const toml = readFileSync(join(home, ".codex", "config.toml"), "utf-8");
+    expect(toml).toContain('command = "cmd"');
+    expect(toml).toContain("startup_timeout_sec = 30");
+    expect(toml).toContain('AGENTMEMORY_URL = "https://memory.example.com"');
+    expect(toml).toContain('AGENTMEMORY_SECRET = "s3cret"');
+    expect(toml).not.toContain("localhost:3111");
+    expect(toml).toContain("[other]\nkey = 1");
+  });
+
+  it("continue keeps existing env when it migrates the launcher", async () => {
+    mkdirSync(join(home, ".continue"), { recursive: true });
+    const env = { AGENTMEMORY_URL: "https://memory.example.com", AGENTMEMORY_SECRET: "s3cret" };
+    writeFileSync(
+      join(home, ".continue", "config.json"),
+      JSON.stringify({ mcpServers: [{ name: "agentmemory", command: "npx", args: ["-y", "@agentmemory/mcp"], env }] }),
+    );
+    const { adapter } = await import("../src/cli/connect/continue.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const cfg = JSON.parse(readFileSync(join(home, ".continue", "config.json"), "utf-8"));
+    expect(cfg.mcpServers[0]).toMatchObject({ ...WINDOWS_MCP, env });
+  });
+
+  it("opencode keeps existing environment and options when it migrates the launcher", async () => {
+    mkdirSync(join(home, ".config", "opencode"), { recursive: true });
+    const environment = { AGENTMEMORY_URL: "https://memory.example.com", AGENTMEMORY_SECRET: "s3cret" };
+    writeFileSync(
+      join(home, ".config", "opencode", "opencode.json"),
+      JSON.stringify({ mcp: { agentmemory: { type: "local", command: ["npx", "-y", "@agentmemory/mcp"], enabled: false, environment } } }),
+    );
+    const { adapter } = await import("../src/cli/connect/opencode.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const cfg = JSON.parse(readFileSync(join(home, ".config", "opencode", "opencode.json"), "utf-8"));
+    expect(cfg.mcp.agentmemory).toEqual({ type: "local", command: ["cmd", ...WINDOWS_MCP.args], enabled: false, environment });
+  });
+
+  it("dsh keeps existing env when it migrates the launcher", async () => {
+    mkdirSync(join(home, ".dsh"), { recursive: true });
+    writeFileSync(
+      join(home, ".dsh", "cordis.patch.yml"),
+      "- insert:\n    - id: agentmemory\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        transport: stdio\n        serverName: agentmemory\n        command: npx\n        args: ['-y', '@agentmemory/mcp']\n        env:\n          AGENTMEMORY_URL: https://memory.example.com\n          AGENTMEMORY_SECRET: s3cret\n",
+    );
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const { parseDocument } = await import("yaml");
+    const config = parseDocument(readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8")).toJS()[0].insert[0].config;
+    expect(config.command).toBe("cmd");
+    expect(config.args).toEqual(WINDOWS_MCP.args);
+    expect(config.env).toEqual({ AGENTMEMORY_URL: "https://memory.example.com", AGENTMEMORY_SECRET: "s3cret" });
+  });
+
+  it("dsh leaves a custom npx package untouched without --force", async () => {
+    mkdirSync(join(home, ".dsh"), { recursive: true });
+    const original =
+      "- insert:\n    - id: agentmemory\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        transport: stdio\n        serverName: agentmemory\n        command: npx\n        args: ['-y', '@team/custom-mcp']\n";
+    writeFileSync(join(home, ".dsh", "cordis.patch.yml"), original);
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
+    expect(readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8")).toBe(original);
+  });
+
   it("droid hooks quote a plugin path with spaces", async () => {
     mkdirSync(join(home, ".factory"), { recursive: true });
     const root = spacedPluginRoot(home);
