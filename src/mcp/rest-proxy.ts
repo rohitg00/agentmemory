@@ -1,6 +1,9 @@
+import { hookSetting, resolveSettingSecret } from "../hooks/_endpoint.js";
+import { readEnvFileValue } from "../secret-store.js";
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
-const CALL_TIMEOUT_MS = 15_000;
+const DEFAULT_CALL_TIMEOUT_MS = 190_000;
+const MAX_TIMER_MS = 2_147_483_647;
 const LOCAL_MODE_TTL_MS = 30_000;
 
 function probeTimeoutMs(): number {
@@ -10,7 +13,14 @@ function probeTimeoutMs(): number {
   return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_HEALTH_PROBE_TIMEOUT_MS;
 }
 
-function forceProxy(): boolean {
+export function callTimeoutMs(): number {
+  const name = "AGENTMEMORY_CALL_TIMEOUT_MS";
+  const raw = (resolveEnvOrEmpty(name) || readEnvFileValue(name)).trim();
+  const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+  return n >= 1 && n <= MAX_TIMER_MS ? n : DEFAULT_CALL_TIMEOUT_MS;
+}
+
+export function isProxyRequired(): boolean {
   const raw = process.env["AGENTMEMORY_FORCE_PROXY"];
   return raw === "1" || raw === "true";
 }
@@ -21,6 +31,18 @@ export interface ProxyHandle {
   call: (path: string, init?: RequestInit) => Promise<unknown>;
 }
 
+export class ProxyCallError extends Error {
+  status: number;
+  body: unknown;
+
+  constructor(message: string, status: number, body: unknown) {
+    super(message);
+    this.name = "ProxyCallError";
+    this.status = status;
+    this.body = body;
+  }
+}
+
 export interface LocalHandle {
   mode: "local";
 }
@@ -28,8 +50,9 @@ export interface LocalHandle {
 export type Handle = ProxyHandle | LocalHandle;
 
 let cached: Handle | null = null;
+let cachedUrl: string | null = null;
 let cachedAt = 0;
-let probeInFlight: Promise<Handle> | null = null;
+let probeInFlight: { url: string; forceProxy: boolean; promise: Promise<Handle> } | null = null;
 
 // `${VAR}`-style placeholders ship in plugin/.mcp.json so MCP hosts that
 // expand them (Claude Code, Cursor) substitute the user's shell value.
@@ -39,29 +62,28 @@ let probeInFlight: Promise<Handle> | null = null;
 // (DNS failure). Strip any literal placeholder we see so the fallback
 // engages instead.
 export function resolveEnvOrEmpty(name: string): string {
-  const raw = process.env[name];
-  if (!raw) return "";
-  if (raw.startsWith("${") && raw.endsWith("}")) return "";
-  return raw;
+  return hookSetting(name) ?? "";
 }
 
 function baseUrl(): string {
-  return (resolveEnvOrEmpty("AGENTMEMORY_URL") || DEFAULT_URL).replace(/\/+$/, "");
+  const value = resolveEnvOrEmpty("AGENTMEMORY_URL") || DEFAULT_URL;
+  try {
+    const parsed = new URL(value);
+    if (!["http:", "https:"].includes(parsed.protocol) || !parsed.hostname ||
+        parsed.username || parsed.password || /[?#\s]/.test(value)) {
+      throw new Error();
+    }
+    return value.replace(/\/+$/, "");
+  } catch {
+    throw new Error("AGENTMEMORY_URL must be an HTTP(S) URL without credentials, query, or fragment");
+  }
 }
 
-function authHeader(): Record<string, string> {
-  const secret = resolveEnvOrEmpty("AGENTMEMORY_SECRET");
+function authHeader(url: string): Record<string, string> {
+  const secret = resolveSettingSecret(url);
   return secret ? { authorization: `Bearer ${secret}` } : {};
 }
 
-/**
- * Probes the agentmemory server's livez endpoint. Returns a Response-shaped
- * object whose `ok` flag drives the proxy/local-fallback decision.
- *
- * Tests can swap this via {@link setLivezProbe} to avoid the real 2s
- * AbortController race that destabilises mcp-standalone test runs (#449).
- * Production callers should leave it on the default.
- */
 export type LivezProbe = (
   url: string,
   timeoutMs: number,
@@ -73,6 +95,7 @@ const defaultLivezProbe: LivezProbe = async (url, timeoutMs, headers) => {
     method: "GET",
     headers,
     signal: AbortSignal.timeout(timeoutMs),
+    redirect: "error",
   });
   return { ok: res.ok, status: res.status, statusText: res.statusText };
 };
@@ -92,7 +115,7 @@ export function setLivezProbe(fn?: LivezProbe): void {
 async function probe(url: string): Promise<boolean> {
   const timeout = probeTimeoutMs();
   try {
-    const res = await livezProbe(url, timeout, authHeader());
+    const res = await livezProbe(url, timeout, authHeader(url));
     if (!res.ok) {
       process.stderr.write(
         `[@agentmemory/mcp] livez probe ${url}/agentmemory/livez -> ${res.status ?? "?"} ${res.statusText ?? ""}; falling back to local InMemoryKV (set AGENTMEMORY_FORCE_PROXY=1 to skip the probe)\n`,
@@ -109,11 +132,14 @@ async function probe(url: string): Promise<boolean> {
 
 export function invalidateHandle(): void {
   cached = null;
+  cachedUrl = null;
   cachedAt = 0;
 }
 
 export async function resolveHandle(): Promise<Handle> {
   const now = Date.now();
+  const url = baseUrl();
+  if (cached && (cachedUrl !== url || (cached.mode === "local" && isProxyRequired()))) invalidateHandle();
   if (cached) {
     if (cached.mode === "local" && now - cachedAt >= LOCAL_MODE_TTL_MS) {
       cached = null;
@@ -122,11 +148,11 @@ export async function resolveHandle(): Promise<Handle> {
       return cached;
     }
   }
-  if (probeInFlight) return probeInFlight;
-  const url = baseUrl();
-  const skipProbe = forceProxy();
-  probeInFlight = (async () => {
+  const skipProbe = isProxyRequired();
+  if (probeInFlight?.url === url && probeInFlight.forceProxy === skipProbe) return probeInFlight.promise;
+  const pending = (async () => {
     const up = skipProbe ? true : await probe(url);
+    if (baseUrl() !== url || isProxyRequired() !== skipProbe) return resolveHandle();
     if (skipProbe) {
       process.stderr.write(
         `[@agentmemory/mcp] AGENTMEMORY_FORCE_PROXY set; skipping livez probe and trusting ${url}\n`,
@@ -137,18 +163,33 @@ export async function resolveHandle(): Promise<Handle> {
         mode: "proxy",
         baseUrl: url,
         call: async (path, init) => {
+          if (baseUrl() !== url) {
+            throw new Error("AgentMemory endpoint changed; resolve a new proxy handle before retrying.");
+          }
           const res = await fetch(`${url}${path}`, {
             ...init,
             headers: {
               "content-type": "application/json",
-              ...authHeader(),
+              ...authHeader(url),
               ...(init?.headers as Record<string, string> | undefined),
             },
-            signal: AbortSignal.timeout(CALL_TIMEOUT_MS),
+            signal: AbortSignal.timeout(callTimeoutMs()),
+            redirect: "error",
           });
           if (!res.ok) {
-            throw new Error(
+            const errText = await res.text().catch(() => "");
+            let errBody: unknown = undefined;
+            if (errText) {
+              try {
+                errBody = JSON.parse(errText);
+              } catch {
+                errBody = undefined;
+              }
+            }
+            throw new ProxyCallError(
               `${init?.method || "GET"} ${path} -> ${res.status} ${res.statusText}`,
+              res.status,
+              errBody,
             );
           }
           const text = await res.text();
@@ -156,23 +197,27 @@ export async function resolveHandle(): Promise<Handle> {
         },
       };
       cached = handle;
+      cachedUrl = url;
       cachedAt = Date.now();
       return handle;
     }
     const local: LocalHandle = { mode: "local" };
     cached = local;
+    cachedUrl = url;
     cachedAt = Date.now();
     return local;
   })();
+  probeInFlight = { url, forceProxy: skipProbe, promise: pending };
   try {
-    return await probeInFlight;
+    return await pending;
   } finally {
-    probeInFlight = null;
+    if (probeInFlight?.promise === pending) probeInFlight = null;
   }
 }
 
 export function resetHandleForTests(): void {
   cached = null;
+  cachedUrl = null;
   cachedAt = 0;
   probeInFlight = null;
   livezProbe = defaultLivezProbe;

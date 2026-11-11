@@ -50,7 +50,7 @@ describe("SearchIndex.has()", () => {
   });
 });
 
-describe("memory indexing into SearchIndex (closes #257)", () => {
+describe("memory indexing into SearchIndex", () => {
   it("makes a saved memory findable by keyword search", () => {
     const idx = new SearchIndex();
     idx.add(memoryAsIndexable(makeMemory({
@@ -66,8 +66,6 @@ describe("memory indexing into SearchIndex (closes #257)", () => {
   });
 
   it("returns the memory when the issue's reproduction query is run", () => {
-    // From issue #257: user saved a memory containing 'BM25 test'
-    // keywords and the search returned empty — recall failure.
     const idx = new SearchIndex();
     idx.add(memoryAsIndexable(makeMemory({
       id: "mem_moy3u6ua_8c6962b668e7",

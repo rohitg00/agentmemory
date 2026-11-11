@@ -1,7 +1,8 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, normalize, resolve } from "node:path";
 import * as p from "@clack/prompts";
+import { isEnvFileValue } from "../../config.js";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
@@ -18,9 +19,18 @@ import {
   type HookManifest,
 } from "./codex-hooks.js";
 
-const CLAUDE_DIR = join(homedir(), ".claude");
-const CLAUDE_JSON = join(homedir(), ".claude.json");
-const CLAUDE_SETTINGS = join(CLAUDE_DIR, "settings.json");
+function claudeConfigPaths() {
+  const rawConfigDir = process.env["CLAUDE_CONFIG_DIR"];
+  const configDir = rawConfigDir?.trim() ? rawConfigDir : undefined;
+  const dir = configDir ? normalize(configDir) : join(homedir(), ".claude");
+  return {
+    rawConfigDir,
+    configDir,
+    dir,
+    mcp: configDir ? join(dir, ".claude.json") : join(homedir(), ".claude.json"),
+    settings: join(dir, "settings.json"),
+  };
+}
 
 type ClaudeMcpEntry = typeof AGENTMEMORY_MCP_BLOCK;
 type ClaudeConfig = {
@@ -45,10 +55,48 @@ export const adapter: ConnectAdapter = {
     "→ Using MCP. Hooks are also available — see https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it.",
 
   detect(): boolean {
-    return existsSync(CLAUDE_DIR);
+    const { configDir, dir } = claudeConfigPaths();
+    let detected: boolean;
+    try {
+      detected = statSync(dir, { throwIfNoEntry: false })?.isDirectory() ?? false;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "EACCES" && code !== "EPERM") throw err;
+      p.log.warn(
+        `Cannot inspect Claude Code configuration directory ${JSON.stringify(dir)} (${code}). Check directory permissions and retry.`,
+      );
+      return false;
+    }
+    if (!detected && configDir) {
+      p.log.warn(
+        `Claude Code configuration path ${JSON.stringify(configDir)} is not an existing directory. Create it or correct CLAUDE_CONFIG_DIR; check for unintended leading or trailing whitespace.`,
+      );
+    }
+    return detected;
   },
 
   async install(opts: ConnectOptions): Promise<ConnectResult> {
+    const { rawConfigDir, configDir, dir: CLAUDE_DIR, mcp: CLAUDE_JSON } = claudeConfigPaths();
+    const fromEnvFile = isEnvFileValue("CLAUDE_CONFIG_DIR");
+    if (configDir && fromEnvFile) {
+      p.log.warn(
+        `CLAUDE_CONFIG_DIR was loaded only from agentmemory's env file. Launch Claude Code with the same CLAUDE_CONFIG_DIR value ${JSON.stringify(configDir)} so it reads the same MCP and hook configuration.`,
+      );
+    } else if (rawConfigDir && !configDir && !fromEnvFile) {
+      p.log.warn(
+        "CLAUDE_CONFIG_DIR contains only whitespace. AgentMemory will use the default Claude Code profile. Unset CLAUDE_CONFIG_DIR before launching Claude Code so it uses the same profile.",
+      );
+    }
+    if (configDir && configDir !== configDir.trim()) {
+      p.log.warn(
+        `CLAUDE_CONFIG_DIR contains leading or trailing whitespace. Using the path exactly as provided: ${JSON.stringify(configDir)}. If this is unintended, correct CLAUDE_CONFIG_DIR and rerun this command.`,
+      );
+    }
+    if (configDir && !isAbsolute(configDir)) {
+      p.log.warn(
+        `CLAUDE_CONFIG_DIR is relative and resolves to ${JSON.stringify(resolve(configDir))} from this working directory. Set the same absolute path for agentmemory and Claude Code so they use the same profile.`,
+      );
+    }
     const existing = readJsonSafe<ClaudeConfig>(CLAUDE_JSON);
     const next: ClaudeConfig = existing ? { ...existing } : {};
     const servers: Record<string, ClaudeMcpEntry> = {
@@ -58,9 +106,6 @@ export const adapter: ConnectAdapter = {
     const alreadyHas = entryMatches(servers["agentmemory"]);
     if (alreadyHas && !opts.force) {
       logAlreadyWired("Claude Code", CLAUDE_JSON);
-      // --with-hooks is independent of MCP wiring (issue #508). Run the
-      // hooks fallback even when MCP is already in place so users with a
-      // healthy MCP setup can still pick up version-stable hook paths.
       if (opts.withHooks) {
         const hookResult = installClaudeHooks(opts);
         if (hookResult.kind === "skipped") {
@@ -118,18 +163,8 @@ export const adapter: ConnectAdapter = {
   },
 };
 
-/**
- * Merge the bundled `plugin/hooks/hooks.json` into
- * `~/.claude/settings.json`'s top-level `hooks` field with absolute
- * script paths. Use this when agentmemory is NOT installed through
- * `/plugin marketplace add` (e.g. MCP standalone wiring), so the
- * hook scripts survive version bumps without `${CLAUDE_PLUGIN_ROOT}`
- * expansion (issue #508).
- *
- * Re-install strips entries whose command points under
- * `<pluginRoot>/scripts/`; unrelated user hook entries survive.
- */
 function installClaudeHooks(opts: ConnectOptions): ConnectResult {
+  const { dir: CLAUDE_DIR, settings: CLAUDE_SETTINGS } = claudeConfigPaths();
   let pluginRoot: string;
   try {
     pluginRoot = findPluginRoot();
@@ -165,7 +200,7 @@ function installClaudeHooks(opts: ConnectOptions): ConnectResult {
   const next: ClaudeSettings = { ...existing, hooks: merged.hooks };
   writeJsonAtomic(CLAUDE_SETTINGS, next);
 
-  logInstalled("Claude Code hooks (workaround for #508)", CLAUDE_SETTINGS);
+  logInstalled("Claude Code hooks", CLAUDE_SETTINGS);
   p.log.info(
     "User-scope hook entries reference absolute paths under the bundled plugin/ dir. Re-run `agentmemory connect claude-code --with-hooks` after upgrading agentmemory to refresh them.",
   );

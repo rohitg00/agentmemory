@@ -8,12 +8,13 @@ const ENV_KEYS = [
   "AGENTMEMORY_PROVIDER",
   "ANTHROPIC_API_KEY",
   "OPENAI_API_KEY",
-  "OPENAI_API_KEY_FOR_LLM",
+  "AGENTMEMORY_LLM_PROVIDER",
   "OPENROUTER_API_KEY",
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
   "MINIMAX_API_KEY",
   "OPENAI_BASE_URL",
+  "AGENTMEMORY_ALLOW_AGENT_SDK",
 ];
 
 const ORIGINAL_HOME = process.env["HOME"];
@@ -63,27 +64,76 @@ describe("isConsolidationEnabled default behavior", () => {
   });
 
   it("returns true by default when ANTHROPIC_API_KEY is set", async () => {
-    writeEnv("ANTHROPIC_API_KEY=sk-test-123");
+    writeEnv("AGENTMEMORY_LLM_PROVIDER=anthropic\nANTHROPIC_API_KEY=sk-test-123");
     const cfg = await freshConfig();
     expect(cfg.isConsolidationEnabled()).toBe(true);
+  });
+
+  it("returns false when a provider key is set without AGENTMEMORY_LLM_PROVIDER", async () => {
+    writeEnv("ANTHROPIC_API_KEY=sk-test-123");
+    const cfg = await freshConfig();
+    expect(cfg.isConsolidationEnabled()).toBe(false);
+    expect(cfg.loadConfig().provider.provider).toBe("noop");
   });
 
   it("returns true by default when OPENAI_API_KEY is set", async () => {
-    writeEnv("OPENAI_API_KEY=sk-test-123");
+    writeEnv("AGENTMEMORY_LLM_PROVIDER=openai\nOPENAI_API_KEY=sk-test-123");
     const cfg = await freshConfig();
     expect(cfg.isConsolidationEnabled()).toBe(true);
   });
 
-  it("returns true by default when OPENAI_BASE_URL is set (local OpenAI-compatible)", async () => {
+  it("returns true for a local OpenAI-compatible server with a key", async () => {
+    writeEnv("AGENTMEMORY_LLM_PROVIDER=openai\nOPENAI_API_KEY=local\nOPENAI_BASE_URL=http://localhost:1234/v1");
+    const cfg = await freshConfig();
+    expect(cfg.isConsolidationEnabled()).toBe(true);
+  });
+
+  it("returns false when OPENAI_BASE_URL is set without an LLM key, matching the provider", async () => {
     writeEnv("OPENAI_BASE_URL=http://localhost:1234/v1");
     const cfg = await freshConfig();
-    expect(cfg.isConsolidationEnabled()).toBe(true);
+    expect(cfg.isConsolidationEnabled()).toBe(false);
+    expect(cfg.detectLlmProviderKind()).toBe("noop");
+    expect(cfg.loadConfig().provider.provider).toBe("noop");
   });
 
-  it("returns true by default when AGENTMEMORY_PROVIDER=agent-sdk", async () => {
-    writeEnv("AGENTMEMORY_PROVIDER=agent-sdk");
+  it("returns false when OPENAI_BASE_URL serves embeddings only", async () => {
+    writeEnv("OPENAI_API_KEY=sk-test\nOPENAI_API_KEY_FOR_LLM=false\nOPENAI_BASE_URL=http://localhost:1234/v1");
+    const cfg = await freshConfig();
+    expect(cfg.isConsolidationEnabled()).toBe(false);
+    expect(cfg.loadConfig().provider.provider).toBe("noop");
+  });
+
+  it("returns true when the agent-sdk fallback is allowed", async () => {
+    writeEnv("AGENTMEMORY_ALLOW_AGENT_SDK=true");
     const cfg = await freshConfig();
     expect(cfg.isConsolidationEnabled()).toBe(true);
+    expect(cfg.loadConfig().provider.provider).toBe("agent-sdk");
+  });
+
+  it("agrees with the provider actually loaded for every provider setup", async () => {
+    const setups = [
+      "",
+      "OPENAI_BASE_URL=http://localhost:1234/v1",
+      "OPENAI_API_KEY=sk\nOPENAI_API_KEY_FOR_LLM=false",
+      "OPENAI_API_KEY=sk",
+      "ANTHROPIC_API_KEY=sk",
+      "GEMINI_API_KEY=g",
+      "GOOGLE_API_KEY=g",
+      "OPENROUTER_API_KEY=o",
+      "MINIMAX_API_KEY=m",
+      "ANTHROPIC_API_KEY=   ",
+      "AGENTMEMORY_ALLOW_AGENT_SDK=true",
+    ];
+    for (const setup of setups) {
+      writeEnv(setup);
+      const cfg = await freshConfig();
+      const hasLlm = cfg.loadConfig().provider.provider !== "noop";
+      expect({ setup, consolidation: cfg.isConsolidationEnabled(), kind: cfg.detectLlmProviderKind() }).toEqual({
+        setup,
+        consolidation: hasLlm,
+        kind: hasLlm ? "llm" : "noop",
+      });
+    }
   });
 
   it("explicit CONSOLIDATION_ENABLED=false overrides provider-based default", async () => {

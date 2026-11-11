@@ -32,13 +32,6 @@ import type { ConnectResult } from "./connect/types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Native plugin row — these agents ship an agentmemory plugin or
-// first-party integration. Glyphs match SkillKit's published set
-// where they overlap; the rest fall back to the generic `◇`.
-// Display glyph per agent; the agent set itself comes from connect's
-// ADAPTERS (single source of truth) so the picker can never drift from
-// what `agentmemory connect` can actually wire (#872). Unknown adapters
-// fall back to a neutral glyph.
 const AGENT_GLYPH: Record<string, string> = {
   "claude-code": "⟁",
   "copilot-cli": "◈",
@@ -53,7 +46,7 @@ const PROVIDERS: { value: string; label: string; envKey: string | null }[] = [
   { value: "openai", label: "OpenAI — gpt", envKey: "OPENAI_API_KEY" },
   { value: "gemini", label: "Google — gemini", envKey: "GEMINI_API_KEY" },
   { value: "openrouter", label: "OpenRouter — multi-model", envKey: "OPENROUTER_API_KEY" },
-  { value: "minimax", label: "MiniMax — minimax-m1", envKey: "MINIMAX_API_KEY" },
+  { value: "minimax", label: "MiniMax — MiniMax-M3", envKey: "MINIMAX_API_KEY" },
   { value: "skip", label: "Skip — BM25-only mode (no LLM key)", envKey: null },
 ];
 
@@ -221,6 +214,7 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   }
 
   const envPath = await seedEnvFile(provider);
+  const providerWritten = setLlmProviderInEnv(envPath, provider);
 
   await maybePromptContextInjection(envPath);
 
@@ -242,10 +236,16 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   if (provider) {
     const envKey = PROVIDERS.find((x) => x.value === provider)?.envKey;
     if (envKey) {
-      lines.push(`  Uncomment ${envKey}= in that file to enable ${provider}.`);
+      lines.push(
+        providerWritten
+          ? `  Set AGENTMEMORY_LLM_PROVIDER=${provider}. Add ${envKey}= to that file to enable ${provider}.`
+          : `  Add AGENTMEMORY_LLM_PROVIDER=${provider} and ${envKey}= to that file to enable ${provider}.`,
+      );
     }
+  } else if (providerWritten) {
+    lines.push("  No LLM provider chosen. LLM summaries and compression stay off.");
   } else {
-    lines.push("  No provider chosen — agentmemory will run in BM25-only mode.");
+    lines.push(`  ! Could not remove AGENTMEMORY_LLM_PROVIDER from ${envPath}. Delete that line to keep LLM features off.`);
   }
   p.note(lines.join("\n"), "ready");
 
@@ -254,6 +254,25 @@ export async function runOnboarding(): Promise<OnboardingResult> {
   }
 
   return { agents, provider };
+}
+
+export function setLlmProviderInEnv(envPath: string | null, provider: string | null): boolean {
+  if (provider === null) delete process.env["AGENTMEMORY_LLM_PROVIDER"];
+  if (!envPath || !existsSync(envPath)) return provider === null;
+  try {
+    const current = readFileSync(envPath, "utf-8");
+    const kept = current
+      .split("\n")
+      .filter((entry) => !/^\s*AGENTMEMORY_LLM_PROVIDER\s*=/.test(entry))
+      .join("\n");
+    const next = provider === null
+      ? kept
+      : `${kept}${kept.length > 0 && !kept.endsWith("\n") ? "\n" : ""}AGENTMEMORY_LLM_PROVIDER=${provider}\n`;
+    if (next !== current) writeFileSync(envPath, next, { mode: 0o600 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function enableInjectContextInEnv(envPath: string | null): boolean {

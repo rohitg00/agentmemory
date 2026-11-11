@@ -1,8 +1,12 @@
-import type { ISdk } from "iii-sdk";
+import { pinGraphState } from "../state/graph-generation.js";
+import { persistGraphRecords } from "../state/graph-ingestion.js";
+import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
+import { collectAll } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
+import { indexMemory } from "./search.js";
 import type {
   MeshPeer,
   Memory,
@@ -54,6 +58,8 @@ async function isAllowedUrl(urlStr: string): Promise<boolean> {
   }
 }
 
+const MESH_PULL_PAGE_LIMIT = 500;
+
 const DEFAULT_SHARED_SCOPES = [
   "memories",
   "actions",
@@ -80,6 +86,7 @@ async function lwwMergeList<T extends { id: string }>(
   items: T[] | undefined,
   lockPrefix: string,
   tsField: "updatedAt" | "createdAt",
+  onWrite?: (item: T) => Promise<void>,
 ): Promise<number> {
   if (!items || !Array.isArray(items)) return 0;
   let count = 0;
@@ -100,7 +107,10 @@ async function lwwMergeList<T extends { id: string }>(
       }
       return false;
     });
-    if (wrote) count++;
+    if (wrote) {
+      count++;
+      if (onWrite) await onWrite(item);
+    }
   }
   return count;
 }
@@ -109,38 +119,12 @@ function graphNodeTs(node: GraphNode): string {
   return node.updatedAt || node.createdAt;
 }
 
-async function lwwMergeGraphNodes(
-  kv: StateKV,
-  items: GraphNode[] | undefined,
-): Promise<number> {
-  if (!items || !Array.isArray(items)) return 0;
-  let count = 0;
-  for (const item of items) {
-    if (!item.id || typeof item.id !== "string") continue;
-    const ts = graphNodeTs(item);
-    if (!ts || Number.isNaN(new Date(ts).getTime())) continue;
-    const wrote = await withKeyedLock(`mem:gnode:${item.id}`, async () => {
-      const existing = await kv.get<GraphNode>(KV.graphNodes, item.id);
-      if (!existing) {
-        await kv.set(KV.graphNodes, item.id, item);
-        return true;
-      }
-      if (new Date(ts) > new Date(graphNodeTs(existing))) {
-        await kv.set(KV.graphNodes, item.id, item);
-        return true;
-      }
-      return false;
-    });
-    if (wrote) count++;
-  }
-  return count;
-}
-
 export function registerMeshFunction(
-  sdk: ISdk,
-  kv: StateKV,
+  sdk: IIIClient,
+  state: StateKV,
   meshAuthToken?: string,
 ): void {
+  const kv = state;
   sdk.registerFunction("mem::mesh-register",
     async (data: {
       url: string;
@@ -195,6 +179,7 @@ export function registerMeshFunction(
 
   sdk.registerFunction("mem::mesh-sync",
     async (data: { peerId?: string; scopes?: string[]; direction?: "push" | "pull" | "both" }) => {
+      const kv = await pinGraphState(state);
       if (!meshAuthToken) {
         return {
           success: false,
@@ -256,6 +241,7 @@ export function registerMeshFunction(
             continue;
           }
 
+          const syncStartedAt = new Date().toISOString();
           if (direction === "push" || direction === "both") {
             const pushData = await collectSyncData(kv, scopes, peer.lastSyncAt, peer.syncFilter);
             try {
@@ -282,24 +268,45 @@ export function registerMeshFunction(
 
           if (direction === "pull" || direction === "both") {
             try {
-              const response = await fetch(
-                `${peer.url}/agentmemory/mesh/export?since=${peer.lastSyncAt || ""}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${meshAuthToken}`,
+              let cursor: string | undefined;
+              let pulled = 0;
+              let failed = false;
+              let pages = 0;
+              for (;;) {
+                const response = await fetch(
+                  `${peer.url}/agentmemory/mesh/export?since=${peer.lastSyncAt || ""}&limit=${MESH_PULL_PAGE_LIMIT}${peer.syncFilter?.project ? `&project=${encodeURIComponent(peer.syncFilter.project)}` : ""}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+                  {
+                    headers: {
+                      Authorization: `Bearer ${meshAuthToken}`,
+                    },
+                    signal: AbortSignal.timeout(30000),
+                    redirect: "error",
                   },
-                  signal: AbortSignal.timeout(30000),
-                  redirect: "error",
-                },
-              );
-              if (response.ok) {
-                const pullData = (await response.json()) as {
-                  memories?: Memory[];
-                  actions?: Action[];
-                };
-                result.pulled = await applySyncData(kv, pullData, scopes);
-              } else {
-                result.errors.push(`pull failed: HTTP ${response.status}`);
+                );
+                if (!response.ok) {
+                  result.errors.push(`pull failed: HTTP ${response.status}`);
+                  failed = true;
+                  break;
+                }
+                const pullData = (await response.json()) as MeshSyncPayload & { nextCursor?: string };
+                pulled += await applySyncData(kv, pullData, scopes);
+                pages++;
+                const next = typeof pullData.nextCursor === "string" ? pullData.nextCursor : undefined;
+                if (next && next === cursor) {
+                  result.errors.push("pull failed: cursor did not advance");
+                  failed = true;
+                  break;
+                }
+                cursor = next;
+                if (!cursor) break;
+                if (pages >= 10000) {
+                  result.errors.push("pull failed: page limit reached");
+                  failed = true;
+                  break;
+                }
+              }
+              if (!failed) {
+                result.pulled = pulled;
               }
             } catch (err) {
               result.errors.push(`pull failed: ${String(err)}`);
@@ -308,7 +315,7 @@ export function registerMeshFunction(
 
           peer.status = result.errors.length > 0 ? "error" : "connected";
           if (result.errors.length === 0) {
-            peer.lastSyncAt = new Date().toISOString();
+            peer.lastSyncAt = syncStartedAt;
           }
         } catch (err) {
           peer.status = "disconnected";
@@ -334,12 +341,13 @@ export function registerMeshFunction(
 
   sdk.registerFunction("mem::mesh-receive",
     async (data: MeshSyncPayload) => {
+      const kv = await pinGraphState(state);
       if (!data || typeof data !== "object") {
         return { success: false, error: "payload required" };
       }
       let accepted = 0;
 
-      accepted += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt");
+      accepted += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt", (memory) => indexMemory(kv, memory));
       accepted += await lwwMergeList(kv, KV.actions, data.actions, "mem:action", "updatedAt");
       accepted += await lwwMergeList(kv, KV.semantic, data.semantic, "mem:semantic", "updatedAt");
       accepted += await lwwMergeList(kv, KV.procedural, data.procedural, "mem:procedural", "updatedAt");
@@ -360,8 +368,13 @@ export function registerMeshFunction(
           });
         }
       }
-      accepted += await lwwMergeGraphNodes(kv, data.graphNodes);
-      accepted += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
+      const graph = await persistGraphRecords(
+        kv,
+        Array.isArray(data.graphNodes) ? data.graphNodes : [],
+        Array.isArray(data.graphEdges) ? data.graphEdges : [],
+        { mode: "lww" },
+      );
+      accepted += graph.nodesWritten + graph.edgesWritten;
       await recordAudit(kv, "mesh_sync", "mem::mesh-receive", [], {
         action: "mesh.receive",
         accepted,
@@ -406,7 +419,10 @@ async function collectSyncData(
   const sinceTime = Number.isNaN(parsed) ? 0 : parsed;
 
   if (scopes.includes("memories")) {
-    const all = await kv.list<Memory>(KV.memories);
+    let all = await collectAll<Memory>(kv, KV.memories);
+    if (syncFilter?.project) {
+      all = all.filter((m) => m.project === syncFilter.project);
+    }
     result.memories = deltaFilter(all, sinceTime, "updatedAt");
   }
 
@@ -421,29 +437,29 @@ async function collectSyncData(
   const projectScoped = !!syncFilter?.project;
 
   if (scopes.includes("semantic") && !projectScoped) {
-    const all = await kv.list<SemanticMemory>(KV.semantic);
+    const all = await collectAll<SemanticMemory>(kv, KV.semantic);
     result.semantic = deltaFilter(all, sinceTime, "updatedAt");
   }
 
   if (scopes.includes("procedural") && !projectScoped) {
-    const all = await kv.list<ProceduralMemory>(KV.procedural);
+    const all = await collectAll<ProceduralMemory>(kv, KV.procedural);
     result.procedural = deltaFilter(all, sinceTime, "updatedAt");
   }
 
   if (scopes.includes("relations") && !projectScoped) {
-    const all = await kv.list<MemoryRelation>(KV.relations);
+    const all = await collectAll<MemoryRelation>(kv, KV.relations);
     result.relations = deltaFilter(all, sinceTime, "createdAt");
   }
 
   if (scopes.includes("graph:nodes") && !projectScoped) {
-    const all = await kv.list<GraphNode>(KV.graphNodes);
+    const all = await collectAll<GraphNode>(kv, KV.graphNodes);
     result.graphNodes = all.filter(
       (n) => new Date(graphNodeTs(n)).getTime() > sinceTime,
     );
   }
 
   if (scopes.includes("graph:edges") && !projectScoped) {
-    const all = await kv.list<GraphEdge>(KV.graphEdges);
+    const all = await collectAll<GraphEdge>(kv, KV.graphEdges);
     result.graphEdges = deltaFilter(all, sinceTime, "createdAt");
   }
 
@@ -458,7 +474,7 @@ async function applySyncData(
   let applied = 0;
 
   if (scopes.includes("memories")) {
-    applied += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt");
+    applied += await lwwMergeList(kv, KV.memories, data.memories, "mem:memory", "updatedAt", (memory) => indexMemory(kv, memory));
   }
   if (scopes.includes("actions")) {
     applied += await lwwMergeList(kv, KV.actions, data.actions, "mem:action", "updatedAt");
@@ -484,12 +500,13 @@ async function applySyncData(
       if (wrote) applied++;
     }
   }
-  if (scopes.includes("graph:nodes")) {
-    applied += await lwwMergeGraphNodes(kv, data.graphNodes);
-  }
-  if (scopes.includes("graph:edges")) {
-    applied += await lwwMergeList(kv, KV.graphEdges, data.graphEdges, "mem:gedge", "createdAt");
-  }
+  const graph = await persistGraphRecords(
+    kv,
+    scopes.includes("graph:nodes") && Array.isArray(data.graphNodes) ? data.graphNodes : [],
+    scopes.includes("graph:edges") && Array.isArray(data.graphEdges) ? data.graphEdges : [],
+    { mode: "lww" },
+  );
+  applied += graph.nodesWritten + graph.edgesWritten;
 
   return applied;
 }

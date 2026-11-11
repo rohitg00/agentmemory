@@ -54,6 +54,29 @@ describe("CircuitBreaker", () => {
     expect(cb.getState().state).toBe("half-open");
   });
 
+  it("reports half-open once the recovery timeout passed, before any call", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(29_999);
+    expect(cb.getState().state).toBe("open");
+    vi.advanceTimersByTime(1);
+    expect(cb.getState().state).toBe("half-open");
+  });
+
+  it("reading the state does not change the breaker", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    expect(cb.getState().state).toBe("half-open");
+    cb.recordFailure();
+    expect(cb.getState().state).toBe("open");
+    expect(cb.isAllowed).toBe(false);
+  });
+
   it("closes on success in half-open state", () => {
     const cb = new CircuitBreaker();
     cb.recordFailure();
@@ -103,5 +126,66 @@ describe("CircuitBreaker", () => {
     cb.recordSuccess();
     expect(cb.getState().state).toBe("closed");
     expect(cb.getState().failures).toBe(0);
+  });
+
+  it("a success in closed state clears the accumulated failure count", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    expect(cb.getState().failures).toBe(2);
+    cb.recordSuccess();
+    expect(cb.getState().failures).toBe(0);
+    expect(cb.getState().lastFailureAt).toBeNull();
+  });
+
+  it("stays closed across 100 calls at a 5% failure rate", () => {
+    const cb = new CircuitBreaker();
+    for (let i = 0; i < 100; i++) {
+      if (i % 20 === 0) cb.recordFailure();
+      else cb.recordSuccess();
+      vi.advanceTimersByTime(1_000);
+      expect(cb.getState().state).toBe("closed");
+    }
+    expect(cb.isAllowed).toBe(true);
+  });
+
+  it("stays closed when failures are interleaved with successes inside the window", () => {
+    const cb = new CircuitBreaker();
+    for (let i = 0; i < 5; i++) {
+      cb.recordFailure();
+      cb.recordSuccess();
+    }
+    expect(cb.getState().state).toBe("closed");
+    expect(cb.getState().failures).toBe(0);
+  });
+
+  it("keeps openedAt when a success arrives while open", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    expect(cb.getState().state).toBe("open");
+    const openedAt = cb.getState().openedAt;
+
+    cb.recordSuccess();
+
+    expect(cb.getState().state).toBe("open");
+    expect(cb.getState().openedAt).toBe(openedAt);
+    expect(cb.isAllowed).toBe(false);
+
+    vi.advanceTimersByTime(30_000);
+    expect(cb.isAllowed).toBe(true);
+    expect(cb.getState().state).toBe("half-open");
+  });
+
+  it("still opens after consecutive failures with no success between them", () => {
+    const cb = new CircuitBreaker();
+    cb.recordSuccess();
+    for (let i = 0; i < 3; i++) {
+      cb.recordFailure();
+      vi.advanceTimersByTime(1_000);
+    }
+    expect(cb.getState().state).toBe("open");
+    expect(cb.isAllowed).toBe(false);
   });
 });

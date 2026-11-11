@@ -29,11 +29,6 @@ export type JsonMcpAdapterConfig = {
   // Extra fields merged into the agentmemory entry. Droid requires
   // type: "stdio"; other hosts ignore unknown fields.
   extraEntryFields?: Record<string, unknown>;
-  // Invoked when `--with-hooks` is passed, independent of whether the MCP
-  // entry was freshly installed or already wired (mirrors the Claude Code /
-  // Codex adapters, issue #508 pattern) — hosts that ship a native hook
-  // config alongside MCP (e.g. Droid's `~/.factory/hooks.json`) pass this
-  // to install/refresh their hook manifest.
   installHooks?: (opts: ConnectOptions) => ConnectResult;
 };
 

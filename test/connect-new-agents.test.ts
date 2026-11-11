@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, readFileSync, existsSync, writeFileSync } from "node:fs";
 import { tmpdir, platform } from "node:os";
 import { join } from "node:path";
 
@@ -76,23 +76,26 @@ describe("connect: Antigravity", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
-  it("writes mcpServers.agentmemory to the platform-specific config path", async () => {
-    const isMac = platform() === "darwin";
-    const userDir = isMac
+  it.each(["antigravity", "antigravity-ide", "legacy"])("detects %s and writes the shared config while preserving other servers", async (surface) => {
+    const legacyDir = platform() === "darwin"
       ? join(home, "Library", "Application Support", "Antigravity", "User")
       : join(home, ".config", "Antigravity", "User");
-    mkdirSync(userDir, { recursive: true });
+    mkdirSync(surface === "legacy" ? legacyDir : join(home, ".gemini", surface), { recursive: true });
+    const configDir = join(home, ".gemini", "config");
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, "mcp_config.json"), JSON.stringify({ mcpServers: { existing: { command: "custom" } } }));
     const { adapter } = await import("../src/cli/connect/antigravity.js");
     expect(adapter.detect()).toBe(true);
-    const result = await adapter.install({ dryRun: false, force: false });
+    const result = await adapter.install({ dryRun: false, force: false, withHooks: true });
     expect(result.kind).toBe("installed");
     const cfg = JSON.parse(
-      readFileSync(join(userDir, "mcp_config.json"), "utf-8"),
+      readFileSync(join(configDir, "mcp_config.json"), "utf-8"),
     );
     expect(cfg.mcpServers.agentmemory.command).toBe("npx");
-    expect(cfg.mcpServers.agentmemory.env.AGENTMEMORY_URL).toMatch(
-      /\$\{AGENTMEMORY_URL:-/,
-    );
+    expect(cfg.mcpServers.existing).toEqual({ command: "custom" });
+    expect(existsSync(join(legacyDir, "mcp_config.json"))).toBe(false);
+    expect(JSON.parse(readFileSync(join(configDir, "hooks.json"), "utf8")).agentmemory.enabled).toBe(true);
+    expect(cfg.mcpServers.agentmemory.env).toEqual({});
   });
 });
 
@@ -184,6 +187,7 @@ describe("connect: Cline", () => {
   beforeEach(() => {
     home = freshHome();
     vi.resetModules();
+    vi.stubEnv("CLINE_MCP_SETTINGS_PATH", undefined);
     process.env["HOME"] = home;
     // os.homedir() on win32 reads USERPROFILE, not HOME — without this,
     // adapter.detect()/install() resolve the real user's home directory
@@ -191,6 +195,7 @@ describe("connect: Cline", () => {
     process.env["USERPROFILE"] = home;
   });
   afterEach(() => {
+    vi.unstubAllEnvs();
     process.env["HOME"] = ORIG;
     if (ORIG_USERPROFILE === undefined) delete process.env["USERPROFILE"];
     else process.env["USERPROFILE"] = ORIG_USERPROFILE;
@@ -202,17 +207,68 @@ describe("connect: Cline", () => {
     expect(adapter.detect()).toBe(false);
   });
 
-  it("writes mcpServers.agentmemory to ~/.cline/mcp.json", async () => {
+  it("writes to the native Cline CLI settings path", async () => {
     mkdirSync(join(home, ".cline"), { recursive: true });
     const { adapter } = await import("../src/cli/connect/cline.js");
     expect(adapter.detect()).toBe(true);
     const result = await adapter.install({ dryRun: false, force: false });
     expect(result.kind).toBe("installed");
     const cfg = JSON.parse(
-      readFileSync(join(home, ".cline", "mcp.json"), "utf-8"),
+      readFileSync(join(home, ".cline", "data", "settings", "cline_mcp_settings.json"), "utf-8"),
     );
     expect(cfg.mcpServers.agentmemory.command).toBe("npx");
     expect(cfg.mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
+    expect(existsSync(join(home, ".cline", "mcp.json"))).toBe(false);
+  });
+
+  it("uses an explicit settings path without a default Cline directory", async () => {
+    const configPath = join(home, "custom-cline", "nested", "mcp.json");
+    vi.stubEnv("CLINE_MCP_SETTINGS_PATH", configPath);
+    const { adapter } = await import("../src/cli/connect/cline.js");
+    expect(adapter.detect()).toBe(true);
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result).toMatchObject({ kind: "installed", mutatedPath: configPath });
+    expect(JSON.parse(readFileSync(configPath, "utf-8")).mcpServers.agentmemory.args).toContain("@agentmemory/mcp");
+    expect(existsSync(join(home, ".cline"))).toBe(false);
+  });
+
+  it("falls back to native settings when the override is empty", async () => {
+    vi.stubEnv("CLINE_MCP_SETTINGS_PATH", "");
+    mkdirSync(join(home, ".cline"));
+    const { adapter } = await import("../src/cli/connect/cline.js");
+    expect(adapter.detect()).toBe(true);
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result).toMatchObject({
+      kind: "installed",
+      mutatedPath: join(home, ".cline", "data", "settings", "cline_mcp_settings.json"),
+    });
+  });
+
+  it.each(["default", "override"])("preserves existing servers and settings at the %s path", async (location) => {
+    const dir = location === "default" ? join(home, ".cline", "data", "settings") : join(home, "custom-cline");
+    const configPath = join(dir, "cline_mcp_settings.json");
+    mkdirSync(dir, { recursive: true });
+    if (location === "override") vi.stubEnv("CLINE_MCP_SETTINGS_PATH", configPath);
+    const existing = { mcpServers: { other: { command: "custom", args: ["server"], disabled: true, autoApprove: ["read"] } }, customSetting: true };
+    const before = JSON.stringify(existing);
+    writeFileSync(configPath, before);
+    const { adapter } = await import("../src/cli/connect/cline.js");
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("installed");
+    if (result.kind !== "installed") throw new Error("installation failed");
+    expect(readFileSync(result.backupPath!, "utf-8")).toBe(before);
+    expect(JSON.parse(readFileSync(configPath, "utf-8"))).toMatchObject(existing);
+    const installed = readFileSync(configPath, "utf-8");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
+    expect(readFileSync(configPath, "utf-8")).toBe(installed);
+  });
+
+  it("does not create an override directory during dry-run", async () => {
+    const configPath = join(home, "custom-cline", "mcp.json");
+    vi.stubEnv("CLINE_MCP_SETTINGS_PATH", configPath);
+    const { adapter } = await import("../src/cli/connect/cline.js");
+    expect(await adapter.install({ dryRun: true, force: false })).toMatchObject({ kind: "installed", mutatedPath: configPath });
+    expect(existsSync(join(home, "custom-cline"))).toBe(false);
   });
 });
 

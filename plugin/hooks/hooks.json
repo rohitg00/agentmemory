@@ -5,7 +5,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/session-start.mjs"]
           }
         ]
       }
@@ -15,7 +16,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/prompt-submit.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/prompt-submit.mjs"]
           }
         ]
       }
@@ -26,7 +28,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-use.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pre-tool-use.mjs"]
           }
         ]
       }
@@ -36,7 +39,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-use.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-use.mjs"]
           }
         ]
       }
@@ -46,7 +50,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-failure.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/post-tool-failure.mjs"]
           }
         ]
       }
@@ -56,7 +61,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/pre-compact.mjs"]
           }
         ]
       }
@@ -66,7 +72,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-start.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/subagent-start.mjs"]
           }
         ]
       }
@@ -76,7 +83,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop.mjs"]
           }
         ]
       }
@@ -86,7 +94,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/notification.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/notification.mjs"]
           }
         ]
       }
@@ -96,7 +105,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/task-completed.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/task-completed.mjs"]
           }
         ]
       }
@@ -106,7 +116,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/stop.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/stop.mjs"]
           }
         ]
       }
@@ -116,7 +127,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/session-end.mjs\""
+            "command": "node",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/session-end.mjs"],
+            "timeout": 10
           }
         ]
       }

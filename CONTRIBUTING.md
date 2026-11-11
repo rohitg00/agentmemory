@@ -31,6 +31,8 @@ If it's a feature: describe the user problem before the implementation. "I could
 4. `npm test` — the full test suite must pass. The one integration test under `test/integration.test.ts` needs a live server on `:3111` and is fine to skip locally.
 5. Commit with sign-off. Rebase over tiny fixup commits so the history stays readable.
 
+Run `npm run build` before focused DSH connector tests too: `npm test -- test/connect-dsh.test.ts` loads the generated `dist/integrations/dsh.mjs` bundle.
+
 ## Pull request flow
 
 - Keep PRs small and focused. One logical change per PR.
@@ -93,20 +95,29 @@ PRs with commits lacking sign-off will not merge.
 
 ## Release process
 
-Maintainers cut releases. Every bump touches these files in lockstep (the consistency tests fail if the trio of doc counts or any version drifts):
-
-1. `package.json`
-2. `src/version.ts`
-3. `plugin/.claude-plugin/plugin.json`
-4. `plugin/plugin.json`
-5. `plugin/.codex-plugin/plugin.json`
-6. `packages/mcp/package.json`
-7. `src/types.ts` (`ExportData.version` union)
-8. `src/functions/export-import.ts` (`supportedVersions` Set)
+Maintainers cut releases. To bump the version, change only `package.json`, then run `npm run docs:sync`. It carries the new version into `src/version.ts`, the `ExportData.version` union in `src/types.ts`, the `supportedVersions` set in `src/functions/export-import.ts`, every plugin and package manifest that shared the old version, the deploy templates, the AGENTS.md stats heading, and CHANGELOG.md (the Unreleased section becomes the new version with today's date and its compare link). Commit everything it changes, and check with `npm run docs:check`.
 
 No lockfiles are committed. `test/export-import.test.ts` asserts against the `VERSION` constant, so it needs no per-release edit. Run `npm run skills:gen` if the endpoint or env surface changed.
 
-Then: CHANGELOG section, PR, merge, tag, GitHub release. The `Publish to npm` workflow picks up the release trigger and publishes `@agentmemory/agentmemory`, `@agentmemory/mcp`, and `@agentmemory/fs-watcher` to npm with provenance (`@agentmemory/fs-watcher` versions independently from `integrations/filesystem-watcher/package.json`).
+Before publishing, run the release gate on the release commit:
+
+```bash
+npm run release:gate
+```
+
+It builds, packs `@agentmemory/agentmemory` and `@agentmemory/mcp`, installs both tarballs into a fresh prefix with a clean `HOME`, starts the installed CLI on random free ports with a deterministic local embedding server (no API keys), and checks capture through the bundled hooks, offline capture and spool recovery, replay dedup after a force kill, dead letters across a restart, vector survival before the first checkpoint, `agentmemory stop` then start, export and import into a fresh home, the MCP entrypoints, and the viewer plus `/agentmemory/status`. It prints a pass or fail line per scenario and a JSON summary, writes logs and `summary.json` to the output directory it prints, and stops only the processes it started. To gate the exact file you will publish, pass it in: `npm pack` then `npm run release:gate -- --tarball agentmemory-agentmemory-<version>.tgz`, and publish that tarball. Do not publish when a scenario fails. The `Release gate` workflow runs the same script on Ubuntu and macOS for pull requests and pushes to main.
+
+For startup changes, also run `npm run test:startup:packaged`. It installs the packed CLI in isolated homes and tests delayed and externally managed Worker Compose runtimes, `--no-engine` joining, worker and readiness failures, timeout cleanup, environment-file precedence, doctor, observability storage, and demo. It does not test adoption of an arbitrary already-running engine or Docker-specific CLI startup scenarios. The default slow-worker case waits 48 seconds before importing the installed worker. Pass `--tarball <file.tgz>` to test an existing artifact. Run the standard release gate first to cache the pinned engine, or set `AGENTMEMORY_GATE_ENGINE` to that engine binary.
+
+For Hermes, OpenClaw or shared skill changes, follow [Native integration tests](docs/native-integration-tests.md). Those gates load plugins and skills from an installed tarball and inspect the native model requests and backend records. Source tests alone do not establish native lifecycle capture or skill discovery.
+
+Then: CHANGELOG section, PR, merge, tag, GitHub release. The `Publish to npm` workflow picks up the release trigger and publishes `@agentmemory/agentmemory` and `@agentmemory/mcp` to npm with provenance. It packs once, runs the release gate with both exact tarballs, checks their hashes again, and publishes those files with lifecycle scripts disabled. It retains the manifest, tarballs and gate logs as workflow artifacts. A failed gate prevents publication.
+
+Manual runs accept a comma-separated selection of `agentmemory`, `mcp`, and `fs-watcher`. The default is `agentmemory,mcp`; `@agentmemory/fs-watcher` versions independently and must be explicitly selected when releasing a new connector version. Its exact packed CLI must pass capture, credential, scope and shutdown checks. An MCP-only run also verifies that the registry's main package is the artifact used in its gate.
+
+Before publishing any selected package, the workflow checks existing versions. An existing version is accepted only when its SHA512 matches the gated tarball and its cryptographically verified SLSA provenance identifies this repository, workflow, ref and source commit. Conflicting or unprovenanced versions fail the run and cannot be overwritten. Only a registry version lookup returning HTTP 404 permits publication; authorization, network and other registry failures never count as absence. After publication, bounded retries allow registry metadata and provenance to propagate, then require the same verification. Reruns can skip only identical, verified artifacts from the same source identity.
+
+These checks do not configure or prove npm publish authorization. Maintainers must separately ensure that each selected package permits this workflow to publish, using its configured trusted publisher or publish token. The workflow retains the existing credential configuration. A successful dry run does not establish that npm will accept a future publication or persist its provenance.
 
 ## Security issues
 

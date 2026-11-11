@@ -3,6 +3,24 @@ import { createHash } from "node:crypto";
 const TTL_MS = 5 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 60_000;
 
+let skippedSinceStart = 0;
+
+export function recordDedupSkip(): void {
+  skippedSinceStart++;
+}
+
+export function getDedupSkippedCount(): number {
+  return skippedSinceStart;
+}
+
+export const DEDUP_WINDOW_MS = TTL_MS;
+
+function outputDigest(toolOutput: unknown): string {
+  if (toolOutput === undefined) return "";
+  const text = typeof toolOutput === "string" ? toolOutput : JSON.stringify(toolOutput) ?? "";
+  return createHash("sha256").update(text).digest("hex");
+}
+
 interface DedupEntry {
   hash: string;
   expiresAt: number;
@@ -17,12 +35,13 @@ export class DedupMap {
     this.cleanupTimer.unref();
   }
 
-  computeHash(sessionId: string, toolName: string, toolInput: unknown): string {
+  computeHash(sessionId: string, toolName: string, toolInput: unknown, toolOutput?: unknown): string {
     const input =
       typeof toolInput === "string"
         ? toolInput.slice(0, 500)
         : JSON.stringify(toolInput ?? "").slice(0, 500);
-    const raw = `${sessionId}:${toolName}:${input}`;
+    const output = outputDigest(toolOutput);
+    const raw = output ? `${sessionId}:${toolName}:${input}:${output}` : `${sessionId}:${toolName}:${input}`;
     return createHash("sha256").update(raw).digest("hex");
   }
 

@@ -1,6 +1,14 @@
 import type { MemoryProvider, CircuitBreakerState } from "../types.js";
 import { CircuitBreaker } from "./circuit-breaker.js";
 
+const FILTER_CODE = /content_filter|ResponsibleAIPolicyViolation/;
+const REJECTED_STATUS = /^[^{]*\(400\)/;
+
+export function isPayloadRejection(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return REJECTED_STATUS.test(message) && FILTER_CODE.test(message);
+}
+
 export class ResilientProvider implements MemoryProvider {
   private breaker = new CircuitBreaker();
   name: string;
@@ -18,7 +26,9 @@ export class ResilientProvider implements MemoryProvider {
       this.breaker.recordSuccess();
       return result;
     } catch (err) {
-      this.breaker.recordFailure();
+      if (!isPayloadRejection(err)) {
+        this.breaker.recordFailure();
+      }
       throw err;
     }
   }
