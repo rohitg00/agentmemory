@@ -4,6 +4,7 @@ import * as p from "@clack/prompts";
 import { isMap, isSeq, parseDocument, type YAMLMap } from "yaml";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
+  AGENTMEMORY_MCP_BLOCK,
   backupFile,
   resolveDshHome,
   logAlreadyWired,
@@ -20,8 +21,8 @@ const MCP_BLOCK = `- insert:
       config:
         transport: stdio
         serverName: agentmemory
-        command: npx
-        args: ['-y', '@agentmemory/mcp']
+        command: ${AGENTMEMORY_MCP_BLOCK.command}
+        args: [${AGENTMEMORY_MCP_BLOCK.args.map((arg) => `'${arg}'`).join(", ")}]
         env:
           AGENTMEMORY_URL: !!js process.env.AGENTMEMORY_URL || 'http://localhost:3111'
           AGENTMEMORY_SECRET: !!js process.env.AGENTMEMORY_SECRET || ''

@@ -4,6 +4,7 @@ import { join, dirname } from "node:path";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
+  AGENTMEMORY_MCP_BLOCK,
   backupFile,
   logAlreadyWired,
   logBackup,
@@ -22,8 +23,8 @@ const CODEX_TOML = join(CODEX_DIR, "config.toml");
 const CODEX_HOOKS = join(CODEX_DIR, "hooks.json");
 
 const TOML_BLOCK = `[mcp_servers.agentmemory]
-command = "npx"
-args = ["-y", "@agentmemory/mcp"]
+command = ${JSON.stringify(AGENTMEMORY_MCP_BLOCK.command)}
+args = [${AGENTMEMORY_MCP_BLOCK.args.map((arg) => JSON.stringify(arg)).join(", ")}]
 
 [mcp_servers.agentmemory.env]
 AGENTMEMORY_URL = "http://localhost:3111"

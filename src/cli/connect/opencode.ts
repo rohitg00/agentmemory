@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
+  AGENTMEMORY_MCP_BLOCK,
   backupFile,
   logAlreadyWired,
   logBackup,
@@ -28,7 +29,7 @@ const DETECT_DIR = join(homedir(), ".config", "opencode");
 // shim defaults unset vars (URL -> localhost:3111, no secret, all tools).
 const OPENCODE_ENTRY = {
   type: "local",
-  command: ["npx", "-y", "@agentmemory/mcp"],
+  command: [AGENTMEMORY_MCP_BLOCK.command, ...AGENTMEMORY_MCP_BLOCK.args],
   enabled: true,
 };
 

@@ -8,7 +8,10 @@ import { createJsonMcpAdapter } from "./json-mcp-adapter.js";
 // even on macOS; ~/Library/Application Support/Zed/ holds runtime data
 // like the database + cached language servers, not the config).
 // Source: zed.dev/docs/ai/mcp + zed.dev/docs/configuring-zed
-const zedConfigDir = join(homedir(), ".config", "zed");
+const zedConfigDir =
+  process.platform === "win32"
+    ? join(process.env["APPDATA"] || join(homedir(), "AppData", "Roaming"), "Zed")
+    : join(homedir(), ".config", "zed");
 
 export const adapter = createJsonMcpAdapter({
   name: "zed",
