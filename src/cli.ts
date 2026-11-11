@@ -43,6 +43,7 @@ import {
   canAutoFix,
   doctorPromptsAllowed,
   dryRunPlan,
+  failureReport,
   parseEnvFile,
   type Diagnostic,
   type DiagnosticFixResult,
@@ -104,6 +105,7 @@ import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
 import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
+import { engineOnlyLines, probeWorkerConnection } from "./cli/worker-connection.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -1878,6 +1880,11 @@ async function runStatus() {
     process.exit(1);
   }
 
+  if (await probeWorkerConnection(base, bearerHeaders(base)) === "engine-only") {
+    p.log.error(engineOnlyLines(base).join("\n"));
+    process.exit(1);
+  }
+
   try {
     const [healthRes, sessionsRes, graphRes, memoriesRes, flagsRes, followupRes] = await Promise.all([
       apiFetch<any>(base, "health"),
@@ -2101,6 +2108,7 @@ function buildDoctorEffects(): DoctorEffects {
       const managed = state?.kind === "compose" && state.restPort === getRestPort() && !remoteTarget;
       return !managed && await isEngineRunning();
     },
+    workerConnection: () => probeWorkerConnection(getBaseUrl(), bearerHeaders(getBaseUrl())),
     viewerReachable: async (timeoutMs = 2000) => {
       try {
         await discoverViewerPort();
@@ -2407,15 +2415,14 @@ async function runDoctor() {
       continue;
     }
     failed++;
-    p.log.warn(`${d.id} ✗ ${status.detail ?? ""}`.trim());
+    const report = failureReport(d, status);
+    p.log.warn(report.problem);
+    p.log.info(report.fix);
 
     if (!canAutoFix(d, status)) {
-      p.log.info(`manual fix: ${status.manualFix ?? d.fixPreview}`);
       skipped++;
       continue;
     }
-
-    p.log.info(`why: ${d.fixPreview}`);
 
     if (applyAll) {
       const r = await applyFixWithReport(d, ctx, false);

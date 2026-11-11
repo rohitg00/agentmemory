@@ -24,6 +24,7 @@ import {
   llmOptInHint,
   parseEnvContent,
 } from "../config.js";
+import { ENGINE_ONLY_DOCKER_GUIDE, ENGINE_ONLY_FIX, type WorkerConnection } from "./worker-connection.js";
 
 export type DiagnosticStatus = {
   ok: boolean;
@@ -73,6 +74,13 @@ export function canAutoFix(d: Diagnostic, status?: DiagnosticStatus): boolean {
   return !d.manualOnly && !status?.manualFix;
 }
 
+export function failureReport(d: Diagnostic, status: DiagnosticStatus): { problem: string; fix: string } {
+  return {
+    problem: `${d.id} ✗ ${d.message}${status.detail ? ` (${status.detail})` : ""}`,
+    fix: `${canAutoFix(d, status) ? "fix" : "manual fix"}: ${status.manualFix ?? d.fixPreview}`,
+  };
+}
+
 export function doctorPromptsAllowed(
   env: NodeJS.ProcessEnv,
   stdinIsTTY: boolean | undefined,
@@ -87,6 +95,7 @@ export const DIAGNOSTIC_IDS = [
   "no-llm-provider-key",
   "embedding-provider-not-chosen",
   "engine-version-mismatch",
+  "worker-not-connected",
   "viewer-unreachable",
   "stale-pidfile",
   "env-placeholder-keys",
@@ -143,6 +152,7 @@ export type DoctorEffects = {
   /** Run `iii --version`; null if it fails. */
   iiiBinaryVersion: (binPath: string) => string | null;
   externalEngineRunning: () => Promise<boolean>;
+  workerConnection: () => Promise<WorkerConnection>;
   /** Probe the viewer URL; true if it returns OK within timeoutMs. */
   viewerReachable: (timeoutMs?: number) => Promise<boolean>;
   /** Run init logic (copies .env.example). */
@@ -290,6 +300,27 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
       },
     },
     {
+      id: "worker-not-connected",
+      message: "The iii engine is running, but the agentmemory worker is not connected to it.",
+      fixPreview: ENGINE_ONLY_FIX,
+      moreInfo:
+        "The REST port answers, but /agentmemory/livez and /agentmemory/health return 404. " +
+        "Only the agentmemory worker registers those routes, so the engine runs alone: status shows " +
+        "no version and no health, and the viewer is not served. Old Docker images from the legacy " +
+        "CLI Docker mode ran only the engine. Migration guide: " +
+        ENGINE_ONLY_DOCKER_GUIDE,
+      manualOnly: true,
+      check: async (ctx) => {
+        const connection = await effects.workerConnection();
+        if (connection === "engine-only") {
+          return { ok: false, detail: `engine at ${ctx.baseUrl} has no agentmemory routes (404)` };
+        }
+        if (connection === "unreachable") return { ok: true, detail: "server not reachable (see Server reachable)" };
+        return { ok: true };
+      },
+      fix: async () => ({ ok: false, message: ENGINE_ONLY_FIX }),
+    },
+    {
       id: "viewer-unreachable",
       message: "Viewer port not reachable.",
       fixPreview: "Stop the engine, restart it, and retry the viewer probe.",
@@ -357,14 +388,16 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     {
       id: "iii-on-path-not-local-bin",
       message:
-        "iii is on PATH but agentmemory's private install is absent or mismatched.",
+        "agentmemory's own iii at ~/.agentmemory/bin/iii is missing or a different version, so an iii on your PATH is used instead.",
       fixPreview:
-        "Install the pinned version to ~/.agentmemory/bin — won't touch your PATH.",
+        "Run npx -y @agentmemory/agentmemory@latest. It installs the pinned iii to ~/.agentmemory/bin/iii and does not change your PATH or the other iii.",
       moreInfo:
-        "agentmemory installs its pinned engine to ~/.agentmemory/bin/iii so a " +
+        "agentmemory keeps its pinned engine at ~/.agentmemory/bin/iii so a " +
         "user-managed iii on PATH (homebrew, cargo, manual install) stays untouched. " +
-        "When agentmemory needs the pin and PATH doesn't have it, it falls back to the " +
-        "private install. If neither exists, run the installer.",
+        "When that copy is missing or has a different version, startup uses the iii on PATH " +
+        "if it matches the pin. If the PATH iii has a different version, startup installs the " +
+        "pinned copy into ~/.agentmemory/bin first. The engine-version-mismatch check shows " +
+        "which version each binary reports.",
       manualOnly: true,
       check: async (ctx) => {
         const bin = effects.findIiiBinary();
@@ -378,7 +411,17 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
             detail: `private install pinned; PATH iii at ${bin} stays untouched`,
           };
         }
-        return { ok: false, detail: `iii at: ${bin}` };
+        const pathVersion = effects.iiiBinaryVersion(bin);
+        const detail = `PATH iii at ${bin} is ${pathVersion ?? "an unknown version"} (pinned ${ctx.pinnedVersion})`;
+        if (pathVersion === ctx.pinnedVersion) {
+          return {
+            ok: false,
+            detail,
+            manualFix:
+              "The PATH iii is the pinned version, so startup can use it and no action is needed. To give agentmemory its own copy in ~/.agentmemory/bin, run npx -y @agentmemory/agentmemory@latest upgrade and accept the iii-engine install step.",
+          };
+        }
+        return { ok: false, detail };
       },
       fix: async () =>
         effects.runIiiInstaller().then((r) => ({
