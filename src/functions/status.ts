@@ -359,8 +359,8 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     problems.push({
       level: "error",
       code: "bm25-rebuild-incomplete",
-      message: `The keyword index could not load every session at boot, so some observations are missing from search until the next successful rebuild${bm25RetryDetail(input.index)}.`,
-      fix: "No action needed: agentmemory retries the failed sessions in the background and clears this when they load. If it keeps failing, check the server log for the session listing error.",
+      message: `The keyword index could not load all memories or session observations at boot, so some are missing from search until they load${bm25RetryDetail(input.index)}.`,
+      fix: "No action needed: agentmemory retries the failed loads in the background and clears this when they succeed. If it keeps failing, check the server log for keyword index loading errors.",
     });
   }
 

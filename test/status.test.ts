@@ -134,7 +134,7 @@ describe("evaluateStatus", () => {
     const problem = report.problems.find((p) => p.code === "bm25-rebuild-incomplete");
     expect(problem?.message).toContain("12 sessions failed to load");
     expect(problem?.message).toContain("next retry at 2026-11-11T10:00:30.000Z");
-    expect(problem?.fix).toMatch(/retries the failed sessions in the background/);
+    expect(problem?.fix).toMatch(/retries the failed loads in the background/);
   });
 
   it("notes a pending vector backfill without raising the overall status", () => {

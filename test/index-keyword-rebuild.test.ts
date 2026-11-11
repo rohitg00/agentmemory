@@ -603,6 +603,99 @@ describe("keyword rebuild background retry", () => {
     expect(getKeywordRetryStatus().running).toBe(false);
   });
 
+  it("keeps the retry page size at the minimum after many attempts", async () => {
+    vi.useFakeTimers();
+    const kv = mockKV();
+    seed(kv, 2, 2, () => "2026-09-01T00:00:00.000Z");
+    const pageSizes: number[] = [];
+    const pagedKv = {
+      ...kv,
+      list: async <T>(scope: string): Promise<T[]> => {
+        if (scope === "mem:obs:ses_1") throw new Error("invocation timed out");
+        return kv.list<T>(scope);
+      },
+      iterate: async function* <T>(scope: string, opts: { pageSize?: number } = {}): AsyncGenerator<T[]> {
+        if (scope === "mem:obs:ses_1") {
+          pageSizes.push(opts.pageSize ?? 0);
+          throw new Error("invocation timed out");
+        }
+        yield await kv.list<T>(scope);
+      },
+    };
+
+    await rebuildKeywordIndex(pagedKv as never);
+    await vi.advanceTimersByTimeAsync(48 * 60 * 60_000);
+
+    expect(pageSizes.length).toBeGreaterThan(34);
+    expect(pageSizes.slice(0, 4)).toEqual([200, 100, 50, 25]);
+    expect(pageSizes.slice(3).every((size) => size === 25)).toBe(true);
+  });
+
+  it("reads the session list through paged reads on retry", async () => {
+    vi.useFakeTimers();
+    const kv = mockKV();
+    seed(kv, 2, 2, () => "2026-09-01T00:00:00.000Z");
+    let down = true;
+    const iterated: string[] = [];
+    const pagedKv = {
+      ...kv,
+      list: async <T>(scope: string): Promise<T[]> => {
+        if (scope === "mem:sessions") throw new Error("frame too large");
+        return kv.list<T>(scope);
+      },
+      iterate: async function* <T>(scope: string): AsyncGenerator<T[]> {
+        iterated.push(scope);
+        if (down && scope === "mem:sessions") throw new Error("frame too large");
+        yield await kv.list<T>(scope);
+      },
+    };
+
+    await rebuildKeywordIndex(pagedKv as never);
+    expect(getKeywordRetryStatus().sessionListPending).toBe(true);
+
+    down = false;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(iterated.filter((scope) => scope === "mem:sessions").length).toBeGreaterThan(1);
+    expect(getSearchIndex().has("obs_3")).toBe(true);
+    expect(isBm25RebuildIncomplete()).toBe(false);
+  });
+
+  it("lets a new rebuild schedule its retry while an older retry is still running", async () => {
+    vi.useFakeTimers();
+    const kv = mockKV();
+    seed(kv, 2, 2, () => "2026-09-01T00:00:00.000Z");
+    let calls = 0;
+    let release: (() => void) | null = null;
+    const slowKv = {
+      ...kv,
+      list: async <T>(scope: string): Promise<T[]> => {
+        if (scope !== "mem:obs:ses_1") return kv.list<T>(scope);
+        calls++;
+        if (calls === 1 || calls === 3) throw new Error("invocation timed out");
+        if (calls === 2) await new Promise<void>((resolve) => { release = resolve; });
+        return kv.list<T>(scope);
+      },
+    };
+
+    await rebuildKeywordIndex(slowKv as never);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(getKeywordRetryStatus().running).toBe(true);
+
+    await rebuildKeywordIndex(slowKv as never);
+    expect(getKeywordRetryStatus()).toMatchObject({ failedSessions: 1, running: false });
+    expect(getKeywordRetryStatus().nextRetryAt).not.toBeNull();
+
+    release!();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getKeywordRetryStatus().failedSessions).toBe(1);
+    expect(isBm25RebuildIncomplete()).toBe(true);
+
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(calls).toBe(4);
+    expect(getSearchIndex().has("obs_2")).toBe(true);
+    expect(isBm25RebuildIncomplete()).toBe(false);
+  });
+
   it("drops a pending retry when a new full rebuild starts or on shutdown", async () => {
     vi.useFakeTimers();
     const kv = mockKV();

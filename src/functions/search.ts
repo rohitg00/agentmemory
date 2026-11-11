@@ -725,7 +725,7 @@ type KeywordRetryState = {
   attempts: number
   nextAt: number | null
   timer: ReturnType<typeof setTimeout> | null
-  running: boolean
+  runningGeneration: number | null
   stopped: boolean
   generation: number
 }
@@ -737,7 +737,7 @@ const keywordRetry: KeywordRetryState = {
   attempts: 0,
   nextAt: null,
   timer: null,
-  running: false,
+  runningGeneration: null,
   stopped: false,
   generation: 0,
 }
@@ -757,9 +757,13 @@ export function getKeywordRetryStatus(): KeywordRetryStatus {
     sessionListPending: keywordRetry.sessionList,
     memoriesPending: keywordRetry.memories,
     attempts: keywordRetry.attempts,
-    running: keywordRetry.running,
+    running: keywordRetryRunning(),
     nextRetryAt: keywordRetry.nextAt === null ? null : new Date(keywordRetry.nextAt).toISOString(),
   }
+}
+
+function keywordRetryRunning(): boolean {
+  return keywordRetry.runningGeneration !== null && keywordRetry.runningGeneration === keywordRetry.generation
 }
 
 function keywordRetryPending(): boolean {
@@ -789,7 +793,7 @@ export function stopKeywordRebuildRetry(): void {
 }
 
 function scheduleKeywordRetry(kv: StateKV): void {
-  if (keywordRetry.stopped || !keywordRetryPending() || keywordRetry.timer || keywordRetry.running) return
+  if (keywordRetry.stopped || !keywordRetryPending() || keywordRetry.timer || keywordRetryRunning()) return
   const wait = Math.min(KEYWORD_RETRY_MAX_MS, KEYWORD_RETRY_BASE_MS * 2 ** keywordRetry.attempts)
   const generation = keywordRetry.generation
   keywordRetry.nextAt = Date.now() + wait
@@ -810,9 +814,9 @@ async function listSessionObservations(kv: StateKV, scope: string, pageSize: num
 }
 
 async function retryKeywordRebuild(kv: StateKV, generation: number): Promise<void> {
-  keywordRetry.running = true
+  keywordRetry.runningGeneration = generation
   keywordRetry.attempts++
-  const pageSize = Math.max(KEYWORD_RETRY_MIN_PAGE_SIZE, KEYWORD_RETRY_PAGE_SIZE >> (keywordRetry.attempts - 1))
+  const pageSize = Math.max(KEYWORD_RETRY_MIN_PAGE_SIZE, Math.floor(KEYWORD_RETRY_PAGE_SIZE / 2 ** (keywordRetry.attempts - 1)))
   const current = () => generation === keywordRetry.generation
   const idx = getSearchIndex()
   let added = 0
@@ -831,7 +835,7 @@ async function retryKeywordRebuild(kv: StateKV, generation: number): Promise<voi
       }
     }
     if (keywordRetry.sessionList) {
-      const sessions = await kv.list<Session>(KV.sessions).catch(() => null)
+      const sessions = await collectAll<Session>(kv, KV.sessions).catch(() => null)
       if (!current()) return
       if (sessions) {
         for (const session of sessions) keywordRetry.sessions.add(session.id)
@@ -858,7 +862,7 @@ async function retryKeywordRebuild(kv: StateKV, generation: number): Promise<voi
   } catch (err) {
     logger.warn('keyword index retry failed', { error: err instanceof Error ? err.message : String(err) })
   } finally {
-    keywordRetry.running = false
+    if (keywordRetry.runningGeneration === generation) keywordRetry.runningGeneration = null
     if (added > 0) scheduleIndexSave()
     scheduleKeywordRetry(kv)
   }
