@@ -73,7 +73,10 @@ export function engineOnlyFix(startCommand = DEFAULT_START_COMMAND): string {
 }
 
 export function shellArg(value: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform === "win32") return /^[A-Za-z0-9._:\\/-]+$/.test(value) ? value : `"${value}"`;
+  if (platform === "win32") {
+    const trimmed = /^[A-Za-z]:\\$/.test(value) ? value : value.replace(/[\\/]+$/, "") || value;
+    return /^[A-Za-z0-9._:\\/-]+$/.test(trimmed) ? trimmed : `'${trimmed.replace(/'/g, "''")}'`;
+  }
   if (/^[A-Za-z0-9._:/@%+=,-]+$/.test(value)) return value;
   return `'${value.replace(/'/g, `'"'"'`)}'`;
 }

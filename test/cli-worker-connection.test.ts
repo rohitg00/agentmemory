@@ -155,7 +155,14 @@ describe("shellArg", () => {
     expect(shellArg("/tmp/$HOME", "linux")).toBe("'/tmp/$HOME'");
   });
 
-  it("double-quotes Windows paths with spaces or apostrophes", () => {
-    expect(shellArg("C:\\Users\\O'Reilly\\my data", "win32")).toBe(`"C:\\Users\\O'Reilly\\my data"`);
+  it("single-quotes Windows paths for PowerShell so apostrophes and dollar signs stay literal", () => {
+    expect(shellArg("C:\\Users\\O'Reilly\\my data", "win32")).toBe(`'C:\\Users\\O''Reilly\\my data'`);
+    expect(shellArg("C:\\data\\$archive", "win32")).toBe(`'C:\\data\\$archive'`);
+  });
+
+  it("drops trailing Windows separators so no backslash precedes a closing quote", () => {
+    expect(shellArg("C:\\my data\\", "win32")).toBe(`'C:\\my data'`);
+    expect(shellArg("C:\\data\\", "win32")).toBe("C:\\data");
+    expect(shellArg("C:\\", "win32")).toBe("C:\\");
   });
 });
