@@ -11,6 +11,7 @@ import { safeAudit } from "./audit.js";
 import { withKeyedLocks } from "../state/keyed-mutex.js";
 import { stableStringify } from "../capture/event-id.js";
 import { supersededAt } from "../state/memory-utils.js";
+import { flushIndexSave, indexMemory, unindexMemory } from "./search.js";
 
 const CONSOLIDATION_SYSTEM = `You are a memory consolidation engine. Given a set of related observations from coding sessions, synthesize them into a single long-term memory.
 
@@ -179,6 +180,7 @@ export function registerConsolidateFunction(
 
           const publicationLocks = ["mem:remember", ...sessionIds.map((sid) => `obs:${sid}`)];
           let adoptedId: string | undefined;
+          let publishedMemory: Memory | undefined;
           const published = await withKeyedLocks(publicationLocks, async () => {
             for (const sid of sessionIds) {
               const current = await kv.get<Session>(KV.sessions, sid);
@@ -213,6 +215,7 @@ export function registerConsolidateFunction(
               await kv.set(KV.memories, parent.id, { ...parent, isLatest: false, updatedAt });
               parent.isLatest = false;
               parent.updatedAt = updatedAt;
+              unindexMemory(parent.id);
               await safeAudit(kv, "evolve", "mem::consolidate", [parent.id], {
                 action: "complete_publication", newId: child.id,
               });
@@ -266,7 +269,9 @@ export function registerConsolidateFunction(
                 await kv.delete(KV.memories, memory.id);
                 throw error;
               }
+              unindexMemory(previous.id);
             }
+            publishedMemory = memory;
             await safeAudit(kv, previous ? "evolve" : "remember", "mem::consolidate", [memory.id], {
               action: previous ? "evolve_memory" : "create_memory",
               ...(previous && { oldId: previous.id, newId: memory.id }),
@@ -277,6 +282,7 @@ export function registerConsolidateFunction(
           if (adoptedId) {
             await safeAudit(kv, "evolve", "mem::consolidate", [adoptedId], { action: "adopt_legacy", concept });
           }
+          if (publishedMemory) await indexMemory(kv, publishedMemory);
           if (published) consolidated++;
         } catch (err) {
           logger.warn("Consolidation failed for concept", {
@@ -288,6 +294,7 @@ export function registerConsolidateFunction(
         }
       }
 
+      if (consolidated > 0) await flushIndexSave().catch(() => {});
       logger.info("Consolidation complete", {
         consolidated,
         totalObs: allObs.length,
