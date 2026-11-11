@@ -271,4 +271,23 @@ describe("standalone local fallback expiry", () => {
     const stored = await localKv.list<{ content: string }>("mem:memories");
     expect(stored.map((memory) => memory.content)).toEqual(["permanent note"]);
   });
+
+  it("records an audit entry for each expired fallback memory it deletes", async () => {
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("ECONNREFUSED");
+    }) as unknown as typeof fetch;
+    const localKv = new InMemoryKV(undefined);
+    vi.useFakeTimers({ now: new Date("2026-11-01T00:00:00Z"), toFake: ["Date"] });
+    const saved = await handleToolCall("memory_save", { content: "temporary note", ttlDays: 0.001 }, localKv);
+    const id = JSON.parse(saved.content[0].text).saved as string;
+    vi.setSystemTime(new Date("2026-11-01T00:05:00Z"));
+    await handleToolCall("memory_recall", { query: "note" }, localKv);
+    const audit = JSON.parse((await handleToolCall("memory_audit", {}, localKv)).content[0].text) as {
+      entries: Array<{ operation: string; targetIds: string[]; details: Record<string, unknown> }>;
+    };
+    const deletions = audit.entries.filter((entry) => entry.operation === "delete");
+    expect(deletions).toHaveLength(1);
+    expect(deletions[0].targetIds).toEqual([id]);
+    expect(deletions[0].details).toMatchObject({ reason: "auto-forget TTL", resource: "memory", storage: "local" });
+  });
 });

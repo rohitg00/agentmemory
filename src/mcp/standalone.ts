@@ -15,7 +15,7 @@ import { pageAfterCursor, sortByKeyDesc } from "../state/list-query.js";
 import type { Memory, SearchResult, Session } from "../types.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
-import { queryAudit } from "../functions/audit.js";
+import { queryAudit, safeAudit } from "../functions/audit.js";
 import {
   resolveHandle,
   invalidateHandle,
@@ -338,7 +338,15 @@ async function liveLocalMemories(kvInstance: InMemoryKV, now = Date.now()): Prom
   const memories = await kvInstance.list<Memory>("mem:memories");
   const expired = memories.filter((memory) => memory.forgetAfter && Date.parse(memory.forgetAfter) <= now);
   if (expired.length === 0) return memories;
-  for (const memory of expired) await kvInstance.delete("mem:memories", memory.id);
+  for (const memory of expired) {
+    await kvInstance.delete("mem:memories", memory.id);
+    await safeAudit(kvInstance as never, "delete", "mem::auto-forget", [memory.id], {
+      resource: "memory",
+      reason: "auto-forget TTL",
+      timestamp: memory.forgetAfter,
+      storage: "local",
+    });
+  }
   kvInstance.persist();
   return memories.filter((memory) => !expired.includes(memory));
 }
