@@ -89,6 +89,8 @@ curl -X POST localhost:3111/agentmemory/graph/import-graphify \
 
 This merges Graphify's structural entities and relationships (with their EXTRACTED/INFERRED confidence carried over as edge weight) into agentmemory's knowledge graph, so graph retrieval and context injection see codebase structure the developer never touched in a session. Re-importing after `graphify update .` merges instead of duplicating.
 
+The request accepts two fields: `cwd` (reads `<cwd>/graphify-out/graph.json`) or `path` (an explicit `.json` file). Both must be under `~/.agentmemory`, the data directory, or a directory in `AGENTMEMORY_IMPORT_ROOT`; a leading `~` is expanded in all three. The import keeps the first 5000 nodes and 20000 edges. Set `AGENTMEMORY_GRAPH_IMPORT_MAX_NODES` and `AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES` to raise the limits. When the response has `truncated: true`, `droppedNodes` and `droppedEdges` give what was left out. When `graphIndex.ready` is `false`, the rows are stored but the viewer cannot show them until you run `agentmemory graph-index migrate --allow-legacy-scan`.
+
 ## How the four projects line up
 
 Four planes, four consumers, four update models. None of them try to do what the others do.

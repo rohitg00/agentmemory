@@ -11,6 +11,10 @@ vi.mock("../src/logger.js", () => ({
 import { parseGraphifyGraph, registerGraphImportFunction } from "../src/functions/graph-import.js";
 import { KV } from "../src/state/schema.js";
 import type { GraphNode, GraphEdge } from "../src/types.js";
+import { logger } from "../src/logger.js";
+import { createGraphIndexState } from "./helpers/graph-index-state.js";
+import { initializeGraphIndex } from "../src/state/graph-retrieval-index.js";
+import { queryGraphIndex } from "../src/functions/graph-index-query.js";
 
 // graphify's clustered graph.json is NetworkX node_link: nodes carry
 // label/source_file/community/file_type, links carry
@@ -121,7 +125,136 @@ describe("parseGraphifyGraph", () => {
     };
     const parsed = parseGraphifyGraph(JSON.stringify(big));
     expect(parsed.nodes).toHaveLength(5000);
-    expect(parsed.truncated).toEqual({ nodes: 10, edges: 0 });
+    expect(parsed.droppedNodes).toBe(10);
+    expect(parsed.droppedEdges).toBe(0);
+  });
+
+  it("counts edges lost to the caps apart from dangling edges", () => {
+    const fixture = {
+      nodes: [{ id: "a", label: "a" }, { id: "b", label: "b" }, { id: "c", label: "c" }],
+      links: [
+        { source: "a", target: "b" },
+        { source: "a", target: "c" },
+        { source: "a", target: "ghost" },
+        { source: "b", target: "a" },
+      ],
+    };
+    const parsed = parseGraphifyGraph(JSON.stringify(fixture), { maxNodes: 2, maxEdges: 3 });
+    expect(parsed.nodes.map((n) => n.name)).toEqual(["a", "b"]);
+    expect(parsed.edges).toHaveLength(1);
+    expect(parsed.droppedNodes).toBe(1);
+    expect(parsed.droppedEdges).toBe(2);
+    expect(parsed.skippedEdges).toBe(1);
+  });
+});
+
+describe("mem::graph::import-graphify limits, paths and index visibility", () => {
+  let tmp: string;
+  const saved: Record<string, string | undefined> = {};
+  const envKeys = ["AGENTMEMORY_IMPORT_ROOT", "AGENTMEMORY_GRAPH_IMPORT_MAX_NODES", "AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES", "HOME", "USERPROFILE"];
+
+  beforeEach(() => {
+    for (const key of envKeys) saved[key] = process.env[key];
+    tmp = mkdtempSync(join(tmpdir(), "am-graphify-"));
+    process.env.AGENTMEMORY_IMPORT_ROOT = tmp;
+    mkdirSync(join(tmp, "graphify-out"), { recursive: true });
+    writeFileSync(join(tmp, "graphify-out", "graph.json"), JSON.stringify(FIXTURE));
+    vi.mocked(logger.warn).mockClear();
+  });
+
+  afterEach(() => {
+    for (const key of envKeys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  async function runImport(kv: unknown, payload: Record<string, unknown>) {
+    const sdk = mockSdk();
+    registerGraphImportFunction(sdk, kv as never);
+    return (await (sdk as any).trigger({
+      function_id: "mem::graph::import-graphify",
+      payload,
+    })) as Record<string, any>;
+  }
+
+  it("reports truncation with limits, dropped counts and a logged warning", async () => {
+    process.env.AGENTMEMORY_GRAPH_IMPORT_MAX_NODES = "2";
+    process.env.AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES = "100";
+    const result = await runImport(mockKV(), { cwd: tmp });
+    expect(result.success).toBe(true);
+    expect(result.truncated).toBe(true);
+    expect(result.limits).toEqual({ nodes: 2, edges: 100 });
+    expect(result.nodesRead).toBe(4);
+    expect(result.nodesImported).toBe(2);
+    expect(result.droppedNodes).toBe(2);
+    expect(result.droppedEdges).toBe(1);
+    expect(result.warnings.join(" ")).toContain("AGENTMEMORY_GRAPH_IMPORT_MAX_NODES");
+    expect(vi.mocked(logger.warn)).toHaveBeenCalledWith("graphify import truncated", expect.objectContaining({ droppedNodes: 2 }));
+  });
+
+  it("reports no truncation under the default limits", async () => {
+    const result = await runImport(mockKV(), { cwd: tmp });
+    expect(result.truncated).toBe(false);
+    expect(result.limits).toEqual({ nodes: 5000, edges: 20000 });
+    expect(result.droppedNodes).toBe(0);
+    expect(result.droppedEdges).toBe(0);
+  });
+
+  it("expands a leading ~ in AGENTMEMORY_IMPORT_ROOT and in cwd", async () => {
+    process.env.HOME = tmp;
+    process.env.USERPROFILE = tmp;
+    process.env.AGENTMEMORY_IMPORT_ROOT = "~";
+    const result = await runImport(mockKV(), { cwd: "~" });
+    expect(result.success).toBe(true);
+    expect(result.path).toBe(join(tmp, "graphify-out", "graph.json"));
+    expect(result.nodesImported).toBe(4);
+  });
+
+  it("keeps root confinement when ~ points outside the allowed roots", async () => {
+    const home = mkdtempSync(join(tmpdir(), "am-graphify-home-"));
+    try {
+      process.env.HOME = home;
+      process.env.USERPROFILE = home;
+      process.env.AGENTMEMORY_IMPORT_ROOT = tmp;
+      const result = await runImport(mockKV(), { path: "~/graph.json" });
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("outside the allowed roots");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("makes imported nodes visible to the indexed graph query the viewer uses", async () => {
+    const { kv } = createGraphIndexState();
+    await initializeGraphIndex(kv, { status: "ready" });
+    const result = await runImport(kv, { cwd: tmp });
+    expect(result.success).toBe(true);
+    expect(result.graphIndex).toMatchObject({ state: "ready", ready: true });
+    expect(result.warnings).toBeUndefined();
+    const query = await queryGraphIndex(kv, { limit: 500 });
+    expect(query.nodes.map((n) => n.name).sort()).toEqual(["architecture overview", "cluster.py", "extract", "retry rationale"]);
+    expect(query.edges).toHaveLength(2);
+  });
+
+  it("warns when the store has no graph index, since the viewer cannot show the import", async () => {
+    const { kv } = createGraphIndexState();
+    const result = await runImport(kv, { cwd: tmp });
+    expect(result.success).toBe(true);
+    expect(result.newNodes).toBe(4);
+    expect(result.graphIndex).toMatchObject({ state: "needs-migration", ready: false });
+    expect(result.warnings.join(" ")).toContain("graph-index migrate");
+    expect((await queryGraphIndex(kv, { limit: 500 })).nodes).toHaveLength(0);
+  });
+
+  it("reports merged counts when a re-import finds every node already present", async () => {
+    const kv = mockKV();
+    await runImport(kv, { cwd: tmp });
+    const second = await runImport(kv, { cwd: tmp });
+    expect(second.newNodes).toBe(0);
+    expect(second.mergedNodes).toBe(4);
+    expect(second.mergedEdges).toBe(2);
   });
 });
 

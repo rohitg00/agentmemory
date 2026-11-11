@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- `POST /agentmemory/graph/import-graphify` no longer truncates large graphs without saying so. The response has `truncated`, `limits`, `droppedNodes` and `droppedEdges`, plus `warnings`, and the server logs a warning. `AGENTMEMORY_GRAPH_IMPORT_MAX_NODES` (default 5000) and `AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES` (default 20000) set the limits. The response also has `mergedNodes` and `mergedEdges` for rows that already existed, and a `graphIndex` status: when the graph index is not ready, the imported rows are stored but the viewer cannot show them until `agentmemory graph-index migrate --allow-legacy-scan` runs.
+
 ## [0.9.33] — 2026-11-09
 
 ### Upgrade notes
