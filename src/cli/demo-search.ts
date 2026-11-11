@@ -1,4 +1,9 @@
-export type DemoSearchResult = { query: string; hits: number; topTitle: string };
+export type DemoSearchResult = { query: string; hits: number; topTitle: string; error?: string };
+
+export interface DemoSearchScope {
+  project?: string;
+  sessionIds?: string[];
+}
 
 export interface DemoHttpDeps {
   fetch?: typeof fetch;
@@ -12,6 +17,7 @@ export interface DemoWaitResult {
   polls: number;
   waitedMs: number;
   pending: string[];
+  errors: string[];
 }
 
 export interface DemoStatusSnapshot {
@@ -38,34 +44,45 @@ function errorText(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+export function uniqueErrors(results: DemoSearchResult[]): string[] {
+  return [...new Set(results.flatMap((r) => (r.error ? [r.error] : [])))];
+}
+
 export async function searchDemo(
   base: string,
   query: string,
-  project: string | undefined,
+  scope: DemoSearchScope = {},
   deps: DemoHttpDeps = {},
   timeoutMs = 10_000,
 ): Promise<DemoSearchResult> {
   const doFetch = deps.fetch ?? fetch;
   const url = `${base}/agentmemory/smart-search`;
+  const sessions = scope.sessionIds ? new Set(scope.sessionIds) : null;
+  const limit = sessions ? 20 : 5;
   try {
     const res = await doFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...(deps.headers?.(url) ?? {}) },
-      body: JSON.stringify(project ? { query, limit: 5, project } : { query, limit: 5 }),
+      body: JSON.stringify(scope.project ? { query, limit, project: scope.project } : { query, limit }),
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!res.ok) return { query, hits: 0, topTitle: "(no results)" };
-    const data = (await res.json().catch(() => null)) as { results?: Array<{ title?: string }> } | null;
-    const items = Array.isArray(data?.results) ? data.results : [];
+    if (!res.ok) return { query, hits: 0, topTitle: "(no results)", error: `HTTP ${res.status}` };
+    const data = (await res.json().catch(() => null)) as { results?: Array<{ title?: string; sessionId?: string }> } | null;
+    if (!data || !Array.isArray(data.results)) {
+      return { query, hits: 0, topTitle: "(no results)", error: "the search response was not valid JSON" };
+    }
+    const items = sessions
+      ? data.results.filter((r) => typeof r.sessionId === "string" && sessions.has(r.sessionId)).slice(0, 5)
+      : data.results;
     return { query, hits: items.length, topTitle: items[0]?.title ?? "(no results)" };
-  } catch {
-    return { query, hits: 0, topTitle: "(no results)" };
+  } catch (err) {
+    return { query, hits: 0, topTitle: "(no results)", error: errorText(err) };
   }
 }
 
 export async function waitForDemoSearchable(
   base: string,
-  project: string,
+  scope: DemoSearchScope,
   probes: string[],
   deps: DemoHttpDeps = {},
   options: { timeoutMs?: number; intervalMs?: number } = {},
@@ -80,11 +97,12 @@ export async function waitForDemoSearchable(
   for (;;) {
     polls++;
     const budgetMs = Math.max(1_000, timeoutMs - (now() - start));
-    const results = await Promise.all(pending.map((q) => searchDemo(base, q, project, deps, Math.min(10_000, budgetMs))));
+    const results = await Promise.all(pending.map((q) => searchDemo(base, q, scope, deps, Math.min(10_000, budgetMs))));
+    const errors = uniqueErrors(results);
     pending = pending.filter((_, i) => results[i].hits === 0);
     const waitedMs = now() - start;
-    if (pending.length === 0) return { ready: true, polls, waitedMs, pending };
-    if (waitedMs + intervalMs > timeoutMs) return { ready: false, polls, waitedMs, pending };
+    if (pending.length === 0) return { ready: true, polls, waitedMs, pending, errors };
+    if (waitedMs + intervalMs > timeoutMs) return { ready: false, polls, waitedMs, pending, errors };
     await sleep(intervalMs);
   }
 }
@@ -111,10 +129,16 @@ export function explainZeroHits(input: {
   seeded: number;
   expected: number;
   wait: DemoWaitResult;
+  searchErrors: string[];
   status: DemoStatusRead;
   invocation: string;
 }): string[] {
   const reasons: string[] = [];
+  if (input.searchErrors.length > 0) {
+    reasons.push(
+      `The search request failed (${input.searchErrors.join("; ")}), so the demo could not check the search index.`,
+    );
+  }
   if (input.seeded < input.expected) {
     reasons.push(
       input.seeded === 0
@@ -165,8 +189,12 @@ export function explainZeroHits(input: {
     reasons.push("The server reported no capture or index problem. The demo observations may still be indexing.");
   }
   const quoted = input.emptyQueries.map((q) => `"${q}"`).join(", ");
+  const pendingProbes = input.wait.pending.map((q) => `"${q}"`).join(", ");
+  const header = input.emptyQueries.length > 0
+    ? `No results for ${quoted}. Why:`
+    : `The demo observations for ${pendingProbes} were not searchable in time. Why:`;
   return [
-    `No results for ${quoted}. Why:`,
+    header,
     ...reasons.map((r) => `  - ${r}`),
     `Next: run ${input.invocation} status for details, or ${input.invocation} doctor to find and fix the cause.`,
   ];

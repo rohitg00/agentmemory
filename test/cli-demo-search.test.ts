@@ -37,7 +37,7 @@ describe("demo search readiness", () => {
     const c = clock();
     const wait = await waitForDemoSearchable(
       BASE,
-      "/tmp/agentmemory-demo",
+      { project: "/tmp/agentmemory-demo" },
       ["jwt middleware", "prisma"],
       { fetch: fetchMock as unknown as typeof fetch, headers: () => ({ Authorization: "Bearer t" }), ...c },
       { timeoutMs: 18_000, intervalMs: 500 },
@@ -60,7 +60,7 @@ describe("demo search readiness", () => {
       return json({ results: hit ? [{ title: "x" }] : [] });
     });
     const c = clock();
-    const wait = await waitForDemoSearchable(BASE, "p", ["prisma", "rate limiting"], {
+    const wait = await waitForDemoSearchable(BASE, { project: "p" }, ["prisma", "rate limiting"], {
       fetch: fetchMock as unknown as typeof fetch,
       ...c,
     });
@@ -74,7 +74,7 @@ describe("demo search readiness", () => {
     const c = clock();
     const wait = await waitForDemoSearchable(
       BASE,
-      "p",
+      { project: "p" },
       ["jwt middleware"],
       { fetch: fetchMock as unknown as typeof fetch, ...c },
       { timeoutMs: 18_000, intervalMs: 500 },
@@ -85,18 +85,57 @@ describe("demo search readiness", () => {
     expect(wait.polls).toBe(37);
   });
 
-  it("treats a failed search request as zero hits", async () => {
+  it("reports a failed search request as zero hits with the error", async () => {
     const fetchMock = vi.fn(async (_url: string | URL | Request, _init?: RequestInit): Promise<Response> => {
       throw new Error("ECONNREFUSED");
     });
-    const result = await searchDemo(BASE, "rate limiting", undefined, { fetch: fetchMock as unknown as typeof fetch });
-    expect(result).toEqual({ query: "rate limiting", hits: 0, topTitle: "(no results)" });
+    const result = await searchDemo(BASE, "rate limiting", {}, { fetch: fetchMock as unknown as typeof fetch });
+    expect(result).toEqual({ query: "rate limiting", hits: 0, topTitle: "(no results)", error: "ECONNREFUSED" });
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({ query: "rate limiting", limit: 5 });
+  });
+
+  it("reports an HTTP error from the search endpoint", async () => {
+    const fetchMock = vi.fn(async () => json({ error: "boom" }, 500));
+    const result = await searchDemo(BASE, "prisma", { project: "p" }, { fetch: fetchMock as unknown as typeof fetch });
+    expect(result.error).toBe("HTTP 500");
+    const c = clock();
+    const wait = await waitForDemoSearchable(BASE, { project: "p" }, ["prisma"], {
+      fetch: fetchMock as unknown as typeof fetch,
+      ...c,
+    }, { timeoutMs: 1_000, intervalMs: 500 });
+    expect(wait.ready).toBe(false);
+    expect(wait.errors).toEqual(["HTTP 500"]);
+  });
+
+  it("counts only hits from the current demo sessions", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    let calls = 0;
+    const fetchMock = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      calls++;
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      const results = [{ title: "old run", sessionId: "demo_old" }];
+      if (calls > 2) results.push({ title: "this run", sessionId: "demo_new" });
+      return json({ results });
+    });
+    const c = clock();
+    const scope = { project: "p", sessionIds: ["demo_new"] };
+    const wait = await waitForDemoSearchable(BASE, scope, ["prisma"], { fetch: fetchMock as unknown as typeof fetch, ...c });
+    expect(wait.ready).toBe(true);
+    expect(wait.polls).toBe(3);
+    expect(bodies[0]).toEqual({ query: "prisma", limit: 20, project: "p" });
+    const result = await searchDemo(BASE, "prisma", scope, { fetch: fetchMock as unknown as typeof fetch });
+    expect(result).toEqual({ query: "prisma", hits: 1, topTitle: "this run" });
   });
 });
 
 describe("demo zero-hit diagnosis", () => {
-  const timedOut: DemoWaitResult = { ready: false, polls: 36, waitedMs: 17_600, pending: ["jwt middleware"] };
+  const timedOut: DemoWaitResult = {
+    ready: false,
+    polls: 36,
+    waitedMs: 17_600,
+    pending: ["jwt middleware"],
+    errors: [],
+  };
 
   it("prints the reasons from server status after the wait times out", async () => {
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
@@ -116,6 +155,7 @@ describe("demo zero-hit diagnosis", () => {
       seeded: 6,
       expected: 6,
       wait: timedOut,
+      searchErrors: [],
       status,
       invocation: "agentmemory",
     });
@@ -141,6 +181,7 @@ describe("demo zero-hit diagnosis", () => {
       seeded: 0,
       expected: 6,
       wait: timedOut,
+      searchErrors: [],
       status,
       invocation: "npx @agentmemory/agentmemory",
     });
@@ -155,7 +196,8 @@ describe("demo zero-hit diagnosis", () => {
       emptyQueries: ["rate limiting"],
       seeded: 5,
       expected: 6,
-      wait: { ready: true, polls: 1, waitedMs: 0, pending: [] },
+      wait: { ready: true, polls: 1, waitedMs: 0, pending: [], errors: [] },
+      searchErrors: [],
       status: {
         status: {
           health: { connectionState: "connected" },
@@ -179,10 +221,38 @@ describe("demo zero-hit diagnosis", () => {
       emptyQueries: ["rate limiting"],
       seeded: 6,
       expected: 6,
-      wait: { ready: true, polls: 1, waitedMs: 0, pending: [] },
+      wait: { ready: true, polls: 1, waitedMs: 0, pending: [], errors: [] },
+      searchErrors: [],
       status: { status: { health: { connectionState: "connected" }, provider: { embeddings: "local (384 dims)" } } },
       invocation: "agentmemory",
     });
     expect(lines[1]).toContain("reported no capture or index problem");
+  });
+
+  it("reports a timed-out readiness check even when the final queries have hits", () => {
+    const lines = explainZeroHits({
+      emptyQueries: [],
+      seeded: 6,
+      expected: 6,
+      wait: timedOut,
+      searchErrors: [],
+      status: { status: { health: { connectionState: "connected" }, provider: { embeddings: "local (384 dims)" } } },
+      invocation: "agentmemory",
+    });
+    expect(lines[0]).toBe('The demo observations for "jwt middleware" were not searchable in time. Why:');
+    expect(lines.join("\n")).toContain("still not searchable after 18 s");
+  });
+
+  it("names a failed search request as a reason", () => {
+    const lines = explainZeroHits({
+      emptyQueries: ["rate limiting"],
+      seeded: 6,
+      expected: 6,
+      wait: timedOut,
+      searchErrors: ["HTTP 500"],
+      status: { status: { health: { connectionState: "connected" } } },
+      invocation: "agentmemory",
+    });
+    expect(lines.join("\n")).toContain("The search request failed (HTTP 500)");
   });
 });

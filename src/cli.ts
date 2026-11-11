@@ -57,7 +57,7 @@ import {
   type RemoveOptions,
 } from "./cli/remove-plan.js";
 import { portFlagSuffix } from "./cli/ready-hint.js";
-import { explainZeroHits, readDemoStatus, searchDemo, waitForDemoSearchable, type DemoSearchResult } from "./cli/demo-search.js";
+import { explainZeroHits, readDemoStatus, searchDemo, uniqueErrors, waitForDemoSearchable, type DemoSearchResult } from "./cli/demo-search.js";
 import { embeddingStatusLabel } from "./cli/embedding-status.js";
 import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive, installIiiZip } from "./cli/engine-install.js";
 import {
@@ -2779,7 +2779,8 @@ async function runDemoBody(base: string) {
 
   const sWait = p.spinner();
   sWait.start("Waiting for the demo observations to become searchable...");
-  const wait = await waitForDemoSearchable(base, demoProject, ["jwt middleware", "prisma", "rate limiting"], deps);
+  const scope = { project: demoProject, sessionIds: sessions.map((s) => s.id) };
+  const wait = await waitForDemoSearchable(base, scope, ["jwt middleware", "prisma", "rate limiting"], deps);
   sWait.stop(
     wait.ready
       ? `Demo observations are searchable (${(wait.waitedMs / 1000).toFixed(1)} s)`
@@ -2794,19 +2795,21 @@ async function runDemoBody(base: string) {
 
   const results: DemoSearchResult[] = [];
   for (const query of queries) {
-    results.push(await searchDemo(base, query, undefined, deps));
+    results.push(await searchDemo(base, query, scope, deps));
   }
 
   sQuery.stop("Search complete");
 
   const emptyQueries = results.filter((r) => r.hits === 0).map((r) => r.query);
-  const needsDiagnosis = !wait.ready || emptyQueries.some((q) => q !== semanticQuery);
-  const diagnosis = needsDiagnosis && emptyQueries.length > 0
+  const searchErrors = [...new Set([...wait.errors, ...uniqueErrors(results)])];
+  const needsDiagnosis = !wait.ready || searchErrors.length > 0 || emptyQueries.some((q) => q !== semanticQuery);
+  const diagnosis = needsDiagnosis
     ? explainZeroHits({
         emptyQueries,
         seeded: totalObs,
         expected: expectedObs,
         wait,
+        searchErrors,
         status: await readDemoStatus(base, deps),
         invocation: isInvokedViaNpx() ? "npx @agentmemory/agentmemory" : "agentmemory",
       })
