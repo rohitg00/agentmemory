@@ -271,6 +271,37 @@ describe("capture spool retained claims", () => {
     expect(existsSync(claim)).toBe(true);
     expect(existsSync(spoolPaths(URL, dir).file)).toBe(false);
   });
+
+  it("keeps a delivered record's backup even when the claim being drained nearly fills the spool", () => {
+    writeClaim("99995-1", "x".repeat(policy.maxBytes - 200), 0);
+    const kept = retainSent(URL, "evc_ppppppppppp1", body("delivered"), { bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }, { dir, policy });
+    expect(kept).toBe(true);
+    expect(readdirSync(dir).some((f) => f.includes(".sent-"))).toBe(true);
+  });
+
+  it("keeps sent backups when evicting them cannot make room for the new record", () => {
+    writeClaim("99994-1", "x".repeat(60 * 1024), 10 * 60_000);
+    let sentBytes = 0;
+    for (let i = 0; sentBytes < 4 * 1024; i++) {
+      expect(retainSent(URL, `evc_q${String(i).padStart(11, "0")}`, body(`q${i}`), { bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }, { dir, policy })).toBe(true);
+      sentBytes = readdirSync(dir).filter((f) => f.includes(".sent-")).reduce((n, f) => n + statSync(join(dir, f)).size, 0);
+    }
+    const result = appendSpool(URL, "evc_qqqqqqqqqqqq", body("big", { pad: "y".repeat(5 * 1024) }), "timeout", { dir, policy });
+    expect(result).toEqual({ spooled: false, dropped: "full" });
+    const after = readdirSync(dir).filter((f) => f.includes(".sent-")).reduce((n, f) => n + statSync(join(dir, f)).size, 0);
+    expect(after).toBe(sentBytes);
+  });
+
+  it("prunes expired live records when retained claims cause the overflow", () => {
+    writeClaim("99993-1", "x".repeat(60 * 1024), 10 * 60_000);
+    const old = new Date(Date.now() - 2 * policy.maxAgeMs).toISOString();
+    const expired = Array.from({ length: 3 }, (_, i) =>
+      `${JSON.stringify({ v: 1, eventId: `evc_exp${String(i).padStart(9, "0")}`, spooledAt: old, reason: "timeout", attempts: 0, body: body(`e${i}`, { pad: "z".repeat(800) }) })}\n`).join("");
+    writeFileSync(spoolPaths(URL, dir).file, expired);
+    const result = appendSpool(URL, "evc_rrrrrrrrrrrr", body("fresh", { pad: "w".repeat(1500) }), "timeout", { dir, policy });
+    expect(result).toEqual({ spooled: true });
+    expect(lines(spoolPaths(URL, dir).file).map((r) => r.eventId)).toEqual(["evc_rrrrrrrrrrrr"]);
+  });
 });
 
 describe("capture spool retention until durable", () => {

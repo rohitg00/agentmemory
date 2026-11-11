@@ -341,9 +341,9 @@ export function appendSpool(
     if (bytes > policy.maxRecordBytes) return note("too-large", bytes);
     return withLock(paths.lock, (locked) => {
       let expired = 0;
-      if (locked && fileSize(paths.file) + bytes > policy.maxBytes) expired = pruneExpiredLocked(paths, policy);
+      if (locked && fileSize(paths.file) + claimBytes(paths) + bytes > policy.maxBytes) expired = pruneExpiredLocked(paths, policy);
       const over = heldBytes(paths) + bytes - policy.maxBytes;
-      if (locked && over > 0) evictSent(paths, over);
+      if (locked && over > 0 && over <= sentBytes(paths)) evictSent(paths, over);
       if (heldBytes(paths) + bytes > policy.maxBytes) {
         if (expired) writeStats(paths, (s) => void (s.expired += expired));
         return note("full", bytes);
@@ -424,8 +424,12 @@ function listClaims(paths: SpoolPaths): ClaimFile[] {
   return claims;
 }
 
+function claimBytes(paths: SpoolPaths): number {
+  return listClaims(paths).reduce((n, c) => n + c.bytes, 0);
+}
+
 function heldBytes(paths: SpoolPaths): number {
-  return fileSize(paths.file) + sentBytes(paths) + listClaims(paths).reduce((n, c) => n + c.bytes, 0);
+  return fileSize(paths.file) + sentBytes(paths) + claimBytes(paths);
 }
 
 function evictSent(paths: SpoolPaths, need: number): void {
@@ -480,7 +484,7 @@ export function retainSent(
     const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
     const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
     return withLock(paths.lock, () => {
-      if (heldBytes(paths) + bytes > policy.maxBytes) return false;
+      if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) return false;
       const fd = openSync(file, "a", 0o600);
       try {
         writeSync(fd, line);
