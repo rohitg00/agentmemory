@@ -35,8 +35,10 @@ export type ConnectAdapter = {
   install(opts: ConnectOptions): Promise<ConnectResult>;
 };
 
+export type HookState = "installed" | "skipped";
+
 export type ConnectResult =
-  | { kind: "installed"; mutatedPath?: string; backupPath?: string }
-  | { kind: "already-wired"; mutatedPath?: string }
+  | { kind: "installed"; mutatedPath?: string; backupPath?: string; hooks?: HookState }
+  | { kind: "already-wired"; mutatedPath?: string; hooks?: HookState }
   | { kind: "stub"; reason: string }
   | { kind: "skipped"; reason: string };

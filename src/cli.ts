@@ -104,7 +104,7 @@ import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
 import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
-import { NO_HOOK_CAPTURE } from "./functions/status.js";
+import { NO_HOOK_CAPTURE, hookCaptureMissing } from "./functions/status.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -1975,7 +1975,11 @@ async function runStatus() {
     }
     p.note(lines.join("\n"), "agentmemory");
     if (Array.isArray(sessionsRes?.sessions) && sessions === 0) {
-      p.log.warn(`${NO_HOOK_CAPTURE.message}\n${NO_HOOK_CAPTURE.fix}`);
+      const capture = (await apiFetch<any>(base, "capture?limit=1"))?.capture;
+      const known = capture && typeof capture === "object" && capture.sinceStart && Array.isArray(capture.spool);
+      if (known && hookCaptureMissing(0, capture)) {
+        p.log.warn(`${NO_HOOK_CAPTURE.message}\n${NO_HOOK_CAPTURE.fix}`);
+      }
     }
   } catch (err) {
     p.log.error(err instanceof Error ? err.message : String(err));

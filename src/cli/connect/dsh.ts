@@ -116,6 +116,7 @@ export const adapter: ConnectAdapter = {
     const hooks = managedEntries(existing, HOOKS_MARKER);
     const pluginPath = wantHooks ? join(dirname(findPluginRoot()), "dist", "integrations", "dsh.mjs") : "";
     const hooksReady = hooks.length === 1 && hooks[0].get("name") === pluginPath && existsSync(pluginPath);
+    const hookState = wantHooks || hooks.length > 0 ? { hooks: "installed" as const } : {};
 
     if (wantHooks && !opts.force && hooks.some(entry => entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code")) {
       throw new Error("Legacy DSH hooks bridge found. Run agentmemory connect dsh --with-hooks --force to replace it with the bundled native plugin. Existing manifest files will be preserved.");
@@ -123,14 +124,14 @@ export const adapter: ConnectAdapter = {
 
     if (hasMcp && (!wantHooks || hooksReady) && !opts.force) {
       logAlreadyWired(this.displayName, configPath);
-      return { kind: "already-wired", mutatedPath: configPath };
+      return { kind: "already-wired", mutatedPath: configPath, ...hookState };
     }
 
     if (opts.dryRun) {
       p.log.info(
         `[dry-run] Would update the agentmemory mcp-client row${wantHooks ? " and the bundled capture plugin" : ""} in ${configPath}`,
       );
-      return { kind: "installed", mutatedPath: configPath };
+      return { kind: "installed", mutatedPath: configPath, ...hookState };
     }
 
     if (wantHooks && !existsSync(pluginPath)) {
@@ -162,6 +163,6 @@ export const adapter: ConnectAdapter = {
     }
 
     logInstalled(this.displayName, configPath);
-    return { kind: "installed", mutatedPath: configPath, backupPath };
+    return { kind: "installed", mutatedPath: configPath, backupPath, ...hookState };
   },
 };

@@ -1,4 +1,8 @@
-import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
+import type { ConnectAdapter, ConnectOptions, ConnectResult, HookState } from "./types.js";
+
+export function hookState(result: ConnectResult): HookState {
+  return result.kind === "installed" || result.kind === "already-wired" ? "installed" : "skipped";
+}
 
 export function mcpOnlyCaptureNotice(
   adapter: Pick<ConnectAdapter, "displayName" | "autoCapture">,
@@ -7,9 +11,11 @@ export function mcpOnlyCaptureNotice(
 ): string | null {
   if (result.kind !== "installed" && result.kind !== "already-wired") return null;
   const mode = adapter.autoCapture;
-  if (mode === "built-in") return null;
-  if (opts.withHooks && (mode === "with-hooks" || mode === "plugin-or-with-hooks")) return null;
+  if (mode === "built-in" || result.hooks === "installed") return null;
   const lead = `${adapter.displayName}: MCP only. Nothing is captured automatically`;
+  if (opts.withHooks && (mode === "with-hooks" || mode === "plugin-or-with-hooks")) {
+    return `${lead} because the hooks were not installed. Fix the problem reported above, then rerun with --with-hooks.`;
+  }
   switch (mode) {
     case "with-hooks":
       return `${lead}. Rerun with --with-hooks to capture sessions automatically.`;

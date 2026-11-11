@@ -2,7 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import * as p from "@clack/prompts";
-import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
+import type { ConnectAdapter, ConnectOptions, ConnectResult, HookState } from "./types.js";
+import { hookState } from "./capture-notice.js";
 import {
   backupFile,
   logAlreadyWired,
@@ -80,15 +81,16 @@ export const adapter: ConnectAdapter = {
 
     if (wired && !opts.force) {
       logAlreadyWired("Codex CLI", CODEX_TOML);
-      return { kind: "already-wired", mutatedPath: CODEX_TOML };
+      const hooks = runCodexHooks(opts, "");
+      return { kind: "already-wired", mutatedPath: CODEX_TOML, ...(hooks && { hooks }) };
     }
 
     if (opts.dryRun) {
       p.log.info(
         `[dry-run] Would ${wired ? "rewrite" : "append"} [mcp_servers.agentmemory] in ${CODEX_TOML}`,
       );
-      if (opts.withHooks) installCodexHooks(opts);
-      return { kind: "installed", mutatedPath: CODEX_TOML };
+      const hooks = runCodexHooks(opts, "");
+      return { kind: "installed", mutatedPath: CODEX_TOML, ...(hooks && { hooks }) };
     }
 
     let backupPath: string | undefined;
@@ -117,22 +119,25 @@ export const adapter: ConnectAdapter = {
       "Codex picks up MCP servers on next launch. For the deeper plugin install, run: codex plugin marketplace add rohitg00/agentmemory && codex plugin add agentmemory@agentmemory",
     );
 
-    if (opts.withHooks) {
-      const hookResult = installCodexHooks(opts);
-      if (hookResult.kind === "skipped") {
-        p.log.warn(
-          `Codex hooks fallback skipped: ${hookResult.reason}. MCP wiring still applied.`,
-        );
-      }
-    }
+    const hooks = runCodexHooks(opts, " MCP wiring still applied.");
 
     return {
       kind: "installed",
       mutatedPath: CODEX_TOML,
       ...(backupPath !== undefined && { backupPath }),
+      ...(hooks && { hooks }),
     };
   },
 };
+
+function runCodexHooks(opts: ConnectOptions, suffix: string): HookState | undefined {
+  if (!opts.withHooks) return undefined;
+  const hookResult = installCodexHooks(opts);
+  if (hookResult.kind === "skipped") {
+    p.log.warn(`Codex hooks fallback skipped: ${hookResult.reason}.${suffix}`);
+  }
+  return hookState(hookResult);
+}
 
 function installCodexHooks(opts: ConnectOptions): ConnectResult {
   let pluginRoot: string;

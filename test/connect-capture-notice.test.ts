@@ -34,9 +34,19 @@ describe("mcpOnlyCaptureNotice", () => {
     expect(notice).toBe("Antigravity: MCP only. Nothing is captured automatically. Rerun with --with-hooks to capture sessions automatically.");
   });
 
-  it("stays quiet once hooks were requested for an adapter that installs them", () => {
-    expect(mcpOnlyCaptureNotice({ displayName: "Droid", autoCapture: "with-hooks" }, { withHooks: true }, installed)).toBeNull();
-    expect(mcpOnlyCaptureNotice({ displayName: "Codex CLI", autoCapture: "plugin-or-with-hooks" }, { withHooks: true }, installed)).toBeNull();
+  it("stays quiet once the adapter reports its hooks as installed", () => {
+    const withHooks = { kind: "installed", hooks: "installed" } as const;
+    expect(mcpOnlyCaptureNotice({ displayName: "Droid", autoCapture: "with-hooks" }, { withHooks: true }, withHooks)).toBeNull();
+    expect(mcpOnlyCaptureNotice({ displayName: "Codex CLI", autoCapture: "plugin-or-with-hooks" }, { withHooks: true }, { kind: "already-wired", hooks: "installed" })).toBeNull();
+    expect(mcpOnlyCaptureNotice({ displayName: "DSH", autoCapture: "with-hooks" }, { withHooks: false }, withHooks)).toBeNull();
+  });
+
+  it("still warns when --with-hooks was passed but the hooks were not installed", () => {
+    for (const result of [installed, { kind: "installed", hooks: "skipped" } as const, { kind: "already-wired", hooks: "skipped" } as const]) {
+      expect(mcpOnlyCaptureNotice({ displayName: "Codex CLI", autoCapture: "plugin-or-with-hooks" }, { withHooks: true }, result)).toBe(
+        "Codex CLI: MCP only. Nothing is captured automatically because the hooks were not installed. Fix the problem reported above, then rerun with --with-hooks.",
+      );
+    }
   });
 
   it("points plugin-based agents at their plugin", () => {
@@ -103,7 +113,12 @@ describe("runAdapter capture notice", () => {
   });
 
   it("does not print it when --with-hooks installed the hooks", async () => {
-    await runAdapter(fake({ autoCapture: "with-hooks" }), { dryRun: true, force: false, withHooks: true, guidelines: false });
+    await runAdapter(fake({ autoCapture: "with-hooks", install: async () => ({ kind: "installed", hooks: "installed" }) }), { dryRun: true, force: false, withHooks: true, guidelines: false });
     expect(log.warn).not.toHaveBeenCalled();
+  });
+
+  it("prints it when --with-hooks was passed but the adapter skipped the hooks", async () => {
+    await runAdapter(fake({ autoCapture: "with-hooks", install: async () => ({ kind: "already-wired", hooks: "skipped" }) }), { dryRun: true, force: false, withHooks: true, guidelines: false });
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining("because the hooks were not installed"));
   });
 });

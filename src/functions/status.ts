@@ -487,7 +487,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
   problems.push(...captureProblems(input.capture ?? null, input.now, input.ports.rest));
-  if (input.index.sessions === 0 && !captureActivity(input.capture ?? null)) {
+  if (hookCaptureMissing(input.index.sessions, input.capture)) {
     problems.push({ level: "warn", code: "no-hook-capture", ...NO_HOOK_CAPTURE });
   }
 
@@ -564,8 +564,11 @@ export const NO_HOOK_CAPTURE = {
   fix: "Install the agent's hooks: rerun npx @agentmemory/agentmemory connect <agent> --with-hooks, or install the agentmemory plugin for that agent. If you only just connected an agent, run one session and check again.",
 };
 
-function captureActivity(capture: CaptureStatus | null): boolean {
-  if (!capture) return false;
+export function hookCaptureMissing(sessions: number | null, capture: CaptureStatus | null | undefined): boolean {
+  return sessions === 0 && !!capture && !captureActivity(capture);
+}
+
+function captureActivity(capture: CaptureStatus): boolean {
   const inbox = capture.inbox;
   const queued = inbox ? inbox.pending + inbox.retrying + inbox.dead : 0;
   const spooled = capture.spool.reduce((n, s) => n + s.records, 0);
