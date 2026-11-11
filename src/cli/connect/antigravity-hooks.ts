@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { toCommandPath } from "./util.js";
 
 /**
  * Merge engine for Antigravity CLI's `hooks.json`.
@@ -62,11 +63,12 @@ export function buildMergedAntigravityHooks(
   existing: AntigravityHookManifest | null,
   pluginRoot: string,
   manifestFile = "hooks.antigravity.json",
+  commandRoot = pluginRoot,
 ): AntigravityHookManifest {
   const ours = JSON.parse(
     readFileSync(join(pluginRoot, "hooks", manifestFile), "utf-8"),
   ) as AntigravityHookManifest;
-  const scriptsDir = join(pluginRoot, "scripts");
+  const scriptsDir = join(commandRoot, "scripts");
 
   const out: AntigravityHookManifest = {};
 
@@ -76,7 +78,7 @@ export function buildMergedAntigravityHooks(
   }
 
   for (const [name, bundle] of Object.entries(ours)) {
-    out[name] = resolveBundle(bundle, pluginRoot);
+    out[name] = resolveBundle(bundle, toCommandPath(commandRoot));
   }
 
   return out;

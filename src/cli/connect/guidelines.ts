@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { resolveDshHome } from "./util.js";
+import { resolveDshHome, resolveZedConfigDir } from "./util.js";
 
 // Activating memory for agents that have no auto-capture hooks: write a short
 // "use the memory tools" guideline into each agent's native rules mechanism so
@@ -65,7 +65,7 @@ export function guidelineTargets(
       source: "https://docs.continue.dev/customize/deep-dives/rules",
     },
     zed: {
-      globalPath: join(home, ".config", "zed", "AGENTS.md"),
+      globalPath: join(resolveZedConfigDir(home), "AGENTS.md"),
       projectPath: "AGENTS.md",
       format: "block",
       scope: "global",

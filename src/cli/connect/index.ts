@@ -1,4 +1,3 @@
-import { platform } from "node:os";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
@@ -141,17 +140,6 @@ export async function runAdapter(
 export async function runConnect(args: string[]): Promise<void> {
   const { dryRun, force, all, withHooks, withMcp, guidelines, positional } =
     parseFlags(args);
-  const allowWindowsAdapter =
-    positional.length === 1 && positional[0]?.toLowerCase() === "copilot-cli";
-  if (platform() === "win32" && !allowWindowsAdapter) {
-    p.intro("agentmemory connect");
-    p.log.warn(
-      "Windows: automated `connect` is not supported yet. See https://github.com/rohitg00/agentmemory#other-agents for manual install steps.",
-    );
-    p.outro("Windows: manual install required — see docs");
-    return;
-  }
-
   const opts: ConnectOptions = { dryRun, force, withHooks, withMcp, guidelines };
 
   p.intro("agentmemory connect");
