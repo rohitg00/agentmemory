@@ -198,6 +198,19 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
     });
 
     if (ranking === "hybrid") {
+      it("deepens a shortened hybrid response when candidateCount still fills the window", async () => {
+        const foreign = addMemory({ id: "mem_foreign", project: "project-b" });
+        const matching = addMemory({ id: "mem_matching", project: "project-a" });
+        const ranker = vi.fn<NonNullable<Parameters<typeof setHybridRanker>[0]>>(async (_query, limit, _layer, _authorize, request) => {
+          if (request) request.candidateCount = limit === 100 ? 100 : 101;
+          const observation = memoryToObservation(limit === 100 ? foreign : matching);
+          return [{ observation, sessionId: observation.sessionId, combinedScore: 1, layer: "memory" as const }];
+        });
+        setHybridRanker(ranker);
+        expect(await recall({ limit: 1 })).toEqual([matching.id]);
+        expect(ranker.mock.calls.map((call) => call[1])).toEqual([100, 200]);
+      });
+
       it("fills a real hybrid window shortened by a missing record", async () => {
         for (let i = 0; i < 100; i++) {
           addMemory({ id: `mem_foreign_${i.toString().padStart(3, "0")}`, project: "project-b" });
@@ -213,6 +226,21 @@ describe.each(["keyword", "hybrid", "hybrid-fallback"] as const)(
         expect(ranker.mock.calls.map((call) => call[1])).toEqual([100]);
       });
     }
+
+    it.each([1, 20])("refills an unfiltered query past stale candidates with limit %i", async (limit) => {
+      for (let i = 0; i < 100; i++) {
+        addMemory({ id: `mem_stale_${i}`, isLatest: false });
+      }
+      const live = addMemory({ id: "mem_live" });
+      orderedKeywordResults();
+      if (ranking === "hybrid") {
+        const hybrid = new HybridSearch(getSearchIndex(), null, null, {
+          get: async (scope: string, key: string) => records.get(scope)?.get(key) ?? null,
+        } as never, 0.4, 0.6, 0);
+        setHybridRanker(hybrid.search.bind(hybrid));
+      }
+      expect(await recall({ project: undefined, limit })).toEqual([live.id]);
+    });
 
     it("refills multiple full windows without returning excluded projects", async () => {
       for (let i = 0; i < 205; i++) {
