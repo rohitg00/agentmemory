@@ -478,12 +478,16 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
 
-  if (input.capture === null || input.capture?.inbox === null || input.capture?.spool.some((s) => s.unreadable)) {
+  const unreadableSpools = (input.capture?.spool ?? []).filter((s) => s.unreadable).map((s) => s.path);
+  if (input.capture === null || input.capture?.inbox === null || unreadableSpools.length > 0) {
+    const spoolFix = unreadableSpools.length > 0
+      ? ` Check that the agentmemory process can read ${unreadableSpools.join(", ")} and its folder.`
+      : "";
     problems.push({
       level: "info",
       code: "capture-check-unavailable",
       message: "The capture inbox or spool could not be read, so capture was not checked.",
-      fix: "The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.",
+      fix: `The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.${spoolFix}`,
     });
   }
   problems.push(...captureProblems(input.capture ?? null, input.now, input.ports.rest));
