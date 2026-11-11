@@ -10,13 +10,24 @@ vi.mock("../src/config.js", async (importOriginal) => ({
 }));
 
 const imageReleases: Array<{ path: string; lockHeld: boolean }> = [];
-vi.mock("../src/functions/image-refs.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../src/functions/image-refs.js")>()),
-  decrementImageRef: vi.fn(async (_kv: unknown, _sdk: unknown, path: string) => {
+const imageFailures = new Set<string>();
+vi.mock("../src/functions/image-refs.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/functions/image-refs.js")>();
+  const decrementImageRef = vi.fn(async (_kv: unknown, _sdk: unknown, path: string) => {
     const { isKeyedLockHeld } = await import("../src/state/keyed-mutex.js");
     imageReleases.push({ path, lockHeld: isKeyedLockHeld("mem:remember") });
-  }),
-}));
+    if (imageFailures.has(path)) throw new Error("image ref write failed");
+  });
+  const releaseImageRef = vi.fn(async (kv: unknown, sdk: unknown, ownerId: string, path: string) => {
+    try {
+      await decrementImageRef(kv, sdk, path);
+    } catch (err) {
+      const { logger } = await import("../src/logger.js");
+      logger.warn("Image reference release failed after delete", { ownerId, imageRef: path, error: String(err) });
+    }
+  });
+  return { ...actual, decrementImageRef, releaseImageRef };
+});
 
 import { registerGovernanceFunction } from "../src/functions/governance.js";
 import { registerRelationsFunction } from "../src/functions/relations.js";
@@ -25,6 +36,8 @@ import { registerAutoForgetFunction } from "../src/functions/auto-forget.js";
 import { registerRetentionFunctions } from "../src/functions/retention.js";
 import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import { KV } from "../src/state/schema.js";
+import { getSearchIndex } from "../src/functions/search.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 import type { Memory, RetentionScore } from "../src/types.js";
 
 type Gate = { scope: string; key: string; reached: () => void; release: Promise<void> };
@@ -297,5 +310,51 @@ describe("retention eviction holds the remember lock", () => {
     await done;
 
     expect(await kv.get(KV.retentionScores, "mem_s")).not.toBeNull();
+  });
+
+  it("finishes cleanup and continues the sweep when an image release fails", async () => {
+    imageFailures.clear();
+    imageFailures.add("broken.png");
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerRetentionFunctions(sdk as never, kv as never);
+    const broken = makeMemory("mem_img_a", { imageRef: "broken.png" });
+    const next = makeMemory("mem_img_b");
+    for (const mem of [broken, next]) {
+      await kv.set(KV.memories, mem.id, mem);
+      getSearchIndex().add(memoryToObservation(mem), "memory");
+    }
+    await kv.set(KV.retentionScores, "mem_img_a", score("mem_img_a", 0.01));
+    await kv.set(KV.retentionScores, "mem_img_b", score("mem_img_b", 0.02));
+
+    const result = (await sdk.trigger("mem::retention-evict", { threshold: 0.5 })) as { evicted: number };
+    imageFailures.clear();
+
+    expect(result.evicted).toBe(2);
+    for (const id of ["mem_img_a", "mem_img_b"]) {
+      expect(await kv.get(KV.memories, id)).toBeNull();
+      expect(await kv.get(KV.retentionScores, id)).toBeNull();
+      expect(getSearchIndex().has(id)).toBe(false);
+    }
+  });
+
+  it("records an audit entry when it removes orphan scores and evicts nothing", async () => {
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerRetentionFunctions(sdk as never, kv as never);
+    await kv.set(KV.retentionScores, "mem_orphan", score("mem_orphan", 0.01));
+
+    const result = (await sdk.trigger("mem::retention-evict", { threshold: 0.5 })) as { evicted: number };
+
+    expect(result.evicted).toBe(0);
+    expect(await kv.get(KV.retentionScores, "mem_orphan")).toBeNull();
+    const audits = [...kv.store.entries()]
+      .filter(([scope]) => scope.startsWith("mem:audit"))
+      .flatMap(([, rows]) => [...rows.values()]) as Array<{ functionId: string; targetIds: string[]; details?: Record<string, unknown> }>;
+    expect(audits).toContainEqual(expect.objectContaining({
+      functionId: "mem::retention-evict",
+      targetIds: ["mem_orphan"],
+      details: expect.objectContaining({ resource: "retention_score", removed: 1 }),
+    }));
   });
 });

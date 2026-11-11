@@ -307,7 +307,7 @@ export function registerRetentionFunctions(
           ? data.maxEvict
           : 50;
       const maxEvict = Math.min(1000, Math.max(0, maxEvictRaw));
-      const { decrementImageRef } = await import("./image-refs.js");
+      const { releaseImageRef } = await import("./image-refs.js");
 
       const allScores = await kv.list<RetentionScore>(KV.retentionScores);
       const candidates = allScores
@@ -379,7 +379,7 @@ export function registerRetentionFunctions(
             missingIds.push(candidate.memoryId);
             continue;
           }
-          if (removed.imageRef) await decrementImageRef(kv, sdk, removed.imageRef);
+          if (removed.imageRef) await releaseImageRef(kv, sdk, candidate.memoryId, removed.imageRef);
           evictedIds.push(candidate.memoryId);
           evicted++;
           if (resolvedSource === "semantic") evictedSemantic++;
@@ -393,9 +393,11 @@ export function registerRetentionFunctions(
         }
       }
 
+      const orphanScoreIds: string[] = [];
       for (const id of missingIds) {
         if (await kv.get(KV.memories, id) || await kv.get(KV.semantic, id)) continue;
         await kv.delete(KV.retentionScores, id);
+        orphanScoreIds.push(id);
       }
       await deleteFacetsForTargets(kv, [...evictedIds, ...missingIds]);
 
@@ -413,6 +415,13 @@ export function registerRetentionFunctions(
           evictedEpisodic,
           evictedSemantic,
           reason: "retention score below threshold",
+        });
+      }
+      if (orphanScoreIds.length > 0) {
+        await recordAudit(kv, "delete", "mem::retention-evict", orphanScoreIds, {
+          resource: "retention_score",
+          removed: orphanScoreIds.length,
+          reason: "retention score for a memory that no longer exists",
         });
       }
 
