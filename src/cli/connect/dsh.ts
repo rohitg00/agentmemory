@@ -70,16 +70,28 @@ function isLegacyEntry(entry: YAMLMap): boolean {
 
 function migrateLegacyCommand(content: string): string {
   const { doc, operations } = parsePatch(content);
-  for (const operation of operations.items) {
+  let kept = false;
+  for (let i = 0; i < operations.items.length; i++) {
+    const operation = operations.items[i];
     const entries = isMap(operation) ? operation.get("insert", true) : null;
     if (!isSeq(entries)) continue;
-    for (const entry of entries.items) {
-      if (!isManaged(entry, MCP_MARKER) || !isLegacyEntry(entry)) continue;
+    let removed = false;
+    for (let j = 0; j < entries.items.length; j++) {
+      const entry = entries.items[j];
+      if (!isManaged(entry, MCP_MARKER)) continue;
+      if (kept) {
+        entries.delete(j--);
+        removed = true;
+        continue;
+      }
+      kept = true;
+      if (!isLegacyEntry(entry)) continue;
       const args = doc.createNode([...AGENTMEMORY_MCP_BLOCK.args]);
       args.flow = true;
       entry.setIn(["config", "command"], AGENTMEMORY_MCP_BLOCK.command);
       entry.setIn(["config", "args"], args);
     }
+    if (removed && entries.items.length === 0) operations.delete(i--);
   }
   return doc.toString();
 }

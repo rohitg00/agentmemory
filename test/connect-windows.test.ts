@@ -227,6 +227,30 @@ describe("connect on Windows with a home directory that contains spaces", () => 
     expect(toml).toContain('args = ["/c", "npx", "-y", "@agentmemory/mcp"] # pkg');
   });
 
+  it("codex migrates a multiline args array with brackets in strings and comments", async () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.agentmemory]\ncommand = "npx"\nargs = [\n  "-y",\n  "@agentmemory/mcp", # [required]\n  "--filter=[foo]",\n]\n\n[mcp_servers.agentmemory.env]\nAGENTMEMORY_URL = "https://memory.example.com"\n',
+    );
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const toml = readFileSync(join(home, ".codex", "config.toml"), "utf-8");
+    expect(toml).toBe(
+      '[mcp_servers.agentmemory]\ncommand = "cmd"\nargs = ["/c", "npx", "-y", "@agentmemory/mcp"]\n\n[mcp_servers.agentmemory.env]\nAGENTMEMORY_URL = "https://memory.example.com"\n',
+    );
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
+  });
+
+  it("codex does not treat an unterminated args array as legacy", async () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    const original = '[mcp_servers.agentmemory]\ncommand = "npx"\nargs = ["-y", "@agentmemory/mcp"\n';
+    writeFileSync(join(home, ".codex", "config.toml"), original);
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
+    expect(readFileSync(join(home, ".codex", "config.toml"), "utf-8")).toBe(original);
+  });
+
   it("codex leaves a custom npx package untouched without --force", async () => {
     mkdirSync(join(home, ".codex"), { recursive: true });
     const original = '[mcp_servers.agentmemory]\ncommand = "npx"\nargs = ["-y", "@team/custom-mcp"]\n';
@@ -292,6 +316,21 @@ describe("connect on Windows with a home directory that contains spaces", () => 
     expect(config.command).toBe("cmd");
     expect(config.args).toEqual(WINDOWS_MCP.args);
     expect(config.env).toEqual({ AGENTMEMORY_URL: "https://memory.example.com", AGENTMEMORY_SECRET: "s3cret" });
+  });
+
+  it("dsh collapses duplicate agentmemory rows when it migrates the launcher", async () => {
+    mkdirSync(join(home, ".dsh"), { recursive: true });
+    const row = (url: string) =>
+      `- insert:\n    - id: agentmemory\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        transport: stdio\n        serverName: agentmemory\n        command: npx\n        args: ['-y', '@agentmemory/mcp']\n        env:\n          AGENTMEMORY_URL: ${url}\n`;
+    const other = "- insert:\n    - id: other\n      name: other-plugin\n";
+    writeFileSync(join(home, ".dsh", "cordis.patch.yml"), row("https://first.example.com") + other + row("https://second.example.com"));
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const { parseDocument } = await import("yaml");
+    const ops = parseDocument(readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8")).toJS();
+    expect(ops).toHaveLength(2);
+    expect(ops[0].insert[0].config).toMatchObject({ command: "cmd", args: WINDOWS_MCP.args, env: { AGENTMEMORY_URL: "https://first.example.com" } });
+    expect(ops[1].insert[0].id).toBe("other");
   });
 
   it("dsh leaves a custom npx package untouched without --force", async () => {
