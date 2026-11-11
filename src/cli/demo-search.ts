@@ -33,6 +33,12 @@ export interface DemoStatusSnapshot {
 
 export type DemoStatusRead = { status: DemoStatusSnapshot } | { error: string };
 
+export const DEMO_PROJECT_PREFIX = "/tmp/agentmemory-demo";
+
+export function demoProjectForRun(now: number = Date.now(), random: () => number = Math.random): string {
+  return `${DEMO_PROJECT_PREFIX}-${now.toString(36)}${Math.floor(random() * 36 ** 4).toString(36).padStart(4, "0")}`;
+}
+
 export const DEMO_WAIT_TIMEOUT_MS = 18_000;
 export const DEMO_WAIT_INTERVAL_MS = 500;
 

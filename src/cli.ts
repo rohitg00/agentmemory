@@ -57,7 +57,7 @@ import {
   type RemoveOptions,
 } from "./cli/remove-plan.js";
 import { portFlagSuffix } from "./cli/ready-hint.js";
-import { explainZeroHits, readDemoStatus, searchDemo, uniqueErrors, waitForDemoSearchable, type DemoSearchResult } from "./cli/demo-search.js";
+import { demoProjectForRun, explainZeroHits, readDemoStatus, searchDemo, uniqueErrors, waitForDemoSearchable, type DemoSearchResult } from "./cli/demo-search.js";
 import { embeddingStatusLabel } from "./cli/embedding-status.js";
 import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive, installIiiZip } from "./cli/engine-install.js";
 import {
@@ -2761,7 +2761,7 @@ async function runDemo() {
 }
 
 async function runDemoBody(base: string) {
-  const demoProject = "/tmp/agentmemory-demo";
+  const demoProject = demoProjectForRun();
   const sessions = buildDemoSessions();
 
   const sSeed = p.spinner();

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  DEMO_PROJECT_PREFIX,
+  demoProjectForRun,
   explainZeroHits,
   readDemoStatus,
   searchDemo,
@@ -22,6 +24,16 @@ function clock() {
     },
   };
 }
+
+describe("demo project", () => {
+  it("gives each run its own project so earlier demo runs cannot fill the result limit", () => {
+    const first = demoProjectForRun(1_000, () => 0.25);
+    const second = demoProjectForRun(1_000, () => 0.75);
+    const later = demoProjectForRun(2_000, () => 0.25);
+    expect(first.startsWith(`${DEMO_PROJECT_PREFIX}-`)).toBe(true);
+    expect(new Set([first, second, later]).size).toBe(3);
+  });
+});
 
 describe("demo search readiness", () => {
   it("returns ready once every probe has hits after a few polls", async () => {
