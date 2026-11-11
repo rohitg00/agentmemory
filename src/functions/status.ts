@@ -478,11 +478,11 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
 
-  if (input.capture === null) {
+  if (input.capture === null || input.capture?.inbox === null) {
     problems.push({
       level: "info",
       code: "capture-check-unavailable",
-      message: "The capture inbox did not answer in time, so capture was not checked.",
+      message: "The capture inbox could not be read in time, so capture was not checked.",
       fix: "The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.",
     });
   }
@@ -560,12 +560,12 @@ export function captureRestBase(restPort: number | null): string {
 
 export const NO_HOOK_CAPTURE = {
   message:
-    "No capture has been observed yet: there are no sessions and no hook events. An agent connected with MCP only stores observations only when it calls memory_save.",
-  fix: "Run one agent session, then check again. If there are still no sessions, install the agent's hooks: rerun npx @agentmemory/agentmemory connect <agent> --with-hooks, or install the agentmemory plugin for that agent.",
+    "No capture has been observed yet: there are no sessions and no hook events. An agent connected with MCP only records no session observations; it saves long-term memories only when it calls memory_save.",
+  fix: "Run one agent session, then check again. If there are still no sessions and the agent supports hooks or an agentmemory plugin, rerun npx @agentmemory/agentmemory connect <agent> --with-hooks or install the plugin. Agents without either stay MCP only and keep memories only through memory_save.",
 };
 
 export function hookCaptureMissing(sessions: number | null, capture: CaptureStatus | null | undefined): boolean {
-  return sessions === 0 && !!capture?.inbox && !captureActivity(capture);
+  return sessions === 0 && !!capture?.inbox && !capture.spool.some((s) => s.unreadable) && !captureActivity(capture);
 }
 
 function captureActivity(capture: CaptureStatus): boolean {

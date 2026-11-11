@@ -134,7 +134,8 @@ describe("evaluateStatus", () => {
     const problem = report.problems[0];
     expect(problem.message).toMatch(/No capture has been observed yet/);
     expect(problem.fix).toMatch(/^Run one agent session/);
-    expect(problem.message).toMatch(/memory_save/);
+    expect(problem.message).toMatch(/long-term memories only when it calls memory_save/);
+    expect(problem.fix).toMatch(/supports hooks or an agentmemory plugin/);
     expect(problem.fix).toMatch(/--with-hooks/);
   });
 
@@ -158,6 +159,14 @@ describe("evaluateStatus", () => {
   it("does not diagnose missing hooks when the capture inbox could not be read", () => {
     const capture = { ...idleCapture, inbox: null };
     const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 }, capture }));
+    expect(codes(report)).toContain("capture-check-unavailable");
+    expect(codes(report)).not.toContain("no-hook-capture");
+    expect(report.status).not.toBe("ok");
+  });
+
+  it("does not diagnose missing hooks when the capture spool could not be read", () => {
+    const spool = [{ records: 0, unreadable: true, stats: { dropped: 0, lastDropAt: null } }] as unknown as NonNullable<StatusInputs["capture"]>["spool"];
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 }, capture: { ...idleCapture, spool } }));
     expect(codes(report)).not.toContain("no-hook-capture");
   });
 

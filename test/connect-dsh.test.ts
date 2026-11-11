@@ -368,6 +368,19 @@ describe("connect: DeepSeek Harness", () => {
     expect(result.hooks).toBeUndefined();
   });
 
+  it("counts a legacy bridge row as installed only while its manifest exists", async () => {
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: false });
+    const dir = join(home, ".dsh");
+    const configPath = join(dir, "cordis.patch.yml");
+    const rows = parseDocument(readFileSync(configPath, "utf-8")).toJS();
+    rows.push({ insert: [{ id: "agentmemory-hooks", name: "@deepseek-ai/dsh-hooks-claude-code", config: { configPath: "agentmemory.hooks.json" } }] });
+    writeFileSync(configPath, JSON.stringify(rows));
+    expect((await adapter.install({ dryRun: false, force: false })).hooks).toBeUndefined();
+    writeFileSync(join(dir, "agentmemory.hooks.json"), "{}");
+    expect((await adapter.install({ dryRun: false, force: false })).hooks).toBe("installed");
+  });
+
   it("MCP-only install after --with-hooks keeps the hooks row intact", async () => {
     mkdirSync(join(home, ".dsh"), { recursive: true });
     const { adapter } = await import("../src/cli/connect/dsh.js");

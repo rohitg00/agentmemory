@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { isMap, isSeq, parseDocument, type YAMLMap } from "yaml";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
@@ -118,7 +118,9 @@ export const adapter: ConnectAdapter = {
     const hooksReady = hooks.length === 1 && hooks[0].get("name") === pluginPath && existsSync(pluginPath);
     const hooksUsable = hooks.some((entry) => {
       const name = String(entry.get("name"));
-      return name === "@deepseek-ai/dsh-hooks-claude-code" || existsSync(name);
+      if (name !== "@deepseek-ai/dsh-hooks-claude-code") return existsSync(name);
+      const manifest = entry.getIn(["config", "configPath"]);
+      return typeof manifest === "string" && manifest.length > 0 && existsSync(resolve(home, manifest));
     });
     const hookState = wantHooks || hooksUsable ? { hooks: "installed" as const } : {};
 
