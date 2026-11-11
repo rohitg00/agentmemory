@@ -1880,7 +1880,7 @@ async function runStatus() {
     process.exit(1);
   }
 
-  if (await probeWorkerConnection(base, bearerHeaders(base)) === "engine-only") {
+  if (savedState?.kind !== "compose" && await probeWorkerConnection(base, bearerHeaders(base)) === "engine-only") {
     p.log.error(engineOnlyLines(base).join("\n"));
     process.exit(1);
   }
@@ -2108,7 +2108,10 @@ function buildDoctorEffects(): DoctorEffects {
       const managed = state?.kind === "compose" && state.restPort === getRestPort() && !remoteTarget;
       return !managed && await isEngineRunning();
     },
-    workerConnection: () => probeWorkerConnection(getBaseUrl(), bearerHeaders(getBaseUrl())),
+    workerConnection: async () => {
+      if (readEngineState()?.kind === "compose") return "connected";
+      return probeWorkerConnection(getBaseUrl(), bearerHeaders(getBaseUrl()));
+    },
     viewerReachable: async (timeoutMs = 2000) => {
       try {
         await discoverViewerPort();
