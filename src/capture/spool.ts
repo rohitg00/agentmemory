@@ -653,7 +653,7 @@ export function spoolSummary(url: string, options: { policy?: SpoolPolicy; dir?:
   const noteError = (err: unknown) => {
     if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") unreadable = true;
   };
-  if (existsSync(paths.file)) files.push(paths.file);
+  files.push(paths.file);
   try {
     for (const entry of readdirSync(paths.dir)) {
       if (entry.startsWith(`${paths.name}.draining-`) && entry.endsWith(".jsonl")) files.push(join(paths.dir, entry));

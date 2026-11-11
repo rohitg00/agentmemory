@@ -478,11 +478,11 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
 
-  if (input.capture === null || input.capture?.inbox === null) {
+  if (input.capture === null || input.capture?.inbox === null || input.capture?.spool.some((s) => s.unreadable)) {
     problems.push({
       level: "info",
       code: "capture-check-unavailable",
-      message: "The capture inbox could not be read in time, so capture was not checked.",
+      message: "The capture inbox or spool could not be read, so capture was not checked.",
       fix: "The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.",
     });
   }

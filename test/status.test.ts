@@ -167,7 +167,9 @@ describe("evaluateStatus", () => {
   it("does not diagnose missing hooks when the capture spool could not be read", () => {
     const spool = [{ records: 0, unreadable: true, stats: { dropped: 0, lastDropAt: null } }] as unknown as NonNullable<StatusInputs["capture"]>["spool"];
     const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 }, capture: { ...idleCapture, spool } }));
+    expect(codes(report)).toContain("capture-check-unavailable");
     expect(codes(report)).not.toContain("no-hook-capture");
+    expect(report.status).not.toBe("ok");
   });
 
   it("notes when the index check timed out instead of claiming the index is fine", () => {
