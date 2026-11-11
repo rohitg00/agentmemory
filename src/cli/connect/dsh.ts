@@ -6,6 +6,7 @@ import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
   backupFile,
+  isLegacyMcpCommand,
   resolveDshHome,
   logAlreadyWired,
   logBackup,
@@ -112,7 +113,10 @@ export const adapter: ConnectAdapter = {
       : "";
 
     const wantHooks = opts.withHooks === true;
-    const hasMcp = hasBlock(existing, MCP_MARKER);
+    const mcpEntries = managedEntries(existing, MCP_MARKER);
+    const hasMcp =
+      mcpEntries.length > 0 &&
+      !mcpEntries.some((entry) => isLegacyMcpCommand(entry.getIn(["config", "command"])));
     const hooks = managedEntries(existing, HOOKS_MARKER);
     const pluginPath = wantHooks ? join(dirname(findPluginRoot()), "dist", "integrations", "dsh.mjs") : "";
     const hooksReady = hooks.length === 1 && hooks[0].get("name") === pluginPath && existsSync(pluginPath);

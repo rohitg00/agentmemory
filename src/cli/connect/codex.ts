@@ -6,6 +6,7 @@ import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
   backupFile,
+  isLegacyMcpCommand,
   logAlreadyWired,
   logBackup,
   logInstalled,
@@ -34,6 +35,16 @@ const SECTION_HEADER = "[mcp_servers.agentmemory]";
 
 function isWiredText(toml: string): boolean {
   return toml.includes(SECTION_HEADER);
+}
+
+function hasLegacyCommand(toml: string): boolean {
+  const start = toml.indexOf(SECTION_HEADER);
+  if (start < 0) return false;
+  const rest = toml.slice(start + SECTION_HEADER.length);
+  const end = rest.search(/^\s*\[/m);
+  const section = end < 0 ? rest : rest.slice(0, end);
+  const match = section.match(/^\s*command\s*=\s*(["'])(.*?)\1\s*$/m);
+  return isLegacyMcpCommand(match?.[2]);
 }
 
 function stripExistingBlock(toml: string): string {
@@ -78,7 +89,7 @@ export const adapter: ConnectAdapter = {
     const current = exists ? readFileSync(CODEX_TOML, "utf-8") : "";
     const wired = isWiredText(current);
 
-    if (wired && !opts.force) {
+    if (wired && !hasLegacyCommand(current) && !opts.force) {
       logAlreadyWired("Codex CLI", CODEX_TOML);
       return { kind: "already-wired", mutatedPath: CODEX_TOML };
     }

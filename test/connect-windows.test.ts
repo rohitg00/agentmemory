@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -127,7 +127,7 @@ describe("connect on Windows with a home directory that contains spaces", () => 
     for (const handler of handlers) {
       expect(handler.command).toBe("node");
       expect(handler.args).toHaveLength(1);
-      expect(handler.args![0].startsWith(`${root}/scripts/`)).toBe(true);
+      expect(handler.args![0].startsWith(`${root.replace(/\\/g, "/")}/scripts/`)).toBe(true);
       expect(handler.args![0]).toMatch(/\.mjs$/);
     }
   });
@@ -146,8 +146,64 @@ describe("connect on Windows with a home directory that contains spaces", () => 
     const hooks = JSON.parse(readFileSync(join(home, ".codex", "hooks.json"), "utf-8"));
     for (const command of hookCommands(hooks.hooks)) {
       expect(command).toMatch(QUOTED_NODE_COMMAND);
-      expect(command).toContain(root);
+      expect(command).toContain(root.replace(/\\/g, "/"));
     }
+  });
+
+  it("codex replaces a bare npx block without --force", async () => {
+    mkdirSync(join(home, ".codex"), { recursive: true });
+    writeFileSync(
+      join(home, ".codex", "config.toml"),
+      '[mcp_servers.agentmemory]\ncommand = "npx"\nargs = ["-y", "@agentmemory/mcp"]\n',
+    );
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const toml = readFileSync(join(home, ".codex", "config.toml"), "utf-8");
+    expect(toml).toContain('command = "cmd"');
+    expect(toml).not.toContain('command = "npx"');
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
+  });
+
+  it("opencode replaces a bare npx command array without --force", async () => {
+    mkdirSync(join(home, ".config", "opencode"), { recursive: true });
+    writeFileSync(
+      join(home, ".config", "opencode", "opencode.json"),
+      JSON.stringify({ theme: "dark", mcp: { agentmemory: { type: "local", command: ["npx", "-y", "@agentmemory/mcp"], enabled: true } } }),
+    );
+    const { adapter } = await import("../src/cli/connect/opencode.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const cfg = JSON.parse(readFileSync(join(home, ".config", "opencode", "opencode.json"), "utf-8"));
+    expect(cfg.theme).toBe("dark");
+    expect(cfg.mcp.agentmemory.command).toEqual(["cmd", ...WINDOWS_MCP.args]);
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
+  });
+
+  it("continue replaces a bare npx entry in config.json without --force", async () => {
+    mkdirSync(join(home, ".continue"), { recursive: true });
+    writeFileSync(
+      join(home, ".continue", "config.json"),
+      JSON.stringify({ mcpServers: [{ name: "agentmemory", command: "npx", args: ["-y", "@agentmemory/mcp"] }] }),
+    );
+    const { adapter } = await import("../src/cli/connect/continue.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const cfg = JSON.parse(readFileSync(join(home, ".continue", "config.json"), "utf-8"));
+    expect(cfg.mcpServers).toHaveLength(1);
+    expect(cfg.mcpServers[0]).toMatchObject(WINDOWS_MCP);
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
+  });
+
+  it("dsh replaces a bare npx mcp-client row without --force", async () => {
+    mkdirSync(join(home, ".dsh"), { recursive: true });
+    writeFileSync(
+      join(home, ".dsh", "cordis.patch.yml"),
+      "- insert:\n    - id: agentmemory\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        transport: stdio\n        serverName: agentmemory\n        command: npx\n        args: ['-y', '@agentmemory/mcp']\n",
+    );
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const patch = readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8");
+    expect(patch).toContain("command: cmd");
+    expect(patch).not.toContain("command: npx");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("already-wired");
   });
 
   it("droid hooks quote a plugin path with spaces", async () => {
@@ -180,6 +236,11 @@ describe("connect on Windows with a home directory that contains spaces", () => 
     await adapter.install({ dryRun: false, force: false });
     const cfg = JSON.parse(readFileSync(join(zedDir, "settings.json"), "utf-8"));
     expect(cfg.context_servers.agentmemory).toMatchObject(WINDOWS_MCP);
+  });
+
+  it("zed guideline lands beside the %APPDATA%\\Zed settings", async () => {
+    const { guidelineTargets } = await import("../src/cli/connect/guidelines.js");
+    expect(guidelineTargets(home).zed.globalPath).toBe(join(home, "AppData", "Roaming", "Zed", "AGENTS.md"));
   });
 
   it("converts Windows separators in hook command paths", async () => {

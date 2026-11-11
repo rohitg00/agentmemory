@@ -100,7 +100,7 @@ The first embedding request downloads `Xenova/all-MiniLM-L6-v2`; wait for that d
 
 ## 5. Wire MCP into the calling agent
 
-Detect which agent is running this runbook, then wire its MCP config. On native Windows, run this automated step only for `copilot-cli`:
+Detect which agent is running this runbook, then wire its MCP config:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest connect <agent>

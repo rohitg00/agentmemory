@@ -54,8 +54,17 @@ export function isAgentmemoryMcpEntry(entry: unknown): boolean {
   return args.includes("@agentmemory/mcp");
 }
 
+export function isLegacyMcpCommand(command: unknown): boolean {
+  return command === "npx" && AGENTMEMORY_MCP_BLOCK.command !== "npx";
+}
+
 export function toCommandPath(path: string): string {
   return process.platform === "win32" ? path.replace(/\\/g, "/") : path;
+}
+
+export function resolveZedConfigDir(home: string = homedir()): string {
+  if (process.platform !== "win32") return join(home, ".config", "zed");
+  return join(process.env["APPDATA"] || join(home, "AppData", "Roaming"), "Zed");
 }
 
 export function resolveDshHome(home: string = homedir()): string {

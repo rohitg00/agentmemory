@@ -6,6 +6,7 @@ import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
   backupFile,
+  isLegacyMcpCommand,
   logAlreadyWired,
   logBackup,
   logInstalled,
@@ -66,7 +67,9 @@ export const adapter: ConnectAdapter = {
         : {};
 
     const alreadyHas = entryMatches(mcp["agentmemory"]);
-    if (alreadyHas && !opts.force) {
+    const command = mcp["agentmemory"]?.["command"];
+    const legacy = Array.isArray(command) && isLegacyMcpCommand(command[0]);
+    if (alreadyHas && !legacy && !opts.force) {
       logAlreadyWired(this.displayName, CONFIG_PATH);
       return { kind: "already-wired", mutatedPath: CONFIG_PATH };
     }
