@@ -44,6 +44,7 @@ vi.mock("../src/functions/image-refs.js", () => ({
 import { mockKV, mockSdk, currentAuditScope } from "./helpers/mocks.js";
 import { indexObservationSession, lookupObservationSession } from "../src/state/obs-index.js";
 import type { AuditEntry } from "../src/types.js";
+import { SESSION_SOURCE_MAX_BYTES } from "../src/functions/observation-source-budget.js";
 
 const SESSION = "ses_capped";
 const SCOPE = `mem:obs:${SESSION}`;
@@ -246,6 +247,42 @@ describe("session observation cap evicts instead of refusing", () => {
     expect(storedIds(kv)).toEqual(["obs_keep"]);
     expect(removedFromBm25).toHaveLength(0);
     expect(removedFromVector).toHaveLength(0);
+  });
+
+  it("budgets the incoming source against the rows that remain after eviction", async () => {
+    const { sdk, kv } = await setup(1);
+    await seed(kv, [{ id: "obs_big", importance: 1, ts: "2026-01-01T00:00:00.000Z" }]);
+    const big = (await kv.get<Record<string, unknown>>(SCOPE, "obs_big"))!;
+    await kv.set(SCOPE, "obs_big", {
+      ...big,
+      source: { hookType: "post_tool_use", toolOutput: "x".repeat(SESSION_SOURCE_MAX_BYTES - 1024) },
+    });
+
+    const result = await observeOnce(sdk, "y".repeat(8 * 1024));
+
+    expect(storedIds(kv)).toEqual([result.observationId!]);
+    const stored = await kv.get<{ source?: { truncated?: boolean } }>(SCOPE, result.observationId!);
+    expect(stored?.source).toBeDefined();
+    expect(stored?.source?.truncated).toBe(false);
+  });
+
+  it("re-budgets the incoming source when the planned victim cannot be evicted", async () => {
+    const { sdk, kv } = await setup(1);
+    await seed(kv, [{ id: "obs_big", importance: 1, ts: "2026-01-01T00:00:00.000Z" }]);
+    const big = (await kv.get<Record<string, unknown>>(SCOPE, "obs_big"))!;
+    await kv.set(SCOPE, "obs_big", {
+      ...big,
+      source: { hookType: "post_tool_use", toolOutput: "x".repeat(SESSION_SOURCE_MAX_BYTES - 1024) },
+    });
+    kv.delete = async () => {
+      throw new Error("disk busy");
+    };
+
+    const result = await observeOnce(sdk, "y".repeat(8 * 1024));
+
+    expect(storedIds(kv).sort()).toEqual([result.observationId!, "obs_big"].sort());
+    const stored = await kv.get<{ source?: { truncated?: boolean } }>(SCOPE, result.observationId!);
+    expect(stored?.source === undefined || stored.source.truncated === true).toBe(true);
   });
 
   it("keeps the session observation count equal to retained rows after eviction", async () => {

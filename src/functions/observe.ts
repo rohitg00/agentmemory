@@ -36,6 +36,10 @@ function byEvictionOrder(a: CompressedObservation, b: CompressedObservation): nu
   return new Date(a.timestamp ?? 0).getTime() - new Date(b.timestamp ?? 0).getTime();
 }
 
+function evictionCandidates(existing: CompressedObservation[], incomingId: string): CompressedObservation[] {
+  return existing.filter((o) => o?.id && o.id !== incomingId).sort(byEvictionOrder);
+}
+
 async function evictForSessionCap(
   sdk: IIIClient,
   kv: StateKV,
@@ -45,7 +49,7 @@ async function evictForSessionCap(
   cap: number,
 ): Promise<{ evicted: CompressedObservation[]; needed: number }> {
   const needed = existing.length - cap + 1;
-  const candidates = existing.filter((o) => o?.id && o.id !== incomingId).sort(byEvictionOrder);
+  const candidates = evictionCandidates(existing, incomingId);
   const evicted: CompressedObservation[] = [];
   for (const victim of candidates) {
     if (evicted.length >= needed) break;
@@ -317,7 +321,13 @@ export function registerObserveFunction(
           await requestSummaryRefresh(kv, payload.sessionId, dueAt);
           if (finalizeIdleMs > 0) await scheduleSessionFinalize(kv, payload.sessionId, dueAt);
         }
-        const synthetic = budgetLiveObservationSource(buildSyntheticCompression(raw), existing);
+        const cap = maxObservationsPerSession && maxObservationsPerSession > 0 ? maxObservationsPerSession : 0;
+        const plannedVictims = cap > 0 && existing.length >= cap
+          ? evictionCandidates(existing, obsId).slice(0, existing.length - cap + 1)
+          : [];
+        const plannedIds = new Set(plannedVictims.map((o) => o.id));
+        const unbudgeted = buildSyntheticCompression(raw);
+        const synthetic = budgetLiveObservationSource(unbudgeted, existing.filter((o) => !plannedIds.has(o?.id)));
         if (autoCompress) synthetic.compression = pendingCompression();
         try {
           await kv.set(KV.observations(payload.sessionId), obsId, synthetic);
@@ -353,23 +363,39 @@ export function registerObserveFunction(
         }
 
         let evictedCount = 0;
-        if (maxObservationsPerSession && maxObservationsPerSession > 0 && existing.length >= maxObservationsPerSession) {
+        if (plannedVictims.length > 0) {
           const { evicted, needed } = await evictForSessionCap(
             sdk,
             kv,
             payload.sessionId,
             obsId,
             existing,
-            maxObservationsPerSession,
+            cap,
           );
           evictedCount = evicted.length;
           if (evicted.length < needed) {
             logger.warn("Session observation cap eviction freed fewer slots than needed", {
               sessionId: payload.sessionId,
-              cap: maxObservationsPerSession,
+              cap,
               evicted: evicted.length,
               needed,
             });
+          }
+          const evictedIds = new Set(evicted.map((o) => o.id));
+          if (plannedVictims.some((o) => !evictedIds.has(o.id))) {
+            const retained = existing.filter((o) => !evictedIds.has(o?.id));
+            const rebudgeted = budgetLiveObservationSource(unbudgeted, retained);
+            if (JSON.stringify(rebudgeted.source) !== JSON.stringify(synthetic.source)) {
+              if (rebudgeted.source) synthetic.source = rebudgeted.source;
+              else delete synthetic.source;
+              await kv.set(KV.observations(payload.sessionId), obsId, synthetic).catch((err) => {
+                logger.warn("Session cap source re-budget write failed", {
+                  sessionId: payload.sessionId,
+                  obsId,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              });
+            }
           }
         }
 
