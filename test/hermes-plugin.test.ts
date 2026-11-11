@@ -41,14 +41,19 @@ function readManifest(): Record<string, unknown> {
   return parse(readFileSync("integrations/hermes/plugin.yaml", "utf8"));
 }
 
-function readProviderMethods(): string[] {
+const HERMES_MEMORY_PROVIDER_CORE_METHODS = new Set([
+  "name", "is_available", "unavailable_reason", "initialize", "get_config_schema", "save_config",
+  "get_tool_schemas", "handle_tool_call", "shutdown",
+]);
+
+function readPublicProviderMethods(): string[] {
   const source = readFileSync("integrations/hermes/__init__.py", "utf8");
   const start = source.indexOf("class AgentMemoryProvider(");
-  const methods: string[] = [];
-  for (const match of source.slice(start).matchAll(/^    def ([a-z_][a-z0-9_]*)\(/gm)) {
-    if (HERMES_MEMORY_PROVIDER_METHODS.has(match[1])) methods.push(match[1]);
-  }
-  return methods;
+  return [...source.slice(start).matchAll(/^    def ([a-z][a-z0-9_]*)\(/gm)].map((match) => match[1]);
+}
+
+function readProviderMethods(): string[] {
+  return readPublicProviderMethods().filter((method) => HERMES_MEMORY_PROVIDER_METHODS.has(method));
 }
 
 describe("Hermes plugin manifest", () => {
@@ -73,6 +78,13 @@ describe("Hermes plugin manifest", () => {
   it("requires a Hermes version with the memory provider lifecycle it implements", () => {
     expect(readManifest().requires_hermes).toBe(">=0.21.6");
     expect(readProviderMethods()).toEqual(expectedProviderMethods);
+  });
+
+  it("implements no public provider methods outside the known Hermes contract", () => {
+    const unknown = readPublicProviderMethods().filter(
+      (method) => !HERMES_MEMORY_PROVIDER_METHODS.has(method) && !HERMES_MEMORY_PROVIDER_CORE_METHODS.has(method),
+    );
+    expect(unknown).toEqual([]);
   });
 
   it("satisfies native provider runtime and credential contracts", () => {
