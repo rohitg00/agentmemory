@@ -8,7 +8,7 @@ vi.mock("../src/logger.js", () => ({
   bootLog: vi.fn(),
 }));
 
-import { parseGraphifyGraph, registerGraphImportFunction } from "../src/functions/graph-import.js";
+import { parseGraphifyGraph, registerGraphImportFunction, type GraphifyImportResult } from "../src/functions/graph-import.js";
 import { KV } from "../src/state/schema.js";
 import type { GraphNode, GraphEdge } from "../src/types.js";
 import { logger } from "../src/logger.js";
@@ -53,18 +53,43 @@ function mockKV() {
   };
 }
 
-function mockSdk() {
+type MockSdk = {
+  registerFunction: (id: string, handler: Function) => void;
+  registerTrigger: () => void;
+  trigger: (input: { function_id: string; payload?: unknown }) => Promise<unknown>;
+};
+
+function mockSdk(): MockSdk {
   const fns = new Map<string, Function>();
   return {
-    registerFunction: (id: string, handler: Function) => fns.set(id, handler),
+    registerFunction: (id: string, handler: Function) => {
+      fns.set(id, handler);
+    },
     registerTrigger: () => {},
     trigger: async (input: { function_id: string; payload?: unknown }) => {
       const fn = fns.get(input.function_id);
       if (!fn) throw new Error(`missing handler: ${input.function_id}`);
       return fn(input.payload);
     },
-  } as never;
+  };
 }
+
+const LIMIT_KEYS = ["AGENTMEMORY_GRAPH_IMPORT_MAX_NODES", "AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES"];
+const savedLimits: Record<string, string | undefined> = {};
+
+beforeEach(() => {
+  for (const key of LIMIT_KEYS) {
+    savedLimits[key] = process.env[key];
+    process.env[key] = "";
+  }
+});
+
+afterEach(() => {
+  for (const key of LIMIT_KEYS) {
+    if (savedLimits[key] === undefined) delete process.env[key];
+    else process.env[key] = savedLimits[key];
+  }
+});
 
 describe("parseGraphifyGraph", () => {
   it("maps nodes with file_type-aware types and provenance", () => {
@@ -151,7 +176,7 @@ describe("parseGraphifyGraph", () => {
 describe("mem::graph::import-graphify limits, paths and index visibility", () => {
   let tmp: string;
   const saved: Record<string, string | undefined> = {};
-  const envKeys = ["AGENTMEMORY_IMPORT_ROOT", "AGENTMEMORY_GRAPH_IMPORT_MAX_NODES", "AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES", "HOME", "USERPROFILE"];
+  const envKeys = ["AGENTMEMORY_IMPORT_ROOT", "HOME", "USERPROFILE"];
 
   beforeEach(() => {
     for (const key of envKeys) saved[key] = process.env[key];
@@ -170,13 +195,13 @@ describe("mem::graph::import-graphify limits, paths and index visibility", () =>
     rmSync(tmp, { recursive: true, force: true });
   });
 
-  async function runImport(kv: unknown, payload: Record<string, unknown>) {
+  async function runImport(kv: unknown, payload: Record<string, unknown>): Promise<GraphifyImportResult> {
     const sdk = mockSdk();
-    registerGraphImportFunction(sdk, kv as never);
-    return (await (sdk as any).trigger({
+    registerGraphImportFunction(sdk as never, kv as never);
+    return (await sdk.trigger({
       function_id: "mem::graph::import-graphify",
       payload,
-    })) as Record<string, any>;
+    })) as GraphifyImportResult;
   }
 
   it("reports truncation with limits, dropped counts and a logged warning", async () => {
@@ -190,7 +215,7 @@ describe("mem::graph::import-graphify limits, paths and index visibility", () =>
     expect(result.nodesImported).toBe(2);
     expect(result.droppedNodes).toBe(2);
     expect(result.droppedEdges).toBe(1);
-    expect(result.warnings.join(" ")).toContain("AGENTMEMORY_GRAPH_IMPORT_MAX_NODES");
+    expect((result.warnings ?? []).join(" ")).toContain("AGENTMEMORY_GRAPH_IMPORT_MAX_NODES");
     expect(vi.mocked(logger.warn)).toHaveBeenCalledWith("graphify import truncated", expect.objectContaining({ droppedNodes: 2 }));
   });
 
@@ -244,7 +269,7 @@ describe("mem::graph::import-graphify limits, paths and index visibility", () =>
     expect(result.success).toBe(true);
     expect(result.newNodes).toBe(4);
     expect(result.graphIndex).toMatchObject({ state: "needs-migration", ready: false });
-    expect(result.warnings.join(" ")).toContain("graph-index migrate");
+    expect((result.warnings ?? []).join(" ")).toContain("graph-index migrate");
     expect((await queryGraphIndex(kv, { limit: 500 })).nodes).toHaveLength(0);
   });
 
@@ -270,7 +295,7 @@ describe("mem::graph::import-graphify", () => {
     writeFileSync(join(tmp, "graphify-out", "graph.json"), JSON.stringify(FIXTURE));
     kv = mockKV();
     sdk = mockSdk();
-    registerGraphImportFunction(sdk, kv as never);
+    registerGraphImportFunction(sdk as never, kv as never);
   });
 
   afterEach(() => {
