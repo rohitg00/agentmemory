@@ -560,12 +560,12 @@ export function captureRestBase(restPort: number | null): string {
 
 export const NO_HOOK_CAPTURE = {
   message:
-    "No hook has reached this server yet: there are no sessions, so nothing is captured automatically. An agent connected with MCP only stores observations only when it calls memory_save.",
-  fix: "Install the agent's hooks: rerun npx @agentmemory/agentmemory connect <agent> --with-hooks, or install the agentmemory plugin for that agent. If you only just connected an agent, run one session and check again.",
+    "No capture has been observed yet: there are no sessions and no hook events. An agent connected with MCP only stores observations only when it calls memory_save.",
+  fix: "Run one agent session, then check again. If there are still no sessions, install the agent's hooks: rerun npx @agentmemory/agentmemory connect <agent> --with-hooks, or install the agentmemory plugin for that agent.",
 };
 
 export function hookCaptureMissing(sessions: number | null, capture: CaptureStatus | null | undefined): boolean {
-  return sessions === 0 && !!capture && !captureActivity(capture);
+  return sessions === 0 && !!capture?.inbox && !captureActivity(capture);
 }
 
 function captureActivity(capture: CaptureStatus): boolean {

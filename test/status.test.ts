@@ -132,7 +132,8 @@ describe("evaluateStatus", () => {
     expect(codes(report)).toEqual(["no-hook-capture"]);
     expect(report.status).toBe("warn");
     const problem = report.problems[0];
-    expect(problem.message).toMatch(/nothing is captured automatically/);
+    expect(problem.message).toMatch(/No capture has been observed yet/);
+    expect(problem.fix).toMatch(/^Run one agent session/);
     expect(problem.message).toMatch(/memory_save/);
     expect(problem.fix).toMatch(/--with-hooks/);
   });
@@ -151,6 +152,12 @@ describe("evaluateStatus", () => {
   it("does not diagnose missing hooks when the capture check is unavailable", () => {
     const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 }, capture: null }));
     expect(codes(report)).toContain("capture-check-unavailable");
+    expect(codes(report)).not.toContain("no-hook-capture");
+  });
+
+  it("does not diagnose missing hooks when the capture inbox could not be read", () => {
+    const capture = { ...idleCapture, inbox: null };
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 }, capture }));
     expect(codes(report)).not.toContain("no-hook-capture");
   });
 

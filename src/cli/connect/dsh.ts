@@ -116,7 +116,11 @@ export const adapter: ConnectAdapter = {
     const hooks = managedEntries(existing, HOOKS_MARKER);
     const pluginPath = wantHooks ? join(dirname(findPluginRoot()), "dist", "integrations", "dsh.mjs") : "";
     const hooksReady = hooks.length === 1 && hooks[0].get("name") === pluginPath && existsSync(pluginPath);
-    const hookState = wantHooks || hooks.length > 0 ? { hooks: "installed" as const } : {};
+    const hooksUsable = hooks.some((entry) => {
+      const name = String(entry.get("name"));
+      return name === "@deepseek-ai/dsh-hooks-claude-code" || existsSync(name);
+    });
+    const hookState = wantHooks || hooksUsable ? { hooks: "installed" as const } : {};
 
     if (wantHooks && !opts.force && hooks.some(entry => entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code")) {
       throw new Error("Legacy DSH hooks bridge found. Run agentmemory connect dsh --with-hooks --force to replace it with the bundled native plugin. Existing manifest files will be preserved.");

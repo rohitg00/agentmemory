@@ -43,8 +43,11 @@ describe("mcpOnlyCaptureNotice", () => {
 
   it("still warns when --with-hooks was passed but the hooks were not installed", () => {
     for (const result of [installed, { kind: "installed", hooks: "skipped" } as const, { kind: "already-wired", hooks: "skipped" } as const]) {
+      expect(mcpOnlyCaptureNotice({ displayName: "Droid", autoCapture: "with-hooks" }, { withHooks: true }, result)).toBe(
+        "Droid: MCP only. Nothing is captured automatically because the hooks were not installed. Fix the problem reported above, then rerun with --with-hooks.",
+      );
       expect(mcpOnlyCaptureNotice({ displayName: "Codex CLI", autoCapture: "plugin-or-with-hooks" }, { withHooks: true }, result)).toBe(
-        "Codex CLI: MCP only. Nothing is captured automatically because the hooks were not installed. Fix the problem reported above, then rerun with --with-hooks.",
+        "Codex CLI: MCP only. The hooks were not installed, so nothing is captured automatically unless the agentmemory plugin is installed. Fix the problem reported above and rerun with --with-hooks, or install the plugin.",
       );
     }
   });
