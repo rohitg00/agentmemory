@@ -55,7 +55,8 @@ export async function probeWorkerConnection(
     routeStatus(`${base}/agentmemory/health`, headers, timeoutMs, fetchImpl),
   ]);
   if (livez === null && health === null) return "unreachable";
-  if (livez !== 404 || health !== 404) return "connected";
+  const answered = (status: number | null) => status !== null && status !== 404;
+  if (answered(livez) || answered(health)) return "connected";
   const busReachable = options.engineBusReachable
     ? await options.engineBusReachable().catch(() => false)
     : false;
@@ -70,6 +71,15 @@ export const ENGINE_ONLY_DOCKER_GUIDE =
 export function engineOnlyFix(startCommand = DEFAULT_START_COMMAND): string {
   return `Stop the process that owns this port (an old Docker container or an iii you started yourself), then start agentmemory with: ${startCommand}. For Docker, run the current image instead.`;
 }
+
+export function shellArg(value: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === "win32") return /^[A-Za-z0-9._:\\/-]+$/.test(value) ? value : `"${value}"`;
+  if (/^[A-Za-z0-9._:/@%+=,-]+$/.test(value)) return value;
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+export const UNRECOGNIZED_DOCKER_NOTE =
+  `Old Docker images from the legacy CLI Docker mode keep the engine port inside the container and also show this state. Docker migration: ${ENGINE_ONLY_DOCKER_GUIDE}`;
 
 export const UNRECOGNIZED_SERVICE_FIX =
   `Check that AGENTMEMORY_URL or --port points at agentmemory. If another program owns this port, start agentmemory on a free port with: ${DEFAULT_START_COMMAND} --port <N>.`;
@@ -88,6 +98,7 @@ export function unrecognizedServiceLines(base: string): string[] {
   return [
     `A server answers at ${base}, but agentmemory does not.`,
     "It returns 404 for /agentmemory/livez and /agentmemory/health, and the iii engine port does not answer. It can be another program on this port, or a remote iii engine without the agentmemory worker.",
+    UNRECOGNIZED_DOCKER_NOTE,
     `Fix: ${UNRECOGNIZED_SERVICE_FIX}`,
   ];
 }

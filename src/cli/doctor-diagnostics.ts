@@ -24,7 +24,7 @@ import {
   llmOptInHint,
   parseEnvContent,
 } from "../config.js";
-import { DEFAULT_START_COMMAND, ENGINE_ONLY_DOCKER_GUIDE, engineOnlyFix, UNRECOGNIZED_SERVICE_FIX, type WorkerConnection } from "./worker-connection.js";
+import { DEFAULT_START_COMMAND, ENGINE_ONLY_DOCKER_GUIDE, engineOnlyFix, UNRECOGNIZED_DOCKER_NOTE, UNRECOGNIZED_SERVICE_FIX, type WorkerConnection } from "./worker-connection.js";
 
 export type DiagnosticStatus = {
   ok: boolean;
@@ -52,6 +52,7 @@ export type DoctorContext = {
   /** Pinned engine version. */
   pinnedVersion: string;
   startCommand?: string;
+  targetArgs?: string;
 };
 
 export type DoctorWorkerConnection = WorkerConnection | "managed-worker-down";
@@ -304,7 +305,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     },
     {
       id: "worker-not-connected",
-      message: "The iii engine is running, but the agentmemory worker is not connected to it.",
+      message: "The server answers, but the agentmemory worker routes return 404.",
       fixPreview: engineOnlyFix(),
       moreInfo:
         "The REST port answers, but /agentmemory/livez and /agentmemory/health return 404. " +
@@ -316,6 +317,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
       check: async (ctx) => {
         const connection = await effects.workerConnection();
         const startCommand = ctx.startCommand ?? DEFAULT_START_COMMAND;
+        const targetArgs = ctx.targetArgs ?? "";
         if (connection === "engine-only") {
           return {
             ok: false,
@@ -327,14 +329,14 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
           return {
             ok: false,
             detail: `managed Worker Compose engine at ${ctx.baseUrl} has no agentmemory routes (404)`,
-            manualFix: `Run agentmemory status to see the Worker Compose failure report, then run agentmemory stop and start again with: ${startCommand}.`,
+            manualFix: `Run agentmemory status${targetArgs} to see the Worker Compose failure report, then run agentmemory stop${targetArgs} and start again with: ${startCommand}.`,
           };
         }
         if (connection === "unrecognized") {
           return {
             ok: false,
             detail: `server at ${ctx.baseUrl} returns 404 for the agentmemory routes and the iii engine port does not answer`,
-            manualFix: UNRECOGNIZED_SERVICE_FIX,
+            manualFix: `${UNRECOGNIZED_SERVICE_FIX} ${UNRECOGNIZED_DOCKER_NOTE}`,
           };
         }
         if (connection === "unreachable") return { ok: true, detail: "server not reachable (see Server reachable)" };

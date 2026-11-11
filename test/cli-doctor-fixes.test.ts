@@ -516,6 +516,15 @@ describe("doctor v2 diagnostic catalog", () => {
     expect(status.manualFix).not.toContain("Stop the process");
   });
 
+  it("worker-not-connected keeps the selected instance in the managed Compose recovery commands", async () => {
+    const diagnostics = buildDiagnostics(stubEffects({ workerConnection: async () => "managed-worker-down" }));
+    const check = diagnostics.find((d) => d.id === "worker-not-connected")!;
+    const status = await check.check({ ...stubCtx(), targetArgs: " --instance 1", startCommand: "npx -y @agentmemory/agentmemory@latest --instance 1" });
+    expect(status.manualFix).toContain("agentmemory status --instance 1 ");
+    expect(status.manualFix).toContain("agentmemory stop --instance 1 ");
+    expect(status.manualFix).toContain("start again with: npx -y @agentmemory/agentmemory@latest --instance 1.");
+  });
+
   it("worker-not-connected does not call an unrecognized service an engine", async () => {
     const diagnostics = buildDiagnostics(stubEffects({ workerConnection: async () => "unrecognized" }));
     const check = diagnostics.find((d) => d.id === "worker-not-connected")!;
@@ -524,6 +533,9 @@ describe("doctor v2 diagnostic catalog", () => {
     expect(status.detail).toContain("iii engine port does not answer");
     expect(status.manualFix).toContain("AGENTMEMORY_URL");
     expect(status.manualFix).not.toContain("Stop the process");
+    const report = failureReport(check, status);
+    expect(report.problem).not.toContain("iii engine is running");
+    expect(report.fix).toContain("legacy CLI Docker mode");
   });
 
   it("worker-not-connected passes when the worker answers or the server is down", async () => {

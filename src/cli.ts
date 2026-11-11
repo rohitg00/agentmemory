@@ -105,7 +105,7 @@ import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
 import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
-import { DEFAULT_START_COMMAND, engineOnlyLines, probeWorkerConnection, tcpPortOpen, unrecognizedServiceLines, type WorkerConnection } from "./cli/worker-connection.js";
+import { DEFAULT_START_COMMAND, engineOnlyLines, probeWorkerConnection, shellArg, tcpPortOpen, unrecognizedServiceLines, type WorkerConnection } from "./cli/worker-connection.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -1842,19 +1842,34 @@ async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 500
   }
 }
 
-function recoveryStartCommand(): string {
-  const parts = [DEFAULT_START_COMMAND];
+function recoveryTargetArgs(): string {
+  const parts: string[] = [];
   if (hasInstanceArgument) parts.push(`--instance ${selectedInstance}`);
   if (portValue || (!hasInstanceArgument && getRestPort() !== 3111)) parts.push(`--port ${getRestPort()}`);
   const dataDir = cliArgValue("--data-dir");
-  if (dataDir) parts.push(`--data-dir ${/\s/.test(dataDir) ? JSON.stringify(dataDir) : dataDir}`);
-  return parts.join(" ");
+  if (dataDir) parts.push(`--data-dir ${shellArg(dataDir)}`);
+  return parts.map((part) => ` ${part}`).join("");
+}
+
+function recoveryStartCommand(): string {
+  return `${DEFAULT_START_COMMAND}${recoveryTargetArgs()}`;
+}
+
+function workerEnginePort(): number {
+  const workerUrl = process.env["III_URL"];
+  if (!process.env["III_ENGINE_URL"] && workerUrl) {
+    try {
+      const parsed = new URL(workerUrl).port;
+      if (parsed) return parseInt(parsed, 10);
+    } catch {}
+  }
+  return getEnginePort();
 }
 
 function probeTargetWorker(base: string): Promise<WorkerConnection> {
   return probeWorkerConnection(base, {
     headers: bearerHeaders(base),
-    engineBusReachable: async () => tcpPortOpen(new URL(base).hostname.replace(/^\[|\]$/g, ""), getEnginePort()),
+    engineBusReachable: async () => tcpPortOpen(new URL(base).hostname.replace(/^\[|\]$/g, ""), workerEnginePort()),
   });
 }
 
@@ -1904,13 +1919,15 @@ async function runStatus() {
   }
 
   const connection = await probeTargetWorker(base);
-  const composeExplainsMissingRoutes = (connection === "engine-only" || connection === "unrecognized")
+  const workerMissing = connection !== "connected";
+  const composeExplainsMissingRoutes = workerMissing
     && savedState?.kind === "compose"
     && (await savedComposeFailure(savedState)) !== null;
-  if ((connection === "engine-only" || connection === "unrecognized") && !composeExplainsMissingRoutes) {
-    const lines = connection === "engine-only"
-      ? engineOnlyLines(base, recoveryStartCommand())
-      : unrecognizedServiceLines(base);
+  if (workerMissing && !composeExplainsMissingRoutes) {
+    let lines: string[];
+    if (connection === "engine-only") lines = engineOnlyLines(base, recoveryStartCommand());
+    else if (connection === "unrecognized") lines = unrecognizedServiceLines(base);
+    else lines = [`A server answers at ${base}, but /agentmemory/livez and /agentmemory/health did not respond.`, "Check the agentmemory logs, then run status again."];
     p.log.error(lines.join("\n"));
     process.exit(1);
   }
@@ -2096,6 +2113,7 @@ function buildDoctorContext(): DoctorContext {
     enginePath: engineStatePath(),
     pinnedVersion: IIPINNED_VERSION,
     startCommand: recoveryStartCommand(),
+    targetArgs: recoveryTargetArgs(),
   };
 }
 

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   engineOnlyLines,
   probeWorkerConnection,
+  shellArg,
   tcpPortOpen,
   unrecognizedServiceLines,
 } from "../src/cli/worker-connection.js";
@@ -54,6 +55,26 @@ describe("probeWorkerConnection", () => {
   it("does not report engine-only when only one route is missing", async () => {
     const fetchImpl = fakeFetch({ "/agentmemory/livez": 404, "/agentmemory/health": 200 });
     expect(await probeWorkerConnection(base, { timeoutMs: 500, fetchImpl, engineBusReachable: busUp })).toBe("connected");
+  });
+
+  it("checks the engine bus when one route returns 404 and the other request fails", async () => {
+    for (const routes of [
+      { "/agentmemory/livez": 404 },
+      { "/agentmemory/health": 404 },
+    ]) {
+      const fetchImpl = fakeFetch(routes);
+      expect(await probeWorkerConnection(base, { timeoutMs: 500, fetchImpl, engineBusReachable: busUp })).toBe("engine-only");
+      expect(await probeWorkerConnection(base, { timeoutMs: 500, fetchImpl, engineBusReachable: busDown })).toBe("unrecognized");
+    }
+  });
+
+  it("reports connected when one route answers and the other request fails", async () => {
+    for (const routes of [
+      { "/agentmemory/livez": 200 },
+      { "/agentmemory/health": 200 },
+    ]) {
+      expect(await probeWorkerConnection(base, { timeoutMs: 500, fetchImpl: fakeFetch(routes) })).toBe("connected");
+    }
   });
 
   it("reports unreachable when nothing answers", async () => {
@@ -112,5 +133,29 @@ describe("unrecognizedServiceLines", () => {
     expect(text).not.toContain("iii engine is running");
     expect(text).not.toContain("Stop the process");
     expect(text).toContain("--port <N>");
+  });
+
+  it("points old Docker images that keep the engine port internal at the migration guide", () => {
+    const text = unrecognizedServiceLines("http://localhost:3111").join("\n");
+    expect(text).toContain("legacy CLI Docker mode");
+    expect(text).toContain("#migrating-from-the-legacy-cli-docker-mode");
+  });
+});
+
+describe("shellArg", () => {
+  it("leaves plain paths unquoted", () => {
+    expect(shellArg("/home/alice/data", "linux")).toBe("/home/alice/data");
+    expect(shellArg("C:\\Users\\alice\\data", "win32")).toBe("C:\\Users\\alice\\data");
+  });
+
+  it("quotes apostrophes, backslashes, spaces and dollar signs for POSIX shells", () => {
+    expect(shellArg("/home/alice/O'Reilly", "darwin")).toBe(`'/home/alice/O'"'"'Reilly'`);
+    expect(shellArg("/tmp/a b", "linux")).toBe("'/tmp/a b'");
+    expect(shellArg("/tmp/a\\b", "linux")).toBe("'/tmp/a\\b'");
+    expect(shellArg("/tmp/$HOME", "linux")).toBe("'/tmp/$HOME'");
+  });
+
+  it("double-quotes Windows paths with spaces or apostrophes", () => {
+    expect(shellArg("C:\\Users\\O'Reilly\\my data", "win32")).toBe(`"C:\\Users\\O'Reilly\\my data"`);
   });
 });
