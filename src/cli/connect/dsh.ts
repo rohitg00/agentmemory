@@ -78,14 +78,13 @@ function migrateLegacyCommand(content: string): string {
     let removed = false;
     for (let j = 0; j < entries.items.length; j++) {
       const entry = entries.items[j];
-      if (!isManaged(entry, MCP_MARKER)) continue;
+      if (!isManaged(entry, MCP_MARKER) || !isLegacyEntry(entry)) continue;
       if (kept) {
         entries.delete(j--);
         removed = true;
         continue;
       }
       kept = true;
-      if (!isLegacyEntry(entry)) continue;
       const args = doc.createNode([...AGENTMEMORY_MCP_BLOCK.args]);
       args.flow = true;
       entry.setIn(["config", "command"], AGENTMEMORY_MCP_BLOCK.command);

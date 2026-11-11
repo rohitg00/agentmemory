@@ -333,6 +333,24 @@ describe("connect on Windows with a home directory that contains spaces", () => 
     expect(ops[1].insert[0].id).toBe("other");
   });
 
+  it.each([true, false])("dsh migrates the legacy row and keeps a custom row, custom first: %s", async (customFirst) => {
+    mkdirSync(join(home, ".dsh"), { recursive: true });
+    const row = (id: string, command: string, args: string, extra = "") =>
+      `- insert:\n    - id: ${id}\n      name: '@deepseek-ai/dsh-mcp-client'\n${extra}      config:\n        transport: stdio\n        serverName: agentmemory\n        command: ${command}\n        args: ${args}\n`;
+    const custom = row("agentmemory-custom", "custom-mcp", "['--port', '1']");
+    const legacy = row("agentmemory", "npx", "['-y', '@agentmemory/mcp']", "      disabled: true\n");
+    writeFileSync(join(home, ".dsh", "cordis.patch.yml"), customFirst ? custom + legacy : legacy + custom);
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    expect((await adapter.install({ dryRun: false, force: false })).kind).toBe("installed");
+    const { parseDocument } = await import("yaml");
+    const rows = parseDocument(readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8"))
+      .toJS()
+      .map((op: { insert: { id: string; disabled?: boolean; config: { command: string; args: string[] } }[] }) => op.insert[0]);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r: { id: string }) => r.id === "agentmemory-custom").config).toMatchObject({ command: "custom-mcp", args: ["--port", "1"] });
+    expect(rows.find((r: { id: string }) => r.id === "agentmemory")).toMatchObject({ disabled: true, config: { command: "cmd", args: WINDOWS_MCP.args } });
+  });
+
   it("dsh leaves a custom npx package untouched without --force", async () => {
     mkdirSync(join(home, ".dsh"), { recursive: true });
     const original =
