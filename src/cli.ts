@@ -1904,11 +1904,10 @@ async function runStatus() {
   }
 
   const connection = await probeTargetWorker(base);
-  if (connection === "engine-only" || connection === "unrecognized") {
-    if (savedState?.kind === "compose") {
-      const failure = await savedComposeFailure(savedState);
-      if (failure) exitWithComposeFailure(savedState, failure, `the agentmemory routes are unavailable at ${base}`);
-    }
+  const composeExplainsMissingRoutes = (connection === "engine-only" || connection === "unrecognized")
+    && savedState?.kind === "compose"
+    && (await savedComposeFailure(savedState)) !== null;
+  if ((connection === "engine-only" || connection === "unrecognized") && !composeExplainsMissingRoutes) {
     const lines = connection === "engine-only"
       ? engineOnlyLines(base, recoveryStartCommand())
       : unrecognizedServiceLines(base);
