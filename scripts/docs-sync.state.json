@@ -23,17 +23,17 @@
       "4700+"
     ],
     "functions": [
-      "331"
+      "320"
     ],
     "sourceFiles": [
-      "267"
+      "268"
     ],
     "loc": [
-      "62000"
+      "61000"
     ],
     "kvScopes": [
       "67"
     ]
   },
-  "engineVersion": "0.25.1"
+  "engineVersion": "0.26.0"
 }

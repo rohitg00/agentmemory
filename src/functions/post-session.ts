@@ -9,6 +9,7 @@ import { isReflectEnabled } from "./slots.js";
 import { logger } from "../logger.js";
 import { consolidationDue } from "../triggers/events.js";
 import { getGraphGeneration } from "../state/graph-generation.js";
+import { registerObserverTarget } from "../runtime/observed.js";
 
 const graphStamp = (o: CompressedObservation): string => o.compressedAt ?? o.timestamp;
 
@@ -23,7 +24,7 @@ const fireVoid = (sdk: IIIClient, function_id: string, payload: unknown, session
     );
 
 export function registerPostSessionFunctions(sdk: IIIClient, kv: StateKV): void {
-  sdk.registerFunction("mem::post-session-graph", async (data: { sessionId: string }) => {
+  registerObserverTarget(sdk, "mem::post-session-graph", "input", async (data: { sessionId: string }) => {
     const stored = await kv.get<GraphExtractMark>(KV.graphExtractMarks, data.sessionId);
     const graphGeneration = await getGraphGeneration(kv);
     const marker = stored && (stored.graphGeneration ?? null) === graphGeneration ? stored : null;
@@ -51,12 +52,12 @@ export function registerPostSessionFunctions(sdk: IIIClient, kv: StateKV): void 
     return { extracted: fresh.length };
   });
 
-  sdk.registerFunction("mem::post-session-reflect", async (data: { sessionId: string }) => {
+  registerObserverTarget(sdk, "mem::post-session-reflect", "input", async (data: { sessionId: string }) => {
     if (!isReflectEnabled()) return { skipped: "reflect_disabled" };
     return sdk.trigger({ function_id: "mem::slot-reflect", payload: { sessionId: data.sessionId } });
   });
 
-  sdk.registerFunction("mem::post-session-consolidate", async (data: { sessionId: string; skipConsolidation?: boolean }) => {
+  registerObserverTarget(sdk, "mem::post-session-consolidate", "input", async (data: { sessionId: string; skipConsolidation?: boolean }) => {
     if (!isConsolidationEnabled()) return { skipped: "consolidation_disabled" };
     if (!(await consolidationDue(kv))) return { skipped: "debounced" };
     fireVoid(sdk, "mem::consolidate-pipeline", { tier: "all", force: true }, data.sessionId);

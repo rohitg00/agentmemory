@@ -436,7 +436,7 @@ Příkaz pro údržbu použijte, když chcete úmyslně aktualizovat svůj loká
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Příkaz aktualizuje místní běhové prostředí a může změnit JavaScriptové závislosti v aktuálním workspace. Zálohujte data a před aktualizací si přečtěte [průvodce upgradem](../docs/upgrades/iii-0.25.md).
+Příkaz aktualizuje místní běhové prostředí a může změnit JavaScriptové závislosti v aktuálním workspace. Zálohujte data a před aktualizací si přečtěte [průvodce upgradem](../docs/upgrades/iii-0.26.md).
 
 ### Claude Code (jeden blok, vložte ho)
 
@@ -663,7 +663,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory běží na Windows 10/11. WSL2 používá cestu pro Linux a může pinned engine nainstalovat automaticky. Nativní Windows vyžaduje ručně nainstalovanou binárku iii-engine v0.25.1; stáhněte odpovídající archiv ze [stránky vydání iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), ověřte kontrolní součet a umístěte `iii.exe` do `PATH` (například `%USERPROFILE%\.local\bin\iii.exe`). CLI ZIP pro Windows automaticky nerozbaluje.
+agentmemory běží na Windows 10/11. WSL2 používá cestu pro Linux a může pinned engine nainstalovat automaticky. Nativní Windows vyžaduje ručně nainstalovanou binárku iii-engine v0.26.0; stáhněte odpovídající archiv ze [stránky vydání iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), ověřte kontrolní součet a umístěte `iii.exe` do `PATH` (například `%USERPROFILE%\.local\bin\iii.exe`). CLI ZIP pro Windows automaticky nerozbaluje.
 
 Automatizované zapojení MCP na nativním Windows podporuje pouze `agentmemory connect copilot-cli`. U ostatních nativních agentů použijte manuální blok MCP ze sekce [Další agenti](#other-agents). `connect` ve WSL spouštějte pouze tehdy, pokud je cílový agent nainstalován ve stejném prostředí WSL.
 
@@ -675,7 +675,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Spusťte `agentmemory doctor` nebo restartujte s `--verbose`. Jsou-li výchozí porty obsazené, použijte `--port <N>` nebo `--instance <N>`. Kompatibilitu a obnovu popisuje [průvodce upgradem](../docs/upgrades/iii-0.25.md).
+Spusťte `agentmemory doctor` nebo restartujte s `--verbose`. Jsou-li výchozí porty obsazené, použijte `--port <N>` nebo `--instance <N>`. Kompatibilitu a obnovu popisuje [průvodce upgradem](../docs/upgrades/iii-0.26.md).
 
 ---
 

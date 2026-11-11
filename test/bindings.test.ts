@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Bindings, getBindings } from "../src/runtime/bindings.js";
+import { registerObserverTarget, unwrapObserved } from "../src/runtime/observed.js";
 import { KV } from "../src/state/schema.js";
 
 vi.mock("../src/logger.js", () => ({
@@ -9,44 +10,37 @@ import { logger } from "../src/logger.js";
 
 type Observed = { source: Record<string, unknown>; target: string; options?: Record<string, unknown> };
 
-function makeHandle() {
-  const listeners: Array<(s: string, r?: unknown) => void> = [];
-  return {
+function makeHandle(initial: "active" | "pending" = "active") {
+  const listeners = new Set<(state: string) => void>();
+  const handle = {
     id: "obs-1",
-    state: "pending",
+    state: initial as string,
     reason: undefined,
     ready: vi.fn(() => Promise.resolve()),
-    onStateChange: (l: (s: string, r?: unknown) => void) => { listeners.push(l); return () => {}; },
+    onStateChange: (listener: (state: string) => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
     dispose: vi.fn(() => Promise.resolve()),
-    emit: (s: string) => listeners.forEach((l) => l(s)),
+    become(next: string) { handle.state = next; for (const listener of listeners) listener(next); },
   };
+  return handle;
 }
 
-function fakeSdk(functions: string[] | Record<string, unknown>) {
-  const registered: unknown[] = [];
+function fakeSdk(initial: "active" | "pending" = "active") {
   const observed: Observed[] = [];
   const handles: ReturnType<typeof makeHandle>[] = [];
   const sdk = {
-    registered,
     observed,
     handles,
-    registerTrigger: vi.fn((spec: unknown) => { registered.push(spec); }),
     observe: vi.fn((source: Record<string, unknown>, target: string, options?: Record<string, unknown>) => {
       observed.push({ source, target, options });
-      const h = makeHandle();
-      handles.push(h);
-      return h;
-    }),
-    trigger: vi.fn(async (req: { function_id: string }) => {
-      if (req.function_id === "engine::functions::list") return { functions };
-      throw new Error(`unexpected ${req.function_id}`);
+      const handle = makeHandle(initial);
+      handles.push(handle);
+      return handle;
     }),
   };
   return sdk;
 }
 
 const ROUTE = {
-  type: "http" as const,
   function_id: "api::x",
   config: { api_path: "/agentmemory/x", http_method: "POST", middleware_function_ids: ["middleware::api-auth"] },
 };
@@ -56,50 +50,54 @@ describe("Bindings", () => {
   beforeEach(() => { vi.clearAllMocks(); env.AGENTMEMORY_BINDINGS = undefined; });
   afterEach(() => { env.AGENTMEMORY_BINDINGS = undefined; });
 
-  it("registerTrigger immediately with identical object when sdk lacks observe", async () => {
-    const sdk = { registerTrigger: vi.fn(), trigger: vi.fn() };
+  it("observes http::on-request with the route as args right away", () => {
+    const sdk = fakeSdk();
     const b = new Bindings(sdk as never);
     b.http(ROUTE);
-    expect(sdk.registerTrigger).toHaveBeenCalledWith(ROUTE);
-    b.state({ function_id: "ev::x", scope: KV.memories });
-    expect(sdk.registerTrigger).toHaveBeenLastCalledWith({ type: "state", function_id: "ev::x", config: { scope: KV.memories } });
-  });
-
-  it("AGENTMEMORY_BINDINGS=trigger forces registerTrigger even with observe", async () => {
-    env.AGENTMEMORY_BINDINGS = "trigger";
-    const sdk = fakeSdk(["state::get", "http::x", "state::on-changed", "http::on-request"]);
-    const b = new Bindings(sdk as never);
-    b.http(ROUTE);
-    await b.activate();
-    expect(sdk.registerTrigger).toHaveBeenCalledWith(ROUTE);
-    expect(sdk.observe).not.toHaveBeenCalled();
-  });
-
-  it("auto mode observes http and state when providers advertise the functions", async () => {
-    const sdk = fakeSdk(["state::get", "http::x", "state::on-changed", "http::on-request"]);
-    const b = new Bindings(sdk as never);
-    b.http(ROUTE);
-    b.state({ function_id: "ev::mem", scope: KV.memories, maxInFlight: 1 });
-    const modes = await b.activate();
-    expect(modes).toEqual({ state: "observe", http: "observe" });
-    const route = sdk.observed.find((o) => (o.source as { function_id: string }).function_id === "http::on-request")!;
-    expect(route.source.args).toEqual({ method: "POST", path: "/agentmemory/x", middleware_function_ids: ["middleware::api-auth"] });
+    expect(sdk.observed).toHaveLength(1);
+    const route = sdk.observed[0];
+    expect(route.source).toEqual({
+      function_id: "http::on-request",
+      args: { method: "POST", path: "/agentmemory/x", middleware_function_ids: ["middleware::api-auth"] },
+    });
     expect(route.target).toBe("api::x");
-    expect(route.options?.id).toBe("agentmemory:route:POST /agentmemory/x");
-    expect(route.options?.max_in_flight).toBe(1024);
-    const st = sdk.observed.find((o) => (o.source as { function_id: string }).function_id === "state::on-changed")!;
-    expect(st.source.deliver).toBe("input");
-    expect(st.source.filters).toEqual({ "input.scope": { $eq: KV.memories } });
-    expect(st.options).toMatchObject({ id: "agentmemory:state:ev::mem", max_in_flight: 1 });
+    expect(route.options).toEqual({ id: "agentmemory:route:POST /agentmemory/x", max_in_flight: 1024 });
   });
 
-  it("graph scopes produce an $or prefix filter and key filters are included", async () => {
-    const sdk = fakeSdk(["state::get", "http::x", "state::on-changed", "http::on-request"]);
+  it("defaults the method to GET and passes public_webhook only when set", () => {
+    const sdk = fakeSdk();
+    const b = new Bindings(sdk as never);
+    b.http({ type: "http", function_id: "api::y", config: { api_path: "/y", public_webhook: true } });
+    expect(sdk.observed[0].source.args).toEqual({ method: "GET", path: "/y", public_webhook: true });
+  });
+
+  it("refuses route config the http worker does not accept", () => {
+    const sdk = fakeSdk();
+    const b = new Bindings(sdk as never);
+    const odd = { ...ROUTE, config: { ...ROUTE.config, condition_function_id: "x::y" } };
+    expect(() => b.http(odd as never)).toThrow(/condition_function_id/);
+    expect(sdk.observed).toHaveLength(0);
+  });
+
+  it("observes state::on-changed with capture input and a scope filter", () => {
+    const sdk = fakeSdk();
+    const b = new Bindings(sdk as never);
+    b.state({ function_id: "ev::mem", scope: KV.memories, maxInFlight: 1 });
+    const st = sdk.observed[0];
+    expect(st.source).toEqual({
+      function_id: "state::on-changed",
+      filters: { "input.scope": { $eq: KV.memories } },
+      capture: ["input"],
+    });
+    expect(st.options).toEqual({ id: "agentmemory:state:ev::mem", max_in_flight: 1 });
+    expect(b.stateHandles).toHaveLength(1);
+  });
+
+  it("graph scopes produce an $or prefix filter and key filters are included", () => {
+    const sdk = fakeSdk();
     const b = new Bindings(sdk as never);
     b.state({ function_id: "ev::g", scope: KV.graphNodes, key: "current" });
-    await b.activate();
-    const st = sdk.observed[0]!;
-    expect(st.source.filters).toEqual({
+    expect(sdk.observed[0].source.filters).toEqual({
       $or: [
         { "input.scope": { $eq: KV.graphNodes } },
         { "input.scope": { $prefix: `${KV.graphNodes}:generation:` } },
@@ -108,127 +106,133 @@ describe("Bindings", () => {
     });
   });
 
-  it("routes with unknown config fall back to registerTrigger", async () => {
-    const sdk = fakeSdk(["state::get", "http::x", "state::on-changed", "http::on-request"]);
+  it("no observer source carries the removed on or deliver fields", () => {
+    const sdk = fakeSdk();
     const b = new Bindings(sdk as never);
-    const odd = { ...ROUTE, config: { ...ROUTE.config, timeout_ms: 5000 } };
-    b.http(odd);
-    await b.activate();
-    expect(sdk.registerTrigger).toHaveBeenCalledWith(odd);
-    expect(sdk.observed).toHaveLength(0);
-    expect(b.describe().routesViaTrigger).toBe(1);
+    b.http(ROUTE);
+    b.state({ function_id: "ev::x", scope: KV.sessions });
+    b.observeStateChanges({ "input.scope": { $eq: KV.relations } }, "ev::r");
+    for (const { source } of sdk.observed) {
+      expect(source).not.toHaveProperty("on");
+      expect(source).not.toHaveProperty("deliver");
+    }
   });
 
-  it("falls back to trigger when the provider function is absent", async () => {
-    const sdk = fakeSdk(["state::get", "http::x"]);
+  it("activate resolves at once when every route and state observer is active", async () => {
+    const sdk = fakeSdk("active");
     const b = new Bindings(sdk as never);
     b.http(ROUTE);
     b.state({ function_id: "ev::x", scope: KV.memories });
-    const modes = await b.activate();
-    expect(modes).toEqual({ state: "trigger", http: "trigger" });
-    expect(sdk.registerTrigger).toHaveBeenCalledTimes(2);
+    expect(await b.activate()).toEqual({ state: "observe", http: "observe" });
+    expect(b.describe()).toMatchObject({ state: "observe", http: "observe", pipeline: "observe", failedObservers: 0, reasons: [] });
   });
 
-  it("activate is idempotent and late specs bind immediately", async () => {
-    const sdk = fakeSdk(["state::get", "http::x", "state::on-changed", "http::on-request"]);
+  it("modes follow observer state changes and activate resolves when they settle", async () => {
+    const sdk = fakeSdk("pending");
     const b = new Bindings(sdk as never);
-    const first = await b.activate();
-    const second = await b.activate();
-    expect(second).toEqual(first);
-    const calls = sdk.trigger.mock.calls.filter((c) => c[0].function_id === "engine::functions::list").length;
     b.http(ROUTE);
-    expect(sdk.observed).toHaveLength(1);
-    expect(sdk.trigger.mock.calls.filter((c) => c[0].function_id === "engine::functions::list").length).toBe(calls);
+    b.state({ function_id: "ev::x", scope: KV.memories });
+    expect(b.modes).toEqual({ state: "pending", http: "pending" });
+    const settled = b.activate();
+    sdk.handles[1].become("active");
+    expect(b.modes).toEqual({ state: "observe", http: "pending" });
+    sdk.handles[0].become("active");
+    expect(await settled).toEqual({ state: "observe", http: "observe" });
   });
 
-  it("logs ready() rejections with the route", async () => {
-    const sdk = fakeSdk(["state::get", "http::x", "http::on-request"]);
-    const b = new Bindings(sdk as never);
-    const handle = makeHandle();
-    handle.ready = vi.fn(() => Promise.reject(Object.assign(new Error("conflict"), { code: "HTTP_ROUTE_CONFLICT" })));
-    sdk.observe.mockReturnValueOnce(handle as never);
-    b.http(ROUTE);
-    await b.activate();
-    await Promise.resolve();
-    expect(logger.error).toHaveBeenCalledWith(
-      expect.stringContaining("POST /agentmemory/x"),
-      expect.objectContaining({ error: "HTTP_ROUTE_CONFLICT" }),
-    );
+  it("activate resolves with pending modes after the deadline and reports why", async () => {
+    vi.useFakeTimers();
+    try {
+      const sdk = fakeSdk("pending");
+      const b = new Bindings(sdk as never);
+      b.http(ROUTE);
+      const modes = b.activate();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await modes).toEqual({ state: "pending", http: "pending" });
+      expect(b.describe().reasons).toEqual(["http::on-request observers pending until the http worker connects"]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("specs registered while detection is in flight bind in the final mode", async () => {
-    const sdk = fakeSdk([]);
-    let release: (v: unknown) => void;
-    const gate = new Promise((r) => { release = r; });
-    sdk.trigger.mockImplementation(async (req: { function_id: string }) => {
-      if (req.function_id === "engine::functions::list") {
-        await gate;
-        return { functions: ["state::get", "http::x", "state::on-changed", "http::on-request"] };
-      }
-      throw new Error(`unexpected ${req.function_id}`);
-    });
-    const b = new Bindings(sdk as never);
-    const act = b.activate();
-    b.http(ROUTE);
-    release!();
-    const modes = await act;
-    expect(modes.http).toBe("observe");
-    expect(sdk.registerTrigger).not.toHaveBeenCalled();
-    expect(sdk.observed).toHaveLength(1);
-    expect(sdk.observed[0].source.function_id).toBe("http::on-request");
-  });
-
-  it("route observer max_in_flight honors AGENTMEMORY_ROUTE_MAX_IN_FLIGHT and falls back on invalid", async () => {
+  it("route observer max_in_flight honors AGENTMEMORY_ROUTE_MAX_IN_FLIGHT and falls back on invalid", () => {
     process.env.AGENTMEMORY_ROUTE_MAX_IN_FLIGHT = "256";
-    let sdk = fakeSdk(["state::get", "http::x", "http::on-request"]);
-    let b = new Bindings(sdk as never);
-    b.http(ROUTE);
-    await b.activate();
+    let sdk = fakeSdk();
+    new Bindings(sdk as never).http(ROUTE);
     expect(sdk.observed[0].options?.max_in_flight).toBe(256);
     process.env.AGENTMEMORY_ROUTE_MAX_IN_FLIGHT = "abc";
-    sdk = fakeSdk(["state::get", "http::x", "http::on-request"]);
-    b = new Bindings(sdk as never);
-    b.http(ROUTE);
-    await b.activate();
+    sdk = fakeSdk();
+    new Bindings(sdk as never).http(ROUTE);
     expect(sdk.observed[0].options?.max_in_flight).toBe(1024);
     process.env.AGENTMEMORY_ROUTE_MAX_IN_FLIGHT = undefined;
   });
 
-  it("counts routes bound through registerTrigger in trigger mode", async () => {
-    const sdk = fakeSdk(["state::get", "http::x"]);
-    const b = new Bindings(sdk as never);
-    b.http(ROUTE);
-    await b.activate();
-    expect(b.modes.http).toBe("trigger");
-    expect(b.describe().routesViaTrigger).toBe(1);
-  });
-
-  it("bounds each function-list probe by the remaining detection time", async () => {
-    const sdk = fakeSdk(["state::get", "http::x", "http::on-request", "state::on-changed"]);
-    const b = new Bindings(sdk as never);
-    await b.activate();
-    const probe = sdk.trigger.mock.calls.find((c) => c[0].function_id === "engine::functions::list")![0] as { timeoutMs?: number };
-    expect(probe.timeoutMs).toBeGreaterThan(0);
-    expect(probe.timeoutMs).toBeLessThanOrEqual(30_000);
-  });
-
-  it("reports a rejected observer as failed instead of active", async () => {
-    const sdk = fakeSdk(["state::get", "http::x", "http::on-request"]);
+  it("logs and counts a rejected observer", async () => {
+    const sdk = fakeSdk();
     const b = new Bindings(sdk as never);
     const handle = makeHandle();
     handle.ready = vi.fn(() => Promise.reject(Object.assign(new Error("conflict"), { code: "HTTP_ROUTE_CONFLICT" })));
     sdk.observe.mockReturnValueOnce(handle as never);
     b.http(ROUTE);
-    await b.activate();
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("POST /agentmemory/x"),
+      expect.objectContaining({ error: "HTTP_ROUTE_CONFLICT" }),
+    );
     const report = b.describe();
     expect(report.failedObservers).toBe(1);
     expect(report.observers).toBe(0);
     expect(report.reasons.join("\n")).toContain("POST /agentmemory/x observer rejected: HTTP_ROUTE_CONFLICT");
   });
 
+  it("skips bindings and runs the pipeline inline for a client without observe", () => {
+    const sdk = {};
+    const b = new Bindings(sdk as never);
+    b.http(ROUTE);
+    b.state({ function_id: "ev::x", scope: KV.memories });
+    expect(b.pipeline).toBe("inline");
+    expect(b.handles).toHaveLength(0);
+    expect(b.describe().reasons).toContain("client has no observe(); bindings skipped");
+  });
+
+  it("AGENTMEMORY_BINDINGS=trigger is treated as inline with a warning", () => {
+    env.AGENTMEMORY_BINDINGS = "trigger";
+    const sdk = fakeSdk();
+    const b = new Bindings(sdk as never);
+    expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining("AGENTMEMORY_BINDINGS=trigger"));
+    expect(b.pipeline).toBe("inline");
+    b.http(ROUTE);
+    expect(sdk.observed).toHaveLength(1);
+  });
+
   it("per-sdk singleton", () => {
-    const sdk = { registerTrigger: vi.fn(), trigger: vi.fn() };
+    const sdk = {};
     expect(getBindings(sdk as never)).toBe(getBindings(sdk as never));
+  });
+});
+
+describe("observed payloads", () => {
+  const activation = { observer_id: "o", activation_id: "a", function_id: "f", namespace: "agentmemory", invocation_id: "i", status: "success", started_at_ms: 1, duration_ms: 2 };
+
+  it("unwraps input and output from an Observed payload", () => {
+    expect(unwrapObserved({ ...activation, input: { key: "k" } }, "input")).toEqual({ key: "k" });
+    expect(unwrapObserved({ ...activation, output: { observationId: "o1" } }, "output")).toEqual({ observationId: "o1" });
+  });
+
+  it("passes a direct call payload through unchanged", () => {
+    const direct = { sessionId: "s1", observationId: "o1" };
+    expect(unwrapObserved(direct, "input")).toBe(direct);
+    expect(unwrapObserved(direct, "output")).toBe(direct);
+    expect(unwrapObserved(null, "input")).toBeNull();
+  });
+
+  it("registerObserverTarget hands the handler the captured field", async () => {
+    const handlers = new Map<string, (payload: unknown) => unknown>();
+    const sdk = { registerFunction: (id: string, fn: (payload: unknown) => unknown) => handlers.set(id, fn) };
+    registerObserverTarget(sdk as never, "t::in", "input", (payload: { key: string }) => payload.key);
+    registerObserverTarget(sdk as never, "t::out", "output", (payload: { id: string }) => payload.id);
+    expect(await handlers.get("t::in")!({ ...activation, input: { key: "k" } })).toBe("k");
+    expect(await handlers.get("t::out")!({ ...activation, output: { id: "o1" } })).toBe("o1");
+    expect(await handlers.get("t::in")!({ key: "direct" })).toBe("direct");
   });
 });

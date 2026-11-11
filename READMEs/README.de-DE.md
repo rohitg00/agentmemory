@@ -429,7 +429,7 @@ Verwenden Sie den Wartungsbefehl, wenn Sie Ihr lokales Runtime bewusst aktualisi
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Dieser Befehl aktualisiert die lokale Laufzeit und gegebenenfalls JavaScript-Abhängigkeiten im aktuellen Workspace. Sichern Sie Ihre Daten und lesen Sie vor dem Update den [Upgrade-Leitfaden](../docs/upgrades/iii-0.25.md).
+Dieser Befehl aktualisiert die lokale Laufzeit und gegebenenfalls JavaScript-Abhängigkeiten im aktuellen Workspace. Sichern Sie Ihre Daten und lesen Sie vor dem Update den [Upgrade-Leitfaden](../docs/upgrades/iii-0.26.md).
 
 ### Claude Code (ein Block, einfügen)
 
@@ -653,7 +653,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory läuft unter Windows 10/11. WSL2 folgt dem Linux-Pfad und kann die gepinnte Engine automatisch installieren. Unter nativem Windows muss das gepinnte iii-engine-Binary v0.25.1 manuell installiert werden: Laden Sie das passende Archiv von der [iii-v0.25.1-Release-Seite](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) herunter, prüfen Sie die Prüfsumme und legen Sie `iii.exe` auf den `PATH` (zum Beispiel `%USERPROFILE%\.local\bin\iii.exe`). Die CLI entpackt das Windows-ZIP nicht automatisch.
+agentmemory läuft unter Windows 10/11. WSL2 folgt dem Linux-Pfad und kann die gepinnte Engine automatisch installieren. Unter nativem Windows muss das gepinnte iii-engine-Binary v0.26.0 manuell installiert werden: Laden Sie das passende Archiv von der [iii-v0.26.0-Release-Seite](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0) herunter, prüfen Sie die Prüfsumme und legen Sie `iii.exe` auf den `PATH` (zum Beispiel `%USERPROFILE%\.local\bin\iii.exe`). Die CLI entpackt das Windows-ZIP nicht automatisch.
 
 Die automatisierte MCP-Verdrahtung unter nativem Windows unterstützt nur `agentmemory connect copilot-cli`. Für andere native Windows-Agenten verwenden Sie den manuellen MCP-Block unter [Andere Agenten](#other-agents). Führen Sie `connect` in WSL nur aus, wenn der Ziel-Agent in derselben WSL-Umgebung installiert ist.
 
@@ -665,7 +665,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Führen Sie `agentmemory doctor` aus oder starten Sie mit `--verbose` neu. Verwenden Sie bei belegten Ports `--port <N>` oder `--instance <N>`. Kompatibilität und Wiederherstellung stehen im [Upgrade-Leitfaden](../docs/upgrades/iii-0.25.md).
+Führen Sie `agentmemory doctor` aus oder starten Sie mit `--verbose` neu. Verwenden Sie bei belegten Ports `--port <N>` oder `--instance <N>`. Kompatibilität und Wiederherstellung stehen im [Upgrade-Leitfaden](../docs/upgrades/iii-0.26.md).
 
 ---
 

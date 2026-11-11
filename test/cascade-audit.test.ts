@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { registerCascadeFunctions, failureCounters, flushDeleteCascade } from "../src/functions/cascade-audit.js";
 import { registerPipelineObservers } from "../src/runtime/pipeline-observers.js";
 import { getBindings } from "../src/runtime/bindings.js";
+import { recordObservers } from "./helpers/mocks.js";
 import { KV } from "../src/state/schema.js";
 import type { Memory, MemoryRelation, Facet } from "../src/types.js";
 
@@ -70,14 +71,14 @@ describe("mem::record-failure", () => {
     const kv = memoryKv();
     registerCascadeFunctions(sdk as never, kv as never);
     const fn = sdk.functions.get("mem::record-failure")!;
-    await fn({ input: { observationId: "o1", sessionId: "s1" }, output: {}, error: { code: "circuit_breaker_open", message: "breaker" }, metadata: { function_id: "mem::compress" } });
+    await fn({ input: { observationId: "o1", sessionId: "s1" }, output: {}, error: { code: "circuit_breaker_open", message: "breaker" }, duration_ms: 12 }, { source_fn: "mem::compress" });
     expect(audits[0].operation).toBe("compress-failed");
-    expect(audits[0].details).toMatchObject({ code: "circuit_breaker_open", retryable: true });
+    expect(audits[0].details).toMatchObject({ code: "circuit_breaker_open", retryable: true, durationMs: 12 });
     expect(audits[0].targetIds).toEqual(["o1", "s1"]);
     const c = failureCounters();
     expect(c.transient).toBeGreaterThan(0);
     audits.length = 0;
-    await fn({ input: {}, output: { success: false, error: "source_unavailable" }, metadata: { function_id: "mem::summarize" } });
+    await fn({ observer_id: "agentmemory:pipeline:failure:mem::summarize:soft", input: {}, output: { success: false, error: "source_unavailable" } });
     expect(audits[0].operation).toBe("summarize-failed");
     expect(audits[0].details).toMatchObject({ code: "source_unavailable", retryable: false });
   });
@@ -87,14 +88,15 @@ describe("mem::record-failure", () => {
     const sdk = fakeFns();
     registerCascadeFunctions(sdk as never, memoryKv() as never);
     const fn = sdk.functions.get("mem::record-failure")!;
-    const env = { input: {}, output: {}, error: { code: "parse_failed" }, metadata: { function_id: "mem::graph-extract" } };
-    await fn(env);
+    const env = { input: {}, output: {}, error: { code: "parse_failed" } };
+    const meta = { source_fn: "mem::graph-extract" };
+    await fn(env, meta);
     vi.advanceTimersByTime(30_000);
-    const r1 = await fn(env);
+    const r1 = await fn(env, meta);
     expect(r1).toMatchObject({ deduped: true });
     expect(audits.length).toBe(1);
     vi.advanceTimersByTime(31_000);
-    const r2 = await fn(env);
+    const r2 = await fn(env, meta);
     expect(r2).toMatchObject({ recorded: true });
     expect(audits.length).toBe(2);
     expect(audits[1].details).toMatchObject({ dedupedCount: 1 });
@@ -104,22 +106,17 @@ describe("mem::record-failure", () => {
 
 describe("pipeline observer specs", () => {
   it("failure observers: error + soft specs per function", async () => {
-    const observed: Array<{ source: Record<string, unknown>; target: string; options?: Record<string, unknown> }> = [];
-    const sdk = {
-      observed,
-      registerTrigger: vi.fn(),
-      registerFunction: vi.fn(),
-      observe: vi.fn((s: Record<string, unknown>, t: string, o?: Record<string, unknown>) => { observed.push({ source: s, target: t, options: o }); return { id: "h", state: "active", ready: () => Promise.resolve(), onStateChange: () => () => {}, dispose: () => Promise.resolve() }; }),
-      trigger: vi.fn(async () => ({ functions: ["http::on-request", "state::on-changed", "state::get"] })),
-    };
+    const bound = recordObservers();
+    const observed = bound.sources as Array<{ source: Record<string, unknown>; target: string; options?: Record<string, unknown> }>;
+    const sdk = { registerFunction: vi.fn(), observe: bound.observe };
     const b = getBindings(sdk as never);
     registerPipelineObservers(sdk as never);
     await b.activate();
     const compressErr = observed.find((o) => o.options?.id === "agentmemory:pipeline:failure:mem::compress:error")!;
-    expect(compressErr.source).toMatchObject({ function_id: "mem::compress", on: "error", capture: ["input", "output", "error"], deliver: "envelope" });
+    expect(compressErr.source).toEqual({ function_id: "mem::compress", filters: { error: { $exists: true } }, capture: ["input", "error"] });
     expect(compressErr.options?.max_in_flight).toBe(4);
     const summarizeSoft = observed.find((o) => o.options?.id === "agentmemory:pipeline:failure:mem::summarize:soft")!;
-    expect(summarizeSoft.source).toMatchObject({ on: "success", filters: { "output.success": { $eq: false } } });
+    expect(summarizeSoft.source).toEqual({ function_id: "mem::summarize", filters: { "output.success": { $eq: false } }, capture: ["input", "output"] });
     const deleted = observed.find((o) => o.options?.id === "agentmemory:cascade:deleted")!;
     const or = deleted.source.filters as { $or: Array<Record<string, unknown>> };
     expect(or.$or[0]).toMatchObject({ "input.event_type": { $eq: "state:deleted" }, "input.scope": { $prefix: "mem:obs:" } });

@@ -436,7 +436,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Команда оновлює локальне середовище й може змінити JavaScript-залежності поточного workspace. Зробіть резервну копію даних і прочитайте [посібник з оновлення](../docs/upgrades/iii-0.25.md).
+Команда оновлює локальне середовище й може змінити JavaScript-залежності поточного workspace. Зробіть резервну копію даних і прочитайте [посібник з оновлення](../docs/upgrades/iii-0.26.md).
 
 ### Claude Code (один блок, вставте як є)
 
@@ -663,7 +663,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory працює у Windows 10/11; WSL2 може автоматично встановити engine. Нативна Windows потребує ручного встановлення iii-engine v0.25.1: завантажте архів зі [сторінки iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), перевірте checksum і розмістіть `iii.exe` у `PATH`. CLI не розпаковує ZIP автоматично
+agentmemory працює у Windows 10/11; WSL2 може автоматично встановити engine. Нативна Windows потребує ручного встановлення iii-engine v0.26.0: завантажте архів зі [сторінки iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), перевірте checksum і розмістіть `iii.exe` у `PATH`. CLI не розпаковує ZIP автоматично
 
 Автоматичне налаштування MCP у нативній Windows підтримує лише `agentmemory connect copilot-cli`; для інших скористайтеся [Other agents](#other-agents). У WSL виконуйте `connect`, лише якщо агент встановлений у тому самому середовищі
 
@@ -675,7 +675,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Запустіть `agentmemory doctor` або перезапустіть із `--verbose`. Якщо порти зайняті, використовуйте `--port <N>` або `--instance <N>`. Сумісність і відновлення описано в [посібнику з оновлення](../docs/upgrades/iii-0.25.md).
+Запустіть `agentmemory doctor` або перезапустіть із `--verbose`. Якщо порти зайняті, використовуйте `--port <N>` або `--instance <N>`. Сумісність і відновлення описано в [посібнику з оновлення](../docs/upgrades/iii-0.26.md).
 
 ---
 

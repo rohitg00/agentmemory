@@ -434,7 +434,7 @@ Használd a karbantartási parancsot, amikor szándékosan frissíteni akarod a 
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-A parancs frissíti a helyi környezetet, és módosíthatja az aktuális munkaterület JavaScript-függőségeit. Mentsd az adatokat, és olvasd el a [frissítési útmutatót](../docs/upgrades/iii-0.25.md).
+A parancs frissíti a helyi környezetet, és módosíthatja az aktuális munkaterület JavaScript-függőségeit. Mentsd az adatokat, és olvasd el a [frissítési útmutatót](../docs/upgrades/iii-0.26.md).
 
 ### Claude Code (egyetlen blokk, illeszd be)
 
@@ -661,7 +661,7 @@ Az `npm start` ugyanazt a helyi szervert indítja, mint a telepített CLI. A kö
 
 ### Windows
 
-Az agentmemory Windows 10/11 rendszeren fut. A WSL2 a Linux útvonalat követi, és automatikusan telepítheti a rögzített motort. Natív Windowson kézzel telepítse a rögzített iii-engine v0.25.1 binárist: töltse le a megfelelő archívumot az [iii v0.25.1 kiadási oldaláról](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), ellenőrizze az ellenőrzőösszeget, majd helyezze az `iii.exe` fájlt a `PATH`-ra (például `%USERPROFILE%\.local\bin\iii.exe`). A CLI nem bontja ki automatikusan a Windows ZIP-et.
+Az agentmemory Windows 10/11 rendszeren fut. A WSL2 a Linux útvonalat követi, és automatikusan telepítheti a rögzített motort. Natív Windowson kézzel telepítse a rögzített iii-engine v0.26.0 binárist: töltse le a megfelelő archívumot az [iii v0.26.0 kiadási oldaláról](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), ellenőrizze az ellenőrzőösszeget, majd helyezze az `iii.exe` fájlt a `PATH`-ra (például `%USERPROFILE%\.local\bin\iii.exe`). A CLI nem bontja ki automatikusan a Windows ZIP-et.
 
 A natív Windows automatizált MCP-kapcsolat csak az `agentmemory connect copilot-cli` parancsot támogatja. Más natív Windows-ügynökökhöz használja az [Egyéb ügynökök](#other-agents) kézi MCP-blokkját. A `connect` parancsot csak akkor futtassa WSL-ben, ha a célügynök is ugyanabban a WSL-környezetben van telepítve.
 
@@ -673,7 +673,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Futtasd az `agentmemory doctor` parancsot, vagy indíts újra `--verbose` kapcsolóval. Foglalt portoknál használj `--port <N>` vagy `--instance <N>` beállítást. A kompatibilitás és helyreállítás a [frissítési útmutatóban](../docs/upgrades/iii-0.25.md) szerepel.
+Futtasd az `agentmemory doctor` parancsot, vagy indíts újra `--verbose` kapcsolóval. Foglalt portoknál használj `--port <N>` vagy `--instance <N>` beállítást. A kompatibilitás és helyreállítás a [frissítési útmutatóban](../docs/upgrades/iii-0.26.md) szerepel.
 
 ---
 

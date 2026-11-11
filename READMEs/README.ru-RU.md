@@ -436,7 +436,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Команда обновляет локальную среду и может изменить JavaScript-зависимости текущего workspace. Сделайте резервную копию данных и прочитайте [руководство по обновлению](../docs/upgrades/iii-0.25.md).
+Команда обновляет локальную среду и может изменить JavaScript-зависимости текущего workspace. Сделайте резервную копию данных и прочитайте [руководство по обновлению](../docs/upgrades/iii-0.26.md).
 
 ### Claude Code (один блок, вставьте его)
 
@@ -664,7 +664,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory работает на Windows 10/11. В WSL2 используется путь Linux, и закреплённый движок устанавливается автоматически. Для нативной работы в Windows требуется вручную установить закреплённый бинарь iii-engine v0.25.1: скачайте подходящий архив со [страницы релиза iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), проверьте контрольную сумму и поместите `iii.exe` в `PATH` (например, `%USERPROFILE%\.local\bin\iii.exe`). CLI не распаковывает Windows ZIP автоматически.
+agentmemory работает на Windows 10/11. В WSL2 используется путь Linux, и закреплённый движок устанавливается автоматически. Для нативной работы в Windows требуется вручную установить закреплённый бинарь iii-engine v0.26.0: скачайте подходящий архив со [страницы релиза iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), проверьте контрольную сумму и поместите `iii.exe` в `PATH` (например, `%USERPROFILE%\.local\bin\iii.exe`). CLI не распаковывает Windows ZIP автоматически.
 
 Автоматизированное подключение MCP в нативной Windows поддерживает только `agentmemory connect copilot-cli`. Для других нативных Windows-агентов используйте ручной блок MCP из раздела [Другие агенты](#other-agents). Запускайте `connect` внутри WSL только если целевой агент установлен в той же среде WSL.
 
@@ -676,7 +676,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Запустите `agentmemory doctor` или перезапустите с `--verbose`. Для занятых портов используйте `--port <N>` или `--instance <N>`. Совместимость и восстановление описаны в [руководстве по обновлению](../docs/upgrades/iii-0.25.md).
+Запустите `agentmemory doctor` или перезапустите с `--verbose`. Для занятых портов используйте `--port <N>` или `--instance <N>`. Совместимость и восстановление описаны в [руководстве по обновлению](../docs/upgrades/iii-0.26.md).
 
 ---
 

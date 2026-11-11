@@ -2,9 +2,9 @@
 
 ## Architecture
 
-agentmemory is a persistent memory system for AI coding agents, built on iii-engine's three primitives (Worker/Function/Trigger). Everything goes through `registerFunction`/`registerTrigger`/`sdk.trigger()` — never bypass iii-engine with standalone SQLite or in-process alternatives.
+agentmemory is a persistent memory system for AI coding agents, built on iii-engine's workers, functions and observers. Everything goes through `registerFunction`, observers bound in `src/runtime/bindings.ts`, and `sdk.trigger()` — never bypass iii-engine with standalone SQLite or in-process alternatives.
 
-- **Engine**: iii-sdk 0.25.1 with @iii-dev/helpers 0.25.1 (Worker Compose-managed iii-engine 0.25.1 on port 49134; the client type is `IIIClient`, HTTP requests are `HttpRequest` from `@iii-dev/helpers/http`)
+- **Engine**: iii-sdk 0.26.0 with @iii-dev/helpers 0.26.0 (Worker Compose-managed iii-engine 0.26.0 on port 49134; the client type is `IIIClient`, HTTP requests are `HttpRequest` from `@iii-dev/helpers/http`)
 - **State**: iii state worker with a file-backed KV store by default (`./data/state_store.db`); Docker pins `save_interval_ms` to 2000 ms
 - **Build**: TypeScript → ESM via tsdown, output to `dist/`
 - **Test**: vitest (`npm test` excludes integration tests)
@@ -71,7 +71,7 @@ getBindings(sdk).http({
 });
 ```
 
-Bindings pick observe (engine `http::on-request` / `state::on-changed` observers) or `registerTrigger` automatically — see `src/runtime/bindings.ts`; force a mode with `AGENTMEMORY_BINDINGS` (`auto` default, `observe`, `trigger`). State subscriptions use `getBindings(sdk).state({ function_id, scope, key?, maxInFlight? })`.
+Routes and state subscriptions are observers of `http::on-request` and `state::on-changed` (iii 0.26 removed triggers) — see `src/runtime/bindings.ts`. Observer targets receive the `Observed` payload; register them with `registerObserverTarget(sdk, id, "input" | "output", handler)` from `src/runtime/observed.ts` so the handler gets the bare event (HTTP targets still receive the `HttpRequest`). `AGENTMEMORY_BINDINGS=inline` keeps the post-capture pipeline inline instead of observers. State subscriptions use `getBindings(sdk).state({ function_id, scope, key?, maxInFlight? })`.
 
 ### MCP Tool Handler
 ```typescript

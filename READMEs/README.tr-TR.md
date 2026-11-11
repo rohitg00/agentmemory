@@ -436,7 +436,7 @@ Yerel runtime'ınızı kasıtlı olarak güncellemek istediğinizde bakım komut
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Komut yerel ortamı günceller ve geçerli çalışma alanındaki JavaScript bağımlılıklarını değiştirebilir. Verileri yedekleyin ve [yükseltme rehberini](../docs/upgrades/iii-0.25.md) okuyun.
+Komut yerel ortamı günceller ve geçerli çalışma alanındaki JavaScript bağımlılıklarını değiştirebilir. Verileri yedekleyin ve [yükseltme rehberini](../docs/upgrades/iii-0.26.md) okuyun.
 
 ### Claude Code (tek blok, yapıştırın)
 
@@ -663,7 +663,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory Windows 10/11’de çalışır. WSL2 Linux yolunu izleyerek engine’i otomatik kurabilir. Yerel Windows’ta iii-engine v0.25.1 elle kurulmalıdır: arşivi [iii v0.25.1 sürüm sayfasından](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) indirin, checksum’u doğrulayın ve `iii.exe` dosyasını `PATH` üzerine koyun. CLI Windows ZIP’ini otomatik açmaz
+agentmemory Windows 10/11’de çalışır. WSL2 Linux yolunu izleyerek engine’i otomatik kurabilir. Yerel Windows’ta iii-engine v0.26.0 elle kurulmalıdır: arşivi [iii v0.26.0 sürüm sayfasından](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0) indirin, checksum’u doğrulayın ve `iii.exe` dosyasını `PATH` üzerine koyun. CLI Windows ZIP’ini otomatik açmaz
 
 Yerel Windows’ta otomatik MCP yapılandırması yalnızca `agentmemory connect copilot-cli` için vardır; diğerleri için [Other agents](#other-agents) bölümünü kullanın. WSL’de `connect` yalnızca hedef agent aynı WSL ortamındaysa çalıştırılmalıdır
 
@@ -675,7 +675,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-`agentmemory doctor` çalıştırın veya `--verbose` ile yeniden başlatın. Portlar doluysa `--port <N>` veya `--instance <N>` kullanın. Uyumluluk ve kurtarma için [yükseltme rehberine](../docs/upgrades/iii-0.25.md) bakın.
+`agentmemory doctor` çalıştırın veya `--verbose` ile yeniden başlatın. Portlar doluysa `--port <N>` veya `--instance <N>` kullanın. Uyumluluk ve kurtarma için [yükseltme rehberine](../docs/upgrades/iii-0.26.md) bakın.
 
 ---
 

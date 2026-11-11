@@ -431,7 +431,7 @@ Använd underhållskommandot när du avsiktligt vill uppdatera din lokala körti
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Kommandot uppdaterar den lokala körtiden och kan uppdatera JavaScript-beroenden i den aktuella arbetsytan. Säkerhetskopiera dina data och läs [uppgraderingsguiden](../docs/upgrades/iii-0.25.md) innan du fortsätter.
+Kommandot uppdaterar den lokala körtiden och kan uppdatera JavaScript-beroenden i den aktuella arbetsytan. Säkerhetskopiera dina data och läs [uppgraderingsguiden](../docs/upgrades/iii-0.26.md) innan du fortsätter.
 
 ### Claude Code (ett block, klistra in det)
 
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory körs på Windows 10/11. WSL2 följer Linux-vägen och kan installera den fastlåsta enginen automatiskt. Native Windows kräver att den fastlåsta iii-engine v0.25.1-binären installeras manuellt: ladda ner rätt arkiv från [iii v0.25.1-utgåvan](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifiera kontrollsumman och placera `iii.exe` på `PATH` (till exempel `%USERPROFILE%\.local\bin\iii.exe`). CLI:n packar inte upp Windows-ZIP-filen automatiskt.
+agentmemory körs på Windows 10/11. WSL2 följer Linux-vägen och kan installera den fastlåsta enginen automatiskt. Native Windows kräver att den fastlåsta iii-engine v0.26.0-binären installeras manuellt: ladda ner rätt arkiv från [iii v0.26.0-utgåvan](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verifiera kontrollsumman och placera `iii.exe` på `PATH` (till exempel `%USERPROFILE%\.local\bin\iii.exe`). CLI:n packar inte upp Windows-ZIP-filen automatiskt.
 
 Automatiserad MCP-inkoppling på native Windows stöder bara `agentmemory connect copilot-cli`. För andra native Windows-agenter använder du det manuella MCP-blocket från [Andra agenter](#other-agents). Kör `connect` i WSL endast om målagenten är installerad i samma WSL-miljö.
 
@@ -668,7 +668,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Kör `agentmemory doctor` eller starta om med `--verbose`. Använd `--port <N>` eller `--instance <N>` om portarna är upptagna. Se [uppgraderingsguiden](../docs/upgrades/iii-0.25.md) för kompatibilitet och återställning.
+Kör `agentmemory doctor` eller starta om med `--verbose`. Använd `--port <N>` eller `--instance <N>` om portarna är upptagna. Se [uppgraderingsguiden](../docs/upgrades/iii-0.26.md) för kompatibilitet och återställning.
 
 ---
 

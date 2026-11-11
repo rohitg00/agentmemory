@@ -16,6 +16,7 @@ import { getSummaryTriggerTimeoutMs } from "../functions/summary-state.js";
 import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 
 import { getBindings } from "../runtime/bindings.js";
+import { registerObserverTarget } from "../runtime/observed.js";
 // Global marker recording when corpus consolidation last ran, used to debounce
 // the per-turn session-stop fan-out.
 const CONSOLIDATION_MARKER_KEY = "consolidation:lastRun";
@@ -110,8 +111,9 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
     return summary;
   });
   // React to observation count changes and emit a lightweight live event for dashboards/viewer.
-  sdk.registerFunction(
+  registerObserverTarget(sdk,
     "event::session::observation-count-changed",
+    "input",
     async (payload: {
       key: string;
       event_type: string;
@@ -149,8 +151,9 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
   );
   getBindings(sdk).state({ function_id: "event::session::observation-count-changed", scope: KV.sessions, maxInFlight: 1 });
 
-  sdk.registerFunction(
+  registerObserverTarget(sdk,
     "event::memory::changed",
+    "input",
     async (payload: {
       key: string;
       event_type: string;

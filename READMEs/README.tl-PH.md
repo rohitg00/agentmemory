@@ -434,7 +434,7 @@ Gamitin ang maintenance command kapag sinasadya mong i-update ang iyong local ru
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Ina-update nito ang local runtime at maaaring baguhin ang JavaScript dependencies sa kasalukuyang working directory. I-backup ang data at basahin ang [upgrade guide](../docs/upgrades/iii-0.25.md) bago mag-update ng umiiral na installation.
+Ina-update nito ang local runtime at maaaring baguhin ang JavaScript dependencies sa kasalukuyang working directory. I-backup ang data at basahin ang [upgrade guide](../docs/upgrades/iii-0.26.md) bago mag-update ng umiiral na installation.
 
 ### Claude Code (isang block, i-paste ito)
 
@@ -656,7 +656,7 @@ Pinapatakbo ng `npm start` ang kaparehong local server ng naka-install na CLI. N
 
 ### Windows
 
-Tumatakbo ang agentmemory sa Windows 10/11. Awtomatikong nag-i-install ng engine ang WSL2 gamit ang Linux path. Sa native Windows, manu-manong i-install ang pinned na iii-engine v0.25.1: i-download ang archive mula sa [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), tiyakin ang checksum, at ilagay ang `iii.exe` sa `PATH`. Hindi awtomatikong nag-e-extract ng ZIP ang CLI
+Tumatakbo ang agentmemory sa Windows 10/11. Awtomatikong nag-i-install ng engine ang WSL2 gamit ang Linux path. Sa native Windows, manu-manong i-install ang pinned na iii-engine v0.26.0: i-download ang archive mula sa [iii v0.26.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), tiyakin ang checksum, at ilagay ang `iii.exe` sa `PATH`. Hindi awtomatikong nag-e-extract ng ZIP ang CLI
 
 Native Windows MCP automation ay para lamang sa `agentmemory connect copilot-cli`; gamitin ang manual MCP block sa [Other agents](#other-agents) para sa iba. Sa WSL, patakbuhin ang `connect` lamang kung naroon din ang target agent
 
@@ -668,7 +668,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Patakbuhin ang `agentmemory doctor` o i-restart gamit ang `--verbose`. Kung ginagamit na ang default ports, gumamit ng `--port <N>` o `--instance <N>`. Tingnan ang [upgrade guide](../docs/upgrades/iii-0.25.md) para sa compatibility at recovery.
+Patakbuhin ang `agentmemory doctor` o i-restart gamit ang `--verbose`. Kung ginagamit na ang default ports, gumamit ng `--port <N>` o `--instance <N>`. Tingnan ang [upgrade guide](../docs/upgrades/iii-0.26.md) para sa compatibility at recovery.
 
 ---
 

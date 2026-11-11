@@ -434,7 +434,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-यह लोकल रनटाइम अपडेट करता है और वर्तमान कार्य डायरेक्टरी की JavaScript निर्भरताएँ भी बदल सकता है। डेटा का बैकअप लें और मौजूदा इंस्टॉलेशन अपडेट करने से पहले [अपग्रेड गाइड](../docs/upgrades/iii-0.25.md) पढ़ें।
+यह लोकल रनटाइम अपडेट करता है और वर्तमान कार्य डायरेक्टरी की JavaScript निर्भरताएँ भी बदल सकता है। डेटा का बैकअप लें और मौजूदा इंस्टॉलेशन अपडेट करने से पहले [अपग्रेड गाइड](../docs/upgrades/iii-0.26.md) पढ़ें।
 
 ### Claude Code (एक block, paste करें)
 
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory Windows 10/11 पर चलता है। WSL2 Linux path अपनाता है और pinned engine को automatically install कर सकता है। Native Windows पर pinned iii-engine v0.25.1 binary manually install करें: [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) से सही archive download करें, checksum verify करें और `iii.exe` को `PATH` में रखें (उदाहरण: `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP को automatically extract नहीं करता।
+agentmemory Windows 10/11 पर चलता है। WSL2 Linux path अपनाता है और pinned engine को automatically install कर सकता है। Native Windows पर pinned iii-engine v0.26.0 binary manually install करें: [iii v0.26.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0) से सही archive download करें, checksum verify करें और `iii.exe` को `PATH` में रखें (उदाहरण: `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP को automatically extract नहीं करता।
 
 Native Windows में automated MCP wiring केवल `agentmemory connect copilot-cli` को support करती है। अन्य native Windows agents के लिए [Other agents](#other-agents) वाला manual MCP block इस्तेमाल करें। `connect` को WSL में तभी चलाएँ जब target agent भी उसी WSL environment में installed हो।
 
@@ -668,7 +668,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-`agentmemory doctor` चलाएँ या `--verbose` के साथ रीस्टार्ट करें। डिफ़ॉल्ट पोर्ट व्यस्त हों तो `--port <N>` या `--instance <N>` इस्तेमाल करें। अनुकूलता और recovery के लिए [अपग्रेड गाइड](../docs/upgrades/iii-0.25.md) देखें।
+`agentmemory doctor` चलाएँ या `--verbose` के साथ रीस्टार्ट करें। डिफ़ॉल्ट पोर्ट व्यस्त हों तो `--port <N>` या `--instance <N>` इस्तेमाल करें। अनुकूलता और recovery के लिए [अपग्रेड गाइड](../docs/upgrades/iii-0.26.md) देखें।
 
 ---
 

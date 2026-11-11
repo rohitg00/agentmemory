@@ -65,7 +65,6 @@ export function registerMcpEndpoints(
     },
   );
   getBindings(sdk).http({
-    type: "http",
     function_id: "mcp::tools::list",
     config: { api_path: "/agentmemory/mcp/tools", http_method: "GET" },
   });
@@ -1345,7 +1344,6 @@ export function registerMcpEndpoints(
     },
   );
   getBindings(sdk).http({
-    type: "http",
     function_id: "mcp::tools::call",
     config: { api_path: "/agentmemory/mcp/call", http_method: "POST" },
   });
@@ -1398,7 +1396,6 @@ export function registerMcpEndpoints(
     },
   );
   getBindings(sdk).http({
-    type: "http",
     function_id: "mcp::resources::list",
     config: { api_path: "/agentmemory/mcp/resources", http_method: "GET" },
   });
@@ -1628,7 +1625,6 @@ export function registerMcpEndpoints(
     },
   );
   getBindings(sdk).http({
-    type: "http",
     function_id: "mcp::resources::read",
     config: {
       api_path: "/agentmemory/mcp/resources/read",
@@ -1682,7 +1678,6 @@ export function registerMcpEndpoints(
     },
   );
   getBindings(sdk).http({
-    type: "http",
     function_id: "mcp::prompts::list",
     config: { api_path: "/agentmemory/mcp/prompts", http_method: "GET" },
   });
@@ -1820,7 +1815,6 @@ export function registerMcpEndpoints(
     },
   );
   getBindings(sdk).http({
-    type: "http",
     function_id: "mcp::prompts::get",
     config: { api_path: "/agentmemory/mcp/prompts/get", http_method: "POST" },
   });

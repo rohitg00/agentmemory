@@ -438,7 +438,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-הפקודה מעדכנת את הסביבה המקומית ועשויה לשנות תלויות JavaScript בסביבת העבודה הנוכחית. גבו את הנתונים וקראו את [מדריך השדרוג](../docs/upgrades/iii-0.25.md).
+הפקודה מעדכנת את הסביבה המקומית ועשויה לשנות תלויות JavaScript בסביבת העבודה הנוכחית. גבו את הנתונים וקראו את [מדריך השדרוג](../docs/upgrades/iii-0.26.md).
 
 ### Claude Code (בלוק אחד, הדביקו אותו)
 
@@ -665,7 +665,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory פועל ב-Windows 10/11. ‏WSL2 פועל במסלול Linux ויכול להתקין את המנוע הנעוץ אוטומטית. ב-Windows מקורי יש להתקין ידנית את הבינארי הנעוץ iii-engine v0.25.1: הורידו את הארכיון המתאים מ-[דף ההפצה של iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), אמתו את ה-checksum והוסיפו את `iii.exe` ל-`PATH` (למשל `%USERPROFILE%\.local\bin\iii.exe`). ה-CLI אינו מחלץ אוטומטית את ZIP של Windows.
+agentmemory פועל ב-Windows 10/11. ‏WSL2 פועל במסלול Linux ויכול להתקין את המנוע הנעוץ אוטומטית. ב-Windows מקורי יש להתקין ידנית את הבינארי הנעוץ iii-engine v0.26.0: הורידו את הארכיון המתאים מ-[דף ההפצה של iii 0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), אמתו את ה-checksum והוסיפו את `iii.exe` ל-`PATH` (למשל `%USERPROFILE%\.local\bin\iii.exe`). ה-CLI אינו מחלץ אוטומטית את ZIP של Windows.
 
 חיבור MCP אוטומטי ב-Windows מקורי נתמך רק עבור `agentmemory connect copilot-cli`. עבור סוכנים מקומיים אחרים ב-Windows, השתמשו בבלוק MCP הידני מתוך [סוכנים אחרים](#other-agents). הפעילו `connect` בתוך WSL רק אם סוכן היעד מותקן באותה סביבת WSL.
 
@@ -677,7 +677,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-הריצו `agentmemory doctor` או הפעילו מחדש עם `--verbose`. אם הפורטים תפוסים, השתמשו ב-`--port <N>` או ב-`--instance <N>`. תאימות ושחזור מתוארים ב[מדריך השדרוג](../docs/upgrades/iii-0.25.md).
+הריצו `agentmemory doctor` או הפעילו מחדש עם `--verbose`. אם הפורטים תפוסים, השתמשו ב-`--port <N>` או ב-`--instance <N>`. תאימות ושחזור מתוארים ב[מדריך השדרוג](../docs/upgrades/iii-0.26.md).
 
 ---
 

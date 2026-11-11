@@ -436,7 +436,7 @@ Käytä ylläpitokomentoa, kun haluat tarkoituksella päivittää paikallisen aj
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Komento päivittää paikallisen ympäristön ja voi muuttaa työtilan JavaScript-riippuvuuksia. Varmuuskopioi tiedot ja lue [päivitysopas](../docs/upgrades/iii-0.25.md).
+Komento päivittää paikallisen ympäristön ja voi muuttaa työtilan JavaScript-riippuvuuksia. Varmuuskopioi tiedot ja lue [päivitysopas](../docs/upgrades/iii-0.26.md).
 
 ### Claude Code (yksi lohko, liitä se)
 
@@ -663,7 +663,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory toimii Windows 10/11:ssä. WSL2 noudattaa Linuxin polkua ja voi asentaa kiinnitetyn moottorin automaattisesti. Natiivi Windows vaatii iii-engine v0.25.1:n kiinnitetyn binäärin asentamisen käsin; lataa sopiva paketti [iii v0.25.1 -julkaisusivulta](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), tarkista sen tarkistussumma ja sijoita `iii.exe` `PATH`-polkuun (esimerkiksi `%USERPROFILE%\.local\bin\iii.exe`). CLI ei pura Windows-ZIP-pakettia automaattisesti.
+agentmemory toimii Windows 10/11:ssä. WSL2 noudattaa Linuxin polkua ja voi asentaa kiinnitetyn moottorin automaattisesti. Natiivi Windows vaatii iii-engine v0.26.0:n kiinnitetyn binäärin asentamisen käsin; lataa sopiva paketti [iii v0.26.0 -julkaisusivulta](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), tarkista sen tarkistussumma ja sijoita `iii.exe` `PATH`-polkuun (esimerkiksi `%USERPROFILE%\.local\bin\iii.exe`). CLI ei pura Windows-ZIP-pakettia automaattisesti.
 
 Natiivin Windowsin automaattinen MCP-kytkentä tukee vain komentoa `agentmemory connect copilot-cli`. Muiden natiivien Windows-agenttien kanssa käytä manuaalista MCP-lohkoa kohdasta [Muut agentit](#other-agents). Suorita `connect` WSL:ssä vain, kun kohdeagentti on asennettu samaan WSL-ympäristöön.
 
@@ -675,7 +675,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Suorita `agentmemory doctor` tai käynnistä uudelleen valinnalla `--verbose`. Jos portit ovat varattuja, käytä `--port <N>` tai `--instance <N>`. Yhteensopivuus ja palautuminen kuvataan [päivitysoppaassa](../docs/upgrades/iii-0.25.md).
+Suorita `agentmemory doctor` tai käynnistä uudelleen valinnalla `--verbose`. Jos portit ovat varattuja, käytä `--port <N>` tai `--instance <N>`. Yhteensopivuus ja palautuminen kuvataan [päivitysoppaassa](../docs/upgrades/iii-0.26.md).
 
 ---
 

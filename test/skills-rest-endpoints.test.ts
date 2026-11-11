@@ -29,11 +29,11 @@ describe("generated REST endpoint methods", () => {
     const source = `
       // api_path: "/comment", http_method: "DELETE"
       const example = 'api_path: "/string", http_method: "DELETE"';
-      sdk.registerTrigger({ type: "http", config: { http_method: "GET", api_path: "/first" } });
-      sdk.registerTrigger({ type: "http", config: { api_path: "/second", metadata: { http_method: "DELETE" },
+      getBindings(sdk).http({ function_id: "f", config: { http_method: "GET", api_path: "/first" } });
+      getBindings(sdk).http({ function_id: "f", config: { api_path: "/second", metadata: { http_method: "DELETE" },
         /* ${"spacing".repeat(40)} */ http_method: "POST" } });
-      sdk.registerTrigger({ type: "http", config: { "api_path": '/third', "http_method": 'PATCH' } });
-      sdk.registerTrigger({ type: "cron", config: { api_path: "/not-http", http_method: "GET" } });
+      getBindings(sdk).http({ function_id: "f", config: { "api_path": '/third', "http_method": 'PATCH' } });
+      getBindings(sdk).state({ function_id: "x", config: { api_path: "/not-http", http_method: "GET" } });
     `;
     expect(collectRestEndpoints(source)).toEqual([
       { path: "/first", method: "GET" },
@@ -44,9 +44,9 @@ describe("generated REST endpoint methods", () => {
 
   it("deduplicates method/path pairs while preserving multiple methods for the same route", () => {
     const source = `
-      sdk.registerTrigger({ type: "http", config: { api_path: "/shared", http_method: "POST" } });
-      sdk.registerTrigger({ type: "http", config: { api_path: "/shared", http_method: "GET" } });
-      sdk.registerTrigger({ type: "http", config: { api_path: "/shared", http_method: "POST" } });
+      getBindings(sdk).http({ function_id: "f", config: { api_path: "/shared", http_method: "POST" } });
+      getBindings(sdk).http({ function_id: "f", config: { api_path: "/shared", http_method: "GET" } });
+      getBindings(sdk).http({ function_id: "f", config: { api_path: "/shared", http_method: "POST" } });
     `;
     expect(collectRestEndpoints(source)).toEqual([
       { path: "/shared", method: "GET" },

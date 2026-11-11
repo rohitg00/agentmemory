@@ -1,6 +1,7 @@
 import type { IIIClient, ObserverHandle } from "iii-sdk";
 import { logger } from "../logger.js";
 import type { Bindings } from "./bindings.js";
+import { unwrapObserved } from "./observed.js";
 
 export interface StateWorkerReadiness {
   ready: boolean;
@@ -116,9 +117,9 @@ export function onStateWorkerReturn(
       wasPending = next === "pending" || next === "suspended";
     });
   }
-  if (typeof client.observe === "function" && bindings.modes.state === "observe") {
+  if (typeof client.observe === "function" && bindings.pipeline === "observe") {
     client.registerFunction?.("runtime::on-workers-changed", async (payload: unknown) => {
-      if ((payload as { event?: string })?.event !== "worker_connected") return { handled: false };
+      if (unwrapObserved<{ event?: string } | undefined>(payload, "input")?.event !== "worker_connected") return { handled: false };
       try {
         await probeOnce(client, 2000);
         stateWorkerStatus.ready = true;
@@ -130,7 +131,7 @@ export function onStateWorkerReturn(
       return { handled: true };
     });
     client.observe(
-      { function_id: "engine::on-workers-changed", capture: ["input"], deliver: "input" },
+      { function_id: "engine::on-workers-changed", capture: ["input"] },
       "runtime::on-workers-changed",
       { id: "agentmemory:runtime:workers-changed" },
     );

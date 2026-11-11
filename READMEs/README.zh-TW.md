@@ -432,7 +432,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-這會更新本機執行階段，也可能更新目前工作目錄中的 JavaScript 相依項目。請備份資料，並在更新既有安裝前閱讀[升級指南](../docs/upgrades/iii-0.25.md)。
+這會更新本機執行階段，也可能更新目前工作目錄中的 JavaScript 相依項目。請備份資料，並在更新既有安裝前閱讀[升級指南](../docs/upgrades/iii-0.26.md)。
 
 ### Claude Code(一段文字,直接貼上)
 
@@ -654,7 +654,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory 可在 Windows 10/11 執行；WSL2 可依 Linux 流程自動安裝 engine。原生 Windows 需手動安裝 iii-engine v0.25.1：從 [iii v0.25.1 發行頁面](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) 下載相符封存檔、驗證 checksum，並將 `iii.exe` 放入 `PATH`。CLI 不會自動解壓 ZIP
+agentmemory 可在 Windows 10/11 執行；WSL2 可依 Linux 流程自動安裝 engine。原生 Windows 需手動安裝 iii-engine v0.26.0：從 [iii v0.26.0 發行頁面](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0) 下載相符封存檔、驗證 checksum，並將 `iii.exe` 放入 `PATH`。CLI 不會自動解壓 ZIP
 
 原生 Windows 僅支援 `agentmemory connect copilot-cli` 自動設定 MCP；其他 agent 請使用 [Other agents](#other-agents) 的手動設定。只有目標 agent 也安裝在相同 WSL 環境時，才在 WSL 執行 `connect`
 
@@ -666,7 +666,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-執行 `agentmemory doctor`，或加上 `--verbose` 重新啟動。預設連接埠被占用時使用 `--port <N>` 或 `--instance <N>`。相容性與復原說明見[升級指南](../docs/upgrades/iii-0.25.md)。
+執行 `agentmemory doctor`，或加上 `--verbose` 重新啟動。預設連接埠被占用時使用 `--port <N>` 或 `--instance <N>`。相容性與復原說明見[升級指南](../docs/upgrades/iii-0.26.md)。
 
 ---
 

@@ -488,7 +488,6 @@ async function main() {
   registerPipelineObservers(sdk);
 
   const bindings = getBindings(sdk);
-  await bindings.activate();
   if (isAutoCompressEnabled()) {
     const sweepMs = compressionSweepMs();
     if (sweepMs > 0) {
@@ -496,7 +495,7 @@ async function main() {
       sweepTimer.unref();
     }
   }
-  bootLog(`Bindings: state=${bindings.modes.state} http=${bindings.modes.http} (${bindings.handles.length} observers)`);
+  void bindings.activate().then((modes) => bootLog(`Bindings: state=${modes.state} http=${modes.http} (${bindings.handles.length} observers)`));
   await waitForStateWorker(sdk);
 
   const indexPersistence = new IndexPersistence(kv, vectorIndex, { requireRecoveryPlan: true });

@@ -429,7 +429,7 @@ Use o comando de manutenção quando você quiser intencionalmente atualizar seu
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-O comando atualiza o ambiente local e pode atualizar dependências JavaScript no workspace atual. Faça um backup e leia o [guia de atualização](../docs/upgrades/iii-0.25.md) antes de continuar.
+O comando atualiza o ambiente local e pode atualizar dependências JavaScript no workspace atual. Faça um backup e leia o [guia de atualização](../docs/upgrades/iii-0.26.md) antes de continuar.
 
 ### Claude Code (um bloco só, cole e vá)
 
@@ -653,7 +653,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory roda no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar o engine fixado automaticamente. O Windows nativo exige a instalação manual do binário iii-engine v0.25.1 fixado; baixe o arquivo correspondente na [página de releases do iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), confira o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai o ZIP do Windows automaticamente.
+agentmemory roda no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar o engine fixado automaticamente. O Windows nativo exige a instalação manual do binário iii-engine v0.26.0 fixado; baixe o arquivo correspondente na [página de releases do iii 0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), confira o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai o ZIP do Windows automaticamente.
 
 A configuração MCP automatizada no Windows nativo dá suporte apenas a `agentmemory connect copilot-cli`. Para os outros agentes nativos do Windows, use o bloco MCP manual em [Outros agentes](#other-agents). Rode `connect` no WSL somente quando o agente de destino estiver instalado no mesmo ambiente WSL.
 
@@ -665,7 +665,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Execute `agentmemory doctor` ou reinicie com `--verbose`. Use `--port <N>` ou `--instance <N>` se as portas estiverem ocupadas. Consulte compatibilidade e recuperação no [guia de atualização](../docs/upgrades/iii-0.25.md).
+Execute `agentmemory doctor` ou reinicie com `--verbose`. Use `--port <N>` ou `--instance <N>` se as portas estiverem ocupadas. Consulte compatibilidade e recuperação no [guia de atualização](../docs/upgrades/iii-0.26.md).
 
 ---
 

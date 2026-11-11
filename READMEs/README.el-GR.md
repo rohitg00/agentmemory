@@ -436,7 +436,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Η εντολή ενημερώνει το τοπικό περιβάλλον και μπορεί να αλλάξει εξαρτήσεις JavaScript στον τρέχοντα χώρο εργασίας. Δημιουργήστε αντίγραφο δεδομένων και διαβάστε τον [οδηγό αναβάθμισης](../docs/upgrades/iii-0.25.md).
+Η εντολή ενημερώνει το τοπικό περιβάλλον και μπορεί να αλλάξει εξαρτήσεις JavaScript στον τρέχοντα χώρο εργασίας. Δημιουργήστε αντίγραφο δεδομένων και διαβάστε τον [οδηγό αναβάθμισης](../docs/upgrades/iii-0.26.md).
 
 ### Claude Code (ένα block, επικολλήστε το)
 
@@ -663,7 +663,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-Το agentmemory εκτελείται σε Windows 10/11. Το WSL2 ακολουθεί τη διαδρομή Linux και μπορεί να εγκαταστήσει αυτόματα τον καρφιτσωμένο engine. Σε native Windows απαιτείται χειροκίνητη εγκατάσταση του καρφιτσωμένου binary iii-engine v0.25.1: κατεβάστε το αντίστοιχο archive από τη [σελίδα έκδοσης iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), επαληθεύστε το checksum και τοποθετήστε το `iii.exe` στο `PATH` (για παράδειγμα `%USERPROFILE%\.local\bin\iii.exe`). Το CLI δεν εξάγει αυτόματα το Windows ZIP.
+Το agentmemory εκτελείται σε Windows 10/11. Το WSL2 ακολουθεί τη διαδρομή Linux και μπορεί να εγκαταστήσει αυτόματα τον καρφιτσωμένο engine. Σε native Windows απαιτείται χειροκίνητη εγκατάσταση του καρφιτσωμένου binary iii-engine v0.26.0: κατεβάστε το αντίστοιχο archive από τη [σελίδα έκδοσης iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), επαληθεύστε το checksum και τοποθετήστε το `iii.exe` στο `PATH` (για παράδειγμα `%USERPROFILE%\.local\bin\iii.exe`). Το CLI δεν εξάγει αυτόματα το Windows ZIP.
 
 Η αυτοματοποιημένη ρύθμιση MCP σε native Windows υποστηρίζει μόνο το `agentmemory connect copilot-cli`. Για άλλους native Windows agents, χρησιμοποιήστε το χειροκίνητο block MCP από τους [Άλλους agents](#other-agents). Εκτελέστε `connect` μέσα στο WSL μόνο αν ο agent-στόχος είναι εγκατεστημένος στο ίδιο περιβάλλον WSL.
 
@@ -675,7 +675,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Εκτελέστε `agentmemory doctor` ή επανεκκινήστε με `--verbose`. Για κατειλημμένες θύρες χρησιμοποιήστε `--port <N>` ή `--instance <N>`. Συμβατότητα και ανάκτηση περιγράφονται στον [οδηγό αναβάθμισης](../docs/upgrades/iii-0.25.md).
+Εκτελέστε `agentmemory doctor` ή επανεκκινήστε με `--verbose`. Για κατειλημμένες θύρες χρησιμοποιήστε `--port <N>` ή `--instance <N>`. Συμβατότητα και ανάκτηση περιγράφονται στον [οδηγό αναβάθμισης](../docs/upgrades/iii-0.26.md).
 
 ---
 

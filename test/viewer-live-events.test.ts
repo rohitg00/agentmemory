@@ -1,24 +1,25 @@
 import { onLiveEvent } from "../src/viewer/live-events.js";
 import { describe, it, expect, vi } from "vitest";
 import { registerEventTriggers } from "../src/triggers/events.js";
+import { recordObservers } from "./helpers/mocks.js";
 import type { StateKV } from "../src/state/kv.js";
 
 type Handler = (payload: unknown) => Promise<unknown>;
 
 function setup() {
   const handlers = new Map<string, Handler>();
-  const triggers: Array<{ type: string; function_id: string; config: Record<string, unknown> }> = [];
+  const bound = recordObservers();
   const sent: Array<{ type: string; id: string; data: Record<string, unknown> }> = [];
   const sdk = {
     registerFunction: (id: string, fn: Handler) => handlers.set(id, fn),
-    registerTrigger: (t: { type: string; function_id: string; config: Record<string, unknown> }) => triggers.push(t),
+    observe: bound.observe,
     trigger: vi.fn(async (req: { function_id: string; payload: Record<string, unknown> }) => {
       return {};
     }),
   };
   onLiveEvent((event) => sent.push(event));
   registerEventTriggers(sdk as never, {} as StateKV);
-  return { handlers, triggers, sent };
+  return { handlers, bound, sent };
 }
 
 describe("viewer live events", () => {
@@ -79,10 +80,8 @@ describe("viewer live events", () => {
   });
 
   it("pushes memory.created, memory.updated and memory.deleted with the full row", async () => {
-    const { handlers, triggers, sent } = setup();
-    expect(triggers).toContainEqual(
-      expect.objectContaining({ type: "state", function_id: "event::memory::changed", config: { scope: "mem:memories" } }),
-    );
+    const { handlers, bound, sent } = setup();
+    expect(bound.states).toContainEqual({ function_id: "event::memory::changed", scope: "mem:memories" });
     const handler = handlers.get("event::memory::changed")!;
     const row = { id: "m1", type: "fact", title: "t", content: "long body", isLatest: true, updatedAt: "2026-09-24T00:00:00Z" };
     await handler({ key: "m1", event_type: "state:created", new_value: row });

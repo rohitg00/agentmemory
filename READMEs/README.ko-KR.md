@@ -432,7 +432,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-로컬 런타임을 업데이트하며 현재 작업 디렉터리의 JavaScript 의존성도 바꿀 수 있습니다. 데이터를 백업하고 기존 설치를 업데이트하기 전에 [업그레이드 가이드](../docs/upgrades/iii-0.25.md)를 읽으세요.
+로컬 런타임을 업데이트하며 현재 작업 디렉터리의 JavaScript 의존성도 바꿀 수 있습니다. 데이터를 백업하고 기존 설치를 업데이트하기 전에 [업그레이드 가이드](../docs/upgrades/iii-0.26.md)를 읽으세요.
 
 ### Claude Code (블록 한 번, 붙여넣기)
 
@@ -654,7 +654,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory는 Windows 10/11에서 실행됩니다. WSL2는 Linux 경로를 따르며 고정 엔진을 자동 설치할 수 있습니다. 네이티브 Windows에서는 고정된 iii-engine v0.25.1 바이너리를 수동 설치하십시오: [iii v0.25.1 릴리스 페이지](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1)에서 맞는 아카이브를 다운로드하고 checksum을 확인한 뒤 `iii.exe`를 `PATH`에 두십시오(예: `%USERPROFILE%\.local\bin\iii.exe`). CLI는 Windows ZIP을 자동으로 압축 해제하지 않습니다.
+agentmemory는 Windows 10/11에서 실행됩니다. WSL2는 Linux 경로를 따르며 고정 엔진을 자동 설치할 수 있습니다. 네이티브 Windows에서는 고정된 iii-engine v0.26.0 바이너리를 수동 설치하십시오: [iii v0.26.0 릴리스 페이지](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0)에서 맞는 아카이브를 다운로드하고 checksum을 확인한 뒤 `iii.exe`를 `PATH`에 두십시오(예: `%USERPROFILE%\.local\bin\iii.exe`). CLI는 Windows ZIP을 자동으로 압축 해제하지 않습니다.
 
 네이티브 Windows 자동 MCP 연결은 `agentmemory connect copilot-cli`만 지원합니다. 다른 네이티브 Windows 에이전트는 [다른 에이전트](#other-agents)의 수동 MCP 블록을 사용하십시오. 대상 에이전트도 같은 WSL 환경에 설치된 경우에만 WSL에서 `connect`를 실행하십시오.
 
@@ -666,7 +666,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-`agentmemory doctor`를 실행하거나 `--verbose`로 재시작하세요. 기본 포트가 사용 중이면 `--port <N>` 또는 `--instance <N>`을 지정하세요. 호환성과 복구는 [업그레이드 가이드](../docs/upgrades/iii-0.25.md)를 참고하세요.
+`agentmemory doctor`를 실행하거나 `--verbose`로 재시작하세요. 기본 포트가 사용 중이면 `--port <N>` 또는 `--instance <N>`을 지정하세요. 호환성과 복구는 [업그레이드 가이드](../docs/upgrades/iii-0.26.md)를 참고하세요.
 
 ---
 

@@ -3,6 +3,7 @@ import { Bindings, getBindings } from "../src/runtime/bindings.js";
 import { registerPipelineObservers } from "../src/runtime/pipeline-observers.js";
 import { KV } from "../src/state/schema.js";
 import type { GraphExtractMark } from "../src/types.js";
+import { fakeHandle as handle } from "./helpers/mocks.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -18,9 +19,6 @@ vi.mock("../src/functions/slots.js", async (importOriginal) => {
 
 const envFlags = { autoCompress: true, reflect: false, graphLlm: false, consolidation: true, maxConcurrent: 3, structural: true };
 
-function handle() {
-  return { id: "h", state: "active", ready: () => Promise.resolve(), onStateChange: () => () => {}, dispose: () => Promise.resolve() };
-}
 
 function fakeSdk(functions: string[] = ["state::get", "http::x", "state::on-changed", "http::on-request"]) {
   const observed: Array<{ source: Record<string, unknown>; target: string; options?: Record<string, unknown> }> = [];
@@ -28,7 +26,6 @@ function fakeSdk(functions: string[] = ["state::get", "http::x", "state::on-chan
   const sdk = {
     observed,
     triggers,
-    registerTrigger: vi.fn(),
     registerFunction: vi.fn((id: string, handler: unknown) => {
       (sdk as Record<string, unknown>)[`fn:${id}`] = handler;
     }),
@@ -59,42 +56,26 @@ describe("observer pipeline", () => {
   });
   afterEach(() => { process.env.AGENTMEMORY_BINDINGS = undefined; });
 
-  it("pipeline is observe after activation with observe-capable sdk, inline before", async () => {
-    const sdk = fakeSdk();
-    const b = new Bindings(sdk as never);
-    expect(b.pipeline).toBe("inline");
-    await b.activate();
-    expect(b.pipeline).toBe("observe");
+  it("pipeline is observe with an observe-capable sdk and inline otherwise", () => {
+    expect(new Bindings(fakeSdk() as never).pipeline).toBe("observe");
+    expect(new Bindings({ trigger: vi.fn() } as never).pipeline).toBe("inline");
+    process.env.AGENTMEMORY_BINDINGS = "inline";
+    expect(new Bindings(fakeSdk() as never).pipeline).toBe("inline");
   });
 
-  it("pipeline stays inline with AGENTMEMORY_BINDINGS=trigger and without observe", async () => {
-    process.env.AGENTMEMORY_BINDINGS = "trigger";
-    const sdk = fakeSdk();
-    const b = new Bindings(sdk as never);
-    await b.activate();
-    expect(b.pipeline).toBe("inline");
-    const sdk2 = { registerTrigger: vi.fn(), trigger: vi.fn() };
-    const b2 = new Bindings(sdk2 as never);
-    await b2.activate();
-    expect(b2.pipeline).toBe("inline");
-  });
-
-  it("observePipeline buffers until activation then creates the observer", async () => {
+  it("observePipeline creates the observer right away", () => {
     const sdk = fakeSdk();
     const b = getBindings(sdk as never);
     b.observePipeline({ function_id: "x::y" }, "mem::z", { id: "agentmemory:pipeline:test" });
-    expect(sdk.observed).toHaveLength(0);
-    await b.activate();
     expect(sdk.observed).toHaveLength(1);
     expect(sdk.observed[0].target).toBe("mem::z");
     expect(b.handles).toHaveLength(1);
   });
 
-  it("observePipeline is a no-op in inline mode", async () => {
-    process.env.AGENTMEMORY_BINDINGS = "trigger";
+  it("observePipeline is a no-op in inline mode", () => {
+    process.env.AGENTMEMORY_BINDINGS = "inline";
     const sdk = fakeSdk();
     const b = getBindings(sdk as never);
-    await b.activate();
     expect(b.observePipeline({ function_id: "x::y" }, "mem::z", {})).toBeNull();
     expect(sdk.observed).toHaveLength(0);
   });
@@ -109,7 +90,6 @@ describe("observer pipeline", () => {
       function_id: "mem::observe",
       filters: { "output.observationId": { $exists: true }, "output.deduplicated": { $ne: true } },
       capture: ["output"],
-      deliver: "output",
     });
     expect(compress.target).toBe("mem::compress");
     expect(compress.options?.max_in_flight).toBe(3);
@@ -131,7 +111,7 @@ describe("observer pipeline", () => {
     registerPipelineObservers(sdk as never);
     await b.activate();
     const graph = sdk.observed.find((o) => o.options?.id === "agentmemory:pipeline:post-session-graph")!;
-    expect(graph.source).toMatchObject({ function_id: "event::session::stopped", deliver: "input", filters: { "output.unchanged": { $ne: true } } });
+    expect(graph.source).toEqual({ function_id: "event::session::stopped", filters: { "output.unchanged": { $ne: true } }, capture: ["input", "output"] });
     expect(graph.options?.max_in_flight).toBe(1);
     const reflect = sdk.observed.find((o) => o.options?.id === "agentmemory:pipeline:post-session-reflect");
     expect(reflect).toBeTruthy();
@@ -184,6 +164,25 @@ describe("post-session-graph delta marker", () => {
     expect(marks.get("s1")!.lastObservationTimestamp).toBe("2026-03-01T00:00:00Z");
     expect(marks.get("s1")!.extractedCount).toBe(3);
     expect(result).toEqual({ extracted: 2 });
+  });
+
+  it("reads the session from an Observed payload delivered by the stop observer", async () => {
+    const { registerPostSessionFunctions } = await import("../src/functions/post-session.js");
+    const sdk = { functions: new Map<string, (d: unknown) => Promise<unknown>>(), trigger: vi.fn(async () => ({ success: true })), registerFunction: function (id: string, h: (d: unknown) => Promise<unknown>) { this.functions.set(id, h); } };
+    const kv = {
+      get: vi.fn(async () => null),
+      set: vi.fn(async () => {}),
+      iterate: async function* () { yield [{ id: "o1", title: "x", timestamp: "2026-02-01T00:00:00Z" }]; },
+      backend: "file",
+    };
+    registerPostSessionFunctions(sdk as never, kv as never);
+    const result = await sdk.functions.get("mem::post-session-graph")!({
+      observer_id: "agentmemory:pipeline:post-session-graph", activation_id: "a1", function_id: "event::session::stopped",
+      namespace: "agentmemory", invocation_id: "i1", status: "success", started_at_ms: 1, duration_ms: 1,
+      input: { sessionId: "s1" }, output: { unchanged: false },
+    });
+    expect(result).toEqual({ extracted: 1 });
+    expect(kv.set).toHaveBeenCalledWith(KV.graphExtractMarks, "s1", expect.objectContaining({ sessionId: "s1" }));
   });
 
   it("marker does not advance when extract fails", async () => {

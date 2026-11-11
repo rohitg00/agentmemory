@@ -1,19 +1,17 @@
-import type { IIIClient, ObserverHandle } from "iii-sdk";
+import type { IIIClient, ObserveSource, ObserverHandle, ObserverOptions } from "iii-sdk";
 import { logger } from "../logger.js";
 import { GRAPH_SCOPES } from "../state/graph-generation.js";
 
-export type BindingModes = { state: "observe" | "trigger"; http: "observe" | "trigger" };
+export type ProviderMode = "observe" | "pending";
+export type BindingModes = { state: ProviderMode; http: ProviderMode };
 
-export interface HttpTriggerSpec {
-  type: "http";
+export interface HttpRouteSpec {
   function_id: string;
   config: {
     api_path: string;
     http_method?: string;
     middleware_function_ids?: string[];
     public_webhook?: boolean;
-    condition_function_id?: string;
-    [key: string]: unknown;
   };
 }
 
@@ -24,71 +22,65 @@ export interface StateSpec {
   maxInFlight?: number;
 }
 
-interface PendingSpec {
-  kind: "http" | "state";
-  spec: HttpTriggerSpec | StateSpec;
-}
-
-interface PipelineSpec {
-  source: Record<string, unknown>;
-  target: string;
-  options?: Record<string, unknown>;
-  stateOnly?: boolean;
-}
-
 export interface BindingReport {
-  state: "observe" | "trigger";
-  http: "observe" | "trigger";
+  state: ProviderMode;
+  http: ProviderMode;
+  pipeline: "observe" | "inline";
   observers: number;
   failedObservers: number;
-  routesViaTrigger: number;
   reasons: string[];
 }
 
 interface SdkLike {
-  registerTrigger?: (spec: unknown) => unknown;
-  observe?: (source: unknown, target: string, options?: Record<string, unknown>) => ObserverHandle;
-  trigger: (input: { function_id: string; payload: unknown; timeoutMs?: number }) => Promise<unknown>;
+  observe?: (source: ObserveSource, target: string, options?: ObserverOptions) => ObserverHandle;
 }
+
+type BindingKind = "http" | "state" | "pipeline";
 
 const instances = new WeakMap<object, Bindings>();
 
-const OBSERVE_CAPABLE_HTTP_KEYS = new Set([
-  "api_path",
-  "http_method",
-  "middleware_function_ids",
-  "public_webhook",
-  "condition_function_id",
-]);
+const HTTP_ARG_KEYS = new Set(["api_path", "http_method", "middleware_function_ids", "public_webhook"]);
+
+const ACTIVATE_TIMEOUT_MS = 30_000;
 
 export class Bindings {
   private readonly sdk: SdkLike;
-  private readonly pending: PendingSpec[] = [];
-  private readonly pipelinePending: PipelineSpec[] = [];
-  private pipelineMode: "observe" | "inline" = "inline";
-  private activated: Promise<BindingModes> | null = null;
-  private readonly boundHandles: ObserverHandle[] = [];
-  private readonly stateBoundHandles: ObserverHandle[] = [];
-  private readonly reasons: string[] = [];
-  private routesViaTriggerCount = 0;
+  private readonly bound: Array<{ handle: ObserverHandle; kind: BindingKind }> = [];
+  private readonly reasons = new Set<string>();
+  private readonly inline: boolean;
   private failedObserverCount = 0;
-  modes: BindingModes = { state: "trigger", http: "trigger" };
-  private resolved = false;
 
   constructor(sdk: SdkLike) {
     this.sdk = sdk;
+    const forced = process.env.AGENTMEMORY_BINDINGS;
+    if (forced === "trigger") {
+      logger.warn("AGENTMEMORY_BINDINGS=trigger is no longer supported on iii 0.26 (triggers were removed); treating it as AGENTMEMORY_BINDINGS=inline");
+    }
+    this.inline = forced === "inline" || forced === "trigger" || typeof sdk.observe !== "function";
   }
 
   get handles(): readonly ObserverHandle[] {
-    return this.boundHandles;
+    return this.bound.map((entry) => entry.handle);
   }
 
   get stateHandles(): readonly ObserverHandle[] {
-    return this.stateBoundHandles;
+    return this.handlesOf("state");
   }
 
-  private immediate(): boolean {
-    return typeof this.sdk.observe !== "function" || process.env.AGENTMEMORY_BINDINGS === "trigger";
+  get pipeline(): "observe" | "inline" {
+    return this.inline ? "inline" : "observe";
+  }
+
+  get modes(): BindingModes {
+    return { state: this.modeOf("state"), http: this.modeOf("http") };
+  }
+
+  private handlesOf(kind: BindingKind): ObserverHandle[] {
+    return this.bound.filter((entry) => entry.kind === kind).map((entry) => entry.handle);
+  }
+
+  private modeOf(kind: "state" | "http"): ProviderMode {
+    return this.handlesOf(kind).some((handle) => handle.state === "active") ? "observe" : "pending";
   }
 
   private routeMaxInFlight(): number {
@@ -99,75 +91,32 @@ export class Bindings {
     return parsed;
   }
 
-  http(spec: HttpTriggerSpec): void {
-    if (this.resolved || this.immediate()) return this.bindHttp(spec);
-    this.pending.push({ kind: "http", spec });
-  }
-
-  state(spec: StateSpec): void {
-    if (this.resolved || this.immediate()) return this.bindState(spec);
-    this.pending.push({ kind: "state", spec });
-  }
-
-  get pipeline(): "observe" | "inline" {
-    return this.pipelineMode;
-  }
-
-  observePipeline(source: Record<string, unknown>, target: string, options?: Record<string, unknown>): ObserverHandle | null {
-    if (!this.resolved && !this.immediate()) {
-      this.pipelinePending.push({ source, target, options });
+  private observe(kind: BindingKind, label: string, source: ObserveSource, target: string, options?: ObserverOptions): ObserverHandle | null {
+    if (typeof this.sdk.observe !== "function") {
+      this.reasons.add("client has no observe(); bindings skipped");
       return null;
     }
-    if (this.pipelineMode !== "observe" || typeof this.sdk.observe !== "function") return null;
     const handle = this.sdk.observe(source, target, options);
-    this.boundHandles.push(handle);
+    this.bound.push({ handle, kind });
     void handle.ready().catch((err: unknown) => {
-      const code = (err as { code?: string })?.code;
-      logger.error(`Pipeline observer failed for ${target}`, { error: code ?? String(err) });
+      const code = (err as { code?: string })?.code ?? String(err);
+      this.failedObserverCount++;
+      this.reasons.add(`${label} observer rejected: ${code}`);
+      logger.error(`Observer failed for ${label}`, { error: code });
     });
     return handle;
   }
 
-  observeStateChanges(filters: Record<string, unknown>, target: string, options?: Record<string, unknown>): ObserverHandle | null {
-    const source = { function_id: "state::on-changed", filters, capture: ["input"], deliver: "input" };
-    if (!this.resolved && !this.immediate()) {
-      this.pipelinePending.push({ source, target, options, stateOnly: true });
-      return null;
-    }
-    if (this.modes.state !== "observe") return null;
-    return this.observePipeline(source, target, options);
-  }
-
-  private bindHttp(spec: HttpTriggerSpec): void {
-    if (this.modes.http === "observe") return this.observeHttp(spec);
-    this.routesViaTriggerCount++;
-    this.sdk.registerTrigger?.(spec);
-  }
-
-  private bindState(spec: StateSpec): void {
-    if (this.modes.state === "observe") return this.observeState(spec);
-    this.sdk.registerTrigger?.({
-      type: "state",
-      function_id: spec.function_id,
-      config: { scope: spec.scope, ...(spec.key !== undefined ? { key: spec.key } : {}) },
-    });
-  }
-
-  private observeHttp(spec: HttpTriggerSpec): void {
+  http(spec: HttpRouteSpec): void {
     const config = spec.config;
     const method = (config.http_method ?? "GET").toUpperCase();
-    const extras = Object.keys(config).filter((key) => !OBSERVE_CAPABLE_HTTP_KEYS.has(key));
-    if (extras.length > 0) {
-      this.routesViaTriggerCount++;
-      this.reasons.push(`route ${method} ${config.api_path} uses trigger (unsupported config: ${extras.join(",")})`);
-      logger.info("Route bound via registerTrigger (unsupported config for http::on-request)", {
-        route: `${method} ${config.api_path}`,
-        extras,
-      });
-      this.sdk.registerTrigger?.(spec);
-      return;
+    const unknown = Object.keys(config).filter((key) => !HTTP_ARG_KEYS.has(key));
+    if (unknown.length > 0) {
+      throw new Error(`route ${method} ${config.api_path} uses config the http worker does not accept: ${unknown.join(",")}`);
     }
-    const handle = this.sdk.observe!(
+    this.observe(
+      "http",
+      `route ${method} ${config.api_path}`,
       {
         function_id: "http::on-request",
         args: {
@@ -175,22 +124,14 @@ export class Bindings {
           path: config.api_path,
           ...(config.middleware_function_ids?.length ? { middleware_function_ids: config.middleware_function_ids } : {}),
           ...(config.public_webhook ? { public_webhook: true } : {}),
-          ...(config.condition_function_id ? { condition_function_id: config.condition_function_id } : {}),
         },
       },
       spec.function_id,
       { id: `agentmemory:route:${method} ${config.api_path}`, max_in_flight: this.routeMaxInFlight() },
     );
-    this.boundHandles.push(handle);
-    void handle.ready().catch((err: unknown) => {
-      const code = (err as { code?: string })?.code;
-      this.failedObserverCount++;
-      this.reasons.push(`route ${method} ${config.api_path} observer rejected: ${code ?? String(err)}`);
-      logger.error(`HTTP observer failed for route ${method} ${config.api_path}`, { error: code ?? String(err) });
-    });
   }
 
-  private observeState(spec: StateSpec): void {
+  state(spec: StateSpec): void {
     const scopeClause = GRAPH_SCOPES.has(spec.scope)
       ? { $or: [{ "input.scope": { $eq: spec.scope } }, { "input.scope": { $prefix: `${spec.scope}:generation:` } }] }
       : { "input.scope": { $eq: spec.scope } };
@@ -198,107 +139,58 @@ export class Bindings {
       ...scopeClause,
       ...(spec.key !== undefined ? { "input.key": { $eq: spec.key } } : {}),
     };
-    const handle = this.sdk.observe!(
-      { function_id: "state::on-changed", filters, capture: ["input"], deliver: "input" },
+    this.observe(
+      "state",
+      `state ${spec.function_id}`,
+      { function_id: "state::on-changed", filters, capture: ["input"] },
       spec.function_id,
       { id: `agentmemory:state:${spec.function_id}`, ...(spec.maxInFlight ? { max_in_flight: spec.maxInFlight } : {}) },
     );
-    this.boundHandles.push(handle);
-    this.stateBoundHandles.push(handle);
-    void handle.ready().catch((err: unknown) => {
-      const code = (err as { code?: string })?.code;
-      this.failedObserverCount++;
-      this.reasons.push(`state observer ${spec.function_id} rejected: ${code ?? String(err)}`);
-      logger.error(`State observer failed for ${spec.function_id}`, { scope: spec.scope, error: code ?? String(err) });
-    });
   }
 
-  private async probeFunctions(timeoutMs: number): Promise<Set<string>> {
-    try {
-      const listed = await this.sdk.trigger({ function_id: "engine::functions::list", payload: {}, timeoutMs });
-      const entries = Array.isArray(listed)
-        ? listed
-        : (((listed as { functions?: unknown[] })?.functions ?? []) as unknown[]);
-      return new Set(entries.map((entry) => {
-        if (typeof entry === "string") return entry;
-        const obj = entry as { function_id?: string; id?: string; name?: string };
-        return obj.function_id ?? obj.id ?? obj.name ?? "";
-      }).filter(Boolean));
-    } catch {
-      return new Set();
-    }
+  observePipeline(source: ObserveSource, target: string, options?: ObserverOptions): ObserverHandle | null {
+    if (this.inline) return null;
+    return this.observe("pipeline", `pipeline ${target}`, source, target, options);
   }
 
-  private async detectModes(): Promise<BindingModes> {
-    const forced = process.env.AGENTMEMORY_BINDINGS;
-    const deadline = Date.now() + 30_000;
-    let delay = 250;
-    let functions = new Set<string>();
-    while (Date.now() < deadline) {
-      functions = await this.probeFunctions(Math.max(1, deadline - Date.now()));
-      const stateProvider = functions.has("state::get");
-      const httpProvider = [...functions].some((name) => name.startsWith("http::"));
-      if ((stateProvider || forced === "observe") && (httpProvider || forced === "observe")) {
-        const modes: BindingModes = {
-          state: forced === "observe" ? "observe" : functions.has("state::on-changed") ? "observe" : "trigger",
-          http: forced === "observe" ? "observe" : functions.has("http::on-request") ? "observe" : "trigger",
-        };
-        if (forced === "observe") {
-          if (modes.state === "observe" && !functions.has("state::on-changed")) {
-            logger.error("AGENTMEMORY_BINDINGS=observe but state::on-changed is not registered; state observers will wait pending until it registers");
-          }
-          if (modes.http === "observe" && !functions.has("http::on-request")) {
-            logger.error("AGENTMEMORY_BINDINGS=observe but http::on-request is not registered; http observers will wait pending until it registers");
-          }
-        }
-        if (modes.state === "trigger") this.reasons.push("state::on-changed absent; state bindings via registerTrigger");
-        if (modes.http === "trigger") this.reasons.push("http::on-request absent; http bindings via registerTrigger");
-        return modes;
+  observeStateChanges(filters: Record<string, unknown>, target: string, options?: ObserverOptions): ObserverHandle | null {
+    return this.observePipeline({ function_id: "state::on-changed", filters, capture: ["input"] }, target, options);
+  }
+
+  activate(timeoutMs = ACTIVATE_TIMEOUT_MS): Promise<BindingModes> {
+    const settled = () => {
+      const modes = this.modes;
+      return (modes.state === "observe" || this.handlesOf("state").length === 0) &&
+        (modes.http === "observe" || this.handlesOf("http").length === 0);
+    };
+    if (settled()) return Promise.resolve(this.modes);
+    return new Promise((resolve) => {
+      const unsubscribes: Array<() => void> = [];
+      const finish = () => {
+        clearTimeout(timer);
+        for (const unsubscribe of unsubscribes) unsubscribe();
+        resolve(this.modes);
+      };
+      const timer = setTimeout(finish, timeoutMs);
+      timer.unref?.();
+      for (const { handle, kind } of this.bound) {
+        if (kind === "pipeline") continue;
+        unsubscribes.push(handle.onStateChange(() => { if (settled()) finish(); }));
       }
-      await new Promise((resolve) => setTimeout(resolve, delay));
-      delay = Math.min(delay * 2, 2000);
-    }
-    logger.warn("Timed out waiting for state/http workers after 30s; falling back to trigger bindings", {
-      haveStateWorker: functions.has("state::get"),
-      haveHttpWorker: [...functions].some((name) => name.startsWith("http::")),
     });
-    this.reasons.push("provider detection timed out after 30s");
-    return { state: "trigger", http: "trigger" };
-  }
-
-  async activate(): Promise<BindingModes> {
-    if (!this.activated) {
-      if (this.immediate()) {
-        this.resolved = true;
-        this.activated = Promise.resolve(this.modes);
-      } else {
-        this.activated = this.detectModes().then((modes) => {
-          this.modes = modes;
-          this.resolved = true;
-          this.pipelineMode = typeof this.sdk.observe === "function" && process.env.AGENTMEMORY_BINDINGS !== "trigger" ? "observe" : "inline";
-          for (const { spec } of this.pending.splice(0)) {
-            if ("type" in spec && spec.type === "http") this.bindHttp(spec as HttpTriggerSpec);
-            else this.bindState(spec as StateSpec);
-          }
-          for (const spec of this.pipelinePending.splice(0)) {
-            if (spec.stateOnly && this.modes.state !== "observe") continue;
-            this.observePipeline(spec.source, spec.target, spec.options);
-          }
-          return modes;
-        });
-      }
-    }
-    return this.activated;
   }
 
   describe(): BindingReport {
+    const modes = this.modes;
+    const reasons = new Set(this.reasons);
+    if (modes.state === "pending" && this.handlesOf("state").length > 0) reasons.add("state::on-changed observers pending until the state worker connects");
+    if (modes.http === "pending" && this.handlesOf("http").length > 0) reasons.add("http::on-request observers pending until the http worker connects");
     return {
-      state: this.modes.state,
-      http: this.modes.http,
-      observers: this.boundHandles.length - this.failedObserverCount,
+      ...modes,
+      pipeline: this.pipeline,
+      observers: this.bound.length - this.failedObserverCount,
       failedObservers: this.failedObserverCount,
-      routesViaTrigger: this.routesViaTriggerCount,
-      reasons: [...this.reasons],
+      reasons: [...reasons],
     };
   }
 }

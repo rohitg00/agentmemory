@@ -101,7 +101,7 @@ Yêu cầu:
 
 - Node.js 20 hoặc mới hơn kèm npm và npx (`node -v`, `npm -v`, và `npx -v`).
 - Thiết lập tự động trên macOS/Linux cần `curl`, POSIX `sh` và `tar`.
-Windows native cần cài thủ công `iii.exe` của iii v0.25.1 đã pin; WSL2 dùng trình cài tự động cho macOS/Linux
+Windows native cần cài thủ công `iii.exe` của iii v0.26.0 đã pin; WSL2 dùng trình cài tự động cho macOS/Linux
 
 Lệnh cài mới chuẩn (canonical):
 
@@ -434,7 +434,7 @@ Dùng lệnh bảo trì khi bạn chủ động muốn cập nhật runtime cụ
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Lệnh cập nhật runtime cục bộ và có thể cập nhật phụ thuộc JavaScript trong thư mục làm việc. Sao lưu dữ liệu và đọc [hướng dẫn nâng cấp](../docs/upgrades/iii-0.25.md) trước khi cập nhật bản cài hiện có.
+Lệnh cập nhật runtime cục bộ và có thể cập nhật phụ thuộc JavaScript trong thư mục làm việc. Sao lưu dữ liệu và đọc [hướng dẫn nâng cấp](../docs/upgrades/iii-0.26.md) trước khi cập nhật bản cài hiện có.
 
 ### Claude Code (một block, dán vào)
 
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory chạy trên Windows 10/11; WSL2 có thể tự cài engine theo quy trình Linux. Windows native cần cài thủ công iii-engine v0.25.1: tải archive từ [trang phát hành iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), xác minh checksum và đặt `iii.exe` trong `PATH`. CLI không tự giải nén ZIP Windows
+agentmemory chạy trên Windows 10/11; WSL2 có thể tự cài engine theo quy trình Linux. Windows native cần cài thủ công iii-engine v0.26.0: tải archive từ [trang phát hành iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), xác minh checksum và đặt `iii.exe` trong `PATH`. CLI không tự giải nén ZIP Windows
 
 Cấu hình MCP tự động trên Windows native chỉ hỗ trợ `agentmemory connect copilot-cli`; agent khác dùng khối MCP thủ công trong [Other agents](#other-agents). Chỉ chạy `connect` trong WSL nếu agent đích cũng cài trong cùng môi trường WSL
 
@@ -668,7 +668,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Chạy `agentmemory doctor` hoặc khởi động lại với `--verbose`. Nếu cổng mặc định đang được dùng, chọn `--port <N>` hoặc `--instance <N>`. Xem [hướng dẫn nâng cấp](../docs/upgrades/iii-0.25.md) về tương thích và phục hồi.
+Chạy `agentmemory doctor` hoặc khởi động lại với `--verbose`. Nếu cổng mặc định đang được dùng, chọn `--port <N>` hoặc `--instance <N>`. Xem [hướng dẫn nâng cấp](../docs/upgrades/iii-0.26.md) về tương thích và phục hồi.
 
 ---
 

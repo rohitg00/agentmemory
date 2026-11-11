@@ -429,7 +429,7 @@ Gebruik het onderhoudscommando wanneer je bewust je lokale runtime wilt bijwerke
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Deze opdracht werkt de lokale runtime bij en kan JavaScript-afhankelijkheden in de huidige workspace bijwerken. Maak een back-up en lees de [upgradehandleiding](../docs/upgrades/iii-0.25.md) voordat je verdergaat.
+Deze opdracht werkt de lokale runtime bij en kan JavaScript-afhankelijkheden in de huidige workspace bijwerken. Maak een back-up en lees de [upgradehandleiding](../docs/upgrades/iii-0.26.md) voordat je verdergaat.
 
 ### Claude Code (één blok, plak dit)
 
@@ -651,7 +651,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory draait op Windows 10/11. WSL2 volgt het Linux-pad en kan de vastgezette engine automatisch installeren. Native Windows vereist handmatige installatie van de vastgezette iii-engine v0.25.1-binary; download het passende archief van de [iii v0.25.1-releasepagina](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), controleer de checksum en plaats `iii.exe` op `PATH` (bijvoorbeeld `%USERPROFILE%\.local\bin\iii.exe`). De CLI pakt de Windows ZIP niet automatisch uit.
+agentmemory draait op Windows 10/11. WSL2 volgt het Linux-pad en kan de vastgezette engine automatisch installeren. Native Windows vereist handmatige installatie van de vastgezette iii-engine v0.26.0-binary; download het passende archief van de [iii v0.26.0-releasepagina](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), controleer de checksum en plaats `iii.exe` op `PATH` (bijvoorbeeld `%USERPROFILE%\.local\bin\iii.exe`). De CLI pakt de Windows ZIP niet automatisch uit.
 
 Geautomatiseerde MCP-koppeling op native Windows ondersteunt alleen `agentmemory connect copilot-cli`. Gebruik voor andere native Windows-agents het handmatige MCP-blok uit [Other agents](#other-agents). Voer `connect` binnen WSL alleen uit wanneer de doelagent in dezelfde WSL-omgeving is geïnstalleerd.
 
@@ -663,7 +663,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Voer `agentmemory doctor` uit of herstart met `--verbose`. Gebruik `--port <N>` of `--instance <N>` als de poorten bezet zijn. Zie de [upgradehandleiding](../docs/upgrades/iii-0.25.md) voor compatibiliteit en herstel.
+Voer `agentmemory doctor` uit of herstart met `--verbose`. Gebruik `--port <N>` of `--instance <N>` als de poorten bezet zijn. Zie de [upgradehandleiding](../docs/upgrades/iii-0.26.md) voor compatibiliteit en herstel.
 
 ---
 

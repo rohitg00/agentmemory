@@ -436,7 +436,7 @@ Folosește comanda de întreținere atunci când vrei, în mod intenționat, să
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Comanda actualizează mediul local și poate modifica dependențele JavaScript din spațiul de lucru curent. Fă backup datelor și citește [ghidul de actualizare](../docs/upgrades/iii-0.25.md).
+Comanda actualizează mediul local și poate modifica dependențele JavaScript din spațiul de lucru curent. Fă backup datelor și citește [ghidul de actualizare](../docs/upgrades/iii-0.26.md).
 
 ### Claude Code (un singur bloc, lipește-l)
 
@@ -663,7 +663,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory rulează pe Windows 10/11. WSL2 urmează calea Linux și poate instala automat engine-ul fixat. Windows nativ necesită instalarea manuală a binarului iii-engine v0.25.1 fixat; descarcă arhiva potrivită de pe [pagina de release iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifică checksum-ul și pune `iii.exe` în `PATH` (de exemplu `%USERPROFILE%\.local\bin\iii.exe`). CLI-ul nu extrage automat arhiva ZIP pentru Windows.
+agentmemory rulează pe Windows 10/11. WSL2 urmează calea Linux și poate instala automat engine-ul fixat. Windows nativ necesită instalarea manuală a binarului iii-engine v0.26.0 fixat; descarcă arhiva potrivită de pe [pagina de release iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verifică checksum-ul și pune `iii.exe` în `PATH` (de exemplu `%USERPROFILE%\.local\bin\iii.exe`). CLI-ul nu extrage automat arhiva ZIP pentru Windows.
 
 Conectarea MCP automatizată pe Windows nativ acceptă doar `agentmemory connect copilot-cli`. Pentru ceilalți agenți nativi Windows, folosește blocul MCP manual din [Alți agenți](#other-agents). Rulează `connect` în WSL doar când agentul țintă este instalat în același mediu WSL.
 
@@ -675,7 +675,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Rulează `agentmemory doctor` sau repornește cu `--verbose`. Dacă porturile sunt ocupate, folosește `--port <N>` sau `--instance <N>`. Compatibilitatea și recuperarea sunt în [ghidul de actualizare](../docs/upgrades/iii-0.25.md).
+Rulează `agentmemory doctor` sau repornește cu `--verbose`. Dacă porturile sunt ocupate, folosește `--port <N>` sau `--instance <N>`. Compatibilitatea și recuperarea sunt în [ghidul de actualizare](../docs/upgrades/iii-0.26.md).
 
 ---
 

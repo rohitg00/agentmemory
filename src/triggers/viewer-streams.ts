@@ -44,6 +44,7 @@ import { isStateDelete, sendViewerEvent } from "./events.js";
 import { setAuditRecordedListener } from "../functions/audit.js";
 
 import { getBindings } from "../runtime/bindings.js";
+import { registerObserverTarget } from "../runtime/observed.js";
 type Response = {
   status_code: number;
   headers?: Record<string, string>;
@@ -121,7 +122,7 @@ export function registerViewerStreamTriggers(
     entity: string;
     countKind?: CountedKind;
   }): void {
-    sdk.registerFunction(options.functionId, async (payload: StatePayload<T>) => {
+    registerObserverTarget(sdk, options.functionId, "input", async (payload: StatePayload<T>) => {
       const deleted = isStateDelete(payload);
       const row = deleted ? null : payload.new_value ?? null;
       if (options.countKind) noteRowChange(options.countKind, payload.old_value, row);
@@ -175,8 +176,9 @@ export function registerViewerStreamTriggers(
       throw error;
     }
   }
-  sdk.registerFunction(
+  registerObserverTarget(sdk,
     "event::viewer::graph-snapshot-changed",
+    "input",
     async (payload: StatePayload<GraphSnapshot>) => withKeyedLock("graph:viewer-events", async () => {
       if (payload.key !== GRAPH_SNAPSHOT_KEY) return { emitted: false };
       if (!await isLegacyGraphState(kv)) return { emitted: false };
@@ -238,8 +240,9 @@ export function registerViewerStreamTriggers(
     await publishGraphMetadata(kind === "reset");
   }));
 
-  sdk.registerFunction(
+  registerObserverTarget(sdk,
     "event::viewer::consolidation-changed",
+    "input",
     async (payload: StatePayload<ConsolidationRunRecord>) => {
       if (payload.key !== CONSOLIDATION_LAST_RUN_KEY || isStateDelete(payload)) {
         return { emitted: false };
@@ -254,8 +257,9 @@ export function registerViewerStreamTriggers(
   );
   getBindings(sdk).state({ function_id: "event::viewer::consolidation-changed", scope: KV.config, key: CONSOLIDATION_LAST_RUN_KEY });
 
-  sdk.registerFunction(
+  registerObserverTarget(sdk,
     "event::viewer::health-changed",
+    "input",
     async (payload: StatePayload<HealthSnapshot>) => {
       if (payload.key !== HEALTH_LATEST_KEY || isStateDelete(payload)) {
         return { emitted: false };
@@ -304,7 +308,6 @@ export function registerViewerStreamTriggers(
     },
   );
   getBindings(sdk).http({
-    type: "http",
     function_id: "api::viewer-snapshot",
     config: {
       api_path: "/agentmemory/viewer/snapshot",
@@ -321,7 +324,6 @@ export function registerViewerStreamTriggers(
     },
   );
   getBindings(sdk).http({
-    type: "http",
     function_id: "api::counts",
     config: {
       api_path: "/agentmemory/counts",

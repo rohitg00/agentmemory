@@ -428,7 +428,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-คำสั่งนี้อัปเดต runtime ในเครื่อง และอาจอัปเดต dependency ของ JavaScript ในไดเรกทอรีทำงานด้วย สำรองข้อมูลและอ่าน[คู่มืออัปเกรด](../docs/upgrades/iii-0.25.md)ก่อนอัปเดตการติดตั้งเดิม
+คำสั่งนี้อัปเดต runtime ในเครื่อง และอาจอัปเดต dependency ของ JavaScript ในไดเรกทอรีทำงานด้วย สำรองข้อมูลและอ่าน[คู่มืออัปเกรด](../docs/upgrades/iii-0.26.md)ก่อนอัปเดตการติดตั้งเดิม
 
 ### Claude Code (one block, paste it)
 
@@ -648,7 +648,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory รองรับ Windows 10/11; WSL2 ใช้ขั้นตอน Linux และติดตั้ง engine อัตโนมัติได้ Windows แบบ native ต้องติดตั้งไบนารี iii-engine v0.25.1 ด้วยตนเอง ดาวน์โหลด archive จาก [หน้า release iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), ตรวจ checksum และวาง `iii.exe` บน `PATH` (เช่น `%USERPROFILE%\.local\bin\iii.exe`) CLI ไม่แตก Windows ZIP ให้อัตโนมัติ
+agentmemory รองรับ Windows 10/11; WSL2 ใช้ขั้นตอน Linux และติดตั้ง engine อัตโนมัติได้ Windows แบบ native ต้องติดตั้งไบนารี iii-engine v0.26.0 ด้วยตนเอง ดาวน์โหลด archive จาก [หน้า release iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), ตรวจ checksum และวาง `iii.exe` บน `PATH` (เช่น `%USERPROFILE%\.local\bin\iii.exe`) CLI ไม่แตก Windows ZIP ให้อัตโนมัติ
 
 การตั้งค่า MCP อัตโนมัติบน Windows รองรับเฉพาะ `agentmemory connect copilot-cli`; สำหรับ agent อื่นให้ใช้ MCP block ใน [Other agents](#other-agents) เรียก `connect` ใน WSL เมื่อ agent เป้าหมายติดตั้งใน WSL เดียวกันเท่านั้น
 
@@ -660,7 +660,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-รัน `agentmemory doctor` หรือเริ่มใหม่ด้วย `--verbose` หากพอร์ตเริ่มต้นถูกใช้ ให้เลือก `--port <N>` หรือ `--instance <N>` ดูความเข้ากันได้และการกู้คืนใน[คู่มืออัปเกรด](../docs/upgrades/iii-0.25.md)
+รัน `agentmemory doctor` หรือเริ่มใหม่ด้วย `--verbose` หากพอร์ตเริ่มต้นถูกใช้ ให้เลือก `--port <N>` หรือ `--instance <N>` ดูความเข้ากันได้และการกู้คืนใน[คู่มืออัปเกรด](../docs/upgrades/iii-0.26.md)
 
 ---
 

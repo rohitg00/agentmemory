@@ -431,7 +431,7 @@ Use o comando de manutenção quando quiser, de forma intencional, atualizar o s
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-O comando atualiza o ambiente local e pode atualizar dependências JavaScript no workspace atual. Faça uma cópia de segurança e leia o [guia de atualização](../docs/upgrades/iii-0.25.md) antes de continuar.
+O comando atualiza o ambiente local e pode atualizar dependências JavaScript no workspace atual. Faça uma cópia de segurança e leia o [guia de atualização](../docs/upgrades/iii-0.26.md) antes de continuar.
 
 ### Claude Code (um bloco, cole-o)
 
@@ -655,7 +655,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-O agentmemory funciona no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar automaticamente o engine fixado. O Windows nativo exige que o binário iii-engine v0.25.1 fixado seja instalado manualmente; descarregue o ficheiro correspondente na [página de lançamento iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifique o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai automaticamente o ZIP do Windows.
+O agentmemory funciona no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar automaticamente o engine fixado. O Windows nativo exige que o binário iii-engine v0.26.0 fixado seja instalado manualmente; descarregue o ficheiro correspondente na [página de lançamento iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verifique o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai automaticamente o ZIP do Windows.
 
 A ligação MCP automatizada no Windows nativo só suporta `agentmemory connect copilot-cli`. Para os restantes agentes nativos do Windows, use o bloco MCP manual de [Outros agentes](#other-agents). Execute `connect` no WSL apenas quando o agente de destino também estiver instalado nesse mesmo ambiente WSL.
 
@@ -667,7 +667,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Execute `agentmemory doctor` ou reinicie com `--verbose`. Use `--port <N>` ou `--instance <N>` se as portas estiverem ocupadas. Consulte compatibilidade e recuperação no [guia de atualização](../docs/upgrades/iii-0.25.md).
+Execute `agentmemory doctor` ou reinicie com `--verbose`. Use `--port <N>` ou `--instance <N>` se as portas estiverem ocupadas. Consulte compatibilidade e recuperação no [guia de atualização](../docs/upgrades/iii-0.26.md).
 ---
 
 <h2 id="deploy">Deploy</h2>

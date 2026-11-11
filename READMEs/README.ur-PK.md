@@ -436,7 +436,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-یہ مقامی رن ٹائم اپ ڈیٹ کرتا ہے اور موجودہ ورکنگ ڈائریکٹری کی JavaScript dependencies بھی بدل سکتا ہے۔ ڈیٹا کا بیک اپ لیں اور موجودہ تنصیب اپ ڈیٹ کرنے سے پہلے [اپ گریڈ گائیڈ](../docs/upgrades/iii-0.25.md) پڑھیں۔
+یہ مقامی رن ٹائم اپ ڈیٹ کرتا ہے اور موجودہ ورکنگ ڈائریکٹری کی JavaScript dependencies بھی بدل سکتا ہے۔ ڈیٹا کا بیک اپ لیں اور موجودہ تنصیب اپ ڈیٹ کرنے سے پہلے [اپ گریڈ گائیڈ](../docs/upgrades/iii-0.26.md) پڑھیں۔
 
 ### Claude Code (ایک بلاک، اسے پیسٹ کریں)
 
@@ -658,7 +658,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory Windows 10/11 پر چلتا ہے؛ WSL2 Linux طریقے سے engine خود انسٹال کر سکتا ہے۔ Native Windows پر iii-engine v0.25.1 binary دستی طور پر انسٹال کریں: [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) سے archive ڈاؤن لوڈ، checksum کی تصدیق، اور `iii.exe` کو `PATH` پر رکھیں۔ CLI ZIP خود نہیں کھولتا
+agentmemory Windows 10/11 پر چلتا ہے؛ WSL2 Linux طریقے سے engine خود انسٹال کر سکتا ہے۔ Native Windows پر iii-engine v0.26.0 binary دستی طور پر انسٹال کریں: [iii v0.26.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0) سے archive ڈاؤن لوڈ، checksum کی تصدیق، اور `iii.exe` کو `PATH` پر رکھیں۔ CLI ZIP خود نہیں کھولتا
 
 Native Windows پر MCP خودکار wiring صرف `agentmemory connect copilot-cli` کے لیے ہے؛ دوسرے agents کے لیے [Other agents](#other-agents) کا دستی MCP block استعمال کریں۔ WSL میں `connect` تب چلائیں جب target agent وہیں نصب ہو
 
@@ -670,7 +670,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-`agentmemory doctor` چلائیں یا `--verbose` کے ساتھ دوبارہ آغاز کریں۔ طے شدہ پورٹس مصروف ہوں تو `--port <N>` یا `--instance <N>` استعمال کریں۔ مطابقت اور بحالی کے لیے [اپ گریڈ گائیڈ](../docs/upgrades/iii-0.25.md) دیکھیں۔
+`agentmemory doctor` چلائیں یا `--verbose` کے ساتھ دوبارہ آغاز کریں۔ طے شدہ پورٹس مصروف ہوں تو `--port <N>` یا `--instance <N>` استعمال کریں۔ مطابقت اور بحالی کے لیے [اپ گریڈ گائیڈ](../docs/upgrades/iii-0.26.md) دیکھیں۔
 
 ---
 

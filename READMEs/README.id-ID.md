@@ -434,7 +434,7 @@ Gunakan perintah pemeliharaan saat Anda sengaja ingin memperbarui runtime lokal 
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Perintah ini memperbarui runtime lokal dan dapat memperbarui dependensi JavaScript dalam direktori kerja. Cadangkan data dan baca [panduan upgrade](../docs/upgrades/iii-0.25.md) sebelum memperbarui instalasi yang ada.
+Perintah ini memperbarui runtime lokal dan dapat memperbarui dependensi JavaScript dalam direktori kerja. Cadangkan data dan baca [panduan upgrade](../docs/upgrades/iii-0.26.md) sebelum memperbarui instalasi yang ada.
 
 ### Claude Code (satu blok, tempel saja)
 
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory berjalan di Windows 10/11. WSL2 mengikuti jalur Linux dan dapat memasang engine yang dipatok secara otomatis. Pada Windows native, pasang biner iii-engine v0.25.1 yang dipatok secara manual: unduh arsip yang sesuai dari [halaman rilis iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifikasi checksum, lalu letakkan `iii.exe` di `PATH` (misalnya `%USERPROFILE%\.local\bin\iii.exe`). CLI tidak mengekstrak ZIP Windows secara otomatis.
+agentmemory berjalan di Windows 10/11. WSL2 mengikuti jalur Linux dan dapat memasang engine yang dipatok secara otomatis. Pada Windows native, pasang biner iii-engine v0.26.0 yang dipatok secara manual: unduh arsip yang sesuai dari [halaman rilis iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verifikasi checksum, lalu letakkan `iii.exe` di `PATH` (misalnya `%USERPROFILE%\.local\bin\iii.exe`). CLI tidak mengekstrak ZIP Windows secara otomatis.
 
 Wiring MCP otomatis di Windows native hanya mendukung `agentmemory connect copilot-cli`. Untuk agen Windows native lainnya, gunakan blok MCP manual dari [Agen lainnya](#other-agents). Jalankan `connect` di WSL hanya jika agen target juga dipasang di lingkungan WSL yang sama.
 
@@ -668,7 +668,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Jalankan `agentmemory doctor` atau restart dengan `--verbose`. Jika port default terpakai, gunakan `--port <N>` atau `--instance <N>`. Lihat [panduan upgrade](../docs/upgrades/iii-0.25.md) untuk kompatibilitas dan pemulihan.
+Jalankan `agentmemory doctor` atau restart dengan `--verbose`. Jika port default terpakai, gunakan `--port <N>` atau `--instance <N>`. Lihat [panduan upgrade](../docs/upgrades/iii-0.26.md) untuk kompatibilitas dan pemulihan.
 
 ---
 

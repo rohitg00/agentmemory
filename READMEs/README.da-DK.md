@@ -431,7 +431,7 @@ Brug vedligeholdelseskommandoen, når du bevidst vil opdatere din lokale runtime
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Kommandoen opdaterer den lokale runtime og kan opdatere JavaScript-afhængigheder i det aktuelle workspace. Tag en backup, og læs [opgraderingsvejledningen](../docs/upgrades/iii-0.25.md), før du fortsætter.
+Kommandoen opdaterer den lokale runtime og kan opdatere JavaScript-afhængigheder i det aktuelle workspace. Tag en backup, og læs [opgraderingsvejledningen](../docs/upgrades/iii-0.26.md), før du fortsætter.
 
 ### Claude Code (én blok, indsæt den)
 
@@ -655,7 +655,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory kører på Windows 10/11. WSL2 følger Linux-vejen og kan installere den fastlåste engine automatisk. Native Windows kræver, at den fastlåste iii-engine v0.25.1-binary installeres manuelt; download det tilsvarende arkiv fra [iii v0.25.1-udgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verificér checksum, og placér `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI’en pakker ikke Windows-ZIP’en ud automatisk.
+agentmemory kører på Windows 10/11. WSL2 følger Linux-vejen og kan installere den fastlåste engine automatisk. Native Windows kræver, at den fastlåste iii-engine v0.26.0-binary installeres manuelt; download det tilsvarende arkiv fra [iii v0.26.0-udgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verificér checksum, og placér `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI’en pakker ikke Windows-ZIP’en ud automatisk.
 
 Automatisk MCP-opsætning på native Windows understøtter kun `agentmemory connect copilot-cli`. Brug den manuelle MCP-blok fra [Andre agenter](#other-agents) til andre native Windows-agenter. Kør kun `connect` i WSL, hvis målagenten er installeret i samme WSL-miljø.
 
@@ -667,7 +667,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Kør `agentmemory doctor`, eller genstart med `--verbose`. Brug `--port <N>` eller `--instance <N>`, hvis portene er optaget. Se [opgraderingsvejledningen](../docs/upgrades/iii-0.25.md) for kompatibilitet og gendannelse.
+Kør `agentmemory doctor`, eller genstart med `--verbose`. Brug `--port <N>` eller `--instance <N>`, hvis portene er optaget. Se [opgraderingsvejledningen](../docs/upgrades/iii-0.26.md) for kompatibilitet og gendannelse.
 
 ---
 

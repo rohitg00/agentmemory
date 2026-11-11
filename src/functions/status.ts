@@ -92,7 +92,7 @@ export interface StatusInputs {
 }
 
 export interface StatusRuntimeInfo {
-  bindings: { state: string; http: string; observers: number; failedObservers?: number; routesViaTrigger: number; reasons: string[] };
+  bindings: { state: string; http: string; pipeline?: string; observers: number; failedObservers?: number; reasons: string[] };
   duplicateWorkers: { count: number; workerIds: string[] } | null;
   stateWorker: { ready: boolean; waitedMs: number; lastReturnAt?: string };
 }

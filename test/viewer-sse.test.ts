@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { registerViewerSse } from "../src/triggers/viewer-sse.js";
+import { recordObservers } from "./helpers/mocks.js";
 
 const viewerSource = readFileSync("src/viewer/index.html", "utf8");
 function extractFunction(name: string): string {
@@ -16,13 +17,12 @@ function extractFunction(name: string): string {
 describe("viewer SSE endpoint", () => {
   it("registers the authenticated GET route and streams with the required headers", async () => {
     const functions = new Map<string, (req: any) => Promise<any>>();
-    const triggers: any[] = [];
-    const sdk = { registerFunction: (id: string, fn: any) => functions.set(id, fn), registerTrigger: (trigger: any) => triggers.push(trigger) };
+    const bound = recordObservers();
+    const sdk = { registerFunction: (id: string, fn: any) => functions.set(id, fn), observe: bound.observe };
     registerViewerSse(sdk as never);
-    expect(triggers).toContainEqual(expect.objectContaining({
-      type: "http", function_id: "api::viewer-events",
-      config: expect.objectContaining({ api_path: "/agentmemory/viewer/events", http_method: "GET", middleware_function_ids: ["middleware::api-auth"] }),
-    }));
+    expect(bound.routes).toContainEqual({
+      function_id: "api::viewer-events", method: "GET", path: "/agentmemory/viewer/events", middleware_function_ids: ["middleware::api-auth"],
+    });
     const parts: string[] = [];
     const emitted: any[] = [];
     const response = { sendMessage: (raw: string) => { const message = JSON.parse(raw); emitted.push(message.type === "set_status" ? ["status", message.status_code] : ["headers", message.headers]); }, stream: { write: (s: string) => parts.push(s), once(event: string, cb: () => void) { if (event === "close") queueMicrotask(cb); }, off() {}, writableLength: 0, destroyed: false }, close() {} };

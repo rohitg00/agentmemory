@@ -9,6 +9,7 @@ import { getSearchIndex, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRe
 import { memoryToObservation, observationEmbedText } from "../state/memory-utils.js";
 import { singleFlight } from "../runtime/recovery.js";
 import { logger } from "../logger.js";
+import { registerObserverTarget } from "../runtime/observed.js";
 
 const FAILURE_OPS: Record<string, AuditEntry["operation"]> = {
   "mem::compress": "compress-failed",
@@ -187,11 +188,11 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
       if (pendingDeletes.size > 0 || pendingSessions.size > 0) scheduleDeleteFlush();
     }
   });
-  sdk.registerFunction("mem::record-failure", async (envelope: Record<string, unknown>) => {
-    const meta = envelope.metadata as { function_id?: string; source_fn?: string; observer_id?: string } | undefined;
-    const observerId = (envelope.observer_id ?? meta?.observer_id ?? envelope.observer) as string | undefined;
+  sdk.registerFunction("mem::record-failure", async (envelope: Record<string, unknown>, metadata?: unknown) => {
+    const sourceFn = (metadata as { source_fn?: unknown } | undefined)?.source_fn;
+    const observerId = envelope.observer_id;
     const fromObserverId = typeof observerId === "string" ? /agentmemory:pipeline:failure:(mem::[a-z-]+):(?:error|soft)/.exec(observerId)?.[1] : undefined;
-    const functionId = meta?.source_fn ?? meta?.function_id ?? fromObserverId ?? (envelope.caller as { function_id?: string } | undefined)?.function_id ?? "unknown";
+    const functionId = (typeof sourceFn === "string" ? sourceFn : undefined) ?? fromObserverId ?? "unknown";
     const code = failureCode(envelope);
     const retryable = isRetryable(code, envelope);
     const now = Date.now();
@@ -213,13 +214,13 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
       code,
       message: String(errMsg).slice(0, 300),
       retryable,
-      durationMs: (envelope.metadata as { duration_ms?: number } | undefined)?.duration_ms,
+      durationMs: typeof envelope.duration_ms === "number" ? envelope.duration_ms : undefined,
       dedupedCount,
     });
     return { recorded: true, code, retryable };
   });
 
-  sdk.registerFunction("mem::on-record-deleted", (event: Record<string, unknown>) => {
+  registerObserverTarget(sdk, "mem::on-record-deleted", "input", (event: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const scope = String(event.scope ?? "");
     const id = String(event.key ?? "");
     if (!id) return Promise.resolve({ skipped: "no_key" });
@@ -231,7 +232,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     return Promise.resolve({ removed: id, queued: true });
   });
 
-  sdk.registerFunction("event::graph::edge-reaction", async (event: Record<string, unknown>) => {
+  registerObserverTarget(sdk, "event::graph::edge-reaction", "input", async (event: Record<string, unknown>) => {
     const rel = (event.event_type === "state:deleted" ? event.old_value : event.new_value) as MemoryRelation | undefined;
     if (!rel || typeof rel.targetId !== "string") return { skipped: "no_relation" };
     const relationId = String(event.key ?? `${rel.sourceId}->${rel.targetId}:${rel.type}`);

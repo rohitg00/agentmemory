@@ -434,7 +434,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-ローカルランタイムを更新し、作業ディレクトリ内の JavaScript 依存関係も更新する場合があります。データをバックアップし、実行前に[アップグレードガイド](../docs/upgrades/iii-0.25.md)を読んでください。
+ローカルランタイムを更新し、作業ディレクトリ内の JavaScript 依存関係も更新する場合があります。データをバックアップし、実行前に[アップグレードガイド](../docs/upgrades/iii-0.26.md)を読んでください。
 
 ### Claude Code(1 ブロックそのまま貼り付け)
 
@@ -656,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory は Windows 10/11 で動作します。WSL2 は Linux の経路に従い、ピン留めされたエンジンを自動インストールできます。ネイティブ Windows では、ピン留めされた iii-engine v0.25.1 バイナリを手動でインストールしてください。[iii v0.25.1 リリースページ](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1)から該当アーカイブをダウンロードして checksum を確認し、`iii.exe` を `PATH` に配置します(例: `%USERPROFILE%\.local\bin\iii.exe`)。CLI は Windows ZIP を自動展開しません。
+agentmemory は Windows 10/11 で動作します。WSL2 は Linux の経路に従い、ピン留めされたエンジンを自動インストールできます。ネイティブ Windows では、ピン留めされた iii-engine v0.26.0 バイナリを手動でインストールしてください。[iii v0.26.0 リリースページ](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0)から該当アーカイブをダウンロードして checksum を確認し、`iii.exe` を `PATH` に配置します(例: `%USERPROFILE%\.local\bin\iii.exe`)。CLI は Windows ZIP を自動展開しません。
 
 ネイティブ Windows の自動 MCP 接続は `agentmemory connect copilot-cli` のみをサポートします。それ以外のネイティブ Windows エージェントには[その他のエージェント](#other-agents)の手動 MCP ブロックを使用してください。`connect` を WSL 内で実行するのは、対象エージェントも同じ WSL 環境にインストールされている場合に限ります。
 
@@ -668,7 +668,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-`agentmemory doctor` を実行するか、`--verbose` を付けて再起動してください。ポートが使用中なら `--port <N>` または `--instance <N>` を指定します。互換性と復旧は[アップグレードガイド](../docs/upgrades/iii-0.25.md)を参照してください。
+`agentmemory doctor` を実行するか、`--verbose` を付けて再起動してください。ポートが使用中なら `--port <N>` または `--instance <N>` を指定します。互換性と復旧は[アップグレードガイド](../docs/upgrades/iii-0.26.md)を参照してください。
 
 ---
 

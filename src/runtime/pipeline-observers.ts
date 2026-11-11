@@ -1,8 +1,13 @@
-import type { IIIClient } from "iii-sdk";
+import type { Capture, IIIClient } from "iii-sdk";
 import { getBindings } from "./bindings.js";
 import { KV } from "../state/schema.js";
 import { compressMaxConcurrent, isAutoCompressEnabled, isGraphExtractionEnabled } from "../config.js";
 import { isReflectEnabled } from "../functions/slots.js";
+
+const FAILURE_OBSERVERS: Array<{ suffix: string; filters: Record<string, unknown>; capture: Capture[] }> = [
+  { suffix: "error", filters: { error: { $exists: true } }, capture: ["input", "error"] },
+  { suffix: "soft", filters: { "output.success": { $eq: false } }, capture: ["input", "output"] },
+];
 
 export function registerPipelineObservers(sdk: IIIClient): void {
   const bindings = getBindings(sdk);
@@ -12,27 +17,30 @@ export function registerPipelineObservers(sdk: IIIClient): void {
         function_id: "mem::observe",
         filters: { "output.observationId": { $exists: true }, "output.deduplicated": { $ne: true } },
         capture: ["output"],
-        deliver: "output",
       },
       "mem::compress",
       { id: "agentmemory:pipeline:compress-on-capture", max_in_flight: compressMaxConcurrent() },
     );
   }
-  const sessionFilters = { "output.unchanged": { $ne: true } };
+  const sessionStopped = (filters: Record<string, unknown> = {}) => ({
+    function_id: "event::session::stopped",
+    filters: { "output.unchanged": { $ne: true }, ...filters },
+    capture: ["input", "output"] as Capture[],
+  });
   bindings.observePipeline(
-    { function_id: "event::session::stopped", filters: sessionFilters, capture: ["input", "output"], deliver: "input" },
+    sessionStopped(),
     "mem::post-session-graph",
     { id: "agentmemory:pipeline:post-session-graph", max_in_flight: 1 },
   );
   if (isReflectEnabled()) {
     bindings.observePipeline(
-      { function_id: "event::session::stopped", filters: sessionFilters, capture: ["input", "output"], deliver: "input" },
+      sessionStopped(),
       "mem::post-session-reflect",
       { id: "agentmemory:pipeline:post-session-reflect", max_in_flight: 1 },
     );
   }
   bindings.observePipeline(
-    { function_id: "event::session::stopped", filters: { ...sessionFilters, "input.skipConsolidation": { $ne: true } }, capture: ["input", "output"], deliver: "input" },
+    sessionStopped({ "input.skipConsolidation": { $ne: true } }),
     "mem::post-session-consolidate",
     { id: "agentmemory:pipeline:post-session-consolidate", max_in_flight: 1 },
   );
@@ -44,16 +52,13 @@ export function registerPipelineObservers(sdk: IIIClient): void {
     );
   }
   for (const fn of ["mem::compress", "mem::summarize", "mem::graph-extract", "mem::consolidate-pipeline", "mem::reflect", "mem::skill-extract"]) {
-    bindings.observePipeline(
-      { function_id: fn, on: "error", capture: ["input", "output", "error"], deliver: "envelope" },
-      "mem::record-failure",
-      { id: `agentmemory:pipeline:failure:${fn}:error`, max_in_flight: 4, metadata: { source_fn: fn } },
-    );
-    bindings.observePipeline(
-      { function_id: fn, on: "success", filters: { "output.success": { $eq: false } }, capture: ["input", "output", "error"], deliver: "envelope" },
-      "mem::record-failure",
-      { id: `agentmemory:pipeline:failure:${fn}:soft`, max_in_flight: 4, metadata: { source_fn: fn } },
-    );
+    for (const failure of FAILURE_OBSERVERS) {
+      bindings.observePipeline(
+        { function_id: fn, filters: failure.filters, capture: failure.capture },
+        "mem::record-failure",
+        { id: `agentmemory:pipeline:failure:${fn}:${failure.suffix}`, max_in_flight: 4, metadata: { source_fn: fn } },
+      );
+    }
   }
   bindings.observeStateChanges(
     {

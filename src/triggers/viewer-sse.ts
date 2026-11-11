@@ -19,7 +19,6 @@ export function registerViewerSse(sdk: IIIClient): void {
     }),
   );
   getBindings(sdk).http({
-    type: "http",
     function_id: "api::viewer-events",
     config: {
       api_path: "/agentmemory/viewer/events",

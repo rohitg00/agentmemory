@@ -17,8 +17,8 @@ export interface StateBackendOptions {
 
 /** Registry versions are pinned here so every generated project uses one reviewed set. */
 export const COMPOSE_WORKER_VERSIONS = {
-  state: "0.22.22",
-  http: "0.22.8",
+  state: "0.23.1",
+  http: "0.23.2",
 } as const;
 
 export const COMPOSE_STOP_TIMEOUT_SECONDS = 20;
