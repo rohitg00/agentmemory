@@ -155,14 +155,20 @@ describe("shellArg", () => {
     expect(shellArg("/tmp/$HOME", "linux")).toBe("'/tmp/$HOME'");
   });
 
-  it("single-quotes Windows paths for PowerShell so apostrophes and dollar signs stay literal", () => {
-    expect(shellArg("C:\\Users\\O'Reilly\\my data", "win32")).toBe(`'C:\\Users\\O''Reilly\\my data'`);
+  it("double-quotes Windows paths so Command Prompt and PowerShell keep spaces and metacharacters literal", () => {
+    expect(shellArg("C:\\my data", "win32")).toBe(`"C:\\my data"`);
+    expect(shellArg("C:\\Users\\O'Reilly\\a & calc & rem", "win32")).toBe(`"C:\\Users\\O'Reilly\\a & calc & rem"`);
+  });
+
+  it("single-quotes Windows paths with dollar signs so PowerShell keeps them literal", () => {
     expect(shellArg("C:\\data\\$archive", "win32")).toBe(`'C:\\data\\$archive'`);
+    expect(shellArg("C:\\O'Reilly\\$x", "win32")).toBe(`'C:\\O''Reilly\\$x'`);
   });
 
   it("drops trailing Windows separators so no backslash precedes a closing quote", () => {
-    expect(shellArg("C:\\my data\\", "win32")).toBe(`'C:\\my data'`);
+    expect(shellArg("C:\\my data\\", "win32")).toBe(`"C:\\my data"`);
     expect(shellArg("C:\\data\\", "win32")).toBe("C:\\data");
     expect(shellArg("C:\\", "win32")).toBe("C:\\");
+    expect(shellArg("C:/", "win32")).toBe("C:/");
   });
 });
