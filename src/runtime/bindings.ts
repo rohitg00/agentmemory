@@ -51,6 +51,7 @@ export class Bindings {
   private readonly reasons = new Set<string>();
   private readonly inline: boolean;
   private failedObserverCount = 0;
+  private readonly boundWatchers = new Set<(entry: { handle: ObserverHandle; kind: BindingKind }) => void>();
 
   constructor(sdk: SdkLike) {
     this.sdk = sdk;
@@ -106,6 +107,7 @@ export class Bindings {
     const handle = this.sdk.observe(source, target, options);
     const entry = { handle, kind, target };
     this.bound.push(entry);
+    for (const watch of this.boundWatchers) watch(entry);
     void handle.ready().catch((err: unknown) => {
       const code = (err as { code?: string })?.code ?? String(err);
       if (code === "OBSERVER_ID_CONFLICT" && attempt < ID_CONFLICT_RETRY_DELAYS_MS.length) {
@@ -187,17 +189,24 @@ export class Bindings {
     if (settled()) return Promise.resolve(this.modes);
     return new Promise((resolve) => {
       const unsubscribes: Array<() => void> = [];
+      let done = false;
       const finish = () => {
+        if (done) return;
+        done = true;
         clearTimeout(timer);
         for (const unsubscribe of unsubscribes) unsubscribe();
         resolve(this.modes);
       };
       const timer = setTimeout(finish, timeoutMs);
       timer.unref?.();
-      for (const { handle, kind } of this.bound) {
-        if (kind === "pipeline") continue;
+      const watch = ({ handle, kind }: { handle: ObserverHandle; kind: BindingKind }) => {
+        if (done || kind === "pipeline") return;
         unsubscribes.push(handle.onStateChange(() => { if (settled()) finish(); }));
-      }
+        if (settled()) finish();
+      };
+      this.boundWatchers.add(watch);
+      unsubscribes.push(() => this.boundWatchers.delete(watch));
+      for (const entry of this.bound) watch(entry);
     });
   }
 

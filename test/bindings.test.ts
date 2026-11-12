@@ -168,6 +168,31 @@ describe("Bindings", () => {
     }
   });
 
+  it("activate resolves when a retried route observer becomes active", async () => {
+    vi.useFakeTimers();
+    try {
+      const sdk = fakeSdk("active");
+      let first = true;
+      sdk.observe.mockImplementation((source: Record<string, unknown>, target: string, options?: Record<string, unknown>) => {
+        sdk.observed.push({ source, target, options });
+        const handle = makeHandle(first ? "pending" : "active");
+        if (first) handle.ready.mockImplementation(() => Promise.reject(Object.assign(new Error("conflict"), { code: "OBSERVER_ID_CONFLICT" })));
+        first = false;
+        sdk.handles.push(handle);
+        return handle;
+      });
+      const b = new Bindings(sdk as never);
+      b.http(ROUTE);
+      let modes: unknown = null;
+      void b.activate().then((m) => { modes = m; });
+      sdk.handles[0].become("error");
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(modes).toEqual({ state: "pending", http: "observe" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reports a route as rejected after the id conflict retries run out", async () => {
     vi.useFakeTimers();
     try {
