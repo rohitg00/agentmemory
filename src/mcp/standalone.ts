@@ -348,7 +348,8 @@ async function liveLocalMemories(kvInstance: InMemoryKV, now = Date.now()): Prom
     });
   }
   kvInstance.persist();
-  return memories.filter((memory) => !expired.includes(memory));
+  const expiredSet = new Set(expired);
+  return memories.filter((memory) => !expiredSet.has(memory));
 }
 
 async function handleLocal(
