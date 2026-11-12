@@ -1,8 +1,8 @@
-import { platform } from "node:os";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { writeGuideline } from "./guidelines.js";
+import { mcpOnlyCaptureNotice } from "./capture-notice.js";
 import { adapter as antigravity } from "./antigravity.js";
 import { adapter as antigravityCli } from "./antigravity-cli.js";
 import { adapter as claudeCode } from "./claude-code.js";
@@ -129,6 +129,8 @@ export async function runAdapter(
         );
       }
     }
+    const captureNotice = mcpOnlyCaptureNotice(adapter, opts, result);
+    if (captureNotice) p.log.warn(captureNotice);
     return result;
   } catch (err) {
     p.log.error(
@@ -141,17 +143,6 @@ export async function runAdapter(
 export async function runConnect(args: string[]): Promise<void> {
   const { dryRun, force, all, withHooks, withMcp, guidelines, positional } =
     parseFlags(args);
-  const allowWindowsAdapter =
-    positional.length === 1 && positional[0]?.toLowerCase() === "copilot-cli";
-  if (platform() === "win32" && !allowWindowsAdapter) {
-    p.intro("agentmemory connect");
-    p.log.warn(
-      "Windows: automated `connect` is not supported yet. See https://github.com/rohitg00/agentmemory#other-agents for manual install steps.",
-    );
-    p.outro("Windows: manual install required — see docs");
-    return;
-  }
-
   const opts: ConnectOptions = { dryRun, force, withHooks, withMcp, guidelines };
 
   p.intro("agentmemory connect");

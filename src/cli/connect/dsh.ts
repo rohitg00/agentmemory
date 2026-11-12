@@ -4,7 +4,9 @@ import * as p from "@clack/prompts";
 import { isMap, isSeq, parseDocument, type YAMLMap } from "yaml";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
+  AGENTMEMORY_MCP_BLOCK,
   backupFile,
+  isLegacyMcpCommand,
   resolveDshHome,
   logAlreadyWired,
   logBackup,
@@ -20,8 +22,8 @@ const MCP_BLOCK = `- insert:
       config:
         transport: stdio
         serverName: agentmemory
-        command: npx
-        args: ['-y', '@agentmemory/mcp']
+        command: ${AGENTMEMORY_MCP_BLOCK.command}
+        args: [${AGENTMEMORY_MCP_BLOCK.args.map((arg) => `'${arg}'`).join(", ")}]
         env:
           AGENTMEMORY_URL: !!js process.env.AGENTMEMORY_URL || 'http://localhost:3111'
           AGENTMEMORY_SECRET: !!js process.env.AGENTMEMORY_SECRET || ''
@@ -59,6 +61,38 @@ function managedEntries(content: string, marker: string): YAMLMap[] {
     const entries = isMap(operation) ? operation.get("insert", true) : null;
     return isSeq(entries) ? entries.items.filter((entry) => isManaged(entry, marker)) : [];
   });
+}
+
+function isLegacyEntry(entry: YAMLMap): boolean {
+  const args = entry.getIn(["config", "args"]);
+  return isLegacyMcpCommand(entry.getIn(["config", "command"]), isSeq(args) ? args.toJSON() : args);
+}
+
+function migrateLegacyCommand(content: string): string {
+  const { doc, operations } = parsePatch(content);
+  let kept = false;
+  for (let i = 0; i < operations.items.length; i++) {
+    const operation = operations.items[i];
+    const entries = isMap(operation) ? operation.get("insert", true) : null;
+    if (!isSeq(entries)) continue;
+    let removed = false;
+    for (let j = 0; j < entries.items.length; j++) {
+      const entry = entries.items[j];
+      if (!isManaged(entry, MCP_MARKER) || !isLegacyEntry(entry)) continue;
+      if (kept) {
+        entries.delete(j--);
+        removed = true;
+        continue;
+      }
+      kept = true;
+      const args = doc.createNode([...AGENTMEMORY_MCP_BLOCK.args]);
+      args.flow = true;
+      entry.setIn(["config", "command"], AGENTMEMORY_MCP_BLOCK.command);
+      entry.setIn(["config", "args"], args);
+    }
+    if (removed && entries.items.length === 0) operations.delete(i--);
+  }
+  return doc.toString();
 }
 
 function hasBlock(content: string, marker: string): boolean {
@@ -100,6 +134,7 @@ export const adapter: ConnectAdapter = {
   protocolNote:
     "→ Using MCP via $DSH_HOME/cordis.patch.yml (the home-level patch layer every profile loads). Tools appear as mcp__agentmemory__*. Pass --with-hooks to also wire auto-capture with the bundled native DSH plugin.",
   category: "native",
+  autoCapture: "with-hooks",
   detect(): boolean {
     return existsSync(resolveDshHome());
   },
@@ -111,10 +146,17 @@ export const adapter: ConnectAdapter = {
       : "";
 
     const wantHooks = opts.withHooks === true;
-    const hasMcp = hasBlock(existing, MCP_MARKER);
+    const mcpEntries = managedEntries(existing, MCP_MARKER);
+    const legacyMcp = mcpEntries.some(isLegacyEntry);
+    const hasMcp = mcpEntries.length > 0 && !legacyMcp;
     const hooks = managedEntries(existing, HOOKS_MARKER);
     const pluginPath = wantHooks ? join(dirname(findPluginRoot()), "dist", "integrations", "dsh.mjs") : "";
     const hooksReady = hooks.length === 1 && hooks[0].get("name") === pluginPath && existsSync(pluginPath);
+    const hooksUsable = hooks.some((entry) => {
+      const name = String(entry.get("name"));
+      return name !== "@deepseek-ai/dsh-hooks-claude-code" && existsSync(name);
+    });
+    const hookState = wantHooks || hooksUsable ? { hooks: "installed" as const } : {};
 
     if (wantHooks && !opts.force && hooks.some(entry => entry.get("name") === "@deepseek-ai/dsh-hooks-claude-code")) {
       throw new Error("Legacy DSH hooks bridge found. Run agentmemory connect dsh --with-hooks --force to replace it with the bundled native plugin. Existing manifest files will be preserved.");
@@ -122,14 +164,14 @@ export const adapter: ConnectAdapter = {
 
     if (hasMcp && (!wantHooks || hooksReady) && !opts.force) {
       logAlreadyWired(this.displayName, configPath);
-      return { kind: "already-wired", mutatedPath: configPath };
+      return { kind: "already-wired", mutatedPath: configPath, ...hookState };
     }
 
     if (opts.dryRun) {
       p.log.info(
         `[dry-run] Would update the agentmemory mcp-client row${wantHooks ? " and the bundled capture plugin" : ""} in ${configPath}`,
       );
-      return { kind: "installed", mutatedPath: configPath };
+      return { kind: "installed", mutatedPath: configPath, ...hookState };
     }
 
     if (wantHooks && !existsSync(pluginPath)) {
@@ -144,7 +186,9 @@ export const adapter: ConnectAdapter = {
       mkdirSync(dirname(configPath), { recursive: true });
     }
 
-    let next = hasMcp && !opts.force ? existing : upsertBlock(existing, MCP_MARKER, MCP_BLOCK);
+    let next = existing;
+    if (opts.force || mcpEntries.length === 0) next = upsertBlock(existing, MCP_MARKER, MCP_BLOCK);
+    else if (legacyMcp) next = migrateLegacyCommand(existing);
 
     if (wantHooks && (!hooksReady || opts.force)) {
       next = upsertBlock(next, HOOKS_MARKER, hooksBlock(pluginPath));
@@ -161,6 +205,6 @@ export const adapter: ConnectAdapter = {
     }
 
     logInstalled(this.displayName, configPath);
-    return { kind: "installed", mutatedPath: configPath, backupPath };
+    return { kind: "installed", mutatedPath: configPath, backupPath, ...hookState };
   },
 };
