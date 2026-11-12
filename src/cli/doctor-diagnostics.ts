@@ -24,6 +24,7 @@ import {
   llmOptInHint,
   parseEnvContent,
 } from "../config.js";
+import { DEFAULT_START_COMMAND, ENGINE_ONLY_DOCKER_GUIDE, engineOnlyFix, UNRECOGNIZED_DOCKER_NOTE, UNRECOGNIZED_SERVICE_FIX, type WorkerConnection } from "./worker-connection.js";
 
 export type DiagnosticStatus = {
   ok: boolean;
@@ -50,7 +51,11 @@ export type DoctorContext = {
   enginePath: string;
   /** Pinned engine version. */
   pinnedVersion: string;
+  startCommand?: string;
+  targetArgs?: string;
 };
+
+export type DoctorWorkerConnection = WorkerConnection | "managed-worker-down";
 
 export type Diagnostic = {
   /** Stable id. Used in --json and tests. */
@@ -73,6 +78,13 @@ export function canAutoFix(d: Diagnostic, status?: DiagnosticStatus): boolean {
   return !d.manualOnly && !status?.manualFix;
 }
 
+export function failureReport(d: Diagnostic, status: DiagnosticStatus): { problem: string; fix: string } {
+  return {
+    problem: `${d.id} ✗ ${d.message}${status.detail ? ` (${status.detail})` : ""}`,
+    fix: `${canAutoFix(d, status) ? "fix" : "manual fix"}: ${status.manualFix ?? d.fixPreview}`,
+  };
+}
+
 export function doctorPromptsAllowed(
   env: NodeJS.ProcessEnv,
   stdinIsTTY: boolean | undefined,
@@ -87,6 +99,7 @@ export const DIAGNOSTIC_IDS = [
   "no-llm-provider-key",
   "embedding-provider-not-chosen",
   "engine-version-mismatch",
+  "worker-not-connected",
   "viewer-unreachable",
   "stale-pidfile",
   "env-placeholder-keys",
@@ -143,6 +156,7 @@ export type DoctorEffects = {
   /** Run `iii --version`; null if it fails. */
   iiiBinaryVersion: (binPath: string) => string | null;
   externalEngineRunning: () => Promise<boolean>;
+  workerConnection: () => Promise<DoctorWorkerConnection>;
   /** Probe the viewer URL; true if it returns OK within timeoutMs. */
   viewerReachable: (timeoutMs?: number) => Promise<boolean>;
   /** Run init logic (copies .env.example). */
@@ -290,6 +304,47 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
       },
     },
     {
+      id: "worker-not-connected",
+      message: "The server answers, but the agentmemory worker routes return 404.",
+      fixPreview: engineOnlyFix(),
+      moreInfo:
+        "The REST port answers, but /agentmemory/livez and /agentmemory/health return 404. " +
+        "Only the agentmemory worker registers those routes, so the engine runs alone: status shows " +
+        "no version and no health, and the viewer is not served. Old Docker images from the legacy " +
+        "CLI Docker mode ran only the engine. Migration guide: " +
+        ENGINE_ONLY_DOCKER_GUIDE,
+      manualOnly: true,
+      check: async (ctx) => {
+        const connection = await effects.workerConnection();
+        const startCommand = ctx.startCommand ?? DEFAULT_START_COMMAND;
+        const targetArgs = ctx.targetArgs ?? "";
+        if (connection === "engine-only") {
+          return {
+            ok: false,
+            detail: `engine at ${ctx.baseUrl} has no agentmemory routes (404)`,
+            manualFix: engineOnlyFix(startCommand),
+          };
+        }
+        if (connection === "managed-worker-down") {
+          return {
+            ok: false,
+            detail: `managed Worker Compose engine at ${ctx.baseUrl} has no agentmemory routes (404)`,
+            manualFix: `Run agentmemory status${targetArgs} to see the Worker Compose failure report, then run agentmemory stop${targetArgs} and start again with: ${startCommand}.`,
+          };
+        }
+        if (connection === "unrecognized") {
+          return {
+            ok: false,
+            detail: `server at ${ctx.baseUrl} returns 404 for the agentmemory routes and the iii engine port does not answer`,
+            manualFix: `${UNRECOGNIZED_SERVICE_FIX} ${UNRECOGNIZED_DOCKER_NOTE}`,
+          };
+        }
+        if (connection === "unreachable") return { ok: true, detail: "server not reachable (see Server reachable)" };
+        return { ok: true };
+      },
+      fix: async (ctx) => ({ ok: false, message: engineOnlyFix(ctx.startCommand) }),
+    },
+    {
       id: "viewer-unreachable",
       message: "Viewer port not reachable.",
       fixPreview: "Stop the engine, restart it, and retry the viewer probe.",
@@ -357,14 +412,16 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
     {
       id: "iii-on-path-not-local-bin",
       message:
-        "iii is on PATH but agentmemory's private install is absent or mismatched.",
+        "agentmemory's own iii at ~/.agentmemory/bin/iii is missing or a different version, and another iii is on your PATH.",
       fixPreview:
-        "Install the pinned version to ~/.agentmemory/bin — won't touch your PATH.",
+        "Run npx -y @agentmemory/agentmemory@latest. It installs the pinned iii to ~/.agentmemory/bin/iii and does not change your PATH or the other iii.",
       moreInfo:
-        "agentmemory installs its pinned engine to ~/.agentmemory/bin/iii so a " +
+        "agentmemory keeps its pinned engine at ~/.agentmemory/bin/iii so a " +
         "user-managed iii on PATH (homebrew, cargo, manual install) stays untouched. " +
-        "When agentmemory needs the pin and PATH doesn't have it, it falls back to the " +
-        "private install. If neither exists, run the installer.",
+        "When that copy is missing or has a different version, startup uses the iii on PATH " +
+        "if it matches the pin. If the PATH iii has a different version, startup installs the " +
+        "pinned copy into ~/.agentmemory/bin first. The engine-version-mismatch check shows " +
+        "which version each binary reports.",
       manualOnly: true,
       check: async (ctx) => {
         const bin = effects.findIiiBinary();
@@ -378,7 +435,17 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
             detail: `private install pinned; PATH iii at ${bin} stays untouched`,
           };
         }
-        return { ok: false, detail: `iii at: ${bin}` };
+        const pathVersion = effects.iiiBinaryVersion(bin);
+        const detail = `PATH iii at ${bin} is ${pathVersion ?? "an unknown version"} (pinned ${ctx.pinnedVersion})`;
+        if (pathVersion === ctx.pinnedVersion) {
+          return {
+            ok: false,
+            detail,
+            manualFix:
+              "The PATH iii is the pinned version, so startup can use it and no action is needed. To give agentmemory its own copy in ~/.agentmemory/bin, run npx -y @agentmemory/agentmemory@latest upgrade and accept the iii-engine install step.",
+          };
+        }
+        return { ok: false, detail };
       },
       fix: async () =>
         effects.runIiiInstaller().then((r) => ({

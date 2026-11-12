@@ -43,6 +43,7 @@ import {
   canAutoFix,
   doctorPromptsAllowed,
   dryRunPlan,
+  failureReport,
   parseEnvFile,
   type Diagnostic,
   type DiagnosticFixResult,
@@ -104,6 +105,7 @@ import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
 import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
+import { DEFAULT_START_COMMAND, engineOnlyLines, probeWorkerConnection, shellArg, tcpPortOpen, unrecognizedServiceLines, type WorkerConnection } from "./cli/worker-connection.js";
 import { NO_HOOK_CAPTURE, hookCaptureMissing } from "./functions/status.js";
 import type { CaptureStatus } from "./functions/capture.js";
 
@@ -1842,6 +1844,61 @@ async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 500
   }
 }
 
+function recoveryTargetArgs(): string {
+  const parts: string[] = [];
+  if (hasInstanceArgument) parts.push(`--instance ${selectedInstance}`);
+  if (portValue || (!hasInstanceArgument && getRestPort() !== 3111)) parts.push(`--port ${getRestPort()}`);
+  const dataDir = cliArgValue("--data-dir");
+  if (dataDir) parts.push(`--data-dir ${shellArg(dataDir)}`);
+  return parts.map((part) => ` ${part}`).join("");
+}
+
+function recoveryStartCommand(): string {
+  return `${DEFAULT_START_COMMAND}${recoveryTargetArgs()}`;
+}
+
+function workerEnginePort(): number {
+  const workerUrl = process.env["III_URL"];
+  if (!process.env["III_ENGINE_URL"] && workerUrl) {
+    try {
+      const parsed = new URL(workerUrl).port;
+      if (parsed) return parseInt(parsed, 10);
+    } catch {}
+  }
+  return getEnginePort();
+}
+
+function probeTargetWorker(base: string): Promise<WorkerConnection> {
+  return probeWorkerConnection(base, {
+    headers: bearerHeaders(base),
+    engineBusReachable: async () => tcpPortOpen(new URL(base).hostname.replace(/^\[|\]$/g, ""), workerEnginePort()),
+  });
+}
+
+async function savedComposeFailure(state: ComposeEngineState): Promise<string | null> {
+  if (!state.composePid || !pidAlive(state.composePid)) return null;
+  try {
+    const composeStatus = await composeCall<ComposeStatus>({
+      engineUrl: state.engineUrl,
+      namespace: state.namespace,
+      functionId: "compose::status",
+      file: state.file,
+    });
+    return composeWorkerFailureSummary(ownedComposeProject(composeStatus, state.file));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    p.log.warn(`Worker Compose status unavailable: ${message}`);
+    return null;
+  }
+}
+
+function exitWithComposeFailure(state: ComposeEngineState, failure: string, unavailable: string): never {
+  p.log.error(`Worker Compose failed after exhausting restart attempts; ${unavailable}.`);
+  p.log.error(failure);
+  p.log.info(`Inspect ${state.logFile}, then run agentmemory stop before retrying.`);
+  process.exit(1);
+}
+
 async function runStatus() {
   const base = getBaseUrl();
   p.intro("agentmemory status");
@@ -1854,29 +1911,26 @@ async function runStatus() {
 
   const up = await isEngineRunning();
   if (!up) {
-    if (savedState?.kind === "compose" && savedState.composePid && pidAlive(savedState.composePid)) {
-      try {
-        const composeStatus = await composeCall<ComposeStatus>({
-          engineUrl: savedState.engineUrl,
-          namespace: savedState.namespace,
-          functionId: "compose::status",
-          file: savedState.file,
-        });
-        const project = ownedComposeProject(composeStatus, savedState.file);
-        const failure = composeWorkerFailureSummary(project);
-        if (failure) {
-          p.log.error(`Worker Compose failed after exhausting restart attempts; REST is unavailable at ${base}.`);
-          p.log.error(failure);
-          p.log.info(`Inspect ${savedState.logFile}, then run agentmemory stop before retrying.`);
-          process.exit(1);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        p.log.warn(`Worker Compose status unavailable: ${message}`);
-      }
+    if (savedState?.kind === "compose") {
+      const failure = await savedComposeFailure(savedState);
+      if (failure) exitWithComposeFailure(savedState, failure, `REST is unavailable at ${base}`);
     }
     p.log.error(`Not running — no response at ${base}`);
     p.log.info("Start with: npx @agentmemory/agentmemory");
+    process.exit(1);
+  }
+
+  const connection = await probeTargetWorker(base);
+  const workerMissing = connection !== "connected";
+  const composeExplainsMissingRoutes = workerMissing
+    && savedState?.kind === "compose"
+    && (await savedComposeFailure(savedState)) !== null;
+  if (workerMissing && !composeExplainsMissingRoutes) {
+    let lines: string[];
+    if (connection === "engine-only") lines = engineOnlyLines(base, recoveryStartCommand());
+    else if (connection === "unrecognized") lines = unrecognizedServiceLines(base);
+    else lines = [`A server answers at ${base}, but /agentmemory/livez and /agentmemory/health did not respond.`, "Check the agentmemory logs, then run status again."];
+    p.log.error(lines.join("\n"));
     process.exit(1);
   }
 
@@ -2072,7 +2126,15 @@ function buildDoctorContext(): DoctorContext {
     pidfilePath: readEngineState()?.kind === "compose" ? engineStatePath() : enginePidfilePath(),
     enginePath: engineStatePath(),
     pinnedVersion: IIPINNED_VERSION,
+    startCommand: recoveryStartCommand(),
+    targetArgs: recoveryTargetArgs(),
   };
+}
+
+function doctorTargetsManagedCompose(): boolean {
+  const state = readEngineState();
+  const remoteTarget = shouldUseAgentmemoryUrl() && process.env["AGENTMEMORY_URL"];
+  return state?.kind === "compose" && state.restPort === getRestPort() && !remoteTarget;
 }
 
 function buildDoctorEffects(): DoctorEffects {
@@ -2109,11 +2171,11 @@ function buildDoctorEffects(): DoctorEffects {
       return state?.kind === "compose" ? state.binPath : privateIiiPath();
     },
     iiiBinaryVersion: (binPath: string) => iiiBinVersion(binPath),
-    externalEngineRunning: async () => {
-      const state = readEngineState();
-      const remoteTarget = shouldUseAgentmemoryUrl() && process.env["AGENTMEMORY_URL"];
-      const managed = state?.kind === "compose" && state.restPort === getRestPort() && !remoteTarget;
-      return !managed && await isEngineRunning();
+    externalEngineRunning: async () => !doctorTargetsManagedCompose() && await isEngineRunning(),
+    workerConnection: async () => {
+      const connection = await probeTargetWorker(getBaseUrl());
+      if (connection === "connected" || connection === "unreachable") return connection;
+      return doctorTargetsManagedCompose() ? "managed-worker-down" : connection;
     },
     viewerReachable: async (timeoutMs = 2000) => {
       try {
@@ -2421,15 +2483,14 @@ async function runDoctor() {
       continue;
     }
     failed++;
-    p.log.warn(`${d.id} ✗ ${status.detail ?? ""}`.trim());
+    const report = failureReport(d, status);
+    p.log.warn(report.problem);
+    p.log.info(report.fix);
 
     if (!canAutoFix(d, status)) {
-      p.log.info(`manual fix: ${status.manualFix ?? d.fixPreview}`);
       skipped++;
       continue;
     }
-
-    p.log.info(`why: ${d.fixPreview}`);
 
     if (applyAll) {
       const r = await applyFixWithReport(d, ctx, false);
