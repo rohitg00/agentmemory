@@ -60,6 +60,11 @@ export function registerPipelineObservers(sdk: IIIClient): void {
       );
     }
   }
+  bindings.observePipeline(
+    { function_id: "mem::graph-extract", filters: { "output.partial": { $eq: true } }, capture: ["input", "output"] },
+    "mem::record-failure",
+    { id: "agentmemory:pipeline:failure:mem::graph-extract:partial", max_in_flight: 4, metadata: { source_fn: "mem::graph-extract" } },
+  );
   bindings.observeStateChanges(
     {
       $or: [

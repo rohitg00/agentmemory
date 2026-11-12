@@ -82,6 +82,11 @@ describe("mem::record-failure", () => {
     await fn({ observer_id: "agentmemory:pipeline:failure:mem::summarize:soft", input: {}, output: { success: false, error: "source_unavailable" } });
     expect(audits[0].operation).toBe("summarize-failed");
     expect(audits[0].details).toMatchObject({ code: "source_unavailable", retryable: false });
+    audits.length = 0;
+    await fn({ observer_id: "agentmemory:pipeline:failure:mem::graph-extract:partial", input: {}, output: { success: true, partial: true, error: "llm down" } });
+    expect(audits).toHaveLength(1);
+    expect(audits[0].operation).toBe("graph-extract-failed");
+    expect(audits[0].details).toMatchObject({ message: "llm down" });
   });
 
   it("dedupes by (function_id, code) in a fixed 60s window and counts every failure", async () => {
@@ -118,6 +123,8 @@ describe("pipeline observer specs", () => {
     expect(compressErr.options?.max_in_flight).toBe(4);
     const summarizeSoft = observed.find((o) => o.options?.id === "agentmemory:pipeline:failure:mem::summarize:soft")!;
     expect(summarizeSoft.source).toEqual({ function_id: "mem::summarize", filters: { "output.success": { $eq: false } }, capture: ["input", "output"] });
+    const graphPartial = observed.find((o) => o.options?.id === "agentmemory:pipeline:failure:mem::graph-extract:partial")!;
+    expect(graphPartial.source).toEqual({ function_id: "mem::graph-extract", filters: { "output.partial": { $eq: true } }, capture: ["input", "output"] });
     const deleted = observed.find((o) => o.options?.id === "agentmemory:cascade:deleted")!;
     const or = deleted.source.filters as { $or: Array<Record<string, unknown>> };
     expect(or.$or[0]).toMatchObject({ "input.event_type": { $eq: "state:deleted" }, "input.scope": { $prefix: "mem:obs:" } });

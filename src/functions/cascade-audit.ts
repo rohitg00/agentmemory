@@ -243,7 +243,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::record-failure", async (envelope: Record<string, unknown>, metadata?: unknown) => {
     const sourceFn = (metadata as { source_fn?: unknown } | undefined)?.source_fn;
     const observerId = envelope.observer_id;
-    const fromObserverId = typeof observerId === "string" ? /agentmemory:pipeline:failure:(mem::[a-z-]+):(?:error|soft)/.exec(observerId)?.[1] : undefined;
+    const fromObserverId = typeof observerId === "string" ? /agentmemory:pipeline:failure:(mem::[a-z-]+):(?:error|soft|partial)/.exec(observerId)?.[1] : undefined;
     const functionId = (typeof sourceFn === "string" ? sourceFn : undefined) ?? fromObserverId ?? "unknown";
     const code = failureCode(envelope);
     const retryable = isRetryable(code, envelope);
