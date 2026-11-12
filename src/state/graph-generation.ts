@@ -7,7 +7,7 @@ import { initializeGraphIndex } from "./graph-retrieval-index.js";
 
 const CONTROL_SCOPE = KV.graphControl;
 const CONTROL_KEY = "generation";
-const GRAPH_SCOPES = new Set<string>([
+export const GRAPH_SCOPES = new Set<string>([
   KV.graphNodes, KV.graphEdges, KV.graphEdgeHistory, KV.graphSnapshot,
   KV.graphNameIndex, KV.graphEdgeKey, KV.graphNodeDegree, KV.graphMembership,
   KV.graphRetrievalControl, KV.graphRetrievalData, KV.graphIndexMigration, KV.graphIndexManifest,

@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { registerEventTriggers } from "../src/triggers/events.js";
 import { getViewerCounts, resetViewerCounts } from "../src/state/viewer-counts.js";
 import { KV } from "../src/state/schema.js";
+import { recordObservers } from "./helpers/mocks.js";
 import { recordAudit, setAuditRecordedListener } from "../src/functions/audit.js";
 
 const cleanupListeners: Array<() => void> = [];
@@ -33,11 +34,11 @@ function mockKV(seed: Record<string, Record<string, unknown>> = {}) {
 
 function setup(kv = mockKV(), deps: Record<string, unknown> = {}) {
   const handlers = new Map<string, Handler>();
-  const triggers: Array<{ type: string; function_id: string; config: Record<string, unknown> }> = [];
+  const bound = recordObservers();
   const sent: Sent[] = [];
   const sdk = {
     registerFunction: (id: string, fn: Handler) => handlers.set(id, fn),
-    registerTrigger: (t: (typeof triggers)[number]) => triggers.push(t),
+    observe: bound.observe,
     trigger: vi.fn(async (req: { function_id: string; payload: Record<string, unknown> }) => {
       return {};
     }),
@@ -45,7 +46,7 @@ function setup(kv = mockKV(), deps: Record<string, unknown> = {}) {
   cleanupListeners.push(onLiveEvent((event) => sent.push(event)));
   registerEventTriggers(sdk as never, kv as never);
   registerViewerStreamTriggers(sdk as never, kv as never, deps);
-  return { handlers, triggers, sent, kv };
+  return { handlers, bound, sent, kv };
 }
 
 const graphControl = (nodes: number, edges = 0) => ({ schema: 2, buildId: "test", status: "ready", revision: 0, nodes, edges, historyEdges: 0, incompleteRecords: 0, nodesByType: {}, edgesByType: {}, otherTypes: 0, updatedAt: "now" });
@@ -81,8 +82,8 @@ describe("viewer stream triggers", () => {
   });
 
   it("registers a state trigger for every scope the viewer shows", () => {
-    const { triggers } = setup();
-    const scopes = triggers.filter((t) => t.type === "state").map((t) => t.config.scope);
+    const { bound } = setup();
+    const scopes = bound.states.map((s) => s.scope);
     for (const scope of [
       KV.sessions,
       KV.memories,
@@ -99,7 +100,7 @@ describe("viewer stream triggers", () => {
     ]) {
       expect(scopes).toContain(scope);
     }
-    const http = triggers.filter((t) => t.type === "http").map((t) => t.config.api_path);
+    const http = bound.routes.map((r) => r.path);
     expect(http).toEqual(expect.arrayContaining(["/agentmemory/viewer/snapshot", "/agentmemory/counts"]));
   });
 

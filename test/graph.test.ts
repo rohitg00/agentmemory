@@ -201,6 +201,17 @@ describe("Graph Functions", () => {
     expect(result.edgesByType.uses).toBe(1);
   });
 
+  it("graph-extract reports a partial result when the LLM pass fails after structural extraction", async () => {
+    mockProvider.compress.mockRejectedValueOnce(new Error("llm down"));
+    const result = (await sdk.trigger("mem::graph-extract", {
+      observations: [{ ...testObs, files: ["src/auth.ts"], concepts: ["jwt"] }],
+    })) as { success: boolean; partial?: boolean; error?: string; nodesAdded: number };
+    expect(result.success).toBe(true);
+    expect(result.nodesAdded).toBeGreaterThan(0);
+    expect(result.partial).toBe(true);
+    expect(result.error).toBe("llm down");
+  });
+
   it("graph-extract returns error for empty observations", async () => {
     const result = (await sdk.trigger("mem::graph-extract", {
       observations: [],

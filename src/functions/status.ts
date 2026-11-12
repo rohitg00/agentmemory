@@ -3,6 +3,7 @@ import type { VectorBackfillState } from "./search.js";
 import { describeGraphCompactBoot, type GraphCompactBootStatus } from "./graph-compact-boot.js";
 import type { CaptureStatus } from "./capture.js";
 import type { GraphIndexMigrationStatus } from "../state/graph-index-migration.js";
+import { failureCounters } from "./cascade-audit.js";
 
 export type StatusLevel = "ok" | "info" | "warn" | "error";
 
@@ -89,6 +90,13 @@ export interface StatusInputs {
   stateStore?: { ok: boolean; latencyMs?: number } | null;
   capture?: CaptureStatus | null;
   observeDedup?: ObserveDedupStatus | null;
+  runtime?: StatusRuntimeInfo | null;
+}
+
+export interface StatusRuntimeInfo {
+  bindings: { state: string; http: string; pipeline?: string; observers: number; failedObservers?: number; reasons: string[] };
+  duplicateWorkers: { count: number; workerIds: string[] } | null;
+  stateWorker: { ready: boolean; waitedMs: number; lastReturnAt?: string };
 }
 
 export interface ObserveDedupStatus {
@@ -131,6 +139,8 @@ export interface StatusReport {
   graphIndex: GraphIndexMigrationStatus | null;
   capture: CaptureStatus | null;
   observeDedup: ObserveDedupStatus | null;
+  runtime: StatusRuntimeInfo | null;
+  failures: { transient: number; permanent: number; lastAt: string | null };
   functions: Array<FunctionMetricInput & { failureRate: number; offWithoutLlm: boolean }>;
   flags: Array<StatusFlag & { inactiveReason?: string }>;
   problems: StatusProblem[];
@@ -282,6 +292,16 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
   else if (described.length && !described.some((d) => d.level === "error")) described[0].level = "error";
   for (const d of described) {
     problems.push({ level: d.level, code: "health-alert", message: d.message, fix: d.fix });
+  }
+
+  const failedObservers = input.runtime?.bindings.failedObservers ?? 0;
+  if (failedObservers > 0) {
+    problems.push({
+      level: "error",
+      code: "observer-rejected",
+      message: `${failedObservers} observer${failedObservers === 1 ? " was" : "s were"} rejected by the engine. Rejected route or state observers leave those endpoints or reactions inactive; rejected pipeline observers fall back to direct calls.`,
+      fix: "Check runtime.bindings.reasons in /agentmemory/status for the conflicting route, remove the conflict, then restart agentmemory.",
+    });
   }
 
   if (input.circuitBreaker?.state === "open") {
@@ -553,6 +573,8 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     graphIndex,
     capture: input.capture ?? null,
     observeDedup: input.observeDedup ?? null,
+    runtime: input.runtime ?? null,
+    failures: failureCounters(),
     functions,
     flags: input.flags.map((flag) =>
       flag.enabled && flag.needsLlm && noLlm

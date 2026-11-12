@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -666,7 +666,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory работает на Windows 10/11. В WSL2 используется путь Linux, и закреплённый движок устанавливается автоматически. Для нативной работы в Windows требуется вручную установить закреплённый бинарь iii-engine v0.25.1: скачайте подходящий архив со [страницы релиза iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), проверьте контрольную сумму и поместите `iii.exe` в `PATH` (например, `%USERPROFILE%\.local\bin\iii.exe`). CLI не распаковывает Windows ZIP автоматически.
+agentmemory работает на Windows 10/11. В WSL2 используется путь Linux, и закреплённый движок устанавливается автоматически. В нативной Windows закреплённый iii-engine v0.26.0 тоже устанавливается автоматически: CLI скачивает Windows ZIP, проверяет его SHA-256 и распаковывает `iii.exe` в `%USERPROFILE%\.agentmemory\bin`. Если это не удалось, скачайте подходящий архив со [страницы релиза iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), проверьте контрольную сумму и распакуйте `iii.exe` в тот же каталог.
 
 Автоматизированное подключение MCP в нативной Windows поддерживает только `agentmemory connect copilot-cli`. Для других нативных Windows-агентов используйте ручной блок MCP из раздела [Другие агенты](#other-agents). Запускайте `connect` внутри WSL только если целевой агент установлен в той же среде WSL.
 
@@ -1243,7 +1243,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

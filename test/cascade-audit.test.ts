@@ -1,0 +1,490 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
+import { registerCascadeFunctions, failureCounters, flushDeleteCascade } from "../src/functions/cascade-audit.js";
+import { registerPipelineObservers } from "../src/runtime/pipeline-observers.js";
+import { getBindings } from "../src/runtime/bindings.js";
+import { recordObservers } from "./helpers/mocks.js";
+import { KV } from "../src/state/schema.js";
+import type { Memory, MemoryRelation, Facet } from "../src/types.js";
+
+vi.mock("../src/logger.js", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+const audits: Array<Record<string, unknown>> = [];
+vi.mock("../src/functions/audit.js", () => ({
+  recordAudit: vi.fn(async (_kv: unknown, operation: string, functionId: string, targetIds: string[], details: Record<string, unknown>) => {
+    audits.push({ operation, functionId, targetIds, details });
+    return { id: "aud_x" };
+  }),
+  safeAudit: vi.fn(async (_kv: unknown, operation: string, functionId: string, targetIds: string[], details: Record<string, unknown>) => {
+    audits.push({ operation, functionId, targetIds, details });
+    return { id: "aud_x" };
+  }),
+}));
+
+const removedBm25: string[] = [];
+const removedVector: string[] = [];
+const addedBm25: string[] = [];
+const addedVector: string[] = [];
+const addedVectorCalls: unknown[][] = [];
+vi.mock("../src/functions/search.js", () => ({
+  getSearchIndex: () => ({ remove: (id: string) => removedBm25.push(id), add: (obs: { id: string }) => addedBm25.push(obs.id) }),
+  getVectorIndex: () => ({ size: 0 }),
+  vectorIndexRemove: (id: string) => { removedVector.push(id); },
+  vectorIndexAddGuarded: async (...args: unknown[]) => { addedVector.push(args[0] as string); addedVectorCalls.push(args); return true; },
+  scheduleIndexSave: () => {},
+  isMemoryIndexReady: () => true,
+}));
+
+function memoryKv(seed: Record<string, Map<string, unknown>> = {}) {
+  const store = seed;
+  return {
+    store,
+    get: vi.fn(async (scope: string, key: string) => store[scope]?.get(key) ?? null),
+    set: vi.fn(async (scope: string, key: string, v: unknown) => { (store[scope] ??= new Map()).set(key, v); }),
+    delete: vi.fn(async (scope: string, key: string) => { store[scope]?.delete(key); }),
+    update: vi.fn(async (scope: string, key: string, ops: Array<{ path: string; value: unknown }>) => {
+      const row = store[scope]?.get(key) as Record<string, unknown> | undefined;
+      if (row) for (const op of ops) row[op.path] = op.value;
+      return row;
+    }),
+    list: vi.fn(async (scope: string) => [...(store[scope]?.values() ?? [])]),
+    listKeys: vi.fn(async (scope: string) => [...(store[scope]?.keys() ?? [])]),
+    iterate: async function* (scope: string) { yield [...(store[scope]?.values() ?? [])]; },
+    backend: "file",
+  };
+}
+
+function fakeFns() {
+  const fns = new Map<string, (d: unknown) => Promise<unknown>>();
+  return {
+    functions: fns,
+    registerFunction(id: string, h: (d: unknown) => Promise<unknown>) { fns.set(id, h); },
+  };
+}
+
+describe("mem::record-failure", () => {
+  beforeEach(() => { audits.length = 0; });
+
+  it("classifies retryable vs permanent and writes the op audit", async () => {
+    const sdk = fakeFns();
+    const kv = memoryKv();
+    registerCascadeFunctions(sdk as never, kv as never);
+    const fn = sdk.functions.get("mem::record-failure")!;
+    await fn({ input: { observationId: "o1", sessionId: "s1" }, output: {}, error: { code: "circuit_breaker_open", message: "breaker" }, duration_ms: 12 }, { source_fn: "mem::compress" });
+    expect(audits[0].operation).toBe("compress-failed");
+    expect(audits[0].details).toMatchObject({ code: "circuit_breaker_open", retryable: true, durationMs: 12 });
+    expect(audits[0].targetIds).toEqual(["o1", "s1"]);
+    const c = failureCounters();
+    expect(c.transient).toBeGreaterThan(0);
+    audits.length = 0;
+    await fn({ observer_id: "agentmemory:pipeline:failure:mem::summarize:soft", input: {}, output: { success: false, error: "source_unavailable" } });
+    expect(audits[0].operation).toBe("summarize-failed");
+    expect(audits[0].details).toMatchObject({ code: "source_unavailable", retryable: false });
+    audits.length = 0;
+    await fn({ observer_id: "agentmemory:pipeline:failure:mem::graph-extract:partial", input: {}, output: { success: true, partial: true, error: "llm down" } });
+    expect(audits).toHaveLength(1);
+    expect(audits[0].operation).toBe("graph-extract-failed");
+    expect(audits[0].details).toMatchObject({ message: "llm down" });
+  });
+
+  it("dedupes by (function_id, code) in a fixed 60s window and counts every failure", async () => {
+    vi.useFakeTimers();
+    const sdk = fakeFns();
+    registerCascadeFunctions(sdk as never, memoryKv() as never);
+    const fn = sdk.functions.get("mem::record-failure")!;
+    const env = { input: {}, output: {}, error: { code: "parse_failed" } };
+    const meta = { source_fn: "mem::graph-extract" };
+    await fn(env, meta);
+    vi.advanceTimersByTime(30_000);
+    const r1 = await fn(env, meta);
+    expect(r1).toMatchObject({ deduped: true });
+    expect(audits.length).toBe(1);
+    vi.advanceTimersByTime(31_000);
+    const r2 = await fn(env, meta);
+    expect(r2).toMatchObject({ recorded: true });
+    expect(audits.length).toBe(2);
+    expect(audits[1].details).toMatchObject({ dedupedCount: 1 });
+    vi.useRealTimers();
+  });
+});
+
+describe("pipeline observer specs", () => {
+  it("failure observers: error + soft specs per function", async () => {
+    const bound = recordObservers();
+    const observed = bound.sources as Array<{ source: Record<string, unknown>; target: string; options?: Record<string, unknown> }>;
+    const sdk = { registerFunction: vi.fn(), observe: bound.observe };
+    const b = getBindings(sdk as never);
+    registerPipelineObservers(sdk as never);
+    await b.activate();
+    const compressErr = observed.find((o) => o.options?.id === "agentmemory:pipeline:failure:mem::compress:error")!;
+    expect(compressErr.source).toEqual({ function_id: "mem::compress", filters: { error: { $exists: true } }, capture: ["input", "error"] });
+    expect(compressErr.options?.max_in_flight).toBe(4);
+    const summarizeSoft = observed.find((o) => o.options?.id === "agentmemory:pipeline:failure:mem::summarize:soft")!;
+    expect(summarizeSoft.source).toEqual({ function_id: "mem::summarize", filters: { "output.success": { $eq: false } }, capture: ["input", "output"] });
+    const graphPartial = observed.find((o) => o.options?.id === "agentmemory:pipeline:failure:mem::graph-extract:partial")!;
+    expect(graphPartial.source).toEqual({ function_id: "mem::graph-extract", filters: { "output.partial": { $eq: true } }, capture: ["input", "output"] });
+    const deleted = observed.find((o) => o.options?.id === "agentmemory:cascade:deleted")!;
+    const or = deleted.source.filters as { $or: Array<Record<string, unknown>> };
+    expect(or.$or[0]).toMatchObject({ "input.event_type": { $eq: "state:deleted" }, "input.scope": { $prefix: "mem:obs:" } });
+    const rel = observed.find((o) => o.options?.id === "agentmemory:cascade:relation-reaction")!;
+    const or2 = rel.source.filters as { $or: Array<Record<string, unknown>> };
+    expect(or2.$or[0]["input.new_value.type"]).toEqual({ $in: ["supersedes", "contradicts", "extends"] });
+    expect(rel.options?.max_in_flight).toBe(1);
+  });
+});
+
+describe("mem::on-record-deleted", () => {
+  beforeEach(() => { audits.length = 0; removedBm25.length = 0; removedVector.length = 0; });
+
+  it("removes bm25/vector entries, facets (incl. lessons), reconciles observationCount, audits", async () => {
+    const sdk = fakeFns();
+    const facets = new Map<string, Facet>([
+      ["f1", { id: "f1", targetId: "m1", targetType: "memory", dimension: "d", value: "v", createdAt: "t" }],
+      ["f2", { id: "f2", targetId: "l1", targetType: "memory", dimension: "d", value: "v", createdAt: "t" }],
+      ["f3", { id: "f3", targetId: "other", targetType: "memory", dimension: "d", value: "v", createdAt: "t" }],
+    ]);
+    const kv = memoryKv({
+      [KV.facets]: facets,
+      [KV.sessions]: new Map([["s1", { id: "s1", observationCount: 5 }]]),
+      "mem:obs:s1": new Map([["o1", {}], ["o2", {}]]),
+    });
+    registerCascadeFunctions(sdk as never, kv as never);
+    const fn = sdk.functions.get("mem::on-record-deleted")!;
+    kv.store[KV.observations("s1")]?.delete("o9");
+    await fn({ event_type: "state:deleted", scope: "mem:obs:s1", key: "o9" });
+    expect(removedBm25).toContain("o9");
+    expect(removedVector).toContain("o9");
+    kv.store[KV.lessons]?.set("l1", { deleted: true });
+    await fn({ scope: KV.lessons, key: "l1", event_type: "state:updated", new_value: { deleted: true }, old_value: { deleted: false } });
+    kv.store[KV.memories]?.delete("m1");
+    await fn({ event_type: "state:deleted", scope: KV.memories, key: "m1" });
+    const { flushDeleteCascade } = await import("../src/functions/cascade-audit.js");
+    await flushDeleteCascade();
+    expect(kv.update).toHaveBeenCalledWith(KV.sessions, "s1", [{ type: "set", path: "observationCount", value: 2 }]);
+    expect(audits.find((a) => a.operation === "cascade")).toBeTruthy();
+    expect(kv.store[KV.facets].has("f2")).toBe(false);
+    expect(kv.store[KV.facets].has("f3")).toBe(true);
+    expect(kv.store[KV.facets].has("f1")).toBe(false);
+  });
+
+  it("keeps index entries when the key was restored before the delete delivery ran", async () => {
+    const sdk = fakeFns();
+    const kv = memoryKv({
+      [KV.memories]: new Map([["m1", { id: "m1" }]]),
+      [KV.lessons]: new Map([["l1", { id: "l1", deleted: true }]]),
+      [KV.facets]: new Map(),
+    });
+    registerCascadeFunctions(sdk as never, kv as never);
+    const fn = sdk.functions.get("mem::on-record-deleted")!;
+    const r = await fn({ event_type: "state:deleted", scope: KV.memories, key: "m1" });
+    expect(r).toMatchObject({ restored: "m1" });
+    expect(removedBm25).not.toContain("m1");
+    expect(removedVector).not.toContain("m1");
+    await fn({ scope: KV.lessons, key: "l1", event_type: "state:updated", new_value: { deleted: true }, old_value: { deleted: false } });
+    expect(removedBm25).toContain("l1");
+    expect(removedVector).toContain("l1");
+    await flushDeleteCascade();
+  });
+
+  it("keeps index entries when the restoration read fails and removes them once the flush confirms the delete", async () => {
+    const sdk = fakeFns();
+    const kv = memoryKv({ [KV.memories]: new Map(), [KV.facets]: new Map() });
+    const realGet = kv.get.bind(kv);
+    let failNext = true;
+    kv.get = (async (scope: string, key: string) => {
+      if (failNext && scope === KV.memories && key === "m2") {
+        failNext = false;
+        throw new Error("state read failed");
+      }
+      return realGet(scope, key);
+    }) as typeof kv.get;
+    registerCascadeFunctions(sdk as never, kv as never);
+    const fn = sdk.functions.get("mem::on-record-deleted")!;
+    const r = await fn({ event_type: "state:deleted", scope: KV.memories, key: "m2" });
+    expect(r).toMatchObject({ deferred: "m2", queued: true });
+    expect(removedBm25).not.toContain("m2");
+    expect(removedVector).not.toContain("m2");
+    await flushDeleteCascade();
+    expect(removedBm25).toContain("m2");
+    expect(removedVector).toContain("m2");
+  });
+
+  it("worker shutdown drains queued delete cascades before the SDK shuts down", () => {
+    const src = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("const shutdown = async"));
+    const drain = body.indexOf("flushDeleteCascade()");
+    expect(drain).toBeGreaterThan(0);
+    expect(drain).toBeLessThan(body.indexOf("sdk.shutdown()"));
+  });
+});
+
+describe("event::graph::edge-reaction", () => {
+  const base: Memory = { id: "tgt", createdAt: "t", updatedAt: "t", type: "fact", title: "x", content: "c", concepts: [], files: [], sessionIds: [], strength: 1, version: 1, isLatest: true, confidence: 0.8, relatedIds: ["pre"] } as unknown as Memory;
+  const rel: MemoryRelation = { type: "supersedes", sourceId: "src", targetId: "tgt", createdAt: "2026-01-01T00:00:00Z", confidence: 0.6 };
+
+  function seeded(marks: Record<string, unknown> = {}) {
+    const sdk = fakeFns();
+    const kv = memoryKv({
+      [KV.memories]: new Map([["tgt", { ...base }], ["src", { ...base, id: "src" }]]),
+      [KV.relations]: new Map(),
+      [KV.relationReactions]: new Map(Object.entries(marks)),
+    });
+    registerCascadeFunctions(sdk as never, kv as never);
+    return { kv, fn: sdk.functions.get("event::graph::edge-reaction")! };
+  }
+  const created = (key: string, r: Partial<MemoryRelation> = {}) => ({ event_type: "state:created", scope: KV.relations, key, new_value: { ...rel, ...r } });
+  const deleted = (key: string, r: Partial<MemoryRelation> = {}) => ({ event_type: "state:deleted", scope: KV.relations, key, old_value: { ...rel, ...r } });
+  const mem = (kv: ReturnType<typeof seeded>["kv"]) => kv.store[KV.memories].get("tgt") as Memory;
+  const mark = (kv: ReturnType<typeof seeded>["kv"], type = "supersedes") => kv.store[KV.relationReactions]?.get(`tgt:${type}`) as Record<string, unknown> | undefined;
+
+  it("two supersedes: second adds contributor only; delete restores originals when empty", async () => {
+    const { kv, fn } = seeded();
+    await fn(created("rA"));
+    await fn(created("rB", { sourceId: "srcB" }));
+    expect(mem(kv).strength).toBeCloseTo(0.5);
+    const r1 = await fn(deleted("rA"));
+    expect(r1).toMatchObject({ unreacted: false, remaining: 1 });
+    expect(mem(kv).isLatest).toBe(false);
+    expect(mem(kv).strength).toBeCloseTo(0.5);
+    const r2 = await fn(deleted("rB", { sourceId: "srcB" }));
+    expect(r2).toMatchObject({ unreacted: true });
+    expect(mem(kv).isLatest).toBe(true);
+    expect(mem(kv).strength).toBeCloseTo(1);
+    expect(mark(kv)).toBeUndefined();
+  });
+
+  it("contradicts: cumulative floored decay, partial undo adds back per-relation delta", async () => {
+    const { kv, fn } = seeded();
+    await fn(created("rA", { type: "contradicts", confidence: 0.5 }));
+    await fn(created("rB", { type: "contradicts", sourceId: "srcB", confidence: 0.5 }));
+    expect(mem(kv).confidence).toBeCloseTo(0.5);
+    const mutual = await fn(created("rC", { type: "contradicts", sourceId: "tgt", targetId: "src", confidence: 0.5 }));
+    expect(mutual).toMatchObject({ reacted: true });
+    await fn(deleted("rA", { type: "contradicts" }));
+    expect(mem(kv).confidence).toBeCloseTo(0.65);
+    await fn(deleted("rB", { type: "contradicts", sourceId: "srcB" }));
+    expect(mem(kv).confidence).toBeCloseTo(0.8);
+  });
+
+  it("supersedes removes the target from search indexes and the final undo re-adds it", async () => {
+    const { kv, fn } = seeded();
+    removedBm25.length = 0; removedVector.length = 0;
+    await fn(created("rA"));
+    expect(removedBm25).toContain("tgt");
+    expect(removedVector).toContain("tgt");
+    addedBm25.length = 0; addedVector.length = 0;
+    await fn(deleted("rA"));
+    expect(mem(kv).isLatest).toBe(true);
+    expect(addedBm25).toContain("tgt");
+    expect(addedVector).toContain("tgt");
+    const call = addedVectorCalls.find((args) => args[0] === "tgt")!;
+    expect(call).toHaveLength(4);
+    expect(typeof call[1]).toBe("string");
+    expect(String(call[2])).toContain("c");
+    expect(call[3]).toEqual({ kind: "memory", logId: "tgt" });
+  });
+
+  it("contradicts on a memory without a stored confidence starts from the default salience and stays finite", async () => {
+    const { kv, fn } = seeded();
+    const plain = { ...base } as Record<string, unknown>;
+    delete plain.confidence;
+    kv.store[KV.memories].set("tgt", plain);
+    await fn(created("rA", { type: "contradicts", confidence: 0.5 }));
+    expect(mem(kv).confidence).toBeCloseTo(0.35);
+    expect(mem(kv).confidence!).toBeLessThanOrEqual(0.5);
+    await fn(deleted("rA", { type: "contradicts" }));
+    expect(mem(kv).confidence).toBeCloseTo(0.5);
+  });
+
+  it("contradicts: undoing one relation keeps the floor a remaining relation still holds", async () => {
+    const { kv, fn } = seeded();
+    kv.store[KV.memories].set("tgt", { ...base, confidence: 0.2 });
+    await fn(created("rA", { type: "contradicts", confidence: 0.5 }));
+    await fn(created("rB", { type: "contradicts", sourceId: "srcB", confidence: 0.5 }));
+    expect(mem(kv).confidence).toBeCloseTo(0.05);
+    await fn(deleted("rA", { type: "contradicts" }));
+    expect(mem(kv).confidence).toBeCloseTo(0.05);
+    await fn(deleted("rB", { type: "contradicts", sourceId: "srcB" }));
+    expect(mem(kv).confidence).toBeCloseTo(0.2);
+  });
+
+  it("supersedes cycle guard via reverse mark", async () => {
+    const { kv, fn } = seeded();
+    await fn(created("rA"));
+    const r = await fn(created("rB", { sourceId: "tgt", targetId: "src" }));
+    expect(r).toMatchObject({ skipped: "cycle" });
+    expect(audits.find((a) => (a.details as { skipped?: string }).skipped === "cycle")).toBeTruthy();
+  });
+
+  it("supersedes cycle guard rejects a three-relation cycle", async () => {
+    const { kv, fn } = seeded();
+    kv.store[KV.memories].set("c", { ...base, id: "c" });
+    await fn(created("rA"));
+    await fn(created("rB", { sourceId: "c", targetId: "src" }));
+    const r = await fn(created("rC", { sourceId: "tgt", targetId: "c" }));
+    expect(r).toMatchObject({ skipped: "cycle" });
+    expect((kv.store[KV.memories].get("c") as Memory).isLatest).toBe(true);
+  });
+
+  it("a failed mark write after the memory write does not apply the reaction twice on retry", async () => {
+    const { kv, fn } = seeded();
+    const realSet = kv.set.getMockImplementation()!;
+    let armed = true;
+    kv.set.mockImplementation(async (scope: string, key: string, v: unknown) => {
+      if (armed && scope === KV.relationReactions && !(v as { pending?: unknown }).pending) {
+        armed = false;
+        throw new Error("state worker restarting");
+      }
+      return realSet(scope, key, v);
+    });
+    await expect(fn(created("rA"))).rejects.toThrow("state worker restarting");
+    const r = await fn(created("rA"));
+    expect(r).toMatchObject({ skipped: "already_applied" });
+    expect(mem(kv).strength).toBeCloseTo(0.5);
+    expect(mark(kv)).toMatchObject({ strengthBefore: 1, isLatestBefore: true });
+    expect(mark(kv)?.pending).toBeUndefined();
+    await fn(deleted("rA"));
+    expect(mem(kv).strength).toBeCloseTo(1);
+    expect(mem(kv).isLatest).toBe(true);
+  });
+
+  it("a pending mark whose memory write was lost is completed by the next delivery", async () => {
+    const { kv, fn } = seeded({
+      "tgt:supersedes": {
+        targetId: "tgt", type: "supersedes", sources: { rA: "src" }, isLatestBefore: true, strengthBefore: 1,
+        firstAppliedAt: rel.createdAt, lastAppliedAt: rel.createdAt,
+        pending: { target: { isLatest: false, strength: 0.5, confidence: 0.8, relatedIds: ["pre"] }, removeMark: false },
+      },
+    });
+    const r = await fn(created("rA"));
+    expect(r).toMatchObject({ skipped: "already_applied" });
+    expect(mem(kv).strength).toBeCloseTo(0.5);
+    expect(mem(kv).isLatest).toBe(false);
+    expect(mark(kv)?.pending).toBeUndefined();
+    expect(mark(kv)).toMatchObject({ strengthBefore: 1 });
+  });
+
+  it("extends: undo removes only the added ids", async () => {
+    const { kv, fn } = seeded();
+    await fn(created("rA", { type: "extends" }));
+    await fn(created("rB", { type: "extends", sourceId: "srcB" }));
+    expect(mem(kv).relatedIds).toEqual(["pre", "src", "srcB"]);
+    await fn(deleted("rA", { type: "extends" }));
+    await fn(deleted("rB", { type: "extends", sourceId: "srcB" }));
+    expect(mem(kv).relatedIds).toEqual(["pre"]);
+  });
+
+  it("replayed create applies once", async () => {
+    const { kv, fn } = seeded();
+    await fn(created("rA"));
+    const r = await fn(created("rA"));
+    expect(r).toMatchObject({ skipped: "already_applied" });
+    expect(mem(kv).strength).toBeCloseTo(0.5);
+  });
+
+  it("missing target audits and skips", async () => {
+    const { kv, fn } = seeded();
+    kv.store[KV.memories].delete("tgt");
+    const r = await fn(created("rA"));
+    expect(r).toMatchObject({ skipped: "missing_target" });
+  });
+});
+
+describe("mem::relate lock safety", () => {
+  it("resolves when sourceId === targetId and a follow-up relate resolves", async () => {
+    const { registerRelationsFunction } = await import("../src/functions/relations.js");
+    const sdk = fakeFns();
+    const kv = memoryKv({
+      [KV.memories]: new Map([["m1", { id: "m1", relatedIds: [], sessionIds: [], concepts: [], files: [] }]]),
+      [KV.relations]: new Map(),
+    });
+    registerRelationsFunction(sdk as never, kv as never);
+    const fn = sdk.functions.get("mem::relate")!;
+    const timed = (p: Promise<unknown>) =>
+      Promise.race([p, new Promise((_, rj) => setTimeout(() => rj(new Error("deadlock")), 2000))]);
+    const r1 = await timed(fn({ sourceId: "m1", targetId: "m1", type: "extends" }));
+    expect(r1).toMatchObject({ success: true });
+    const r2 = await timed(fn({ sourceId: "m1", targetId: "m1", type: "contradicts" }));
+    expect(r2).toMatchObject({ success: true });
+  });
+});
+
+describe("delete cascade batcher resilience", () => {
+  function seededDelete() {
+    const sdk = fakeFns();
+    const kv = memoryKv({
+      [KV.sessions]: new Map([
+        ["s1", { id: "s1", observationCount: 5 }],
+        ["s2", { id: "s2", observationCount: 3 }],
+      ]),
+      [KV.observations("s1")]: new Map([["o1", {}], ["o2", {}]]),
+      [KV.observations("s2")]: new Map([["o3", {}]]),
+      [KV.facets]: new Map(),
+    });
+    registerCascadeFunctions(sdk as never, kv as never);
+    return { kv, fn: sdk.functions.get("mem::on-record-deleted")! };
+  }
+
+  it("scans the facet scope once per target type for a batch of deletes", async () => {
+    const { kv, fn } = seededDelete();
+    for (const id of ["m1", "m2", "m3"]) await fn({ event_type: "state:deleted", scope: KV.memories, key: id });
+    kv.list.mockClear();
+    await flushDeleteCascade();
+    expect(kv.list.mock.calls.filter((c) => c[0] === KV.facets)).toHaveLength(1);
+  });
+
+  it("retries facet cleanup for a target whose read failed", async () => {
+    const { kv, fn } = seededDelete();
+    kv.store[KV.facets].set("f1", { id: "f1", targetId: "m1", targetType: "memory", dimension: "d", value: "v", createdAt: "t" });
+    await fn({ event_type: "state:deleted", scope: KV.memories, key: "m1" });
+    kv.get.mockRejectedValueOnce(new Error("state worker restarting"));
+    await flushDeleteCascade();
+    expect(kv.store[KV.facets].has("f1")).toBe(true);
+    await flushDeleteCascade();
+    expect(kv.store[KV.facets].has("f1")).toBe(false);
+  });
+
+  it("a failed flush logs, requeues sessions, and reconciles on the next flush", async () => {
+    const { kv, fn } = seededDelete();
+    const rejections: unknown[] = [];
+    const onRej = (e: unknown) => { rejections.push(e); };
+    process.on("unhandledRejection", onRej);
+    try {
+      kv.listKeys.mockRejectedValueOnce(new Error("state worker restarting"));
+      await fn({ event_type: "state:deleted", scope: "mem:obs:s1", key: "o9" });
+      await flushDeleteCascade().catch(() => {});
+      expect(rejections).toEqual([]);
+      await flushDeleteCascade();
+      expect(kv.update).toHaveBeenCalledWith(KV.sessions, "s1", [
+        { type: "set", path: "observationCount", value: 2 },
+      ]);
+    } finally {
+      process.off("unhandledRejection", onRej);
+    }
+  });
+
+  it("items queued during an in-flight flush are drained by the next batch", async () => {
+    vi.useFakeTimers();
+    try {
+      const { kv, fn } = seededDelete();
+      let release!: () => void;
+      const gate = new Promise<void>((r) => { release = r; });
+      kv.list.mockImplementationOnce(() => gate.then(() => []));
+      await fn({ event_type: "state:deleted", scope: "mem:obs:s1", key: "o1" });
+      await vi.advanceTimersByTimeAsync(600);
+      await fn({ event_type: "state:deleted", scope: "mem:obs:s2", key: "o3" });
+      release();
+      await vi.advanceTimersByTimeAsync(600);
+      await vi.advanceTimersByTimeAsync(600);
+      expect(kv.update).toHaveBeenCalledWith(KV.sessions, "s2", [
+        { type: "set", path: "observationCount", value: 1 },
+      ]);
+      const cascades = audits.filter((a) => a.operation === "cascade");
+      expect(cascades.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

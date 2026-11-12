@@ -37,12 +37,15 @@ export class VectorIndex {
   private vectors: Map<string, VectorEntry> = new Map();
   private changes: Map<string, boolean> = new Map();
   private listener: VectorChangeListener | null = null;
+  private touched: Set<string> | null = null;
+  private replaying = false;
 
   setChangeListener(listener: VectorChangeListener | null): void {
     this.listener = listener;
   }
 
   add(obsId: string, sessionId: string, embedding: Float32Array): void {
+    if (this.skipForLiveChange(obsId)) return;
     const entry = { embedding, sessionId };
     this.vectors.set(obsId, entry);
     this.changes.set(obsId, true);
@@ -50,6 +53,7 @@ export class VectorIndex {
   }
 
   remove(obsId: string): void {
+    if (this.skipForLiveChange(obsId)) return;
     if (this.vectors.delete(obsId)) {
       this.changes.set(obsId, false);
       this.listener?.(obsId, null);
@@ -157,6 +161,15 @@ export class VectorIndex {
   }
 
   clear(): void {
+    if (this.replaying && this.touched) {
+      for (const obsId of [...this.vectors.keys()]) {
+        if (this.touched.has(obsId)) continue;
+        this.vectors.delete(obsId);
+        this.changes.set(obsId, false);
+      }
+      this.listener?.(null, null);
+      return;
+    }
     const hadVectors = this.vectors.size > 0;
     for (const obsId of this.vectors.keys()) this.changes.set(obsId, false);
     this.vectors.clear();
@@ -168,6 +181,7 @@ export class VectorIndex {
       string,
       { embedding: Float32Array; sessionId: string }
     >;
+    const live = this.vectors;
     this.vectors = new Map();
     for (const [obsId, entry] of src) {
       this.vectors.set(obsId, {
@@ -175,7 +189,51 @@ export class VectorIndex {
         sessionId: entry.sessionId,
       });
     }
+    const liveChanges = this.changes;
     this.changes = new Map(other.changes);
+    for (const obsId of this.touched ?? []) {
+      const entry = live.get(obsId);
+      if (entry) this.vectors.set(obsId, entry);
+      else this.vectors.delete(obsId);
+      this.changes.set(obsId, liveChanges.get(obsId) ?? Boolean(entry));
+    }
+  }
+
+  trackLiveChanges(): void {
+    this.touched ??= new Set();
+  }
+
+  finishLiveTracking(): void {
+    if (!this.touched) return;
+    for (const obsId of this.touched) {
+      if (!this.vectors.has(obsId)) this.changes.set(obsId, false);
+    }
+    this.touched = null;
+  }
+
+  beginReplay(): void {
+    this.replaying = true;
+  }
+
+  endReplay(): void {
+    this.replaying = false;
+  }
+
+  private skipForLiveChange(obsId: string): boolean {
+    if (!this.touched) return false;
+    if (this.replaying) return this.touched.has(obsId);
+    this.touched.add(obsId);
+    return false;
+  }
+
+  mergeMissingFrom(other: VectorIndex): number {
+    let merged = 0;
+    for (const [obsId, entry] of other.entries()) {
+      if (this.vectors.has(obsId) || this.changes.get(obsId) === false || this.touched?.has(obsId)) continue;
+      this.vectors.set(obsId, { embedding: new Float32Array(entry.embedding), sessionId: entry.sessionId });
+      merged++;
+    }
+    return merged;
   }
 
   serialize(): string {

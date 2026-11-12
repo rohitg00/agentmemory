@@ -1,5 +1,5 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
-import type { CompressedObservation, Memory, Session } from "../types.js";
+import type { Memory, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { emitLiveEvent } from "../viewer/live-events.js";
@@ -15,6 +15,8 @@ import { logger } from "../logger.js";
 import { getSummaryTriggerTimeoutMs } from "../functions/summary-state.js";
 import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 
+import { getBindings } from "../runtime/bindings.js";
+import { registerObserverTarget } from "../runtime/observed.js";
 // Global marker recording when corpus consolidation last ran, used to debounce
 // the per-turn session-stop fan-out.
 const CONSOLIDATION_MARKER_KEY = "consolidation:lastRun";
@@ -37,7 +39,7 @@ async function consolidationDueUnserialized(kv: StateKV): Promise<boolean> {
 // check through an in-process chain so exactly one concurrent caller wins.
 let consolidationCheckChain: Promise<unknown> = Promise.resolve();
 
-function consolidationDue(kv: StateKV): Promise<boolean> {
+export function consolidationDue(kv: StateKV): Promise<boolean> {
   const result = consolidationCheckChain.then(() =>
     consolidationDueUnserialized(kv),
   );
@@ -53,6 +55,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       timeoutMs: getSummaryTriggerTimeoutMs(),
     });
     if (summary?.unchanged === true) return summary;
+    const bindings = getBindings(sdk);
     const fireVoid = (function_id: string, payload: unknown) =>
       sdk
         .trigger({ function_id, payload, action: TriggerAction.Void() })
@@ -62,23 +65,11 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
             error: err instanceof Error ? err.message : String(err),
           }),
         );
-    if (isReflectEnabled()) {
+    if (isReflectEnabled() && !bindings.observing("mem::post-session-reflect")) {
       fireVoid("mem::slot-reflect", { sessionId: data.sessionId });
     }
-    // Unconditional: mem::graph-extract gates its LLM pass internally.
-    try {
-      const observations = await kv.list<CompressedObservation>(
-        KV.observations(data.sessionId),
-      );
-      const compressed = observations.filter((o) => o.title);
-      if (compressed.length > 0) {
-        fireVoid("mem::graph-extract", { observations: compressed });
-      }
-    } catch (err) {
-      logger.warn("graph-extract trigger failed", {
-        sessionId: data.sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
+    if (!bindings.observing("mem::post-session-graph")) {
+      fireVoid("mem::post-session-graph", { sessionId: data.sessionId });
     }
     // Crystals + lessons consolidation. The stop lifecycle is the single
     // source of truth: event::session::stopped fires for ALL agents (the
@@ -96,7 +87,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
     // are full-corpus LLM work with no internal "nothing changed" guard, so
     // firing them every turn is a cost/latency storm for connected agents.
     // Bound the global corpus consolidation to once per cooldown window.
-    if (isConsolidationEnabled() && !data.skipConsolidation) {
+    if (isConsolidationEnabled() && !data.skipConsolidation && !bindings.observing("mem::post-session-consolidate")) {
       if (await consolidationDue(kv)) {
         fireVoid("mem::consolidate-pipeline", { tier: "all", force: true });
         fireVoid("mem::auto-crystallize", { olderThanDays: 0 });
@@ -108,8 +99,9 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
     return summary;
   });
   // React to observation count changes and emit a lightweight live event for dashboards/viewer.
-  sdk.registerFunction(
+  registerObserverTarget(sdk,
     "event::session::observation-count-changed",
+    "input",
     async (payload: {
       key: string;
       event_type: string;
@@ -145,14 +137,11 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       return { emitted: true };
     },
   );
-  sdk.registerTrigger({
-    type: "state",
-    function_id: "event::session::observation-count-changed",
-    config: { scope: KV.sessions },
-  });
+  getBindings(sdk).state({ function_id: "event::session::observation-count-changed", scope: KV.sessions, maxInFlight: 1 });
 
-  sdk.registerFunction(
+  registerObserverTarget(sdk,
     "event::memory::changed",
+    "input",
     async (payload: {
       key: string;
       event_type: string;
@@ -187,11 +176,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       return { emitted: true };
     },
   );
-  sdk.registerTrigger({
-    type: "state",
-    function_id: "event::memory::changed",
-    config: { scope: KV.memories },
-  });
+  getBindings(sdk).state({ function_id: "event::memory::changed", scope: KV.memories, maxInFlight: 1 });
 }
 
 export function isStateDelete(payload: { event_type: string; new_value?: unknown }): boolean {

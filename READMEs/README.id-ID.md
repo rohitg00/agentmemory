@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 tool MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook otomatis" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 DB eksternal" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ pengujian lolos" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ pengujian lolos" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -658,7 +658,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory berjalan di Windows 10/11. WSL2 mengikuti jalur Linux dan dapat memasang engine yang dipatok secara otomatis. Pada Windows native, pasang biner iii-engine v0.25.1 yang dipatok secara manual: unduh arsip yang sesuai dari [halaman rilis iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifikasi checksum, lalu letakkan `iii.exe` di `PATH` (misalnya `%USERPROFILE%\.local\bin\iii.exe`). CLI tidak mengekstrak ZIP Windows secara otomatis.
+agentmemory berjalan di Windows 10/11. WSL2 mengikuti jalur Linux dan dapat memasang engine yang dipatok secara otomatis. Windows native juga memasang iii-engine v0.26.0 yang dipatok secara otomatis: CLI mengunduh ZIP Windows, memverifikasi SHA-256-nya, dan mengekstrak `iii.exe` ke `%USERPROFILE%\.agentmemory\bin`. Jika gagal, unduh arsip yang sesuai dari [halaman rilis iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verifikasi checksum, lalu ekstrak `iii.exe` ke direktori yang sama.
 
 Wiring MCP otomatis di Windows native hanya mendukung `agentmemory connect copilot-cli`. Untuk agen Windows native lainnya, gunakan blok MCP manual dari [Agen lainnya](#other-agents). Jalankan `connect` di WSL hanya jika agen target juga dipasang di lingkungan WSL yang sama.
 
@@ -1258,7 +1258,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

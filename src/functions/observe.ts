@@ -10,6 +10,7 @@ import { indexObservationSession } from "../state/obs-index.js";
 import { scrubRecord } from "./privacy.js";
 import { DedupMap, recordDedupSkip } from "./dedup.js";
 import { afterKeyedLock, withKeyedLock } from "../state/keyed-mutex.js";
+import { getBindings } from "../runtime/bindings.js";
 import { getFinalizeIdleMs, isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
 import { isCaptureKey, markCaptureEventDeleted } from "../capture/event-record.js";
@@ -503,7 +504,7 @@ export function registerObserveFunction(
           },
         });
 
-        if (autoCompress) {
+        if (autoCompress && !getBindings(sdk).observing("mem::compress")) {
           afterKeyedLock(`obs:${payload.sessionId}`, async () => {
             try {
               await sdk.trigger({
@@ -523,7 +524,7 @@ export function registerObserveFunction(
           hook: payload.hookType,
           compress: autoCompress ? "llm" : "synthetic",
         });
-        return { observationId: obsId };
+        return { observationId: obsId, sessionId: payload.sessionId };
       });
     },
   );

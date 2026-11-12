@@ -114,6 +114,20 @@ describe("event::session::stopped consolidation fan-out", () => {
     });
   });
 
+  it("runs the marker-aware post-session graph function when the graph observer is inactive", async () => {
+    const { sdk, handlers, trigger } = mockSdk();
+    const kv = mockKV();
+    kv.list.mockResolvedValue([{ id: "o1", title: "t" }] as never);
+    registerEventTriggers(sdk as never, kv as never);
+    await handlers.get("event::session::stopped")!({ sessionId: "ses_1" });
+    const ids = functionIds(trigger);
+    expect(ids).not.toContain("mem::graph-extract");
+    const call = trigger.mock.calls.find(
+      (c) => (c[0] as { function_id: string }).function_id === "mem::post-session-graph",
+    );
+    expect((call![0] as { payload: unknown }).payload).toEqual({ sessionId: "ses_1" });
+  });
+
   it("waits on mem::summarize for longer than the configured summary budget", async () => {
     const previous = process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS;
     process.env.AGENTMEMORY_SUMMARY_TIMEOUT_MS = "600000";
@@ -220,6 +234,23 @@ describe("event::session::stopped consolidation fan-out", () => {
       "mem::consolidate-pipeline trigger failed",
       expect.objectContaining({ sessionId: "ses_1" }),
     );
+  });
+
+  it("runs consolidation directly while its observer is not active and leaves it to the observer once active", async () => {
+    vi.mocked(isConsolidationEnabled).mockReturnValue(true);
+    const { getBindings } = await import("../src/runtime/bindings.js");
+    const handle = { state: "pending", ready: () => Promise.resolve(), onStateChange: () => () => {}, dispose: () => Promise.resolve() };
+    const run = async () => {
+      const { sdk, handlers, trigger } = mockSdk();
+      const observed = Object.assign(sdk, { observe: () => handle });
+      getBindings(observed as never).observePipeline({ function_id: "event::session::stopped" }, "mem::post-session-consolidate");
+      registerEventTriggers(observed as never, mockKV() as never);
+      await handlers.get("event::session::stopped")!({ sessionId: "ses_1" });
+      return functionIds(trigger);
+    };
+    expect(await run()).toContain("mem::consolidate-pipeline");
+    handle.state = "active";
+    expect(await run()).not.toContain("mem::consolidate-pipeline");
   });
 });
 

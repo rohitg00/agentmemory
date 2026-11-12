@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,900+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="5,000+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -334,7 +334,7 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ### What's new in 0.9.33
 
-- **Large stores keep working:** state reads page, so scopes above 64 MiB no longer fail, on iii 0.25.1.
+- **Large stores keep working:** state reads page, so scopes above 64 MiB no longer fail, on iii 0.26.0.
 - **Better recall:** saved memories are no longer capped at three per search, and evicted memories leave the indexes.
 - **Hooks reach the model:** PreToolUse context arrives in the hook envelope, scoped to the current project.
 - **Steadier providers:** placeholder keys count as unset, and the circuit breaker resets on success.
@@ -688,7 +688,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory runs on Windows 10/11. WSL2 follows the Linux path and can install the pinned engine automatically. Native Windows also installs the pinned iii-engine v0.25.1 automatically: the CLI downloads the Windows ZIP, verifies its SHA-256 and extracts `iii.exe` into `%USERPROFILE%\.agentmemory\bin`. If that fails, download the matching archive from the [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verify its checksum, and extract `iii.exe` into the same directory.
+agentmemory runs on Windows 10/11. WSL2 follows the Linux path and can install the pinned engine automatically. Native Windows also installs the pinned iii-engine v0.26.0 automatically: the CLI downloads the Windows ZIP, verifies its SHA-256 and extracts `iii.exe` into `%USERPROFILE%\.agentmemory\bin`. If that fails, download the matching archive from the [iii v0.26.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verify its checksum, and extract `iii.exe` into the same directory.
 
 `agentmemory connect <agent>` works on native Windows. It writes the MCP server as `cmd /c npx -y @agentmemory/mcp`, because Windows cannot start `npx` without a shell, and it writes hook script paths as absolute paths with forward slashes, either quoted or passed as a separate argument, so a home folder with spaces is safe. Antigravity hooks cannot use quoted paths. When the install path has spaces, `connect antigravity --with-hooks` uses the Windows short (8.3) path. If the short path is not available, it prints the hook JSON to paste by hand, and the MCP wiring still applies. Run `connect` inside WSL only when the target agent is installed in that same WSL environment.
 
@@ -1313,7 +1313,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
