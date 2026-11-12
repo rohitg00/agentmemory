@@ -9,6 +9,7 @@ const MAX_DATE_MS = 8.64e15;
 const DAY_MS = 86_400_000;
 
 export const TTL_TOO_LARGE = "ttlDays is too large: the expiry date cannot be represented";
+export const TTL_INVALID = "ttlDays must be a positive number of days";
 
 export function ttlExpiry(ttlDays: number, now = Date.now()): string | null {
   const ms = now + ttlDays * DAY_MS;
@@ -41,6 +42,8 @@ export function rememberFieldsError(args: Record<string, unknown>): string | und
     return "sourceObservationIds must be an array";
   }
   const ttlDays = positiveNumber(args.ttlDays);
+  const ttlGiven = args.ttlDays !== undefined && args.ttlDays !== null && args.ttlDays !== "";
+  if (ttlGiven && ttlDays === undefined) return TTL_INVALID;
   if (ttlDays !== undefined && ttlExpiry(ttlDays) === null) return TTL_TOO_LARGE;
   return undefined;
 }

@@ -9,7 +9,7 @@ import { registerApiTriggers } from "../src/triggers/api.js";
 import { handleToolCall } from "../src/mcp/standalone.js";
 import { resetHandleForTests } from "../src/mcp/rest-proxy.js";
 import { InMemoryKV } from "../src/mcp/in-memory-kv.js";
-import { normalizeRememberFields, rememberFieldsError, TTL_TOO_LARGE, ttlExpiry } from "../src/mcp/remember-arguments.js";
+import { normalizeRememberFields, rememberFieldsError, TTL_INVALID, TTL_TOO_LARGE, ttlExpiry } from "../src/mcp/remember-arguments.js";
 import { getAllTools } from "../src/mcp/tools-registry.js";
 import { mockKV, mockSdk as rememberSdk } from "./helpers/mocks.js";
 
@@ -198,6 +198,9 @@ describe("memory_save argument validation", () => {
     [{ concepts: 5 }, "concepts must be a comma-separated string or an array of strings"],
     [{ files: ["src/a.ts", 3] }, "files must be a comma-separated string or an array of strings"],
     [{ ttlDays: 1e9 }, TTL_TOO_LARGE],
+    [{ ttlDays: 0 }, TTL_INVALID],
+    [{ ttlDays: -3 }, TTL_INVALID],
+    [{ ttlDays: "abc" }, TTL_INVALID],
   ];
 
   it("reports invalid list fields and unrepresentable ttlDays", () => {
@@ -281,7 +284,10 @@ describe("standalone local fallback expiry", () => {
     const saved = await handleToolCall("memory_save", { content: "temporary note", ttlDays: 0.001 }, localKv);
     const id = JSON.parse(saved.content[0].text).saved as string;
     vi.setSystemTime(new Date("2026-11-01T00:05:00Z"));
-    await handleToolCall("memory_recall", { query: "note" }, localKv);
+    await Promise.all([
+      handleToolCall("memory_recall", { query: "note" }, localKv),
+      handleToolCall("memory_recall", { query: "note" }, localKv),
+    ]);
     const audit = JSON.parse((await handleToolCall("memory_audit", {}, localKv)).content[0].text) as {
       entries: Array<{ operation: string; targetIds: string[]; details: Record<string, unknown> }>;
     };

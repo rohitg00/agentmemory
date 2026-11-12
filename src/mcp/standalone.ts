@@ -339,7 +339,7 @@ async function liveLocalMemories(kvInstance: InMemoryKV, now = Date.now()): Prom
   const expired = memories.filter((memory) => memory.forgetAfter && Date.parse(memory.forgetAfter) <= now);
   if (expired.length === 0) return memories;
   for (const memory of expired) {
-    await kvInstance.delete("mem:memories", memory.id);
+    if (!(await kvInstance.delete("mem:memories", memory.id))) continue;
     await safeAudit(kvInstance as never, "delete", "mem::auto-forget", [memory.id], {
       resource: "memory",
       reason: "auto-forget TTL",
