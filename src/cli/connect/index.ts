@@ -2,6 +2,7 @@ import * as p from "@clack/prompts";
 import pc from "picocolors";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { writeGuideline } from "./guidelines.js";
+import { mcpOnlyCaptureNotice } from "./capture-notice.js";
 import { adapter as antigravity } from "./antigravity.js";
 import { adapter as antigravityCli } from "./antigravity-cli.js";
 import { adapter as claudeCode } from "./claude-code.js";
@@ -128,6 +129,8 @@ export async function runAdapter(
         );
       }
     }
+    const captureNotice = mcpOnlyCaptureNotice(adapter, opts, result);
+    if (captureNotice) p.log.warn(captureNotice);
     return result;
   } catch (err) {
     p.log.error(

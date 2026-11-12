@@ -85,6 +85,7 @@ export interface SpoolSummary {
   maxBytes: number;
   maxAgeHours: number;
   stats: SpoolStats;
+  unreadable?: boolean;
 }
 
 export type SendOutcome = "delivered" | "duplicate" | "rejected" | "retry";
@@ -648,12 +649,18 @@ export function spoolSummary(url: string, options: { policy?: SpoolPolicy; dir?:
   let bytes = 0;
   let oldestAt: string | null = null;
   const files: string[] = [];
-  if (existsSync(paths.file)) files.push(paths.file);
+  let unreadable = false;
+  const noteError = (err: unknown) => {
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") unreadable = true;
+  };
+  files.push(paths.file);
   try {
     for (const entry of readdirSync(paths.dir)) {
       if (entry.startsWith(`${paths.name}.draining-`) && entry.endsWith(".jsonl")) files.push(join(paths.dir, entry));
     }
-  } catch {}
+  } catch (err) {
+    noteError(err);
+  }
   for (const file of files) {
     try {
       const text = readFileSync(file, "utf-8");
@@ -662,7 +669,9 @@ export function spoolSummary(url: string, options: { policy?: SpoolPolicy; dir?:
         records++;
         if (!oldestAt || rec.spooledAt < oldestAt) oldestAt = rec.spooledAt;
       }
-    } catch {}
+    } catch (err) {
+      noteError(err);
+    }
   }
   let retained = 0;
   let retainedBytes = 0;
@@ -684,5 +693,6 @@ export function spoolSummary(url: string, options: { policy?: SpoolPolicy; dir?:
     maxBytes: policy.maxBytes,
     maxAgeHours: Math.round(policy.maxAgeMs / 3600_000),
     stats: readSpoolStats(paths),
+    ...(unreadable ? { unreadable: true } : {}),
   };
 }

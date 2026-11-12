@@ -487,15 +487,22 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
 
-  if (input.capture === null) {
+  const unreadableSpools = (input.capture?.spool ?? []).filter((s) => s.unreadable).map((s) => s.path);
+  if (input.capture === null || input.capture?.inbox === null || unreadableSpools.length > 0) {
+    const spoolFix = unreadableSpools.length > 0
+      ? ` Check that the agentmemory process can read ${unreadableSpools.join(", ")} and its folder.`
+      : "";
     problems.push({
       level: "info",
       code: "capture-check-unavailable",
-      message: "The capture inbox did not answer in time, so capture was not checked.",
-      fix: "The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.",
+      message: "The capture inbox or spool could not be read, so capture was not checked.",
+      fix: `The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.${spoolFix}`,
     });
   }
   problems.push(...captureProblems(input.capture ?? null, input.now, input.ports.rest));
+  if (hookCaptureMissing(input.index.sessions, input.capture)) {
+    problems.push({ level: "warn", code: "no-hook-capture", ...NO_HOOK_CAPTURE });
+  }
 
   if (input.stateStore && !input.stateStore.ok) {
     problems.push({
@@ -562,6 +569,23 @@ export const CURL_AUTH_HEADER = '-H "Authorization: Bearer ${AGENTMEMORY_SECRET:
 
 export function captureRestBase(restPort: number | null): string {
   return `http://localhost:${restPort ?? 3111}/agentmemory`;
+}
+
+export const NO_HOOK_CAPTURE = {
+  message:
+    "No capture has been observed yet: there are no sessions and no hook events. An agent connected with MCP only records no session observations; it saves long-term memories only when it calls memory_save.",
+  fix: "Run one agent session, then check again. If there are still no sessions and the agent supports hooks or an agentmemory plugin, rerun npx @agentmemory/agentmemory connect <agent> --with-hooks or install the plugin. Agents without either stay MCP only and keep memories only through memory_save.",
+};
+
+export function hookCaptureMissing(sessions: number | null, capture: CaptureStatus | null | undefined): boolean {
+  return sessions === 0 && !!capture?.inbox && !capture.spool.some((s) => s.unreadable) && !captureActivity(capture);
+}
+
+function captureActivity(capture: CaptureStatus): boolean {
+  const inbox = capture.inbox;
+  const queued = inbox ? inbox.pending + inbox.retrying + inbox.dead : 0;
+  const spooled = capture.spool.reduce((n, s) => n + s.records, 0);
+  return capture.sinceStart.accepted > 0 || queued > 0 || spooled > 0;
 }
 
 function captureProblems(capture: CaptureStatus | null, now: Date, restPort: number | null): StatusProblem[] {

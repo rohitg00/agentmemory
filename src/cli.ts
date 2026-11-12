@@ -104,6 +104,8 @@ import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
 import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
+import { NO_HOOK_CAPTURE, hookCaptureMissing } from "./functions/status.js";
+import type { CaptureStatus } from "./functions/capture.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -1973,6 +1975,18 @@ async function runStatus() {
       }
     }
     p.note(lines.join("\n"), "agentmemory");
+    if (Array.isArray(sessionsRes?.sessions) && sessions === 0) {
+      const [allSessions, captureRes] = await Promise.all([
+        apiFetch<{ sessions?: unknown }>(base, "sessions?agentId=*&limit=1"),
+        apiFetch<{ capture?: CaptureStatus | null }>(base, "capture?limit=1"),
+      ]);
+      const noSessions = Array.isArray(allSessions?.sessions) && allSessions.sessions.length === 0;
+      const capture = captureRes?.capture;
+      const known = !!capture && typeof capture === "object" && !!capture.sinceStart && Array.isArray(capture.spool);
+      if (noSessions && known && hookCaptureMissing(0, capture)) {
+        p.log.warn(`${NO_HOOK_CAPTURE.message}\n${NO_HOOK_CAPTURE.fix}`);
+      }
+    }
   } catch (err) {
     p.log.error(err instanceof Error ? err.message : String(err));
     process.exit(1);

@@ -117,6 +117,62 @@ describe("evaluateStatus", () => {
     expect(problem?.fix).toMatch(/Restart agentmemory/);
   });
 
+  const idleCapture = {
+    policy: { maxAttempts: 5, retryIntervalMs: 10_000, dedupRetentionHours: 168, inboxMax: 10_000, deadMax: 1000, eventsMax: 100_000 },
+    inbox: { pending: 0, retrying: 0, dead: 0, oldestAcceptedAt: null, nextAttemptAt: null, lastError: null },
+    sinceStart: { accepted: 0, completed: 0, duplicates: 0, retried: 0, recovered: 0, deadLettered: 0, rejected: 0, pruned: 0 },
+    lastSweepAt: null,
+    lastPruneAt: null,
+    lastBootDrain: null,
+    spool: [],
+  } as unknown as NonNullable<StatusInputs["capture"]>;
+
+  it("warns when no hook has ever reached the server", () => {
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 }, capture: idleCapture }));
+    expect(codes(report)).toEqual(["no-hook-capture"]);
+    expect(report.status).toBe("warn");
+    const problem = report.problems[0];
+    expect(problem.message).toMatch(/No capture has been observed yet/);
+    expect(problem.fix).toMatch(/^Run one agent session/);
+    expect(problem.message).toMatch(/long-term memories only when it calls memory_save/);
+    expect(problem.fix).toMatch(/supports hooks or an agentmemory plugin/);
+    expect(problem.fix).toMatch(/--with-hooks/);
+  });
+
+  it("skips the no-hook warning while hook captures are in flight or the session count is unknown", () => {
+    const capture = idleCapture;
+    const empty = { ...inputs().index, sessions: 0 };
+    expect(codes(evaluateStatus(inputs({ index: empty, capture })))).toContain("no-hook-capture");
+    const accepted = { ...capture, sinceStart: { ...capture.sinceStart, accepted: 2 } };
+    expect(codes(evaluateStatus(inputs({ index: empty, capture: accepted })))).not.toContain("no-hook-capture");
+    const pending = { ...capture, inbox: { ...capture.inbox!, pending: 1 } };
+    expect(codes(evaluateStatus(inputs({ index: empty, capture: pending })))).not.toContain("no-hook-capture");
+    expect(codes(evaluateStatus(inputs({ index: { ...empty, sessions: null }, capture })))).not.toContain("no-hook-capture");
+  });
+
+  it("does not diagnose missing hooks when the capture check is unavailable", () => {
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 }, capture: null }));
+    expect(codes(report)).toContain("capture-check-unavailable");
+    expect(codes(report)).not.toContain("no-hook-capture");
+  });
+
+  it("does not diagnose missing hooks when the capture inbox could not be read", () => {
+    const capture = { ...idleCapture, inbox: null };
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 }, capture }));
+    expect(codes(report)).toContain("capture-check-unavailable");
+    expect(codes(report)).not.toContain("no-hook-capture");
+    expect(report.status).not.toBe("ok");
+  });
+
+  it("does not diagnose missing hooks when the capture spool could not be read", () => {
+    const spool = [{ path: "/tmp/spool/x.jsonl", records: 0, unreadable: true, stats: { dropped: 0, lastDropAt: null } }] as unknown as NonNullable<StatusInputs["capture"]>["spool"];
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, sessions: 0 }, capture: { ...idleCapture, spool } }));
+    expect(codes(report)).toContain("capture-check-unavailable");
+    expect(codes(report)).not.toContain("no-hook-capture");
+    expect(report.status).not.toBe("ok");
+    expect(report.problems.find((p) => p.code === "capture-check-unavailable")?.fix).toContain("can read /tmp/spool/x.jsonl");
+  });
+
   it("notes when the index check timed out instead of claiming the index is fine", () => {
     const report = evaluateStatus(inputs({ index: { ...inputs().index, missingObservations: null, sessions: null } }));
     expect(codes(report)).toEqual(["index-check-unavailable"]);
