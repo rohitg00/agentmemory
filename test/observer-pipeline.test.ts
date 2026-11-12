@@ -80,6 +80,16 @@ describe("observer pipeline", () => {
     expect(sdk.observed).toHaveLength(0);
   });
 
+  it("registers the delete-cascade and relation-reaction observers in inline mode", () => {
+    process.env.AGENTMEMORY_BINDINGS = "inline";
+    const sdk = fakeSdk();
+    registerPipelineObservers(sdk as never);
+    const ids = sdk.observed.map((o) => o.options?.id);
+    expect(ids).toContain("agentmemory:cascade:deleted");
+    expect(ids).toContain("agentmemory:cascade:relation-reaction");
+    expect(ids.filter((id) => String(id).startsWith("agentmemory:pipeline:"))).toEqual([]);
+  });
+
   it("registerPipelineObservers issues the compress observer spec", async () => {
     const sdk = fakeSdk();
     const b = getBindings(sdk as never);
@@ -231,6 +241,13 @@ describe("post-session-graph marker validity", () => {
 
   it("keeps the marker when graph extraction reports success false", async () => {
     const t = await setup({ extract: { success: false, error: "llm down" }, obs: [{ id: "o2", title: "x", timestamp: "2026-03-01T00:00:00Z" }], mark: mark() });
+    const result = await t.functions.get("mem::post-session-graph")!({ sessionId: "s1" });
+    expect(result).toEqual({ extracted: 0, error: "llm down" });
+    expect(t.marks.get("s1")!.lastObservationTimestamp).toBe("2026-02-01T00:00:00Z");
+  });
+
+  it("keeps the marker when graph extraction reports a partial LLM failure", async () => {
+    const t = await setup({ extract: { success: true, partial: true, error: "llm down", nodesAdded: 2 }, obs: [{ id: "o2", title: "x", timestamp: "2026-03-01T00:00:00Z" }], mark: mark() });
     const result = await t.functions.get("mem::post-session-graph")!({ sessionId: "s1" });
     expect(result).toEqual({ extracted: 0, error: "llm down" });
     expect(t.marks.get("s1")!.lastObservationTimestamp).toBe("2026-02-01T00:00:00Z");

@@ -1,5 +1,5 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
-import type { CompressedObservation, Memory, Session } from "../types.js";
+import type { Memory, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
 import { emitLiveEvent } from "../viewer/live-events.js";
@@ -69,20 +69,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       fireVoid("mem::slot-reflect", { sessionId: data.sessionId });
     }
     if (!bindings.observing("mem::post-session-graph")) {
-      try {
-        const observations = await kv.list<CompressedObservation>(
-          KV.observations(data.sessionId),
-        );
-        const compressed = observations.filter((o) => o.title);
-        if (compressed.length > 0) {
-          fireVoid("mem::graph-extract", { observations: compressed });
-        }
-      } catch (err) {
-        logger.warn("graph-extract trigger failed", {
-          sessionId: data.sessionId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+      fireVoid("mem::post-session-graph", { sessionId: data.sessionId });
     }
     // Crystals + lessons consolidation. The stop lifecycle is the single
     // source of truth: event::session::stopped fires for ALL agents (the

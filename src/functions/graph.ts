@@ -798,6 +798,7 @@ export function registerGraphFunction(
           success: true,
           nodesAdded: nodes.length,
           edgesAdded: edges.length,
+          ...(llmError ? { partial: true, error: llmError } : {}),
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

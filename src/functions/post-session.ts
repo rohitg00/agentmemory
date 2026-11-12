@@ -36,11 +36,11 @@ export function registerPostSessionFunctions(sdk: IIIClient, kv: StateKV): void 
     const observations = await collectAll<CompressedObservation>(kv, KV.observations(data.sessionId));
     const fresh = observations.filter((o) => o.title && Date.parse(graphStamp(o)) > since);
     if (fresh.length === 0) return { extracted: 0 };
-    const result = await sdk.trigger<{ observations: CompressedObservation[] }, { success?: boolean; error?: string } | null>({
+    const result = await sdk.trigger<{ observations: CompressedObservation[] }, { success?: boolean; partial?: boolean; error?: string } | null>({
       function_id: "mem::graph-extract",
       payload: { observations: fresh },
     });
-    if (result?.success === false) return { extracted: 0, error: result.error ?? "graph extraction failed" };
+    if (result?.success === false || result?.partial === true) return { extracted: 0, error: result.error ?? "graph extraction failed" };
     const maxTs = fresh.reduce((max, o) => (graphStamp(o) > max ? graphStamp(o) : max), marker?.lastObservationTimestamp ?? "");
     await kv.set(KV.graphExtractMarks, data.sessionId, {
       sessionId: data.sessionId,

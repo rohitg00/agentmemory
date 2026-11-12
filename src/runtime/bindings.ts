@@ -175,7 +175,7 @@ export class Bindings {
   }
 
   observeStateChanges(filters: Record<string, unknown>, target: string, options?: ObserverOptions): ObserverHandle | null {
-    return this.observePipeline({ function_id: "state::on-changed", filters, capture: ["input"] }, target, options);
+    return this.observe("pipeline", `pipeline ${target}`, { function_id: "state::on-changed", filters, capture: ["input"] }, target, options);
   }
 
   activate(timeoutMs = ACTIVATE_TIMEOUT_MS): Promise<BindingModes> {
