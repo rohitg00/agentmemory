@@ -24,7 +24,7 @@ export const III_RELEASE_SHA256: ChecksumTable = {
     "iii-x86_64-pc-windows-msvc.zip": "3df9e089826f26ddc157d2e504a8e3aa11b9bc5fe21b3faeece85599b21c7081",
     "iii-aarch64-pc-windows-msvc.zip": "ac3a94945741b7194f678347a7275524a63c5e4261cb2bcf34a9ae51d68ccaf0",
   },
-  "0.26.0": {
+  "0.25.1": {
     "iii-aarch64-apple-darwin.tar.gz": "f7eff803540436a4964958048abc0083e638f53b500d737819f62913c270f141",
     "iii-x86_64-apple-darwin.tar.gz": "d93511a72336c19a6028a18f43819e6b3c49522589fc6303f0a0880b3f02d8ae",
     "iii-x86_64-unknown-linux-gnu.tar.gz": "0f486f0fb175013fdebd482735228a47de5fd5014d375a9720cb4f958341208a",
