@@ -611,10 +611,10 @@ function appendSpool(url, eventId, body, reason, options = {}) {
 		if (bytes > policy.maxRecordBytes) return note("too-large", bytes);
 		return withLock(paths.lock, (locked) => {
 			let expired = 0;
-			if (locked && fileSize(paths.file) + bytes > policy.maxBytes) expired = pruneExpiredLocked(paths, policy);
-			const over = fileSize(paths.file) + sentBytes(paths) + bytes - policy.maxBytes;
-			if (locked && over > 0) evictSent(paths, over);
-			if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) {
+			if (locked && fileSize(paths.file) + claimBytes(paths) + bytes > policy.maxBytes) expired = pruneExpiredLocked(paths, policy);
+			const over = heldBytes(paths) + bytes - policy.maxBytes;
+			if (locked && over > 0 && over <= sentBytes(paths)) evictSent(paths, over);
+			if (heldBytes(paths) + bytes > policy.maxBytes) {
 				if (expired) writeStats(paths, (s) => void (s.expired += expired));
 				return note("full", bytes);
 			}
@@ -666,6 +666,40 @@ function listSent(paths) {
 function sentBytes(paths) {
 	return listSent(paths).reduce((n, s) => n + s.bytes, 0);
 }
+function listClaims(paths) {
+	const claims = [];
+	let entries;
+	try {
+		entries = readdirSync(paths.dir);
+	} catch {
+		return claims;
+	}
+	const prefix = `${paths.name}.draining-`;
+	for (const entry of entries) {
+		if (!entry.startsWith(prefix) || !entry.endsWith(".jsonl")) continue;
+		const file = join(paths.dir, entry);
+		try {
+			const stat = statSync(file);
+			claims.push({
+				file,
+				bytes: stat.size,
+				mtimeMs: stat.mtimeMs
+			});
+		} catch {}
+	}
+	return claims;
+}
+function claimBytes(paths) {
+	return listClaims(paths).reduce((n, c) => n + c.bytes, 0);
+}
+const drainingClaims = /* @__PURE__ */ new Map();
+function retainedClaimBytes(paths) {
+	const draining = drainingClaims.get(paths.file);
+	return listClaims(paths).reduce((n, c) => draining?.has(c.file) ? n : n + c.bytes, 0);
+}
+function heldBytes(paths) {
+	return fileSize(paths.file) + sentBytes(paths) + claimBytes(paths);
+}
 function evictSent(paths, need) {
 	let freed = 0;
 	for (const seg of listSent(paths).sort((a, b) => a.dueAt - b.dueAt)) {
@@ -713,7 +747,7 @@ function retainSent(url, eventId, body, mark, options = {}) {
 		const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
 		const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
 		return withLock(paths.lock, () => {
-			if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) return false;
+			if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return false;
 			const fd = openSync(file, "a", 384);
 			try {
 				writeSync(fd, line);
@@ -757,17 +791,7 @@ function reconcileSent(url, bootId, options = {}) {
 	return result;
 }
 function claimFiles(paths) {
-	const claimed = [];
-	try {
-		const prefix = `${paths.name}.draining-`;
-		for (const entry of readdirSync(paths.dir)) {
-			if (!entry.startsWith(prefix) || !entry.endsWith(".jsonl")) continue;
-			const full = join(paths.dir, entry);
-			try {
-				if (Date.now() - statSync(full).mtimeMs > ORPHAN_CLAIM_MS) claimed.push(full);
-			} catch {}
-		}
-	} catch {}
+	const claimed = eligibleClaims(paths).map((claim) => claim.file);
 	if (fileSize(paths.file) > 0) {
 		const target = join(paths.dir, `${paths.name}.draining-${process.pid}-${Date.now()}.jsonl`);
 		withLock(paths.lock, (locked) => {
@@ -799,8 +823,12 @@ function requeueUnlocked(paths, leftover) {
 		utimesSync(target, 0, 0);
 	} catch {}
 }
+function eligibleClaims(paths, now = Date.now()) {
+	return listClaims(paths).filter((claim) => now - claim.mtimeMs > ORPHAN_CLAIM_MS);
+}
 function spoolHasRecords(url, dir) {
-	return fileSize(spoolPaths(url, dir).file) > 0;
+	const paths = spoolPaths(url, dir);
+	return fileSize(paths.file) > 0 || eligibleClaims(paths).length > 0;
 }
 function drainInProgress(url, dir) {
 	const paths = spoolPaths(url, dir);
@@ -819,6 +847,7 @@ async function drainSpool(url, send, options = {}) {
 		rejected: 0,
 		expired: 0,
 		corrupt: 0,
+		unreadable: 0,
 		remaining: 0
 	};
 	const paths = spoolPaths(url, options.dir);
@@ -840,12 +869,17 @@ async function drainSpool(url, send, options = {}) {
 			skipped: "empty"
 		};
 		const records = [];
+		const read = [];
 		for (const file of files) try {
 			const parsed = parseLines(readFileSync(file, "utf-8"));
 			records.push(...parsed.records);
 			result.corrupt += parsed.corrupt;
-		} catch {}
+			read.push(file);
+		} catch {
+			result.unreadable++;
+		}
 		result.claimed = records.length;
+		drainingClaims.set(paths.file, new Set(read));
 		const seen = /* @__PURE__ */ new Set();
 		const now = Date.now();
 		const deadline = options.deadlineMs ? now + options.deadlineMs : Number.POSITIVE_INFINITY;
@@ -888,7 +922,7 @@ async function drainSpool(url, send, options = {}) {
 		}
 		result.remaining = leftover.length;
 		withLock(paths.lock, (locked) => locked ? requeueLocked(paths, leftover) : requeueUnlocked(paths, leftover), 2e3);
-		for (const file of files) try {
+		for (const file of read) try {
 			unlinkSync(file);
 		} catch {}
 		writeStats(paths, (s) => {
@@ -901,11 +935,13 @@ async function drainSpool(url, send, options = {}) {
 			s.lastDrainDuplicates = result.duplicates;
 			s.lastDrainRejected = result.rejected;
 			s.lastDrainRemaining = result.remaining;
+			s.lastDrainUnreadable = result.unreadable;
 			if (result.error) s.lastDrainError = result.error;
 			else delete s.lastDrainError;
 		});
 		return result;
 	} finally {
+		drainingClaims.delete(paths.file);
 		releaseLock(paths.drainLock);
 	}
 }
