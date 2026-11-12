@@ -55,7 +55,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       timeoutMs: getSummaryTriggerTimeoutMs(),
     });
     if (summary?.unchanged === true) return summary;
-    if (getBindings(sdk).pipeline === "observe") return summary;
+    const bindings = getBindings(sdk);
     const fireVoid = (function_id: string, payload: unknown) =>
       sdk
         .trigger({ function_id, payload, action: TriggerAction.Void() })
@@ -65,23 +65,24 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
             error: err instanceof Error ? err.message : String(err),
           }),
         );
-    if (isReflectEnabled()) {
+    if (isReflectEnabled() && !bindings.observing("mem::post-session-reflect")) {
       fireVoid("mem::slot-reflect", { sessionId: data.sessionId });
     }
-    // Unconditional: mem::graph-extract gates its LLM pass internally.
-    try {
-      const observations = await kv.list<CompressedObservation>(
-        KV.observations(data.sessionId),
-      );
-      const compressed = observations.filter((o) => o.title);
-      if (compressed.length > 0) {
-        fireVoid("mem::graph-extract", { observations: compressed });
+    if (!bindings.observing("mem::post-session-graph")) {
+      try {
+        const observations = await kv.list<CompressedObservation>(
+          KV.observations(data.sessionId),
+        );
+        const compressed = observations.filter((o) => o.title);
+        if (compressed.length > 0) {
+          fireVoid("mem::graph-extract", { observations: compressed });
+        }
+      } catch (err) {
+        logger.warn("graph-extract trigger failed", {
+          sessionId: data.sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
-    } catch (err) {
-      logger.warn("graph-extract trigger failed", {
-        sessionId: data.sessionId,
-        error: err instanceof Error ? err.message : String(err),
-      });
     }
     // Crystals + lessons consolidation. The stop lifecycle is the single
     // source of truth: event::session::stopped fires for ALL agents (the
@@ -99,7 +100,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
     // are full-corpus LLM work with no internal "nothing changed" guard, so
     // firing them every turn is a cost/latency storm for connected agents.
     // Bound the global corpus consolidation to once per cooldown window.
-    if (isConsolidationEnabled() && !data.skipConsolidation) {
+    if (isConsolidationEnabled() && !data.skipConsolidation && !bindings.observing("mem::post-session-consolidate")) {
       if (await consolidationDue(kv)) {
         fireVoid("mem::consolidate-pipeline", { tier: "all", force: true });
         fireVoid("mem::auto-crystallize", { olderThanDays: 0 });

@@ -291,6 +291,27 @@ describe("compression sweep", () => {
     expect(r2.dispatched).toBe(50);
     expect(sent).toHaveLength(50);
   });
+
+  it("sends pending rows before failed rows and stops retrying failures that cannot succeed", async () => {
+    const { createCompressionSweep, MAX_SWEEP_ATTEMPTS } = await import("../src/functions/compression-sweep.js");
+    const sent: Array<{ observationId: string }> = [];
+    const sdk = { trigger: vi.fn(async (req: { payload: { observationId: string } }) => { sent.push(req.payload); return {}; }) };
+    const old = new Date(Date.now() - 10 * 60_000).toISOString();
+    const failedRow = (id: string, attempts: number, error = "llm_error") => ({ id, title: "t", timestamp: old, compression: { status: "failed", attempts, revision: "r", error } });
+    const obs = [
+      ...Array.from({ length: 60 }, (_, i) => failedRow(`f${i}`, 1)),
+      failedRow("exhausted", MAX_SWEEP_ATTEMPTS),
+      failedRow("no-source", 0, "source_unavailable"),
+      ...Array.from({ length: 10 }, (_, i) => ({ id: `p${i}`, title: "t", timestamp: old, compression: { status: "pending", attempts: 0, revision: "r" } })),
+    ];
+    const kv = { list: vi.fn(async () => [{ id: "s1" }]), iterate: async function* () { yield obs; }, backend: "file" };
+    const result = await createCompressionSweep(sdk as never, kv as never)();
+    const ids = sent.map((p) => p.observationId);
+    expect(result.dispatched).toBe(50);
+    expect(new Set(ids.slice(0, 10))).toEqual(new Set(Array.from({ length: 10 }, (_, i) => `p${i}`)));
+    expect(ids).not.toContain("exhausted");
+    expect(ids).not.toContain("no-source");
+  });
 });
 
 describe("post-remember-graph", () => {

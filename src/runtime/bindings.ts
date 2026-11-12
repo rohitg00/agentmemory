@@ -43,9 +43,11 @@ const HTTP_ARG_KEYS = new Set(["api_path", "http_method", "middleware_function_i
 
 const ACTIVATE_TIMEOUT_MS = 30_000;
 
+const ID_CONFLICT_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000];
+
 export class Bindings {
   private readonly sdk: SdkLike;
-  private readonly bound: Array<{ handle: ObserverHandle; kind: BindingKind }> = [];
+  private readonly bound: Array<{ handle: ObserverHandle; kind: BindingKind; target: string }> = [];
   private readonly reasons = new Set<string>();
   private readonly inline: boolean;
   private failedObserverCount = 0;
@@ -71,6 +73,11 @@ export class Bindings {
     return this.inline ? "inline" : "observe";
   }
 
+  observing(target: string): boolean {
+    if (this.inline) return false;
+    return this.bound.some((entry) => entry.kind === "pipeline" && entry.target === target && entry.handle.state === "active");
+  }
+
   get modes(): BindingModes {
     return { state: this.modeOf("state"), http: this.modeOf("http") };
   }
@@ -91,15 +98,29 @@ export class Bindings {
     return parsed;
   }
 
-  private observe(kind: BindingKind, label: string, source: ObserveSource, target: string, options?: ObserverOptions): ObserverHandle | null {
+  private observe(kind: BindingKind, label: string, source: ObserveSource, target: string, options?: ObserverOptions, attempt = 0): ObserverHandle | null {
     if (typeof this.sdk.observe !== "function") {
       this.reasons.add("client has no observe(); bindings skipped");
       return null;
     }
     const handle = this.sdk.observe(source, target, options);
-    this.bound.push({ handle, kind });
+    const entry = { handle, kind, target };
+    this.bound.push(entry);
     void handle.ready().catch((err: unknown) => {
       const code = (err as { code?: string })?.code ?? String(err);
+      if (code === "OBSERVER_ID_CONFLICT" && attempt < ID_CONFLICT_RETRY_DELAYS_MS.length) {
+        const delay = ID_CONFLICT_RETRY_DELAYS_MS[attempt];
+        logger.warn(`Observer id for ${label} is still held by an earlier connection; retrying`, { attempt: attempt + 1, delayMs: delay });
+        const timer = setTimeout(() => {
+          void handle.dispose().catch(() => {}).finally(() => {
+            const index = this.bound.indexOf(entry);
+            if (index >= 0) this.bound.splice(index, 1);
+            this.observe(kind, label, source, target, options, attempt + 1);
+          });
+        }, delay);
+        timer.unref?.();
+        return;
+      }
       this.failedObserverCount++;
       this.reasons.add(`${label} observer rejected: ${code}`);
       logger.error(`Observer failed for ${label}`, { error: code });
@@ -185,6 +206,12 @@ export class Bindings {
     const reasons = new Set(this.reasons);
     if (modes.state === "pending" && this.handlesOf("state").length > 0) reasons.add("state::on-changed observers pending until the state worker connects");
     if (modes.http === "pending" && this.handlesOf("http").length > 0) reasons.add("http::on-request observers pending until the http worker connects");
+    if (!this.inline) {
+      const inactive = this.bound.filter((entry) => entry.kind === "pipeline" && entry.handle.state !== "active");
+      if (inactive.length > 0) {
+        reasons.add(`${inactive.length} pipeline observers are not active, so their work runs as direct calls: ${inactive.map((entry) => entry.target).join(", ")}`);
+      }
+    }
     for (const kind of ["state", "http"] as const) {
       if (modes[kind] !== "observe") continue;
       const handles = this.handlesOf(kind);

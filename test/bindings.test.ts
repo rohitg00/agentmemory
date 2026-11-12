@@ -140,6 +140,79 @@ describe("Bindings", () => {
     expect(await settled).toEqual({ state: "observe", http: "observe" });
   });
 
+  it("observes a route again when an earlier connection still holds its observer id", async () => {
+    vi.useFakeTimers();
+    try {
+      const sdk = fakeSdk("active");
+      let first = true;
+      sdk.observe.mockImplementation((source: Record<string, unknown>, target: string, options?: Record<string, unknown>) => {
+        sdk.observed.push({ source, target, options });
+        const handle = makeHandle(first ? "error" : "active");
+        if (first) handle.ready.mockImplementation(() => Promise.reject(Object.assign(new Error("conflict"), { code: "OBSERVER_ID_CONFLICT" })));
+        first = false;
+        sdk.handles.push(handle);
+        return handle;
+      });
+      const b = new Bindings(sdk as never);
+      b.http(ROUTE);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(sdk.observed).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(sdk.observed).toHaveLength(2);
+      expect(sdk.observed[1].options).toEqual(sdk.observed[0].options);
+      expect(sdk.handles[0].dispose).toHaveBeenCalled();
+      expect(b.handles).toEqual([sdk.handles[1]]);
+      expect(b.describe()).toMatchObject({ http: "observe", failedObservers: 0, reasons: [] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a route as rejected after the id conflict retries run out", async () => {
+    vi.useFakeTimers();
+    try {
+      const sdk = fakeSdk("active");
+      sdk.observe.mockImplementation((source: Record<string, unknown>, target: string, options?: Record<string, unknown>) => {
+        sdk.observed.push({ source, target, options });
+        const handle = makeHandle("active");
+        handle.state = "error";
+        handle.ready.mockImplementation(() => Promise.reject(Object.assign(new Error("conflict"), { code: "OBSERVER_ID_CONFLICT" })));
+        sdk.handles.push(handle);
+        return handle;
+      });
+      const b = new Bindings(sdk as never);
+      b.http(ROUTE);
+      await vi.advanceTimersByTimeAsync(200_000);
+      expect(sdk.observed).toHaveLength(5);
+      expect(b.describe().failedObservers).toBe(1);
+      expect(b.describe().reasons).toContain("route POST /agentmemory/x observer rejected: OBSERVER_ID_CONFLICT");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a pipeline target as observed only while its own observer is active", () => {
+    const sdk = fakeSdk("pending");
+    const b = new Bindings(sdk as never);
+    b.observePipeline({ function_id: "mem::observe" }, "mem::compress");
+    b.observePipeline({ function_id: "event::session::stopped" }, "mem::post-session-graph");
+    expect(b.observing("mem::compress")).toBe(false);
+    sdk.handles[0].become("active");
+    expect(b.observing("mem::compress")).toBe(true);
+    expect(b.observing("mem::post-session-graph")).toBe(false);
+    expect(b.describe().reasons).toContain("1 pipeline observers are not active, so their work runs as direct calls: mem::post-session-graph");
+    sdk.handles[0].become("error");
+    expect(b.observing("mem::compress")).toBe(false);
+  });
+
+  it("never reports a pipeline target as observed in inline mode", () => {
+    process.env.AGENTMEMORY_BINDINGS = "inline";
+    const sdk = fakeSdk("active");
+    const b = new Bindings(sdk as never);
+    b.observePipeline({ function_id: "mem::observe" }, "mem::compress");
+    expect(b.observing("mem::compress")).toBe(false);
+  });
+
   it("reports observers that stay inactive while others of the same provider are active", () => {
     const sdk = fakeSdk("pending");
     const b = new Bindings(sdk as never);

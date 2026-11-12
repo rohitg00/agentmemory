@@ -10,22 +10,27 @@ import { singleFlight } from "../runtime/recovery.js";
 
 const MAX_AGE_MS = 5 * 60_000;
 const MAX_PER_RUN = 50;
+export const MAX_SWEEP_ATTEMPTS = 5;
 
 export function createCompressionSweep(sdk: IIIClient, kv: StateKV) {
   return singleFlight(async () => {
-    const candidates: Array<{ sessionId: string; observationId: string }> = [];
+    const pending: Array<{ sessionId: string; observationId: string }> = [];
+    const failed: Array<{ sessionId: string; observationId: string }> = [];
     const cutoff = Date.now() - MAX_AGE_MS;
     const sessions = await kv.list<Session>(KV.sessions);
     for (const session of sessions) {
       const observations = await collectAll<CompressedObservation>(kv, KV.observations(session.id));
       for (const obs of observations) {
-        if (candidates.length >= MAX_PER_RUN) break;
+        if (pending.length >= MAX_PER_RUN) break;
         if (!needsCompression(obs)) continue;
         if (Date.parse(obs.timestamp) > cutoff) continue;
-        candidates.push({ sessionId: session.id, observationId: obs.id });
+        const candidate = { sessionId: session.id, observationId: obs.id };
+        if (obs.compression?.status !== "failed") pending.push(candidate);
+        else if (obs.compression.error !== "source_unavailable" && (obs.compression.attempts ?? 0) < MAX_SWEEP_ATTEMPTS && failed.length < MAX_PER_RUN) failed.push(candidate);
       }
-      if (candidates.length >= MAX_PER_RUN) break;
+      if (pending.length >= MAX_PER_RUN) break;
     }
+    const candidates = [...pending, ...failed].slice(0, MAX_PER_RUN);
     const concurrency = Math.min(compressMaxConcurrent(), Math.max(1, candidates.length));
     let inFlight = 0;
     let dispatched = 0;

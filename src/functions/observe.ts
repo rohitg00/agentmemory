@@ -499,7 +499,7 @@ export function registerObserveFunction(
           },
         });
 
-        if (autoCompress && getBindings(sdk).pipeline !== "observe") {
+        if (autoCompress && !getBindings(sdk).observing("mem::compress")) {
           afterKeyedLock(`obs:${payload.sessionId}`, async () => {
             try {
               await sdk.trigger({

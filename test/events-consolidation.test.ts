@@ -221,6 +221,23 @@ describe("event::session::stopped consolidation fan-out", () => {
       expect.objectContaining({ sessionId: "ses_1" }),
     );
   });
+
+  it("runs consolidation directly while its observer is not active and leaves it to the observer once active", async () => {
+    vi.mocked(isConsolidationEnabled).mockReturnValue(true);
+    const { getBindings } = await import("../src/runtime/bindings.js");
+    const handle = { state: "pending", ready: () => Promise.resolve(), onStateChange: () => () => {}, dispose: () => Promise.resolve() };
+    const run = async () => {
+      const { sdk, handlers, trigger } = mockSdk();
+      const observed = Object.assign(sdk, { observe: () => handle });
+      getBindings(observed as never).observePipeline({ function_id: "event::session::stopped" }, "mem::post-session-consolidate");
+      registerEventTriggers(observed as never, mockKV() as never);
+      await handlers.get("event::session::stopped")!({ sessionId: "ses_1" });
+      return functionIds(trigger);
+    };
+    expect(await run()).toContain("mem::consolidate-pipeline");
+    handle.state = "active";
+    expect(await run()).not.toContain("mem::consolidate-pipeline");
+  });
 });
 
 // The client session-end hook is bundled into a standalone binary that reads

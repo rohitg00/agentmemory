@@ -21,7 +21,9 @@ Use the same `--instance`, `--port` and `--data-dir` flags you used to start it.
 - The trigger fallback is gone. `AGENTMEMORY_BINDINGS=trigger` is treated as `AGENTMEMORY_BINDINGS=inline` with a warning: routes and state subscriptions still use observers, and only the post-capture pipeline (compression, post-session graph, reflection and consolidation) runs inline.
 - Observers use `capture` only. Background observers receive the `Observed` payload and read the event from its `input` or `output`; HTTP route handlers still receive the `HttpRequest`.
 - Failure audit observers capture `["input", "error"]` with an `error` filter for thrown errors, and `["input", "output"]` with an `output.success == false` filter for soft failures.
-- When the state or http worker has not registered within 30 seconds of boot, `agentmemory status` reports it as `pending` instead of falling back. Its observers attach as soon as the worker connects.
+- When the state or http worker has not registered within 30 seconds of boot, `runtime.bindings` in `/agentmemory/status` reports that provider as `pending` instead of falling back. Its observers attach as soon as the worker connects.
+- A pipeline step runs as a direct call while its own observer is not active (pending, rejected or suspended), so compression and post-session work keep running. `runtime.bindings.reasons` lists the steps that use direct calls.
+- The compression sweep retries a failed compression at most 5 times and sends pending observations before failed ones.
 
 ## Custom deployments
 
