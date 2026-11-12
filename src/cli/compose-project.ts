@@ -249,6 +249,7 @@ export interface ComposeProjectOptions {
   workerBinDirIsAbsolute?: boolean;
   redisUrl?: string;
   workerEnvironment?: NodeJS.ProcessEnv;
+  workerEnvironmentOverrides?: NodeJS.ProcessEnv;
   cwd?: string;
   stateBackend?: StateBackendOptions;
   startupTimeoutMs?: number;
@@ -363,7 +364,7 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
     `      run: ${yamlString(windows ? windowsNodeRun(options.nodeBin) : shellCommand(options.nodeBin, ["dist/index.mjs"]))}`,
   );
   if (filteredEnvFile) lines.push(`    env_file: [${yamlString(filteredEnvFile)}]`);
-  const explicitWorkerEnvironment = Object.entries(options.workerEnvironment ?? {})
+  const explicitWorkerEnvironment = Object.entries(options.workerEnvironmentOverrides ?? options.workerEnvironment ?? {})
     .filter(([key, value]) => value !== undefined && AGENTMEMORY_WORKER_ENV_ALLOWLIST.has(key) && !COMPOSE_RESERVED_ENV.has(key))
     .sort(([left], [right]) => left.localeCompare(right));
   lines.push(
