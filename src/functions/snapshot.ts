@@ -71,15 +71,11 @@ export function registerSnapshotFunction(
         const memories = await collectAll<Memory>(kv, KV.memories);
         const graphNodes = await collectAll<GraphNode>(kv, KV.graphNodes);
         const graphEdges = await collectAll<GraphEdge>(kv, KV.graphEdges);
-        const accessLogs = await kv
-          .list<AccessLogExport>(KV.accessLog)
-          .catch(() => [] as AccessLogExport[]);
+        const accessLogs = await kv.list<AccessLogExport>(KV.accessLog);
 
         const observations: Record<string, unknown[]> = {};
         for (const session of sessions) {
-          const obs = await kv
-            .list(KV.observations(session.id))
-            .catch(() => []);
+          const obs = await kv.list(KV.observations(session.id));
           if (obs.length > 0) {
             observations[session.id] = obs;
           }
