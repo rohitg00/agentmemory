@@ -16,12 +16,5 @@ optional_env:
   - name: AGENTMEMORY_AGENT_ID
     description: "Optional shared identity; otherwise isolate this profile and author"
     password: false
-hooks:
-  - on_turn_start
-  - prefetch
-  - sync_turn
-  - on_session_end
-  - on_session_switch
-  - on_pre_compress
-  - on_memory_write
-  - system_prompt_block
+requires_hermes: ">=0.21.6"
+provides_hooks: []

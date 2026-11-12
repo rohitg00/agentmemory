@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -44,7 +45,59 @@ export const adapter = createJsonMcpAdapter({
  * Merge the bundled `plugin/hooks/hooks.antigravity.json` into
  * `~/.gemini/config/hooks.json`, replacing only the bundle agentmemory owns.
  */
-export function installAntigravityCliHooks(opts: ConnectOptions): ConnectResult {
+export function windowsShortPath(path: string): string | null {
+  try {
+    const out = execFileSync(
+      "powershell.exe",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:AGENTMEMORY_LONG_PATH__).ShortPath",
+      ],
+      {
+        env: { ...process.env, AGENTMEMORY_LONG_PATH__: path },
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout: 15_000,
+        windowsHide: true,
+      },
+    ).trim();
+    return out || null;
+  } catch {
+    return null;
+  }
+}
+
+export function resolveHookCommandRoot(
+  pluginRoot: string,
+  shortPath: (path: string) => string | null = windowsShortPath,
+): string | null {
+  if (!containsSpaces(pluginRoot)) return pluginRoot;
+  if (process.platform !== "win32") return null;
+  const short = shortPath(pluginRoot);
+  return short && !containsSpaces(short) ? short : null;
+}
+
+function printManualHooks(pluginRoot: string): void {
+  const target =
+    process.platform === "win32" ? "C:/agentmemory/plugin" : "/opt/agentmemory/plugin";
+  const manual = buildMergedAntigravityHooks(null, pluginRoot, undefined, target);
+  p.log.message(
+    [
+      "Manual hook setup for Antigravity:",
+      `  1. Copy ${pluginRoot} to ${target} (any path without spaces works).`,
+      `  2. Merge this into ${ANTIGRAVITY_CLI_HOOKS}:`,
+      "",
+      JSON.stringify(manual, null, 2),
+    ].join("\n"),
+  );
+}
+
+export function installAntigravityCliHooks(
+  opts: ConnectOptions,
+  shortPath: (path: string) => string | null = windowsShortPath,
+): ConnectResult {
   let pluginRoot: string;
   try {
     pluginRoot = findPluginRoot();
@@ -55,17 +108,17 @@ export function installAntigravityCliHooks(opts: ConnectOptions): ConnectResult 
     };
   }
 
-  // agy honours no quoting, so a space in the path yields hooks that load
-  // but never run. Refuse rather than install something that can only fail.
-  if (containsSpaces(pluginRoot)) {
+  const commandRoot = resolveHookCommandRoot(pluginRoot, shortPath);
+  if (commandRoot === null) {
+    printManualHooks(pluginRoot);
     return {
       kind: "skipped",
-      reason: `Antigravity CLI cannot run hook commands whose path contains spaces, and agentmemory is installed at ${pluginRoot}. Reinstall it under a space-free path to use --with-hooks; MCP works either way.`,
+      reason: `Antigravity cannot run hook commands whose path contains spaces, and agentmemory is installed at ${pluginRoot}. Follow the manual hook steps above; MCP works either way`,
     };
   }
 
   const existing = readJsonSafe<AntigravityHookManifest>(ANTIGRAVITY_CLI_HOOKS);
-  const merged = buildMergedAntigravityHooks(existing, pluginRoot);
+  const merged = buildMergedAntigravityHooks(existing, pluginRoot, undefined, commandRoot);
 
   if (opts.dryRun) {
     p.log.info(

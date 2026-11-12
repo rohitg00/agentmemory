@@ -68,7 +68,11 @@ describe("connect: DeepSeek Harness", () => {
     expect(patch).toContain("name: '@deepseek-ai/dsh-mcp-client'");
     expect(patch).toContain("serverName: agentmemory");
     expect(patch).toContain("transport: stdio");
-    expect(parseDocument(patch).toJS()[0].insert[0].config.args).toEqual(["-y", "@agentmemory/mcp"]);
+    expect(parseDocument(patch).toJS()[0].insert[0].config.args).toEqual(
+      process.platform === "win32"
+        ? ["/c", "npx", "-y", "@agentmemory/mcp"]
+        : ["-y", "@agentmemory/mcp"],
+    );
     expect(patch).toContain("AGENTMEMORY_URL:");
   });
 
@@ -354,12 +358,39 @@ describe("connect: DeepSeek Harness", () => {
     expect(readFileSync(configPath, "utf-8")).toBe(existing);
   });
 
+  it("does not report a hooks row whose plugin file is gone as installed", async () => {
+    const hooks = await import("../src/cli/connect/codex-hooks.js");
+    vi.spyOn(hooks, "findPluginRoot").mockReturnValue(join(home, "install", "plugin"));
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: false });
+    const configPath = join(home, ".dsh", "cordis.patch.yml");
+    const rows = parseDocument(readFileSync(configPath, "utf-8")).toJS();
+    rows.push({ insert: [{ id: "agentmemory-hooks", name: join(home, "install", "dist", "integrations", "dsh.mjs") }] });
+    writeFileSync(configPath, JSON.stringify(rows));
+    const result = await adapter.install({ dryRun: false, force: false });
+    expect(result.kind).toBe("already-wired");
+    expect(result.hooks).toBeUndefined();
+  });
+
+  it("does not count a legacy bridge row as installed hooks", async () => {
+    const { adapter } = await import("../src/cli/connect/dsh.js");
+    await adapter.install({ dryRun: false, force: false });
+    const dir = join(home, ".dsh");
+    const configPath = join(dir, "cordis.patch.yml");
+    const rows = parseDocument(readFileSync(configPath, "utf-8")).toJS();
+    rows.push({ insert: [{ id: "agentmemory-hooks", name: "@deepseek-ai/dsh-hooks-claude-code", config: { configPath: "agentmemory.hooks.json" } }] });
+    writeFileSync(configPath, JSON.stringify(rows));
+    writeFileSync(join(dir, "agentmemory.hooks.json"), "{}");
+    expect((await adapter.install({ dryRun: false, force: false })).hooks).toBeUndefined();
+  });
+
   it("MCP-only install after --with-hooks keeps the hooks row intact", async () => {
     mkdirSync(join(home, ".dsh"), { recursive: true });
     const { adapter } = await import("../src/cli/connect/dsh.js");
     await adapter.install({ dryRun: false, force: false, withHooks: true });
     const result = await adapter.install({ dryRun: false, force: false });
     expect(result.kind).toBe("already-wired");
+    expect(result.hooks).toBe("installed");
     const patch = readFileSync(join(home, ".dsh", "cordis.patch.yml"), "utf-8");
     expect(patch).toContain("id: agentmemory-hooks");
     expect(patch).toContain("serverName: agentmemory");
