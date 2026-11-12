@@ -12,6 +12,12 @@ export type ConnectOptions = {
   guidelines?: boolean;
 };
 
+export type AutoCapture =
+  | "built-in"
+  | "with-hooks"
+  | "plugin"
+  | "plugin-or-with-hooks";
+
 export type ConnectAdapter = {
   name: string;
   displayName: string;
@@ -24,12 +30,15 @@ export type ConnectAdapter = {
    */
   protocolNote?: string;
   category?: "native" | "mcp";
+  autoCapture?: AutoCapture;
   detect(): boolean;
   install(opts: ConnectOptions): Promise<ConnectResult>;
 };
 
+export type HookState = "installed" | "skipped";
+
 export type ConnectResult =
-  | { kind: "installed"; mutatedPath?: string; backupPath?: string }
-  | { kind: "already-wired"; mutatedPath?: string }
+  | { kind: "installed"; mutatedPath?: string; backupPath?: string; hooks?: HookState }
+  | { kind: "already-wired"; mutatedPath?: string; hooks?: HookState }
   | { kind: "stub"; reason: string }
   | { kind: "skipped"; reason: string };

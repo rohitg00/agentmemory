@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
+  AGENTMEMORY_MCP_BLOCK,
   backupFile,
+  isLegacyMcpCommand,
   logAlreadyWired,
   logBackup,
   logInstalled,
@@ -28,7 +30,7 @@ const DETECT_DIR = join(homedir(), ".config", "opencode");
 // shim defaults unset vars (URL -> localhost:3111, no secret, all tools).
 const OPENCODE_ENTRY = {
   type: "local",
-  command: ["npx", "-y", "@agentmemory/mcp"],
+  command: [AGENTMEMORY_MCP_BLOCK.command, ...AGENTMEMORY_MCP_BLOCK.args],
   enabled: true,
 };
 
@@ -45,6 +47,7 @@ export const adapter: ConnectAdapter = {
   name: "opencode",
   displayName: "OpenCode",
   category: "mcp",
+  autoCapture: "plugin",
   docs: "https://github.com/rohitg00/agentmemory#other-agents",
   protocolNote:
     "Using MCP via ~/.config/opencode/opencode.json (top-level `mcp` key). For full auto-capture, also install the bundled plugin in plugin/opencode/.",
@@ -65,7 +68,9 @@ export const adapter: ConnectAdapter = {
         : {};
 
     const alreadyHas = entryMatches(mcp["agentmemory"]);
-    if (alreadyHas && !opts.force) {
+    const command = mcp["agentmemory"]?.["command"];
+    const legacy = Array.isArray(command) && isLegacyMcpCommand(command[0], command.slice(1));
+    if (alreadyHas && !legacy && !opts.force) {
       logAlreadyWired(this.displayName, CONFIG_PATH);
       return { kind: "already-wired", mutatedPath: CONFIG_PATH };
     }
@@ -85,7 +90,10 @@ export const adapter: ConnectAdapter = {
       mkdirSync(dirname(CONFIG_PATH), { recursive: true });
     }
 
-    mcp["agentmemory"] = { ...OPENCODE_ENTRY };
+    mcp["agentmemory"] =
+      legacy && !opts.force
+        ? { ...mcp["agentmemory"], command: [...OPENCODE_ENTRY.command] }
+        : { ...OPENCODE_ENTRY };
     next["mcp"] = mcp;
     writeJsonAtomic(CONFIG_PATH, next);
 
