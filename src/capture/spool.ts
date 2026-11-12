@@ -428,6 +428,13 @@ function claimBytes(paths: SpoolPaths): number {
   return listClaims(paths).reduce((n, c) => n + c.bytes, 0);
 }
 
+const drainingClaims = new Map<string, ReadonlySet<string>>();
+
+function retainedClaimBytes(paths: SpoolPaths): number {
+  const draining = drainingClaims.get(paths.file);
+  return listClaims(paths).reduce((n, c) => (draining?.has(c.file) ? n : n + c.bytes), 0);
+}
+
 function heldBytes(paths: SpoolPaths): number {
   return fileSize(paths.file) + sentBytes(paths) + claimBytes(paths);
 }
@@ -484,7 +491,7 @@ export function retainSent(
     const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
     const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
     return withLock(paths.lock, () => {
-      if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) return false;
+      if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return false;
       const fd = openSync(file, "a", 0o600);
       try {
         writeSync(fd, line);
@@ -614,6 +621,7 @@ export async function drainSpool(
       }
     }
     result.claimed = records.length;
+    drainingClaims.set(paths.file, new Set(read));
     const seen = new Set<string>();
     const now = Date.now();
     const deadline = options.deadlineMs ? now + options.deadlineMs : Number.POSITIVE_INFINITY;
@@ -674,6 +682,7 @@ export async function drainSpool(
     });
     return result;
   } finally {
+    drainingClaims.delete(paths.file);
     releaseLock(paths.drainLock);
   }
 }

@@ -692,6 +692,11 @@ function listClaims(paths) {
 function claimBytes(paths) {
 	return listClaims(paths).reduce((n, c) => n + c.bytes, 0);
 }
+const drainingClaims = /* @__PURE__ */ new Map();
+function retainedClaimBytes(paths) {
+	const draining = drainingClaims.get(paths.file);
+	return listClaims(paths).reduce((n, c) => draining?.has(c.file) ? n : n + c.bytes, 0);
+}
 function heldBytes(paths) {
 	return fileSize(paths.file) + sentBytes(paths) + claimBytes(paths);
 }
@@ -742,7 +747,7 @@ function retainSent(url, eventId, body, mark, options = {}) {
 		const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
 		const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
 		return withLock(paths.lock, () => {
-			if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) return false;
+			if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return false;
 			const fd = openSync(file, "a", 384);
 			try {
 				writeSync(fd, line);
@@ -874,6 +879,7 @@ async function drainSpool(url, send, options = {}) {
 			result.unreadable++;
 		}
 		result.claimed = records.length;
+		drainingClaims.set(paths.file, new Set(read));
 		const seen = /* @__PURE__ */ new Set();
 		const now = Date.now();
 		const deadline = options.deadlineMs ? now + options.deadlineMs : Number.POSITIVE_INFINITY;
@@ -935,6 +941,7 @@ async function drainSpool(url, send, options = {}) {
 		});
 		return result;
 	} finally {
+		drainingClaims.delete(paths.file);
 		releaseLock(paths.drainLock);
 	}
 }

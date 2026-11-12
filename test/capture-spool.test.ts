@@ -280,15 +280,33 @@ describe("capture spool retained claims", () => {
     expect(existsSync(spoolPaths(URL, dir).file)).toBe(false);
   });
 
-  it("keeps a delivered record's backup even when the claim being drained nearly fills the spool", () => {
-    writeClaim("99995-1", "x".repeat(policy.maxBytes - 200), 0);
-    const kept = retainSent(URL, "evc_ppppppppppp1", body("delivered"), { bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }, { dir, policy });
-    expect(kept).toBe(true);
-    expect(readdirSync(dir).some((f) => f.includes(".sent-"))).toBe(true);
+  it("keeps a delivered record's backup even when the claim being drained nearly fills the spool", async () => {
+    const now = new Date().toISOString();
+    const records = Array.from({ length: 6 }, (_, i) =>
+      `${JSON.stringify({ v: 1, eventId: `evc_drn${String(i).padStart(9, "0")}`, spooledAt: now, reason: "timeout", attempts: 0, body: body(`d${i}`, { pad: "p".repeat(10 * 1024) }) })}\n`).join("");
+    writeClaim("99995-1", records, 10 * 60_000);
+    const kept: boolean[] = [];
+    const result = await drainSpool(URL, async (rec) => {
+      kept.push(retainSent(URL, rec.eventId, { hookType: "post_tool_use", sessionId: "ses_spool", marker: rec.eventId }, { bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }, { dir, policy }));
+      return "delivered";
+    }, { dir, policy });
+    expect(result.delivered).toBe(6);
+    expect(kept).toEqual([true, true, true, true, true, true]);
+  });
+
+  it("counts a claim no drain is reading against the limit for sent backups", () => {
+    writeClaim("99996-1", "x".repeat(60 * 1024), 10 * 60_000);
+    let kept = 0;
+    for (let i = 0; i < 20; i++) {
+      if (retainSent(URL, `evc_u${String(i).padStart(11, "0")}`, body(`u${i}`), { bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }, { dir, policy })) kept++;
+    }
+    const held = readdirSync(dir).reduce((n, f) => n + statSync(join(dir, f)).size, 0);
+    expect(kept).toBeLessThan(20);
+    expect(held).toBeLessThanOrEqual(policy.maxBytes + 1024);
   });
 
   it("keeps sent backups when evicting them cannot make room for the new record", () => {
-    writeClaim("99994-1", "x".repeat(60 * 1024), 10 * 60_000);
+    writeClaim("99994-1", "x".repeat(59 * 1024), 10 * 60_000);
     let sentBytes = 0;
     for (let i = 0; sentBytes < 4 * 1024; i++) {
       expect(retainSent(URL, `evc_q${String(i).padStart(11, "0")}`, body(`q${i}`), { bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }, { dir, policy })).toBe(true);
