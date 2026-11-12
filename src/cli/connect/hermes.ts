@@ -18,6 +18,7 @@ export const adapter: ConnectAdapter = {
   name: "hermes",
   displayName: "Hermes Agent",
   category: "native",
+  autoCapture: "built-in",
   docs: DOCS,
   protocolNote: "→ Installs the native memory provider and bundled skills into the active Hermes profile. Credentials stay managed by Hermes.",
   detect: () => existsSync(hermesHome()),
