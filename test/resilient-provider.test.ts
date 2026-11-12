@@ -225,6 +225,45 @@ describe("ResilientProvider half-open probe", () => {
     }
   });
 
+  it("does not reopen on a content-filter rejection during the probe", async () => {
+    // The probe rule above counts a rate-limited probe as a failure. A
+    // content-filter rejection is different: the provider answered, and the
+    // refusal is about the payload (#1277), so the probe must not reopen the
+    // breaker. It stays half-open, and the next call decides.
+    let mode: "fail" | "filtered" | "ok" = "fail";
+    const inner = countingProvider(async () => {
+      if (mode === "fail") throw new Error("upstream exploded");
+      if (mode === "filtered") {
+        throw new Error(
+          'OpenAI API error (400): {"error":{"code":"content_filter",' +
+            '"innererror":{"code":"ResponsibleAIPolicyViolation"}}}',
+        );
+      }
+      return "ok";
+    });
+    const provider = new ResilientProvider(inner);
+
+    for (let i = 0; i < 3; i++) {
+      await provider.compress("sys", "user").catch(() => undefined);
+    }
+    expect(provider.circuitState.state).toBe("open");
+
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.now() + 31_000);
+    try {
+      mode = "filtered";
+      await provider.compress("sys", "user").catch(() => undefined);
+      expect(inner.calls).toBe(4);
+      expect(provider.circuitState.state).toBe("half-open");
+
+      mode = "ok";
+      await expect(provider.compress("sys", "user")).resolves.toBe("ok");
+      expect(provider.circuitState.state).toBe("closed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("fails a call queued before the breaker opened, without calling the provider", async () => {
     // The post-acquire re-check. A call admitted while the breaker was closed
     // can wait behind others that fail and open it; without the re-check it is
