@@ -685,13 +685,21 @@ export function spoolSummary(url: string, options: { policy?: SpoolPolicy; dir?:
   let bytes = 0;
   let oldestAt: string | null = null;
   let unreadable = 0;
-  const files = [...(existsSync(paths.file) ? [paths.file] : []), ...listClaims(paths).map((claim) => claim.file)];
+  const noteError = (err: unknown) => {
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") unreadable++;
+  };
+  try {
+    readdirSync(paths.dir);
+  } catch (err) {
+    noteError(err);
+  }
+  const files = [paths.file, ...listClaims(paths).map((claim) => claim.file)];
   for (const file of files) {
     let text: string;
     try {
       text = readFileSync(file, "utf-8");
-    } catch {
-      if (file !== paths.file) unreadable++;
+    } catch (err) {
+      noteError(err);
       continue;
     }
     bytes += Buffer.byteLength(text);

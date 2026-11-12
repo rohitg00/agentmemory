@@ -97,6 +97,14 @@ describe("capture spool", () => {
     expect(summary.stats.lastDropReason).toBe("full");
   });
 
+  it("flags a spool it cannot read instead of reporting it empty", () => {
+    expect(spoolSummary(URL, { dir: join(dir, "missing"), policy }).unreadable).toBe(0);
+    mkdirSync(spoolPaths(URL, dir).file, { recursive: true });
+    const summary = spoolSummary(URL, { dir, policy });
+    expect(summary.records).toBe(0);
+    expect(summary.unreadable).toBe(1);
+  });
+
   it("does nothing when the spool is disabled", () => {
     const r = appendSpool(URL, "evc_eeeeeeeeeeee", body("off"), "unreachable", { dir, policy: { ...policy, enabled: false } });
     expect(r).toEqual({ spooled: false, dropped: "disabled" });
