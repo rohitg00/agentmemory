@@ -567,7 +567,7 @@ mcp_servers:
 memory:
   provider: agentmemory
 
-Vahvista toiminta komennolla `curl http://localhost:3111/agentmemory/health`. Avaa reaaliaikainen katseluohjelma osoitteessa http://localhost:3113. Syvempää kuuden hookin muistitarjoajaintegraatiota varten (kontekstin lisäys ennen LLM:ää, vuoron tallennus, MEMORY.md-peilaus ja järjestelmäkehotteen lohko) kopioi integrations/hermes agentmemory-repositoriosta polkuun ~/.hermes/plugins/agentmemory.
+Vahvista toiminta komennolla `curl http://localhost:3111/agentmemory/health`. Avaa reaaliaikainen katseluohjelma osoitteessa http://localhost:3113. Syvempää kuuden hookin muistitarjoajaintegraatiota varten (kontekstin lisäys ennen LLM:ää, vuoron tallennus, MEMORY.md-peilaus ja järjestelmäkehotteen lohko) kopioi integrations/hermes repositoriosta https://github.com/rohitg00/agentmemory polkuun ~/.hermes/plugins/agentmemory.
 ```
 
 Täysi opas: [`integrations/hermes/`](../integrations/hermes/)
