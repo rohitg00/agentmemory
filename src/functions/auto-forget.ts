@@ -3,7 +3,7 @@ import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV, collectAll } from "../state/kv.js";
-import { sharesMemoryScope, supersededAt } from "../state/memory-utils.js";
+import { deleteMemoryUnderLock, sharesMemoryScope, supersededAt } from "../state/memory-utils.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { recordAudit } from "./audit.js";
@@ -51,11 +51,10 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
               result.ttlExpired.push(mem.id);
               deletedIds.add(mem.id);
               if (!dryRun) {
-                await kv.delete(KV.memories, mem.id);
+                const removed = await deleteMemoryUnderLock(kv, KV.memories, mem.id);
+                if (!removed) continue;
+                if (removed.imageRef) await releaseImageRef(kv, sdk, mem.id, removed.imageRef);
                 facetIds.add(mem.id);
-                if (mem.imageRef) {
-                  await releaseImageRef(kv, sdk, mem.id, mem.imageRef);
-                }
                 await recordAudit(kv, "delete", "mem::auto-forget", [mem.id], {
                   resource: "memory",
                   reason: "auto-forget TTL",

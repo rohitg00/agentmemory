@@ -10,6 +10,7 @@ import type {
 import { KV } from "../state/schema.js";
 import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
+import { deleteMemoryUnderLock } from "../state/memory-utils.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { isConsolidationEnabled } from "../config.js";
@@ -344,8 +345,10 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 stats.expiredMemories++;
                 evictedMemIds.add(mem.id);
               } else {
+                let deleted: Memory | null;
                 try {
-                  await kv.delete(KV.memories, mem.id);
+                  deleted = await deleteMemoryUnderLock<Memory>(kv, KV.memories, mem.id);
+                  if (!deleted) continue;
                   deletedMemIds.add(mem.id);
                   stats.expiredMemories++;
                   evictedMemIds.add(mem.id);
@@ -361,9 +364,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 getSearchIndex().remove(mem.id);
                 vectorIndexRemove(mem.id);
                 indexCleaned = true;
-                if (mem.imageRef) {
-                  await releaseImageRef(kv, sdk, mem.id, mem.imageRef);
-                }
+                if (deleted.imageRef) await releaseImageRef(kv, sdk, mem.id, deleted.imageRef);
                 await recordAudit(kv, "delete", "mem::evict", [mem.id], {
                   resource: "memory",
                   reason: "expired_memory",
@@ -384,8 +385,10 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
               if (dryRun) {
                 stats.nonLatestMemories++;
               } else {
+                let deleted: Memory | null;
                 try {
-                  await kv.delete(KV.memories, mem.id);
+                  deleted = await deleteMemoryUnderLock<Memory>(kv, KV.memories, mem.id);
+                  if (!deleted) continue;
                   deletedMemIds.add(mem.id);
                   stats.nonLatestMemories++;
                 } catch (err) {
@@ -400,9 +403,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 getSearchIndex().remove(mem.id);
                 vectorIndexRemove(mem.id);
                 indexCleaned = true;
-                if (mem.imageRef) {
-                  await releaseImageRef(kv, sdk, mem.id, mem.imageRef);
-                }
+                if (deleted.imageRef) await releaseImageRef(kv, sdk, mem.id, deleted.imageRef);
                 await recordAudit(kv, "delete", "mem::evict", [mem.id], {
                   resource: "memory",
                   reason: "old_non_latest_memory",
