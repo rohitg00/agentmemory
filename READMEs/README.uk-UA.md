@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Проєктний документ: 1.6k зірок / 230 форків на gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Проєктний документ: 1.7k зірок / 240 форків на gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 інструменти MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 автоматичних хуків" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 зовнішніх БД" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ тестів пройдено" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ тестів пройдено" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -446,7 +446,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code без встановлення плагіна (автономний шлях MCP)
 
-Якщо ви підключаєте MCP-сервер agentmemory напряму через `~/.claude.json`, а не через `/plugin install`, Claude Code ніколи не розгортає `${CLAUDE_PLUGIN_ROOT}`, і вам доведеться вказувати абсолютні шляхи до скриптів хуків у `~/.claude/settings.json`. Ці шляхи, як правило, містять версію agentmemory (наприклад, `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), тому наступне оновлення непомітно зламає кожен хук.
+Якщо ви підключаєте MCP-сервер agentmemory напряму через `~/.claude.json` (типовий шлях), а не через `/plugin install`, Claude Code ніколи не розгортає `${CLAUDE_PLUGIN_ROOT}`, і вам доведеться вказувати абсолютні шляхи до скриптів хуків у `~/.claude/settings.json` (типовий шлях). Ці шляхи, як правило, містять версію agentmemory (наприклад, `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), тому наступне оновлення непомітно зламає кожен хук.
 
 Обхідне рішення:
 
@@ -454,7 +454,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-Ця команда об'єднує ті самі команди хуків у `~/.claude/settings.json`, використовуючи абсолютні шляхи, визначені до вбудованого каталогу `plugin/` наразі встановленого пакета `@agentmemory/agentmemory`. Повторно запустіть команду після оновлення agentmemory, щоб оновити шляхи. Записи користувача в тому самому файлі зберігаються; замінюються лише попередні записи agentmemory. Шлях через `/plugin install` залишається рекомендованим підходом.
+Ця команда налаштовує MCP-сервер і додає включені до пакета хуки до конфігурації користувача Claude Code. Якщо `CLAUDE_CONFIG_DIR` не задано, вона порожня або містить лише пробільні символи, для MCP використовується `~/.claude.json`, а для хуків — `~/.claude/settings.json`. Інші значення каталогу використовуються без змін, включно з пробільними символами на початку та в кінці. Щоб використовувати власний каталог, задайте однакове непорожнє значення `CLAUDE_CONFIG_DIR` для цієї команди та Claude Code; тоді файлами будуть відповідно `$CLAUDE_CONFIG_DIR/.claude.json` і `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code має отримати це значення у своєму середовищі запуску, навіть якщо конектор читає його з файлу `.env` AgentMemory. Створіть власний каталог перед виконанням цієї команди; інакше конектор пропустить Claude Code як невиявлений. Якщо значення в оболонці містить лише пробільні символи, вилучіть `CLAUDE_CONFIG_DIR` із середовища перед запуском Claude Code, щоб він також використовував типовий профіль. Використовуйте абсолютний шлях. Відносні шляхи визначаються від робочого каталогу, тому обидві команди потрібно запускати з одного каталогу.
+
+Команди хуків використовують абсолютні шляхи до каталогу `plugin/`, включеного до встановленого пакета. Після оновлення agentmemory запустіть команду ще раз, щоб оновити ці шляхи. Записи користувача у файлах конфігурації зберігаються; замінюються лише попередні записи agentmemory. Використання `/plugin install` залишається рекомендованим підходом.
 Для віддалених або захищених розгортань запускайте Claude Code зі встановленими `AGENTMEMORY_URL` та `AGENTMEMORY_SECRET`. Плагін передає обидва значення своєму вбудованому MCP-серверу; якщо `AGENTMEMORY_URL` порожній, MCP-шим використовує `http://localhost:3111`.
 
 ### Codex CLI (платформа плагінів Codex)
@@ -663,7 +665,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory працює у Windows 10/11; WSL2 може автоматично встановити engine. Нативна Windows потребує ручного встановлення iii-engine v0.25.0: завантажте архів зі [сторінки iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), перевірте checksum і розмістіть `iii.exe` у `PATH`. CLI не розпаковує ZIP автоматично
+agentmemory працює у Windows 10/11; WSL2 може автоматично встановити engine. Нативна Windows потребує ручного встановлення iii-engine v0.25.1: завантажте архів зі [сторінки iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), перевірте checksum і розмістіть `iii.exe` у `PATH`. CLI не розпаковує ZIP автоматично
 
 Автоматичне налаштування MCP у нативній Windows підтримує лише `agentmemory connect copilot-cli`; для інших скористайтеся [Other agents](#other-agents). У WSL виконуйте `connect`, лише якщо агент встановлений у тому самому середовищі
 
@@ -1160,7 +1162,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 ендпоінтів на порту `3111`. REST API за замовчуванням прив'язується до `127.0.0.1`. Захищені ендпоінти вимагають `Authorization: Bearer <secret>`, а ендпоінти синхронізації mesh вимагають явно встановленого `AGENTMEMORY_SECRET` на обох сторонах.
+147 ендпоінтів на порту `3111`. REST API за замовчуванням прив'язується до `127.0.0.1`. Захищені ендпоінти вимагають `Authorization: Bearer <secret>`, а ендпоінти синхронізації mesh вимагають явно встановленого `AGENTMEMORY_SECRET` на обох сторонах.
 
 **Автентифікацію ввімкнено типово.** Якщо `AGENTMEMORY_SECRET` не задано, під час першого запуску CLI створює випадковий секрет у `~/.agentmemory/secret` з правами `0600` і копіює його також у вибраний каталог даних. Вбудовані клієнти читають його звідти для локального сервера; secret надсилається лише на loopback URL (`localhost`, `127.0.0.0/8`, `::1`). Віддалені клієнти мають отримати secret через власне середовище. Docker self-host і `deploy/` створюють власні секрети. Щоб викликати API вручну:
 
@@ -1242,7 +1244,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

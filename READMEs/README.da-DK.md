@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white" alt="Designdokument: 1.6k stjerner / 230 forks på gist'en" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white" alt="Designdokument: 1.7k stjerner / 240 forks på gist'en" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-værktøjer" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiske hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 eksterne databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ beståede tests" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ beståede tests" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -441,7 +441,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code uden plugin-installation (MCP-standalone-vej)
 
-Hvis du forbinder agentmemorys MCP-server via `~/.claude.json` direkte i stedet for at bruge `/plugin install`, opløser Claude Code aldrig `${CLAUDE_PLUGIN_ROOT}`, og du skal pege hook-scripts på absolutte paths i `~/.claude/settings.json`. Disse paths indeholder typisk agentmemory-versionen (f.eks. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), så den næste opgradering stille og roligt bryder hver hook.
+Hvis du forbinder agentmemorys MCP-server via `~/.claude.json` (standardsti) direkte i stedet for at bruge `/plugin install`, opløser Claude Code aldrig `${CLAUDE_PLUGIN_ROOT}`, og du skal pege hook-scripts på absolutte paths i `~/.claude/settings.json` (standardsti). Disse paths indeholder typisk agentmemory-versionen (f.eks. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), så den næste opgradering stille og roligt bryder hver hook.
 
 Løsning:
 
@@ -449,7 +449,9 @@ Løsning:
 agentmemory connect claude-code --with-hooks
 ```
 
-Dette sammenføjer de samme hook-kommandoer i `~/.claude/settings.json` med absolutte paths, der peger på den medfølgende `plugin/`-mappe i den aktuelt installerede `@agentmemory/agentmemory`-pakke. Kør kommandoen igen efter opgradering af agentmemory for at opdatere paths. Brugerens egne indgange i samme fil bevares; kun tidligere agentmemory-indgange udskiftes. At bruge `/plugin install`-vejen er stadig den anbefalede metode.
+Denne kommando konfigurerer MCP-serveren og fletter de medfølgende hooks ind i Claude Codes brugerkonfiguration. Hvis `CLAUDE_CONFIG_DIR` ikke er sat, er tom eller kun indeholder blanktegn, bruges `~/.claude.json` til MCP og `~/.claude/settings.json` til hooks. Andre mappeværdier bruges præcis som angivet, inklusive indledende og afsluttende blanktegn. Hvis du vil bruge en brugerdefineret mappe, skal `CLAUDE_CONFIG_DIR` have den samme ikke-tomme værdi for både denne kommando og Claude Code; filerne bliver da henholdsvis `$CLAUDE_CONFIG_DIR/.claude.json` og `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code skal modtage værdien i sit startmiljø, selv hvis connectoren læser den fra AgentMemorys `.env`. Opret den brugerdefinerede mappe, før du kører kommandoen; ellers springer connectoren Claude Code over, fordi det ikke bliver fundet. Hvis værdien i shellen kun indeholder blanktegn, skal du fjerne `CLAUDE_CONFIG_DIR` fra miljøet, før du starter Claude Code, så det også bruger standardprofilen. Brug en absolut sti. Relative stier fortolkes ud fra arbejdsmappen, så begge kommandoer skal køres fra samme mappe.
+
+Hook-kommandoerne bruger absolutte stier til den installerede pakkes medfølgende `plugin/`-mappe. Kør kommandoen igen efter en opgradering af agentmemory for at opdatere stierne. Brugerens egne indgange i konfigurationsfilerne bevares; kun tidligere agentmemory-indgange erstattes. Det anbefales fortsat at bruge `/plugin install`.
 Til eksterne eller beskyttede deployments, start Claude Code med `AGENTMEMORY_URL` og `AGENTMEMORY_SECRET` sat. Pluginet sender begge værdier videre til sin medfølgende MCP-server; når `AGENTMEMORY_URL` er tom, bruger MCP-shimmen `http://localhost:3111`.
 
 ### Codex CLI (Codex-plugin-platform)
@@ -655,7 +657,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory kører på Windows 10/11. WSL2 følger Linux-vejen og kan installere den fastlåste engine automatisk. Native Windows kræver, at den fastlåste iii-engine v0.25.0-binary installeres manuelt; download det tilsvarende arkiv fra [iii v0.25.0-udgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verificér checksum, og placér `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI’en pakker ikke Windows-ZIP’en ud automatisk.
+agentmemory kører på Windows 10/11. WSL2 følger Linux-vejen og kan installere den fastlåste engine automatisk. Native Windows kræver, at den fastlåste iii-engine v0.25.1-binary installeres manuelt; download det tilsvarende arkiv fra [iii v0.25.1-udgivelsessiden](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verificér checksum, og placér `iii.exe` på `PATH` (for eksempel `%USERPROFILE%\.local\bin\iii.exe`). CLI’en pakker ikke Windows-ZIP’en ud automatisk.
 
 Automatisk MCP-opsætning på native Windows understøtter kun `agentmemory connect copilot-cli`. Brug den manuelle MCP-blok fra [Andre agenter](#other-agents) til andre native Windows-agenter. Kør kun `connect` i WSL, hvis målagenten er installeret i samme WSL-miljø.
 
@@ -1168,7 +1170,7 @@ Den fulde reference er [`.env.example`](../.env.example) med legitimationsoplysn
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints på port `3111`. REST API'et binder til `127.0.0.1` som standard. Beskyttede endpoints kræver `Authorization: Bearer <secret>`, og mesh-sync-endpoints kræver en eksplicit sat `AGENTMEMORY_SECRET` på begge peers.
+147 endpoints på port `3111`. REST API'et binder til `127.0.0.1` som standard. Beskyttede endpoints kræver `Authorization: Bearer <secret>`, og mesh-sync-endpoints kræver en eksplicit sat `AGENTMEMORY_SECRET` på begge peers.
 
 **Autentificering er slået til som standard.** Hvis `AGENTMEMORY_SECRET` hverken er sat i shellen eller i `~/.agentmemory/.env`, opretter CLI’en en tilfældig hemmelighed ved første start i `~/.agentmemory/secret` og en kopi med navnet `secret` i den valgte datamappe, med filtilstanden `0600`. Alle medfølgende klienter læser den derfra, når de taler med en lokal server: CLI’en, viewer, hooks under `plugin/scripts`, MCP-serveren og `@agentmemory/mcp`-shimmen, konfigurationerne skrevet af `agentmemory connect`, og de medfølgende OpenCode-, Pi-, OpenClaw-, Hermes- og filesystem-watcher-integrationer. Den lagrede secret sendes kun til loopback-URL’er (`localhost`, `127.0.0.0/8`, `::1`). En eksplicit `AGENTMEMORY_SECRET` vinder altid, og eksterne klienter skal have den i deres miljø. Docker-self-hosting fra repositoryet og `deploy/`-entrypoints genererer og eksporterer deres egen secret. Sådan kaldes API’et manuelt:
 
@@ -1249,7 +1251,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

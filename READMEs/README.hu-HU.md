@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Dokumentum: 1.6k csillag / 230 fork a gist-en" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Dokumentum: 1.7k csillag / 240 fork a gist-en" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP eszköz" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatikus hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 külső adatbázis" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ sikeres teszt" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ sikeres teszt" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code a plugin telepítése nélkül (önálló MCP útvonal)
 
-Ha az agentmemory MCP szerverét közvetlenül a `~/.claude.json`-ban kötöd be, a `/plugin install` használata helyett, a Claude Code soha nem oldja fel a `${CLAUDE_PLUGIN_ROOT}`-ot, és a hook-szkripteket abszolút elérési utakra kell mutatnod a `~/.claude/settings.json`-ban. Ezek az útvonalak jellemzően beágyazzák az agentmemory verziószámát (pl. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), így a következő frissítés némán elront minden hookot.
+Ha az agentmemory MCP szerverét közvetlenül a `~/.claude.json` (alapértelmezett útvonal)-ban kötöd be, a `/plugin install` használata helyett, a Claude Code soha nem oldja fel a `${CLAUDE_PLUGIN_ROOT}`-ot, és a hook-szkripteket abszolút elérési utakra kell mutatnod a `~/.claude/settings.json` (alapértelmezett útvonal)-ban. Ezek az útvonalak jellemzően beágyazzák az agentmemory verziószámát (pl. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), így a következő frissítés némán elront minden hookot.
 
 Megoldás:
 
@@ -452,7 +452,9 @@ Megoldás:
 agentmemory connect claude-code --with-hooks
 ```
 
-Ez ugyanazokat a hook-parancsokat olvasztja be a `~/.claude/settings.json`-ba, abszolút elérési utakkal, amelyek a jelenleg telepített `@agentmemory/agentmemory` csomag becsomagolt `plugin/` mappájára mutatnak. Futtasd újra a parancsot az agentmemory frissítése után, hogy felfrissítsd az útvonalakat. A felhasználó saját bejegyzései ugyanabban a fájlban megmaradnak; csak a korábbi agentmemory-bejegyzések kerülnek lecserélésre. A `/plugin install` útvonal marad az ajánlott megközelítés.
+Ez a parancs beállítja az MCP-kiszolgálót, és beolvasztja a mellékelt hookokat a Claude Code felhasználói konfigurációjába. Ha a `CLAUDE_CONFIG_DIR` nincs beállítva, üres, vagy csak üres karaktereket tartalmaz, az MCP-hez a `~/.claude.json`, a hookokhoz pedig a `~/.claude/settings.json` fájlt használja. A többi könyvtárérték változatlanul kerül felhasználásra, az elején és végén lévő üres karakterekkel együtt. Egyéni könyvtár használatához állítsd a `CLAUDE_CONFIG_DIR` változót ugyanarra a nem üres értékre ennél a parancsnál és a Claude Code-nál is; ekkor az MCP fájlja `$CLAUDE_CONFIG_DIR/.claude.json`, a hookoké pedig `$CLAUDE_CONFIG_DIR/settings.json` lesz. A Claude Code-nak az indítási környezetében meg kell kapnia ezt az értéket akkor is, ha a csatlakozó az AgentMemory `.env` fájljából olvassa be. A parancs futtatása előtt hozd létre az egyéni könyvtárat; különben a csatlakozó nem észleli a Claude Code-ot, és kihagyja. Ha a shellben az érték csak üres karaktereket tartalmaz, a Claude Code indítása előtt töröld a `CLAUDE_CONFIG_DIR` változót a környezetből, hogy az is az alapértelmezett profilt használja. Használj abszolút elérési utat. A relatív utak a munkakönyvtárhoz képest értendők, ezért mindkét parancsot ugyanabból a könyvtárból kell futtatni.
+
+A hook-parancsok a telepített csomaghoz mellékelt `plugin/` könyvtárra mutató abszolút útvonalakat használnak. Az agentmemory frissítése után futtasd újra a parancsot az útvonalak frissítéséhez. A konfigurációs fájlok felhasználói bejegyzései megmaradnak; csak a korábbi agentmemory-bejegyzések cserélődnek le. Továbbra is a `/plugin install` használata az ajánlott megoldás.
 Távoli vagy védett telepítésekhez indítsd el a Claude Code-ot az `AGENTMEMORY_URL` és az `AGENTMEMORY_SECRET` beállításával. A plugin mindkét értéket továbbadja a becsomagolt MCP szerverének; amikor az `AGENTMEMORY_URL` üres, az MCP shim a `http://localhost:3111`-et használja.
 
 ### Codex CLI (Codex plugin platform)
@@ -661,7 +663,7 @@ Az `npm start` ugyanazt a helyi szervert indítja, mint a telepített CLI. A kö
 
 ### Windows
 
-Az agentmemory Windows 10/11 rendszeren fut. A WSL2 a Linux útvonalat követi, és automatikusan telepítheti a rögzített motort. Natív Windowson kézzel telepítse a rögzített iii-engine v0.25.0 binárist: töltse le a megfelelő archívumot az [iii v0.25.0 kiadási oldaláról](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), ellenőrizze az ellenőrzőösszeget, majd helyezze az `iii.exe` fájlt a `PATH`-ra (például `%USERPROFILE%\.local\bin\iii.exe`). A CLI nem bontja ki automatikusan a Windows ZIP-et.
+Az agentmemory Windows 10/11 rendszeren fut. A WSL2 a Linux útvonalat követi, és automatikusan telepítheti a rögzített motort. Natív Windowson kézzel telepítse a rögzített iii-engine v0.25.1 binárist: töltse le a megfelelő archívumot az [iii v0.25.1 kiadási oldaláról](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), ellenőrizze az ellenőrzőösszeget, majd helyezze az `iii.exe` fájlt a `PATH`-ra (például `%USERPROFILE%\.local\bin\iii.exe`). A CLI nem bontja ki automatikusan a Windows ZIP-et.
 
 A natív Windows automatizált MCP-kapcsolat csak az `agentmemory connect copilot-cli` parancsot támogatja. Más natív Windows-ügynökökhöz használja az [Egyéb ügynökök](#other-agents) kézi MCP-blokkját. A `connect` parancsot csak akkor futtassa WSL-ben, ha a célügynök is ugyanabban a WSL-környezetben van telepítve.
 
@@ -1158,7 +1160,7 @@ A teljes [`.env.example`](../.env.example) leírja a szolgáltatókat, rögzít�
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoint a `3111`-es porton. A REST API alapértelmezetten a `127.0.0.1`-hez kötődik. A védett végpontok `Authorization: Bearer <secret>`-et igényelnek, és a mesh-sync végpontok mindkét oldalon explicit módon beállított `AGENTMEMORY_SECRET`-et igényelnek.
+147 endpoint a `3111`-es porton. A REST API alapértelmezetten a `127.0.0.1`-hez kötődik. A védett végpontok `Authorization: Bearer <secret>`-et igényelnek, és a mesh-sync végpontok mindkét oldalon explicit módon beállított `AGENTMEMORY_SECRET`-et igényelnek.
 
 **A hitelesítés alapértelmezetten be van kapcsolva.** Ha az `AGENTMEMORY_SECRET` nincs beállítva, a CLI első indításkor véletlen titkot hoz létre a `~/.agentmemory/secret` fájlban `0600` jogosultsággal, és a kiválasztott adatkönyvtárba is átmásolja. Minden becsomagolt kliens onnan olvassa, amikor egy lokális szerverrel beszél: a CLI, a megjelenítő, a `plugin/scripts` alatti hookok, az MCP szerver és a `@agentmemory/mcp` shim, az `agentmemory connect` által írt konfigurációk, és a becsomagolt OpenCode, Pi, OpenClaw, Hermes és fájlrendszer-figyelő integrációk. A tárolt secret csak loopback URL-eknek kerül elküldésre (`localhost`, `127.0.0.0/8`, `::1`). Egy explicit `AGENTMEMORY_SECRET` mindig elsőbbséget kap, és a távoli klienseknek továbbra is be kell állítaniuk. A Docker és a `deploy/` entrypointok már generálnak és exportálnak egy saját secretet. Az API kézi hívásához:
 
@@ -1239,7 +1241,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

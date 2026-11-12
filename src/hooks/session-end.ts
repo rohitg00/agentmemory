@@ -1,7 +1,9 @@
 #!/usr/bin/env node
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { truncateText } from "./_capture-filter.js";
 import { resolveProject, hookCwd } from "./_project.js";
-import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, withEventId } from "./_capture.js";
+import { REST_URL, authHeaders, captureObservation, isDrainChild, runDrainChild, transportBlocked, withEventId } from "./_capture.js";
 
 function isSdkChildContext(payload: unknown): boolean {
   if (process.env["AGENTMEMORY_SDK_CHILD"] === "1") return true;
@@ -75,7 +77,7 @@ function extractTranscriptPrompts(data: Record<string, unknown>): TranscriptProm
       if (prompts.length >= 50) return prompts;
       const match = msg.content.match(/<USER_REQUEST>\n?([\s\S]*?)\n?<\/USER_REQUEST>/);
       const text = (match ? match[1] : msg.content).trim();
-      if (text) prompts.push({ prompt: text.slice(0, 8000) });
+      if (text) prompts.push({ prompt: truncateText(text, 8000) });
       continue;
     }
     if (!isUserTurn(msg)) continue;
@@ -84,10 +86,36 @@ function extractTranscriptPrompts(data: Record<string, unknown>): TranscriptProm
     const timestamp = typeof msg.timestamp === "string" ? msg.timestamp : undefined;
     for (const text of promptId ? [texts.join("\n\n")].filter(Boolean) : texts) {
       if (prompts.length >= 50) return prompts;
-      prompts.push({ prompt: text.slice(0, 8000), promptId, timestamp });
+      prompts.push({ prompt: truncateText(text, 8000), promptId, timestamp });
     }
   }
   return prompts;
+}
+
+const WORKER_ENV = "AGENTMEMORY_SESSION_END_WORKER";
+
+function handOff(input: string): Promise<boolean> {
+  if (process.env[WORKER_ENV] === "1" || !process.argv[1]) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    try {
+      const child = spawn(process.execPath, [process.argv[1]], {
+        detached: true,
+        stdio: ["pipe", "ignore", "ignore"],
+        windowsHide: true,
+        env: { ...process.env, [WORKER_ENV]: "1" },
+      });
+      child.on("error", () => resolve(false));
+      child.stdin.on("error", () => resolve(false));
+      child.once("spawn", () => {
+        child.stdin.end(input, () => {
+          child.unref();
+          resolve(true);
+        });
+      });
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
 async function main() {
@@ -106,6 +134,7 @@ async function main() {
 
   if (!data || typeof data !== "object") return;
   if (isSdkChildContext(data)) return;
+  if (data.hook_event_name === "SessionEnd" && (await handOff(input))) return;
 
   const sessionId = ((data.session_id || data.sessionId || data.conversation_id) as string) || "unknown";
 
@@ -127,6 +156,11 @@ async function main() {
         ),
       ),
     );
+  }
+
+  if (transportBlocked()) {
+    setTimeout(() => process.exit(0), 1500).unref();
+    return;
   }
 
   fetch(`${REST_URL}/agentmemory/session/end`, {

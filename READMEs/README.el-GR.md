@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Σημείωμα σχεδίασης: 1.6k stars / 230 forks στο gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Σημείωμα σχεδίασης: 1.7k stars / 240 forks στο gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 εργαλεία MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 αυτόματα hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 εξωτερικές βάσεις δεδομένων" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ επιτυχημένες δοκιμές" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ επιτυχημένες δοκιμές" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -446,7 +446,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code χωρίς εγκατάσταση plugin (αυτόνομη διαδρομή MCP)
 
-Αν συνδέσετε τον διακομιστή MCP του agentmemory μέσω του `~/.claude.json` απευθείας αντί να χρησιμοποιήσετε το `/plugin install`, το Claude Code δεν επιλύει ποτέ το `${CLAUDE_PLUGIN_ROOT}` και πρέπει να δείξετε τα scripts των hooks σε απόλυτες διαδρομές στο `~/.claude/settings.json`. Αυτές οι διαδρομές συνήθως ενσωματώνουν την έκδοση του agentmemory (π.χ. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), οπότε η επόμενη αναβάθμιση χαλάει σιωπηλά κάθε hook.
+Αν συνδέσετε τον διακομιστή MCP του agentmemory μέσω του `~/.claude.json` (προεπιλεγμένη διαδρομή) απευθείας αντί να χρησιμοποιήσετε το `/plugin install`, το Claude Code δεν επιλύει ποτέ το `${CLAUDE_PLUGIN_ROOT}` και πρέπει να δείξετε τα scripts των hooks σε απόλυτες διαδρομές στο `~/.claude/settings.json` (προεπιλεγμένη διαδρομή). Αυτές οι διαδρομές συνήθως ενσωματώνουν την έκδοση του agentmemory (π.χ. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), οπότε η επόμενη αναβάθμιση χαλάει σιωπηλά κάθε hook.
 
 Λύση παράκαμψης:
 
@@ -454,7 +454,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-Αυτό συγχωνεύει τις ίδιες εντολές hook στο `~/.claude/settings.json` με απόλυτες διαδρομές που αναλύονται στον ενσωματωμένο κατάλογο `plugin/` του πακέτου `@agentmemory/agentmemory` που είναι τρέχουσα εγκατεστημένο. Εκτελέστε ξανά την εντολή μετά την αναβάθμιση του agentmemory για να ανανεωθούν οι διαδρομές. Οι καταχωρήσεις του χρήστη στο ίδιο αρχείο διατηρούνται· αντικαθίστανται μόνο οι προηγούμενες καταχωρήσεις του agentmemory. Η χρήση της διαδρομής `/plugin install` παραμένει η συνιστώμενη προσέγγιση.
+Αυτή η εντολή ρυθμίζει τον διακομιστή MCP και συγχωνεύει τα ενσωματωμένα hooks στη διαμόρφωση χρήστη του Claude Code. Αν το `CLAUDE_CONFIG_DIR` δεν έχει οριστεί, είναι κενό ή περιέχει μόνο κενούς χαρακτήρες, χρησιμοποιεί το `~/.claude.json` για το MCP και το `~/.claude/settings.json` για τα hooks. Οι υπόλοιπες τιμές καταλόγου χρησιμοποιούνται ακριβώς όπως δίνονται, μαζί με τυχόν κενούς χαρακτήρες στην αρχή και στο τέλος. Για προσαρμοσμένο κατάλογο, ορίστε την ίδια μη κενή τιμή του `CLAUDE_CONFIG_DIR` για αυτή την εντολή και το Claude Code, οπότε τα αρχεία θα είναι `$CLAUDE_CONFIG_DIR/.claude.json` και `$CLAUDE_CONFIG_DIR/settings.json`, αντίστοιχα. Το Claude Code πρέπει να λάβει αυτή την τιμή στο περιβάλλον εκκίνησής του, ακόμη και αν ο connector τη διαβάζει από το `.env` του AgentMemory. Δημιουργήστε τον προσαρμοσμένο κατάλογο πριν εκτελέσετε αυτή την εντολή, διαφορετικά ο connector παραλείπει το Claude Code επειδή δεν το εντοπίζει. Αν η τιμή στο shell περιέχει μόνο κενούς χαρακτήρες, καταργήστε το `CLAUDE_CONFIG_DIR` από το περιβάλλον πριν ξεκινήσετε το Claude Code, ώστε να χρησιμοποιήσει και αυτό το προεπιλεγμένο προφίλ. Χρησιμοποιήστε απόλυτη διαδρομή. Οι σχετικές διαδρομές επιλύονται ως προς τον κατάλογο εργασίας, οπότε και οι δύο εντολές πρέπει να εκτελούνται από τον ίδιο κατάλογο.
+
+Οι εντολές των hooks χρησιμοποιούν απόλυτες διαδρομές προς τον ενσωματωμένο κατάλογο `plugin/` του εγκατεστημένου πακέτου. Εκτελέστε ξανά την εντολή μετά την αναβάθμιση του agentmemory για να ενημερώσετε αυτές τις διαδρομές. Οι καταχωρίσεις χρήστη στα αρχεία διαμόρφωσης διατηρούνται και αντικαθίστανται μόνο οι προηγούμενες καταχωρίσεις του agentmemory. Η χρήση του `/plugin install` παραμένει η προτεινόμενη προσέγγιση.
 Για απομακρυσμένες ή προστατευμένες αναπτύξεις, εκκινήστε το Claude Code με ρυθμισμένα τα `AGENTMEMORY_URL` και `AGENTMEMORY_SECRET`. Το plugin περνάει και τις δύο τιμές στον ενσωματωμένο διακομιστή MCP του· όταν το `AGENTMEMORY_URL` είναι άδειο, το MCP shim χρησιμοποιεί το `http://localhost:3111`.
 
 ### Codex CLI (πλατφόρμα plugin του Codex)
@@ -663,7 +665,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-Το agentmemory εκτελείται σε Windows 10/11. Το WSL2 ακολουθεί τη διαδρομή Linux και μπορεί να εγκαταστήσει αυτόματα τον καρφιτσωμένο engine. Σε native Windows απαιτείται χειροκίνητη εγκατάσταση του καρφιτσωμένου binary iii-engine v0.25.0: κατεβάστε το αντίστοιχο archive από τη [σελίδα έκδοσης iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), επαληθεύστε το checksum και τοποθετήστε το `iii.exe` στο `PATH` (για παράδειγμα `%USERPROFILE%\.local\bin\iii.exe`). Το CLI δεν εξάγει αυτόματα το Windows ZIP.
+Το agentmemory εκτελείται σε Windows 10/11. Το WSL2 ακολουθεί τη διαδρομή Linux και μπορεί να εγκαταστήσει αυτόματα τον καρφιτσωμένο engine. Σε native Windows απαιτείται χειροκίνητη εγκατάσταση του καρφιτσωμένου binary iii-engine v0.25.1: κατεβάστε το αντίστοιχο archive από τη [σελίδα έκδοσης iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), επαληθεύστε το checksum και τοποθετήστε το `iii.exe` στο `PATH` (για παράδειγμα `%USERPROFILE%\.local\bin\iii.exe`). Το CLI δεν εξάγει αυτόματα το Windows ZIP.
 
 Η αυτοματοποιημένη ρύθμιση MCP σε native Windows υποστηρίζει μόνο το `agentmemory connect copilot-cli`. Για άλλους native Windows agents, χρησιμοποιήστε το χειροκίνητο block MCP από τους [Άλλους agents](#other-agents). Εκτελέστε `connect` μέσα στο WSL μόνο αν ο agent-στόχος είναι εγκατεστημένος στο ίδιο περιβάλλον WSL.
 
@@ -1160,7 +1162,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints στη θύρα `3111`. Το REST API συνδέεται στο `127.0.0.1` από προεπιλογή. Τα προστατευμένα endpoints απαιτούν `Authorization: Bearer <secret>`, και τα endpoints mesh sync απαιτούν ένα ρητά ρυθμισμένο `AGENTMEMORY_SECRET` και στους δύο peers.
+147 endpoints στη θύρα `3111`. Το REST API συνδέεται στο `127.0.0.1` από προεπιλογή. Τα προστατευμένα endpoints απαιτούν `Authorization: Bearer <secret>`, και τα endpoints mesh sync απαιτούν ένα ρητά ρυθμισμένο `AGENTMEMORY_SECRET` και στους δύο peers.
 
 **Η πιστοποίηση είναι ενεργή από προεπιλογή.** Όταν δεν ορίζεται `AGENTMEMORY_SECRET`, στην πρώτη εκκίνηση το CLI δημιουργεί τυχαίο μυστικό στο `~/.agentmemory/secret` με δικαιώματα `0600` και το αντιγράφει και στον επιλεγμένο κατάλογο δεδομένων. Κάθε ενσωματωμένος client το διαβάζει από εκεί όταν μιλά με έναν τοπικό διακομιστή: το CLI, το viewer, τα hooks κάτω από το `plugin/scripts`, ο διακομιστής MCP και το shim `@agentmemory/mcp`, οι ρυθμίσεις που γράφει το `agentmemory connect`, και οι ενσωματωμένες ενσωματώσεις OpenCode, Pi, OpenClaw, Hermes, και filesystem-watcher. Το αποθηκευμένο secret αποστέλλεται μόνο σε loopback URLs (`localhost`, `127.0.0.0/8`, `::1`). Ένα ρητό `AGENTMEMORY_SECRET` υπερισχύει πάντα, και οι απομακρυσμένοι clients εξακολουθούν να το χρειάζονται ρυθμισμένο. Το Docker και τα entrypoints του `deploy/` δημιουργούν και εξάγουν ήδη το δικό τους secret. Για να καλέσετε το API χειροκίνητα:
 
@@ -1241,7 +1243,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

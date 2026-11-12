@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Designdokument: 1.6k stjärnor / 230 forks på gisten" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Designdokument: 1.7k stjärnor / 240 forks på gisten" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-verktyg" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiska hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externa databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ godkända tester" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ godkända tester" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -441,7 +441,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code utan plugin-installationen (fristående MCP-väg)
 
-Om du kopplar in agentmemorys MCP-server via `~/.claude.json` direkt istället för att använda `/plugin install`, löser Claude Code aldrig upp `${CLAUDE_PLUGIN_ROOT}`, och du måste peka hook-skripten mot absoluta sökvägar i `~/.claude/settings.json`. Dessa sökvägar innehåller vanligtvis agentmemory-versionen (t.ex. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), så nästa uppgradering bryter varje hook i det tysta.
+Om du kopplar in agentmemorys MCP-server via `~/.claude.json` (standardsökväg) direkt istället för att använda `/plugin install`, löser Claude Code aldrig upp `${CLAUDE_PLUGIN_ROOT}`, och du måste peka hook-skripten mot absoluta sökvägar i `~/.claude/settings.json` (standardsökväg). Dessa sökvägar innehåller vanligtvis agentmemory-versionen (t.ex. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), så nästa uppgradering bryter varje hook i det tysta.
 
 Lösning:
 
@@ -449,7 +449,9 @@ Lösning:
 agentmemory connect claude-code --with-hooks
 ```
 
-Detta slår samman samma hook-kommandon i `~/.claude/settings.json` med absoluta sökvägar som löses upp till den medföljande `plugin/`-katalogen i det för tillfället installerade paketet `@agentmemory/agentmemory`. Kör kommandot igen efter att du har uppgraderat agentmemory för att uppdatera sökvägarna. Användarens egna poster i samma fil bevaras; endast tidigare agentmemory-poster ersätts. Att använda vägen `/plugin install` är fortfarande den rekommenderade metoden.
+Det här kommandot konfigurerar MCP-servern och slår samman de medföljande hookarna med Claude Codes användarkonfiguration. Om `CLAUDE_CONFIG_DIR` inte är satt, är tom eller bara innehåller blanktecken används `~/.claude.json` för MCP och `~/.claude/settings.json` för hooks. Övriga katalogvärden används exakt som de anges, inklusive inledande och avslutande blanktecken. För en egen katalog ställer du in `CLAUDE_CONFIG_DIR` till samma icke-tomma värde för både det här kommandot och Claude Code; filerna blir då `$CLAUDE_CONFIG_DIR/.claude.json` respektive `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code måste få värdet i sin startmiljö, även om anslutningsmodulen läser det från AgentMemorys `.env`. Skapa den egna katalogen innan du kör kommandot; annars hoppar anslutningsmodulen över Claude Code eftersom det inte upptäcks. Om värdet i skalet bara innehåller blanktecken tar du bort `CLAUDE_CONFIG_DIR` från miljön innan du startar Claude Code, så att det också använder standardprofilen. Använd en absolut sökväg. Relativa sökvägar utgår från arbetskatalogen, så båda kommandona måste köras från samma katalog.
+
+Hook-kommandona använder absoluta sökvägar till det installerade paketets medföljande katalog `plugin/`. Kör kommandot igen efter en uppgradering av agentmemory för att uppdatera sökvägarna. Användarens egna poster i konfigurationsfilerna bevaras; bara tidigare agentmemory-poster ersätts. Att använda `/plugin install` är fortfarande det rekommenderade sättet.
 För fjärr- eller skyddade driftsättningar, starta Claude Code med `AGENTMEMORY_URL` och `AGENTMEMORY_SECRET` satta. Plugin-programmet skickar båda värdena vidare till sin medföljande MCP-server; när `AGENTMEMORY_URL` är tomt använder MCP-shimmen `http://localhost:3111`.
 
 ### Codex CLI (Codex-plugin-plattformen)
@@ -656,7 +658,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory körs på Windows 10/11. WSL2 följer Linux-vägen och kan installera den fastlåsta enginen automatiskt. Native Windows kräver att den fastlåsta iii-engine v0.25.0-binären installeras manuellt: ladda ner rätt arkiv från [iii v0.25.0-utgåvan](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verifiera kontrollsumman och placera `iii.exe` på `PATH` (till exempel `%USERPROFILE%\.local\bin\iii.exe`). CLI:n packar inte upp Windows-ZIP-filen automatiskt.
+agentmemory körs på Windows 10/11. WSL2 följer Linux-vägen och kan installera den fastlåsta enginen automatiskt. Native Windows kräver att den fastlåsta iii-engine v0.25.1-binären installeras manuellt: ladda ner rätt arkiv från [iii v0.25.1-utgåvan](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifiera kontrollsumman och placera `iii.exe` på `PATH` (till exempel `%USERPROFILE%\.local\bin\iii.exe`). CLI:n packar inte upp Windows-ZIP-filen automatiskt.
 
 Automatiserad MCP-inkoppling på native Windows stöder bara `agentmemory connect copilot-cli`. För andra native Windows-agenter använder du det manuella MCP-blocket från [Andra agenter](#other-agents). Kör `connect` i WSL endast om målagenten är installerad i samma WSL-miljö.
 
@@ -1168,7 +1170,7 @@ Den fullständiga referensen finns i [`.env.example`](../.env.example): autentis
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints på port `3111`. REST API:et binder till `127.0.0.1` som standard. Skyddade endpoints kräver `Authorization: Bearer <secret>`, och mesh-synk-endpoints kräver en explicit satt `AGENTMEMORY_SECRET` på båda parterna.
+147 endpoints på port `3111`. REST API:et binder till `127.0.0.1` som standard. Skyddade endpoints kräver `Authorization: Bearer <secret>`, och mesh-synk-endpoints kräver en explicit satt `AGENTMEMORY_SECRET` på båda parterna.
 
 **Autentisering är aktiverad som standard.** Om `AGENTMEMORY_SECRET` inte är angiven i skalet eller i `~/.agentmemory/.env` skapar CLI:n en slumpmässig hemlighet vid första starten i `~/.agentmemory/secret` och en kopia med namnet `secret` i den valda datamappen, med filbehörigheten `0600`. Alla medföljande klienter läser den därifrån när de ansluter till en lokal server: CLI:n, viewern, hookarna under `plugin/scripts`, MCP-servern och `@agentmemory/mcp`-shimmen, konfigurationerna skrivna av `agentmemory connect` samt de medföljande integrationerna för OpenCode, Pi, OpenClaw, Hermes och filsystemsbevakaren. Den lagrade hemligheten skickas bara till loopback-URL:er (`localhost`, `127.0.0.0/8`, `::1`). En explicit `AGENTMEMORY_SECRET` har alltid företräde; fjärrklienter behöver hemligheten i sin miljö. Docker-baserad self-hosting från repot och startpunkterna i `deploy/` genererar och exporterar en egen hemlighet. För att anropa API:et för hand:
 
@@ -1249,7 +1251,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

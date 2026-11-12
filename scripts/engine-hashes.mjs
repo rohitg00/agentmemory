@@ -47,6 +47,10 @@ if (!table.test(source)) {
   console.error("III_RELEASE_SHA256 table not found in src/cli/engine-install.ts");
   process.exit(1);
 }
-const block = `export const III_RELEASE_SHA256: ChecksumTable = {\n  "${version}": {\n${lines.join("\n")}\n  },\n};\n`;
+const kept = [...source.match(table)[0].matchAll(/\n  "([^"]+)": \{\n[\s\S]*?\n  \},/g)]
+  .filter((entry) => entry[1] !== version)
+  .map((entry) => entry[0])
+  .join("");
+const block = `export const III_RELEASE_SHA256: ChecksumTable = {\n  "${version}": {\n${lines.join("\n")}\n  },${kept}\n};\n`;
 writeFileSync(installFile, source.replace(table, block));
 console.log(`wrote hashes for iii v${version} to src/cli/engine-install.ts`);

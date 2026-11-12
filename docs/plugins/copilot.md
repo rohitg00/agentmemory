@@ -55,8 +55,6 @@ Merge this entry into `.vscode/mcp.json`, preserving your existing servers. VS C
 }
 ```
 
-The bundled bridge is present in the 0.9.30 release branch. Before that release is published, use a built checkout for this setup.
-
 For automatic capture, create `.github/hooks/agentmemory.json` in the workspace:
 
 ```json

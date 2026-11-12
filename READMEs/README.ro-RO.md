@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Document de design: 1.6k stele / 230 fork-uri pe gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Document de design: 1.7k stele / 240 fork-uri pe gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 de instrumente MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook-uri automate" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 baze de date externe" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ teste trecute" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ teste trecute" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -446,7 +446,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code fără instalarea plugin-ului (cale MCP independentă)
 
-Dacă conectezi serverul MCP al agentmemory direct prin `~/.claude.json`, în loc să folosești `/plugin install`, Claude Code nu rezolvă niciodată `${CLAUDE_PLUGIN_ROOT}` și trebuie să indici scripturile de hook prin căi absolute în `~/.claude/settings.json`. Aceste căi includ de obicei versiunea agentmemory (de ex. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), astfel încât următoarea actualizare rupe silențios fiecare hook.
+Dacă conectezi serverul MCP al agentmemory direct prin `~/.claude.json` (cale implicită), în loc să folosești `/plugin install`, Claude Code nu rezolvă niciodată `${CLAUDE_PLUGIN_ROOT}` și trebuie să indici scripturile de hook prin căi absolute în `~/.claude/settings.json` (cale implicită). Aceste căi includ de obicei versiunea agentmemory (de ex. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), astfel încât următoarea actualizare rupe silențios fiecare hook.
 
 Soluție alternativă:
 
@@ -454,7 +454,9 @@ Soluție alternativă:
 agentmemory connect claude-code --with-hooks
 ```
 
-Aceasta îmbină aceleași comenzi de hook în `~/.claude/settings.json`, cu căi absolute rezolvate către directorul `plugin/` inclus în pachetul `@agentmemory/agentmemory` instalat curent. Rulează din nou comanda după actualizarea agentmemory, pentru a reîmprospăta căile. Intrările proprii ale utilizatorului din același fișier sunt păstrate; sunt înlocuite doar intrările anterioare ale agentmemory. Folosirea căii `/plugin install` rămâne abordarea recomandată.
+Această comandă configurează serverul MCP și îmbină hook-urile incluse cu configurația de utilizator a Claude Code. Dacă `CLAUDE_CONFIG_DIR` nu este setată, este goală sau conține doar spații albe, folosește `~/.claude.json` pentru MCP și `~/.claude/settings.json` pentru hook-uri. Celelalte valori de director sunt folosite exact așa cum sunt furnizate, inclusiv spațiile albe de la început și de la sfârșit. Pentru un director personalizat, setați `CLAUDE_CONFIG_DIR` la aceeași valoare nevidă atât pentru această comandă, cât și pentru Claude Code; fișierele vor fi atunci `$CLAUDE_CONFIG_DIR/.claude.json` și, respectiv, `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code trebuie să primească această valoare în mediul său de pornire, chiar dacă conectorul o citește din fișierul `.env` al AgentMemory. Creați directorul personalizat înainte de a rula această comandă; altfel, conectorul omite Claude Code deoarece nu îl detectează. Dacă valoarea din shell conține doar spații albe, eliminați `CLAUDE_CONFIG_DIR` din mediu înainte de a porni Claude Code, pentru ca și acesta să folosească profilul implicit. Folosește o cale absolută. Căile relative sunt interpretate pornind de la directorul de lucru, deci ambele comenzi trebuie executate din același director.
+
+Comenzile hook-urilor folosesc căi absolute către directorul `plugin/` inclus în pachetul instalat. Rulați din nou comanda după actualizarea agentmemory pentru a reîmprospăta aceste căi. Intrările utilizatorului din fișierele de configurare sunt păstrate; sunt înlocuite doar intrările anterioare ale agentmemory. Utilizarea `/plugin install` rămâne abordarea recomandată.
 Pentru deployment-uri la distanță sau protejate, pornește Claude Code cu `AGENTMEMORY_URL` și `AGENTMEMORY_SECRET` setate. Plugin-ul transmite ambele valori către serverul MCP inclus; când `AGENTMEMORY_URL` este gol, shim-ul MCP folosește `http://localhost:3111`.
 
 ### Codex CLI (platforma de plugin-uri Codex)
@@ -663,7 +665,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory rulează pe Windows 10/11. WSL2 urmează calea Linux și poate instala automat engine-ul fixat. Windows nativ necesită instalarea manuală a binarului iii-engine v0.25.0 fixat; descarcă arhiva potrivită de pe [pagina de release iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), verifică checksum-ul și pune `iii.exe` în `PATH` (de exemplu `%USERPROFILE%\.local\bin\iii.exe`). CLI-ul nu extrage automat arhiva ZIP pentru Windows.
+agentmemory rulează pe Windows 10/11. WSL2 urmează calea Linux și poate instala automat engine-ul fixat. Windows nativ necesită instalarea manuală a binarului iii-engine v0.25.1 fixat; descarcă arhiva potrivită de pe [pagina de release iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), verifică checksum-ul și pune `iii.exe` în `PATH` (de exemplu `%USERPROFILE%\.local\bin\iii.exe`). CLI-ul nu extrage automat arhiva ZIP pentru Windows.
 
 Conectarea MCP automatizată pe Windows nativ acceptă doar `agentmemory connect copilot-cli`. Pentru ceilalți agenți nativi Windows, folosește blocul MCP manual din [Alți agenți](#other-agents). Rulează `connect` în WSL doar când agentul țintă este instalat în același mediu WSL.
 
@@ -1154,7 +1156,7 @@ Referința completă [`.env.example`](../.env.example) include furnizori, filtre
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 de endpoint-uri pe portul `3111`. API-ul REST se leagă implicit la `127.0.0.1`. Endpoint-urile protejate necesită `Authorization: Bearer <secret>`, iar endpoint-urile de sincronizare mesh necesită un `AGENTMEMORY_SECRET` setat explicit pe ambii parteneri (peers).
+147 de endpoint-uri pe portul `3111`. API-ul REST se leagă implicit la `127.0.0.1`. Endpoint-urile protejate necesită `Authorization: Bearer <secret>`, iar endpoint-urile de sincronizare mesh necesită un `AGENTMEMORY_SECRET` setat explicit pe ambii parteneri (peers).
 
 **Autentificarea este activată implicit.** Dacă `AGENTMEMORY_SECRET` nu este setat, CLI-ul generează la prima pornire un secret aleatoriu în `~/.agentmemory/secret`, cu permisiuni `0600`, și îl copiază și în directorul de date selectat. Toți clienții incluși îl citesc de acolo când comunică cu un server local: CLI-ul, vizualizatorul, hook-urile din `plugin/scripts`, serverul MCP și shim-ul `@agentmemory/mcp`, configurațiile scrise de `agentmemory connect` și integrările incluse OpenCode, Pi, OpenClaw, Hermes și filesystem-watcher. Secretul stocat este trimis doar către URL-uri loopback (`localhost`, `127.0.0.0/8`, `::1`). Un `AGENTMEMORY_SECRET` explicit are întotdeauna prioritate, iar clienții la distanță trebuie să seteze secretul în mediul lor. Implementările Docker self-host pornite din repository și entrypoint-urile `deploy/` își generează și exportă propriul secret. Pentru a apela API-ul manual:
 
@@ -1235,7 +1237,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

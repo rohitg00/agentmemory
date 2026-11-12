@@ -52,7 +52,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.6k stars / 230 forks on the gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.7k stars / 240 forks on the gist" /></a>
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -448,7 +448,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code بدون تثبيت الإضافة (مسار MCP القائم بذاته)
 
-إذا ربطت خادم MCP الخاص بـ agentmemory عبر `~/.claude.json` مباشرة بدلًا من استخدام `/plugin install`، فإن Claude Code لن يحلّ `${CLAUDE_PLUGIN_ROOT}` مطلقًا، وستحتاج إلى توجيه نصوص الخطافات إلى مسارات مطلقة في `~/.claude/settings.json`. وتُضمِّن تلك المسارات عادة إصدار agentmemory (مثل `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`)، فتنكسر جميع الخطافات بصمت عند الترقية التالية.
+إذا ربطت خادم MCP الخاص بـ agentmemory عبر `~/.claude.json` (المسار الافتراضي) مباشرة بدلًا من استخدام `/plugin install`، فإن Claude Code لن يحلّ `${CLAUDE_PLUGIN_ROOT}` مطلقًا، وستحتاج إلى توجيه نصوص الخطافات إلى مسارات مطلقة في `~/.claude/settings.json` (المسار الافتراضي). وتُضمِّن تلك المسارات عادة إصدار agentmemory (مثل `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`)، فتنكسر جميع الخطافات بصمت عند الترقية التالية.
 
 الحل البديل:
 
@@ -456,7 +456,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-يُدمج هذا الأمر نفس أوامر الخطافات في `~/.claude/settings.json` بمسارات مطلقة تُحلَّل إلى دليل `plugin/` المُضمَّن في حزمة `@agentmemory/agentmemory` المثبَّتة حاليًا. أعد تشغيل الأمر بعد ترقية agentmemory لتحديث المسارات. تُحفظ إدخالات المستخدم في نفس الملف؛ ويُستبدل إدخالات agentmemory السابقة فقط. يظل استخدام مسار `/plugin install` هو الأسلوب المُوصى به.
+يضبط هذا الأمر خادم MCP ويدمج الخطافات المضمّنة في إعدادات مستخدم Claude Code. عندما لا يكون `CLAUDE_CONFIG_DIR` مضبوطًا أو تكون قيمته فارغة أو مؤلفة من مسافات بيضاء فقط، يستخدم `~/.claude.json` لإعدادات MCP و`~/.claude/settings.json` للخطافات. تُستخدم قيم الأدلة الأخرى كما هي تمامًا، بما في ذلك المسافات البيضاء في البداية والنهاية. لاستخدام دليل مخصص، اضبط `CLAUDE_CONFIG_DIR` على القيمة غير الفارغة نفسها عند تشغيل هذا الأمر وClaude Code؛ وعندها يكون الملفان `$CLAUDE_CONFIG_DIR/.claude.json` و`$CLAUDE_CONFIG_DIR/settings.json`، على الترتيب. يجب أن يتلقى Claude Code هذه القيمة في بيئة تشغيله، حتى إذا قرأها الموصل من ملف `.env` الخاص بـ AgentMemory. أنشئ الدليل المخصص قبل تشغيل هذا الأمر؛ وإلا فسيتجاوز الموصل Claude Code باعتباره غير مكتشف. إذا كانت قيمة المتغير في بيئة shell مؤلفة من مسافات بيضاء فقط، فألغِ تعيين `CLAUDE_CONFIG_DIR` قبل تشغيل Claude Code ليستخدم الإعدادات الافتراضية أيضًا. استخدم مسارًا مطلقًا. تُحل المسارات النسبية انطلاقًا من دليل العمل، لذا يجب تشغيل الأمرين من الدليل نفسه.
+
+تستخدم أوامر الخطافات مسارات مطلقة إلى دليل `plugin/` المضمّن في الحزمة المثبّتة. أعد تشغيل الأمر بعد ترقية agentmemory لتحديث تلك المسارات. تُحفظ إدخالات المستخدم في ملفات الإعدادات؛ ولا تُستبدل إلا إدخالات agentmemory السابقة. يظل استخدام `/plugin install` هو النهج الموصى به.
 بالنسبة للنشر عن بُعد أو المحمي، شغّل Claude Code مع ضبط `AGENTMEMORY_URL` و`AGENTMEMORY_SECRET`. تُمرّر الإضافة كلتا القيمتين إلى خادم MCP المُضمَّن بها؛ وعندما يكون `AGENTMEMORY_URL` فارغًا، يستخدم وسيط MCP (shim) عنوان `http://localhost:3111`.
 
 ### Codex CLI (منصة إضافات Codex)
@@ -665,7 +667,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-يعمل agentmemory على Windows 10/11. يتبع WSL2 مسار Linux ويمكنه تثبيت المحرك المثبّت تلقائيًا. يتطلب Windows الأصلي تثبيت ملف iii-engine 0.25.0 المثبّت يدويًا؛ نزّل الأرشيف المطابق من [صفحة إصدار iii 0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0)، وتحقق من بصمته، وضع `iii.exe` على `PATH` (مثل `%USERPROFILE%\.local\bin\iii.exe`). لا يستخرج CLI ملف ZIP الخاص بـ Windows تلقائيًا.
+يعمل agentmemory على Windows 10/11. يتبع WSL2 مسار Linux ويمكنه تثبيت المحرك المثبّت تلقائيًا. يتطلب Windows الأصلي تثبيت ملف iii-engine 0.25.1 المثبّت يدويًا؛ نزّل الأرشيف المطابق من [صفحة إصدار iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1)، وتحقق من بصمته، وضع `iii.exe` على `PATH` (مثل `%USERPROFILE%\.local\bin\iii.exe`). لا يستخرج CLI ملف ZIP الخاص بـ Windows تلقائيًا.
 
 لا يدعم الربط الآلي لـ MCP على Windows الأصلي إلا `agentmemory connect copilot-cli`. أما وكلاء Windows الأصليون الآخرون، فاستخدم كتلة MCP اليدوية من [وكلاء آخرون](#other-agents). شغّل `connect` داخل WSL فقط عندما يكون الوكيل المستهدف مثبتًا في بيئة WSL نفسها.
 
@@ -1161,7 +1163,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
+147 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
 
 **المصادقة مُفعّلة افتراضيًا.** إذا لم يُضبط `AGENTMEMORY_SECRET`، ينشئ CLI عند التشغيل الأول سرًا عشوائيًا في `~/.agentmemory/secret` بصلاحيات `0600` وينسخه أيضًا إلى مجلد البيانات المحدد. يقرأ كل عميل مضمّن هذا السر عند الاتصال بخادم محلي: CLI والعارض والخطافات تحت `plugin/scripts` وخادم MCP ووسيط `@agentmemory/mcp` والإعدادات التي يكتبها `agentmemory connect` وتكاملات OpenCode وPi وOpenClaw وHermes ومراقب نظام الملفات المضمّنة. لا يُرسل السر المحفوظ إلا إلى عناوين loopback (`localhost` و`127.0.0.0/8` و`::1`). وتكون الأولوية دائمًا لقيمة `AGENTMEMORY_SECRET` الصريحة، كما يجب ضبط السر في بيئة العملاء البعيدين. تنشئ عمليات الاستضافة الذاتية عبر Docker من المستودع ونقاط دخول [`deploy/`](../deploy/) سرها وتصدّره. لاستدعاء API يدويًا:
 
@@ -1242,7 +1244,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

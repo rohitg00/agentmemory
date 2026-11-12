@@ -4,7 +4,9 @@ import { join, dirname } from "node:path";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
+  AGENTMEMORY_MCP_BLOCK,
   backupFile,
+  isLegacyMcpCommand,
   logAlreadyWired,
   logBackup,
   logInstalled,
@@ -22,8 +24,8 @@ const CODEX_TOML = join(CODEX_DIR, "config.toml");
 const CODEX_HOOKS = join(CODEX_DIR, "hooks.json");
 
 const TOML_BLOCK = `[mcp_servers.agentmemory]
-command = "npx"
-args = ["-y", "@agentmemory/mcp"]
+command = ${JSON.stringify(AGENTMEMORY_MCP_BLOCK.command)}
+args = [${AGENTMEMORY_MCP_BLOCK.args.map((arg) => JSON.stringify(arg)).join(", ")}]
 
 [mcp_servers.agentmemory.env]
 AGENTMEMORY_URL = "http://localhost:3111"
@@ -33,6 +35,90 @@ const SECTION_HEADER = "[mcp_servers.agentmemory]";
 
 function isWiredText(toml: string): boolean {
   return toml.includes(SECTION_HEADER);
+}
+
+const COMMAND_LINE = /^([ \t]*command[ \t]*=[ \t]*)(["'])(.*?)\2(?=[ \t]*(?:#.*)?$)/m;
+const ARGS_KEY = /^[ \t]*args[ \t]*=[ \t]*(?=\[)/m;
+
+function sectionBounds(toml: string): { start: number; end: number } | null {
+  const header = toml.indexOf(SECTION_HEADER);
+  if (header < 0) return null;
+  const start = header + SECTION_HEADER.length;
+  const end = toml.slice(start).search(/^\s*\[/m);
+  return { start, end: end < 0 ? toml.length : start + end };
+}
+
+function decodeBasicString(literal: string): string {
+  try {
+    return JSON.parse(literal) as string;
+  } catch {
+    return literal.slice(1, -1);
+  }
+}
+
+function findArgs(section: string): { open: number; end: number; items: string[] } | null {
+  const key = section.match(ARGS_KEY);
+  if (!key || key.index === undefined) return null;
+  const open = key.index + key[0].length;
+  const items: string[] = [];
+  let depth = 0;
+  for (let i = open; i < section.length; i++) {
+    const ch = section[i];
+    if (ch === "#") {
+      const newline = section.indexOf("\n", i);
+      if (newline < 0) return null;
+      i = newline;
+    } else if (ch === '"' || ch === "'") {
+      let j = i + 1;
+      while (j < section.length && section[j] !== ch && section[j] !== "\n") {
+        j += ch === '"' && section[j] === "\\" ? 2 : 1;
+      }
+      if (section[j] !== ch) return null;
+      const literal = section.slice(i, j + 1);
+      if (depth === 1) items.push(ch === '"' ? decodeBasicString(literal) : literal.slice(1, -1));
+      i = j;
+    } else if (ch === "[") {
+      depth++;
+    } else if (ch === "]" && --depth === 0) {
+      return { open, end: i + 1, items };
+    }
+  }
+  return null;
+}
+
+function agentmemorySection(toml: string): string | null {
+  const bounds = sectionBounds(toml);
+  return bounds ? toml.slice(bounds.start, bounds.end) : null;
+}
+
+function hasLegacyCommand(toml: string): boolean {
+  const section = agentmemorySection(toml);
+  if (section === null) return false;
+  return isLegacyMcpCommand(section.match(COMMAND_LINE)?.[3], findArgs(section)?.items);
+}
+
+function hasCurrentCommand(toml: string): boolean {
+  const section = agentmemorySection(toml);
+  if (section === null) return false;
+  const args = findArgs(section)?.items;
+  return (
+    section.match(COMMAND_LINE)?.[3] === AGENTMEMORY_MCP_BLOCK.command &&
+    JSON.stringify(args) === JSON.stringify(AGENTMEMORY_MCP_BLOCK.args)
+  );
+}
+
+function migrateLegacyCommand(toml: string): string | null {
+  const bounds = sectionBounds(toml)!;
+  const section = toml.slice(bounds.start, bounds.end);
+  const args = findArgs(section);
+  if (!args) return null;
+  const nextArgs = `[${AGENTMEMORY_MCP_BLOCK.args.map((arg) => JSON.stringify(arg)).join(", ")}]`;
+  const migrated = (section.slice(0, args.open) + nextArgs + section.slice(args.end)).replace(
+    COMMAND_LINE,
+    (_, prefix: string) => `${prefix}${JSON.stringify(AGENTMEMORY_MCP_BLOCK.command)}`,
+  );
+  const next = toml.slice(0, bounds.start) + migrated + toml.slice(bounds.end);
+  return hasCurrentCommand(next) ? next : null;
 }
 
 function stripExistingBlock(toml: string): string {
@@ -76,8 +162,9 @@ export const adapter: ConnectAdapter = {
     const exists = existsSync(CODEX_TOML);
     const current = exists ? readFileSync(CODEX_TOML, "utf-8") : "";
     const wired = isWiredText(current);
+    const legacy = wired && hasLegacyCommand(current);
 
-    if (wired && !opts.force) {
+    if (wired && !legacy && !opts.force) {
       logAlreadyWired("Codex CLI", CODEX_TOML);
       return { kind: "already-wired", mutatedPath: CODEX_TOML };
     }
@@ -98,10 +185,20 @@ export const adapter: ConnectAdapter = {
       mkdirSync(dirname(CODEX_TOML), { recursive: true });
     }
 
-    const cleaned = wired ? stripExistingBlock(current) : current;
-    const joiner = cleaned.length === 0 || cleaned.endsWith("\n") ? "" : "\n";
-    const next = `${cleaned}${joiner}${cleaned.length > 0 ? "\n" : ""}${TOML_BLOCK}`;
-    writeFileSync(CODEX_TOML, next, "utf-8");
+    if (legacy && !opts.force) {
+      const migrated = migrateLegacyCommand(current);
+      if (migrated === null) {
+        p.log.error(
+          `Could not migrate the agentmemory launcher in ${CODEX_TOML}. Run again with --force to rewrite the block.`,
+        );
+        return { kind: "skipped", reason: "verification-failed" };
+      }
+      writeFileSync(CODEX_TOML, migrated, "utf-8");
+    } else {
+      const cleaned = wired ? stripExistingBlock(current) : current;
+      const joiner = cleaned.length === 0 || cleaned.endsWith("\n") ? "" : "\n";
+      writeFileSync(CODEX_TOML, `${cleaned}${joiner}${cleaned.length > 0 ? "\n" : ""}${TOML_BLOCK}`, "utf-8");
+    }
 
     const verify = readFileSync(CODEX_TOML, "utf-8");
     if (!isWiredText(verify)) {

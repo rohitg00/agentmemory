@@ -41,7 +41,7 @@ describe("zero-LLM provider notice", () => {
     }
 
     const notices = write.mock.calls.filter((call) =>
-      String(call[0]).includes("No LLM provider key set"),
+      String(call[0]).includes("No LLM provider chosen"),
     );
     expect(notices).toHaveLength(1);
   });

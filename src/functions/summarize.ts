@@ -25,13 +25,12 @@ import { logger } from "../logger.js";
 import { scrubRecord } from "./privacy.js";
 import { registerSummaryRecoveryFunction } from "./summary-recovery.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
-import { summaryFingerprint, summaryObservations } from "./summary-state.js";
+import { getSummaryTimeoutMs, summaryFingerprint, summaryObservations } from "./summary-state.js";
 
 // Per-chunk observation budget when a session is too large to fit in one
 // LLM call. Default ≈ 50k input tokens per chunk at ~110 tok/obs — fits
 // comfortably in 128k-window models. Override via SUMMARIZE_CHUNK_SIZE.
 const CHUNK_SIZE_DEFAULT = 400;
-export const SUMMARY_TIMEOUT_MS = 120_000;
 // Concurrent chunk calls share the summary deadline. Increase this for
 // large sessions only when the configured provider supports the load.
 const CHUNK_CONCURRENCY_DEFAULT = 6;
@@ -312,15 +311,16 @@ export function registerSummarizeFunction(
           success: false,
           error: "no_provider",
           reason:
-            "No LLM provider key set; Summarize is a no-op. Set ANTHROPIC_API_KEY (or GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env to enable.",
+            "No LLM provider chosen; Summarize is a no-op. Set AGENTMEMORY_LLM_PROVIDER and that provider's key in ~/.agentmemory/.env to enable.",
         };
       }
 
+      const timeoutMs = getSummaryTimeoutMs();
       const boundedProvider: MemoryProvider = {
         name: provider.name,
         compress: (system, prompt) => provider.compress(system, prompt),
         summarize: async (system, prompt) => {
-          const remaining = SUMMARY_TIMEOUT_MS - (Date.now() - startMs);
+          const remaining = timeoutMs - (Date.now() - startMs);
           if (remaining <= 0) throw new Error("summary_timeout");
           let timer: ReturnType<typeof setTimeout> | undefined;
           try {

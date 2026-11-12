@@ -1,8 +1,8 @@
 # Shared build for local Compose and every deployment platform.
 # Update these four pins together when promoting the runtime.
-ARG III_VERSION=0.25.0
-ARG STATE_VERSION=0.22.20
-ARG HTTP_VERSION=0.22.7
+ARG III_VERSION=0.25.1
+ARG STATE_VERSION=0.22.22
+ARG HTTP_VERSION=0.22.8
 
 FROM node:24-slim AS agent-build
 ARG III_VERSION
@@ -11,7 +11,8 @@ COPY package.json ./package.json
 RUN npm install --no-fund --no-audit --package-lock=false
 COPY . .
 RUN npm run build \
- && npm prune --omit=dev --omit=optional --no-fund --no-audit
+ && npm prune --omit=dev --no-fund --no-audit \
+ && node scripts/deploy/prune-onnx.mjs
 
 FROM iiidev/iii:${III_VERSION} AS iii-engine
 
@@ -26,17 +27,18 @@ RUN apt-get update \
  && find /var/lib/apt/lists -mindepth 1 -delete
 
 COPY --from=iii-engine /app/iii /usr/local/bin/iii
-RUN iii --version 2>&1 | grep -qF "${III_VERSION}" \
+RUN iii --version 2>&1 | tr -s " \t" "\n" | grep -qxF "${III_VERSION}" \
  || { echo "iiidev/iii:${III_VERSION} does not contain iii ${III_VERSION}" >&2; exit 1; }
 
 WORKDIR /opt/agentmemory
-COPY --from=agent-build /opt/agentmemory/package.json ./package.json
-COPY --from=agent-build /opt/agentmemory/node_modules ./node_modules
-COPY --from=agent-build /opt/agentmemory/dist ./dist
-COPY deploy/runtime/agentmemory.worker.yaml /opt/agentmemory/iii.worker.yaml
-COPY deploy/runtime/worker-compose.yaml /opt/agentmemory/worker-compose.yaml
-RUN chmod 644 /opt/agentmemory/worker-compose.yaml /opt/agentmemory/iii.worker.yaml \
- && chown -R node:node /opt/agentmemory
+RUN chown node:node /opt/agentmemory
+COPY --from=agent-build --chown=node:node /opt/agentmemory/package.json ./package.json
+COPY --from=agent-build --chown=node:node /opt/agentmemory/node_modules ./node_modules
+# npm can silently skip failed optional installs; local embeddings must load in the final image.
+RUN node --input-type=module -e "await import('@huggingface/transformers')"
+COPY --from=agent-build --chown=node:node /opt/agentmemory/dist ./dist
+COPY --chown=node:node --chmod=644 deploy/runtime/agentmemory.worker.yaml /opt/agentmemory/iii.worker.yaml
+COPY --chown=node:node --chmod=644 deploy/runtime/worker-compose.yaml /opt/agentmemory/worker-compose.yaml
 COPY --chmod=0755 deploy/runtime/entrypoint.sh /usr/local/bin/agentmemory-entrypoint
 
 ENV III_VERSION=${III_VERSION} \

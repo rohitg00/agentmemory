@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.6k stars / 230 forks on the gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Design doc: 1.7k stars / 240 forks on the gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Plugin install के बिना Claude Code (MCP-standalone path)
 
-अगर आप `/plugin install` का उपयोग करने के बजाय `~/.claude.json` के माध्यम से सीधे agentmemory का MCP server connect करते हैं, तो Claude Code कभी भी `${CLAUDE_PLUGIN_ROOT}` resolve नहीं करता और आपको hook scripts को `~/.claude/settings.json` में absolute paths पर point करना पड़ता है। ये paths आमतौर पर agentmemory version को embed करते हैं (जैसे `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), इसलिए अगला upgrade चुपचाप हर hook को तोड़ देता है।
+अगर आप `/plugin install` का उपयोग करने के बजाय `~/.claude.json` (डिफ़ॉल्ट पथ) के माध्यम से सीधे agentmemory का MCP server connect करते हैं, तो Claude Code कभी भी `${CLAUDE_PLUGIN_ROOT}` resolve नहीं करता और आपको hook scripts को `~/.claude/settings.json` (डिफ़ॉल्ट पथ) में absolute paths पर point करना पड़ता है। ये paths आमतौर पर agentmemory version को embed करते हैं (जैसे `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), इसलिए अगला upgrade चुपचाप हर hook को तोड़ देता है।
 
 Workaround:
 
@@ -452,7 +452,9 @@ Workaround:
 agentmemory connect claude-code --with-hooks
 ```
 
-यह वही hook commands को `~/.claude/settings.json` में merge करता है, current installed `@agentmemory/agentmemory` package की bundled `plugin/` directory पर resolve किए गए absolute paths के साथ। agentmemory upgrade करने के बाद paths refresh करने के लिए command फिर से चलाएँ। उसी file में user entries preserved रहती हैं; केवल पिछली agentmemory entries replace होती हैं। `/plugin install` path अनुशंसित approach बनी रहती है।
+यह कमांड MCP सर्वर को कॉन्फ़िगर करता है और साथ आए hooks को Claude Code के उपयोगकर्ता कॉन्फ़िगरेशन में मिलाता है। यदि `CLAUDE_CONFIG_DIR` सेट नहीं है, खाली है या उसमें केवल व्हाइटस्पेस हैं, तो यह MCP के लिए `~/.claude.json` और hooks के लिए `~/.claude/settings.json` का उपयोग करता है। डायरेक्टरी के अन्य मान आगे-पीछे के व्हाइटस्पेस सहित ठीक वैसे ही इस्तेमाल होते हैं जैसे दिए गए हैं। कस्टम डायरेक्टरी के लिए इस कमांड और Claude Code दोनों में `CLAUDE_CONFIG_DIR` का एक ही गैर-खाली मान सेट करें; तब फ़ाइलें क्रमशः `$CLAUDE_CONFIG_DIR/.claude.json` और `$CLAUDE_CONFIG_DIR/settings.json` होंगी। Claude Code के लॉन्च वातावरण में यह मान होना चाहिए, भले ही कनेक्टर इसे AgentMemory की `.env` से पढ़ता हो। इस कमांड को चलाने से पहले कस्टम डायरेक्टरी बनाएँ; अन्यथा कनेक्टर Claude Code को नहीं पहचान पाता और उसे छोड़ देता है। यदि shell के मान में केवल व्हाइटस्पेस हैं, तो Claude Code लॉन्च करने से पहले `CLAUDE_CONFIG_DIR` अनसेट करें, ताकि वह भी डिफ़ॉल्ट प्रोफ़ाइल का उपयोग करे। निरपेक्ष पथ का उपयोग करें। सापेक्ष पथ कार्यशील डायरेक्टरी के आधार पर तय होते हैं, इसलिए दोनों कमांड एक ही डायरेक्टरी से चलाएँ।
+
+Hook कमांड इंस्टॉल किए गए पैकेज की साथ आई `plugin/` डायरेक्टरी के ऐब्सोल्यूट पथ इस्तेमाल करते हैं। agentmemory अपग्रेड करने के बाद इन पथों को रीफ़्रेश करने के लिए कमांड फिर से चलाएँ। कॉन्फ़िगरेशन फ़ाइलों में उपयोगकर्ता की प्रविष्टियाँ बनी रहती हैं; केवल पिछली agentmemory प्रविष्टियाँ बदली जाती हैं। `/plugin install` का उपयोग करना अब भी अनुशंसित तरीका है।
 Remote या protected deployments के लिए, Claude Code को `AGENTMEMORY_URL` और `AGENTMEMORY_SECRET` set के साथ launch करें। Plugin दोनों values को अपने bundled MCP server के माध्यम से pass करता है; जब `AGENTMEMORY_URL` खाली होता है, तो MCP shim `http://localhost:3111` का उपयोग करता है।
 
 ### Codex CLI (Codex plugin platform)
@@ -656,7 +658,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory Windows 10/11 पर चलता है। WSL2 Linux path अपनाता है और pinned engine को automatically install कर सकता है। Native Windows पर pinned iii-engine v0.25.0 binary manually install करें: [iii v0.25.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) से सही archive download करें, checksum verify करें और `iii.exe` को `PATH` में रखें (उदाहरण: `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP को automatically extract नहीं करता।
+agentmemory Windows 10/11 पर चलता है। WSL2 Linux path अपनाता है और pinned engine को automatically install कर सकता है। Native Windows पर pinned iii-engine v0.25.1 binary manually install करें: [iii v0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) से सही archive download करें, checksum verify करें और `iii.exe` को `PATH` में रखें (उदाहरण: `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP को automatically extract नहीं करता।
 
 Native Windows में automated MCP wiring केवल `agentmemory connect copilot-cli` को support करती है। अन्य native Windows agents के लिए [Other agents](#other-agents) वाला manual MCP block इस्तेमाल करें। `connect` को WSL में तभी चलाएँ जब target agent भी उसी WSL environment में installed हो।
 
@@ -1175,7 +1177,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-Port `3111` पर 146 endpoints। REST API default रूप से `127.0.0.1` से bind होता है। Protected endpoints `Authorization: Bearer <secret>` की आवश्यकता रखते हैं, और mesh sync endpoints दोनों peers पर एक explicitly set `AGENTMEMORY_SECRET` की आवश्यकता रखते हैं।
+Port `3111` पर 147 endpoints। REST API default रूप से `127.0.0.1` से bind होता है। Protected endpoints `Authorization: Bearer <secret>` की आवश्यकता रखते हैं, और mesh sync endpoints दोनों peers पर एक explicitly set `AGENTMEMORY_SECRET` की आवश्यकता रखते हैं।
 
 प्रमाणीकरण डिफ़ॉल्ट रूप से चालू है। `AGENTMEMORY_SECRET` सेट न होने पर CLI पहली बार एक random secret `~/.agentmemory/secret` में रखता है और चुनी हुई डेटा डायरेक्टरी के `secret` में उसकी प्रति बनाता है; permissions `0600` होती हैं। साथ आए क्लाइंट लोकल कनेक्शन में इस मूल फ़ाइल को प्राथमिकता देते हैं और सेव किया secret सिर्फ loopback URL को भेजते हैं। स्पष्ट `AGENTMEMORY_SECRET` प्राथमिकता रखता है; रिमोट क्लाइंट को इसे environment में सेट करना होता है। Docker अपना secret बनाता है।
 
@@ -1256,7 +1258,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

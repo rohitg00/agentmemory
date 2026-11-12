@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white" alt="Design doc: 1.6k stars / 230 forks on the gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white" alt="Design doc: 1.7k stars / 240 forks on the gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-työkalua" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automaattista hookia" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 ulkoista tietokantaa" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ testiä läpäisty" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ testiä läpäisty" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -446,7 +446,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code ilman pluginin asennusta (itsenäinen MCP-reitti)
 
-Jos kytket agentmemoryn MCP-palvelimen tiedoston `~/.claude.json` kautta suoraan sen sijaan, että käyttäisit `/plugin install`-komentoa, Claude Code ei koskaan ratkaise muuttujaa `${CLAUDE_PLUGIN_ROOT}`, ja sinun on osoitettava hook-skriptit absoluuttisiin polkuihin tiedostossa `~/.claude/settings.json`. Nämä polut sisältävät tyypillisesti agentmemoryn versionumeron (esim. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), niin että seuraava päivitys hajottaa hiljaisesti kaikki hookit.
+Jos kytket agentmemoryn MCP-palvelimen tiedoston `~/.claude.json` (oletuspolku) kautta suoraan sen sijaan, että käyttäisit `/plugin install`-komentoa, Claude Code ei koskaan ratkaise muuttujaa `${CLAUDE_PLUGIN_ROOT}`, ja sinun on osoitettava hook-skriptit absoluuttisiin polkuihin tiedostossa `~/.claude/settings.json` (oletuspolku). Nämä polut sisältävät tyypillisesti agentmemoryn versionumeron (esim. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), niin että seuraava päivitys hajottaa hiljaisesti kaikki hookit.
 
 Kiertotapa:
 
@@ -454,7 +454,9 @@ Kiertotapa:
 agentmemory connect claude-code --with-hooks
 ```
 
-Tämä yhdistää samat hook-komennot tiedostoon `~/.claude/settings.json` absoluuttisilla poluilla, jotka osoittavat asennetun `@agentmemory/agentmemory`-paketin mukana tulevaan `plugin/`-hakemistoon. Aja komento uudelleen agentmemoryn päivityksen jälkeen päivittääksesi polut. Käyttäjän omat merkinnät samassa tiedostossa säilyvät; vain aiemmat agentmemory-merkinnät korvataan. `/plugin install`-reitti pysyy suositeltuna lähestymistapana.
+Tämä komento määrittää MCP-palvelimen ja yhdistää mukana tulevat hookit Claude Coden käyttäjäkohtaisiin asetuksiin. Jos `CLAUDE_CONFIG_DIR` on asettamatta, tyhjä tai sisältää vain tyhjiä merkkejä, se käyttää MCP:lle tiedostoa `~/.claude.json` ja hookeille tiedostoa `~/.claude/settings.json`. Muut hakemistopolut säilytetään täsmälleen annettuina, myös alun ja lopun tyhjät merkit mukaan lukien. Jos haluat käyttää omaa hakemistoa, aseta `CLAUDE_CONFIG_DIR` samaksi ei-tyhjäksi arvoksi sekä tälle komennolle että Claude Codelle; tiedostot ovat tällöin `$CLAUDE_CONFIG_DIR/.claude.json` MCP:lle ja `$CLAUDE_CONFIG_DIR/settings.json` hookeille. Claude Coden on saatava tämä arvo käynnistysympäristöstään, vaikka yhdistin lukisi sen AgentMemoryn `.env`-tiedostosta. Luo oma hakemisto ennen tämän komennon suorittamista; muuten yhdistin ohittaa Claude Coden, koska sitä ei tunnisteta. Jos shellin arvo sisältää vain tyhjiä merkkejä, poista `CLAUDE_CONFIG_DIR` ympäristöstä ennen Claude Coden käynnistämistä, jotta myös se käyttää oletusprofiilia. Käytä absoluuttista polkua. Suhteelliset polut tulkitaan työhakemiston perusteella, joten molemmat komennot on suoritettava samasta hakemistosta.
+
+Hook-komennot käyttävät absoluuttisia polkuja asennetun paketin mukana tulevaan `plugin/`-hakemistoon. Suorita komento uudelleen agentmemoryn päivityksen jälkeen, jotta polut päivittyvät. Käyttäjän omat merkinnät asetustiedostoissa säilytetään; vain aiemmat agentmemory-merkinnät korvataan. `/plugin install` on edelleen suositeltu tapa.
 Etä- tai suojattuja käyttöönottoja varten käynnistä Claude Code `AGENTMEMORY_URL`- ja `AGENTMEMORY_SECRET`-muuttujat asetettuina. Plugin välittää molemmat arvot sen mukana tulevalle MCP-palvelimelle; kun `AGENTMEMORY_URL` on tyhjä, MCP-shim käyttää osoitetta `http://localhost:3111`.
 
 ### Codex CLI (Codexin plugin-alusta)
@@ -663,7 +665,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory toimii Windows 10/11:ssä. WSL2 noudattaa Linuxin polkua ja voi asentaa kiinnitetyn moottorin automaattisesti. Natiivi Windows vaatii iii-engine v0.25.0:n kiinnitetyn binäärin asentamisen käsin; lataa sopiva paketti [iii v0.25.0 -julkaisusivulta](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), tarkista sen tarkistussumma ja sijoita `iii.exe` `PATH`-polkuun (esimerkiksi `%USERPROFILE%\.local\bin\iii.exe`). CLI ei pura Windows-ZIP-pakettia automaattisesti.
+agentmemory toimii Windows 10/11:ssä. WSL2 noudattaa Linuxin polkua ja voi asentaa kiinnitetyn moottorin automaattisesti. Natiivi Windows vaatii iii-engine v0.25.1:n kiinnitetyn binäärin asentamisen käsin; lataa sopiva paketti [iii v0.25.1 -julkaisusivulta](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), tarkista sen tarkistussumma ja sijoita `iii.exe` `PATH`-polkuun (esimerkiksi `%USERPROFILE%\.local\bin\iii.exe`). CLI ei pura Windows-ZIP-pakettia automaattisesti.
 
 Natiivin Windowsin automaattinen MCP-kytkentä tukee vain komentoa `agentmemory connect copilot-cli`. Muiden natiivien Windows-agenttien kanssa käytä manuaalista MCP-lohkoa kohdasta [Muut agentit](#other-agents). Suorita `connect` WSL:ssä vain, kun kohdeagentti on asennettu samaan WSL-ympäristöön.
 
@@ -1160,7 +1162,7 @@ Täydellinen [`.env.example`](../.env.example) kattaa palveluntarjoajat, tallenn
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpointia portissa `3111`. REST-rajapinta sitoutuu oletuksena osoitteeseen `127.0.0.1`. Suojatut endpointit vaativat `Authorization: Bearer <secret>`, ja mesh-synkronointiendpointit vaativat nimenomaisesti asetetun `AGENTMEMORY_SECRET`-arvon molemmilla vertaisilla.
+147 endpointia portissa `3111`. REST-rajapinta sitoutuu oletuksena osoitteeseen `127.0.0.1`. Suojatut endpointit vaativat `Authorization: Bearer <secret>`, ja mesh-synkronointiendpointit vaativat nimenomaisesti asetetun `AGENTMEMORY_SECRET`-arvon molemmilla vertaisilla.
 
 **Autentikointi on oletuksena päällä.** Jos `AGENTMEMORY_SECRET` puuttuu, CLI luo ensimmäisellä käynnistyksellä satunnaisen salaisuuden tiedostoon `~/.agentmemory/secret` oikeuksilla `0600` ja kopioi sen myös valittuun datahakemistoon. Kaikki mukana toimitetut asiakkaat lukevat salaisuuden sieltä käyttäessään paikallista palvelinta: CLI, katseluohjelma, `plugin/scripts`-hakemiston hookit, MCP-palvelin ja `@agentmemory/mcp`-shim, `agentmemory connect` -komennon luomat asetukset sekä mukana toimitetut OpenCode-, Pi-, OpenClaw-, Hermes- ja filesystem-watcher-integraatiot. Tallennettu salaisuus lähetetään vain loopback-osoitteisiin (`localhost`, `127.0.0.0/8`, `::1`). Nimenomainen `AGENTMEMORY_SECRET` voittaa aina, ja etäasiakkaiden on asetettava salaisuus ympäristöönsä. Repositorion Docker-itseylläpitokäyttöönotot ja `deploy/`-entrypointit luovat ja vievät oman salaisuutensa. Rajapinnan manuaalinen kutsu:
 
@@ -1241,7 +1243,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

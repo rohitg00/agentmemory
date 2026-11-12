@@ -41,6 +41,7 @@ import { generateId } from "./state/schema.js";
 import {
   buildDiagnostics,
   canAutoFix,
+  doctorPromptsAllowed,
   dryRunPlan,
   parseEnvFile,
   type Diagnostic,
@@ -57,7 +58,7 @@ import {
 } from "./cli/remove-plan.js";
 import { portFlagSuffix } from "./cli/ready-hint.js";
 import { embeddingStatusLabel } from "./cli/embedding-status.js";
-import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive } from "./cli/engine-install.js";
+import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive, installIiiZip } from "./cli/engine-install.js";
 import {
   runtimeConfigPath,
   redactCredentialUrls,
@@ -83,7 +84,7 @@ import {
 } from "./cli/engine-config.js";
 import { SHUTDOWN_HARD_EXIT_MS, registerStartupCleanup, runStartupCleanup } from "./shutdown.js";
 import { processStatIsRunning } from "./cli/process-state.js";
-import { readUnixProcessExecutable, sameResolvedExecutable } from "./cli/compose-process.js";
+import { classifyComposeProcess, readUnixProcessExecutable, type ComposeProcessIdentity } from "./cli/compose-process.js";
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
@@ -101,7 +102,7 @@ import { runCompressionCommand } from "./cli/compression.js";
 import { runGraphIndexCommand } from "./cli/graph-index.js";
 import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
-import { COMPOSE_WORKER_VERSIONS, composeNamespace } from "./cli/compose-project.js";
+import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -549,18 +550,38 @@ function fallbackIiiPaths(): string[] {
   return paths;
 }
 
+const III_VERSION_PROBE_TIMEOUTS_MS = [3000, 30000];
+
+function isProbeTimeout(err: unknown): boolean {
+  const e = err as { code?: string; signal?: string } | null;
+  return e?.code === "ETIMEDOUT" || e?.signal === "SIGTERM";
+}
+
+let iiiProbeScan: Map<string, string | null> | null = null;
+
 function iiiBinVersion(binPath: string): string | null {
-  try {
-    const out = execFileSync(binPath, ["--version"], {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 3000,
-    });
-    const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
-    return match ? match[1]! : null;
-  } catch {
-    return null;
+  if (iiiProbeScan?.has(binPath)) return iiiProbeScan.get(binPath)!;
+  const version = probeIiiVersion(binPath);
+  iiiProbeScan?.set(binPath, version);
+  return version;
+}
+
+function probeIiiVersion(binPath: string): string | null {
+  for (const timeout of III_VERSION_PROBE_TIMEOUTS_MS) {
+    try {
+      const out = execFileSync(binPath, ["--version"], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "ignore"],
+        timeout,
+      });
+      const match = out.match(/(\d+\.\d+\.\d+(?:[-+][\w.]+)?)/);
+      return match ? match[1]! : null;
+    } catch (err) {
+      if (!isProbeTimeout(err)) return null;
+      vlog(`iii --version at ${binPath} timed out after ${timeout}ms`);
+    }
   }
+  return null;
 }
 
 // Resolve a compatible iii binary for the pinned engine version.
@@ -939,12 +960,30 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
   }
 
   if (IS_WINDOWS || isZipAsset) {
-    p.log.info(
-      `Auto-install unavailable on ${platform()} — ${asset} isn't tar-compatible. Install manually:\n` +
+    const binDir = agentmemoryBinDir();
+    const binPath = privateIiiPath();
+    const label = `Installing iii-engine v${IIPINNED_VERSION} (pinned)`;
+    const spinner = p.spinner();
+    spinner.start(label);
+    const outcome = await installIiiZip({
+      releaseUrl,
+      version: IIPINNED_VERSION,
+      asset: asset ?? "",
+      binDir,
+      binPath,
+    });
+    if (outcome.ok) {
+      spinner.stop(`${label} ${pc.green("✓")}`);
+      iiiProbeScan?.delete(binPath);
+      return { ok: true, binPath };
+    }
+    spinner.stop(`${label} ${pc.red("✗")}`);
+    p.log.warn(
+      `iii-engine auto-install failed: ${outcome.detail.slice(0, 300)}\n` +
+        `Install it manually, then re-run agentmemory:\n` +
         `  1. Download ${releaseUrl}\n` +
         `     Its SHA-256 must be ${expectedIiiSha256(IIPINNED_VERSION, asset ?? "") ?? `the value in ${releaseUrl.replace(/\.zip$/, ".sha256")}`}\n` +
-        `  2. Extract iii.exe and place it on PATH (e.g. %USERPROFILE%\\.local\\bin)\n` +
-        `Install the pinned iii binary from ${releaseUrl}`,
+        `  2. Extract iii.exe into ${binDir}`,
     );
     return { ok: false, binPath: null };
   }
@@ -994,6 +1033,7 @@ async function runIiiInstaller(): Promise<{ ok: boolean; binPath: string | null 
     return { ok: false, binPath: null };
   }
   spinner.stop(`${label} ${pc.green("✓")}`);
+  iiiProbeScan?.delete(binPath);
   return { ok: true, binPath };
 }
 
@@ -1102,6 +1142,14 @@ function printComposeStartupLogs(): void {
 }
 
 function composePidMatches(pid: number, state: ComposeEngineState): boolean {
+  return composePidIdentity(pid, state) === "match";
+}
+
+function composePidIdentity(pid: number, state: ComposeEngineState): ComposeProcessIdentity {
+  return classifyComposeProcess(inspectComposeProcess(pid), state, IS_WINDOWS);
+}
+
+function inspectComposeProcess(pid: number): { command: string; executable: string } | null {
   try {
     let command = "";
     let executable = "";
@@ -1120,15 +1168,9 @@ function composePidMatches(pid: number, state: ComposeEngineState): boolean {
       command = execFileSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
       executable = readUnixProcessExecutable(pid, "linux");
     }
-    const expectedCommand = command.includes("compose") &&
-      command.includes("compose --namespace") &&
-      command.includes(state.namespace) &&
-      command.includes(state.file);
-    if (!expectedCommand) return false;
-    if (!executable) return false;
-    return sameResolvedExecutable(executable, state.binPath, IS_WINDOWS);
+    return { command, executable };
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -1282,6 +1324,15 @@ function pickCompatibleIii(candidates: Array<string | null | undefined>): string
 }
 
 async function startEngine(): Promise<boolean> {
+  iiiProbeScan = new Map();
+  try {
+    return await scanAndStartEngine();
+  } finally {
+    iiiProbeScan = null;
+  }
+}
+
+async function scanAndStartEngine(): Promise<boolean> {
   startupFailure = null;
   engineReadinessDeadline = null;
   let stateBackendKind: "file" | "redis";
@@ -1322,10 +1373,7 @@ async function startEngine(): Promise<boolean> {
   vlog(`iii binary: ${pathIii ?? "(not on PATH)"}`);
 
   const fallbacks = fallbackIiiPaths().filter((p) => existsSync(p));
-  for (const f of fallbacks) {
-    const v = iiiBinVersion(f);
-    vlog(`fallback iii at ${f} reports version: ${v ?? "unknown"}`);
-  }
+  vlog(`fallback iii candidates: ${fallbacks.length > 0 ? fallbacks.join(", ") : "(none)"}`);
 
   let iiiBin = pickCompatibleIii([pathIii, ...fallbacks]);
 
@@ -1363,6 +1411,9 @@ async function startEngine(): Promise<boolean> {
       `iii on PATH is v${detected ?? "unknown"} but agentmemory pins v${IIPINNED_VERSION}. ` +
         `Installing pinned engine to ~/.agentmemory/bin (leaves your existing iii untouched).`,
     );
+  } else if (IS_WINDOWS) {
+    choice = "install";
+    p.log.warn("iii-engine binary not found locally.");
   } else if (!interactive) {
     choice = "install";
     p.log.info("Non-interactive environment detected — auto-installing iii-engine.");
@@ -1451,7 +1502,7 @@ function installInstructions(): string[] {
       `     1. Open https://github.com/iii-hq/iii/releases/tag/iii%2Fv${IIPINNED_VERSION}`,
       `     2. Download iii-x86_64-pc-windows-msvc.zip (or iii-aarch64-pc-windows-msvc.zip on ARM)`,
       verify,
-      "     3. Extract iii.exe to %USERPROFILE%\\.local\\bin\\iii.exe (or add to PATH)",
+      "     3. Extract iii.exe to %USERPROFILE%\\.agentmemory\\bin\\iii.exe (or add to PATH)",
       "     4. Re-run: npx @agentmemory/agentmemory",
       "",
       "Or skip the engine entirely (standalone MCP):  npx @agentmemory/agentmemory mcp",
@@ -1510,7 +1561,7 @@ async function reconcilePersistedComposeEngine(): Promise<boolean> {
   const state = readEngineState();
   if (state?.kind !== "compose") return false;
   if (!(await isEngineRunning())) {
-    if (state.composePid && pidAlive(state.composePid)) {
+    if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign") {
       p.log.error(`Worker Compose daemon ${state.composePid} is alive but REST ${state.restPort} is not ready. Inspect ${state.logFile}; use agentmemory stop to reconcile.`);
       process.exit(1);
     }
@@ -1883,7 +1934,7 @@ async function runStatus() {
     }
 
     if (flagsRes) {
-      const provider = flagsRes.provider === "llm" ? pc.green("✓ llm") : pc.yellow("✗ noop (no key)");
+      const provider = flagsRes.provider === "llm" ? pc.green("✓ llm") : pc.yellow("✗ noop (LLM features off)");
       const embedding = embeddingStatusLabel(flagsRes.embeddingProvider);
       const embed = embedding ? pc.green(`✓ ${embedding}`) : pc.dim("bm25-only");
       const flagRows = (flagsRes.flags || []).map((f: { key: string; enabled: boolean; label: string }) =>
@@ -1892,6 +1943,8 @@ async function runStatus() {
       lines.push("");
       lines.push(`Provider:     ${provider}`);
       lines.push(`Embeddings:   ${embed}`);
+      if (typeof flagsRes.providerHint === "string") lines.push(pc.yellow(`  ${flagsRes.providerHint}`));
+      if (typeof flagsRes.embeddingHint === "string") lines.push(pc.yellow(`  ${flagsRes.embeddingHint}`));
       lines.push(`Flags:`);
       flagRows.forEach((r: string) => lines.push(r));
     }
@@ -2205,14 +2258,20 @@ async function passiveServerChecks(): Promise<DoctorCheck[]> {
     {
       name: "LLM provider",
       ok: hasLlm,
-      hint: hasLlm ? undefined : "set ANTHROPIC_API_KEY (or GEMINI/OPENROUTER/MINIMAX) in ~/.agentmemory/.env",
+      hint: hasLlm
+        ? undefined
+        : typeof flags?.providerHint === "string"
+          ? flags.providerHint
+          : "set AGENTMEMORY_LLM_PROVIDER and that provider's key (for example ANTHROPIC_API_KEY) in ~/.agentmemory/.env",
     },
     {
       name: "Embedding provider",
       ok: hasEmbed,
       hint: hasEmbed
         ? undefined
-        : "Running BM25-only. Set EMBEDDING_PROVIDER=local for on-device semantic search, or add OPENAI_API_KEY / VOYAGE_API_KEY / COHERE_API_KEY / OLLAMA_HOST",
+        : typeof flags?.embeddingHint === "string"
+          ? flags.embeddingHint
+          : "Running BM25-only. Set EMBEDDING_PROVIDER=local for on-device semantic search, or EMBEDDING_PROVIDER=openai, voyage, cohere, gemini or openrouter with that provider's key",
     },
   );
 
@@ -2334,6 +2393,8 @@ async function runDoctor() {
   let fixed = 0;
   let skipped = 0;
   let quit = false;
+  const promptsAllowed = doctorPromptsAllowed(process.env, process.stdin.isTTY, process.stdout.isTTY);
+  let autoFixHintShown = false;
 
   for (const d of diagnostics) {
     if (quit) {
@@ -2362,6 +2423,15 @@ async function runDoctor() {
       // Re-check only this diagnostic.
       const after = await d.check(ctx);
       if (!after.ok) p.log.warn(`${d.id} still failing after fix.`);
+      continue;
+    }
+
+    if (!promptsAllowed) {
+      skipped++;
+      if (!autoFixHintShown) {
+        autoFixHintShown = true;
+        p.log.info("Not prompting in a non-interactive shell. Run `agentmemory doctor --all` to apply the fixes.");
+      }
       continue;
     }
 
@@ -2645,7 +2715,7 @@ async function runInit() {
       "All keys are commented out by default. Uncomment the ones you want.",
       "",
       "Common next steps:",
-      "  1. Pick an LLM provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY / etc.)",
+      "  1. Optional: to send session content to an LLM for summaries, set AGENTMEMORY_LLM_PROVIDER and that provider's key (for example ANTHROPIC_API_KEY)",
       "  2. Run `npx @agentmemory/agentmemory doctor` to verify the daemon sees them",
       "  3. Run `npx @agentmemory/agentmemory` to start the worker",
     ].join("\n"),
@@ -2681,7 +2751,16 @@ async function startServerForDemo(): Promise<() => Promise<void>> {
 
   return async () => {
     if (importedStartupWorker && readWorkerPidfile() === process.pid) clearWorkerPidfile();
-    if (startedEngine) await cleanupFailedStartup();
+    if (!startedEngine) return;
+    if (IS_WINDOWS && spawnedComposeDaemon) {
+      const state = readEngineState();
+      if (state?.kind !== "compose" || state.composePid !== spawnedComposeDaemon.pid) {
+        throw new Error("Demo Compose lifecycle state no longer matches the daemon it started. Lifecycle state was preserved.");
+      }
+      await stopComposeRuntime(state, true);
+      return;
+    }
+    await cleanupFailedStartup();
   };
 }
 
@@ -2769,7 +2848,7 @@ async function runDemoBody(base: string) {
       : [
           c.dim(`Note: "database performance optimization" found nothing —`),
           c.dim(`set EMBEDDING_PROVIDER=local for on-device semantic recall,`),
-          c.dim(`or add an embedding API key in ~/.agentmemory/.env.`),
+          c.dim(`or set EMBEDDING_PROVIDER and its API key in ~/.agentmemory/.env.`),
         ]),
     "",
     `Viewer:        ${c.url(getViewerUrl())}`,
@@ -3090,6 +3169,40 @@ function findEnginePidsByPort(port: number): number[] {
   }
 }
 
+async function stopComposeRuntime(state: ComposeEngineState, running: boolean): Promise<void> {
+  const pid = state.composePid;
+  const ownedDaemonAlive = pid !== undefined && pidAlive(pid);
+  if (ownedDaemonAlive && !composePidMatches(pid, state)) {
+    throw new Error(`Recorded Compose pid ${pid} does not match the saved daemon identity; refusing to invoke Compose control or signal it. Lifecycle state was preserved.`);
+  }
+  if (running && !ownedDaemonAlive) {
+    throw new Error("The REST endpoint is responding, but the recorded Compose daemon is not alive. Refusing to stop or clear an engine that may be unrelated; restore the owning daemon or inspect the endpoint manually.");
+  }
+  if (running && ownedDaemonAlive) {
+    try {
+      await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: composeDownTimeoutMs() });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("ENGINE_RESTART_REQUIRED")) {
+        throw new Error(`compose::down failed for ${state.file}: ${message}. Lifecycle state was preserved.`);
+      }
+      p.log.warn("Compose requested an engine restart while stopping; terminating its verified owning daemon to finish shutdown.");
+    }
+  }
+  if (ownedDaemonAlive) {
+    const childrenStopped = await terminateComposeChildren(state);
+    if (!childrenStopped) {
+      throw new Error(`One or more child workers of Compose ${pid} did not stop; lifecycle state was preserved.`);
+    }
+    if (!(await signalAndWait(pid, "SIGTERM", 20_000))) {
+      throw new Error(`Worker Compose daemon pid ${pid} did not stop; lifecycle state was preserved. Inspect ${state.logFile}.`);
+    }
+  }
+  clearEnginePidfile();
+  clearWorkerPidfile();
+  clearEngineState();
+}
+
 async function runStop(): Promise<void> {
   const savedState = readEngineState();
   if (savedState?.kind === "docker") {
@@ -3110,41 +3223,7 @@ async function runStop(): Promise<void> {
   const force = args.includes("--force");
 
   if (state?.kind === "compose") {
-    const ownedDaemonAlive = Boolean(state.composePid && pidAlive(state.composePid));
-    if (ownedDaemonAlive && !composePidMatches(state.composePid!, state)) {
-      p.log.error(`Recorded Compose pid ${state.composePid} does not match the saved daemon identity; refusing to invoke Compose control or signal it. Lifecycle state was preserved.`);
-      process.exit(1);
-    }
-    if (running && !ownedDaemonAlive) {
-      p.log.error("The REST endpoint is responding, but the recorded Compose daemon is not alive. Refusing to stop or clear an engine that may be unrelated; restore the owning daemon or inspect the endpoint manually.");
-      process.exit(1);
-    }
-    if (running && ownedDaemonAlive) {
-      try {
-        await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: 60_000 });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!message.includes("ENGINE_RESTART_REQUIRED")) {
-          p.log.error(`compose::down failed for ${state.file}: ${message}. Lifecycle state was preserved.`);
-          process.exit(1);
-        }
-        p.log.warn("Compose requested an engine restart while stopping; terminating its verified owning daemon to finish shutdown.");
-      }
-    }
-    if (ownedDaemonAlive) {
-      const childrenStopped = await terminateComposeChildren(state);
-      if (!childrenStopped) {
-        p.log.error(`One or more child workers of Compose ${state.composePid} did not stop; lifecycle state was preserved.`);
-        process.exit(1);
-      }
-      if (!(await signalAndWait(state.composePid!, "SIGTERM", 20_000))) {
-        p.log.error(`Worker Compose daemon pid ${state.composePid} did not stop; lifecycle state was preserved. Inspect ${state.logFile}.`);
-        process.exit(1);
-      }
-    }
-    clearEnginePidfile();
-    clearWorkerPidfile();
-    clearEngineState();
+    await stopComposeRuntime(state, running);
     p.outro("Stopped Worker Compose, engine, and agentmemory workers. Data was preserved.");
     return;
   }
@@ -3605,7 +3684,7 @@ async function runConsole(): Promise<void> {
   p.note([
     `AgentMemory viewer: ${getViewerUrl()} (start agentmemory first if it is offline).`,
     "Use agentmemory status for runtime health and worker status.",
-    "Engine console migration: https://github.com/iii-hq/iii/blob/iii/v0.25.0/docs/using-iii/console.mdx",
+    "Engine console migration: https://github.com/iii-hq/iii/blob/iii/v0.25.1/docs/using-iii/console.mdx",
   ].join("\n"), "Console migration");
 }
 

@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Documento de design: 1.6k stars / 230 forks no gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Documento de design: 1.7k stars / 240 forks no gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -439,7 +439,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code sem instalar o plugin (caminho MCP standalone)
 
-Se você cabear o servidor MCP do agentmemory via `~/.claude.json` diretamente em vez de usar `/plugin install`, o Claude Code nunca resolve `${CLAUDE_PLUGIN_ROOT}` e você tem que apontar os scripts de hook para caminhos absolutos em `~/.claude/settings.json`. Esses caminhos tipicamente embutem a versão do agentmemory (ex.: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), então a próxima atualização quebra silenciosamente todos os hooks.
+Se você cabear o servidor MCP do agentmemory via `~/.claude.json` (caminho padrão) diretamente em vez de usar `/plugin install`, o Claude Code nunca resolve `${CLAUDE_PLUGIN_ROOT}` e você tem que apontar os scripts de hook para caminhos absolutos em `~/.claude/settings.json` (caminho padrão). Esses caminhos tipicamente embutem a versão do agentmemory (ex.: `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), então a próxima atualização quebra silenciosamente todos os hooks.
 
 Contorno:
 
@@ -447,7 +447,9 @@ Contorno:
 agentmemory connect claude-code --with-hooks
 ```
 
-Isso mescla os mesmos comandos de hook em `~/.claude/settings.json` com caminhos absolutos resolvidos para o diretório `plugin/` empacotado do pacote `@agentmemory/agentmemory` atualmente instalado. Rode o comando novamente após atualizar o agentmemory para atualizar os caminhos. Entradas de usuário no mesmo arquivo são preservadas; apenas entradas anteriores do agentmemory são substituídas. Usar o caminho `/plugin install` continua sendo a abordagem recomendada.
+Este comando configura o servidor MCP e mescla os hooks incluídos à configuração de usuário do Claude Code. Se `CLAUDE_CONFIG_DIR` não estiver definida, estiver vazia ou contiver apenas espaços em branco, ele usa `~/.claude.json` para MCP e `~/.claude/settings.json` para hooks. Os demais valores de diretório são usados exatamente como fornecidos, incluindo espaços em branco no início e no fim. Para usar um diretório personalizado, defina `CLAUDE_CONFIG_DIR` com o mesmo valor não vazio para este comando e para o Claude Code; os arquivos serão então `$CLAUDE_CONFIG_DIR/.claude.json` e `$CLAUDE_CONFIG_DIR/settings.json`, respectivamente. O Claude Code deve receber esse valor no ambiente em que é iniciado, mesmo que o conector o leia do arquivo `.env` do AgentMemory. Crie o diretório personalizado antes de executar este comando; caso contrário, o conector ignora o Claude Code por não detectá-lo. Se o valor no shell contiver apenas espaços em branco, remova `CLAUDE_CONFIG_DIR` do ambiente antes de iniciar o Claude Code para que ele também use o perfil padrão. Use um caminho absoluto. Caminhos relativos são resolvidos a partir do diretório de trabalho, portanto os dois comandos devem ser executados no mesmo diretório.
+
+Os comandos dos hooks usam caminhos absolutos para o diretório `plugin/` incluído no pacote instalado. Execute o comando novamente após atualizar o agentmemory para atualizar esses caminhos. As entradas de usuário nos arquivos de configuração são preservadas; apenas as entradas anteriores do agentmemory são substituídas. O uso de `/plugin install` continua sendo a abordagem recomendada.
 Para deploys remotos ou protegidos, inicie o Claude Code com `AGENTMEMORY_URL` e `AGENTMEMORY_SECRET` definidos. O plugin repassa ambos os valores para seu servidor MCP empacotado; quando `AGENTMEMORY_URL` está vazio, o shim MCP usa `http://localhost:3111`.
 
 ### Codex CLI (plataforma de plugins do Codex)
@@ -653,7 +655,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory roda no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar o engine fixado automaticamente. O Windows nativo exige a instalação manual do binário iii-engine v0.25.0 fixado; baixe o arquivo correspondente na [página de releases do iii 0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), confira o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai o ZIP do Windows automaticamente.
+agentmemory roda no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar o engine fixado automaticamente. O Windows nativo exige a instalação manual do binário iii-engine v0.25.1 fixado; baixe o arquivo correspondente na [página de releases do iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), confira o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai o ZIP do Windows automaticamente.
 
 A configuração MCP automatizada no Windows nativo dá suporte apenas a `agentmemory connect copilot-cli`. Para os outros agentes nativos do Windows, use o bloco MCP manual em [Outros agentes](#other-agents). Rode `connect` no WSL somente quando o agente de destino estiver instalado no mesmo ambiente WSL.
 
@@ -1166,7 +1168,7 @@ A referência completa está em [`.env.example`](../.env.example): credenciais, 
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints na porta `3111`. A REST API faz bind em `127.0.0.1` por padrão. Endpoints protegidos exigem `Authorization: Bearer <secret>`, e endpoints de mesh sync exigem um `AGENTMEMORY_SECRET` explicitamente definido em ambos os peers.
+147 endpoints na porta `3111`. A REST API faz bind em `127.0.0.1` por padrão. Endpoints protegidos exigem `Authorization: Bearer <secret>`, e endpoints de mesh sync exigem um `AGENTMEMORY_SECRET` explicitamente definido em ambos os peers.
 
 **A autenticação vem ativada por padrão.** Quando `AGENTMEMORY_SECRET` não está definida na shell nem em `~/.agentmemory/.env`, a CLI gera um segredo aleatório na primeira execução em `~/.agentmemory/secret` e grava uma cópia chamada `secret` no diretório de dados selecionado, com permissões `0600`. Todos os clientes empacotados o leem de lá ao falar com um servidor local: CLI, viewer, hooks em `plugin/scripts`, servidor MCP e shim `@agentmemory/mcp`, configurações escritas por `agentmemory connect` e integrações empacotadas de OpenCode, Pi, OpenClaw, Hermes e filesystem-watcher. O secret armazenado só é enviado para URLs de loopback (`localhost`, `127.0.0.0/8`, `::1`). Um `AGENTMEMORY_SECRET` explícito sempre prevalece, e clientes remotos precisam ter o secret definido em seu ambiente. Deploys self-hosted com Docker baseados no repositório e os entrypoints de `deploy/` geram e exportam seu próprio secret. Para chamar a API manualmente:
 
@@ -1247,7 +1249,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -67,6 +67,14 @@ function resolveMaxConcurrent(configured: number | undefined): number {
   return whole >= 1 ? whole : DEFAULT_MAX_CONCURRENT;
 }
 
+const FILTER_CODE = /content_filter|ResponsibleAIPolicyViolation/;
+const REJECTED_STATUS = /^[^{]*\(400\)/;
+
+export function isPayloadRejection(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  return REJECTED_STATUS.test(message) && FILTER_CODE.test(message);
+}
+
 export class ResilientProvider implements MemoryProvider {
   private breaker: CircuitBreaker;
   private gate: Semaphore;
@@ -106,7 +114,11 @@ export class ResilientProvider implements MemoryProvider {
       // rate-limited probe leaves the breaker sitting in half-open admitting
       // every call, with no path back to either open or closed. A probe that
       // came back rate-limited has still failed as a probe.
-      if (probing || !isBackpressure(err)) this.breaker.recordFailure();
+      // A content-filter rejection is about the payload, not the provider, so
+      // it never counts (#1277).
+      if (!isPayloadRejection(err) && (probing || !isBackpressure(err))) {
+        this.breaker.recordFailure();
+      }
       throw err;
     } finally {
       this.gate.release();

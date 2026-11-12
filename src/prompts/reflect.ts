@@ -1,3 +1,5 @@
+export const REFLECT_MAX_PROMPT_BYTES = 64 * 1024;
+
 export const REFLECT_SYSTEM = `You are a higher-order reasoning engine. Given a cluster of related concepts, facts, lessons, and action outcomes, synthesize cross-cutting insights that span multiple individual memories.
 
 Output format (XML):
@@ -14,7 +16,7 @@ Rules:
 - Content should be the actual observation (1-3 sentences)
 - Prefer actionable insights over abstract summaries
 - Skip insights that merely restate a single source item
-- Cite at least two distinct supplied source records in the sources attribute
+- Cite between two and twenty distinct supplied source records in the sources attribute
 - Use only the supplied F, L, and C labels; never invent labels or cite uncited context
 - Cite only records used to form this particular insight, not the entire cluster
 - Return <insights></insights> when the evidence does not support an insight
@@ -56,5 +58,9 @@ export function buildReflectPrompt(cluster: {
     );
   }
 
-  return `Synthesize higher-order insights from this cluster of related memories:\n\n${sections.join("\n")}`;
+  const prompt = `Synthesize higher-order insights from this cluster of related memories:\n\n${sections.join("\n")}`;
+  if (Buffer.byteLength(REFLECT_SYSTEM, "utf8") + Buffer.byteLength(prompt, "utf8") > REFLECT_MAX_PROMPT_BYTES) {
+    throw new Error("Reflection prompt exceeds its byte budget");
+  }
+  return prompt;
 }

@@ -1,6 +1,6 @@
 # Docker deployments
 
-agentmemory runs on iii 0.25.0 with the `state` 0.22.20 and `http` 0.22.7 registry workers. All image builds use one [`Dockerfile`](Dockerfile), with engine and registry worker pins declared once. Update those build arguments together when promoting a release. Workers are fetched from the iii registry at startup; the `worker-compose.yaml` uses the same Worker Compose format as the CLI.
+agentmemory runs on iii 0.25.1 with the `state` 0.22.22 and `http` 0.22.8 registry workers. All image builds use one [`Dockerfile`](Dockerfile), with engine and registry worker pins declared once. Update those build arguments together when promoting a release. Workers are fetched from the iii registry at startup; the `worker-compose.yaml` uses the same Worker Compose format as the CLI.
 
 The container runs `iii compose --up`: Compose owns the engine and supervises `state`, `http`, and the local `agentmemory` worker. There is no legacy embedded engine config, standalone stream, pubsub, or queue worker. The registry worker artifacts are pinned in the compose manifest. Engine and worker state, agentmemory state, generated secret, Compose cache, and logs live on the persistent `/data` volume. For Docker Compose, the volume key is `iii-data`, normally stored as `<compose-project>_iii-data`; set `AGENTMEMORY_DATA_DIR` to a host path to use a bind mount instead. The state worker continues to use `/data/state_store.db`, so the existing 0.22.1 file-based store is read in place without conversion or deletion.
 
@@ -23,6 +23,28 @@ AGENTMEMORY_REST_PORT=3611 AGENTMEMORY_VIEWER_PORT=3613 docker compose up --buil
 ```
 
 Open `http://127.0.0.1:3613`, use the persisted secret in `docker compose exec agentmemory cat /data/secret`, and stop with `docker compose down`. `docker compose down -v` deletes the memories and secret. Set `AGENTMEMORY_SECRET` to provide an explicit REST bearer. To use Redis for state, set `AGENTMEMORY_STATE_BACKEND=redis` and `AGENTMEMORY_REDIS_URL=redis://...`; otherwise the persistent file-backed store is used.
+
+## Prebuilt image
+
+Each published release is also available as a prebuilt image on Docker Hub, built from this Dockerfile at the release tag for `linux/amd64` and `linux/arm64`:
+
+```bash
+docker pull ghumarerohit/agentmemory:<version>
+docker run -d --name agentmemory \
+  -p 127.0.0.1:3111:3111 -p 127.0.0.1:3113:3113 \
+  -v agentmemory-data:/data \
+  ghumarerohit/agentmemory:<version>
+```
+
+Keep `/data` on a persistent volume: it holds the memories, the generated secret (`docker exec agentmemory cat /data/secret`) and the worker cache. The container fetches the pinned `state` and `http` registry workers on first start, so it needs network access then. Set `AGENTMEMORY_SECRET`, `EMBEDDING_PROVIDER` and the other variables from the sections above with `-e`. The `latest` tag points at the image for the highest stable release version (semver order, prereleases and drafts excluded), so an older, backported or prerelease build never replaces it. Pin a version tag for deployments.
+
+## LLM and embedding providers
+
+A provider key alone turns nothing on. To use LLM summaries and compression, set `AGENTMEMORY_LLM_PROVIDER` (`anthropic`, `openai`, `gemini`, `openrouter` or `minimax`) and that provider's key. To use cloud embeddings, set `EMBEDDING_PROVIDER` and its key. All the Compose files above forward both selectors to the worker.
+
+## Local embeddings
+
+Set `EMBEDDING_PROVIDER=local` to generate embeddings without an API key. The shared image includes `@huggingface/transformers` and its runtime dependencies; the image build checks that the package loads after pruning development dependencies. Only ONNX native binaries for the image's platform and architecture are retained; other runtime dependencies remain installed. Model weights are not bundled: the first embedding request downloads `Xenova/all-MiniLM-L6-v2` from Hugging Face and requires network access.
 
 ## Platform templates
 

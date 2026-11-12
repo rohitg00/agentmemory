@@ -18,6 +18,8 @@ const hookEntries = [
   "src/hooks/_capture.ts",
 ];
 
+const pluginExcludedHooks = new Set(["src/hooks/post-commit.ts"]);
+
 // Cursor gets a thin adapter rather than its own hook copies: two CLI
 // entrypoints that resolve the workspace Cursor fails to report, then
 // delegate to the canonical hooks above. workspace.ts/delegate.ts are not
@@ -126,7 +128,7 @@ export default defineConfig([
     clean: false,
     sourcemap: false,
   })),
-  ...hookEntries.map((entry) => ({
+  ...hookEntries.filter((entry) => !pluginExcludedHooks.has(entry)).map((entry) => ({
     entry: [entry],
     outDir: "plugin/scripts",
     ...shared,

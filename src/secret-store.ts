@@ -41,7 +41,7 @@ function unquote(value: string): string {
   return hash === -1 ? value : value.slice(0, hash).trim();
 }
 
-export function readEnvFileSecret(): string {
+export function readEnvFileValue(name: string): string {
   let content: unknown;
   try {
     content = readFileSync(process.env["AGENTMEMORY_ENV_FILE"] || join(homedir(), ".agentmemory", ".env"), "utf-8");
@@ -56,10 +56,14 @@ export function readEnvFileSecret(): string {
     const eq = trimmed.indexOf("=");
     if (eq === -1) continue;
     const key = trimmed.slice(0, eq).replace(/^export\s+/, "").trim();
-    if (key !== SECRET_KEY) continue;
-    found = usable(unquote(trimmed.slice(eq + 1).trim()));
+    if (key !== name) continue;
+    found = unquote(trimmed.slice(eq + 1).trim());
   }
   return found;
+}
+
+export function readEnvFileSecret(): string {
+  return usable(readEnvFileValue(SECRET_KEY));
 }
 
 function readSecretFile(path: string): string {

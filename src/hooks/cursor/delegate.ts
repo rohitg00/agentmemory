@@ -85,6 +85,10 @@ export function delegateHook(
   }
 
   const { project, payload } = enrichPayload(data);
+  if (hookKey === "subagentStop") {
+    payload.agent_type ||= data.agentType || data.agentDisplayName || data.agentName || data.subagent_type;
+    payload.last_assistant_message ??= data.response ?? data.summary;
+  }
 
   const child = spawnSync(process.execPath, [scriptPath], {
     input: JSON.stringify(payload),

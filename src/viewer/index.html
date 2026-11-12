@@ -1704,8 +1704,8 @@
       lesson: { path: 'lessons', key: 'lessons' },
       action: { path: 'actions', key: 'actions', allPages: true },
       crystal: { path: 'crystals', key: 'crystals' },
-      semantic: { path: 'semantic', key: 'facts', fallbackKey: 'semantic' },
-      procedural: { path: 'procedural', key: 'procedures', fallbackKey: 'procedural' },
+      semantic: { path: 'semantic', key: 'facts', fallbackKey: 'semantic', allPages: true },
+      procedural: { path: 'procedural', key: 'procedures', fallbackKey: 'procedural', allPages: true },
       audit: { path: 'audit?limit=100', key: 'entries' }
     };
     var bootGateOpen = null;
@@ -3642,7 +3642,7 @@
           title: 'The knowledge graph is off',
           what: 'Entities and relations agentmemory pulls out of what agents do.',
           why: esc(g.disabledInfo.enableHow || 'Graph extraction is disabled on this server.'),
-          steps: [{ label: 'Turn it on and restart:', cmd: 'export GRAPH_EXTRACTION_ENABLED=true\nexport ANTHROPIC_API_KEY=sk-ant-...\nnpx @agentmemory/agentmemory' }],
+          steps: [{ label: 'Turn it on and restart:', cmd: 'export GRAPH_EXTRACTION_ENABLED=true\nexport AGENTMEMORY_LLM_PROVIDER=anthropic\nexport ANTHROPIC_API_KEY=sk-ant-...\nnpx @agentmemory/agentmemory' }],
           link: g.disabledInfo.docsHref ? { href: g.disabledInfo.docsHref, text: 'Knowledge graph docs' } : null
         });
       } else if (g.queryError) {
@@ -3662,7 +3662,7 @@
           steps: [
             { label: 'Build it now from every stored observation (spends LLM tokens when extraction is on):', cmd: curlPost('graph/build', {}) },
             { label: 'Or import a structural code graph made by graphify (no LLM needed):', cmd: curlPost('graph/import-graphify', { cwd: '/path/to/repo' }) },
-            { label: 'For typed entities and relations, turn on LLM extraction and restart:', cmd: 'export GRAPH_EXTRACTION_ENABLED=true\nexport ANTHROPIC_API_KEY=sk-ant-...' }
+            { label: 'For typed entities and relations, turn on LLM extraction and restart:', cmd: 'export GRAPH_EXTRACTION_ENABLED=true\nexport AGENTMEMORY_LLM_PROVIDER=anthropic\nexport ANTHROPIC_API_KEY=sk-ant-...' }
           ]
         }) + '<div class="graph-msg-actions"><button type="button" class="btn btn-primary" data-action="rebuild-graph">Build from observations</button></div>';
       }
@@ -3819,7 +3819,7 @@
       html += '<div class="go-intro"><strong>Knowledge graph</strong> ' + help('graph') + ' The files, functions, concepts and decisions agents worked with, and how they relate. Click a node to see its relations and the observations it came from.</div>';
       html += '<div class="go-stats"><div><b>' + fmtNum(t.nodes) + '</b><span>nodes ' + help('graphNode') + '</span></div><div><b>' + fmtNum(t.edges) + '</b><span>relations ' + help('graphEdge') + '</span></div><div><b>' + fmtNum(iso) + '</b><span>unlinked ' + help('graphIsolated') + '</span></div></div>';
       if (shown >= 3 && (iso / shown > 0.4 || t.edges < shown / 2)) {
-        html += '<div class="mem-note go-sparse"><b>Sparse graph.</b> ' + fmtNum(iso) + ' of ' + fmtNum(shown) + ' nodes have no relations yet. ' + esc(graphLlmNote()) + (graphLlmMode() !== 'llm' ? cmdBlock('export GRAPH_EXTRACTION_ENABLED=true\nexport ANTHROPIC_API_KEY=sk-ant-...') : '') + '</div>';
+        html += '<div class="mem-note go-sparse"><b>Sparse graph.</b> ' + fmtNum(iso) + ' of ' + fmtNum(shown) + ' nodes have no relations yet. ' + esc(graphLlmNote()) + (graphLlmMode() !== 'llm' ? cmdBlock('export GRAPH_EXTRACTION_ENABLED=true\nexport AGENTMEMORY_LLM_PROVIDER=anthropic\nexport ANTHROPIC_API_KEY=sk-ant-...') : '') + '</div>';
       }
       if (g.truncated && shown < t.nodes) html += '<div class="mem-note">Showing the ' + fmtNum(shown) + ' most connected of ' + fmtNum(t.nodes) + ' nodes. Search finds the rest on the server.</div>';
       if (g.warning) html += '<div class="mem-note">' + esc(g.warning) + '</div>';
@@ -6204,7 +6204,7 @@
       var body = '<h3>Summarize this session?</h3>' +
         '<p>An LLM reads the observations of <b>' + esc(sessionDisplayName(s)) + '</b> (' + fmtNum(s.observationCount || 0) + ') and writes a short summary: a title, what happened and the key decisions. The summary is shown here and in the session list, and later feeds consolidation into facts and procedures. Running it again replaces the old summary.</p>';
       if (!llm) {
-        body += '<div class="mem-note err">No LLM provider is configured, so Summarize would do nothing. Set a key and restart agentmemory:</div>' + cmdBlock('export ANTHROPIC_API_KEY=sk-ant-...\nnpx @agentmemory/agentmemory');
+        body += '<div class="mem-note err">No LLM provider is configured, so Summarize would do nothing. Set a key and restart agentmemory:</div>' + cmdBlock('export AGENTMEMORY_LLM_PROVIDER=anthropic\nexport ANTHROPIC_API_KEY=sk-ant-...\nnpx @agentmemory/agentmemory');
         body += '<div class="modal-actions" style="margin-top:14px;"><button class="btn" data-action="close-modal">Close</button></div>';
       } else {
         body += '<p style="font-size:11px;">Same call from a terminal: <code>' + esc(curlPost('summarize', { sessionId: id }).replace(/\s*\\\n\s*/g, ' ')) + '</code></p>';
@@ -6736,7 +6736,7 @@
             { label: 'Crystallize every finished action now:', cmd: curlPost('crystals/auto', {}) },
             { label: 'Or from an agent, for specific actions:', cmd: 'memory_crystallize { "actionIds": ["act_..."] }' }
           ] : [
-            { label: 'Set an LLM key and restart agentmemory:', cmd: 'export ANTHROPIC_API_KEY=sk-ant-...\nnpx @agentmemory/agentmemory' },
+            { label: 'Set an LLM key and restart agentmemory:', cmd: 'export AGENTMEMORY_LLM_PROVIDER=anthropic\nexport ANTHROPIC_API_KEY=sk-ant-...\nnpx @agentmemory/agentmemory' },
             { label: 'Then crystallize finished actions:', cmd: curlPost('crystals/auto', {}) }
           ],
           link: { href: 'https://github.com/rohitg00/agentmemory#crystals', text: 'How crystals are built' }
@@ -7174,7 +7174,7 @@
     }
 
     var BM25_EXPLAINER = 'The keyword index holds observations, memories and lessons, so its total is larger than the observation count.';
-    var LLM_KEY_FIX = 'Add one LLM provider key (for example ANTHROPIC_API_KEY or OPENAI_API_KEY) to ~/.agentmemory/.env and restart.';
+    var LLM_KEY_FIX = 'Set AGENTMEMORY_LLM_PROVIDER and that provider\'s key (for example AGENTMEMORY_LLM_PROVIDER=anthropic and ANTHROPIC_API_KEY) in ~/.agentmemory/.env and restart.';
 
     function hrow(label, valueHtml, helpKey, note) {
       return '<div class="detail-row"><div class="dl">' + esc(label) + (helpKey ? ' ' + help(helpKey) : '') + '</div><div class="dv">' + valueHtml + (note ? '<div class="hnote">' + note + '</div>' : '') + '</div></div>';
@@ -7300,7 +7300,7 @@
       html += hrow('Keyword index', esc(fmtNum(idx.bm25Documents) + ' documents'), 'bm25',
         (b ? esc(fmtNum(b.observations) + ' observations + ' + fmtNum(b.memories) + ' memories + ' + fmtNum(b.lessons) + ' lessons. ') : '') + esc(BM25_EXPLAINER));
       html += hrow('Vector index', hasVectors ? esc(fmtNum(idx.vectorDocuments) + ' vectors') : 'off', 'vector',
-        hasVectors ? 'Meaning-based search. Each vector is one embedded record.' : 'No embedding provider, so search is keyword only. Set an embedding provider key (for example OPENAI_API_KEY) and restart.');
+        hasVectors ? 'Meaning-based search. Each vector is one embedded record.' : 'No embedding provider, so search is keyword only. Set EMBEDDING_PROVIDER (local runs on-device; openai, voyage, cohere, gemini or openrouter also need that provider\'s key) and restart.');
       var bfState = ri.vectorBackfillState;
       var bfNote = bfState === 'paused' ? 'Paused because the embedding provider did not return vectors. Retried on the next start.' :
         bfState === 'waiting-for-opt-in' ? 'Waiting for AGENTMEMORY_VECTOR_BACKFILL=all and a restart.' :
@@ -7342,7 +7342,7 @@
       html += hrow('LLM provider', noLlm ? '<span class="badge badge-muted">none</span>' : '<span class="badge badge-green">configured</span>', null,
         noLlm ? 'Capture, keyword and vector search, saved memories, lessons and the structural graph all work without one.' : 'Used for summaries, consolidation, typed graph extraction and optional compression.');
       if (noLlm && off.length) {
-        html += hrow('Off without an LLM', esc(off.join(', ')), null, esc(LLM_KEY_FIX) + cmdBlock("echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.agentmemory/.env"));
+        html += hrow('Off without an LLM', esc(off.join(', ')), null, esc(LLM_KEY_FIX) + cmdBlock("printf 'AGENTMEMORY_LLM_PROVIDER=anthropic\\nANTHROPIC_API_KEY=sk-ant-...\\n' >> ~/.agentmemory/.env"));
       }
       var emb = (r && r.provider.embeddings) || store.embeddingProvider || 'none';
       html += hrow('Embeddings', esc(emb === 'none' ? 'none (keyword search only)' : emb), 'vector', emb === 'none' ? 'Meaning-based search is off.' : 'The number in brackets is the vector size (dimensions) the provider returns.');
@@ -7380,7 +7380,7 @@
       html += hrow('RSS', esc(mb(m.rss) + ' MB'), 'rss', 'Everything the process holds from the operating system, including code and buffers.');
       var lag = snap.eventLoopLagMs;
       html += hrow('Event loop delay', lag !== undefined ? esc(Number(lag).toFixed(1) + ' ms') : '-', 'eventLoop', 'How far behind the worker is. Under 100 ms is fine; above that requests answer slowly.');
-      if (snap.cpu) html += hrow('CPU', esc(Math.round(snap.cpu.percent || 0) + '%'), null, 'Share of one core used since the last report. Short bursts during imports are normal.');
+      if (snap.cpu) html += hrow('CPU', esc(Math.round(snap.cpu.percent || 0) + '%'), null, 'Share of all available CPU cores used since the last report' + (snap.cpu.cores ? ' (' + snap.cpu.cores + ' cores)' : '') + '. Short bursts during imports are normal.');
       (snap.notes || []).forEach(function(n) { html += '<div class="hnote" style="margin-top:6px;">' + esc(humanizeHealthFlag(n)) + '</div>'; });
       return html + '</div>';
     }
@@ -7461,7 +7461,7 @@
     }
 
     function consolidationWhyEmpty(cs, c) {
-      if (!cs.llmConfigured) return { text: 'No LLM provider is configured on this instance, so no session summaries are written and consolidation never runs. Semantic facts and procedures stay at zero.', cmd: "echo 'ANTHROPIC_API_KEY=sk-ant-...' >> ~/.agentmemory/.env" };
+      if (!cs.llmConfigured) return { text: 'No LLM provider is configured on this instance, so no session summaries are written and consolidation never runs. Semantic facts and procedures stay at zero.', cmd: "printf 'AGENTMEMORY_LLM_PROVIDER=anthropic\\nANTHROPIC_API_KEY=sk-ant-...\\n' >> ~/.agentmemory/.env" };
       if (!cs.enabled) return { text: 'CONSOLIDATION_ENABLED is set to false, so consolidation is switched off even though an LLM key exists. Remove that line from ~/.agentmemory/.env (or set it to true) and restart. Find it with:', cmd: 'grep -n CONSOLIDATION_ENABLED ~/.agentmemory/.env' };
       var t = cs.thresholds || {};
       if ((c.semantic || 0) === 0 && cs.summaries < (t.semanticMinSummaries || 5)) return { text: 'Not enough finished sessions yet: semantic facts need ' + (t.semanticMinSummaries || 5) + ' session summaries and there are ' + cs.summaries + '. End sessions normally (the Stop hook does it) so each one gets a summary.', cmd: curlPost('session/end', { sessionId: 'ses_...' }) };
@@ -7484,7 +7484,7 @@
         '<div class="cstep"><div class="cstep-n">1 · captured</div><div class="cstep-t">Observations</div><div class="cstep-d">Hooks record every tool call, edit and command.</div><div class="cstep-c">' + fmtNum(c.observations) + '</div></div>' +
         '<div class="cstep"><div class="cstep-n">2 · session end</div><div class="cstep-t">Summaries</div><div class="cstep-d">The LLM writes one summary when a session ends.</div><div class="cstep-c">' + fmtNum(cs.summaries) + '</div></div>' +
         '<div class="cstep"><div class="cstep-n">3 · merge</div><div class="cstep-t">Semantic facts ' + help('semantic') + '</div><div class="cstep-d">Merged from the newest 20 summaries once at least ' + (t.semanticMinSummaries || 5) + ' exist.</div><div class="cstep-c">' + fmtNum(c.semantic) + '</div></div>' +
-        '<div class="cstep"><div class="cstep-n">4 · repeat</div><div class="cstep-t">Procedures ' + help('procedural') + '</div><div class="cstep-d">From pattern memories seen in ' + (t.proceduralMinSessionsPerPattern || 2) + '+ sessions, once ' + (t.proceduralMinPatterns || 2) + ' exist.</div><div class="cstep-c">' + fmtNum(c.procedural) + '</div></div>' +
+        '<div class="cstep"><div class="cstep-n">4 · repeat</div><div class="cstep-t">Procedures ' + help('procedural') + '</div><div class="cstep-d">From pattern memories seen in ' + (t.proceduralMinSessionsPerPattern || 2) + '+ sessions or saved that many times, once ' + (t.proceduralMinPatterns || 2) + ' exist.</div><div class="cstep-c">' + fmtNum(c.procedural) + '</div></div>' +
         '<div class="cstep"><div class="cstep-n">5 · forget</div><div class="cstep-t">Decay ' + help('decay') + '</div><div class="cstep-d">Facts and procedures unused for ' + (sch.decayDays || 30) + ' days lose 10% strength per period (never below 0.1).</div></div>' +
         '</div>';
       var why = consolidationWhyEmpty(cs, c);
@@ -8338,9 +8338,9 @@
         items.push({
           on: false,
           title: 'No LLM provider',
-          key: 'ANTHROPIC_API_KEY',
-          desc: 'Compression, summaries, consolidation and graph extraction stay off until an LLM key is set. Memories, search and sessions still work.',
-          enable: 'export ANTHROPIC_API_KEY=sk-ant-...\n# then restart: npx @agentmemory/agentmemory',
+          key: 'AGENTMEMORY_LLM_PROVIDER',
+          desc: 'Compression, summaries, consolidation and graph extraction stay off until you choose an LLM provider. Memories, search and sessions still work.',
+          enable: 'export AGENTMEMORY_LLM_PROVIDER=anthropic\nexport ANTHROPIC_API_KEY=sk-ant-...\n# then restart: npx @agentmemory/agentmemory',
           affects: ['Overview', 'Graph', 'Crystals']
         });
       }
@@ -8348,9 +8348,9 @@
         items.push({
           on: false,
           title: 'No embedding provider',
-          key: 'OPENAI_API_KEY',
+          key: 'EMBEDDING_PROVIDER',
           desc: 'Search matches exact keywords only. With embeddings it also finds memories by meaning.',
-          enable: 'export OPENAI_API_KEY=sk-...\n# or VOYAGE_API_KEY, COHERE_API_KEY, OLLAMA_HOST',
+          enable: 'export EMBEDDING_PROVIDER=local\n# or EMBEDDING_PROVIDER=openai with OPENAI_API_KEY (also voyage, cohere, gemini, openrouter)',
           affects: ['Memories', 'Health']
         });
       }

@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="設計文件:這份 gist 獲得 1.6k 顆星 / 230 次 fork" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="設計文件:這份 gist 獲得 1.7k 顆星 / 240 次 fork" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 個 MCP 工具" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 個自動 hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 個外部資料庫" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ 測試通過" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ 測試通過" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -442,7 +442,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code 若未安裝外掛(MCP 獨立路徑)
 
-若你直接透過 `~/.claude.json` 連接 agentmemory 的 MCP 伺服器,而不是使用 `/plugin install`,Claude Code 永遠不會解析 `${CLAUDE_PLUGIN_ROOT}`,你必須把 hook 腳本指向 `~/.claude/settings.json` 中的絕對路徑。這些路徑通常會嵌入 agentmemory 的版本號(例如 `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`),因此下次升級會靜默破壞每一個 hook。
+若你直接透過 `~/.claude.json`（預設路徑）連接 agentmemory 的 MCP 伺服器,而不是使用 `/plugin install`,Claude Code 永遠不會解析 `${CLAUDE_PLUGIN_ROOT}`,你必須把 hook 腳本指向 `~/.claude/settings.json`（預設路徑）中的絕對路徑。這些路徑通常會嵌入 agentmemory 的版本號(例如 `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`),因此下次升級會靜默破壞每一個 hook。
 
 變通方法:
 
@@ -450,7 +450,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-這會把同樣的 hook 指令合併到 `~/.claude/settings.json` 中,絕對路徑會解析到目前安裝的 `@agentmemory/agentmemory` 套件所捆綁的 `plugin/` 目錄。升級 agentmemory 後重新執行此指令以刷新路徑。同一檔案中既有的使用者條目會被保留;只有先前的 agentmemory 條目會被取代。仍然建議使用 `/plugin install` 路徑。
+此指令會設定 MCP 伺服器，並將套件內的 hook 合併到 Claude Code 的使用者設定中。`CLAUDE_CONFIG_DIR` 未設定、為空或僅含空白時，MCP 使用 `~/.claude.json`，hook 使用 `~/.claude/settings.json`。其他目錄值按原樣使用，包括首尾空白。若使用自訂目錄，請為此指令和 Claude Code 設定相同且非空的 `CLAUDE_CONFIG_DIR`，此時兩份設定檔分別為 `$CLAUDE_CONFIG_DIR/.claude.json` 和 `$CLAUDE_CONFIG_DIR/settings.json`。即使連接器從 AgentMemory 的 `.env` 讀取該值，Claude Code 本身的啟動環境中也必須設定該值。執行此指令前請先建立自訂目錄；目錄不存在時，連接器會以未偵測到 Claude Code 為由略過。若 shell 中的值僅含空白，請在啟動 Claude Code 前取消 `CLAUDE_CONFIG_DIR`，使其也使用預設設定。建議使用絕對路徑。相對路徑以工作目錄為基準，因此兩個命令必須從同一目錄啟動。
+
+Hook 指令使用絕對路徑，指向已安裝套件內的 `plugin/` 目錄。升級 agentmemory 後，請重新執行此指令以更新這些路徑。設定檔中的使用者條目會保留，僅取代先前的 agentmemory 條目。仍建議使用 `/plugin install`。
 若用於遠端或受保護的部署,啟動 Claude Code 時請設定 `AGENTMEMORY_URL` 和 `AGENTMEMORY_SECRET`。外掛會把這兩個值都傳給它捆綁的 MCP 伺服器;當 `AGENTMEMORY_URL` 為空時,MCP shim 會使用 `http://localhost:3111`。
 
 ### Codex CLI(Codex 外掛平台)
@@ -654,7 +656,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory 可在 Windows 10/11 執行；WSL2 可依 Linux 流程自動安裝 engine。原生 Windows 需手動安裝 iii-engine v0.25.0：從 [iii v0.25.0 發行頁面](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) 下載相符封存檔、驗證 checksum，並將 `iii.exe` 放入 `PATH`。CLI 不會自動解壓 ZIP
+agentmemory 可在 Windows 10/11 執行；WSL2 可依 Linux 流程自動安裝 engine。原生 Windows 需手動安裝 iii-engine v0.25.1：從 [iii v0.25.1 發行頁面](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) 下載相符封存檔、驗證 checksum，並將 `iii.exe` 放入 `PATH`。CLI 不會自動解壓 ZIP
 
 原生 Windows 僅支援 `agentmemory connect copilot-cli` 自動設定 MCP；其他 agent 請使用 [Other agents](#other-agents) 的手動設定。只有目標 agent 也安裝在相同 WSL 環境時，才在 WSL 執行 `connect`
 
@@ -1163,7 +1165,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-連接埠 `3111` 上有 146 個端點。REST API 預設綁定 `127.0.0.1`。受保護的端點需要 `Authorization: Bearer <secret>`,而網狀同步端點要求兩端都明確設定 `AGENTMEMORY_SECRET`。
+連接埠 `3111` 上有 147 個端點。REST API 預設綁定 `127.0.0.1`。受保護的端點需要 `Authorization: Bearer <secret>`,而網狀同步端點要求兩端都明確設定 `AGENTMEMORY_SECRET`。
 
 驗證預設開啟。未設定 `AGENTMEMORY_SECRET` 時，CLI 首次啟動會將隨機密鑰儲存到 `~/.agentmemory/secret`，並鏡像到所選資料目錄的 `secret`，權限為 `0600`。內建客戶端連接本機伺服器時優先讀取此共用檔案，只向回環 URL 傳送儲存的密鑰。明確設定的 `AGENTMEMORY_SECRET` 優先；遠端客戶端需透過環境變數設定密鑰。Docker 部署會產生自己的密鑰。
 
@@ -1244,7 +1246,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

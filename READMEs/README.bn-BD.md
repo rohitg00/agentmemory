@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="ডিজাইন ডক: গিস্টে 1.6k স্টার / 230 ফর্ক" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="ডিজাইন ডক: গিস্টে 1.7k স্টার / 240 ফর্ক" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP টুল" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 অটো হুক" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 এক্সটার্নাল ডিবি" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ টেস্ট পাস" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ টেস্ট পাস" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### প্লাগইন ইনস্টল ছাড়া Claude Code (MCP-স্ট্যান্ডঅ্যালোন পাথ)
 
-আপনি `/plugin install` ব্যবহার না করে সরাসরি `~/.claude.json`-এর মাধ্যমে agentmemory-র MCP সার্ভার ওয়্যার করলে, Claude Code কখনো `${CLAUDE_PLUGIN_ROOT}` রিজলভ করে না এবং আপনাকে `~/.claude/settings.json`-এ হুক স্ক্রিপ্টগুলো অ্যাবসোলিউট পাথে পয়েন্ট করতে হয়। সেই পাথগুলোতে সাধারণত agentmemory-র ভার্সন এমবেড থাকে (যেমন `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), তাই পরের আপগ্রেড নিঃশব্দে প্রতিটি হুক ভেঙে দেয়।
+আপনি `/plugin install` ব্যবহার না করে সরাসরি `~/.claude.json` (ডিফল্ট পথ)-এর মাধ্যমে agentmemory-র MCP সার্ভার ওয়্যার করলে, Claude Code কখনো `${CLAUDE_PLUGIN_ROOT}` রিজলভ করে না এবং আপনাকে `~/.claude/settings.json` (ডিফল্ট পথ)-এ হুক স্ক্রিপ্টগুলো অ্যাবসোলিউট পাথে পয়েন্ট করতে হয়। সেই পাথগুলোতে সাধারণত agentmemory-র ভার্সন এমবেড থাকে (যেমন `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), তাই পরের আপগ্রেড নিঃশব্দে প্রতিটি হুক ভেঙে দেয়।
 
 ওয়ার্কঅ্যারাউন্ড:
 
@@ -452,7 +452,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-এটি একই হুক কমান্ডগুলো `~/.claude/settings.json`-এ মার্জ করে, বর্তমানে ইনস্টল করা `@agentmemory/agentmemory` প্যাকেজের বান্ডলড `plugin/` ডিরেক্টরির অ্যাবসোলিউট পাথ দিয়ে। পাথ রিফ্রেশ করতে agentmemory আপগ্রেড করার পর কমান্ডটি আবার চালান। একই ফাইলের ইউজার এন্ট্রিগুলো রক্ষিত থাকে; শুধু আগের agentmemory এন্ট্রিগুলো রিপ্লেস হয়। `/plugin install` পাথটি এখনও সুপারিশকৃত পদ্ধতি।
+এই কমান্ড MCP সার্ভার কনফিগার করে এবং সঙ্গে থাকা hook-গুলো Claude Code-এর ব্যবহারকারী কনফিগারেশনে যুক্ত করে। `CLAUDE_CONFIG_DIR` সেট করা না থাকলে, খালি থাকলে বা শুধু ফাঁকা অক্ষর থাকলে, এটি MCP-এর জন্য `~/.claude.json` এবং hook-এর জন্য `~/.claude/settings.json` ব্যবহার করে। অন্য ডিরেক্টরি মানগুলো শুরু ও শেষের ফাঁকা স্থানসহ হুবহু ব্যবহার করা হয়। কাস্টম ডিরেক্টরি ব্যবহার করতে এই কমান্ড এবং Claude Code উভয়ের জন্য `CLAUDE_CONFIG_DIR`-এ একই খালি নয় এমন মান সেট করুন; তখন ফাইল দুটি হবে যথাক্রমে `$CLAUDE_CONFIG_DIR/.claude.json` এবং `$CLAUDE_CONFIG_DIR/settings.json`। কানেক্টর AgentMemory-এর `.env` থেকে মানটি পড়লেও Claude Code চালু করার এনভায়রনমেন্টে এই মান থাকতে হবে। এই কমান্ড চালানোর আগে কাস্টম ডিরেক্টরি তৈরি করুন; না থাকলে কানেক্টর Claude Code-কে শনাক্ত করতে না পেরে এড়িয়ে যাবে। Shell-এর মানে শুধু ফাঁকা অক্ষর থাকলে, Claude Code চালুর আগে `CLAUDE_CONFIG_DIR` আনসেট করুন, যাতে সেটিও ডিফল্ট প্রোফাইল ব্যবহার করে। একটি পরম পথ ব্যবহার করুন। আপেক্ষিক পথ কর্মরত ডিরেক্টরির ভিত্তিতে নির্ধারিত হয়, তাই উভয় কমান্ড একই ডিরেক্টরি থেকে চালাতে হবে।
+
+Hook কমান্ডগুলো ইনস্টল করা প্যাকেজের সঙ্গে থাকা `plugin/` ডিরেক্টরির অ্যাবসোলিউট পথ ব্যবহার করে। agentmemory আপগ্রেড করার পরে পথগুলো হালনাগাদ করতে কমান্ডটি আবার চালান। কনফিগারেশন ফাইলে ব্যবহারকারীর এন্ট্রিগুলো সংরক্ষিত থাকে; শুধু আগের agentmemory এন্ট্রিগুলো প্রতিস্থাপিত হয়। `/plugin install` ব্যবহার করাই সুপারিশকৃত পদ্ধতি।
 রিমোট বা প্রোটেক্টেড ডিপ্লয়মেন্টের জন্য, `AGENTMEMORY_URL` এবং `AGENTMEMORY_SECRET` সেট করে Claude Code লঞ্চ করুন। প্লাগইন দুটি ভ্যালুই তার বান্ডলড MCP সার্ভারে পাস করে; `AGENTMEMORY_URL` খালি থাকলে, MCP শিম `http://localhost:3111` ব্যবহার করে।
 
 ### Codex CLI (Codex প্লাগইন প্ল্যাটফর্ম)
@@ -656,7 +658,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory Windows 10/11-এ চলে। WSL2 Linux-এর পথ অনুসরণ করে এবং পিন করা engine স্বয়ংক্রিয়ভাবে ইনস্টল করতে পারে। নেটিভ Windows-এর জন্য পিন করা iii-engine 0.25.0 বাইনারি ম্যানুয়ালি ইনস্টল করতে হবে; [iii 0.25.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0) থেকে মিলে যাওয়া archive ডাউনলোড করে checksum যাচাই করুন, তারপর `iii.exe` `PATH`-এ রাখুন (যেমন `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP স্বয়ংক্রিয়ভাবে extract করে না।
+agentmemory Windows 10/11-এ চলে। WSL2 Linux-এর পথ অনুসরণ করে এবং পিন করা engine স্বয়ংক্রিয়ভাবে ইনস্টল করতে পারে। নেটিভ Windows-এর জন্য পিন করা iii-engine 0.25.1 বাইনারি ম্যানুয়ালি ইনস্টল করতে হবে; [iii 0.25.1 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1) থেকে মিলে যাওয়া archive ডাউনলোড করে checksum যাচাই করুন, তারপর `iii.exe` `PATH`-এ রাখুন (যেমন `%USERPROFILE%\.local\bin\iii.exe`)। CLI Windows ZIP স্বয়ংক্রিয়ভাবে extract করে না।
 
 নেটিভ Windows-এ স্বয়ংক্রিয় MCP wiring কেবল `agentmemory connect copilot-cli` সাপোর্ট করে। অন্য নেটিভ Windows এজেন্টের জন্য [Other agents](#other-agents) থেকে ম্যানুয়াল MCP block ব্যবহার করুন। লক্ষ্য এজেন্টটি একই WSL পরিবেশে ইনস্টল থাকলেই কেবল WSL-এর ভিতরে `connect` চালান।
 
@@ -1174,7 +1176,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-`3111` পোর্টে 146 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
+`3111` পোর্টে 147 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
 
 প্রমাণীকরণ ডিফল্টভাবে চালু। `AGENTMEMORY_SECRET` নির্ধারিত না থাকলে CLI প্রথমবার একটি random secret `~/.agentmemory/secret`-এ রাখে এবং নির্বাচিত ডেটা ডিরেক্টরির `secret`-এ কপি করে; অনুমতি `0600`। সঙ্গে থাকা ক্লায়েন্ট লোকাল সংযোগে মূল ফাইলটিকে অগ্রাধিকার দেয় এবং সংরক্ষিত secret শুধু loopback URL-এ পাঠায়। স্পষ্ট `AGENTMEMORY_SECRET` অগ্রাধিকার পায়; রিমোট ক্লায়েন্টকে environment-এ সেট করতে হয়। Docker নিজস্ব secret তৈরি করে।
 
@@ -1255,7 +1257,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

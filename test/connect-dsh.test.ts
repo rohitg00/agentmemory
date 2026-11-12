@@ -68,7 +68,11 @@ describe("connect: DeepSeek Harness", () => {
     expect(patch).toContain("name: '@deepseek-ai/dsh-mcp-client'");
     expect(patch).toContain("serverName: agentmemory");
     expect(patch).toContain("transport: stdio");
-    expect(parseDocument(patch).toJS()[0].insert[0].config.args).toEqual(["-y", "@agentmemory/mcp"]);
+    expect(parseDocument(patch).toJS()[0].insert[0].config.args).toEqual(
+      process.platform === "win32"
+        ? ["/c", "npx", "-y", "@agentmemory/mcp"]
+        : ["-y", "@agentmemory/mcp"],
+    );
     expect(patch).toContain("AGENTMEMORY_URL:");
   });
 

@@ -9,6 +9,8 @@ vi.mock("node:fs", () => ({
   readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
+  renameSync: vi.fn(),
+  rmSync: vi.fn(),
 }));
 
 vi.mock("../src/mcp/transport.js", () => ({
@@ -33,7 +35,7 @@ import {
   resetHandleForTests,
   setLivezProbe,
 } from "../src/mcp/rest-proxy.js";
-import { writeFileSync } from "node:fs";
+import { renameSync, writeFileSync } from "node:fs";
 
 const instantLocalFallbackProbe = vi.fn(async () => ({
   ok: false,
@@ -119,10 +121,11 @@ describe("InMemoryKV", () => {
     kvWithPersist.persist();
 
     expect(writeFileSync).toHaveBeenCalledWith(
-      "/tmp/test-kv.json",
+      `/tmp/test-kv.json.${process.pid}.tmp`,
       expect.any(String),
-      "utf-8",
+      { encoding: "utf-8", mode: 0o600 },
     );
+    expect(renameSync).toHaveBeenCalledWith(`/tmp/test-kv.json.${process.pid}.tmp`, "/tmp/test-kv.json");
     const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
     const parsed = JSON.parse(written);
     expect(parsed.scope1.key1).toEqual({ data: "test" });
@@ -176,10 +179,11 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.saved).toMatch(/^mem_/);
     expect(writeFileSync).toHaveBeenCalledWith(
-      "/tmp/test-handle.json",
+      `/tmp/test-handle.json.${process.pid}.tmp`,
       expect.any(String),
-      "utf-8",
+      { encoding: "utf-8", mode: 0o600 },
     );
+    expect(renameSync).toHaveBeenCalledWith(`/tmp/test-handle.json.${process.pid}.tmp`, "/tmp/test-handle.json");
   });
 
   it("memory_save without persist path does not call writeFileSync", async () => {
@@ -280,6 +284,17 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.results).toHaveLength(1);
     expect(parsed.results[0].content).toBe("Use bcrypt for password hashing");
+  });
+
+  it.each(["pattern", "preference", "architecture", "bug", "workflow", "fact"])("retains %s metadata in fallback compact and expanded search", async (type) => {
+    const kv = new InMemoryKV();
+    await handleToolCall("memory_save", { content: "Synthetic type probe", type, project: "type-project" }, kv);
+    const compact = JSON.parse((await handleToolCall("memory_smart_search", { query: "Synthetic", project: "type-project" }, kv)).content[0].text);
+    expect(compact.results[0]).toMatchObject({ type: "decision", memoryType: type });
+    const id = compact.results[0].obsId;
+    const expanded = JSON.parse((await handleToolCall("memory_smart_search", { expandIds: id, project: "type-project" }, kv)).content[0].text);
+    expect(expanded.results[0].observation).toMatchObject({ id, type: "decision", memoryType: type });
+    expect((await kv.get<{ type: string }>("mem:memories", id))?.type).toBe(type);
   });
 
   it("memory_smart_search rejects empty query to prevent match-all in forget flow", async () => {

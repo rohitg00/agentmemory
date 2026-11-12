@@ -2,7 +2,8 @@ import type { IIIClient } from "iii-sdk";
 import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
-import { StateKV } from "../state/kv.js";
+import { StateKV, collectAll } from "../state/kv.js";
+import { supersededAt } from "../state/memory-utils.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { recordAudit } from "./audit.js";
@@ -39,7 +40,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
         dryRun,
       };
 
-      const memories = await kv.list<Memory>(KV.memories);
+      const memories = await collectAll<Memory>(kv, KV.memories);
       const deletedIds = new Set<string>();
       const facetIds = new Set<string>();
       try {
@@ -141,7 +142,10 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
                     ? memA
                     : memB;
                 older.isLatest = false;
+                older.updatedAt = supersededAt(older.updatedAt, new Date().toISOString());
                 await kv.set(KV.memories, older.id, older);
+                getSearchIndex().remove(older.id);
+                vectorIndexRemove(older.id);
                 await recordAudit(kv, "forget", "mem::auto-forget", [older.id], {
                   resource: "memory",
                   reason: "auto-forget contradiction",
@@ -208,7 +212,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
         }
       }
 
-      if (!dryRun && (result.ttlExpired.length > 0 || result.lowValueObs.length > 0)) {
+      if (!dryRun && (result.ttlExpired.length > 0 || result.lowValueObs.length > 0 || result.contradictions.length > 0)) {
         await flushIndexSave();
       }
 

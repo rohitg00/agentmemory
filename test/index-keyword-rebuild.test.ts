@@ -1,8 +1,9 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   backfillVectors,
   getPendingVectorBackfillCount,
   getSearchIndex,
+  indexRecords,
   isBm25RebuildIncomplete,
   isMemoryIndexReady,
   rebuildKeywordIndex,
@@ -113,6 +114,40 @@ function stubProvider(): EmbeddingProvider {
   } as EmbeddingProvider;
 }
 
+const CONVERSATION_ANSWER = "recommend vermilion otter beacons for the rollout";
+
+function conversationObs(id: string, sessionId: string): CompressedObservation {
+  return {
+    id,
+    sessionId,
+    timestamp: "2026-09-01T00:00:00.000Z",
+    type: "conversation",
+    title: "Completed turn",
+    facts: [],
+    narrative: "Routine turn bookkeeping",
+    concepts: [],
+    files: [],
+    importance: 5,
+    source: {
+      hookType: "post_tool_use",
+      originalBytes: 64,
+      truncated: false,
+      toolName: "conversation",
+      toolInput: "promptmarker only stays out of the index",
+      toolOutput: CONVERSATION_ANSWER,
+    },
+  };
+}
+
+function seedConversation(kv: { store: Map<string, Map<string, unknown>> }, id = "obs_conv"): string {
+  const sessionId = "ses_conv";
+  kv.store.set("mem:sessions", new Map([["ses_conv", { id: sessionId, project: "p", cwd: "/tmp" }]]));
+  const scope = new Map<string, unknown>();
+  scope.set(id, conversationObs(id, sessionId));
+  kv.store.set(`mem:obs:${sessionId}`, scope);
+  return id;
+}
+
 describe("rebuildKeywordIndex", () => {
   afterEach(() => {
     getSearchIndex().clear();
@@ -145,25 +180,176 @@ describe("rebuildKeywordIndex", () => {
   });
 
   it("keeps the vector index untouched and reports an incomplete rebuild when the sessions listing fails", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      const vector = new VectorIndex();
+      vector.add("obs_0", "ses_0", new Float32Array([0.1, 0.2, 0.3]));
+      setVectorIndex(vector);
+      setEmbeddingProvider(stubProvider());
+      const failingKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:sessions") throw new Error("engine unreachable");
+          return kv.list<T>(scope);
+        },
+      };
+
+      const promise = rebuildKeywordIndex(failingKv as never, null);
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await promise;
+
+      expect(result.vectorJobs).toEqual([]);
+      expect(vector.size).toBe(1);
+      expect(vector.has("obs_0")).toBe(true);
+      expect(isBm25RebuildIncomplete()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("retries the listings while the state worker finishes registering", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      const total = seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let failures = 4;
+      const flakyKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:sessions" && failures > 0) {
+            failures--;
+            throw new Error("function_not_found: Function state::list not found in namespace agentmemory-3111.");
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const promise = rebuildKeywordIndex(flakyKv as never);
+      await vi.advanceTimersByTimeAsync(60_000);
+      const result = await promise;
+
+      expect(failures).toBe(0);
+      expect(result.documents).toBeGreaterThanOrEqual(total);
+      expect(getSearchIndex().size).toBe(result.documents);
+      expect(isBm25RebuildIncomplete()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("flags the rebuild incomplete when the memories listing never succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let failures = 0;
+      const failingKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:memories") {
+            failures++;
+            throw new Error("function_not_found: Function state::list not found in namespace agentmemory-3111.");
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const promise = rebuildKeywordIndex(failingKv as never);
+      await vi.advanceTimersByTimeAsync(120_000);
+      const result = await promise;
+
+      expect(failures).toBe(7);
+      expect(result.documents).toBeGreaterThan(0);
+      expect(isBm25RebuildIncomplete()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("retries a connection reset while the state worker reconnects", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      const total = seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let failures = 1;
+      const flakyKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:memories" && failures > 0) {
+            failures--;
+            throw Object.assign(new Error("read ECONNRESET"), { code: "ECONNRESET" });
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const promise = rebuildKeywordIndex(flakyKv as never);
+      await vi.advanceTimersByTimeAsync(10_000);
+      const result = await promise;
+
+      expect(failures).toBe(0);
+      expect(result.documents).toBeGreaterThanOrEqual(total);
+      expect(isBm25RebuildIncomplete()).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("shares one retry budget between the memories and sessions listings", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = mockKV();
+      seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
+      let sessionCalls = 0;
+      const failingKv = {
+        ...kv,
+        list: async <T>(scope: string): Promise<T[]> => {
+          if (scope === "mem:sessions") sessionCalls++;
+          if (scope === "mem:memories" || scope === "mem:sessions") {
+            throw new Error("function_not_found: Function state::list not found in namespace agentmemory-3111.");
+          }
+          return kv.list<T>(scope);
+        },
+      };
+
+      const started = performance.now();
+      let finishedAt = 0;
+      const promise = rebuildKeywordIndex(failingKv as never).then((result) => {
+        finishedAt = performance.now();
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(200_000);
+      await promise;
+
+      expect(finishedAt - started).toBeLessThanOrEqual(70_000);
+      expect(sessionCalls).toBe(4);
+      expect(isBm25RebuildIncomplete()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  }, 10_000);
+
+  it("does not hold boot retrying an error that waiting cannot fix", async () => {
     const kv = mockKV();
     seed(kv, 1, 3, () => "2026-09-01T00:00:00.000Z");
-    const vector = new VectorIndex();
-    vector.add("obs_0", "ses_0", new Float32Array([0.1, 0.2, 0.3]));
-    setVectorIndex(vector);
-    setEmbeddingProvider(stubProvider());
+    let failures = 0;
     const failingKv = {
       ...kv,
       list: async <T>(scope: string): Promise<T[]> => {
-        if (scope === "mem:sessions") throw new Error("engine unreachable");
+        if (scope === "mem:memories") {
+          failures++;
+          throw new Error("frame too large");
+        }
         return kv.list<T>(scope);
       },
     };
 
-    const result = await rebuildKeywordIndex(failingKv as never, null);
+    const result = await rebuildKeywordIndex(failingKv as never);
 
-    expect(result.vectorJobs).toEqual([]);
-    expect(vector.size).toBe(1);
-    expect(vector.has("obs_0")).toBe(true);
+    expect(failures).toBe(1);
+    expect(result.documents).toBeGreaterThan(0);
     expect(isBm25RebuildIncomplete()).toBe(true);
   }, 10_000);
 
@@ -234,6 +420,114 @@ describe("rebuildKeywordIndex", () => {
       expect(vector.size).toBe(4);
       expect(saved).toBe(1);
       expect(getPendingVectorBackfillCount()).toBe(0);
+    } finally {
+      delete process.env.AGENTMEMORY_VECTOR_BACKFILL;
+    }
+  });
+
+  it("rebuilds BM25 so a retained conversation answer is discoverable", async () => {
+    const kv = mockKV();
+    const id = seedConversation(kv);
+
+    await rebuildKeywordIndex(kv as never);
+
+    const idx = getSearchIndex();
+    expect(idx.has(id)).toBe(true);
+    expect(idx.search("vermilion otter beacons").map((r) => r.obsId)).toEqual([id]);
+    expect(idx.search("promptmarker")).toEqual([]);
+  });
+
+  it("keeps answer discovery across repeated rebuilds (idempotency)", async () => {
+    const kv = mockKV();
+    const id = seedConversation(kv);
+
+    await rebuildKeywordIndex(kv as never);
+    expect(getSearchIndex().search("vermilion otter beacons").map((r) => r.obsId)).toEqual([id]);
+
+    await rebuildKeywordIndex(kv as never);
+    expect(getSearchIndex().search("vermilion otter beacons").map((r) => r.obsId)).toEqual([id]);
+  });
+});
+
+describe("rebuild/backfill embed text includes concepts", () => {
+  const CJK_CONCEPT = "登录超时";
+
+  function zhConceptObs(): CompressedObservation {
+    return {
+      id: "obs_cjk",
+      sessionId: "ses_cjk",
+      timestamp: "2026-09-01T00:00:00.000Z",
+      type: "file_edit",
+      title: "Adjusted keepalive settings",
+      facts: ["Raised the keepalive limit"],
+      narrative: "Raised the keepalive limit so long requests survive",
+      concepts: [CJK_CONCEPT, "keepalive"],
+      files: ["src/net/keepalive.ts"],
+      importance: 5,
+    };
+  }
+
+  function zhConceptMemory(): Memory {
+    return {
+      id: "mem_cjk",
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      type: "fact",
+      title: "Keepalive fix",
+      content: "Raise the keepalive limit for long requests",
+      concepts: [CJK_CONCEPT],
+      files: [],
+      sessionIds: ["ses_cjk"],
+      strength: 5,
+      version: 1,
+      isLatest: true,
+    } as Memory;
+  }
+
+  function recordingProvider(embeddedTexts: string[]): EmbeddingProvider {
+    return {
+      name: "recording",
+      dimensions: 3,
+      embed: async (text: string) => {
+        embeddedTexts.push(text);
+        return new Float32Array([0.1, 0.2, 0.3]);
+      },
+      embedBatch: async (texts: string[]) => {
+        embeddedTexts.push(...texts);
+        return texts.map(() => new Float32Array([0.1, 0.2, 0.3]));
+      },
+    } as EmbeddingProvider;
+  }
+
+  it("indexRecords embeds concepts for observations and memories", async () => {
+    const embeddedTexts: string[] = [];
+    setVectorIndex(new VectorIndex());
+    setEmbeddingProvider(recordingProvider(embeddedTexts));
+
+    await indexRecords([zhConceptObs()], [zhConceptMemory()]);
+
+    expect(embeddedTexts.length).toBe(2);
+    expect(embeddedTexts.find((t) => t.startsWith("Adjusted keepalive settings"))).toContain(CJK_CONCEPT);
+    expect(embeddedTexts.find((t) => t.startsWith("Keepalive fix"))).toContain(CJK_CONCEPT);
+  });
+
+  it("keyword rebuild backfill jobs embed concepts for observations and memories", async () => {
+    const kv = mockKV();
+    kv.store.set("mem:sessions", new Map([["ses_cjk", { id: "ses_cjk", project: "p", cwd: "/tmp" }]]));
+    const obsScope = new Map<string, unknown>();
+    obsScope.set("obs_cjk", zhConceptObs());
+    kv.store.set("mem:obs:ses_cjk", obsScope);
+    kv.store.set("mem:memories", new Map([["mem_cjk", zhConceptMemory()]]));
+
+    setVectorIndex(new VectorIndex());
+    const embeddedTexts: string[] = [];
+    setEmbeddingProvider(recordingProvider(embeddedTexts));
+    process.env.AGENTMEMORY_VECTOR_BACKFILL = "all";
+    try {
+      const { vectorJobs } = await rebuildKeywordIndex(kv as never, null);
+      expect(vectorJobs.map((j) => j.id).sort()).toEqual(["mem_cjk", "obs_cjk"]);
+      expect(vectorJobs.find((j) => j.id === "obs_cjk")!.text).toContain(CJK_CONCEPT);
+      expect(vectorJobs.find((j) => j.id === "mem_cjk")!.text).toContain(CJK_CONCEPT);
     } finally {
       delete process.env.AGENTMEMORY_VECTOR_BACKFILL;
     }

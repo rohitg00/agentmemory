@@ -1,18 +1,20 @@
 import type { IIIClient } from 'iii-sdk'
 import type { GraphObservationAuthorization } from "./graph-retrieval.js";
+import type { HybridSearchRequest } from "../state/hybrid-search.js";
 import type { IndexPersistenceStatus } from "../state/index-persistence.js";
 import type { CompressedObservation, Memory, SearchResult, Session } from '../types.js'
 import { KV } from '../state/schema.js'
-import { StateKV } from '../state/kv.js'
+import { StateKV, collectAll } from '../state/kv.js'
 import { getSearchResultLayer, isSearchLayer, matchesSearchLayer, type SearchLayer, type SearchResultLayer } from "../state/search-layer.js";
 import { SearchIndex, type SearchIndexRevision } from '../state/search-index.js'
 import { VectorIndex } from '../state/vector-index.js'
 import type { EmbeddingProvider } from '../types.js'
-import { memoryToObservation } from '../state/memory-utils.js'
+import { memoryToObservation, observationEmbedText } from '../state/memory-utils.js'
 import { buildRecallResponse, type RecallFormat } from "./recall-response.js";
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
 import { withoutObservationSource } from "./observation-source.js";
+import { withKeyedLocks } from "../state/keyed-mutex.js";
 import {
   getAgentId,
   getVectorBackfillMax,
@@ -33,6 +35,7 @@ type HybridRanker = (
   limit: number,
   targetLayer?: SearchLayer,
   authorizeGraph?: GraphObservationAuthorization,
+  request?: HybridSearchRequest,
 ) => Promise<Array<{ observation: CompressedObservation; sessionId: string; combinedScore: number; layer?: SearchResultLayer }>>
 let hybridRanker: HybridRanker | null = null
 
@@ -198,6 +201,50 @@ const EMBED_MAX_CHARS = 16_000
 export function clipEmbedInput(text: string): string {
   if (text.length <= EMBED_MAX_CHARS) return text
   return text.slice(0, EMBED_MAX_CHARS)
+}
+
+export function unindexMemory(id: string): void {
+  try {
+    getSearchIndex().remove(id)
+  } catch {}
+  vectorIndexRemove(id)
+  scheduleIndexSave()
+}
+
+export async function indexMemory(kv: StateKV, memory: Memory): Promise<void> {
+  const locks = ["mem:remember", `mem:memory:${memory.id}`]
+  const snapshot = await withKeyedLocks(locks, async () => {
+    const current = await kv.get<Memory>(KV.memories, memory.id)
+    if (!current || current.isLatest === false) {
+      unindexMemory(memory.id)
+      return null
+    }
+    try {
+      getSearchIndex().add(memoryToObservation(current), "memory")
+      scheduleIndexSave()
+    } catch (err) {
+      logger.warn("Failed to index memory into BM25", {
+        memId: memory.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return current
+  })
+  if (!snapshot) return
+  const sessionId = snapshot.sessionIds?.[0] ?? "memory"
+  await vectorIndexAddGuarded(
+    memory.id,
+    sessionId,
+    observationEmbedText({ title: snapshot.title, narrative: snapshot.content, concepts: snapshot.concepts }),
+    { kind: "memory", logId: memory.id },
+    (embedding, isCurrent) => withKeyedLocks(locks, async () => {
+      const current = await kv.get<Memory>(KV.memories, memory.id).catch(() => null)
+      if (!isCurrent() || !current || current.isLatest === false || current.updatedAt !== snapshot.updatedAt) return false
+      vectorIndex?.add(memory.id, sessionId, embedding)
+      scheduleIndexSave()
+      return true
+    }),
+  )
 }
 
 export async function vectorIndexAddGuarded(
@@ -403,7 +450,7 @@ export async function indexRecords(
       await enqueue({
         id: memory.id, revision,
         sessionId: memory.sessionIds?.[0] ?? 'memory',
-        text: memory.title + ' ' + memory.content,
+        text: observationEmbedText({ title: memory.title, narrative: memory.content, concepts: memory.concepts }),
         context: { kind: "memory", logId: memory.id },
       })
     }
@@ -412,7 +459,7 @@ export async function indexRecords(
       if (!revision?.isCurrent()) continue
       await enqueue({
         id: obs.id, revision, sessionId: obs.sessionId,
-        text: obs.title + ' ' + obs.narrative,
+        text: observationEmbedText(obs),
         context: { kind: "observation", logId: obs.id },
       })
     }
@@ -469,7 +516,7 @@ export async function rebuildIndex(kv: StateKV): Promise<number> {
   let memories: Memory[] = []
   let memoriesLoaded = false
   try {
-    memories = await kv.list<Memory>(KV.memories)
+    memories = await collectAll<Memory>(kv, KV.memories)
     memoriesLoaded = true
   } catch (err) {
     logger.warn('rebuildIndex: failed to load memories', {
@@ -516,33 +563,45 @@ export type VectorBackfillJob = {
   context: { kind: "memory" | "observation" | "synthetic"; logId: string }
 }
 
-const SESSIONS_LIST_RETRY_ATTEMPTS = 3
-const SESSIONS_LIST_RETRY_BASE_MS = 250
+const LIST_RETRY_ATTEMPTS = 8
+const LIST_RETRY_BASE_MS = 2500
+const LIST_RETRY_BUDGET_MS = 70_000
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-async function listSessionsWithRetry(kv: StateKV): Promise<Session[] | null> {
+function isStateNotReadyError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code
+  if (code === "function_not_found" || code === "invocation_timeout" || code === "timeout" || code === "ECONNRESET" || code === "ECONNREFUSED" || code === "EPIPE") return true
+  const message = err instanceof Error ? err.message : String(err)
+  return /function_not_found|Function state::\w+ not found|timed out|timeout|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EPIPE|socket hang up|connection (?:closed|reset)/i.test(message)
+}
+
+async function listWithRetry<T>(kv: StateKV, scope: string, label: string, deadline: number): Promise<T[] | null> {
   let lastErr: unknown
-  for (let attempt = 0; attempt < SESSIONS_LIST_RETRY_ATTEMPTS; attempt++) {
+  let attempts = 0
+  while (attempts < LIST_RETRY_ATTEMPTS) {
+    attempts++
     try {
-      return await kv.list<Session>(KV.sessions)
+      return await collectAll<T>(kv, scope)
     } catch (err) {
       lastErr = err
-      if (attempt < SESSIONS_LIST_RETRY_ATTEMPTS - 1) {
-        await delay(SESSIONS_LIST_RETRY_BASE_MS * (attempt + 1))
-      }
+      if (!isStateNotReadyError(err)) break
+      const remaining = deadline - performance.now()
+      const wait = LIST_RETRY_BASE_MS * attempts
+      if (attempts >= LIST_RETRY_ATTEMPTS || wait >= remaining) break
+      await delay(wait)
     }
   }
-  logger.warn('rebuildKeywordIndex: failed to load sessions after retries', {
-    attempts: SESSIONS_LIST_RETRY_ATTEMPTS,
+  logger.warn(`${label}: failed to load`, {
+    attempts,
     error: lastErr instanceof Error ? lastErr.message : String(lastErr),
   })
   return null
 }
 
-type KeywordRebuildResult = { documents: number; vectorJobs: VectorBackfillJob[]; fullBackfillPending: number }
+type KeywordRebuildResult = { documents: number; vectorJobs: VectorBackfillJob[]; fullBackfillPending: number; historicalVectorGaps: number }
 
 export async function rebuildKeywordIndex(
   kv: StateKV,
@@ -575,6 +634,7 @@ async function runKeywordRebuild(
   const backfillCap = backfillActive ? getVectorBackfillMax() : 0
   const vectorJobs: VectorBackfillJob[] = []
   let fullBackfillPending = 0
+  let historicalVectorGaps = 0
   const consider = (
     id: string,
     sessionId: string,
@@ -583,7 +643,10 @@ async function runKeywordRebuild(
     kind: "memory" | "observation",
   ): void => {
     if (!backfillEligible || vi?.has(id)) return
-    if (!Number.isNaN(cutoff) && !(Date.parse(timestamp ?? '') > cutoff)) return
+    if (!Number.isNaN(cutoff) && !(Date.parse(timestamp ?? '') > cutoff)) {
+      historicalVectorGaps++
+      return
+    }
     if (backfillGated || (wholeStoreBackfill && vectorJobs.length >= backfillCap)) {
       fullBackfillPending++
       return
@@ -594,27 +657,26 @@ async function runKeywordRebuild(
 
   let documents = 0
   let memoriesLoaded = false
-  try {
-    const memories = await kv.list<Memory>(KV.memories)
+  const listDeadline = performance.now() + LIST_RETRY_BUDGET_MS
+  const memories = await listWithRetry<Memory>(kv, KV.memories, 'rebuildKeywordIndex: memories', listDeadline)
+  const sessions = await listWithRetry<Session>(kv, KV.sessions, 'rebuildKeywordIndex: sessions', listDeadline)
+  if (memories === null) {
+    bm25RebuildIncomplete = true
+  } else {
     memoriesLoaded = true
     for (const memory of memories) {
       if (memory.isLatest === false) continue
       if (!memory.title || !memory.content) continue
       idx.add(memoryToObservation(memory), "memory")
-      consider(memory.id, memory.sessionIds?.[0] ?? 'memory', memory.title + ' ' + memory.content, memory.createdAt, "memory")
+      consider(memory.id, memory.sessionIds?.[0] ?? 'memory', observationEmbedText({ title: memory.title, narrative: memory.content, concepts: memory.concepts }), memory.createdAt, "memory")
       documents++
     }
-  } catch (err) {
-    logger.warn('rebuildKeywordIndex: failed to load memories', {
-      error: err instanceof Error ? err.message : String(err),
-    })
   }
 
-  const sessions = await listSessionsWithRetry(kv)
   if (sessions === null) {
     bm25RebuildIncomplete = true
     if (memoriesLoaded) memoryIndexReady = true
-    return { documents, vectorJobs, fullBackfillPending }
+    return { documents, vectorJobs, fullBackfillPending, historicalVectorGaps }
   }
   const failedSessions: string[] = []
   for (let batch = 0; batch < sessions.length; batch += 10) {
@@ -632,7 +694,7 @@ async function runKeywordRebuild(
     for (const obs of results.flat()) {
       if (!obs.title || !obs.narrative) continue
       idx.add(obs)
-      consider(obs.id, obs.sessionId, obs.title + ' ' + obs.narrative, obs.timestamp, "observation")
+      consider(obs.id, obs.sessionId, observationEmbedText(obs), obs.timestamp, "observation")
       documents++
     }
   }
@@ -641,7 +703,7 @@ async function runKeywordRebuild(
     logger.warn('rebuildKeywordIndex: failed to load observations for sessions', { failedSessions })
   }
   if (memoriesLoaded) memoryIndexReady = true
-  return { documents, vectorJobs, fullBackfillPending }
+  return { documents, vectorJobs, fullBackfillPending, historicalVectorGaps }
 }
 
 const BACKFILL_SAVE_EVERY_BATCHES = 10
@@ -750,6 +812,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       }
       const targetLayer = data.targetLayer ?? 'all'
       const MAX_LIMIT = 100
+      const MAX_CANDIDATES = 1000
       let effectiveLimit = 20
       if (data.limit !== undefined) {
         if (!Number.isInteger(data.limit) || data.limit < 1) {
@@ -824,7 +887,8 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       // queries return underfilled pages when same-agent matches
       // rank lower than cross-agent ones in the hybrid score.
       const filtering = !!(projectFilter || cwdFilter || filterAgentId)
-      const fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
+      let fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : Math.max(effectiveLimit * 4, effectiveLimit + 20)
+      let hybridLimit = filtering ? fetchLimit : effectiveLimit
       // Hybrid results carry the observation the ranker already loaded,
       // so the load pass below doesn't refetch every record it just
       // enriched.
@@ -847,33 +911,13 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         }
         return true
       }
-      if (hybridRanker) {
-        try {
-          const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph)
-          results = hybrid.map((r) => ({
-            obsId: r.observation.id,
-            sessionId: r.sessionId,
-            score: r.combinedScore,
-            observation: r.observation,
-            layer: r.layer,
-          }))
-        } catch (err) {
-          logger.warn("hybrid ranking failed, falling back to keyword search", {
-            error: err instanceof Error ? err.message : String(err),
-          })
-          results = idx.search(query, fetchLimit, targetLayer)
-        }
-      } else {
-        results = idx.search(query, fetchLimit, targetLayer)
-      }
-
       // Resolve session -> project/cwd once per sessionId we touch.
-      const sessionCache = new Map<string, Session | null>()
+      const sessionCache = new Map<string, Promise<Session | null>>()
       const loadSession = async (sessionId: string): Promise<Session | null> => {
         if (sessionCache.has(sessionId)) return sessionCache.get(sessionId)!
-        const s = await kv.get<Session>(KV.sessions, sessionId)
-        sessionCache.set(sessionId, s ?? null)
-        return s ?? null
+        const pending = kv.get<Session>(KV.sessions, sessionId).then((session) => session ?? null)
+        sessionCache.set(sessionId, pending)
+        return pending
       }
 
       const memoryProjectCache = new Map<string, string | null>()
@@ -885,62 +929,100 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         return proj
       }
 
-      // First pass: filter by session (sequential — benefits from session cache).
-      // Memory entries with a synthetic sessionId take a secondary KV.memories
-      // path so project filtering works correctly for them too.
-      //
-      // When agentId filtering is active we can't cap at effectiveLimit
-      // here — the second pass (post-load) is what drops cross-agent
-      // rows, and capping early would underfill the result page. Use
-      // fetchLimit as the upper bound in that case; the final
-      // truncation lives at the end of the second pass.
-      const earlyCap = filterAgentId ? fetchLimit : effectiveLimit
-      const candidates: typeof results = []
-      for (const r of results) {
-        if (candidates.length >= earlyCap) break
-        const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
-        if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) continue
-        if (filtering) {
-          const memoryProject = projectFilter && layer === "memory"
-            ? await loadMemoryProject(r.obsId)
-            : null
-          if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) continue
-          const session = await loadSession(r.sessionId)
-          if (session) {
-            if (projectFilter && memoryProject === null && session.project !== projectFilter) continue
-            if (cwdFilter && session.cwd !== cwdFilter) continue
+      const observationCache = new Map<string, Promise<{
+        observation: CompressedObservation
+        layer: SearchResultLayer
+      } | null>>()
+      const hybridRequest: HybridSearchRequest = {}
+      let enriched: SearchResult[] = []
+      let useHybridRanker = hybridRanker !== null
+      while (true) {
+        hybridRequest.candidateCount = undefined
+        if (useHybridRanker && hybridRanker) {
+          try {
+            const hybrid = await hybridRanker(query, hybridLimit, targetLayer, authorizeGraph, hybridRequest)
+            results = hybrid.map((r) => ({
+              obsId: r.observation.id,
+              sessionId: r.sessionId,
+              score: r.combinedScore,
+              observation: r.observation,
+              layer: r.layer,
+            }))
+          } catch (err) {
+            hybridRequest.candidateCount = undefined
+            logger.warn("hybrid ranking failed", {
+              error: err instanceof Error ? err.message : String(err),
+            })
+            if (enriched.length > 0) break
+            useHybridRanker = false
+            results = idx.search(query, fetchLimit, targetLayer)
           }
+        } else {
+          results = idx.search(query, fetchLimit, targetLayer)
         }
-        candidates.push(r)
-      }
 
-      const obsResults = await Promise.all(
-        candidates.map(async (r) => {
-          if (r.observation) return { observation: r.observation, layer: r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId) }
-          const obs = await kv
-            .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
-            .catch(() => null)
-          if (obs) return { observation: obs, layer: "observation" as const }
-          const mem = await kv
-            .get<Memory>(KV.memories, r.obsId)
-            .catch(() => null)
-          return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
-        })
-      )
-      const enriched: SearchResult[] = []
-      for (let i = 0; i < candidates.length; i++) {
-        const resolved = obsResults[i]
-        if (!resolved) continue
-        const obs = resolved.observation
-        if (!matchesSearchLayer(obs.id, obs.sessionId, targetLayer, resolved.layer)) continue
-        if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
-        if (enriched.length >= effectiveLimit) break
-        enriched.push({
-          observation: withoutObservationSource(obs),
-          layer: resolved.layer,
-          score: candidates[i].score,
-          sessionId: candidates[i].sessionId,
-        })
+        enriched = []
+        let batchSize = Math.min(10, effectiveLimit)
+        for (let offset = 0; offset < Math.min(results.length, fetchLimit) && enriched.length < effectiveLimit;) {
+          const batch = results.slice(offset, Math.min(offset + batchSize, fetchLimit))
+          offset += batch.length
+          const obsResults = await Promise.all(
+            batch.map(async (r) => {
+              const layer = r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId)
+              if (!matchesSearchLayer(r.obsId, r.sessionId, targetLayer, layer)) return null
+              if (filtering) {
+                const memoryProject = projectFilter && layer === "memory"
+                  ? await loadMemoryProject(r.obsId)
+                  : null
+                if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) return null
+                const session = projectFilter || cwdFilter ? await loadSession(r.sessionId) : null
+                if (projectFilter && memoryProject === null && !session) return null
+                if (cwdFilter && layer === "observation" && !session) return null
+                if (session) {
+                  if (projectFilter && memoryProject === null && session.project !== projectFilter) return null
+                  if (cwdFilter && session.cwd !== cwdFilter) return null
+                }
+              }
+
+              const key = JSON.stringify([r.obsId, r.sessionId])
+              let pending = observationCache.get(key)
+              if (!pending) {
+                pending = (async () => {
+                  if (r.observation) return { observation: r.observation, layer: r.layer ?? idx.layerOf(r.obsId) ?? getSearchResultLayer(r.obsId, r.sessionId) }
+                  const obs = await kv
+                    .get<CompressedObservation>(KV.observations(r.sessionId), r.obsId)
+                    .catch(() => null)
+                  if (obs) return { observation: obs, layer: "observation" as const }
+                  const mem = await kv
+                    .get<Memory>(KV.memories, r.obsId)
+                    .catch(() => null)
+                  return mem && mem.isLatest !== false ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
+                })()
+                observationCache.set(key, pending)
+              }
+              return pending
+            })
+          )
+          for (let i = 0; i < batch.length; i++) {
+            const resolved = obsResults[i]
+            if (!resolved) continue
+            const obs = resolved.observation
+            if (!matchesSearchLayer(obs.id, obs.sessionId, targetLayer, resolved.layer)) continue
+            if (filterAgentId !== undefined && obs.agentId !== filterAgentId) continue
+            if (enriched.length >= effectiveLimit) break
+            enriched.push({
+              observation: withoutObservationSource(obs),
+              layer: resolved.layer,
+              score: batch[i].score,
+              sessionId: batch[i].sessionId,
+            })
+          }
+          batchSize = Math.min(10, Math.max(effectiveLimit - enriched.length, batchSize * 2))
+        }
+        const candidateLimit = useHybridRanker ? hybridLimit : fetchLimit
+        if (enriched.length >= effectiveLimit || (hybridRequest.candidateCount ?? results.length) < candidateLimit || fetchLimit >= MAX_CANDIDATES) break
+        fetchLimit = Math.min(fetchLimit * 2, MAX_CANDIDATES)
+        hybridLimit = fetchLimit
       }
 
       const response = buildRecallResponse(enriched, format as RecallFormat, tokenBudget)

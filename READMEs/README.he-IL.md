@@ -52,7 +52,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="מסמך עיצוב: 1.6 אלף כוכבים / 230 forks על ה-gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="מסמך עיצוב: 1.7 אלף כוכבים / 240 forks על ה-gist" /></a>
 </p>
 
 <p align="center">
@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 כלי MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks אוטומטיים" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 מסדי נתונים חיצוניים" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ בדיקות עוברות" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ בדיקות עוברות" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -448,7 +448,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code בלי התקנת ה-plugin (נתיב MCP בלבד)
 
-אם אתם מחווטים את שרת ה-MCP של agentmemory ישירות דרך `~/.claude.json` במקום להשתמש ב-`/plugin install`, Claude Code לעולם לא פותר את `${CLAUDE_PLUGIN_ROOT}` ואתם חייבים להפנות את סקריפטי ה-hook ל-paths מוחלטים בתוך `~/.claude/settings.json`. ה-paths האלה בדרך כלל מטמיעים בתוכם את גרסת agentmemory (למשל `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), כך שהשדרוג הבא שובר בשקט כל hook.
+אם אתם מחווטים את שרת ה-MCP של agentmemory ישירות דרך `~/.claude.json` (נתיב ברירת המחדל) במקום להשתמש ב-`/plugin install`, Claude Code לעולם לא פותר את `${CLAUDE_PLUGIN_ROOT}` ואתם חייבים להפנות את סקריפטי ה-hook ל-paths מוחלטים בתוך `~/.claude/settings.json` (נתיב ברירת המחדל). ה-paths האלה בדרך כלל מטמיעים בתוכם את גרסת agentmemory (למשל `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), כך שהשדרוג הבא שובר בשקט כל hook.
 
 פתרון עוקף:
 
@@ -456,7 +456,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-זה ממזג את אותן פקודות hook לתוך `~/.claude/settings.json` עם paths מוחלטים שנפתרים לתיקיית `plugin/` המצורפת של חבילת `@agentmemory/agentmemory` המותקנת כעת. יש להריץ את הפקודה מחדש אחרי שדרוג agentmemory כדי לרפרש את ה-paths. רשומות משתמש בקובץ עצמו נשמרות; רק רשומות agentmemory קודמות מוחלפות. השימוש בנתיב `/plugin install` נשאר הגישה המומלצת.
+הפקודה מגדירה את שרת ה-MCP וממזגת את ה-hooks המצורפים לתצורת המשתמש של Claude Code. אם `CLAUDE_CONFIG_DIR` אינו מוגדר, ריק או מכיל רק תווי רווח, היא משתמשת ב-`~/.claude.json` עבור MCP וב-`~/.claude/settings.json` עבור hooks. ערכי תיקייה אחרים משמשים בדיוק כפי שהוזנו, כולל תווי רווח בתחילת הערך ובסופו. כדי להשתמש בתיקייה מותאמת אישית, הגדירו את `CLAUDE_CONFIG_DIR` לאותו ערך שאינו ריק גם עבור הפקודה הזו וגם עבור Claude Code; הקבצים יהיו אז `$CLAUDE_CONFIG_DIR/.claude.json` ו-`$CLAUDE_CONFIG_DIR/settings.json`, בהתאמה. Claude Code חייב לקבל את הערך בסביבת ההפעלה שלו, גם אם המחבר קורא אותו מקובץ `.env` של AgentMemory. צרו את התיקייה המותאמת אישית לפני הפעלת הפקודה; אחרת המחבר מדלג על Claude Code כי הוא לא זוהה. אם הערך ב-shell מכיל רק תווי רווח, הסירו את `CLAUDE_CONFIG_DIR` מהסביבה לפני הפעלת Claude Code כדי שגם הוא ישתמש בפרופיל ברירת המחדל. השתמשו בנתיב מוחלט. נתיבים יחסיים מפוענחים ביחס לתיקיית העבודה, ולכן יש להריץ את שתי הפקודות מאותה תיקייה.
+
+פקודות ה-hook משתמשות בנתיבים מוחלטים לתיקיית `plugin/` המצורפת לחבילה המותקנת. הפעילו שוב את הפקודה לאחר שדרוג agentmemory כדי לרענן את הנתיבים. רשומות המשתמש בקובצי התצורה נשמרות; רק רשומות קודמות של agentmemory מוחלפות. השימוש ב-`/plugin install` נותר הדרך המומלצת.
 ל-deployments מרוחקים או מוגנים, הפעילו את Claude Code עם `AGENTMEMORY_URL` ו-`AGENTMEMORY_SECRET` מוגדרים. ה-plugin מעביר את שני הערכים לשרת ה-MCP המצורף שלו; כש-`AGENTMEMORY_URL` ריק, ה-shim של MCP משתמש ב-`http://localhost:3111`.
 
 ### Codex CLI (פלטפורמת plugin של Codex)
@@ -665,7 +667,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory פועל ב-Windows 10/11. ‏WSL2 פועל במסלול Linux ויכול להתקין את המנוע הנעוץ אוטומטית. ב-Windows מקורי יש להתקין ידנית את הבינארי הנעוץ iii-engine v0.25.0: הורידו את הארכיון המתאים מ-[דף ההפצה של iii 0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), אמתו את ה-checksum והוסיפו את `iii.exe` ל-`PATH` (למשל `%USERPROFILE%\.local\bin\iii.exe`). ה-CLI אינו מחלץ אוטומטית את ZIP של Windows.
+agentmemory פועל ב-Windows 10/11. ‏WSL2 פועל במסלול Linux ויכול להתקין את המנוע הנעוץ אוטומטית. ב-Windows מקורי יש להתקין ידנית את הבינארי הנעוץ iii-engine v0.25.1: הורידו את הארכיון המתאים מ-[דף ההפצה של iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), אמתו את ה-checksum והוסיפו את `iii.exe` ל-`PATH` (למשל `%USERPROFILE%\.local\bin\iii.exe`). ה-CLI אינו מחלץ אוטומטית את ZIP של Windows.
 
 חיבור MCP אוטומטי ב-Windows מקורי נתמך רק עבור `agentmemory connect copilot-cli`. עבור סוכנים מקומיים אחרים ב-Windows, השתמשו בבלוק MCP הידני מתוך [סוכנים אחרים](#other-agents). הפעילו `connect` בתוך WSL רק אם סוכן היעד מותקן באותה סביבת WSL.
 
@@ -1161,7 +1163,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
+147 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
 
 **אימות (Authentication) פעיל כברירת מחדל.** אם `AGENTMEMORY_SECRET` לא מוגדר, בהפעלה הראשונה ה-CLI יוצר סוד אקראי ב-`~/.agentmemory/secret` עם הרשאות `0600`, ומעתיק אותו גם לתיקיית הנתונים שנבחרה. כל לקוח מצורף קורא אותו משם כשהוא מדבר עם שרת מקומי: ה-CLI, המציג, ה-hooks תחת `plugin/scripts`, שרת ה-MCP וה-shim `@agentmemory/mcp`, התצורות שנכתבות על ידי `agentmemory connect`, והאינטגרציות המצורפות של OpenCode, Pi, OpenClaw, Hermes וה-filesystem-watcher. ה-secret המאוחסן נשלח רק ל-URLs של loopback (`localhost`, `127.0.0.0/8`, `::1`). `AGENTMEMORY_SECRET` מפורש גובר תמיד, ולקוחות מרוחקים עדיין צריכים אותו מוגדר. Docker וה-entrypoints של `deploy/` כבר מייצרים ומייצאים את ה-secret שלהם. כדי לקרוא ל-API ביד:
 
@@ -1242,7 +1244,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

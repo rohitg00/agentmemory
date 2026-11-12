@@ -50,7 +50,7 @@
 </p>
 
 <p align="center">
-  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.6k%20stars%20%2F%20230%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Tài liệu thiết kế: 1.6k stars / 230 forks trên gist" /></a>
+  <a href="https://gist.github.com/rohitg00/2067ab416f7bbe447c1977edaaa681e2"><img src="https://img.shields.io/badge/Viral%20GitHub%20Gist-1.7k%20stars%20%2F%20240%20forks-FF6B35?style=for-the-badge&logo=github&logoColor=white&labelColor=1a1a1a" alt="Tài liệu thiết kế: 1.7k stars / 240 forks trên gist" /></a>
 </p>
 
 <p align="center">
@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,100+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -101,7 +101,7 @@ Yêu cầu:
 
 - Node.js 20 hoặc mới hơn kèm npm và npx (`node -v`, `npm -v`, và `npx -v`).
 - Thiết lập tự động trên macOS/Linux cần `curl`, POSIX `sh` và `tar`.
-Windows native cần cài thủ công `iii.exe` của iii v0.25.0 đã pin; WSL2 dùng trình cài tự động cho macOS/Linux
+Windows native cần cài thủ công `iii.exe` của iii v0.25.1 đã pin; WSL2 dùng trình cài tự động cho macOS/Linux
 
 Lệnh cài mới chuẩn (canonical):
 
@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code không cài plugin (đường MCP độc lập)
 
-Nếu bạn kết nối MCP server của agentmemory qua `~/.claude.json` trực tiếp thay vì dùng `/plugin install`, Claude Code sẽ không bao giờ resolve `${CLAUDE_PLUGIN_ROOT}` và bạn phải chỉ các hook script tới đường dẫn tuyệt đối trong `~/.claude/settings.json`. Các đường dẫn đó thường nhúng cả phiên bản agentmemory (ví dụ `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), nên lần nâng cấp kế tiếp sẽ lặng lẽ làm hỏng mọi hook.
+Nếu bạn kết nối MCP server của agentmemory qua `~/.claude.json` (đường dẫn mặc định) trực tiếp thay vì dùng `/plugin install`, Claude Code sẽ không bao giờ resolve `${CLAUDE_PLUGIN_ROOT}` và bạn phải chỉ các hook script tới đường dẫn tuyệt đối trong `~/.claude/settings.json` (đường dẫn mặc định). Các đường dẫn đó thường nhúng cả phiên bản agentmemory (ví dụ `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), nên lần nâng cấp kế tiếp sẽ lặng lẽ làm hỏng mọi hook.
 
 Cách khắc phục tạm:
 
@@ -452,7 +452,9 @@ Cách khắc phục tạm:
 agentmemory connect claude-code --with-hooks
 ```
 
-Lệnh này gộp cùng các hook command đó vào `~/.claude/settings.json` với đường dẫn tuyệt đối được resolve tới thư mục `plugin/` đi kèm của package `@agentmemory/agentmemory` đang được cài. Chạy lại lệnh này sau khi nâng cấp agentmemory để làm mới các đường dẫn. Các entry của người dùng trong cùng file được giữ lại; chỉ các entry agentmemory trước đó bị thay thế. Dùng đường `/plugin install` vẫn là cách được khuyến nghị.
+Lệnh này cấu hình máy chủ MCP và gộp các hook đi kèm vào cấu hình người dùng của Claude Code. Nếu `CLAUDE_CONFIG_DIR` chưa được đặt, rỗng hoặc chỉ chứa khoảng trắng, lệnh dùng `~/.claude.json` cho MCP và `~/.claude/settings.json` cho các hook. Các giá trị thư mục khác được dùng đúng như đã cung cấp, kể cả khoảng trắng ở đầu và cuối. Để dùng thư mục tùy chỉnh, hãy đặt `CLAUDE_CONFIG_DIR` thành cùng một giá trị không rỗng cho cả lệnh này và Claude Code; khi đó, các tệp lần lượt là `$CLAUDE_CONFIG_DIR/.claude.json` và `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code phải nhận giá trị này trong môi trường khởi chạy của chính nó, ngay cả khi trình kết nối đọc giá trị từ tệp `.env` của AgentMemory. Tạo thư mục tùy chỉnh trước khi chạy lệnh này; nếu thư mục chưa tồn tại, trình kết nối sẽ bỏ qua Claude Code vì không phát hiện được. Nếu giá trị trong shell chỉ chứa khoảng trắng, hãy xóa `CLAUDE_CONFIG_DIR` khỏi môi trường trước khi khởi chạy Claude Code để nó cũng dùng cấu hình mặc định. Hãy dùng đường dẫn tuyệt đối. Đường dẫn tương đối được xác định theo thư mục làm việc, nên cả hai lệnh phải được chạy từ cùng một thư mục.
+
+Các lệnh hook dùng đường dẫn tuyệt đối đến thư mục `plugin/` đi kèm trong gói đã cài đặt. Chạy lại lệnh sau khi nâng cấp agentmemory để cập nhật các đường dẫn này. Các mục của người dùng trong tệp cấu hình được giữ nguyên; chỉ các mục agentmemory trước đó bị thay thế. Dùng `/plugin install` vẫn là cách được khuyến nghị.
 Với các deployment từ xa hoặc được bảo vệ, hãy khởi chạy Claude Code với `AGENTMEMORY_URL` và `AGENTMEMORY_SECRET` đã được đặt. Plugin sẽ truyền cả hai giá trị này xuống MCP server đi kèm của nó; khi `AGENTMEMORY_URL` để trống, MCP shim dùng `http://localhost:3111`.
 
 ### Codex CLI (nền tảng plugin của Codex)
@@ -656,7 +658,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory chạy trên Windows 10/11; WSL2 có thể tự cài engine theo quy trình Linux. Windows native cần cài thủ công iii-engine v0.25.0: tải archive từ [trang phát hành iii v0.25.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.0), xác minh checksum và đặt `iii.exe` trong `PATH`. CLI không tự giải nén ZIP Windows
+agentmemory chạy trên Windows 10/11; WSL2 có thể tự cài engine theo quy trình Linux. Windows native cần cài thủ công iii-engine v0.25.1: tải archive từ [trang phát hành iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), xác minh checksum và đặt `iii.exe` trong `PATH`. CLI không tự giải nén ZIP Windows
 
 Cấu hình MCP tự động trên Windows native chỉ hỗ trợ `agentmemory connect copilot-cli`; agent khác dùng khối MCP thủ công trong [Other agents](#other-agents). Chỉ chạy `connect` trong WSL nếu agent đích cũng cài trong cùng môi trường WSL
 
@@ -1170,7 +1172,7 @@ Tham chiếu đầy đủ ở [`.env.example`](../.env.example), gồm nhà cung
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-146 endpoint trên port `3111`. REST API bind vào `127.0.0.1` theo mặc định. Các endpoint được bảo vệ cần `Authorization: Bearer <secret>`, và các endpoint mesh sync cần `AGENTMEMORY_SECRET` được đặt rõ ràng trên cả hai phía.
+147 endpoint trên port `3111`. REST API bind vào `127.0.0.1` theo mặc định. Các endpoint được bảo vệ cần `Authorization: Bearer <secret>`, và các endpoint mesh sync cần `AGENTMEMORY_SECRET` được đặt rõ ràng trên cả hai phía.
 
 Xác thực bật mặc định. Nếu chưa đặt `AGENTMEMORY_SECRET`, CLI tạo bí mật ngẫu nhiên lần đầu tại `~/.agentmemory/secret` và sao chép vào `secret` trong thư mục dữ liệu đã chọn, với quyền `0600`. Client đi kèm ưu tiên tệp chính này khi kết nối cục bộ và chỉ gửi bí mật đã lưu đến URL loopback. `AGENTMEMORY_SECRET` đặt tường minh luôn được ưu tiên; client từ xa phải đặt qua biến môi trường. Triển khai Docker tạo bí mật riêng.
 
@@ -1251,7 +1253,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,100+ tests
+npm test                  # 4,700+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
