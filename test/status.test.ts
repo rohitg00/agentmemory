@@ -129,6 +129,14 @@ describe("evaluateStatus", () => {
     expect(codes(report)).toContain("bm25-rebuild-incomplete");
   });
 
+  it("reports the failed session count and next background retry for an incomplete BM25 rebuild", () => {
+    const report = evaluateStatus(inputs({ index: { ...inputs().index, bm25Incomplete: true, bm25FailedSessions: 12, bm25NextRetryAt: "2026-11-11T10:00:30.000Z" } }));
+    const problem = report.problems.find((p) => p.code === "bm25-rebuild-incomplete");
+    expect(problem?.message).toContain("12 sessions failed to load");
+    expect(problem?.message).toContain("next retry at 2026-11-11T10:00:30.000Z");
+    expect(problem?.fix).toMatch(/retries the failed loads in the background/);
+  });
+
   it("notes a pending vector backfill without raising the overall status", () => {
     const report = evaluateStatus(inputs({ index: { ...inputs().index, pendingVectorBackfill: 42 } }));
     expect(report.status).toBe("info");
