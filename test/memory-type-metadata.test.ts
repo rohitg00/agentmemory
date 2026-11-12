@@ -46,14 +46,23 @@ function fixture(saved: Memory, legacy = false, failMemoryReads = false) {
     bm25Score: 1, vectorScore: 0, graphScore: 0,
   }]);
   registerSmartSearchFunction(sdk as unknown as IIIClient, kv as unknown as StateKV, search);
-  return { call: (args: object) => handler(args), saved };
+  return { call: (args: object) => handler(args), saved, kv };
 }
 
 describe("original memory type metadata", () => {
-  it("keeps compact search working when the stored memory read fails", async () => {
+  it("skips stored-memory reads when the search index already carries memoryType", async () => {
     const f = fixture(memory("bug"), false, true);
+    const get = vi.spyOn(f.kv, "get");
     const compact = await f.call({ query: "Synthetic", agentId: "*", targetLayer: "memory", includeLessons: false });
     expect(compact.results[0]).toMatchObject({ obsId: f.saved.id, type: "decision", memoryType: "bug" });
+    expect(get).not.toHaveBeenCalledWith("mem:memories", f.saved.id);
+  });
+
+  it("keeps compact search working when a legacy index forces a stored-memory read that fails", async () => {
+    const f = fixture(memory("bug"), true, true);
+    const compact = await f.call({ query: "Synthetic", agentId: "*", targetLayer: "memory", includeLessons: false });
+    expect(compact.results[0]).toMatchObject({ obsId: f.saved.id, type: "decision" });
+    expect(compact.results[0]).not.toHaveProperty("memoryType");
   });
 
   it.each(types)("preserves %s without changing the observation type or input", (type) => {
