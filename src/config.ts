@@ -373,6 +373,24 @@ export function getFinalizeIdleMs(): number {
   return parseInt(raw.trim(), 10);
 }
 
+export const GRAPH_IMPORT_MAX_NODES_DEFAULT = 5000;
+export const GRAPH_IMPORT_MAX_EDGES_DEFAULT = 20000;
+
+function positiveIntEnv(key: string, fallback: number): number {
+  const raw = getMergedEnv()[key];
+  if (!raw || !/^\d+$/.test(raw.trim())) return fallback;
+  const parsed = parseInt(raw.trim(), 10);
+  return parsed > 0 ? parsed : fallback;
+}
+
+export function getGraphImportMaxNodes(): number {
+  return positiveIntEnv("AGENTMEMORY_GRAPH_IMPORT_MAX_NODES", GRAPH_IMPORT_MAX_NODES_DEFAULT);
+}
+
+export function getGraphImportMaxEdges(): number {
+  return positiveIntEnv("AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES", GRAPH_IMPORT_MAX_EDGES_DEFAULT);
+}
+
 export function isGraphCompactOnBootEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_GRAPH_COMPACT_ON_BOOT"] !== "false";
 }

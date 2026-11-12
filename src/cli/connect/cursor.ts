@@ -8,6 +8,7 @@ export const adapter = createJsonMcpAdapter({
   // Cursor speaks lifecycle hooks as well as MCP, so it groups with the
   // native hosts rather than the MCP-only ones.
   category: "native",
+  autoCapture: "plugin",
   detectDir: join(homedir(), ".cursor"),
   configPath: join(homedir(), ".cursor", "mcp.json"),
   docs: "https://github.com/rohitg00/agentmemory#cursor",

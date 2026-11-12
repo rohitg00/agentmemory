@@ -3,12 +3,14 @@ import { join } from "node:path";
 import { confinePath } from "./path-guard.js";
 import type { IIIClient } from "iii-sdk";
 import type { GraphEdge, GraphEdgeType, GraphNode, GraphNodeType } from "../types.js";
-import { KV, generateId } from "../state/schema.js";
+import { generateId } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { pinGraphState } from "../state/graph-generation.js";
 import { persistGraphDelta } from "./graph.js";
 import { recordAudit } from "./audit.js";
 import { logger } from "../logger.js";
+import { getGraphImportMaxEdges, getGraphImportMaxNodes } from "../config.js";
+import { getGraphIndexMigrationStatus } from "../state/graph-index-migration.js";
 
 // Import graphify's structural knowledge graph (graphify-out/graph.json) into
 // the memory graph, so context injection and graph retrieval see codebase
@@ -24,8 +26,6 @@ import { logger } from "../logger.js";
 // graphs (graphify caps graph.json at 512MiB; a 100k-node import would blow
 // the invocation window). Truncation is reported loudly in the result.
 const MAX_FILE_BYTES = 32 * 1024 * 1024;
-const MAX_NODES = 5000;
-const MAX_EDGES = 20000;
 
 // graphify file_type enum: code|document|paper|image|rationale|concept.
 // Mapped to the closest memory-graph node type; code symbols carrying a file
@@ -97,18 +97,32 @@ export type GraphifyImportResult = {
   edgesImported?: number;
   newNodes?: number;
   newEdges?: number;
+  mergedNodes?: number;
+  mergedEdges?: number;
   skippedEdges?: number;
-  truncated?: { nodes: number; edges: number } | null;
+  truncated?: boolean;
+  limits?: { nodes: number; edges: number };
+  droppedNodes?: number;
+  droppedEdges?: number;
+  graphIndex?: { state: string; ready: boolean; action?: string };
+  warnings?: string[];
 };
 
-export function parseGraphifyGraph(raw: string): {
+export type GraphifyImportLimits = { maxNodes: number; maxEdges: number };
+
+export function parseGraphifyGraph(
+  raw: string,
+  limits: GraphifyImportLimits = { maxNodes: getGraphImportMaxNodes(), maxEdges: getGraphImportMaxEdges() },
+): {
   nodes: GraphNode[];
   edges: GraphEdge[];
   nodesRead: number;
   edgesRead: number;
   skippedEdges: number;
-  truncated: { nodes: number; edges: number } | null;
+  droppedNodes: number;
+  droppedEdges: number;
 } {
+  const { maxNodes, maxEdges } = limits;
   const parsed = JSON.parse(raw) as RawGraph;
   const rawNodes = Array.isArray(parsed.nodes) ? parsed.nodes : [];
   // graphify's clustered output stores edges under "links" (NetworkX
@@ -120,12 +134,17 @@ export function parseGraphifyGraph(raw: string): {
       : [];
 
   const now = new Date().toISOString();
-  const truncatedNodes = Math.max(0, rawNodes.length - MAX_NODES);
-  const truncatedEdges = Math.max(0, rawEdges.length - MAX_EDGES);
+  const droppedNodes = Math.max(0, rawNodes.length - maxNodes);
+  let droppedEdges = Math.max(0, rawEdges.length - maxEdges);
+  const droppedIds = new Set<string>();
+  for (const entry of rawNodes.slice(maxNodes)) {
+    const id = entry && typeof entry === "object" ? (entry as Record<string, unknown>).id : undefined;
+    if (typeof id === "string" || typeof id === "number") droppedIds.add(String(id));
+  }
 
   const nodes: GraphNode[] = [];
   const byGraphifyId = new Map<string, GraphNode>();
-  for (const entry of rawNodes.slice(0, MAX_NODES)) {
+  for (const entry of rawNodes.slice(0, maxNodes)) {
     if (!entry || typeof entry !== "object") continue;
     const n = entry as Record<string, unknown>;
     const graphifyId = typeof n.id === "string" || typeof n.id === "number" ? String(n.id) : null;
@@ -154,7 +173,7 @@ export function parseGraphifyGraph(raw: string): {
 
   const edges: GraphEdge[] = [];
   let skippedEdges = 0;
-  for (const entry of rawEdges.slice(0, MAX_EDGES)) {
+  for (const entry of rawEdges.slice(0, maxEdges)) {
     if (!entry || typeof entry !== "object") {
       skippedEdges++;
       continue;
@@ -167,7 +186,8 @@ export function parseGraphifyGraph(raw: string): {
     if (!sourceNode || !targetNode) {
       // Endpoint outside the imported node set (dropped by the cap, or a
       // dangling reference in the file). Skipped, counted, never guessed.
-      skippedEdges++;
+      if ((source && droppedIds.has(source)) || (target && droppedIds.has(target))) droppedEdges++;
+      else skippedEdges++;
       continue;
     }
     edges.push({
@@ -187,10 +207,8 @@ export function parseGraphifyGraph(raw: string): {
     nodesRead: rawNodes.length,
     edgesRead: rawEdges.length,
     skippedEdges,
-    truncated:
-      truncatedNodes > 0 || truncatedEdges > 0
-        ? { nodes: truncatedNodes, edges: truncatedEdges }
-        : null,
+    droppedNodes,
+    droppedEdges,
   };
 }
 
@@ -230,12 +248,17 @@ export function registerGraphImportFunction(sdk: IIIClient, state: StateKV): voi
           };
         }
 
-        const parsed = parseGraphifyGraph(await readFile(path, "utf-8"));
+        const limits = { nodes: getGraphImportMaxNodes(), edges: getGraphImportMaxEdges() };
+        const parsed = parseGraphifyGraph(await readFile(path, "utf-8"), {
+          maxNodes: limits.nodes,
+          maxEdges: limits.edges,
+        });
         const { newNodeCount, newEdgeCount } = await persistGraphDelta(
           kv,
           parsed.nodes,
           parsed.edges,
         );
+        const truncated = parsed.droppedNodes > 0 || parsed.droppedEdges > 0;
 
         await recordAudit(kv, "import", "mem::graph::import-graphify", [], {
           path,
@@ -243,7 +266,39 @@ export function registerGraphImportFunction(sdk: IIIClient, state: StateKV): voi
           edgesImported: parsed.edges.length,
           newNodes: newNodeCount,
           newEdges: newEdgeCount,
+          droppedNodes: parsed.droppedNodes,
+          droppedEdges: parsed.droppedEdges,
         });
+
+        const warnings: string[] = [];
+        if (truncated) {
+          const message = `Import truncated: dropped ${parsed.droppedNodes} of ${parsed.nodesRead} nodes and ${parsed.droppedEdges} of ${parsed.edgesRead} edges over the limits (${limits.nodes} nodes, ${limits.edges} edges). Raise AGENTMEMORY_GRAPH_IMPORT_MAX_NODES or AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES and import again.`;
+          warnings.push(message);
+          logger.warn("graphify import truncated", {
+            path,
+            nodesRead: parsed.nodesRead,
+            edgesRead: parsed.edgesRead,
+            droppedNodes: parsed.droppedNodes,
+            droppedEdges: parsed.droppedEdges,
+            limits,
+          });
+        }
+
+        const index = await getGraphIndexMigrationStatus(state);
+        const graphIndex = {
+          state: index.state,
+          ready: index.ready,
+          ...(index.action ? { action: index.action } : {}),
+        };
+        if (!index.ready) {
+          warnings.push(
+            `Imported records are stored, but the graph index is not ready (${index.state}), so the viewer and graph queries cannot show them yet. ${index.action ?? "Run agentmemory graph-index status."}`,
+          );
+          logger.warn("graphify import stored but graph index is not ready", {
+            path,
+            graphIndex: index.state,
+          });
+        }
 
         logger.info("graphify graph imported", {
           path,
@@ -262,8 +317,15 @@ export function registerGraphImportFunction(sdk: IIIClient, state: StateKV): voi
           edgesImported: parsed.edges.length,
           newNodes: newNodeCount,
           newEdges: newEdgeCount,
+          mergedNodes: parsed.nodes.length - newNodeCount,
+          mergedEdges: parsed.edges.length - newEdgeCount,
           skippedEdges: parsed.skippedEdges,
-          truncated: parsed.truncated,
+          truncated,
+          limits,
+          droppedNodes: parsed.droppedNodes,
+          droppedEdges: parsed.droppedEdges,
+          graphIndex,
+          ...(warnings.length > 0 ? { warnings } : {}),
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
