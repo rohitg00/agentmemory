@@ -185,6 +185,14 @@ export class Bindings {
     const reasons = new Set(this.reasons);
     if (modes.state === "pending" && this.handlesOf("state").length > 0) reasons.add("state::on-changed observers pending until the state worker connects");
     if (modes.http === "pending" && this.handlesOf("http").length > 0) reasons.add("http::on-request observers pending until the http worker connects");
+    for (const kind of ["state", "http"] as const) {
+      if (modes[kind] !== "observe") continue;
+      const handles = this.handlesOf(kind);
+      const inactive = handles.filter((handle) => handle.state !== "active");
+      if (inactive.length === 0) continue;
+      const states = [...new Set(inactive.map((handle) => handle.state))].join(", ");
+      reasons.add(`${inactive.length} of ${handles.length} ${kind} observers are not active (${states})`);
+    }
     return {
       ...modes,
       pipeline: this.pipeline,

@@ -140,6 +140,18 @@ describe("Bindings", () => {
     expect(await settled).toEqual({ state: "observe", http: "observe" });
   });
 
+  it("reports observers that stay inactive while others of the same provider are active", () => {
+    const sdk = fakeSdk("pending");
+    const b = new Bindings(sdk as never);
+    b.http(ROUTE);
+    b.http({ ...ROUTE, config: { ...ROUTE.config, api_path: "/agentmemory/other" } });
+    sdk.handles[0].become("active");
+    expect(b.modes.http).toBe("observe");
+    expect(b.describe().reasons).toEqual(["1 of 2 http observers are not active (pending)"]);
+    sdk.handles[1].become("active");
+    expect(b.describe().reasons).toEqual([]);
+  });
+
   it("activate resolves with pending modes after the deadline and reports why", async () => {
     vi.useFakeTimers();
     try {
