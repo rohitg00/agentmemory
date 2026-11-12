@@ -57,6 +57,10 @@ export type DoctorContext = {
 
 export type DoctorWorkerConnection = WorkerConnection | "managed-worker-down";
 
+function managedEngineRunningMessage(targetArgs = ""): string {
+  return `A managed agentmemory engine is running from the iii binary the installer would replace. Run agentmemory stop${targetArgs} first, then run the fix again.`;
+}
+
 export type Diagnostic = {
   /** Stable id. Used in --json and tests. */
   id: string;
@@ -157,6 +161,7 @@ export type DoctorEffects = {
   /** Run `iii --version`; null if it fails. */
   iiiBinaryVersion: (binPath: string) => string | null;
   externalEngineRunning: () => Promise<boolean>;
+  managedEngineRunning: () => Promise<boolean>;
   workerConnection: () => Promise<DoctorWorkerConnection>;
   /** Probe the viewer URL; true if it returns OK within timeoutMs. */
   viewerReachable: (timeoutMs?: number) => Promise<boolean>;
@@ -295,9 +300,12 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
           detail: `${pathVersion} (pinned ${ctx.pinnedVersion})`,
         };
       },
-      fix: async () => {
+      fix: async (ctx) => {
         if (await effects.externalEngineRunning()) {
           return { ok: false, message: "Verify or stop the external engine manually." };
+        }
+        if (await effects.managedEngineRunning()) {
+          return { ok: false, message: managedEngineRunningMessage(ctx.targetArgs) };
         }
         const r = await effects.runIiiInstaller();
         if (!r.ok) return r;
@@ -450,13 +458,17 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         }
         return { ok: false, detail };
       },
-      fix: async () =>
-        effects.runIiiInstaller().then((r) => ({
+      fix: async (ctx) => {
+        if (await effects.managedEngineRunning()) {
+          return { ok: false, message: managedEngineRunningMessage(ctx.targetArgs) };
+        }
+        return effects.runIiiInstaller().then((r) => ({
           ok: r.ok,
           message:
             r.message ??
             "Installer wrote to ~/.agentmemory/bin/iii. Your PATH wasn't modified.",
-        })),
+        }));
+      },
     },
     {
       id: "duplicate-workers",

@@ -150,4 +150,35 @@ describe("fresh native engine startup", () => {
       'if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign")',
     );
   });
+
+  it("records the launched engine version next to the worker versions in the Compose state", () => {
+    const start = source.indexOf("async function startIiiBin");
+    const body = source.slice(start, source.indexOf("function pickCompatibleIii", start));
+    expect(body).toContain("const engineVersion = iiiBinVersion(iiiBin);");
+    expect(body).toContain("...(engineVersion ? { engineVersion } : {}),");
+    expect(body).toContain("workerVersions: workerBinDir ? { local: true } : COMPOSE_WORKER_VERSIONS,");
+  });
+
+  it("refuses to adopt a running Compose project whose persisted engine or workers are stale", () => {
+    const reconcileStart = source.indexOf("async function reconcilePersistedComposeEngine");
+    const reconcileBody = source.slice(reconcileStart, source.indexOf("async function main()", reconcileStart));
+    const staleCheck = reconcileBody.indexOf("const staleRuntime = composeRuntimeVersionMismatch(state, IIPINNED_VERSION);");
+    expect(staleCheck).toBeGreaterThan(-1);
+    expect(staleCheck).toBeLessThan(reconcileBody.indexOf("compose::status"));
+    expect(reconcileBody).toMatch(/if \(staleRuntime\) \{\s*p\.log\.error\(`The running managed Compose engine\/workers are an older version: \$\{staleRuntime\}\. Run agentmemory stop[^`]*`\);\s*process\.exit\(1\);/);
+  });
+
+  it("refuses to upgrade while a managed engine is running, before touching dependencies or the installer", () => {
+    const start = source.indexOf("async function runUpgrade");
+    const body = source.slice(start, source.indexOf("\nfunction pidAlive", start));
+    const guard = body.indexOf("if (await managedComposeEngineRunning()) {");
+    expect(guard).toBeGreaterThan(-1);
+    expect(guard).toBeLessThan(body.indexOf("runCommand("));
+    expect(guard).toBeLessThan(body.indexOf("await runIiiInstaller()"));
+    expect(body.slice(guard, body.indexOf("}", guard))).toContain("process.exit(1);");
+    expect(body.slice(guard, body.indexOf("}", guard))).toContain("run agentmemory stop first");
+    const helper = source.slice(source.indexOf("async function managedComposeEngineRunning"), source.indexOf("async function main()"));
+    expect(helper).toContain('if (state?.kind !== "compose") return false;');
+    expect(source).toContain("managedEngineRunning: managedComposeEngineRunning,");
+  });
 });

@@ -44,6 +44,7 @@ function stubEffects(overrides: Partial<DoctorEffects> = {}): DoctorEffects {
     localBinIiiPath: () => "/Users/test/.local/bin/iii",
     iiiBinaryVersion: () => III_PINNED_VERSION,
     externalEngineRunning: async () => false,
+    managedEngineRunning: async () => false,
     workerConnection: async () => "connected",
     viewerReachable: async () => true,
     runInit: async () => ({ ok: true, message: "wrote .env" }),
@@ -414,6 +415,26 @@ describe("doctor v2 diagnostic catalog", () => {
     expect(fixResult.ok).toBe(true);
     const after = await check.check(stubCtx());
     expect(after.ok).toBe(true);
+  });
+
+  it("refuses to run the installer while a managed engine is running", async () => {
+    const install = vi.fn(async () => ({ ok: true }));
+    const stop = vi.fn(async () => ({ ok: true }));
+    const start = vi.fn(async () => ({ ok: true }));
+    const diagnostics = buildDiagnostics(stubEffects({
+      managedEngineRunning: async () => true,
+      runIiiInstaller: install,
+      runStop: stop,
+      runStart: start,
+    }));
+    for (const id of ["engine-version-mismatch", "iii-on-path-not-local-bin"]) {
+      const result = await diagnostics.find((d) => d.id === id)!.fix(stubCtx({ targetArgs: " --port 3211" }));
+      expect(result.ok).toBe(false);
+      expect(result.message).toContain("agentmemory stop --port 3211 first");
+    }
+    expect(install).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+    expect(start).not.toHaveBeenCalled();
   });
 
   it("does not infer an external engine version from a pinned private install", async () => {

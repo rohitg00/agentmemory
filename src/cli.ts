@@ -103,7 +103,7 @@ import { runCaptureCommand } from "./cli/capture.js";
 import { runCompressionCommand } from "./cli/compression.js";
 import { runGraphIndexCommand } from "./cli/graph-index.js";
 import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
-import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
+import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeRuntimeVersionMismatch, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
 import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
 import { DEFAULT_START_COMMAND, engineOnlyLines, probeWorkerConnection, shellArg, tcpPortOpen, unrecognizedServiceLines, type WorkerConnection } from "./cli/worker-connection.js";
@@ -643,6 +643,7 @@ type ComposeEngineState = {
   logFile: string;
   logStartOffset?: number;
   binPath: string;
+  engineVersion?: string;
   composePid?: number;
   enginePid?: number;
   workerBinDir?: string;
@@ -1274,6 +1275,7 @@ async function startIiiBin(iiiBin: string): Promise<boolean> {
   spawnedComposeDaemon = compose.child;
   composeStartupCompleted = false;
   if (typeof compose.child.pid !== "number") throw new Error("Failed to spawn the iii Compose daemon.");
+  const engineVersion = iiiBinVersion(iiiBin);
   const state = {
     kind: "compose" as const,
     restPort: getRestPort(),
@@ -1286,6 +1288,7 @@ async function startIiiBin(iiiBin: string): Promise<boolean> {
     logFile: compose.logFile,
     logStartOffset: compose.logStartOffset,
     binPath: iiiBin,
+    ...(engineVersion ? { engineVersion } : {}),
     composePid: compose.child.pid,
     ...(workerBinDir ? { workerBinDir: resolve(process.cwd(), workerBinDir) } : {}),
   };
@@ -1583,6 +1586,11 @@ async function reconcilePersistedComposeEngine(): Promise<boolean> {
     p.log.error(`Compose metadata points to PID ${state.composePid}, but its process identity does not match the saved engine/file/namespace.`);
     process.exit(1);
   }
+  const staleRuntime = composeRuntimeVersionMismatch(state, IIPINNED_VERSION);
+  if (staleRuntime) {
+    p.log.error(`The running managed Compose engine/workers are an older version: ${staleRuntime}. Run agentmemory stop before changing the runtime.`);
+    process.exit(1);
+  }
   if (version !== IIPINNED_VERSION) {
     p.log.error(`Managed Compose engine is ${version ?? "unverified"}; expected ${IIPINNED_VERSION}. Run agentmemory stop before changing the runtime.`);
     process.exit(1);
@@ -1595,6 +1603,13 @@ async function reconcilePersistedComposeEngine(): Promise<boolean> {
     process.exit(1);
   }
   return true;
+}
+
+async function managedComposeEngineRunning(): Promise<boolean> {
+  const state = readEngineState();
+  if (state?.kind !== "compose") return false;
+  if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign") return true;
+  return isEngineRunning();
 }
 
 async function main() {
@@ -2173,6 +2188,7 @@ function buildDoctorEffects(): DoctorEffects {
     },
     iiiBinaryVersion: (binPath: string) => iiiBinVersion(binPath),
     externalEngineRunning: async () => !doctorTargetsManagedCompose() && await isEngineRunning(),
+    managedEngineRunning: managedComposeEngineRunning,
     workerConnection: async () => {
       const connection = await probeTargetWorker(getBaseUrl());
       if (connection === "connected" || connection === "unreachable") return connection;
@@ -2976,6 +2992,11 @@ function runCommand(
 
 async function runUpgrade() {
   p.intro("agentmemory upgrade");
+
+  if (await managedComposeEngineRunning()) {
+    p.log.error("A managed agentmemory engine is running. Upgrade replaces its iii binary and pinned workers, so run agentmemory stop first, then run agentmemory upgrade again.");
+    process.exit(1);
+  }
 
   const cwd = process.cwd();
   const hasPackageJson = existsSync(join(cwd, "package.json"));
