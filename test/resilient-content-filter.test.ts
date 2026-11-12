@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ResilientProvider, isPayloadRejection } from "../src/providers/resilient.js";
 import type { MemoryProvider } from "../src/types.js";
 
@@ -102,5 +102,33 @@ describe("ResilientProvider — content filter vs circuit breaker", () => {
 
     expect(provider.circuitState.state).toBe("open");
     await expect(provider.compress("sys", "x")).rejects.toThrow("circuit_breaker_open");
+  });
+
+  it("releases a half-open probe rejected by the content filter so the next call can probe", async () => {
+    vi.useFakeTimers();
+    try {
+      let mode: "down" | "filter" | "ok" = "down";
+      const provider = new ResilientProvider({
+        name: "stub",
+        async compress() {
+          if (mode === "down") throw new Error("OpenAI API error (503): upstream down");
+          if (mode === "filter") throw CONTENT_FILTER_ERROR;
+          return "<observation/>";
+        },
+        async summarize() {
+          return "<summary/>";
+        },
+      } as MemoryProvider);
+      for (let i = 0; i < 3; i++) await expect(provider.compress("sys", "x")).rejects.toThrow(/503/);
+      expect(provider.circuitState.state).toBe("open");
+      vi.advanceTimersByTime(30_000);
+      mode = "filter";
+      await expect(provider.compress("sys", "bad")).rejects.toThrow(/content_filter/);
+      mode = "ok";
+      await expect(provider.compress("sys", "fine")).resolves.toBe("<observation/>");
+      expect(provider.circuitState.state).toBe("closed");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

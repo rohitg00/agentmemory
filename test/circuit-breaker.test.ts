@@ -178,6 +178,52 @@ describe("CircuitBreaker", () => {
     expect(cb.getState().state).toBe("half-open");
   });
 
+  it("lets only one probe through while half-open", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    expect(cb.isAllowed).toBe(true);
+    expect(cb.isAllowed).toBe(false);
+    expect(cb.isAllowed).toBe(false);
+    cb.recordSuccess();
+    expect(cb.getState().state).toBe("closed");
+    expect(cb.isAllowed).toBe(true);
+    expect(cb.isAllowed).toBe(true);
+  });
+
+  it("reopens with a fresh openedAt when the probe fails", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    expect(cb.isAllowed).toBe(true);
+    const probeAt = Date.now();
+    cb.recordFailure();
+    expect(cb.getState().state).toBe("open");
+    expect(cb.getState().openedAt).toBe(probeAt);
+    expect(cb.isAllowed).toBe(false);
+    vi.advanceTimersByTime(30_000);
+    expect(cb.isAllowed).toBe(true);
+    expect(cb.isAllowed).toBe(false);
+  });
+
+  it("releases a probe that never reports a result after the recovery timeout", () => {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    expect(cb.isAllowed).toBe(true);
+    vi.advanceTimersByTime(29_999);
+    expect(cb.isAllowed).toBe(false);
+    vi.advanceTimersByTime(1);
+    expect(cb.isAllowed).toBe(true);
+    expect(cb.isAllowed).toBe(false);
+  });
+
   it("still opens after consecutive failures with no success between them", () => {
     const cb = new CircuitBreaker();
     cb.recordSuccess();
@@ -187,5 +233,68 @@ describe("CircuitBreaker", () => {
     }
     expect(cb.getState().state).toBe("open");
     expect(cb.isAllowed).toBe(false);
+  });
+
+  function openAndExpireFirstProbe() {
+    const cb = new CircuitBreaker();
+    cb.recordFailure();
+    cb.recordFailure();
+    cb.recordFailure();
+    vi.advanceTimersByTime(30_000);
+    const first = cb.admit();
+    vi.advanceTimersByTime(30_000);
+    const second = cb.admit();
+    return { cb, first: first!, second: second! };
+  }
+
+  it("ignores a late failure from an expired probe while its replacement runs", () => {
+    const { cb, first, second } = openAndExpireFirstProbe();
+    expect(second).toBeGreaterThan(first);
+    cb.recordFailure(first);
+    expect(cb.getState().state).toBe("half-open");
+    cb.recordSuccess(second);
+    expect(cb.getState().state).toBe("closed");
+  });
+
+  it("ignores a late success from an expired probe", () => {
+    const { cb, first, second } = openAndExpireFirstProbe();
+    cb.recordSuccess(first);
+    expect(cb.getState().state).toBe("half-open");
+    expect(cb.admit()).toBeNull();
+    cb.recordFailure(second);
+    expect(cb.getState().state).toBe("open");
+  });
+
+  it("ignores an expired probe outcome after the current probe closed the breaker", () => {
+    const { cb, first, second } = openAndExpireFirstProbe();
+    cb.recordSuccess(second);
+    cb.recordFailure(first);
+    cb.recordFailure(first);
+    cb.recordFailure(first);
+    expect(cb.getState()).toMatchObject({ state: "closed", failures: 0 });
+  });
+
+  it("releaseProbe frees only the current half-open probe without changing counters", () => {
+    vi.useFakeTimers();
+    try {
+      const cb = new CircuitBreaker({ failureThreshold: 1, recoveryTimeoutMs: 1000 });
+      cb.recordFailure(cb.admit()!);
+      vi.advanceTimersByTime(1000);
+      const probe = cb.admit()!;
+      expect(cb.admit()).toBeNull();
+      cb.releaseProbe(probe + 1);
+      expect(cb.admit()).toBeNull();
+      cb.releaseProbe(probe);
+      expect(cb.getState().state).toBe("half-open");
+      expect(cb.admit()).toBe(probe + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("counts closed-state call outcomes as before", () => {
+    const cb = new CircuitBreaker();
+    for (let i = 0; i < 3; i++) cb.recordFailure(cb.admit()!);
+    expect(cb.getState().state).toBe("open");
   });
 });
