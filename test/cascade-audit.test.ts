@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
 import { registerCascadeFunctions, failureCounters, flushDeleteCascade } from "../src/functions/cascade-audit.js";
 import { registerPipelineObservers } from "../src/runtime/pipeline-observers.js";
 import { getBindings } from "../src/runtime/bindings.js";
@@ -160,6 +161,33 @@ describe("mem::on-record-deleted", () => {
     expect(kv.store[KV.facets].has("f3")).toBe(true);
     expect(kv.store[KV.facets].has("f1")).toBe(false);
   });
+
+  it("keeps index entries when the key was restored before the delete delivery ran", async () => {
+    const sdk = fakeFns();
+    const kv = memoryKv({
+      [KV.memories]: new Map([["m1", { id: "m1" }]]),
+      [KV.lessons]: new Map([["l1", { id: "l1", deleted: true }]]),
+      [KV.facets]: new Map(),
+    });
+    registerCascadeFunctions(sdk as never, kv as never);
+    const fn = sdk.functions.get("mem::on-record-deleted")!;
+    const r = await fn({ event_type: "state:deleted", scope: KV.memories, key: "m1" });
+    expect(r).toMatchObject({ restored: "m1" });
+    expect(removedBm25).not.toContain("m1");
+    expect(removedVector).not.toContain("m1");
+    await fn({ scope: KV.lessons, key: "l1", event_type: "state:updated", new_value: { deleted: true }, old_value: { deleted: false } });
+    expect(removedBm25).toContain("l1");
+    expect(removedVector).toContain("l1");
+    await flushDeleteCascade();
+  });
+
+  it("worker shutdown drains queued delete cascades before the SDK shuts down", () => {
+    const src = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
+    const body = src.slice(src.indexOf("const shutdown = async"));
+    const drain = body.indexOf("flushDeleteCascade()");
+    expect(drain).toBeGreaterThan(0);
+    expect(drain).toBeLessThan(body.indexOf("sdk.shutdown()"));
+  });
 });
 
 describe("event::graph::edge-reaction", () => {
@@ -260,6 +288,54 @@ describe("event::graph::edge-reaction", () => {
     expect(audits.find((a) => (a.details as { skipped?: string }).skipped === "cycle")).toBeTruthy();
   });
 
+  it("supersedes cycle guard rejects a three-relation cycle", async () => {
+    const { kv, fn } = seeded();
+    kv.store[KV.memories].set("c", { ...base, id: "c" });
+    await fn(created("rA"));
+    await fn(created("rB", { sourceId: "c", targetId: "src" }));
+    const r = await fn(created("rC", { sourceId: "tgt", targetId: "c" }));
+    expect(r).toMatchObject({ skipped: "cycle" });
+    expect((kv.store[KV.memories].get("c") as Memory).isLatest).toBe(true);
+  });
+
+  it("a failed mark write after the memory write does not apply the reaction twice on retry", async () => {
+    const { kv, fn } = seeded();
+    const realSet = kv.set.getMockImplementation()!;
+    let armed = true;
+    kv.set.mockImplementation(async (scope: string, key: string, v: unknown) => {
+      if (armed && scope === KV.relationReactions && !(v as { pending?: unknown }).pending) {
+        armed = false;
+        throw new Error("state worker restarting");
+      }
+      return realSet(scope, key, v);
+    });
+    await expect(fn(created("rA"))).rejects.toThrow("state worker restarting");
+    const r = await fn(created("rA"));
+    expect(r).toMatchObject({ skipped: "already_applied" });
+    expect(mem(kv).strength).toBeCloseTo(0.5);
+    expect(mark(kv)).toMatchObject({ strengthBefore: 1, isLatestBefore: true });
+    expect(mark(kv)?.pending).toBeUndefined();
+    await fn(deleted("rA"));
+    expect(mem(kv).strength).toBeCloseTo(1);
+    expect(mem(kv).isLatest).toBe(true);
+  });
+
+  it("a pending mark whose memory write was lost is completed by the next delivery", async () => {
+    const { kv, fn } = seeded({
+      "tgt:supersedes": {
+        targetId: "tgt", type: "supersedes", sources: { rA: "src" }, isLatestBefore: true, strengthBefore: 1,
+        firstAppliedAt: rel.createdAt, lastAppliedAt: rel.createdAt,
+        pending: { target: { isLatest: false, strength: 0.5, confidence: 0.8, relatedIds: ["pre"] }, removeMark: false },
+      },
+    });
+    const r = await fn(created("rA"));
+    expect(r).toMatchObject({ skipped: "already_applied" });
+    expect(mem(kv).strength).toBeCloseTo(0.5);
+    expect(mem(kv).isLatest).toBe(false);
+    expect(mark(kv)?.pending).toBeUndefined();
+    expect(mark(kv)).toMatchObject({ strengthBefore: 1 });
+  });
+
   it("extends: undo removes only the added ids", async () => {
     const { kv, fn } = seeded();
     await fn(created("rA", { type: "extends" }));
@@ -332,8 +408,8 @@ describe("delete cascade batcher resilience", () => {
   it("retries facet cleanup for a target whose read failed", async () => {
     const { kv, fn } = seededDelete();
     kv.store[KV.facets].set("f1", { id: "f1", targetId: "m1", targetType: "memory", dimension: "d", value: "v", createdAt: "t" });
-    kv.get.mockRejectedValueOnce(new Error("state worker restarting"));
     await fn({ event_type: "state:deleted", scope: KV.memories, key: "m1" });
+    kv.get.mockRejectedValueOnce(new Error("state worker restarting"));
     await flushDeleteCascade();
     expect(kv.store[KV.facets].has("f1")).toBe(true);
     await flushDeleteCascade();

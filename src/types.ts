@@ -10,6 +10,10 @@ export interface RelationReactionMark {
   relatedIdsAdded?: string[];
   firstAppliedAt: string;
   lastAppliedAt: string;
+  pending?: {
+    target: Pick<Memory, "isLatest" | "strength" | "confidence" | "relatedIds">;
+    removeMark: boolean;
+  };
 }
 
 export interface GraphExtractMark {

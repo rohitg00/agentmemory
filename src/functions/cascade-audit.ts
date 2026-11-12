@@ -129,6 +129,58 @@ function contradictFloor(base: number, penalties: Record<string, number>): numbe
 
 const KIND_TARGET_TYPE: Record<string, string | null> = { memory: "memory", observation: "observation", lesson: "memory" };
 
+const SUPERSEDES_WALK_MAX = 1000;
+
+async function supersedesReaches(kv: StateKV, fromId: string, toId: string): Promise<boolean> {
+  const seen = new Set<string>([fromId]);
+  const frontier = [fromId];
+  while (frontier.length > 0 && seen.size <= SUPERSEDES_WALK_MAX) {
+    const id = frontier.shift()!;
+    const mark = await kv.get<RelationReactionMark>(KV.relationReactions, `${id}:supersedes`);
+    for (const sourceId of Object.values(mark?.sources ?? {})) {
+      if (sourceId === toId) return true;
+      if (seen.has(sourceId)) continue;
+      seen.add(sourceId);
+      frontier.push(sourceId);
+    }
+  }
+  return false;
+}
+
+async function commitReaction(
+  kv: StateKV,
+  targetId: string,
+  target: Memory,
+  markKey: string,
+  mark: RelationReactionMark,
+  removeMark: boolean,
+): Promise<void> {
+  const { isLatest, strength, confidence, relatedIds } = target;
+  await kv.set(KV.relationReactions, markKey, { ...mark, pending: { target: { isLatest, strength, confidence, relatedIds }, removeMark } });
+  await kv.set(KV.memories, targetId, target);
+  if (removeMark) await kv.delete(KV.relationReactions, markKey);
+  else await kv.set(KV.relationReactions, markKey, mark);
+}
+
+async function settlePendingReaction(
+  kv: StateKV,
+  targetId: string,
+  target: Memory,
+  markKey: string,
+  mark: RelationReactionMark,
+): Promise<RelationReactionMark | null> {
+  const { pending, ...settled } = mark;
+  if (!pending) return mark;
+  Object.assign(target, pending.target);
+  await kv.set(KV.memories, targetId, target);
+  if (pending.removeMark) {
+    await kv.delete(KV.relationReactions, markKey);
+    return null;
+  }
+  await kv.set(KV.relationReactions, markKey, settled);
+  return settled;
+}
+
 export async function flushDeleteCascade(): Promise<void> {
   if (!deleteFlusher) return;
   await deleteFlusher();
@@ -220,16 +272,20 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     return { recorded: true, code, retryable };
   });
 
-  registerObserverTarget(sdk, "mem::on-record-deleted", "input", (event: Record<string, unknown>): Promise<Record<string, unknown>> => {
+  registerObserverTarget(sdk, "mem::on-record-deleted", "input", async (event: Record<string, unknown>): Promise<Record<string, unknown>> => {
     const scope = String(event.scope ?? "");
     const id = String(event.key ?? "");
-    if (!id) return Promise.resolve({ skipped: "no_key" });
-    try { getSearchIndex().remove(id); } catch {}
-    try { vectorIndexRemove(id); } catch {}
+    if (!id) return { skipped: "no_key" };
+    const current = await kv.get<{ deleted?: boolean }>(scope, id).catch(() => null);
+    const restored = current !== null && current.deleted !== true;
+    if (!restored) {
+      try { getSearchIndex().remove(id); } catch {}
+      try { vectorIndexRemove(id); } catch {}
+    }
     const sessionId = scope.startsWith("mem:obs:") ? scope.slice("mem:obs:".length) : undefined;
     const kind = sessionId ? "observation" : scope === KV.lessons ? "lesson" : "memory";
     queueDeleteCascade({ id, kind, sessionId });
-    return Promise.resolve({ removed: id, queued: true });
+    return restored ? { restored: id, queued: true } : { removed: id, queued: true };
   });
 
   registerObserverTarget(sdk, "event::graph::edge-reaction", "input", async (event: Record<string, unknown>) => {
@@ -246,14 +302,14 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
         });
         return { skipped: "missing_target" as const };
       }
-      const mark = await kv.get<RelationReactionMark>(KV.relationReactions, markKey);
+      const stored = await kv.get<RelationReactionMark>(KV.relationReactions, markKey);
+      const mark = stored ? await settlePendingReaction(kv, rel.targetId, target, markKey, stored) : null;
       if (!deleted) {
         if (mark?.sources && Object.hasOwn(mark.sources, relationId)) {
           return { skipped: "already_applied" as const, relationId };
         }
         if (rel.type === "supersedes") {
-          const reverseMark = await kv.get<RelationReactionMark>(KV.relationReactions, `${rel.sourceId}:supersedes`);
-          if (reverseMark && Object.values(reverseMark.sources).includes(rel.targetId)) {
+          if (await supersedesReaches(kv, rel.sourceId, rel.targetId)) {
             await recordAudit(kv, "relation_reaction", "event::graph::edge-reaction", [rel.targetId, rel.sourceId], {
               skipped: "cycle", type: rel.type, relationId,
             });
@@ -298,8 +354,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
         } else {
           return { skipped: "unsupported_type" as const };
         }
-        await kv.set(KV.memories, rel.targetId, target);
-        await kv.set(KV.relationReactions, markKey, next);
+        await commitReaction(kv, rel.targetId, target, markKey, next, false);
         return { reacted: true as const, contributors: Object.keys(next.sources).length };
       }
       if (!mark || !Object.hasOwn(mark.sources, relationId)) {
@@ -313,8 +368,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
         target.confidence = Math.min(1, (target.confidence ?? mark.contradictBase) + after - before);
       }
       if (Object.keys(mark.sources).length > 0) {
-        await kv.set(KV.memories, rel.targetId, target);
-        await kv.set(KV.relationReactions, markKey, mark);
+        await commitReaction(kv, rel.targetId, target, markKey, mark, false);
         return { unreacted: false as const, remaining: Object.keys(mark.sources).length };
       }
       const restoredLatest = mark.isLatestBefore !== undefined && target.isLatest !== true && mark.isLatestBefore === true;
@@ -334,8 +388,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
         const added = new Set(mark.relatedIdsAdded);
         target.relatedIds = (target.relatedIds ?? []).filter((id) => !added.has(id));
       }
-      await kv.set(KV.memories, rel.targetId, target);
-      await kv.delete(KV.relationReactions, markKey);
+      await commitReaction(kv, rel.targetId, target, markKey, mark, true);
       return { unreacted: true as const };
     });
     const skip = (result as { skipped?: string }).skipped;

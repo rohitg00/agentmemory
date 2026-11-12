@@ -141,7 +141,7 @@ import { registerPipelineObservers } from "./runtime/pipeline-observers.js";
 import { registerPostSessionFunctions } from "./functions/post-session.js";
 import { registerCompressionSweepFunction } from "./functions/compression-sweep.js";
 import { registerCascadeFunction } from "./functions/cascade.js";
-import { registerCascadeFunctions } from "./functions/cascade-audit.js";
+import { flushDeleteCascade, registerCascadeFunctions } from "./functions/cascade-audit.js";
 import { compressionSweepMs } from "./config.js";
 import { ensureServerSecret, explicitSecret, secretFilePath } from "./secret-store.js";
 import { mkdirSync, writeFileSync, unlinkSync } from "node:fs";
@@ -913,6 +913,7 @@ async function main() {
     capture.stop();
     stopKeywordRebuildRetry();
     clearInterval(sessionFinalizeTimer);
+    await settleWithin(flushDeleteCascade().catch(() => {}), SHUTDOWN_FLUSH_TIMEOUT_MS);
     await settleWithin(graphIndexMigration.stop(), SHUTDOWN_FLUSH_TIMEOUT_MS);
     indexPersistence.stop();
     const viewerClosed = new Promise<void>((resolve) =>
