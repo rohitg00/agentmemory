@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { toCommandPath } from "./util.js";
 
 type HookHandler = { type: string; command?: string; args?: string[]; [key: string]: unknown };
 type HookEntry = { matcher?: string; hooks: HookHandler[] };
@@ -86,7 +87,7 @@ export function buildMergedHooks(
 }
 
 function withPluginRoot(value: string | undefined, pluginRoot: string): string | undefined {
-  return value?.replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, () => pluginRoot);
+  return value?.replace(/\$\{CLAUDE_PLUGIN_ROOT\}/g, () => toCommandPath(pluginRoot));
 }
 
 function isAgentmemoryHandler(handler: HookHandler, scriptsDir: string): boolean {
