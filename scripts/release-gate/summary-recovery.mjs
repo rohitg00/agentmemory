@@ -39,7 +39,7 @@ const began = Date.now(), sessionId = "summary-recovery-session", project = "sum
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const sha = (file) => createHash("sha256").update(readFileSync(file)).digest("hex");
 let port, modelPort, modelServer, secret, installed, packageBefore, boot = 0;
-let heldCompression = null, failSummary = false, phase = "setup";
+let heldCompression = null, failSummary = false, autoCompress = true, phase = "setup";
 const markers = { BASE: "RECOVERED_BASE_COBALT", FINAL: "RECOVERED_FINAL_JUNIPER", LATE: "RECOVERED_LATE_QUARTZ" };
 const truncation = { session: "truncated-reasoning-session", accepted: "TRUNCATION_ACCEPTED_SAGE", marker: "TRUNCATED_REASONING_ONYX" };
 function log(message) {
@@ -64,7 +64,7 @@ function cleanEnv() {
     AGENTMEMORY_DATA_DIR: dataDir, AGENTMEMORY_RUNTIME_DIR: runtime,
     III_REST_PORT: String(port), III_VIEWER_PORT: String(port + 2),
     III_ENGINE_PORT: String(port + 46023), AGENTMEMORY_METRICS_PORT: String(port + 6353), AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
-    EMBEDDING_PROVIDER: "none", AGENTMEMORY_AUTO_COMPRESS: "true", AGENTMEMORY_FINALIZE_IDLE_MS: "0",
+    EMBEDDING_PROVIDER: "none", AGENTMEMORY_AUTO_COMPRESS: String(autoCompress), AGENTMEMORY_FINALIZE_IDLE_MS: "0",
     AGENTMEMORY_SESSION_SWEEP_ENABLED: "false", GRAPH_EXTRACTION_ENABLED: "false", CONSOLIDATION_ENABLED: "false", AGENTMEMORY_REFLECT: "false",
     AGENTMEMORY_LLM_PROVIDER: "openai", OPENAI_API_KEY: "summary-gate-synthetic-key", OPENAI_BASE_URL: `http://127.0.0.1:${modelPort}`,
     OPENAI_MODEL: "summary-recovery-fixture", OPENAI_TIMEOUT_MS: "60000",
@@ -282,7 +282,18 @@ async function main() {
     const pending = observations(before).find((row) => row.compression?.status === "pending");
     assert(pending && JSON.stringify(pending.source).includes("GATE_INPUT_FINAL"), "Pending compression lost retained raw source");
     assert(!summaryFor(before)?.narrative.includes(markers.FINAL), "Final marker must require the blocked provider result");
-    await crashDaemon(); heldCompression = null; await startDaemon();
+    await crashDaemon(); heldCompression = null; autoCompress = false;
+    const callsBeforeDisabledBoot = modelRequests.length;
+    await startDaemon();
+    const disabledAtStartup = await snapshot("at-disabled-compression-restart");
+    // Cross an ordinary recovery tick with the configured provider still available.
+    await sleep(35_000);
+    const disabled = await snapshot("after-disabled-compression-restart");
+    assert.equal(modelRequests.length, callsBeforeDisabledBoot, "Disabled automatic compression must not retry pending observations or summarize incomplete work");
+    assert.deepEqual(observations(disabled).find((row) => row.id === pending.id), pending, "Disabled recovery must retain the pending observation and its source");
+    assert.equal(observations(disabled).length, 2);
+    assert.deepEqual(summaryFor(disabled), summaryFor(disabledAtStartup));
+    await crashDaemon(); autoCompress = true; await startDaemon();
     await waitSummary([markers.BASE, markers.FINAL]);
     const after = await snapshot("after-compression-restart");
     assert.equal(observations(after).length, 2); assert.equal(summaryFor(after).observationCount, 2);
