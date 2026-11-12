@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-verktyg" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automatiska hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 externa databaser" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ godkända tester" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ godkända tester" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -431,7 +431,7 @@ Använd underhållskommandot när du avsiktligt vill uppdatera din lokala körti
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Kommandot uppdaterar den lokala körtiden och kan uppdatera JavaScript-beroenden i den aktuella arbetsytan. Säkerhetskopiera dina data och läs [uppgraderingsguiden](../docs/upgrades/iii-0.26.md) innan du fortsätter.
+Kommandot uppdaterar den lokala körtiden och kan uppdatera JavaScript-beroenden i den aktuella arbetsytan. Säkerhetskopiera dina data och läs [uppgraderingsguiden](../docs/upgrades/iii-0.25.md) innan du fortsätter.
 
 ### Claude Code (ett block, klistra in det)
 
@@ -441,7 +441,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code utan plugin-installationen (fristående MCP-väg)
 
-Om du kopplar in agentmemorys MCP-server via `~/.claude.json` direkt istället för att använda `/plugin install`, löser Claude Code aldrig upp `${CLAUDE_PLUGIN_ROOT}`, och du måste peka hook-skripten mot absoluta sökvägar i `~/.claude/settings.json`. Dessa sökvägar innehåller vanligtvis agentmemory-versionen (t.ex. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), så nästa uppgradering bryter varje hook i det tysta.
+Om du kopplar in agentmemorys MCP-server via `~/.claude.json` (standardsökväg) direkt istället för att använda `/plugin install`, löser Claude Code aldrig upp `${CLAUDE_PLUGIN_ROOT}`, och du måste peka hook-skripten mot absoluta sökvägar i `~/.claude/settings.json` (standardsökväg). Dessa sökvägar innehåller vanligtvis agentmemory-versionen (t.ex. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), så nästa uppgradering bryter varje hook i det tysta.
 
 Lösning:
 
@@ -449,7 +449,9 @@ Lösning:
 agentmemory connect claude-code --with-hooks
 ```
 
-Detta slår samman samma hook-kommandon i `~/.claude/settings.json` med absoluta sökvägar som löses upp till den medföljande `plugin/`-katalogen i det för tillfället installerade paketet `@agentmemory/agentmemory`. Kör kommandot igen efter att du har uppgraderat agentmemory för att uppdatera sökvägarna. Användarens egna poster i samma fil bevaras; endast tidigare agentmemory-poster ersätts. Att använda vägen `/plugin install` är fortfarande den rekommenderade metoden.
+Det här kommandot konfigurerar MCP-servern och slår samman de medföljande hookarna med Claude Codes användarkonfiguration. Om `CLAUDE_CONFIG_DIR` inte är satt, är tom eller bara innehåller blanktecken används `~/.claude.json` för MCP och `~/.claude/settings.json` för hooks. Övriga katalogvärden används exakt som de anges, inklusive inledande och avslutande blanktecken. För en egen katalog ställer du in `CLAUDE_CONFIG_DIR` till samma icke-tomma värde för både det här kommandot och Claude Code; filerna blir då `$CLAUDE_CONFIG_DIR/.claude.json` respektive `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code måste få värdet i sin startmiljö, även om anslutningsmodulen läser det från AgentMemorys `.env`. Skapa den egna katalogen innan du kör kommandot; annars hoppar anslutningsmodulen över Claude Code eftersom det inte upptäcks. Om värdet i skalet bara innehåller blanktecken tar du bort `CLAUDE_CONFIG_DIR` från miljön innan du startar Claude Code, så att det också använder standardprofilen. Använd en absolut sökväg. Relativa sökvägar utgår från arbetskatalogen, så båda kommandona måste köras från samma katalog.
+
+Hook-kommandona använder absoluta sökvägar till det installerade paketets medföljande katalog `plugin/`. Kör kommandot igen efter en uppgradering av agentmemory för att uppdatera sökvägarna. Användarens egna poster i konfigurationsfilerna bevaras; bara tidigare agentmemory-poster ersätts. Att använda `/plugin install` är fortfarande det rekommenderade sättet.
 För fjärr- eller skyddade driftsättningar, starta Claude Code med `AGENTMEMORY_URL` och `AGENTMEMORY_SECRET` satta. Plugin-programmet skickar båda värdena vidare till sin medföljande MCP-server; när `AGENTMEMORY_URL` är tomt använder MCP-shimmen `http://localhost:3111`.
 
 ### Codex CLI (Codex-plugin-plattformen)
@@ -558,7 +560,7 @@ mcp_servers:
 memory:
   provider: agentmemory
 
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from https://github.com/rohitg00/agentmemory to ~/.hermes/plugins/agentmemory.
 ```
 
 Fullständig guide: [`integrations/hermes/`](../integrations/hermes/)
@@ -668,7 +670,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Kör `agentmemory doctor` eller starta om med `--verbose`. Använd `--port <N>` eller `--instance <N>` om portarna är upptagna. Se [uppgraderingsguiden](../docs/upgrades/iii-0.26.md) för kompatibilitet och återställning.
+Kör `agentmemory doctor` eller starta om med `--verbose`. Använd `--port <N>` eller `--instance <N>` om portarna är upptagna. Se [uppgraderingsguiden](../docs/upgrades/iii-0.25.md) för kompatibilitet och återställning.
 
 ---
 
@@ -1249,7 +1251,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,700+ tests
+npm test                  # 4,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

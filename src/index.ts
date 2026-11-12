@@ -53,6 +53,7 @@ import {
   isBm25RebuildIncomplete,
   isMemoryIndexReady,
   rebuildKeywordIndex,
+  stopKeywordRebuildRetry,
   markKeywordRebuildPending,
   getSearchIndex,
   setVectorIndex,
@@ -910,6 +911,7 @@ async function main() {
     healthMonitor.stop();
     dedupMap.stop();
     capture.stop();
+    stopKeywordRebuildRetry();
     clearInterval(sessionFinalizeTimer);
     await settleWithin(graphIndexMigration.stop(), SHUTDOWN_FLUSH_TIMEOUT_MS);
     indexPersistence.stop();

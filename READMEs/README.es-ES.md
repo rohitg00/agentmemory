@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 tools MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks automáticos" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 bases de datos externas" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ tests superados" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ tests superados" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -431,7 +431,7 @@ Usa el comando de mantenimiento cuando quieras actualizar intencionadamente tu r
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Este comando actualiza el entorno local y puede actualizar las dependencias JavaScript del espacio de trabajo actual. Haz una copia de seguridad y lee la [guía de actualización](../docs/upgrades/iii-0.26.md) antes de continuar.
+Este comando actualiza el entorno local y puede actualizar las dependencias JavaScript del espacio de trabajo actual. Haz una copia de seguridad y lee la [guía de actualización](../docs/upgrades/iii-0.25.md) antes de continuar.
 
 ### Claude Code (un bloque, pégalo)
 
@@ -441,7 +441,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code sin instalar el plugin (ruta MCP standalone)
 
-Si conectas el servidor MCP de agentmemory directamente vía `~/.claude.json` en lugar de usar `/plugin install`, Claude Code nunca resuelve `${CLAUDE_PLUGIN_ROOT}` y tienes que apuntar los scripts de hook a rutas absolutas en `~/.claude/settings.json`. Esas rutas suelen incluir la versión de agentmemory (p. ej. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), por lo que la siguiente actualización rompe silenciosamente todos los hooks.
+Si conectas el servidor MCP de agentmemory directamente vía `~/.claude.json` (ruta predeterminada) en lugar de usar `/plugin install`, Claude Code nunca resuelve `${CLAUDE_PLUGIN_ROOT}` y tienes que apuntar los scripts de hook a rutas absolutas en `~/.claude/settings.json` (ruta predeterminada). Esas rutas suelen incluir la versión de agentmemory (p. ej. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), por lo que la siguiente actualización rompe silenciosamente todos los hooks.
 
 Workaround:
 
@@ -449,7 +449,9 @@ Workaround:
 agentmemory connect claude-code --with-hooks
 ```
 
-Esto fusiona los mismos comandos de hook en `~/.claude/settings.json` con rutas absolutas que apuntan al directorio `plugin/` empaquetado del paquete `@agentmemory/agentmemory` actualmente instalado. Vuelve a ejecutar el comando tras actualizar agentmemory para refrescar las rutas. Las entradas de usuario en el mismo fichero se preservan; solo se reemplazan las entradas previas de agentmemory. La ruta vía `/plugin install` sigue siendo la recomendada.
+Este comando configura el servidor MCP y fusiona los hooks incluidos en la configuración de usuario de Claude Code. Si `CLAUDE_CONFIG_DIR` no está definida, está vacía o contiene solo espacios en blanco, usa `~/.claude.json` para MCP y `~/.claude/settings.json` para los hooks. Los demás valores de directorio se usan tal como se proporcionan, incluidos los espacios en blanco iniciales y finales. Para usar un directorio personalizado, establece `CLAUDE_CONFIG_DIR` con el mismo valor no vacío para este comando y para Claude Code; los archivos serán entonces `$CLAUDE_CONFIG_DIR/.claude.json` y `$CLAUDE_CONFIG_DIR/settings.json`, respectivamente. Claude Code debe recibir este valor en su entorno de inicio, aunque el conector lo lea del archivo `.env` de AgentMemory. Crea el directorio personalizado antes de ejecutar este comando; de lo contrario, el conector omite Claude Code porque no lo detecta. Si el valor en el shell contiene solo espacios en blanco, elimina `CLAUDE_CONFIG_DIR` del entorno antes de iniciar Claude Code para que también use el perfil predeterminado. Usa una ruta absoluta. Las rutas relativas se resuelven desde el directorio de trabajo, por lo que ambos comandos deben ejecutarse desde el mismo directorio.
+
+Los comandos de los hooks usan rutas absolutas al directorio `plugin/` incluido en el paquete instalado. Vuelve a ejecutar el comando tras actualizar agentmemory para refrescar esas rutas. Las entradas de usuario en los archivos de configuración se conservan; solo se reemplazan las entradas previas de agentmemory. El uso de `/plugin install` sigue siendo la opción recomendada.
 Para despliegues remotos o protegidos, lanza Claude Code con `AGENTMEMORY_URL` y `AGENTMEMORY_SECRET` definidos. El plugin pasa ambos valores a su servidor MCP empaquetado; cuando `AGENTMEMORY_URL` está vacío, el shim MCP usa `http://localhost:3111`.
 
 ### Codex CLI (plataforma de plugins Codex)
@@ -558,7 +560,7 @@ mcp_servers:
 memory:
   provider: agentmemory
 
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from https://github.com/rohitg00/agentmemory to ~/.hermes/plugins/agentmemory.
 ```
 
 Guía completa: [`integrations/hermes/`](../integrations/hermes/)
@@ -667,7 +669,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Ejecuta `agentmemory doctor` o reinicia con `--verbose`. Usa `--port <N>` o `--instance <N>` si los puertos están ocupados. Consulta compatibilidad y recuperación en la [guía de actualización](../docs/upgrades/iii-0.26.md).
+Ejecuta `agentmemory doctor` o reinicia con `--verbose`. Usa `--port <N>` o `--instance <N>` si los puertos están ocupados. Consulta compatibilidad y recuperación en la [guía de actualización](../docs/upgrades/iii-0.25.md).
 
 ---
 
@@ -1243,7 +1245,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,700+ tests
+npm test                  # 4,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

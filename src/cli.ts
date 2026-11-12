@@ -43,6 +43,7 @@ import {
   canAutoFix,
   doctorPromptsAllowed,
   dryRunPlan,
+  failureReport,
   parseEnvFile,
   type Diagnostic,
   type DiagnosticFixResult,
@@ -57,6 +58,7 @@ import {
   type RemoveOptions,
 } from "./cli/remove-plan.js";
 import { portFlagSuffix } from "./cli/ready-hint.js";
+import { demoProjectForRun, explainZeroHits, readDemoStatus, searchDemo, uniqueErrors, waitForDemoSearchable, type DemoSearchResult } from "./cli/demo-search.js";
 import { embeddingStatusLabel } from "./cli/embedding-status.js";
 import { expectedIiiSha256, iiiManualInstallCommand, installIiiArchive, installIiiZip } from "./cli/engine-install.js";
 import {
@@ -104,6 +106,9 @@ import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
 import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
 import { legacyDockerStateMessage, type LegacyDockerEngineState } from "./cli/legacy-docker-state.js";
+import { DEFAULT_START_COMMAND, engineOnlyLines, probeWorkerConnection, shellArg, tcpPortOpen, unrecognizedServiceLines, type WorkerConnection } from "./cli/worker-connection.js";
+import { NO_HOOK_CAPTURE, hookCaptureMissing } from "./functions/status.js";
+import type { CaptureStatus } from "./functions/capture.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -1840,6 +1845,61 @@ async function apiFetch<T = unknown>(base: string, path: string, timeoutMs = 500
   }
 }
 
+function recoveryTargetArgs(): string {
+  const parts: string[] = [];
+  if (hasInstanceArgument) parts.push(`--instance ${selectedInstance}`);
+  if (portValue || (!hasInstanceArgument && getRestPort() !== 3111)) parts.push(`--port ${getRestPort()}`);
+  const dataDir = cliArgValue("--data-dir");
+  if (dataDir) parts.push(`--data-dir ${shellArg(dataDir)}`);
+  return parts.map((part) => ` ${part}`).join("");
+}
+
+function recoveryStartCommand(): string {
+  return `${DEFAULT_START_COMMAND}${recoveryTargetArgs()}`;
+}
+
+function workerEnginePort(): number {
+  const workerUrl = process.env["III_URL"];
+  if (!process.env["III_ENGINE_URL"] && workerUrl) {
+    try {
+      const parsed = new URL(workerUrl).port;
+      if (parsed) return parseInt(parsed, 10);
+    } catch {}
+  }
+  return getEnginePort();
+}
+
+function probeTargetWorker(base: string): Promise<WorkerConnection> {
+  return probeWorkerConnection(base, {
+    headers: bearerHeaders(base),
+    engineBusReachable: async () => tcpPortOpen(new URL(base).hostname.replace(/^\[|\]$/g, ""), workerEnginePort()),
+  });
+}
+
+async function savedComposeFailure(state: ComposeEngineState): Promise<string | null> {
+  if (!state.composePid || !pidAlive(state.composePid)) return null;
+  try {
+    const composeStatus = await composeCall<ComposeStatus>({
+      engineUrl: state.engineUrl,
+      namespace: state.namespace,
+      functionId: "compose::status",
+      file: state.file,
+    });
+    return composeWorkerFailureSummary(ownedComposeProject(composeStatus, state.file));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    p.log.warn(`Worker Compose status unavailable: ${message}`);
+    return null;
+  }
+}
+
+function exitWithComposeFailure(state: ComposeEngineState, failure: string, unavailable: string): never {
+  p.log.error(`Worker Compose failed after exhausting restart attempts; ${unavailable}.`);
+  p.log.error(failure);
+  p.log.info(`Inspect ${state.logFile}, then run agentmemory stop before retrying.`);
+  process.exit(1);
+}
+
 async function runStatus() {
   const base = getBaseUrl();
   p.intro("agentmemory status");
@@ -1852,29 +1912,26 @@ async function runStatus() {
 
   const up = await isEngineRunning();
   if (!up) {
-    if (savedState?.kind === "compose" && savedState.composePid && pidAlive(savedState.composePid)) {
-      try {
-        const composeStatus = await composeCall<ComposeStatus>({
-          engineUrl: savedState.engineUrl,
-          namespace: savedState.namespace,
-          functionId: "compose::status",
-          file: savedState.file,
-        });
-        const project = ownedComposeProject(composeStatus, savedState.file);
-        const failure = composeWorkerFailureSummary(project);
-        if (failure) {
-          p.log.error(`Worker Compose failed after exhausting restart attempts; REST is unavailable at ${base}.`);
-          p.log.error(failure);
-          p.log.info(`Inspect ${savedState.logFile}, then run agentmemory stop before retrying.`);
-          process.exit(1);
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        p.log.warn(`Worker Compose status unavailable: ${message}`);
-      }
+    if (savedState?.kind === "compose") {
+      const failure = await savedComposeFailure(savedState);
+      if (failure) exitWithComposeFailure(savedState, failure, `REST is unavailable at ${base}`);
     }
     p.log.error(`Not running — no response at ${base}`);
     p.log.info("Start with: npx @agentmemory/agentmemory");
+    process.exit(1);
+  }
+
+  const connection = await probeTargetWorker(base);
+  const workerMissing = connection !== "connected";
+  const composeExplainsMissingRoutes = workerMissing
+    && savedState?.kind === "compose"
+    && (await savedComposeFailure(savedState)) !== null;
+  if (workerMissing && !composeExplainsMissingRoutes) {
+    let lines: string[];
+    if (connection === "engine-only") lines = engineOnlyLines(base, recoveryStartCommand());
+    else if (connection === "unrecognized") lines = unrecognizedServiceLines(base);
+    else lines = [`A server answers at ${base}, but /agentmemory/livez and /agentmemory/health did not respond.`, "Check the agentmemory logs, then run status again."];
+    p.log.error(lines.join("\n"));
     process.exit(1);
   }
 
@@ -1973,6 +2030,18 @@ async function runStatus() {
       }
     }
     p.note(lines.join("\n"), "agentmemory");
+    if (Array.isArray(sessionsRes?.sessions) && sessions === 0) {
+      const [allSessions, captureRes] = await Promise.all([
+        apiFetch<{ sessions?: unknown }>(base, "sessions?agentId=*&limit=1"),
+        apiFetch<{ capture?: CaptureStatus | null }>(base, "capture?limit=1"),
+      ]);
+      const noSessions = Array.isArray(allSessions?.sessions) && allSessions.sessions.length === 0;
+      const capture = captureRes?.capture;
+      const known = !!capture && typeof capture === "object" && !!capture.sinceStart && Array.isArray(capture.spool);
+      if (noSessions && known && hookCaptureMissing(0, capture)) {
+        p.log.warn(`${NO_HOOK_CAPTURE.message}\n${NO_HOOK_CAPTURE.fix}`);
+      }
+    }
   } catch (err) {
     p.log.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
@@ -2058,7 +2127,15 @@ function buildDoctorContext(): DoctorContext {
     pidfilePath: readEngineState()?.kind === "compose" ? engineStatePath() : enginePidfilePath(),
     enginePath: engineStatePath(),
     pinnedVersion: IIPINNED_VERSION,
+    startCommand: recoveryStartCommand(),
+    targetArgs: recoveryTargetArgs(),
   };
+}
+
+function doctorTargetsManagedCompose(): boolean {
+  const state = readEngineState();
+  const remoteTarget = shouldUseAgentmemoryUrl() && process.env["AGENTMEMORY_URL"];
+  return state?.kind === "compose" && state.restPort === getRestPort() && !remoteTarget;
 }
 
 function buildDoctorEffects(): DoctorEffects {
@@ -2095,11 +2172,11 @@ function buildDoctorEffects(): DoctorEffects {
       return state?.kind === "compose" ? state.binPath : privateIiiPath();
     },
     iiiBinaryVersion: (binPath: string) => iiiBinVersion(binPath),
-    externalEngineRunning: async () => {
-      const state = readEngineState();
-      const remoteTarget = shouldUseAgentmemoryUrl() && process.env["AGENTMEMORY_URL"];
-      const managed = state?.kind === "compose" && state.restPort === getRestPort() && !remoteTarget;
-      return !managed && await isEngineRunning();
+    externalEngineRunning: async () => !doctorTargetsManagedCompose() && await isEngineRunning(),
+    workerConnection: async () => {
+      const connection = await probeTargetWorker(getBaseUrl());
+      if (connection === "connected" || connection === "unreachable") return connection;
+      return doctorTargetsManagedCompose() ? "managed-worker-down" : connection;
     },
     viewerReachable: async (timeoutMs = 2000) => {
       try {
@@ -2419,15 +2496,14 @@ async function runDoctor() {
       continue;
     }
     failed++;
-    p.log.warn(`${d.id} ✗ ${status.detail ?? ""}`.trim());
+    const report = failureReport(d, status);
+    p.log.warn(report.problem);
+    p.log.info(report.fix);
 
     if (!canAutoFix(d, status)) {
-      p.log.info(`manual fix: ${status.manualFix ?? d.fixPreview}`);
       skipped++;
       continue;
     }
-
-    p.log.info(`why: ${d.fixPreview}`);
 
     if (applyAll) {
       const r = await applyFixWithReport(d, ctx, false);
@@ -2506,8 +2582,6 @@ type DemoSession = {
   observations: DemoObservation[];
 };
 
-type SearchResult = { query: string; hits: number; topTitle: string };
-
 function buildDemoSessions(): DemoSession[] {
   return [
     {
@@ -2564,25 +2638,6 @@ function buildDemoSessions(): DemoSession[] {
       ],
     },
   ];
-}
-
-async function postJson<T = unknown>(
-  url: string,
-  body: unknown,
-  timeoutMs = 5000,
-): Promise<T | null> {
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...bearerHeaders(url) },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    if (!res.ok) return null;
-    return (await res.json().catch(() => null)) as T | null;
-  } catch {
-    return null;
-  }
 }
 
 async function postJsonStrict<T = unknown>(
@@ -2655,20 +2710,6 @@ async function seedDemoSession(
 
   await postJsonStrict(`${base}/agentmemory/session/end`, { sessionId: session.id, final: true });
   return stored;
-}
-
-async function runDemoSearch(base: string, query: string): Promise<SearchResult> {
-  const data = await postJson<{ results?: Array<{ title?: string }> }>(
-    `${base}/agentmemory/smart-search`,
-    { query, limit: 5 },
-    10000,
-  );
-  const items = data?.results ?? [];
-  return {
-    query,
-    hits: items.length,
-    topTitle: items[0]?.title ?? "(no results)",
-  };
 }
 
 // Prefer the packaged `.env.example` (next to `dist/cli.mjs`); fall back to
@@ -2763,7 +2804,16 @@ async function startServerForDemo(): Promise<() => Promise<void>> {
 
   return async () => {
     if (importedStartupWorker && readWorkerPidfile() === process.pid) clearWorkerPidfile();
-    if (startedEngine) await cleanupFailedStartup();
+    if (!startedEngine) return;
+    if (IS_WINDOWS && spawnedComposeDaemon) {
+      const state = readEngineState();
+      if (state?.kind !== "compose" || state.composePid !== spawnedComposeDaemon.pid) {
+        throw new Error("Demo Compose lifecycle state no longer matches the daemon it started. Lifecycle state was preserved.");
+      }
+      await stopComposeRuntime(state, true);
+      return;
+    }
+    await cleanupFailedStartup();
   };
 }
 
@@ -2798,7 +2848,7 @@ async function runDemo() {
 }
 
 async function runDemoBody(base: string) {
-  const demoProject = "/tmp/agentmemory-demo";
+  const demoProject = demoProjectForRun();
   const sessions = buildDemoSessions();
 
   const sSeed = p.spinner();
@@ -2811,28 +2861,61 @@ async function runDemoBody(base: string) {
 
   sSeed.stop(`Seeded ${totalObs} observations across ${sessions.length} sessions`);
 
-  const queries = [
-    "jwt auth middleware",
-    "database performance optimization",
-    "rate limiting",
-  ];
+  const expectedObs = sessions.reduce((n, s) => n + s.observations.length, 0);
+  const deps = { headers: (url: string) => bearerHeaders(url) };
+
+  const sWait = p.spinner();
+  sWait.start("Waiting for the demo observations to become searchable...");
+  const scope = { project: demoProject, sessionIds: sessions.map((s) => s.id) };
+  const wait = await waitForDemoSearchable(base, scope, ["jwt middleware", "prisma", "rate limiting"], deps);
+  sWait.stop(
+    wait.ready
+      ? `Demo observations are searchable (${(wait.waitedMs / 1000).toFixed(1)} s)`
+      : `Demo observations were not searchable after ${Math.round(wait.waitedMs / 1000)} s`,
+  );
+
+  const semanticQuery = "database performance optimization";
+  const queries = ["jwt auth middleware", semanticQuery, "rate limiting"];
 
   const sQuery = p.spinner();
   sQuery.start(`Running ${queries.length} smart-search queries...`);
 
-  const results: SearchResult[] = [];
+  const results: DemoSearchResult[] = [];
   for (const query of queries) {
-    results.push(await runDemoSearch(base, query));
+    results.push(await searchDemo(base, query, scope, deps));
   }
 
   sQuery.stop("Search complete");
 
+  const emptyQueries = results.filter((r) => r.hits === 0).map((r) => r.query);
+  const searchErrors = [...new Set([...wait.errors, ...uniqueErrors(results)])];
+  const needsDiagnosis = !wait.ready || searchErrors.length > 0 || emptyQueries.some((q) => q !== semanticQuery);
+  const diagnosis = needsDiagnosis
+    ? explainZeroHits({
+        emptyQueries,
+        seeded: totalObs,
+        expected: expectedObs,
+        wait,
+        searchErrors,
+        status: await readDemoStatus(base, deps),
+        invocation: isInvokedViaNpx() ? "npx @agentmemory/agentmemory" : "agentmemory",
+      })
+    : null;
+
   // Only claim the semantic-recall win when the search actually hit.
   // Without an embedding key this query returns 0 hits, and asserting
   // success over a visibly failed search reads as a lie.
-  const semanticHits =
-    results.find((r) => r.query === "database performance optimization")
-      ?.hits ?? 0;
+  const semanticHits = results.find((r) => r.query === semanticQuery)?.hits ?? 0;
+  const semanticNote = semanticHits > 0
+    ? [
+        c.accent(`Notice: searching "database performance optimization"`),
+        c.accent(`found the N+1 query fix — keyword matching can't do that.`),
+      ]
+    : [
+        c.dim(`Note: "database performance optimization" found nothing —`),
+        c.dim(`set EMBEDDING_PROVIDER=local for on-device semantic recall,`),
+        c.dim(`or set EMBEDDING_PROVIDER and its API key in ~/.agentmemory/.env.`),
+      ];
   const lines = [
     `Project:       ${demoProject}`,
     `Sessions:      ${sessions.length} seeded (${totalObs} observations)`,
@@ -2843,22 +2926,17 @@ async function runDemoBody(base: string) {
       `    ${c.dim("→")} ${c.ok(`${r.hits} hit(s)`)}, top: ${r.topTitle.slice(0, 60)}`,
     ]),
     "",
-    ...(semanticHits > 0
-      ? [
-          c.accent(`Notice: searching "database performance optimization"`),
-          c.accent(`found the N+1 query fix — keyword matching can't do that.`),
-        ]
-      : [
-          c.dim(`Note: "database performance optimization" found nothing —`),
-          c.dim(`set EMBEDDING_PROVIDER=local for on-device semantic recall,`),
-          c.dim(`or set EMBEDDING_PROVIDER and its API key in ~/.agentmemory/.env.`),
-        ]),
+    ...(diagnosis ? diagnosis.map((line) => c.warn(line)) : semanticNote),
     "",
     `Viewer:        ${c.url(getViewerUrl())}`,
     `Clean up with: ${c.dim(`curl -X DELETE "${base}/agentmemory/sessions?project=${demoProject}"`)}`,
   ];
 
   p.note(lines.join("\n"), "demo complete");
+  if (diagnosis) {
+    p.log.warn("The demo search did not find the seeded observations. See the reasons above.");
+    return;
+  }
   p.log.success("agentmemory is working. Point your agent at it and get back to coding.");
 }
 
@@ -3172,6 +3250,40 @@ function findEnginePidsByPort(port: number): number[] {
   }
 }
 
+async function stopComposeRuntime(state: ComposeEngineState, running: boolean): Promise<void> {
+  const pid = state.composePid;
+  const ownedDaemonAlive = pid !== undefined && pidAlive(pid);
+  if (ownedDaemonAlive && !composePidMatches(pid, state)) {
+    throw new Error(`Recorded Compose pid ${pid} does not match the saved daemon identity; refusing to invoke Compose control or signal it. Lifecycle state was preserved.`);
+  }
+  if (running && !ownedDaemonAlive) {
+    throw new Error("The REST endpoint is responding, but the recorded Compose daemon is not alive. Refusing to stop or clear an engine that may be unrelated; restore the owning daemon or inspect the endpoint manually.");
+  }
+  if (running && ownedDaemonAlive) {
+    try {
+      await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: composeDownTimeoutMs() });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (!message.includes("ENGINE_RESTART_REQUIRED")) {
+        throw new Error(`compose::down failed for ${state.file}: ${message}. Lifecycle state was preserved.`);
+      }
+      p.log.warn("Compose requested an engine restart while stopping; terminating its verified owning daemon to finish shutdown.");
+    }
+  }
+  if (ownedDaemonAlive) {
+    const childrenStopped = await terminateComposeChildren(state);
+    if (!childrenStopped) {
+      throw new Error(`One or more child workers of Compose ${pid} did not stop; lifecycle state was preserved.`);
+    }
+    if (!(await signalAndWait(pid, "SIGTERM", 20_000))) {
+      throw new Error(`Worker Compose daemon pid ${pid} did not stop; lifecycle state was preserved. Inspect ${state.logFile}.`);
+    }
+  }
+  clearEnginePidfile();
+  clearWorkerPidfile();
+  clearEngineState();
+}
+
 async function runStop(): Promise<void> {
   const savedState = readEngineState();
   if (savedState?.kind === "docker") {
@@ -3192,41 +3304,7 @@ async function runStop(): Promise<void> {
   const force = args.includes("--force");
 
   if (state?.kind === "compose") {
-    const ownedDaemonAlive = Boolean(state.composePid && pidAlive(state.composePid));
-    if (ownedDaemonAlive && !composePidMatches(state.composePid!, state)) {
-      p.log.error(`Recorded Compose pid ${state.composePid} does not match the saved daemon identity; refusing to invoke Compose control or signal it. Lifecycle state was preserved.`);
-      process.exit(1);
-    }
-    if (running && !ownedDaemonAlive) {
-      p.log.error("The REST endpoint is responding, but the recorded Compose daemon is not alive. Refusing to stop or clear an engine that may be unrelated; restore the owning daemon or inspect the endpoint manually.");
-      process.exit(1);
-    }
-    if (running && ownedDaemonAlive) {
-      try {
-        await composeCall({ engineUrl: state.engineUrl, namespace: state.namespace, functionId: "compose::down", file: state.file, timeoutMs: composeDownTimeoutMs() });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (!message.includes("ENGINE_RESTART_REQUIRED")) {
-          p.log.error(`compose::down failed for ${state.file}: ${message}. Lifecycle state was preserved.`);
-          process.exit(1);
-        }
-        p.log.warn("Compose requested an engine restart while stopping; terminating its verified owning daemon to finish shutdown.");
-      }
-    }
-    if (ownedDaemonAlive) {
-      const childrenStopped = await terminateComposeChildren(state);
-      if (!childrenStopped) {
-        p.log.error(`One or more child workers of Compose ${state.composePid} did not stop; lifecycle state was preserved.`);
-        process.exit(1);
-      }
-      if (!(await signalAndWait(state.composePid!, "SIGTERM", 20_000))) {
-        p.log.error(`Worker Compose daemon pid ${state.composePid} did not stop; lifecycle state was preserved. Inspect ${state.logFile}.`);
-        process.exit(1);
-      }
-    }
-    clearEnginePidfile();
-    clearWorkerPidfile();
-    clearEngineState();
+    await stopComposeRuntime(state, running);
     p.outro("Stopped Worker Compose, engine, and agentmemory workers. Data was preserved.");
     return;
   }

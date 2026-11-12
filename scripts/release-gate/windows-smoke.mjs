@@ -159,11 +159,16 @@ function leftoverProcesses() {
   const ps = spawnSync("powershell.exe", [
     "-NoProfile", "-Command",
     [
-      `$byPath = Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*${root.replace(/'/g, "''")}*' } | ForEach-Object { "$($_.ProcessId) $($_.Name)" }`,
+      "$ErrorActionPreference = 'Stop'",
+      `$root = '${root.replace(/'/g, "''")}'`,
+      `$byPath = Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne $PID -and ($_.CommandLine -like "*$root*" -or $_.ExecutablePath -like "*$root*") } | ForEach-Object { "$($_.ProcessId) $($_.Name)" }`,
       `$byPort = Get-NetTCPConnection -State Listen -LocalPort 3911,3913,49950 -ErrorAction SilentlyContinue | ForEach-Object { "$($_.OwningProcess) port:$($_.LocalPort)" }`,
       `@($byPath) + @($byPort) | Where-Object { $_ }`,
     ].join("; "),
   ], { encoding: "utf8" });
+  if (ps.error || ps.status !== 0) {
+    throw new Error(`leftover process query failed (status ${ps.status}): ${ps.error?.message ?? (ps.stderr ?? "").slice(-400)}`);
+  }
   return (ps.stdout ?? "").split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
 }
 
@@ -278,6 +283,16 @@ await step("stop cleans up", async () => {
   await sleep(4000);
   const leftovers = leftoverProcesses();
   assert.equal(leftovers.length, 0, `leftover processes: ${leftovers.join(",")}`);
+  return { leftovers: leftovers.length };
+});
+await step("demo stops its Compose runtime", () => {
+  const demo = cli("demo", "--serve", "--port", "3911");
+  const output = demo.stdout + demo.stderr;
+  writeFileSync(join(out, "demo.txt"), output);
+  assert.equal(demo.status, 0, `demo failed: ${output.slice(-1200)}`);
+  assert(output.includes("demo complete"), "demo did not finish seeding and searching");
+  const leftovers = leftoverProcesses();
+  assert.equal(leftovers.length, 0, `demo left processes: ${leftovers.join(",")}`);
   return { leftovers: leftovers.length };
 });
 await step("restart reaches livez", async () => startWorker());

@@ -4,7 +4,7 @@ You are a coding agent. Follow this runbook top to bottom to install agentmemory
 
 ## What you are installing
 
-agentmemory is a local memory server for coding agents. Its CLI starts an iii Worker Compose runtime using the pinned iii 0.26.0 engine and registry workers `state@0.23.1` and `http@0.23.2`. The default listeners are REST/MCP HTTP on port 3111, the viewer on 3113, and the internal engine WebSocket on 49134. The viewer receives live updates as SSE through `GET /agentmemory/viewer/events` on the REST port.
+agentmemory is a local memory server for coding agents. Its CLI starts an iii Worker Compose runtime using the pinned iii 0.26.0 engine and registry workers `state@0.22.22` and `http@0.22.8`. The default listeners are REST/MCP HTTP on port 3111, the viewer on 3113, and the internal engine WebSocket on 49134. The viewer receives live updates as SSE through `GET /agentmemory/viewer/events` on the REST port.
 
 The CLI downloads the pinned engine into `~/.agentmemory/bin`. On native Windows it downloads and extracts the pinned ZIP; WSL2 follows the Linux path. Persistent state defaults to `~/Library/Application Support/agentmemory` on macOS, `$XDG_DATA_HOME/agentmemory` or `~/.local/share/agentmemory` on Linux, and `%APPDATA%\agentmemory` on Windows. Override the directory with `--data-dir <path>` or `AGENTMEMORY_DATA_DIR`, and reuse the same override on every restart. `AGENTMEMORY_ENV_FILE` selects a non-default env file. Instance 0 reuses an existing `./data/state_store.db` when present. `--instance N` creates an isolated directory and port set for another runtime.
 
@@ -14,7 +14,7 @@ Default keyless mode needs no API key or cloud account and disables vector embed
 
 - Node.js >= 20 with npm and npx. Check with `node -v`, `npm -v`, and `npx -v`.
 - macOS/Linux automatic iii installation also requires `curl`, a POSIX `sh`, and `tar`. Check with `command -v curl sh tar`. Minimal images such as `node:20-slim` may not include them.
-- Windows: WSL2 follows the Linux path. Native Windows installs the pinned iii-engine v0.26.0 ZIP automatically. Native automated `connect` supports only `copilot-cli`; configure other Windows agents manually. WSL `connect` applies only to agents installed in that same WSL environment.
+- Windows: WSL2 follows the Linux path. Native Windows installs the pinned iii-engine v0.26.0 ZIP automatically. Native `connect` works for every adapter. WSL `connect` applies only to agents installed in that same WSL environment.
 - Default ports 3111 (REST), 3113 (viewer), and 49134 (engine) must be free. Viewer events are carried over REST.
 
 ## Running non-interactively
@@ -100,7 +100,7 @@ The first embedding request downloads `Xenova/all-MiniLM-L6-v2`; wait for that d
 
 ## 5. Wire MCP into the calling agent
 
-Detect which agent is running this runbook, then wire its MCP config. On native Windows, run this automated step only for `copilot-cli`:
+Detect which agent is running this runbook, then wire its MCP config:
 
 ```bash
 npx -y @agentmemory/agentmemory@latest connect <agent>
@@ -110,7 +110,7 @@ Supported agent names:
 
 `claude-code`, `copilot-cli`, `codex`, `cursor`, `gemini-cli`, `opencode`, `cline`, `continue`, `droid`, `hermes`, `openclaw`, `openhuman`, `pi`, `omp`, `qwen`, `warp`, `zed`, `antigravity`, `kiro`.
 
-If you cannot tell which agent you are, default to `claude-code` on macOS/Linux. On native Windows, `copilot-cli` is the only automated adapter; configure all other agents with the manual MCP block in the README. Run `connect` inside WSL only when the target agent is installed inside the same WSL environment. After wiring, restart the agent or run its MCP reload command (for example `/mcp` in Claude Code) so it picks up the server.
+If you cannot tell which agent you are, default to `claude-code` on macOS/Linux. Run `connect` inside WSL only when the target agent is installed inside the same WSL environment. After wiring, restart the agent or run its MCP reload command (for example `/mcp` in Claude Code) so it picks up the server.
 
 Expect: the agent now lists agentmemory's tools. With the server running you should see the full set of 54 tools (for example `memory_save`, `memory_smart_search`, `memory_sessions`). If you see only 7 tools, the MCP shim could not reach the server; see Troubleshooting.
 
@@ -216,7 +216,7 @@ The MCP server exposes 54 tools by default (`--tools all`). Use `--tools core` (
 - `The engine process started but the REST API never responded.`: inspect the REST, viewer, and engine ports, confirm the pinned iii process stayed alive, and use `--verbose` for captured engine stderr.
 - Engine version conflict / another iii engine already running: if an unmanaged engine is already listening on the engine port, agentmemory will not adopt it. Stop that engine or choose another `--instance` or `--port`. The CLI keeps its private pinned binary separate from a user-managed `iii` on `PATH`.
 - Only 7 tools visible in the agent: the MCP shim is in local fallback because it could not reach a server. Start `npx -y @agentmemory/agentmemory@latest`, ensure `AGENTMEMORY_URL` points at it (default `http://localhost:3111`), then reload MCP.
-- Native Windows: if the automatic engine install fails, install the pinned v0.26.0 `iii.exe` manually or use WSL2. Automated `connect` supports only `copilot-cli`; configure other native agents manually.
+- Native Windows: if the automatic engine install fails, install the pinned v0.26.0 `iii.exe` manually or use WSL2.
 - Semantic demo query returns zero hits: this is expected with vectors disabled in default keyless mode. Set `EMBEDDING_PROVIDER=local`, restart, allow the first model download to complete, and rerun the demo.
 
 ## Report success

@@ -31,6 +31,7 @@ import {
   getSearchIndex,
   getVectorIndex,
   isBm25RebuildIncomplete,
+  getKeywordRetryStatus,
   rankMemoryIds,
 } from "../functions/search.js";
 import {
@@ -394,6 +395,7 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
   return async function statusReport(options: { health?: HealthSnapshot | null; scanMaxAgeMs?: number } = {}): Promise<StatusReport> {
     const idx = getSearchIndex();
     const keywordRebuildRunning = isKeywordRebuildInProgress();
+    const keywordRetry = getKeywordRetryStatus();
     const scan = unindexedScanFor(kv);
     const cached = scan.last && options.scanMaxAgeMs !== undefined && Date.now() - scan.last.at < options.scanMaxAgeMs
       ? scan.last.value
@@ -459,6 +461,8 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
         missingObservations: unindexed ? unindexed.missing.length : null,
         sessions: unindexed ? unindexed.sessions : null,
         bm25Incomplete: isBm25RebuildIncomplete(),
+        bm25FailedSessions: keywordRetry.failedSessions,
+        bm25NextRetryAt: keywordRetry.nextRetryAt,
         keywordRebuildRunning,
         pendingVectorBackfill: getPendingVectorBackfillCount(),
         vectorBackfillState: getVectorBackfillState(),

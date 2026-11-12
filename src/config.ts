@@ -41,6 +41,7 @@ function writeProviderNoticeOnce(text: string): void {
 // mutate the file between cases reset the module (clearing this via reload) or
 // call __resetEnvFileCache().
 let envFileCache: Record<string, string> | undefined;
+const hydratedEnvValues = new Map<string, string>();
 
 function loadEnvFile(): Record<string, string> {
   if (envFileCache) return envFileCache;
@@ -86,6 +87,31 @@ function hasRealValue(v: string | undefined): v is string {
   return typeof v === "string" && v.trim().length > 0;
 }
 
+const PLACEHOLDER_KEY_VALUES = new Set(["your-key-here", "changeme", "todo"]);
+
+function hasRealKey(value: string | undefined): boolean {
+  const v = value?.trim().toLowerCase();
+  return (
+    !!v &&
+    !v.endsWith("...") &&
+    !PLACEHOLDER_KEY_VALUES.has(v) &&
+    !/^x+$/.test(v.replace(/[-_]/g, ""))
+  );
+}
+
+function hasRealOpenAIKey(env: Record<string, string | undefined>): boolean {
+  return /^http:\/\//i.test(env["OPENAI_BASE_URL"]?.trim() ?? "")
+    ? !!env["OPENAI_API_KEY"]?.trim()
+    : hasRealKey(env["OPENAI_API_KEY"]);
+}
+
+export function isRealProviderKey(
+  env: Record<string, string | undefined>,
+  key: string,
+): boolean {
+  return key === "OPENAI_API_KEY" ? hasRealOpenAIKey(env) : hasRealKey(env[key]);
+}
+
 // Hydrate ~/.agentmemory/.env into process.env at boot. loadEnvFile() is
 // otherwise only consumed via getMergedEnv(), which the many modules that
 // read raw process.env["X"] never call — so .env-only values were silently
@@ -95,9 +121,17 @@ function hasRealValue(v: string | undefined): v is string {
 export function hydrateProcessEnvFromFile(): Record<string, string | undefined> {
   const beforeHydration = { ...process.env };
   for (const [k, v] of Object.entries(loadEnvFile())) {
-    if (process.env[k] === undefined) process.env[k] = v;
+    if (process.env[k] === undefined) {
+      process.env[k] = v;
+      hydratedEnvValues.set(k, v);
+    }
   }
   return beforeHydration;
+}
+
+export function isEnvFileValue(key: string): boolean {
+  const hydrated = hydratedEnvValues.get(key);
+  return hydrated !== undefined && process.env[key] === hydrated;
 }
 
 // Warn once when a configured model is in the premium tier and likely to burn
@@ -152,7 +186,7 @@ function selectedLlmProviderValue(env: Record<string, string | undefined>): stri
 }
 
 function llmProviderHasKey(env: Record<string, string | undefined>, name: LlmProviderName): boolean {
-  return LLM_PROVIDER_KEYS[name].some((k) => hasRealValue(env[k]));
+  return LLM_PROVIDER_KEYS[name].some((k) => isRealProviderKey(env, k));
 }
 
 export function envFileLabel(path: string = ENV_FILE): string {
@@ -174,7 +208,7 @@ export function llmOptInHint(env: Record<string, string | undefined> = getMerged
   if (env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true") return null;
   const withKey = LLM_PROVIDER_NAMES.filter((name) => llmProviderHasKey(env, name));
   if (withKey.length === 0) return null;
-  const keys = withKey.flatMap((name) => LLM_PROVIDER_KEYS[name].filter((k) => hasRealValue(env[k])));
+  const keys = withKey.flatMap((name) => LLM_PROVIDER_KEYS[name].filter((k) => isRealProviderKey(env, k)));
   return `Found ${keys.join(", ")}, but agentmemory sends nothing to an LLM provider until you choose one for it. To turn on LLM summaries and compression, add AGENTMEMORY_LLM_PROVIDER=${withKey[0]} to ${envFileLabel()}.`;
 }
 
@@ -220,7 +254,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
           baseURL: env["ANTHROPIC_BASE_URL"],
         };
       case "gemini":
-        if (!hasRealValue(env["GEMINI_API_KEY"])) {
+        if (!hasRealKey(env["GEMINI_API_KEY"])) {
           process.stderr.write(
             "[agentmemory] GOOGLE_API_KEY detected — treating as GEMINI_API_KEY. " +
               "Set GEMINI_API_KEY in ~/.agentmemory/.env to silence this warning.\n",
@@ -317,6 +351,11 @@ export function getEnvVar(key: string): string | undefined {
   return getMergedEnv()[key];
 }
 
+export function getProviderKey(key: string): string | undefined {
+  const env = getMergedEnv();
+  return isRealProviderKey(env, key) ? env[key] : undefined;
+}
+
 export function isSessionSweepEnabled(): boolean {
   return getMergedEnv()["AGENTMEMORY_SESSION_SWEEP_ENABLED"] !== "false";
 }
@@ -332,6 +371,24 @@ export function getFinalizeIdleMs(): number {
   const raw = getMergedEnv()["AGENTMEMORY_FINALIZE_IDLE_MS"];
   if (!raw || !/^\d+$/.test(raw.trim())) return 120000;
   return parseInt(raw.trim(), 10);
+}
+
+export const GRAPH_IMPORT_MAX_NODES_DEFAULT = 5000;
+export const GRAPH_IMPORT_MAX_EDGES_DEFAULT = 20000;
+
+function positiveIntEnv(key: string, fallback: number): number {
+  const raw = getMergedEnv()[key];
+  if (!raw || !/^\d+$/.test(raw.trim())) return fallback;
+  const parsed = parseInt(raw.trim(), 10);
+  return parsed > 0 ? parsed : fallback;
+}
+
+export function getGraphImportMaxNodes(): number {
+  return positiveIntEnv("AGENTMEMORY_GRAPH_IMPORT_MAX_NODES", GRAPH_IMPORT_MAX_NODES_DEFAULT);
+}
+
+export function getGraphImportMaxEdges(): number {
+  return positiveIntEnv("AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES", GRAPH_IMPORT_MAX_EDGES_DEFAULT);
 }
 
 export function isGraphCompactOnBootEnabled(): boolean {

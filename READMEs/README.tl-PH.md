@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tool" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 awtomatikong hook" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 panlabas na DB" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ pumapasang test" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ pumapasang test" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -434,7 +434,7 @@ Gamitin ang maintenance command kapag sinasadya mong i-update ang iyong local ru
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Ina-update nito ang local runtime at maaaring baguhin ang JavaScript dependencies sa kasalukuyang working directory. I-backup ang data at basahin ang [upgrade guide](../docs/upgrades/iii-0.26.md) bago mag-update ng umiiral na installation.
+Ina-update nito ang local runtime at maaaring baguhin ang JavaScript dependencies sa kasalukuyang working directory. I-backup ang data at basahin ang [upgrade guide](../docs/upgrades/iii-0.25.md) bago mag-update ng umiiral na installation.
 
 ### Claude Code (isang block, i-paste ito)
 
@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code nang walang plugin install (MCP-standalone path)
 
-Kung i-wire mo ang MCP server ng agentmemory gamit ang `~/.claude.json` nang direkta sa halip na gamitin ang `/plugin install`, hindi kailanman nireresolba ng Claude Code ang `${CLAUDE_PLUGIN_ROOT}` at kailangan mong ituro ang hook scripts sa absolute paths sa `~/.claude/settings.json`. Karaniwang naka-embed sa mga path na ito ang bersyon ng agentmemory (hal. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), kaya tahimik na masisira ng susunod na upgrade ang bawat hook.
+Kung i-wire mo ang MCP server ng agentmemory gamit ang `~/.claude.json` (default na path) nang direkta sa halip na gamitin ang `/plugin install`, hindi kailanman nireresolba ng Claude Code ang `${CLAUDE_PLUGIN_ROOT}` at kailangan mong ituro ang hook scripts sa absolute paths sa `~/.claude/settings.json` (default na path). Karaniwang naka-embed sa mga path na ito ang bersyon ng agentmemory (hal. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), kaya tahimik na masisira ng susunod na upgrade ang bawat hook.
 
 Workaround:
 
@@ -452,7 +452,9 @@ Workaround:
 agentmemory connect claude-code --with-hooks
 ```
 
-Pinagsasama nito ang parehong hook commands sa `~/.claude/settings.json` gamit ang absolute paths na nireresolba sa bundled `plugin/` directory ng kasalukuyang naka-install na `@agentmemory/agentmemory` package. Patakbuhin ulit ang command pagkatapos i-upgrade ang agentmemory para i-refresh ang mga path. Napapanatili ang mga entry ng user sa parehong file; ang mga nakaraang entry ng agentmemory lamang ang napapalitan. Ang paggamit ng `/plugin install` path ay nananatiling inirerekomendang paraan.
+Kino-configure ng command na ito ang MCP server at pinagsasama ang mga bundled hook sa user configuration ng Claude Code. Kung hindi naka-set ang `CLAUDE_CONFIG_DIR`, blangko ito, o puro whitespace ang laman, ginagamit nito ang `~/.claude.json` para sa MCP at `~/.claude/settings.json` para sa mga hook. Ginagamit ang iba pang directory value nang eksakto sa ibinigay, kasama ang whitespace sa simula at dulo. Para sa custom na directory, itakda ang `CLAUDE_CONFIG_DIR` sa parehong hindi blangkong value para sa command na ito at sa Claude Code; ang mga file ay magiging `$CLAUDE_CONFIG_DIR/.claude.json` at `$CLAUDE_CONFIG_DIR/settings.json`, ayon sa pagkakasunod. Kailangang matanggap ng Claude Code ang value na ito sa environment na ginagamit sa paglulunsad nito, kahit binabasa ito ng connector mula sa `.env` ng AgentMemory. Gawin ang custom na directory bago patakbuhin ang command na ito; kung wala ito, lalaktawan ng connector ang Claude Code dahil hindi ito ma-detect. Kung puro whitespace ang value sa shell, alisin ang `CLAUDE_CONFIG_DIR` sa environment bago ilunsad ang Claude Code para gamitin din nito ang default na profile. Gumamit ng absolute path. Ang mga relative path ay nakabatay sa working directory, kaya dapat patakbuhin ang parehong command mula sa iisang directory.
+
+Gumagamit ang mga hook command ng absolute paths patungo sa bundled na `plugin/` directory ng naka-install na package. Patakbuhin muli ang command pagkatapos i-upgrade ang agentmemory upang i-refresh ang mga path. Pinananatili ang mga entry ng user sa mga configuration file; ang mga dating entry ng agentmemory lamang ang pinapalitan. Ang paggamit ng `/plugin install` pa rin ang inirerekomendang paraan.
 Para sa remote o protected deployment, patakbuhin ang Claude Code na naka-set ang `AGENTMEMORY_URL` at `AGENTMEMORY_SECRET`. Ipinapasa ng plugin ang dalawang value papunta sa bundled MCP server nito; kapag walang laman ang `AGENTMEMORY_URL`, gumagamit ang MCP shim ng `http://localhost:3111`.
 
 ### Codex CLI (Codex plugin platform)
@@ -559,7 +561,7 @@ mcp_servers:
 memory:
   provider: agentmemory
 
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from https://github.com/rohitg00/agentmemory to ~/.hermes/plugins/agentmemory.
 ```
 
 Kumpletong gabay: [`integrations/hermes/`](../integrations/hermes/)
@@ -668,7 +670,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Patakbuhin ang `agentmemory doctor` o i-restart gamit ang `--verbose`. Kung ginagamit na ang default ports, gumamit ng `--port <N>` o `--instance <N>`. Tingnan ang [upgrade guide](../docs/upgrades/iii-0.26.md) para sa compatibility at recovery.
+Patakbuhin ang `agentmemory doctor` o i-restart gamit ang `--verbose`. Kung ginagamit na ang default ports, gumamit ng `--port <N>` o `--instance <N>`. Tingnan ang [upgrade guide](../docs/upgrades/iii-0.25.md) para sa compatibility at recovery.
 
 ---
 
@@ -1251,7 +1253,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,700+ tests
+npm test                  # 4,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

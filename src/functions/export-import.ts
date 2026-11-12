@@ -40,7 +40,7 @@ import {
 import { withKeyedLocks } from "../state/keyed-mutex.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
-import { indexRecords, rebuildKeywordIndex } from "./search.js";
+import { indexRecords, rebuildKeywordIndex, getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { singleFlight } from "../runtime/recovery.js";
 import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
@@ -309,7 +309,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       const strategy = data.strategy || "merge";
       const importData = data.exportData;
 
-      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27", "0.9.28", "0.9.29", "0.9.30", "0.9.31", "0.9.32"]);
+      const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27", "0.9.28", "0.9.29", "0.9.30", "0.9.31", "0.9.32", "0.9.33"]);
       if (!supportedVersions.has(importData.version)) {
         return {
           success: false,
@@ -512,10 +512,15 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
             await markCaptureEventDeleted(kv, { id: d.obsId, sessionId: d.sessionId, captureKey: d.captureKey });
             await kv.delete(KV.observations(d.sessionId), d.obsId);
             await unindexObservationSession(kv, d.obsId).catch(() => {});
+            getSearchIndex().remove(d.obsId);
+            vectorIndexRemove(d.obsId);
           });
-          await runChunked(memories, (m) =>
-            kv.delete(KV.memories, m.id),
-          );
+          await runChunked(memories, async (m) => {
+            await kv.delete(KV.memories, m.id);
+            getSearchIndex().remove(m.id);
+            vectorIndexRemove(m.id);
+          });
+          await flushIndexSave();
           await runChunked(summaries, (s) => kv.delete(KV.summaries, s.sessionId));
           await runChunked(actions, (a) =>
             kv.delete(KV.actions, a.id),

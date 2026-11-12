@@ -7318,7 +7318,8 @@
         'Embedded in the background in batches of AGENTMEMORY_VECTOR_BACKFILL_MAX. If agentmemory stops first, it continues on the next start.';
       html += hrow('Waiting for embeddings', esc(fmtNum(idx.pendingVectorBackfill || 0) + (bfState && bfState !== 'idle' && idx.pendingVectorBackfill ? ' · ' + (bfState === 'waiting-for-opt-in' ? 'waiting for opt-in' : bfState) : '')), 'pendingBackfill', idx.pendingVectorBackfill ? esc(bfNote) : '');
       html += hrow('Missing from index', ri.missingObservations === null || ri.missingObservations === undefined ? 'not checked yet' : esc(fmtNum(ri.missingObservations)), 'missingFromIndex');
-      html += hrow('Keyword rebuild', ri.bm25Incomplete ? '<span style="color:var(--accent);">incomplete</span>' : 'complete', null, 'Rebuilt from stored data at every start, so it is never saved to disk.');
+      var kwRetry = ri.bm25Incomplete ? (ri.bm25FailedSessions ? ' ' + fmtNum(ri.bm25FailedSessions) + ' sessions failed to load.' : '') + (ri.bm25NextRetryAt ? ' Next background retry at ' + ri.bm25NextRetryAt + '.' : '') : '';
+      html += hrow('Keyword rebuild', ri.bm25Incomplete ? '<span style="color:var(--accent);">incomplete</span>' : 'complete', null, esc('Rebuilt from stored data at every start, so it is never saved to disk.' + kwRetry));
       if (p) {
         html += hrow('Vector save', esc(legText(p.vector)), null, 'Saved at most every ' + esc(durationText(p.saveIntervalMs || 600000)) + ' (AGENTMEMORY_INDEX_SAVE_INTERVAL_MS). ' + esc(fmtNum(p.buckets) + ' bucket' + (p.buckets === 1 ? '' : 's') + ', ' + fmtNum(p.pendingChanges) + ' unsaved change' + (p.pendingChanges === 1 ? '' : 's') + (p.saving ? ', saving now' : '') + '.'));
         if (typeof p.pendingLog === 'number') {
@@ -7391,7 +7392,7 @@
       html += hrow('RSS', esc(mb(m.rss) + ' MB'), 'rss', 'Everything the process holds from the operating system, including code and buffers.');
       var lag = snap.eventLoopLagMs;
       html += hrow('Event loop delay', lag !== undefined ? esc(Number(lag).toFixed(1) + ' ms') : '-', 'eventLoop', 'How far behind the worker is. Under 100 ms is fine; above that requests answer slowly.');
-      if (snap.cpu) html += hrow('CPU', esc(Math.round(snap.cpu.percent || 0) + '%'), null, 'Share of one core used since the last report. Short bursts during imports are normal.');
+      if (snap.cpu) html += hrow('CPU', esc(Math.round(snap.cpu.percent || 0) + '%'), null, 'Share of all available CPU cores used since the last report' + (snap.cpu.cores ? ' (' + snap.cpu.cores + ' cores)' : '') + '. Short bursts during imports are normal.');
       (snap.notes || []).forEach(function(n) { html += '<div class="hnote" style="margin-top:6px;">' + esc(humanizeHealthFlag(n)) + '</div>'; });
       return html + '</div>';
     }

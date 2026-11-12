@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP-työkalua" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 automaattista hookia" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 ulkoista tietokantaa" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ testiä läpäisty" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ testiä läpäisty" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -436,7 +436,7 @@ Käytä ylläpitokomentoa, kun haluat tarkoituksella päivittää paikallisen aj
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Komento päivittää paikallisen ympäristön ja voi muuttaa työtilan JavaScript-riippuvuuksia. Varmuuskopioi tiedot ja lue [päivitysopas](../docs/upgrades/iii-0.26.md).
+Komento päivittää paikallisen ympäristön ja voi muuttaa työtilan JavaScript-riippuvuuksia. Varmuuskopioi tiedot ja lue [päivitysopas](../docs/upgrades/iii-0.25.md).
 
 ### Claude Code (yksi lohko, liitä se)
 
@@ -446,7 +446,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code ilman pluginin asennusta (itsenäinen MCP-reitti)
 
-Jos kytket agentmemoryn MCP-palvelimen tiedoston `~/.claude.json` kautta suoraan sen sijaan, että käyttäisit `/plugin install`-komentoa, Claude Code ei koskaan ratkaise muuttujaa `${CLAUDE_PLUGIN_ROOT}`, ja sinun on osoitettava hook-skriptit absoluuttisiin polkuihin tiedostossa `~/.claude/settings.json`. Nämä polut sisältävät tyypillisesti agentmemoryn versionumeron (esim. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), niin että seuraava päivitys hajottaa hiljaisesti kaikki hookit.
+Jos kytket agentmemoryn MCP-palvelimen tiedoston `~/.claude.json` (oletuspolku) kautta suoraan sen sijaan, että käyttäisit `/plugin install`-komentoa, Claude Code ei koskaan ratkaise muuttujaa `${CLAUDE_PLUGIN_ROOT}`, ja sinun on osoitettava hook-skriptit absoluuttisiin polkuihin tiedostossa `~/.claude/settings.json` (oletuspolku). Nämä polut sisältävät tyypillisesti agentmemoryn versionumeron (esim. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), niin että seuraava päivitys hajottaa hiljaisesti kaikki hookit.
 
 Kiertotapa:
 
@@ -454,7 +454,9 @@ Kiertotapa:
 agentmemory connect claude-code --with-hooks
 ```
 
-Tämä yhdistää samat hook-komennot tiedostoon `~/.claude/settings.json` absoluuttisilla poluilla, jotka osoittavat asennetun `@agentmemory/agentmemory`-paketin mukana tulevaan `plugin/`-hakemistoon. Aja komento uudelleen agentmemoryn päivityksen jälkeen päivittääksesi polut. Käyttäjän omat merkinnät samassa tiedostossa säilyvät; vain aiemmat agentmemory-merkinnät korvataan. `/plugin install`-reitti pysyy suositeltuna lähestymistapana.
+Tämä komento määrittää MCP-palvelimen ja yhdistää mukana tulevat hookit Claude Coden käyttäjäkohtaisiin asetuksiin. Jos `CLAUDE_CONFIG_DIR` on asettamatta, tyhjä tai sisältää vain tyhjiä merkkejä, se käyttää MCP:lle tiedostoa `~/.claude.json` ja hookeille tiedostoa `~/.claude/settings.json`. Muut hakemistopolut säilytetään täsmälleen annettuina, myös alun ja lopun tyhjät merkit mukaan lukien. Jos haluat käyttää omaa hakemistoa, aseta `CLAUDE_CONFIG_DIR` samaksi ei-tyhjäksi arvoksi sekä tälle komennolle että Claude Codelle; tiedostot ovat tällöin `$CLAUDE_CONFIG_DIR/.claude.json` MCP:lle ja `$CLAUDE_CONFIG_DIR/settings.json` hookeille. Claude Coden on saatava tämä arvo käynnistysympäristöstään, vaikka yhdistin lukisi sen AgentMemoryn `.env`-tiedostosta. Luo oma hakemisto ennen tämän komennon suorittamista; muuten yhdistin ohittaa Claude Coden, koska sitä ei tunnisteta. Jos shellin arvo sisältää vain tyhjiä merkkejä, poista `CLAUDE_CONFIG_DIR` ympäristöstä ennen Claude Coden käynnistämistä, jotta myös se käyttää oletusprofiilia. Käytä absoluuttista polkua. Suhteelliset polut tulkitaan työhakemiston perusteella, joten molemmat komennot on suoritettava samasta hakemistosta.
+
+Hook-komennot käyttävät absoluuttisia polkuja asennetun paketin mukana tulevaan `plugin/`-hakemistoon. Suorita komento uudelleen agentmemoryn päivityksen jälkeen, jotta polut päivittyvät. Käyttäjän omat merkinnät asetustiedostoissa säilytetään; vain aiemmat agentmemory-merkinnät korvataan. `/plugin install` on edelleen suositeltu tapa.
 Etä- tai suojattuja käyttöönottoja varten käynnistä Claude Code `AGENTMEMORY_URL`- ja `AGENTMEMORY_SECRET`-muuttujat asetettuina. Plugin välittää molemmat arvot sen mukana tulevalle MCP-palvelimelle; kun `AGENTMEMORY_URL` on tyhjä, MCP-shim käyttää osoitetta `http://localhost:3111`.
 
 ### Codex CLI (Codexin plugin-alusta)
@@ -565,7 +567,7 @@ mcp_servers:
 memory:
   provider: agentmemory
 
-Vahvista toiminta komennolla `curl http://localhost:3111/agentmemory/health`. Avaa reaaliaikainen katseluohjelma osoitteessa http://localhost:3113. Syvempää kuuden hookin muistitarjoajaintegraatiota varten (kontekstin lisäys ennen LLM:ää, vuoron tallennus, MEMORY.md-peilaus ja järjestelmäkehotteen lohko) kopioi integrations/hermes agentmemory-repositoriosta polkuun ~/.hermes/plugins/agentmemory.
+Vahvista toiminta komennolla `curl http://localhost:3111/agentmemory/health`. Avaa reaaliaikainen katseluohjelma osoitteessa http://localhost:3113. Syvempää kuuden hookin muistitarjoajaintegraatiota varten (kontekstin lisäys ennen LLM:ää, vuoron tallennus, MEMORY.md-peilaus ja järjestelmäkehotteen lohko) kopioi integrations/hermes repositoriosta https://github.com/rohitg00/agentmemory polkuun ~/.hermes/plugins/agentmemory.
 ```
 
 Täysi opas: [`integrations/hermes/`](../integrations/hermes/)
@@ -675,7 +677,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Suorita `agentmemory doctor` tai käynnistä uudelleen valinnalla `--verbose`. Jos portit ovat varattuja, käytä `--port <N>` tai `--instance <N>`. Yhteensopivuus ja palautuminen kuvataan [päivitysoppaassa](../docs/upgrades/iii-0.26.md).
+Suorita `agentmemory doctor` tai käynnistä uudelleen valinnalla `--verbose`. Jos portit ovat varattuja, käytä `--port <N>` tai `--instance <N>`. Yhteensopivuus ja palautuminen kuvataan [päivitysoppaassa](../docs/upgrades/iii-0.25.md).
 
 ---
 
@@ -1241,7 +1243,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,700+ tests
+npm test                  # 4,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -75,6 +75,8 @@ export interface StatusInputs {
     missingObservations: number | null;
     sessions: number | null;
     bm25Incomplete: boolean;
+    bm25FailedSessions?: number;
+    bm25NextRetryAt?: string | null;
     keywordRebuildRunning?: boolean;
     pendingVectorBackfill: number;
     vectorBackfillState?: VectorBackfillState;
@@ -237,6 +239,13 @@ function describeBackfillState(state: VectorBackfillState): string {
   return state;
 }
 
+function bm25RetryDetail(index: { bm25FailedSessions?: number; bm25NextRetryAt?: string | null }): string {
+  const parts: string[] = [];
+  if (index.bm25FailedSessions) parts.push(`${index.bm25FailedSessions} sessions failed to load`);
+  if (index.bm25NextRetryAt) parts.push(`next retry at ${index.bm25NextRetryAt}`);
+  return parts.length ? ` (${parts.join(", ")})` : "";
+}
+
 function vectorBackfillFix(state: VectorBackfillState | undefined): string {
   if (state === "waiting-for-opt-in") {
     return "Backfill is paused. Set AGENTMEMORY_VECTOR_BACKFILL=all and restart to opt in. This calls the embedding provider and is capped per boot by AGENTMEMORY_VECTOR_BACKFILL_MAX.";
@@ -370,8 +379,8 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     problems.push({
       level: "error",
       code: "bm25-rebuild-incomplete",
-      message: "The keyword index could not load every session at boot, so some observations are missing from search until the next successful rebuild.",
-      fix: "Check the server log for the session listing failure. Restarting or the next cold-start search retries automatically.",
+      message: `The keyword index could not load all memories or session observations at boot, so some are missing from search until they load${bm25RetryDetail(input.index)}.`,
+      fix: "No action needed: agentmemory retries the failed loads in the background and clears this when they succeed. If it keeps failing, check the server log for keyword index loading errors.",
     });
   }
 
@@ -498,15 +507,22 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     });
   }
 
-  if (input.capture === null) {
+  const unreadableSpools = (input.capture?.spool ?? []).filter((s) => s.unreadable).map((s) => s.path);
+  if (input.capture === null || input.capture?.inbox === null || unreadableSpools.length > 0) {
+    const spoolFix = unreadableSpools.length > 0
+      ? ` Check that the agentmemory process can read ${unreadableSpools.join(", ")} and its folder.`
+      : "";
     problems.push({
       level: "info",
       code: "capture-check-unavailable",
-      message: "The capture inbox did not answer in time, so capture was not checked.",
-      fix: "The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.",
+      message: "The capture inbox or spool could not be read, so capture was not checked.",
+      fix: `The check runs again on the next status request. If it keeps timing out, the state store is overloaded: check the server log.${spoolFix}`,
     });
   }
   problems.push(...captureProblems(input.capture ?? null, input.now, input.ports.rest));
+  if (hookCaptureMissing(input.index.sessions, input.capture)) {
+    problems.push({ level: "warn", code: "no-hook-capture", ...NO_HOOK_CAPTURE });
+  }
 
   if (input.stateStore && !input.stateStore.ok) {
     problems.push({
@@ -577,6 +593,23 @@ export function captureRestBase(restPort: number | null): string {
   return `http://localhost:${restPort ?? 3111}/agentmemory`;
 }
 
+export const NO_HOOK_CAPTURE = {
+  message:
+    "No capture has been observed yet: there are no sessions and no hook events. An agent connected with MCP only records no session observations; it saves long-term memories only when it calls memory_save.",
+  fix: "Run one agent session, then check again. If there are still no sessions and the agent supports hooks or an agentmemory plugin, rerun npx @agentmemory/agentmemory connect <agent> --with-hooks or install the plugin. Agents without either stay MCP only and keep memories only through memory_save.",
+};
+
+export function hookCaptureMissing(sessions: number | null, capture: CaptureStatus | null | undefined): boolean {
+  return sessions === 0 && !!capture?.inbox && !capture.spool.some((s) => s.unreadable) && !captureActivity(capture);
+}
+
+function captureActivity(capture: CaptureStatus): boolean {
+  const inbox = capture.inbox;
+  const queued = inbox ? inbox.pending + inbox.retrying + inbox.dead : 0;
+  const spooled = capture.spool.reduce((n, s) => n + s.records, 0);
+  return capture.sinceStart.accepted > 0 || queued > 0 || spooled > 0;
+}
+
 function captureProblems(capture: CaptureStatus | null, now: Date, restPort: number | null): StatusProblem[] {
   if (!capture) return [];
   const problems: StatusProblem[] = [];
@@ -592,7 +625,7 @@ function captureProblems(capture: CaptureStatus | null, now: Date, restPort: num
       code: "capture-dead-letters",
       message: `${plural(inbox.dead, "captured observation")} could not be stored and ${inbox.dead === 1 ? "is parked as a dead letter" : "are parked as dead letters"}${inbox.lastError ? `: ${inbox.lastError}` : "."}`,
       fix: sessionCap
-        ? `The session reached its MAX_OBS_PER_SESSION cap, so a retry is refused again until the cap is raised. Raise MAX_OBS_PER_SESSION in ~/.agentmemory/.env (0 = no cap) and restart agentmemory. ${listAndRetry}`
+        ? `The session reached its MAX_OBS_PER_SESSION cap and older observations could not be evicted to make room. Check the server log for "Session cap eviction delete failed", or raise MAX_OBS_PER_SESSION in ~/.agentmemory/.env (0 = no cap) and restart agentmemory. ${listAndRetry}`
         : listAndRetry,
     });
   }
@@ -903,7 +936,7 @@ ${row("Vector documents", escapeHtml(idx.vectorDocuments ?? "vector search off")
 ${row("Observations searchable", escapeHtml(idx.breakdown ? idx.breakdown.observations : idx.observationsIndexed))}
 ${row("Missing from index", escapeHtml(idx.missingObservations ?? "not checked"))}
 ${row("Sessions", escapeHtml(idx.sessions ?? "unknown"))}
-${row("Keyword index rebuild", idx.bm25Incomplete ? '<span class="warn">incomplete</span>' : "complete")}
+${row("Keyword index rebuild", idx.bm25Incomplete ? `<span class="warn">incomplete</span>${escapeHtml(bm25RetryDetail(idx))}` : "complete")}
 ${row("Pending vector backfill", escapeHtml(idx.pendingVectorBackfill))}
 ${idx.vectorBackfillState ? row("Vector backfill", escapeHtml(describeBackfillState(idx.vectorBackfillState))) : ""}
 ${indexPersistenceRows(report)}

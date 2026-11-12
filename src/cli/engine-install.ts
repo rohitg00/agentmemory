@@ -5,8 +5,12 @@ import { basename, join } from "node:path";
 
 export const III_INSTALL_CONNECT_TIMEOUT_S = 15;
 export const III_INSTALL_MAX_TIME_S = 300;
+export const III_INSTALL_RETRIES = 3;
+export const III_INSTALL_RETRY_DELAY_S = 2;
+export const III_INSTALL_RETRY_MAX_TIME_S = 120;
 export const III_INSTALL_SPAWN_TIMEOUT_MS =
-  (III_INSTALL_CONNECT_TIMEOUT_S + III_INSTALL_MAX_TIME_S + 30) * 1000;
+  (III_INSTALL_CONNECT_TIMEOUT_S + III_INSTALL_MAX_TIME_S + III_INSTALL_RETRY_MAX_TIME_S + 30) * 1000;
+const RETRYABLE_HTTP_STATUS = new Set([408, 429, 500, 502, 503, 504]);
 
 type ChecksumTable = Readonly<Record<string, Readonly<Record<string, string>>>>;
 
@@ -20,7 +24,7 @@ export const III_RELEASE_SHA256: ChecksumTable = {
     "iii-x86_64-pc-windows-msvc.zip": "3df9e089826f26ddc157d2e504a8e3aa11b9bc5fe21b3faeece85599b21c7081",
     "iii-aarch64-pc-windows-msvc.zip": "ac3a94945741b7194f678347a7275524a63c5e4261cb2bcf34a9ae51d68ccaf0",
   },
-  "0.25.1": {
+  "0.26.0": {
     "iii-aarch64-apple-darwin.tar.gz": "f7eff803540436a4964958048abc0083e638f53b500d737819f62913c270f141",
     "iii-x86_64-apple-darwin.tar.gz": "d93511a72336c19a6028a18f43819e6b3c49522589fc6303f0a0880b3f02d8ae",
     "iii-x86_64-unknown-linux-gnu.tar.gz": "0f486f0fb175013fdebd482735228a47de5fd5014d375a9720cb4f958341208a",
@@ -53,7 +57,11 @@ export function sha256File(path: string): string {
 }
 
 function curlTimeoutFlags(): string {
-  return `--connect-timeout ${III_INSTALL_CONNECT_TIMEOUT_S} --max-time ${III_INSTALL_MAX_TIME_S}`;
+  return `--connect-timeout ${III_INSTALL_CONNECT_TIMEOUT_S} --max-time ${III_INSTALL_MAX_TIME_S} ${curlRetryFlags()}`;
+}
+
+function curlRetryFlags(): string {
+  return `--retry ${III_INSTALL_RETRIES} --retry-delay ${III_INSTALL_RETRY_DELAY_S} --retry-max-time ${III_INSTALL_RETRY_MAX_TIME_S}`;
 }
 
 export function iiiArchivePath(binDir: string): string {
@@ -77,7 +85,7 @@ export function iiiManualInstallCommand(
   const verify = sha256
     ? ` && printf '%s  %s\\n' "${sha256}" "$archive" | { sha256sum -c - 2>/dev/null || shasum -a 256 -c -; }`
     : "";
-  return `mkdir -p "${binDir}" && archive="$(mktemp "${binDir}/.iii-download.XXXXXX")" && { curl -fL --connect-timeout ${III_INSTALL_CONNECT_TIMEOUT_S} -o "$archive" "${releaseUrl}"${verify} && tar -xzf "$archive" -C "${binDir}"; code=$?; rm -f "$archive"; (exit $code); } && chmod +x "${binPath}"`;
+  return `mkdir -p "${binDir}" && archive="$(mktemp "${binDir}/.iii-download.XXXXXX")" && { curl -fL --connect-timeout ${III_INSTALL_CONNECT_TIMEOUT_S} ${curlRetryFlags()} -o "$archive" "${releaseUrl}"${verify} && tar -xzf "$archive" -C "${binDir}"; code=$?; rm -f "$archive"; (exit $code); } && chmod +x "${binPath}"`;
 }
 
 export function describeInstallFailure(result: {
@@ -225,6 +233,12 @@ export function windowsCurlDownloadCommand(
       String(III_INSTALL_CONNECT_TIMEOUT_S),
       "--max-time",
       String(III_INSTALL_MAX_TIME_S),
+      "--retry",
+      String(III_INSTALL_RETRIES),
+      "--retry-delay",
+      String(III_INSTALL_RETRY_DELAY_S),
+      "--retry-max-time",
+      String(III_INSTALL_RETRY_MAX_TIME_S),
       "-o",
       dest,
       url,
@@ -262,6 +276,8 @@ export async function downloadToFile(
   dest: string,
   env: NodeJS.ProcessEnv = process.env,
   run: ZipCommandRunner = runInstallCommand,
+  request: typeof fetch = fetch,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((done) => setTimeout(done, ms)),
 ): Promise<void> {
   if (proxyConfigured(env)) {
     const step = windowsCurlDownloadCommand(url, dest, env);
@@ -269,12 +285,39 @@ export async function downloadToFile(
     if (result.status !== 0) throw new Error(describeInstallFailure(result));
     return;
   }
-  const res = await fetch(url, {
-    redirect: "follow",
-    signal: AbortSignal.timeout(III_INSTALL_MAX_TIME_S * 1000),
-  });
-  if (!res.ok) throw new Error(`download failed with HTTP ${res.status} ${res.statusText}`.trim());
-  writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+  const deadline = Date.now() + III_INSTALL_RETRY_MAX_TIME_S * 1000;
+  for (let attempt = 0; ; attempt++) {
+    let res: Response | undefined;
+    let body: Buffer | undefined;
+    let failure: unknown;
+    try {
+      res = await request(url, { redirect: "follow", signal: AbortSignal.timeout(III_INSTALL_MAX_TIME_S * 1000) });
+      if (res.ok) body = Buffer.from(await res.arrayBuffer());
+      else await res.body?.cancel().catch(() => {});
+    } catch (error) {
+      failure = error;
+    }
+    if (body) {
+      writeFileSync(dest, body);
+      return;
+    }
+    if (res && !res.ok) {
+      failure = new Error(`download failed with HTTP ${res.status} ${res.statusText}`.trim());
+      if (!RETRYABLE_HTTP_STATUS.has(res.status)) throw failure;
+    }
+    const delayMs = retryDelayMs(res);
+    if (attempt >= III_INSTALL_RETRIES || Date.now() + delayMs >= deadline) throw failure;
+    await sleep(delayMs);
+  }
+}
+
+function retryDelayMs(res: Response | undefined): number {
+  const fallback = III_INSTALL_RETRY_DELAY_S * 1000;
+  const header = res?.ok ? null : res?.headers.get("retry-after");
+  if (!header) return fallback;
+  const seconds = Number(header);
+  const ms = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(header) - Date.now();
+  return Number.isFinite(ms) ? Math.max(ms, fallback) : fallback;
 }
 
 export function runInstallCommand(command: string, args: string[]): Promise<ZipRunResult> {

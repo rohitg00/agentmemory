@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,700+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -434,7 +434,7 @@ Dùng lệnh bảo trì khi bạn chủ động muốn cập nhật runtime cụ
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-Lệnh cập nhật runtime cục bộ và có thể cập nhật phụ thuộc JavaScript trong thư mục làm việc. Sao lưu dữ liệu và đọc [hướng dẫn nâng cấp](../docs/upgrades/iii-0.26.md) trước khi cập nhật bản cài hiện có.
+Lệnh cập nhật runtime cục bộ và có thể cập nhật phụ thuộc JavaScript trong thư mục làm việc. Sao lưu dữ liệu và đọc [hướng dẫn nâng cấp](../docs/upgrades/iii-0.25.md) trước khi cập nhật bản cài hiện có.
 
 ### Claude Code (một block, dán vào)
 
@@ -444,7 +444,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code không cài plugin (đường MCP độc lập)
 
-Nếu bạn kết nối MCP server của agentmemory qua `~/.claude.json` trực tiếp thay vì dùng `/plugin install`, Claude Code sẽ không bao giờ resolve `${CLAUDE_PLUGIN_ROOT}` và bạn phải chỉ các hook script tới đường dẫn tuyệt đối trong `~/.claude/settings.json`. Các đường dẫn đó thường nhúng cả phiên bản agentmemory (ví dụ `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), nên lần nâng cấp kế tiếp sẽ lặng lẽ làm hỏng mọi hook.
+Nếu bạn kết nối MCP server của agentmemory qua `~/.claude.json` (đường dẫn mặc định) trực tiếp thay vì dùng `/plugin install`, Claude Code sẽ không bao giờ resolve `${CLAUDE_PLUGIN_ROOT}` và bạn phải chỉ các hook script tới đường dẫn tuyệt đối trong `~/.claude/settings.json` (đường dẫn mặc định). Các đường dẫn đó thường nhúng cả phiên bản agentmemory (ví dụ `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), nên lần nâng cấp kế tiếp sẽ lặng lẽ làm hỏng mọi hook.
 
 Cách khắc phục tạm:
 
@@ -452,7 +452,9 @@ Cách khắc phục tạm:
 agentmemory connect claude-code --with-hooks
 ```
 
-Lệnh này gộp cùng các hook command đó vào `~/.claude/settings.json` với đường dẫn tuyệt đối được resolve tới thư mục `plugin/` đi kèm của package `@agentmemory/agentmemory` đang được cài. Chạy lại lệnh này sau khi nâng cấp agentmemory để làm mới các đường dẫn. Các entry của người dùng trong cùng file được giữ lại; chỉ các entry agentmemory trước đó bị thay thế. Dùng đường `/plugin install` vẫn là cách được khuyến nghị.
+Lệnh này cấu hình máy chủ MCP và gộp các hook đi kèm vào cấu hình người dùng của Claude Code. Nếu `CLAUDE_CONFIG_DIR` chưa được đặt, rỗng hoặc chỉ chứa khoảng trắng, lệnh dùng `~/.claude.json` cho MCP và `~/.claude/settings.json` cho các hook. Các giá trị thư mục khác được dùng đúng như đã cung cấp, kể cả khoảng trắng ở đầu và cuối. Để dùng thư mục tùy chỉnh, hãy đặt `CLAUDE_CONFIG_DIR` thành cùng một giá trị không rỗng cho cả lệnh này và Claude Code; khi đó, các tệp lần lượt là `$CLAUDE_CONFIG_DIR/.claude.json` và `$CLAUDE_CONFIG_DIR/settings.json`. Claude Code phải nhận giá trị này trong môi trường khởi chạy của chính nó, ngay cả khi trình kết nối đọc giá trị từ tệp `.env` của AgentMemory. Tạo thư mục tùy chỉnh trước khi chạy lệnh này; nếu thư mục chưa tồn tại, trình kết nối sẽ bỏ qua Claude Code vì không phát hiện được. Nếu giá trị trong shell chỉ chứa khoảng trắng, hãy xóa `CLAUDE_CONFIG_DIR` khỏi môi trường trước khi khởi chạy Claude Code để nó cũng dùng cấu hình mặc định. Hãy dùng đường dẫn tuyệt đối. Đường dẫn tương đối được xác định theo thư mục làm việc, nên cả hai lệnh phải được chạy từ cùng một thư mục.
+
+Các lệnh hook dùng đường dẫn tuyệt đối đến thư mục `plugin/` đi kèm trong gói đã cài đặt. Chạy lại lệnh sau khi nâng cấp agentmemory để cập nhật các đường dẫn này. Các mục của người dùng trong tệp cấu hình được giữ nguyên; chỉ các mục agentmemory trước đó bị thay thế. Dùng `/plugin install` vẫn là cách được khuyến nghị.
 Với các deployment từ xa hoặc được bảo vệ, hãy khởi chạy Claude Code với `AGENTMEMORY_URL` và `AGENTMEMORY_SECRET` đã được đặt. Plugin sẽ truyền cả hai giá trị này xuống MCP server đi kèm của nó; khi `AGENTMEMORY_URL` để trống, MCP shim dùng `http://localhost:3111`.
 
 ### Codex CLI (nền tảng plugin của Codex)
@@ -559,7 +561,7 @@ mcp_servers:
 memory:
   provider: agentmemory
 
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from https://github.com/rohitg00/agentmemory to ~/.hermes/plugins/agentmemory.
 ```
 
 Hướng dẫn đầy đủ: [`integrations/hermes/`](../integrations/hermes/)
@@ -668,7 +670,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-Chạy `agentmemory doctor` hoặc khởi động lại với `--verbose`. Nếu cổng mặc định đang được dùng, chọn `--port <N>` hoặc `--instance <N>`. Xem [hướng dẫn nâng cấp](../docs/upgrades/iii-0.26.md) về tương thích và phục hồi.
+Chạy `agentmemory doctor` hoặc khởi động lại với `--verbose`. Nếu cổng mặc định đang được dùng, chọn `--port <N>` hoặc `--instance <N>`. Xem [hướng dẫn nâng cấp](../docs/upgrades/iii-0.25.md) về tương thích và phục hồi.
 
 ---
 
@@ -1251,7 +1253,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,700+ tests
+npm test                  # 4,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

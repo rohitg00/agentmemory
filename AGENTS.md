@@ -2,7 +2,7 @@
 
 ## Architecture
 
-agentmemory is a persistent memory system for AI coding agents, built on iii-engine's workers, functions and observers. Everything goes through `registerFunction`, observers bound in `src/runtime/bindings.ts`, and `sdk.trigger()` — never bypass iii-engine with standalone SQLite or in-process alternatives.
+agentmemory is a persistent memory system for AI coding agents, built on iii-engine's three primitives (Worker/Function/Trigger). Everything goes through `registerFunction`/`registerTrigger`/`sdk.trigger()` — never bypass iii-engine with standalone SQLite or in-process alternatives.
 
 - **Engine**: iii-sdk 0.26.0 with @iii-dev/helpers 0.26.0 (Worker Compose-managed iii-engine 0.26.0 on port 49134; the client type is `IIIClient`, HTTP requests are `HttpRequest` from `@iii-dev/helpers/http`)
 - **State**: iii state worker with a file-backed KV store by default (`./data/state_store.db`); Docker pins `save_interval_ms` to 2000 ms
@@ -62,16 +62,12 @@ sdk.registerFunction("api::your-endpoint", async (req: HttpRequest) => {
   });
   return { status_code: 200, body: result };
 });
-import { getBindings } from "./runtime/bindings.js";
-
-getBindings(sdk).http({
+sdk.registerTrigger({
   type: "http",
   function_id: "api::your-endpoint",
   config: { api_path: "/agentmemory/your-path", http_method: "POST" },
 });
 ```
-
-Routes and state subscriptions are observers of `http::on-request` and `state::on-changed` (iii 0.26 removed triggers) — see `src/runtime/bindings.ts`. Observer targets receive the `Observed` payload; register them with `registerObserverTarget(sdk, id, "input" | "output", handler)` from `src/runtime/observed.ts` so the handler gets the bare event (HTTP targets still receive the `HttpRequest`). `AGENTMEMORY_BINDINGS=inline` keeps the post-capture pipeline inline instead of observers. State subscriptions use `getBindings(sdk).state({ function_id, scope, key?, maxInFlight? })`.
 
 ### MCP Tool Handler
 ```typescript
@@ -105,17 +101,17 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 
 ## Testing
 
-- Before every commit run, in order: `npm run build`, `npm run skills:gen`, `npm run docs:sync`, `npm run skills:check`, `npm test` (4,700+ tests). Commit anything the generators changed. CI runs the same build, skills check and tests.
+- Before every commit run, in order: `npm run build`, `npm run skills:gen`, `npm run docs:sync`, `npm run skills:check`, `npm test` (4,900+ tests). Commit anything the generators changed. CI runs the same build, skills check and tests.
 - Before any npm publish: `npm run release:gate` must pass. It installs the packed tarballs into a clean home and runs capture, recovery, restart, export/import, MCP and status checks against the installed CLI (see CONTRIBUTING.md, Release process)
 - Mock pattern: `vi.mock("iii-sdk")` with mock `sdk.trigger`, `kv.get/set/list`
 - Test files go in `test/` with `.test.ts` extension
 - Follow existing patterns in `test/crystallize.test.ts` for function tests
 
-## Current Stats (v0.9.32)
+## Current Stats (v0.9.33)
 
 - 54 MCP tools visible by default; `AGENTMEMORY_TOOLS=core` selects 8 essentials
 - 147 REST endpoints
 - 6 MCP resources, 3 MCP prompts
 - 12 hooks, 17 skills
 - 322+ iii functions
-- 4,700+ tests
+- 4,900+ tests

@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,700+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,900+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -332,14 +332,14 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-### What's new in 0.9.32
+### What's new in 0.9.33
 
-- **Providers are opt-in:** a key alone sends nothing out. Set `AGENTMEMORY_LLM_PROVIDER` for LLM features and `EMBEDDING_PROVIDER` for cloud embeddings.
-- **Native Windows works:** Worker Compose starts, iii installs itself, and `doctor` never waits on a prompt in scripts.
-- **Reliable boot:** agentmemory waits for the state worker, so slow starts keep their search index and vectors.
-- **Better recall:** CJK queries, scoped smart-search and project isolation fixes.
+- **Large stores keep working:** state reads page, so scopes above 64 MiB no longer fail, on iii 0.26.0.
+- **Better recall:** saved memories are no longer capped at three per search, and evicted memories leave the indexes.
+- **Hooks reach the model:** PreToolUse context arrives in the hook envelope, scoped to the current project.
+- **Steadier providers:** placeholder keys count as unset, and the circuit breaker resets on success.
 
-[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.32).
+[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.33).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-benchmarks.svg"><img src="assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
@@ -464,7 +464,7 @@ Use the maintenance command when you intentionally want to update your local run
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-This updates the local runtime and may update JavaScript dependencies in the current workspace. Back up your data and read the [upgrade guide](docs/upgrades/iii-0.26.md) before updating an existing installation.
+This updates the local runtime and may update JavaScript dependencies in the current workspace. Back up your data and read the [upgrade guide](docs/upgrades/iii-0.25.md) before updating an existing installation.
 
 ### Claude Code (one block, paste it)
 
@@ -474,7 +474,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code without the plugin install (MCP-standalone path)
 
-If you wire agentmemory's MCP server through `~/.claude.json` directly instead of using `/plugin install`, Claude Code never resolves `${CLAUDE_PLUGIN_ROOT}` and you have to point hook scripts at absolute paths in `~/.claude/settings.json`. Those paths typically embed the agentmemory version (e.g. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), so the next upgrade silently breaks every hook.
+If you wire agentmemory's MCP server directly through the default `~/.claude.json` file instead of using `/plugin install`, Claude Code never resolves `${CLAUDE_PLUGIN_ROOT}` and you have to point hook scripts at absolute paths in the default `~/.claude/settings.json` file. Those paths typically embed the agentmemory version (e.g. `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`), so the next upgrade silently breaks every hook.
 
 Workaround:
 
@@ -482,7 +482,9 @@ Workaround:
 agentmemory connect claude-code --with-hooks
 ```
 
-This merges the same hook commands into `~/.claude/settings.json` with absolute paths resolved to the bundled `plugin/` directory of the currently installed `@agentmemory/agentmemory` package. Re-run the command after upgrading agentmemory to refresh the paths. User entries in the same file are preserved; only previous agentmemory entries are replaced. Using the `/plugin install` path remains the recommended approach.
+This command configures the MCP server and merges the bundled hooks into Claude Code’s user configuration. When `CLAUDE_CONFIG_DIR` is unset, empty, or whitespace-only, it uses `~/.claude.json` for MCP and `~/.claude/settings.json` for hooks. Other directory values are used exactly as provided, including leading and trailing whitespace. For a custom directory, set `CLAUDE_CONFIG_DIR` to the same non-empty value for this command and Claude Code; the files are then `$CLAUDE_CONFIG_DIR/.claude.json` and `$CLAUDE_CONFIG_DIR/settings.json`, respectively. Claude Code must receive this value in its launch environment, even if the connector reads it from AgentMemory’s `.env`. Create the custom directory before running this command; otherwise, the connector skips Claude Code as not detected. If the shell value is whitespace-only, unset `CLAUDE_CONFIG_DIR` before launching Claude Code so it also uses the default profile. Use an absolute path. Relative paths are resolved from the working directory, so both commands must run from the same directory.
+
+Hook commands use absolute paths to the installed package’s bundled `plugin/` directory. Re-run the command after upgrading agentmemory to refresh those paths. User entries in the configuration files are preserved; only previous agentmemory entries are replaced. Using `/plugin install` remains the recommended approach.
 
 For a remote server with the plugin, enter its `https://` URL and secret in the plugin settings that Claude Code asks for when you enable the plugin. The hooks and the bundled MCP server read both from there. With the URL setting empty, they use `AGENTMEMORY_URL` from your environment, then `http://localhost:3111`; with the secret setting empty, they send only the local server's own secret, and only to a loopback address. With `agentmemory connect claude-code` there are no plugin settings: set `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` in the environment that starts Claude Code.
 
@@ -531,7 +533,7 @@ agentmemory connect copilot-cli
 copilot plugin install rohitg00/agentmemory:plugin
 ```
 
-`agentmemory connect copilot-cli` merges `mcpServers.agentmemory` into `~/.copilot/mcp-config.json` (or `$COPILOT_HOME/mcp-config.json` when `COPILOT_HOME` is set) and preserves existing servers. On native Windows this is the only automated `connect` adapter; configure every other native Windows agent manually. WSL `connect` is supported only when the target agent is installed in that same WSL environment. Copilot picks up the MCP server on next launch or after `/mcp`. Install the plugin as well when you want the full hook/skill experience.
+`agentmemory connect copilot-cli` merges `mcpServers.agentmemory` into `~/.copilot/mcp-config.json` (or `$COPILOT_HOME/mcp-config.json` when `COPILOT_HOME` is set) and preserves existing servers. WSL `connect` is supported only when the target agent is installed in that same WSL environment. Copilot picks up the MCP server on next launch or after `/mcp`. Install the plugin as well when you want the full hook/skill experience.
 
 ### Cursor
 
@@ -688,7 +690,7 @@ npm install && npm run build && npm start
 
 agentmemory runs on Windows 10/11. WSL2 follows the Linux path and can install the pinned engine automatically. Native Windows also installs the pinned iii-engine v0.26.0 automatically: the CLI downloads the Windows ZIP, verifies its SHA-256 and extracts `iii.exe` into `%USERPROFILE%\.agentmemory\bin`. If that fails, download the matching archive from the [iii v0.26.0 release page](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verify its checksum, and extract `iii.exe` into the same directory.
 
-Native Windows automated MCP wiring supports only `agentmemory connect copilot-cli`. For other native Windows agents, use the manual MCP block from [Other agents](#other-agents). Run `connect` inside WSL only when the target agent is installed in that same WSL environment.
+`agentmemory connect <agent>` works on native Windows. It writes the MCP server as `cmd /c npx -y @agentmemory/mcp`, because Windows cannot start `npx` without a shell, and it writes hook script paths as absolute paths with forward slashes, either quoted or passed as a separate argument, so a home folder with spaces is safe. Antigravity hooks cannot use quoted paths. When the install path has spaces, `connect antigravity --with-hooks` uses the Windows short (8.3) path. If the short path is not available, it prints the hook JSON to paste by hand, and the MCP wiring still applies. Run `connect` inside WSL only when the target agent is installed in that same WSL environment.
 
 **Standalone MCP only (no engine).** If you only need MCP tools and do not need the REST API, viewer, or runtime services:
 
@@ -698,7 +700,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-**Diagnostics:** Run `agentmemory doctor` or restart with `--verbose`. Use `--port <N>` or `--instance <N>` if the default ports are occupied. See the [upgrade guide](docs/upgrades/iii-0.26.md) for runtime compatibility and recovery.
+**Diagnostics:** Run `agentmemory doctor` or restart with `--verbose`. Use `--port <N>` or `--instance <N>` if the default ports are occupied. See the [upgrade guide](docs/upgrades/iii-0.25.md) for runtime compatibility and recovery.
 
 ---
 
@@ -1200,8 +1202,8 @@ EMBEDDING_PROVIDER=local
 
 # Optional automatic context injection through the shared hooks
 # AGENTMEMORY_INJECT_CONTEXT=true
-# How long the PreToolUse hook waits for that context, in ms (default 2000)
-# AGENTMEMORY_ENRICH_TIMEOUT_MS=2000
+# Set the PreToolUse timeout in the hook process environment, not this server file:
+# AGENTMEMORY_ENRICH_TIMEOUT_MS=2000 (default 2000 ms)
 
 # Optional outside LLM for summaries and consolidation. A key alone does nothing;
 # this line selects the provider whose key agentmemory may use.
@@ -1311,7 +1313,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,700+ tests
+npm test                  # 4,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

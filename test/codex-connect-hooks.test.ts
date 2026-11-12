@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
   copyFileSync,
   writeFileSync,
@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  existsSync,
 } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -163,5 +164,34 @@ describe("buildMergedHooks file round-trip", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("connect codex --with-hooks on an already-wired config", () => {
+  let home: string;
+
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "am-codex-wired-"));
+    vi.stubEnv("HOME", home);
+    vi.stubEnv("USERPROFILE", home);
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    rmSync(home, { recursive: true, force: true });
+  });
+
+  it("installs the requested hooks and reports them before returning already-wired", async () => {
+    const { adapter } = await import("../src/cli/connect/codex.js");
+    expect(await adapter.install({ dryRun: false, force: false })).toMatchObject({ kind: "installed" });
+    const hooksPath = join(home, ".codex", "hooks.json");
+    expect(existsSync(hooksPath)).toBe(false);
+
+    const result = await adapter.install({ dryRun: false, force: false, withHooks: true });
+    expect(result).toMatchObject({ kind: "already-wired", hooks: "installed" });
+    const hooks = JSON.parse(readFileSync(hooksPath, "utf-8")) as HookManifest;
+    expect(Object.keys(hooks.hooks)).toContain("SessionStart");
   });
 });

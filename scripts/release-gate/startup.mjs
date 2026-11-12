@@ -432,10 +432,13 @@ async function main() {
     d.exitCode = result.code; d.ownedComposeStopped = true;
   });
   await scenario("cancel-external-startup", async (i, d) => {
-    await i.startEngine(i.config({ delayMs: 10_000, earlyPid: true }));
+    await i.startEngine(i.config({ delayMs: 120_000, earlyPid: true }));
     await poll("delayed Compose worker process", () => i.wrapperStarts()[0]?.pid, 10_000);
-    i.start(["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "300000" });
-    await sleep(1000);
+    i.start(["--no-engine"], { AGENTMEMORY_READY_TIMEOUT_MS: "300000", AGENTMEMORY_VERBOSE: "1" });
+    await poll("CLI worker readiness wait", () => {
+      if (i.cli.result) throw Object.assign(new Error(`CLI exited before its readiness wait ${JSON.stringify(i.cli.result)}: ${i.cli.text.slice(-800)}`), { fatal: true });
+      return i.cli.text.includes("Skipping engine check (--no-engine)");
+    }, 30_000);
     i.cli.kill("SIGTERM"); const result = await exited(i.cli, 6_000); assert.equal(result.code, 143, `Cancellation result ${JSON.stringify(result)}: ${i.cli.text.slice(-800)}`);
     assert(alive(i.composePid), "Cancellation stopped an external Compose project");
     assert(alive(i.wrapperStarts()[0].pid), "Cancellation killed the Compose-owned delayed worker");

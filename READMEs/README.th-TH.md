@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 เครื่องมือ MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook อัตโนมัติ" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="ไม่ต้องพึ่ง external DB เลย" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 4,700+ รายการ" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="ผ่านการทดสอบ 4,900+ รายการ" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -428,7 +428,7 @@ npx -y @agentmemory/agentmemory@latest import-jsonl ~/.claude/projects/-my-proje
 npx -y @agentmemory/agentmemory@latest upgrade
 ```
 
-คำสั่งนี้อัปเดต runtime ในเครื่อง และอาจอัปเดต dependency ของ JavaScript ในไดเรกทอรีทำงานด้วย สำรองข้อมูลและอ่าน[คู่มืออัปเกรด](../docs/upgrades/iii-0.26.md)ก่อนอัปเดตการติดตั้งเดิม
+คำสั่งนี้อัปเดต runtime ในเครื่อง และอาจอัปเดต dependency ของ JavaScript ในไดเรกทอรีทำงานด้วย สำรองข้อมูลและอ่าน[คู่มืออัปเกรด](../docs/upgrades/iii-0.25.md)ก่อนอัปเดตการติดตั้งเดิม
 
 ### Claude Code (one block, paste it)
 
@@ -438,7 +438,7 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 
 #### Claude Code without the plugin install (MCP-standalone path)
 
-ถ้าคุณเชื่อมต่อ MCP server ของ agentmemory ผ่าน `~/.claude.json` โดยตรงแทนการใช้ `/plugin install`, Claude Code จะไม่ resolve `${CLAUDE_PLUGIN_ROOT}` เลย และคุณต้องชี้ hook script ไปที่ absolute path ใน `~/.claude/settings.json` path เหล่านั้นมักจะฝังเวอร์ชันของ agentmemory ไว้ด้วย (เช่น `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`) ดังนั้นการ upgrade ครั้งต่อไปจะทำให้ hook ทุกตัวพังแบบไม่มีเสียงเตือน
+ถ้าคุณเชื่อมต่อ MCP server ของ agentmemory ผ่าน `~/.claude.json` (เส้นทางเริ่มต้น) โดยตรงแทนการใช้ `/plugin install`, Claude Code จะไม่ resolve `${CLAUDE_PLUGIN_ROOT}` เลย และคุณต้องชี้ hook script ไปที่ absolute path ใน `~/.claude/settings.json` (เส้นทางเริ่มต้น) path เหล่านั้นมักจะฝังเวอร์ชันของ agentmemory ไว้ด้วย (เช่น `~/.codex/plugins/cache/agentmemory/agentmemory/0.9.22/scripts/…`) ดังนั้นการ upgrade ครั้งต่อไปจะทำให้ hook ทุกตัวพังแบบไม่มีเสียงเตือน
 
 วิธีแก้:
 
@@ -446,7 +446,9 @@ Install agentmemory: run `npx -y @agentmemory/agentmemory@latest` in a separate 
 agentmemory connect claude-code --with-hooks
 ```
 
-คำสั่งนี้จะ merge คำสั่ง hook เดียวกันเข้าไปใน `~/.claude/settings.json` โดยใช้ absolute path ที่ resolve ไปยัง directory `plugin/` ที่แพ็กเกจ `@agentmemory/agentmemory` เวอร์ชันที่ติดตั้งอยู่ในปัจจุบัน ให้รันคำสั่งนี้ซ้ำอีกครั้งหลัง upgrade agentmemory เพื่อ refresh path รายการของผู้ใช้ในไฟล์เดียวกันจะยังคงอยู่ มีเพียงรายการของ agentmemory เดิมที่จะถูกแทนที่ การใช้เส้นทาง `/plugin install` ยังคงเป็นวิธีที่แนะนำ
+คำสั่งนี้กำหนดค่าเซิร์ฟเวอร์ MCP และรวม hook ที่ให้มากับแพ็กเกจเข้ากับการกำหนดค่าผู้ใช้ของ Claude Code หากไม่ได้ตั้งค่า `CLAUDE_CONFIG_DIR` มีค่าว่าง หรือมีแต่ช่องว่าง จะใช้ `~/.claude.json` สำหรับ MCP และ `~/.claude/settings.json` สำหรับ hook ค่าไดเรกทอรีอื่นจะถูกใช้ตามที่ระบุทุกตัวอักษร รวมถึงช่องว่างที่ต้นและท้ายค่า หากต้องการใช้ไดเรกทอรีที่กำหนดเอง ให้ตั้งค่า `CLAUDE_CONFIG_DIR` เป็นค่าเดียวกันที่ไม่ว่างทั้งสำหรับคำสั่งนี้และ Claude Code โดยไฟล์ที่ใช้จะเป็น `$CLAUDE_CONFIG_DIR/.claude.json` และ `$CLAUDE_CONFIG_DIR/settings.json` ตามลำดับ Claude Code ต้องได้รับค่านี้ในสภาพแวดล้อมที่ใช้เริ่มโปรแกรม แม้ว่าตัวเชื่อมต่อจะอ่านค่าจากไฟล์ `.env` ของ AgentMemory ก็ตาม สร้างไดเรกทอรีที่กำหนดเองก่อนรันคำสั่งนี้ มิฉะนั้นตัวเชื่อมต่อจะข้าม Claude Code เนื่องจากตรวจไม่พบ หากค่าใน shell มีแต่ช่องว่าง ให้ยกเลิกการตั้งค่า `CLAUDE_CONFIG_DIR` ก่อนเริ่ม Claude Code เพื่อให้ใช้โปรไฟล์เริ่มต้นเช่นกัน ใช้พาธแบบสัมบูรณ์ พาธแบบสัมพัทธ์จะอ้างอิงจากไดเรกทอรีทำงาน ดังนั้นต้องเรียกใช้ทั้งสองคำสั่งจากไดเรกทอรีเดียวกัน
+
+คำสั่ง hook ใช้เส้นทางแบบสัมบูรณ์ไปยังไดเรกทอรี `plugin/` ที่ให้มากับแพ็กเกจที่ติดตั้ง หลังอัปเกรด agentmemory ให้รันคำสั่งนี้อีกครั้งเพื่ออัปเดตเส้นทาง รายการของผู้ใช้ในไฟล์กำหนดค่าจะยังคงอยู่ โดยจะแทนที่เฉพาะรายการเดิมของ agentmemory เท่านั้น การใช้ `/plugin install` ยังคงเป็นแนวทางที่แนะนำ
 สำหรับการ deploy แบบ remote หรือแบบที่มีการป้องกัน ให้เปิด Claude Code โดยตั้งค่า `AGENTMEMORY_URL` และ `AGENTMEMORY_SECRET` ไว้ plugin จะส่งค่าทั้งสองนี้ต่อไปยัง MCP server ที่ bundle มาด้วย เมื่อ `AGENTMEMORY_URL` เป็นค่าว่าง MCP shim จะใช้ `http://localhost:3111`
 
 ### Codex CLI (Codex plugin platform)
@@ -553,7 +555,7 @@ mcp_servers:
 memory:
   provider: agentmemory
 
-Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from the agentmemory repo to ~/.hermes/plugins/agentmemory.
+Verify with `curl http://localhost:3111/agentmemory/health`. Open http://localhost:3113 for the real-time viewer. For deeper 6-hook memory provider integration (pre-LLM context injection, turn capture, MEMORY.md mirroring, system prompt block), copy integrations/hermes from https://github.com/rohitg00/agentmemory to ~/.hermes/plugins/agentmemory.
 ```
 
 คู่มือฉบับเต็ม: [`integrations/hermes/`](../integrations/hermes/)
@@ -660,7 +662,7 @@ npx -y @agentmemory/agentmemory@latest mcp
 npx -y @agentmemory/mcp
 ```
 
-รัน `agentmemory doctor` หรือเริ่มใหม่ด้วย `--verbose` หากพอร์ตเริ่มต้นถูกใช้ ให้เลือก `--port <N>` หรือ `--instance <N>` ดูความเข้ากันได้และการกู้คืนใน[คู่มืออัปเกรด](../docs/upgrades/iii-0.26.md)
+รัน `agentmemory doctor` หรือเริ่มใหม่ด้วย `--verbose` หากพอร์ตเริ่มต้นถูกใช้ ให้เลือก `--port <N>` หรือ `--instance <N>` ดูความเข้ากันได้และการกู้คืนใน[คู่มืออัปเกรด](../docs/upgrades/iii-0.25.md)
 
 ---
 
@@ -1242,7 +1244,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,700+ tests
+npm test                  # 4,900+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
