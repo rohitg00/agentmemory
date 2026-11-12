@@ -32,6 +32,7 @@ const MAX_EVIDENCE = 256;
 const MAX_OPERATIONS = 32;
 const MAX_RESULTS = 32;
 const FINAL_EVIDENCE_READS = 64;
+const MAX_CANDIDATE_BATCH = 4;
 
 function compareText(a: string, b: string): number { return a === b ? 0 : a < b ? -1 : 1; }
 function nodeNames(node: GraphNode): string[] {
@@ -215,15 +216,21 @@ export class GraphQuery {
         const characters = [...new Set([...name].filter((value) => value.trim()))];
         if (characters.length > 16) this.truncated();
         for (const [position, character] of characters.slice(0, 16).entries()) {
+          if (selected.size + examined.size >= reader.status.nodes) break;
           if (reader.remainingReads <= FINAL_EVIDENCE_READS || selected.size >= MAX_START_NODES) { this.truncated(); break; }
           const page = await reader.posting("character", character, { limit: position === 0 ? MAX_CANDIDATES : 16 });
           if (page.cursor) this.truncated();
-          for (const id of page.ids) {
-            if (selected.has(id) || examined.has(id)) continue;
-            if (examined.size >= MAX_CANDIDATES || reader.remainingReads <= FINAL_EVIDENCE_READS) { this.truncated(); break; }
-            examined.add(id);
-            const node = await reader.getNode(id);
-            if (node && !node.stale && nodeNames(node).some((value) => value.includes(name) || name.includes(value))) partialCandidates.set(id, node);
+          const candidates = page.ids.filter((id) => !selected.has(id) && !examined.has(id));
+          for (let offset = 0; offset < candidates.length && !reader.exhausted && !this.controller.signal.aborted;) {
+            const room = Math.min(MAX_CANDIDATES - examined.size, reader.remainingReads - FINAL_EVIDENCE_READS);
+            if (room <= 0) { this.truncated(); break; }
+            const batch = candidates.slice(offset, offset + Math.min(MAX_CANDIDATE_BATCH, room));
+            offset += batch.length;
+            for (const id of batch) examined.add(id);
+            const loaded = await Promise.all(batch.map(async (id) => ({ id, node: await reader.getNode(id) })));
+            for (const { id, node } of loaded) {
+              if (node && !node.stale && nodeNames(node).some((value) => value.includes(name) || name.includes(value))) partialCandidates.set(id, node);
+            }
           }
         }
       }

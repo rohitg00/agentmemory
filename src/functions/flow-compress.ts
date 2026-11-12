@@ -2,7 +2,10 @@ import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
 import type { Action, ActionEdge, RoutineRun, MemoryProvider } from "../types.js";
-import { recordAudit } from "./audit.js";
+import { getAgentId } from "../config.js";
+import { logger } from "../logger.js";
+import { safeAudit } from "./audit.js";
+import { indexRecords } from "./search.js";
 
 const FLOW_COMPRESS_SYSTEM = `You are a workflow summarizer. Given a completed action chain, produce a concise summary capturing:
 1. The overall goal and outcome
@@ -82,20 +85,40 @@ export function registerFlowCompressFunction(
         );
         const summary = parseFlowSummary(response);
         const ts = new Date().toISOString();
+        const agentId = getAgentId();
+        const rawText = response
+          .replace(/<\/?(?:summary|goal|outcome|steps|discoveries|lesson)(?:\s[^>]*)?>/gi, " ")
+          .replace(/\s+/g, " ")
+          .trim();
+        const project =
+          typeof data.project === "string" && data.project.length > 0
+            ? doneActions.every((a) => a.project === data.project)
+              ? data.project
+              : undefined
+            : new Set(doneActions.map((a) => a.project)).size === 1
+              ? doneActions[0].project
+              : undefined;
 
         const memory = {
           id: generateId("mem"),
           createdAt: ts,
           updatedAt: ts,
           type: "workflow" as const,
-          title: summary.goal || `Workflow: ${doneActions.length} actions`,
-          content: formatSummary(summary),
+          title: summary.goal || rawText.slice(0, 80) || `Workflow: ${doneActions.length} actions`,
+          // Fall back to the tag-stripped response so an unparseable or empty
+          // summary never produces an unsearchable memory or indexed markup.
+          content:
+            formatSummary(summary) ||
+            rawText ||
+            `Workflow with ${doneActions.length} completed actions`,
           concepts: extractConcepts(doneActions),
           files: extractFiles(doneActions),
           sessionIds: [],
           strength: 1.0,
           version: 1,
           isLatest: true,
+          ...(agentId ? { agentId } : {}),
+          ...(project !== undefined ? { project } : {}),
           metadata: {
             flowCompressed: true,
             actionCount: doneActions.length,
@@ -104,12 +127,21 @@ export function registerFlowCompressFunction(
         };
 
         await kv.set(KV.memories, memory.id, memory);
-        await recordAudit(kv, "compress", "mem::flow-compress", [memory.id], {
+        await safeAudit(kv, "compress", "mem::flow-compress", [memory.id], {
           action: "compress_flow",
           flowCompressed: true,
           actionCount: doneActions.length,
-          project: data.project,
+          project,
         });
+        // Indexing failures are logged, not fatal: the KV write already
+        // committed and the restart rebuild is the backstop.
+        try {
+          await indexRecords([], [memory]);
+        } catch (err) {
+          logger.warn("Flow-compress indexing failed; restart rebuild will recover", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
 
         return {
           success: true,
@@ -166,7 +198,7 @@ function parseFlowSummary(response: string): {
 } {
   const extract = (tag: string): string => {
     const match = response.match(
-      new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`),
+      new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`),
     );
     return match ? match[1].trim() : "";
   };

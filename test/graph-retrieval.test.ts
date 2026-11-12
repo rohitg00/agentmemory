@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { GraphRetrieval } from "../src/functions/graph-retrieval.js";
-import { getGraphIndexStatus, initializeGraphIndex, reconcileGraphIndexRecord } from "../src/state/graph-retrieval-index.js";
+import { getGraphIndexStatus, initializeGraphIndex, reconcileGraphIndexRecord, GraphIndexReader } from "../src/state/graph-retrieval-index.js";
 import { indexObservationSession } from "../src/state/obs-index.js";
 import { KV } from "../src/state/schema.js";
 import type { GraphNode, GraphEdge } from "../src/types.js";
@@ -570,4 +570,65 @@ it("does not replay cached operations after the caller cancels its query", async
   expect(await query.searchByEntities(["Cobalt"])).toHaveLength(1);
   query.cancel();
   await expect(query.searchByEntities(["Cobalt"])).rejects.toThrow();
+});
+
+it("keeps deterministic partial candidate order when node reads resolve out of order", async () => {
+  const nodes = [
+    makeNode("p-zeta", "zeta-auth", "concept", ["obs_zeta"]),
+    makeNode("p-alpha", "alpha-auth", "concept", ["obs_alpha"]),
+    ...Array.from({ length: 6 }, (_, index) => makeNode(`fill-${index}`, `hat-${index}`, "concept", [`fill_${index}`])),
+  ];
+  const kv = await mockKV(nodes, []);
+  const pending: Array<() => void> = [];
+  const get = kv.get;
+  vi.spyOn(kv, "get").mockImplementation(async (scope, key) => {
+    const value = await get(scope, key);
+    if (scope === KV.graphRetrievalData && key.includes(":record:node:")) await new Promise<void>((resolve) => pending.push(resolve));
+    return value;
+  });
+  const search = new GraphRetrieval(kv as never).searchByEntities(["auth"], 0);
+  let settled = false;
+  void search.then(() => { settled = true; }, () => { settled = true; });
+  while (!settled) {
+    for (const resolve of pending.splice(0).reverse()) resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  expect((await search).map((result) => result.obsId)).toEqual(["obs_alpha", "obs_zeta"]);
+});
+
+it("does not dispatch further partial candidate batches after the caller cancels its query", async () => {
+  const nodes = Array.from({ length: 8 }, (_, index) => makeNode(`fill-${index}`, `atlas-${index}`, "concept", [`obs_${index}`]));
+  const kv = await mockKV(nodes, []);
+  const query = new GraphRetrieval(kv as never).createQuery();
+  const getNode = vi.spyOn(GraphIndexReader.prototype, "getNode");
+  let canceled = false;
+  const get = kv.get;
+  vi.spyOn(kv, "get").mockImplementation(async (scope, key) => {
+    if (!canceled && scope === KV.graphRetrievalData && key.includes(":record:node:")) { canceled = true; query.cancel(); }
+    return get(scope, key);
+  });
+  try {
+    await expect(query.searchByEntities(["auth"], 0)).rejects.toThrow();
+    expect(canceled).toBe(true);
+    expect(getNode.mock.calls.length).toBeLessThanOrEqual(4);
+  } finally {
+    getNode.mockRestore();
+  }
+});
+
+it("stops requesting character postings once every indexed node is covered", async () => {
+  const nodes = [
+    makeNode("exact", "auth", "function", ["obs_auth"]),
+    makeNode("partial", "auth-handler", "function", ["obs_handler"]),
+    makeNode("other", "atlas", "concept", ["obs_atlas"]),
+  ];
+  const kv = await mockKV(nodes, []);
+  const posting = vi.spyOn(GraphIndexReader.prototype, "posting");
+  try {
+    const results = await new GraphRetrieval(kv as never).searchByEntities(["auth"], 0);
+    expect(results.map((result) => result.obsId)).toEqual(["obs_auth", "obs_handler"]);
+    expect(posting.mock.calls.filter((call) => call[0] === "character").map((call) => call[1])).toEqual(["a"]);
+  } finally {
+    posting.mockRestore();
+  }
 });

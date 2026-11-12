@@ -295,7 +295,7 @@ function persisted(p, scope) {
 }
 function graphFiles(p) {
   const dir = join(p.data, "state_store.db");
-  return readdirSync(dir).filter((file) => decodeURIComponent(file).startsWith("mem:graph:")).map((file) => ({ scope: decodeURIComponent(file).replace(/\.bin$/, ""), bytes: statSync(join(dir, file)).size }));
+  return readdirSync(dir).filter((file) => file.endsWith(".bin") && decodeURIComponent(file).startsWith("mem:graph:")).map((file) => ({ scope: decodeURIComponent(file).replace(/\.bin$/, ""), bytes: statSync(join(dir, file)).size }));
 }
 function ordinaryReads(p, phase, requestCount = 10) {
   const summary = p.traceSummary.get(phase);
