@@ -13,6 +13,7 @@ import { recordAudit } from "./audit.js";
 import { getSearchIndex, getVectorIndex, isMemoryIndexReady, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { TTL_TOO_LARGE, ttlExpiry } from "../mcp/remember-arguments.js";
 
 // Slicing by UTF-16 code unit can cut an astral character (emoji, some CJK
 // extensions) mid surrogate pair, leaving a lone high surrogate that renders
@@ -54,6 +55,9 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       }
       if (data.sourceObservationIds && !Array.isArray(data.sourceObservationIds)) {
         return { success: false, error: "sourceObservationIds must be an array" };
+      }
+      if (typeof data.ttlDays === "number" && data.ttlDays > 0 && ttlExpiry(data.ttlDays) === null) {
+        return { success: false, error: TTL_TOO_LARGE };
       }
       const validTypes = new Set([
         "pattern",
@@ -178,9 +182,8 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           ...(project !== undefined && { project }),
         };
 
-        if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {
-          memory.forgetAfter = new Date(Date.now() + data.ttlDays * 86400000).toISOString();
-        }
+        const forgetAfter = typeof data.ttlDays === "number" && data.ttlDays > 0 ? ttlExpiry(data.ttlDays) : null;
+        if (forgetAfter) memory.forgetAfter = forgetAfter;
 
         if (supersededMemory) {
           supersededMemory.isLatest = false;

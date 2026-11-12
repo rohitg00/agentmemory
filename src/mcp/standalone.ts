@@ -10,11 +10,12 @@ import { memoryToObservation } from "../state/memory-utils.js";
 import { buildRecallResponse } from "../functions/recall-response.js";
 import { parseSearchExpansionIds, type SearchExpansionId } from "./search-arguments.js";
 import { parseSessionArguments } from "./session-arguments.js";
+import { normalizeRememberFields, normalizeStringList, rememberFieldsError, ttlExpiry } from "./remember-arguments.js";
 import { pageAfterCursor, sortByKeyDesc } from "../state/list-query.js";
 import type { Memory, SearchResult, Session } from "../types.js";
 import { VERSION } from "../version.js";
 import { generateId } from "../state/schema.js";
-import { queryAudit } from "../functions/audit.js";
+import { queryAudit, safeAudit } from "../functions/audit.js";
 import {
   resolveHandle,
   invalidateHandle,
@@ -75,22 +76,6 @@ function announceMode(handle: Handle): void {
   }
 }
 
-function normalizeList(value: unknown): string[] {
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    return value
-      .map((v) => (typeof v === "string" ? v.trim() : ""))
-      .filter((v) => v.length > 0);
-  }
-  if (typeof value === "string") {
-    return value
-      .split(",")
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-  }
-  return [];
-}
-
 const DEFAULT_LIMIT = 10;
 const MAX_LIMIT = 100;
 function parseLimit(raw: unknown, fallback = DEFAULT_LIMIT): number {
@@ -120,6 +105,8 @@ interface Validated {
   type?: string;
   concepts?: string[];
   files?: string[];
+  ttlDays?: number;
+  sourceObservationIds?: string[];
   project?: string;
   agentId?: string;
   query?: string;
@@ -151,8 +138,9 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       }
       v.content = content;
       v.type = (args["type"] as string) || "fact";
-      v.concepts = normalizeList(args["concepts"]);
-      v.files = normalizeList(args["files"]);
+      const fieldError = rememberFieldsError(args);
+      if (fieldError) throw new Error(fieldError);
+      Object.assign(v, normalizeRememberFields(args));
       // The tool schema exposes project (and now agentId); dropping them
       // here silently broke project/agent scoping through the stdio
       // package specifically.
@@ -208,7 +196,7 @@ function validate(toolName: string, args: Record<string, unknown>): Validated {
       return v;
     }
     case "memory_governance_delete": {
-      const ids = normalizeList(args["memoryIds"]);
+      const ids = normalizeStringList(args["memoryIds"]);
       if (ids.length === 0) throw new Error("memoryIds is required");
       v.memoryIds = ids;
       v.reason = (args["reason"] as string) || "plugin skill request";
@@ -247,6 +235,8 @@ async function handleProxy(
           type: v.type,
           concepts: v.concepts,
           files: v.files,
+          ...(v.ttlDays !== undefined && { ttlDays: v.ttlDays }),
+          ...(v.sourceObservationIds !== undefined && { sourceObservationIds: v.sourceObservationIds }),
           ...(v.project !== undefined && { project: v.project }),
           ...(v.agentId !== undefined && { agentId: v.agentId }),
         }),
@@ -344,6 +334,24 @@ function localFallbackNotice(persisted: boolean) {
   };
 }
 
+async function liveLocalMemories(kvInstance: InMemoryKV, now = Date.now()): Promise<Memory[]> {
+  const memories = await kvInstance.list<Memory>("mem:memories");
+  const expired = memories.filter((memory) => memory.forgetAfter && Date.parse(memory.forgetAfter) <= now);
+  if (expired.length === 0) return memories;
+  for (const memory of expired) {
+    if (!(await kvInstance.delete("mem:memories", memory.id))) continue;
+    await safeAudit(kvInstance as never, "delete", "mem::auto-forget", [memory.id], {
+      resource: "memory",
+      reason: "auto-forget TTL",
+      timestamp: memory.forgetAfter,
+      storage: "local",
+    });
+  }
+  kvInstance.persist();
+  const expiredSet = new Set(expired);
+  return memories.filter((memory) => !expiredSet.has(memory));
+}
+
 async function handleLocal(
   v: Validated,
   kvInstance: InMemoryKV,
@@ -365,6 +373,8 @@ async function handleLocal(
         version: 1,
         isLatest: true,
         sessionIds: [],
+        ...(v.ttlDays !== undefined && { forgetAfter: ttlExpiry(v.ttlDays) ?? undefined }),
+        ...(v.sourceObservationIds !== undefined && { sourceObservationIds: v.sourceObservationIds }),
         ...(v.project !== undefined && { project: v.project }),
         ...((v.agentId ?? getAgentId()) !== undefined && { agentId: v.agentId ?? getAgentId() }),
       });
@@ -381,7 +391,7 @@ async function handleLocal(
       }
       const query = (v.query || "").toLowerCase();
       const limit = v.limit ?? DEFAULT_LIMIT;
-      const all = v.targetLayer === "observation" ? [] : await kvInstance.list<Memory>("mem:memories");
+      const all = v.targetLayer === "observation" ? [] : await liveLocalMemories(kvInstance);
       const sessions = v.project || v.cwd ? await kvInstance.list<Session>("mem:sessions") : [];
       const sessionsById = new Map(sessions.map((session) => [session.id, session]));
       const scoped = all.filter((memory) => {
@@ -456,7 +466,7 @@ async function handleLocal(
     }
 
     case "memory_export": {
-      const memories = await kvInstance.list("mem:memories");
+      const memories = await liveLocalMemories(kvInstance);
       const sessions = await kvInstance.list("mem:sessions");
       return textResponse({ version: VERSION, memories, sessions }, true);
     }
