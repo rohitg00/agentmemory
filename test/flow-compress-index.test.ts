@@ -110,6 +110,20 @@ describe("flow-compressed memories", () => {
     expect(f.memory(result.memoryId!)!.content).toContain("left < threshold && threshold > right");
   });
 
+  it("keeps long fallback summaries searchable past the embedding input limit", async () => {
+    const response = "deployment notes ".repeat(1100) + "Quasar rollback checkpoint";
+    const f = fixture(async () => response);
+    const result = await f.call({ actionIds: ["act_1"] });
+
+    expect(result.success).toBe(true);
+    const stored = f.memory(result.memoryId!)!;
+    expect(stored.title.length).toBeLessThanOrEqual(80);
+    expect(stored.content).toBe(response);
+    expect(
+      getSearchIndex().search("quasar rollback checkpoint", 5, "memory").map((r) => r.obsId),
+    ).toContain(result.memoryId);
+  });
+
   it("parses attributed summary tags instead of dropping them", async () => {
     const f = fixture(
       async () =>

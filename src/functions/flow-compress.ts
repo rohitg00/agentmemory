@@ -89,8 +89,7 @@ export function registerFlowCompressFunction(
         const rawText = response
           .replace(/<\/?(?:summary|goal|outcome|steps|discoveries|lesson)(?:\s[^>]*)?>/gi, " ")
           .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 16_000);
+          .trim();
         const project =
           typeof data.project === "string" && data.project.length > 0
             ? doneActions.every((a) => a.project === data.project)
