@@ -26,7 +26,7 @@ If it's a feature: describe the user problem before the implementation. "I could
    - `feat/<short-name>` for features
    - `fix/<issue-number>-<short-name>` for bug fixes
    - `docs/<topic>`, `refactor/<topic>`, `chore/<topic>` for the rest
-2. `npm install` — you need Node >=20.
+2. `npm install --legacy-peer-deps` — you need Node >=20. The flag works around npm 10 (bundled with Node 20 and 22), which crashes resolving vitest's peer dependencies with `Cannot read properties of null (reading 'edgesOut')`. npm 11 installs without it, so the flag can go once every Node version in the CI matrix ships npm 11 or later.
 3. `npm run build` — TypeScript must compile clean.
 4. `npm test` — the full test suite must pass. The one integration test under `test/integration.test.ts` needs a live server on `:3111` and is fine to skip locally.
 5. Commit with sign-off. Rebase over tiny fixup commits so the history stays readable.
