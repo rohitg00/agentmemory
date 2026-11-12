@@ -23,6 +23,7 @@ import {
   isGraphCompactOnBootEnabled,
   getSessionSweepStaleHours,
   getFinalizeIdleMs,
+  getAutoForgetIntervalMs,
 } from "./config.js";
 import {
   createProvider,
@@ -99,6 +100,7 @@ import { registerSignalsFunction } from "./functions/signals.js";
 import { registerCheckpointsFunction } from "./functions/checkpoints.js";
 import { registerFlowCompressFunction } from "./functions/flow-compress.js";
 import { registerMeshFunction } from "./functions/mesh.js";
+import { singleFlight } from "./functions/status.js";
 import { registerBranchAwareFunction } from "./functions/branch-aware.js";
 import { registerSentinelsFunction } from "./functions/sentinels.js";
 import { registerSketchesFunction } from "./functions/sketches.js";
@@ -689,13 +691,17 @@ async function main() {
     setGraphCompactBootDisabled();
   }
 
-  const autoForgetIntervalMs = parseInt(process.env.AUTO_FORGET_INTERVAL_MS || "3600000", 10);
+  const autoForgetIntervalMs = getAutoForgetIntervalMs();
   const consolidationIntervalMs = getConsolidationIntervalMs();
 
   if (process.env.AUTO_FORGET_ENABLED !== "false") {
+    const runAutoForget = singleFlight(
+      () => sdk.trigger({ function_id: "mem::auto-forget", payload: { dryRun: false } }),
+      0,
+    );
     const autoForgetTimer = setInterval(async () => {
       try {
-        await sdk.trigger({ function_id: "mem::auto-forget", payload: { dryRun: false } });
+        await runAutoForget();
       } catch {}
     }, autoForgetIntervalMs);
     autoForgetTimer.unref();
