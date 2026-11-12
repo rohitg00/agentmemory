@@ -436,9 +436,16 @@ export class IndexPersistence {
   resumeAfterUnavailable(): boolean {
     if (!this.recoveryPausedForUnavailable) return false;
     this.recoveryPausedForUnavailable = false;
+    if (this.leg.lastError === this.recoveryError) {
+      this.leg.lastError = null;
+      this.leg.lastErrorAt = null;
+    }
     this.recoveryError = null;
-    this.recoveryReady = true;
     return true;
+  }
+
+  isPausedForUnavailable(): boolean {
+    return this.recoveryPausedForUnavailable;
   }
 
   private checkpointRecoveryCutoff(): string | null | undefined {

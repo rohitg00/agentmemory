@@ -80,6 +80,7 @@ export function onStateWorkerReturn(
   sdk: IIIClient,
   bindings: Bindings,
   cb: () => void | Promise<void>,
+  opts: { pending?: () => boolean } = {},
 ): { state: StateWorkerReturnState; probeTick: () => Promise<void>; stop: () => void } {
   const client = sdk as unknown as SdkLike;
   const state: StateWorkerReturnState = { probeReady: stateWorkerStatus.ready };
@@ -137,7 +138,11 @@ export function onStateWorkerReturn(
     );
   }
   const probeTick = async () => {
-    if (bindings.modes.state === "observe" || stopped) return;
+    if (stopped) return;
+    if (bindings.modes.state === "observe") {
+      if (stateWorkerStatus.ready && opts.pending?.()) fire();
+      return;
+    }
     try {
       await probeOnce(client, 2000);
       stateWorkerStatus.ready = true;
@@ -146,6 +151,8 @@ export function onStateWorkerReturn(
         state.lastReturnAt = new Date().toISOString();
         stateWorkerStatus.lastReturnAt = state.lastReturnAt;
         logger.info("State worker reachable again; running re-arm");
+        fire();
+      } else if (opts.pending?.()) {
         fire();
       }
     } catch {

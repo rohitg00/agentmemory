@@ -72,6 +72,31 @@ describe("onStateWorkerReturn", () => {
     rearm.stop();
   });
 
+  it("probeTick retries pending recovery while the state worker stays reachable", async () => {
+    const cb = vi.fn();
+    let pending = true;
+    const rearm = onStateWorkerReturn(fakeSdk() as never, fakeBindings(fakeHandle("active"), "trigger") as never, cb, { pending: () => pending });
+    await rearm.probeTick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    pending = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    await rearm.probeTick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    rearm.stop();
+  });
+
+  it("probeTick retries pending recovery in observe mode while the observer stays active", async () => {
+    const cb = vi.fn();
+    const rearm = onStateWorkerReturn(fakeSdk() as never, fakeBindings(fakeHandle("active")) as never, cb, { pending: () => true });
+    await rearm.probeTick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    stateWorkerStatus.ready = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    await rearm.probeTick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    rearm.stop();
+  });
+
   it("stop() cancels a pending throttle retry", async () => {
     const cb = vi.fn();
     const handle = fakeHandle("pending");
@@ -106,8 +131,36 @@ describe("IndexPersistence.resumeAfterUnavailable", () => {
     await p.prepareBackfill(null);
     expect(p.isRecoveryPaused()).toBe(true);
     expect(p.resumeAfterUnavailable()).toBe(true);
-    expect(p.isRecoveryPaused()).toBe(false);
+    expect(p.isRecoveryPaused()).toBe(true);
     expect(p.resumeAfterUnavailable()).toBe(false);
+  });
+
+  it("keeps checkpoint writes paused until the reloaded checkpoint is prepared", async () => {
+    const kv = memoryKv();
+    const sets: string[] = [];
+    const tracked = { ...kv, set: async (scope: string, key: string, value: unknown) => { sets.push(`${scope}/${key}`); await kv.set(scope, key, value); } };
+    const vector = new VectorIndex();
+    const p = new IndexPersistence(tracked as never, vector, { requireRecoveryPlan: true });
+    await p.prepareBackfill(null);
+    expect(p.resumeAfterUnavailable()).toBe(true);
+    vector.add("live", "s", new Float32Array([1, 2, 3]));
+    p.scheduleSave();
+    await p.save();
+    expect(sets).toEqual([]);
+    expect(vector.pendingChanges).toBeGreaterThan(0);
+  });
+
+  it("clears the unavailable-checkpoint error so a restored checkpoint can complete backfill", async () => {
+    const kv = memoryKv();
+    const p = new IndexPersistence(kv as never, new VectorIndex(), { requireRecoveryPlan: true });
+    await p.prepareBackfill(null);
+    expect(p.status().vector?.lastError).toMatch(/unavailable/);
+    expect(p.resumeAfterUnavailable()).toBe(true);
+    expect(p.status().vector?.lastError).toBeNull();
+    await kv.set("mem:index:bm25", "vectors:meta", { v: 3, bucketCount: 0, savedAt: new Date().toISOString(), count: 0, backfillSince: null });
+    const loaded = await p.load();
+    await p.prepareBackfill(loaded);
+    expect(await p.completeBackfill()).toBe(true);
   });
 
   it("does not resume pauses from other causes", async () => {

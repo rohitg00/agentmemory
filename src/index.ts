@@ -760,7 +760,7 @@ async function main() {
     } catch (err) {
       bootWarn(`State-worker re-arm failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  });
+  }, { pending: () => bootCheckpointUnavailable && indexPersistence.isPausedForUnavailable() });
   const rearmTick = setInterval(() => {
     void rearm.probeTick();
     void checkDuplicateWorkers(sdk);
