@@ -4,7 +4,11 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 // closure can't safely reference non-hoisted bindings. Use vi.hoisted to
 // declare the mock's mutable state alongside the mock itself.
 const state = vi.hoisted(() => ({
-  queryCalls: [] as Array<{ systemPrompt: string; userPrompt: string }>,
+  queryCalls: [] as Array<{
+    systemPrompt: string;
+    userPrompt: string;
+    options: Record<string, unknown>;
+  }>,
   mockResult: "<result>ok</result>" as
     | string
     | ((systemPrompt: string, userPrompt: string) => string),
@@ -16,9 +20,9 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
     options,
   }: {
     prompt: string;
-    options: { systemPrompt: string };
+    options: { systemPrompt: string } & Record<string, unknown>;
   }) => {
-    state.queryCalls.push({ systemPrompt: options.systemPrompt, userPrompt: prompt });
+    state.queryCalls.push({ systemPrompt: options.systemPrompt, userPrompt: prompt, options });
     async function* gen() {
       const value =
         typeof state.mockResult === "function"
@@ -31,6 +35,70 @@ vi.mock("@anthropic-ai/claude-agent-sdk", () => ({
 }));
 
 import { AgentSDKProvider } from "../src/providers/agent-sdk.js";
+import { createProvider } from "../src/providers/index.js";
+
+describe("AgentSDKProvider child session isolation", () => {
+  beforeEach(() => {
+    state.queryCalls.length = 0;
+    state.mockResult = "<result>ok</result>";
+    delete process.env.AGENTMEMORY_SDK_CHILD;
+  });
+
+  it("runs the child without the host's settings, plugins, MCP servers, skills, tools or transcript", async () => {
+    await new AgentSDKProvider().summarize("sys", "user");
+
+    expect(state.queryCalls).toHaveLength(1);
+    expect(state.queryCalls[0].options).toMatchObject({
+      systemPrompt: "sys",
+      maxTurns: 1,
+      settingSources: [],
+      tools: [],
+      skills: [],
+      persistSession: false,
+    });
+  });
+
+  it("does not request strict MCP mode, which the CLI refuses when an enterprise managed-mcp.json exists", async () => {
+    await new AgentSDKProvider().summarize("sys", "user");
+
+    expect(state.queryCalls[0].options).not.toHaveProperty("strictMcpConfig");
+  });
+
+  it("isolates compress calls the same way as summarize calls", async () => {
+    await new AgentSDKProvider().compress("sys", "user");
+
+    expect(state.queryCalls[0].options).toMatchObject({
+      settingSources: [],
+      tools: [],
+      skills: [],
+      persistSession: false,
+    });
+  });
+
+  it("sends the configured model, since isolation drops the host's model setting", async () => {
+    await new AgentSDKProvider("claude-sonnet-5").summarize("sys", "user");
+
+    expect(state.queryCalls[0].options.model).toBe("claude-sonnet-5");
+  });
+
+  it("leaves the model to the SDK when none is configured", async () => {
+    await new AgentSDKProvider().summarize("sys", "user");
+
+    expect(state.queryCalls[0].options).not.toHaveProperty("model");
+  });
+
+  it("createProvider passes the agent-sdk config model to the child", async () => {
+    const provider = createProvider({
+      provider: "agent-sdk",
+      model: "claude-sonnet-5",
+      maxTokens: 4096,
+    });
+
+    await provider.summarize("sys", "user");
+
+    expect(state.queryCalls[0].options.model).toBe("claude-sonnet-5");
+  });
+});
 
 describe("AgentSDKProvider recursion guard", () => {
   beforeEach(() => {

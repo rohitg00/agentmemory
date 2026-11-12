@@ -133,6 +133,6 @@ function createBaseProvider(config: ProviderConfig): MemoryProvider {
       return new NoopProvider();
     case "agent-sdk":
     default:
-      return new AgentSDKProvider();
+      return new AgentSDKProvider(config.model);
   }
 }
