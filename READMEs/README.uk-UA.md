@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 інструменти MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 автоматичних хуків" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 зовнішніх БД" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ тестів пройдено" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ тестів пройдено" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -665,7 +665,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory працює у Windows 10/11; WSL2 може автоматично встановити engine. Нативна Windows потребує ручного встановлення iii-engine v0.26.0: завантажте архів зі [сторінки iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), перевірте checksum і розмістіть `iii.exe` у `PATH`. CLI не розпаковує ZIP автоматично
+agentmemory працює у Windows 10/11; WSL2 може автоматично встановити engine. Нативна Windows теж встановлює iii-engine v0.26.0 автоматично: CLI завантажує Windows ZIP, перевіряє його SHA-256 і розпаковує `iii.exe` у `%USERPROFILE%\.agentmemory\bin`. Якщо це не вдалося, завантажте архів зі [сторінки iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), перевірте checksum і розпакуйте `iii.exe` у той самий каталог.
 
 Автоматичне налаштування MCP у нативній Windows підтримує лише `agentmemory connect copilot-cli`; для інших скористайтеся [Other agents](#other-agents). У WSL виконуйте `connect`, лише якщо агент встановлений у тому самому середовищі
 
@@ -1244,7 +1244,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

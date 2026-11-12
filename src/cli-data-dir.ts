@@ -137,3 +137,22 @@ export function resolveDataDir(options: ResolveDataDirOptions = {}): ResolvedDat
     source: "default",
   };
 }
+
+export function managedRuntimeDirs(options: ResolveDataDirOptions = {}): string[] {
+  const args = options.args ?? process.argv.slice(2);
+  const home = options.home ?? homedir();
+  const baseArgs: string[] = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--instance") {
+      i++;
+      continue;
+    }
+    if (args[i]!.startsWith("--instance=")) continue;
+    baseArgs.push(args[i]!);
+  }
+  const dirs = [join(home, ".agentmemory")];
+  for (let instance = 1; instance <= 50; instance++) {
+    dirs.push(resolveDataDir({ ...options, args: [...baseArgs, "--instance", String(instance)] }).dataDir);
+  }
+  return dirs;
+}

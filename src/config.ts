@@ -624,7 +624,7 @@ export function compressMaxConcurrent(): number {
 
 export function compressionSweepMs(): number {
   const raw = getMergedEnv()["AGENTMEMORY_COMPRESSION_SWEEP_MS"];
-  if (raw === undefined) return 600_000;
+  if (raw === undefined || raw.trim() === "") return 600_000;
   const parsed = Number(raw);
   if (parsed === 0) return 0;
   if (!Number.isInteger(parsed) || parsed < 60_000 || parsed > 86_400_000) return 600_000;

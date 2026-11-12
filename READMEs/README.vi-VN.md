@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -101,7 +101,7 @@ Yêu cầu:
 
 - Node.js 20 hoặc mới hơn kèm npm và npx (`node -v`, `npm -v`, và `npx -v`).
 - Thiết lập tự động trên macOS/Linux cần `curl`, POSIX `sh` và `tar`.
-Windows native cần cài thủ công `iii.exe` của iii v0.26.0 đã pin; WSL2 dùng trình cài tự động cho macOS/Linux
+Windows native và WSL2 đều tự cài iii v0.26.0 đã pin; xem [Windows](#windows)
 
 Lệnh cài mới chuẩn (canonical):
 
@@ -658,7 +658,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory chạy trên Windows 10/11; WSL2 có thể tự cài engine theo quy trình Linux. Windows native cần cài thủ công iii-engine v0.26.0: tải archive từ [trang phát hành iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), xác minh checksum và đặt `iii.exe` trong `PATH`. CLI không tự giải nén ZIP Windows
+agentmemory chạy trên Windows 10/11; WSL2 có thể tự cài engine theo quy trình Linux. Windows native cũng tự cài iii-engine v0.26.0 đã pin: CLI tải ZIP Windows, xác minh SHA-256 và giải nén `iii.exe` vào `%USERPROFILE%\.agentmemory\bin`. Nếu bước này thất bại, tải archive từ [trang phát hành iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), xác minh checksum và giải nén `iii.exe` vào cùng thư mục.
 
 Cấu hình MCP tự động trên Windows native chỉ hỗ trợ `agentmemory connect copilot-cli`; agent khác dùng khối MCP thủ công trong [Other agents](#other-agents). Chỉ chạy `connect` trong WSL nếu agent đích cũng cài trong cùng môi trường WSL
 
@@ -1253,7 +1253,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

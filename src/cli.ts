@@ -98,7 +98,7 @@ import { knownAgents } from "./cli/connect/index.js";
 
 const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
-import { resolveDataDir } from "./cli-data-dir.js";
+import { managedRuntimeDirs, resolveDataDir } from "./cli-data-dir.js";
 import { runCaptureCommand } from "./cli/capture.js";
 import { runCompressionCommand } from "./cli/compression.js";
 import { runGraphIndexCommand } from "./cli/graph-index.js";
@@ -699,9 +699,9 @@ function clearWorkerPidfile(): void {
   } catch {}
 }
 
-function readEngineState(): EngineState | null {
+function readEngineState(path: string = engineStatePath()): EngineState | null {
   try {
-    const raw = readFileSync(engineStatePath(), "utf-8");
+    const raw = readFileSync(path, "utf-8");
     const parsed = JSON.parse(raw) as Partial<EngineState>;
     if (parsed && (parsed.kind === "native" || parsed.kind === "docker" || parsed.kind === "compose")) {
       return parsed as EngineState;
@@ -1606,10 +1606,22 @@ async function reconcilePersistedComposeEngine(): Promise<boolean> {
 }
 
 async function managedComposeEngineRunning(): Promise<boolean> {
-  const state = readEngineState();
+  const own = engineStatePath();
+  if (await composeStateRunning(readEngineState(own), true)) return true;
+  for (const dir of managedRuntimeDirs({ args })) {
+    const path = runtimeMetadataPath("engine-state.json", { env: { AGENTMEMORY_RUNTIME_DIR: dir } });
+    if (path === own) continue;
+    if (await composeStateRunning(readEngineState(path), false)) return true;
+  }
+  return false;
+}
+
+async function composeStateRunning(state: EngineState | null, own: boolean): Promise<boolean> {
   if (state?.kind !== "compose") return false;
   if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign") return true;
-  return isEngineRunning();
+  if (own) return isEngineRunning();
+  const result = await withinStartupDeadline(startupDeadline(2000), (signal) => probeEngine(`http://127.0.0.1:${state.restPort}`, signal)).catch(() => null);
+  return result?.completed === true && result.value;
 }
 
 async function main() {

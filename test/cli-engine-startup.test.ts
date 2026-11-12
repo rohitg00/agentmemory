@@ -181,4 +181,12 @@ describe("fresh native engine startup", () => {
     expect(helper).toContain('if (state?.kind !== "compose") return false;');
     expect(source).toContain("managedEngineRunning: managedComposeEngineRunning,");
   });
+
+  it("checks the Compose state of every managed instance, not only the selected one, before replacing the shared engine", () => {
+    const helper = source.slice(source.indexOf("async function managedComposeEngineRunning"), source.indexOf("async function main()"));
+    expect(helper).toContain("for (const dir of managedRuntimeDirs({ args })) {");
+    expect(helper).toContain('runtimeMetadataPath("engine-state.json", { env: { AGENTMEMORY_RUNTIME_DIR: dir } })');
+    expect(helper).toContain("if (await composeStateRunning(readEngineState(path), false)) return true;");
+    expect(helper).toContain("probeEngine(`http://127.0.0.1:${state.restPort}`, signal)");
+  });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveDataDir } from "../src/cli-data-dir.js";
+import { managedRuntimeDirs, resolveDataDir } from "../src/cli-data-dir.js";
 
 describe("resolveDataDir", () => {
   it("prefers --data-dir over AGENTMEMORY_DATA_DIR", () => {
@@ -161,5 +161,35 @@ describe("resolveDataDir", () => {
       rmSync(cwd, { recursive: true, force: true });
       rmSync(xdgDataHome, { recursive: true, force: true });
     }
+  });
+});
+
+describe("managedRuntimeDirs", () => {
+  it("lists the default runtime dir and every instance dir regardless of the selected --instance", () => {
+    const home = "/home/alex";
+    const options = { env: {}, cwd: "/repo/project", home, platform: "linux" as const };
+    const fromDefault = managedRuntimeDirs({ ...options, args: ["upgrade"] });
+    const fromInstance = managedRuntimeDirs({ ...options, args: ["upgrade", "--instance", "3"] });
+    const fromInline = managedRuntimeDirs({ ...options, args: ["upgrade", "--instance=7"] });
+
+    expect(fromDefault).toHaveLength(51);
+    expect(fromDefault[0]).toBe(join(home, ".agentmemory"));
+    expect(fromDefault).toContain(join(home, ".local", "share", "agentmemory", "instance-1"));
+    expect(fromDefault).toContain(join(home, ".local", "share", "agentmemory", "instance-50"));
+    expect(fromInstance).toEqual(fromDefault);
+    expect(fromInline).toEqual(fromDefault);
+  });
+
+  it("keeps a --data-dir override for the instance dirs", () => {
+    const home = "/home/alex";
+    const dirs = managedRuntimeDirs({
+      args: ["doctor", "--data-dir", "~/state", "--instance", "2"],
+      env: {},
+      cwd: "/repo/project",
+      home,
+      platform: "linux",
+    });
+    expect(dirs).toContain(join(home, "state", "instance-1"));
+    expect(dirs).toContain(join(home, "state", "instance-2"));
   });
 });

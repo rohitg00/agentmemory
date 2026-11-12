@@ -362,4 +362,22 @@ describe("env parsing", () => {
     const mod = await import("../src/config.js");
     expect(mod.compressMaxConcurrent()).toBe(7);
   });
+
+  it("compressionSweepMs treats an empty value as unset and keeps 0 as disabled", async () => {
+    const mod = await import("../src/config.js");
+    const saved = process.env.AGENTMEMORY_COMPRESSION_SWEEP_MS;
+    try {
+      process.env.AGENTMEMORY_COMPRESSION_SWEEP_MS = "";
+      expect(mod.compressionSweepMs()).toBe(600_000);
+      process.env.AGENTMEMORY_COMPRESSION_SWEEP_MS = "  ";
+      expect(mod.compressionSweepMs()).toBe(600_000);
+      process.env.AGENTMEMORY_COMPRESSION_SWEEP_MS = "0";
+      expect(mod.compressionSweepMs()).toBe(0);
+      process.env.AGENTMEMORY_COMPRESSION_SWEEP_MS = "120000";
+      expect(mod.compressionSweepMs()).toBe(120_000);
+    } finally {
+      if (saved === undefined) delete process.env.AGENTMEMORY_COMPRESSION_SWEEP_MS;
+      else process.env.AGENTMEMORY_COMPRESSION_SWEEP_MS = saved;
+    }
+  });
 });

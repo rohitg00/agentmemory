@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 de instrumente MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hook-uri automate" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 baze de date externe" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ teste trecute" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ teste trecute" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -665,7 +665,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory rulează pe Windows 10/11. WSL2 urmează calea Linux și poate instala automat engine-ul fixat. Windows nativ necesită instalarea manuală a binarului iii-engine v0.26.0 fixat; descarcă arhiva potrivită de pe [pagina de release iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verifică checksum-ul și pune `iii.exe` în `PATH` (de exemplu `%USERPROFILE%\.local\bin\iii.exe`). CLI-ul nu extrage automat arhiva ZIP pentru Windows.
+agentmemory rulează pe Windows 10/11. WSL2 urmează calea Linux și poate instala automat engine-ul fixat. Și Windows nativ instalează automat engine-ul iii-engine v0.26.0 fixat: CLI-ul descarcă arhiva ZIP pentru Windows, îi verifică SHA-256 și extrage `iii.exe` în `%USERPROFILE%\.agentmemory\bin`. Dacă acest pas eșuează, descarcă arhiva potrivită de pe [pagina de release iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), verifică checksum-ul și extrage `iii.exe` în același director.
 
 Conectarea MCP automatizată pe Windows nativ acceptă doar `agentmemory connect copilot-cli`. Pentru ceilalți agenți nativi Windows, folosește blocul MCP manual din [Alți agenți](#other-agents). Rulează `connect` în WSL doar când agentul țintă este instalat în același mediu WSL.
 
@@ -1237,7 +1237,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
