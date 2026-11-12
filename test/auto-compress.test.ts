@@ -103,8 +103,8 @@ describe("mem::observe auto-compress gate", () => {
     expect(compressCalls).toHaveLength(0);
   });
 
-  it("AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE rejects only captures that contain the marker", async () => {
-    process.env["AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE"] = "gate-marker-x";
+  it("AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__ rejects only captures that contain the marker", async () => {
+    process.env["AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__"] = "gate-marker-x";
     try {
       const { registerObserveFunction } = await import("../src/functions/observe.js");
       const sdk = mockSdk();
@@ -116,7 +116,7 @@ describe("mem::observe auto-compress gate", () => {
       const kept = (await sdk.trigger("mem::observe", validPayload())) as { observationId?: string };
       expect(kept.observationId).toMatch(/^obs_/);
     } finally {
-      delete process.env["AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE"];
+      delete process.env["AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__"];
     }
   });
 

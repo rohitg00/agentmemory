@@ -163,9 +163,9 @@ export function registerObserveFunction(
         };
       }
 
-      const gateFailMarker = process.env["AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE"];
+      const gateFailMarker = process.env["AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__"];
       if (gateFailMarker && JSON.stringify(payload.data ?? null).includes(gateFailMarker)) {
-        return { success: false, error: "release gate: AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE rejected this capture" };
+        return { success: false, error: "release gate: AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__ rejected this capture" };
       }
 
       const durable =

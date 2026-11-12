@@ -1182,7 +1182,7 @@ async function main() {
     await instA.stop();
     const sid = `gate-dead-${randomBytes(4).toString("hex")}`;
     const ms = [marker("onyx"), marker("opal"), marker("quartz")];
-    await instA.start({ AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE: ms[2] });
+    await instA.start({ AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__: ms[2] });
     for (const m of ms) await instA.hook("PostToolUse", instA.toolEvent(sid, m));
     const dead = await poll("a dead letter for the failed capture", async () => {
       const c = await instA.capture("?status=dead");
