@@ -86,7 +86,7 @@ function pruneDedupe(now: number): void {
 
 const DELETE_BATCH_MS = 500;
 const DELETE_BATCH_MAX = 200;
-type PendingDelete = { id: string; kind: "memory" | "observation" | "lesson"; sessionId?: string };
+type PendingDelete = { id: string; kind: "memory" | "observation" | "lesson"; sessionId?: string; removeIndex?: boolean };
 const pendingDeletes = new Map<string, PendingDelete>();
 const pendingSessions = new Set<string>();
 let deleteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -103,7 +103,9 @@ function reportFlushFailure(): void {
 }
 
 function queueDeleteCascade(item: PendingDelete): void {
-  pendingDeletes.set(`${item.kind}:${item.id}`, item);
+  const key = `${item.kind}:${item.id}`;
+  const queued = pendingDeletes.get(key);
+  pendingDeletes.set(key, queued?.removeIndex ? { ...item, removeIndex: true } : item);
   if (item.sessionId) pendingSessions.add(item.sessionId);
   if (pendingDeletes.size >= DELETE_BATCH_MAX) void flushDeleteCascade().catch(() => reportFlushFailure());
   else scheduleDeleteFlush();
@@ -205,6 +207,10 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
           pendingDeletes.set(`${item.kind}:${item.id}`, item);
           return;
         }
+        if (checks[i] === "gone" && item.removeIndex) {
+          try { getSearchIndex().remove(item.id); } catch {}
+          try { vectorIndexRemove(item.id); } catch {}
+        }
         const targetType = KIND_TARGET_TYPE[item.kind];
         if (checks[i] !== "gone" || !targetType) return;
         byType.set(targetType, [...(byType.get(targetType) ?? []), item.id]);
@@ -276,14 +282,20 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     const scope = String(event.scope ?? "");
     const id = String(event.key ?? "");
     if (!id) return { skipped: "no_key" };
-    const current = await kv.get<{ deleted?: boolean }>(scope, id).catch(() => null);
+    const sessionId = scope.startsWith("mem:obs:") ? scope.slice("mem:obs:".length) : undefined;
+    const kind = sessionId ? "observation" : scope === KV.lessons ? "lesson" : "memory";
+    let current: { deleted?: boolean } | null;
+    try {
+      current = await kv.get<{ deleted?: boolean }>(scope, id);
+    } catch {
+      queueDeleteCascade({ id, kind, sessionId, removeIndex: true });
+      return { deferred: id, queued: true };
+    }
     const restored = current !== null && current.deleted !== true;
     if (!restored) {
       try { getSearchIndex().remove(id); } catch {}
       try { vectorIndexRemove(id); } catch {}
     }
-    const sessionId = scope.startsWith("mem:obs:") ? scope.slice("mem:obs:".length) : undefined;
-    const kind = sessionId ? "observation" : scope === KV.lessons ? "lesson" : "memory";
     queueDeleteCascade({ id, kind, sessionId });
     return restored ? { restored: id, queued: true } : { removed: id, queued: true };
   });

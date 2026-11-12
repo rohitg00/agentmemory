@@ -104,20 +104,24 @@ export function onStateWorkerReturn(
       if (queued) { queued = false; fire(); }
     }, () => { inFlight = null; });
   };
-  for (const handle of bindings.stateHandles) {
+  const markReturned = (observerId: string) => {
+    stateWorkerStatus.ready = true;
+    state.lastReturnAt = new Date().toISOString();
+    stateWorkerStatus.lastReturnAt = state.lastReturnAt;
+    logger.info("State worker observer active again; running re-arm", { observerId });
+    fire();
+  };
+  const watchStateHandle = (handle: ObserverHandle, added: boolean) => {
     let wasPending = handle.state === "pending" || handle.state === "suspended";
     handle.onStateChange((next) => {
       if (next === "pending" || next === "suspended") stateWorkerStatus.ready = false;
-      if (next === "active" && wasPending) {
-        stateWorkerStatus.ready = true;
-        state.lastReturnAt = new Date().toISOString();
-        stateWorkerStatus.lastReturnAt = state.lastReturnAt;
-        logger.info("State worker observer active again; running re-arm", { observerId: handle.id });
-        fire();
-      }
+      if (next === "active" && wasPending) markReturned(handle.id);
       wasPending = next === "pending" || next === "suspended";
     });
-  }
+    if (added && handle.state === "active" && !stateWorkerStatus.ready) markReturned(handle.id);
+  };
+  for (const handle of bindings.stateHandles) watchStateHandle(handle, false);
+  bindings.onStateHandle?.((handle) => watchStateHandle(handle, true));
   if (typeof client.observe === "function" && bindings.pipeline === "observe") {
     client.registerFunction?.("runtime::on-workers-changed", async (payload: unknown) => {
       if (unwrapObserved<{ event?: string } | undefined>(payload, "input")?.event !== "worker_connected") return { handled: false };

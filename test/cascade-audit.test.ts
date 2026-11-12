@@ -188,6 +188,29 @@ describe("mem::on-record-deleted", () => {
     await flushDeleteCascade();
   });
 
+  it("keeps index entries when the restoration read fails and removes them once the flush confirms the delete", async () => {
+    const sdk = fakeFns();
+    const kv = memoryKv({ [KV.memories]: new Map(), [KV.facets]: new Map() });
+    const realGet = kv.get.bind(kv);
+    let failNext = true;
+    kv.get = (async (scope: string, key: string) => {
+      if (failNext && scope === KV.memories && key === "m2") {
+        failNext = false;
+        throw new Error("state read failed");
+      }
+      return realGet(scope, key);
+    }) as typeof kv.get;
+    registerCascadeFunctions(sdk as never, kv as never);
+    const fn = sdk.functions.get("mem::on-record-deleted")!;
+    const r = await fn({ event_type: "state:deleted", scope: KV.memories, key: "m2" });
+    expect(r).toMatchObject({ deferred: "m2", queued: true });
+    expect(removedBm25).not.toContain("m2");
+    expect(removedVector).not.toContain("m2");
+    await flushDeleteCascade();
+    expect(removedBm25).toContain("m2");
+    expect(removedVector).toContain("m2");
+  });
+
   it("worker shutdown drains queued delete cascades before the SDK shuts down", () => {
     const src = readFileSync(new URL("../src/index.ts", import.meta.url), "utf8");
     const body = src.slice(src.indexOf("const shutdown = async"));

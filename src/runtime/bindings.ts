@@ -70,6 +70,14 @@ export class Bindings {
     return this.handlesOf("state");
   }
 
+  onStateHandle(listener: (handle: ObserverHandle) => void): () => void {
+    const watch = (entry: { handle: ObserverHandle; kind: BindingKind }) => {
+      if (entry.kind === "state") listener(entry.handle);
+    };
+    this.boundWatchers.add(watch);
+    return () => this.boundWatchers.delete(watch);
+  }
+
   get pipeline(): "observe" | "inline" {
     return this.inline ? "inline" : "observe";
   }

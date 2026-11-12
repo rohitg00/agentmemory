@@ -364,6 +364,7 @@ if (Number.isFinite(restPort) && restPort > 0) {
 }
 
 const dataDirResolution = resolveDataDir({ args });
+const unsuffixedDataDirEnv = process.env["AGENTMEMORY_DATA_DIR"];
 process.env["AGENTMEMORY_DATA_DIR"] = dataDirResolution.dataDir;
 process.env["AGENTMEMORY_RUNTIME_DIR"] = selectedInstance > 0
   ? dataDirResolution.dataDir
@@ -1608,7 +1609,9 @@ async function reconcilePersistedComposeEngine(): Promise<boolean> {
 async function managedComposeEngineRunning(): Promise<boolean> {
   const own = engineStatePath();
   if (await composeStateRunning(readEngineState(own), true)) return true;
-  for (const dir of managedRuntimeDirs({ args })) {
+  const baseEnv = { ...process.env, AGENTMEMORY_DATA_DIR: unsuffixedDataDirEnv };
+  if (unsuffixedDataDirEnv === undefined) delete baseEnv["AGENTMEMORY_DATA_DIR"];
+  for (const dir of managedRuntimeDirs({ args, env: baseEnv })) {
     const path = runtimeMetadataPath("engine-state.json", { env: { AGENTMEMORY_RUNTIME_DIR: dir } });
     if (path === own) continue;
     if (await composeStateRunning(readEngineState(path), false)) return true;

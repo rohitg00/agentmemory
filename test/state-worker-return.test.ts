@@ -55,6 +55,28 @@ describe("onStateWorkerReturn", () => {
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
+  it("runs recovery for a state handle bound later, such as an id conflict replacement", async () => {
+    const cb = vi.fn();
+    const original = fakeHandle("pending");
+    let bindLater: ((handle: ReturnType<typeof fakeHandle>) => void) | undefined;
+    const bindings = { ...fakeBindings(original), onStateHandle: (listener: (handle: ReturnType<typeof fakeHandle>) => void) => { bindLater = listener; return () => {}; } };
+    stateWorkerStatus.ready = false;
+    const rearm = onStateWorkerReturn(fakeSdk() as never, bindings as never, cb);
+    const replacement = fakeHandle("pending");
+    bindLater!(replacement);
+    replacement.emit("active");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(stateWorkerStatus.ready).toBe(true);
+    const activeAlready = fakeHandle("active");
+    stateWorkerStatus.ready = false;
+    await vi.advanceTimersByTimeAsync(1000);
+    bindLater!(activeAlready);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cb).toHaveBeenCalledTimes(2);
+    rearm.stop();
+  });
+
   it("two returns within the throttle window fire the callback twice, second after retry delay", async () => {
     const cb = vi.fn();
     const handle = fakeHandle("pending");
