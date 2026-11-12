@@ -25,6 +25,7 @@ export const adapter: ConnectAdapter = {
   name: "openclaw",
   displayName: "OpenClaw",
   category: "native",
+  autoCapture: "built-in",
   docs: "https://github.com/rohitg00/agentmemory/tree/main/integrations/openclaw",
   protocolNote: "→ Installs native recall/capture and bundled skills into the active OpenClaw state directory. MCP tools are opt-in with --with-mcp.",
   detect: () => existsSync(paths().config) || existsSync(paths().state),

@@ -3,7 +3,8 @@ import { homedir } from "node:os";
 import { isAbsolute, join, normalize, resolve } from "node:path";
 import * as p from "@clack/prompts";
 import { isEnvFileValue } from "../../config.js";
-import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
+import type { ConnectAdapter, ConnectOptions, ConnectResult, HookState } from "./types.js";
+import { hookState } from "./capture-notice.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
   backupFile,
@@ -45,6 +46,7 @@ export const adapter: ConnectAdapter = {
   name: "claude-code",
   displayName: "Claude Code",
   category: "native",
+  autoCapture: "plugin-or-with-hooks",
   docs: "https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it",
   protocolNote:
     "→ Using MCP. Hooks are also available — see https://github.com/rohitg00/agentmemory#claude-code-one-block-paste-it.",
@@ -101,22 +103,16 @@ export const adapter: ConnectAdapter = {
     const alreadyHas = entryMatches(servers["agentmemory"]);
     if (alreadyHas && !opts.force) {
       logAlreadyWired("Claude Code", CLAUDE_JSON);
-      if (opts.withHooks) {
-        const hookResult = installClaudeHooks(opts);
-        if (hookResult.kind === "skipped") {
-          p.log.warn(
-            `Claude Code hooks fallback skipped: ${hookResult.reason}.`,
-          );
-        }
-      }
-      return { kind: "already-wired", mutatedPath: CLAUDE_JSON };
+      const hooks = runClaudeHooks(opts, "");
+      return { kind: "already-wired", mutatedPath: CLAUDE_JSON, ...(hooks && { hooks }) };
     }
 
     if (opts.dryRun) {
       p.log.info(
         `[dry-run] Would ${alreadyHas ? "overwrite" : "add"} mcpServers.agentmemory in ${CLAUDE_JSON}`,
       );
-      return { kind: "installed", mutatedPath: CLAUDE_JSON };
+      const hooks = runClaudeHooks(opts, "");
+      return { kind: "installed", mutatedPath: CLAUDE_JSON, ...(hooks && { hooks }) };
     }
 
     let backupPath: string | undefined;
@@ -145,18 +141,20 @@ export const adapter: ConnectAdapter = {
       "Restart Claude Code (or run `/mcp` inside a session) to pick up the new server.",
     );
 
-    if (opts.withHooks) {
-      const hookResult = installClaudeHooks(opts);
-      if (hookResult.kind === "skipped") {
-        p.log.warn(
-          `Claude Code hooks fallback skipped: ${hookResult.reason}. MCP wiring still applied.`,
-        );
-      }
-    }
+    const hooks = runClaudeHooks(opts, " MCP wiring still applied.");
 
-    return { kind: "installed", mutatedPath: CLAUDE_JSON, backupPath };
+    return { kind: "installed", mutatedPath: CLAUDE_JSON, backupPath, ...(hooks && { hooks }) };
   },
 };
+
+function runClaudeHooks(opts: ConnectOptions, suffix: string): HookState | undefined {
+  if (!opts.withHooks) return undefined;
+  const hookResult = installClaudeHooks(opts);
+  if (hookResult.kind === "skipped") {
+    p.log.warn(`Claude Code hooks fallback skipped: ${hookResult.reason}.${suffix}`);
+  }
+  return hookState(hookResult);
+}
 
 function installClaudeHooks(opts: ConnectOptions): ConnectResult {
   const { dir: CLAUDE_DIR, settings: CLAUDE_SETTINGS } = claudeConfigPaths();
