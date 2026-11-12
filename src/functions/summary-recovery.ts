@@ -4,6 +4,7 @@ import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { logger } from "../logger.js";
+import { isAutoCompressEnabled } from "../config.js";
 import { compressionInFlight } from "./compress.js";
 import { compressionRaw, needsCompression, type StoredObservation } from "./compression-state.js";
 import { getSummaryTriggerTimeoutMs, summaryCovers, summaryObservations } from "./summary-state.js";
@@ -37,7 +38,7 @@ export function registerSummaryRecoveryFunction(sdk: IIIClient, kv: StateKV, has
           let observations = await kv.list<StoredObservation>(KV.observations(sessionId));
           const pending = observations.filter(needsCompression);
           if (!pending.some((row) => compressionInFlight(kv, sessionId, row.id))) {
-            if (pending.length) {
+            if (pending.length && isAutoCompressEnabled()) {
               const retried = await sdk.trigger<Record<string, unknown>, CompressionRetryResult>({
                 function_id: "mem::compression-retry",
                 payload: { sessionId, limit: 1, ...(compressionCursor ? { cursor: compressionCursor } : {}) },
