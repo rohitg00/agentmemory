@@ -1180,9 +1180,9 @@ async function main() {
     // Agentmemory capture inbox/dead-letter recovery is independent of queue workers.
     await ensureUp(instA);
     await instA.stop();
-    await instA.start({ MAX_OBS_PER_SESSION: "2" });
     const sid = `gate-dead-${randomBytes(4).toString("hex")}`;
     const ms = [marker("onyx"), marker("opal"), marker("quartz")];
+    await instA.start({ AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__: ms[2] });
     for (const m of ms) await instA.hook("PostToolUse", instA.toolEvent(sid, m));
     const dead = await poll("a dead letter for the failed capture", async () => {
       const c = await instA.capture("?status=dead");
