@@ -186,7 +186,8 @@ describe("direct observation redaction", () => {
     if (!streamed.toolName) expect(stored?.source?.payload).toEqual(expected);
     expectClean(stored);
     expectClean(streamed);
-    expect(compress).toHaveBeenCalledWith({ observationId: result.observationId, sessionId: input.sessionId });
+    if (data === undefined) expect(compress).not.toHaveBeenCalled();
+    else expect(compress).toHaveBeenCalledWith({ observationId: result.observationId, sessionId: input.sessionId });
     expect(JSON.stringify(input)).toBe(before);
   });
 });
