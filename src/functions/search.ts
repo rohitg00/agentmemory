@@ -1150,7 +1150,9 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
                   ? await loadMemoryProject(r.obsId)
                   : null
                 if (projectFilter && memoryProject !== null && memoryProject !== projectFilter) return null
-                const session = projectFilter || cwdFilter ? await loadSession(r.sessionId) : null
+                const session = cwdFilter || (projectFilter && memoryProject === null)
+                  ? await loadSession(r.sessionId)
+                  : null
                 if (projectFilter && memoryProject === null && !session) return null
                 if (cwdFilter && layer === "observation" && !session) return null
                 if (session) {
