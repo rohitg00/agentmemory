@@ -103,6 +103,23 @@ describe("mem::observe auto-compress gate", () => {
     expect(compressCalls).toHaveLength(0);
   });
 
+  it("AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE rejects only captures that contain the marker", async () => {
+    process.env["AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE"] = "gate-marker-x";
+    try {
+      const { registerObserveFunction } = await import("../src/functions/observe.js");
+      const sdk = mockSdk();
+      const kv = mockKV();
+      registerObserveFunction(sdk as never, kv as never);
+      const rejected = await sdk.trigger("mem::observe", validPayload({ data: { tool_name: "Bash", tool_output: "ran gate-marker-x" } }));
+      expect(rejected).toMatchObject({ success: false });
+      expect(kv.store.get("mem:obs:ses_test")?.size ?? 0).toBe(0);
+      const kept = (await sdk.trigger("mem::observe", validPayload())) as { observationId?: string };
+      expect(kept.observationId).toMatch(/^obs_/);
+    } finally {
+      delete process.env["AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE"];
+    }
+  });
+
   it("default: stores a synthetic CompressedObservation with the raw-derived fields", async () => {
     const { registerObserveFunction } = await import(
       "../src/functions/observe.js"
