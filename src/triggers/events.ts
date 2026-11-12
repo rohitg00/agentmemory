@@ -15,6 +15,7 @@ import { logger } from "../logger.js";
 import { getSummaryTriggerTimeoutMs } from "../functions/summary-state.js";
 import { noteMemoryChange, noteSessionChange } from "../state/viewer-counts.js";
 
+import { getBindings } from "../runtime/bindings.js";
 // Global marker recording when corpus consolidation last ran, used to debounce
 // the per-turn session-stop fan-out.
 const CONSOLIDATION_MARKER_KEY = "consolidation:lastRun";
@@ -145,11 +146,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       return { emitted: true };
     },
   );
-  sdk.registerTrigger({
-    type: "state",
-    function_id: "event::session::observation-count-changed",
-    config: { scope: KV.sessions },
-  });
+  getBindings(sdk).state({ function_id: "event::session::observation-count-changed", scope: KV.sessions, maxInFlight: 1 });
 
   sdk.registerFunction(
     "event::memory::changed",
@@ -187,11 +184,7 @@ export function registerEventTriggers(sdk: IIIClient, kv: StateKV): void {
       return { emitted: true };
     },
   );
-  sdk.registerTrigger({
-    type: "state",
-    function_id: "event::memory::changed",
-    config: { scope: KV.memories },
-  });
+  getBindings(sdk).state({ function_id: "event::memory::changed", scope: KV.memories, maxInFlight: 1 });
 }
 
 export function isStateDelete(payload: { event_type: string; new_value?: unknown }): boolean {

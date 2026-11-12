@@ -43,6 +43,7 @@ import { buildConfigFlags, checkAuth, createConsolidationStatusReader, createSta
 import { isStateDelete, sendViewerEvent } from "./events.js";
 import { setAuditRecordedListener } from "../functions/audit.js";
 
+import { getBindings } from "../runtime/bindings.js";
 type Response = {
   status_code: number;
   headers?: Record<string, string>;
@@ -133,11 +134,7 @@ export function registerViewerStreamTriggers(
       });
       return { emitted: true };
     });
-    sdk.registerTrigger({
-      type: "state",
-      function_id: options.functionId,
-      config: { scope: options.scope },
-    });
+    getBindings(sdk).state({ function_id: options.functionId, scope: options.scope, maxInFlight: 1 });
   }
 
   registerRowStream<Lesson>({ functionId: "event::viewer::lesson-changed", scope: KV.lessons, entity: "lesson", countKind: "lessons" });
@@ -189,11 +186,7 @@ export function registerViewerStreamTriggers(
       return { emitted: true };
     }),
   );
-  sdk.registerTrigger({
-    type: "state",
-    function_id: "event::viewer::graph-snapshot-changed",
-    config: { scope: KV.graphSnapshot },
-  });
+  getBindings(sdk).state({ function_id: "event::viewer::graph-snapshot-changed", scope: KV.graphSnapshot, key: GRAPH_SNAPSHOT_KEY });
 
   const pendingGraphItems = { nodes: 0, edges: 0, since: 0 };
   let graphItemsTimer: ReturnType<typeof setTimeout> | null = null;
@@ -228,7 +221,7 @@ export function registerViewerStreamTriggers(
       noteGraphItem(kind);
       return { emitted: true };
     }));
-    sdk.registerTrigger({ type: "state", function_id: functionId, config: { scope } });
+    getBindings(sdk).state({ function_id: functionId, scope, maxInFlight: 1 });
   }
 
   setGraphGenerationListener(async (kind) => withKeyedLock("graph:viewer-events", async () => {
@@ -259,11 +252,7 @@ export function registerViewerStreamTriggers(
       return { emitted: true };
     },
   );
-  sdk.registerTrigger({
-    type: "state",
-    function_id: "event::viewer::consolidation-changed",
-    config: { scope: KV.config },
-  });
+  getBindings(sdk).state({ function_id: "event::viewer::consolidation-changed", scope: KV.config, key: CONSOLIDATION_LAST_RUN_KEY });
 
   sdk.registerFunction(
     "event::viewer::health-changed",
@@ -280,11 +269,7 @@ export function registerViewerStreamTriggers(
       return { emitted: true };
     },
   );
-  sdk.registerTrigger({
-    type: "state",
-    function_id: "event::viewer::health-changed",
-    config: { scope: KV.health },
-  });
+  getBindings(sdk).state({ function_id: "event::viewer::health-changed", scope: KV.health, key: HEALTH_LATEST_KEY });
 
   const { restPort } = loadConfig();
 
@@ -318,7 +303,7 @@ export function registerViewerStreamTriggers(
       };
     },
   );
-  sdk.registerTrigger({
+  getBindings(sdk).http({
     type: "http",
     function_id: "api::viewer-snapshot",
     config: {
@@ -335,7 +320,7 @@ export function registerViewerStreamTriggers(
       return { status_code: 200, body: { counts: await getViewerCounts(kv) } };
     },
   );
-  sdk.registerTrigger({
+  getBindings(sdk).http({
     type: "http",
     function_id: "api::counts",
     config: {

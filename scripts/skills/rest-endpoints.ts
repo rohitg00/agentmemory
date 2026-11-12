@@ -16,7 +16,7 @@ export function collectRestEndpoints(...texts: string[]): { path: string; method
   const rows = new Map<string, { path: string; method: string }>();
   const sources = texts.map((text, index) => ts.createSourceFile(`source-${index}.ts`, text, ts.ScriptTarget.Latest, false, ts.ScriptKind.TS));
   function visit(node: ts.Node): void {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === "registerTrigger") {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression) && (node.expression.name.text === "registerTrigger" || node.expression.name.text === "http")) {
       const registration = node.arguments[0];
       if (registration && ts.isObjectLiteralExpression(registration) && literal(property(registration, "type")) === "http") {
         const config = property(registration, "config");

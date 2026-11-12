@@ -87,6 +87,13 @@ export interface StatusInputs {
   stateStore?: { ok: boolean; latencyMs?: number } | null;
   capture?: CaptureStatus | null;
   observeDedup?: ObserveDedupStatus | null;
+  runtime?: StatusRuntimeInfo | null;
+}
+
+export interface StatusRuntimeInfo {
+  bindings: { state: string; http: string; observers: number; failedObservers?: number; routesViaTrigger: number; reasons: string[] };
+  duplicateWorkers: { count: number; workerIds: string[] } | null;
+  stateWorker: { ready: boolean; waitedMs: number; lastReturnAt?: string };
 }
 
 export interface ObserveDedupStatus {
@@ -129,6 +136,7 @@ export interface StatusReport {
   graphIndex: GraphIndexMigrationStatus | null;
   capture: CaptureStatus | null;
   observeDedup: ObserveDedupStatus | null;
+  runtime: StatusRuntimeInfo | null;
   functions: Array<FunctionMetricInput & { failureRate: number; offWithoutLlm: boolean }>;
   flags: Array<StatusFlag & { inactiveReason?: string }>;
   problems: StatusProblem[];
@@ -273,6 +281,16 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
   else if (described.length && !described.some((d) => d.level === "error")) described[0].level = "error";
   for (const d of described) {
     problems.push({ level: d.level, code: "health-alert", message: d.message, fix: d.fix });
+  }
+
+  const failedObservers = input.runtime?.bindings.failedObservers ?? 0;
+  if (failedObservers > 0) {
+    problems.push({
+      level: "error",
+      code: "observer-rejected",
+      message: `${failedObservers} route or state observer${failedObservers === 1 ? " was" : "s were"} rejected by the engine, so those endpoints or reactions are not active.`,
+      fix: "Check runtime.bindings.reasons in /agentmemory/status for the conflicting route, remove the conflict, then restart agentmemory.",
+    });
   }
 
   if (input.circuitBreaker?.state === "open") {
@@ -537,6 +555,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     graphIndex,
     capture: input.capture ?? null,
     observeDedup: input.observeDedup ?? null,
+    runtime: input.runtime ?? null,
     functions,
     flags: input.flags.map((flag) =>
       flag.enabled && flag.needsLlm && noLlm

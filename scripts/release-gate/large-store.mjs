@@ -317,7 +317,9 @@ async function probe(name, path, body, { allowRefusal = false } = {}) {
       const detail = json && typeof json === "object" ? json.error ?? json.message : undefined;
       if (detail) result.error = String(typeof detail === "string" ? detail : JSON.stringify(detail)).slice(0, 500);
       else if (json && typeof json === "object" && json.success === false) result.error = "success:false";
-    } catch {}
+    } catch {
+      if (/^\s*\{\s*"success"\s*:\s*false\b/.test(text)) result.error = "success:false";
+    }
     if (!result.error && res.status >= 400) result.error = `HTTP ${res.status}`;
   } catch (cause) {
     result.error = String(cause?.message ?? cause).slice(0, 500);

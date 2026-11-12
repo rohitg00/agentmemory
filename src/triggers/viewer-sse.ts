@@ -2,6 +2,7 @@ import { http } from "@iii-dev/helpers/http";
 import type { IIIClient } from "iii-sdk";
 import { liveEvents, type LiveEventWriter } from "../viewer/live-events.js";
 
+import { getBindings } from "../runtime/bindings.js";
 export function registerViewerSse(sdk: IIIClient): void {
   sdk.registerFunction(
     "api::viewer-events",
@@ -17,7 +18,7 @@ export function registerViewerSse(sdk: IIIClient): void {
       liveEvents.subscribe(res.stream as LiveEventWriter);
     }),
   );
-  sdk.registerTrigger({
+  getBindings(sdk).http({
     type: "http",
     function_id: "api::viewer-events",
     config: {

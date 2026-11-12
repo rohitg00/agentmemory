@@ -230,6 +230,7 @@ export class IndexPersistence {
   private earlySaveQueued = false;
   private backfillQueue: Promise<void> = Promise.resolve();
   private recoveryError: string | null = null;
+  private recoveryPausedForUnavailable = false;
   private backfillRevision = 0;
   private recoveryReady: boolean;
   private backfillSince: string | null | undefined;
@@ -311,6 +312,7 @@ export class IndexPersistence {
     }
     const valid = (Array.isArray(rows) ? rows : []).filter(isPendingVectorRow).sort((a, b) => a.q - b.q);
     this.logSuppressed = true;
+    vector.beginReplay();
     try {
       for (const row of valid) {
         result.entries++;
@@ -346,6 +348,7 @@ export class IndexPersistence {
         result.added++;
       }
     } finally {
+      vector.endReplay();
       this.logSuppressed = false;
     }
     if (result.skipped > 0) {
@@ -398,6 +401,7 @@ export class IndexPersistence {
     if (!this.vector || this.recoveryError) return undefined;
     if (!loaded || loaded.state === "unavailable") {
       this.pauseRecovery(new Error("Persisted vector checkpoint is unavailable"));
+      this.recoveryPausedForUnavailable = true;
       return undefined;
     }
     const shortfall = loaded.expectedCount !== undefined && (loaded.vector?.size ?? 0) < loaded.expectedCount;
@@ -427,6 +431,14 @@ export class IndexPersistence {
       this.pauseRecovery(err);
       return false;
     }
+  }
+
+  resumeAfterUnavailable(): boolean {
+    if (!this.recoveryPausedForUnavailable) return false;
+    this.recoveryPausedForUnavailable = false;
+    this.recoveryError = null;
+    this.recoveryReady = true;
+    return true;
   }
 
   private checkpointRecoveryCutoff(): string | null | undefined {
