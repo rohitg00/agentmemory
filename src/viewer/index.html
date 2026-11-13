@@ -2325,8 +2325,10 @@
         var memoryRead = null;
         try {
           await bootGate;
+          if (kind === 'memory' && store.loaded.memory) return;
           var seqAtStart = eventSeq;
           var memoryRevisionAtStart = state.memories.facetRevision || 0;
+          var memorySnapshotAtStart = state.memories.facetSnapshotRevision || 0;
           var memoryPageAtStart = state.memories.firstPageRevision || 0;
           if (kind === 'memory') memoryRead = startMemoryRead();
           var result;
@@ -2349,7 +2351,9 @@
           if (kind === 'memory') {
             mergeMemoryRows(rows);
             state.memories.nextCursor = result.nextCursor || null;
-            setMemoryFacets(result.facets, '', '');
+            var m = state.memories, scope = m.facetScope;
+            var currentScope = m.facets && scope && scope.project === m.projectFilter && scope.agent === m.agentFilter;
+            if (memorySnapshotAtStart === (m.facetSnapshotRevision || 0) || !currentScope) setMemoryFacets(result.facets, '', '');
             state.memories.fetches = {};
             if (memoryFiltersActive() || state.memories.searchIds) setTimeout(applyMemoryFilters, 0);
           }
@@ -4433,6 +4437,7 @@
         } else {
           var rows = res.memories || [];
           mergeMemoryRows(rows);
+          store.loaded.memory = true;
           state.memories.firstPageRevision = (state.memories.firstPageRevision || 0) + 1;
           if (adoptFacets) setMemoryFacets(res.facets, project, agent);
           state.memories.searchIds = rows.map(function(r) { return r.id; });
@@ -4465,6 +4470,7 @@
         m.firstPageLoading = false;
         if (res) {
           mergeMemoryRows(res.memories);
+          store.loaded.memory = true;
           m.firstPageRevision = (m.firstPageRevision || 0) + 1;
           if (adoptFacets) setMemoryFacets(res.facets, project, agent);
           if (!filtered) m.nextCursor = res.nextCursor || null;

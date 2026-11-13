@@ -56,8 +56,31 @@ const instantiate = new Function("fixture", `
   return { memoryFacetList, memoryFilterSelect, memoryListHtml, applyMemoryFilters, setMemoryFilter, runMemorySearch, loadMoreMemories, noteMemoryChange, ensureLoaded, fetchMemoryVersion, openBootGate, handleLiveEvent };
 `) as (fixture: object) => Viewer;
 
+const renderMemoryView = new Function("fixture", `
+  var state = fixture.state, store = fixture.store, document = fixture.document;
+  var captureSearchFocus = function() { return null; };
+  var restoreSearchFocus = function() {};
+  var memoryToolbarHtml = function() { return ''; };
+  var bindMemoryToolbar = function() {};
+  var renderMemoryDetailPanel = function() {};
+  var setViewHtml = function(el, html) { el.innerHTML = html; };
+  var skeleton = function() { return 'initial skeleton'; };
+  var memoryListHtml = function() { return 'loaded memory rows'; };
+  ${source.statements.filter(ts.isFunctionDeclaration).find((node) => node.name?.text === "renderMemories")!.getText(source)}
+  renderMemories();
+`) as (fixture: object) => void;
+
+function renderedMemoryCollection(r: Awaited<ReturnType<typeof viewerFixture>>): string {
+  const list = { innerHTML: "" }, toolbar = { innerHTML: "" }, detail = { innerHTML: "", firstElementChild: null };
+  const layout = { classList: { remove: vi.fn(), toggle: vi.fn() } };
+  const view = { querySelector: (selector: string) => selector === "#memory-list" ? list : layout };
+  const elements: Record<string, object> = { "view-memories": view, "memory-list": list, "memory-toolbar": toolbar, "memory-detail": detail };
+  renderMemoryView({ state: { memories: r.memories }, store: r.store, document: { getElementById: (id: string) => elements[id] } });
+  return list.innerHTML;
+}
+
 const indexedIds = new Set<string>();
-async function viewerFixture(loaded = true, indexed = false, details = false) {
+async function viewerFixture(loaded = true, indexed = false, details = false, bootOpen = true) {
   const rows = projectMemoryFixture();
   if (indexed) {
     setVectorIndex(null);
@@ -115,7 +138,7 @@ async function viewerFixture(loaded = true, indexed = false, details = false) {
       return lastResponse = promise;
     },
   });
-  viewer.openBootGate();
+  if (bootOpen) viewer.openBootGate();
   return {
     viewer, memories, store, rows, requests, pending, response,
     defer: () => { deferred = true; },
@@ -139,6 +162,90 @@ beforeEach(() => {
 });
 
 describe("search completion during live memory changes", () => {
+  it("keeps a successful primary page accepted while the initial loader waits for startup", async () => {
+    const r = await viewerFixture(false, false, false, false);
+    r.defer();
+    const initial = r.viewer.ensureLoaded("memory");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(r.pending).toEqual([]);
+    r.memories.projectFilter = "A";
+    const primary = r.viewer.applyMemoryFilters();
+    const request = r.pending[0]!;
+    request.resolve(structuredClone(await r.response(request.path)));
+    await primary;
+    expect(r.store.loaded.memory).toBe(true);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 130, bug: 3 });
+    const ids = Object.keys(r.store.entities.memory).sort();
+    const query = r.memories.query;
+    const cursor = query!.nextCursor;
+    r.viewer.openBootGate();
+    await vi.advanceTimersByTimeAsync(0);
+    const lateInitial = r.pending[1];
+    if (lateInitial) lateInitial.resolve(structuredClone(await r.response(lateInitial.path)));
+    await initial;
+    expect(Object.keys(r.store.entities.memory).sort()).toEqual(ids);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 130, bug: 3 });
+    expect(r.memories.query).toBe(query);
+    expect(r.memories.query!.nextCursor).toBe(cursor);
+    expect(r.memories.readChanges).toEqual([]);
+    expect(r.store.loading).toEqual({ memory: null });
+  });
+
+  it.each(["search", "filter"] as const)("renders a successful %s page after the initial request fails", async (mode) => {
+    const r = await viewerFixture(false, true);
+    r.defer();
+    const initial = r.viewer.ensureLoaded("memory");
+    await vi.advanceTimersByTimeAsync(0);
+    r.memories.projectFilter = "A";
+    const primary = mode === "search" ? r.viewer.runMemorySearch("Memory") : r.viewer.applyMemoryFilters();
+    expect(r.pending).toHaveLength(2);
+    r.pending[0]!.resolve(null);
+    await initial;
+    expect(r.store.loaded.memory).toBe(false);
+    expect(renderedMemoryCollection(r)).toBe("initial skeleton");
+    const pending = r.pending[1]!;
+    const response = await r.response(pending.path);
+    expect(response!.memories!.length).toBeGreaterThan(0);
+    expect(response!.memories!.every((row) => row.project === "A")).toBe(true);
+    pending.resolve(response);
+    await primary;
+    expect(renderedMemoryCollection(r)).toBe("loaded memory rows");
+    expect(r.store.loaded.memory).toBe(true);
+    expect(r.memories.firstPageLoading).toBe(false);
+    expect(r.store.loading).toEqual({ memory: null });
+    expect(r.memories.readChanges).toEqual([]);
+  });
+
+  it("keeps newer background counts when an older reconnect page completes", async () => {
+    const r = await viewerFixture();
+    r.defer();
+    const row = r.rows.find((item) => r.store.entities.memory[item.id])!;
+    const updated = { ...row, title: "Update before reconnect starts", updatedAt: "2026-10-01T00:00:00Z" };
+    r.rows[r.rows.findIndex((item) => item.id === row.id)] = updated;
+    r.viewer.handleLiveEvent("memory.updated", { memory: updated });
+    const revision = r.memories.facetRevision;
+    r.store.loaded.memory = false;
+    const reload = r.viewer.ensureLoaded("memory");
+    await vi.advanceTimersByTimeAsync(0);
+    const initial = r.pending[0]!;
+    const old = structuredClone(await r.response(initial.path));
+    r.rows.push(memoryFixture("B-without-later-event", "B", "fact"));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.pending).toHaveLength(2);
+    const metadata = r.pending[1]!;
+    expect(new URL(metadata.path, "http://viewer.test").searchParams.get("limit")).toBe("1");
+    metadata.resolve(structuredClone(await r.response(metadata.path)));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 133, bug: 3, workflow: 1 });
+    expect(r.memories.facetRevision).toBe(revision);
+    initial.resolve(old);
+    await reload;
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 133, bug: 3, workflow: 1 });
+    expect(r.memories.nextCursor).toBe(old!.nextCursor);
+    expect(Object.keys(r.store.entities.memory).sort()).toEqual(old!.memories!.map((item) => item.id).sort());
+    expect(r.memories.readChanges).toEqual([]);
+  });
+
   it.each(["A", "B"])("finishes project A search while project %s changes during every response", async (project) => {
     const r = await viewerFixture(true, true);
     await r.select("A");
