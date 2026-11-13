@@ -1610,6 +1610,53 @@ describe("Import image reference accounting", () => {
     expect(await kv.get(KV.imageRefs, "/tmp/img-f.png")).toBeNull();
   });
 
+  it("rejects duplicate memory ids before applying image-reference changes", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const shared = "/tmp/img-shared.png";
+    await kv.set(KV.memories, "mem_dup", {
+      ...testMemory,
+      id: "mem_dup",
+      imageRef: shared,
+    });
+    await kv.set(KV.imageRefs, shared, 1);
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: imageExport({
+        memories: [
+          { ...testMemory, id: "mem_dup", imageRef: "/tmp/img-x.png" },
+          { ...testMemory, id: "mem_dup", imageRef: "/tmp/img-y.png" },
+        ],
+      }),
+      strategy: "merge",
+    })) as { success: boolean; error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("duplicate id");
+    expect(await kv.get(KV.imageRefs, shared)).toBe(1);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-x.png")).toBeNull();
+    expect(await kv.get(KV.imageRefs, "/tmp/img-y.png")).toBeNull();
+  });
+
+  it("rejects duplicate observation ids within one bucket", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const obs = { ...testObs, id: "obs_dup", imageData: "/tmp/img-o.png" };
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: imageExport({
+        observations: { ses_1: [obs, { ...obs }] },
+      }),
+      strategy: "merge",
+    })) as { success: boolean; error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("duplicate id");
+    expect(await kv.get(KV.imageRefs, "/tmp/img-o.png")).toBeNull();
+  });
+
   it("reserves image references in bounded parallel chunks", async () => {
     const sdk = mockSdk();
     const kv = mockKV();

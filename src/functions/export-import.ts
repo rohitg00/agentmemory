@@ -39,7 +39,7 @@ import {
   indexObservationSession,
   unindexObservationSession,
 } from "../state/obs-index.js";
-import { withKeyedLocks } from "../state/keyed-mutex.js";
+import { withKeyedLock, withKeyedLocks } from "../state/keyed-mutex.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import {
@@ -448,6 +448,11 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (index >= 0) {
           return { success: false, error: `observations.${sessionId}[${index}] must be an object with a string id` };
         }
+        const seenObs = new Set<string>();
+        const duplicate = obs.findIndex((o) => seenObs.has(o.id) || !seenObs.add(o.id));
+        if (duplicate >= 0) {
+          return { success: false, error: `observations.${sessionId}[${duplicate}] has a duplicate id` };
+        }
       }
       const rowKeys: Record<string, string> = { summaries: "sessionId", profiles: "project", accessLogs: "memoryId" };
       for (const section of ["sessions", "memories", "summaries", "profiles", ...EXPORT_COLLECTIONS.map(([field]) => field)] as const) {
@@ -484,6 +489,13 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (index >= 0) {
           return { success: false, error: `${section}[${index}] must be an object with a string ${key}` };
         }
+      }
+      const seenMemories = new Set<string>();
+      const duplicateMemory = importData.memories.findIndex(
+        (m) => seenMemories.has(m.id) || !seenMemories.add(m.id),
+      );
+      if (duplicateMemory >= 0) {
+        return { success: false, error: `memories[${duplicateMemory}] has a duplicate id` };
       }
       if ((importData.accessLogs?.length ?? 0) > MAX_ACCESS_LOGS) {
         return {
@@ -732,25 +744,27 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (preflightError) return preflightError;
 
         await runChunked(memoryRows, async ({ row: memory, token }) => {
-          if (strategy === "skip") {
-            const existing = await kv.get<Memory>(KV.memories, memory.id);
-            if (existing) {
-              stats.skipped++;
-              return;
+          await withKeyedLock(`mem:${memory.id}`, async () => {
+            if (strategy === "skip") {
+              const existing = await kv.get<Memory>(KV.memories, memory.id);
+              if (existing) {
+                stats.skipped++;
+                return;
+              }
             }
-          }
-          // Older exports + hand-edited dumps can omit this field.
-          if (!Array.isArray(memory.sessionIds)) {
-            memory.sessionIds = [];
-          }
-          memory.origin = importOrigin(memory.origin, memory.createdAt);
-          const previous = strategy === "merge"
-            ? await kv.get<Memory>(KV.memories, memory.id)
-            : null;
-          await kv.set(KV.memories, memory.id, memory);
-          batch.written(token, memoryImagePaths(previous));
-          stats.memories++;
-          indexMems.push(memory);
+            // Older exports + hand-edited dumps can omit this field.
+            if (!Array.isArray(memory.sessionIds)) {
+              memory.sessionIds = [];
+            }
+            memory.origin = importOrigin(memory.origin, memory.createdAt);
+            const previous = strategy === "merge"
+              ? await kv.get<Memory>(KV.memories, memory.id)
+              : null;
+            await kv.set(KV.memories, memory.id, memory);
+            batch.written(token, memoryImagePaths(previous));
+            stats.memories++;
+            indexMems.push(memory);
+          });
         });
 
         return null;

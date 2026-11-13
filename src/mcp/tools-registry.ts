@@ -222,7 +222,7 @@ export const CORE_TOOLS: McpToolDef[] = [
           type: "string",
           description: "Comma-separated memory or observation IDs to expand; query is optional when provided",
         },
-        limit: { type: "number", description: "Max results (default 10)" },
+        limit: { type: "integer", minimum: 1, description: "Max results (default 10)" },
         targetLayer: {
           type: "string",
           enum: ["all", "memory", "observation"],

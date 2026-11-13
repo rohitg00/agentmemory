@@ -248,12 +248,14 @@ export function registerSnapshotFunction(
               }
             }
             for (const { row: memory, token } of restoreMemories) {
-              const previous = await kv.get<Memory>(KV.memories, memory.id);
-              await kv.set(KV.memories, memory.id, memory);
-              batch.written(token, memoryImagePaths(previous));
-              getSearchIndex().remove(memory.id);
-              vectorIndexRemove(memory.id);
-              memoryIds.add(memory.id);
+              await withKeyedLock(`mem:${memory.id}`, async () => {
+                const previous = await kv.get<Memory>(KV.memories, memory.id);
+                await kv.set(KV.memories, memory.id, memory);
+                batch.written(token, memoryImagePaths(previous));
+                getSearchIndex().remove(memory.id);
+                vectorIndexRemove(memory.id);
+                memoryIds.add(memory.id);
+              });
             }
             for (const [sessionId, rows] of restoreObservations) {
               await withKeyedLock(`obs:${sessionId}`, async () => {
@@ -263,8 +265,8 @@ export function registerSnapshotFunction(
                   batch.written(token, observationImagePaths(previous));
                   getSearchIndex().remove(observation.id);
                   vectorIndexRemove(observation.id);
-                  await indexObservationSession(kv, observation.id, sessionId);
                   observationSessions.set(observation.id, sessionId);
+                  await indexObservationSession(kv, observation.id, sessionId);
                 }
               });
             }
