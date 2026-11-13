@@ -69,6 +69,16 @@ describe("recall request boundaries", () => {
     expect(trigger).not.toHaveBeenCalled();
   });
 
+  it.each([0, -1, 1.5, "2", null])("rejects invalid limit %j before dispatch at both REST routes", async (limit) => {
+    const { call, trigger } = endpoints();
+    for (const name of ["api::search", "api::smart-search"]) {
+      const result = await call(name, { query: "context", limit });
+      expect(result.status_code).toBe(400);
+      expect(result.body.error).toContain("limit");
+    }
+    expect(trigger).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed expansion requests rather than crashing or silently dropping entries", async () => {
     const { call, trigger } = endpoints();
     const invalid = [null, "mem_a", {}, [null], [1], [""], [" "], [{}], [{ obsId: 3 }],
