@@ -918,3 +918,36 @@ describe("Export/import relations", () => {
     expect(relatedAfter.results.length).toBe(1);
   });
 });
+
+describe("Export/import sessionless observation scope", () => {
+  it("exports the migrated observation bucket and restores it on import", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.sessions, testSession.id, testSession);
+    await kv.set(KV.observations(testSession.id), testObs.id, testObs);
+    const migratedObs: CompressedObservation = {
+      ...testObs,
+      id: "obs_migrated",
+      sessionId: "migrated",
+    };
+    await kv.set(KV.observations("migrated"), migratedObs.id, migratedObs);
+
+    const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+    expect(exported.observations[testSession.id]).toEqual([testObs]);
+    expect(exported.observations["migrated"]).toEqual([migratedObs]);
+
+    const target = mockKV();
+    const targetSdk = mockSdk();
+    registerExportImportFunction(targetSdk as never, target as never);
+    const result = (await targetSdk.trigger("mem::import", {
+      exportData: exported,
+      strategy: "merge",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(
+      await target.get(KV.observations("migrated"), "obs_migrated"),
+    ).toMatchObject({ id: "obs_migrated", sessionId: "migrated" });
+  });
+});

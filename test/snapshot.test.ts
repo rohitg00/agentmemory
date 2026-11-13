@@ -31,6 +31,7 @@ vi.mock("node:fs", () => ({
   writeFileSync: vi.fn(),
 }));
 
+import { writeFileSync } from "node:fs";
 import { registerSnapshotFunction } from "../src/functions/snapshot.js";
 import { currentAuditScope } from "./helpers/mocks.js";
 import { withKeyedLock } from "../src/state/keyed-mutex.js";
@@ -218,6 +219,32 @@ describe("Snapshot Functions", () => {
 
     const audits = await kv.list(currentAuditScope());
     expect(audits.length).toBe(1);
+  });
+
+  it("snapshot-create captures the sessionless migrated observation bucket", async () => {
+    const migratedObs = {
+      id: "obs_migrated",
+      sessionId: "migrated",
+      timestamp: "2026-02-01T00:00:00Z",
+      type: "discovery",
+      title: "Legacy row",
+      narrative: "from sqlite",
+      facts: [],
+      concepts: [],
+      files: [],
+      importance: 5,
+    };
+    await kv.set(KV.observations("migrated"), migratedObs.id, migratedObs);
+
+    await sdk.trigger("mem::snapshot-create", { message: "capture" });
+
+    const written = vi
+      .mocked(writeFileSync)
+      .mock.calls.find(([path]) => String(path).endsWith("state.json"));
+    const state = JSON.parse(String(written![1])) as {
+      observations: Record<string, unknown[]>;
+    };
+    expect(state.observations["migrated"]).toEqual([migratedObs]);
   });
 });
 

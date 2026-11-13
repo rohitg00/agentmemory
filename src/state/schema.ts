@@ -70,6 +70,11 @@ export const KV = {
   capturePrompts: "mem:capture:prompts",
 } as const;
 
+// mem::migrate writes legacy rows with no session_id into
+// KV.observations("migrated"); the bucket has no session row, so any
+// per-session enumeration must name it explicitly.
+export const UNSESSIONED_OBSERVATION_SCOPE = "migrated";
+
 export function generateId(prefix: string): string {
   const ts = Date.now().toString(36);
   const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 12);

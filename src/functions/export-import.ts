@@ -27,7 +27,7 @@ import type {
 } from "../types.js";
 import { importOrigin } from "../types.js";
 import { normalizeAccessLog } from "./access-tracker.js";
-import { KV } from "../state/schema.js";
+import { KV, UNSESSIONED_OBSERVATION_SCOPE } from "../state/schema.js";
 import { checkPayloadFrameSize, oversizedPayloadError, payloadByteLength, SAFE_PAYLOAD_BYTES } from "../state/frame-guard.js";
 import { StateKV, collectAll } from "../state/kv.js";
 import {
@@ -201,6 +201,18 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (obs.length === 0) continue;
         if (!budget.fits(obs, session.id)) return refuse("observations");
         observations[session.id] = obs;
+      }
+      if (isSelected("sessions")) {
+        const migrated = await collectAll<CompressedObservation>(
+          kv,
+          KV.observations(UNSESSIONED_OBSERVATION_SCOPE),
+        );
+        if (migrated.length > 0) {
+          if (!budget.fits(migrated, UNSESSIONED_OBSERVATION_SCOPE)) {
+            return refuse("observations");
+          }
+          observations[UNSESSIONED_OBSERVATION_SCOPE] = migrated;
+        }
       }
 
       const profiles: ProjectProfile[] = [];

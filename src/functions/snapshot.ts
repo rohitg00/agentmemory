@@ -13,7 +13,7 @@ import type {
   CompressedObservation,
   AccessLogExport,
 } from "../types.js";
-import { KV, generateId } from "../state/schema.js";
+import { KV, generateId, UNSESSIONED_OBSERVATION_SCOPE } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { collectAll } from "../state/kv.js";
 import type { SearchIndexRevision } from "../state/search-index.js";
@@ -83,6 +83,12 @@ export function registerSnapshotFunction(
           if (obs.length > 0) {
             observations[session.id] = obs;
           }
+        }
+        const migratedObs = await kv
+          .list(KV.observations(UNSESSIONED_OBSERVATION_SCOPE))
+          .catch(() => []);
+        if (migratedObs.length > 0) {
+          observations[UNSESSIONED_OBSERVATION_SCOPE] = migratedObs;
         }
 
         const state = {
