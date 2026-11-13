@@ -239,6 +239,32 @@ describe("search completion during live memory changes", () => {
     expect(r.store.entities.memory[id]).toEqual(newer);
     expect(r.memories.searching).toBe(false);
   });
+
+  it.each(["filter", "search"] as const)("initializes project B type choices during unrelated project A writes: %s", async (mode) => {
+    const r = await viewerFixture(true, true);
+    await r.select("A");
+    r.defer();
+    r.memories.projectFilter = "B";
+    const action = mode === "filter" ? r.viewer.applyMemoryFilters() : r.viewer.runMemorySearch("Memory");
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const pending = r.pending[attempt]!;
+      const snapshot = structuredClone(await r.response(pending.path));
+      const next = memoryFixture(`A-during-new-B-scope-${attempt}`, "A", "fact");
+      r.rows.push(next);
+      r.viewer.handleLiveEvent("memory.created", { memory: next });
+      pending.resolve(snapshot);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    await action;
+    expect(r.memories.firstPageLoading).toBe(false);
+    expect(r.memories.searching).toBe(false);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 2, workflow: 1 });
+    expect(r.memories.facetScope).toEqual({ project: "B", agent: "" });
+    r.resume();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 2, workflow: 1 });
+    expect(facetCounts(r.viewer.memoryFacetList("project"))).toEqual({ A: 135, B: 3 });
+  });
 });
 afterEach(() => {
   for (const id of indexedIds) getSearchIndex().remove(id);

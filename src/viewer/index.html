@@ -4292,7 +4292,9 @@
                 return changes[row.id] ? store.entities.memory[row.id] : row;
               }).filter(Boolean) });
             }
-            adoptResponse(response, currentFacets);
+            var scope = m.facetScope;
+            var initializeScope = !m.facets || !scope || scope.project !== (m.projectFilter || '') || scope.agent !== (m.agentFilter || '');
+            adoptResponse(response, currentFacets || initializeScope);
             if (response && !currentFacets) scheduleMemoryFacetRefresh();
             return true;
           }
@@ -4376,7 +4378,7 @@
       state.memories.searching = true;
       state.memories.firstPageLoading = true;
       renderMemories();
-      var received = await fetchMemoryFacetPage(memoryQueryPath('&q=' + encodeURIComponent(query)) + '&facets=true', function() { return seq === memorySearchSeq; }, function(res, currentFacets) {
+      var received = await fetchMemoryFacetPage(memoryQueryPath('&q=' + encodeURIComponent(query)) + '&facets=true', function() { return seq === memorySearchSeq; }, function(res, adoptFacets) {
         state.memories.searching = false;
         state.memories.firstPageLoading = false;
         if (!res) {
@@ -4385,7 +4387,7 @@
         } else {
           var rows = res.memories || [];
           mergeMemoryRows(rows);
-          if (currentFacets) setMemoryFacets(res.facets, project, agent);
+          if (adoptFacets) setMemoryFacets(res.facets, project, agent);
           state.memories.searchIds = rows.map(function(r) { return r.id; });
           state.memories.searchMode = (res.search && res.search.mode) || 'keyword';
         }
@@ -4412,11 +4414,11 @@
       var project = m.projectFilter, agent = m.agentFilter;
       m.query = filtered ? { loading: true, total: null, nextCursor: null } : null;
       renderMemories();
-      var received = await fetchMemoryFacetPage(memoryQueryPath('&facets=true'), function() { return seq === memoryFilterSeq; }, function(res, currentFacets) {
+      var received = await fetchMemoryFacetPage(memoryQueryPath('&facets=true'), function() { return seq === memoryFilterSeq; }, function(res, adoptFacets) {
         m.firstPageLoading = false;
         if (res) {
           mergeMemoryRows(res.memories);
-          if (currentFacets) setMemoryFacets(res.facets, project, agent);
+          if (adoptFacets) setMemoryFacets(res.facets, project, agent);
           if (!filtered) m.nextCursor = res.nextCursor || null;
           m.query = filtered ? { loading: false, total: typeof res.total === 'number' ? res.total : null, nextCursor: res.nextCursor || null } : null;
         } else {
