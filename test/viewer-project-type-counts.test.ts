@@ -14,7 +14,7 @@ type MemoryState = {
   projectFilter: string; agentFilter: string; typeFilter: string; search: string;
   facets: MemoryFacets | null; checked: Record<string, boolean>; searchIds: string[] | null;
   fetches: Record<string, string>;
-  query: { loading?: boolean; total?: number | null; nextCursor?: string | null } | null;
+  query: { loading?: boolean; failed?: boolean; total?: number | null; nextCursor?: string | null } | null;
   [key: string]: unknown;
 };
 type Viewer = {
@@ -162,6 +162,43 @@ beforeEach(() => {
 });
 
 describe("search completion during live memory changes", () => {
+  it("blocks the stale All cursor after a failed replacement and recovers on retry", async () => {
+    const r = await viewerFixture();
+    expect(r.memories.nextCursor).toEqual(expect.any(String));
+    await r.select("A");
+    r.rows.push(...Array.from({ length: 250 }, (_, index) => memoryFixture(`B-before-failed-All-${index}`, "B", "fact", {
+      updatedAt: "2026-10-04T00:00:00Z",
+    })));
+    r.defer();
+    r.memories.projectFilter = "";
+    const replacement = r.viewer.applyMemoryFilters();
+    expect(r.pending).toHaveLength(1);
+    r.pending[0]!.resolve(null);
+    await replacement;
+    expect(r.memories.firstPageLoading).toBe(false);
+    r.resume();
+    const beforePaging = r.requests.length;
+    await r.viewer.loadMoreMemories();
+    expect(r.requests).toHaveLength(beforePaging);
+    expect(r.memories.nextCursor).toBeNull();
+    expect(r.memories.query?.failed).toBe(true);
+    expect(r.viewer.memoryListHtml()).toContain("Could not load memories");
+    expect(r.viewer.memoryListHtml()).toContain('data-action="mem-clear-filters"');
+    await r.viewer.applyMemoryFilters();
+    const fresh = await r.response(r.requests.at(-1)!);
+    expect(r.memories.query).toBeNull();
+    expect(r.memories.nextCursor).toEqual(fresh!.nextCursor);
+    expect(r.memories.nextCursor).toEqual(expect.any(String));
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 382, bug: 3, workflow: 1 });
+    for (const row of fresh!.memories!) expect(r.store.entities.memory[row.id]).toEqual(row);
+    const retryCursor = r.memories.nextCursor as string;
+    const beforeRetryPaging = r.requests.length;
+    await r.viewer.loadMoreMemories();
+    expect(r.requests).toHaveLength(beforeRetryPaging + 1);
+    expect(new URL(r.requests.at(-1)!, "http://viewer.test").searchParams.get("cursor")).toBe(retryCursor);
+    expect(r.memories.readChanges).toEqual([]);
+  });
+
   it("keeps a successful primary page accepted while the initial loader waits for startup", async () => {
     const r = await viewerFixture(false, false, false, false);
     r.defer();

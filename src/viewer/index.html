@@ -4476,7 +4476,8 @@
           if (!filtered) m.nextCursor = res.nextCursor || null;
           m.query = filtered ? { loading: false, total: typeof res.total === 'number' ? res.total : null, nextCursor: res.nextCursor || null } : null;
         } else {
-          m.query = filtered ? { loading: false, failed: true, total: null, nextCursor: null } : null;
+          if (!filtered) m.nextCursor = null;
+          m.query = { loading: false, failed: true, total: null, nextCursor: null };
         }
       });
       if (!received) return;
@@ -4632,6 +4633,9 @@
 
     function memoryListHtml() {
       var m = state.memories;
+      if (m.query && m.query.failed && !memoryFiltersActive()) {
+        return '<div class="empty-state">Could not load memories. <button type="button" class="btn" data-action="mem-clear-filters">Retry</button></div>';
+      }
       var c = store.counts || {};
       var rows = memoryRows();
       var filtered = memoryFiltersActive();
