@@ -190,7 +190,10 @@ export function registerSmartSearchFunction(
         return { mode: "compact", results: [], error: "query is required" };
       }
 
-      const limit = Math.max(1, Math.min(data.limit ?? 20, 100));
+      if (data.limit !== undefined && (!Number.isInteger(data.limit) || data.limit < 1)) {
+        throw new Error("mem::smart-search: limit must be a positive integer");
+      }
+      const limit = Math.min(data.limit ?? 20, 100);
       // Lesson recall stays capped: lessons are denser than raw
       // observations so 10 covers most recall flows.
       const lessonLimit = Math.min(limit, 10);
