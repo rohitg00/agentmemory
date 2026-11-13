@@ -848,13 +848,29 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         });
       }
       if (importData.relations) {
+        // Relations created by mem::relate live under generated rel_* keys, so
+        // a same-database re-import must match rows by their composite
+        // identity, not only by the composite key the import writes to.
+        const existingRelKeys = new Map<string, string>();
+        const relStoredKeys = await kv.listKeys(KV.relations).catch(() => [] as string[]);
+        await runChunked(relStoredKeys, async (key) => {
+          const rel = await kv.get<MemoryRelation>(KV.relations, key).catch(() => null);
+          if (rel) {
+            existingRelKeys.set(`${rel.sourceId}:${rel.targetId}:${rel.type}`, key);
+          }
+        });
         await runChunked(importData.relations, async (rel) => {
           const relKey = `${rel.sourceId}:${rel.targetId}:${rel.type}`;
-          if (strategy === "skip") {
-            const existing = await kv.get(KV.relations, relKey).catch(() => null);
-            if (existing) { stats.skipped++; return; }
+          const storedKey = existingRelKeys.get(relKey);
+          if (strategy === "skip" && storedKey !== undefined) {
+            stats.skipped++;
+            return;
+          }
+          if (storedKey !== undefined && storedKey !== relKey) {
+            await kv.delete(KV.relations, storedKey);
           }
           await kv.set(KV.relations, relKey, rel);
+          existingRelKeys.set(relKey, relKey);
         });
       }
 

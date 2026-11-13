@@ -884,6 +884,51 @@ describe("Export/import relations", () => {
     expect((await kv.list(KV.relations)).length).toBe(1);
   });
 
+  it("collapses a generated-key relation into the composite key on merge instead of duplicating it", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      relations: [relation],
+    } as unknown as ExportData;
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "merge",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.list<MemoryRelation>(KV.relations)).toEqual([relation]);
+    expect(await kv.get(KV.relations, "mem_a:mem_b:extends")).toEqual(relation);
+  });
+
+  it("honors an existing generated-key relation under skip", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      relations: [relation],
+    } as unknown as ExportData;
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "skip",
+    })) as { success: boolean; skipped: number };
+
+    expect(result.success).toBe(true);
+    expect(result.skipped).toBe(1);
+    expect(await kv.list<MemoryRelation>(KV.relations)).toEqual([relation]);
+    expect(await kv.get(KV.relations, "mem_a:mem_b:extends")).toBeNull();
+  });
+
   it("preserves relation confidence through export and import", async () => {
     const { registerRelationsFunction } = await import(
       "../src/functions/relations.js"
