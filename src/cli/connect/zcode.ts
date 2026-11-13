@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, fchmodSync, mkdirSync, openSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fchmodSync, fchownSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
@@ -7,12 +7,13 @@ import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { buildMergedHooks, findPluginRoot, type HookManifest } from "./codex-hooks.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
-  backupFile,
+  ensureBackupsDir,
   isAgentmemoryMcpEntry,
   logAlreadyWired,
   logBackup,
   logInstalled,
   readJsonSafe,
+  timestampSlug,
 } from "./util.js";
 
 const ZCODE_DIR = join(homedir(), ".zcode");
@@ -51,13 +52,24 @@ function skipped(reason: string, message: string): ConnectResult {
   return { kind: "skipped", reason };
 }
 
-function writeConfigAtomic(value: Record<string, unknown>): void {
-  const mode = existsSync(CONFIG_PATH) ? statSync(CONFIG_PATH).mode & 0o777 : 0o600;
+function backupConfig(): string {
+  const contents = readFileSync(CONFIG_PATH);
+  const target = join(ensureBackupsDir(), `zcode-${timestampSlug()}-${randomUUID()}.json`);
+  writeFileSync(target, contents, { flag: "wx", mode: 0o600 });
+  return target;
+}
+
+function writeConfigAtomic(value: Record<string, unknown>): string | undefined {
+  const original = existsSync(CONFIG_PATH) ? statSync(CONFIG_PATH) : undefined;
+  const mode = original ? original.mode & 0o777 : 0o600;
   mkdirSync(dirname(CONFIG_PATH), { recursive: true });
   const temporary = CONFIG_PATH + ".tmp-" + randomUUID();
   const fd = openSync(temporary, "wx", 0o600);
   try {
     try {
+      if (original && process.platform !== "win32") {
+        fchownSync(fd, original.uid, original.gid);
+      }
       writeFileSync(fd, JSON.stringify(value, null, 2) + "\n");
       // Retained MCP settings can contain credentials; preserve their file's
       // permissions independently of the current process's umask.
@@ -65,7 +77,9 @@ function writeConfigAtomic(value: Record<string, unknown>): void {
     } finally {
       closeSync(fd);
     }
+    const backupPath = original ? backupConfig() : undefined;
     renameSync(temporary, CONFIG_PATH);
+    return backupPath;
   } finally {
     if (existsSync(temporary)) unlinkSync(temporary);
   }
@@ -135,9 +149,8 @@ export const adapter: ConnectAdapter = {
       return { kind: "installed", mutatedPath: CONFIG_PATH, ...hookState };
     }
 
-    const backupPath = present ? backupFile(CONFIG_PATH, "zcode") : undefined;
+    const backupPath = writeConfigAtomic(next);
     if (backupPath) logBackup(backupPath);
-    writeConfigAtomic(next);
     if (JSON.stringify(readJsonSafe(CONFIG_PATH)) !== JSON.stringify(next)) {
       return skipped("verification-failed", `ZCode config verification failed: ${CONFIG_PATH}`);
     }
