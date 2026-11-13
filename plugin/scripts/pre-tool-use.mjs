@@ -80,7 +80,7 @@ function isLoopbackUrl(url) {
 		return false;
 	}
 	const bare = hostname.replace(/^\[|\]$/g, "");
-	return bare === "localhost" || bare === "::1" || /^127(?:\.\d{1,3}){3}$/.test(bare);
+	return bare === "localhost" || bare === "localhost." || bare === "::1" || /^127(?:\.\d{1,3}){3}$/.test(bare);
 }
 function resolveClientSecret(baseUrl, env = process.env) {
 	const fromEnv = usable(env[SECRET_KEY]);

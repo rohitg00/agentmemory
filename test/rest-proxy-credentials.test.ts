@@ -31,6 +31,78 @@ describe("MCP proxy credential origins", () => {
     rmSync(home, { recursive: true, force: true });
   });
 
+  it.each([
+    "http://memory.example.invalid",
+    "http://192.0.2.10:3111",
+    "http://[2001:db8::10]:3111",
+    "http://localhost.example.invalid:3111",
+  ].flatMap((url) => [false, true].map((forced) => [url, forced] as const)))(
+    "rejects insecure remote transport %s before sending credentials (forced: %s)",
+    async (url, forced) => {
+      vi.stubEnv("AGENTMEMORY_URL", url);
+      vi.stubEnv("AGENTMEMORY_SECRET", "synthetic-remote-secret");
+      vi.stubEnv("AGENTMEMORY_FORCE_PROXY", forced ? "1" : "");
+      const fetchMock = vi.fn(async () => new Response("{}"));
+      vi.stubGlobal("fetch", fetchMock);
+      const probe = vi.fn(async () => ({ ok: true }));
+      setLivezProbe(probe);
+
+      await expect(resolveHandle()).rejects.toThrow(/HTTPS.*loopback/i);
+      expect(probe).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects insecure remote transport even without a secret", async () => {
+    vi.stubEnv("AGENTMEMORY_URL", "http://memory.example.invalid");
+    const fetchMock = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(resolveHandle()).rejects.toThrow(/HTTPS.*loopback/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    remote,
+    "https://memory.example.invalid/prefix",
+    "http://localhost:3111",
+    "http://localhost.:3111",
+    "http://127.0.0.2:3111",
+    "http://[::1]:3111",
+  ].flatMap((url) => [false, true].map((forced) => [url, forced] as const)))(
+    "preserves credentials on secure or loopback transport %s (forced: %s)",
+    async (url, forced) => {
+      vi.stubEnv("AGENTMEMORY_URL", url);
+      vi.stubEnv("AGENTMEMORY_SECRET", "synthetic-remote-secret");
+      vi.stubEnv("AGENTMEMORY_FORCE_PROXY", forced ? "1" : "");
+      const calls: Array<{ url: string; auth: string | null }> = [];
+      vi.stubGlobal("fetch", vi.fn(async (target: string, init?: RequestInit) => {
+        calls.push({ url: target, auth: new Headers(init?.headers).get("authorization") });
+        return new Response("{}");
+      }));
+
+      const handle = await resolveHandle();
+      if (handle.mode !== "proxy") throw new Error("expected proxy mode");
+      await handle.call("/agentmemory/sessions");
+      const expected = [{ url: `${url}/agentmemory/sessions`, auth: "Bearer synthetic-remote-secret" }];
+      if (!forced) expected.unshift({ url: `${url}/agentmemory/livez`, auth: "Bearer synthetic-remote-secret" });
+      expect(calls).toEqual(expected);
+    },
+  );
+
+  it("rejects insecure reconfiguration before reusing or calling a cached handle", async () => {
+    vi.stubEnv("AGENTMEMORY_SECRET", "synthetic-remote-secret");
+    const fetchMock = vi.fn(async () => new Response("{}"));
+    vi.stubGlobal("fetch", fetchMock);
+    const handle = await resolveHandle();
+    if (handle.mode !== "proxy") throw new Error("expected proxy mode");
+    vi.stubEnv("AGENTMEMORY_URL", "http://memory.example.invalid");
+
+    await expect(resolveHandle()).rejects.toThrow(/HTTPS.*loopback/i);
+    await expect(handle.call("/agentmemory/sessions")).rejects.toThrow(/HTTPS.*loopback/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("refuses a stale handle before attaching credentials for a changed endpoint", async () => {
     const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response("{}"));
     vi.stubGlobal("fetch", fetchMock);

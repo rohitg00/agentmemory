@@ -102,7 +102,7 @@ export function isLoopbackUrl(url: string): boolean {
     return false;
   }
   const bare = hostname.replace(/^\[|\]$/g, "");
-  return bare === "localhost" || bare === "::1" || /^127(?:\.\d{1,3}){3}$/.test(bare);
+  return bare === "localhost" || bare === "localhost." || bare === "::1" || /^127(?:\.\d{1,3}){3}$/.test(bare);
 }
 
 export function resolveClientSecret(
