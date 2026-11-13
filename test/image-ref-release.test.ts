@@ -469,3 +469,339 @@ describe("mem::snapshot-restore image ref reconciliation", () => {
     expect(await kv.get(KV.imageEmbeddings, pathB)).toEqual({ dims: 9 });
   });
 });
+
+describe("bounded image ref reservation concurrency", () => {
+  const delay = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  const advanceUntilSettled = async (
+    isSettled: () => boolean,
+    budgetMs = 260_000,
+  ) => {
+    for (let elapsed = 0; elapsed < budgetMs && !isSettled(); elapsed += 200) {
+      await vi.advanceTimersByTimeAsync(200);
+    }
+  };
+
+  function instrumentImageOps(
+    kv: ReturnType<typeof mockKV>,
+    ownerScopes: Set<string>,
+    failSet?: (key: string) => boolean,
+    failOwner?: (scope: string, key: string) => boolean,
+  ) {
+    const stats = {
+      inFlight: 0,
+      maxInFlight: 0,
+      postFailureMaxInFlight: 0,
+      done: 0,
+      ownerWrites: 0,
+      imageOpsAtFirstOwnerWrite: -1,
+      failed: false,
+      getsByKey: new Map<string, number>(),
+      setsByKey: new Map<string, number>(),
+    };
+    const track = () => {
+      stats.inFlight += 1;
+      stats.maxInFlight = Math.max(stats.maxInFlight, stats.inFlight);
+      if (stats.failed) {
+        stats.postFailureMaxInFlight = Math.max(
+          stats.postFailureMaxInFlight,
+          stats.inFlight,
+        );
+      }
+    };
+    const realGet = kv.get;
+    const realSet = kv.set;
+    vi.spyOn(kv, "get").mockImplementation(
+      async (scope: string, key: string): Promise<unknown> => {
+        if (scope !== KV.imageRefs) return realGet(scope, key);
+        stats.getsByKey.set(key, (stats.getsByKey.get(key) ?? 0) + 1);
+        track();
+        await delay(20);
+        stats.inFlight -= 1;
+        stats.done += 1;
+        return realGet(scope, key);
+      },
+    );
+    vi.spyOn(kv, "set").mockImplementation(
+      async (scope: string, key: string, value: never): Promise<unknown> => {
+        if (scope !== KV.imageRefs) {
+          if (failOwner?.(scope, key)) {
+            stats.failed = true;
+            throw new Error("owner set failed");
+          }
+          if (ownerScopes.has(scope)) {
+            stats.ownerWrites += 1;
+            if (stats.imageOpsAtFirstOwnerWrite === -1) {
+              stats.imageOpsAtFirstOwnerWrite = stats.done;
+            }
+          }
+          return realSet(scope, key, value);
+        }
+        if (failSet?.(key)) throw new Error("image ref write failed");
+        stats.setsByKey.set(key, (stats.setsByKey.get(key) ?? 0) + 1);
+        track();
+        await delay(20);
+        stats.inFlight -= 1;
+        stats.done += 1;
+        return realSet(scope, key, value);
+      },
+    );
+    return stats;
+  }
+
+  it("imports 5000 observations with distinct images under a 20-wide reservation cap before any owner write", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const sessionId = "ses_bulk";
+    const exportData = imageExport({
+      sessions: [testSession(sessionId)],
+      observations: {
+        [sessionId]: Array.from({ length: 5000 }, (_, i) => ({
+          ...obsRow(`obs_${i}`, sessionId),
+          imageData: `/img/res-${i}.png`,
+        })),
+      },
+    });
+    const stats = instrumentImageOps(kv, new Set([KV.observations(sessionId)]));
+
+    let settled = false;
+    vi.useFakeTimers();
+    try {
+      const pending = importResult(sdk, exportData, "merge");
+      pending.then(() => {
+        settled = true;
+      });
+      await advanceUntilSettled(() => settled, 15_000);
+      expect(settled).toBe(true);
+      const result = await pending;
+      expect(result.success).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+
+    expect(stats.ownerWrites).toBe(5000);
+    expect(stats.imageOpsAtFirstOwnerWrite).toBe(10000);
+    expect(stats.maxInFlight).toBeGreaterThan(1);
+    expect(stats.maxInFlight).toBeLessThanOrEqual(20);
+    const refs = await kv.list<number>(KV.imageRefs);
+    expect(refs).toHaveLength(5000);
+    expect(refs.every((count) => count === 1)).toBe(true);
+    expect(await kv.list(KV.observations(sessionId))).toHaveLength(5000);
+  });
+
+  it("restores snapshot owners under the same bounded reservation cap", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSnapshotFunction(sdk as never, kv as never, "/tmp/agentmemory-snapshots");
+    const archive = {
+      version: "0.4.0",
+      sessions: [],
+      memories: Array.from({ length: 60 }, (_, i) => ({
+        ...memRow(`mem_${i}`),
+        imageRef: `/img/restore-mem-${i}.png`,
+      })),
+      observations: {
+        ses_r: Array.from({ length: 20 }, (_, i) => ({
+          ...obsRow(`robs_${i}`, "ses_r"),
+          imageData: `/img/restore-obs-${i}.png`,
+        })),
+      },
+    };
+    snapshotContent.mockReturnValueOnce(JSON.stringify(archive));
+    const stats = instrumentImageOps(
+      kv,
+      new Set([KV.memories, KV.observations("ses_r")]),
+    );
+
+    let settled = false;
+    vi.useFakeTimers();
+    try {
+      const pending = sdk.trigger("mem::snapshot-restore", {
+        commitHash: "abc1234",
+      }) as Promise<{ success: boolean }>;
+      pending.then(() => {
+        settled = true;
+      });
+      await advanceUntilSettled(() => settled);
+      expect(settled).toBe(true);
+      const result = await pending;
+      expect(result.success).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+
+    expect(stats.ownerWrites).toBe(80);
+    expect(stats.imageOpsAtFirstOwnerWrite).toBe(160);
+    expect(stats.maxInFlight).toBeGreaterThan(1);
+    expect(stats.maxInFlight).toBeLessThanOrEqual(20);
+    const refs = await kv.list<number>(KV.imageRefs);
+    expect(refs).toHaveLength(80);
+    expect(refs.every((count) => count === 1)).toBe(true);
+    for (let i = 0; i < 60; i++) {
+      expect(
+        await kv.get<{ imageRef: string }>(KV.memories, `mem_${i}`),
+      ).toMatchObject({ imageRef: `/img/restore-mem-${i}.png` });
+    }
+    for (let i = 0; i < 20; i++) {
+      expect(
+        await kv.get<{ imageData: string }>(KV.observations("ses_r"), `robs_${i}`),
+      ).toMatchObject({ imageData: `/img/restore-obs-${i}.png` });
+    }
+  });
+
+  it("settles delayed sibling reservations before rejecting and never starts the next group", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const paths = await Promise.all(
+      Array.from({ length: 30 }, (_, i) => seedManagedImage(`fail-${i}.png`)),
+    );
+    for (const path of paths) {
+      await kv.set(KV.imageEmbeddings, path, { dims: 3 });
+    }
+    const exportData = imageExport({
+      memories: paths.map((path, i) => ({
+        ...memRow(`mem_f${i}`),
+        imageRef: path,
+      })),
+    });
+    const stats = instrumentImageOps(
+      kv,
+      new Set([KV.memories]),
+      (key) => key === paths[5],
+    );
+
+    let settled = false;
+    vi.useFakeTimers();
+    try {
+      const pending = importResult(sdk, exportData, "merge").catch(
+        (err: unknown) => err,
+      );
+      pending.then(() => {
+        settled = true;
+      });
+      await advanceUntilSettled(() => settled);
+      expect(settled).toBe(true);
+      const failed = await pending;
+      expect(failed).toBeInstanceOf(Error);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+
+    for (const [key, count] of stats.setsByKey) {
+      expect(paths.indexOf(key)).toBeLessThan(20);
+      expect(key).not.toBe(paths[5]);
+      expect(count).toBe(1);
+    }
+    expect(stats.setsByKey.size).toBe(19);
+    for (let i = 20; i < 30; i++) {
+      expect(stats.getsByKey.has(paths[i])).toBe(false);
+    }
+    expect(stats.ownerWrites).toBe(0);
+    expect(stats.inFlight).toBe(0);
+    expect(await kv.list(KV.imageRefs)).toHaveLength(0);
+    expect(await kv.list(KV.memories)).toHaveLength(0);
+    for (const path of paths) {
+      await expect(stat(path)).resolves.toBeTruthy();
+      expect(await kv.get(KV.imageEmbeddings, path)).toEqual({ dims: 3 });
+    }
+  });
+
+  it("counts a shared image exactly when many owners reserve it concurrently", async () => {
+    const shared = await seedManagedImage("shared-many.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.imageEmbeddings, shared, { dims: 4 });
+    const exportData = imageExport({
+      memories: Array.from({ length: 24 }, (_, i) => ({
+        ...memRow(`mem_s${i}`),
+        imageRef: shared,
+      })),
+    });
+
+    const result = await importResult(sdk, exportData, "merge");
+
+    expect(result.success).toBe(true);
+    expect(await kv.list(KV.memories)).toHaveLength(24);
+    expect(await kv.get(KV.imageRefs, shared)).toBe(24);
+    await expect(stat(shared)).resolves.toBeTruthy();
+  });
+
+  it("releases previous paths and unpins unused reservations with the same cap after a partial replace", async () => {
+    const oldPaths = await Promise.all(
+      Array.from({ length: 40 }, (_, i) => seedManagedImage(`old-${i}.png`)),
+    );
+    const newPaths = await Promise.all(
+      Array.from({ length: 40 }, (_, i) => seedManagedImage(`new-${i}.png`)),
+    );
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    for (let i = 0; i < 40; i++) {
+      await kv.set(KV.memories, `old_${i}`, {
+        ...memRow(`old_${i}`),
+        imageRef: oldPaths[i],
+      });
+      await kv.set(KV.imageRefs, oldPaths[i], 1);
+      await kv.set(KV.imageEmbeddings, oldPaths[i], { dims: 2 });
+      await kv.set(KV.imageEmbeddings, newPaths[i], { dims: 3 });
+    }
+    const exportData = imageExport({
+      memories: newPaths.map((path, i) => ({
+        ...memRow(`new_${i}`),
+        imageRef: path,
+      })),
+    });
+    const stats = instrumentImageOps(
+      kv,
+      new Set([KV.memories]),
+      undefined,
+      (scope, key) => scope === KV.memories && key === "new_20",
+    );
+
+    let settled = false;
+    vi.useFakeTimers();
+    try {
+      const pending = importResult(sdk, exportData, "replace").catch(
+        (err: unknown) => err,
+      );
+      pending.then(() => {
+        settled = true;
+      });
+      await advanceUntilSettled(() => settled);
+      expect(settled).toBe(true);
+      const failed = await pending;
+      expect(failed).toBeInstanceOf(Error);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+
+    expect(stats.inFlight).toBe(0);
+    expect(stats.maxInFlight).toBeGreaterThan(1);
+    expect(stats.maxInFlight).toBeLessThanOrEqual(20);
+    expect(stats.postFailureMaxInFlight).toBeGreaterThan(1);
+    expect(stats.postFailureMaxInFlight).toBeLessThanOrEqual(20);
+    for (let i = 0; i < 40; i++) {
+      if (i === 20) continue;
+      expect(await kv.get(KV.imageRefs, newPaths[i])).toBe(1);
+      expect(await kv.get(KV.memories, `new_${i}`)).not.toBeNull();
+    }
+    expect(await kv.get(KV.imageRefs, newPaths[20])).toBeNull();
+    expect(await kv.get(KV.memories, "new_20")).toBeNull();
+    await expect(stat(newPaths[20])).resolves.toBeTruthy();
+    expect(await kv.get(KV.imageEmbeddings, newPaths[20])).toEqual({ dims: 3 });
+    for (let i = 0; i < 40; i++) {
+      expect(await kv.get(KV.imageRefs, oldPaths[i])).toBeNull();
+      expect(await kv.get(KV.imageEmbeddings, oldPaths[i])).toBeNull();
+      await expect(stat(oldPaths[i])).rejects.toBeTruthy();
+      expect(await kv.get(KV.memories, `old_${i}`)).toBeNull();
+    }
+  });
+});
