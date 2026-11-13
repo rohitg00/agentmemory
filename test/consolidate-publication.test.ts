@@ -430,4 +430,24 @@ describe("consolidation publication", () => {
     await f.run();
     expect(lockFree).toBe(true);
   });
+
+  it("consolidates stored rows missing concepts or files", async () => {
+    const f = fixture();
+    const session: Session = {
+      id: "session-a", project: "app", cwd: "/synthetic",
+      startedAt: "2026-01-01T00:00:00Z", status: "completed", observationCount: 4,
+    };
+    await f.kv.set(KV.sessions, session.id, session);
+    // mem::import and mem::snapshot-restore store observation rows
+    // verbatim: fields the type marks required can be absent at runtime.
+    const store = (row: Record<string, unknown>) =>
+      f.kv.set(KV.observations(session.id), row.id as string, row as CompressedObservation);
+    const base = { sessionId: session.id, timestamp: session.startedAt, type: "decision", narrative: "n", facts: [], importance: 8 };
+    await store({ ...base, id: "no-concepts", title: "a", files: [] });
+    await store({ ...base, id: "bad-concept", title: "b", concepts: [42, "auth"], files: [] });
+    await store({ ...base, id: "no-files-1", title: "c", concepts: ["auth"] });
+    await store({ ...base, id: "no-files-2", title: "d", concepts: ["auth"] });
+    await expect(f.run()).resolves.toMatchObject({ consolidated: 1 });
+    expect(f.compress).toHaveBeenCalledTimes(1);
+  });
 });
