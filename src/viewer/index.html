@@ -2327,12 +2327,17 @@
           await bootGate;
           var seqAtStart = eventSeq;
           var memoryRevisionAtStart = state.memories.facetRevision || 0;
+          var memoryPageAtStart = state.memories.firstPageRevision || 0;
           if (kind === 'memory') memoryRead = startMemoryRead();
           var result;
           if (spec.allPages) {
             result = await loadAllPages(spec, apiGet);
           } else {
             result = await apiGet(spec.path);
+          }
+          if (kind === 'memory' && memoryPageAtStart !== (state.memories.firstPageRevision || 0)) {
+            store.loaded[kind] = true;
+            return;
           }
           if (result === null) {
             if (kind === 'action') state.actions.loadError = true;
@@ -4211,7 +4216,10 @@
 
     function mergeMemoryRows(rows) {
       (rows || []).forEach(function(r) {
-        if (r && r.id) store.entities.memory[r.id] = Object.assign({}, store.entities.memory[r.id] || {}, r);
+        if (r && r.id) {
+          store.entities.memory[r.id] = Object.assign({}, store.entities.memory[r.id] || {}, r);
+          (state.memories.readChanges || []).forEach(function(changes) { changes[r.id] = true; });
+        }
       });
     }
 
@@ -4425,6 +4433,7 @@
         } else {
           var rows = res.memories || [];
           mergeMemoryRows(rows);
+          state.memories.firstPageRevision = (state.memories.firstPageRevision || 0) + 1;
           if (adoptFacets) setMemoryFacets(res.facets, project, agent);
           state.memories.searchIds = rows.map(function(r) { return r.id; });
           state.memories.searchMode = (res.search && res.search.mode) || 'keyword';
@@ -4456,6 +4465,7 @@
         m.firstPageLoading = false;
         if (res) {
           mergeMemoryRows(res.memories);
+          m.firstPageRevision = (m.firstPageRevision || 0) + 1;
           if (adoptFacets) setMemoryFacets(res.facets, project, agent);
           if (!filtered) m.nextCursor = res.nextCursor || null;
           m.query = filtered ? { loading: false, total: typeof res.total === 'number' ? res.total : null, nextCursor: res.nextCursor || null } : null;
@@ -4516,14 +4526,20 @@
       var m = state.memories;
       if (!id || m.fetches[id]) return;
       m.fetches[id] = 'loading';
-      var res = await apiGet('memories/' + encodeURIComponent(id));
-      if (res && res.memory) {
-        mergeMemoryRows([res.memory]);
-        m.fetches[id] = 'done';
-      } else {
-        m.fetches[id] = 'missing';
+      var changes = startMemoryRead();
+      try {
+        var res = await apiGet('memories/' + encodeURIComponent(id));
+        var rows = res && res.memory ? memoryReadRows([res.memory], changes) : [];
+        if (rows.length) {
+          mergeMemoryRows(rows);
+          m.fetches[id] = 'done';
+        } else {
+          m.fetches[id] = 'missing';
+        }
+      } finally {
+        finishMemoryRead(changes);
+        if (state.activeTab === 'memories') renderMemories();
       }
-      if (state.activeTab === 'memories') renderMemories();
     }
 
     function renderMemories() {
