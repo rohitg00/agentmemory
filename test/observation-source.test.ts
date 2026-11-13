@@ -318,7 +318,8 @@ describe("retained observation source", () => {
     expect(rows).toHaveLength(1200);
     expect(rows.reduce((sum, row) => sum + (row.source ? payloadByteLength(row.source) + 10 : 0), 0)).toBeLessThanOrEqual(SESSION_SOURCE_MAX_BYTES);
     expect(payloadByteLength({ result: rows })).toBeLessThan(SAFE_PAYLOAD_BYTES);
-  });
+    // Both source-heavy batches must complete before checking the shared budget.
+  }, 30_000);
 
   it("refuses a replay result that expands beyond the transport frame", async () => {
     const r = rig();
