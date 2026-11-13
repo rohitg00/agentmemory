@@ -445,6 +445,8 @@ describe("consolidation publication", () => {
     const base = { sessionId: session.id, timestamp: session.startedAt, type: "decision", narrative: "n", facts: [], importance: 8 };
     await store({ ...base, id: "no-concepts", title: "a", files: [] });
     await store({ ...base, id: "bad-concept", title: "b", concepts: [42, "auth"], files: [] });
+    await store({ ...base, id: "scalar-concepts", title: "e", concepts: 7, files: [] });
+    await store({ ...base, id: "scalar-files", title: "f", concepts: ["auth"], files: "flat" });
     await store({ ...base, id: "no-files-1", title: "c", concepts: ["auth"] });
     await store({ ...base, id: "no-files-2", title: "d", concepts: ["auth"] });
     await expect(f.run()).resolves.toMatchObject({ consolidated: 1 });

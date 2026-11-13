@@ -123,7 +123,8 @@ export function registerConsolidateFunction(
 
       const conceptGroups = new Map<string, typeof allObs>();
       for (const obs of allObs) {
-        for (const concept of obs.concepts ?? []) {
+        const concepts = Array.isArray(obs.concepts) ? obs.concepts : [];
+        for (const concept of concepts) {
           if (typeof concept !== "string") continue;
           const key = concept.toLowerCase();
           if (!conceptGroups.has(key)) conceptGroups.set(key, []);
@@ -151,7 +152,7 @@ export function registerConsolidateFunction(
         const prompt = top
           .map(
             (o) =>
-              `[${o.type}] ${o.title}\n${o.narrative}\nFiles: ${(o.files ?? []).join(", ")}\nImportance: ${o.importance}`,
+              `[${o.type}] ${o.title}\n${o.narrative}\nFiles: ${(Array.isArray(o.files) ? o.files : []).join(", ")}\nImportance: ${o.importance}`,
           )
           .join("\n\n");
 
