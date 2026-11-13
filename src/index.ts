@@ -782,16 +782,12 @@ async function main() {
     pending: () => bootCheckpointUnavailable && indexPersistence.isPausedForUnavailable() && checkpointRetry.due(),
     onWorkersChanged: () => { void checkDuplicateWorkers(sdk); },
   });
-  // Worker connect/disconnect events drive the duplicate-worker check. While
-  // that observer is not active (pending, rejected, out of conflict retries)
-  // the tick checks instead, and once more when it comes back to cover the
-  // events it missed.
-  let workersObserverWasActive = true;
+  // Worker connect/disconnect events drive the duplicate-worker check, plus one
+  // check whenever that observer becomes active again. While it is not active
+  // (pending, rejected, out of conflict retries) the tick checks instead.
   const rearmTick = setInterval(() => {
     void rearm.probeTick();
-    const workersObserverActive = bindings.runtimeActive("runtime::on-workers-changed");
-    if (!workersObserverActive || !workersObserverWasActive) void checkDuplicateWorkers(sdk);
-    workersObserverWasActive = workersObserverActive;
+    if (!bindings.runtimeActive("runtime::on-workers-changed")) void checkDuplicateWorkers(sdk);
   }, 30_000);
   rearmTick.unref();
   void checkDuplicateWorkers(sdk);

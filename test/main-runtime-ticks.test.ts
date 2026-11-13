@@ -101,13 +101,30 @@ describe("real main() runtime tick", () => {
     // Once the observer is active again, one catch-up check covers events it
     // missed, then the tick stops polling.
     engine.workers.pop();
-    observer.handle.become("active");
     const activeBefore = engine.callsTo("engine::workers::list");
+    observer.handle.become("active");
     await main.tick(30_000);
     expect(getDuplicateWorkers()).toBeNull();
     await main.tick(30_000);
     await main.tick(30_000);
     expect(engine.callsTo("engine::workers::list") - activeBefore).toBe(1);
+  });
+
+  it("checks once when the workers-changed observer recovers between ticks", async () => {
+    const observer = engine.observers.find((entry) => entry.source.function_id === "engine::on-workers-changed")!;
+    const before = engine.callsTo("engine::workers::list");
+    observer.handle.become("pending");
+    engine.workers.push({ worker_id: "w-during-outage", worker_name: "agentmemory" });
+    observer.handle.become("active");
+    await main.settle();
+    const checked = engine.callsTo("engine::workers::list") - before;
+    console.info(`[proof review-3] observer pending then active with no tick between: ${checked} checks, duplicate count ${getDuplicateWorkers()?.count ?? 0}`);
+    expect(checked).toBe(1);
+    expect(getDuplicateWorkers()?.count).toBe(2);
+    engine.workers.pop();
+    await engine.functions.get(observer.target)!({ observer_id: "o", activation_id: "cleanup", input: { event: "worker_disconnected" } });
+    await main.settle();
+    expect(getDuplicateWorkers()).toBeNull();
   });
 
   it("shutdown clears the runtime tick and the compression sweep, and a late tick does no work", async () => {

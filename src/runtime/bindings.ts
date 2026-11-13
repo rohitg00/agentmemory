@@ -59,7 +59,7 @@ export class Bindings {
   private readonly reasons = new Set<string>();
   private readonly inline: boolean;
   private failedObserverCount = 0;
-  private readonly boundWatchers = new Set<(entry: { handle: ObserverHandle; kind: BindingKind }) => void>();
+  private readonly boundWatchers = new Set<(entry: BoundObserver) => void>();
 
   constructor(sdk: SdkLike) {
     this.sdk = sdk;
@@ -93,6 +93,15 @@ export class Bindings {
   observing(target: string): boolean {
     if (this.inline) return false;
     return this.bound.some((entry) => entry.kind === "pipeline" && entry.target === target && entry.handle.state === "active");
+  }
+
+  /** Calls listener with every runtime handle bound for target, including conflict replacements. */
+  onRuntimeHandle(target: string, listener: (handle: ObserverHandle) => void): () => void {
+    const watch = (entry: BoundObserver) => {
+      if (entry.kind === "runtime" && entry.target === target) listener(entry.handle);
+    };
+    this.boundWatchers.add(watch);
+    return () => this.boundWatchers.delete(watch);
   }
 
   runtimeActive(target: string): boolean {

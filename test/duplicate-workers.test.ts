@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
-import { checkDuplicateWorkers, resetDuplicateWorkersForTest } from "../src/runtime/duplicates.js";
+import { checkDuplicateWorkers, getDuplicateWorkers, resetDuplicateWorkersForTest } from "../src/runtime/duplicates.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -35,5 +35,22 @@ describe("route bindings in api.ts", () => {
   it("registers every HTTP route through Bindings", () => {
     const api = readFileSync("src/triggers/api.ts", "utf-8");
     expect(api).not.toMatch(/sdk\.registerTrigger\(\{\s*type:\s*"http"/);
+  });
+
+  it("keeps the newest result when an older check finishes last", async () => {
+    resetDuplicateWorkersForTest();
+    let releaseOlder!: (value: unknown) => void;
+    const trigger = vi.fn()
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseOlder = resolve; }))
+      .mockImplementationOnce(async () => ({
+        workers: [{ worker_id: "a", worker_name: "agentmemory" }, { worker_id: "b", worker_name: "agentmemory" }],
+      }));
+    const sdk = { trigger } as never;
+    const older = checkDuplicateWorkers(sdk);
+    await checkDuplicateWorkers(sdk);
+    expect(getDuplicateWorkers()?.count).toBe(2);
+    releaseOlder({ workers: [{ worker_id: "a", worker_name: "agentmemory" }] });
+    await older;
+    expect(getDuplicateWorkers()?.count).toBe(2);
   });
 });

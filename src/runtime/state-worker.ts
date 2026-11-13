@@ -80,7 +80,11 @@ export function onStateWorkerReturn(
   sdk: IIIClient,
   bindings: Bindings,
   cb: () => void | Promise<void>,
-  opts: { pending?: () => boolean; onWorkersChanged?: (event: "worker_connected" | "worker_disconnected") => void } = {},
+  opts: {
+    pending?: () => boolean;
+    /** A worker connected or disconnected, or the observer reporting those events became active again. */
+    onWorkersChanged?: (reason: "worker_connected" | "worker_disconnected" | "observer_active") => void;
+  } = {},
 ): { state: StateWorkerReturnState; probeTick: () => Promise<void>; stop: () => void } {
   const client = sdk as unknown as SdkLike;
   const state: StateWorkerReturnState = { probeReady: stateWorkerStatus.ready };
@@ -123,6 +127,14 @@ export function onStateWorkerReturn(
   for (const handle of bindings.stateHandles) watchStateHandle(handle, false);
   bindings.onStateHandle?.((handle) => watchStateHandle(handle, true));
   if (typeof client.observe === "function" && typeof bindings.observeRuntime === "function") {
+    // Events are missed while the observer is not active, however short the gap.
+    bindings.onRuntimeHandle?.("runtime::on-workers-changed", (handle) => {
+      let wasActive = handle.state === "active";
+      handle.onStateChange((next) => {
+        if (next === "active" && !wasActive) opts.onWorkersChanged?.("observer_active");
+        wasActive = next === "active";
+      });
+    });
     client.registerFunction?.("runtime::on-workers-changed", async (payload: unknown) => {
       const event = unwrapObserved<{ event?: string } | undefined>(payload, "input")?.event;
       if (event !== "worker_connected" && event !== "worker_disconnected") return { handled: false };
