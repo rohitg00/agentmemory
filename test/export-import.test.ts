@@ -13,6 +13,7 @@ import type {
   Session,
   CompressedObservation,
   Memory,
+  MemoryRelation,
   SessionSummary,
   ExportData,
 } from "../src/types.js";
@@ -35,6 +36,8 @@ function mockKV() {
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
+    listKeys: async (scope: string): Promise<string[]> =>
+      Array.from(store.get(scope)?.keys() ?? []),
   };
 }
 
@@ -778,5 +781,140 @@ describe("Export collection allowlist", () => {
     expect(result.collectionPagination?.limit).toBeUndefined();
     expect(result.collectionPagination?.totals["graphNodes"]).toBe(20);
     expect(result.collectionPagination?.hasMore).toBe(false);
+  });
+});
+
+describe("Export/import relations", () => {
+  const relation: MemoryRelation = {
+    type: "extends",
+    sourceId: "mem_a",
+    targetId: "mem_b",
+    createdAt: "2026-02-05T00:00:00Z",
+    confidence: 0.9,
+  };
+
+  const seedRelationStores = async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.memories, "mem_a", { ...testMemory, id: "mem_a", relatedIds: ["mem_b"] });
+    await kv.set(KV.memories, "mem_b", { ...testMemory, id: "mem_b", relatedIds: ["mem_a"] });
+    await kv.set(KV.relations, "rel_1", relation);
+    return { sdk, kv };
+  };
+
+  it("exports KV.relations rows and restores them under the composite key", async () => {
+    const { sdk, kv } = await seedRelationStores();
+
+    const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+    expect(exported.relations).toEqual([relation]);
+
+    const freshKv = mockKV();
+    const freshSdk = mockSdk();
+    registerExportImportFunction(freshSdk as never, freshKv as never);
+    const result = (await freshSdk.trigger("mem::import", {
+      exportData: exported,
+      strategy: "merge",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await freshKv.get(KV.relations, "mem_a:mem_b:extends")).toEqual(relation);
+  });
+
+  it("dedupes restored relations by composite key under skip", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+
+    const target = mockKV();
+    const targetSdk = mockSdk();
+    registerExportImportFunction(targetSdk as never, target as never);
+    const existing = { ...relation, confidence: 0.4 };
+    await target.set(KV.relations, "mem_a:mem_b:extends", existing);
+
+    const result = (await targetSdk.trigger("mem::import", {
+      exportData: exported,
+      strategy: "skip",
+    })) as { success: boolean; skipped: number };
+
+    expect(result.success).toBe(true);
+    expect(result.skipped).toBe(1);
+    expect(await target.get(KV.relations, "mem_a:mem_b:extends")).toEqual(existing);
+  });
+
+  it("clears every relation row on replace, not only composite-keyed ones", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+    } as unknown as ExportData;
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "replace",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.memories, "mem_a")).toBeNull();
+    expect(await kv.list(KV.relations)).toEqual([]);
+  });
+
+  it("rejects relation rows missing a key component before mutating", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      relations: [{ sourceId: "mem_a", targetId: "mem_b" }],
+    } as unknown as ExportData;
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData,
+      strategy: "merge",
+    })) as { success: boolean; error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("relations[0]");
+    expect((await kv.list(KV.relations)).length).toBe(1);
+  });
+
+  it("preserves relation confidence through export and import", async () => {
+    const { registerRelationsFunction } = await import(
+      "../src/functions/relations.js"
+    );
+    const build = async (withRelation: boolean) => {
+      const sdk = mockSdk();
+      const kv = mockKV();
+      registerExportImportFunction(sdk as never, kv as never);
+      registerRelationsFunction(sdk as never, kv as never);
+      await kv.set(KV.sessions, testSession.id, testSession);
+      await kv.set(KV.memories, "mem_a", { ...testMemory, id: "mem_a", relatedIds: ["mem_b"] });
+      await kv.set(KV.memories, "mem_b", { ...testMemory, id: "mem_b", relatedIds: ["mem_a"] });
+      if (withRelation) await kv.set(KV.relations, "rel_1", relation);
+      return { sdk, kv };
+    };
+
+    const before = await build(true);
+    const relatedBefore = (await before.sdk.trigger("mem::get-related", {
+      memoryId: "mem_a",
+      minConfidence: 0.8,
+    })) as { results: unknown[] };
+    const exported = (await before.sdk.trigger("mem::export", {})) as ExportData;
+
+    const after = await build(false);
+    await after.sdk.trigger("mem::import", { exportData: exported, strategy: "merge" });
+    const relatedAfter = (await after.sdk.trigger("mem::get-related", {
+      memoryId: "mem_a",
+      minConfidence: 0.8,
+    })) as { results: unknown[] };
+
+    expect(relatedBefore.results.length).toBe(1);
+    expect(relatedAfter.results.length).toBe(1);
   });
 });

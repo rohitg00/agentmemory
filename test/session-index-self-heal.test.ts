@@ -41,6 +41,8 @@ function mockKV() {
       if (!store.has(scope)) return [];
       return Array.from(store.get(scope)!.values()) as T[];
     }),
+    listKeys: vi.fn(async (scope: string): Promise<string[]> =>
+      Array.from(store.get(scope)?.keys() ?? [])),
   };
 }
 

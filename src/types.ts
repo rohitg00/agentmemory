@@ -423,6 +423,7 @@ export interface ExportData {
   lessons?: Lesson[];
   insights?: Insight[];
   accessLogs?: AccessLogExport[];
+  relations?: MemoryRelation[];
   pagination?: ExportPagination;
   collectionPagination?: ExportCollectionPagination;
 }

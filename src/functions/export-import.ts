@@ -23,6 +23,7 @@ import type {
   Insight,
   ExportPagination,
   AccessLogExport,
+  MemoryRelation,
 } from "../types.js";
 import { importOrigin } from "../types.js";
 import { normalizeAccessLog } from "./access-tracker.js";
@@ -95,6 +96,7 @@ const EXPORT_COLLECTIONS: ReadonlyArray<readonly [keyof ExportData, string]> = [
   ["signals", KV.signals],
   ["checkpoints", KV.checkpoints],
   ["accessLogs", KV.accessLog],
+  ["relations", KV.relations],
 ];
 
 const EXPORT_COLLECTION_NAMES: ReadonlySet<string> = new Set([
@@ -424,6 +426,19 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (rows !== undefined && !Array.isArray(rows)) {
           return { success: false, error: `${section} must be an array` };
         }
+        if (section === "relations") {
+          const index = (importData.relations ?? []).findIndex(
+            (rel) =>
+              !rel || typeof rel !== "object" ||
+              [rel.sourceId, rel.targetId, rel.type].some(
+                (v) => typeof v !== "string" || v.length === 0,
+              ),
+          );
+          if (index >= 0) {
+            return { success: false, error: `relations[${index}] must be an object with string sourceId, targetId, and type` };
+          }
+          continue;
+        }
         const key = rowKeys[section] ?? "id";
         const index = badRow(rows ?? [], key);
         if (index >= 0) {
@@ -493,6 +508,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           const proceduralRows = await collectAll<{ id: string }>(kv, KV.procedural);
           const profiles = await kv.list<ProjectProfile>(KV.profiles);
           const accessLogs = await kv.list<AccessLogExport>(KV.accessLog);
+          const relationKeys = await kv.listKeys(KV.relations);
           // Collect observation deletes across all sessions, then run them in
           // one bounded pass: a runChunked nested inside a runChunked callback
           // multiplies in-flight deletes to chunk-size squared.
@@ -568,6 +584,9 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           );
           await runChunked(accessLogs, (a) =>
             kv.delete(KV.accessLog, a.memoryId),
+          );
+          await runChunked(relationKeys, (key) =>
+            kv.delete(KV.relations, key),
           );
         }
 
@@ -801,6 +820,16 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
             }
           }
           await kv.set(KV.accessLog, log.memoryId, log);
+        });
+      }
+      if (importData.relations) {
+        await runChunked(importData.relations, async (rel) => {
+          const relKey = `${rel.sourceId}:${rel.targetId}:${rel.type}`;
+          if (strategy === "skip") {
+            const existing = await kv.get(KV.relations, relKey).catch(() => null);
+            if (existing) { stats.skipped++; return; }
+          }
+          await kv.set(KV.relations, relKey, rel);
         });
       }
 
