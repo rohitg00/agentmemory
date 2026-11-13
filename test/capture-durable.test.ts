@@ -82,6 +82,36 @@ describe("durable capture", () => {
     expect(observations(kv)).toHaveLength(2);
   });
 
+  it.each(["prompt_submit", "post_tool_use", "notification"])(
+    "keeps different long %s inputs without client event IDs",
+    async (hookType) => {
+      const kv = mockKV();
+      const { capture, dedup } = await boot(kv);
+      const prefix = "Shared repository instructions. ".repeat(30);
+      const body = (suffix: string) => ({
+        ...payload("long-input"),
+        hookType,
+        data: hookType === "prompt_submit"
+          ? { prompt: prefix + suffix }
+          : hookType === "post_tool_use"
+            ? { tool_name: "Bash", tool_input: { command: prefix + suffix }, tool_output: "ok" }
+            : prefix + suffix,
+      });
+      try {
+        const first = await capture(body("Inspect auth.ts."));
+        const second = await capture(body("Inspect billing.ts."));
+        expect(first).toMatchObject({ status: "accepted", state: "completed" });
+        expect(second).toMatchObject({ status: "accepted", state: "completed" });
+        expect(observations(kv)).toHaveLength(2);
+        const repeated = await capture(body("Inspect billing.ts."));
+        expect(repeated).toMatchObject({ status: "duplicate", deduplicated: true });
+        expect(observations(kv)).toHaveLength(2);
+      } finally {
+        dedup.stop();
+      }
+    },
+  );
+
   it("still deduplicates a replay after a restart", async () => {
     const kv = mockKV();
     const before = await boot(kv);
