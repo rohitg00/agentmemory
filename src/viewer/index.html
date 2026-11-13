@@ -4364,9 +4364,11 @@
         return;
       }
       state.memories.searching = true;
+      state.memories.firstPageLoading = true;
       renderMemories();
       var received = await fetchMemoryFacetPage(memoryQueryPath('&q=' + encodeURIComponent(query)) + '&facets=true', function() { return seq === memorySearchSeq; }, function(res) {
         state.memories.searching = false;
+        state.memories.firstPageLoading = false;
         if (!res) {
           state.memories.searchIds = [];
           state.memories.searchMode = 'failed';
@@ -4386,6 +4388,7 @@
     async function applyMemoryFilters() {
       var m = state.memories;
       m.checked = {};
+      m.firstPageLoading = true;
       var seq = ++memoryFilterSeq;
       if (String(m.search || '').trim()) {
         m.query = null;
@@ -4400,6 +4403,7 @@
       m.query = filtered ? { loading: true, total: null, nextCursor: null } : null;
       renderMemories();
       var received = await fetchMemoryFacetPage(memoryQueryPath('&facets=true'), function() { return seq === memoryFilterSeq; }, function(res) {
+        m.firstPageLoading = false;
         if (res) {
           mergeMemoryRows(res.memories);
           setMemoryFacets(res.facets, project, agent);
@@ -4439,13 +4443,13 @@
     async function loadMoreMemories() {
       var m = state.memories;
       var cursor = m.query ? m.query.nextCursor : m.nextCursor;
-      if (!cursor || m.loadingMore) return;
+      if (!cursor || m.loadingMore || m.firstPageLoading) return;
       var filterSeq = memoryFilterSeq, searchSeq = memorySearchSeq, query = m.query;
       m.loadingMore = true;
       renderMemories();
       var res = await apiGet(memoryQueryPath('&cursor=' + encodeURIComponent(cursor)));
       m.loadingMore = false;
-      if (res && filterSeq === memoryFilterSeq && searchSeq === memorySearchSeq && query === m.query) {
+      if (res && filterSeq === memoryFilterSeq && searchSeq === memorySearchSeq && query === m.query && cursor === (query ? query.nextCursor : m.nextCursor)) {
         mergeMemoryRows(res.memories);
         if (query) query.nextCursor = res.nextCursor || null;
         else m.nextCursor = res.nextCursor || null;
@@ -4617,7 +4621,7 @@
         var shownTotal = m.query ? m.query.total : c.latestMemories;
         var cursor = m.query ? m.query.nextCursor : m.nextCursor;
         html += '<div class="load-more">Showing ' + fmtNum(rows.length) + (typeof shownTotal === 'number' ? ' of ' + fmtNum(Math.max(shownTotal, rows.length)) : '') + (filtered ? ' matching' : ' latest') + ' memories';
-        if (cursor) html += '<button class="btn" data-action="memories-load-more"' + (m.loadingMore ? ' disabled' : '') + '>' + (m.loadingMore ? 'Loading…' : 'Load 100 more') + '</button>';
+        if (cursor) html += '<button class="btn" data-action="memories-load-more"' + (m.loadingMore || m.firstPageLoading ? ' disabled' : '') + '>' + (m.loadingMore || m.firstPageLoading ? 'Loading…' : 'Load 100 more') + '</button>';
         html += '</div>';
       }
       if (!filtered && !searching && rows.length < 12) html += usageCard('memory');

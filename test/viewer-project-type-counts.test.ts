@@ -515,4 +515,39 @@ describe("project type counts in the rendered memory selector", () => {
     expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 133, bug: 3, workflow: 1 });
     expect(facetCounts(r.viewer.memoryFacetList("project"))).toEqual({ A: 134, B: 3 });
   });
+
+  it("does not paginate from an old global cursor while the new All first page is pending", async () => {
+    const r = await viewerFixture();
+    await r.select("B");
+    r.rows.push(...Array.from({ length: 250 }, (_, index) => memoryFixture(`B-before-pending-All-${index}`, "B", "fact", {
+      updatedAt: new Date(Date.UTC(2026, 9, 1, 0, 0, index)).toISOString(),
+    })));
+    r.defer();
+    r.memories.projectFilter = "";
+    const all = r.viewer.applyMemoryFilters();
+    expect(r.pending).toHaveLength(1);
+    const page = r.viewer.loadMoreMemories();
+    const oldRequest = r.pending[1];
+    const oldResponse = oldRequest ? await r.response(oldRequest.path) : null;
+    if (oldResponse) expect(oldResponse.nextCursor).toBeNull();
+    r.pending[0]!.resolve(await r.response(r.pending[0]!.path));
+    await all;
+    const cursor = r.memories.nextCursor;
+    const cachedIds = Object.keys(r.store.entities.memory).sort();
+    expect(cursor).toEqual(expect.any(String));
+    if (oldRequest) oldRequest.resolve(oldResponse);
+    await page;
+    expect(r.memories.nextCursor).toBe(cursor);
+    expect(Object.keys(r.store.entities.memory).sort()).toEqual(cachedIds);
+    r.resume();
+    let pages = 0;
+    while (r.memories.nextCursor && pages < 10) {
+      await r.viewer.loadMoreMemories();
+      pages++;
+    }
+    expect(pages).toBeLessThan(10);
+    const expected = r.rows.filter((row) => row.isLatest && row.agentId === "x").map((row) => row.id).sort();
+    expect(Object.keys(r.store.entities.memory).sort()).toEqual(expected);
+    expect(expected).toHaveLength(386);
+  });
 });
