@@ -598,14 +598,14 @@ In `hermes memory setup`, select AgentMemory and enter the server URL and its se
 
 ### Orca (plugin panel)
 
-The Orca plugin adds an agentmemory panel to Orca's sidebar: server status, the latest memories of the focused workspace, search and quick saves.
+The Orca plugin adds an agentmemory panel to Orca's sidebar: server status and memory counts, the latest memories of the focused workspace, search, quick saves, Send to agent, and links that open a memory's files and the viewer inside Orca.
 
 ```bash
 npx -y @agentmemory/agentmemory@latest
 orca plugin install https://github.com/rohitg00/agentmemory/tree/main/integrations/orca
 ```
 
-The panel reads and saves memories; capture still comes from each agent's own connection, so run `agentmemory connect <agent>` for the agents you launch in Orca. Full guide: [`integrations/orca/`](integrations/orca/).
+Capture comes from each agent's own connection, so run `agentmemory connect <agent>` for the agents you launch in Orca. For an agent you cannot connect, turn on the plugin's Capture agent tool calls setting. Full guide: [`integrations/orca/`](integrations/orca/).
 
 ### Other agents
 

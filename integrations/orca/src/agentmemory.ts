@@ -146,6 +146,10 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+function files(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((file): file is string => typeof file === 'string' && file.trim() !== '').slice(0, 20) : []
+}
+
 function time(value: unknown): number | null {
   const parsed = typeof value === 'string' ? Date.parse(value) : Number.NaN
   return Number.isFinite(parsed) ? parsed : null
@@ -161,7 +165,7 @@ export function searchItems(body: unknown): MemoryItem[] {
     const body = text(source.narrative) || text(source.content) || text(source.summary)
     const title = text(source.title) || body.split('\n')[0]?.slice(0, 80) || 'Untitled'
     const score = typeof result.combinedScore === 'number' ? result.combinedScore : typeof result.score === 'number' ? result.score : null
-    return [{ id, title, type: text(source.type) || 'memory', text: body, at: time(source.timestamp ?? source.createdAt), score }]
+    return [{ id, title, type: text(source.type) || 'memory', text: body, files: files(source.files), at: time(source.timestamp ?? source.createdAt), score }]
   })
 }
 
@@ -174,6 +178,7 @@ export function memoryItem(value: unknown): MemoryItem | null {
     title: text(memory.title) || content.split('\n')[0]?.slice(0, 80) || 'Untitled',
     type: text(memory.type) || 'memory',
     text: content,
+    files: files(memory.files),
     at: time(memory.updatedAt ?? memory.createdAt),
     score: null
   }
