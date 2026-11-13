@@ -448,6 +448,21 @@ export class IndexPersistence {
     return this.recoveryPausedForUnavailable;
   }
 
+  /**
+   * Pauses recovery for a checkpoint that was read but cannot be used, such as
+   * one written with another embedding dimension. Unlike an unavailable
+   * checkpoint, reading it again cannot fix it, so it is not retried.
+   */
+  pauseForUnusableCheckpoint(reason: string): void {
+    this.recoveryPausedForUnavailable = false;
+    this.pauseRecovery(new Error(reason));
+  }
+
+  /** True when the last checkpoint write failed, not when recovery is merely paused. */
+  checkpointSaveFailed(): boolean {
+    return this.leg.lastError !== null && this.leg.lastError !== this.recoveryError;
+  }
+
   private checkpointRecoveryCutoff(): string | null | undefined {
     return this.completingBackfill ? null : this.backfillSince;
   }
