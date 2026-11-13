@@ -2325,6 +2325,7 @@
         try {
           await bootGate;
           var seqAtStart = eventSeq;
+          var memoryRevisionAtStart = state.memories.facetRevision || 0;
           var result;
           if (spec.allPages) {
             result = await loadAllPages(spec, apiGet);
@@ -2352,6 +2353,7 @@
             seedFeedFromAudit();
           }
           replayEventsSince(seqAtStart, kind);
+          if (kind === 'memory' && memoryRevisionAtStart !== (state.memories.facetRevision || 0)) scheduleMemoryFacetRefresh();
           store.loaded[kind] = true;
           if (kind === 'action') state.actions.loadError = false;
         } catch {
@@ -4438,13 +4440,14 @@
       var m = state.memories;
       var cursor = m.query ? m.query.nextCursor : m.nextCursor;
       if (!cursor || m.loadingMore) return;
+      var filterSeq = memoryFilterSeq, searchSeq = memorySearchSeq, query = m.query;
       m.loadingMore = true;
       renderMemories();
       var res = await apiGet(memoryQueryPath('&cursor=' + encodeURIComponent(cursor)));
       m.loadingMore = false;
-      if (res) {
+      if (res && filterSeq === memoryFilterSeq && searchSeq === memorySearchSeq && query === m.query) {
         mergeMemoryRows(res.memories);
-        if (m.query) m.query.nextCursor = res.nextCursor || null;
+        if (query) query.nextCursor = res.nextCursor || null;
         else m.nextCursor = res.nextCursor || null;
       }
       renderMemories();

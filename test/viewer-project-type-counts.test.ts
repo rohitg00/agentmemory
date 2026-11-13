@@ -19,6 +19,9 @@ type Viewer = {
   setMemoryFilter: (dimension: string, value: string) => void;
   runMemorySearch: (query: string) => Promise<void>;
   loadMoreMemories: () => Promise<void>;
+  ensureLoaded: (kind: string) => Promise<void>;
+  openBootGate: () => void;
+  handleLiveEvent: (type: string, data: object) => void;
   noteMemoryChange: (before: Memory | null, after: Memory | null, id: string) => void;
 };
 
@@ -32,7 +35,7 @@ if (!script) throw new Error("Viewer memory functions were not found");
 const source = script;
 const declarations = source.statements.filter(ts.isFunctionDeclaration).map((node) => node.getText(source)).join("\n");
 const bindings = source.statements.filter(ts.isVariableStatement).flatMap((node) => [...node.declarationList.declarations])
-  .filter((node) => ts.isIdentifier(node.name) && ["MEMORY_TYPES", "memoryFilterSeq", "memorySearchSeq"].includes(node.name.text))
+  .filter((node) => ts.isIdentifier(node.name) && ["MEMORY_TYPES", "memoryFilterSeq", "memorySearchSeq", "ENTITY_ENDPOINTS", "bootGateOpen", "bootGate", "EVENT_LOG_MAX", "eventLog", "eventSeq", "ROW_EVENT_KINDS", "KIND_TABS"].includes(node.name.text))
   .map((node) => `var ${node.getText(source)};`).join("\n");
 const instantiate = new Function("fixture", `
   var state = fixture.state, store = fixture.store, document = fixture.document;
@@ -40,10 +43,13 @@ const instantiate = new Function("fixture", `
   ${declarations}
   apiGet = fixture.apiGet;
   renderMemories = fixture.render;
-  return { memoryFacetList, memoryFilterSelect, applyMemoryFilters, setMemoryFilter, runMemorySearch, loadMoreMemories, noteMemoryChange };
+  noteSessionProduced = fixture.render;
+  feedFromChange = fixture.render;
+  markDirty = fixture.render;
+  return { memoryFacetList, memoryFilterSelect, applyMemoryFilters, setMemoryFilter, runMemorySearch, loadMoreMemories, noteMemoryChange, ensureLoaded, openBootGate, handleLiveEvent };
 `) as (fixture: object) => Viewer;
 
-async function viewerFixture() {
+async function viewerFixture(loaded = true) {
   const rows = projectMemoryFixture();
   const api = createMemoryApi(rows);
   const initial = await api.get({ latest: "true", limit: "100", facets: "true" });
@@ -51,10 +57,10 @@ async function viewerFixture() {
   expect(initial.body.total).toBe(136);
   const memories: MemoryState = {
     projectFilter: "", agentFilter: "", typeFilter: "", search: "", searchIds: null,
-    facets: initial.body.facets!, checked: {}, query: null, nextCursor: initial.body.nextCursor || null,
+    facets: loaded ? initial.body.facets! : null, checked: {}, query: null, nextCursor: loaded ? initial.body.nextCursor || null : null,
   };
-  const entities = Object.fromEntries(initial.body.memories!.map((row) => [row.id, row]));
-  const store = { entities: { memory: entities }, loaded: { memory: true } };
+  const entities = Object.fromEntries((loaded ? initial.body.memories! : []).map((row) => [row.id, row]));
+  const store = { entities: { memory: entities }, loaded: { memory: loaded }, loading: {} };
   const requests: string[] = [], pending: Pending[] = [];
   let deferred = false;
   let lastResponse: Promise<Body | null> | undefined;
@@ -75,6 +81,7 @@ async function viewerFixture() {
       return lastResponse = promise;
     },
   });
+  viewer.openBootGate();
   return {
     viewer, memories, store, rows, requests, pending, response,
     defer: () => { deferred = true; },
@@ -431,5 +438,81 @@ describe("project type counts in the rendered memory selector", () => {
     r.pending[0]!.resolve(older);
     await primary;
     expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 132, bug: 3 });
+  });
+
+  it("reconciles an initial stale snapshot after a live event while facets were still unloaded", async () => {
+    const r = await viewerFixture(false);
+    r.defer();
+    const loading = r.viewer.ensureLoaded("memory");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(r.pending).toHaveLength(1);
+    const stale = await r.response(r.pending[0]!.path);
+    const next = memoryFixture("A-during-initial-load", "A", "fact");
+    r.rows.push(next);
+    r.viewer.handleLiveEvent("memory.created", { memory: next });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.memories.facets).toBeNull();
+    r.pending[0]!.resolve(stale);
+    await loading;
+    r.resume();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.store.loaded.memory).toBe(true);
+    expect(r.store.entities.memory[next.id]).toEqual(next);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 133, bug: 3, workflow: 1 });
+    expect(facetCounts(r.viewer.memoryFacetList("project"))).toEqual({ A: 134, B: 3 });
+  });
+
+  it("discards a late project page after returning to All without losing its fresh cursor or remaining rows", async () => {
+    const r = await viewerFixture();
+    await r.select("A");
+    r.defer();
+    const oldPage = r.viewer.loadMoreMemories();
+    expect(r.pending).toHaveLength(1);
+    const previous = await r.response(r.pending[0]!.path);
+    expect(previous!.nextCursor).toBeNull();
+    r.rows.push(...Array.from({ length: 250 }, (_, index) => memoryFixture(`B-new-before-All-${index}`, "B", "fact", {
+      updatedAt: new Date(Date.UTC(2026, 9, 1, 0, 0, index)).toISOString(),
+    })));
+    r.memories.projectFilter = "";
+    const all = r.viewer.applyMemoryFilters();
+    expect(r.pending).toHaveLength(2);
+    r.pending[1]!.resolve(await r.response(r.pending[1]!.path));
+    await all;
+    const cursor = r.memories.nextCursor;
+    const cachedIds = Object.keys(r.store.entities.memory).sort();
+    expect(cursor).toEqual(expect.any(String));
+    r.pending[0]!.resolve(previous);
+    await oldPage;
+    expect(r.memories.nextCursor).toBe(cursor);
+    expect(Object.keys(r.store.entities.memory).sort()).toEqual(cachedIds);
+    r.resume();
+    let pages = 0;
+    while (r.memories.nextCursor && pages < 10) {
+      await r.viewer.loadMoreMemories();
+      pages++;
+    }
+    expect(pages).toBeLessThan(10);
+    const expected = r.rows.filter((row) => row.isLatest && row.agentId === "x").map((row) => row.id).sort();
+    expect(Object.keys(r.store.entities.memory).sort()).toEqual(expected);
+    expect(expected).toHaveLength(386);
+  });
+
+  it("does not double-count a live event already included in the initial snapshot", async () => {
+    const r = await viewerFixture(false);
+    r.defer();
+    const loading = r.viewer.ensureLoaded("memory");
+    await vi.advanceTimersByTimeAsync(0);
+    const next = memoryFixture("A-included-in-initial-load", "A", "fact");
+    r.rows.push(next);
+    r.viewer.handleLiveEvent("memory.created", { memory: next });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.memories.facets).toBeNull();
+    r.pending[0]!.resolve(await r.response(r.pending[0]!.path));
+    await loading;
+    r.resume();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.store.entities.memory[next.id]).toEqual(next);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 133, bug: 3, workflow: 1 });
+    expect(facetCounts(r.viewer.memoryFacetList("project"))).toEqual({ A: 134, B: 3 });
   });
 });
