@@ -9,7 +9,6 @@ import {
   normalizeBaseUrl,
 } from "./_openai-shared.js";
 
-const DEFAULT_MODEL = "gpt-5.6-luna";
 const DEFAULT_TIMEOUT_MS = 60_000;
 
 /**

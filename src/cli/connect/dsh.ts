@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
-import { isMap, isSeq, parseDocument, type YAMLMap } from "yaml";
+import { isMap, isSeq, parseDocument, type Document, type YAMLMap } from "yaml";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import {
   AGENTMEMORY_MCP_BLOCK,
@@ -40,7 +40,7 @@ function hooksBlock(pluginPath: string): string {
 }
 
 function parsePatch(content: string) {
-  const doc = parseDocument(content);
+  const doc: Document = parseDocument(content);
   if (doc.contents === null) doc.contents = doc.createNode([]);
   if (doc.errors.length || !isSeq(doc.contents)) {
     throw new Error("Cannot update dsh cordis.patch.yml: expected a valid YAML sequence.");
