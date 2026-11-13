@@ -237,10 +237,12 @@ describe("stored API secret", () => {
   it("only hands the stored secret to loopback servers", () => {
     const { secret } = ensureServerSecret();
     expect(resolveClientSecret("http://localhost:3111")).toBe(secret);
+    expect(resolveClientSecret("http://localhost.:3111")).toBe(secret);
     expect(resolveClientSecret("http://[::1]:3111")).toBe(secret);
     expect(resolveClientSecret("https://memory.example.com")).toBe("");
     expect(isLoopbackUrl("http://127.0.0.2:3111")).toBe(true);
     expect(isLoopbackUrl("http://localhost.example.com")).toBe(false);
+    expect(isLoopbackUrl("http://localhost..:3111")).toBe(false);
   });
 
   it("returns nothing when no secret has been generated yet", () => {

@@ -1,4 +1,4 @@
-import { hookSetting, resolveSettingSecret } from "../hooks/_endpoint.js";
+import { hookSetting, resolveSettingSecret, secretTransportAllowed } from "../hooks/_endpoint.js";
 import { readEnvFileValue } from "../secret-store.js";
 const DEFAULT_URL = "http://localhost:3111";
 const DEFAULT_HEALTH_PROBE_TIMEOUT_MS = 2_000;
@@ -73,10 +73,13 @@ function baseUrl(): string {
         parsed.username || parsed.password || /[?#\s]/.test(value)) {
       throw new Error();
     }
-    return value.replace(/\/+$/, "");
   } catch {
     throw new Error("AGENTMEMORY_URL must be an HTTP(S) URL without credentials, query, or fragment");
   }
+  if (!secretTransportAllowed(value)) {
+    throw new Error("AGENTMEMORY_URL must use HTTPS unless it is a loopback address");
+  }
+  return value.replace(/\/+$/, "");
 }
 
 function authHeader(url: string): Record<string, string> {
