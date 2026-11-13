@@ -49,3 +49,33 @@ export async function releaseImageRef(kv: StateKV, sdk: IIIClient, ownerId: stri
     });
   }
 }
+
+export function observationImagePaths(row: { imageData?: string; imageRef?: string } | null | undefined): string[] {
+  if (!row) return [];
+  return [...new Set(
+    [row.imageData, row.imageRef].filter(
+      (p): p is string => typeof p === "string" && p.length > 0,
+    ),
+  )];
+}
+
+export function memoryImagePaths(row: { imageRef?: string } | null | undefined): string[] {
+  return row && typeof row.imageRef === "string" && row.imageRef.length > 0
+    ? [row.imageRef]
+    : [];
+}
+
+export async function syncImageRefs(
+  kv: StateKV,
+  sdk: IIIClient,
+  ownerId: string,
+  before: string[],
+  after: string[],
+): Promise<void> {
+  for (const path of before) {
+    if (!after.includes(path)) await releaseImageRef(kv, sdk, ownerId, path);
+  }
+  for (const path of after) {
+    if (!before.includes(path)) await incrementImageRef(kv, path);
+  }
+}

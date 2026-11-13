@@ -27,6 +27,7 @@ import type {
 } from "../types.js";
 import { importOrigin } from "../types.js";
 import { normalizeAccessLog } from "./access-tracker.js";
+import { memoryImagePaths, observationImagePaths, syncImageRefs } from "./image-refs.js";
 import { KV, UNSESSIONED_OBSERVATION_SCOPE } from "../state/schema.js";
 import { checkPayloadFrameSize, oversizedPayloadError, payloadByteLength, SAFE_PAYLOAD_BYTES } from "../state/frame-guard.js";
 import { StateKV, collectAll } from "../state/kv.js";
@@ -524,7 +525,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           // Collect observation deletes across all sessions, then run them in
           // one bounded pass: a runChunked nested inside a runChunked callback
           // multiplies in-flight deletes to chunk-size squared.
-          const obsDeletes: Array<{ sessionId: string; obsId: string; captureKey?: string }> = [];
+          const obsDeletes: Array<{ sessionId: string; obsId: string; captureKey?: string; imagePaths: string[] }> = [];
           await runChunked(obsBySession, async ({ session, obs }) => {
             await kv.delete(KV.sessions, session.id);
             await kv.delete(KV.summaryRepairs, session.id);
@@ -534,7 +535,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
               session.id,
             ).catch(() => {});
             for (const o of obs) {
-              obsDeletes.push({ sessionId: session.id, obsId: o.id, captureKey: o.captureKey });
+              obsDeletes.push({ sessionId: session.id, obsId: o.id, captureKey: o.captureKey, imagePaths: observationImagePaths(o) });
             }
           });
           await runChunked(obsDeletes, async (d) => {
@@ -543,11 +544,13 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
             await unindexObservationSession(kv, d.obsId).catch(() => {});
             getSearchIndex().remove(d.obsId);
             vectorIndexRemove(d.obsId);
+            await syncImageRefs(kv, sdk, d.obsId, d.imagePaths, []);
           });
           await runChunked(memories, async (m) => {
             await kv.delete(KV.memories, m.id);
             getSearchIndex().remove(m.id);
             vectorIndexRemove(m.id);
+            await syncImageRefs(kv, sdk, m.id, memoryImagePaths(m), []);
           });
           await flushIndexSave();
           await runChunked(summaries, (s) => kv.delete(KV.summaries, s.sessionId));
@@ -630,8 +633,14 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
                 return;
               }
             }
+            const previous = strategy === "merge"
+              ? await kv
+                  .get<CompressedObservation>(KV.observations(sessionId), o.id)
+                  .catch(() => null)
+              : null;
             await kv.set(KV.observations(sessionId), o.id, o);
             await indexObservationSession(kv, o.id, sessionId).catch(() => {});
+            await syncImageRefs(kv, sdk, o.id, observationImagePaths(previous), observationImagePaths(o));
             stats.observations++;
             indexObs.push(o);
           });
@@ -670,7 +679,11 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           memory.sessionIds = [];
         }
         memory.origin = importOrigin(memory.origin, memory.createdAt);
+        const previous = strategy === "merge"
+          ? await kv.get<Memory>(KV.memories, memory.id).catch(() => null)
+          : null;
         await kv.set(KV.memories, memory.id, memory);
+        await syncImageRefs(kv, sdk, memory.id, memoryImagePaths(previous), memoryImagePaths(memory));
         stats.memories++;
         indexMems.push(memory);
       });

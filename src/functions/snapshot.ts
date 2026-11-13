@@ -19,6 +19,7 @@ import { collectAll } from "../state/kv.js";
 import type { SearchIndexRevision } from "../state/search-index.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
 import { indexObservationSession } from "../state/obs-index.js";
+import { memoryImagePaths, observationImagePaths, syncImageRefs } from "./image-refs.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
 import { persistGraphRecords, validateGraphRecords } from "../state/graph-ingestion.js";
@@ -226,18 +227,22 @@ export function registerSnapshotFunction(
             }
           }
           for (const memory of archive.memories ?? []) {
+            const previous = await kv.get<Memory>(KV.memories, memory.id).catch(() => null);
             await kv.set(KV.memories, memory.id, memory);
             getSearchIndex().remove(memory.id);
             vectorIndexRemove(memory.id);
+            await syncImageRefs(kv, sdk, memory.id, memoryImagePaths(previous), memoryImagePaths(memory));
             memoryIds.add(memory.id);
           }
           for (const [sessionId, observations] of Object.entries(archive.observations ?? {})) {
             await withKeyedLock(`obs:${sessionId}`, async () => {
               for (const observation of observations) {
+                const previous = await kv.get<CompressedObservation>(KV.observations(sessionId), observation.id).catch(() => null);
                 await kv.set(KV.observations(sessionId), observation.id, observation);
                 getSearchIndex().remove(observation.id);
                 vectorIndexRemove(observation.id);
                 await indexObservationSession(kv, observation.id, sessionId);
+                await syncImageRefs(kv, sdk, observation.id, observationImagePaths(previous), observationImagePaths(observation));
                 observationSessions.set(observation.id, sessionId);
               }
             });

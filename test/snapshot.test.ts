@@ -278,6 +278,54 @@ describe("Snapshot Functions", () => {
     expect(await kv.get(KV.observations("ses_9"), "obs_restored")).toEqual(restored);
     expect(await lookupObservationSession(kv as never, "obs_restored")).toBe("ses_9");
   });
+
+  it("snapshot-restore registers image refs for restored rows", async () => {
+    const restoredMem = {
+      id: "mem_img",
+      createdAt: "2026-02-01T00:00:00Z",
+      updatedAt: "2026-02-01T00:00:00Z",
+      type: "pattern",
+      title: "Image memory",
+      content: "has image",
+      concepts: [],
+      files: [],
+      sessionIds: [],
+      strength: 5,
+      version: 1,
+      isLatest: true,
+      imageRef: "/tmp/img-m.png",
+    };
+    const restoredObs = {
+      id: "obs_img",
+      sessionId: "ses_9",
+      timestamp: "2026-02-01T00:00:00Z",
+      type: "discovery",
+      title: "Image obs",
+      narrative: "content",
+      facts: [],
+      concepts: [],
+      files: [],
+      importance: 5,
+      imageData: "/tmp/img-o.png",
+      imageRef: "/tmp/img-o.png",
+    };
+    snapshotContent.mockReturnValueOnce(
+      JSON.stringify({
+        version: "0.4.0",
+        sessions: [],
+        memories: [restoredMem],
+        observations: { ses_9: [restoredObs] },
+      }),
+    );
+
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-m.png")).toBe(1);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-o.png")).toBe(1);
+  });
 });
 
 describe("snapshot-create reentrancy guard", () => {

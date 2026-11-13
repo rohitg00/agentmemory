@@ -951,3 +951,136 @@ describe("Export/import sessionless observation scope", () => {
     ).toMatchObject({ id: "obs_migrated", sessionId: "migrated" });
   });
 });
+
+describe("Import image reference accounting", () => {
+  const imageExport = (rows: Partial<ExportData>): ExportData =>
+    ({
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      ...rows,
+    }) as ExportData;
+
+  it("registers an imageRef for each imported memory under merge", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const mem: Memory = { ...testMemory, id: "mem_img", imageRef: "/tmp/img-a.png" };
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: imageExport({ memories: [mem] }),
+      strategy: "merge",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-a.png")).toBe(1);
+  });
+
+  it("counts an observation's image once when imageData and imageRef match", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const obs: CompressedObservation = {
+      ...testObs,
+      id: "obs_img",
+      imageData: "/tmp/img-b.png",
+      imageRef: "/tmp/img-b.png",
+    };
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: imageExport({ observations: { ses_1: [obs] } }),
+      strategy: "merge",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-b.png")).toBe(1);
+  });
+
+  it("moves the refcount when merge overwrites a memory with a new image", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+
+    await sdk.trigger("mem::import", {
+      exportData: imageExport({
+        memories: [{ ...testMemory, id: "mem_img", imageRef: "/tmp/img-old.png" }],
+      }),
+      strategy: "merge",
+    });
+    await sdk.trigger("mem::import", {
+      exportData: imageExport({
+        memories: [{ ...testMemory, id: "mem_img", imageRef: "/tmp/img-new.png" }],
+      }),
+      strategy: "merge",
+    });
+
+    expect(await kv.get(KV.imageRefs, "/tmp/img-old.png")).toBeNull();
+    expect(await kv.get(KV.imageRefs, "/tmp/img-new.png")).toBe(1);
+  });
+
+  it("does not double-count an unchanged memory merged twice", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const data = imageExport({
+      memories: [{ ...testMemory, id: "mem_img", imageRef: "/tmp/img-a.png" }],
+    });
+
+    await sdk.trigger("mem::import", { exportData: data, strategy: "merge" });
+    await sdk.trigger("mem::import", { exportData: data, strategy: "merge" });
+
+    expect(await kv.get(KV.imageRefs, "/tmp/img-a.png")).toBe(1);
+  });
+
+  it("adds no refcount for rows skipped under skip", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.memories, "mem_img", {
+      ...testMemory,
+      id: "mem_img",
+      imageRef: "/tmp/img-a.png",
+    });
+    await kv.set(KV.imageRefs, "/tmp/img-a.png", 1);
+
+    await sdk.trigger("mem::import", {
+      exportData: imageExport({
+        memories: [{ ...testMemory, id: "mem_img", imageRef: "/tmp/img-a.png" }],
+      }),
+      strategy: "skip",
+    });
+
+    expect(await kv.get(KV.imageRefs, "/tmp/img-a.png")).toBe(1);
+  });
+
+  it("releases refcounts for rows deleted by replace", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.sessions, testSession.id, testSession);
+    await kv.set(KV.observations(testSession.id), "obs_img", {
+      ...testObs,
+      id: "obs_img",
+      imageData: "/tmp/img-obs.png",
+    });
+    await kv.set(KV.memories, "mem_img", {
+      ...testMemory,
+      id: "mem_img",
+      imageRef: "/tmp/img-mem.png",
+    });
+    await kv.set(KV.imageRefs, "/tmp/img-obs.png", 1);
+    await kv.set(KV.imageRefs, "/tmp/img-mem.png", 1);
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: imageExport({}),
+      strategy: "replace",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-obs.png")).toBeNull();
+    expect(await kv.get(KV.imageRefs, "/tmp/img-mem.png")).toBeNull();
+  });
+});
