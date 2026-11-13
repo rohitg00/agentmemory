@@ -13,7 +13,7 @@ function mockKV(seed: Record<string, Record<string, unknown>>) {
   for (const [scope, rows] of Object.entries(seed)) store.set(scope, new Map(Object.entries(rows)));
   return {
     get: vi.fn(async (scope: string, key: string) => store.get(scope)?.get(key) ?? null),
-    set: vi.fn(async (scope: string, key: string, value: unknown) => value),
+    set: vi.fn(async (_scope: string, _key: string, value: unknown) => value),
     delete: vi.fn(async () => {}),
     list: vi.fn(async (scope: string) => Array.from(store.get(scope)?.values() ?? [])),
   };
@@ -143,9 +143,12 @@ describe("paginated and filtered list endpoints", () => {
     expect(res.body.facets).toEqual({
       projects: [{ value: "web", count: 2 }, { value: "infra", count: 1 }],
       agents: [{ value: "coder", count: 2 }, { value: "reviewer", count: 1 }],
-      types: [{ value: "fact", count: 2 }, { value: "bug", count: 1 }],
+      types: [{ value: "bug", count: 1 }, { value: "fact", count: 1 }],
     });
     expect(res.body.total).toBe(2);
+
+    const global = await call(handlers, "api::memories", { latest: "true", facets: "true" });
+    expect((global.body.facets as { types: unknown }).types).toEqual([{ value: "fact", count: 2 }, { value: "bug", count: 1 }]);
 
     const plain = await call(handlers, "api::memories", { latest: "true" });
     expect(plain.body.facets).toBeUndefined();

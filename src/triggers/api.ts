@@ -293,6 +293,7 @@ type FacetCount = { value: string; count: number };
 
 function memoryFacets(
   memories: Array<{ isLatest?: boolean; project?: string; agentId?: string; type?: string }>,
+  project?: string,
 ): { projects: FacetCount[]; agents: FacetCount[]; types: FacetCount[] } {
   const tally = (pick: (m: (typeof memories)[number]) => string | undefined) => {
     const counts = new Map<string, number>();
@@ -308,7 +309,7 @@ function memoryFacets(
   return {
     projects: tally((m) => m.project),
     agents: tally((m) => m.agentId),
-    types: tally((m) => m.type),
+    types: tally((m) => !project || m.project === project ? m.type : undefined),
   };
 }
 
@@ -2770,9 +2771,9 @@ export function registerApiTriggers(
             (includeOrphans && m.agentId === undefined),
         );
       }
-      const facets =
-        req.query_params?.["facets"] === "true" ? memoryFacets(filtered) : undefined;
       const listQuery = parseListQuery(req.query_params);
+      const facets =
+        req.query_params?.["facets"] === "true" ? memoryFacets(filtered, listQuery.project) : undefined;
       if (listQuery.project) filtered = filtered.filter((m) => m.project === listQuery.project);
       if (listQuery.type) filtered = filtered.filter((m) => m.type === listQuery.type);
       const fromSession = asNonEmptyString(req.query_params?.["sessionId"]);
