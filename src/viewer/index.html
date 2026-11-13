@@ -2347,6 +2347,7 @@
           if (kind === 'memory') rows = memoryReadRows(rows, memoryRead, true);
           replaceBucket(kind, rows);
           if (kind === 'memory') {
+            mergeMemoryRows(rows);
             state.memories.nextCursor = result.nextCursor || null;
             setMemoryFacets(result.facets, '', '');
             state.memories.fetches = {};
@@ -4218,7 +4219,7 @@
       (rows || []).forEach(function(r) {
         if (r && r.id) {
           store.entities.memory[r.id] = Object.assign({}, store.entities.memory[r.id] || {}, r);
-          (state.memories.readChanges || []).forEach(function(changes) { changes[r.id] = true; });
+          (state.memories.readChanges || []).forEach(function(changes) { changes[r.id] = Object.assign({}, store.entities.memory[r.id]); });
         }
       });
     }
@@ -4238,13 +4239,12 @@
     }
 
     function memoryReadRows(rows, changes, includeLive) {
-      var current = store.entities.memory;
       var seen = Object.create(null);
       var result = [];
       (rows || []).forEach(function(row) {
         if (!row || !row.id) return;
-        if (changes[row.id]) {
-          var live = current[row.id];
+        if (Object.prototype.hasOwnProperty.call(changes, row.id)) {
+          var live = changes[row.id];
           if (!live) return;
           var serverTime = Date.parse(row.updatedAt || '');
           var liveTime = Date.parse(live.updatedAt || '');
@@ -4255,7 +4255,7 @@
         result.push(row);
       });
       if (includeLive) Object.keys(changes).forEach(function(id) {
-        if (!seen[id] && current[id]) result.push(current[id]);
+        if (!seen[id] && changes[id]) result.push(changes[id]);
       });
       return result;
     }
@@ -4395,7 +4395,7 @@
     function noteMemoryChange(prev, next, id) {
       var m = state.memories;
       m.facetRevision = (m.facetRevision || 0) + 1;
-      (m.readChanges || []).forEach(function(changes) { changes[id] = true; });
+      (m.readChanges || []).forEach(function(changes) { changes[id] = next ? Object.assign({}, next) : null; });
       adjustMemoryFacets(prev, next);
       if (m.query && typeof m.query.total === 'number') {
         m.query.total += (memoryMatchesFilters(next) ? 1 : 0) - (memoryMatchesFilters(prev) ? 1 : 0);

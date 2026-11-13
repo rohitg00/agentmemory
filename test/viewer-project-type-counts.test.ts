@@ -483,6 +483,68 @@ describe("search completion during live memory changes", () => {
     expect(r.store.entities.memory[row.id]).toEqual(newer);
     expect(r.memories.fetches[row.id]).toBe("done");
   });
+
+  it("keeps a newer reconnect snapshot when an older detail response finishes later", async () => {
+    const r = await viewerFixture(true, false, true);
+    const row = r.rows.find((item) => item.isLatest && item.agentId === "x" && !r.store.entities.memory[item.id])!;
+    expect(row).toBeDefined();
+    r.defer();
+    const lookup = r.viewer.fetchMemoryVersion(row.id);
+    const pendingLookup = r.pending[0]!;
+    const old = structuredClone(await r.response(pendingLookup.path));
+    expect(old!.memory).toEqual(row);
+    const newer = { ...row, title: "Newer reconnect snapshot before older detail", updatedAt: "2026-10-02T00:00:00Z" };
+    r.rows[r.rows.findIndex((item) => item.id === row.id)] = newer;
+    r.store.loaded.memory = false;
+    const reload = r.viewer.ensureLoaded("memory");
+    await vi.advanceTimersByTimeAsync(0);
+    const pendingReload = r.pending[1]!;
+    const fresh = structuredClone(await r.response(pendingReload.path));
+    expect(fresh!.memories).toContainEqual(newer);
+    pendingReload.resolve(fresh);
+    await reload;
+    expect(r.store.entities.memory[row.id]).toEqual(newer);
+    expect(r.memories.readChanges).toHaveLength(1);
+    pendingLookup.resolve(old);
+    await lookup;
+    expect(r.store.entities.memory[row.id]).toEqual(newer);
+    expect(r.memories.fetches[row.id]).toBe("done");
+    expect(r.memories.readChanges).toEqual([]);
+    expect(r.store.loading).toEqual({ memory: null });
+  });
+
+  it("preserves an updated detail row omitted from a later partial reconnect page", async () => {
+    const r = await viewerFixture(true, false, true);
+    const row = r.rows.find((item) => item.isLatest && item.agentId === "x" && !r.store.entities.memory[item.id])!;
+    expect(row).toBeDefined();
+    const index = r.rows.findIndex((item) => item.id === row.id);
+    r.rows[index] = { ...row, createdAt: "2026-07-01T00:00:00Z", updatedAt: "2026-08-01T00:00:00Z" };
+    r.defer();
+    const lookup = r.viewer.fetchMemoryVersion(row.id);
+    const pendingLookup = r.pending[0]!;
+    const old = structuredClone(await r.response(pendingLookup.path));
+    expect(old!.memory).toEqual(r.rows[index]);
+    const newer = { ...r.rows[index]!, title: "Live detail outside the reconnect first page", updatedAt: "2026-08-02T00:00:00Z" };
+    r.rows[index] = newer;
+    r.viewer.handleLiveEvent("memory.updated", { memory: newer });
+    expect(r.store.entities.memory[row.id]).toEqual(newer);
+    r.store.loaded.memory = false;
+    const reload = r.viewer.ensureLoaded("memory");
+    await vi.advanceTimersByTimeAsync(0);
+    const pendingReload = r.pending[1]!;
+    const fresh = structuredClone(await r.response(pendingReload.path));
+    expect(fresh!.memories).toHaveLength(100);
+    expect(fresh!.memories!.some((item) => item.id === row.id)).toBe(false);
+    expect(r.rows[index]).toEqual(newer);
+    pendingReload.resolve(fresh);
+    await reload;
+    expect(r.store.entities.memory[row.id]).toBeUndefined();
+    pendingLookup.resolve(old);
+    await lookup;
+    expect(r.store.entities.memory[row.id]).toEqual(newer);
+    expect(r.memories.fetches[row.id]).toBe("done");
+    expect(r.memories.readChanges).toEqual([]);
+  });
 });
 afterEach(() => {
   for (const id of indexedIds) getSearchIndex().remove(id);
