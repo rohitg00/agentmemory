@@ -80,9 +80,12 @@ export interface ImageRefReservation {
 
 export interface ImageRefBatch {
   reserve(paths: string[]): Promise<ImageRefReservation>;
+  reserveAll(pathSets: readonly string[][]): Promise<ImageRefReservation[]>;
   written(token: ImageRefReservation, beforePaths: string[]): void;
   deleted(beforePaths: string[]): void;
 }
+
+const IMAGE_REF_BATCH_CHUNK = 20;
 
 export async function withImageRefBatch<T>(
   kv: StateKV,
@@ -101,6 +104,19 @@ export async function withImageRefBatch<T>(
       }
       return reservation;
     },
+    async reserveAll(pathSets) {
+      const tokens = new Array<ImageRefReservation>(pathSets.length);
+      for (let i = 0; i < pathSets.length; i += IMAGE_REF_BATCH_CHUNK) {
+        const results = await Promise.allSettled(
+          pathSets
+            .slice(i, i + IMAGE_REF_BATCH_CHUNK)
+            .map((paths, j) => batch.reserve(paths).then((token) => { tokens[i + j] = token; })),
+        );
+        const failure = results.find((result) => result.status === "rejected");
+        if (failure?.status === "rejected") throw failure.reason;
+      }
+      return tokens;
+    },
     written(token, beforePaths) {
       token.committed = true;
       previousPaths.push(...beforePaths);
@@ -112,19 +128,27 @@ export async function withImageRefBatch<T>(
   try {
     return await fn(batch);
   } finally {
-    for (const path of previousPaths) {
-      await releaseImageRef(kv, sdk, "mem::image-ref-batch", path);
+    for (let i = 0; i < previousPaths.length; i += IMAGE_REF_BATCH_CHUNK) {
+      await Promise.all(
+        previousPaths
+          .slice(i, i + IMAGE_REF_BATCH_CHUNK)
+          .map((path) => releaseImageRef(kv, sdk, "mem::image-ref-batch", path)),
+      );
     }
-    for (const reservation of reservations) {
-      if (reservation.committed) continue;
-      for (const path of reservation.paths) {
-        await unpinImageRef(kv, path).catch((err) => {
-          logger.warn("Image reference reservation rollback failed", {
-            imageRef: path,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        });
-      }
+    const rollbackPaths = reservations
+      .filter((reservation) => !reservation.committed)
+      .flatMap((reservation) => reservation.paths);
+    for (let i = 0; i < rollbackPaths.length; i += IMAGE_REF_BATCH_CHUNK) {
+      await Promise.all(
+        rollbackPaths.slice(i, i + IMAGE_REF_BATCH_CHUNK).map((path) =>
+          unpinImageRef(kv, path).catch((err) => {
+            logger.warn("Image reference reservation rollback failed", {
+              imageRef: path,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }),
+        ),
+      );
     }
   }
 }

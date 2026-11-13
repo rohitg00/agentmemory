@@ -218,21 +218,17 @@ export function registerSnapshotFunction(
             Array<{ row: CompressedObservation; token: ImageRefReservation }>
           >();
           await withImageRefBatch(kv, sdk, async (batch) => {
-            for (const memory of archive.memories ?? []) {
-              restoreMemories.push({
-                row: memory,
-                token: await batch.reserve(memoryImagePaths(memory)),
-              });
+            const archiveMemories = archive.memories ?? [];
+            const memoryTokens = await batch.reserveAll(archiveMemories.map(memoryImagePaths));
+            for (let i = 0; i < archiveMemories.length; i++) {
+              restoreMemories.push({ row: archiveMemories[i], token: memoryTokens[i] });
             }
             for (const [sessionId, observations] of Object.entries(archive.observations ?? {})) {
-              const rows: Array<{ row: CompressedObservation; token: ImageRefReservation }> = [];
-              for (const observation of observations) {
-                rows.push({
-                  row: observation,
-                  token: await batch.reserve(observationImagePaths(observation)),
-                });
-              }
-              restoreObservations.set(sessionId, rows);
+              const tokens = await batch.reserveAll(observations.map(observationImagePaths));
+              restoreObservations.set(
+                sessionId,
+                observations.map((row, i) => ({ row, token: tokens[i] })),
+              );
             }
             if (archive.sessions) {
               for (const session of archive.sessions) {

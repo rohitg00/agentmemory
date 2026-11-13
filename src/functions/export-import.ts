@@ -587,14 +587,15 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
           const plannedRows = new Map<string, Array<{ row: CompressedObservation; token: ImageRefReservation }>>();
           for (const [sessionId, rows] of plannedObservations) {
-            const entries: Array<{ row: CompressedObservation; token: ImageRefReservation }> = [];
-            for (const row of rows) {
-              entries.push({ row, token: await batch.reserve(observationImagePaths(row)) });
-            }
-            plannedRows.set(sessionId, entries);
+            const tokens = await batch.reserveAll(rows.map(observationImagePaths));
+            plannedRows.set(
+              sessionId,
+              rows.map((row, i) => ({ row, token: tokens[i] })),
+            );
           }
-          for (const memory of importData.memories) {
-            memoryRows.push({ row: memory, token: await batch.reserve(memoryImagePaths(memory)) });
+          const memoryTokens = await batch.reserveAll(importData.memories.map(memoryImagePaths));
+          for (let i = 0; i < importData.memories.length; i++) {
+            memoryRows.push({ row: importData.memories[i], token: memoryTokens[i] });
           }
 
           if (strategy === "replace") {

@@ -1609,4 +1609,39 @@ describe("Import image reference accounting", () => {
     expect(await kv.get(KV.imageRefs, "/tmp/img-q.png")).toBe(1);
     expect(await kv.get(KV.imageRefs, "/tmp/img-f.png")).toBeNull();
   });
+
+  it("reserves image references in bounded parallel chunks", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const realGet = kv.get;
+    vi.spyOn(kv, "get").mockImplementation(async (scope, key) => {
+      if (scope === KV.imageRefs) {
+        inFlight++;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setImmediate(resolve));
+        inFlight--;
+      }
+      return realGet(scope, key);
+    });
+    const memories = Array.from({ length: 60 }, (_, i) => ({
+      ...testMemory,
+      id: `mem_${i}`,
+      imageRef: `/tmp/img-${i}.png`,
+    }));
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: imageExport({ memories }),
+      strategy: "merge",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(maxInFlight).toBeGreaterThan(1);
+    expect(maxInFlight).toBeLessThanOrEqual(20);
+    for (let i = 0; i < 60; i++) {
+      expect(await kv.get(KV.imageRefs, `/tmp/img-${i}.png`)).toBe(1);
+    }
+  });
 });
