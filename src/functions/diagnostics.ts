@@ -13,7 +13,6 @@ import type {
   Insight,
   Lease,
   Lesson,
-  Checkpoint,
   Crystal,
   ProceduralMemory,
   SemanticMemory,

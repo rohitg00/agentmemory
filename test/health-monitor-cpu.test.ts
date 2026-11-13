@@ -59,6 +59,7 @@ function mockKV() {
 
 function mockSdk() {
   return {
+    getConnectionState: () => "connected" as const,
     trigger: async () => ({ workers: [] }),
   };
 }

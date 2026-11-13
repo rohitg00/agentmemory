@@ -24,15 +24,8 @@ export function registerHealthMonitor(
   sdk: IIIClient,
   kv: StateKV,
 ): { stop: () => void } {
-  let connectionState = "connected";
   let prevCpuUsage = process.cpuUsage();
   let prevCpuTime = Date.now();
-
-  if (typeof sdk.on === "function") {
-    sdk.on("connection_state", (state?: unknown) => {
-      connectionState = state as string;
-    });
-  }
 
   async function collectHealth(): Promise<HealthSnapshot> {
     const mem = process.memoryUsage();
@@ -82,7 +75,7 @@ export function registerHealthMonitor(
     }
 
     const snapshot: HealthSnapshot = {
-      connectionState,
+      connectionState: sdk.getConnectionState(),
       liveEvents: getLiveEventsStats(),
       workers,
       memory: {

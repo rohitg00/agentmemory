@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESSENTIAL_TOOLS, getAllTools } from "../src/mcp/tools-registry.js";
+import ts from "typescript";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_PATH = "scripts/docs-sync.state.json";
@@ -56,6 +57,18 @@ function countFallbackTools(): number {
   return (body.slice(0, body.indexOf("]);")).match(/"memory_\w+"/g) ?? []).length;
 }
 
+function countMcpEntries(name: string): string | null {
+  const path = "src/mcp/server.ts";
+  const source = ts.createSourceFile(path, read(path), ts.ScriptTarget.Latest, true);
+  const counts: number[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name && node.initializer && ts.isArrayLiteralExpression(node.initializer) && node.initializer.elements.every(ts.isObjectLiteralExpression)) counts.push(node.initializer.elements.length);
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return counts.length === 1 ? String(counts[0]) : null;
+}
+
 function sourceFiles(): string[] {
   return trackedFiles().filter((f) => f.startsWith("src/") && f.endsWith(".ts"));
 }
@@ -81,6 +94,8 @@ const TOOL_NOUNS = [
 ];
 
 const FACTS: Fact[] = [
+  { key: "mcpResources", label: "MCP resources", value: () => countMcpEntries("MCP_RESOURCES"), nouns: ["MCP resources"] },
+  { key: "mcpPrompts", label: "MCP prompts", value: () => countMcpEntries("MCP_PROMPTS"), nouns: ["MCP prompts"] },
   {
     key: "mcpTools",
     label: "MCP tools",
@@ -227,6 +242,67 @@ function formatLike(matched: string, next: string): string {
   return digits.replace(/\B(?=(\d{3})+(?!\d))/g, separator);
 }
 
+function syncBadgeNumber(value: string, next: string): string {
+  return value.replace(/\d+(?:[,.\u00a0\u202f ]\d{3})*\+?/g, (number) =>
+    `${formatLike(number, next)}${next.endsWith("+") ? "+" : ""}`,
+  );
+}
+
+function syncBadge(text: string, next: string): string {
+  return text
+    .replace(/>(\d+(?:[,.\u00a0\u202f ]\d{3})*\+?)</g, (_match, number: string) => `>${syncBadgeNumber(number, next)}<`)
+    .replace(/(aria-label=")([^"]*)(")/g, (_match, prefix: string, label: string, suffix: string) => `${prefix}${syncBadgeNumber(label, next)}${suffix}`);
+}
+
+function currentCount(matched: string, key: string, state: State): string {
+  const next = state.facts[key]?.[0];
+  if (!next) throw new Error(`Could not compute current ${key}.`);
+  return `${formatLike(matched, next)}${next.endsWith("+") ? "+" : ""}`;
+}
+
+function currentRegion(text: string, start: RegExp, end: RegExp, update: (body: string) => string): string {
+  const match = start.exec(text);
+  if (!match) throw new Error(`Missing managed statistics region: ${start.source}`);
+  const after = match.index + match[0].length;
+  const boundary = text.slice(after).search(end);
+  const stop = boundary < 0 ? text.length : after + boundary;
+  return text.slice(0, match.index) + update(text.slice(match.index, stop)) + text.slice(stop);
+}
+
+function syncCurrentRegions(files: Map<string, string>, state: State): void {
+  // These regions describe current inventory; other prose and historical examples keep their own numbers.
+  const agents = files.get("AGENTS.md");
+  const readme = files.get("README.md");
+  if (!agents || !readme) throw new Error("Current statistics documents are missing.");
+  const number = "\\d+(?:[,.\\u00a0\\u202f ]\\d{3})*\\+?";
+  const counters: Array<[string, string]> = [
+    ["mcpTools", "MCP tools"], ["mcpResources", "MCP resources"], ["mcpPrompts", "MCP prompts"],
+    ["restEndpoints", "REST endpoints"], ["hooks", "hooks"], ["skills", "skills"],
+    ["functions", "iii functions"], ["tests", "tests"], ["coreTools", "essentials"],
+  ];
+  files.set("AGENTS.md", currentRegion(agents, /^## Current Stats .*$/m, /^## /m, (body) => {
+    let next = body.replace(/^## Current Stats \([^)]*\)/m, `## Current Stats (v${state.version})`);
+    for (const [key, noun] of counters) next = next.replace(new RegExp(`${number}(?=\\s+${escapeRegex(noun)}\\b)`, "g"), (value) => currentCount(value, key, state));
+    return next;
+  }));
+  let currentReadme = currentRegion(readme, /^<h2 id="mcp-server">.*$/m, /^<h2 /m, (body) => {
+    const summary = new RegExp(`^(${number})( tools, )(${number})( resources, )(${number})( prompts, and )(${number})( skills\\.)$`, "m");
+    if (!summary.test(body)) throw new Error("Missing managed MCP inventory summary.");
+    return body.replace(summary, (_all, tools: string, a: string, resources: string, b: string, prompts: string, c: string, skills: string, d: string) =>
+      `${currentCount(tools, "mcpTools", state)}${a}${currentCount(resources, "mcpResources", state)}${b}${currentCount(prompts, "mcpPrompts", state)}${c}${currentCount(skills, "skills", state)}${d}`,
+    ).replace(new RegExp(`(?<=^### )${number}(?= Tools$)`, "gm"), (value) => currentCount(value, "mcpTools", state))
+      .replace(new RegExp(`(?<=full )${number}(?=-tool surface)`, "g"), (value) => currentCount(value, "mcpTools", state))
+      .replace(new RegExp(`(?<=falls back to a )${number}(?=-tool local set)`, "g"), (value) => currentCount(value, "fallbackTools", state))
+      .replace(new RegExp(`(?<=see only )${number}(?= tools)`, "g"), (value) => currentCount(value, "fallbackTools", state));
+  });
+  currentReadme = currentRegion(currentReadme, /^<h2 id="api">.*$/m, /^<h2 /m, (body) => {
+    const summary = new RegExp(`^${number}(?= endpoints on port )`, "m");
+    if (!summary.test(body)) throw new Error("Missing managed API inventory summary.");
+    return body.replace(summary, (value) => currentCount(value, "restEndpoints", state));
+  });
+  files.set("README.md", currentReadme);
+}
+
 function factRegex(fact: Fact, old: string): RegExp {
   const nouns = [...fact.nouns].sort((a, b) => b.length - a.length).map(escapeRegex).join("|");
   const before = fact.before ? `(?<=${fact.before})` : "";
@@ -351,6 +427,28 @@ function main(): void {
     }
     report.push(`${fact.label}: ${olds.join(", ")} -> ${next}`);
     nextState.facts[fact.key] = [next];
+  }
+
+  syncCurrentRegions(files, nextState);
+
+  // A docs-only edit can corrupt a generated badge while the saved facts stay current.
+  for (const fact of FACTS) {
+    const badge = fact.badge;
+    const next = nextState.facts[fact.key]?.[0];
+    if (!badge || !next) continue;
+    for (const [path, text] of files) {
+      if (path.endsWith(badge)) {
+        files.set(path, syncBadge(text, next));
+      } else if (text.includes(badge)) {
+        files.set(path, text.replace(/<img\b[^>]*>/gi, (tag) => {
+          const src = tag.match(/\bsrc\s*=\s*(["'])(.*?)\1/i)?.[2];
+          if (!src?.endsWith(badge)) return tag;
+          return tag.replace(/(\balt\s*=\s*)(["'])(.*?)\2/gi, (_match, prefix: string, quote: string, label: string) =>
+            `${prefix}${quote}${syncBadgeNumber(label, next)}${quote}`,
+          );
+        }));
+      }
+    }
   }
 
   const changed = [...files].filter(([p, t]) => original.get(p) !== t).map(([p]) => p);

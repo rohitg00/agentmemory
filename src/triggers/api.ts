@@ -34,7 +34,6 @@ import {
 } from "../functions/search.js";
 import {
   LIST_PAGE_MAX,
-  decodeCursor,
   encodeCursor,
   matchesText,
   pageAfterCursor,
@@ -671,7 +670,6 @@ export function registerApiTriggers(
         status_code: statusCode,
         body: {
           status,
-          service: "agentmemory",
           version: VERSION,
           health: health || null,
           functionMetrics,
@@ -722,8 +720,8 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::observe",
-    async (req: HttpRequest<HookPayload>): Promise<Response> => {
-      const body = (req.body ?? {}) as Record<string, unknown>;
+    async (req: HttpRequest<Record<string, unknown>>): Promise<Response> => {
+      const body = req.body ?? {};
       const hookType = asNonEmptyString(body.hookType);
       const sessionId = asNonEmptyString(body.sessionId);
       const project = asNonEmptyString(body.project);
@@ -3422,7 +3420,7 @@ export function registerApiTriggers(
   });
 
   sdk.registerFunction("api::routine-create",
-    async (req: HttpRequest): Promise<Response> => {
+    async (req: HttpRequest<Record<string, unknown>>): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
       if (!req.body?.name || !req.body?.steps) {

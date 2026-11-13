@@ -28,7 +28,7 @@ async function loadScorer(): Promise<ScorePair | null> {
           return_token_type_ids: true,
         });
         const length = encoded.input_ids.length;
-        const boundary = encoded.token_type_ids.indexOf(1);
+        const boundary = encoded.token_type_ids?.indexOf(1) ?? -1;
         if (boundary < 2 || boundary >= length) throw new Error("Invalid BERT pair encoding");
 
         // This model uses [CLS] query [SEP] document [SEP]. Transformers.js
@@ -85,7 +85,7 @@ export async function rerank(
     return results;
   }
   scores.sort((a, b) => b.score - a.score || a.position - b.position);
-  return scores.map(({ result, score }, i) => ({
+  return scores.map<HybridSearchResult>(({ result, score }, i) => ({
     ...result,
     rerankScore: score,
     rerankPosition: i + 1,
