@@ -265,6 +265,104 @@ describe("search completion during live memory changes", () => {
     expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 2, workflow: 1 });
     expect(facetCounts(r.viewer.memoryFacetList("project"))).toEqual({ A: 135, B: 3 });
   });
+
+  it.each(["updated", "deleted"] as const)("keeps a live %s row when its unchanged-selection cursor response is stale", async (action) => {
+    const r = await viewerFixture();
+    await r.select("A");
+    r.defer();
+    const page = r.viewer.loadMoreMemories();
+    const pending = r.pending[0]!;
+    const stale = structuredClone(await r.response(pending.path));
+    const id = stale!.memories!.find((row) => row.type === "fact")!.id;
+    const index = r.rows.findIndex((row) => row.id === id);
+    let updated: Memory | undefined;
+    if (action === "deleted") {
+      r.rows.splice(index, 1);
+      r.viewer.handleLiveEvent("memory.deleted", { memoryId: id });
+    } else {
+      updated = { ...r.rows[index]!, title: "Live title during cursor request", updatedAt: "2026-10-02T00:00:00Z" };
+      r.rows[index] = updated;
+      r.viewer.handleLiveEvent("memory.updated", { memory: updated });
+    }
+    pending.resolve(stale);
+    await page;
+    expect(r.store.entities.memory[id]).toEqual(updated);
+    r.resume();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.store.entities.memory[id]).toEqual(updated);
+  });
+
+  it("keeps initial-load deletions and creations after the event journal rolls over", async () => {
+    const r = await viewerFixture(false);
+    r.defer();
+    const loading = r.viewer.ensureLoaded("memory");
+    await vi.advanceTimersByTimeAsync(0);
+    const pending = r.pending[0]!;
+    const stale = structuredClone(await r.response(pending.path));
+    const id = stale!.memories!.find((row) => row.type === "fact")!.id;
+    r.rows.splice(r.rows.findIndex((row) => row.id === id), 1);
+    r.viewer.handleLiveEvent("memory.deleted", { memoryId: id });
+    const created: Memory[] = [];
+    for (let index = 0; index < 600; index++) {
+      const next = memoryFixture(`B-initial-overflow-${index}`, "B", "fact");
+      created.push(next);
+      r.rows.push(next);
+      r.viewer.handleLiveEvent("memory.created", { memory: next });
+    }
+    pending.resolve(stale);
+    await loading;
+    expect(r.store.entities.memory[id]).toBeUndefined();
+    expect(created.every((row) => r.store.entities.memory[row.id]?.id === row.id)).toBe(true);
+    r.resume();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.store.entities.memory[id]).toBeUndefined();
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 731, bug: 3, workflow: 1 });
+  });
+
+  it("keeps a newer server row when a delayed older event arrives during the same retry", async () => {
+    const r = await viewerFixture(true, true);
+    await r.select("A");
+    r.defer();
+    const search = r.viewer.runMemorySearch("Memory");
+    const first = r.pending[0]!;
+    const firstSnapshot = structuredClone(await r.response(first.path));
+    const other = memoryFixture("B-before-delayed-older-event", "B", "fact");
+    r.rows.push(other);
+    r.viewer.handleLiveEvent("memory.created", { memory: other });
+    first.resolve(firstSnapshot);
+    await vi.advanceTimersByTimeAsync(0);
+    const retry = r.pending[1]!;
+    const id = firstSnapshot!.memories!.find((row) => row.type === "fact")!.id;
+    const index = r.rows.findIndex((row) => row.id === id);
+    const newer = { ...r.rows[index]!, title: "Server T2 must survive delayed T1", updatedAt: "2026-10-02T00:00:00Z" };
+    r.rows[index] = newer;
+    const response = structuredClone(await r.response(retry.path));
+    expect(response!.memories!.find((row) => row.id === id)).toEqual(newer);
+    const older = { ...newer, title: "Delayed older T1", updatedAt: "2026-10-01T00:00:00Z" };
+    r.viewer.handleLiveEvent("memory.updated", { memory: older });
+    retry.resolve(response);
+    await search;
+    expect(r.store.entities.memory[id]).toEqual(newer);
+    expect(r.memories.searching).toBe(false);
+    expect(r.memories.firstPageLoading).toBe(false);
+  });
+
+  it("keeps the newer initial snapshot row when an older update overlaps that read", async () => {
+    const r = await viewerFixture(false);
+    const row = r.rows.find((item) => item.project === "A" && item.type === "fact" && item.isLatest && item.agentId === "x")!;
+    const newer = { ...row, title: "Newer initial server row", updatedAt: "2026-10-02T00:00:00Z" };
+    r.rows[r.rows.findIndex((item) => item.id === row.id)] = newer;
+    r.defer();
+    const loading = r.viewer.ensureLoaded("memory");
+    await vi.advanceTimersByTimeAsync(0);
+    const pending = r.pending[0]!;
+    const response = structuredClone(await r.response(pending.path));
+    expect(response!.memories!.find((item) => item.id === row.id)).toEqual(newer);
+    r.viewer.handleLiveEvent("memory.updated", { memory: { ...newer, title: "Older delayed initial event", updatedAt: "2026-10-01T00:00:00Z" } });
+    pending.resolve(response);
+    await loading;
+    expect(r.store.entities.memory[row.id]).toEqual(newer);
+  });
 });
 afterEach(() => {
   for (const id of indexedIds) getSearchIndex().remove(id);

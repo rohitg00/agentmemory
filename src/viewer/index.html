@@ -2322,10 +2322,12 @@
       var spec = ENTITY_ENDPOINTS[kind];
       if (!spec) return;
       store.loading[kind] = (async function() {
+        var memoryRead = null;
         try {
           await bootGate;
           var seqAtStart = eventSeq;
           var memoryRevisionAtStart = state.memories.facetRevision || 0;
+          if (kind === 'memory') memoryRead = startMemoryRead();
           var result;
           if (spec.allPages) {
             result = await loadAllPages(spec, apiGet);
@@ -2336,7 +2338,9 @@
             if (kind === 'action') state.actions.loadError = true;
             return;
           }
-          replaceBucket(kind, listOr([], result, spec.key, spec.fallbackKey));
+          var rows = listOr([], result, spec.key, spec.fallbackKey);
+          if (kind === 'memory') rows = memoryReadRows(rows, memoryRead, true);
+          replaceBucket(kind, rows);
           if (kind === 'memory') {
             state.memories.nextCursor = result.nextCursor || null;
             setMemoryFacets(result.facets, '', '');
@@ -2352,13 +2356,14 @@
             if ((result[spec.key] || []).length < 100) state.audit.exhausted['|||'] = true;
             seedFeedFromAudit();
           }
-          replayEventsSince(seqAtStart, kind);
+          if (kind !== 'memory') replayEventsSince(seqAtStart, kind);
           if (kind === 'memory' && memoryRevisionAtStart !== (state.memories.facetRevision || 0)) scheduleMemoryFacetRefresh();
           store.loaded[kind] = true;
           if (kind === 'action') state.actions.loadError = false;
         } catch {
           if (kind === 'action') state.actions.loadError = true;
         } finally {
+          if (memoryRead) finishMemoryRead(memoryRead);
           store.loading[kind] = null;
         }
       })();
@@ -4210,6 +4215,43 @@
       });
     }
 
+    function startMemoryRead() {
+      var m = state.memories;
+      var changes = Object.create(null);
+      if (!m.readChanges) m.readChanges = [];
+      m.readChanges.push(changes);
+      return changes;
+    }
+
+    function finishMemoryRead(changes) {
+      var reads = state.memories.readChanges || [];
+      var index = reads.indexOf(changes);
+      if (index >= 0) reads.splice(index, 1);
+    }
+
+    function memoryReadRows(rows, changes, includeLive) {
+      var current = store.entities.memory;
+      var seen = Object.create(null);
+      var result = [];
+      (rows || []).forEach(function(row) {
+        if (!row || !row.id) return;
+        if (changes[row.id]) {
+          var live = current[row.id];
+          if (!live) return;
+          var serverTime = Date.parse(row.updatedAt || '');
+          var liveTime = Date.parse(live.updatedAt || '');
+          var serverNewer = Number.isFinite(serverTime) && Number.isFinite(liveTime) && serverTime > liveTime;
+          row = serverNewer ? Object.assign({}, live, row) : Object.assign({}, row, live);
+        }
+        seen[row.id] = true;
+        result.push(row);
+      });
+      if (includeLive) Object.keys(changes).forEach(function(id) {
+        if (!seen[id] && current[id]) result.push(current[id]);
+      });
+      return result;
+    }
+
     function strengthScore(m) {
       var raw = Number(m.strength) || 0;
       var score = raw <= 1 ? raw * 10 : raw;
@@ -4276,10 +4318,8 @@
 
     async function fetchMemoryFacetPage(path, isCurrent, adoptResponse) {
       var m = state.memories;
-      if (!m.facetPageChanges) m.facetPageChanges = [];
       for (var attempt = 0; attempt < 2; attempt++) {
-        var changes = Object.create(null);
-        m.facetPageChanges.push(changes);
+        var changes = startMemoryRead();
         try {
           var revision = m.facetRevision || 0;
           var snapshotRevision = m.facetSnapshotRevision || 0;
@@ -4288,9 +4328,7 @@
           var currentFacets = revision === (m.facetRevision || 0) && snapshotRevision === (m.facetSnapshotRevision || 0);
           if (!response || currentFacets || attempt === 1) {
             if (response) {
-              response = Object.assign({}, response, { memories: (response.memories || []).map(function(row) {
-                return changes[row.id] ? store.entities.memory[row.id] : row;
-              }).filter(Boolean) });
+              response = Object.assign({}, response, { memories: memoryReadRows(response.memories, changes) });
             }
             var scope = m.facetScope;
             var initializeScope = !m.facets || !scope || scope.project !== (m.projectFilter || '') || scope.agent !== (m.agentFilter || '');
@@ -4299,7 +4337,7 @@
             return true;
           }
         } finally {
-          m.facetPageChanges.splice(m.facetPageChanges.indexOf(changes), 1);
+          finishMemoryRead(changes);
         }
       }
     }
@@ -4349,7 +4387,7 @@
     function noteMemoryChange(prev, next, id) {
       var m = state.memories;
       m.facetRevision = (m.facetRevision || 0) + 1;
-      (m.facetPageChanges || []).forEach(function(changes) { changes[id] = true; });
+      (m.readChanges || []).forEach(function(changes) { changes[id] = true; });
       adjustMemoryFacets(prev, next);
       if (m.query && typeof m.query.total === 'number') {
         m.query.total += (memoryMatchesFilters(next) ? 1 : 0) - (memoryMatchesFilters(prev) ? 1 : 0);
@@ -4459,14 +4497,19 @@
       var filterSeq = memoryFilterSeq, searchSeq = memorySearchSeq, query = m.query;
       m.loadingMore = true;
       renderMemories();
-      var res = await apiGet(memoryQueryPath('&cursor=' + encodeURIComponent(cursor)));
-      m.loadingMore = false;
-      if (res && filterSeq === memoryFilterSeq && searchSeq === memorySearchSeq && query === m.query && cursor === (query ? query.nextCursor : m.nextCursor)) {
-        mergeMemoryRows(res.memories);
-        if (query) query.nextCursor = res.nextCursor || null;
-        else m.nextCursor = res.nextCursor || null;
+      var changes = startMemoryRead();
+      try {
+        var res = await apiGet(memoryQueryPath('&cursor=' + encodeURIComponent(cursor)));
+        if (res && filterSeq === memoryFilterSeq && searchSeq === memorySearchSeq && query === m.query && cursor === (query ? query.nextCursor : m.nextCursor)) {
+          mergeMemoryRows(memoryReadRows(res.memories, changes));
+          if (query) query.nextCursor = res.nextCursor || null;
+          else m.nextCursor = res.nextCursor || null;
+        }
+      } finally {
+        finishMemoryRead(changes);
+        m.loadingMore = false;
+        renderMemories();
       }
-      renderMemories();
     }
 
     async function fetchMemoryVersion(id) {
