@@ -1891,6 +1891,9 @@ export function registerApiTriggers(
           return { status_code: 400, body: { error: `${field} must be a string` } };
         }
       }
+      if (body.limit !== undefined && (!Number.isInteger(body.limit) || body.limit < 1)) {
+        return { status_code: 400, body: { error: "limit must be a positive integer" } };
+      }
       if (body.includeLessons !== undefined && typeof body.includeLessons !== "boolean") {
         return { status_code: 400, body: { error: "includeLessons must be a boolean" } };
       }

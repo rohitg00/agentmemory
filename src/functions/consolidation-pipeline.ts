@@ -15,7 +15,7 @@ import {
   PROCEDURAL_EXTRACTION_SYSTEM,
   buildProceduralExtractionPrompt,
 } from "../prompts/consolidation.js";
-import { recordAudit } from "./audit.js";
+import { safeAudit } from "./audit.js";
 import { CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, patternFrequency } from "./consolidation-status.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
@@ -298,7 +298,7 @@ export function registerConsolidationPipelineFunction(
         }
       }
 
-      await recordAudit(kv, "consolidate", "mem::consolidate-pipeline", [], {
+      await safeAudit(kv, "consolidate", "mem::consolidate-pipeline", [], {
         tier,
         results,
       });

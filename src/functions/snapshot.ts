@@ -13,11 +13,13 @@ import type {
   CompressedObservation,
   AccessLogExport,
 } from "../types.js";
-import { KV, generateId } from "../state/schema.js";
+import { KV, generateId, UNSESSIONED_OBSERVATION_SCOPE } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { collectAll } from "../state/kv.js";
 import type { SearchIndexRevision } from "../state/search-index.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
+import { indexObservationSession } from "../state/obs-index.js";
+import { memoryImagePaths, observationImagePaths, withImageRefBatch, type ImageRefReservation } from "./image-refs.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
 import { persistGraphRecords, validateGraphRecords } from "../state/graph-ingestion.js";
@@ -83,6 +85,12 @@ export function registerSnapshotFunction(
           if (obs.length > 0) {
             observations[session.id] = obs;
           }
+        }
+        const migratedObs = await kv
+          .list(KV.observations(UNSESSIONED_OBSERVATION_SCOPE))
+          .catch(() => []);
+        if (migratedObs.length > 0) {
+          observations[UNSESSIONED_OBSERVATION_SCOPE] = migratedObs;
         }
 
         const state = {
@@ -201,45 +209,74 @@ export function registerSnapshotFunction(
         const observationSessions = new Map<string, string>();
         let restoreError: unknown;
         try {
-          if (archive.sessions) {
-            for (const session of archive.sessions) {
-              await withKeyedLock(`obs:${session.id}`, () =>
-                kv.set(KV.sessions, session.id, session),
+          const restoreMemories: Array<{
+            row: Memory;
+            token: ImageRefReservation;
+          }> = [];
+          const restoreObservations = new Map<
+            string,
+            Array<{ row: CompressedObservation; token: ImageRefReservation }>
+          >();
+          await withImageRefBatch(kv, sdk, async (batch) => {
+            const archiveMemories = archive.memories ?? [];
+            const memoryTokens = await batch.reserveAll(archiveMemories.map(memoryImagePaths));
+            for (let i = 0; i < archiveMemories.length; i++) {
+              restoreMemories.push({ row: archiveMemories[i], token: memoryTokens[i] });
+            }
+            for (const [sessionId, observations] of Object.entries(archive.observations ?? {})) {
+              const tokens = await batch.reserveAll(observations.map(observationImagePaths));
+              restoreObservations.set(
+                sessionId,
+                observations.map((row, i) => ({ row, token: tokens[i] })),
               );
-              const project = session.project;
-              const startedAt = session.startedAt;
-              if (typeof project === "string" && typeof startedAt === "string") {
-                const agentId = session.agentId;
-                await addSessionToProjectIndex(kv, project, {
-                  id: session.id,
-                  startedAt,
-                  ...(typeof agentId === "string" ? { agentId } : {}),
-                }).catch(() => {});
+            }
+            if (archive.sessions) {
+              for (const session of archive.sessions) {
+                await withKeyedLock(`obs:${session.id}`, () =>
+                  kv.set(KV.sessions, session.id, session),
+                );
+                const project = session.project;
+                const startedAt = session.startedAt;
+                if (typeof project === "string" && typeof startedAt === "string") {
+                  const agentId = session.agentId;
+                  await addSessionToProjectIndex(kv, project, {
+                    id: session.id,
+                    startedAt,
+                    ...(typeof agentId === "string" ? { agentId } : {}),
+                  }).catch(() => {});
+                }
               }
             }
-          }
-          for (const memory of archive.memories ?? []) {
-            await kv.set(KV.memories, memory.id, memory);
-            getSearchIndex().remove(memory.id);
-            vectorIndexRemove(memory.id);
-            memoryIds.add(memory.id);
-          }
-          for (const [sessionId, observations] of Object.entries(archive.observations ?? {})) {
-            await withKeyedLock(`obs:${sessionId}`, async () => {
-              for (const observation of observations) {
-                await kv.set(KV.observations(sessionId), observation.id, observation);
-                getSearchIndex().remove(observation.id);
-                vectorIndexRemove(observation.id);
-                observationSessions.set(observation.id, sessionId);
-              }
-            });
-          }
-          if (archive.graphNodes?.length || archive.graphEdges?.length) {
-            await persistGraphRecords(kv, archive.graphNodes ?? [], archive.graphEdges ?? [], { mode: "merge" });
-          }
-          for (const log of archive.accessLogs ?? []) {
-            await kv.set(KV.accessLog, log.memoryId, log);
-          }
+            for (const { row: memory, token } of restoreMemories) {
+              await withKeyedLock(`mem:${memory.id}`, async () => {
+                const previous = await kv.get<Memory>(KV.memories, memory.id);
+                await kv.set(KV.memories, memory.id, memory);
+                batch.written(token, memoryImagePaths(previous));
+                getSearchIndex().remove(memory.id);
+                vectorIndexRemove(memory.id);
+                memoryIds.add(memory.id);
+              });
+            }
+            for (const [sessionId, rows] of restoreObservations) {
+              await withKeyedLock(`obs:${sessionId}`, async () => {
+                for (const { row: observation, token } of rows) {
+                  const previous = await kv.get<CompressedObservation>(KV.observations(sessionId), observation.id);
+                  await kv.set(KV.observations(sessionId), observation.id, observation);
+                  batch.written(token, observationImagePaths(previous));
+                  getSearchIndex().remove(observation.id);
+                  vectorIndexRemove(observation.id);
+                  observationSessions.set(observation.id, sessionId);
+                  await indexObservationSession(kv, observation.id, sessionId);
+                }
+              });
+            }
+            if (archive.graphNodes?.length || archive.graphEdges?.length) {
+              await persistGraphRecords(kv, archive.graphNodes ?? [], archive.graphEdges ?? [], { mode: "merge" });
+            }
+            for (const log of archive.accessLogs ?? []) {
+              await kv.set(KV.accessLog, log.memoryId, log);
+            }
+          });
         } catch (err) {
           restoreError = err;
         }

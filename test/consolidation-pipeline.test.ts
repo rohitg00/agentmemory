@@ -10,7 +10,9 @@ vi.mock("../src/config.js", () => ({
 }));
 
 import { registerConsolidationPipelineFunction } from "../src/functions/consolidation-pipeline.js";
+import { CONSOLIDATION_LAST_RUN_KEY } from "../src/functions/consolidation-status.js";
 import { isConsolidationEnabled } from "../src/config.js";
+import { KV } from "../src/state/schema.js";
 import { currentAuditScope } from "./helpers/mocks.js";
 import type { SessionSummary, Memory, SemanticMemory, ProceduralMemory } from "../src/types.js";
 
@@ -312,6 +314,28 @@ describe("Consolidation Pipeline", () => {
 
     const audits = await kv.list(currentAuditScope());
     expect(audits.length).toBe(1);
+  });
+
+  it("still writes the last-run marker when the audit write fails", async () => {
+    const provider = {
+      name: "test",
+      compress: vi.fn(),
+      summarize: vi.fn(),
+    };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+
+    const write = kv.set;
+    vi.spyOn(kv, "set").mockImplementation(async (scope, key, value) => {
+      if (scope.startsWith("mem:audit")) throw new Error("state store write failed");
+      return write(scope, key, value);
+    });
+
+    const result = (await sdk.trigger("mem::consolidate-pipeline", {
+      force: true,
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.config, CONSOLIDATION_LAST_RUN_KEY)).not.toBeNull();
   });
 
   it("pipeline returns early when consolidation is disabled", async () => {

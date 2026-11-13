@@ -1,12 +1,42 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { join } from "node:path";
+import { mkdir, writeFile, stat } from "node:fs/promises";
 
-const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
+const { warn, snapshotContent } = vi.hoisted(() => ({
+  warn: vi.fn(),
+  snapshotContent: vi.fn(() => '{"version":"0.4.0","sessions":[],"memories":[]}'),
+}));
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn, error: vi.fn() },
 }));
 
+vi.mock("node:util", async () => {
+  const actual = (await vi.importActual("node:util")) as Record<
+    string,
+    unknown
+  >;
+  return {
+    ...actual,
+    promisify: () => async (_file: string, args: string[]) => ({
+      stdout: args[0] === "show" ? snapshotContent() : "abc1234\n",
+      stderr: "",
+    }),
+  };
+});
+
 import { releaseImageRef } from "../src/functions/image-refs.js";
+import { registerExportImportFunction } from "../src/functions/export-import.js";
+import { registerSnapshotFunction } from "../src/functions/snapshot.js";
+import { getSearchIndex } from "../src/functions/search.js";
+import { IMAGES_DIR } from "../src/utils/image-store.js";
 import { KV } from "../src/state/schema.js";
+import { VERSION } from "../src/version.js";
+import type {
+  CompressedObservation,
+  ExportData,
+  Memory,
+  Session,
+} from "../src/types.js";
 
 function kvWithFailingWrite(count: number) {
   return {
@@ -46,5 +76,732 @@ describe("releaseImageRef", () => {
     await releaseImageRef(kv as never, { trigger: vi.fn() } as never, "mem_2", "/tmp/img-b.png");
     expect(writes).toEqual([[KV.imageRefs, "/tmp/img-b.png", 2]]);
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+function mockKV() {
+  const store = new Map<string, Map<string, unknown>>();
+  return {
+    get: async <T>(scope: string, key: string): Promise<T | null> =>
+      (store.get(scope)?.get(key) as T) ?? null,
+    set: async <T>(scope: string, key: string, data: T): Promise<T> => {
+      if (!store.has(scope)) store.set(scope, new Map());
+      store.get(scope)!.set(key, data);
+      return data;
+    },
+    delete: async (scope: string, key: string): Promise<void> => {
+      store.get(scope)?.delete(key);
+    },
+    list: async <T>(scope: string): Promise<T[]> =>
+      Array.from(store.get(scope)?.values() ?? []) as T[],
+    listKeys: async (scope: string): Promise<string[]> =>
+      Array.from(store.get(scope)?.keys() ?? []),
+  };
+}
+
+function mockSdk() {
+  const functions = new Map<string, Function>();
+  functions.set("mem::disk-size-delta", () => ({ success: true }));
+  return {
+    registerFunction: (idOrOpts: string | { id: string }, handler: Function) => {
+      const id = typeof idOrOpts === "string" ? idOrOpts : idOrOpts.id;
+      functions.set(id, handler);
+    },
+    registerTrigger: () => {},
+    trigger: async (
+      idOrInput: string | { function_id: string; payload: unknown },
+      data?: unknown,
+    ) => {
+      const id =
+        typeof idOrInput === "string" ? idOrInput : idOrInput.function_id;
+      const payload = typeof idOrInput === "string" ? data : idOrInput.payload;
+      const fn = functions.get(id);
+      if (!fn) throw new Error(`No function: ${id}`);
+      return fn(payload);
+    },
+  };
+}
+
+const testSession = (id: string): Session => ({
+  id,
+  project: "img-project",
+  cwd: "/tmp",
+  startedAt: "2026-02-01T00:00:00Z",
+  status: "completed",
+  observationCount: 1,
+});
+
+const obsRow = (id: string, sessionId: string): CompressedObservation => ({
+  id,
+  sessionId,
+  timestamp: "2026-02-01T10:00:00Z",
+  type: "file_edit",
+  title: `Observation ${id}`,
+  facts: ["fact"],
+  narrative: "narrative",
+  concepts: ["img"],
+  files: ["src/x.ts"],
+  importance: 5,
+});
+
+const memRow = (id: string): Memory => ({
+  id,
+  createdAt: "2026-02-01T00:00:00Z",
+  updatedAt: "2026-02-01T00:00:00Z",
+  type: "pattern",
+  title: `Memory ${id}`,
+  content: "content",
+  concepts: ["img"],
+  files: [],
+  sessionIds: [],
+  strength: 5,
+  version: 1,
+  isLatest: true,
+});
+
+const imageExport = (rows: Partial<ExportData>): ExportData =>
+  ({
+    version: VERSION,
+    exportedAt: new Date().toISOString(),
+    sessions: [],
+    observations: {},
+    memories: [],
+    summaries: [],
+    ...rows,
+  }) as ExportData;
+
+const importResult = (sdk: ReturnType<typeof mockSdk>, exportData: ExportData, strategy: "merge" | "replace" | "skip") =>
+  sdk.trigger("mem::import", { exportData, strategy }) as Promise<{ success: boolean }>;
+
+async function seedManagedImage(name: string): Promise<string> {
+  const path = join(IMAGES_DIR, name);
+  await mkdir(IMAGES_DIR, { recursive: true });
+  await writeFile(path, `png-${name}`);
+  return path;
+}
+
+describe("mem::import image ref reconciliation", () => {
+  beforeEach(() => getSearchIndex().clear());
+
+  it("keeps the file, embedding and count when merge moves an image from an observation to a memory", async () => {
+    const path = await seedManagedImage("move.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.sessions, "ses_1", testSession("ses_1"));
+    await kv.set(KV.observations("ses_1"), "obs_1", { ...obsRow("obs_1", "ses_1"), imageData: path });
+    await kv.set(KV.imageRefs, path, 1);
+    await kv.set(KV.imageEmbeddings, path, { dims: 3 });
+
+    const incomingObs = obsRow("obs_1", "ses_1");
+    const incomingMem = { ...memRow("mem_1"), imageRef: path };
+    const result = await importResult(sdk, imageExport({
+      sessions: [testSession("ses_1")],
+      observations: { ses_1: [incomingObs] },
+      memories: [incomingMem],
+    }), "merge");
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, path)).toBe(1);
+    expect(await kv.get(KV.imageEmbeddings, path)).toEqual({ dims: 3 });
+    await expect(stat(path)).resolves.toBeTruthy();
+  });
+
+  it("keeps a shared memory and observation image referenced while an owner is rewritten", async () => {
+    const path = await seedManagedImage("shared.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.sessions, "ses_1", testSession("ses_1"));
+    await kv.set(KV.observations("ses_1"), "obs_1", { ...obsRow("obs_1", "ses_1"), imageData: path });
+    await kv.set(KV.memories, "mem_1", { ...memRow("mem_1"), imageRef: path });
+    await kv.set(KV.imageRefs, path, 2);
+    await kv.set(KV.imageEmbeddings, path, { dims: 3 });
+
+    const result = await importResult(sdk, imageExport({
+      sessions: [testSession("ses_1")],
+      observations: { ses_1: [obsRow("obs_1", "ses_1")] },
+      memories: [{ ...memRow("mem_1"), imageRef: path }],
+    }), "merge");
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, path)).toBe(1);
+    expect(await kv.get(KV.imageEmbeddings, path)).toEqual({ dims: 3 });
+    await expect(stat(path)).resolves.toBeTruthy();
+  });
+
+  it("rolls back earlier reservations when a later reservation write fails, then retries cleanly", async () => {
+    const pathA = await seedManagedImage("res-a.png");
+    const pathB = await seedManagedImage("res-b.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.imageEmbeddings, pathA, { dims: 3 });
+    await kv.set(KV.imageEmbeddings, pathB, { dims: 4 });
+
+    const exportData = imageExport({
+      memories: [
+        { ...memRow("mem_a"), imageRef: pathA },
+        { ...memRow("mem_b"), imageRef: pathB },
+      ],
+    });
+    const realSet = kv.set;
+    const setter = vi
+      .spyOn(kv, "set")
+      .mockImplementation(async (scope: string, key: string, value: never) => {
+        if (scope === KV.imageRefs && key === pathB) {
+          throw new Error("ref set failed");
+        }
+        return realSet(scope, key, value);
+      });
+
+    const failed = await importResult(sdk, exportData, "merge").catch((err: unknown) => err);
+
+    expect(failed).toBeInstanceOf(Error);
+    expect(await kv.get(KV.memories, "mem_a")).toBeNull();
+    expect(await kv.get(KV.memories, "mem_b")).toBeNull();
+    expect(await kv.get(KV.imageRefs, pathA)).toBeNull();
+    expect(await kv.get(KV.imageRefs, pathB)).toBeNull();
+    await expect(stat(pathA)).resolves.toBeTruthy();
+    await expect(stat(pathB)).resolves.toBeTruthy();
+    expect(await kv.get(KV.imageEmbeddings, pathA)).toEqual({ dims: 3 });
+    expect(await kv.get(KV.imageEmbeddings, pathB)).toEqual({ dims: 4 });
+
+    setter.mockRestore();
+    const retried = await importResult(sdk, exportData, "merge");
+    expect(retried.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, pathA)).toBe(1);
+    expect(await kv.get(KV.imageRefs, pathB)).toBe(1);
+    await expect(stat(pathA)).resolves.toBeTruthy();
+    await expect(stat(pathB)).resolves.toBeTruthy();
+    expect(await kv.get(KV.imageEmbeddings, pathA)).toEqual({ dims: 3 });
+    expect(await kv.get(KV.imageEmbeddings, pathB)).toEqual({ dims: 4 });
+  });
+
+  it("reconciles committed writes when a later memory write fails under replace, then retries cleanly", async () => {
+    const oldPath = await seedManagedImage("old.png");
+    const pathA = await seedManagedImage("new-a.png");
+    const pathB = await seedManagedImage("new-b.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.memories, "mem_old", { ...memRow("mem_old"), imageRef: oldPath });
+    await kv.set(KV.imageRefs, oldPath, 1);
+    await kv.set(KV.imageEmbeddings, oldPath, { dims: 3 });
+
+    const exportData = imageExport({
+      memories: [
+        { ...memRow("mem_a"), imageRef: pathA },
+        { ...memRow("mem_b"), imageRef: pathB },
+      ],
+    });
+    await kv.set(KV.imageEmbeddings, pathA, { dims: 5 });
+    await kv.set(KV.imageEmbeddings, pathB, { dims: 6 });
+    const realSet = kv.set;
+    const setter = vi
+      .spyOn(kv, "set")
+      .mockImplementation(async (scope: string, key: string, value: never) => {
+        if (scope === KV.memories && key === "mem_b") {
+          throw new Error("owner set failed");
+        }
+        return realSet(scope, key, value);
+      });
+
+    const failed = await importResult(sdk, exportData, "replace").catch((err: unknown) => err);
+
+    expect(failed).toBeInstanceOf(Error);
+    expect(await kv.get(KV.memories, "mem_old")).toBeNull();
+    expect(await kv.get(KV.memories, "mem_a")).not.toBeNull();
+    expect(await kv.get(KV.memories, "mem_b")).toBeNull();
+    expect(await kv.get(KV.imageRefs, oldPath)).toBeNull();
+    expect(await kv.get(KV.imageEmbeddings, oldPath)).toBeNull();
+    await expect(stat(oldPath)).rejects.toBeTruthy();
+    expect(await kv.get(KV.imageRefs, pathA)).toBe(1);
+    expect(await kv.get(KV.imageRefs, pathB)).toBeNull();
+    await expect(stat(pathB)).resolves.toBeTruthy();
+    expect(await kv.get(KV.imageEmbeddings, pathB)).toEqual({ dims: 6 });
+
+    setter.mockRestore();
+    const retried = await importResult(sdk, exportData, "replace");
+    expect(retried.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, pathA)).toBe(1);
+    expect(await kv.get(KV.imageRefs, pathB)).toBe(1);
+    await expect(stat(pathA)).resolves.toBeTruthy();
+    await expect(stat(pathB)).resolves.toBeTruthy();
+    expect(await kv.get(KV.imageEmbeddings, pathA)).toEqual({ dims: 5 });
+    expect(await kv.get(KV.imageEmbeddings, pathB)).toEqual({ dims: 6 });
+  });
+});
+
+describe("mem::snapshot-restore image ref reconciliation", () => {
+  const snapshotDir = "/tmp/agentmemory-snapshots";
+  beforeEach(() => {
+    getSearchIndex().clear();
+    snapshotContent.mockClear();
+  });
+
+  it("keeps both files, embeddings and counts when a restore swaps two memories' image refs", async () => {
+    const pathA = await seedManagedImage("swap-a.png");
+    const pathB = await seedManagedImage("swap-b.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSnapshotFunction(sdk as never, kv as never, snapshotDir);
+    await kv.set(KV.memories, "mem_1", { ...memRow("mem_1"), imageRef: pathA });
+    await kv.set(KV.memories, "mem_2", { ...memRow("mem_2"), imageRef: pathB });
+    await kv.set(KV.imageRefs, pathA, 1);
+    await kv.set(KV.imageRefs, pathB, 1);
+    await kv.set(KV.imageEmbeddings, pathA, { dims: 3 });
+    await kv.set(KV.imageEmbeddings, pathB, { dims: 4 });
+
+    snapshotContent.mockReturnValueOnce(JSON.stringify({
+      version: "0.4.0",
+      sessions: [],
+      memories: [
+        { ...memRow("mem_1"), imageRef: pathB },
+        { ...memRow("mem_2"), imageRef: pathA },
+      ],
+    }));
+
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, pathA)).toBe(1);
+    expect(await kv.get(KV.imageRefs, pathB)).toBe(1);
+    expect(await kv.get(KV.imageEmbeddings, pathA)).toEqual({ dims: 3 });
+    expect(await kv.get(KV.imageEmbeddings, pathB)).toEqual({ dims: 4 });
+    await expect(stat(pathA)).resolves.toBeTruthy();
+    await expect(stat(pathB)).resolves.toBeTruthy();
+    expect(await kv.get<{ imageRef: string }>(KV.memories, "mem_1")).toMatchObject({ imageRef: pathB });
+    expect(await kv.get<{ imageRef: string }>(KV.memories, "mem_2")).toMatchObject({ imageRef: pathA });
+  });
+
+  it("leaves owners and refcounts untouched when a previous-owner read fails", async () => {
+    const pathA = await seedManagedImage("prev-a.png");
+    const pathC = await seedManagedImage("prev-c.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSnapshotFunction(sdk as never, kv as never, snapshotDir);
+    const existing = { ...memRow("mem_1"), imageRef: pathA };
+    await kv.set(KV.memories, "mem_1", existing);
+    await kv.set(KV.imageRefs, pathA, 1);
+    await kv.set(KV.imageEmbeddings, pathC, { dims: 7 });
+
+    snapshotContent.mockReturnValueOnce(JSON.stringify({
+      version: "0.4.0",
+      sessions: [],
+      memories: [{ ...memRow("mem_1"), imageRef: pathC }],
+    }));
+    const getter = vi
+      .spyOn(kv, "get")
+      .mockImplementation(async (scope: string, key: string) => {
+        if (scope === KV.memories && key === "mem_1") {
+          throw new Error("previous owner read failed");
+        }
+        return null;
+      });
+
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(false);
+    getter.mockRestore();
+    expect(await kv.get(KV.memories, "mem_1")).toEqual(existing);
+    expect(await kv.get(KV.imageRefs, pathA)).toBe(1);
+    expect(await kv.get(KV.imageRefs, pathC)).toBeNull();
+    await expect(stat(pathC)).resolves.toBeTruthy();
+    expect(await kv.get(KV.imageEmbeddings, pathC)).toEqual({ dims: 7 });
+  });
+
+  it("reconciles committed owners when a later restore write fails, then retries cleanly", async () => {
+    const pathA = await seedManagedImage("late-a.png");
+    const pathB = await seedManagedImage("late-b.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSnapshotFunction(sdk as never, kv as never, snapshotDir);
+    const archive = {
+      version: "0.4.0",
+      sessions: [],
+      memories: [
+        { ...memRow("mem_a"), imageRef: pathA },
+        { ...memRow("mem_b"), imageRef: pathB },
+      ],
+    };
+    const realSet = kv.set;
+    const setter = vi
+      .spyOn(kv, "set")
+      .mockImplementation(async (scope: string, key: string, value: never) => {
+        if (scope === KV.memories && key === "mem_b") {
+          throw new Error("restore set failed");
+        }
+        return realSet(scope, key, value);
+      });
+    await kv.set(KV.imageEmbeddings, pathA, { dims: 8 });
+    await kv.set(KV.imageEmbeddings, pathB, { dims: 9 });
+    snapshotContent.mockReturnValueOnce(JSON.stringify(archive));
+
+    const failed = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(failed.success).toBe(false);
+    expect(await kv.get(KV.memories, "mem_a")).not.toBeNull();
+    expect(await kv.get(KV.memories, "mem_b")).toBeNull();
+    expect(await kv.get(KV.imageRefs, pathA)).toBe(1);
+    expect(await kv.get(KV.imageRefs, pathB)).toBeNull();
+    await expect(stat(pathB)).resolves.toBeTruthy();
+    expect(await kv.get(KV.imageEmbeddings, pathB)).toEqual({ dims: 9 });
+
+    setter.mockRestore();
+    snapshotContent.mockReturnValueOnce(JSON.stringify(archive));
+    const retried = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(retried.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, pathA)).toBe(1);
+    expect(await kv.get(KV.imageRefs, pathB)).toBe(1);
+    await expect(stat(pathA)).resolves.toBeTruthy();
+    await expect(stat(pathB)).resolves.toBeTruthy();
+    expect(await kv.get(KV.imageEmbeddings, pathA)).toEqual({ dims: 8 });
+    expect(await kv.get(KV.imageEmbeddings, pathB)).toEqual({ dims: 9 });
+  });
+});
+
+describe("bounded image ref reservation concurrency", () => {
+  const delay = (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+  const advanceUntilSettled = async (
+    isSettled: () => boolean,
+    budgetMs = 260_000,
+  ) => {
+    for (let elapsed = 0; elapsed < budgetMs && !isSettled(); elapsed += 200) {
+      await vi.advanceTimersByTimeAsync(200);
+    }
+  };
+
+  function instrumentImageOps(
+    kv: ReturnType<typeof mockKV>,
+    ownerScopes: Set<string>,
+    failSet?: (key: string) => boolean,
+    failOwner?: (scope: string, key: string) => boolean,
+  ) {
+    const stats = {
+      inFlight: 0,
+      maxInFlight: 0,
+      postFailureMaxInFlight: 0,
+      done: 0,
+      ownerWrites: 0,
+      imageOpsAtFirstOwnerWrite: -1,
+      failed: false,
+      getsByKey: new Map<string, number>(),
+      setsByKey: new Map<string, number>(),
+    };
+    const track = () => {
+      stats.inFlight += 1;
+      stats.maxInFlight = Math.max(stats.maxInFlight, stats.inFlight);
+      if (stats.failed) {
+        stats.postFailureMaxInFlight = Math.max(
+          stats.postFailureMaxInFlight,
+          stats.inFlight,
+        );
+      }
+    };
+    const realGet = kv.get;
+    const realSet = kv.set;
+    vi.spyOn(kv, "get").mockImplementation(
+      async (scope: string, key: string): Promise<unknown> => {
+        if (scope !== KV.imageRefs) return realGet(scope, key);
+        stats.getsByKey.set(key, (stats.getsByKey.get(key) ?? 0) + 1);
+        track();
+        await delay(20);
+        stats.inFlight -= 1;
+        stats.done += 1;
+        return realGet(scope, key);
+      },
+    );
+    vi.spyOn(kv, "set").mockImplementation(
+      async (scope: string, key: string, value: never): Promise<unknown> => {
+        if (scope !== KV.imageRefs) {
+          if (failOwner?.(scope, key)) {
+            stats.failed = true;
+            throw new Error("owner set failed");
+          }
+          if (ownerScopes.has(scope)) {
+            stats.ownerWrites += 1;
+            if (stats.imageOpsAtFirstOwnerWrite === -1) {
+              stats.imageOpsAtFirstOwnerWrite = stats.done;
+            }
+          }
+          return realSet(scope, key, value);
+        }
+        if (failSet?.(key)) throw new Error("image ref write failed");
+        stats.setsByKey.set(key, (stats.setsByKey.get(key) ?? 0) + 1);
+        track();
+        await delay(20);
+        stats.inFlight -= 1;
+        stats.done += 1;
+        return realSet(scope, key, value);
+      },
+    );
+    return stats;
+  }
+
+  it("imports 5000 observations with distinct images under a 20-wide reservation cap before any owner write", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const sessionId = "ses_bulk";
+    const exportData = imageExport({
+      sessions: [testSession(sessionId)],
+      observations: {
+        [sessionId]: Array.from({ length: 5000 }, (_, i) => ({
+          ...obsRow(`obs_${i}`, sessionId),
+          imageData: `/img/res-${i}.png`,
+        })),
+      },
+    });
+    const stats = instrumentImageOps(kv, new Set([KV.observations(sessionId)]));
+
+    let settled = false;
+    vi.useFakeTimers();
+    try {
+      const pending = importResult(sdk, exportData, "merge");
+      pending.then(() => {
+        settled = true;
+      });
+      await advanceUntilSettled(() => settled, 15_000);
+      expect(settled).toBe(true);
+      const result = await pending;
+      expect(result.success).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+
+    expect(stats.ownerWrites).toBe(5000);
+    expect(stats.imageOpsAtFirstOwnerWrite).toBe(10000);
+    expect(stats.maxInFlight).toBeGreaterThan(1);
+    expect(stats.maxInFlight).toBeLessThanOrEqual(20);
+    const refs = await kv.list<number>(KV.imageRefs);
+    expect(refs).toHaveLength(5000);
+    expect(refs.every((count) => count === 1)).toBe(true);
+    expect(await kv.list(KV.observations(sessionId))).toHaveLength(5000);
+  });
+
+  it("restores snapshot owners under the same bounded reservation cap", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSnapshotFunction(sdk as never, kv as never, "/tmp/agentmemory-snapshots");
+    const archive = {
+      version: "0.4.0",
+      sessions: [],
+      memories: Array.from({ length: 60 }, (_, i) => ({
+        ...memRow(`mem_${i}`),
+        imageRef: `/img/restore-mem-${i}.png`,
+      })),
+      observations: {
+        ses_r: Array.from({ length: 20 }, (_, i) => ({
+          ...obsRow(`robs_${i}`, "ses_r"),
+          imageData: `/img/restore-obs-${i}.png`,
+        })),
+      },
+    };
+    snapshotContent.mockReturnValueOnce(JSON.stringify(archive));
+    const stats = instrumentImageOps(
+      kv,
+      new Set([KV.memories, KV.observations("ses_r")]),
+    );
+
+    let settled = false;
+    vi.useFakeTimers();
+    try {
+      const pending = sdk.trigger("mem::snapshot-restore", {
+        commitHash: "abc1234",
+      }) as Promise<{ success: boolean }>;
+      pending.then(() => {
+        settled = true;
+      });
+      await advanceUntilSettled(() => settled);
+      expect(settled).toBe(true);
+      const result = await pending;
+      expect(result.success).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+
+    expect(stats.ownerWrites).toBe(80);
+    expect(stats.imageOpsAtFirstOwnerWrite).toBe(160);
+    expect(stats.maxInFlight).toBeGreaterThan(1);
+    expect(stats.maxInFlight).toBeLessThanOrEqual(20);
+    const refs = await kv.list<number>(KV.imageRefs);
+    expect(refs).toHaveLength(80);
+    expect(refs.every((count) => count === 1)).toBe(true);
+    for (let i = 0; i < 60; i++) {
+      expect(
+        await kv.get<{ imageRef: string }>(KV.memories, `mem_${i}`),
+      ).toMatchObject({ imageRef: `/img/restore-mem-${i}.png` });
+    }
+    for (let i = 0; i < 20; i++) {
+      expect(
+        await kv.get<{ imageData: string }>(KV.observations("ses_r"), `robs_${i}`),
+      ).toMatchObject({ imageData: `/img/restore-obs-${i}.png` });
+    }
+  });
+
+  it("settles delayed sibling reservations before rejecting and never starts the next group", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const paths = await Promise.all(
+      Array.from({ length: 30 }, (_, i) => seedManagedImage(`fail-${i}.png`)),
+    );
+    for (const path of paths) {
+      await kv.set(KV.imageEmbeddings, path, { dims: 3 });
+    }
+    const exportData = imageExport({
+      memories: paths.map((path, i) => ({
+        ...memRow(`mem_f${i}`),
+        imageRef: path,
+      })),
+    });
+    const stats = instrumentImageOps(
+      kv,
+      new Set([KV.memories]),
+      (key) => key === paths[5],
+    );
+
+    let settled = false;
+    vi.useFakeTimers();
+    try {
+      const pending = importResult(sdk, exportData, "merge").catch(
+        (err: unknown) => err,
+      );
+      pending.then(() => {
+        settled = true;
+      });
+      await advanceUntilSettled(() => settled);
+      expect(settled).toBe(true);
+      const failed = await pending;
+      expect(failed).toBeInstanceOf(Error);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+
+    for (const [key, count] of stats.setsByKey) {
+      expect(paths.indexOf(key)).toBeLessThan(20);
+      expect(key).not.toBe(paths[5]);
+      expect(count).toBe(1);
+    }
+    expect(stats.setsByKey.size).toBe(19);
+    for (let i = 20; i < 30; i++) {
+      expect(stats.getsByKey.has(paths[i])).toBe(false);
+    }
+    expect(stats.ownerWrites).toBe(0);
+    expect(stats.inFlight).toBe(0);
+    expect(await kv.list(KV.imageRefs)).toHaveLength(0);
+    expect(await kv.list(KV.memories)).toHaveLength(0);
+    for (const path of paths) {
+      await expect(stat(path)).resolves.toBeTruthy();
+      expect(await kv.get(KV.imageEmbeddings, path)).toEqual({ dims: 3 });
+    }
+  });
+
+  it("counts a shared image exactly when many owners reserve it concurrently", async () => {
+    const shared = await seedManagedImage("shared-many.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.imageEmbeddings, shared, { dims: 4 });
+    const exportData = imageExport({
+      memories: Array.from({ length: 24 }, (_, i) => ({
+        ...memRow(`mem_s${i}`),
+        imageRef: shared,
+      })),
+    });
+
+    const result = await importResult(sdk, exportData, "merge");
+
+    expect(result.success).toBe(true);
+    expect(await kv.list(KV.memories)).toHaveLength(24);
+    expect(await kv.get(KV.imageRefs, shared)).toBe(24);
+    await expect(stat(shared)).resolves.toBeTruthy();
+  });
+
+  it("releases previous paths and unpins unused reservations with the same cap after a partial replace", async () => {
+    const oldPaths = await Promise.all(
+      Array.from({ length: 40 }, (_, i) => seedManagedImage(`old-${i}.png`)),
+    );
+    const newPaths = await Promise.all(
+      Array.from({ length: 40 }, (_, i) => seedManagedImage(`new-${i}.png`)),
+    );
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    for (let i = 0; i < 40; i++) {
+      await kv.set(KV.memories, `old_${i}`, {
+        ...memRow(`old_${i}`),
+        imageRef: oldPaths[i],
+      });
+      await kv.set(KV.imageRefs, oldPaths[i], 1);
+      await kv.set(KV.imageEmbeddings, oldPaths[i], { dims: 2 });
+      await kv.set(KV.imageEmbeddings, newPaths[i], { dims: 3 });
+    }
+    const exportData = imageExport({
+      memories: newPaths.map((path, i) => ({
+        ...memRow(`new_${i}`),
+        imageRef: path,
+      })),
+    });
+    const stats = instrumentImageOps(
+      kv,
+      new Set([KV.memories]),
+      undefined,
+      (scope, key) => scope === KV.memories && key === "new_20",
+    );
+
+    let settled = false;
+    vi.useFakeTimers();
+    try {
+      const pending = importResult(sdk, exportData, "replace").catch(
+        (err: unknown) => err,
+      );
+      pending.then(() => {
+        settled = true;
+      });
+      await advanceUntilSettled(() => settled);
+      expect(settled).toBe(true);
+      const failed = await pending;
+      expect(failed).toBeInstanceOf(Error);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
+
+    expect(stats.inFlight).toBe(0);
+    expect(stats.maxInFlight).toBeGreaterThan(1);
+    expect(stats.maxInFlight).toBeLessThanOrEqual(20);
+    expect(stats.postFailureMaxInFlight).toBeGreaterThan(1);
+    expect(stats.postFailureMaxInFlight).toBeLessThanOrEqual(20);
+    for (let i = 0; i < 40; i++) {
+      if (i === 20) continue;
+      expect(await kv.get(KV.imageRefs, newPaths[i])).toBe(1);
+      expect(await kv.get(KV.memories, `new_${i}`)).not.toBeNull();
+    }
+    expect(await kv.get(KV.imageRefs, newPaths[20])).toBeNull();
+    expect(await kv.get(KV.memories, "new_20")).toBeNull();
+    await expect(stat(newPaths[20])).resolves.toBeTruthy();
+    expect(await kv.get(KV.imageEmbeddings, newPaths[20])).toEqual({ dims: 3 });
+    for (let i = 0; i < 40; i++) {
+      expect(await kv.get(KV.imageRefs, oldPaths[i])).toBeNull();
+      expect(await kv.get(KV.imageEmbeddings, oldPaths[i])).toBeNull();
+      await expect(stat(oldPaths[i])).rejects.toBeTruthy();
+      expect(await kv.get(KV.memories, `old_${i}`)).toBeNull();
+    }
   });
 });

@@ -20,6 +20,10 @@ import {
   getProjectSessionIndex,
   rebuildAllProjectSessionIndexes,
 } from "../src/state/session-index.js";
+import {
+  indexObservationSession,
+  lookupObservationSession,
+} from "../src/state/obs-index.js";
 import { KV } from "../src/state/schema.js";
 import type { Session, ExportData } from "../src/types.js";
 
@@ -41,6 +45,8 @@ function mockKV() {
       if (!store.has(scope)) return [];
       return Array.from(store.get(scope)!.values()) as T[];
     }),
+    listKeys: vi.fn(async (scope: string): Promise<string[]> =>
+      Array.from(store.get(scope)?.keys() ?? [])),
   };
 }
 
@@ -174,6 +180,50 @@ describe("mem::import replace read failures", () => {
     expect(result.success === false || threw).toBe(true);
     expect(await kv.get(KV.sessions, "ses_old")).not.toBeNull();
     expect(await kv.get(KV.memories, "mem_old")).not.toBeNull();
+  });
+
+  it("deletes nothing when the sessionless observation read fails", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+
+    await kv.set(KV.sessions, "ses_old", makeStaleSession("ses_old", "proj-old"));
+    await kv.set(KV.memories, "mem_old", { id: "mem_old", type: "pattern", project: "proj-old" });
+    await kv.set(KV.observations("migrated"), "o_mig", { id: "o_mig", sessionId: "migrated" });
+    await kv.set(KV.imageRefs, "/img/old.png", 1);
+    await indexObservationSession(kv as never, "o_mig", "migrated");
+    await rebuildAllProjectSessionIndexes(kv as never);
+    const origList = kv.list.getMockImplementation()!;
+    kv.list.mockImplementation(async (scope: string) => {
+      if (scope === KV.observations("migrated")) throw new Error("payload_too_large");
+      return origList(scope);
+    });
+    kv.delete.mockClear();
+
+    const exportData: ExportData = {
+      version: "0.9.28",
+      exportedAt: new Date().toISOString(),
+      sessions: [{ id: "ses_new", project: "proj-new", cwd: "/x", startedAt: new Date().toISOString(), status: "active", observationCount: 0 }],
+      observations: {},
+      memories: [],
+      summaries: [],
+    };
+    let threw = false;
+    const result = await sdk.trigger({
+      function_id: "mem::import",
+      payload: { exportData, strategy: "replace" },
+    }).then((r) => r as { success: boolean }).catch((err) => { threw = true; return { success: false, error: String(err) }; });
+
+    expect(result.success === false || threw).toBe(true);
+    expect(kv.delete).not.toHaveBeenCalled();
+    expect(await kv.get(KV.sessions, "ses_old")).not.toBeNull();
+    expect(await kv.get(KV.memories, "mem_old")).not.toBeNull();
+    expect(await kv.get(KV.observations("migrated"), "o_mig")).not.toBeNull();
+    expect(await kv.get(KV.imageRefs, "/img/old.png")).toBe(1);
+    expect(await lookupObservationSession(kv as never, "o_mig")).toBe("migrated");
+    expect(
+      (await getProjectSessionIndex(kv as never, "proj-old"))?.map((e) => e.id),
+    ).toEqual(["ses_old"]);
   });
 
   it("deletes nothing when a later collection read fails", async () => {

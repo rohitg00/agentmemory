@@ -18,6 +18,7 @@ import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { deleteFacetsForTargets } from "./facets.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { byEvictionOrder } from "./observe.js";
 import { logger } from "../logger.js";
 
 interface EvictionConfig {
@@ -199,8 +200,22 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 if (!current || JSON.stringify(current) !== sessionRevision) return false;
                 const currentObservations = await kv.list(KV.observations(session.id));
                 if (JSON.stringify(currentObservations) !== observationsRevision) return false;
-                await kv.delete(KV.sessions, session.id);
+                for (const o of observations) {
+                  await markCaptureEventDeleted(kv, o);
+                  await kv.delete(KV.observations(session.id), o.id);
+                  getSearchIndex().remove(o.id);
+                  vectorIndexRemove(o.id);
+                  indexCleaned = true;
+                  await unindexObservationSession(kv, o.id).catch(() => {});
+                  if (o.imageData) {
+                    await releaseImageRef(kv, sdk, o.id, o.imageData);
+                  }
+                  if ("imageRef" in o && o.imageRef && o.imageRef !== o.imageData) {
+                    await releaseImageRef(kv, sdk, o.id, o.imageRef);
+                  }
+                }
                 await kv.delete(KV.summaryRepairs, session.id);
+                await kv.delete(KV.sessions, session.id);
                 return true;
               });
               if (!removed) continue;
@@ -212,9 +227,6 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 error: err instanceof Error ? err.message : String(err),
               });
               continue;
-            }
-            for (const o of observations) {
-              await unindexObservationSession(kv, o.id).catch(() => {});
             }
             await removeSessionFromProjectIndex(
               kv,
@@ -292,9 +304,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
 
       for (const [, obs] of projectObs) {
         if (obs.length > cfg.maxObservationsPerProject) {
-          const sorted = obs.sort(
-            (a, b) => (a.importance ?? 5) - (b.importance ?? 5),
-          );
+          const sorted = obs.sort(byEvictionOrder);
           const toEvict = sorted.slice(
             0,
             obs.length - cfg.maxObservationsPerProject,

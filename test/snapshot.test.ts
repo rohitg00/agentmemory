@@ -31,11 +31,13 @@ vi.mock("node:fs", () => ({
   writeFileSync: vi.fn(),
 }));
 
+import { writeFileSync } from "node:fs";
 import { registerSnapshotFunction } from "../src/functions/snapshot.js";
 import { currentAuditScope } from "./helpers/mocks.js";
 import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import { KV } from "../src/state/schema.js";
 import { getProjectSessionIndex } from "../src/state/session-index.js";
+import { lookupObservationSession } from "../src/state/obs-index.js";
 import type { Session, Memory, SnapshotMeta } from "../src/types.js";
 
 function mockKV() {
@@ -218,6 +220,111 @@ describe("Snapshot Functions", () => {
 
     const audits = await kv.list(currentAuditScope());
     expect(audits.length).toBe(1);
+  });
+
+  it("snapshot-create captures the sessionless migrated observation bucket", async () => {
+    const migratedObs = {
+      id: "obs_migrated",
+      sessionId: "migrated",
+      timestamp: "2026-02-01T00:00:00Z",
+      type: "discovery",
+      title: "Legacy row",
+      narrative: "from sqlite",
+      facts: [],
+      concepts: [],
+      files: [],
+      importance: 5,
+    };
+    await kv.set(KV.observations("migrated"), migratedObs.id, migratedObs);
+
+    await sdk.trigger("mem::snapshot-create", { message: "capture" });
+
+    const written = vi
+      .mocked(writeFileSync)
+      .mock.calls.find(([path]) => String(path).endsWith("state.json"));
+    const state = JSON.parse(String(written![1])) as {
+      observations: Record<string, unknown[]>;
+    };
+    expect(state.observations["migrated"]).toEqual([migratedObs]);
+  });
+
+  it("snapshot-restore rebuilds the observation-to-session index", async () => {
+    const restored = {
+      id: "obs_restored",
+      sessionId: "ses_9",
+      timestamp: "2026-02-01T00:00:00Z",
+      type: "decision",
+      title: "Restored obs",
+      narrative: "content",
+      facts: [],
+      concepts: [],
+      files: [],
+      importance: 5,
+    };
+    snapshotContent.mockReturnValueOnce(
+      JSON.stringify({
+        version: "0.4.0",
+        sessions: [],
+        memories: [],
+        observations: { ses_9: [restored] },
+      }),
+    );
+
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.observations("ses_9"), "obs_restored")).toEqual(restored);
+    expect(await lookupObservationSession(kv as never, "obs_restored")).toBe("ses_9");
+  });
+
+  it("snapshot-restore registers image refs for restored rows", async () => {
+    const restoredMem = {
+      id: "mem_img",
+      createdAt: "2026-02-01T00:00:00Z",
+      updatedAt: "2026-02-01T00:00:00Z",
+      type: "pattern",
+      title: "Image memory",
+      content: "has image",
+      concepts: [],
+      files: [],
+      sessionIds: [],
+      strength: 5,
+      version: 1,
+      isLatest: true,
+      imageRef: "/tmp/img-m.png",
+    };
+    const restoredObs = {
+      id: "obs_img",
+      sessionId: "ses_9",
+      timestamp: "2026-02-01T00:00:00Z",
+      type: "discovery",
+      title: "Image obs",
+      narrative: "content",
+      facts: [],
+      concepts: [],
+      files: [],
+      importance: 5,
+      imageData: "/tmp/img-o.png",
+      imageRef: "/tmp/img-o.png",
+    };
+    snapshotContent.mockReturnValueOnce(
+      JSON.stringify({
+        version: "0.4.0",
+        sessions: [],
+        memories: [restoredMem],
+        observations: { ses_9: [restoredObs] },
+      }),
+    );
+
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-m.png")).toBe(1);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-o.png")).toBe(1);
   });
 });
 
