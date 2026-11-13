@@ -10,9 +10,13 @@ import { dirname, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import * as p from "@clack/prompts";
 
+const MCP_COMMAND =
+  process.platform === "win32"
+    ? { command: "cmd", args: ["/c", "npx", "-y", "@agentmemory/mcp"] }
+    : { command: "npx", args: ["-y", "@agentmemory/mcp"] };
+
 export const AGENTMEMORY_MCP_BLOCK = {
-  command: "npx",
-  args: ["-y", "@agentmemory/mcp"],
+  ...MCP_COMMAND,
   env: {
     AGENTMEMORY_URL: "${AGENTMEMORY_URL:-http://localhost:3111}",
     AGENTMEMORY_SECRET: "${AGENTMEMORY_SECRET:-}",
@@ -41,6 +45,32 @@ export const AGENTMEMORY_COPILOT_MCP_BLOCK = {
   },
   tools: ["*"],
 };
+
+export function isAgentmemoryMcpEntry(entry: unknown): boolean {
+  if (!entry || typeof entry !== "object") return false;
+  const e = entry as Record<string, unknown>;
+  if (e["command"] !== AGENTMEMORY_MCP_BLOCK.command) return false;
+  const args = Array.isArray(e["args"]) ? (e["args"] as string[]) : [];
+  return args.includes("@agentmemory/mcp");
+}
+
+export function isLegacyMcpCommand(command: unknown, args: unknown): boolean {
+  return (
+    AGENTMEMORY_MCP_BLOCK.command !== "npx" &&
+    command === "npx" &&
+    Array.isArray(args) &&
+    args.includes("@agentmemory/mcp")
+  );
+}
+
+export function toCommandPath(path: string): string {
+  return process.platform === "win32" ? path.replace(/\\/g, "/") : path;
+}
+
+export function resolveZedConfigDir(home: string = homedir()): string {
+  if (process.platform !== "win32") return join(home, ".config", "zed");
+  return join(process.env["APPDATA"] || join(home, "AppData", "Roaming"), "Zed");
+}
 
 export function resolveDshHome(home: string = homedir()): string {
   const override = process.env["DSH_HOME"];

@@ -400,7 +400,7 @@ export class HybridSearch {
         const mem = await this.kv
           .get<Memory>(KV.memories, r.obsId)
           .catch(() => null);
-        return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null;
+        return mem && mem.isLatest !== false ? { observation: memoryToObservation(mem), layer: "memory" as const } : null;
       }),
     );
     const enriched: HybridSearchResult[] = [];

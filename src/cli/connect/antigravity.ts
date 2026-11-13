@@ -4,10 +4,17 @@ import { join } from "node:path";
 import { createJsonMcpAdapter } from "./json-mcp-adapter.js";
 import { installAntigravityCliHooks } from "./antigravity-cli.js";
 
-const LEGACY_USER_DIR =
-  platform() === "darwin"
-    ? join(homedir(), "Library", "Application Support", "Antigravity", "User")
-    : join(homedir(), ".config", "Antigravity", "User");
+function legacyUserDir(): string {
+  if (platform() === "darwin") {
+    return join(homedir(), "Library", "Application Support", "Antigravity", "User");
+  }
+  if (platform() === "win32") {
+    return join(process.env["APPDATA"] || join(homedir(), "AppData", "Roaming"), "Antigravity", "User");
+  }
+  return join(homedir(), ".config", "Antigravity", "User");
+}
+
+const LEGACY_USER_DIR = legacyUserDir();
 
 const CUSTOMIZATION_DIR = join(homedir(), ".gemini", "config");
 const mcpAdapter = createJsonMcpAdapter({

@@ -14,6 +14,7 @@ import { buildRecallResponse, type RecallFormat } from "./recall-response.js";
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
 import { withoutObservationSource } from "./observation-source.js";
+import { withKeyedLocks } from "../state/keyed-mutex.js";
 import {
   getAgentId,
   getVectorBackfillMax,
@@ -200,6 +201,50 @@ const EMBED_MAX_CHARS = 16_000
 export function clipEmbedInput(text: string): string {
   if (text.length <= EMBED_MAX_CHARS) return text
   return text.slice(0, EMBED_MAX_CHARS)
+}
+
+export function unindexMemory(id: string): void {
+  try {
+    getSearchIndex().remove(id)
+  } catch {}
+  vectorIndexRemove(id)
+  scheduleIndexSave()
+}
+
+export async function indexMemory(kv: StateKV, memory: Memory): Promise<void> {
+  const locks = ["mem:remember", `mem:memory:${memory.id}`]
+  const snapshot = await withKeyedLocks(locks, async () => {
+    const current = await kv.get<Memory>(KV.memories, memory.id)
+    if (!current || current.isLatest === false) {
+      unindexMemory(memory.id)
+      return null
+    }
+    try {
+      getSearchIndex().add(memoryToObservation(current), "memory")
+      scheduleIndexSave()
+    } catch (err) {
+      logger.warn("Failed to index memory into BM25", {
+        memId: memory.id,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+    return current
+  })
+  if (!snapshot) return
+  const sessionId = snapshot.sessionIds?.[0] ?? "memory"
+  await vectorIndexAddGuarded(
+    memory.id,
+    sessionId,
+    observationEmbedText({ title: snapshot.title, narrative: snapshot.content, concepts: snapshot.concepts }),
+    { kind: "memory", logId: memory.id },
+    (embedding, isCurrent) => withKeyedLocks(locks, async () => {
+      const current = await kv.get<Memory>(KV.memories, memory.id).catch(() => null)
+      if (!isCurrent() || !current || current.isLatest === false || current.updatedAt !== snapshot.updatedAt) return false
+      vectorIndex?.add(memory.id, sessionId, embedding)
+      scheduleIndexSave()
+      return true
+    }),
+  )
 }
 
 export async function vectorIndexAddGuarded(
@@ -580,6 +625,7 @@ async function runKeywordRebuild(
   idx.clear()
   memoryIndexReady = false
   bm25RebuildIncomplete = false
+  resetKeywordRetry()
   const vi = vectorIndex
   const backfillEligible = Boolean(vi && currentEmbeddingProvider) && vectorBackfillSince !== undefined
   const wholeStoreBackfill = vectorBackfillSince === null
@@ -617,6 +663,7 @@ async function runKeywordRebuild(
   const sessions = await listWithRetry<Session>(kv, KV.sessions, 'rebuildKeywordIndex: sessions', listDeadline)
   if (memories === null) {
     bm25RebuildIncomplete = true
+    keywordRetry.memories = true
   } else {
     memoriesLoaded = true
     for (const memory of memories) {
@@ -630,7 +677,9 @@ async function runKeywordRebuild(
 
   if (sessions === null) {
     bm25RebuildIncomplete = true
+    keywordRetry.sessionList = true
     if (memoriesLoaded) memoryIndexReady = true
+    scheduleKeywordRetry(kv)
     return { documents, vectorJobs, fullBackfillPending, historicalVectorGaps }
   }
   const failedSessions: string[] = []
@@ -655,10 +704,181 @@ async function runKeywordRebuild(
   }
   if (failedSessions.length > 0) {
     bm25RebuildIncomplete = true
+    for (const id of failedSessions) keywordRetry.sessions.add(id)
     logger.warn('rebuildKeywordIndex: failed to load observations for sessions', { failedSessions })
   }
   if (memoriesLoaded) memoryIndexReady = true
+  scheduleKeywordRetry(kv)
   return { documents, vectorJobs, fullBackfillPending, historicalVectorGaps }
+}
+
+const KEYWORD_RETRY_BASE_MS = 30_000
+const KEYWORD_RETRY_MAX_MS = 30 * 60_000
+const KEYWORD_RETRY_PAGE_SIZE = 200
+const KEYWORD_RETRY_MIN_PAGE_SIZE = 25
+const KEYWORD_RETRY_CONCURRENCY = 4
+
+type KeywordRetryState = {
+  memories: boolean
+  sessionList: boolean
+  sessions: Set<string>
+  attempts: number
+  nextAt: number | null
+  timer: ReturnType<typeof setTimeout> | null
+  runningGeneration: number | null
+  stopped: boolean
+  generation: number
+}
+
+const keywordRetry: KeywordRetryState = {
+  memories: false,
+  sessionList: false,
+  sessions: new Set(),
+  attempts: 0,
+  nextAt: null,
+  timer: null,
+  runningGeneration: null,
+  stopped: false,
+  generation: 0,
+}
+
+export type KeywordRetryStatus = {
+  failedSessions: number
+  sessionListPending: boolean
+  memoriesPending: boolean
+  attempts: number
+  running: boolean
+  nextRetryAt: string | null
+}
+
+export function getKeywordRetryStatus(): KeywordRetryStatus {
+  return {
+    failedSessions: keywordRetry.sessions.size,
+    sessionListPending: keywordRetry.sessionList,
+    memoriesPending: keywordRetry.memories,
+    attempts: keywordRetry.attempts,
+    running: keywordRetryRunning(),
+    nextRetryAt: keywordRetry.nextAt === null ? null : new Date(keywordRetry.nextAt).toISOString(),
+  }
+}
+
+function keywordRetryRunning(): boolean {
+  return keywordRetry.runningGeneration !== null && keywordRetry.runningGeneration === keywordRetry.generation
+}
+
+function keywordRetryPending(): boolean {
+  return keywordRetry.memories || keywordRetry.sessionList || keywordRetry.sessions.size > 0
+}
+
+function clearKeywordRetryTimer(): void {
+  if (keywordRetry.timer) clearTimeout(keywordRetry.timer)
+  keywordRetry.timer = null
+  keywordRetry.nextAt = null
+}
+
+function resetKeywordRetry(): void {
+  clearKeywordRetryTimer()
+  keywordRetry.generation++
+  keywordRetry.memories = false
+  keywordRetry.sessionList = false
+  keywordRetry.sessions.clear()
+  keywordRetry.attempts = 0
+  keywordRetry.stopped = false
+}
+
+export function stopKeywordRebuildRetry(): void {
+  clearKeywordRetryTimer()
+  keywordRetry.generation++
+  keywordRetry.stopped = true
+}
+
+function scheduleKeywordRetry(kv: StateKV): void {
+  if (keywordRetry.stopped || !keywordRetryPending() || keywordRetry.timer || keywordRetryRunning()) return
+  const wait = Math.min(KEYWORD_RETRY_MAX_MS, KEYWORD_RETRY_BASE_MS * 2 ** keywordRetry.attempts)
+  const generation = keywordRetry.generation
+  keywordRetry.nextAt = Date.now() + wait
+  keywordRetry.timer = setTimeout(() => {
+    keywordRetry.timer = null
+    keywordRetry.nextAt = null
+    if (generation !== keywordRetry.generation) return
+    void retryKeywordRebuild(kv, generation)
+  }, wait)
+  keywordRetry.timer.unref?.()
+}
+
+async function listSessionObservations(kv: StateKV, scope: string, pageSize: number): Promise<CompressedObservation[]> {
+  if (typeof kv.iterate !== 'function') return kv.list<CompressedObservation>(scope)
+  const out: CompressedObservation[] = []
+  for await (const page of kv.iterate<CompressedObservation>(scope, { pageSize })) out.push(...page)
+  return out
+}
+
+async function retryKeywordRebuild(kv: StateKV, generation: number): Promise<void> {
+  keywordRetry.runningGeneration = generation
+  keywordRetry.attempts++
+  const pageSize = Math.max(KEYWORD_RETRY_MIN_PAGE_SIZE, Math.floor(KEYWORD_RETRY_PAGE_SIZE / 2 ** (keywordRetry.attempts - 1)))
+  const current = () => generation === keywordRetry.generation
+  const idx = getSearchIndex()
+  let added = 0
+  try {
+    if (keywordRetry.memories) {
+      const memories = await collectAll<Memory>(kv, KV.memories).catch(() => null)
+      if (!current()) return
+      if (memories) {
+        for (const memory of memories) {
+          if (memory.isLatest === false || !memory.title || !memory.content || idx.has(memory.id)) continue
+          idx.add(memoryToObservation(memory), "memory")
+          added++
+        }
+        keywordRetry.memories = false
+        memoryIndexReady = true
+      }
+    }
+    if (keywordRetry.sessionList) {
+      const sessions = await collectAll<Session>(kv, KV.sessions).catch(() => null)
+      if (!current()) return
+      if (sessions) {
+        for (const session of sessions) keywordRetry.sessions.add(session.id)
+        keywordRetry.sessionList = false
+      }
+    }
+    const pending = [...keywordRetry.sessions]
+    for (let batch = 0; batch < pending.length; batch += KEYWORD_RETRY_CONCURRENCY) {
+      const chunk = pending.slice(batch, batch + KEYWORD_RETRY_CONCURRENCY)
+      const results = await Promise.all(chunk.map((id) =>
+        listSessionObservations(kv, KV.observations(id), pageSize).catch(() => null)))
+      if (!current()) return
+      for (let i = 0; i < chunk.length; i++) {
+        const observations = results[i]
+        if (!observations) continue
+        for (const obs of observations) {
+          if (!obs.title || !obs.narrative || idx.has(obs.id)) continue
+          idx.add(obs)
+          added++
+        }
+        keywordRetry.sessions.delete(chunk[i])
+      }
+    }
+  } catch (err) {
+    logger.warn('keyword index retry failed', { error: err instanceof Error ? err.message : String(err) })
+  } finally {
+    if (keywordRetry.runningGeneration === generation) keywordRetry.runningGeneration = null
+    if (added > 0) scheduleIndexSave()
+    scheduleKeywordRetry(kv)
+  }
+  if (!current()) return
+  if (keywordRetryPending()) {
+    logger.warn('keyword index retry incomplete', {
+      failedSessions: keywordRetry.sessions.size,
+      sessionListPending: keywordRetry.sessionList,
+      memoriesPending: keywordRetry.memories,
+      added,
+    })
+    return
+  }
+  bm25RebuildIncomplete = false
+  keywordRetry.attempts = 0
+  logger.info('keyword index retry complete', { added })
 }
 
 const BACKFILL_SAVE_EVERY_BATCHES = 10
@@ -842,7 +1062,8 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
       // queries return underfilled pages when same-agent matches
       // rank lower than cross-agent ones in the hybrid score.
       const filtering = !!(projectFilter || cwdFilter || filterAgentId)
-      let fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : effectiveLimit
+      let fetchLimit = filtering ? Math.max(effectiveLimit * 10, 100) : Math.max(effectiveLimit * 4, effectiveLimit + 20)
+      let hybridLimit = filtering ? fetchLimit : effectiveLimit
       // Hybrid results carry the observation the ranker already loaded,
       // so the load pass below doesn't refetch every record it just
       // enriched.
@@ -894,7 +1115,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
         hybridRequest.candidateCount = undefined
         if (useHybridRanker && hybridRanker) {
           try {
-            const hybrid = await hybridRanker(query, fetchLimit, targetLayer, authorizeGraph, hybridRequest)
+            const hybrid = await hybridRanker(query, hybridLimit, targetLayer, authorizeGraph, hybridRequest)
             results = hybrid.map((r) => ({
               obsId: r.observation.id,
               sessionId: r.sessionId,
@@ -950,7 +1171,7 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
                   const mem = await kv
                     .get<Memory>(KV.memories, r.obsId)
                     .catch(() => null)
-                  return mem ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
+                  return mem && mem.isLatest !== false ? { observation: memoryToObservation(mem), layer: "memory" as const } : null
                 })()
                 observationCache.set(key, pending)
               }
@@ -973,8 +1194,10 @@ export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
           }
           batchSize = Math.min(10, Math.max(effectiveLimit - enriched.length, batchSize * 2))
         }
-        if (!filtering || enriched.length >= effectiveLimit || (hybridRequest.candidateCount ?? results.length) < fetchLimit || fetchLimit >= MAX_CANDIDATES) break
+        const candidateLimit = useHybridRanker ? hybridLimit : fetchLimit
+        if (enriched.length >= effectiveLimit || (hybridRequest.candidateCount ?? results.length) < candidateLimit || fetchLimit >= MAX_CANDIDATES) break
         fetchLimit = Math.min(fetchLimit * 2, MAX_CANDIDATES)
+        hybridLimit = fetchLimit
       }
 
       const response = buildRecallResponse(enriched, format as RecallFormat, tokenBudget)

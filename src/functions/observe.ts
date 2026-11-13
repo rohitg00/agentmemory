@@ -12,9 +12,11 @@ import { DedupMap, recordDedupSkip } from "./dedup.js";
 import { afterKeyedLock, withKeyedLock } from "../state/keyed-mutex.js";
 import { getFinalizeIdleMs, isAutoCompressEnabled } from "../config.js";
 import { buildSyntheticCompression } from "./compress-synthetic.js";
-import { isCaptureKey } from "../capture/event-record.js";
+import { isCaptureKey, markCaptureEventDeleted } from "../capture/event-record.js";
 import { claimBackfillPrompt, isBackfillPrompt, recordLivePrompt } from "../capture/prompt-ledger.js";
-import { getSearchIndex, getVectorIndex, scheduleIndexSave, vectorIndexAddGuarded } from "./search.js";
+import { getSearchIndex, getVectorIndex, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove } from "./search.js";
+import { unindexObservationSession } from "../state/obs-index.js";
+import { safeAudit } from "./audit.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
 import { saveImageToDisk } from "../utils/image-store.js";
@@ -24,6 +26,79 @@ import { observationEmbedText } from "../state/memory-utils.js";
 import { markCompressionDispatchFailed, pendingCompression } from "./compression-state.js";
 import { requestSummaryRefresh } from "./summary-state.js";
 import { scheduleSessionFinalize } from "./session-finalize.js";
+
+const DEFAULT_EVICTION_IMPORTANCE = 5;
+
+function byEvictionOrder(a: CompressedObservation, b: CompressedObservation): number {
+  const ia = a.importance ?? DEFAULT_EVICTION_IMPORTANCE;
+  const ib = b.importance ?? DEFAULT_EVICTION_IMPORTANCE;
+  if (ia !== ib) return ia - ib;
+  return new Date(a.timestamp ?? 0).getTime() - new Date(b.timestamp ?? 0).getTime();
+}
+
+function evictionCandidates(existing: CompressedObservation[], incomingId: string): CompressedObservation[] {
+  return existing.filter((o) => o?.id && o.id !== incomingId).sort(byEvictionOrder);
+}
+
+async function evictForSessionCap(
+  sdk: IIIClient,
+  kv: StateKV,
+  sessionId: string,
+  incomingId: string,
+  existing: CompressedObservation[],
+  cap: number,
+): Promise<{ evicted: CompressedObservation[]; needed: number }> {
+  const needed = existing.length - cap + 1;
+  const candidates = evictionCandidates(existing, incomingId);
+  const evicted: CompressedObservation[] = [];
+  for (const victim of candidates) {
+    if (evicted.length >= needed) break;
+    try {
+      await markCaptureEventDeleted(kv, victim);
+      await kv.delete(KV.observations(sessionId), victim.id);
+    } catch (err) {
+      logger.warn("Session cap eviction delete failed", {
+        sessionId,
+        obsId: victim.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
+    evicted.push(victim);
+    getSearchIndex().remove(victim.id);
+    vectorIndexRemove(victim.id);
+  }
+  if (evicted.length === 0) return { evicted, needed };
+
+  scheduleIndexSave();
+  const { decrementImageRef } = await import("./image-refs.js");
+  for (const victim of evicted) {
+    await unindexObservationSession(kv, victim.id).catch(() => {});
+    const refs = new Set([victim.imageData, victim.imageRef].filter((r): r is string => typeof r === "string" && r.length > 0));
+    for (const ref of refs) {
+      await decrementImageRef(kv, sdk, ref).catch((err) => {
+        logger.warn("Session cap eviction image ref release failed", {
+          sessionId,
+          obsId: victim.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
+  }
+  await safeAudit(kv, "delete", "mem::observe", evicted.map((o) => o.id), {
+    resource: "observation",
+    reason: "session_observation_cap",
+    sessionId,
+    cap,
+    evicted: evicted.length,
+  });
+  logger.warn("Session observation cap reached, evicted lowest-value observations", {
+    sessionId,
+    cap,
+    evicted: evicted.length,
+  });
+  return { evicted, needed };
+}
 
 export function extractImage(d: unknown): string | undefined {
   if (!d) return undefined;
@@ -86,6 +161,11 @@ export function registerObserveFunction(
           error:
             "Invalid payload: sessionId, hookType, and timestamp are required",
         };
+      }
+
+      const gateFailMarker = process.env["AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__"];
+      if (gateFailMarker && JSON.stringify(payload.data ?? null).includes(gateFailMarker)) {
+        return { success: false, error: "release gate: AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__ rejected this capture" };
       }
 
       const durable =
@@ -198,14 +278,6 @@ export function registerObserveFunction(
           recordDedupSkip();
           return { deduplicated: true, sessionId: payload.sessionId };
         }
-        if (maxObservationsPerSession && maxObservationsPerSession > 0) {
-          if (existing.length >= maxObservationsPerSession) {
-            return {
-              success: false,
-              error: `Session observation limit reached (${maxObservationsPerSession})`,
-            };
-          }
-        }
 
         // Existing session is the source of truth for agentId (even
         // undefined). Env AGENT_ID only fires when no session row
@@ -254,7 +326,13 @@ export function registerObserveFunction(
           await requestSummaryRefresh(kv, payload.sessionId, dueAt);
           if (finalizeIdleMs > 0) await scheduleSessionFinalize(kv, payload.sessionId, dueAt);
         }
-        const synthetic = budgetLiveObservationSource(buildSyntheticCompression(raw), existing);
+        const cap = maxObservationsPerSession && maxObservationsPerSession > 0 ? maxObservationsPerSession : 0;
+        const plannedVictims = cap > 0 && existing.length >= cap
+          ? evictionCandidates(existing, obsId).slice(0, existing.length - cap + 1)
+          : [];
+        const plannedIds = new Set(plannedVictims.map((o) => o.id));
+        const unbudgeted = buildSyntheticCompression(raw);
+        const synthetic = budgetLiveObservationSource(unbudgeted, existing.filter((o) => !plannedIds.has(o?.id)));
         if (autoCompress) synthetic.compression = pendingCompression();
         try {
           await kv.set(KV.observations(payload.sessionId), obsId, synthetic);
@@ -289,6 +367,43 @@ export function registerObserveFunction(
           throw error;
         }
 
+        let evictedCount = 0;
+        if (plannedVictims.length > 0) {
+          const { evicted, needed } = await evictForSessionCap(
+            sdk,
+            kv,
+            payload.sessionId,
+            obsId,
+            existing,
+            cap,
+          );
+          evictedCount = evicted.length;
+          if (evicted.length < needed) {
+            logger.warn("Session observation cap eviction freed fewer slots than needed", {
+              sessionId: payload.sessionId,
+              cap,
+              evicted: evicted.length,
+              needed,
+            });
+          }
+          const evictedIds = new Set(evicted.map((o) => o.id));
+          if (plannedVictims.some((o) => !evictedIds.has(o.id))) {
+            const retained = existing.filter((o) => !evictedIds.has(o?.id));
+            const rebudgeted = budgetLiveObservationSource(unbudgeted, retained);
+            if (JSON.stringify(rebudgeted.source) !== JSON.stringify(synthetic.source)) {
+              if (rebudgeted.source) synthetic.source = rebudgeted.source;
+              else delete synthetic.source;
+              await kv.set(KV.observations(payload.sessionId), obsId, synthetic).catch((err) => {
+                logger.warn("Session cap source re-budget write failed", {
+                  sessionId: payload.sessionId,
+                  obsId,
+                  error: err instanceof Error ? err.message : String(err),
+                });
+              });
+            }
+          }
+        }
+
         if (dedupMap && dedupHash) {
           dedupMap.record(dedupHash);
         }
@@ -307,7 +422,7 @@ export function registerObserveFunction(
             {
               type: "set",
               path: "observationCount",
-              value: (session.observationCount || 0) + 1,
+              value: Math.max(1, (session.observationCount || 0) + 1 - evictedCount),
             },
           ];
           if (session.status !== "active" && finalizeIdleMs > 0) {

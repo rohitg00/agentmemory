@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -94,6 +94,14 @@ describe("capture spool", () => {
     expect(dropped).toBeGreaterThan(0);
     expect(summary.stats.dropped).toBe(dropped);
     expect(summary.stats.lastDropReason).toBe("full");
+  });
+
+  it("flags a spool it cannot read instead of reporting it empty", () => {
+    expect(spoolSummary(URL, { dir: join(dir, "missing"), policy }).unreadable).toBeUndefined();
+    mkdirSync(spoolPaths(URL, dir).file, { recursive: true });
+    const summary = spoolSummary(URL, { dir, policy });
+    expect(summary.records).toBe(0);
+    expect(summary.unreadable).toBe(true);
   });
 
   it("does nothing when the spool is disabled", () => {
