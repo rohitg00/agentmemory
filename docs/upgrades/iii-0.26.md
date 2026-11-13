@@ -22,7 +22,7 @@ Use the same `--instance`, `--port` and `--data-dir` flags you used to start it.
 - Observers use `capture` only. Background observers receive the `Observed` payload and read the event from its `input` or `output`; HTTP route handlers still receive the `HttpRequest`.
 - Failure audit observers capture `["input", "error"]` with an `error` filter for thrown errors, and `["input", "output"]` with an `output.success == false` filter for soft failures.
 - When the state or http worker has not registered within 30 seconds of boot, `runtime.bindings` in `/agentmemory/status` reports that provider as `pending` instead of falling back. Its observers attach as soon as the worker connects.
-- A pipeline step runs as a direct call while its own observer is not active (pending, rejected or suspended), so compression and post-session work keep running. `runtime.bindings.reasons` lists the steps that use direct calls.
+- A compression or post-session step runs as a direct call while its own observer is not active (pending, rejected or suspended), so that work keeps running. `runtime.bindings.reasons` lists the steps that use direct calls. Delete cascades, relation reactions, failure audits and post-remember graph extraction have no direct-call path: `runtime.bindings.reasons` lists them separately, and their work waits until their observers are active.
 - The compression sweep retries a failed compression at most 5 times and sends pending observations before failed ones.
 
 ## Custom deployments

@@ -49,6 +49,7 @@ export function registerPipelineObservers(sdk: IIIClient): void {
       { function_id: "mem::remember", capture: ["input", "output"] },
       "mem::post-remember-graph",
       { id: "agentmemory:pipeline:post-remember-graph", max_in_flight: 1 },
+      { fallback: false },
     );
   }
   for (const fn of ["mem::compress", "mem::summarize", "mem::graph-extract", "mem::consolidate-pipeline", "mem::reflect", "mem::skill-extract"]) {
@@ -57,6 +58,7 @@ export function registerPipelineObservers(sdk: IIIClient): void {
         { function_id: fn, filters: failure.filters, capture: failure.capture },
         "mem::record-failure",
         { id: `agentmemory:pipeline:failure:${fn}:${failure.suffix}`, max_in_flight: 4, metadata: { source_fn: fn } },
+        { fallback: false },
       );
     }
   }
@@ -64,6 +66,7 @@ export function registerPipelineObservers(sdk: IIIClient): void {
     { function_id: "mem::graph-extract", filters: { "output.partial": { $eq: true } }, capture: ["input", "output"] },
     "mem::record-failure",
     { id: "agentmemory:pipeline:failure:mem::graph-extract:partial", max_in_flight: 4, metadata: { source_fn: "mem::graph-extract" } },
+    { fallback: false },
   );
   bindings.observeStateChanges(
     {

@@ -80,7 +80,7 @@ export function onStateWorkerReturn(
   sdk: IIIClient,
   bindings: Bindings,
   cb: () => void | Promise<void>,
-  opts: { pending?: () => boolean } = {},
+  opts: { pending?: () => boolean; onWorkersChanged?: (event: "worker_connected" | "worker_disconnected") => void } = {},
 ): { state: StateWorkerReturnState; probeTick: () => Promise<void>; stop: () => void } {
   const client = sdk as unknown as SdkLike;
   const state: StateWorkerReturnState = { probeReady: stateWorkerStatus.ready };
@@ -122,9 +122,12 @@ export function onStateWorkerReturn(
   };
   for (const handle of bindings.stateHandles) watchStateHandle(handle, false);
   bindings.onStateHandle?.((handle) => watchStateHandle(handle, true));
-  if (typeof client.observe === "function" && bindings.pipeline === "observe") {
+  if (typeof client.observe === "function" && typeof bindings.observeRuntime === "function") {
     client.registerFunction?.("runtime::on-workers-changed", async (payload: unknown) => {
-      if (unwrapObserved<{ event?: string } | undefined>(payload, "input")?.event !== "worker_connected") return { handled: false };
+      const event = unwrapObserved<{ event?: string } | undefined>(payload, "input")?.event;
+      if (event !== "worker_connected" && event !== "worker_disconnected") return { handled: false };
+      opts.onWorkersChanged?.(event);
+      if (event !== "worker_connected") return { handled: true };
       try {
         await probeOnce(client, 2000);
         stateWorkerStatus.ready = true;
@@ -135,8 +138,12 @@ export function onStateWorkerReturn(
       } catch {}
       return { handled: true };
     });
-    client.observe(
-      { function_id: "engine::on-workers-changed", capture: ["input"] },
+    bindings.observeRuntime(
+      {
+        function_id: "engine::on-workers-changed",
+        filters: { "input.event": { $in: ["worker_connected", "worker_disconnected"] } },
+        capture: ["input"],
+      },
       "runtime::on-workers-changed",
       { id: "agentmemory:runtime:workers-changed" },
     );

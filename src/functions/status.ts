@@ -299,7 +299,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
     problems.push({
       level: "error",
       code: "observer-rejected",
-      message: `${failedObservers} observer${failedObservers === 1 ? " was" : "s were"} rejected by the engine. Rejected route or state observers leave those endpoints or reactions inactive; rejected pipeline observers fall back to direct calls.`,
+      message: `${failedObservers} observer${failedObservers === 1 ? " was" : "s were"} rejected by the engine. Rejected route or state observers leave those endpoints or reactions inactive. Rejected compression and post-session observers fall back to direct calls; rejected delete-cascade, relation-reaction, failure-audit and post-remember graph observers stop that work until restart.`,
       fix: "Check runtime.bindings.reasons in /agentmemory/status for the conflicting route, remove the conflict, then restart agentmemory.",
     });
   }
