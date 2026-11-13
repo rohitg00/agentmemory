@@ -28,13 +28,13 @@ type Call = { function_id: string; payload: { scope?: string; key?: string; valu
 function row(id = ID): CompressedObservation {
   return {
     id, sessionId: SESSION, timestamp: TIMESTAMP, type: "command_run",
-    title: "Persisted command", facts: [], narrative: "Stored result", concepts: [], files: [],
+    title: "Persisted command", facts: [], narrative: "Stored result", concepts: [], files: [], importance: 5,
   };
 }
 
 function payload(overrides: Partial<HookPayload> = {}): HookPayload {
   return {
-    sessionId: SESSION, hookType: "post_tool_use", timestamp: TIMESTAMP,
+    sessionId: SESSION, project: "fixture", cwd: "/tmp/fixture", hookType: "post_tool_use", timestamp: TIMESTAMP,
     observationId: ID, data: { tool_name: "Bash", tool_input: { command: "echo fixture" }, tool_output: "fixture" },
     ...overrides,
   };
