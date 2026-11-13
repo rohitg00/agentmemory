@@ -4,17 +4,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
+import { copyGitCheckout } from "./helpers/git-checkout-fixture.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
 it("rejects and repairs current API-count drift without changing historical prose", () => {
   const fixture = mkdtempSync(join(tmpdir(), "am-docs-api-"));
   try {
-    const archive = execFileSync("git", ["archive", "--format=tar", "HEAD"], { cwd: root, maxBuffer: 128 * 1024 * 1024 });
-    execFileSync("tar", ["-xf", "-", "-C", fixture], { input: archive });
-    // Before a commit, test the same working files as the developer's local run.
-    const changed = execFileSync("git", ["ls-files", "--modified", "--others", "--exclude-standard", "-z"], { cwd: root, encoding: "utf8" });
-    for (const path of changed.split("\0").filter(Boolean)) cpSync(join(root, path), join(fixture, path), { recursive: true });
+    copyGitCheckout(root, fixture);
     cpSync(join(root, "dist"), join(fixture, "dist"), { recursive: true });
     symlinkSync(join(root, "node_modules"), join(fixture, "node_modules"), "junction");
     execFileSync("git", ["init", "--quiet"], { cwd: fixture });
@@ -46,7 +43,13 @@ it("rejects and repairs current API-count drift without changing historical pros
     expect(rejected.stderr).toContain("would update README.md");
     expect(run(false).status).toBe(0);
     expect(readFileSync(readme, "utf8")).toBe(historical + original);
+    writeFileSync(readme, historical + original.replace(summary[0], `${count}+ endpoints on port `));
+    const inexact = run(true);
+    expect(inexact.status).toBe(1);
+    expect(inexact.stderr).toContain("would update README.md");
+    expect(run(false).status).toBe(0);
+    expect(readFileSync(readme, "utf8")).toBe(historical + original);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
-}, 400_000);
+}, 640_000);

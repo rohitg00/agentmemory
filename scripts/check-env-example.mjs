@@ -107,6 +107,7 @@ function environment(node, seen = new Set()) {
   if (!node) return false;
   if (builtinImport(node, "env")) return true;
   if (ts.isPropertyAccessExpression(node) && node.name.text === "env" && processObject(node.expression)) return true;
+  if (ts.isElementAccessExpression(node) && constant(node.argumentExpression) === "env" && processObject(node.expression)) return true;
   if (ts.isCallExpression(node) && environmentReturns.has(target(node.expression))) return true;
   if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind)) return environment(node.left, new Set(seen)) || environment(node.right, new Set(seen));
   if (ts.isObjectLiteralExpression(node)) return node.properties.some((property) => ts.isSpreadAssignment(property) && environment(property.expression, new Set(seen)));
@@ -178,7 +179,8 @@ for (const source of sources) visit(source, (node) => {
   if (key) record(ts.isPropertyAccessExpression(node) ? node.name.text : constant(key), node);
   if (ts.isCallExpression(node)) for (const index of positions(node.expression)) record(constant(node.arguments[index]), node);
   if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name) && environment(node.initializer)) for (const binding of node.name.elements) {
-    if (!binding.dotDotDotToken) record((binding.propertyName ?? binding.name).text, binding);
+    const name = binding.propertyName ?? binding.name;
+    if (!binding.dotDotDotToken) record(ts.isComputedPropertyName(name) ? constant(name.expression) : name.text, binding);
   }
 });
 const documented = new Set();

@@ -257,7 +257,7 @@ function syncBadge(text: string, next: string): string {
 function currentCount(matched: string, key: string, state: State): string {
   const next = state.facts[key]?.[0];
   if (!next) throw new Error(`Could not compute current ${key}.`);
-  return `${formatLike(matched, next)}${next.endsWith("+") || matched.endsWith("+") ? "+" : ""}`;
+  return `${formatLike(matched, next)}${next.endsWith("+") ? "+" : ""}`;
 }
 
 function currentRegion(text: string, start: RegExp, end: RegExp, update: (body: string) => string): string {
