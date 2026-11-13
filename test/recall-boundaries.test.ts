@@ -79,6 +79,41 @@ describe("recall request boundaries", () => {
     expect(trigger).not.toHaveBeenCalled();
   });
 
+  it.each([1.5, 0, -1, NaN, Infinity, "5", null, true])("rejects invalid MCP smart-search limit %j before dispatch", async (limit) => {
+    const { call, trigger } = endpoints();
+    const result = await call("mcp::tools::call", {
+      name: "memory_smart_search",
+      arguments: { query: "context", limit },
+    });
+    expect(result.status_code).toBe(400);
+    expect(result.body.error).toContain("limit");
+    expect(trigger).not.toHaveBeenCalled();
+  });
+
+  it("forwards valid MCP smart-search limits, defaulting to 10 and capping at 100", async () => {
+    const { call, trigger } = endpoints();
+    const invoke = (limit?: unknown) =>
+      call("mcp::tools::call", {
+        name: "memory_smart_search",
+        arguments: { query: "context", ...(limit === undefined ? {} : { limit }) },
+      });
+    expect((await invoke()).status_code).toBe(200);
+    expect(trigger).toHaveBeenLastCalledWith({
+      function_id: "mem::smart-search",
+      payload: expect.objectContaining({ limit: 10 }),
+    });
+    expect((await invoke(7)).status_code).toBe(200);
+    expect(trigger).toHaveBeenLastCalledWith({
+      function_id: "mem::smart-search",
+      payload: expect.objectContaining({ limit: 7 }),
+    });
+    expect((await invoke(500)).status_code).toBe(200);
+    expect(trigger).toHaveBeenLastCalledWith({
+      function_id: "mem::smart-search",
+      payload: expect.objectContaining({ limit: 100 }),
+    });
+  });
+
   it("rejects malformed expansion requests rather than crashing or silently dropping entries", async () => {
     const { call, trigger } = endpoints();
     const invalid = [null, "mem_a", {}, [null], [1], [""], [" "], [{}], [{ obsId: 3 }],

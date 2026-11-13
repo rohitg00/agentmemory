@@ -269,6 +269,73 @@ describe("mem::evict stale sessions", () => {
       }
       expect(await kv.get(KV.imageRefs, imagePath)).toBeNull();
     });
+
+    it("keeps the session and remaining rows when a later observation delete fails, then finishes on retry", async () => {
+      const sessionId = "ses_partial_cleanup";
+      const obsA = {
+        ...makeObservation(sessionId),
+        id: "obs_a",
+        imageData: "/img/a.png",
+      };
+      const obsB = {
+        ...makeObservation(sessionId),
+        id: "obs_b",
+        imageData: "/img/b.png",
+      };
+      const store = storeForObservations(sessionId, [obsA, obsB]);
+      store.set(
+        KV.imageRefs,
+        new Map([
+          ["/img/a.png", 1],
+          ["/img/b.png", 1],
+        ]),
+      );
+      const kv = mockKV(store);
+      const { sdk } = mockSdk();
+      for (const o of [obsA, obsB]) {
+        await indexObservationSession(kv as never, o.id, sessionId);
+      }
+
+      const realDelete = kv.delete;
+      const del = vi
+        .spyOn(kv, "delete")
+        .mockImplementation(async (scope: string, key: string) => {
+          if (scope === KV.observations(sessionId) && key === "obs_b") {
+            throw new Error("delete failed");
+          }
+          return realDelete(scope, key);
+        });
+
+      registerEvictFunction(sdk as never, kv as never);
+      sdk.registerFunction("event::session::stopped", () => ({ success: true }));
+      sdk.registerFunction("mem::consolidate-pipeline", () => ({ success: true }));
+      sdk.registerFunction("mem::auto-crystallize", () => ({ success: true }));
+
+      const first = (await sdk.trigger({
+        function_id: "mem::evict",
+        payload: {},
+      })) as { staleSessions: number };
+
+      expect(first.staleSessions).toBe(0);
+      expect(await kv.get(KV.sessions, sessionId)).not.toBeNull();
+      expect(await kv.get(KV.observations(sessionId), "obs_a")).toBeNull();
+      expect(await kv.get(KV.observations(sessionId), "obs_b")).not.toBeNull();
+      expect(await lookupObservationSession(kv as never, "obs_a")).toBeNull();
+      expect(await lookupObservationSession(kv as never, "obs_b")).toBe(sessionId);
+      expect(await kv.get(KV.imageRefs, "/img/a.png")).toBeNull();
+      expect(await kv.get(KV.imageRefs, "/img/b.png")).toBe(1);
+
+      del.mockRestore();
+      const second = (await sdk.trigger({
+        function_id: "mem::evict",
+        payload: {},
+      })) as { staleSessions: number };
+
+      expect(second.staleSessions).toBe(1);
+      expect(await kv.get(KV.sessions, sessionId)).toBeNull();
+      expect(await kv.get(KV.observations(sessionId), "obs_b")).toBeNull();
+      expect(await kv.get(KV.imageRefs, "/img/b.png")).toBeNull();
+    });
   });
 
   it("bounds consolidation to one pass regardless of how many stale sessions are recovered", async () => {

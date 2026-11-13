@@ -18,6 +18,14 @@ export async function incrementImageRef(kv: StateKV, filePath: string): Promise<
   });
 }
 
+export async function unpinImageRef(kv: StateKV, filePath: string): Promise<void> {
+  return withKeyedLock(`imgRef:${filePath}`, async () => {
+    const current = await getImageRefCount(kv, filePath);
+    if (current <= 1) await kv.delete(KV.imageRefs, filePath);
+    else await kv.set(KV.imageRefs, filePath, current - 1);
+  });
+}
+
 export async function decrementImageRef(kv: StateKV, sdk: IIIClient, filePath: string): Promise<void> {
   return withKeyedLock(`imgRef:${filePath}`, async () => {
     const current = await getImageRefCount(kv, filePath);
@@ -65,17 +73,58 @@ export function memoryImagePaths(row: { imageRef?: string } | null | undefined):
     : [];
 }
 
-export async function syncImageRefs(
+export interface ImageRefReservation {
+  readonly paths: string[];
+  committed: boolean;
+}
+
+export interface ImageRefBatch {
+  reserve(paths: string[]): Promise<ImageRefReservation>;
+  written(token: ImageRefReservation, beforePaths: string[]): void;
+  deleted(beforePaths: string[]): void;
+}
+
+export async function withImageRefBatch<T>(
   kv: StateKV,
   sdk: IIIClient,
-  ownerId: string,
-  before: string[],
-  after: string[],
-): Promise<void> {
-  for (const path of before) {
-    if (!after.includes(path)) await releaseImageRef(kv, sdk, ownerId, path);
-  }
-  for (const path of after) {
-    if (!before.includes(path)) await incrementImageRef(kv, path);
+  fn: (batch: ImageRefBatch) => Promise<T>,
+): Promise<T> {
+  const reservations: ImageRefReservation[] = [];
+  const previousPaths: string[] = [];
+  const batch: ImageRefBatch = {
+    async reserve(paths) {
+      const reservation: ImageRefReservation = { paths: [], committed: false };
+      reservations.push(reservation);
+      for (const path of new Set(paths)) {
+        await incrementImageRef(kv, path);
+        reservation.paths.push(path);
+      }
+      return reservation;
+    },
+    written(token, beforePaths) {
+      token.committed = true;
+      previousPaths.push(...beforePaths);
+    },
+    deleted(beforePaths) {
+      previousPaths.push(...beforePaths);
+    },
+  };
+  try {
+    return await fn(batch);
+  } finally {
+    for (const path of previousPaths) {
+      await releaseImageRef(kv, sdk, "mem::image-ref-batch", path);
+    }
+    for (const reservation of reservations) {
+      if (reservation.committed) continue;
+      for (const path of reservation.paths) {
+        await unpinImageRef(kv, path).catch((err) => {
+          logger.warn("Image reference reservation rollback failed", {
+            imageRef: path,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
   }
 }

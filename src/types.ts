@@ -331,6 +331,10 @@ export interface MemoryRelation {
   confidence?: number;
 }
 
+export interface RelationExport extends MemoryRelation {
+  storageKey?: string;
+}
+
 export interface HybridSearchResult {
   observation: CompressedObservation;
   layer?: "memory" | "observation" | "lesson" | "insight";
@@ -423,7 +427,7 @@ export interface ExportData {
   lessons?: Lesson[];
   insights?: Insight[];
   accessLogs?: AccessLogExport[];
-  relations?: MemoryRelation[];
+  relations?: RelationExport[];
   pagination?: ExportPagination;
   collectionPagination?: ExportCollectionPagination;
 }

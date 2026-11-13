@@ -5,8 +5,9 @@ vi.mock("../src/logger.js", () => ({
 }));
 
 import { registerExportImportFunction } from "../src/functions/export-import.js";
+import { MAX_IMPORT_OBS_PER_SESSION } from "../src/config.js";
 import { VERSION } from "../src/version.js";
-import { KV } from "../src/state/schema.js";
+import { KV, fingerprintId } from "../src/state/schema.js";
 import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import { getSearchIndex } from "../src/functions/search.js";
 import type {
@@ -803,42 +804,94 @@ describe("Export/import relations", () => {
     return { sdk, kv };
   };
 
-  it("exports KV.relations rows and restores them under the composite key", async () => {
-    const { sdk, kv } = await seedRelationStores();
+  const freshTarget = () => {
+    const kv = mockKV();
+    const sdk = mockSdk();
+    registerExportImportFunction(sdk as never, kv as never);
+    return { kv, sdk };
+  };
+
+  const runImport = (sdk: ReturnType<typeof mockSdk>, exportData: ExportData, strategy: "merge" | "replace" | "skip") =>
+    sdk.trigger("mem::import", { exportData, strategy }) as Promise<{
+      success: boolean;
+      skipped: number;
+      error?: string;
+    }>;
+
+  it("exports each relation with its KV storage key", async () => {
+    const { sdk } = await seedRelationStores();
 
     const exported = (await sdk.trigger("mem::export", {})) as ExportData;
-    expect(exported.relations).toEqual([relation]);
-
-    const freshKv = mockKV();
-    const freshSdk = mockSdk();
-    registerExportImportFunction(freshSdk as never, freshKv as never);
-    const result = (await freshSdk.trigger("mem::import", {
-      exportData: exported,
-      strategy: "merge",
-    })) as { success: boolean };
-
-    expect(result.success).toBe(true);
-    expect(await freshKv.get(KV.relations, "mem_a:mem_b:extends")).toEqual(relation);
+    expect(exported.relations).toEqual([{ ...relation, storageKey: "rel_1" }]);
   });
 
-  it("dedupes restored relations by composite key under skip", async () => {
+  it.each(["merge", "replace", "skip"] as const)(
+    "restores both confidence variants under their generated keys on %s",
+    async (strategy) => {
+      const { sdk, kv } = await seedRelationStores();
+      const lowConfidence = { ...relation, confidence: 0.2 };
+      await kv.set(KV.relations, "rel_2", lowConfidence);
+
+      const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+      expect(exported.relations).toEqual([
+        { ...relation, storageKey: "rel_1" },
+        { ...lowConfidence, storageKey: "rel_2" },
+      ]);
+
+      const target = freshTarget();
+      const result = await runImport(target.sdk, exported, strategy);
+
+      expect(result.success).toBe(true);
+      expect(await target.kv.get(KV.relations, "rel_1")).toEqual(relation);
+      expect(await target.kv.get(KV.relations, "rel_2")).toEqual(lowConfidence);
+      expect(await target.kv.list(KV.relations)).toHaveLength(2);
+    },
+  );
+
+  it.each(["merge", "skip"] as const)("re-importing its own export is idempotent under %s", async (strategy) => {
     const { sdk, kv } = await seedRelationStores();
+    const lowConfidence = { ...relation, confidence: 0.2 };
+    await kv.set(KV.relations, "rel_2", lowConfidence);
     const exported = (await sdk.trigger("mem::export", {})) as ExportData;
 
-    const target = mockKV();
-    const targetSdk = mockSdk();
-    registerExportImportFunction(targetSdk as never, target as never);
-    const existing = { ...relation, confidence: 0.4 };
-    await target.set(KV.relations, "mem_a:mem_b:extends", existing);
-
-    const result = (await targetSdk.trigger("mem::import", {
-      exportData: exported,
-      strategy: "skip",
-    })) as { success: boolean; skipped: number };
+    const result = await runImport(sdk, exported, strategy);
 
     expect(result.success).toBe(true);
-    expect(result.skipped).toBe(1);
-    expect(await target.get(KV.relations, "mem_a:mem_b:extends")).toEqual(existing);
+    const stored = await kv.list<MemoryRelation>(KV.relations);
+    expect(stored).toHaveLength(2);
+    expect(await kv.get(KV.relations, "rel_1")).toEqual(relation);
+    expect(await kv.get(KV.relations, "rel_2")).toEqual(lowConfidence);
+  });
+
+  it("leaves the stored row untouched when skip sees the same storage key", async () => {
+    const { sdk } = await seedRelationStores();
+    const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+
+    const target = freshTarget();
+    const existing = { ...relation, confidence: 0.4 };
+    await target.kv.set(KV.relations, "rel_1", existing);
+
+    const result = await runImport(target.sdk, exported, "skip");
+
+    expect(result.success).toBe(true);
+    expect(result.skipped).toBeGreaterThanOrEqual(1);
+    expect(await target.kv.get(KV.relations, "rel_1")).toEqual(existing);
+  });
+
+  it("keeps identical relation rows stored under different generated keys", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    await kv.set(KV.relations, "rel_2", { ...relation });
+
+    const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+    expect(exported.relations).toHaveLength(2);
+
+    const target = freshTarget();
+    const result = await runImport(target.sdk, exported, "merge");
+
+    expect(result.success).toBe(true);
+    expect(await target.kv.get(KV.relations, "rel_1")).toEqual(relation);
+    expect(await target.kv.get(KV.relations, "rel_2")).toEqual(relation);
+    expect(await target.kv.list(KV.relations)).toHaveLength(2);
   });
 
   it("clears every relation row on replace, not only composite-keyed ones", async () => {
@@ -852,17 +905,18 @@ describe("Export/import relations", () => {
       summaries: [],
     } as unknown as ExportData;
 
-    const result = (await sdk.trigger("mem::import", {
-      exportData,
-      strategy: "replace",
-    })) as { success: boolean };
+    const result = await runImport(sdk, exportData, "replace");
 
     expect(result.success).toBe(true);
     expect(await kv.get(KV.memories, "mem_a")).toBeNull();
     expect(await kv.list(KV.relations)).toEqual([]);
   });
 
-  it("rejects relation rows missing a key component before mutating", async () => {
+  it.each([
+    { shape: "missing a key component", rows: [{ sourceId: "mem_a", targetId: "mem_b" }] },
+    { shape: "an empty storageKey", rows: [{ ...relation, storageKey: "" }] },
+    { shape: "a non-string storageKey", rows: [{ ...relation, storageKey: 7 }] },
+  ])("rejects relation rows with $shape before mutating", async ({ rows }) => {
     const { sdk, kv } = await seedRelationStores();
     const exportData = {
       version: VERSION,
@@ -871,20 +925,17 @@ describe("Export/import relations", () => {
       observations: {},
       memories: [],
       summaries: [],
-      relations: [{ sourceId: "mem_a", targetId: "mem_b" }],
+      relations: rows,
     } as unknown as ExportData;
 
-    const result = (await sdk.trigger("mem::import", {
-      exportData,
-      strategy: "merge",
-    })) as { success: boolean; error?: string };
+    const result = await runImport(sdk, exportData, "merge");
 
     expect(result.success).toBe(false);
     expect(result.error).toContain("relations[0]");
     expect((await kv.list(KV.relations)).length).toBe(1);
   });
 
-  it("collapses a generated-key relation into the composite key on merge instead of duplicating it", async () => {
+  it("matches a keyless row to the stored generated key by full identity on merge", async () => {
     const { sdk, kv } = await seedRelationStores();
     const exportData = {
       version: VERSION,
@@ -896,17 +947,14 @@ describe("Export/import relations", () => {
       relations: [relation],
     } as unknown as ExportData;
 
-    const result = (await sdk.trigger("mem::import", {
-      exportData,
-      strategy: "merge",
-    })) as { success: boolean };
+    const result = await runImport(sdk, exportData, "merge");
 
     expect(result.success).toBe(true);
     expect(await kv.list<MemoryRelation>(KV.relations)).toEqual([relation]);
-    expect(await kv.get(KV.relations, "mem_a:mem_b:extends")).toEqual(relation);
+    expect(await kv.get(KV.relations, "rel_1")).toEqual(relation);
   });
 
-  it("honors an existing generated-key relation under skip", async () => {
+  it("honors an existing identity-matched relation under skip", async () => {
     const { sdk, kv } = await seedRelationStores();
     const exportData = {
       version: VERSION,
@@ -918,15 +966,47 @@ describe("Export/import relations", () => {
       relations: [relation],
     } as unknown as ExportData;
 
-    const result = (await sdk.trigger("mem::import", {
-      exportData,
-      strategy: "skip",
-    })) as { success: boolean; skipped: number };
+    const result = await runImport(sdk, exportData, "skip");
 
     expect(result.success).toBe(true);
     expect(result.skipped).toBe(1);
     expect(await kv.list<MemoryRelation>(KV.relations)).toEqual([relation]);
-    expect(await kv.get(KV.relations, "mem_a:mem_b:extends")).toBeNull();
+    expect(await kv.get(KV.relations, "rel_1")).toEqual(relation);
+  });
+
+  it("keeps repeated keyless rows distinct and idempotent across imports", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      relations: [
+        relation,
+        { ...relation },
+        { ...relation, confidence: 0.2 },
+      ],
+    } as unknown as ExportData;
+
+    const first = await runImport(sdk, exportData, "merge");
+    expect(first.success).toBe(true);
+    const keys = await kv.listKeys(KV.relations);
+    expect(keys).toHaveLength(3);
+    expect(await kv.get(KV.relations, "rel_1")).toEqual(relation);
+    const confidences = (await kv.list<MemoryRelation>(KV.relations))
+      .map((rel) => rel.confidence)
+      .sort();
+    expect(confidences).toEqual([0.2, 0.9, 0.9]);
+
+    const second = await runImport(sdk, exportData, "merge");
+    expect(second.success).toBe(true);
+    expect(await kv.listKeys(KV.relations)).toHaveLength(3);
+    const confidencesAfter = (await kv.list<MemoryRelation>(KV.relations))
+      .map((rel) => rel.confidence)
+      .sort();
+    expect(confidencesAfter).toEqual([0.2, 0.9, 0.9]);
   });
 
   it("preserves relation confidence through export and import", async () => {
@@ -961,6 +1041,211 @@ describe("Export/import relations", () => {
 
     expect(relatedBefore.results.length).toBe(1);
     expect(relatedAfter.results.length).toBe(1);
+  });
+
+  it("keeps every confidence tier visible to get-related after a round trip", async () => {
+    const { registerRelationsFunction } = await import(
+      "../src/functions/relations.js"
+    );
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    registerRelationsFunction(sdk as never, kv as never);
+    await kv.set(KV.memories, "mem_a", { ...testMemory, id: "mem_a", relatedIds: ["mem_b"] });
+    await kv.set(KV.memories, "mem_b", { ...testMemory, id: "mem_b", relatedIds: ["mem_a"] });
+    await kv.set(KV.relations, "rel_hi", relation);
+    await kv.set(KV.relations, "rel_lo", { ...relation, confidence: 0.2 });
+
+    const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+
+    const target = mockKV();
+    const targetSdk = mockSdk();
+    registerExportImportFunction(targetSdk as never, target as never);
+    registerRelationsFunction(targetSdk as never, target as never);
+    await targetSdk.trigger("mem::import", { exportData: exported, strategy: "merge" });
+
+    expect(await target.list(KV.relations)).toHaveLength(2);
+    const confident = (await targetSdk.trigger("mem::get-related", {
+      memoryId: "mem_a",
+      minConfidence: 0.8,
+    })) as { results: unknown[] };
+    const strict = (await targetSdk.trigger("mem::get-related", {
+      memoryId: "mem_a",
+      minConfidence: 0.95,
+    })) as { results: unknown[] };
+    expect(confident.results).toHaveLength(1);
+    expect(strict.results).toHaveLength(0);
+  });
+
+  it("keeps both rows when a fingerprinted sibling was deleted between imports", async () => {
+    const { sdk, kv } = freshTarget();
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      relations: [relation, { ...relation }],
+    } as unknown as ExportData;
+
+    const first = await runImport(sdk, exportData, "merge");
+    expect(first.success).toBe(true);
+    const keys = await kv.listKeys(KV.relations);
+    expect(keys).toHaveLength(2);
+
+    await kv.delete(KV.relations, keys[0]);
+    const second = await runImport(sdk, exportData, "merge");
+    expect(second.success).toBe(true);
+
+    const after = await kv.listKeys(KV.relations);
+    expect(after).toHaveLength(2);
+    expect(after).toContain(keys[1]);
+    expect((await kv.list<MemoryRelation>(KV.relations)).map((rel) => rel.confidence).sort()).toEqual([0.9, 0.9]);
+  });
+
+  it("does not let a keyless row borrow an explicit incoming storageKey, and stays idempotent", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      relations: [
+        { ...relation, storageKey: "rel_1" },
+        { ...relation },
+      ],
+    } as unknown as ExportData;
+
+    const first = await runImport(sdk, exportData, "merge");
+    expect(first.success).toBe(true);
+    expect(await kv.listKeys(KV.relations)).toHaveLength(2);
+    expect(await kv.get(KV.relations, "rel_1")).toEqual(relation);
+
+    for (const strategy of ["merge", "skip"] as const) {
+      const again = await runImport(sdk, exportData, strategy);
+      expect(again.success).toBe(true);
+      expect(await kv.listKeys(KV.relations)).toHaveLength(2);
+      expect((await kv.list<MemoryRelation>(KV.relations)).map((rel) => rel.confidence).sort()).toEqual([0.9, 0.9]);
+    }
+  });
+
+  it("rejects duplicate explicit storageKeys before mutating", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      relations: [
+        { ...relation, storageKey: "rel_9" },
+        { ...relation, targetId: "mem_c", storageKey: "rel_9" },
+      ],
+    } as unknown as ExportData;
+
+    const result = await runImport(sdk, exportData, "merge");
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("duplicate storageKey");
+    expect(await kv.listKeys(KV.relations)).toEqual(["rel_1"]);
+  });
+
+  it("aborts the import when a stored relation read fails", async () => {
+    const { sdk, kv } = await seedRelationStores();
+    const realGet = kv.get;
+    const getter = vi
+      .spyOn(kv, "get")
+      .mockImplementation(async (scope: string, key: string) => {
+        if (scope === KV.relations) throw new Error("relation read failed");
+        return realGet(scope, key);
+      });
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      relations: [relation],
+    } as unknown as ExportData;
+
+    const result = await runImport(sdk, exportData, "merge").catch((err: unknown) => err);
+
+    expect(result).toBeInstanceOf(Error);
+    getter.mockRestore();
+    expect(await kv.listKeys(KV.relations)).toEqual(["rel_1"]);
+    expect(await kv.get(KV.relations, "rel_1")).toEqual(relation);
+  });
+
+  it("does not let a keyless fallback collide with a later explicit storageKey", async () => {
+    const { sdk, kv } = freshTarget();
+    const identity = JSON.stringify([
+      relation.sourceId,
+      relation.targetId,
+      relation.type,
+      relation.createdAt,
+      relation.confidence ?? null,
+    ]);
+    const explicitKey = fingerprintId("rel", `${identity}:0`);
+    const explicitRow = { ...relation, targetId: "mem_c", storageKey: explicitKey };
+    const exportData = {
+      version: VERSION,
+      exportedAt: new Date().toISOString(),
+      sessions: [],
+      observations: {},
+      memories: [],
+      summaries: [],
+      relations: [{ ...relation }, explicitRow],
+    } as unknown as ExportData;
+
+    const first = await runImport(sdk, exportData, "merge");
+    expect(first.success).toBe(true);
+    expect(await kv.listKeys(KV.relations)).toHaveLength(2);
+    expect(await kv.get(KV.relations, explicitKey)).toEqual({
+      ...relation,
+      targetId: "mem_c",
+    });
+
+    for (const strategy of ["merge", "skip"] as const) {
+      const again = await runImport(sdk, exportData, strategy);
+      expect(again.success).toBe(true);
+      expect(await kv.listKeys(KV.relations)).toHaveLength(2);
+      expect(await kv.get(KV.relations, explicitKey)).toEqual({
+        ...relation,
+        targetId: "mem_c",
+      });
+    }
+  });
+
+  it("bounds relation reads to the chunk size and preserves key order under out-of-order completion", async () => {
+    const { sdk, kv } = freshTarget();
+    const keys = Array.from({ length: 25 }, (_, i) => `rel_${String(i).padStart(2, "0")}`);
+    for (const key of keys) {
+      await kv.set(KV.relations, key, { ...relation, targetId: `mem_${key}` });
+    }
+
+    let inflight = 0;
+    let maxInflight = 0;
+    const realGet = kv.get;
+    vi.spyOn(kv, "get").mockImplementation(async (scope: string, key: string) => {
+      if (scope !== KV.relations) return realGet(scope, key);
+      inflight++;
+      maxInflight = Math.max(maxInflight, inflight);
+      await new Promise((resolve) => setTimeout(resolve, keys.length - keys.indexOf(key)));
+      inflight--;
+      return realGet(scope, key);
+    });
+
+    const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+
+    expect(maxInflight).toBeLessThanOrEqual(20);
+    expect(maxInflight).toBeGreaterThan(1);
+    expect(exported.relations?.map((rel) => rel.storageKey)).toEqual(keys);
+    expect(exported.relations).toHaveLength(25);
   });
 });
 
@@ -1020,6 +1305,85 @@ describe("Export/import sessionless observation scope", () => {
 
     expect(result.success).toBe(true);
     expect(await kv.list(KV.observations("migrated"))).toEqual([]);
+  });
+
+  it("replace-imports a sessionless bucket above the per-session ceiling", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const rows = Array.from(
+      { length: MAX_IMPORT_OBS_PER_SESSION + 1 },
+      (_, i) => ({ ...testObs, id: `obs_mig_${i}`, sessionId: "migrated" }),
+    );
+    for (const row of rows) {
+      await kv.set(KV.observations("migrated"), row.id, row);
+    }
+
+    const exported = (await sdk.trigger("mem::export", {})) as ExportData;
+    expect(exported.observations["migrated"]).toHaveLength(
+      MAX_IMPORT_OBS_PER_SESSION + 1,
+    );
+
+    const target = mockKV();
+    const targetSdk = mockSdk();
+    registerExportImportFunction(targetSdk as never, target as never);
+    const result = (await targetSdk.trigger("mem::import", {
+      exportData: exported,
+      strategy: "replace",
+    })) as { success: boolean; observations: number };
+
+    expect(result.success).toBe(true);
+    expect(result.observations).toBe(MAX_IMPORT_OBS_PER_SESSION + 1);
+    expect(
+      await target.list(KV.observations("migrated")),
+    ).toHaveLength(MAX_IMPORT_OBS_PER_SESSION + 1);
+  });
+
+  it("still rejects a session bucket above the per-session ceiling", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const rows = Array.from(
+      { length: MAX_IMPORT_OBS_PER_SESSION + 1 },
+      (_, i) => ({ ...testObs, id: `obs_big_${i}`, sessionId: "ses_big" }),
+    );
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: {
+        version: VERSION,
+        exportedAt: new Date().toISOString(),
+        sessions: [],
+        observations: { ses_big: rows },
+        memories: [],
+        summaries: [],
+      } as unknown as ExportData,
+      strategy: "merge",
+    })) as { success: boolean; error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Too many observations in session ses_big");
+  });
+
+  it("still rejects a sessionless bucket above the total observation ceiling", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const row = { ...testObs, id: "obs_mig", sessionId: "migrated" };
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: {
+        version: VERSION,
+        exportedAt: new Date().toISOString(),
+        sessions: [],
+        observations: { migrated: new Array(500_001).fill(row) },
+        memories: [],
+        summaries: [],
+      } as unknown as ExportData,
+      strategy: "merge",
+    })) as { success: boolean; error?: string };
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Too many total observations");
   });
 });
 
@@ -1206,5 +1570,43 @@ describe("Import image reference accounting", () => {
     expect(result.success).toBe(true);
     expect(await kv.get(KV.imageRefs, shared)).toBe(1);
     expect(await kv.get(KV.imageEmbeddings, shared)).toEqual({ dims: 3 });
+  });
+
+  it("keeps committed refcount changes when a later replace write fails", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.memories, "mem_old", {
+      ...testMemory,
+      id: "mem_old",
+      imageRef: "/tmp/img-p.png",
+    });
+    await kv.set(KV.imageRefs, "/tmp/img-p.png", 1);
+    const originalSet = kv.set;
+    vi.spyOn(kv, "set").mockImplementation(async (scope, key, value) => {
+      if (scope === KV.memories && key === "mem_fail") {
+        throw new Error("memory write failed");
+      }
+      return originalSet(scope, key, value);
+    });
+
+    const result = await sdk
+      .trigger("mem::import", {
+        exportData: imageExport({
+          memories: [
+            { ...testMemory, id: "mem_q", imageRef: "/tmp/img-q.png" },
+            { ...testMemory, id: "mem_fail", imageRef: "/tmp/img-f.png" },
+          ],
+        }),
+        strategy: "replace",
+      })
+      .then(() => null, (error: Error) => error);
+
+    expect(result).toMatchObject({ message: "memory write failed" });
+    expect(await kv.get(KV.memories, "mem_q")).toMatchObject({ id: "mem_q" });
+    expect(await kv.get(KV.memories, "mem_fail")).toBeNull();
+    expect(await kv.get(KV.imageRefs, "/tmp/img-p.png")).toBeNull();
+    expect(await kv.get(KV.imageRefs, "/tmp/img-q.png")).toBe(1);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-f.png")).toBeNull();
   });
 });

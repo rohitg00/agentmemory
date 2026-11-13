@@ -33,6 +33,8 @@ function countingKV() {
       listCalls.push(scope);
       return Array.from(store.get(scope)?.values() ?? []) as T[];
     },
+    listKeys: async (scope: string): Promise<string[]> =>
+      Array.from(store.get(scope)?.keys() ?? []),
   };
 }
 

@@ -252,8 +252,11 @@ describe("Git snapshot ingestion", () => {
     const save = vi.fn(async () => {});
     setIndexPersistence({ scheduleSave: vi.fn(), save });
     const commitHash = r.archive({ memories: [memory("mem_retry", "restoredkeyword")] });
+    let reads = 0;
     r.intercept(async (id, p) => {
-      if (id === "state::get" && p.scope === KV.memories && p.key === "mem_retry") throw new Error("synthetic index read failure");
+      if (id === "state::get" && p.scope === KV.memories && p.key === "mem_retry" && ++reads > 1) {
+        throw new Error("synthetic index read failure");
+      }
     });
     expect(await r.call("mem::snapshot-restore", { commitHash })).toMatchObject({ success: false, error: "synthetic index read failure" });
     expect(getSearchIndex().has("mem_retry")).toBe(false);
