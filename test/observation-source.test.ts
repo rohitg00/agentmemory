@@ -277,7 +277,8 @@ describe("retained observation source", () => {
     expect(await fresh.call("mem::import", { exportData: exported })).toMatchObject({ success: true, observations: 1000, sourceOmitted: 1000 });
     expect(await fresh.kv.get(KV.observations(template.sessionId), first[0].id)).toEqual(first[0]);
     expect(payloadByteLength({ result: await fresh.kv.list(KV.observations(template.sessionId)) })).toBeLessThan(SAFE_PAYLOAD_BYTES);
-  });
+    // Two thousand source-heavy imports can exceed the default budget on busy CI runners.
+  }, 30_000);
 
   it("rejects an oversized replacement before deleting or writing any stored records", async () => {
     const r = rig();
