@@ -596,6 +596,17 @@ In `hermes memory setup`, select AgentMemory and enter the server URL and its se
 
 `agentmemory connect hermes` installs the provider and the bundled skills from the installed package instead. Add `--with-mcp` for the full MCP tool set. Full guide: [`integrations/hermes/`](integrations/hermes/).
 
+### Orca (plugin panel)
+
+The Orca plugin adds an agentmemory panel to Orca's sidebar: server status, the latest memories of the focused workspace, search and quick saves.
+
+```bash
+npx -y @agentmemory/agentmemory@latest
+orca plugin install https://github.com/rohitg00/agentmemory/tree/main/integrations/orca
+```
+
+The panel reads and saves memories; capture still comes from each agent's own connection, so run `agentmemory connect <agent>` for the agents you launch in Orca. Full guide: [`integrations/orca/`](integrations/orca/).
+
 ### Other agents
 
 Start the memory server: `npx -y @agentmemory/agentmemory@latest`

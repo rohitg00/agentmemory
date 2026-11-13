@@ -1,0 +1,50 @@
+{
+  "manifestVersion": 2,
+  "id": "agentmemory",
+  "name": "agentmemory",
+  "version": "0.1.0",
+  "description": "Search, browse and save the memories your coding agents keep in agentmemory, scoped to the workspace you have open.",
+  "license": "Apache-2.0",
+  "engines": {
+    "orca": ">=1.4.246"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "contributes": {
+    "panels": [
+      {
+        "id": "memory",
+        "title": "agentmemory",
+        "icon": "book",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      }
+    ],
+    "settings": [
+      {
+        "key": "url",
+        "title": "Server URL",
+        "description": "Where the agentmemory server listens. The bearer secret is read from AGENTMEMORY_SECRET, ~/.agentmemory/.env or ~/.agentmemory/secret, and is only sent to a loopback address or over HTTPS.",
+        "type": "string",
+        "default": "http://localhost:3111",
+        "placeholder": "http://localhost:3111"
+      },
+      {
+        "key": "viewerUrl",
+        "title": "Viewer URL",
+        "description": "Opened by the Open viewer button.",
+        "type": "string",
+        "default": "http://localhost:3113"
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "settings:own"
+    },
+    {
+      "kind": "workspace:read"
+    }
+  ]
+}
