@@ -128,17 +128,27 @@ export function onStateWorkerReturn(
   bindings.onStateHandle?.((handle) => watchStateHandle(handle, true));
   if (typeof client.observe === "function" && typeof bindings.observeRuntime === "function") {
     // Events are missed while the observer is not active, however short the gap.
+    // The first handle is covered by the boot check; a conflict replacement
+    // replaces one that never delivered, so it counts as a recovery even when
+    // it is already active.
+    const reportWorkersChanged = (reason: "worker_connected" | "worker_disconnected" | "observer_active") => {
+      if (!stopped) opts.onWorkersChanged?.(reason);
+    };
+    let firstRuntimeHandle = true;
     bindings.onRuntimeHandle?.("runtime::on-workers-changed", (handle) => {
       let wasActive = handle.state === "active";
+      if (wasActive && !firstRuntimeHandle) reportWorkersChanged("observer_active");
+      firstRuntimeHandle = false;
       handle.onStateChange((next) => {
-        if (next === "active" && !wasActive) opts.onWorkersChanged?.("observer_active");
+        if (next === "active" && !wasActive) reportWorkersChanged("observer_active");
         wasActive = next === "active";
       });
     });
     client.registerFunction?.("runtime::on-workers-changed", async (payload: unknown) => {
       const event = unwrapObserved<{ event?: string } | undefined>(payload, "input")?.event;
       if (event !== "worker_connected" && event !== "worker_disconnected") return { handled: false };
-      opts.onWorkersChanged?.(event);
+      if (stopped) return { handled: false };
+      reportWorkersChanged(event);
       if (event !== "worker_connected") return { handled: true };
       try {
         await probeOnce(client, 2000);

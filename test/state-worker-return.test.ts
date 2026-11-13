@@ -446,6 +446,32 @@ describe("engine::on-workers-changed observer", () => {
     expect(bindings.describe()).toMatchObject({ observers: 1, failedObservers: 0 });
   });
 
+  it("treats a conflict replacement that is already active as a recovery", async () => {
+    vi.useFakeTimers();
+    const sdk = workersSdk(1);
+    const onWorkersChanged = vi.fn();
+    onStateWorkerReturn(sdk as never, new Bindings(sdk as never), vi.fn(), { onWorkersChanged });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(workersChanged(sdk)).toHaveLength(2);
+    expect(onWorkersChanged.mock.calls).toEqual([["observer_active"]]);
+  });
+
+  it("reports nothing after stop()", async () => {
+    const sdk = workersSdk();
+    const onWorkersChanged = vi.fn();
+    const rearm = onStateWorkerReturn(sdk as never, new Bindings(sdk as never), vi.fn(), { onWorkersChanged });
+    const handle = sdk.observe.mock.results.find((_, i) => workersChanged(sdk)[0] === sdk.observed[i])!.value as ReturnType<typeof fakeHandle>;
+    const target = workersChanged(sdk)[0]!.target;
+    const handler = sdk.registerFunction.mock.calls.find(([id]) => id === target)![1] as (payload: unknown) => Promise<unknown>;
+    rearm.stop();
+    handle.emit("pending");
+    handle.emit("active");
+    await handler({ observer_id: "o", activation_id: "late", input: { event: "worker_connected" } });
+    expect(onWorkersChanged).not.toHaveBeenCalled();
+    expect(sdk.trigger).not.toHaveBeenCalled();
+  });
+
   it("passes connect and disconnect events to onWorkersChanged", async () => {
     const sdk = workersSdk();
     const onWorkersChanged = vi.fn();

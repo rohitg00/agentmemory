@@ -95,7 +95,6 @@ export class Bindings {
     return this.bound.some((entry) => entry.kind === "pipeline" && entry.target === target && entry.handle.state === "active");
   }
 
-  /** Calls listener with every runtime handle bound for target, including conflict replacements. */
   onRuntimeHandle(target: string, listener: (handle: ObserverHandle) => void): () => void {
     const watch = (entry: BoundObserver) => {
       if (entry.kind === "runtime" && entry.target === target) listener(entry.handle);
