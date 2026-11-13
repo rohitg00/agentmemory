@@ -1,13 +1,22 @@
 import { appendFileSync } from "node:fs";
 
+function observedBody(body) {
+  if (typeof body !== "string") return body ?? null;
+  try {
+    return JSON.parse(body);
+  } catch {
+    return body;
+  }
+}
+
 globalThis.fetch = async (url, init = {}) => {
   appendFileSync(
     process.env.AGENTMEMORY_HOOK_TEST_REQUESTS,
     `${JSON.stringify({
       url: String(url),
-      method: init.method,
+      method: init.method ?? "GET",
       headers: Object.fromEntries(new Headers(init.headers)),
-      body: JSON.parse(init.body),
+      body: observedBody(init.body),
     })}\n`,
   );
 
