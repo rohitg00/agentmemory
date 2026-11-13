@@ -71,6 +71,7 @@ jobs:
       # in one pass.
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - run: npm run build
+      - run: npm run typecheck:hooks
       - run: npm run skills:check
       - run: npx tsc --noEmit --project tsconfig.eval.json
       - run: npm test
