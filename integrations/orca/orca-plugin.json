@@ -1,0 +1,111 @@
+{
+  "manifestVersion": 2,
+  "id": "agentmemory",
+  "name": "agentmemory",
+  "version": "0.1.0",
+  "description": "Persistent memory for the coding agents you run in Orca: browse and search what they learned, send a memory to an agent, open the files it mentions and the viewer in Orca, and optionally capture agent tool calls.",
+  "license": "Apache-2.0",
+  "repository": "https://github.com/rohitg00/agentmemory",
+  "icon": "images/icon.png",
+  "cover": {
+    "path": "images/cover.png",
+    "alt": "The agentmemory panel in Orca, listing the latest memories of the open project"
+  },
+  "screenshots": [
+    {
+      "path": "images/panel.png",
+      "alt": "The agentmemory panel with memory counts, search, a project filter and recent memories",
+      "caption": "Counts, search and the latest memories of the open project"
+    }
+  ],
+  "engines": {
+    "orca": ">=1.4.248"
+  },
+  "execution": "trusted-worker",
+  "pluginApi": 1,
+  "main": "src/worker.ts",
+  "contributes": {
+    "panels": [
+      {
+        "id": "memory",
+        "title": "agentmemory",
+        "icon": "book",
+        "entry": "src/panel.tsx",
+        "ui": "components"
+      }
+    ],
+    "commands": [
+      {
+        "id": "agentmemory.openViewer",
+        "title": "agentmemory: Open viewer"
+      },
+      {
+        "id": "agentmemory.refresh",
+        "title": "agentmemory: Refresh status"
+      }
+    ],
+    "statusBarItems": [
+      {
+        "id": "status",
+        "text": "agentmemory",
+        "icon": "book",
+        "tooltip": "agentmemory",
+        "command": "agentmemory.openViewer"
+      }
+    ],
+    "events": [
+      {
+        "on": "workspace.changed"
+      }
+    ],
+    "hooks": [
+      {
+        "event": "agent.tool.after"
+      }
+    ],
+    "settings": [
+      {
+        "key": "url",
+        "title": "Server URL",
+        "description": "Where the agentmemory server listens. The bearer secret is read from AGENTMEMORY_SECRET, ~/.agentmemory/.env or ~/.agentmemory/secret, and is only sent to a loopback address or over HTTPS.",
+        "type": "string",
+        "default": "http://localhost:3111",
+        "placeholder": "http://localhost:3111"
+      },
+      {
+        "key": "viewerUrl",
+        "title": "Viewer URL",
+        "description": "Opened in an Orca browser tab by Open viewer and by the status bar item.",
+        "type": "string",
+        "default": "http://localhost:3113"
+      },
+      {
+        "key": "capture",
+        "title": "Capture agent tool calls",
+        "description": "Send the tool calls of agents running in Orca to agentmemory. Leave this off for agents you connected with agentmemory connect, which capture through their own hooks; turning it on for them records each call twice.",
+        "type": "boolean",
+        "default": false
+      }
+    ]
+  },
+  "capabilities": [
+    {
+      "kind": "settings:own"
+    },
+    {
+      "kind": "workspace:read"
+    },
+    {
+      "kind": "workspace:write"
+    },
+    {
+      "kind": "agent:read"
+    },
+    {
+      "kind": "terminal:send"
+    },
+    {
+      "kind": "notifications:show"
+    }
+  ]
+}
