@@ -11,7 +11,7 @@ agentmemory connect zcode --with-hooks
 
 The first command adds stdio MCP under `mcp.servers.agentmemory` in `~/.zcode/cli/config.json`. The second also enables `hooks.events`. Existing MCP servers, user hooks, provider settings and permissions are preserved. MCP inherits the host's `AGENTMEMORY_*` environment; no credential or shell interpolation placeholder is written into this config.
 
-Use `--dry-run` to preview without writes or backups. Repeating the command is idempotent. Changes to an existing file are backed up under `~/.agentmemory/backups`. Malformed configuration is left unchanged. A conflicting MCP entry or explicitly disabled hook runner requires `--force` before replacement or enabling.
+Use `--dry-run` to preview without writes or backups. Repeating the command is idempotent. Changes to an existing file are backed up under `~/.agentmemory/backups`. On POSIX, existing file permissions are preserved and new config files are private. Malformed configuration is left unchanged. A conflicting or disabled MCP entry, including the legacy `enable: false` setting, or an explicitly disabled hook runner requires `--force` before replacement or enabling.
 
 ## Local plugin directory
 

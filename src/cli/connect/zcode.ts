@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { closeSync, existsSync, fchmodSync, mkdirSync, openSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { buildMergedHooks, findPluginRoot, type HookManifest } from "./codex-hooks.js";
@@ -12,7 +13,6 @@ import {
   logBackup,
   logInstalled,
   readJsonSafe,
-  writeJsonAtomic,
 } from "./util.js";
 
 const ZCODE_DIR = join(homedir(), ".zcode");
@@ -51,6 +51,26 @@ function skipped(reason: string, message: string): ConnectResult {
   return { kind: "skipped", reason };
 }
 
+function writeConfigAtomic(value: Record<string, unknown>): void {
+  const mode = existsSync(CONFIG_PATH) ? statSync(CONFIG_PATH).mode & 0o777 : 0o600;
+  mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+  const temporary = CONFIG_PATH + ".tmp-" + randomUUID();
+  const fd = openSync(temporary, "wx", 0o600);
+  try {
+    try {
+      writeFileSync(fd, JSON.stringify(value, null, 2) + "\n");
+      // Retained MCP settings can contain credentials; preserve their file's
+      // permissions independently of the current process's umask.
+      fchmodSync(fd, mode);
+    } finally {
+      closeSync(fd);
+    }
+    renameSync(temporary, CONFIG_PATH);
+  } finally {
+    if (existsSync(temporary)) unlinkSync(temporary);
+  }
+}
+
 export const adapter: ConnectAdapter = {
   name: "zcode",
   displayName: "ZCode",
@@ -81,7 +101,7 @@ export const adapter: ConnectAdapter = {
     if (current !== undefined && !matches && !opts.force) {
       return skipped("mcp-conflict", "ZCode already has a different agentmemory MCP entry. Use --force to replace it.");
     }
-    if (isRecord(current) && current.enabled === false && !opts.force) {
+    if (isRecord(current) && (current.enable === false || current.enabled === false) && !opts.force) {
       return skipped("mcp-disabled", "ZCode's agentmemory MCP entry is disabled. Use --force to enable it.");
     }
     const hooks = isRecord(loaded.hooks) ? loaded.hooks : {};
@@ -117,7 +137,7 @@ export const adapter: ConnectAdapter = {
 
     const backupPath = present ? backupFile(CONFIG_PATH, "zcode") : undefined;
     if (backupPath) logBackup(backupPath);
-    writeJsonAtomic(CONFIG_PATH, next);
+    writeConfigAtomic(next);
     if (JSON.stringify(readJsonSafe(CONFIG_PATH)) !== JSON.stringify(next)) {
       return skipped("verification-failed", `ZCode config verification failed: ${CONFIG_PATH}`);
     }
