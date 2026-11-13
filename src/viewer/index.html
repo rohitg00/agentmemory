@@ -4276,22 +4276,30 @@
 
     async function fetchMemoryFacetPage(path, isCurrent, adoptResponse) {
       var m = state.memories;
+      if (!m.facetPageChanges) m.facetPageChanges = [];
       for (var attempt = 0; attempt < 2; attempt++) {
-        var revision = m.facetRevision || 0;
-        var snapshotRevision = m.facetSnapshotRevision || 0;
-        var response = await apiGet(path);
-        if (!isCurrent()) return null;
-        if (!response || (revision === (m.facetRevision || 0) && snapshotRevision === (m.facetSnapshotRevision || 0))) {
-          adoptResponse(response);
-          return true;
+        var changes = Object.create(null);
+        m.facetPageChanges.push(changes);
+        try {
+          var revision = m.facetRevision || 0;
+          var snapshotRevision = m.facetSnapshotRevision || 0;
+          var response = await apiGet(path);
+          if (!isCurrent()) return null;
+          var currentFacets = revision === (m.facetRevision || 0) && snapshotRevision === (m.facetSnapshotRevision || 0);
+          if (!response || currentFacets || attempt === 1) {
+            if (response) {
+              response = Object.assign({}, response, { memories: (response.memories || []).map(function(row) {
+                return changes[row.id] ? store.entities.memory[row.id] : row;
+              }).filter(Boolean) });
+            }
+            adoptResponse(response, currentFacets);
+            if (response && !currentFacets) scheduleMemoryFacetRefresh();
+            return true;
+          }
+        } finally {
+          m.facetPageChanges.splice(m.facetPageChanges.indexOf(changes), 1);
         }
       }
-      if (m.facetRefreshTimer) clearTimeout(m.facetRefreshTimer);
-      m.facetRefreshTimer = setTimeout(function() {
-        m.facetRefreshTimer = null;
-        if (isCurrent()) applyMemoryFilters();
-      }, 100);
-      return null;
     }
 
     function memoryFacetList(dim) {
@@ -4339,6 +4347,7 @@
     function noteMemoryChange(prev, next, id) {
       var m = state.memories;
       m.facetRevision = (m.facetRevision || 0) + 1;
+      (m.facetPageChanges || []).forEach(function(changes) { changes[id] = true; });
       adjustMemoryFacets(prev, next);
       if (m.query && typeof m.query.total === 'number') {
         m.query.total += (memoryMatchesFilters(next) ? 1 : 0) - (memoryMatchesFilters(prev) ? 1 : 0);
@@ -4352,6 +4361,7 @@
     var memorySearchSeq = 0;
     async function runMemorySearch(q) {
       memoryFilterSeq++;
+      state.memories.query = null;
       var query = String(q || '').trim();
       state.memories.search = q;
       var seq = ++memorySearchSeq;
@@ -4366,7 +4376,7 @@
       state.memories.searching = true;
       state.memories.firstPageLoading = true;
       renderMemories();
-      var received = await fetchMemoryFacetPage(memoryQueryPath('&q=' + encodeURIComponent(query)) + '&facets=true', function() { return seq === memorySearchSeq; }, function(res) {
+      var received = await fetchMemoryFacetPage(memoryQueryPath('&q=' + encodeURIComponent(query)) + '&facets=true', function() { return seq === memorySearchSeq; }, function(res, currentFacets) {
         state.memories.searching = false;
         state.memories.firstPageLoading = false;
         if (!res) {
@@ -4375,7 +4385,7 @@
         } else {
           var rows = res.memories || [];
           mergeMemoryRows(rows);
-          setMemoryFacets(res.facets, project, agent);
+          if (currentFacets) setMemoryFacets(res.facets, project, agent);
           state.memories.searchIds = rows.map(function(r) { return r.id; });
           state.memories.searchMode = (res.search && res.search.mode) || 'keyword';
         }
@@ -4402,11 +4412,11 @@
       var project = m.projectFilter, agent = m.agentFilter;
       m.query = filtered ? { loading: true, total: null, nextCursor: null } : null;
       renderMemories();
-      var received = await fetchMemoryFacetPage(memoryQueryPath('&facets=true'), function() { return seq === memoryFilterSeq; }, function(res) {
+      var received = await fetchMemoryFacetPage(memoryQueryPath('&facets=true'), function() { return seq === memoryFilterSeq; }, function(res, currentFacets) {
         m.firstPageLoading = false;
         if (res) {
           mergeMemoryRows(res.memories);
-          setMemoryFacets(res.facets, project, agent);
+          if (currentFacets) setMemoryFacets(res.facets, project, agent);
           if (!filtered) m.nextCursor = res.nextCursor || null;
           m.query = filtered ? { loading: false, total: typeof res.total === 'number' ? res.total : null, nextCursor: res.nextCursor || null } : null;
         } else {

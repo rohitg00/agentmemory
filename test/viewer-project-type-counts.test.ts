@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Memory } from "../src/types.js";
+import { getSearchIndex, setEmbeddingProvider, setVectorIndex } from "../src/functions/search.js";
+import { memoryToObservation } from "../src/state/memory-utils.js";
 import { createMemoryApi, facetCounts, memoryFixture, projectMemoryFixture, type FacetCount, type MemoryFacets, type MemoryListResponse } from "./helpers/project-memory-fixture.js";
 
 type Body = MemoryListResponse["body"];
@@ -15,6 +17,7 @@ type MemoryState = {
 type Viewer = {
   memoryFacetList: (dimension: string) => FacetCount[];
   memoryFilterSelect: (dimension: string, label: string, selected: string) => string;
+  memoryListHtml: () => string;
   applyMemoryFilters: () => Promise<void>;
   setMemoryFilter: (dimension: string, value: string) => void;
   runMemorySearch: (query: string) => Promise<void>;
@@ -38,7 +41,7 @@ const bindings = source.statements.filter(ts.isVariableStatement).flatMap((node)
   .filter((node) => ts.isIdentifier(node.name) && ["MEMORY_TYPES", "memoryFilterSeq", "memorySearchSeq", "ENTITY_ENDPOINTS", "bootGateOpen", "bootGate", "EVENT_LOG_MAX", "eventLog", "eventSeq", "ROW_EVENT_KINDS", "KIND_TABS"].includes(node.name.text))
   .map((node) => `var ${node.getText(source)};`).join("\n");
 const instantiate = new Function("fixture", `
-  var state = fixture.state, store = fixture.store, document = fixture.document;
+  var state = fixture.state, store = fixture.store, document = fixture.document, REST = fixture.rest;
   ${bindings}
   ${declarations}
   apiGet = fixture.apiGet;
@@ -46,11 +49,20 @@ const instantiate = new Function("fixture", `
   noteSessionProduced = fixture.render;
   feedFromChange = fixture.render;
   markDirty = fixture.render;
-  return { memoryFacetList, memoryFilterSelect, applyMemoryFilters, setMemoryFilter, runMemorySearch, loadMoreMemories, noteMemoryChange, ensureLoaded, openBootGate, handleLiveEvent };
+  return { memoryFacetList, memoryFilterSelect, memoryListHtml, applyMemoryFilters, setMemoryFilter, runMemorySearch, loadMoreMemories, noteMemoryChange, ensureLoaded, openBootGate, handleLiveEvent };
 `) as (fixture: object) => Viewer;
 
-async function viewerFixture(loaded = true) {
+const indexedIds = new Set<string>();
+async function viewerFixture(loaded = true, indexed = false) {
   const rows = projectMemoryFixture();
+  if (indexed) {
+    setVectorIndex(null);
+    setEmbeddingProvider(null);
+    for (const row of rows) {
+      getSearchIndex().add(memoryToObservation(row), "memory");
+      indexedIds.add(row.id);
+    }
+  }
   const api = createMemoryApi(rows);
   const initial = await api.get({ latest: "true", limit: "100", facets: "true" });
   expect(initial.status_code).toBe(200);
@@ -70,7 +82,7 @@ async function viewerFixture(loaded = true) {
     return result.status_code === 200 ? result.body : null;
   };
   const viewer = instantiate({
-    state: { memories, activeTab: "memories" }, store,
+    state: { memories, activeTab: "memories" }, store, rest: "http://viewer.test",
     document: { getElementById: () => null }, render: vi.fn(),
     apiGet: (path: string) => {
       requests.push(path);
@@ -103,7 +115,134 @@ beforeEach(() => {
   vi.stubEnv("AGENT_ID", "x");
   vi.stubEnv("AGENTMEMORY_AGENT_SCOPE", "isolated");
 });
+
+describe("search completion during live memory changes", () => {
+  it.each(["A", "B"])("finishes project A search while project %s changes during every response", async (project) => {
+    const r = await viewerFixture(true, true);
+    await r.select("A");
+    r.defer();
+    const search = r.viewer.runMemorySearch("Memory");
+    const resolved = new Set<Pending>();
+    let expectedIds: string[] = [];
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const pending = r.pending.find((request) => !resolved.has(request) && request.path.includes("&q=Memory"));
+      if (!pending) break;
+      resolved.add(pending);
+      const snapshot = await r.response(pending.path);
+      expectedIds = snapshot!.memories!.map((row) => row.id);
+      const next = memoryFixture(`${project}-continuous-${attempt}`, project, "fact");
+      r.rows.push(next);
+      r.viewer.handleLiveEvent("memory.created", { memory: next });
+      pending.resolve(snapshot);
+      await vi.advanceTimersByTimeAsync(0);
+      if (r.memories.searching) await vi.advanceTimersByTimeAsync(100);
+    }
+    await search;
+    expect({ searching: r.memories.searching, firstPageLoading: r.memories.firstPageLoading }).toEqual({
+      searching: false, firstPageLoading: false,
+    });
+    expect(expectedIds.length).toBeGreaterThan(0);
+    expect(r.memories.searchIds).toEqual(expectedIds);
+    expect(r.memories.searchIds!.every((id) => r.store.entities.memory[id]?.project === "A")).toBe(true);
+  });
+
+  it("renders an empty completed search after cancelling a pending project filter", async () => {
+    const r = await viewerFixture(true, true);
+    r.defer();
+    r.memories.projectFilter = "A";
+    const filter = r.viewer.applyMemoryFilters();
+    expect(r.memories.query!.loading).toBe(true);
+    const search = r.viewer.runMemorySearch("zzzxqvunfindablezz");
+    expect(r.pending).toHaveLength(2);
+    const empty = await r.response(r.pending[1]!.path);
+    expect(empty!.memories).toEqual([]);
+    r.pending[1]!.resolve(empty);
+    await search;
+    expect(r.viewer.memoryListHtml()).toContain("No memories match");
+    expect(r.memories.query).toBeNull();
+    expect(r.memories.searchIds).toEqual([]);
+    expect(r.memories.searching).toBe(false);
+    expect(r.memories.firstPageLoading).toBe(false);
+    const rendered = r.viewer.memoryListHtml();
+    r.pending[0]!.resolve(await r.response(r.pending[0]!.path));
+    await filter;
+    expect(r.memories.query).toBeNull();
+    expect(r.viewer.memoryListHtml()).toBe(rendered);
+  });
+
+  it.each(["updated", "deleted"] as const)("preserves a live %s row when search settles after the event log rolls over", async (action) => {
+    const r = await viewerFixture(true, true);
+    await r.select("A");
+    r.defer();
+    const search = r.viewer.runMemorySearch("Memory");
+    let id = "";
+    let updated: Memory | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const pending = r.pending.filter((request) => request.path.includes("&q=Memory"))[attempt]!;
+      const snapshot = await r.response(pending.path);
+      if (attempt === 0) {
+        const next = memoryFixture("B-before-row-control", "B", "fact");
+        r.rows.push(next);
+        r.viewer.handleLiveEvent("memory.created", { memory: next });
+      } else {
+        id = snapshot!.memories!.find((row) => row.type === "fact")!.id;
+        const index = r.rows.findIndex((row) => row.id === id);
+        if (action === "deleted") {
+          r.rows.splice(index, 1);
+          r.viewer.handleLiveEvent("memory.deleted", { memoryId: id });
+        } else {
+          updated = { ...r.rows[index]!, title: "New live title must survive the older response", updatedAt: "2026-10-01T00:00:00Z" };
+          r.rows[index] = updated;
+          r.viewer.handleLiveEvent("memory.updated", { memory: updated });
+        }
+        for (let index = 0; index < 600; index++) {
+          const next = memoryFixture(`B-after-row-control-${index}`, "B", "fact");
+          r.rows.push(next);
+          r.viewer.handleLiveEvent("memory.created", { memory: next });
+        }
+      }
+      pending.resolve(snapshot);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    await search;
+    expect(r.store.entities.memory[id]).toEqual(updated);
+    expect(r.memories.searching).toBe(false);
+    expect(r.memories.firstPageLoading).toBe(false);
+    r.resume();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.store.entities.memory[id]).toEqual(updated);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: action === "deleted" ? 129 : 130, bug: 3 });
+  });
+
+  it("accepts a fresher server row on retry after an earlier live update", async () => {
+    const r = await viewerFixture(true, true);
+    await r.select("A");
+    r.defer();
+    const search = r.viewer.runMemorySearch("Memory");
+    const first = r.pending[0]!;
+    const old = structuredClone(await r.response(first.path));
+    const id = old!.memories!.find((row) => row.type === "fact")!.id;
+    const index = r.rows.findIndex((row) => row.id === id);
+    const live = { ...r.rows[index]!, title: "First live title", updatedAt: "2026-10-01T00:00:00Z" };
+    r.rows[index] = live;
+    r.viewer.handleLiveEvent("memory.updated", { memory: live });
+    first.resolve(old);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(r.pending).toHaveLength(2);
+    const newer = { ...live, title: "Fresher server title before its event", updatedAt: "2026-10-02T00:00:00Z" };
+    r.rows[index] = newer;
+    const retry = r.pending[1]!;
+    const fresh = structuredClone(await r.response(retry.path));
+    expect(fresh!.memories!.find((row) => row.id === id)).toEqual(newer);
+    retry.resolve(fresh);
+    await search;
+    expect(r.store.entities.memory[id]).toEqual(newer);
+    expect(r.memories.searching).toBe(false);
+  });
+});
 afterEach(() => {
+  for (const id of indexedIds) getSearchIndex().remove(id);
+  indexedIds.clear();
   vi.clearAllTimers();
   vi.useRealTimers();
   vi.unstubAllEnvs();
