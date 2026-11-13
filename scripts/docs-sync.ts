@@ -285,7 +285,7 @@ function syncCurrentRegions(files: Map<string, string>, state: State): void {
     for (const [key, noun] of counters) next = next.replace(new RegExp(`${number}(?=\\s+${escapeRegex(noun)}\\b)`, "g"), (value) => currentCount(value, key, state));
     return next;
   }));
-  files.set("README.md", currentRegion(readme, /^<h2 id="mcp-server">.*$/m, /^<h2 /m, (body) => {
+  let currentReadme = currentRegion(readme, /^<h2 id="mcp-server">.*$/m, /^<h2 /m, (body) => {
     const summary = new RegExp(`^(${number})( tools, )(${number})( resources, )(${number})( prompts, and )(${number})( skills\\.)$`, "m");
     if (!summary.test(body)) throw new Error("Missing managed MCP inventory summary.");
     return body.replace(summary, (_all, tools: string, a: string, resources: string, b: string, prompts: string, c: string, skills: string, d: string) =>
@@ -294,7 +294,13 @@ function syncCurrentRegions(files: Map<string, string>, state: State): void {
       .replace(new RegExp(`(?<=full )${number}(?=-tool surface)`, "g"), (value) => currentCount(value, "mcpTools", state))
       .replace(new RegExp(`(?<=falls back to a )${number}(?=-tool local set)`, "g"), (value) => currentCount(value, "fallbackTools", state))
       .replace(new RegExp(`(?<=see only )${number}(?= tools)`, "g"), (value) => currentCount(value, "fallbackTools", state));
-  }));
+  });
+  currentReadme = currentRegion(currentReadme, /^<h2 id="api">.*$/m, /^<h2 /m, (body) => {
+    const summary = new RegExp(`^${number}(?= endpoints on port )`, "m");
+    if (!summary.test(body)) throw new Error("Missing managed API inventory summary.");
+    return body.replace(summary, (value) => currentCount(value, "restEndpoints", state));
+  });
+  files.set("README.md", currentReadme);
 }
 
 function factRegex(fact: Fact, old: string): RegExp {
