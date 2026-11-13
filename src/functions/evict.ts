@@ -201,6 +201,13 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
                 if (JSON.stringify(currentObservations) !== observationsRevision) return false;
                 await kv.delete(KV.sessions, session.id);
                 await kv.delete(KV.summaryRepairs, session.id);
+                for (const o of observations) {
+                  await markCaptureEventDeleted(kv, o);
+                  await kv.delete(KV.observations(session.id), o.id);
+                  getSearchIndex().remove(o.id);
+                  vectorIndexRemove(o.id);
+                  indexCleaned = true;
+                }
                 return true;
               });
               if (!removed) continue;
@@ -215,6 +222,10 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
             }
             for (const o of observations) {
               await unindexObservationSession(kv, o.id).catch(() => {});
+              if (o.imageData) await releaseImageRef(kv, sdk, o.id, o.imageData);
+              if ("imageRef" in o && o.imageRef && o.imageRef !== o.imageData) {
+                await releaseImageRef(kv, sdk, o.id, o.imageRef);
+              }
             }
             await removeSessionFromProjectIndex(
               kv,

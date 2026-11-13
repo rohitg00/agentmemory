@@ -217,6 +217,60 @@ describe("mem::evict stale sessions", () => {
     }
   });
 
+  describe("observation cleanup", () => {
+    afterEach(() => {
+      setIndexPersistence(null);
+      setVectorIndex(null);
+      getSearchIndex().remove("obs_1");
+    });
+
+    it("deletes the session's observation rows and drops them from the search indexes", async () => {
+      const sessionId = "ses_stale_cleanup";
+      const imagePath = "/img/obs.png";
+      const store = storeForObservations(sessionId, [
+        { ...makeObservation(sessionId), imageData: imagePath },
+      ]);
+      store.set(KV.imageRefs, new Map([[imagePath, 1]]));
+      const kv = mockKV(store);
+      const { sdk } = mockSdk();
+      const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+      setIndexPersistence(persistence);
+      const vectors = new VectorIndex();
+      setVectorIndex(vectors);
+
+      registerEvictFunction(sdk as never, kv as never);
+      sdk.registerFunction("event::session::stopped", () => ({ success: true }));
+      sdk.registerFunction("mem::consolidate-pipeline", () => ({ success: true }));
+      sdk.registerFunction("mem::auto-crystallize", () => ({ success: true }));
+
+      const observations = await kv.list<CompressedObservation>(
+        KV.observations(sessionId),
+      );
+      for (const o of observations) {
+        getSearchIndex().add(o);
+        vectors.add(o.id, sessionId, new Float32Array([1, 0, 0]));
+      }
+
+      const result = (await sdk.trigger({
+        function_id: "mem::evict",
+        payload: {},
+      })) as { staleSessions: number };
+
+      expect(result.staleSessions).toBe(1);
+      for (const o of observations) {
+        expect(await kv.get(KV.observations(sessionId), o.id)).toBeNull();
+        expect(getSearchIndex().has(o.id)).toBe(false);
+        expect(vectors.has(o.id)).toBe(false);
+        expect(
+          getSearchIndex()
+            .search("sqlite", 20, "all")
+            .map((r) => r.obsId),
+        ).not.toContain(o.id);
+      }
+      expect(await kv.get(KV.imageRefs, imagePath)).toBeNull();
+    });
+  });
+
   it("bounds consolidation to one pass regardless of how many stale sessions are recovered", async () => {
     // Regression (P1): before the skipConsolidation guard, N recovered
     // sessions each triggered a forced full-corpus consolidate + crystallize
