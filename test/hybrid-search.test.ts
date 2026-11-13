@@ -112,6 +112,28 @@ describe("HybridSearch", () => {
     expect(results.map((r) => r.observation.id)).toEqual(["obs_valid"]);
   });
 
+  it("uses query embeddings for direct, cached and expanded searches", async () => {
+    const obs = makeObs();
+    bm25.add(obs);
+    await kv.set(KV.observations(obs.sessionId), obs.id, obs);
+    const vector = new VectorIndex();
+    vector.add(obs.id, obs.sessionId, new Float32Array([1, 0]));
+    const embed = vi.fn(async () => new Float32Array([0, 1]));
+    const embedQuery = vi.fn(async (_text: string) => new Float32Array([1, 0]));
+    const provider = { name: "test", dimensions: 2, embed, embedQuery, embedBatch: vi.fn() };
+    const hybrid = new HybridSearch(bm25, vector, provider, kv as never, 0.4, 0.6, 0);
+    expect(await hybrid.search("auth")).toHaveLength(1);
+    const request = {};
+    await hybrid.search("auth", 20, "all", undefined, request);
+    await hybrid.search("auth", 40, "all", undefined, request);
+    expect(embedQuery).toHaveBeenCalledTimes(2);
+    await hybrid.searchWithExpansion("auth", 20, {
+      reformulations: ["authentication"], temporalConcretizations: [], entityExtractions: [],
+    });
+    expect(embedQuery.mock.calls.map((args) => args[0])).toEqual(["auth", "auth", "auth", "authentication"]);
+    expect(embed).not.toHaveBeenCalled();
+  });
+
   it("reuses query embeddings only within a recall request", async () => {
     const obs = makeObs();
     bm25.add(obs);

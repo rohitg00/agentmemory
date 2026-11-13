@@ -24,6 +24,82 @@ const options = (overrides: Record<string, unknown> = {}) => ({
 });
 
 describe("Worker Compose project", () => {
+  it("forwards all local embedding settings to the application worker", () => {
+    const settings = {
+      LOCAL_EMBEDDING_MODEL: "test/model", LOCAL_EMBEDDING_DIMENSIONS: "3",
+      LOCAL_EMBEDDING_POOLING: "cls", LOCAL_EMBEDDING_QUERY_PREFIX: "query: ",
+      LOCAL_EMBEDDING_DOCUMENT_PREFIX: "passage: ", LOCAL_EMBEDDING_CACHE_DIR: join(root, "model-cache"),
+      LOCAL_EMBEDDING_BATCH_SIZE: "2", LOCAL_EMBEDDING_DTYPE: "fp32",
+    };
+    const app = parse(renderWorkerCompose(options({ workerEnvironment: settings }))).containers.agentmemory;
+    expect(app.environment).toMatchObject(settings);
+  });
+
+  it("resolves a relative model cache against the CLI directory and escapes line breaks", () => {
+    const cwd = join(root, "project");
+    const value = "model-cache\n雪";
+    const text = renderWorkerCompose(options({ cwd, workerEnvironment: { LOCAL_EMBEDDING_CACHE_DIR: value } }));
+    expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe(join(cwd, value));
+    expect(text).toContain("model-cache\\n雪");
+  });
+
+  it("preserves literal process environment values after cache path normalization", () => {
+    const text = renderWorkerCompose(options({ cwd: join(root, "caller$directory"), workerEnvironment: {
+      LOCAL_EMBEDDING_CACHE_DIR: "${HOME}/$MODELS/$$/cache",
+      LOCAL_EMBEDDING_DOCUMENT_PREFIX: "${DOCUMENT_PREFIX}",
+      LOCAL_EMBEDDING_QUERY_PREFIX: "query: ${HOME} $$ ",
+      LOCAL_EMBEDDING_MODEL: "models/${MODEL}",
+      OPENAI_BASE_URL: "${ENDPOINT}",
+    } }));
+    const env = parse(text).containers.agentmemory.environment;
+    expect(env.LOCAL_EMBEDDING_CACHE_DIR).toBe(join(root, "caller$$directory", "$${HOME}/$$MODELS/$$$$/cache"));
+    expect(env.LOCAL_EMBEDDING_DOCUMENT_PREFIX).toBe("$${DOCUMENT_PREFIX}");
+    expect(env.LOCAL_EMBEDDING_QUERY_PREFIX).toBe("query: $${HOME} $$$$ ");
+    expect(env.LOCAL_EMBEDDING_MODEL).toBe("models/$${MODEL}");
+    expect(env.OPENAI_BASE_URL).toBe("$${ENDPOINT}");
+  });
+
+  it("escapes literal dollars in absolute Windows cache paths", () => {
+    const text = renderWorkerCompose(options({ windows: true, workerEnvironment: {
+      LOCAL_EMBEDDING_CACHE_DIR: "C:\\$models\\${HOME}\\cache",
+    } }));
+    expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe("C:\\$$models\\$${HOME}\\cache");
+  });
+
+  it("resolves Windows cache paths against the CLI directory", () => {
+    const text = renderWorkerCompose(options({ windows: true, cwd: "C:\\project", nodeBin: "C:\\node\\node.exe", workerEnvironment: { LOCAL_EMBEDDING_CACHE_DIR: "model-cache" } }));
+    expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe("C:\\project\\model-cache");
+  });
+
+  it("preserves an absolute cache path when forwarding to the worker", () => {
+    const value = join(root, "cache");
+    const text = renderWorkerCompose(options({ cwd: join(root, "other"), workerEnvironment: { LOCAL_EMBEDDING_CACHE_DIR: value } }));
+    expect(parse(text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe(value);
+  });
+
+  it.each(["LOCAL_EMBEDDING_CACHE_DIR=model-cache", "export LOCAL_EMBEDDING_CACHE_DIR='model-cache with spaces'"])(
+    "resolves an effective cache value from the env file: %s", (line) => {
+      mkdirSync(root, { recursive: true });
+      const envFile = join(root, "model.env");
+      writeFileSync(envFile, `${line}\nUNRELATED_SETTING=kept-in-file\n`);
+      const cwd = join(root, "project");
+      const result = writeWorkerCompose(options({ envFile, cwd, workerEnvironment: {} }));
+      const env = parse(result.text).containers.agentmemory.environment;
+      const relative = line.startsWith("export ") ? "model-cache with spaces" : "model-cache";
+      expect(env.LOCAL_EMBEDDING_CACHE_DIR).toBe(join(cwd, relative));
+      expect(env).not.toHaveProperty("UNRELATED_SETTING");
+    },
+  );
+
+  it("keeps process-environment cache precedence over the env file", () => {
+    mkdirSync(root, { recursive: true });
+    const envFile = join(root, "model.env");
+    writeFileSync(envFile, "export LOCAL_EMBEDDING_CACHE_DIR=file-cache\n");
+    const cwd = join(root, "project");
+    const result = writeWorkerCompose(options({ envFile, cwd, workerEnvironment: { LOCAL_EMBEDDING_CACHE_DIR: "process-cache" } }));
+    expect(parse(result.text).containers.agentmemory.environment.LOCAL_EMBEDDING_CACHE_DIR).toBe(join(cwd, "process-cache"));
+  });
+
   it.each(Array.from({ length: 32 }, (_, offset) => 0x80 + offset))(
     "escapes C1 character U+%s in single-line and multiline scalars", (code) => {
       for (const value of [`first${String.fromCharCode(code)}second`, `first\n${String.fromCharCode(code)}second`]) {

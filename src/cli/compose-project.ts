@@ -1,6 +1,7 @@
 import { chmodSync, existsSync, readFileSync, mkdirSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { parse, stringify } from "yaml";
+import { parse as parseDotenv } from "dotenv";
 import { MAX_STARTUP_TIMEOUT_MS } from "./readiness.js";
 import { getStateSaveIntervalMs } from "../config.js";
 
@@ -52,6 +53,9 @@ export function composeProjectPaths(dataDir: string): {
 }
 
 const AGENTMEMORY_WORKER_ENV_ALLOWLIST = new Set([
+  "LOCAL_EMBEDDING_MODEL", "LOCAL_EMBEDDING_DIMENSIONS", "LOCAL_EMBEDDING_POOLING",
+  "LOCAL_EMBEDDING_QUERY_PREFIX", "LOCAL_EMBEDDING_DOCUMENT_PREFIX",
+  "LOCAL_EMBEDDING_CACHE_DIR", "LOCAL_EMBEDDING_BATCH_SIZE", "LOCAL_EMBEDDING_DTYPE",
   "EMBEDDING_PROVIDER", "AGENTMEMORY_LLM_PROVIDER", "OPENAI_API_KEY", "OPENAI_BASE_URL",
   "OPENAI_MODEL", "OPENAI_EMBEDDING_API_KEY", "OPENAI_EMBEDDING_BASE_URL",
   "OPENAI_EMBEDDING_MODEL", "OPENAI_EMBEDDING_DIMENSIONS", "ANTHROPIC_API_KEY",
@@ -365,6 +369,13 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
   if (filteredEnvFile) lines.push(`    env_file: [${yamlString(filteredEnvFile)}]`);
   const explicitWorkerEnvironment = Object.entries(options.workerEnvironment ?? {})
     .filter(([key, value]) => value !== undefined && AGENTMEMORY_WORKER_ENV_ALLOWLIST.has(key) && !COMPOSE_RESERVED_ENV.has(key))
+    .map(([key, value]) => {
+      const path = windows ? win32 : { isAbsolute, resolve };
+      const forwardedValue = key === "LOCAL_EMBEDDING_CACHE_DIR" && value && !path.isAbsolute(value)
+        ? path.resolve(options.cwd ?? process.cwd(), value)
+        : value;
+      return [key, forwardedValue?.replaceAll("$", () => "$$")] as const;
+    })
     .sort(([left], [right]) => left.localeCompare(right));
   lines.push(
     "    environment:",
@@ -412,10 +423,15 @@ export function writeWorkerCompose(options: ComposeProjectOptions): { file: stri
       chmodSync(join(projectDir, "iii.worker.yaml"), 0o600);
     }
   }
-  const text = renderWorkerCompose(options);
+  const envFileContents = options.envFile ? readFileSync(options.envFile, "utf8") : "";
+  const cacheDir = options.workerEnvironment?.LOCAL_EMBEDDING_CACHE_DIR ??
+    (options.envFile ? parseDotenv(envFileContents).LOCAL_EMBEDDING_CACHE_DIR : undefined);
+  const text = renderWorkerCompose(cacheDir === undefined ? options : {
+    ...options, workerEnvironment: { ...options.workerEnvironment, LOCAL_EMBEDDING_CACHE_DIR: cacheDir },
+  });
   if (options.envFile) {
     const filteredPath = join(paths.directory, ".agentmemory-filtered.env");
-    const entries = readFileSync(options.envFile, "utf8").split(/\r?\n/).filter((line) => {
+    const entries = envFileContents.split(/\r?\n/).filter((line) => {
       const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=/);
       return !match || !COMPOSE_RESERVED_ENV.has(match[1]!);
     });

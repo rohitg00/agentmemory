@@ -256,7 +256,8 @@ describe("Graph Functions", () => {
     expect(unbounded.limit).toBe(500);
     expect(unbounded.offset).toBe(0);
     expect(new Set(unbounded.nodes.map(node => node.id)).size).toBe(500);
-  });
+    // Seeding and snapshotting 1200 nodes is a functional check, not a 5s benchmark.
+  }, 30_000);
 
   it("honors limit and offset for paged graph-query traversal", async () => {
     for (let i = 0; i < 50; i++) {

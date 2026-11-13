@@ -1,47 +1,104 @@
 import type { EmbeddingProvider } from "../../types.js";
+import type { DataType } from "@huggingface/transformers";
+import { resolve } from "node:path";
 
 type FeatureExtractor = (
   texts: string[],
   options: { pooling: string; normalize: boolean },
 ) => Promise<{ tolist: () => number[][] }>;
 
+function positiveInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw?.trim()) return fallback;
+  const value = Number(raw);
+  if (!/^\d+$/.test(raw) || !Number.isSafeInteger(value) || value < 1) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return value;
+}
+
 export class LocalEmbeddingProvider implements EmbeddingProvider {
-  readonly name = "local";
-  readonly dimensions = 384;
-  private extractor: FeatureExtractor | null = null;
+  readonly model = process.env.LOCAL_EMBEDDING_MODEL?.trim() || "Xenova/all-MiniLM-L6-v2";
+  readonly name = this.model === "Xenova/all-MiniLM-L6-v2" ? "local" : `local:${this.model}`;
+  readonly dimensions = positiveInteger("LOCAL_EMBEDDING_DIMENSIONS", 384);
+  readonly pooling = process.env.LOCAL_EMBEDDING_POOLING?.trim() || "mean";
+  readonly dtype = (process.env.LOCAL_EMBEDDING_DTYPE?.trim() || "q8") as DataType;
+  readonly cacheDir = process.env.LOCAL_EMBEDDING_CACHE_DIR ? resolve(process.env.LOCAL_EMBEDDING_CACHE_DIR) : undefined;
+  private readonly batchSize = positiveInteger("LOCAL_EMBEDDING_BATCH_SIZE", Number.MAX_SAFE_INTEGER);
+  private readonly queryPrefix = process.env.LOCAL_EMBEDDING_QUERY_PREFIX || "";
+  private readonly documentPrefix = process.env.LOCAL_EMBEDDING_DOCUMENT_PREFIX || "";
+  private extractor: Promise<FeatureExtractor> | null = null;
+
+  /** A different cache may contain different artifacts under the same model identifier. */
+  get indexIdentity(): string {
+    return JSON.stringify(["local-v2", this.model, this.dimensions, this.pooling, this.dtype, this.documentPrefix, this.cacheDir ?? null]);
+  }
+
+  constructor() {
+    if (!["mean", "cls", "first_token", "last_token", "eos"].includes(this.pooling)) {
+      throw new Error("LOCAL_EMBEDDING_POOLING must be mean, cls, first_token, last_token, or eos");
+    }
+    if (!["auto", "fp32", "fp16", "q8", "int8", "uint8", "q4", "bnb4", "q4f16", "q2", "q2f16", "q1", "q1f16"].includes(this.dtype)) {
+      throw new Error("LOCAL_EMBEDDING_DTYPE must be a supported Transformers.js dtype");
+    }
+  }
 
   async embed(text: string): Promise<Float32Array> {
     const [result] = await this.embedBatch([text]);
     return result;
   }
 
-  async embedBatch(texts: string[]): Promise<Float32Array[]> {
-    const extractor = await this.getExtractor();
-    const output = await extractor(texts, {
-      pooling: "mean",
-      normalize: true,
-    });
-    return output.tolist().map((v) => new Float32Array(v));
+  async embedQuery(text: string): Promise<Float32Array> {
+    const [result] = await this.extract([this.queryPrefix + text]);
+    return result;
   }
 
-  private async getExtractor() {
-    if (this.extractor) return this.extractor;
+  async embedBatch(texts: string[]): Promise<Float32Array[]> {
+    return this.extract(texts.map((text) => this.documentPrefix + text));
+  }
+
+  private async extract(texts: string[]): Promise<Float32Array[]> {
+    if (!texts.length) return [];
+    const extractor = await this.getExtractor();
+    const vectors: Float32Array[] = [];
+    for (let offset = 0; offset < texts.length; offset += this.batchSize) {
+      const output = await extractor(texts.slice(offset, offset + this.batchSize), {
+        pooling: this.pooling,
+        normalize: true,
+      });
+      const rows = output.tolist();
+      if (rows.length !== Math.min(this.batchSize, texts.length - offset) ||
+          rows.some((row) => row.length !== this.dimensions || row.some((n) => !Number.isFinite(n)))) {
+        throw new Error(`Local embedding output does not match configured dimensions (${this.dimensions})`);
+      }
+      vectors.push(...rows.map((row) => new Float32Array(row)));
+    }
+    return vectors;
+  }
+
+  private getExtractor(): Promise<FeatureExtractor> {
+    if (!this.extractor) {
+      this.extractor = this.loadExtractor().catch((error) => {
+        this.extractor = null;
+        throw error;
+      });
+    }
+    return this.extractor;
+  }
+
+  private async loadExtractor(): Promise<FeatureExtractor> {
     let transformers: typeof import("@huggingface/transformers");
     try {
       transformers = await import("@huggingface/transformers");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ERR_MODULE_NOT_FOUND") {
-        throw new Error(
-          "Install @huggingface/transformers for local embeddings: npm install @huggingface/transformers",
-        );
+        throw new Error("Install @huggingface/transformers for local embeddings: npm install @huggingface/transformers");
       }
       throw err;
     }
-    this.extractor = (await transformers.pipeline(
-      "feature-extraction",
-      "Xenova/all-MiniLM-L6-v2",
-      { dtype: "q8" },
-    )) as FeatureExtractor;
-    return this.extractor;
+    return await transformers.pipeline("feature-extraction", this.model, {
+      dtype: this.dtype,
+      ...(this.cacheDir ? { cache_dir: this.cacheDir } : {}),
+    }) as FeatureExtractor;
   }
 }
