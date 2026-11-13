@@ -11,6 +11,8 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
   renameSync: vi.fn(),
   rmSync: vi.fn(),
+  openSync: vi.fn(() => 1),
+  closeSync: vi.fn(),
 }));
 
 vi.mock("../src/mcp/transport.js", () => ({
@@ -121,12 +123,12 @@ describe("InMemoryKV", () => {
     kvWithPersist.persist();
 
     expect(writeFileSync).toHaveBeenCalledWith(
-      `/tmp/test-kv.json.${process.pid}.tmp`,
+      expect.stringMatching(new RegExp(`^/tmp/test-kv\\.json\\.${process.pid}\\.[^.]+\\.tmp$`)),
       expect.any(String),
       { encoding: "utf-8", mode: 0o600 },
     );
-    expect(renameSync).toHaveBeenCalledWith(`/tmp/test-kv.json.${process.pid}.tmp`, "/tmp/test-kv.json");
-    const written = vi.mocked(writeFileSync).mock.calls[0][1] as string;
+    expect(renameSync).toHaveBeenCalledWith(expect.stringContaining(`/tmp/test-kv.json.${process.pid}.`), "/tmp/test-kv.json");
+    const written = vi.mocked(writeFileSync).mock.calls.find(([target]) => typeof target === "string" && target.endsWith(".tmp"))![1] as string;
     const parsed = JSON.parse(written);
     expect(parsed.scope1.key1).toEqual({ data: "test" });
   });
@@ -146,6 +148,7 @@ describe("handleToolCall", () => {
 
   beforeEach(() => {
     vi.mocked(writeFileSync).mockClear();
+    vi.mocked(renameSync).mockClear();
     instantLocalFallbackProbe.mockClear();
     fetchTrap.mockClear();
     // Order matters: resetHandleForTests() restores the default probe and
@@ -179,11 +182,11 @@ describe("handleToolCall", () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.saved).toMatch(/^mem_/);
     expect(writeFileSync).toHaveBeenCalledWith(
-      `/tmp/test-handle.json.${process.pid}.tmp`,
+      expect.stringContaining(`/tmp/test-handle.json.${process.pid}.`),
       expect.any(String),
       { encoding: "utf-8", mode: 0o600 },
     );
-    expect(renameSync).toHaveBeenCalledWith(`/tmp/test-handle.json.${process.pid}.tmp`, "/tmp/test-handle.json");
+    expect(renameSync).toHaveBeenCalledWith(expect.stringContaining(`/tmp/test-handle.json.${process.pid}.`), "/tmp/test-handle.json");
   });
 
   it("memory_save without persist path does not call writeFileSync", async () => {
@@ -485,7 +488,7 @@ describe("handleToolCall", () => {
       expect(parsed.warning).toContain(serverUrl);
       expect(parsed.warning).not.toContain("/tmp/test-fallback.json");
       expect(parsed.warning).not.toContain("lost");
-      expect(writeFileSync).toHaveBeenCalledTimes(1);
+      expect(renameSync).toHaveBeenCalledTimes(1);
     });
 
     it("memory_save says the memory is lost on exit when there is no local file", async () => {
@@ -509,6 +512,7 @@ describe("handleToolCall", () => {
       expect(parsed.storage).toBe("local");
       expect(parsed.warning).toContain("lost when");
       expect(writeFileSync).toHaveBeenCalledTimes(1);
+      expect(renameSync).not.toHaveBeenCalled();
     });
 
     it("memory_save marks the result local when the server stops answering mid-session", async () => {
@@ -538,7 +542,7 @@ describe("handleToolCall", () => {
       expect(parsed.storage).toBe("local");
       expect(parsed.warning).toContain(serverUrl);
       expect(parsed.warning).not.toContain("lost");
-      expect(writeFileSync).toHaveBeenCalledTimes(1);
+      expect(renameSync).toHaveBeenCalledTimes(1);
     });
 
     it("memory_governance_delete says the change is lost on exit when there is no local file", async () => {
