@@ -18,6 +18,7 @@ import type { StateKV } from "../state/kv.js";
 import { collectAll } from "../state/kv.js";
 import type { SearchIndexRevision } from "../state/search-index.js";
 import { addSessionToProjectIndex } from "../state/session-index.js";
+import { indexObservationSession } from "../state/obs-index.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { recordAudit } from "./audit.js";
 import { persistGraphRecords, validateGraphRecords } from "../state/graph-ingestion.js";
@@ -236,6 +237,7 @@ export function registerSnapshotFunction(
                 await kv.set(KV.observations(sessionId), observation.id, observation);
                 getSearchIndex().remove(observation.id);
                 vectorIndexRemove(observation.id);
+                await indexObservationSession(kv, observation.id, sessionId);
                 observationSessions.set(observation.id, sessionId);
               }
             });

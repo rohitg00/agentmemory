@@ -37,6 +37,7 @@ import { currentAuditScope } from "./helpers/mocks.js";
 import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import { KV } from "../src/state/schema.js";
 import { getProjectSessionIndex } from "../src/state/session-index.js";
+import { lookupObservationSession } from "../src/state/obs-index.js";
 import type { Session, Memory, SnapshotMeta } from "../src/types.js";
 
 function mockKV() {
@@ -245,6 +246,37 @@ describe("Snapshot Functions", () => {
       observations: Record<string, unknown[]>;
     };
     expect(state.observations["migrated"]).toEqual([migratedObs]);
+  });
+
+  it("snapshot-restore rebuilds the observation-to-session index", async () => {
+    const restored = {
+      id: "obs_restored",
+      sessionId: "ses_9",
+      timestamp: "2026-02-01T00:00:00Z",
+      type: "decision",
+      title: "Restored obs",
+      narrative: "content",
+      facts: [],
+      concepts: [],
+      files: [],
+      importance: 5,
+    };
+    snapshotContent.mockReturnValueOnce(
+      JSON.stringify({
+        version: "0.4.0",
+        sessions: [],
+        memories: [],
+        observations: { ses_9: [restored] },
+      }),
+    );
+
+    const result = (await sdk.trigger("mem::snapshot-restore", {
+      commitHash: "abc1234",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.observations("ses_9"), "obs_restored")).toEqual(restored);
+    expect(await lookupObservationSession(kv as never, "obs_restored")).toBe("ses_9");
   });
 });
 
