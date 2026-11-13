@@ -27,7 +27,7 @@ import type {
 } from "../types.js";
 import { importOrigin } from "../types.js";
 import { normalizeAccessLog } from "./access-tracker.js";
-import { memoryImagePaths, observationImagePaths, syncImageRefs } from "./image-refs.js";
+import { incrementImageRef, memoryImagePaths, observationImagePaths, releaseImageRef, syncImageRefs } from "./image-refs.js";
 import { KV, UNSESSIONED_OBSERVATION_SCOPE } from "../state/schema.js";
 import { checkPayloadFrameSize, oversizedPayloadError, payloadByteLength, SAFE_PAYLOAD_BYTES } from "../state/frame-guard.js";
 import { StateKV, collectAll } from "../state/kv.js";
@@ -477,10 +477,20 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
       const replaceSessions = strategy === "replace" ? await kv.list<Session>(KV.sessions) : [];
       const sessionKeys = [...obsBuckets, ...importData.sessions.map((session) => session.id),
-        ...importData.summaries.map((summary) => summary.sessionId), ...replaceSessions.map((session) => session.id)]
+        ...importData.summaries.map((summary) => summary.sessionId), ...replaceSessions.map((session) => session.id),
+        ...(strategy === "replace" ? [UNSESSIONED_OBSERVATION_SCOPE] : [])]
         .map((id) => `obs:${id}`);
       const indexObs: CompressedObservation[] = [];
       const indexMems: Memory[] = [];
+      // "replace" deletes every owner row, then rewrites the import. Releasing
+      // each deleted image edge immediately would drop shared paths to zero
+      // and delete files/embeddings that incoming rows still reference, so
+      // edges are tallied during the pass and reconciled after the writes.
+      const imageEdgesRemoved = new Map<string, number>();
+      const imageEdgesAdded = new Map<string, number>();
+      const bumpImageEdges = (map: Map<string, number>, paths: string[]) => {
+        for (const path of paths) map.set(path, (map.get(path) ?? 0) + 1);
+      };
       const preflightError = await withKeyedLocks(sessionKeys, async () => {
         const plannedObservations = new Map<string, CompressedObservation[]>();
         for (const [sessionId, observations] of Object.entries(importData.observations)) {
@@ -538,19 +548,26 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
               obsDeletes.push({ sessionId: session.id, obsId: o.id, captureKey: o.captureKey, imagePaths: observationImagePaths(o) });
             }
           });
+          const sessionlessObs = await collectAll<CompressedObservation>(
+            kv,
+            KV.observations(UNSESSIONED_OBSERVATION_SCOPE),
+          ).catch(() => [] as CompressedObservation[]);
+          for (const o of sessionlessObs) {
+            obsDeletes.push({ sessionId: UNSESSIONED_OBSERVATION_SCOPE, obsId: o.id, captureKey: o.captureKey, imagePaths: observationImagePaths(o) });
+          }
           await runChunked(obsDeletes, async (d) => {
             await markCaptureEventDeleted(kv, { id: d.obsId, sessionId: d.sessionId, captureKey: d.captureKey });
             await kv.delete(KV.observations(d.sessionId), d.obsId);
             await unindexObservationSession(kv, d.obsId).catch(() => {});
             getSearchIndex().remove(d.obsId);
             vectorIndexRemove(d.obsId);
-            await syncImageRefs(kv, sdk, d.obsId, d.imagePaths, []);
+            bumpImageEdges(imageEdgesRemoved, d.imagePaths);
           });
           await runChunked(memories, async (m) => {
             await kv.delete(KV.memories, m.id);
             getSearchIndex().remove(m.id);
             vectorIndexRemove(m.id);
-            await syncImageRefs(kv, sdk, m.id, memoryImagePaths(m), []);
+            bumpImageEdges(imageEdgesRemoved, memoryImagePaths(m));
           });
           await flushIndexSave();
           await runChunked(summaries, (s) => kv.delete(KV.summaries, s.sessionId));
@@ -640,7 +657,11 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
               : null;
             await kv.set(KV.observations(sessionId), o.id, o);
             await indexObservationSession(kv, o.id, sessionId).catch(() => {});
-            await syncImageRefs(kv, sdk, o.id, observationImagePaths(previous), observationImagePaths(o));
+            if (strategy === "replace") {
+              bumpImageEdges(imageEdgesAdded, observationImagePaths(o));
+            } else {
+              await syncImageRefs(kv, sdk, o.id, observationImagePaths(previous), observationImagePaths(o));
+            }
             stats.observations++;
             indexObs.push(o);
           });
@@ -683,10 +704,27 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           ? await kv.get<Memory>(KV.memories, memory.id).catch(() => null)
           : null;
         await kv.set(KV.memories, memory.id, memory);
-        await syncImageRefs(kv, sdk, memory.id, memoryImagePaths(previous), memoryImagePaths(memory));
+        if (strategy === "replace") {
+          bumpImageEdges(imageEdgesAdded, memoryImagePaths(memory));
+        } else {
+          await syncImageRefs(kv, sdk, memory.id, memoryImagePaths(previous), memoryImagePaths(memory));
+        }
         stats.memories++;
         indexMems.push(memory);
       });
+
+      if (strategy === "replace") {
+        const refPaths = new Set([...imageEdgesRemoved.keys(), ...imageEdgesAdded.keys()]);
+        for (const path of refPaths) {
+          const delta = (imageEdgesAdded.get(path) ?? 0) - (imageEdgesRemoved.get(path) ?? 0);
+          for (let i = delta; i < 0; i++) {
+            await releaseImageRef(kv, sdk, "mem::import", path);
+          }
+          for (let i = 0; i < delta; i++) {
+            await incrementImageRef(kv, path);
+          }
+        }
+      }
 
       if (strategy === "replace" || importData.graphNodes || importData.graphEdges) {
         const graph = await persistGraphRecords(kv, importData.graphNodes ?? [], importData.graphEdges ?? [], {

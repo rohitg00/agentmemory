@@ -995,6 +995,32 @@ describe("Export/import sessionless observation scope", () => {
       await target.get(KV.observations("migrated"), "obs_migrated"),
     ).toMatchObject({ id: "obs_migrated", sessionId: "migrated" });
   });
+
+  it("clears the sessionless observation bucket on replace", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.observations("migrated"), "obs_migrated", {
+      ...testObs,
+      id: "obs_migrated",
+      sessionId: "migrated",
+    });
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: {
+        version: VERSION,
+        exportedAt: new Date().toISOString(),
+        sessions: [],
+        observations: {},
+        memories: [],
+        summaries: [],
+      } as unknown as ExportData,
+      strategy: "replace",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.list(KV.observations("migrated"))).toEqual([]);
+  });
 });
 
 describe("Import image reference accounting", () => {
@@ -1127,5 +1153,58 @@ describe("Import image reference accounting", () => {
     expect(result.success).toBe(true);
     expect(await kv.get(KV.imageRefs, "/tmp/img-obs.png")).toBeNull();
     expect(await kv.get(KV.imageRefs, "/tmp/img-mem.png")).toBeNull();
+  });
+
+  it("keeps refs and embeddings for image paths re-imported under replace", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.sessions, testSession.id, testSession);
+    const obs: CompressedObservation = {
+      ...testObs,
+      id: "obs_img",
+      imageData: "/tmp/img-obs.png",
+    };
+    await kv.set(KV.observations(testSession.id), obs.id, obs);
+    await kv.set(KV.imageRefs, "/tmp/img-obs.png", 1);
+    await kv.set(KV.imageEmbeddings, "/tmp/img-obs.png", { dims: 3 });
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: imageExport({
+        sessions: [testSession],
+        observations: { [testSession.id]: [obs] },
+      }),
+      strategy: "replace",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, "/tmp/img-obs.png")).toBe(1);
+    expect(await kv.get(KV.imageEmbeddings, "/tmp/img-obs.png")).toEqual({ dims: 3 });
+  });
+
+  it("releases only the net refcount for shared paths under replace", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.sessions, testSession.id, testSession);
+    const shared = "/tmp/img-shared.png";
+    const first: CompressedObservation = { ...testObs, id: "obs_a", imageData: shared };
+    const second: CompressedObservation = { ...testObs, id: "obs_b", imageData: shared };
+    await kv.set(KV.observations(testSession.id), first.id, first);
+    await kv.set(KV.observations(testSession.id), second.id, second);
+    await kv.set(KV.imageRefs, shared, 2);
+    await kv.set(KV.imageEmbeddings, shared, { dims: 3 });
+
+    const result = (await sdk.trigger("mem::import", {
+      exportData: imageExport({
+        sessions: [testSession],
+        observations: { [testSession.id]: [first] },
+      }),
+      strategy: "replace",
+    })) as { success: boolean };
+
+    expect(result.success).toBe(true);
+    expect(await kv.get(KV.imageRefs, shared)).toBe(1);
+    expect(await kv.get(KV.imageEmbeddings, shared)).toEqual({ dims: 3 });
   });
 });
