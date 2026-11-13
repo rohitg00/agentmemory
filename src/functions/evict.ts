@@ -18,6 +18,7 @@ import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { deleteFacetsForTargets } from "./facets.js";
 import { getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { byEvictionOrder } from "./observe.js";
 import { logger } from "../logger.js";
 
 interface EvictionConfig {
@@ -303,9 +304,7 @@ export function registerEvictFunction(sdk: IIIClient, kv: StateKV): void {
 
       for (const [, obs] of projectObs) {
         if (obs.length > cfg.maxObservationsPerProject) {
-          const sorted = obs.sort(
-            (a, b) => (a.importance ?? 5) - (b.importance ?? 5),
-          );
+          const sorted = obs.sort(byEvictionOrder);
           const toEvict = sorted.slice(
             0,
             obs.length - cfg.maxObservationsPerProject,

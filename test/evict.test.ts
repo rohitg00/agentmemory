@@ -428,6 +428,65 @@ describe("mem::evict stale sessions", () => {
   });
 });
 
+describe("mem::evict project cap", () => {
+  it("evicts the oldest observation when candidates tie on importance", async () => {
+    const sessionId = "ses_cap";
+    const session = { ...makeSession(sessionId), startedAt: daysAgo(1) };
+    const newest = {
+      ...makeObservation(sessionId),
+      id: "obs_new",
+      timestamp: daysAgo(1),
+      importance: 5,
+    };
+    const oldest = {
+      ...makeObservation(sessionId),
+      id: "obs_old",
+      timestamp: daysAgo(9),
+      importance: 5,
+    };
+    const middle = {
+      ...makeObservation(sessionId),
+      id: "obs_mid",
+      timestamp: daysAgo(5),
+      importance: 5,
+    };
+    // KV order puts the newest first; an importance-only stable sort keeps
+    // that order and evicts obs_new. The session-cap convention (importance
+    // asc, then timestamp asc) evicts the oldest instead.
+    const store: Store = new Map([
+      [KV.sessions, new Map([[session.id, session]])],
+      [KV.summaries, new Map()],
+      [
+        KV.observations(sessionId),
+        new Map([
+          [newest.id, newest],
+          [oldest.id, oldest],
+          [middle.id, middle],
+        ]),
+      ],
+      [KV.config, new Map([["eviction", { maxObservationsPerProject: 2 }]])],
+      [KV.audit, new Map()],
+    ]);
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+    sdk.registerFunction("event::session::stopped", () => ({ success: true }));
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { capEvictions: number };
+
+    expect(result.capEvictions).toBe(1);
+    const remaining = (
+      await kv.list<CompressedObservation>(KV.observations(sessionId))
+    ).map((o) => o.id);
+    expect(remaining).toContain(newest.id);
+    expect(remaining).toContain(middle.id);
+    expect(remaining).not.toContain(oldest.id);
+  });
+});
+
 describe("mem::evict memory cleanup", () => {
   function makeEvictMemory(overrides: Partial<Memory>): Memory {
     return {
