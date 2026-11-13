@@ -2338,7 +2338,7 @@
           replaceBucket(kind, listOr([], result, spec.key, spec.fallbackKey));
           if (kind === 'memory') {
             state.memories.nextCursor = result.nextCursor || null;
-            state.memories.facets = result.facets || null;
+            setMemoryFacets(result.facets, '', '');
             state.memories.fetches = {};
             if (memoryFiltersActive() || state.memories.searchIds) setTimeout(applyMemoryFilters, 0);
           }
@@ -4238,13 +4238,42 @@
       return { head: content.slice(0, cut) + '…', excerpt: '…' + content.slice(cut).trim() };
     }
 
+    function setMemoryFacets(facets, project, agent) {
+      var m = state.memories;
+      m.facets = facets || null;
+      m.facetScope = { project: project || '', agent: agent || '' };
+    }
+
+    async function fetchMemoryFacetPage(path, isCurrent) {
+      var m = state.memories;
+      for (var attempt = 0; attempt < 2; attempt++) {
+        var revision = m.facetRevision || 0;
+        var response = await apiGet(path);
+        if (!isCurrent()) return null;
+        if (!response || revision === (m.facetRevision || 0)) return { response: response };
+      }
+      if (m.facetRefreshTimer) clearTimeout(m.facetRefreshTimer);
+      m.facetRefreshTimer = setTimeout(function() {
+        m.facetRefreshTimer = null;
+        if (isCurrent()) applyMemoryFilters();
+      }, 100);
+      return null;
+    }
+
     function memoryFacetList(dim) {
-      var f = state.memories.facets;
+      var m = state.memories;
+      var f = m.facets;
       var key = dim === 'project' ? 'projects' : dim === 'agent' ? 'agents' : 'types';
-      if (f && f[key]) return f[key];
+      if (f && f[key]) {
+        var scope = m.facetScope || { project: '', agent: '' };
+        if (dim === 'type' && (scope.project !== m.projectFilter || scope.agent !== m.agentFilter)) return [];
+        return f[key];
+      }
       var counts = {};
       entityList('memory').forEach(function(x) {
         if (!x || x.isLatest === false) return;
+        if (m.agentFilter && m.agentFilter !== '*' && x.agentId !== m.agentFilter) return;
+        if (dim === 'type' && m.projectFilter && x.project !== m.projectFilter) return;
         var v = dim === 'project' ? x.project : dim === 'agent' ? x.agentId : x.type;
         if (v) counts[v] = (counts[v] || 0) + 1;
       });
@@ -4252,11 +4281,16 @@
     }
 
     function adjustMemoryFacets(prev, next) {
-      var f = state.memories.facets;
+      var m = state.memories;
+      var f = m.facets;
       if (!f) return;
+      var scope = m.facetScope || { project: '', agent: '' };
       function bump(row, delta) {
         if (!row || row.isLatest === false) return;
-        [['projects', row.project], ['agents', row.agentId], ['types', row.type]].forEach(function(pair) {
+        if (scope.agent && scope.agent !== '*' && row.agentId !== scope.agent) return;
+        var dimensions = [['projects', row.project], ['agents', row.agentId]];
+        if (!scope.project || row.project === scope.project) dimensions.push(['types', row.type]);
+        dimensions.forEach(function(pair) {
           if (!pair[1] || !f[pair[0]]) return;
           var list = f[pair[0]];
           var item = list.filter(function(x) { return x.value === pair[1]; })[0];
@@ -4270,6 +4304,7 @@
 
     function noteMemoryChange(prev, next, id) {
       var m = state.memories;
+      m.facetRevision = (m.facetRevision || 0) + 1;
       adjustMemoryFacets(prev, next);
       if (m.query && typeof m.query.total === 'number') {
         m.query.total += (memoryMatchesFilters(next) ? 1 : 0) - (memoryMatchesFilters(prev) ? 1 : 0);
@@ -4281,9 +4316,11 @@
 
     var memorySearchSeq = 0;
     async function runMemorySearch(q) {
+      memoryFilterSeq++;
       var query = String(q || '').trim();
       state.memories.search = q;
       var seq = ++memorySearchSeq;
+      var project = state.memories.projectFilter, agent = state.memories.agentFilter;
       if (!query) {
         state.memories.searchIds = null;
         state.memories.searchMode = '';
@@ -4293,8 +4330,9 @@
       }
       state.memories.searching = true;
       renderMemories();
-      var res = await apiGet(memoryQueryPath('&q=' + encodeURIComponent(query)));
-      if (seq !== memorySearchSeq) return;
+      var page = await fetchMemoryFacetPage(memoryQueryPath('&q=' + encodeURIComponent(query)) + '&facets=true', function() { return seq === memorySearchSeq; });
+      if (!page) return;
+      var res = page.response;
       state.memories.searching = false;
       if (!res) {
         state.memories.searchIds = [];
@@ -4302,6 +4340,7 @@
       } else {
         var rows = res.memories || [];
         mergeMemoryRows(rows);
+        setMemoryFacets(res.facets, project, agent);
         state.memories.searchIds = rows.map(function(r) { return r.id; });
         state.memories.searchMode = (res.search && res.search.mode) || 'keyword';
       }
@@ -4312,25 +4351,29 @@
     async function applyMemoryFilters() {
       var m = state.memories;
       m.checked = {};
-      if (String(m.search || '').trim()) {
-        runMemorySearch(m.search);
-        return;
-      }
       var seq = ++memoryFilterSeq;
-      if (!memoryFiltersActive()) {
+      if (String(m.search || '').trim()) {
         m.query = null;
-        renderMemories();
-        return;
+        return runMemorySearch(m.search);
       }
-      m.query = { loading: true, total: null, nextCursor: null };
+      memorySearchSeq++;
+      m.searchIds = null;
+      m.searchMode = '';
+      m.searching = false;
+      var filtered = memoryFiltersActive();
+      var project = m.projectFilter, agent = m.agentFilter;
+      m.query = filtered ? { loading: true, total: null, nextCursor: null } : null;
       renderMemories();
-      var res = await apiGet(memoryQueryPath());
-      if (seq !== memoryFilterSeq) return;
+      var page = await fetchMemoryFacetPage(memoryQueryPath('&facets=true'), function() { return seq === memoryFilterSeq; });
+      if (!page) return;
+      var res = page.response;
       if (res) {
         mergeMemoryRows(res.memories);
-        m.query = { loading: false, total: typeof res.total === 'number' ? res.total : null, nextCursor: res.nextCursor || null };
+        setMemoryFacets(res.facets, project, agent);
+        if (!filtered) m.nextCursor = res.nextCursor || null;
+        m.query = filtered ? { loading: false, total: typeof res.total === 'number' ? res.total : null, nextCursor: res.nextCursor || null } : null;
       } else {
-        m.query = { loading: false, failed: true, total: null, nextCursor: null };
+        m.query = filtered ? { loading: false, failed: true, total: null, nextCursor: null } : null;
       }
       renderMemories();
     }
@@ -4413,12 +4456,7 @@
     }
 
     function memoryFilterSelect(dim, allLabel, current) {
-      var list = memoryFacetList(dim).slice();
-      if (dim === 'type') {
-        MEMORY_TYPES.forEach(function(t) {
-          if (!list.some(function(x) { return x.value === t; })) list.push({ value: t, count: 0 });
-        });
-      }
+      var list = memoryFacetList(dim).filter(function(x) { return dim !== 'type' || x.count > 0 || x.value === current; });
       if (current && !list.some(function(x) { return x.value === current; })) list.unshift({ value: current, count: 0 });
       var none = list.length === 0;
       var html = '<select id="mem-' + dim + '-filter" data-dim="' + dim + '" aria-label="Filter by ' + dim + '"' + (none ? ' disabled title="No memory has a' + (dim === 'agent' ? 'n agent id' : ' ' + dim) + ' yet"' : '') + '>';
