@@ -4192,9 +4192,10 @@
       return true;
     }
 
-    function memoryQueryPath(extra) {
+    function memoryQueryPath(extra, limit) {
       var m = state.memories;
       var path = 'memories?latest=true&limit=100';
+      if (limit) path = 'memories?latest=true&limit=' + limit;
       if (m.projectFilter) path += '&project=' + encodeURIComponent(m.projectFilter);
       if (m.agentFilter) path += '&agentId=' + encodeURIComponent(m.agentFilter);
       if (m.typeFilter) path += '&type=' + encodeURIComponent(m.typeFilter);
@@ -4242,15 +4243,46 @@
       var m = state.memories;
       m.facets = facets || null;
       m.facetScope = { project: project || '', agent: agent || '' };
+      m.facetSnapshotRevision = (m.facetSnapshotRevision || 0) + 1;
     }
 
-    async function fetchMemoryFacetPage(path, isCurrent) {
+    function scheduleMemoryFacetRefresh() {
+      var m = state.memories;
+      if (m.facetRevalidationTimer) return;
+      m.facetRevalidationTimer = setTimeout(async function() {
+        m.facetRevalidationTimer = null;
+        if (!m.facets) return;
+        var filterSeq = memoryFilterSeq, searchSeq = memorySearchSeq;
+        var revision = m.facetRevision || 0;
+        var snapshotRevision = m.facetSnapshotRevision || 0;
+        var project = m.projectFilter, agent = m.agentFilter;
+        var query = m.query;
+        var response = await apiGet(memoryQueryPath('&facets=true', 1));
+        if (filterSeq !== memoryFilterSeq || searchSeq !== memorySearchSeq) return;
+        if (snapshotRevision !== (m.facetSnapshotRevision || 0)) return;
+        if (revision !== (m.facetRevision || 0)) {
+          scheduleMemoryFacetRefresh();
+          return;
+        }
+        if (response) {
+          setMemoryFacets(response.facets, project, agent);
+          if (query && m.query === query && !query.loading && typeof response.total === 'number') query.total = response.total;
+          renderMemories();
+        }
+      }, 100);
+    }
+
+    async function fetchMemoryFacetPage(path, isCurrent, adoptResponse) {
       var m = state.memories;
       for (var attempt = 0; attempt < 2; attempt++) {
         var revision = m.facetRevision || 0;
+        var snapshotRevision = m.facetSnapshotRevision || 0;
         var response = await apiGet(path);
         if (!isCurrent()) return null;
-        if (!response || revision === (m.facetRevision || 0)) return { response: response };
+        if (!response || (revision === (m.facetRevision || 0) && snapshotRevision === (m.facetSnapshotRevision || 0))) {
+          adoptResponse(response);
+          return true;
+        }
       }
       if (m.facetRefreshTimer) clearTimeout(m.facetRefreshTimer);
       m.facetRefreshTimer = setTimeout(function() {
@@ -4312,6 +4344,7 @@
       if (!next && m.checked[id]) delete m.checked[id];
       if (next && next.isLatest === false && m.checked[id]) delete m.checked[id];
       if (next && m.pendingId && next.id === m.pendingId) m.pendingId = null;
+      scheduleMemoryFacetRefresh();
     }
 
     var memorySearchSeq = 0;
@@ -4330,20 +4363,20 @@
       }
       state.memories.searching = true;
       renderMemories();
-      var page = await fetchMemoryFacetPage(memoryQueryPath('&q=' + encodeURIComponent(query)) + '&facets=true', function() { return seq === memorySearchSeq; });
-      if (!page) return;
-      var res = page.response;
-      state.memories.searching = false;
-      if (!res) {
-        state.memories.searchIds = [];
-        state.memories.searchMode = 'failed';
-      } else {
-        var rows = res.memories || [];
-        mergeMemoryRows(rows);
-        setMemoryFacets(res.facets, project, agent);
-        state.memories.searchIds = rows.map(function(r) { return r.id; });
-        state.memories.searchMode = (res.search && res.search.mode) || 'keyword';
-      }
+      var received = await fetchMemoryFacetPage(memoryQueryPath('&q=' + encodeURIComponent(query)) + '&facets=true', function() { return seq === memorySearchSeq; }, function(res) {
+        state.memories.searching = false;
+        if (!res) {
+          state.memories.searchIds = [];
+          state.memories.searchMode = 'failed';
+        } else {
+          var rows = res.memories || [];
+          mergeMemoryRows(rows);
+          setMemoryFacets(res.facets, project, agent);
+          state.memories.searchIds = rows.map(function(r) { return r.id; });
+          state.memories.searchMode = (res.search && res.search.mode) || 'keyword';
+        }
+      });
+      if (!received) return;
       renderMemories();
     }
 
@@ -4364,17 +4397,17 @@
       var project = m.projectFilter, agent = m.agentFilter;
       m.query = filtered ? { loading: true, total: null, nextCursor: null } : null;
       renderMemories();
-      var page = await fetchMemoryFacetPage(memoryQueryPath('&facets=true'), function() { return seq === memoryFilterSeq; });
-      if (!page) return;
-      var res = page.response;
-      if (res) {
-        mergeMemoryRows(res.memories);
-        setMemoryFacets(res.facets, project, agent);
-        if (!filtered) m.nextCursor = res.nextCursor || null;
-        m.query = filtered ? { loading: false, total: typeof res.total === 'number' ? res.total : null, nextCursor: res.nextCursor || null } : null;
-      } else {
-        m.query = filtered ? { loading: false, failed: true, total: null, nextCursor: null } : null;
-      }
+      var received = await fetchMemoryFacetPage(memoryQueryPath('&facets=true'), function() { return seq === memoryFilterSeq; }, function(res) {
+        if (res) {
+          mergeMemoryRows(res.memories);
+          setMemoryFacets(res.facets, project, agent);
+          if (!filtered) m.nextCursor = res.nextCursor || null;
+          m.query = filtered ? { loading: false, total: typeof res.total === 'number' ? res.total : null, nextCursor: res.nextCursor || null } : null;
+        } else {
+          m.query = filtered ? { loading: false, failed: true, total: null, nextCursor: null } : null;
+        }
+      });
+      if (!received) return;
       renderMemories();
     }
 

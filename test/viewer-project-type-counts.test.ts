@@ -92,10 +92,15 @@ function renderedTypes(viewer: Viewer, selected = ""): Record<string, number> {
 const positive = (values: Record<string, number>) => Object.fromEntries(Object.entries(values).filter(([, count]) => count > 0));
 
 beforeEach(() => {
+  vi.useFakeTimers();
   vi.stubEnv("AGENT_ID", "x");
   vi.stubEnv("AGENTMEMORY_AGENT_SCOPE", "isolated");
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => {
+  vi.clearAllTimers();
+  vi.useRealTimers();
+  vi.unstubAllEnvs();
+});
 
 describe("project type counts in the rendered memory selector", () => {
   it("starts with full All-project counts even when only one hundred rows are loaded", async () => {
@@ -277,5 +282,154 @@ describe("project type counts in the rendered memory selector", () => {
     });
     const expectedIds = r.rows.filter((row) => row.isLatest && row.agentId === "x").map((row) => row.id).sort();
     expect(Object.keys(r.store.entities.memory).sort()).toEqual(expectedIds);
+  });
+
+  it.each([
+    ["filter", "A"], ["filter", "B"],
+    ["search", "A"], ["search", "B"],
+  ] as const)("reconciles a delayed live event already included in the accepted snapshot: %s, event %s", async (mode, project) => {
+    const r = await viewerFixture();
+    r.memories.projectFilter = "A";
+    r.memories.typeFilter = "bug";
+    await r.viewer.applyMemoryFilters();
+    r.defer();
+    const action = mode === "filter" ? r.viewer.applyMemoryFilters() : r.viewer.runMemorySearch("needle");
+    expect(r.pending).toHaveLength(1);
+    const pending = r.pending[0]!;
+    const next = memoryFixture(`${project}-delayed-${mode}`, project, "fact");
+    r.rows.push(next);
+    pending.resolve(await r.response(pending.path));
+    await action;
+    const types = project === "A" ? { fact: 131, bug: 3 } : { fact: 130, bug: 3 };
+    const projects = project === "A" ? { A: 134, B: 3 } : { A: 133, B: 4 };
+    expect(positive(renderedTypes(r.viewer))).toEqual(types);
+    expect(facetCounts(r.viewer.memoryFacetList("project"))).toEqual(projects);
+    expect(r.store.entities.memory[next.id]).toBeUndefined();
+    r.store.entities.memory[next.id] = next;
+    r.viewer.noteMemoryChange(null, next, next.id);
+    const cursor = r.memories.nextCursor, query = r.memories.query;
+    const cachedIds = Object.keys(r.store.entities.memory).sort();
+    r.resume();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(positive(renderedTypes(r.viewer))).toEqual(types);
+    expect(facetCounts(r.viewer.memoryFacetList("project"))).toEqual(projects);
+    expect(r.memories.nextCursor).toBe(cursor);
+    expect(r.memories.query).toBe(query);
+    expect(Object.keys(r.store.entities.memory).sort()).toEqual(cachedIds);
+  });
+
+  it("coalesces live facet refreshes without replacing loaded rows or pagination", async () => {
+    const r = await viewerFixture();
+    await r.select("A");
+    const cursor = r.memories.nextCursor, query = r.memories.query;
+    const requests = r.requests.length;
+    for (const project of ["A", "B"]) {
+      const next = memoryFixture(`${project}-coalesced`, project, "fact");
+      r.rows.push(next);
+      r.store.entities.memory[next.id] = next;
+      r.viewer.noteMemoryChange(null, next, next.id);
+    }
+    const cachedIds = Object.keys(r.store.entities.memory).sort();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.requests.length - requests).toBe(1);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 131, bug: 3 });
+    expect(facetCounts(r.viewer.memoryFacetList("project"))).toEqual({ A: 134, B: 4 });
+    expect(r.memories.nextCursor).toBe(cursor);
+    expect(r.memories.query).toBe(query);
+    expect(Object.keys(r.store.entities.memory).sort()).toEqual(cachedIds);
+  });
+
+  it("ignores an outstanding background facet response after selecting a later project", async () => {
+    const r = await viewerFixture();
+    await r.select("A");
+    r.defer();
+    const next = memoryFixture("B-before-background", "B", "fact");
+    r.rows.push(next);
+    r.store.entities.memory[next.id] = next;
+    r.viewer.noteMemoryChange(null, next, next.id);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.pending).toHaveLength(1);
+    r.memories.projectFilter = "B";
+    const b = r.viewer.applyMemoryFilters();
+    expect(r.pending).toHaveLength(2);
+    r.pending[1]!.resolve(await r.response(r.pending[1]!.path));
+    await b;
+    const types = positive(renderedTypes(r.viewer));
+    r.pending[0]!.resolve(await r.response(r.pending[0]!.path));
+    await vi.advanceTimersByTimeAsync(0);
+    expect([types, positive(renderedTypes(r.viewer))]).toEqual([{ fact: 3, workflow: 1 }, { fact: 3, workflow: 1 }]);
+    expect(r.memories.projectFilter).toBe("B");
+  });
+
+  it("does not let older background facets replace a newer primary snapshot in the same selection", async () => {
+    const r = await viewerFixture();
+    r.memories.projectFilter = "A";
+    r.memories.typeFilter = "bug";
+    await r.viewer.applyMemoryFilters();
+    r.defer();
+    const first = memoryFixture("A-before-primary", "A", "fact");
+    r.rows.push(first);
+    r.store.entities.memory[first.id] = first;
+    r.viewer.noteMemoryChange(null, first, first.id);
+    const primary = r.viewer.applyMemoryFilters();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.pending).toHaveLength(2);
+    const older = await r.response(r.pending[1]!.path);
+    r.rows.push(memoryFixture("A-before-newer-snapshot", "A", "fact"));
+    r.pending[0]!.resolve(await r.response(r.pending[0]!.path));
+    await primary;
+    const types = positive(renderedTypes(r.viewer));
+    r.pending[1]!.resolve(older);
+    await vi.advanceTimersByTimeAsync(0);
+    expect([types, positive(renderedTypes(r.viewer))]).toEqual([{ fact: 132, bug: 3 }, { fact: 132, bug: 3 }]);
+  });
+
+  it("reconciles a delayed matching paginated row without inflating the accepted total", async () => {
+    const r = await viewerFixture();
+    r.memories.projectFilter = "A";
+    r.memories.typeFilter = "fact";
+    await r.viewer.applyMemoryFilters();
+    r.defer();
+    const primary = r.viewer.applyMemoryFilters();
+    const next = memoryFixture("A-000-delayed-matching", "A", "fact");
+    r.rows.push(next);
+    r.pending[0]!.resolve(await r.response(r.pending[0]!.path));
+    await primary;
+    expect(r.memories.query!.total).toBe(131);
+    expect(r.store.entities.memory[next.id]).toBeUndefined();
+    r.store.entities.memory[next.id] = next;
+    r.viewer.noteMemoryChange(null, next, next.id);
+    const cursor = r.memories.nextCursor, query = r.memories.query;
+    r.resume();
+    await vi.advanceTimersByTimeAsync(100);
+    expect({ types: positive(renderedTypes(r.viewer)), total: r.memories.query!.total }).toEqual({
+      types: { fact: 131, bug: 3 }, total: 131,
+    });
+    expect(r.memories.nextCursor).toBe(cursor);
+    expect(r.memories.query).toBe(query);
+  });
+
+  it("does not let an older primary response replace newer background facets", async () => {
+    const r = await viewerFixture();
+    r.memories.projectFilter = "A";
+    r.memories.typeFilter = "bug";
+    await r.viewer.applyMemoryFilters();
+    r.defer();
+    const first = memoryFixture("A-before-older-primary", "A", "fact");
+    r.rows.push(first);
+    r.store.entities.memory[first.id] = first;
+    r.viewer.noteMemoryChange(null, first, first.id);
+    const primary = r.viewer.applyMemoryFilters();
+    const older = await r.response(r.pending[0]!.path);
+    r.rows.push(memoryFixture("A-before-newer-background", "A", "fact"));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(r.pending).toHaveLength(2);
+    r.pending[1]!.resolve(await r.response(r.pending[1]!.path));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 132, bug: 3 });
+    r.resume();
+    r.pending[0]!.resolve(older);
+    await primary;
+    expect(positive(renderedTypes(r.viewer))).toEqual({ fact: 132, bug: 3 });
   });
 });
