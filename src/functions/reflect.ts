@@ -2,7 +2,7 @@ import { createGraphIndexReader } from "../state/graph-retrieval-index.js";
 import { lookupObservationSession } from "../state/obs-index.js";
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
-import { collectAll } from "../state/kv.js";
+import { collectAll, compareInsertionOrder, insertionOrderKey } from "../state/kv.js";
 import { KV, fingerprintId } from "../state/schema.js";
 import type {
   Insight,
@@ -570,19 +570,40 @@ export function registerReflectFunctions(
       if (limit === null) return invalidOption("limit must be a positive safe integer");
       if (!validConfidence(data?.minConfidence)) return invalidOption("minConfidence must be a finite number between 0 and 1");
       const minConfidence = data?.minConfidence ?? 0;
-      let items = await collectAll<Insight>(kv, KV.insights);
-
-      items = items.filter(
-        (i) => !i.deleted && i.confidence >= minConfidence,
-      );
-
-      if (data?.project) {
-        items = items.filter((i) => i.project === data.project);
+      const paged = typeof kv.iterate === "function";
+      const redisOrder = paged && kv.backend === "redis";
+      type Entry = { insight: Insight; order: ReturnType<typeof insertionOrderKey> };
+      const items: Entry[] = [];
+      const compare = (a: Entry, b: Entry) =>
+        b.insight.confidence - a.insight.confidence ||
+        (redisOrder ? compareInsertionOrder(a.order, b.order) : 0);
+      const consider = (insight: Insight) => {
+        if (insight.deleted || !(insight.confidence >= minConfidence)) return;
+        if (data?.project && insight.project !== data.project) return;
+        const entry: Entry = {
+          insight,
+          order: redisOrder ? insertionOrderKey(insight) : { at: 0, id: "" },
+        };
+        if (items.length === limit && compare(entry, items[items.length - 1]!) >= 0) return;
+        let low = 0;
+        let high = items.length;
+        while (low < high) {
+          const middle = (low + high) >>> 1;
+          if (compare(entry, items[middle]!) < 0) high = middle;
+          else low = middle + 1;
+        }
+        items.splice(low, 0, entry);
+        if (items.length > limit) items.pop();
+      };
+      if (paged) {
+        for await (const page of kv.iterate<Insight>(KV.insights)) {
+          for (const insight of page) consider(insight);
+        }
+      } else {
+        for (const insight of await collectAll<Insight>(kv, KV.insights)) consider(insight);
       }
 
-      items.sort((a, b) => b.confidence - a.confidence);
-
-      const result = { success: true, insights: items.slice(0, limit) };
+      const result = { success: true, insights: items.map((entry) => entry.insight) };
       return checkPayloadFrameSize(result, "reduce limit or filter by project") ?? result;
     },
   );
