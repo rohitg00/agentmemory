@@ -4280,6 +4280,25 @@ export function registerApiTriggers(
   });
   sdk.registerTrigger({ type: "http", function_id: "api::obsidian-export", config: { api_path: "/agentmemory/obsidian/export", http_method: "POST" } });
 
+  sdk.registerFunction("api::obsidian-import", async (req: HttpRequest) => {
+    const denied = checkAuth(req, secret);
+    if (denied) return denied;
+    if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+      return { status_code: 400, body: { error: "body must be an object" } };
+    }
+    const body = req.body as Record<string, unknown>;
+    const vaultDir = asNonEmptyString(body.vaultDir);
+    if (!vaultDir || (body.dryRun !== undefined && typeof body.dryRun !== "boolean") ||
+        (body.prefer !== undefined && body.prefer !== "vault" && body.prefer !== "store")) {
+      return { status_code: 400, body: { error: "vaultDir is required; dryRun must be boolean and prefer must be vault or store" } };
+    }
+    const result = await sdk.trigger({ function_id: "mem::obsidian-import", payload: {
+      vaultDir, dryRun: body.dryRun ?? false, prefer: body.prefer ?? "vault",
+    } });
+    return { status_code: 200, body: result };
+  });
+  sdk.registerTrigger({ type: "http", function_id: "api::obsidian-import", config: { api_path: "/agentmemory/obsidian/import", http_method: "POST" } });
+
   sdk.registerFunction("api::reflect",  async (req: HttpRequest) => {
     const denied = checkAuth(req, secret);
     if (denied) return denied;

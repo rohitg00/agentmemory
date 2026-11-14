@@ -1,6 +1,6 @@
 import { TriggerAction, type IIIClient } from "iii-sdk";
 import type { Memory, MemoryRelation } from "../types.js";
-import { memoryToObservation, observationEmbedText, supersededAt } from "../state/memory-utils.js";
+import { memoryToObservation, memoryWriteToken, observationEmbedText, supersededAt } from "../state/memory-utils.js";
 import { memoryTitleFromContent } from "./remember.js";
 import {
   getSearchIndex,
@@ -149,6 +149,7 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
       newContent: string;
       newTitle?: string;
       newType?: string;
+      expectedState?: string;
     }) => {
       if (
         !data?.memoryId ||
@@ -160,10 +161,17 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
       if (data.newType !== undefined && !MEMORY_TYPES.has(data.newType)) {
         return { success: false, error: `invalid type: ${data.newType}` };
       }
+      if (data.expectedState !== undefined &&
+          (typeof data.expectedState !== "string" || !/^[a-f0-9]{64}$/.test(data.expectedState))) {
+        return { success: false, error: "invalid expectedState" };
+      }
       return withKeyedLock("mem:remember", async () => {
         const existing = await kv.get<Memory>(KV.memories, data.memoryId);
         if (!existing) {
           return { success: false, error: "memory not found", code: "not_found" };
+        }
+        if (data.expectedState !== undefined && data.expectedState !== memoryWriteToken(existing)) {
+          return { success: false, error: "memory changed since import planning", code: "state_changed" };
         }
         if (existing.isLatest === false) {
           return {

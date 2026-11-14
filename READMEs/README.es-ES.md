@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 tools MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks automáticos" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 bases de datos externas" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ tests superados" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ tests superados" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1164,7 +1164,7 @@ La referencia completa está en [`.env.example`](../.env.example): credenciales,
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-147 endpoints en el puerto `3111`. La REST API se enlaza a `127.0.0.1` por defecto. Los endpoints protegidos requieren `Authorization: Bearer <secret>`, y los endpoints de mesh sync requieren un `AGENTMEMORY_SECRET` definido explícitamente en ambos peers.
+148 endpoints en el puerto `3111`. La REST API se enlaza a `127.0.0.1` por defecto. Los endpoints protegidos requieren `Authorization: Bearer <secret>`, y los endpoints de mesh sync requieren un `AGENTMEMORY_SECRET` definido explícitamente en ambos peers.
 
 **La autenticación está activada por defecto.** Si `AGENTMEMORY_SECRET` no está definida en la shell ni en `~/.agentmemory/.env`, la CLI genera un secreto aleatorio en el primer inicio en `~/.agentmemory/secret` y lo copia como `secret` en el directorio de datos seleccionado, con permisos `0600`. Todos los clientes incluidos lo leen desde allí al comunicarse con un servidor local: la CLI, el visor, los hooks de `plugin/scripts`, el servidor MCP y el shim `@agentmemory/mcp`, las configuraciones escritas por `agentmemory connect` y las integraciones incluidas de OpenCode, Pi, OpenClaw, Hermes y filesystem-watcher. El secreto guardado solo se envía a URL de loopback (`localhost`, `127.0.0.0/8`, `::1`). Un `AGENTMEMORY_SECRET` explícito siempre tiene prioridad, y los clientes remotos necesitan que el secreto esté definido en su entorno. Los despliegues Docker alojados por cuenta propia desde el repositorio y los entrypoints de `deploy/` generan y exportan su propio secreto. Para llamar a la API manualmente:
 
@@ -1245,7 +1245,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP ٹولز" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 خودکار ہکس" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 خارجی ڈیٹابیسز" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ ٹیسٹس پاس ہو رہے ہیں" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ ٹیسٹس پاس ہو رہے ہیں" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -1167,7 +1167,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-پورٹ `3111` پر 147 اینڈ پوائنٹس۔ REST API ڈیفالٹ کے طور پر `127.0.0.1` سے bind ہوتا ہے۔ محفوظ اینڈ پوائنٹس کو `Authorization: Bearer <secret>` درکار ہے، اور mesh sync اینڈ پوائنٹس کو دونوں peers پر واضح طور پر سیٹ کیا گیا `AGENTMEMORY_SECRET` درکار ہے۔
+پورٹ `3111` پر 148 اینڈ پوائنٹس۔ REST API ڈیفالٹ کے طور پر `127.0.0.1` سے bind ہوتا ہے۔ محفوظ اینڈ پوائنٹس کو `Authorization: Bearer <secret>` درکار ہے، اور mesh sync اینڈ پوائنٹس کو دونوں peers پر واضح طور پر سیٹ کیا گیا `AGENTMEMORY_SECRET` درکار ہے۔
 
 توثیق بطور طے شدہ فعال ہے۔ `AGENTMEMORY_SECRET` مقرر نہ ہو تو CLI پہلی بار بے ترتیب راز `~/.agentmemory/secret` میں محفوظ کرتا ہے اور منتخب ڈیٹا ڈائریکٹری کے `secret` میں اس کی نقل رکھتا ہے؛ اجازت `0600` ہوتی ہے۔ ساتھ آنے والے کلائنٹس مقامی رابطے میں اس اصل فائل کو ترجیح دیتے ہیں اور محفوظ راز صرف loopback URL کو بھیجتے ہیں۔ واضح `AGENTMEMORY_SECRET` مقدم ہے؛ دور کے کلائنٹس اسے environment میں مقرر کریں۔ Docker اپنا راز بناتا ہے۔
 
@@ -1248,7 +1248,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 
