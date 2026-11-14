@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, fchmodSync, fchownSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fchmodSync, fchownSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import * as p from "@clack/prompts";
@@ -168,6 +168,105 @@ function writeConfigAtomic(value: Record<string, unknown>): string | undefined {
   }
 }
 
+async function acquireConfigLock(): Promise<(() => void) | undefined> {
+  mkdirSync(dirname(CONFIG_PATH), { recursive: true });
+  const directory = CONFIG_PATH + ".lock";
+  const token = `${process.pid}-${randomUUID()}`;
+  const owner = join(directory, `owner-${token}.json`);
+  const started = Date.now();
+  for (;;) {
+    try {
+      mkdirSync(directory, { mode: 0o700 });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      const remaining = 8000 - (Date.now() - started);
+      if (remaining <= 0) return undefined;
+      await new Promise(resolve => setTimeout(resolve, Math.min(50, remaining)));
+      continue;
+    }
+    const release = () => {
+      rmSync(owner, { force: true });
+      try { rmdirSync(directory); } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT" && code !== "ENOTEMPTY") throw error;
+      }
+    };
+    try {
+      const original = statSync(directory);
+      writeFileSync(owner, JSON.stringify({ pid: process.pid, createdAt: Date.now(), token }) + "\n", { flag: "wx", mode: 0o600 });
+      const current = statSync(directory);
+      const owners = readdirSync(directory).filter(name => name.startsWith("owner-") && name.endsWith(".json"));
+      if (original.dev !== current.dev || original.ino !== current.ino || owners.length !== 1 || owners[0] !== `owner-${token}.json`) {
+        throw new Error("ZCode configuration lock ownership changed during acquisition.");
+      }
+      return release;
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+}
+
+function installZCode(opts: ConnectOptions): ConnectResult {
+  const present = existsSync(CONFIG_PATH);
+  const loaded = present ? readJsonSafe(CONFIG_PATH) : {};
+  if (!isRecord(loaded) ||
+    (loaded.mcp !== undefined && !isRecord(loaded.mcp)) ||
+    (isRecord(loaded.mcp) && loaded.mcp.servers !== undefined && !isRecord(loaded.mcp.servers)) ||
+    !validHooks(loaded.hooks)) {
+    return skipped("invalid-config", `ZCode config is invalid; leaving ${CONFIG_PATH} unchanged.`);
+  }
+
+  const mcp = isRecord(loaded.mcp) ? loaded.mcp : {};
+  const servers = isRecord(mcp.servers) ? mcp.servers : {};
+  const current = servers.agentmemory;
+  const matches = isAgentmemoryMcpEntry(current) &&
+    isRecord(current) && (current.type === undefined || current.type === "stdio");
+  if (current !== undefined && !matches && !opts.force) {
+    return skipped("mcp-conflict", "ZCode already has a different agentmemory MCP entry. Use --force to replace it.");
+  }
+  if (isRecord(current) && (current.enable === false || current.enabled === false) && !opts.force) {
+    return skipped("mcp-disabled", "ZCode's agentmemory MCP entry is disabled. Use --force to enable it.");
+  }
+  const hooks = isRecord(loaded.hooks) ? loaded.hooks : {};
+  if (opts.withHooks && hooks.enabled === false && !opts.force) {
+    return skipped("hooks-disabled", "ZCode hooks are explicitly disabled. Use --force with --with-hooks to enable them.");
+  }
+
+  // Native MCP env is passed literally: inherit AGENTMEMORY_* from the host
+  // rather than storing another client's shell-style interpolation strings.
+  const entry = matches && !opts.force ? current : {
+    type: "stdio",
+    command: AGENTMEMORY_MCP_BLOCK.command,
+    args: [...AGENTMEMORY_MCP_BLOCK.args],
+  };
+  const next: Record<string, unknown> = { ...loaded, mcp: { ...mcp, servers: { ...servers, agentmemory: entry } } };
+  if (opts.withHooks) {
+    const merged = mergeZCodeHooks((hooks.events ?? {}) as HookManifest["hooks"], findPluginRoot());
+    if (!merged) {
+      return skipped("hook-ownership", "ZCode has capture hooks whose AgentMemory ownership is unclear. Leaving the config unchanged; remove only the old capture hooks you recognize before reconnecting.");
+    }
+    next.hooks = { ...hooks, enabled: true, events: merged.hooks };
+  }
+  const hookState = opts.withHooks ? { hooks: "installed" as const } : {};
+  if (!opts.force && JSON.stringify(next) === JSON.stringify(loaded)) {
+    logAlreadyWired("ZCode", CONFIG_PATH);
+    return { kind: "already-wired", mutatedPath: CONFIG_PATH, ...hookState };
+  }
+  if (opts.dryRun) {
+    p.log.info(`[dry-run] Would wire ZCode MCP${opts.withHooks ? " and hooks" : ""} in ${CONFIG_PATH}`);
+    return { kind: "installed", mutatedPath: CONFIG_PATH, ...hookState };
+  }
+
+  const backupPath = writeConfigAtomic(next);
+  if (backupPath) logBackup(backupPath);
+  if (JSON.stringify(readJsonSafe(CONFIG_PATH)) !== JSON.stringify(next)) {
+    return skipped("verification-failed", `ZCode config verification failed: ${CONFIG_PATH}`);
+  }
+  logInstalled("ZCode", CONFIG_PATH);
+  return { kind: "installed", mutatedPath: CONFIG_PATH, ...(backupPath && { backupPath }), ...hookState };
+}
+
 export const adapter: ConnectAdapter = {
   name: "zcode",
   displayName: "ZCode",
@@ -181,62 +280,14 @@ export const adapter: ConnectAdapter = {
   },
 
   async install(opts: ConnectOptions): Promise<ConnectResult> {
-    const present = existsSync(CONFIG_PATH);
-    const loaded = present ? readJsonSafe(CONFIG_PATH) : {};
-    if (!isRecord(loaded) ||
-      (loaded.mcp !== undefined && !isRecord(loaded.mcp)) ||
-      (isRecord(loaded.mcp) && loaded.mcp.servers !== undefined && !isRecord(loaded.mcp.servers)) ||
-      !validHooks(loaded.hooks)) {
-      return skipped("invalid-config", `ZCode config is invalid; leaving ${CONFIG_PATH} unchanged.`);
+    const release = opts.dryRun ? undefined : await acquireConfigLock();
+    if (!opts.dryRun && !release) {
+      return skipped("config-locked", "ZCode configuration is locked by another writer. Leaving it unchanged; retry after the native writer finishes.");
     }
-
-    const mcp = isRecord(loaded.mcp) ? loaded.mcp : {};
-    const servers = isRecord(mcp.servers) ? mcp.servers : {};
-    const current = servers.agentmemory;
-    const matches = isAgentmemoryMcpEntry(current) &&
-      isRecord(current) && (current.type === undefined || current.type === "stdio");
-    if (current !== undefined && !matches && !opts.force) {
-      return skipped("mcp-conflict", "ZCode already has a different agentmemory MCP entry. Use --force to replace it.");
+    try {
+      return installZCode(opts);
+    } finally {
+      release?.();
     }
-    if (isRecord(current) && (current.enable === false || current.enabled === false) && !opts.force) {
-      return skipped("mcp-disabled", "ZCode's agentmemory MCP entry is disabled. Use --force to enable it.");
-    }
-    const hooks = isRecord(loaded.hooks) ? loaded.hooks : {};
-    if (opts.withHooks && hooks.enabled === false && !opts.force) {
-      return skipped("hooks-disabled", "ZCode hooks are explicitly disabled. Use --force with --with-hooks to enable them.");
-    }
-
-    // Native MCP env is passed literally: inherit AGENTMEMORY_* from the host
-    // rather than storing another client's shell-style interpolation strings.
-    const entry = matches && !opts.force ? current : {
-      type: "stdio",
-      command: AGENTMEMORY_MCP_BLOCK.command,
-      args: [...AGENTMEMORY_MCP_BLOCK.args],
-    };
-    const next: Record<string, unknown> = { ...loaded, mcp: { ...mcp, servers: { ...servers, agentmemory: entry } } };
-    if (opts.withHooks) {
-      const merged = mergeZCodeHooks((hooks.events ?? {}) as HookManifest["hooks"], findPluginRoot());
-      if (!merged) {
-        return skipped("hook-ownership", "ZCode has capture hooks whose AgentMemory ownership is unclear. Leaving the config unchanged; remove only the old capture hooks you recognize before reconnecting.");
-      }
-      next.hooks = { ...hooks, enabled: true, events: merged.hooks };
-    }
-    const hookState = opts.withHooks ? { hooks: "installed" as const } : {};
-    if (!opts.force && JSON.stringify(next) === JSON.stringify(loaded)) {
-      logAlreadyWired("ZCode", CONFIG_PATH);
-      return { kind: "already-wired", mutatedPath: CONFIG_PATH, ...hookState };
-    }
-    if (opts.dryRun) {
-      p.log.info(`[dry-run] Would wire ZCode MCP${opts.withHooks ? " and hooks" : ""} in ${CONFIG_PATH}`);
-      return { kind: "installed", mutatedPath: CONFIG_PATH, ...hookState };
-    }
-
-    const backupPath = writeConfigAtomic(next);
-    if (backupPath) logBackup(backupPath);
-    if (JSON.stringify(readJsonSafe(CONFIG_PATH)) !== JSON.stringify(next)) {
-      return skipped("verification-failed", `ZCode config verification failed: ${CONFIG_PATH}`);
-    }
-    logInstalled("ZCode", CONFIG_PATH);
-    return { kind: "installed", mutatedPath: CONFIG_PATH, ...(backupPath && { backupPath }), ...hookState };
   },
 };

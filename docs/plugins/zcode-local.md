@@ -15,6 +15,8 @@ Use `--dry-run` to preview without writes or backups. Repeating the command is i
 
 The connector marks its handlers with `agentmemoryOwner: "agentmemory:zcode:v1"`. Reconnecting after moving the installation updates their script paths while preserving handler options and mixed user hooks. Unmarked capture commands from a different installation cannot be assigned ownership safely, so the connector leaves the config unchanged. Remove only the old Agent Memory capture hooks you recognize before retrying. `--force` does not override this ownership check.
 
+Reconnects share ZCode's native configuration lock so a concurrent save retains its settings. If the lock remains unavailable for eight seconds, the connector skips the change and leaves the lock untouched. Retry after the native writer finishes. `--force` does not bypass this guard, and dry-run creates no lock or directories.
+
 Updating an existing config on Linux requires `getfacl` and `setfacl` from the `acl` package to retain its complete access ACL. macOS uses its system `chmod` and `cp` utilities inside a private staging directory. If metadata preparation fails or warns, the original config is left unchanged.
 
 ## Local plugin directory
