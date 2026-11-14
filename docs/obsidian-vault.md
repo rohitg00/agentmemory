@@ -49,26 +49,36 @@ vault files unchanged. No new MCP tool is added.
   types are `pattern`, `preference`, `architecture`, `bug`, `workflow` and `fact`.
   Changes to strength, timestamps, version, concepts or files are reported as
   unsupported rather than silently discarded.
-- New notes can use an H1 title and optional `type` frontmatter. Without an H1,
+- New notes can use an H1 title and optional `type` frontmatter, including an
+  empty frontmatter mapping. Without an H1,
   their filename supplies the title. Other frontmatter is rejected. Loaded body
   and title text passes through the same private-block and secret scrubbing as
   ordinary memory writes.
 - Keep generated trailing Concepts, Related and Supersedes sections unchanged.
   Import strips only a tail proved by that note's stored export context. A
   user-written section with the same heading remains part of the body. An edited
-  generated tail produces an ambiguity error. A legacy multiline title can stay
+  generated tail produces an ambiguity error. One editor-added final newline
+  after an otherwise exact generated tail is accepted; literal body whitespace
+  stays intact. A legacy multiline title can stay
   intact while its body changes; editing that title is reported as ambiguous.
 - If both the vault and store changed since export or the last successful
   import, the report includes a conflict. `vault` evolves the actual latest
   descendant with the vault correction; `store` leaves the store unchanged.
   Store-only corrections survive imports of untouched old notes.
+- If newly edited input already matches the store, import reports `unchanged`
+  and records that accepted baseline once, without memory, index or audit writes.
+  Identical repeats and dry runs do not write or refresh this acknowledgement.
 - Repeating an import of the same note does not create another version or write
   another provenance record. Re-export can leave old and new ID-named notes;
   import retains both files and resolves only a unique parent lineage. Unknown
   IDs, duplicate IDs and multiple changed notes targeting one lineage are errors.
+- Moved notes retain their last confirmed import. Later edits require verified
+  parent-history facts identifying the current baseline; a path name alone
+  never resolves conflicting or unverifiable history.
 
 The daemon records compact hashes of export context after a successful file
-write, and import provenance after a confirmed memory write. These records contain
+write, and import provenance after a confirmed memory write or acknowledgement of
+new input matching the verified current store version. These records contain
 neither note bodies nor vault paths. For older exports without this context,
 identity, creation time, version, concepts, files and the generated tail are
 checked against the stored version. A `legacy_export_context` warning reports
@@ -93,3 +103,10 @@ request; a lost response can follow a successful write. A confirmed memory saved
 without provenance is reported with its ID and applied count; a lost write
 response is marked `writeOutcomeUncertain`. The importer never edits
 or deletes vault files.
+
+An acknowledgement rechecks both the note and planned store version under the
+memory writer's lock. If that journal write fails, the error identifies the
+verified store version. The acknowledgement itself performs no memory write and
+adds no applied count; earlier successful notes remain reported in `applied`
+and retain their `files[].appliedMemoryId`. Inspect the acknowledgement's
+provenance before retrying.

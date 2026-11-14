@@ -364,3 +364,344 @@ describe("Obsidian import production boundaries", () => {
     expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
   });
 });
+
+describe("published upstream review regressions", () => {
+  let temp: string;
+  beforeEach(async () => { temp = await mkdtemp(join(tmpdir(), "obsidian-upstream-review-")); vi.stubEnv("AGENTMEMORY_EXPORT_ROOT", temp); vi.clearAllMocks(); });
+  afterEach(async () => { vi.unstubAllEnvs(); await rm(temp, { recursive: true, force: true }); });
+
+  it("does not replay a changed note accepted by matching the actual store", async () => {
+    const w = await setup(temp);
+    await w.edit();
+    const thursday = await w.sdk.trigger("mem::evolve", { memoryId: BASE.id, newContent: BASE.content.replace("Tuesday", "Thursday") }) as { success: boolean; memory: Memory };
+    expect(thursday.success).toBe(true);
+    const beforeFirstMemories = await w.kv.list<Memory>(KV.memories);
+    const beforeFirstAdd = index.add.mock.calls.length, beforeFirstRemove = index.remove.mock.calls.length;
+    const accepted = await w.importVault();
+    expect(accepted.success).toBe(true); expect(accepted.applied).toEqual({ created: 0, updated: 0 });
+    expect(await w.kv.list(KV.memories)).toEqual(beforeFirstMemories);
+    expect(index.add).toHaveBeenCalledTimes(beforeFirstAdd); expect(index.remove).toHaveBeenCalledTimes(beforeFirstRemove);
+    const friday = await w.sdk.trigger("mem::evolve", { memoryId: thursday.memory.id, newContent: thursday.memory.content.replace("Thursday", "Friday") }) as { success: boolean; memory: Memory };
+    expect(friday.success).toBe(true);
+    const before = w.snapshot(), bytes = await readFile(w.note);
+    const additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const repeated = await w.importVault();
+    expect.soft(repeated.success).toBe(true);
+    expect.soft(repeated.applied).toEqual({ created: 0, updated: 0 });
+    expect.soft(w.snapshot()).toBe(before);
+    expect.soft((await w.latest())[0].id).toBe(friday.memory.id);
+    expect.soft((await w.latest())[0].content).toBe(friday.memory.content);
+    expect.soft(index.add).toHaveBeenCalledTimes(additions); expect.soft(index.remove).toHaveBeenCalledTimes(removals);
+    expect.soft(await readFile(w.note)).toEqual(bytes);
+  });
+
+  it("accepts one editor final newline after an exact generated tail without trimming literal body text", async () => {
+    const w = await setup(temp);
+    const body = BASE.content + "\n\n## Concepts\nLiteral user concept heading stays.\n";
+    await w.kv.set(KV.memories, BASE.id, { ...BASE, content: body, concepts: ["synthetic-shipping"] });
+    await w.exportVault();
+    const original = await readFile(w.note, "utf8");
+    expect(original.endsWith("\n")).toBe(false); expect(original.endsWith("\n\n## Concepts\n#synthetic-shipping")).toBe(true);
+    const edited = original.replace("Tuesday", "Thursday") + "\n";
+    await writeFile(w.note, edited);
+    const result = await w.importVault();
+    expect.soft(result.success).toBe(true); expect.soft(result.applied).toEqual({ created: 0, updated: 1 });
+    expect.soft((await w.latest())[0].content).toBe(body.replace("Tuesday", "Thursday"));
+    expect.soft(await readFile(w.note, "utf8")).toBe(edited);
+  });
+
+  it("imports a real new note with an empty frontmatter mapping", async () => {
+    const w = await setup(temp), path = join(w.vault, "memories", "empty-frontmatter.md");
+    const text = "---\n---\n\n# Synthetic zero metadata\n\nA wholly independent fact.";
+    await writeFile(path, text);
+    const result = await w.importVault();
+    expect.soft(result.success).toBe(true); expect.soft(result.applied).toEqual({ created: 1, updated: 0 });
+    const memory = (await w.latest()).find(m => m.id !== BASE.id);
+    expect.soft(memory?.title).toBe("Synthetic zero metadata"); expect.soft(memory?.content).toBe("A wholly independent fact.");
+    expect.soft(await readFile(path, "utf8")).toBe(text);
+  });
+
+  it("accepts a second changed edit at the current moved path with the newest proven accepted history", async () => {
+    const w = await setup(temp), moved = join(w.vault, "memories", "moved.md");
+    await rename(w.note, moved); await w.edit("Tuesday", "Thursday", moved);
+    expect((await w.importVault()).applied.updated).toBe(1);
+    const first = (await w.latest())[0];
+    await w.edit("Thursday", "Saturday", moved);
+    const result = await w.importVault();
+    expect.soft(result.success).toBe(true); expect.soft(result.applied).toEqual({ created: 0, updated: 1 });
+    expect.soft((await w.latest())[0].content).toBe(first.content.replace("Thursday", "Saturday"));
+    expect.soft((await w.latest())[0].parentId).toBe(first.id);
+  });
+
+  it("does not refresh provenance for an original unchanged input after a store-only edit", async () => {
+    const w = await setup(temp);
+    expect((await w.sdk.trigger("mem::evolve", { memoryId: BASE.id, newContent: BASE.content.replace("Tuesday", "Friday") }) as { success: boolean }).success).toBe(true);
+    const before = w.snapshot(), bytes = await readFile(w.note), additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    for (let i = 0; i < 2; i++) {
+      const result = await w.importVault();
+      expect(result.success).toBe(true); expect(result.applied).toEqual({ created: 0, updated: 0 });
+      expect(w.snapshot()).toBe(before); expect(await readFile(w.note)).toEqual(bytes);
+      expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+    }
+  });
+
+  it("keeps a matching-store dry run free of provenance, memory, index and file writes", async () => {
+    const w = await setup(temp); await w.edit();
+    expect((await w.sdk.trigger("mem::evolve", { memoryId: BASE.id, newContent: BASE.content.replace("Tuesday", "Thursday") }) as { success: boolean }).success).toBe(true);
+    const before = w.snapshot(), bytes = await readFile(w.note), additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const result = await w.importVault({ dryRun: true });
+    expect(result.success).toBe(true); expect(result.applied).toEqual({ created: 0, updated: 0 });
+    expect(w.snapshot()).toBe(before); expect(await readFile(w.note)).toEqual(bytes);
+    expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+  });
+});
+
+describe("Obsidian acknowledgement and recorded-history authority", () => {
+  let temp: string;
+  beforeEach(async () => {
+    temp = await mkdtemp(join(tmpdir(), "obsidian-acknowledgement-"));
+    vi.stubEnv("AGENTMEMORY_EXPORT_ROOT", temp);
+    vi.clearAllMocks();
+  });
+  afterEach(async () => { vi.unstubAllEnvs(); await rm(temp, { recursive: true, force: true }); });
+
+  function gate() {
+    let resolve!: () => void;
+    const promise = new Promise<void>(done => { resolve = done; });
+    return { promise, resolve };
+  }
+
+  async function waitForPlanning(planned: Promise<void>, pending: Promise<ObsidianImportResult>) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        planned,
+        pending.then(() => { throw new Error("import completed before the planning barrier"); }),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error("planning barrier was not reached")), 3000);
+        }),
+      ]);
+    } finally { if (timer) clearTimeout(timer); }
+  }
+
+  it("records one matching-store acknowledgement and keeps immediate repeats free of every write", async () => {
+    const w = await setup(temp); await w.edit();
+    const evolved = await w.sdk.trigger("mem::evolve", {
+      memoryId: BASE.id, newContent: BASE.content.replace("Tuesday", "Thursday"),
+    }) as { success: boolean; memory: Memory };
+    expect(evolved.success).toBe(true);
+    const exported = (await w.kv.list<ObsidianVaultNote>(KV.obsidianNotes))[0].exported;
+    const outsideJournal = () => JSON.stringify((JSON.parse(w.snapshot()) as Array<[string, unknown]>).filter(([scope]) => scope !== KV.obsidianNotes));
+    const before = outsideJournal(), bytes = await readFile(w.note);
+    const additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const writes = w.calls.filter(c => c.id === "mem::remember" || c.id === "mem::evolve").length;
+    const journalWrites: Array<{ scope: string; key: string }> = [];
+    const set = w.kv.set;
+    w.kv.set = async <T>(scope: string, key: string, value: T): Promise<T> => {
+      journalWrites.push({ scope, key }); return set(scope, key, value);
+    };
+    const result = await w.importVault();
+    expect(result.success).toBe(true); expect(result.errors).toEqual([]);
+    expect(result.applied).toEqual({ created: 0, updated: 0 });
+    expect(result.files).toEqual([{ file: `memories/${BASE.id}.md`, action: "unchanged", memoryId: evolved.memory.id }]);
+    const contexts = await w.kv.list<ObsidianVaultNote>(KV.obsidianNotes);
+    expect(contexts).toHaveLength(1); expect(contexts[0].exported).toEqual(exported);
+    expect(contexts[0].imported).toMatchObject({ memoryId: evolved.memory.id, rawId: BASE.id });
+    expect(contexts[0].imported?.inputDigest).toMatch(/^[a-f0-9]{64}$/);
+    expect(contexts[0].imported?.stateDigest).toBe(contexts[0].imported?.inputDigest);
+    expect(journalWrites).toEqual([{ scope: KV.obsidianNotes, key: expect.any(String) }]);
+    expect(outsideJournal()).toBe(before); expect(await readFile(w.note)).toEqual(bytes);
+    expect(w.calls.filter(c => c.id === "mem::remember" || c.id === "mem::evolve")).toHaveLength(writes);
+    expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+    const acknowledged = w.snapshot();
+    for (let i = 0; i < 2; i++) {
+      const repeated = await w.importVault();
+      expect(repeated.success).toBe(true); expect(repeated.applied).toEqual({ created: 0, updated: 0 });
+      expect(w.snapshot()).toBe(acknowledged); expect(journalWrites).toHaveLength(1);
+      expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+      expect(await readFile(w.note)).toEqual(bytes);
+    }
+  });
+
+  it("does not acknowledge a stale plan queued behind an actual store evolution", async () => {
+    const w = await setup(temp); await w.edit();
+    const thursday = await w.sdk.trigger("mem::evolve", {
+      memoryId: BASE.id, newContent: BASE.content.replace("Tuesday", "Thursday"),
+    }) as { success: boolean; memory: Memory };
+    expect(thursday.success).toBe(true);
+    const contexts = await w.kv.list(KV.obsidianNotes), bytes = await readFile(w.note);
+    const additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const held = gate(), release = gate(), planned = gate();
+    const get = w.kv.get;
+    w.kv.get = async <T>(scope: string, key: string): Promise<T | null> => {
+      const value = await get<T>(scope, key); if (scope === KV.obsidianNotes) planned.resolve(); return value;
+    };
+    const holder = withKeyedLock("mem:remember", async () => { held.resolve(); await release.promise; });
+    await held.promise;
+    try {
+      const evolving = w.sdk.trigger("mem::evolve", {
+        memoryId: thursday.memory.id, newContent: thursday.memory.content.replace("Thursday", "Friday"),
+      }) as Promise<{ success: boolean; memory: Memory }>;
+      const importing = w.importVault();
+      await waitForPlanning(planned.promise, importing); release.resolve();
+      const friday = await evolving, result = await importing;
+      expect(friday.success).toBe(true); expect(result.success).toBe(false);
+      expect(result.applied).toEqual({ created: 0, updated: 0 });
+      expect(result.errors).toEqual([{ file: `memories/${BASE.id}.md`, error: "note or store changed since import planning; nothing was acknowledged", memoryId: thursday.memory.id }]);
+      expect(await w.kv.list(KV.obsidianNotes)).toEqual(contexts);
+      expect((await w.latest())[0].id).toBe(friday.memory.id);
+      expect((await w.latest())[0].content).toBe(friday.memory.content);
+      expect(await w.kv.list(KV.memories)).toHaveLength(3);
+      expect(index.add).toHaveBeenCalledTimes(additions + 1); expect(index.remove).toHaveBeenCalledTimes(removals + 1);
+      expect(w.calls.filter(c => c.id === "mem::evolve")).toHaveLength(2);
+      expect(await readFile(w.note)).toEqual(bytes);
+    } finally { release.resolve(); await holder; w.kv.get = get; }
+  });
+
+  it("re-reads the note under the writer lock before acknowledging its planned input", async () => {
+    const w = await setup(temp); await w.edit();
+    const thursday = await w.sdk.trigger("mem::evolve", {
+      memoryId: BASE.id, newContent: BASE.content.replace("Tuesday", "Thursday"),
+    }) as { success: boolean; memory: Memory };
+    expect(thursday.success).toBe(true);
+    const before = w.snapshot(), additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const held = gate(), release = gate(), planned = gate();
+    const get = w.kv.get;
+    w.kv.get = async <T>(scope: string, key: string): Promise<T | null> => {
+      const value = await get<T>(scope, key); if (scope === KV.obsidianNotes) planned.resolve(); return value;
+    };
+    const holder = withKeyedLock("mem:remember", async () => { held.resolve(); await release.promise; });
+    await held.promise;
+    try {
+      const importing = w.importVault(); await waitForPlanning(planned.promise, importing);
+      await w.edit("Thursday", "Saturday"); const edited = await readFile(w.note); release.resolve();
+      const result = await importing;
+      expect(result.success).toBe(false); expect(result.applied).toEqual({ created: 0, updated: 0 });
+      expect(result.errors).toEqual([{ file: `memories/${BASE.id}.md`, error: "note or store changed since import planning; nothing was acknowledged", memoryId: thursday.memory.id }]);
+      expect(w.snapshot()).toBe(before); expect(await readFile(w.note)).toEqual(edited);
+      expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+      expect(w.calls.filter(c => c.id === "mem::evolve")).toHaveLength(1);
+    } finally { release.resolve(); await holder; w.kv.get = get; }
+  });
+
+  it("reports an acknowledgement journal failure with its actual store ID and zero memory writes", async () => {
+    const w = await setup(temp); await w.edit();
+    const thursday = await w.sdk.trigger("mem::evolve", {
+      memoryId: BASE.id, newContent: BASE.content.replace("Tuesday", "Thursday"),
+    }) as { success: boolean; memory: Memory };
+    expect(thursday.success).toBe(true);
+    const before = w.snapshot(), bytes = await readFile(w.note);
+    const additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const set = w.kv.set;
+    w.kv.set = async <T>(scope: string, key: string, value: T): Promise<T> => {
+      if (scope === KV.obsidianNotes) throw new Error("injected journal failure");
+      return set(scope, key, value);
+    };
+    const result = await w.importVault();
+    expect(result.success).toBe(false); expect(result.applied).toEqual({ created: 0, updated: 0 });
+    expect(result.errors).toEqual([{ file: `memories/${BASE.id}.md`, error: "store matched but note acknowledgement failed; inspect its provenance before retrying", memoryId: thursday.memory.id }]);
+    expect(result.files[0].appliedMemoryId).toBeUndefined();
+    expect(w.snapshot()).toBe(before); expect(await readFile(w.note)).toEqual(bytes);
+    expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+    expect(w.calls.filter(c => c.id === "mem::evolve")).toHaveLength(1);
+  });
+
+  it("accepts CRLF normalization and one terminal newline while preserving literal generated-looking body text", async () => {
+    const w = await setup(temp);
+    const body = BASE.content + "\n\n## Related\nLiteral user section.\n";
+    await w.kv.set(KV.memories, BASE.id, { ...BASE, content: body, concepts: ["synthetic-shipping"] });
+    await w.exportVault();
+    const edited = ((await readFile(w.note, "utf8")).replace("Tuesday", "Thursday") + "\n").replace(/\n/g, "\r\n");
+    await writeFile(w.note, edited);
+    const result = await w.importVault();
+    expect(result.success).toBe(true); expect(result.applied).toEqual({ created: 0, updated: 1 });
+    expect((await w.latest())[0].content).toBe(body.replace("Tuesday", "Thursday"));
+    expect(await readFile(w.note, "utf8")).toBe(edited);
+    const before = w.snapshot(); expect((await w.importVault()).applied).toEqual({ created: 0, updated: 0 });
+    expect(w.snapshot()).toBe(before);
+  });
+
+  it.each(["changed tail", "two final newlines"])("refuses %s despite an editor final newline", async kind => {
+    const w = await setup(temp);
+    await w.kv.set(KV.memories, BASE.id, { ...BASE, concepts: ["synthetic-shipping"] });
+    await w.exportVault();
+    const original = (await readFile(w.note, "utf8")).replace("Tuesday", "Thursday");
+    const edited = kind === "changed tail" ? original.replace("#synthetic-shipping", "#changed-tail") + "\n" : original + "\n\n";
+    await writeFile(w.note, edited);
+    const before = w.snapshot(), additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const result = await w.importVault();
+    expect(result.success).toBe(false); expect(result.errors.some(e => e.error.includes("generated trailing sections"))).toBe(true);
+    expect(result.applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
+    expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+    expect(await readFile(w.note, "utf8")).toBe(edited);
+  });
+
+  it("plans empty-frontmatter notes without writes and creates them only once", async () => {
+    const w = await setup(temp), path = join(w.vault, "memories", "empty-repeat.md");
+    const text = "---\n---\n\n# Synthetic empty mapping\n\nA distinct synthetic assertion.";
+    await writeFile(path, text); const before = w.snapshot();
+    const dry = await w.importVault({ dryRun: true });
+    expect(dry.success).toBe(true); expect(dry.planned.creates).toBe(1);
+    expect(dry.applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
+    expect((await w.importVault()).applied).toEqual({ created: 1, updated: 0 });
+    const after = w.snapshot(), additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const repeated = await w.importVault();
+    expect(repeated.success).toBe(true); expect(repeated.applied).toEqual({ created: 0, updated: 0 });
+    expect(w.snapshot()).toBe(after); expect(await readFile(path, "utf8")).toBe(text);
+    expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+  });
+
+  it("accepts another current-path edit after a store-only correction using the proven newest journal", async () => {
+    const w = await setup(temp); await w.edit();
+    expect((await w.importVault()).applied.updated).toBe(1);
+    const moved = join(w.vault, "memories", "moved.md"); await rename(w.note, moved);
+    await w.edit("Thursday", "Saturday", moved); expect((await w.importVault()).applied.updated).toBe(1);
+    const saturday = (await w.latest())[0];
+    const sunday = await w.sdk.trigger("mem::evolve", { memoryId: saturday.id, newContent: saturday.content.replace("Saturday", "Sunday") }) as { success: boolean; memory: Memory };
+    expect(sunday.success).toBe(true); await w.edit("Saturday", "Monday", moved);
+    const result = await w.importVault();
+    expect(result.success).toBe(true); expect(result.applied).toEqual({ created: 0, updated: 1 });
+    expect(result.conflicts).toHaveLength(1);
+    expect((await w.latest())[0].content).toBe(saturday.content.replace("Saturday", "Monday"));
+    expect((await w.latest())[0].parentId).toBe(sunday.memory.id);
+  });
+
+  it.each(["missing other tip", "changed other version", "forked other tip", "equal conflicting tips", "cyclic ancestry", "changed current version"])(
+    "refuses an ambiguous moved-path edit with %s", async fault => {
+      const w = await setup(temp); await w.edit();
+      expect((await w.importVault()).applied.updated).toBe(1);
+      const moved = join(w.vault, "memories", "moved.md"); await rename(w.note, moved);
+      await w.edit("Thursday", "Saturday", moved); expect((await w.importVault()).applied.updated).toBe(1);
+      const saturday = (await w.latest())[0];
+      const { noteIdentity, noteStateDigest } = await import("../src/functions/obsidian-vault.js");
+      const oldKey = noteIdentity(w.vault, `memories/${BASE.id}.md`).key;
+      const currentKey = noteIdentity(w.vault, "memories/moved.md").key;
+      const old = (await w.kv.get<ObsidianVaultNote>(KV.obsidianNotes, oldKey))!;
+      const current = (await w.kv.get<ObsidianVaultNote>(KV.obsidianNotes, currentKey))!;
+      expect(old.imported).toBeDefined(); expect(current.imported?.memoryId).toBe(saturday.id);
+      if (fault === "missing other tip") old.imported!.memoryId = "mem_missing_history_tip";
+      else if (fault === "changed other version") old.imported!.stateDigest = "0".repeat(64);
+      else if (fault === "forked other tip") {
+        const separate = await w.sdk.trigger("mem::remember", { content: "An independent synthetic branch.", type: "fact" }) as { success: boolean; memory: Memory };
+        expect(separate.success).toBe(true); expect(separate.memory.parentId).toBeUndefined();
+        old.imported!.memoryId = separate.memory.id; old.imported!.stateDigest = noteStateDigest(separate.memory);
+      } else if (fault === "equal conflicting tips") {
+        old.imported!.memoryId = saturday.id; old.imported!.stateDigest = noteStateDigest(saturday);
+        expect(old.imported!.inputDigest).not.toBe(current.imported!.inputDigest);
+      } else if (fault === "cyclic ancestry") {
+        const original = (await w.kv.get<Memory>(KV.memories, BASE.id))!;
+        await w.kv.set(KV.memories, BASE.id, { ...original, parentId: saturday.id });
+      } else current.imported!.stateDigest = "0".repeat(64);
+      await w.kv.set(KV.obsidianNotes, oldKey, old); await w.kv.set(KV.obsidianNotes, currentKey, current);
+      await w.edit("Saturday", "Monday", moved);
+      const before = w.snapshot(), bytes = await readFile(moved);
+      const additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+      const result = await w.importVault();
+      expect(result.success).toBe(false); expect(result.errors.some(e => e.error.includes("ambiguous"))).toBe(true);
+      expect(result.applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
+      expect((await w.latest()).find(m => m.id === saturday.id)?.content).toBe(saturday.content);
+      expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+      expect(await readFile(moved)).toEqual(bytes);
+    },
+  );
+});

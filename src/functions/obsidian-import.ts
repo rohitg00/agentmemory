@@ -52,6 +52,7 @@ interface PlannedNote {
   type: Memory["type"];
   inputDigest: string;
   action: "create" | "update" | "unchanged" | "store";
+  acknowledge: boolean;
 }
 
 async function readNote(path: string, vault: string): Promise<string> {
@@ -121,7 +122,7 @@ function parseNote(path: string, vault: string, text: string): RawNote {
   let markdown = text;
   let fields: Record<string, unknown> = {};
   if (text.startsWith("---\n")) {
-    const end = text.indexOf("\n---", 4);
+    const end = text.indexOf("\n---", 3);
     if (end < 0 || end > 65_536 || !/^\n---(?:\n|$)/.test(text.slice(end))) throw new Error("invalid frontmatter");
     const document = parseDocument(text.slice(4, end), { uniqueKeys: true });
     if (document.errors.length || document.warnings.length) throw new Error("invalid or unsupported YAML frontmatter");
@@ -149,20 +150,61 @@ function parseNote(path: string, vault: string, text: string): RawNote {
   return { path, file: relative(vault, path), digest: vaultDigest(text), fields, markdown: markdown.replace(/^\n/, "") };
 }
 
+function descendsFrom(current: Memory | undefined, anchor: string, memories: Map<string, Memory>): boolean {
+  const seen = new Set<string>();
+  while (current && !seen.has(current.id)) {
+    if (current.id === anchor) return true;
+    seen.add(current.id);
+    current = current.parentId ? memories.get(current.parentId) : undefined;
+  }
+  return false;
+}
+
 function latestDescendant(anchor: string, memories: Map<string, Memory>): Memory {
-  const latest = [...memories.values()].filter(candidate => {
-    if (candidate.isLatest === false) return false;
-    const seen = new Set<string>();
-    let current: Memory | undefined = candidate;
-    while (current && !seen.has(current.id)) {
-      if (current.id === anchor) return true;
-      seen.add(current.id);
-      current = current.parentId ? memories.get(current.parentId) : undefined;
-    }
-    return false;
-  });
+  const latest = [...memories.values()].filter(candidate =>
+    candidate.isLatest !== false && descendsFrom(candidate, anchor, memories));
   if (latest.length !== 1) throw new Error("memory has no unique latest descendant; resolve its lineage first");
   return latest[0];
+}
+
+function hasNewestImportHistory(
+  context: ObsidianVaultNote,
+  matches: ObsidianVaultNote[],
+  memory: Memory | undefined,
+  memories: Map<string, Memory>,
+): boolean {
+  const accepted = context.imported;
+  const acceptedMemory = accepted ? memories.get(accepted.memoryId) : undefined;
+  if (!accepted || !acceptedMemory || !memory ||
+      noteStateDigest(acceptedMemory) !== accepted.stateDigest ||
+      !descendsFrom(memory, acceptedMemory.id, memories)) return false;
+  const ancestors = new Set<string>();
+  let ancestor: Memory | undefined = acceptedMemory;
+  while (ancestor) {
+    if (ancestors.has(ancestor.id)) return false;
+    ancestors.add(ancestor.id);
+    if (!ancestor.parentId) break;
+    ancestor = memories.get(ancestor.parentId);
+    if (!ancestor) return false;
+  }
+  const digests = new Map<string, string>();
+  const matchesCanonicalVersion = (version: { memoryId: string; stateDigest: string }): boolean => {
+    const canonical = memories.get(version.memoryId);
+    if (!canonical || !ancestors.has(canonical.id)) return false;
+    if (!digests.has(canonical.id)) digests.set(canonical.id, noteStateDigest(canonical));
+    return digests.get(canonical.id) === version.stateDigest;
+  };
+  if (context.exported && !matchesCanonicalVersion(context.exported)) return false;
+  const history = JSON.stringify([context.exported, context.imported]);
+  if (!matches.some(other => other.noteHash === context.noteHash &&
+      JSON.stringify([other.exported, other.imported]) === history)) return false;
+  return matches.every(other => {
+    if (other.exported && !matchesCanonicalVersion(other.exported)) return false;
+    if (other.imported && !matchesCanonicalVersion(other.imported)) return false;
+    if (JSON.stringify([other.exported, other.imported]) === history) return true;
+    const previous = other.imported?.memoryId ?? other.exported?.memoryId;
+    return !!previous && previous !== acceptedMemory.id && ancestors.has(previous);
+  });
 }
 
 function noteContent(raw: RawNote, descriptor?: ObsidianVaultNote["exported"]): { title: string; content: string } {
@@ -181,11 +223,13 @@ function noteContent(raw: RawNote, descriptor?: ObsidianVaultNote["exported"]): 
     if (heading) text = text.slice(heading[0].length);
   }
   if (descriptor && descriptor.tailLength > 0) {
-    const tail = text.slice(-descriptor.tailLength);
+    let end = text.length;
+    if (vaultDigest(text.slice(-descriptor.tailLength)) !== descriptor.tailDigest && text.endsWith("\n")) end--;
+    const tail = text.slice(end - descriptor.tailLength, end);
     if (tail.length !== descriptor.tailLength || vaultDigest(tail) !== descriptor.tailDigest) {
       throw new Error("generated trailing sections changed; their boundary is ambiguous");
     }
-    text = text.slice(0, -descriptor.tailLength);
+    text = text.slice(0, end - descriptor.tailLength);
   }
   title = stripPrivateData(title);
   const content = stripPrivateData(text);
@@ -286,11 +330,16 @@ export function registerObsidianImportFunction(sdk: IIIClient, kv: StateKV): voi
             const inputDigest = noteStateDigest({ title, content, type });
             const memory = base ? latestDescendant(base.id, memories) : undefined;
             let action: PlannedNote["action"] = "create";
+            let acknowledge = false;
             if (memory && base) {
               const originalDigest = context.imported?.inputDigest ?? descriptor?.stateDigest ?? noteStateDigest(base);
               const storeDigest = noteStateDigest(memory);
               const baselineStore = context.imported?.stateDigest ?? descriptor?.stateDigest ?? noteStateDigest(base);
-              if (inputDigest === originalDigest || inputDigest === storeDigest) action = "unchanged";
+              if (inputDigest === originalDigest) action = "unchanged";
+              else if (inputDigest === storeDigest) {
+                action = "unchanged";
+                acknowledge = true;
+              }
               else {
                 action = "update";
                 if (storeDigest !== baselineStore) {
@@ -299,8 +348,10 @@ export function registerObsidianImportFunction(sdk: IIIClient, kv: StateKV): voi
                 }
               }
             }
-            if (action === "update" && ambiguousHistory) throw new Error("export/import context is ambiguous for this ID");
-            plan.push({ raw, context, key: identity.key, memory, title, content, type, inputDigest, action });
+            if (action === "update" && ambiguousHistory && !hasNewestImportHistory(context, matches, memory, memories)) {
+              throw new Error("export/import context is ambiguous for this ID");
+            }
+            plan.push({ raw, context, key: identity.key, memory, title, content, type, inputDigest, action, acknowledge });
           } catch (error) { fail(error instanceof Error ? error.message : "could not plan note", raw.file); }
         }
         const updateHeads = new Set<string>();
@@ -317,6 +368,33 @@ export function registerObsidianImportFunction(sdk: IIIClient, kv: StateKV): voi
         if (result.errors.length) return result;
         if (!result.dryRun) {
           for (const [index, item] of plan.entries()) {
+            if (item.acknowledge && item.memory) {
+              const progress: { stage: "read" | "provenance" } = { stage: "read" };
+              try {
+                await withKeyedLock("mem:remember", async () => {
+                  if (vaultDigest(await readNote(item.raw.path, vault)) !== item.raw.digest) throw new Error("note changed");
+                  const current = await kv.get<Memory>(KV.memories, item.memory!.id);
+                  if (!current || current.isLatest === false || memoryWriteToken(current) !== memoryWriteToken(item.memory!)) {
+                    throw new Error("store changed");
+                  }
+                  progress.stage = "provenance";
+                  await kv.set<ObsidianVaultNote>(KV.obsidianNotes, item.key, {
+                    ...item.context,
+                    imported: {
+                      memoryId: current.id, rawId: item.raw.fields.id as string | undefined,
+                      inputDigest: item.inputDigest, stateDigest: noteStateDigest(current),
+                    },
+                  });
+                });
+              } catch {
+                fail(progress.stage === "provenance"
+                  ? "store matched but note acknowledgement failed; inspect its provenance before retrying"
+                  : "note or store changed since import planning; nothing was acknowledged",
+                  item.raw.file, { memoryId: item.memory.id });
+                break;
+              }
+              continue;
+            }
             if (item.action !== "create" && item.action !== "update") continue;
             let stage: "read" | "write" | "provenance" = "read";
             let writtenId: string | undefined;
