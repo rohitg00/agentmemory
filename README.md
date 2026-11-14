@@ -488,6 +488,10 @@ Hook commands use absolute paths to the installed package’s bundled `plugin/` 
 
 For a remote server with the plugin, enter its `https://` URL and secret in the plugin settings that Claude Code asks for when you enable the plugin. The hooks and the bundled MCP server read both from there. With the URL setting empty, they use `AGENTMEMORY_URL` from your environment, then `http://localhost:3111`; with the secret setting empty, they send only the local server's own secret, and only to a loopback address. With `agentmemory connect claude-code` there are no plugin settings: set `AGENTMEMORY_URL` and `AGENTMEMORY_SECRET` in the environment that starts Claude Code.
 
+### ZCode
+
+`agentmemory connect zcode` writes native MCP configuration; add `--with-hooks` for six supported lifecycle hooks, including tool failures. Use one capture route: config hooks or the dedicated ZCode plugin directory. See [ZCode setup and lifecycle limits](docs/plugins/zcode-local.md).
+
 ### Codex CLI (Codex plugin platform)
 
 Agent Memory is listed in the [OpenAI plugin directory](https://chatgpt.com/plugins/plugins_6ac50a1b89948191906ff15c72357972). That listing adds the 17 skills only. Start the memory server and wire its MCP server with `agentmemory connect codex` so the skills can call the memory tools. For the MCP server, hooks and skills in one plugin, use the repository marketplace below.

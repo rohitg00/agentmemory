@@ -25,6 +25,7 @@ import { adapter as pi } from "./pi.js";
 import { adapter as qwen } from "./qwen.js";
 import { adapter as warp } from "./warp.js";
 import { adapter as zed } from "./zed.js";
+import { adapter as zcode } from "./zcode.js";
 
 export const ADAPTERS: readonly ConnectAdapter[] = [
   claudeCode,
@@ -49,6 +50,7 @@ export const ADAPTERS: readonly ConnectAdapter[] = [
   pi,
   omp,
   openhuman,
+  zcode,
 ];
 
 export function resolveAdapter(name: string): ConnectAdapter | null {
