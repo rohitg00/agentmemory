@@ -1176,7 +1176,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-`3111` পোর্টে 147 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
+`3111` পোর্টে 148 এন্ডপয়েন্ট। REST API ডিফল্টভাবে `127.0.0.1`-এ বাইন্ড করে। প্রোটেক্টেড এন্ডপয়েন্টে `Authorization: Bearer <secret>` লাগে, এবং mesh sync এন্ডপয়েন্টে দুই পিয়ারেই স্পষ্টভাবে সেট করা `AGENTMEMORY_SECRET` লাগে।
 
 প্রমাণীকরণ ডিফল্টভাবে চালু। `AGENTMEMORY_SECRET` নির্ধারিত না থাকলে CLI প্রথমবার একটি random secret `~/.agentmemory/secret`-এ রাখে এবং নির্বাচিত ডেটা ডিরেক্টরির `secret`-এ কপি করে; অনুমতি `0600`। সঙ্গে থাকা ক্লায়েন্ট লোকাল সংযোগে মূল ফাইলটিকে অগ্রাধিকার দেয় এবং সংরক্ষিত secret শুধু loopback URL-এ পাঠায়। স্পষ্ট `AGENTMEMORY_SECRET` অগ্রাধিকার পায়; রিমোট ক্লায়েন্টকে environment-এ সেট করতে হয়। Docker নিজস্ব secret তৈরি করে।
 

@@ -1163,7 +1163,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-147 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
+148 endpoints בפורט `3111`. ה-REST API נקשר ל-`127.0.0.1` כברירת מחדל. endpoints מוגנים דורשים `Authorization: Bearer <secret>`, ו-endpoints של mesh sync דורשים `AGENTMEMORY_SECRET` מוגדר באופן מפורש בשני ה-peers.
 
 **אימות (Authentication) פעיל כברירת מחדל.** אם `AGENTMEMORY_SECRET` לא מוגדר, בהפעלה הראשונה ה-CLI יוצר סוד אקראי ב-`~/.agentmemory/secret` עם הרשאות `0600`, ומעתיק אותו גם לתיקיית הנתונים שנבחרה. כל לקוח מצורף קורא אותו משם כשהוא מדבר עם שרת מקומי: ה-CLI, המציג, ה-hooks תחת `plugin/scripts`, שרת ה-MCP וה-shim `@agentmemory/mcp`, התצורות שנכתבות על ידי `agentmemory connect`, והאינטגרציות המצורפות של OpenCode, Pi, OpenClaw, Hermes וה-filesystem-watcher. ה-secret המאוחסן נשלח רק ל-URLs של loopback (`localhost`, `127.0.0.0/8`, `::1`). `AGENTMEMORY_SECRET` מפורש גובר תמיד, ולקוחות מרוחקים עדיין צריכים אותו מוגדר. Docker וה-entrypoints של `deploy/` כבר מייצרים ומייצאים את ה-secret שלהם. כדי לקרוא ל-API ביד:
 

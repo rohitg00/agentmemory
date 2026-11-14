@@ -1160,7 +1160,7 @@ Pełny opis w [`.env.example`](../.env.example) obejmuje dostawców, filtry prze
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-147 endpointów na porcie `3111`. REST API domyślnie wiąże się z `127.0.0.1`. Chronione endpointy wymagają `Authorization: Bearer <secret>`, a endpointy synchronizacji mesh wymagają wyraźnie ustawionego `AGENTMEMORY_SECRET` na obu peerach.
+148 endpointów na porcie `3111`. REST API domyślnie wiąże się z `127.0.0.1`. Chronione endpointy wymagają `Authorization: Bearer <secret>`, a endpointy synchronizacji mesh wymagają wyraźnie ustawionego `AGENTMEMORY_SECRET` na obu peerach.
 
 **Autoryzacja jest domyślnie włączona.** Gdy `AGENTMEMORY_SECRET` nie jest ustawiony, CLI przy pierwszym uruchomieniu generuje losowy sekret w `~/.agentmemory/secret` z uprawnieniami `0600` i kopiuje go także do wybranego katalogu danych. Wszystkie dołączone klienty odczytują go stamtąd, gdy łączą się z lokalnym serwerem: CLI, podgląd, hooki w `plugin/scripts`, serwer MCP i shim `@agentmemory/mcp`, konfiguracje tworzone przez `agentmemory connect` oraz dołączone integracje OpenCode, Pi, OpenClaw, Hermes i obserwator systemu plików. Zapisany sekret jest wysyłany tylko na adresy loopback (`localhost`, `127.0.0.0/8`, `::1`). Jawnie ustawione `AGENTMEMORY_SECRET` ma zawsze pierwszeństwo, a zdalni klienci muszą mieć sekret w swoim środowisku. Wdrożenia self-hosted Docker oparte na repozytorium i punkty wejścia `deploy/` generują i eksportują własny sekret. Aby ręcznie wywołać API:
 

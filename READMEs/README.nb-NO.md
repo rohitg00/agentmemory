@@ -1168,7 +1168,7 @@ Den fullstendige referansen er [`.env.example`](../.env.example), med legitimasj
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-147 endepunkter på port `3111`. REST-API-en bindes til `127.0.0.1` som standard. Beskyttede endepunkter krever `Authorization: Bearer <secret>`, og mesh-synkroniseringsendepunkter krever en uttrykkelig satt `AGENTMEMORY_SECRET` på begge sider.
+148 endepunkter på port `3111`. REST-API-en bindes til `127.0.0.1` som standard. Beskyttede endepunkter krever `Authorization: Bearer <secret>`, og mesh-synkroniseringsendepunkter krever en uttrykkelig satt `AGENTMEMORY_SECRET` på begge sider.
 
 **Autentisering er på som standard.** Hvis `AGENTMEMORY_SECRET` verken er satt i skallet eller i `~/.agentmemory/.env`, oppretter CLI-en en tilfeldig hemmelighet ved første start i `~/.agentmemory/secret` og en kopi kalt `secret` i den valgte datamappen, med filmodus `0600`. Alle medfølgende klienter leser den derfra når de snakker med en lokal server: CLI-en, viewer, hookene under `plugin/scripts`, MCP-serveren og `@agentmemory/mcp`-shimmen, konfigurasjonene skrevet av `agentmemory connect` og de medfølgende OpenCode-, Pi-, OpenClaw-, Hermes- og filsystemovervåker-integrasjonene. Den lagrede hemmeligheten sendes bare til loopback-URL-er (`localhost`, `127.0.0.0/8`, `::1`). En uttrykkelig `AGENTMEMORY_SECRET` vinner alltid, og eksterne klienter trenger hemmeligheten i miljøet sitt. Docker-basert selvhosting fra repoet og `deploy/`-entrypointene genererer og eksporterer sin egen hemmelighet. Slik kaller du API-et manuelt:
 

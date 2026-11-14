@@ -1163,7 +1163,7 @@ EMBEDDING_PROVIDER=local
 
 <h2 id="api"><picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/section-api.svg"><img src="../assets/tags/section-api.svg" alt="API" height="32" /></picture></h2>
 
-147 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
+148 نقطة نهاية على المنفذ `3111`. ترتبط REST API بـ `127.0.0.1` افتراضيًا. تتطلب نقاط النهاية المحمية ترويسة `Authorization: Bearer <secret>`، وتتطلب نقاط نهاية مزامنة mesh ضبط `AGENTMEMORY_SECRET` صريحًا على كلا الطرفين.
 
 **المصادقة مُفعّلة افتراضيًا.** إذا لم يُضبط `AGENTMEMORY_SECRET`، ينشئ CLI عند التشغيل الأول سرًا عشوائيًا في `~/.agentmemory/secret` بصلاحيات `0600` وينسخه أيضًا إلى مجلد البيانات المحدد. يقرأ كل عميل مضمّن هذا السر عند الاتصال بخادم محلي: CLI والعارض والخطافات تحت `plugin/scripts` وخادم MCP ووسيط `@agentmemory/mcp` والإعدادات التي يكتبها `agentmemory connect` وتكاملات OpenCode وPi وOpenClaw وHermes ومراقب نظام الملفات المضمّنة. لا يُرسل السر المحفوظ إلا إلى عناوين loopback (`localhost` و`127.0.0.0/8` و`::1`). وتكون الأولوية دائمًا لقيمة `AGENTMEMORY_SECRET` الصريحة، كما يجب ضبط السر في بيئة العملاء البعيدين. تنشئ عمليات الاستضافة الذاتية عبر Docker من المستودع ونقاط دخول [`deploy/`](../deploy/) سرها وتصدّره. لاستدعاء API يدويًا:
 

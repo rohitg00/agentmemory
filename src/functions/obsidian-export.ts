@@ -1,5 +1,5 @@
-import { join, resolve } from "node:path";
-import { homedir } from "node:os";
+import { join, relative } from "node:path";
+import { realpath } from "node:fs/promises";
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
@@ -12,15 +12,11 @@ import type {
 import { recordAudit } from "./audit.js";
 import { confinePath, mkdirConfined, writeConfinedFile } from "./path-guard.js";
 import { collectAll } from "../state/kv.js";
-
-const DEFAULT_EXPORT_ROOT = join(homedir(), ".agentmemory");
-
-function getExportRoot(): string {
-  return resolve(process.env["AGENTMEMORY_EXPORT_ROOT"] || DEFAULT_EXPORT_ROOT);
-}
+import { withKeyedLock } from "../state/keyed-mutex.js";
+import { exportedNoteContext, noteIdentity, obsidianExportRoot, vaultDigest } from "./obsidian-vault.js";
 
 async function resolveVaultDir(vaultDir?: string): Promise<string | null> {
-  const root = getExportRoot();
+  const root = obsidianExportRoot();
   const confined = await confinePath(vaultDir || join(root, "vault"), [root]);
   return confined.ok ? confined.path : null;
 }
@@ -63,37 +59,15 @@ function toFrontmatter(obj: Record<string, unknown>): string {
   return lines.join("\n");
 }
 
-function memoryToMd(m: Memory): string {
+export function memoryMarkdownTail(m: Memory): string {
   const concepts = safeArray<string>(m.concepts);
-  const files = safeArray<string>(m.files);
   const relatedIds = safeArray<string>(m.relatedIds);
   const supersedes = safeArray<string>(m.supersedes);
-  const title = safeString(m.title, m.id);
-
-  const fm = toFrontmatter({
-    id: m.id,
-    type: m.type,
-    created: m.createdAt,
-    updated: m.updatedAt,
-    strength: m.strength,
-    version: m.version,
-    concepts,
-    files,
-  });
-
   const relatedLines = relatedIds.map((id) => `- [[${id}]]`).join("\n");
   const supersedesLines = supersedes
     .map((id) => `- [[${id}]] (superseded)`)
     .join("\n");
-
-  const sections = [
-    fm,
-    "",
-    `# ${title}`,
-    "",
-    safeString(m.content),
-  ];
-
+  const sections: string[] = [];
   if (concepts.length > 0) {
     sections.push(
       "",
@@ -108,7 +82,22 @@ function memoryToMd(m: Memory): string {
     sections.push("", "## Supersedes", supersedesLines);
   }
 
-  return sections.join("\n");
+  return sections.length ? `\n${sections.join("\n")}` : "";
+}
+
+function memoryToMd(m: Memory): string {
+  const fm = toFrontmatter({
+    id: m.id,
+    type: m.type,
+    created: m.createdAt,
+    updated: m.updatedAt,
+    strength: m.strength,
+    version: m.version,
+    concepts: safeArray<string>(m.concepts),
+    files: safeArray<string>(m.files),
+  });
+  return [fm, "", `# ${safeString(m.title, m.id)}`, "", safeString(m.content)]
+    .join("\n") + memoryMarkdownTail(m);
 }
 
 function lessonToMd(l: Lesson): string {
@@ -262,7 +251,7 @@ export function registerObsidianExportFunction(
       if (!vaultDir) {
         return {
           success: false,
-          error: `vaultDir must be inside ${getExportRoot()}`,
+          error: `vaultDir must be inside ${obsidianExportRoot()}`,
         };
       }
       const exportTypes = new Set(
@@ -277,8 +266,10 @@ export function registerObsidianExportFunction(
       };
 
       try {
-        const roots = [getExportRoot()];
+        const roots = [obsidianExportRoot()];
         await Promise.all(Object.values(dirs).map((dir) => mkdirConfined(dir, roots)));
+        const canonicalVault = await realpath(vaultDir);
+        return await withKeyedLock(`mem:obsidian:${vaultDigest(canonicalVault)}`, async () => {
 
         const stats = { memories: 0, lessons: 0, crystals: 0, sessions: 0 };
         const errors: ExportError[] = [];
@@ -301,6 +292,9 @@ export function registerObsidianExportFunction(
           const filepath = join(dirs.memories, filename);
           try {
             await writeConfinedFile(filepath, memoryToMd(m), roots);
+            const note = relative(vaultDir, filepath);
+            await kv.set(KV.obsidianNotes, noteIdentity(canonicalVault, note).key,
+              exportedNoteContext(canonicalVault, note, m, memoryMarkdownTail(m)));
             stats.memories++;
             memoryMoc.push(
               `- [[memories/${sanitize(m.id)}|${safeString(m.title, m.id)}]] (${m.type}, strength: ${m.strength ?? 0})`,
@@ -411,6 +405,7 @@ export function registerObsidianExportFunction(
           errors: errors.length > 0 ? errors : undefined,
           vaultDir,
         };
+        });
       } catch (err) {
         return {
           success: false,

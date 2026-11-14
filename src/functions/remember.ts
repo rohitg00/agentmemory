@@ -31,6 +31,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::remember", 
     async (data: {
       content: string;
+      title?: string;
       type?: string;
       concepts?: string[];
       files?: string[];
@@ -45,6 +46,9 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         !data.content.trim()
       ) {
         return { success: false, error: "content is required" };
+      }
+      if (data.title !== undefined && (typeof data.title !== "string" || !data.title.trim())) {
+        return { success: false, error: "title must be a non-empty string" };
       }
       if (data.files && !Array.isArray(data.files)) {
         return { success: false, error: "files must be an array" };
@@ -159,7 +163,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           createdAt: now,
           updatedAt: now,
           type: memType,
-          title: memoryTitleFromContent(data.content),
+          title: data.title ?? memoryTitleFromContent(data.content),
           content: data.content,
           concepts: data.concepts || [],
           files: data.files || [],

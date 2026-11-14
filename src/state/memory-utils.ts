@@ -1,8 +1,22 @@
 import type { CompressedObservation, Lesson, Memory } from "../types.js";
+import { createHash } from "node:crypto";
 import type { StateKV } from "./kv.js";
 import { withReentrantKeyedLock } from "./keyed-mutex.js";
 
 const MAX_DATE_MS = 8.64e15;
+
+function sortedSnapshot(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortedSnapshot);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => [key, sortedSnapshot(item)]));
+  }
+  return value;
+}
+
+export function memoryWriteToken(memory: Memory): string {
+  return createHash("sha256").update(JSON.stringify(sortedSnapshot(memory))).digest("hex");
+}
 
 export function deleteMemoryUnderLock<T = Memory>(
   kv: StateKV,
