@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Memory } from "../src/types.js";
@@ -129,5 +129,22 @@ describe("preserved cf9 notes without export context", () => {
     const result = await w.importVault();
     expect(result.success).toBe(true); expect(result.applied.updated).toBe(0);
     expect(w.snapshot()).toBe(before); expect(await readFile(w.note)).toEqual(bytes);
+  });
+  it("retains a genuine legacy import-only baseline when its note moves after a store edit", async () => {
+    const w = await world(temp), moved = join(w.vault, "memories", "moved-legacy.md");
+    expect(await w.kv.list("mem:obsidian:notes")).toEqual([]);
+    expect(createHash("sha256").update(await readFile(w.note)).digest("hex")).toBe("aa58bb5694adf17eb677ed5d815258413f5106dc9c53a4a200564ecdc845a2af");
+    await w.edit(); expect((await w.importVault()).applied.updated).toBe(1);
+    const contexts = await w.kv.list<{ exported?: unknown; imported?: { rawId?: string } }>("mem:obsidian:notes");
+    expect(contexts).toHaveLength(1); expect(contexts[0].exported).toBeUndefined(); expect(contexts[0].imported?.rawId).toBe(BASE.id);
+    const saved = (await w.latest())[0], friday = ORIGINAL.replace("Tuesday", "Friday");
+    expect((await w.sdk.trigger("mem::evolve", { memoryId: saved.id, newContent: friday }) as { success: boolean }).success).toBe(true);
+    await rename(w.note, moved);
+    const before = w.snapshot(), bytes = await readFile(moved), additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const result = await w.importVault();
+    expect(result.success).toBe(true); expect(result.applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
+    expect((await w.latest())[0].content).toBe(friday); expect(await readFile(moved)).toEqual(bytes);
+    expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+    expect(w.calls).not.toContain("mem::obsidian-export");
   });
 });

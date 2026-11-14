@@ -244,13 +244,14 @@ export function registerObsidianImportFunction(sdk: IIIClient, kv: StateKV): voi
           try {
             const identity = noteIdentity(vault, raw.file);
             const rawId = raw.fields.id as string | undefined;
+            const matches = rawId ? contexts.filter(c => c.exported?.memoryId === rawId || c.imported?.rawId === rawId) : [];
+            const ambiguousHistory = new Set(matches.map(c => JSON.stringify([c.exported, c.imported]))).size > 1;
             let context = await kv.get<ObsidianVaultNote>(KV.obsidianNotes, identity.key);
             if (context && (context.version !== 1 || context.vaultHash !== identity.vaultHash || context.noteHash !== identity.noteHash)) {
               throw new Error("note provenance does not match this vault path");
             }
             if (!context && rawId) {
-              const matches = contexts.filter(c => c.exported?.memoryId === rawId);
-              if (new Set(matches.map(c => JSON.stringify([c.exported, c.imported]))).size > 1) throw new Error("export/import context is ambiguous for this ID");
+              if (ambiguousHistory) throw new Error("export/import context is ambiguous for this ID");
               if (matches[0]) context = {
                 ...matches[0], vaultHash: identity.vaultHash, noteHash: identity.noteHash,
               };
@@ -298,6 +299,7 @@ export function registerObsidianImportFunction(sdk: IIIClient, kv: StateKV): voi
                 }
               }
             }
+            if (action === "update" && ambiguousHistory) throw new Error("export/import context is ambiguous for this ID");
             plan.push({ raw, context, key: identity.key, memory, title, content, type, inputDigest, action });
           } catch (error) { fail(error instanceof Error ? error.message : "could not plan note", raw.file); }
         }

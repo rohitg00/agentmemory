@@ -321,4 +321,46 @@ describe("Obsidian import production boundaries", () => {
     expect((await w.importVault()).applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
     expect(await readFile(join(w.vault, "memories", "new.md"))).toEqual(noteBytes);
   });
+  it("does not replay an imported correction after moving back to its original path", async () => {
+    const moved = join(w.vault, "memories", "moved.md");
+    await rename(w.note, moved); await w.edit("Tuesday", "Thursday", moved);
+    expect((await w.importVault()).applied.updated).toBe(1);
+    const saved = (await w.latest())[0], friday = saved.content.replace("Thursday", "Friday");
+    expect((await w.sdk.trigger("mem::evolve", { memoryId: saved.id, newContent: friday }) as { success: boolean }).success).toBe(true);
+    await rename(moved, w.note);
+    const before = w.snapshot(), bytes = await readFile(w.note);
+    const additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const result = await w.importVault();
+    expect(result.applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
+    expect((await w.latest())[0].content).toBe(friday); expect(await readFile(w.note)).toEqual(bytes);
+    expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+    if (!result.success) expect(result.errors.some(e => e.error.includes("ambiguous"))).toBe(true);
+  });
+  it("does not replay when returning to a path with a stale nonempty imported baseline", async () => {
+    const moved = join(w.vault, "memories", "moved.md");
+    await w.edit(); expect((await w.importVault()).applied.updated).toBe(1);
+    await rename(w.note, moved); await w.edit("Thursday", "Saturday", moved);
+    expect((await w.importVault()).applied.updated).toBe(1);
+    const saved = (await w.latest())[0], sunday = saved.content.replace("Saturday", "Sunday");
+    expect((await w.sdk.trigger("mem::evolve", { memoryId: saved.id, newContent: sunday }) as { success: boolean }).success).toBe(true);
+    await rename(moved, w.note);
+    const before = w.snapshot(), bytes = await readFile(w.note), additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const result = await w.importVault();
+    expect(result.applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
+    expect((await w.latest())[0].content).toBe(sunday); expect(await readFile(w.note)).toEqual(bytes);
+    expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+    if (!result.success) expect(result.errors.some(e => e.error.includes("ambiguous"))).toBe(true);
+  });
+  it("successfully repeats an unchanged currently mapped moved note despite its older export context", async () => {
+    const moved = join(w.vault, "memories", "moved.md");
+    await rename(w.note, moved); await w.edit("Tuesday", "Thursday", moved);
+    expect((await w.importVault()).applied.updated).toBe(1);
+    const saved = (await w.latest())[0], friday = saved.content.replace("Thursday", "Friday");
+    expect((await w.sdk.trigger("mem::evolve", { memoryId: saved.id, newContent: friday }) as { success: boolean }).success).toBe(true);
+    const before = w.snapshot(), bytes = await readFile(moved), additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+    const result = await w.importVault();
+    expect(result.success).toBe(true); expect(result.applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
+    expect((await w.latest())[0].content).toBe(friday); expect(await readFile(moved)).toEqual(bytes);
+    expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+  });
 });
