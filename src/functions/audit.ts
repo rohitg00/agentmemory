@@ -153,10 +153,21 @@ export async function listAuditMonthsDesc(kv: StateKV): Promise<string[]> {
   return [...months].sort().reverse();
 }
 
-let auditRecordedListener: ((entry: AuditEntry) => void) | null = null;
+export type AuditListener = (entry: AuditEntry) => void;
 
-export function setAuditRecordedListener(listener: ((entry: AuditEntry) => void) | null): void {
+let auditRecordedListener: AuditListener | null = null;
+const auditListeners = new Set<AuditListener>();
+
+export function setAuditRecordedListener(listener: AuditListener | null): void {
   auditRecordedListener = listener;
+}
+
+export function addAuditListener(listener: AuditListener): void {
+  auditListeners.add(listener);
+}
+
+export function removeAuditListener(listener: AuditListener): void {
+  auditListeners.delete(listener);
 }
 
 export async function recordAudit(
@@ -181,9 +192,14 @@ export async function recordAudit(
   const month = auditMonthOf(entry.timestamp);
   await kv.set(KV.auditMonth(month), entry.id, entry);
   await markAuditMonth(kv, month);
-  try {
-    auditRecordedListener?.(entry);
-  } catch {}
+  const listeners = new Set(auditRecordedListener
+    ? [auditRecordedListener, ...auditListeners]
+    : auditListeners);
+  for (const listener of listeners) {
+    try {
+      void Promise.resolve(listener(entry)).catch(() => {});
+    } catch {}
+  }
   return entry;
 }
 
