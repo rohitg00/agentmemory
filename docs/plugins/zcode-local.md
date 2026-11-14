@@ -17,6 +17,8 @@ The connector marks its handlers with `agentmemoryOwner: "agentmemory:zcode:v1"`
 
 Reconnects share ZCode's native configuration lock so a concurrent save retains its settings. If the lock remains unavailable for eight seconds, the connector skips the change and leaves the lock untouched. Retry after the native writer finishes. `--force` does not bypass this guard, and dry-run creates no lock or directories.
 
+If a crashed writer left an abandoned lock, close ZCode and stop any `agentmemory connect zcode` commands using this configuration. Confirm that no writer is running, including any owner PID recorded inside `~/.zcode/cli/config.json.lock`. Only then remove its abandoned `owner-*.json` files, remove the empty lock directory non-recursively, and retry. Leave any other contents or a live owner's lock untouched; the connector does not remove abandoned locks automatically.
+
 Updating an existing config on Linux requires `getfacl` and `setfacl` from the `acl` package to retain its complete access ACL. macOS uses its system `chmod` and `cp` utilities inside a private staging directory. If metadata preparation fails or warns, the original config is left unchanged.
 
 ## Local plugin directory

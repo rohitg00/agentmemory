@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import type { HookManifest } from "../src/cli/connect/codex-hooks.js";
 
 const selected = vi.hoisted(() => ({ root: "" }));
 vi.mock("../src/cli/connect/codex-hooks.js", async (original) => ({
@@ -57,11 +58,11 @@ describe("ZCode native configuration lock", () => {
     const result = await pending;
     expect(during).toEqual({ finished: false, config: original, backups: oldBackups });
     expect(result).toMatchObject({ kind: "installed" });
-    const updated = JSON.parse(readFileSync(path, "utf8"));
+    const updated = JSON.parse(readFileSync(path, "utf8")) as { ui: { locale: string }; hooks: { events: HookManifest["hooks"] } };
     expect(updated.ui.locale).toBe("en-US");
-    const hooks = Object.values(updated.hooks.events).flatMap((entries: any) => entries.flatMap((entry: any) => entry.hooks));
-    expect(hooks.filter((hook: any) => hook.args?.[0]?.startsWith(a + "/scripts/"))).toHaveLength(0);
-    expect(hooks.filter((hook: any) => hook.args?.[0]?.startsWith(b + "/scripts/"))).toHaveLength(6);
+    const hooks = Object.values(updated.hooks.events).flatMap((entries) => entries.flatMap((entry) => entry.hooks));
+    expect(hooks.filter((hook) => hook.args?.[0]?.startsWith((process.platform === "win32" ? a.replace(/\\/g, "/") : a) + "/scripts/"))).toHaveLength(0);
+    expect(hooks.filter((hook) => hook.args?.[0]?.startsWith((process.platform === "win32" ? b.replace(/\\/g, "/") : b) + "/scripts/"))).toHaveLength(6);
     expect(backups()).toHaveLength(1);
     expect(readFileSync(join(home, ".agentmemory/backups", backups()[0]), "utf8")).toBe(nativeBytes);
     expect(existsSync(path + ".lock")).toBe(false);
