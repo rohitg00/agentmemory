@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, fchmodSync, fchownSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { closeSync, existsSync, fchmodSync, fchownSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import * as p from "@clack/prompts";
@@ -54,25 +55,59 @@ function skipped(reason: string, message: string): ConnectResult {
 
 function backupConfig(): string {
   const contents = readFileSync(CONFIG_PATH);
-  const target = join(ensureBackupsDir(), `zcode-${timestampSlug()}-${randomUUID()}.json`);
-  writeFileSync(target, contents, { flag: "wx", mode: 0o600 });
-  return target;
+  const directory = ensureBackupsDir();
+  const target = join(directory, `zcode-${timestampSlug()}-${randomUUID()}.json`);
+  if (process.platform !== "darwin") {
+    writeFileSync(target, contents, { flag: "wx", mode: 0o600 });
+    return target;
+  }
+  const staging = mkdtempSync(join(directory, ".zcode-backup-"));
+  try {
+    retainMetadata("chmod", ["-N", staging]);
+    const temporary = join(staging, "config.json");
+    writeFileSync(temporary, contents, { flag: "wx", mode: 0o600 });
+    renameSync(temporary, target);
+    return target;
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+function retainMetadata(command: string, args: string[], input?: string): string {
+  const result = spawnSync(command, args, { encoding: "utf8", input, timeout: 5000, stdio: ["pipe", "pipe", "pipe"] });
+  if (result.error) throw result.error;
+  if (result.status !== 0 || result.stderr.trim()) {
+    throw new Error("Could not preserve ZCode config access permissions: " + result.stderr.trim());
+  }
+  return result.stdout;
 }
 
 function writeConfigAtomic(value: Record<string, unknown>): string | undefined {
   const original = existsSync(CONFIG_PATH) ? statSync(CONFIG_PATH) : undefined;
   const mode = original ? original.mode & 0o777 : 0o600;
   mkdirSync(dirname(CONFIG_PATH), { recursive: true });
-  const temporary = CONFIG_PATH + ".tmp-" + randomUUID();
-  const fd = openSync(temporary, "wx", 0o600);
+  const staging = mkdtempSync(join(dirname(CONFIG_PATH), ".agentmemory-zcode-"));
+  const temporary = join(staging, "config.json");
   try {
+    if (process.platform === "darwin") retainMetadata("chmod", ["-N", staging]);
+    const fd = openSync(temporary, "wx", 0o600);
     try {
       if (original && process.platform !== "win32") {
         fchownSync(fd, original.uid, original.gid);
+        if (process.platform === "linux") {
+          // Applying the complete original ACL also removes named readers
+          // inherited from the directory when the source has no such ACL.
+          const acl = retainMetadata("getfacl", ["--access", "--omit-header", "--absolute-names", "--numeric", "--", CONFIG_PATH]);
+          if (!acl.trim()) throw new Error("ZCode config access ACL could not be read.");
+          retainMetadata("setfacl", ["--set-file=-", "--", temporary], acl);
+        } else {
+          // The staging directory remains private while cp restores ACLs
+          // after copying contents and applying the source mode.
+          retainMetadata("cp", [process.platform === "darwin" ? "-pN" : "-p", CONFIG_PATH, temporary]);
+        }
       }
+      ftruncateSync(fd, 0);
       writeFileSync(fd, JSON.stringify(value, null, 2) + "\n");
-      // Retained MCP settings can contain credentials; preserve their file's
-      // permissions independently of the current process's umask.
       fchmodSync(fd, mode);
     } finally {
       closeSync(fd);
@@ -81,7 +116,7 @@ function writeConfigAtomic(value: Record<string, unknown>): string | undefined {
     renameSync(temporary, CONFIG_PATH);
     return backupPath;
   } finally {
-    if (existsSync(temporary)) unlinkSync(temporary);
+    rmSync(staging, { recursive: true, force: true });
   }
 }
 

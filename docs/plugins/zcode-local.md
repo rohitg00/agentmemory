@@ -13,6 +13,8 @@ The first command adds stdio MCP under `mcp.servers.agentmemory` in `~/.zcode/cl
 
 Use `--dry-run` to preview without writes or backups. Repeating the command is idempotent. Changes to an existing file are backed up under `~/.agentmemory/backups`. On POSIX, existing file ownership and permissions are preserved; new configs and backups are private. If ownership cannot be retained, the existing config is left unchanged. Malformed configuration is left unchanged. A conflicting or disabled MCP entry, including the legacy `enable: false` setting, or an explicitly disabled hook runner requires `--force` before replacement or enabling.
 
+Updating an existing config on Linux requires `getfacl` and `setfacl` from the `acl` package to retain its complete access ACL. macOS uses its system `chmod` and `cp` utilities inside a private staging directory. If metadata preparation fails or warns, the original config is left unchanged.
+
 ## Local plugin directory
 
 From a source checkout, run `npm run plugin:pack:zcode`. Install the resulting `dist/plugins/agentmemory-zcode` directory with ZCode's plugin manager. It contains the existing bundled scripts and skills, a local MCP bridge to the daemon, and only the ZCode hook manifest at `hooks/hooks.json`.
