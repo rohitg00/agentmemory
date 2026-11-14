@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { closeSync, existsSync, fchmodSync, fchownSync, ftruncateSync, mkdirSync, mkdtempSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, isAbsolute, join } from "node:path";
 import * as p from "@clack/prompts";
 import type { ConnectAdapter, ConnectOptions, ConnectResult } from "./types.js";
 import { buildMergedHooks, findPluginRoot, type HookManifest } from "./codex-hooks.js";
@@ -19,6 +19,7 @@ import {
 
 const ZCODE_DIR = join(homedir(), ".zcode");
 const CONFIG_PATH = join(ZCODE_DIR, "cli", "config.json");
+const HOOK_OWNER = "agentmemory:zcode:v1";
 const SUPPORTED_EVENTS = new Set([
   "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest",
   "PostToolUse", "PostToolUseFailure", "Stop",
@@ -46,6 +47,53 @@ function validHooks(value: unknown): boolean {
       ),
     ),
   );
+}
+
+function mergeZCodeHooks(existing: HookManifest["hooks"], pluginRoot: string): HookManifest | null {
+  const fresh = buildMergedHooks(null, pluginRoot, "hooks.zcode.json");
+  const out: HookManifest = { hooks: {} };
+  const seen = new Set<string>();
+  const normalized = (path: string) => path.replace(/\\/g, "/");
+
+  for (const [event, entries] of Object.entries(existing)) {
+    const kept: typeof entries = [];
+    for (const entry of entries) {
+      const hooks: typeof entry.hooks = [];
+      for (const handler of entry.hooks) {
+        const script = handler.args?.[0];
+        const role = handler.type === "process" && typeof script === "string" && isAbsolute(script)
+          ? fresh.hooks[event]?.flatMap(item => item.hooks).find(expected =>
+            expected.type === handler.type && expected.command === handler.command &&
+            typeof expected.args?.[0] === "string" &&
+            normalized(script).endsWith("/scripts/" + basename(expected.args[0])),
+          )
+          : undefined;
+        const owner = handler.agentmemoryOwner;
+        const currentInvocation = role && typeof script === "string" &&
+          normalized(script) === normalized(role.args![0]);
+        if (owner === HOOK_OWNER || (owner === undefined && currentInvocation)) {
+          if (!role || seen.has(event)) return null;
+          seen.add(event);
+          hooks.push({ ...handler, command: role.command, args: [role.args![0], ...handler.args!.slice(1)], agentmemoryOwner: HOOK_OWNER });
+        } else {
+          const unknownOwner = typeof owner === "string" && owner.startsWith("agentmemory:zcode:");
+          const ambiguousLegacy = owner === undefined && role && typeof script === "string" &&
+            normalized(script).endsWith("/plugin/scripts/" + basename(role.args![0]));
+          if (unknownOwner || ambiguousLegacy) return null;
+          hooks.push(handler);
+        }
+      }
+      if (hooks.length > 0) kept.push({ ...entry, hooks });
+    }
+    if (kept.length > 0) out.hooks[event] = kept;
+  }
+
+  for (const [event, entries] of Object.entries(fresh.hooks)) {
+    if (seen.has(event)) continue;
+    const marked = entries.map(entry => ({ ...entry, hooks: entry.hooks.map(handler => ({ ...handler, agentmemoryOwner: HOOK_OWNER })) }));
+    out.hooks[event] = [...(out.hooks[event] ?? []), ...marked];
+  }
+  return out;
 }
 
 function skipped(reason: string, message: string): ConnectResult {
@@ -167,11 +215,10 @@ export const adapter: ConnectAdapter = {
     };
     const next: Record<string, unknown> = { ...loaded, mcp: { ...mcp, servers: { ...servers, agentmemory: entry } } };
     if (opts.withHooks) {
-      const merged = buildMergedHooks(
-        { hooks: (hooks.events ?? {}) as HookManifest["hooks"] },
-        findPluginRoot(),
-        "hooks.zcode.json",
-      );
+      const merged = mergeZCodeHooks((hooks.events ?? {}) as HookManifest["hooks"], findPluginRoot());
+      if (!merged) {
+        return skipped("hook-ownership", "ZCode has capture hooks whose AgentMemory ownership is unclear. Leaving the config unchanged; remove only the old capture hooks you recognize before reconnecting.");
+      }
       next.hooks = { ...hooks, enabled: true, events: merged.hooks };
     }
     const hookState = opts.withHooks ? { hooks: "installed" as const } : {};

@@ -13,6 +13,8 @@ The first command adds stdio MCP under `mcp.servers.agentmemory` in `~/.zcode/cl
 
 Use `--dry-run` to preview without writes or backups. Repeating the command is idempotent. Changes to an existing file are backed up under `~/.agentmemory/backups`. On POSIX, existing file ownership and permissions are preserved; new configs and backups are private. If ownership cannot be retained, the existing config is left unchanged. Malformed configuration is left unchanged. A conflicting or disabled MCP entry, including the legacy `enable: false` setting, or an explicitly disabled hook runner requires `--force` before replacement or enabling.
 
+The connector marks its handlers with `agentmemoryOwner: "agentmemory:zcode:v1"`. Reconnecting after moving the installation updates their script paths while preserving handler options and mixed user hooks. Unmarked capture commands from a different installation cannot be assigned ownership safely, so the connector leaves the config unchanged. Remove only the old Agent Memory capture hooks you recognize before retrying. `--force` does not override this ownership check.
+
 Updating an existing config on Linux requires `getfacl` and `setfacl` from the `acl` package to retain its complete access ACL. macOS uses its system `chmod` and `cp` utilities inside a private staging directory. If metadata preparation fails or warns, the original config is left unchanged.
 
 ## Local plugin directory
