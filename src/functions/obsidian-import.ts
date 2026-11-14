@@ -175,7 +175,7 @@ function noteContent(raw: RawNote, descriptor?: ObsidianVaultNote["exported"]): 
     text = text.slice(4 + descriptor.titleLength);
   } else {
     if (descriptor?.multilineTitle) throw new Error("edited multiline export title is ambiguous; keep the original title intact");
-    const heading = /^# ([^\n]+)(?:\n\n|\n?$)/.exec(text);
+    const heading = /^# ([^\n]+)(?:\n\n?|$)/.exec(text);
     if (!heading && descriptor) throw new Error("exported note must retain an unambiguous H1 title");
     title = heading ? heading[1] : basename(raw.path, ".md");
     if (heading) text = text.slice(heading[0].length);
@@ -250,7 +250,7 @@ export function registerObsidianImportFunction(sdk: IIIClient, kv: StateKV): voi
             }
             if (!context && rawId) {
               const matches = contexts.filter(c => c.exported?.memoryId === rawId);
-              if (new Set(matches.map(c => JSON.stringify(c.exported))).size > 1) throw new Error("export context is ambiguous for this ID");
+              if (new Set(matches.map(c => JSON.stringify([c.exported, c.imported]))).size > 1) throw new Error("export/import context is ambiguous for this ID");
               if (matches[0]) context = {
                 ...matches[0], vaultHash: identity.vaultHash, noteHash: identity.noteHash,
               };

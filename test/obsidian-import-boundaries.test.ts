@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import type { Memory, ObsidianVaultNote } from "../src/types.js";
@@ -290,4 +290,35 @@ describe("Obsidian import production boundaries", () => {
       expect(await readdir(cliHome)).toEqual([]);
     },
   );
+  it.each([{ order: "export-only-first" }, { order: "imported-first" }])("does not replay a moved note over a store correction %j", async ({ order }) => {
+    const b = join(w.vault, "memories", "moved-b.md"), c = join(w.vault, "memories", "moved-c.md");
+    await rename(w.note, b); await w.edit("Tuesday", "Thursday", b);
+    expect((await w.importVault()).applied.updated).toBe(1);
+    const saved = (await w.latest())[0];
+    const friday = saved.content.replace("Thursday", "Friday");
+    expect((await w.sdk.trigger("mem::evolve", { memoryId: saved.id, newContent: friday }) as { success: boolean }).success).toBe(true);
+    await rename(b, c);
+    const list = w.kv.list;
+    const spy = vi.spyOn(w.kv, "list").mockImplementation(async scope => {
+      const values = await list(scope); return scope === KV.obsidianNotes && order === "imported-first" ? values.reverse() : values;
+    });
+    try {
+      const before = w.snapshot(), bytes = await readFile(c);
+      const additions = index.add.mock.calls.length, removals = index.remove.mock.calls.length;
+      const result = await w.importVault();
+      expect(result.applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
+      expect((await w.latest())[0].content).toBe(friday); expect(await readFile(c)).toEqual(bytes);
+      expect(index.add).toHaveBeenCalledTimes(additions); expect(index.remove).toHaveBeenCalledTimes(removals);
+      if (!result.success) expect(result.errors.some(e => e.error.includes("ambiguous"))).toBe(true);
+    } finally { spy.mockRestore(); }
+  });
+  it("imports a real new-note H1 followed by one newline as its title", async () => {
+    await writeFile(join(w.vault, "memories", "new.md"), "# Correct title\nA wholly independent fact.");
+    const result = await w.importVault(); expect(result.success).toBe(true); expect(result.applied.created).toBe(1);
+    const created = (await w.latest()).find(m => m.id !== BASE.id)!;
+    expect(created.title).toBe("Correct title"); expect(created.content).toBe("A wholly independent fact.");
+    const before = w.snapshot(); const noteBytes = await readFile(join(w.vault, "memories", "new.md"));
+    expect((await w.importVault()).applied).toEqual({ created: 0, updated: 0 }); expect(w.snapshot()).toBe(before);
+    expect(await readFile(join(w.vault, "memories", "new.md"))).toEqual(noteBytes);
+  });
 });
