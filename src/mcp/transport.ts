@@ -19,6 +19,20 @@ export type RequestHandler = (
 
 let activeStdioTransports = 0;
 
+export interface StdioTransportOptions {
+  /** Called when the client closes the stdout pipe (EPIPE). Defaults to a clean exit. */
+  onDisconnect?: () => void;
+  stdout?: NodeJS.WritableStream;
+  stderr?: NodeJS.WritableStream;
+}
+
+// A client that closes the pipe while a response is in flight is a normal
+// shutdown, not a crash.
+export function isClientDisconnectError(err: unknown): boolean {
+  const code = (err as NodeJS.ErrnoException | null)?.code;
+  return code === "EPIPE" || code === "ERR_STREAM_DESTROYED";
+}
+
 export class JsonRpcError extends Error {
   constructor(public readonly code: number, message: string) {
     super(message);
@@ -230,26 +244,44 @@ export function createMessageParser(
   };
 }
 
-export function createStdioTransport(handler: RequestHandler): {
+export function createStdioTransport(
+  handler: RequestHandler,
+  options: StdioTransportOptions = {},
+): {
   start: () => void;
   stop: () => void;
 } {
+  const stdout = options.stdout ?? process.stdout;
+  const stderr = options.stderr ?? process.stderr;
+  const onDisconnect = options.onDisconnect ?? (() => process.exit(0));
   let parser: StdioMessageParser | null = null;
   let queue = Promise.resolve();
   let active = false;
+  let disconnected = false;
 
   const writeResponse = (response: JsonRpcResponse) => {
+    if (disconnected) return;
     const formatted = formatResponse(response, parser?.isFramed() ?? false);
     if (typeof formatted === "string") {
-      process.stdout.write(formatted);
+      stdout.write(formatted);
       return;
     }
     for (const chunk of formatted) {
-      process.stdout.write(chunk);
+      stdout.write(chunk);
     }
   };
 
   const onData = (chunk: Buffer) => parser?.push(chunk);
+  const onStdoutError = (err: Error) => {
+    if (!isClientDisconnectError(err)) throw err;
+    if (disconnected) return;
+    disconnected = true;
+    onDisconnect();
+  };
+  // Nothing useful can be done when stderr is gone; keep serving stdout.
+  const onStderrError = (err: Error) => {
+    if (!isClientDisconnectError(err)) throw err;
+  };
 
   return {
     start() {
@@ -267,10 +299,14 @@ export function createStdioTransport(handler: RequestHandler): {
           );
         });
       });
+      stdout.on("error", onStdoutError);
+      stderr.on("error", onStderrError);
       process.stdin.on("data", onData);
     },
     stop() {
       process.stdin.off("data", onData);
+      stdout.off("error", onStdoutError);
+      stderr.off("error", onStderrError);
       if (active) {
         active = false;
         activeStdioTransports -= 1;
