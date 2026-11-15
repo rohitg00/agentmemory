@@ -1,0 +1,11 @@
+{
+  "name": "@agentmemory/github-watcher",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "One-repository GitHub issue connector design spike",
+  "engines": { "node": ">=20" },
+  "license": "Apache-2.0",
+  "exports": { ".": "./watcher.mjs" },
+  "files": ["watcher.mjs", "watcher.d.mts", "bin.mjs", "README.md"]
+}
