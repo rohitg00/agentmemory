@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GitHubIssueWatcher } from "../integrations/github-watcher/watcher.mjs";
+import { GitHubIssueWatcher } from "../integrations/github-watcher/watcher.js";
 
 const next = "https://api.github.com/repositories/123/issues?state=all&sort=updated&direction=asc&per_page=100&page=2";
 const firstPage = Array.from({ length: 100 }, (_, i) => issue(i + 1));

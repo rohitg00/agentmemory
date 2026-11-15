@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { GitHubIssueWatcher, GitHubSyncError } from "../integrations/github-watcher/watcher.mjs";
+import { GitHubIssueWatcher, GitHubSyncError } from "../integrations/github-watcher/watcher.js";
 import { mockKV, mockSdk } from "./helpers/mocks.js";
 
 vi.mock("../src/logger.js", () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
@@ -56,7 +56,7 @@ async function receiver(kv = mockKV()) {
       { status_code: number; body: Record<string, unknown> };
     return Response.json(result.body, { status: result.status_code });
   };
-  return { kv, capture, observations: () => [...(kv.store.get(KV.observations("gh_123_issue_456"))?.values() ?? [])] };
+  return { kv, capture, observations: () => [...(kv.store.get(KV.observations("gh_123_issue_456_02434ac48bf96d913ba0dc20927ffe42b9d76120acc0d3d9d31b19cc003ca6de"))?.values() ?? [])] };
 }
 
 describe("GitHub issue connector spike", () => {
@@ -68,7 +68,7 @@ describe("GitHub issue connector spike", () => {
     const watcher = new GitHubIssueWatcher({ ...options, fetch: h.transport, githubToken: "github-only-token", secret: "store-only-secret" });
     expect(await watcher.syncOnce()).toEqual({ complete: true, pages: 1, issues: 1, completed: 1, duplicates: 0, notModifiedPages: 0 });
     expect(h.sent).toEqual([{
-      eventId: firstId, hookType: "post_tool_use", sessionId: "gh_123_issue_456",
+      eventId: firstId, hookType: "post_tool_use", sessionId: "gh_123_issue_456_02434ac48bf96d913ba0dc20927ffe42b9d76120acc0d3d9d31b19cc003ca6de",
       project: "example-project", cwd: "/work/example-project", timestamp: first.updated_at,
       data: { source: "github-watcher", tool_name: "GitHubIssue",
         tool_input: { repository: "owner/repo", issue: 7, url: first.html_url },
@@ -100,7 +100,7 @@ describe("GitHub issue connector spike", () => {
     edited = true;
     expect(await restarted.syncOnce()).toMatchObject({ completed: 1, duplicates: 0 });
     expect(actual.observations()).toHaveLength(2);
-    expect(h.sent.map((s) => s.sessionId)).toEqual(Array(4).fill("gh_123_issue_456"));
+    expect(h.sent.map((s) => s.sessionId)).toEqual(Array(4).fill("gh_123_issue_456_02434ac48bf96d913ba0dc20927ffe42b9d76120acc0d3d9d31b19cc003ca6de"));
     expect(h.sent[0]!.eventId).toBe(h.sent[2]!.eventId);
     expect(h.sent[2]!.eventId).not.toBe(h.sent[3]!.eventId);
   });
@@ -154,7 +154,7 @@ describe("GitHub issue connector spike", () => {
       return Response.json([first, { id: 999, pull_request: { url: "https://api.github.com/pulls/9" } }], { headers: { link: `<${next}>; rel="next"` } });
     });
     expect(await h.watcher.syncOnce()).toEqual({ complete: true, pages: 2, issues: 2, completed: 2, duplicates: 0, notModifiedPages: 0 });
-    expect(h.sent.map((s) => s.sessionId)).toEqual(["gh_123_issue_456", "gh_123_issue_457"]);
+    expect(h.sent.map((s) => s.sessionId)).toEqual(["gh_123_issue_456_02434ac48bf96d913ba0dc20927ffe42b9d76120acc0d3d9d31b19cc003ca6de", "gh_123_issue_457_02434ac48bf96d913ba0dc20927ffe42b9d76120acc0d3d9d31b19cc003ca6de"]);
   });
 
   it("visits page2 after page1 304 and observes its edit without refreshing failed cache state", async () => {
@@ -228,7 +228,7 @@ describe("GitHub issue connector spike", () => {
 
   it("reports a rejected second capture while retaining the first completed item", async () => {
     const h = harness((url) => Response.json(url.endsWith("/repos/owner/repo") ? repo : [first, second]),
-      (snapshot) => snapshot.sessionId.endsWith("_456") ?
+      (snapshot) => snapshot.sessionId === "gh_123_issue_456_02434ac48bf96d913ba0dc20927ffe42b9d76120acc0d3d9d31b19cc003ca6de" ?
         Response.json({ status: "accepted", state: "completed", eventId: snapshot.eventId }, { status: 201 }) :
         Response.json({ status: "rejected", eventId: snapshot.eventId, error: "inbox full", retryable: true }, { status: 503 }));
     await expect(h.watcher.syncOnce()).rejects.toMatchObject({ progress: { pages: 1, issues: 2, completed: 1, duplicates: 0 } });
@@ -306,7 +306,7 @@ describe("GitHub issue connector spike", () => {
   });
 
   it("prints one-shot scope in the real Node CLI help without a GitHub or service request", () => {
-    const output = execFileSync(process.execPath, ["integrations/github-watcher/bin.mjs", "--help"], { encoding: "utf8" });
+    const output = execFileSync(process.execPath, ["integrations/github-watcher/dist/bin.mjs", "--help"], { encoding: "utf8" });
     expect(output).toContain("--repo owner/repo --project hook-project");
     expect(output).toContain("No daemon, private sync, durable cursor or package release");
   });

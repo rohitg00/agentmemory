@@ -17,7 +17,8 @@
     "agentmemory": "dist/cli.mjs"
   },
   "scripts": {
-    "build": "tsdown && node scripts/copy-assets.mjs",
+    "build": "npm run typecheck:github-watcher && tsdown && node scripts/copy-assets.mjs",
+    "typecheck:github-watcher": "tsc --project integrations/github-watcher/tsconfig.json",
     "dev": "tsx src/index.ts",
     "start": "node dist/cli.mjs",
     "migrate": "node dist/functions/migrate.js",

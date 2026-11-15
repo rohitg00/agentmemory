@@ -71,7 +71,7 @@ globalThis.fetch = async (input, init = {}) => {
   return Response.json(url === "https://api.github.com/repos/owner/repo" ? f.repo : [f.issue]);
 };
 `);
-    const { stdout, stderr } = await run(process.execPath, ["--import", preload, "integrations/github-watcher/bin.mjs",
+    const { stdout, stderr } = await run(process.execPath, ["--import", preload, "integrations/github-watcher/dist/bin.mjs",
       "--repo", "owner/repo", "--project", "example-project", "--cwd", "/work/example-project", "--url", baseUrl], {
       env: { ...process.env, HOME: sandbox, USERPROFILE: sandbox, GITHUB_CONNECTOR_TEST_FIXTURE: fixture,
         GH_TOKEN: "cli-github-only-token", GITHUB_TOKEN: "", AGENTMEMORY_SECRET: "cli-store-only-secret" },
@@ -81,8 +81,8 @@ globalThis.fetch = async (input, init = {}) => {
     expect(stderr).toBe("");
     expect(bodies).toHaveLength(1);
     expect(bodies[0]).toMatchObject({ eventId: "gh_de4f949794228efe9acaffea7949d7511e455735dfe9ee361c0025297bb0e68c",
-      sessionId: "gh_123_issue_456", project: "example-project", cwd: "/work/example-project" });
-    expect([...(kv.store.get(KV.observations("gh_123_issue_456"))?.values() ?? [])]).toHaveLength(1);
+      sessionId: "gh_123_issue_456_02434ac48bf96d913ba0dc20927ffe42b9d76120acc0d3d9d31b19cc003ca6de", project: "example-project", cwd: "/work/example-project" });
+    expect([...(kv.store.get(KV.observations("gh_123_issue_456_02434ac48bf96d913ba0dc20927ffe42b9d76120acc0d3d9d31b19cc003ca6de"))?.values() ?? [])]).toHaveLength(1);
     const reads = readFileSync(requests, "utf8").trim().split("\n").map((line) => JSON.parse(line) as { url: string; authorization: string | null });
     expect(reads).toHaveLength(2);
     expect(reads[0]).toEqual({ url: "https://api.github.com/repos/owner/repo", authorization: "Bearer cli-github-only-token" });

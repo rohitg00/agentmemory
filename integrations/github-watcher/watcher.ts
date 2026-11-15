@@ -1,9 +1,58 @@
-import { createHash } from "node:crypto";
+import { fingerprintId } from "../../src/state/fingerprint.js";
+
+export interface SyncProgress {
+  pages: number;
+  issues: number;
+  completed: number;
+  duplicates: number;
+  notModifiedPages: number;
+}
+
+export interface WatcherOptions {
+  repo: string;
+  project: string;
+  cwd: string;
+  baseUrl?: string;
+  githubToken?: string;
+  secret?: string;
+  since?: string;
+  maxPages?: number;
+  fetch?: typeof globalThis.fetch;
+}
+
+interface Repository {
+  id: number;
+  full_name: string;
+}
+
+interface IssueSnapshot {
+  eventId: string;
+  hookType: "post_tool_use";
+  sessionId: string;
+  project: string;
+  cwd: string;
+  timestamp: string;
+  data: {
+    source: string;
+    tool_name: string;
+    tool_input: { repository: string; issue: number; url: string };
+    tool_output: string;
+  };
+}
+
+interface CachedPage {
+  etag: string | null;
+  snapshots: IssueSnapshot[];
+  next: string | null;
+}
 
 const API = "https://api.github.com";
 
 export class GitHubSyncError extends Error {
-  constructor(message, progress, details = {}) {
+  progress: SyncProgress;
+  details: { failedEventId?: string };
+
+  constructor(message: string, progress: SyncProgress, details: { failedEventId?: string } = {}) {
     super(message);
     this.name = "GitHubSyncError";
     this.progress = { ...progress };
@@ -11,17 +60,21 @@ export class GitHubSyncError extends Error {
   }
 }
 
-function positiveId(value) {
-  return Number.isSafeInteger(value) && value > 0;
+function positiveId(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-function requiredText(value, name) {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function requiredText(value: unknown, name: string): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required`);
   return value.trim();
 }
 
-function destination(value) {
-  let url;
+function destination(value: string): string {
+  let url: URL;
   try { url = new URL(value); } catch { throw new Error("AgentMemory URL is invalid"); }
   if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new Error("AgentMemory URL must be HTTP(S), without credentials, query or fragment");
@@ -29,10 +82,10 @@ function destination(value) {
   return `${url.href.replace(/\/+$/, "")}/agentmemory/observe`;
 }
 
-function issueSnapshot(repo, issue, project, cwd) {
-  if (!positiveId(issue.id) || !positiveId(issue.number) || typeof issue.title !== "string" ||
+function issueSnapshot(repo: Repository, issue: unknown, project: string, cwd: string): IssueSnapshot {
+  if (!isRecord(issue) || !positiveId(issue.id) || !positiveId(issue.number) || typeof issue.title !== "string" ||
       (issue.body !== null && typeof issue.body !== "string") ||
-      !["open", "closed"].includes(issue.state) || typeof issue.updated_at !== "string" ||
+      typeof issue.state !== "string" || !["open", "closed"].includes(issue.state) || typeof issue.updated_at !== "string" ||
       !Number.isFinite(Date.parse(issue.updated_at))) {
     throw new Error("GitHub returned an invalid issue snapshot");
   }
@@ -42,9 +95,9 @@ function issueSnapshot(repo, issue, project, cwd) {
   const revision = JSON.stringify(["github-issues-v1", String(repo.id), String(issue.id), issue.updated_at,
     issue.title, body, issue.state]);
   return {
-    eventId: `gh_${createHash("sha256").update(revision).digest("hex")}`,
+    eventId: fingerprintId("gh", revision, 64),
     hookType: "post_tool_use",
-    sessionId: `gh_${repo.id}_issue_${issue.id}`,
+    sessionId: fingerprintId(`gh_${repo.id}_issue_${issue.id}`, JSON.stringify(["github-project-v1", project]), 64),
     project,
     cwd,
     timestamp: issue.updated_at,
@@ -57,7 +110,7 @@ function issueSnapshot(repo, issue, project, cwd) {
   };
 }
 
-function nextPage(header, current, repo, initial) {
+function nextPage(header: string | null, current: string, repo: Repository, initial: string): string | null {
   if (!header) return null;
   const links = header.split(/,(?=\s*<)/).map((part) => {
     const match = part.trim().match(/^<([^>]+)>;\s*rel="([^"]+)"$/);
@@ -67,7 +120,7 @@ function nextPage(header, current, repo, initial) {
   const next = links.filter((link) => link.rel.split(/\s+/).includes("next"));
   if (next.length > 1) throw new Error("GitHub returned multiple next pages");
   if (!next.length) return null;
-  let url;
+  let url: URL;
   try { url = new URL(next[0].url, current); } catch { throw new Error("GitHub next page URL is invalid"); }
   const paths = [`/repos/${repo.full_name}/issues`, `/repositories/${repo.id}/issues`];
   if (url.origin !== API || url.username || url.password || url.hash || !paths.includes(url.pathname)) {
@@ -88,25 +141,26 @@ function nextPage(header, current, repo, initial) {
   return url.href;
 }
 
-async function readJson(response, source) {
+async function readJson(response: Response, source: string): Promise<unknown> {
   try { return await response.json(); } catch { throw new Error(`${source} returned invalid JSON`); }
 }
 
 export class GitHubIssueWatcher {
-  #cache = new Map();
+  #cache = new Map<string, CachedPage>();
   #running = false;
-  #repo;
-  #project;
-  #cwd;
-  #observeUrl;
-  #githubToken;
-  #secret;
-  #fetch;
-  #since;
-  #maxPages;
+  #repo: string;
+  #project: string;
+  #cwd: string;
+  #observeUrl: string;
+  #githubToken: string;
+  #secret: string;
+  #fetch: typeof globalThis.fetch;
+  #since: string | undefined;
+  #maxPages: number;
 
-  constructor({ repo, project, cwd, baseUrl = "http://localhost:3111", githubToken = "",
-    secret = "", since, maxPages = 10, fetch: transport = globalThis.fetch } = {}) {
+  constructor(options: WatcherOptions) {
+    const { repo, project, cwd, baseUrl = "http://localhost:3111", githubToken = "",
+      secret = "", since, maxPages = 10, fetch: transport = globalThis.fetch } = options ?? {};
     if (typeof repo !== "string" || !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/.test(repo) ||
         [".", ".."].includes(repo.split("/")[1])) {
       throw new Error("repo must be one owner/repository name");
@@ -128,8 +182,8 @@ export class GitHubIssueWatcher {
     this.#fetch = transport;
   }
 
-  async #github(url, etag, authenticated = false) {
-    const headers = { accept: "application/vnd.github+json", "x-github-api-version": "2026-03-10" };
+  async #github(url: string, etag?: string | null, authenticated = false): Promise<Response> {
+    const headers: Record<string, string> = { accept: "application/vnd.github+json", "x-github-api-version": "2026-03-10" };
     if (authenticated && this.#githubToken) headers.authorization = `Bearer ${this.#githubToken}`;
     if (etag) headers["if-none-match"] = etag;
     try {
@@ -139,34 +193,35 @@ export class GitHubIssueWatcher {
     }
   }
 
-  async syncOnce() {
+  async syncOnce(): Promise<SyncProgress & { complete: true }> {
     if (this.#running) throw new Error("A sync is already running");
     this.#running = true;
     const progress = { pages: 0, issues: 0, completed: 0, duplicates: 0, notModifiedPages: 0 };
-    let failedEventId;
+    let failedEventId: string | undefined;
     try {
       const response = await this.#github(`${API}/repos/${this.#repo}`, undefined, true);
       if (response.status !== 200) throw new Error(`GitHub repository read returned HTTP ${response.status}; no automatic retry`);
-      const repo = await readJson(response, "GitHub repository");
-      if (!repo || repo.private !== false) throw new Error("This prototype accepts public repositories only");
-      if (!positiveId(repo.id) || typeof repo.full_name !== "string" ||
-          repo.full_name.toLowerCase() !== this.#repo.toLowerCase()) throw new Error("GitHub repository identity mismatch");
+      const metadata = await readJson(response, "GitHub repository");
+      if (!isRecord(metadata) || metadata.private !== false) throw new Error("This prototype accepts public repositories only");
+      if (!positiveId(metadata.id) || typeof metadata.full_name !== "string" ||
+          metadata.full_name.toLowerCase() !== this.#repo.toLowerCase()) throw new Error("GitHub repository identity mismatch");
+      const repo: Repository = { id: metadata.id, full_name: metadata.full_name };
       const initial = new URL(`${API}/repos/${repo.full_name}/issues`);
       initial.searchParams.set("state", "all");
       initial.searchParams.set("sort", "updated");
       initial.searchParams.set("direction", "asc");
       initial.searchParams.set("per_page", "100");
       if (this.#since) initial.searchParams.set("since", this.#since);
-      const cache = new Map();
-      const seen = new Set();
-      let url = initial.href;
+      const cache = new Map<string, CachedPage>();
+      const seen = new Set<string>();
+      let url: string | null = initial.href;
       while (url) {
         if (seen.has(url)) throw new Error("GitHub returned a pagination cycle");
         if (progress.pages >= this.#maxPages) throw new Error("Page bound reached; sync incomplete, no checkpoint advanced");
         seen.add(url);
         const previous = this.#cache.get(url);
         let page = await this.#github(url, previous?.etag);
-        let entry;
+        let entry: CachedPage | undefined;
         if (page.status === 304) {
           if (!previous) throw new Error("GitHub returned 304 without a completed cached page");
           progress.notModifiedPages++;
@@ -179,9 +234,9 @@ export class GitHubIssueWatcher {
           if (page.status !== 200) throw new Error(`GitHub issue read returned HTTP ${page.status}; no automatic retry`);
           const rows = await readJson(page, "GitHub issue page");
           if (!Array.isArray(rows) || rows.length > 100) throw new Error("GitHub returned an invalid issue page");
-          const snapshots = [];
+          const snapshots: IssueSnapshot[] = [];
           for (const row of rows) {
-            if (!row || typeof row !== "object") throw new Error("GitHub returned an invalid issue row");
+            if (!isRecord(row)) throw new Error("GitHub returned an invalid issue row");
             if (row.pull_request) continue;
             snapshots.push(issueSnapshot(repo, row, this.#project, this.#cwd));
           }
@@ -192,10 +247,10 @@ export class GitHubIssueWatcher {
         for (const snapshot of entry.snapshots) {
           progress.issues++;
           failedEventId = snapshot.eventId;
-          const headers = { "content-type": "application/json" };
+          const headers: Record<string, string> = { "content-type": "application/json" };
           if (this.#secret) headers.authorization = `Bearer ${this.#secret}`;
-          let capture;
-          let ack;
+          let capture: Response;
+          let ack: unknown;
           try {
             capture = await this.#fetch(this.#observeUrl, { method: "POST", headers,
               body: JSON.stringify(snapshot), redirect: "error", signal: AbortSignal.timeout(15_000) });
@@ -203,8 +258,8 @@ export class GitHubIssueWatcher {
           } catch {
             throw new Error("Capture outcome unknown; retain this identity and inspect the destination before rerunning");
           }
-          if (!capture.ok || !ack || ack.eventId !== snapshot.eventId || ack.state !== "completed" ||
-              !["accepted", "duplicate"].includes(ack.status)) {
+          if (!capture.ok || !isRecord(ack) || ack.eventId !== snapshot.eventId || ack.state !== "completed" ||
+              typeof ack.status !== "string" || !["accepted", "duplicate"].includes(ack.status)) {
             throw new Error("Capture is not confirmed completed; no checkpoint advanced");
           }
           if (ack.status === "accepted") progress.completed++;

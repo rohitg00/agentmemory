@@ -6,6 +6,6 @@
   "description": "One-repository GitHub issue connector design spike",
   "engines": { "node": ">=20" },
   "license": "Apache-2.0",
-  "exports": { ".": "./watcher.mjs" },
-  "files": ["watcher.mjs", "watcher.d.mts", "bin.mjs", "README.md"]
+  "exports": { ".": { "types": "./dist/watcher.d.mts", "import": "./dist/watcher.mjs" } },
+  "files": ["dist/", "README.md"]
 }

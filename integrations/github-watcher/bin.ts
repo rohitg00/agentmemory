@@ -3,16 +3,16 @@ import { execFileSync } from "node:child_process";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
-import { GitHubIssueWatcher, GitHubSyncError } from "./watcher.mjs";
+import { GitHubIssueWatcher, GitHubSyncError } from "./watcher.js";
 
-export async function main(args = process.argv.slice(2), env = process.env) {
+export async function main(args: string[] = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const { values } = parseArgs({ args, options: {
     help: { type: "boolean" }, repo: { type: "string" }, project: { type: "string" },
     cwd: { type: "string" }, url: { type: "string" }, since: { type: "string" },
     "max-pages": { type: "string" },
   } });
   if (values.help) {
-    process.stdout.write("Usage: node integrations/github-watcher/bin.mjs --repo owner/repo --project hook-project [--cwd checkout] [--url http://localhost:3111] [--since UTC] [--max-pages 10]\n\nExplicit one-shot public-issue prototype. No daemon, private sync, durable cursor or package release. GH_TOKEN, GITHUB_TOKEN or gh auth token authenticates GitHub; AGENTMEMORY_SECRET authenticates the separate destination. Project may also use AGENTMEMORY_PROJECT_NAME.\n");
+    process.stdout.write("Usage: node integrations/github-watcher/dist/bin.mjs --repo owner/repo --project hook-project [--cwd checkout] [--url http://localhost:3111] [--since UTC] [--max-pages 10]\n\nExplicit one-shot public-issue prototype. No daemon, private sync, durable cursor or package release. GH_TOKEN, GITHUB_TOKEN or gh auth token authenticates GitHub; AGENTMEMORY_SECRET authenticates the separate destination. Project may also use AGENTMEMORY_PROJECT_NAME.\n");
     return;
   }
   let githubToken = env.GH_TOKEN || env.GITHUB_TOKEN || "";
@@ -23,8 +23,9 @@ export async function main(args = process.argv.slice(2), env = process.env) {
       }).trim();
     } catch {}
   }
+  if (!values.repo || !(values.project || env.AGENTMEMORY_PROJECT_NAME)) throw new Error("repo and project are required");
   const watcher = new GitHubIssueWatcher({
-    repo: values.repo, project: values.project || env.AGENTMEMORY_PROJECT_NAME,
+    repo: values.repo, project: values.project || env.AGENTMEMORY_PROJECT_NAME || "",
     cwd: resolve(values.cwd || process.cwd()), baseUrl: values.url || env.AGENTMEMORY_URL || "http://localhost:3111",
     githubToken, secret: env.AGENTMEMORY_SECRET || "", since: values.since,
     maxPages: values["max-pages"] === undefined ? 10 : Number(values["max-pages"]),
