@@ -846,6 +846,7 @@ Lần cài npm thông thường đã bao gồm runtime tùy chọn `@huggingface
 | Voyage AI | `voyage-code-3` | Trả phí | Tối ưu cho code |
 | Cohere | `embed-english-v3.0` | Free trial | Dùng chung (general purpose) |
 | OpenRouter | Bất kỳ model nào | Thay đổi | Proxy đa model |
+| Requesty | Bất kỳ model nào | Thay đổi | Proxy đa model |
 
 ---
 
@@ -1023,6 +1024,7 @@ agentmemory tự phát hiện provider từ environment của bạn. Một provi
 | MiniMax | `MINIMAX_API_KEY` | Tương thích Anthropic |
 | Gemini | `GEMINI_API_KEY` | Cũng kích hoạt embedding |
 | OpenRouter | `OPENROUTER_API_KEY` | Bất kỳ model nào |
+| Requesty | `REQUESTY_API_KEY` | Bất kỳ model nào |
 | OpenAI API | `OPENAI_API_KEY` | Mặc định `gpt-5.6-luna`, ghi đè bằng `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) hoặc `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Bất cứ gì tương thích OpenAI-API. Không tốn phí, chạy trên hardware của bạn. Xem [Model cục bộ](#local-models-ollama--lm-studio--vllm) dưới đây. |
 | Fallback Claude subscription | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Chỉ opt-in. Spawn các session `@anthropic-ai/claude-agent-sdk`; trước đây nó từng gây ra đệ quy Stop-hook không giới hạn, nên nó không còn là mặc định. |

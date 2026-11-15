@@ -840,6 +840,7 @@ Normaali npm-asennus sisältää valinnaisen `@huggingface/transformers`-ajonaik
 | Voyage AI | `voyage-code-3` | Maksullinen | Optimoitu koodille |
 | Cohere | `embed-english-v3.0` | Ilmainen kokeilu | Yleiskäyttöinen |
 | OpenRouter | Mikä tahansa malli | Vaihtelee | Multi-model-proxy |
+| Requesty | Mikä tahansa malli | Vaihtelee | Multi-model-proxy |
 
 ---
 
@@ -1017,6 +1018,7 @@ agentmemory tunnistaa tarjoajat automaattisesti ympäristöstäsi. Tarjoaja teke
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-yhteensopiva |
 | Gemini | `GEMINI_API_KEY` | Ottaa myös upotukset käyttöön |
 | OpenRouter | `OPENROUTER_API_KEY` | Mikä tahansa malli |
+| Requesty | `REQUESTY_API_KEY` | Mikä tahansa malli |
 | OpenAI API | `OPENAI_API_KEY` | Oletus `gpt-5.6-luna`, ylikirjoita `OPENAI_MODEL`:lla |
 | **Paikallinen (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) tai `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<malli>` | Mikä tahansa OpenAI-API-yhteensopiva. Nolla kustannuksia, toimii omalla laitteistollasi. Katso [Paikalliset mallit](#local-models-ollama--lm-studio--vllm) alla. |
 | Claude-tilauksen varajärjestelmä | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Vain opt-in. Käynnistää `@anthropic-ai/claude-agent-sdk`-istuntoja; se aiheutti aiemmin rajoittamattoman Stop-hook-rekursion, niin se ei ole enää oletus. |

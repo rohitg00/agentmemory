@@ -838,6 +838,7 @@ A normál npm-telepítés tartalmazza az opcionális `@huggingface/transformers`
 | Voyage AI | `voyage-code-3` | Fizetős | Kódra optimalizálva |
 | Cohere | `embed-english-v3.0` | Ingyenes próba | Általános célú |
 | OpenRouter | Bármely modell | Változó | Több modellt lefedő proxy |
+| Requesty | Bármely modell | Változó | Több modellt lefedő proxy |
 
 ---
 
@@ -1015,6 +1016,7 @@ Az agentmemory automatikusan felismeri a szolgáltatókat a környezetedből. Eg
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-kompatibilis |
 | Gemini | `GEMINI_API_KEY` | Az embeddingeket is engedélyezi |
 | OpenRouter | `OPENROUTER_API_KEY` | Bármely modell |
+| Requesty | `REQUESTY_API_KEY` | Bármely modell |
 | OpenAI API | `OPENAI_API_KEY` | Alapértelmezett `gpt-5.6-luna`, felülírható az `OPENAI_MODEL`-lel |
 | **Lokális (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) vagy `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Bármi, ami OpenAI-API-kompatibilis. Nulla költség, a saját hardvereden fut. Lásd a [Lokális modellek](#local-models-ollama--lm-studio--vllm) részt alább. |
 | Claude-előfizetéses fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Csak opt-in. A `@anthropic-ai/claude-agent-sdk` sessionöket indít; korábban korlátlan Stop-hook-rekurziót okozott, így nem alapértelmezett többé. |

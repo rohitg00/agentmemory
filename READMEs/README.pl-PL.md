@@ -838,6 +838,7 @@ Zwykła instalacja npm zawiera opcjonalne środowisko uruchomieniowe `@huggingfa
 | Voyage AI | `voyage-code-3` | Płatny | Zoptymalizowany pod kod |
 | Cohere | `embed-english-v3.0` | Darmowy okres próbny | Ogólnego przeznaczenia |
 | OpenRouter | Każdy model | Zależnie | Proxy dla wielu modeli |
+| Requesty | Każdy model | Zależnie | Proxy dla wielu modeli |
 
 ---
 
@@ -1015,6 +1016,7 @@ agentmemory automatycznie wykrywa dostawców na podstawie twojego środowiska. D
 | MiniMax | `MINIMAX_API_KEY` | Kompatybilny z Anthropic |
 | Gemini | `GEMINI_API_KEY` | Włącza też embeddingi |
 | OpenRouter | `OPENROUTER_API_KEY` | Każdy model |
+| Requesty | `REQUESTY_API_KEY` | Każdy model |
 | OpenAI API | `OPENAI_API_KEY` | Domyślnie `gpt-5.6-luna`, nadpisz za pomocą `OPENAI_MODEL` |
 | **Lokalny (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) albo `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Wszystko kompatybilne z API OpenAI. Zerowy koszt, działa na twoim sprzęcie. Zobacz [Modele lokalne](#local-models-ollama--lm-studio--vllm) poniżej. |
 | Fallback na subskrypcję Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Tylko opt-in. Tworzy sesje `@anthropic-ai/claude-agent-sdk`; wcześniej powodowało to nieograniczoną rekursję hooka Stop, więc nie jest to już wartość domyślna. |

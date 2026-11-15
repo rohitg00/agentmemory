@@ -2348,7 +2348,7 @@ async function passiveServerChecks(): Promise<DoctorCheck[]> {
         ? undefined
         : typeof flags?.embeddingHint === "string"
           ? flags.embeddingHint
-          : "Running BM25-only. Set EMBEDDING_PROVIDER=local for on-device semantic search, or EMBEDDING_PROVIDER=openai, voyage, cohere, gemini or openrouter with that provider's key",
+          : "Running BM25-only. Set EMBEDDING_PROVIDER=local for on-device semantic search, or EMBEDDING_PROVIDER=openai, voyage, cohere, gemini, openrouter or requesty with that provider's key",
     },
   );
 

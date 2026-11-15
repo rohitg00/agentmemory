@@ -841,6 +841,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | בתשלום | מותאם לקוד |
 | Cohere | `embed-english-v3.0` | ניסיון חינמי | כללי |
 | OpenRouter | כל מודל | משתנה | proxy מרובה-מודלים |
+| Requesty | כל מודל | משתנה | proxy מרובה-מודלים |
 
 ---
 
@@ -1018,6 +1019,7 @@ agentmemory מגלה ספקים אוטומטית מהסביבה שלכם. ספק
 | MiniMax | `MINIMAX_API_KEY` | תואם-Anthropic |
 | Gemini | `GEMINI_API_KEY` | מפעיל גם embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | כל מודל |
+| Requesty | `REQUESTY_API_KEY` | כל מודל |
 | OpenAI API | `OPENAI_API_KEY` | ברירת מחדל `gpt-5.6-luna`, override עם `OPENAI_MODEL` |
 | **מקומי (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) או `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | כל דבר תואם-OpenAI-API. עלות אפס, רץ על החומרה שלכם. ראו [מודלים מקומיים](#local-models-ollama--lm-studio--vllm) מתחת. |
 | fallback למנוי Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | opt-in בלבד. יוצר sessions של `@anthropic-ai/claude-agent-sdk`; זה היה גורם לרקורסיה לא חסומה של Stop-hook, אז זה כבר לא ברירת המחדל. |

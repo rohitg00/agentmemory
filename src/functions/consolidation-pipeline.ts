@@ -86,7 +86,7 @@ export function registerConsolidationPipelineFunction(
   sdk.registerFunction("mem::consolidate-pipeline", 
     async (data?: { tier?: string; force?: boolean; project?: string }) => {
       if (!data?.force && !isConsolidationEnabled()) {
-        return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or choose an LLM provider (AGENTMEMORY_LLM_PROVIDER=anthropic, openai, gemini, openrouter or minimax with that provider's key, or AGENTMEMORY_ALLOW_AGENT_SDK=true). A provider key alone does not turn on LLM use." };
+        return { success: false, skipped: true, reason: "Consolidation disabled: set CONSOLIDATION_ENABLED=true or choose an LLM provider (AGENTMEMORY_LLM_PROVIDER=anthropic, openai, gemini, openrouter, requesty or minimax with that provider's key, or AGENTMEMORY_ALLOW_AGENT_SDK=true). A provider key alone does not turn on LLM use." };
       }
       const tier = data?.tier || "all";
       const decayDays = getConsolidationDecayDays();

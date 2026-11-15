@@ -839,6 +839,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | 付費 | 針對程式碼優化 |
 | Cohere | `embed-english-v3.0` | 免費試用 | 通用型 |
 | OpenRouter | 任何模型 | 依情況而異 | 多模型代理 |
+| Requesty | 任何模型 | 依情況而異 | 多模型代理 |
 
 ---
 
@@ -1016,6 +1017,7 @@ agentmemory 會從你的環境自動偵測提供者。設定提供者可讓 LLM 
 | MiniMax | `MINIMAX_API_KEY` | 與 Anthropic 相容 |
 | Gemini | `GEMINI_API_KEY` | 也會啟用嵌入功能 |
 | OpenRouter | `OPENROUTER_API_KEY` | 任何模型 |
+| Requesty | `REQUESTY_API_KEY` | 任何模型 |
 | OpenAI API | `OPENAI_API_KEY` | 預設 `gpt-5.6-luna`,可用 `OPENAI_MODEL` 覆寫 |
 | **本地(Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1`(Ollama)或 `http://localhost:1234/v1`(LM Studio)+ `OPENAI_MODEL=<你的模型>` | 任何相容 OpenAI API 的伺服器。零成本,在你自己的硬體上執行。見下方的 [本地模型](#local-models-ollama--lm-studio--vllm)。 |
 | Claude 訂閱回退 | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | 僅限選擇加入。會產生 `@anthropic-ai/claude-agent-sdk` 會話;它過去曾造成無上限的 Stop-hook 遞迴,因此不再是預設值。 |

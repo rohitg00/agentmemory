@@ -843,6 +843,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | ادا شدہ (Paid) | کوڈ کے لیے optimized |
 | Cohere | `embed-english-v3.0` | مفت trial | عمومی مقصد |
 | OpenRouter | کوئی بھی ماڈل | مختلف ہوتا ہے | Multi-model پراکسی |
+| Requesty | کوئی بھی ماڈل | مختلف ہوتا ہے | Multi-model پراکسی |
 
 ---
 
@@ -1020,6 +1021,7 @@ agentmemory آپ کے ماحول سے providers کو خودکار طور پر de
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `GEMINI_API_KEY` | embeddings بھی فعال کرتا ہے |
 | OpenRouter | `OPENROUTER_API_KEY` | کوئی بھی ماڈل |
+| Requesty | `REQUESTY_API_KEY` | کوئی بھی ماڈل |
 | OpenAI API | `OPENAI_API_KEY` | ڈیفالٹ `gpt-5.6-luna`، `OPENAI_MODEL` سے override کریں |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) یا `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | کوئی بھی OpenAI-API-compatible چیز۔ صفر لاگت، آپ کے اپنے hardware پر چلتا ہے۔ نیچے [مقامی ماڈلز](#local-models-ollama--lm-studio--vllm) دیکھیں۔ |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | صرف opt-in۔ `@anthropic-ai/claude-agent-sdk` سیشنز spawn کرتا ہے؛ یہ پہلے لامحدود Stop-hook recursion کا سبب بنتا تھا، لہٰذا یہ اب ڈیفالٹ نہیں ہے۔ |

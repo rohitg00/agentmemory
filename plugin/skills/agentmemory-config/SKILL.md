@@ -54,7 +54,7 @@ AGENTMEMORY_AUTO_COMPRESS=true
 AGENTMEMORY_INJECT_CONTEXT=true
 ```
 
-A provider key in the environment does nothing until `AGENTMEMORY_LLM_PROVIDER` names that provider. Cloud embeddings run only when `EMBEDDING_PROVIDER` is `gemini`, `openai`, `voyage`, `cohere` or `openrouter`.
+A provider key in the environment does nothing until `AGENTMEMORY_LLM_PROVIDER` names that provider. Cloud embeddings run only when `EMBEDDING_PROVIDER` is `gemini`, `openai`, `voyage`, `cohere`, `openrouter` or `requesty`.
 
 ## Defaults worth knowing
 

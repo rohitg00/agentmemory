@@ -874,7 +874,7 @@ Keyless installs disable vector embeddings: `mem::search` uses BM25, while `smar
 EMBEDDING_PROVIDER=local
 ```
 
-The normal npm install includes the optional `@huggingface/transformers` runtime. The first embedding request downloads `Xenova/all-MiniLM-L6-v2`, so it needs network access and can take longer; subsequent inference runs on-device. Remote embedding providers run only when `EMBEDDING_PROVIDER` names one of them (`gemini`, `openai`, `voyage`, `cohere`, `openrouter`) and its key is set. A key on its own never turns on remote embeddings.
+The normal npm install includes the optional `@huggingface/transformers` runtime. The first embedding request downloads `Xenova/all-MiniLM-L6-v2`, so it needs network access and can take longer; subsequent inference runs on-device. Remote embedding providers run only when `EMBEDDING_PROVIDER` names one of them (`gemini`, `openai`, `voyage`, `cohere`, `openrouter`, `requesty`) and its key is set. A key on its own never turns on remote embeddings.
 
 | Provider | Model | Cost | Notes |
 |---|---|---|---|
@@ -884,6 +884,7 @@ The normal npm install includes the optional `@huggingface/transformers` runtime
 | Voyage AI | `voyage-code-3` | Paid | Optimized for code |
 | Cohere | `embed-english-v3.0` | Free trial | General purpose |
 | OpenRouter | Any model | Varies | Multi-model proxy |
+| Requesty | Any model | Varies | Multi-model router (`openai/text-embedding-3-small` by default) |
 
 ---
 
@@ -1061,6 +1062,7 @@ agentmemory sends session content to an LLM only after you select a provider wit
 | MiniMax | `AGENTMEMORY_LLM_PROVIDER=minimax` + `MINIMAX_API_KEY` | Anthropic-compatible |
 | Gemini | `AGENTMEMORY_LLM_PROVIDER=gemini` + `GEMINI_API_KEY` | Gemini embeddings need `EMBEDDING_PROVIDER=gemini` as well |
 | OpenRouter | `AGENTMEMORY_LLM_PROVIDER=openrouter` + `OPENROUTER_API_KEY` | Any model |
+| Requesty | `AGENTMEMORY_LLM_PROVIDER=requesty` + `REQUESTY_API_KEY` | Any model; default `openai/gpt-4o-mini`, override with `REQUESTY_MODEL` |
 | OpenAI API | `AGENTMEMORY_LLM_PROVIDER=openai` + `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override with `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `AGENTMEMORY_LLM_PROVIDER=openai` + `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) or `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Anything OpenAI-API-compatible. Zero cost, runs on your hardware. See [Local models](#local-models-ollama--lm-studio--vllm) below. |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in only. Spawns `@anthropic-ai/claude-agent-sdk` sessions; it used to cause unbounded Stop-hook recursion, so it is no longer the default. |

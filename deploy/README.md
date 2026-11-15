@@ -40,7 +40,7 @@ Keep `/data` on a persistent volume: it holds the memories, the generated secret
 
 ## LLM and embedding providers
 
-A provider key alone turns nothing on. To use LLM summaries and compression, set `AGENTMEMORY_LLM_PROVIDER` (`anthropic`, `openai`, `gemini`, `openrouter` or `minimax`) and that provider's key. To use cloud embeddings, set `EMBEDDING_PROVIDER` and its key. All the Compose files above forward both selectors to the worker.
+A provider key alone turns nothing on. To use LLM summaries and compression, set `AGENTMEMORY_LLM_PROVIDER` (`anthropic`, `openai`, `gemini`, `openrouter`, `requesty` or `minimax`) and that provider's key. To use cloud embeddings, set `EMBEDDING_PROVIDER` and its key. All the Compose files above forward both selectors to the worker.
 
 ## Local embeddings
 

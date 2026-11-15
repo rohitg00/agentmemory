@@ -839,6 +839,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | เสียเงิน | ปรับให้เหมาะกับโค้ด |
 | Cohere | `embed-english-v3.0` | มี free trial | ใช้งานทั่วไป |
 | OpenRouter | โมเดลใดก็ได้ | ขึ้นกับโมเดล | Proxy แบบ multi-model |
+| Requesty | โมเดลใดก็ได้ | ขึ้นกับโมเดล | Proxy แบบ multi-model |
 
 ---
 
@@ -1016,6 +1017,7 @@ agentmemory ตรวจจับ provider จาก environment ของคุ
 | MiniMax | `MINIMAX_API_KEY` | เข้ากันได้กับ Anthropic |
 | Gemini | `GEMINI_API_KEY` | เปิด embedding ด้วย |
 | OpenRouter | `OPENROUTER_API_KEY` | โมเดลใดก็ได้ |
+| Requesty | `REQUESTY_API_KEY` | โมเดลใดก็ได้ |
 | OpenAI API | `OPENAI_API_KEY` | default `gpt-5.6-luna`, override ด้วย `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) หรือ `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | ทุกอย่างที่เข้ากันได้กับ OpenAI API ไม่มีค่าใช้จ่าย รันบน hardware ของคุณเอง ดู [Local models](#local-models-ollama--lm-studio--vllm) ด้านล่าง |
 | Claude subscription fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | ต้องเปิดเองเท่านั้น จะ spawn session `@anthropic-ai/claude-agent-sdk`; เคยทำให้เกิด Stop-hook recursion แบบไม่มีขอบเขต จึงไม่ใช่ default อีกต่อไป |

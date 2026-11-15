@@ -841,6 +841,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | مدفوع | مُحسَّن للشفرة |
 | Cohere | `embed-english-v3.0` | نسخة تجريبية مجانية | للاستخدام العام |
 | OpenRouter | أي نموذج | متفاوت | وكيل متعدد النماذج |
+| Requesty | أي نموذج | متفاوت | وكيل متعدد النماذج |
 
 ---
 
@@ -1018,6 +1019,7 @@ open http://localhost:3113
 | MiniMax | `MINIMAX_API_KEY` | متوافق مع Anthropic |
 | Gemini | `GEMINI_API_KEY` | يُفعِّل التضمينات أيضًا |
 | OpenRouter | `OPENROUTER_API_KEY` | أي نموذج |
+| Requesty | `REQUESTY_API_KEY` | أي نموذج |
 | OpenAI API | `OPENAI_API_KEY` | الافتراضي `gpt-5.6-luna`، تجاوزه بـ `OPENAI_MODEL` |
 | **محلي (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) أو `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | أي شيء متوافق مع OpenAI API. بلا تكلفة، ويعمل على جهازك. راجع [النماذج المحلية](#local-models-ollama--lm-studio--vllm) أدناه. |
 | الرجوع لاشتراك Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | اختياري الانضمام فقط. يُولِّد جلسات `@anthropic-ai/claude-agent-sdk`؛ وكان يتسبب سابقًا في تكرار (recursion) غير محدود لخطاف Stop، فلم يعد الافتراضي. |

@@ -834,6 +834,7 @@ Instalarea npm normală include runtime-ul opțional `@huggingface/transformers`
 | Voyage AI | `voyage-code-3` | Plătit | Optimizat pentru cod |
 | Cohere | `embed-english-v3.0` | Perioadă de probă gratuită | Scop general |
 | OpenRouter | Orice model | Variabil | Proxy multi-model |
+| Requesty | Orice model | Variabil | Proxy multi-model |
 
 ---
 
@@ -1011,6 +1012,7 @@ agentmemory detectează automat furnizorii din mediul tău. Un furnizor face dis
 | MiniMax | `MINIMAX_API_KEY` | Compatibil Anthropic |
 | Gemini | `GEMINI_API_KEY` | Activează și embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Orice model |
+| Requesty | `REQUESTY_API_KEY` | Orice model |
 | API OpenAI | `OPENAI_API_KEY` | Implicit `gpt-5.6-luna`, suprascrie cu `OPENAI_MODEL` |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) sau `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Orice e compatibil cu API-ul OpenAI. Cost zero, rulează pe hardware-ul tău. Vezi [Modele locale](#local-models-ollama--lm-studio--vllm) mai jos. |
 | Fallback prin abonamentul Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Doar opt-in. Lansează sesiuni `@anthropic-ai/claude-agent-sdk`; obișnuia să cauzeze o recursivitate nelimitată a hook-ului Stop, așa că nu mai este implicit. |

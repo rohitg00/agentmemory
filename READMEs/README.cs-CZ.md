@@ -840,6 +840,7 @@ Běžná instalace npm obsahuje volitelný runtime `@huggingface/transformers`. 
 | Voyage AI | `voyage-code-3` | placené | optimalizováno pro kód |
 | Cohere | `embed-english-v3.0` | bezplatná zkouška | univerzální použití |
 | OpenRouter | jakýkoli model | liší se | proxy pro více modelů |
+| Requesty | jakýkoli model | liší se | proxy pro více modelů |
 
 ---
 
@@ -1017,6 +1018,7 @@ agentmemory automaticky detekuje poskytovatele z vašeho prostředí. Poskytovat
 | MiniMax | `MINIMAX_API_KEY` | kompatibilní s Anthropic |
 | Gemini | `GEMINI_API_KEY` | zapíná i embeddingy |
 | OpenRouter | `OPENROUTER_API_KEY` | jakýkoli model |
+| Requesty | `REQUESTY_API_KEY` | jakýkoli model |
 | OpenAI API | `OPENAI_API_KEY` | výchozí `gpt-5.6-luna`, přepište pomocí `OPENAI_MODEL` |
 | **Lokální (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) nebo `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | cokoli kompatibilní s OpenAI API. Nulové náklady, běží na vašem hardwaru. Viz [Lokální modely](#local-models-ollama--lm-studio--vllm) níže. |
 | Záložní řešení přes předplatné Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | pouze opt-in. Spouští sessions `@anthropic-ai/claude-agent-sdk`; dříve to způsobovalo neomezenou rekurzi Stop-hook, takže už to není výchozí nastavení. |

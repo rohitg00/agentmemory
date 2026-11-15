@@ -49,7 +49,7 @@ Data is kept until you delete it. Each session keeps at most 500 observations by
 
 By default, nothing. Search uses local keyword matching, and no LLM is called. Content leaves your machine only when you turn on one of these options on the server:
 
-- `AGENTMEMORY_LLM_PROVIDER` selects an LLM provider (Anthropic, OpenAI, Gemini, OpenRouter or MiniMax). Session summaries, consolidation and reflection then send excerpts of recorded content to it. A provider key that is already in your environment does nothing until you set this option. LLM compression of each observation stays off unless you also set `AGENTMEMORY_AUTO_COMPRESS=true`.
+- `AGENTMEMORY_LLM_PROVIDER` selects an LLM provider (Anthropic, OpenAI, Gemini, OpenRouter, Requesty or MiniMax). Session summaries, consolidation and reflection then send excerpts of recorded content to it. A provider key that is already in your environment does nothing until you set this option. LLM compression of each observation stays off unless you also set `AGENTMEMORY_AUTO_COMPRESS=true`.
 - `AGENTMEMORY_ALLOW_AGENT_SDK=true`, with no provider selected, sends the same excerpts to Claude through the Claude Agent SDK.
 - `EMBEDDING_PROVIDER` set to `gemini`, `openai`, `voyage`, `cohere` or `openrouter` sends text to that service to build search vectors. `EMBEDDING_PROVIDER=local` runs on your machine after a one-time model download.
 - A Redis state backend stores records on the Redis server you configure.
