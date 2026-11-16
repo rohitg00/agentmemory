@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,900+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="5,000+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -778,7 +778,15 @@ Agent instructions and memory files remain useful for stable project guidance. A
 
 <h2 id="how-it-works"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-how.svg"><img src="assets/tags/section-how.svg" alt="How It Works" height="32" /></picture></h2>
 
+<p align="center">
+  <img src="assets/diagrams/architecture.svg" alt="agentmemory architecture: coding agents reach one local server on port 3111 through hooks, MCP and REST. Capture, recall and store each run locally by default, and each optional provider is turned on by its own environment variable." width="100%" />
+</p>
+
 ### Memory Pipeline
+
+<p align="center">
+  <img src="assets/diagrams/pipeline.svg" alt="Memory pipeline: PostToolUse captures, filters, stores, compresses and indexes each tool call. Stop and SessionEnd write summaries. SessionStart builds a profile, runs hybrid search within a token budget and can inject context." width="100%" />
+</p>
 
 ```text
 PostToolUse hook fires
@@ -814,6 +822,10 @@ Modeled on how human brains process memory, including sleep consolidation.
 | **Procedural** | Workflows and decision patterns | "How to do it" |
 
 Memories decay over time (Ebbinghaus curve). Frequently accessed memories strengthen. Stale memories auto-evict. Contradictions are detected and resolved.
+
+<p align="center">
+  <img src="assets/diagrams/stack.svg" alt="agentmemory as layers: your agents, hooks, MCP and REST, the agentmemory server, four memory tiers, three recall streams, and the file state store on your machine." width="85%" />
+</p>
 
 ### What Gets Captured
 
@@ -1324,7 +1336,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

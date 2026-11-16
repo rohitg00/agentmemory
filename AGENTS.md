@@ -11,7 +11,7 @@ agentmemory is a persistent memory system for AI coding agents, built on iii-eng
 
 ## Consistency Rules
 
-**Before every commit, run `npm run docs:sync` and commit what it changes.** It computes MCP tool counts (all, core, local fallback), REST endpoints, skills, hooks, tests, iii functions, source files, lines of code and KV scopes from the source, and rewrites them in README.md, the translated READMEs, AGENTS.md, INSTALL_FOR_AGENTS.md, plugin manifests, integration READMEs, the stat badges and the `src/index.ts` banner. The last synced values live in `scripts/docs-sync.state.json`; commit that file with the rest. `npm run docs:check` exits non-zero when anything is out of date. When the sync prints `check <fact> <old> left in <file>`, open that line: either fix it by hand or add its noun to the fact in `scripts/docs-sync.ts` so the next sync catches it. Never hand-edit these numbers or versions in the docs; change the source and sync.
+**Before every commit, run `npm run docs:sync` and commit what it changes.** It computes MCP tool counts (all, core, local fallback), REST endpoints, skills, hooks, tests, iii functions, source files, lines of code and KV scopes from the source, and rewrites them in README.md, the translated READMEs, AGENTS.md, INSTALL_FOR_AGENTS.md, plugin manifests, integration READMEs, the stat badges and the `src/index.ts` banner. The last synced values live in `scripts/docs-sync.state.json`; commit that file with the rest. `npm run docs:check` exits non-zero when anything is out of date. When the sync prints `check <fact> <old> left in <file>`, open that line: either fix it by hand or add its noun to the fact in `scripts/docs-sync.ts` so the next sync catches it. Never hand-edit these numbers or versions in the docs; change the source and sync. The same sync renders the README diagrams in `assets/diagrams/` from `scripts/readme-diagrams.ts`: their counts, ports, RRF k, token budget and per-session cap come from the source, and the check fails when a diagram names an environment variable that no longer exists in `src/`. Edit the generator, never the SVG files.
 
 **When adding or removing MCP tools, update:**
 1. `src/mcp/tools-registry.ts` — tool definition + `getAllTools()` array
@@ -101,7 +101,7 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 
 ## Testing
 
-- Before every commit run, in order: `npm run build`, `npm run skills:gen`, `npm run docs:sync`, `npm run skills:check`, `npm test` (4,900+ tests). Commit anything the generators changed. CI runs the same build, skills check and tests.
+- Before every commit run, in order: `npm run build`, `npm run skills:gen`, `npm run docs:sync`, `npm run skills:check`, `npm test` (5,000+ tests). Commit anything the generators changed. CI runs the same build, skills check, docs check and tests.
 - Before any npm publish: `npm run release:gate` must pass. It installs the packed tarballs into a clean home and runs capture, recovery, restart, export/import, MCP and status checks against the installed CLI (see CONTRIBUTING.md, Release process)
 - Mock pattern: `vi.mock("iii-sdk")` with mock `sdk.trigger`, `kv.get/set/list`
 - Test files go in `test/` with `.test.ts` extension
@@ -114,4 +114,4 @@ Hook scripts in `src/hooks/` are standalone Node.js scripts (no iii-sdk import).
 - 6 MCP resources, 3 MCP prompts
 - 12 hooks, 17 skills
 - 322+ iii functions
-- 4,900+ tests
+- 5,000+ tests
