@@ -10,7 +10,7 @@ export type McpToolDef = {
   description: string;
   inputSchema: {
     type: "object";
-    properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string } }>;
+    properties: Record<string, { type: string; description: string; enum?: string[]; items?: { type: string }; minimum?: number }>;
     required?: string[];
   };
   annotations?: McpToolAnnotations;
