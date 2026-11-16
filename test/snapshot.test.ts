@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { writeFileSync } from "node:fs";
 
 const snapshotContent = vi.hoisted(() => vi.fn(() => '{"version":"0.4.0","sessions":[],"memories":[]}'));
+const gitCalls = vi.hoisted(() => vi.fn());
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -21,7 +23,10 @@ vi.mock("node:util", async () => {
   >;
   return {
     ...actual,
-    promisify: () => async (_file: string, args: string[]) => ({ stdout: args[0] === "show" ? snapshotContent() : "abc1234\n", stderr: "" }),
+    promisify: () => async (_file: string, args: string[]) => {
+      gitCalls(args);
+      return { stdout: args[0] === "show" ? snapshotContent() : "abc1234\n", stderr: "" };
+    },
   };
 });
 
@@ -126,6 +131,45 @@ describe("Snapshot Functions", () => {
     expect(result.snapshot.message).toBe("Test snapshot");
     expect(result.snapshot.stats.sessions).toBe(1);
     expect(result.snapshot.stats.memories).toBe(1);
+    expect(result.snapshot.stats.observations).toBe(0);
+    const archive = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
+    expect(archive.observations).toEqual({});
+    expect(archive.accessLogs).toEqual([]);
+  });
+
+  it.each([
+    ["observations", KV.observations("ses_1")],
+    ["access logs", KV.accessLog],
+  ])("snapshot-create fails without publishing when %s cannot be read", async (_name, failedScope) => {
+    const observation = { id: "obs_1", sessionId: "ses_1", title: "Keep this observation" };
+    const accessLog = { memoryId: "mem_1", accessCount: 1 };
+    await kv.set(KV.observations("ses_1"), observation.id, observation);
+    await kv.set(KV.accessLog, accessLog.memoryId, accessLog);
+    const list = kv.list.bind(kv);
+    let readFails = true;
+    vi.spyOn(kv, "list").mockImplementation(async <T>(scope: string): Promise<T[]> => {
+      if (readFails && scope === failedScope) throw new Error("State read failed");
+      return list<T>(scope);
+    });
+
+    const result = await sdk.trigger("mem::snapshot-create", {});
+
+    expect(result).toEqual({ success: false, error: "State read failed" });
+    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(gitCalls).not.toHaveBeenCalledWith(["add", "."]);
+    expect(gitCalls).not.toHaveBeenCalledWith(expect.arrayContaining(["commit"]));
+    expect(await kv.get(KV.observations("ses_1"), observation.id)).toEqual(observation);
+
+    readFails = false;
+    const retry = await sdk.trigger("mem::snapshot-create", {}) as {
+      success: boolean;
+      snapshot: SnapshotMeta;
+    };
+    expect(retry.success).toBe(true);
+    expect(retry.snapshot.stats.observations).toBe(1);
+    const archive = JSON.parse(vi.mocked(writeFileSync).mock.calls[0][1] as string);
+    expect(archive.observations.ses_1).toEqual([observation]);
+    expect(archive.accessLogs).toEqual([accessLog]);
   });
 
   it("snapshot-list returns snapshots from git log", async () => {
