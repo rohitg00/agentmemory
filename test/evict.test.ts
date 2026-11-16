@@ -217,6 +217,127 @@ describe("mem::evict stale sessions", () => {
     }
   });
 
+  describe("observation cleanup", () => {
+    afterEach(() => {
+      setIndexPersistence(null);
+      setVectorIndex(null);
+      getSearchIndex().remove("obs_1");
+    });
+
+    it("deletes the session's observation rows and drops them from the search indexes", async () => {
+      const sessionId = "ses_stale_cleanup";
+      const imagePath = "/img/obs.png";
+      const store = storeForObservations(sessionId, [
+        { ...makeObservation(sessionId), imageData: imagePath },
+      ]);
+      store.set(KV.imageRefs, new Map([[imagePath, 1]]));
+      const kv = mockKV(store);
+      const { sdk } = mockSdk();
+      const persistence = { scheduleSave: vi.fn(), save: vi.fn(async () => {}) };
+      setIndexPersistence(persistence);
+      const vectors = new VectorIndex();
+      setVectorIndex(vectors);
+
+      registerEvictFunction(sdk as never, kv as never);
+      sdk.registerFunction("event::session::stopped", () => ({ success: true }));
+      sdk.registerFunction("mem::consolidate-pipeline", () => ({ success: true }));
+      sdk.registerFunction("mem::auto-crystallize", () => ({ success: true }));
+
+      const observations = await kv.list<CompressedObservation>(
+        KV.observations(sessionId),
+      );
+      for (const o of observations) {
+        getSearchIndex().add(o);
+        vectors.add(o.id, sessionId, new Float32Array([1, 0, 0]));
+      }
+
+      const result = (await sdk.trigger({
+        function_id: "mem::evict",
+        payload: {},
+      })) as { staleSessions: number };
+
+      expect(result.staleSessions).toBe(1);
+      for (const o of observations) {
+        expect(await kv.get(KV.observations(sessionId), o.id)).toBeNull();
+        expect(getSearchIndex().has(o.id)).toBe(false);
+        expect(vectors.has(o.id)).toBe(false);
+        expect(
+          getSearchIndex()
+            .search("sqlite", 20, "all")
+            .map((r) => r.obsId),
+        ).not.toContain(o.id);
+      }
+      expect(await kv.get(KV.imageRefs, imagePath)).toBeNull();
+    });
+
+    it("keeps the session and remaining rows when a later observation delete fails, then finishes on retry", async () => {
+      const sessionId = "ses_partial_cleanup";
+      const obsA = {
+        ...makeObservation(sessionId),
+        id: "obs_a",
+        imageData: "/img/a.png",
+      };
+      const obsB = {
+        ...makeObservation(sessionId),
+        id: "obs_b",
+        imageData: "/img/b.png",
+      };
+      const store = storeForObservations(sessionId, [obsA, obsB]);
+      store.set(
+        KV.imageRefs,
+        new Map([
+          ["/img/a.png", 1],
+          ["/img/b.png", 1],
+        ]),
+      );
+      const kv = mockKV(store);
+      const { sdk } = mockSdk();
+      for (const o of [obsA, obsB]) {
+        await indexObservationSession(kv as never, o.id, sessionId);
+      }
+
+      const realDelete = kv.delete;
+      const del = vi
+        .spyOn(kv, "delete")
+        .mockImplementation(async (scope: string, key: string) => {
+          if (scope === KV.observations(sessionId) && key === "obs_b") {
+            throw new Error("delete failed");
+          }
+          return realDelete(scope, key);
+        });
+
+      registerEvictFunction(sdk as never, kv as never);
+      sdk.registerFunction("event::session::stopped", () => ({ success: true }));
+      sdk.registerFunction("mem::consolidate-pipeline", () => ({ success: true }));
+      sdk.registerFunction("mem::auto-crystallize", () => ({ success: true }));
+
+      const first = (await sdk.trigger({
+        function_id: "mem::evict",
+        payload: {},
+      })) as { staleSessions: number };
+
+      expect(first.staleSessions).toBe(0);
+      expect(await kv.get(KV.sessions, sessionId)).not.toBeNull();
+      expect(await kv.get(KV.observations(sessionId), "obs_a")).toBeNull();
+      expect(await kv.get(KV.observations(sessionId), "obs_b")).not.toBeNull();
+      expect(await lookupObservationSession(kv as never, "obs_a")).toBeNull();
+      expect(await lookupObservationSession(kv as never, "obs_b")).toBe(sessionId);
+      expect(await kv.get(KV.imageRefs, "/img/a.png")).toBeNull();
+      expect(await kv.get(KV.imageRefs, "/img/b.png")).toBe(1);
+
+      del.mockRestore();
+      const second = (await sdk.trigger({
+        function_id: "mem::evict",
+        payload: {},
+      })) as { staleSessions: number };
+
+      expect(second.staleSessions).toBe(1);
+      expect(await kv.get(KV.sessions, sessionId)).toBeNull();
+      expect(await kv.get(KV.observations(sessionId), "obs_b")).toBeNull();
+      expect(await kv.get(KV.imageRefs, "/img/b.png")).toBeNull();
+    });
+  });
+
   it("bounds consolidation to one pass regardless of how many stale sessions are recovered", async () => {
     // Regression (P1): before the skipConsolidation guard, N recovered
     // sessions each triggered a forced full-corpus consolidate + crystallize
@@ -371,6 +492,65 @@ describe("mem::evict stale sessions", () => {
     expect(calls.map((call) => call.function_id)).not.toContain(
       "event::session::stopped",
     );
+  });
+});
+
+describe("mem::evict project cap", () => {
+  it("evicts the oldest observation when candidates tie on importance", async () => {
+    const sessionId = "ses_cap";
+    const session = { ...makeSession(sessionId), startedAt: daysAgo(1) };
+    const newest = {
+      ...makeObservation(sessionId),
+      id: "obs_new",
+      timestamp: daysAgo(1),
+      importance: 5,
+    };
+    const oldest = {
+      ...makeObservation(sessionId),
+      id: "obs_old",
+      timestamp: daysAgo(9),
+      importance: 5,
+    };
+    const middle = {
+      ...makeObservation(sessionId),
+      id: "obs_mid",
+      timestamp: daysAgo(5),
+      importance: 5,
+    };
+    // KV order puts the newest first; an importance-only stable sort keeps
+    // that order and evicts obs_new. The session-cap convention (importance
+    // asc, then timestamp asc) evicts the oldest instead.
+    const store: Store = new Map([
+      [KV.sessions, new Map([[session.id, session]])],
+      [KV.summaries, new Map()],
+      [
+        KV.observations(sessionId),
+        new Map([
+          [newest.id, newest],
+          [oldest.id, oldest],
+          [middle.id, middle],
+        ]),
+      ],
+      [KV.config, new Map([["eviction", { maxObservationsPerProject: 2 }]])],
+      [KV.audit, new Map()],
+    ]);
+    const kv = mockKV(store);
+    const { sdk } = mockSdk();
+    registerEvictFunction(sdk as never, kv as never);
+    sdk.registerFunction("event::session::stopped", () => ({ success: true }));
+
+    const result = (await sdk.trigger({
+      function_id: "mem::evict",
+      payload: {},
+    })) as { capEvictions: number };
+
+    expect(result.capEvictions).toBe(1);
+    const remaining = (
+      await kv.list<CompressedObservation>(KV.observations(sessionId))
+    ).map((o) => o.id);
+    expect(remaining).toContain(newest.id);
+    expect(remaining).toContain(middle.id);
+    expect(remaining).not.toContain(oldest.id);
   });
 });
 

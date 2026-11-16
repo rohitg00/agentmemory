@@ -28,6 +28,8 @@ function mockKV(store = new Map<string, Map<string, unknown>>()) {
     list: async <T>(scope: string): Promise<T[]> =>
       Array.from(store.get(scope)?.values() ?? []) as T[],
     _store: store,
+    listKeys: async (scope: string): Promise<string[]> =>
+      Array.from(store.get(scope)?.keys() ?? []),
   };
 }
 

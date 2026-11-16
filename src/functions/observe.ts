@@ -29,7 +29,7 @@ import { scheduleSessionFinalize } from "./session-finalize.js";
 
 const DEFAULT_EVICTION_IMPORTANCE = 5;
 
-function byEvictionOrder(a: CompressedObservation, b: CompressedObservation): number {
+export function byEvictionOrder(a: CompressedObservation, b: CompressedObservation): number {
   const ia = a.importance ?? DEFAULT_EVICTION_IMPORTANCE;
   const ib = b.importance ?? DEFAULT_EVICTION_IMPORTANCE;
   if (ia !== ib) return ia - ib;

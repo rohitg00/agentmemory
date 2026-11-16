@@ -1,7 +1,7 @@
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { lookupObservationSession } from "../state/obs-index.js";
-import { KV, generateId } from "../state/schema.js";
+import { KV, generateId, UNSESSIONED_OBSERVATION_SCOPE } from "../state/schema.js";
 import type { Facet, Lesson } from "../types.js";
 import { logger } from "../logger.js";
 
@@ -111,7 +111,6 @@ export async function findOrphanFacets(kv: StateKV): Promise<Facet[]> {
 }
 
 const OBSERVATION_SCAN_BATCH = 16;
-const UNSESSIONED_OBSERVATION_SCOPE = "migrated";
 
 async function listObservationIds(kv: StateKV): Promise<Set<string> | null> {
   try {

@@ -295,7 +295,11 @@ export function registerMcpEndpoints(
                 body: { error: "query or expandIds is required for memory_smart_search" },
               };
             }
-            const limit = Math.max(1, Math.min(100, asNumber(args.limit, 10) ?? 10));
+            if (args.limit !== undefined &&
+              (typeof args.limit !== "number" || !Number.isInteger(args.limit) || args.limit < 1)) {
+              return { status_code: 400, body: { error: "limit must be a positive integer" } };
+            }
+            const limit = Math.min(100, (args.limit as number | undefined) ?? 10);
             const result = await sdk.trigger({
               function_id: "mem::smart-search",
               payload: {

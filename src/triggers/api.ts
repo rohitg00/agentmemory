@@ -1891,6 +1891,9 @@ export function registerApiTriggers(
           return { status_code: 400, body: { error: `${field} must be a string` } };
         }
       }
+      if (body.limit !== undefined && (!Number.isInteger(body.limit) || body.limit < 1)) {
+        return { status_code: 400, body: { error: "limit must be a positive integer" } };
+      }
       if (body.includeLessons !== undefined && typeof body.includeLessons !== "boolean") {
         return { status_code: 400, body: { error: "includeLessons must be a boolean" } };
       }
@@ -2087,7 +2090,14 @@ export function registerApiTriggers(
       if (!req.body?.exportData) {
         return { status_code: 400, body: { error: "exportData is required" } };
       }
-      const result = await sdk.trigger({ function_id: "mem::import", payload: req.body });
+      const strategy = req.body.strategy;
+      if (strategy !== undefined && !["merge", "replace", "skip"].includes(strategy)) {
+        return { status_code: 400, body: { error: "strategy must be merge, replace, or skip" } };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::import",
+        payload: { exportData: req.body.exportData, strategy },
+      });
       return { status_code: 200, body: result };
     },
   );

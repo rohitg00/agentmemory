@@ -43,6 +43,7 @@ function rig() {
     },
     list: async (scope: string) => clone(Array.from(store.get(scope)?.values() ?? [])),
     delete: async (scope: string, key: string) => { store.get(scope)?.delete(key); },
+    listKeys: async (scope: string) => Array.from(store.get(scope)?.keys() ?? []),
   };
   const sdk = {
     registerFunction: (id: string, handler: Handler) => handlers.set(id, handler),
