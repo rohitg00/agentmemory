@@ -1,3 +1,25 @@
+export interface ObsidianVaultNote {
+  version: 1;
+  vaultHash: string;
+  noteHash: string;
+  exported?: {
+    memoryId: string;
+    readonlyDigest: string;
+    tailDigest: string;
+    tailLength: number;
+    titleDigest: string;
+    titleLength: number;
+    multilineTitle: boolean;
+    stateDigest: string;
+  };
+  imported?: {
+    memoryId: string;
+    rawId?: string;
+    inputDigest: string;
+    stateDigest: string;
+  };
+}
+
 export interface Session {
   id: string;
   project: string;
@@ -726,6 +748,7 @@ export interface AuditEntry {
     | "lesson_strengthen"
     | "lesson_delete"
     | "obsidian_export"
+    | "obsidian_import"
     | "reflect"
     | "insight_search"
     | "skill_extract"

@@ -102,6 +102,7 @@ import { resolveDataDir } from "./cli-data-dir.js";
 import { runCaptureCommand } from "./cli/capture.js";
 import { runCompressionCommand } from "./cli/compression.js";
 import { runGraphIndexCommand } from "./cli/graph-index.js";
+import { runObsidianImportCommand } from "./cli/obsidian-import.js";
 import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
 import { assertComposePortsFree, composeCall, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, writeComposeState, type ComposeStatus } from "./cli/compose-control.js";
 import { COMPOSE_WORKER_VERSIONS, composeDownTimeoutMs, composeNamespace } from "./cli/compose-project.js";
@@ -247,6 +248,8 @@ Commands:
   import-jsonl [p]   Import Claude Code JSONL transcripts (default: ~/.claude/projects)
                      --max-files <N> | --max-files=<N>: override scan cap (default 200, max 1000;
                      out-of-range is rejected; for trees >1000 files, batch by subdirectory)
+  obsidian-import   Import edited memory notes from an Obsidian vault.
+                    --vault-dir <path> [--dry-run] [--prefer vault|store]
 
 Options:
   --help, -h         Show this help
@@ -301,7 +304,7 @@ if (toolsIdx !== -1 && args[toolsIdx + 1]) {
   process.env["AGENTMEMORY_TOOLS"] = toolsMode;
 }
 
-const URL_CLIENT_COMMANDS = new Set(["status", "doctor", "mcp", "capture", "compression", "graph-index"]);
+const URL_CLIENT_COMMANDS = new Set(["status", "doctor", "mcp", "capture", "compression", "graph-index", "obsidian-import"]);
 let hasExplicitLocalPortOverride = false;
 let selectedInstance = 0;
 
@@ -3781,6 +3784,11 @@ async function runGraphIndex(): Promise<void> {
   process.exit(await runGraphIndexCommand({ base, args: args.slice(1), secret: resolveClientSecret(base) }));
 }
 
+async function runObsidianImport(): Promise<void> {
+  const base = getBaseUrl();
+  process.exit(await runObsidianImportCommand({ base, args: args.slice(1), secret: resolveClientSecret(base) }));
+}
+
 const commands: Record<string, () => Promise<void>> = {
   init: runInit,
   connect: runConnectCmd,
@@ -3796,6 +3804,7 @@ const commands: Record<string, () => Promise<void>> = {
   capture: runCapture,
   compression: runCompression,
   "graph-index": runGraphIndex,
+  "obsidian-import": runObsidianImport,
 };
 
 const first = args[0] ?? "";
