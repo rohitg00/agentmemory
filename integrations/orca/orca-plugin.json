@@ -60,6 +60,9 @@
     ],
     "hooks": [
       {
+        "event": "agent.launch.before"
+      },
+      {
         "event": "agent.tool.after"
       }
     ],

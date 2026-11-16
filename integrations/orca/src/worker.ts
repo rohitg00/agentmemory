@@ -18,6 +18,9 @@ type Scope = 'project' | 'all'
 type Workspace = { id: string; path: string; name: string; branch: string | null; hostId: string | null }
 
 const CAPTURE_OUTPUT_MAX = 8000
+const CAPTURE_QUEUE_MAX = 200
+const SEND_TEXT_MAX = 4096
+const SEND_PREFIX = 'Context from agentmemory: '
 const EVENT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$/
 
 async function urls(orca: OrcaWorkerApi): Promise<{ url: string; viewerUrl: string }> {
@@ -27,22 +30,29 @@ async function urls(orca: OrcaWorkerApi): Promise<{ url: string; viewerUrl: stri
   }
 }
 
-async function localWorkspaces(orca: OrcaWorkerApi): Promise<Workspace[]> {
-  const { workspaces } = await orca.host.call('workspace.list', {})
-  return workspaces.filter((workspace) => workspace.hostId === null || workspace.hostId === 'local')
+function isLocal(workspace: Workspace): boolean {
+  return workspace.hostId === null || workspace.hostId === 'local'
 }
 
-const SCOPE_ERROR = 'Could not read the focused Orca workspace. Try again, or turn off the workspace filter.'
+async function localWorkspaces(orca: OrcaWorkerApi): Promise<Workspace[]> {
+  const { workspaces } = await orca.host.call('workspace.list', {})
+  return workspaces.filter(isLocal)
+}
+
+const SCOPE_ERROR = 'Could not tell which Orca workspace is focused. Try again, or turn off the workspace filter.'
 
 async function focusedWorkspace(orca: OrcaWorkerApi): Promise<Workspace | null> {
   const focused = await orca.host.call('workspace.readContext', {})
   if (!focused) return null
-  const local = await localWorkspaces(orca)
-  return (
-    local.find((workspace) => workspace.id === (focused as { workspaceId?: string }).workspaceId) ??
-    local.find((workspace) => workspace.name === focused.displayName && workspace.branch === focused.branch) ??
-    null
-  )
+  const { workspaces } = await orca.host.call('workspace.list', {})
+  const focusedId = (focused as { workspaceId?: string }).workspaceId
+  const byId = focusedId ? workspaces.find((workspace) => workspace.id === focusedId) : undefined
+  const matches = byId
+    ? [byId]
+    : workspaces.filter((workspace) => workspace.name === focused.displayName && (workspace.branch === null || workspace.branch === focused.branch))
+  if (matches.length > 1) throw new Error('ambiguous workspace')
+  const match = matches[0]
+  return match && isLocal(match) ? match : null
 }
 
 async function focusedProject(orca: OrcaWorkerApi): Promise<string | null> {
@@ -76,7 +86,8 @@ async function readStatus(orca: OrcaWorkerApi, signal?: AbortSignal): Promise<Se
       countMemories(url, null, signal)
     ])
     const counts: Counts = { project: projectCount, all: allCount }
-    return { state: 'connected', url, viewerUrl, project, version: typeof version === 'string' ? version : null, counts }
+    void flushCaptures(url)
+    return { state: 'connected', url, viewerUrl, project, version: typeof version === 'string' ? version : null, counts, degraded: reply.status === 503 }
   }
   const state: 'refused' | 'unauthorized' | 'unreachable' =
     reply.status === -1 ? 'refused' : reply.status === 401 || reply.status === 403 ? 'unauthorized' : 'unreachable'
@@ -88,7 +99,7 @@ async function showStatus(orca: OrcaWorkerApi, status: ServerStatus): Promise<vo
     status.state === 'connected'
       ? {
           text: (status.counts.project ?? status.counts.all) === null ? 'agentmemory' : `${status.counts.project ?? status.counts.all} memories`,
-          tone: (status.counts.project ?? status.counts.all) === null ? ('warning' as const) : ('success' as const),
+          tone: status.degraded || (status.counts.project ?? status.counts.all) === null ? ('warning' as const) : ('success' as const),
           tooltip: status.project ? `agentmemory: ${status.project}. Press to open the viewer in Orca.` : 'agentmemory is running. Press to open the viewer in Orca.'
         }
       : { text: 'agentmemory offline', tone: 'danger' as const, tooltip: status.message }
@@ -106,6 +117,43 @@ async function openViewer(orca: OrcaWorkerApi): Promise<Done> {
   const { viewerUrl } = await urls(orca)
   const opened = await runOrca(['tab', 'create', '--url', viewerUrl, '--json'])
   return opened ? { ok: true, message: null } : { ok: false, message: `Could not open ${viewerUrl} in Orca.` }
+}
+
+const pendingCaptures: Array<Record<string, unknown>> = []
+let flushing = false
+
+function retryable(status: number): boolean {
+  return status === 0 || status === 408 || status === 429 || status >= 500
+}
+
+async function sendCapture(url: string, body: Record<string, unknown>): Promise<boolean> {
+  const reply = await callServer(url, 'observe', { method: 'POST', body, timeoutMs: 5000 })
+  if (reply.status >= 200 && reply.status < 300) return true
+  if (retryable(reply.status)) return false
+  return true
+}
+
+async function flushCaptures(url: string): Promise<void> {
+  if (flushing || pendingCaptures.length === 0) return
+  flushing = true
+  try {
+    while (pendingCaptures.length > 0) {
+      if (!(await sendCapture(url, pendingCaptures[0]))) return
+      pendingCaptures.shift()
+    }
+  } finally {
+    flushing = false
+  }
+}
+
+function queueCapture(body: Record<string, unknown>): void {
+  pendingCaptures.push(body)
+  if (pendingCaptures.length > CAPTURE_QUEUE_MAX) pendingCaptures.shift()
+}
+
+export function sendTextFor(text: string): string {
+  const flat = `${SEND_PREFIX}${text.replace(/\s+/g, ' ')}`
+  return flat.length > SEND_TEXT_MAX ? `${flat.slice(0, SEND_TEXT_MAX - 1)}…` : flat
 }
 
 function truncate(value: unknown): unknown {
@@ -193,7 +241,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     const body = text.trim()
     if (!body) return { ok: false, message: 'Nothing to send.' }
     try {
-      const { accepted } = await orca.host.call('terminal.sendText', { terminalId, text: `Context from agentmemory: ${body.replace(/\s+/g, ' ')}`, enter: false })
+      const { accepted } = await orca.host.call('terminal.sendText', { terminalId, text: sendTextFor(body), enter: false })
       return accepted ? { ok: true, message: null } : { ok: false, message: 'The terminal did not accept the text.' }
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) }
@@ -232,25 +280,35 @@ export default function activate(orca: OrcaWorkerApi): void {
     await showStatus(orca, await readStatus(orca))
   })
 
+  const workerStart = Date.now().toString(36)
+  const runs = new Map<string, string>()
+
+  orca.hooks.on('agent.launch.before', async (event) => {
+    if (event.terminalId) runs.set(event.terminalId, Date.now().toString(36))
+  })
+
   orca.hooks.on('agent.tool.after', async (event) => {
     if ((await orca.settings.get('capture')) !== true) return
     const workspace = (await localWorkspaces(orca).catch(() => [])).find((row) => row.id === event.workspaceId)
     if (!workspace) return
     const { url } = await urls(orca)
     const eventId = event.callId && EVENT_ID_RE.test(`orca:${event.callId}`) ? `orca:${event.callId}` : undefined
-    await callServer(url, 'observe', {
-      method: 'POST',
-      body: {
-        hookType: 'post_tool_use',
-        sessionId: `orca-${event.agent}-${event.terminalId ?? workspace.id}`,
-        project: projectName(workspace.path),
-        cwd: workspace.path,
-        timestamp: new Date().toISOString(),
-        ...(eventId ? { eventId } : {}),
-        data: { tool_name: event.tool, tool_input: truncate(event.input), tool_output: truncate(event.output), agent: event.agent, source: 'orca' }
-      },
-      timeoutMs: 5000
-    })
+    const owner = event.terminalId ?? workspace.id
+    const body: Record<string, unknown> = {
+      hookType: 'post_tool_use',
+      sessionId: `orca-${event.agent}-${owner}-${runs.get(owner) ?? workerStart}`,
+      project: projectName(workspace.path),
+      cwd: workspace.path,
+      timestamp: new Date().toISOString(),
+      ...(eventId ? { eventId } : {}),
+      data: { tool_name: event.tool, tool_input: truncate(event.input), tool_output: truncate(event.output), agent: event.agent, source: 'orca' }
+    }
+    if (pendingCaptures.length > 0) {
+      queueCapture(body)
+      await flushCaptures(url)
+      return
+    }
+    if (!(await sendCapture(url, body))) queueCapture(body)
   })
 
   void readStatus(orca).then((status) => showStatus(orca, status)).catch(() => undefined)

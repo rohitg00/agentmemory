@@ -25,13 +25,19 @@ function fakeServer(answer: (call: Call) => Reply) {
 
 const WORKSPACE_PATH = '/nonexistent/agentmemory-orca-test/myrepo'
 
-function host(settings: Record<string, string | boolean> = {}, readContext: unknown = { branch: 'main', displayName: 'myrepo', terminals: [] }) {
+const LOCAL_ROW = { id: 'w1', kind: 'worktree', name: 'myrepo', path: WORKSPACE_PATH, branch: 'main', hostId: null }
+
+function host(
+  settings: Record<string, string | boolean> = {},
+  readContext: unknown = { branch: 'main', displayName: 'myrepo', terminals: [] },
+  workspaces: unknown[] = [LOCAL_ROW]
+) {
   return mockHost({
     settings,
     results: {
       'workspace.readContext': readContext,
       'workspace.list': {
-        workspaces: [{ id: 'w1', kind: 'worktree', name: 'myrepo', path: WORKSPACE_PATH, branch: 'main', hostId: null }],
+        workspaces,
         truncated: false
       },
       'agents.list': {
@@ -67,7 +73,8 @@ test('reports a connected server with its version, project and memory counts', a
       viewerUrl: 'http://localhost:3113',
       project: 'myrepo',
       version: '0.9.33',
-      counts: { project: 4, all: 7 }
+      counts: { project: 4, all: 7 },
+      degraded: false
     })
     assert.ok(server.calls.every((call) => call.auth === 'Bearer test-secret'))
     assert.ok(server.calls.some((call) => new URL(call.url).searchParams.get('project') === 'myrepo'))
@@ -173,9 +180,9 @@ test('refuses project-scoped requests when the focused workspace cannot be read'
     })
     const worker = await mountWorker(main, { host: failing })
     const recent = await worker.request('memory.recent', { scope: 'project' })
-    assert.match(recent.error ?? '', /focused Orca workspace/)
+    assert.match(recent.error ?? '', /Orca workspace/)
     const saved = await worker.request('memory.save', { content: 'x', scope: 'project' })
-    assert.match(saved.error ?? '', /focused Orca workspace/)
+    assert.match(saved.error ?? '', /Orca workspace/)
     assert.equal(server.calls.filter((call) => call.url.endsWith('/remember') || call.url.includes('limit=20')).length, 0)
     await worker.deactivate()
   } finally {
@@ -260,7 +267,7 @@ test('captures agent tool calls only when the capture setting is on', async () =
     assert.equal(observed.length, 1)
     const body = observed[0].body as Record<string, unknown> & { data: Record<string, unknown> }
     assert.equal(body.hookType, 'post_tool_use')
-    assert.equal(body.sessionId, 'orca-codex-t9')
+    assert.match(body.sessionId as string, /^orca-codex-t9-[0-9a-z]+$/)
     assert.equal(body.project, 'myrepo')
     assert.equal(body.cwd, WORKSPACE_PATH)
     assert.equal(body.eventId, 'orca:call_12345678')
@@ -270,6 +277,76 @@ test('captures agent tool calls only when the capture setting is on', async () =
     await on.hooks.fire('agent.tool.after', { ...event, workspaceId: 'remote-or-unknown' })
     assert.equal(server.calls.filter((call) => call.url.endsWith('/observe')).length, 1)
     await on.deactivate()
+  } finally {
+    server.restore()
+  }
+})
+
+test('reports a degraded server when health answers 503', async () => {
+  const server = fakeServer((call) =>
+    new URL(call.url).pathname.endsWith('/health') ? { status: 503, body: { status: 'critical', version: '0.9.33' } } : healthy(call)
+  )
+  try {
+    const worker = await mountWorker(main, { host: host() })
+    const status = await worker.request('memory.status')
+    assert.equal(status.state, 'connected')
+    assert.equal(status.state === 'connected' && status.degraded, true)
+    await worker.deactivate()
+  } finally {
+    server.restore()
+  }
+})
+
+test('matches folder workspaces, and never guesses between duplicate or remote workspaces', async () => {
+  const server = fakeServer((call) => (call.url.includes('limit=20') ? { status: 200, body: { memories: [] } } : healthy(call)))
+  try {
+    const folder = await mountWorker(main, { host: host({}, undefined, [{ ...LOCAL_ROW, kind: 'folder', branch: null }]) })
+    assert.equal((await folder.request('memory.recent', { scope: 'project' })).project, 'myrepo')
+    await folder.deactivate()
+
+    const twins = await mountWorker(main, { host: host({}, undefined, [LOCAL_ROW, { ...LOCAL_ROW, id: 'w2', path: '/nonexistent/other/myrepo' }]) })
+    const twin = await twins.request('memory.recent', { scope: 'project' })
+    assert.match(twin.error ?? '', /Orca workspace/)
+    await twins.deactivate()
+
+    const remote = await mountWorker(main, { host: host({}, undefined, [LOCAL_ROW, { ...LOCAL_ROW, id: 'r1', hostId: 'ssh-box' }]) })
+    assert.match((await remote.request('memory.recent', { scope: 'project' })).error ?? '', /Orca workspace/)
+    await remote.deactivate()
+
+    const remoteOnly = await mountWorker(main, { host: host({}, undefined, [{ ...LOCAL_ROW, id: 'r1', hostId: 'ssh-box' }]) })
+    assert.equal((await remoteOnly.request('memory.recent', { scope: 'project' })).project, null)
+    await remoteOnly.deactivate()
+  } finally {
+    server.restore()
+  }
+})
+
+test('keeps text sent to an agent within the terminal limit', () => {
+  assert.equal(main.sendTextFor('x'.repeat(10_000)).length, 4096)
+  assert.equal(main.sendTextFor('Use pnpm.\n The repo uses pnpm.'), 'Context from agentmemory: Use pnpm. The repo uses pnpm.')
+})
+
+test('starts a new session for each agent launch and resends captures after the server returns', async () => {
+  let down = true
+  const server = fakeServer((call) => {
+    if (call.url.endsWith('/observe')) return down ? 'down' : { status: 201, body: { status: 'accepted' } }
+    return healthy(call)
+  })
+  const event = { agent: 'codex', workspaceId: 'w1', terminalId: 't9', tool: 'shell', input: { command: 'ls' }, callId: 'call_abcdefgh' }
+  try {
+    const worker = await mountWorker(main, { host: host({ capture: true }) })
+    await worker.hooks.fire('agent.tool.after', event)
+    down = false
+    await worker.hooks.fire('agent.tool.after', { ...event, callId: 'call_ijklmnop' })
+    const sent = server.calls.filter((call) => call.url.endsWith('/observe')).map((call) => call.body as { eventId: string; sessionId: string })
+    assert.deepEqual(sent.map((body) => body.eventId), ['orca:call_abcdefgh', 'orca:call_abcdefgh', 'orca:call_ijklmnop'])
+    const firstRun = sent[2].sessionId
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    await worker.hooks.fire('agent.launch.before', { agent: 'codex', workspaceId: 'w1', workspaceKind: 'worktree', terminalId: 't9', command: 'codex', env: {} })
+    await worker.hooks.fire('agent.tool.after', { ...event, callId: 'call_qrstuvwx' })
+    const last = server.calls.filter((call) => call.url.endsWith('/observe')).at(-1)?.body as { sessionId: string }
+    assert.notEqual(last.sessionId, firstRun)
+    await worker.deactivate()
   } finally {
     server.restore()
   }

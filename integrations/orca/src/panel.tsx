@@ -149,7 +149,10 @@ export function setup(ctx: PanelContext): void {
 
 function StatusBadge({ value }: { value: ServerStatus | null }) {
   if (!value) return <Badge>checking</Badge>
-  if (value.state === 'connected') return <Badge tone="success">{value.version ? `v${value.version}` : 'connected'}</Badge>
+  if (value.state === 'connected') {
+    const label = value.version ? `v${value.version}` : 'connected'
+    return value.degraded ? <Badge tone="warning">{`${label} degraded`}</Badge> : <Badge tone="success">{label}</Badge>
+  }
   if (value.state === 'unauthorized') return <Badge tone="warning">secret rejected</Badge>
   return <Badge tone="danger">offline</Badge>
 }

@@ -25,7 +25,7 @@ agentmemory connect claude-code
 agentmemory connect codex
 ```
 
-For an agent that you cannot connect, turn on the **Capture agent tool calls** setting. The plugin then sends each tool call that an agent in Orca makes to agentmemory, with the tool output cut at 8,000 characters. Keep the setting off for connected agents, or each call is recorded twice.
+For an agent that you cannot connect, turn on the **Capture agent tool calls** setting. The plugin then sends each tool call that an agent in Orca makes to agentmemory, with the tool output cut at 8,000 characters. Each agent launch gets its own session. When the server is down, the plugin keeps up to 200 calls in memory and sends them when the server answers again; calls still waiting when Orca quits are lost. Keep the setting off for connected agents, or each call is recorded twice.
 
 ## Install
 
@@ -57,7 +57,7 @@ The worker sends requests only to the Server URL. It reads the bearer secret fro
 
 ## Project scope
 
-agentmemory names a project after its Git repository, so all worktrees of a repository share one project. The worker finds the focused workspace's folder with `workspace.list` and resolves the name the same way the agentmemory hooks do. `AGENTMEMORY_PROJECT_NAME` overrides it. Remote (SSH) workspaces have no local folder, so the panel falls back to all projects for them and capture skips them.
+agentmemory names a project after its Git repository, so all worktrees of a repository share one project. The worker finds the focused workspace's folder with `workspace.list` and resolves the name the same way the agentmemory hooks do. `AGENTMEMORY_PROJECT_NAME` overrides it. Remote (SSH) workspaces have no local folder, so the panel falls back to all projects for them and capture skips them. When two workspaces have the same name and branch, Orca does not say which one is focused, so the panel shows an error instead of guessing a project.
 
 ## Settings
 

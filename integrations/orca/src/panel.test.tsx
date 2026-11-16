@@ -8,7 +8,8 @@ const connected: ServerStatus = {
   viewerUrl: 'http://localhost:3113',
   project: 'myrepo',
   version: '0.9.33',
-  counts: { project: 4, all: 7 }
+  counts: { project: 4, all: 7 },
+  degraded: false
 }
 
 const recentItem: MemoryItem = { id: 'mem_1', title: 'Deploy notes', type: 'fact', text: 'Deploys run from main.', files: ['deploy/README.md'], at: null, score: null }

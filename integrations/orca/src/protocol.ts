@@ -13,7 +13,7 @@ export type MemoryItem = {
 export type Counts = { project: number | null; all: number | null }
 
 export type ServerStatus =
-  | { state: 'connected'; url: string; viewerUrl: string; project: string | null; version: string | null; counts: Counts }
+  | { state: 'connected'; url: string; viewerUrl: string; project: string | null; version: string | null; counts: Counts; degraded: boolean }
   | { state: 'unauthorized' | 'unreachable' | 'refused'; url: string; viewerUrl: string; project: string | null; message: string }
 
 export type ListAnswer = { items: MemoryItem[]; project: string | null; error: string | null }
