@@ -295,6 +295,7 @@ export function writeComposeState(path: string, state: {
   logFile: string;
   logStartOffset?: number;
   binPath: string;
+  engineVersion?: string;
   enginePid?: number;
   workerBinDir?: string;
   workerFailure?: string;
@@ -303,5 +304,23 @@ export function writeComposeState(path: string, state: {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
   writeFileSync(path, `${JSON.stringify(state)}\n`, { encoding: "utf8", mode: 0o600 });
   chmodSync(path, 0o600);
+}
+
+export function composeRuntimeVersionMismatch(state: {
+  engineVersion?: string;
+  workerVersions?: Partial<Record<string, string>> | { local: true };
+}, pinnedEngineVersion: string): string | null {
+  const stale: string[] = [];
+  if (state.engineVersion && state.engineVersion !== pinnedEngineVersion) {
+    stale.push(`engine ${state.engineVersion} (expected ${pinnedEngineVersion})`);
+  }
+  const workers = state.workerVersions;
+  if (workers && !("local" in workers && workers.local === true)) {
+    const running = workers as Partial<Record<string, string>>;
+    for (const [name, pinned] of Object.entries(COMPOSE_WORKER_VERSIONS)) {
+      if (running[name] !== pinned) stale.push(`${name} worker ${running[name] ?? "unknown"} (expected ${pinned})`);
+    }
+  }
+  return stale.length ? stale.join(", ") : null;
 }
 

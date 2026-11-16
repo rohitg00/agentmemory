@@ -53,7 +53,6 @@ export function mockSdk(opts?: { looseTrigger?: boolean }) {
       const id = typeof idOrOpts === "string" ? idOrOpts : idOrOpts.id;
       functions.set(id, handler);
     },
-    registerTrigger: vi.fn(),
     trigger: async (
       idOrInput:
         | string
@@ -75,4 +74,49 @@ export function mockSdk(opts?: { looseTrigger?: boolean }) {
       return fn(payload);
     },
   };
+}
+
+export function fakeHandle(id = "h", state: "active" | "pending" = "active") {
+  return {
+    id,
+    state,
+    ready: () => Promise.resolve(),
+    onStateChange: (_listener: (state: string) => void) => () => {},
+    dispose: () => Promise.resolve(),
+  };
+}
+
+export type BoundRoute = { function_id: string; method: string; path: string; middleware_function_ids?: string[] };
+export type BoundState = { function_id: string; scope?: string; key?: string };
+type ObservedSource = { function_id: string; args?: Record<string, unknown>; filters?: Record<string, unknown>; capture?: string[] };
+
+function filterValue(filters: Record<string, unknown> | undefined, field: string): string | undefined {
+  if (!filters) return undefined;
+  const direct = (filters[field] as { $eq?: string } | undefined)?.$eq;
+  if (direct !== undefined) return direct;
+  const branches = filters.$or as Array<Record<string, unknown>> | undefined;
+  return branches ? filterValue(branches[0], field) : undefined;
+}
+
+export function recordObservers() {
+  const routes: BoundRoute[] = [];
+  const states: BoundState[] = [];
+  const sources: Array<{ source: ObservedSource; target: string; options?: Record<string, unknown> }> = [];
+  const observe = (source: ObservedSource, target: string, options?: Record<string, unknown>) => {
+    sources.push({ source, target, options });
+    if (source.function_id === "http::on-request" && source.args) {
+      routes.push({
+        function_id: target,
+        method: String(source.args.method),
+        path: String(source.args.path),
+        ...(source.args.middleware_function_ids ? { middleware_function_ids: source.args.middleware_function_ids as string[] } : {}),
+      });
+    } else if (source.function_id === "state::on-changed") {
+      const scope = filterValue(source.filters, "input.scope");
+      const key = filterValue(source.filters, "input.key");
+      states.push({ function_id: target, ...(scope !== undefined ? { scope } : {}), ...(key !== undefined ? { key } : {}) });
+    }
+    return fakeHandle(String(options?.id ?? target));
+  };
+  return { observe, routes, states, sources };
 }

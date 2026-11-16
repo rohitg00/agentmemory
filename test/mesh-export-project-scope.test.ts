@@ -126,6 +126,9 @@ describe("api::mesh-export project scoping", () => {
     const unscoped = await meshExport(sdk);
     expect(unscoped.status_code).toBe(413);
     expect((unscoped.body as { oversized?: boolean }).oversized).toBe(true);
+    const hint = String((unscoped.body as { error?: string }).error);
+    expect(hint).toContain("?project");
+    expect(hint).not.toContain("?collections");
   });
 });
 

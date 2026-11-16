@@ -92,11 +92,11 @@ describe("extractGraphHeuristics", () => {
 // mem::graph-extract, and the function itself gates only the LLM pass
 // on the flag plus a real provider.
 describe("keyless graph extraction wiring", () => {
-  it("event::session::stopped fires graph-extract without the flag gate", () => {
+  it("event::session::stopped fires post-session graph extraction without the flag gate", () => {
     const events = readFileSync("src/triggers/events.ts", "utf-8");
     const stopped = events.slice(events.indexOf("event::session::stopped"));
     const gate = stopped.indexOf("isGraphExtractionEnabled()");
-    const fire = stopped.indexOf('fireVoid("mem::graph-extract"');
+    const fire = stopped.indexOf('fireVoid("mem::post-session-graph"');
     expect(fire).toBeGreaterThan(-1);
     expect(gate === -1 || gate > fire).toBe(true);
   });

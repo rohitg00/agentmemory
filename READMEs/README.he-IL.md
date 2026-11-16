@@ -71,7 +71,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 כלי MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 hooks אוטומטיים" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 מסדי נתונים חיצוניים" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ בדיקות עוברות" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ בדיקות עוברות" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -667,7 +667,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory פועל ב-Windows 10/11. ‏WSL2 פועל במסלול Linux ויכול להתקין את המנוע הנעוץ אוטומטית. ב-Windows מקורי יש להתקין ידנית את הבינארי הנעוץ iii-engine v0.25.1: הורידו את הארכיון המתאים מ-[דף ההפצה של iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), אמתו את ה-checksum והוסיפו את `iii.exe` ל-`PATH` (למשל `%USERPROFILE%\.local\bin\iii.exe`). ה-CLI אינו מחלץ אוטומטית את ZIP של Windows.
+agentmemory פועל ב-Windows 10/11. ‏WSL2 פועל במסלול Linux ויכול להתקין את המנוע הנעוץ אוטומטית. גם ב-Windows מקורי ה-CLI מתקין אוטומטית את iii-engine v0.26.0 הנעוץ: הוא מוריד את ה-ZIP של Windows, מאמת את ה-SHA-256 שלו ומחלץ את `iii.exe` אל `%USERPROFILE%\.agentmemory\bin`. אם זה נכשל, הורידו את הארכיון המתאים מ-[דף ההפצה של iii 0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), אמתו את ה-checksum וחלצו את `iii.exe` לאותה תיקייה.
 
 חיבור MCP אוטומטי ב-Windows מקורי נתמך רק עבור `agentmemory connect copilot-cli`. עבור סוכנים מקומיים אחרים ב-Windows, השתמשו בבלוק MCP הידני מתוך [סוכנים אחרים](#other-agents). הפעילו `connect` בתוך WSL רק אם סוכן היעד מותקן באותה סביבת WSL.
 
@@ -1244,7 +1244,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

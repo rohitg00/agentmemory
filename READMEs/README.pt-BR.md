@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -655,7 +655,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-agentmemory roda no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar o engine fixado automaticamente. O Windows nativo exige a instalação manual do binário iii-engine v0.25.1 fixado; baixe o arquivo correspondente na [página de releases do iii 0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), confira o checksum e coloque `iii.exe` no `PATH` (por exemplo, `%USERPROFILE%\.local\bin\iii.exe`). O CLI não extrai o ZIP do Windows automaticamente.
+agentmemory roda no Windows 10/11. O WSL2 segue o caminho Linux e pode instalar o engine fixado automaticamente. O Windows nativo também instala o iii-engine v0.26.0 fixado automaticamente: o CLI baixa o ZIP do Windows, verifica o SHA-256 e extrai `iii.exe` em `%USERPROFILE%\.agentmemory\bin`. Se isso falhar, baixe o arquivo correspondente na [página de releases do iii 0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), confira o checksum e extraia `iii.exe` no mesmo diretório.
 
 A configuração MCP automatizada no Windows nativo dá suporte apenas a `agentmemory connect copilot-cli`. Para os outros agentes nativos do Windows, use o bloco MCP manual em [Outros agentes](#other-agents). Rode `connect` no WSL somente quando o agente de destino estiver instalado no mesmo ambiente WSL.
 
@@ -1249,7 +1249,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

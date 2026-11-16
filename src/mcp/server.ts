@@ -13,6 +13,7 @@ import { checkAuth, slotsDisabledResponse } from "../triggers/api.js";
 import { isSlotsEnabled } from "../functions/slots.js";
 import { LESSON_SOURCE_IDS_MAX, normalizeLessonSourceIds } from "../functions/lessons.js";
 import { getAgentId, isAgentScopeIsolated } from "../config.js";
+import { getBindings } from "../runtime/bindings.js";
 type McpResponse = {
   status_code: number;
   headers?: Record<string, string>;
@@ -63,8 +64,7 @@ export function registerMcpEndpoints(
       return { status_code: 200, body: { tools } };
     },
   );
-  sdk.registerTrigger({
-    type: "http",
+  getBindings(sdk).http({
     function_id: "mcp::tools::list",
     config: { api_path: "/agentmemory/mcp/tools", http_method: "GET" },
   });
@@ -1343,8 +1343,7 @@ export function registerMcpEndpoints(
       }
     },
   );
-  sdk.registerTrigger({
-    type: "http",
+  getBindings(sdk).http({
     function_id: "mcp::tools::call",
     config: { api_path: "/agentmemory/mcp/call", http_method: "POST" },
   });
@@ -1396,8 +1395,7 @@ export function registerMcpEndpoints(
       return { status_code: 200, body: { resources: MCP_RESOURCES } };
     },
   );
-  sdk.registerTrigger({
-    type: "http",
+  getBindings(sdk).http({
     function_id: "mcp::resources::list",
     config: { api_path: "/agentmemory/mcp/resources", http_method: "GET" },
   });
@@ -1626,8 +1624,7 @@ export function registerMcpEndpoints(
       }
     },
   );
-  sdk.registerTrigger({
-    type: "http",
+  getBindings(sdk).http({
     function_id: "mcp::resources::read",
     config: {
       api_path: "/agentmemory/mcp/resources/read",
@@ -1680,8 +1677,7 @@ export function registerMcpEndpoints(
       return { status_code: 200, body: { prompts: MCP_PROMPTS } };
     },
   );
-  sdk.registerTrigger({
-    type: "http",
+  getBindings(sdk).http({
     function_id: "mcp::prompts::list",
     config: { api_path: "/agentmemory/mcp/prompts", http_method: "GET" },
   });
@@ -1818,8 +1814,7 @@ export function registerMcpEndpoints(
       }
     },
   );
-  sdk.registerTrigger({
-    type: "http",
+  getBindings(sdk).http({
     function_id: "mcp::prompts::get",
     config: { api_path: "/agentmemory/mcp/prompts/get", http_method: "POST" },
   });

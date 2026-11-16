@@ -28,6 +28,8 @@ export const KV = {
   graphRetrievalData: "mem:graph:retrieval-data",
   graphIndexMigration: "mem:graph:index-migration",
   graphIndexManifest: "mem:graph:index-manifest",
+  graphExtractMarks: "mem:graph:extract-marks",
+  relationReactions: "mem:relation-reactions",
   semantic: "mem:semantic",
   procedural: "mem:procedural",
   teamShared: (teamId: string) => `mem:team:${teamId}:shared`,

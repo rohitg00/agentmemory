@@ -40,12 +40,8 @@ import {
 import { withKeyedLocks } from "../state/keyed-mutex.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
-import {
-  indexRecords,
-  getSearchIndex,
-  vectorIndexRemove,
-  flushIndexSave,
-} from "./search.js";
+import { indexRecords, rebuildKeywordIndex, getSearchIndex, vectorIndexRemove, flushIndexSave } from "./search.js";
+import { singleFlight } from "../runtime/recovery.js";
 import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
 import { budgetImportedObservationSources } from "./observation-source-budget.js";
@@ -294,6 +290,9 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
     },
   );
 
+  const rebuildAfterReplace = singleFlight(async () => {
+    await rebuildKeywordIndex(state);
+  });
   sdk.registerFunction("mem::import", 
     async (data: {
       exportData: ExportData;
@@ -826,6 +825,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         strategy,
         stats,
       });
+      if (strategy === "replace") void rebuildAfterReplace().catch((err) => logger.warn("Post-replace index rebuild failed", { error: err instanceof Error ? err.message : String(err) }));
       return { success: true, strategy, ...stats };
     },
   );

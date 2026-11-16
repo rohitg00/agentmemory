@@ -5,7 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const temp = mkdtempSync(join(tmpdir(), "compose-state-error-"));
 afterEach(() => rmSync(temp, { recursive: true, force: true }));
-import { composeCall, composeEnvironment, composeRegistryFailureMessage, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, withQuietSdkDebug, type ComposeStatus } from "../src/cli/compose-control.js";
+import { composeCall, composeEnvironment, composeRegistryFailureMessage, composeRuntimeVersionMismatch, composeStateRegistryFailure, composeWorkerFailureSummary, ownedComposeProject, readComposeLogFromOffset, startComposeDaemon, withQuietSdkDebug, type ComposeStatus } from "../src/cli/compose-control.js";
+import { COMPOSE_WORKER_VERSIONS } from "../src/cli/compose-project.js";
 
 describe("Compose control plane", () => {
   it("does not leak arbitrary machine credentials to the Compose daemon", () => {
@@ -162,5 +163,29 @@ describe("Compose control client output", () => {
       throw new Error("boom");
     })).rejects.toThrow("boom");
     expect(console.debug).toBe(original);
+  });
+});
+
+describe("Compose runtime version reconciliation", () => {
+  it("reports an older launched engine and older workers from the persisted state", () => {
+    const stale = composeRuntimeVersionMismatch({ engineVersion: "0.25.1", workerVersions: { state: "0.22.22", http: "0.22.8" } }, "0.26.0");
+    expect(stale).toContain("engine 0.25.1 (expected 0.26.0)");
+    expect(stale).toContain(`state worker 0.22.22 (expected ${COMPOSE_WORKER_VERSIONS.state})`);
+    expect(stale).toContain(`http worker 0.22.8 (expected ${COMPOSE_WORKER_VERSIONS.http})`);
+  });
+
+  it("detects a stale runtime from workerVersions when an older CLI did not record engineVersion", () => {
+    expect(composeRuntimeVersionMismatch({ workerVersions: { state: "0.22.22", http: "0.22.8" } }, "0.26.0")).toContain("state worker 0.22.22");
+  });
+
+  it("returns null when the persisted runtime matches the pins or cannot decide", () => {
+    expect(composeRuntimeVersionMismatch({ engineVersion: "0.26.0", workerVersions: { ...COMPOSE_WORKER_VERSIONS } }, "0.26.0")).toBeNull();
+    expect(composeRuntimeVersionMismatch({ workerVersions: { ...COMPOSE_WORKER_VERSIONS } }, "0.26.0")).toBeNull();
+    expect(composeRuntimeVersionMismatch({}, "0.26.0")).toBeNull();
+    expect(composeRuntimeVersionMismatch({ workerVersions: { local: true } }, "0.26.0")).toBeNull();
+  });
+
+  it("still checks the launched engine when the workers are local binaries", () => {
+    expect(composeRuntimeVersionMismatch({ engineVersion: "0.25.1", workerVersions: { local: true } }, "0.26.0")).toBe("engine 0.25.1 (expected 0.26.0)");
   });
 });

@@ -23,6 +23,7 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import { scrubRecord, stripPrivateData } from "./privacy.js";
 import { compressionRaw, needsCompression, observationRevision, pendingCompression, type StoredObservation } from "./compression-state.js";
 import { registerCompressionRecovery } from "./compression-recovery.js";
+import { registerObserverTarget } from "../runtime/observed.js";
 
 export const COMPRESSION_TIMEOUT_MS = 60_000;
 
@@ -258,7 +259,7 @@ export function registerCompressFunction(
     return task.promise;
   }
 
-  sdk.registerFunction("mem::compress", (data: CompressRequest): Promise<CompressResult> => {
+  registerObserverTarget(sdk, "mem::compress", "output", (data: CompressRequest): Promise<CompressResult> => {
     if (!data || typeof data.sessionId !== "string" || !data.sessionId.trim() ||
         typeof data.observationId !== "string" || !data.observationId.trim()) {
       return Promise.resolve({ success: false, error: "invalid_observation_identity", retryable: false });

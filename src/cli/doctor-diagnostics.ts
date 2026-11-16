@@ -57,6 +57,10 @@ export type DoctorContext = {
 
 export type DoctorWorkerConnection = WorkerConnection | "managed-worker-down";
 
+function managedEngineRunningMessage(targetArgs = ""): string {
+  return `A managed agentmemory engine is running from the iii binary the installer would replace. Run agentmemory stop${targetArgs} first, then run the fix again.`;
+}
+
 export type Diagnostic = {
   /** Stable id. Used in --json and tests. */
   id: string;
@@ -104,6 +108,7 @@ export const DIAGNOSTIC_IDS = [
   "stale-pidfile",
   "env-placeholder-keys",
   "iii-on-path-not-local-bin",
+  "duplicate-workers",
 ] as const;
 
 export type DiagnosticId = (typeof DIAGNOSTIC_IDS)[number];
@@ -156,9 +161,12 @@ export type DoctorEffects = {
   /** Run `iii --version`; null if it fails. */
   iiiBinaryVersion: (binPath: string) => string | null;
   externalEngineRunning: () => Promise<boolean>;
+  managedEngineRunning: () => Promise<boolean>;
   workerConnection: () => Promise<DoctorWorkerConnection>;
   /** Probe the viewer URL; true if it returns OK within timeoutMs. */
   viewerReachable: (timeoutMs?: number) => Promise<boolean>;
+  /** Fetch the running daemon's status report; null when unreachable. */
+  daemonStatus: () => Promise<{ runtime?: { duplicateWorkers?: { count: number; workerIds: string[] } | null } } | null>;
   /** Run init logic (copies .env.example). */
   runInit: () => Promise<DiagnosticFixResult>;
   /** Open a file in $EDITOR (or fallback). Resolves when editor exits. */
@@ -292,9 +300,12 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
           detail: `${pathVersion} (pinned ${ctx.pinnedVersion})`,
         };
       },
-      fix: async () => {
+      fix: async (ctx) => {
         if (await effects.externalEngineRunning()) {
           return { ok: false, message: "Verify or stop the external engine manually." };
+        }
+        if (await effects.managedEngineRunning()) {
+          return { ok: false, message: managedEngineRunningMessage(ctx.targetArgs) };
         }
         const r = await effects.runIiiInstaller();
         if (!r.ok) return r;
@@ -447,14 +458,41 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         }
         return { ok: false, detail };
       },
-      fix: async () =>
-        effects.runIiiInstaller().then((r) => ({
+      fix: async (ctx) => {
+        if (await effects.managedEngineRunning()) {
+          return { ok: false, message: managedEngineRunningMessage(ctx.targetArgs) };
+        }
+        return effects.runIiiInstaller().then((r) => ({
           ok: r.ok,
           message:
             r.message ??
             "Installer wrote to ~/.agentmemory/bin/iii. Your PATH wasn't modified.",
-        })),
+        }));
+      },
     },
+    {
+      id: "duplicate-workers",
+      message: "More than one agentmemory worker is registered to the engine.",
+      fixPreview: "Stop the extra daemon with `agentmemory stop`, or run `agentmemory status` to see the registered workers.",
+      moreInfo:
+        "The engine owns each function id to one worker per namespace, so a second agentmemory worker " +
+        "is rejected and fails. This happens when two daemons (or a stale process from an older install) " +
+        "share one engine and namespace.",
+      manualOnly: true,
+      check: async () => {
+        const status = await effects.daemonStatus();
+        const dup = status?.runtime?.duplicateWorkers;
+        if (dup && dup.count > 1) {
+          return { ok: false, detail: `${dup.count} workers: ${dup.workerIds.join(", ")}` };
+        }
+        return { ok: true, detail: status === null ? "status endpoint unreachable; check skipped" : undefined };
+      },
+      fix: async () => ({
+        ok: false,
+        message: "Stop the extra daemon with `agentmemory stop`, then restart with `agentmemory start`.",
+      }),
+    },
+
   ];
 }
 

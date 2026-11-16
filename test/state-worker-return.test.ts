@@ -1,0 +1,400 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { onStateWorkerReturn, stateWorkerStatus } from "../src/runtime/state-worker.js";
+import { IndexPersistence } from "../src/state/index-persistence.js";
+import { VectorIndex } from "../src/state/vector-index.js";
+import { rearmIndexRecovery, shouldRearmIndex, backfillFailedOutright } from "../src/runtime/recovery.js";
+
+vi.mock("../src/logger.js", () => ({
+  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+}));
+
+function fakeHandle(initial: "active" | "pending") {
+  const listeners: Array<(next: string) => void> = [];
+  return {
+    id: "h1",
+    state: initial,
+    onStateChange: (l: (next: string) => void) => { listeners.push(l); return () => {}; },
+    emit: (next: "active" | "pending" | "suspended") => { for (const l of listeners) l(next); },
+    ready: () => Promise.resolve(),
+    dispose: () => Promise.resolve(),
+  };
+}
+
+function fakeBindings(handle: ReturnType<typeof fakeHandle>, stateMode = "observe") {
+  return { stateHandles: [handle], handles: [handle], modes: { http: stateMode, state: stateMode } };
+}
+
+function fakeSdk() {
+  return {
+    trigger: vi.fn(async () => ({ ok: true })),
+    observe: vi.fn(() => fakeHandle("active")),
+    registerFunction: vi.fn(),
+  };
+}
+
+describe("onStateWorkerReturn", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    stateWorkerStatus.ready = true;
+    stateWorkerStatus.waitedMs = 0;
+    stateWorkerStatus.lastReturnAt = undefined;
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    stateWorkerStatus.ready = true;
+  });
+
+  it("probeReady seeds from stateWorkerStatus.ready; first successful probeTick fires the callback", async () => {
+    stateWorkerStatus.ready = false;
+    const cb = vi.fn();
+    const sdk = fakeSdk();
+    const rearm = onStateWorkerReturn(sdk as never, fakeBindings(fakeHandle("active"), "trigger") as never, cb);
+    expect(rearm.state.probeReady).toBe(false);
+    await rearm.probeTick();
+    expect(rearm.state.probeReady).toBe(true);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs recovery for a state handle bound later, such as an id conflict replacement", async () => {
+    const cb = vi.fn();
+    const original = fakeHandle("pending");
+    let bindLater: ((handle: ReturnType<typeof fakeHandle>) => void) | undefined;
+    const bindings = { ...fakeBindings(original), onStateHandle: (listener: (handle: ReturnType<typeof fakeHandle>) => void) => { bindLater = listener; return () => {}; } };
+    stateWorkerStatus.ready = false;
+    const rearm = onStateWorkerReturn(fakeSdk() as never, bindings as never, cb);
+    const replacement = fakeHandle("pending");
+    bindLater!(replacement);
+    replacement.emit("active");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(stateWorkerStatus.ready).toBe(true);
+    const activeAlready = fakeHandle("active");
+    stateWorkerStatus.ready = false;
+    await vi.advanceTimersByTimeAsync(1000);
+    bindLater!(activeAlready);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cb).toHaveBeenCalledTimes(2);
+    rearm.stop();
+  });
+
+  it("two returns within the throttle window fire the callback twice, second after retry delay", async () => {
+    const cb = vi.fn();
+    const handle = fakeHandle("pending");
+    const rearm = onStateWorkerReturn(fakeSdk() as never, fakeBindings(handle) as never, cb);
+    handle.emit("active");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cb).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(100);
+    handle.emit("pending");
+    handle.emit("active");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cb).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(cb).toHaveBeenCalledTimes(2);
+    rearm.stop();
+  });
+
+  it("probeTick retries pending recovery while the state worker stays reachable", async () => {
+    const cb = vi.fn();
+    let pending = true;
+    const rearm = onStateWorkerReturn(fakeSdk() as never, fakeBindings(fakeHandle("active"), "trigger") as never, cb, { pending: () => pending });
+    await rearm.probeTick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    pending = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    await rearm.probeTick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    rearm.stop();
+  });
+
+  it("probeTick retries pending recovery in observe mode while the observer stays active", async () => {
+    const cb = vi.fn();
+    const rearm = onStateWorkerReturn(fakeSdk() as never, fakeBindings(fakeHandle("active")) as never, cb, { pending: () => true });
+    await rearm.probeTick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    stateWorkerStatus.ready = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    await rearm.probeTick();
+    expect(cb).toHaveBeenCalledTimes(1);
+    rearm.stop();
+  });
+
+  it("stop() cancels a pending throttle retry", async () => {
+    const cb = vi.fn();
+    const handle = fakeHandle("pending");
+    const rearm = onStateWorkerReturn(fakeSdk() as never, fakeBindings(handle) as never, cb);
+    handle.emit("active");
+    await vi.advanceTimersByTimeAsync(0);
+    handle.emit("pending");
+    handle.emit("active");
+    rearm.stop();
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+});
+
+function memoryKv() {
+  const store = new Map<string, unknown>();
+  return {
+    get: async (scope: string, key: string) => store.get(`${scope}/${key}`) ?? null,
+    set: async (scope: string, key: string, value: unknown) => { store.set(`${scope}/${key}`, value); },
+    delete: async (scope: string, key: string) => { store.delete(`${scope}/${key}`); },
+    list: async () => [],
+    count: async () => 0,
+    listKeys: async function* () {},
+    backend: "file",
+  };
+}
+
+describe("IndexPersistence.resumeAfterUnavailable", () => {
+  it("resumes only the unavailable-checkpoint pause", async () => {
+    const kv = memoryKv();
+    const p = new IndexPersistence(kv as never, new VectorIndex(), { requireRecoveryPlan: true });
+    await p.prepareBackfill(null);
+    expect(p.isRecoveryPaused()).toBe(true);
+    expect(p.resumeAfterUnavailable()).toBe(true);
+    expect(p.isRecoveryPaused()).toBe(true);
+    expect(p.resumeAfterUnavailable()).toBe(false);
+  });
+
+  it("keeps checkpoint writes paused until the reloaded checkpoint is prepared", async () => {
+    const kv = memoryKv();
+    const sets: string[] = [];
+    const tracked = { ...kv, set: async (scope: string, key: string, value: unknown) => { sets.push(`${scope}/${key}`); await kv.set(scope, key, value); } };
+    const vector = new VectorIndex();
+    const p = new IndexPersistence(tracked as never, vector, { requireRecoveryPlan: true });
+    await p.prepareBackfill(null);
+    expect(p.resumeAfterUnavailable()).toBe(true);
+    vector.add("live", "s", new Float32Array([1, 2, 3]));
+    p.scheduleSave();
+    await p.save();
+    expect(sets).toEqual([]);
+    expect(vector.pendingChanges).toBeGreaterThan(0);
+  });
+
+  it("clears the unavailable-checkpoint error so a restored checkpoint can complete backfill", async () => {
+    const kv = memoryKv();
+    const p = new IndexPersistence(kv as never, new VectorIndex(), { requireRecoveryPlan: true });
+    await p.prepareBackfill(null);
+    expect(p.status().vector?.lastError).toMatch(/unavailable/);
+    expect(p.resumeAfterUnavailable()).toBe(true);
+    expect(p.status().vector?.lastError).toBeNull();
+    await kv.set("mem:index:bm25", "vectors:meta", { v: 3, bucketCount: 0, savedAt: new Date().toISOString(), count: 0, backfillSince: null });
+    const loaded = await p.load();
+    await p.prepareBackfill(loaded);
+    expect(await p.completeBackfill()).toBe(true);
+  });
+
+  it("does not resume pauses from other causes", async () => {
+    const failingKv = {
+      ...memoryKv(),
+      set: async () => { throw new Error("write_denied"); },
+    };
+    const vector = new VectorIndex();
+    const loaded = { state: "none" as const, vector, savedAt: new Date().toISOString() };
+    const p = new IndexPersistence(failingKv as never, vector, { requireRecoveryPlan: true });
+    await p.prepareBackfill(loaded);
+    expect(p.isRecoveryPaused()).toBe(true);
+    expect(p.resumeAfterUnavailable()).toBe(false);
+    expect(p.isRecoveryPaused()).toBe(true);
+  });
+
+  it("re-arm after unavailable boot restores the checkpoint and resumes backfill planning", async () => {
+    const kv = memoryKv();
+    const p = new IndexPersistence(kv as never, new VectorIndex(), { requireRecoveryPlan: true });
+    await p.prepareBackfill(null);
+    expect(p.isRecoveryPaused()).toBe(true);
+    expect(p.resumeAfterUnavailable()).toBe(true);
+    const checkpoint = new VectorIndex();
+    checkpoint.add("obs1", "session", new Float32Array([1, 0, 0]));
+    checkpoint.add("obs2", "session", new Float32Array([0, 1, 0]));
+    const since = await p.prepareBackfill({
+      state: "buckets",
+      vector: checkpoint,
+      savedAt: new Date(Date.now() - 60_000).toISOString(),
+      expectedCount: 2,
+    });
+    expect(since).not.toBeUndefined();
+    expect(p.isRecoveryPaused()).toBe(false);
+  });
+});
+
+describe("state-worker re-arm order", () => {
+  it("rebuilds the index after a checkpoint retry even when the index looked complete", async () => {
+    const order: string[] = [];
+    await rearmIndexRecovery({
+      retryCheckpoint: async () => { order.push("checkpoint"); return true; },
+      indexNeedsRearm: () => false,
+      runIndexRecovery: async () => { order.push("index"); },
+    });
+    expect(order).toEqual(["checkpoint", "index"]);
+  });
+
+  it("skips index recovery when no checkpoint was retried and the index is complete", async () => {
+    const run = vi.fn(async () => {});
+    await rearmIndexRecovery({ retryCheckpoint: async () => false, indexNeedsRearm: () => false, runIndexRecovery: run });
+    expect(run).not.toHaveBeenCalled();
+  });
+});
+
+describe("VectorIndex.mergeMissingFrom", () => {
+  it("keeps vectors embedded after boot and adds only missing checkpoint entries", () => {
+    const live = new VectorIndex();
+    live.add("fresh", "s", new Float32Array([9, 9, 9]));
+    live.add("both", "s", new Float32Array([7, 7, 7]));
+    const checkpoint = new VectorIndex();
+    checkpoint.add("both", "s", new Float32Array([1, 1, 1]));
+    checkpoint.add("old", "s", new Float32Array([2, 2, 2]));
+    expect(live.mergeMissingFrom(checkpoint)).toBe(1);
+    expect(Array.from(live.get("fresh")!.embedding)).toEqual([9, 9, 9]);
+    expect(Array.from(live.get("both")!.embedding)).toEqual([7, 7, 7]);
+    expect(Array.from(live.get("old")!.embedding)).toEqual([2, 2, 2]);
+  });
+
+  it("does not restore a checkpoint vector deleted while it was absent from the live index", () => {
+    const live = new VectorIndex();
+    live.trackLiveChanges();
+    live.remove("deleted-early");
+    const checkpoint = new VectorIndex();
+    checkpoint.add("deleted-early", "s", new Float32Array([3]));
+    expect(live.mergeMissingFrom(checkpoint)).toBe(0);
+    expect(live.has("deleted-early")).toBe(false);
+    expect(live.pendingChanges).toBe(0);
+  });
+
+  it("does not bring back a vector removed after boot", () => {
+    const live = new VectorIndex();
+    live.add("gone", "s", new Float32Array([1]));
+    live.remove("gone");
+    const checkpoint = new VectorIndex();
+    checkpoint.add("gone", "s", new Float32Array([1]));
+    expect(live.mergeMissingFrom(checkpoint)).toBe(0);
+    expect(live.has("gone")).toBe(false);
+  });
+});
+
+describe("reported state-worker readiness", () => {
+  afterEach(() => { stateWorkerStatus.ready = true; });
+
+  it("follows trigger-mode probe outcomes", async () => {
+    stateWorkerStatus.ready = true;
+    const sdk = fakeSdk();
+    const rearm = onStateWorkerReturn(sdk as never, fakeBindings(fakeHandle("active"), "trigger") as never, vi.fn());
+    sdk.trigger.mockRejectedValueOnce(new Error("function_not_found"));
+    await rearm.probeTick();
+    expect(stateWorkerStatus.ready).toBe(false);
+    await rearm.probeTick();
+    expect(stateWorkerStatus.ready).toBe(true);
+    rearm.stop();
+  });
+
+  it("follows observer state changes in observe mode", () => {
+    stateWorkerStatus.ready = true;
+    const handle = fakeHandle("active");
+    const rearm = onStateWorkerReturn(fakeSdk() as never, fakeBindings(handle) as never, vi.fn());
+    handle.emit("pending");
+    expect(stateWorkerStatus.ready).toBe(false);
+    handle.emit("active");
+    expect(stateWorkerStatus.ready).toBe(true);
+    rearm.stop();
+  });
+});
+
+describe("shouldRearmIndex", () => {
+  it("does not re-run recovery for a backfill paused at its per-start cap", () => {
+    expect(shouldRearmIndex({ bm25Incomplete: false, persistencePaused: false, lastRecoveryFailed: false, checkpointSaveFailed: false })).toBe(false);
+  });
+
+  it("re-runs recovery after an incomplete keyword rebuild, a paused checkpoint or a failed run", () => {
+    const none = { bm25Incomplete: false, persistencePaused: false, lastRecoveryFailed: false, checkpointSaveFailed: false };
+    expect(shouldRearmIndex({ ...none, bm25Incomplete: true })).toBe(true);
+    expect(shouldRearmIndex({ ...none, persistencePaused: true })).toBe(true);
+    expect(shouldRearmIndex({ ...none, lastRecoveryFailed: true })).toBe(true);
+    expect(shouldRearmIndex({ ...none, checkpointSaveFailed: true })).toBe(true);
+  });
+});
+
+describe("checkpoint retry keeps live vectors", () => {
+  it("pending-log replay leaves vectors added or deleted live during the outage alone", () => {
+    const live = new VectorIndex();
+    live.trackLiveChanges();
+    live.add("fresh", "s", new Float32Array([9]));
+    live.remove("gone");
+    live.beginReplay();
+    live.add("fresh", "s", new Float32Array([1]));
+    live.add("gone", "s", new Float32Array([4]));
+    live.add("other", "s", new Float32Array([5]));
+    live.endReplay();
+    expect(Array.from(live.get("fresh")!.embedding)).toEqual([9]);
+    expect(live.has("gone")).toBe(false);
+    expect(live.has("other")).toBe(true);
+  });
+
+  it("keeps a vector re-added after a live delete", () => {
+    const live = new VectorIndex();
+    live.trackLiveChanges();
+    live.add("x", "s", new Float32Array([1]));
+    live.remove("x");
+    live.add("x", "s", new Float32Array([2]));
+    live.beginReplay();
+    live.remove("x");
+    live.endReplay();
+    expect(Array.from(live.get("x")!.embedding)).toEqual([2]);
+  });
+
+  it("a replayed clear keeps live-changed vectors", () => {
+    const live = new VectorIndex();
+    live.trackLiveChanges();
+    live.add("live", "s", new Float32Array([1]));
+    live.loadPersisted("old", "s", new Float32Array([2]));
+    live.beginReplay();
+    live.clear();
+    live.endReplay();
+    expect(live.has("live")).toBe(true);
+    expect(live.has("old")).toBe(false);
+  });
+
+  it("queues live deletions for persistence and drops the tracking set when tracking ends", () => {
+    const live = new VectorIndex();
+    live.trackLiveChanges();
+    live.remove("absent");
+    live.takeChanges();
+    live.finishLiveTracking();
+    expect(live.takeChanges().get("absent")).toBe(false);
+    const checkpoint = new VectorIndex();
+    checkpoint.add("later", "s", new Float32Array([1]));
+    live.remove("later");
+    expect(live.mergeMissingFrom(checkpoint)).toBe(1);
+  });
+});
+
+describe("backfillFailedOutright", () => {
+  it("re-arms only when a batch embedded nothing and some embeddings failed", () => {
+    expect(backfillFailedOutright({ added: 0, failed: 2 })).toBe(true);
+    expect(backfillFailedOutright({ added: 1, failed: 1 })).toBe(false);
+    expect(backfillFailedOutright({ added: 2, failed: 0 })).toBe(false);
+  });
+});
+
+describe("boot checkpoint load with live writes", () => {
+  it("keeps vectors written live while the boot checkpoint was loading", () => {
+    const live = new VectorIndex();
+    live.trackLiveChanges();
+    live.add("obs_a", "s", new Float32Array([9]));
+    live.remove("obs_b");
+    const checkpoint = new VectorIndex();
+    checkpoint.add("obs_a", "s", new Float32Array([1]));
+    checkpoint.add("obs_b", "s", new Float32Array([2]));
+    checkpoint.add("obs_c", "s", new Float32Array([3]));
+    live.restoreFrom(checkpoint);
+    live.beginReplay();
+    live.add("obs_a", "s", new Float32Array([1]));
+    live.endReplay();
+    expect(Array.from(live.get("obs_a")!.embedding)).toEqual([9]);
+    expect(live.has("obs_b")).toBe(false);
+    expect(live.has("obs_c")).toBe(true);
+    const pending = live.takeChanges();
+    expect(pending.get("obs_a")).toBe(true);
+    expect(pending.get("obs_b")).toBe(false);
+  });
+});

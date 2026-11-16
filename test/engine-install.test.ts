@@ -98,6 +98,15 @@ describe("iii engine auto-installer", () => {
     expect(cmd).toContain(`--max-time ${III_INSTALL_MAX_TIME_S}`);
   });
 
+  it("lists each engine release once in the checksum table", () => {
+    const source = readFileSync("src/cli/engine-install.ts", "utf8");
+    const table = source.slice(source.indexOf("III_RELEASE_SHA256"));
+    const versions = [...table.matchAll(/^ {2}"(\d+\.\d+\.\d+)": \{$/gm)].map((match) => match[1]);
+    expect(versions.length).toBeGreaterThan(0);
+    expect(new Set(versions).size).toBe(versions.length);
+    expect(versions).toEqual(Object.keys(III_RELEASE_SHA256));
+  });
+
   it("pins a SHA-256 for every auto-installable asset of the pinned engine release", () => {
     const pinned = III_RELEASE_SHA256[III_PINNED_VERSION];
     expect(pinned).toBeDefined();

@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tools.svg"><img src="../assets/tags/stat-tools.svg" alt="54 εργαλεία MCP" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-hooks.svg"><img src="../assets/tags/stat-hooks.svg" alt="12 αυτόματα hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-deps.svg"><img src="../assets/tags/stat-deps.svg" alt="0 εξωτερικές βάσεις δεδομένων" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="4,900+ επιτυχημένες δοκιμές" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="../assets/tags/light/stat-tests.svg"><img src="../assets/tags/stat-tests.svg" alt="5,000+ επιτυχημένες δοκιμές" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -665,7 +665,7 @@ npm install && npm run build && npm start
 
 ### Windows
 
-Το agentmemory εκτελείται σε Windows 10/11. Το WSL2 ακολουθεί τη διαδρομή Linux και μπορεί να εγκαταστήσει αυτόματα τον καρφιτσωμένο engine. Σε native Windows απαιτείται χειροκίνητη εγκατάσταση του καρφιτσωμένου binary iii-engine v0.25.1: κατεβάστε το αντίστοιχο archive από τη [σελίδα έκδοσης iii v0.25.1](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.25.1), επαληθεύστε το checksum και τοποθετήστε το `iii.exe` στο `PATH` (για παράδειγμα `%USERPROFILE%\.local\bin\iii.exe`). Το CLI δεν εξάγει αυτόματα το Windows ZIP.
+Το agentmemory εκτελείται σε Windows 10/11. Το WSL2 ακολουθεί τη διαδρομή Linux και μπορεί να εγκαταστήσει αυτόματα τον καρφιτσωμένο engine. Και στα native Windows το CLI εγκαθιστά αυτόματα τον καρφιτσωμένο iii-engine v0.26.0: κατεβάζει το Windows ZIP, επαληθεύει το SHA-256 του και εξάγει το `iii.exe` στο `%USERPROFILE%\.agentmemory\bin`. Αν αυτό αποτύχει, κατεβάστε το αντίστοιχο archive από τη [σελίδα έκδοσης iii v0.26.0](https://github.com/iii-hq/iii/releases/tag/iii%2Fv0.26.0), επαληθεύστε το checksum και εξαγάγετε το `iii.exe` στον ίδιο φάκελο.
 
 Η αυτοματοποιημένη ρύθμιση MCP σε native Windows υποστηρίζει μόνο το `agentmemory connect copilot-cli`. Για άλλους native Windows agents, χρησιμοποιήστε το χειροκίνητο block MCP από τους [Άλλους agents](#other-agents). Εκτελέστε `connect` μέσα στο WSL μόνο αν ο agent-στόχος είναι εγκατεστημένος στο ίδιο περιβάλλον WSL.
 
@@ -1243,7 +1243,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

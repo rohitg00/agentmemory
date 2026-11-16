@@ -321,3 +321,15 @@ describe("viewer navigation and shared components", () => {
     expect(reload).toMatch(/loadGraph\(\{ quiet: true \}\)/);
   });
 });
+
+describe("dashboard duplicate-worker alert", () => {
+  it("requests the status report when the dashboard renders without one", () => {
+    const body = extractFunction("renderDashboard");
+    const request = body.indexOf("if (!store.report && !statusReportRequest)");
+    const alert = body.indexOf("store.report.runtime.duplicateWorkers.count > 1");
+    expect(request).toBeGreaterThan(-1);
+    expect(alert).toBeGreaterThan(request);
+    expect(body).toContain("ensureStatusReport().then(");
+    expect(body).toContain("renderTab('dashboard')");
+  });
+});
