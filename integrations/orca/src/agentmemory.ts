@@ -155,17 +155,39 @@ function time(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null
 }
 
-export function searchItems(body: unknown): MemoryItem[] {
+function resultRows(body: unknown): Record<string, unknown>[] {
   const results = (body as { results?: unknown[] } | null)?.results
-  if (!Array.isArray(results)) return []
-  return results.flatMap((entry, index) => {
-    const result = (entry ?? {}) as Record<string, unknown>
-    const source = ((result.observation as Record<string, unknown> | undefined) ?? (result.memory as Record<string, unknown> | undefined) ?? result)
+  return Array.isArray(results) ? results.map((entry) => (entry ?? {}) as Record<string, unknown>) : []
+}
+
+export function searchIds(body: unknown): Array<{ obsId: string; sessionId?: string }> {
+  return resultRows(body).flatMap((result) => {
+    const obsId = text(result.obsId)
+    if (!obsId) return []
+    const sessionId = text(result.sessionId)
+    return [sessionId ? { obsId, sessionId } : { obsId }]
+  })
+}
+
+export function searchItems(body: unknown, expanded?: unknown): MemoryItem[] {
+  const full = new Map<string, Record<string, unknown>>()
+  for (const row of resultRows(expanded)) {
+    const observation = row.observation as Record<string, unknown> | undefined
+    const id = text(row.obsId) || text(observation?.id)
+    if (id && observation) full.set(id, observation)
+  }
+  return resultRows(body).map((result, index) => {
+    const source =
+      full.get(text(result.obsId)) ??
+      (result.observation as Record<string, unknown> | undefined) ??
+      (result.memory as Record<string, unknown> | undefined) ??
+      result
     const id = text(source.id) || text(result.obsId) || `result-${index}`
     const body = text(source.narrative) || text(source.content) || text(source.summary)
-    const title = text(source.title) || body.split('\n')[0]?.slice(0, 80) || 'Untitled'
+    const title = text(source.title) || text(result.title) || body.split('\n')[0]?.slice(0, 80) || 'Untitled'
+    const type = text(result.memoryType) || text(source.memoryType) || text(source.type) || text(result.type) || 'memory'
     const score = typeof result.combinedScore === 'number' ? result.combinedScore : typeof result.score === 'number' ? result.score : null
-    return [{ id, title, type: text(source.type) || 'memory', text: body, files: files(source.files), at: time(source.timestamp ?? source.createdAt), score }]
+    return { id, title, type, text: body, files: files(source.files), at: time(source.timestamp ?? source.createdAt ?? result.timestamp), score }
   })
 }
 

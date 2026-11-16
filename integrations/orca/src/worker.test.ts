@@ -25,11 +25,11 @@ function fakeServer(answer: (call: Call) => Reply) {
 
 const WORKSPACE_PATH = '/nonexistent/agentmemory-orca-test/myrepo'
 
-function host(settings: Record<string, string | boolean> = {}) {
+function host(settings: Record<string, string | boolean> = {}, readContext: unknown = { branch: 'main', displayName: 'myrepo', terminals: [] }) {
   return mockHost({
     settings,
     results: {
-      'workspace.readContext': { branch: 'main', displayName: 'myrepo', terminals: [] },
+      'workspace.readContext': readContext,
       'workspace.list': {
         workspaces: [{ id: 'w1', kind: 'worktree', name: 'myrepo', path: WORKSPACE_PATH, branch: 'main', hostId: null }],
         truncated: false
@@ -77,34 +77,47 @@ test('reports a connected server with its version, project and memory counts', a
   }
 })
 
-test('searches the focused project and shapes the results', async () => {
-  const server = fakeServer((call) =>
-    call.url.endsWith('/smart-search')
-      ? {
-          status: 200,
-          body: {
-            results: [
-              {
-                observation: { id: 'obs_1', title: 'Use pnpm', narrative: 'The repo uses pnpm workspaces.', type: 'decision', files: ['package.json', 7], timestamp: '2026-11-01T00:00:00Z' },
-                combinedScore: 0.82
-              }
-            ]
-          }
+test('searches the focused project, expands the hits and shapes the results', async () => {
+  const server = fakeServer((call) => {
+    if (!call.url.endsWith('/smart-search')) return healthy(call)
+    const body = call.body as { expandIds?: unknown }
+    if (body.expandIds) {
+      return {
+        status: 200,
+        body: {
+          mode: 'expanded',
+          results: [
+            {
+              obsId: 'mem_1',
+              sessionId: 'memory',
+              observation: { id: 'mem_1', title: 'Use pnpm', narrative: 'The repo uses pnpm workspaces.', type: 'decision', memoryType: 'preference', files: ['package.json', 7], timestamp: '2026-11-01T00:00:00Z' }
+            }
+          ]
         }
-      : healthy(call)
-  )
+      }
+    }
+    return {
+      status: 200,
+      body: {
+        mode: 'compact',
+        results: [{ obsId: 'mem_1', sessionId: 'memory', layer: 'memory', title: 'Use pnpm', type: 'decision', memoryType: 'preference', score: 0.82, timestamp: '2026-11-01T00:00:00Z' }]
+      }
+    }
+  })
   try {
     const worker = await mountWorker(main, { host: host() })
     const scoped = await worker.request('memory.search', { query: ' pnpm ', scope: 'project' })
-    assert.deepEqual(server.calls.filter((call) => call.url.endsWith('/smart-search')).at(-1)?.body, { query: 'pnpm', limit: 15, project: 'myrepo' })
+    const searches = server.calls.filter((call) => call.url.endsWith('/smart-search'))
+    assert.deepEqual(searches.at(-2)?.body, { query: 'pnpm', limit: 15, project: 'myrepo' })
+    assert.deepEqual(searches.at(-1)?.body, { expandIds: [{ obsId: 'mem_1', sessionId: 'memory' }], project: 'myrepo' })
     assert.deepEqual(scoped, {
-      items: [{ id: 'obs_1', title: 'Use pnpm', type: 'decision', text: 'The repo uses pnpm workspaces.', files: ['package.json'], at: Date.parse('2026-11-01T00:00:00Z'), score: 0.82 }],
+      items: [{ id: 'mem_1', title: 'Use pnpm', type: 'preference', text: 'The repo uses pnpm workspaces.', files: ['package.json'], at: Date.parse('2026-11-01T00:00:00Z'), score: 0.82 }],
       project: 'myrepo',
       error: null
     })
     const all = await worker.request('memory.search', { query: 'pnpm', scope: 'all' })
     assert.equal(all.project, null)
-    assert.deepEqual(server.calls.filter((call) => call.url.endsWith('/smart-search')).at(-1)?.body, { query: 'pnpm', limit: 15 })
+    assert.deepEqual(server.calls.filter((call) => call.url.endsWith('/smart-search')).at(-2)?.body, { query: 'pnpm', limit: 15 })
     await worker.deactivate()
   } finally {
     server.restore()
@@ -146,6 +159,24 @@ test('saves a memory to the focused project and reports soft failures', async ()
     assert.deepEqual(await worker.request('memory.save', { content: '  ', scope: 'all' }), { saved: null, error: 'Write something to save first.' })
     reply = { status: 201, body: { success: false, error: 'content is required' } }
     assert.deepEqual(await worker.request('memory.save', { content: 'x', scope: 'all' }), { saved: null, error: 'content is required' })
+    await worker.deactivate()
+  } finally {
+    server.restore()
+  }
+})
+
+test('refuses project-scoped requests when the focused workspace cannot be read', async () => {
+  const server = fakeServer(healthy)
+  try {
+    const failing = host({}, () => {
+      throw new Error('host busy')
+    })
+    const worker = await mountWorker(main, { host: failing })
+    const recent = await worker.request('memory.recent', { scope: 'project' })
+    assert.match(recent.error ?? '', /focused Orca workspace/)
+    const saved = await worker.request('memory.save', { content: 'x', scope: 'project' })
+    assert.match(saved.error ?? '', /focused Orca workspace/)
+    assert.equal(server.calls.filter((call) => call.url.endsWith('/remember') || call.url.includes('limit=20')).length, 0)
     await worker.deactivate()
   } finally {
     server.restore()

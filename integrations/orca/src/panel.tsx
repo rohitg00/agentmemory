@@ -117,12 +117,13 @@ async function showRecent(): Promise<void> {
 }
 
 async function save(): Promise<void> {
-  const answer = await plugin.request('memory.save', { content: read(draft), scope: scope() })
+  const content = read(draft)
+  const answer = await plugin.request('memory.save', { content, scope: 'project' })
   if (answer.error) {
     set(note, { tone: 'danger', text: answer.error })
     return
   }
-  set(draft, '')
+  if (read(draft) === content) set(draft, '')
   set(note, { tone: 'success', text: 'Saved to agentmemory.' })
   await refresh()
 }
@@ -314,7 +315,7 @@ export default function Panel() {
           ))}
         </List>
       ) : null}
-      <Collapsible title="Remember something" description={project ? `Saved to ${project}` : 'Saved without a project'}>
+      <Collapsible title="Remember something" description={server?.project ? `Saved to ${server.project}` : 'Saved without a project'}>
         <Stack gap="xs">
           <Textarea
             label="Memory"

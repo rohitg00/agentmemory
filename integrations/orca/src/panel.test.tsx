@@ -112,6 +112,19 @@ test('saves a memory and shows it in the recent list', async () => {
   await view.unmount()
 })
 
+test('saves to the focused project even when the list shows all projects', async () => {
+  const { host, calls } = server()
+  const view = await mount(panel, { host })
+  await view.settled()
+  await view.toggle({ label: 'Only myrepo' })
+  await view.toggle({ label: 'Remember something' })
+  await view.type({ label: 'Memory' }, 'Keep the changelog short')
+  await view.press({ text: 'Save memory' })
+  assert.deepEqual(calls.find((call) => call.name === 'memory.save'), { name: 'memory.save', input: { content: 'Keep the changelog short', scope: 'project' } })
+  assert.deepEqual(view.errors, [])
+  await view.unmount()
+})
+
 test('refreshes when the panel is shown again', async () => {
   const { host, calls } = server()
   const view = await mount(panel, { host })

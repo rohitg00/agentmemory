@@ -10,6 +10,7 @@ import {
   memoryItem,
   normalizeUrl,
   projectName,
+  searchIds,
   searchItems
 } from './agentmemory'
 
@@ -31,28 +32,29 @@ async function localWorkspaces(orca: OrcaWorkerApi): Promise<Workspace[]> {
   return workspaces.filter((workspace) => workspace.hostId === null || workspace.hostId === 'local')
 }
 
+const SCOPE_ERROR = 'Could not read the focused Orca workspace. Try again, or turn off the workspace filter.'
+
 async function focusedWorkspace(orca: OrcaWorkerApi): Promise<Workspace | null> {
-  try {
-    const focused = await orca.host.call('workspace.readContext', {})
-    if (!focused) return null
-    const local = await localWorkspaces(orca)
-    return (
-      local.find((workspace) => workspace.id === (focused as { workspaceId?: string }).workspaceId) ??
-      local.find((workspace) => workspace.name === focused.displayName && workspace.branch === focused.branch) ??
-      null
-    )
-  } catch {
-    return null
-  }
+  const focused = await orca.host.call('workspace.readContext', {})
+  if (!focused) return null
+  const local = await localWorkspaces(orca)
+  return (
+    local.find((workspace) => workspace.id === (focused as { workspaceId?: string }).workspaceId) ??
+    local.find((workspace) => workspace.name === focused.displayName && workspace.branch === focused.branch) ??
+    null
+  )
 }
 
 async function focusedProject(orca: OrcaWorkerApi): Promise<string | null> {
-  const workspace = await focusedWorkspace(orca)
+  const workspace = await focusedWorkspace(orca).catch(() => null)
   return workspace ? projectName(workspace.path) : null
 }
 
-async function scopedProject(orca: OrcaWorkerApi, scope: Scope): Promise<string | null> {
-  return scope === 'project' ? focusedProject(orca) : null
+async function scopedProject(orca: OrcaWorkerApi, scope: Scope): Promise<string | null | undefined> {
+  if (scope === 'all') return null
+  const workspace = await focusedWorkspace(orca).catch(() => undefined)
+  if (workspace === undefined) return undefined
+  return workspace ? projectName(workspace.path) : null
 }
 
 async function countMemories(url: string, project: string | null, signal?: AbortSignal): Promise<number | null> {
@@ -85,8 +87,8 @@ async function showStatus(orca: OrcaWorkerApi, status: ServerStatus): Promise<vo
   const update =
     status.state === 'connected'
       ? {
-          text: status.counts.project !== null ? `${status.counts.project} memories` : `${status.counts.all ?? 0} memories`,
-          tone: 'success' as const,
+          text: (status.counts.project ?? status.counts.all) === null ? 'agentmemory' : `${status.counts.project ?? status.counts.all} memories`,
+          tone: (status.counts.project ?? status.counts.all) === null ? ('warning' as const) : ('success' as const),
           tooltip: status.project ? `agentmemory: ${status.project}. Press to open the viewer in Orca.` : 'agentmemory is running. Press to open the viewer in Orca.'
         }
       : { text: 'agentmemory offline', tone: 'danger' as const, tooltip: status.message }
@@ -123,6 +125,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   orca.panels.handle('memory.recent', async ({ scope }, { signal }) => {
     const { url } = await urls(orca)
     const project = await scopedProject(orca, scope)
+    if (project === undefined) return { items: [], project: null, error: SCOPE_ERROR }
     const query = new URLSearchParams({ limit: '20', latest: 'true' })
     if (project) query.set('project', project)
     const reply = await callServer(url, `memories?${query}`, { signal })
@@ -135,6 +138,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   orca.panels.handle('memory.search', async ({ query, scope }, { signal }) => {
     const trimmed = query.trim()
     const project = await scopedProject(orca, scope)
+    if (project === undefined) return { items: [], project: null, error: SCOPE_ERROR }
     if (!trimmed) return { items: [], project, error: null }
     const { url } = await urls(orca)
     const reply = await callServer(url, 'smart-search', {
@@ -144,7 +148,15 @@ export default function activate(orca: OrcaWorkerApi): void {
       signal
     })
     if (reply.status < 200 || reply.status >= 300) return { items: [], project, error: failureText(reply) }
-    return { items: searchItems(reply.body), project, error: null }
+    const expandIds = searchIds(reply.body)
+    if (expandIds.length === 0) return { items: searchItems(reply.body), project, error: null }
+    const expanded = await callServer(url, 'smart-search', {
+      method: 'POST',
+      body: { expandIds, ...(project ? { project } : {}) },
+      timeoutMs: 10_000,
+      signal
+    })
+    return { items: searchItems(reply.body, expanded.status >= 200 && expanded.status < 300 ? expanded.body : null), project, error: null }
   })
 
   orca.panels.handle('memory.save', async ({ content, scope }, { signal }) => {
@@ -152,6 +164,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     if (!trimmed) return { saved: null, error: 'Write something to save first.' }
     const { url } = await urls(orca)
     const project = await scopedProject(orca, scope)
+    if (project === undefined) return { saved: null, error: SCOPE_ERROR }
     const reply = await callServer(url, 'remember', {
       method: 'POST',
       body: { content: trimmed, ...(project ? { project } : {}) },
@@ -160,7 +173,7 @@ export default function activate(orca: OrcaWorkerApi): void {
     })
     const result = reply.body as { success?: boolean; memory?: unknown; error?: unknown } | null
     if (reply.status < 200 || reply.status >= 300 || result?.success === false) return { saved: null, error: failureText(reply) }
-    void readStatus(orca).then((status) => showStatus(orca, status))
+    void readStatus(orca).then((status) => showStatus(orca, status)).catch(() => undefined)
     return { saved: memoryItem(result?.memory), error: null }
   })
 
@@ -188,7 +201,7 @@ export default function activate(orca: OrcaWorkerApi): void {
   })
 
   orca.panels.handle('memory.openFile', async ({ path }) => {
-    const workspace = await focusedWorkspace(orca)
+    const workspace = await focusedWorkspace(orca).catch(() => null)
     if (!workspace) return { ok: false, message: 'Open a local workspace first.' }
     const absolute = isAbsolute(path) ? path : join(workspace.path, path)
     const inside = relative(workspace.path, absolute)
