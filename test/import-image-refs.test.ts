@@ -215,3 +215,90 @@ it("serializes duplicate owner IDs within the same import batch", async () => {
   expect(await f.count()).toBe(0);
   expect(await f.count(next)).toBe(1);
 });
+
+it("keeps an image transferred from an observation to a memory during merge", async () => {
+  const f = await fixture();
+  const next = await f.replacement();
+  f.data.memories = [{
+    id: "mem_image_transfer", type: "fact", title: "Screenshot", content: "Screenshot",
+    concepts: [], files: [], sessionIds: [SESSION], strength: 5, version: 1, isLatest: true,
+    createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), imageRef: next,
+  }];
+  await f.import();
+  const changed = structuredClone(f.data);
+  changed.observations[SESSION][0].imageData = next;
+  changed.memories[0].imageRef = f.path;
+
+  expect(await f.import(changed)).toMatchObject({ success: true, observations: 1, memories: 1 });
+  expect(await f.count()).toBe(1);
+  expect(await f.count(next)).toBe(1);
+  expect(existsSync(f.path)).toBe(true);
+  expect(existsSync(next)).toBe(true);
+  expect(await f.kv.get<Memory>(KV.memories, "mem_image_transfer")).toMatchObject({ imageRef: f.path });
+});
+
+it("preserves an image reused by a later duplicate owner ID during merge", async () => {
+  const f = await fixture();
+  const next = await f.replacement();
+  const first = f.data.observations[SESSION][0];
+  f.data.observations[SESSION].push({ ...first, imageData: next }, { ...first });
+  await f.import();
+
+  expect(await f.rows()).toMatchObject([{ imageData: f.path }]);
+  expect(await f.count()).toBe(1);
+  expect(await f.count(next)).toBe(0);
+  expect(existsSync(f.path)).toBe(true);
+});
+
+it("indexes the final duplicate owner when an earlier index mapping is slow", async () => {
+  const f = await fixture();
+  const first = { ...f.data.observations[SESSION][0], title: "aardvark", narrative: "aardvark" };
+  const last = { ...first, title: "zephyr", narrative: "zephyr" };
+  f.data.observations[SESSION] = [first, last];
+  const set = f.kv.set;
+  let delayFirstMapping = true;
+  f.kv.set = async (scope, key, row) => {
+    if (scope.startsWith("mem:idx:obs:") && delayFirstMapping) {
+      delayFirstMapping = false;
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    return set(scope, key, row);
+  };
+  await f.import();
+
+  expect(await f.rows()).toMatchObject([{ title: "zephyr" }]);
+  const { getSearchIndex } = await import("../src/functions/search.js");
+  expect(getSearchIndex().search("zephyr").some((hit) => hit.obsId === first.id)).toBe(true);
+  expect(getSearchIndex().search("aardvark").some((hit) => hit.obsId === first.id)).toBe(false);
+});
+
+it("waits for the memory mutation lock before importing image owners", async () => {
+  const f = await fixture();
+  const { withKeyedLock } = await import("../src/state/keyed-mutex.js");
+  let release!: () => void;
+  let entered!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const ready = new Promise<void>((resolve) => { entered = resolve; });
+  const mutation = withKeyedLock("mem:remember", async () => { entered(); await gate; });
+  await ready;
+  const importing = f.import();
+  try {
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await f.rows()).toHaveLength(0);
+    expect(await f.count()).toBe(0);
+  } finally {
+    release();
+    await mutation;
+    await importing;
+  }
+  expect(await f.rows()).toHaveLength(1);
+  expect(await f.count()).toBe(1);
+});
+
+it.each([null, "", "overwrite", 1, {}, ["replace"]])("rejects an invalid import strategy before changing image ownership: %j", async (strategy) => {
+  const f = await fixture();
+  expect(await f.import(f.data, strategy as never)).toMatchObject({ success: false, error: "strategy must be merge, replace, or skip" });
+  expect(await f.rows()).toHaveLength(0);
+  expect(await f.count()).toBe(0);
+  expect(existsSync(f.path)).toBe(true);
+});

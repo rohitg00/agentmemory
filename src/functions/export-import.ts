@@ -357,7 +357,10 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       ) {
         return { success: false, error: "exportData with string version is required" };
       }
-      const strategy = data.strategy || "merge";
+      if (data.strategy !== undefined && !["merge", "replace", "skip"].includes(data.strategy)) {
+        return { success: false, error: "strategy must be merge, replace, or skip" };
+      }
+      const strategy = data.strategy ?? "merge";
       const importData = data.exportData;
 
       const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27", "0.9.28", "0.9.29", "0.9.30", "0.9.31", "0.9.32", "0.9.33"]);
@@ -504,7 +507,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       const indexObs: CompressedObservation[] = [];
       const indexMems: Memory[] = [];
       const imagePins: string[] = [];
-      const preflightError = await withKeyedLocks([...sessionKeys, "remember"], async () => {
+      const preflightError = await withKeyedLocks([...sessionKeys, "mem:remember"], async () => {
         const plannedObservations = new Map<string, CompressedObservation[]>();
         for (const [sessionId, observations] of Object.entries(importData.observations)) {
           const existing = strategy === "replace" ? [] : await kv.list<CompressedObservation>(KV.observations(sessionId));
@@ -517,15 +520,16 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           stats.sourceOmitted += planned.sourceOmitted;
         }
 
+        const incomingImages = new Set([
+          ...[...plannedObservations.values()].flatMap((rows) => rows.flatMap(imageReferences)),
+          ...importData.memories.flatMap(imageReferences),
+        ]);
+        for (const path of incomingImages) {
+          await incrementImageRef(kv, path);
+          imagePins.push(path);
+        }
+
         if (strategy === "replace") {
-          const incomingImages = new Set([
-            ...[...plannedObservations.values()].flatMap((rows) => rows.flatMap(imageReferences)),
-            ...importData.memories.flatMap(imageReferences),
-          ]);
-          for (const path of incomingImages) {
-            await incrementImageRef(kv, path);
-            imagePins.push(path);
-          }
           const existing = replaceSessions;
           const obsBySession: Array<{ session: Session; obs: CompressedObservation[] }> = [];
           for (let i = 0; i < existing.length; i += IMPORT_CHUNK_SIZE) {
@@ -655,9 +659,9 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
               stats.skipped++;
               return;
             }
-            await indexObservationSession(kv, o.id, sessionId).catch(() => {});
             stats.observations++;
             indexObs.push(o);
+            await indexObservationSession(kv, o.id, sessionId).catch(() => {});
           });
         }
 
