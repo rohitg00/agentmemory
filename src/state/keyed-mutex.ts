@@ -58,6 +58,10 @@ export function withKeyedLock<T>(
   );
 }
 
+export function withReentrantKeyedLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  return isKeyedLockHeld(key) ? fn() : withKeyedLock(key, fn);
+}
+
 export function withKeyedLocks<T>(keys: string[], fn: () => Promise<T>): Promise<T> {
   const ordered = [...new Set(keys)].sort();
   const acquire = (index: number): Promise<T> => index === ordered.length

@@ -1,6 +1,21 @@
 import type { CompressedObservation, Lesson, Memory } from "../types.js";
+import type { StateKV } from "./kv.js";
+import { withReentrantKeyedLock } from "./keyed-mutex.js";
 
 const MAX_DATE_MS = 8.64e15;
+
+export function deleteMemoryUnderLock<T = Memory>(
+  kv: StateKV,
+  scope: string,
+  id: string,
+): Promise<T | null> {
+  return withReentrantKeyedLock("mem:remember", async () => {
+    const current = await kv.get<T>(scope, id);
+    if (!current) return null;
+    await kv.delete(scope, id);
+    return current;
+  });
+}
 
 export function supersededAt(previous: string | undefined, now: string): string {
   const prior = previous ? Date.parse(previous) : Number.NaN;
