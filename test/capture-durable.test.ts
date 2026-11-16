@@ -112,6 +112,115 @@ describe("durable capture", () => {
     },
   );
 
+  it.each([
+    ["1", 1],
+    ['""', null],
+    ["", null],
+    ['{"command":"pwd"}', { command: "pwd" }],
+  ])("keeps distinct JSON input types without client event IDs: %j and %j", async (firstInput, secondInput) => {
+    const kv = mockKV();
+    const { capture, dedup } = await boot(kv);
+    const body = (toolInput: unknown) => ({
+      ...payload("typed-input"),
+      data: { tool_name: "Bash", tool_input: toolInput, tool_output: "ok" },
+    });
+    try {
+      expect(await capture(body(firstInput))).toMatchObject({ status: "accepted", state: "completed" });
+      expect(await capture(body(secondInput))).toMatchObject({ status: "accepted", state: "completed" });
+      expect(await capture(body(secondInput))).toMatchObject({ status: "duplicate", deduplicated: true });
+      expect(observations(kv)).toHaveLength(2);
+    } finally {
+      dedup.stop();
+    }
+  });
+
+  it("keeps distinct JSON output types without client event IDs", async () => {
+    const kv = mockKV();
+    const { capture, dedup } = await boot(kv);
+    const body = (toolOutput: unknown) => ({
+      ...payload("typed-output"),
+      data: { tool_name: "Bash", tool_input: { command: "pwd" }, tool_output: toolOutput },
+    });
+    try {
+      expect(await capture(body("1"))).toMatchObject({ status: "accepted", state: "completed" });
+      expect(await capture(body(1))).toMatchObject({ status: "accepted", state: "completed" });
+      expect(await capture(body(1))).toMatchObject({ status: "duplicate", deduplicated: true });
+      expect(observations(kv)).toHaveLength(2);
+    } finally {
+      dedup.stop();
+    }
+  });
+
+  it("keeps tool-name and input boundaries unambiguous without client event IDs", async () => {
+    const kv = mockKV();
+    const { capture, dedup } = await boot(kv);
+    try {
+      expect(await capture({ ...payload("boundaries"), data: { tool_name: "Bash", tool_input: "command:suffix" } }))
+        .toMatchObject({ status: "accepted", state: "completed" });
+      expect(await capture({ ...payload("boundaries"), data: { tool_name: "Bash:command", tool_input: "suffix" } }))
+        .toMatchObject({ status: "accepted", state: "completed" });
+      expect(observations(kv)).toHaveLength(2);
+    } finally {
+      dedup.stop();
+    }
+  });
+
+  it("keeps hook phases with identical tool inputs without client event IDs", async () => {
+    const kv = mockKV();
+    const { capture, dedup } = await boot(kv);
+    const data = { tool_name: "Bash", tool_input: { command: "pwd" } };
+    try {
+      for (const hookType of ["pre_tool_use", "post_tool_use", "post_tool_failure"]) {
+        expect(await capture({ ...payload("phases"), hookType, data })).toMatchObject({ status: "accepted", state: "completed" });
+        expect(await capture({ ...payload("phases"), hookType, data })).toMatchObject({ status: "duplicate", deduplicated: true });
+      }
+      expect(observations(kv)).toHaveLength(3);
+    } finally {
+      dedup.stop();
+    }
+  });
+
+  it("deduplicates concurrent full-input captures without client event IDs", async () => {
+    const kv = mockKV();
+    const { capture, dedup } = await boot(kv);
+    const body = { ...payload("concurrent-content"), data: { prompt: "long context ".repeat(100) } };
+    try {
+      const results = await Promise.all(Array.from({ length: 8 }, () => capture(body)));
+      expect(results.filter((result) => result.status === "accepted")).toHaveLength(1);
+      expect(results.filter((result) => result.status === "duplicate")).toHaveLength(7);
+      expect(observations(kv)).toHaveLength(1);
+      expect(inbox(kv)).toHaveLength(0);
+    } finally {
+      dedup.stop();
+    }
+  });
+
+  it("retries a failed full-input capture without treating it as a duplicate", async () => {
+    const kv = mockKV();
+    const { sdk, capture, dedup } = await boot(kv);
+    const set = kv.set;
+    let failOnce = true;
+    kv.set = async (scope, key, value) => {
+      if (scope === KV.observations("ses_capture") && failOnce) {
+        failOnce = false;
+        throw new Error("synthetic write failure");
+      }
+      return set(scope, key, value);
+    };
+    const body = payload("retry-content");
+    try {
+      const first = await capture(body);
+      expect(first).toMatchObject({ status: "accepted", state: "retrying" });
+      expect(observations(kv)).toHaveLength(0);
+      expect(await sdk.trigger("mem::capture-retry", { all: true })).toMatchObject({ recovered: 1 });
+      expect(observations(kv)).toMatchObject([{ id: first.observationId }]);
+      expect(await capture(body)).toMatchObject({ status: "duplicate", deduplicated: true });
+      expect(inbox(kv)).toHaveLength(0);
+    } finally {
+      dedup.stop();
+    }
+  });
+
   it("still deduplicates a replay after a restart", async () => {
     const kv = mockKV();
     const before = await boot(kv);

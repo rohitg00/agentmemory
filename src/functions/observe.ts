@@ -194,14 +194,10 @@ export function registerObserveFunction(
             : undefined;
         dedupHash = dedupMap.computeHash(
           payload.sessionId,
-          toolName,
+          JSON.stringify([payload.hookType, toolName]),
           dedupInput,
           dedupOutput,
         );
-        if (dedupMap.isDuplicate(dedupHash)) {
-          recordDedupSkip();
-          return { deduplicated: true, sessionId: payload.sessionId };
-        }
       }
 
       const serializedData = JSON.stringify(payload.data);
@@ -267,6 +263,10 @@ export function registerObserveFunction(
       const promptRef = durable || typeof payload.eventId !== "string" ? obsId : payload.eventId;
 
       return withKeyedLock(`obs:${payload.sessionId}`, async () => {
+        if (dedupHash && dedupMap?.isDuplicate(dedupHash)) {
+          recordDedupSkip();
+          return { deduplicated: true, sessionId: payload.sessionId };
+        }
         const existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
         const stored = durable ? existing.find((o) => o?.id === obsId) : undefined;
         if (stored) {
