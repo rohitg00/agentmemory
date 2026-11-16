@@ -36,12 +36,9 @@ export class DedupMap {
   }
 
   computeHash(sessionId: string, toolName: string, toolInput: unknown, toolOutput?: unknown): string {
-    const input =
-      typeof toolInput === "string"
-        ? toolInput.slice(0, 500)
-        : JSON.stringify(toolInput ?? "").slice(0, 500);
+    const input = JSON.stringify([typeof toolInput, toolInput]);
     const output = outputDigest(toolOutput);
-    const raw = output ? `${sessionId}:${toolName}:${input}:${output}` : `${sessionId}:${toolName}:${input}`;
+    const raw = JSON.stringify([sessionId, toolName, input, typeof toolOutput, output]);
     return createHash("sha256").update(raw).digest("hex");
   }
 
