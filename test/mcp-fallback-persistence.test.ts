@@ -166,6 +166,42 @@ describe("MCP fallback persistence", () => {
     expect(saved().scope).toEqual({ remote: "persisted", pending: "local" });
   });
 
+  it("preserves pending deletions and the last local mutation across read refreshes", async () => {
+    writeFileSync(path, '{"scope":{"deleted":"old","replaced":"old"}}');
+    const a = new InMemoryKV(path);
+    const b = new InMemoryKV(path);
+    await a.set("scope", "deleted", "temporary");
+    await a.delete("scope", "deleted");
+    await a.delete("scope", "replaced");
+    await a.set("scope", "replaced", "local");
+    await b.set("scope", "remote", "persisted");
+    expect(b.persist()).toBe(true);
+
+    expect(await a.get("scope", "deleted")).toBeNull();
+    expect(await a.get("scope", "replaced")).toBe("local");
+    expect(await a.list("scope")).toEqual(["local", "persisted"]);
+    expect(a.persist()).toBe(true);
+    expect(saved()).toEqual({ scope: { replaced: "local", remote: "persisted" } });
+  });
+
+  it("retries a failed deletion without discarding another writer's intervening save", async () => {
+    writeFileSync(path, '{"scope":{"deleted":"old","kept":"original"}}');
+    const a = new InMemoryKV(path);
+    await a.delete("scope", "deleted");
+    vi.mocked(renameSync).mockImplementationOnce(() => { throw new Error("rename denied"); });
+    expect(a.persist()).toBe(false);
+    expect(saved().scope.deleted).toBe("old");
+    expect(readdirSync(home)).toEqual(["standalone.json"]);
+
+    const b = new InMemoryKV(path);
+    await b.set("scope", "remote", "new");
+    expect(b.persist()).toBe(true);
+    expect(await a.get("scope", "deleted")).toBeNull();
+    expect(a.persist()).toBe(true);
+    expect(saved()).toEqual({ scope: { kept: "original", remote: "new" } });
+    expect(await new InMemoryKV(path).get("scope", "deleted")).toBeNull();
+  });
+
   it("keeps pending mutations after a failed rename and releases its lock", async () => {
     writeFileSync(path, '{"scope":{"original":"kept"}}');
     const a = new InMemoryKV(path);
