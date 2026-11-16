@@ -204,16 +204,28 @@ it("protects images from cleanup while their imported owner is being written", a
   expect(await f.count()).toBe(1);
 });
 
-it("serializes duplicate owner IDs within the same import batch", async () => {
+it.each([
+  ["observation", "merge"], ["observation", "replace"], ["observation", "skip"],
+  ["memory", "merge"], ["memory", "replace"], ["memory", "skip"],
+] as const)("rejects duplicate %s owner IDs before any %s writes", async (kind, strategy) => {
   const f = await fixture();
   const next = await f.replacement();
-  const duplicate = { ...f.data.observations[SESSION][0], imageData: next };
-  f.data.observations[SESSION].push(duplicate);
-  await f.import();
-  expect(await f.rows()).toHaveLength(1);
-  expect((await f.rows())[0].imageData).toBe(next);
+  if (kind === "observation") {
+    f.data.observations[SESSION].push({ ...f.data.observations[SESSION][0], imageData: next });
+  } else {
+    const memory: Memory = {
+      id: "mem_duplicate", type: "fact", title: "Image", content: "Image", concepts: [], files: [], sessionIds: [],
+      strength: 5, version: 1, isLatest: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), imageRef: f.path,
+    };
+    f.data.memories = [memory, { ...memory, imageRef: next }];
+  }
+  expect(await f.import(f.data, strategy)).toMatchObject({ success: false, error: expect.stringContaining("duplicate id") });
+  expect(await f.rows()).toHaveLength(0);
+  expect(await f.kv.list(KV.memories)).toHaveLength(0);
   expect(await f.count()).toBe(0);
-  expect(await f.count(next)).toBe(1);
+  expect(await f.count(next)).toBe(0);
+  expect(existsSync(f.path)).toBe(true);
+  expect(existsSync(next)).toBe(true);
 });
 
 it("keeps an image transferred from an observation to a memory during merge", async () => {
@@ -237,12 +249,13 @@ it("keeps an image transferred from an observation to a memory during merge", as
   expect(await f.kv.get<Memory>(KV.memories, "mem_image_transfer")).toMatchObject({ imageRef: f.path });
 });
 
-it("preserves an image reused by a later duplicate owner ID during merge", async () => {
+it("preserves existing image ownership when a duplicate-ID merge is rejected", async () => {
   const f = await fixture();
+  await f.import();
   const next = await f.replacement();
   const first = f.data.observations[SESSION][0];
   f.data.observations[SESSION].push({ ...first, imageData: next }, { ...first });
-  await f.import();
+  expect(await f.import()).toMatchObject({ success: false, error: expect.stringContaining("duplicate id") });
 
   expect(await f.rows()).toMatchObject([{ imageData: f.path }]);
   expect(await f.count()).toBe(1);
@@ -250,26 +263,58 @@ it("preserves an image reused by a later duplicate owner ID during merge", async
   expect(existsSync(f.path)).toBe(true);
 });
 
-it("indexes the final duplicate owner when an earlier index mapping is slow", async () => {
+it("keeps stored and indexed content unchanged when duplicate owners are rejected", async () => {
   const f = await fixture();
   const first = { ...f.data.observations[SESSION][0], title: "aardvark", narrative: "aardvark" };
   const last = { ...first, title: "zephyr", narrative: "zephyr" };
-  f.data.observations[SESSION] = [first, last];
-  const set = f.kv.set;
-  let delayFirstMapping = true;
-  f.kv.set = async (scope, key, row) => {
-    if (scope.startsWith("mem:idx:obs:") && delayFirstMapping) {
-      delayFirstMapping = false;
-      await new Promise((resolve) => setImmediate(resolve));
-    }
-    return set(scope, key, row);
-  };
+  f.data.observations[SESSION] = [first];
   await f.import();
+  f.data.observations[SESSION] = [first, last];
+  expect(await f.import()).toMatchObject({ success: false, error: expect.stringContaining("duplicate id") });
 
-  expect(await f.rows()).toMatchObject([{ title: "zephyr" }]);
+  expect(await f.rows()).toMatchObject([{ title: "aardvark" }]);
   const { getSearchIndex } = await import("../src/functions/search.js");
-  expect(getSearchIndex().search("zephyr").some((hit) => hit.obsId === first.id)).toBe(true);
-  expect(getSearchIndex().search("aardvark").some((hit) => hit.obsId === first.id)).toBe(false);
+  expect(getSearchIndex().search("zephyr").some((hit) => hit.obsId === first.id)).toBe(false);
+  expect(getSearchIndex().search("aardvark").some((hit) => hit.obsId === first.id)).toBe(true);
+});
+
+it.each([false, true])("bounds image reservations and cleanup while retaining failed-batch changes (fail: %s)", async (fail) => {
+  const f = await fixture();
+  const first = f.data.observations[SESSION][0];
+  f.data.observations[SESSION] = Array.from({ length: 60 }, (_, i) => ({ ...first, id: `obs_bounded_${i}`, imageData: `/img/bounded-${i}.png` }));
+  const get = f.kv.get;
+  const set = f.kv.set;
+  let inFlight = 0;
+  let maxInFlight = 0;
+  let ownerWrites = 0;
+  const imageOperation = async <T>(operation: () => Promise<T>): Promise<T> => {
+    inFlight++;
+    maxInFlight = Math.max(maxInFlight, inFlight);
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+      return await operation();
+    } finally {
+      inFlight--;
+    }
+  };
+  f.kv.get = async (scope, key) => scope === KV.imageRefs ? imageOperation(() => get(scope, key)) : get(scope, key);
+  f.kv.set = async (scope, key, row) => {
+    if (scope === KV.observations(SESSION)) ownerWrites++;
+    if (scope !== KV.imageRefs) return set(scope, key, row);
+    return imageOperation(async () => {
+      if (fail && key === "/img/bounded-5.png") throw new Error("synthetic reservation failure");
+      return set(scope, key, row);
+    });
+  };
+  if (fail) await expect(f.import()).rejects.toThrow("synthetic reservation failure");
+  else expect(await f.import()).toMatchObject({ success: true });
+  expect(inFlight).toBe(0);
+  expect(maxInFlight).toBeGreaterThan(1);
+  expect(maxInFlight).toBeLessThanOrEqual(20);
+  expect(ownerWrites).toBe(fail ? 0 : 60);
+  const refs = await f.kv.list<number>(KV.imageRefs);
+  expect(refs).toHaveLength(fail ? 0 : 60);
+  expect(refs.every((count) => count === 1)).toBe(true);
 });
 
 it("waits for the memory mutation lock before importing image owners", async () => {
@@ -293,6 +338,37 @@ it("waits for the memory mutation lock before importing image owners", async () 
   }
   expect(await f.rows()).toHaveLength(1);
   expect(await f.count()).toBe(1);
+});
+
+it("refreshes the session deletion set after a queued replace acquires the lock", async () => {
+  const f = await fixture();
+  const { withKeyedLock } = await import("../src/state/keyed-mutex.js");
+  let release!: () => void;
+  let entered!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const ready = new Promise<void>((resolve) => { entered = resolve; });
+  const mutation = withKeyedLock("mem:remember", async () => { entered(); await gate; });
+  await ready;
+  const dataFor = (id: string): ExportData => ({
+    ...structuredClone(f.data),
+    sessions: [{ ...f.data.sessions[0], id }],
+    observations: { [id]: [{ ...f.data.observations[SESSION][0], id: `obs_${id}`, sessionId: id }] },
+  });
+  const importing = Promise.all([
+    f.import(dataFor("ses_left"), "replace"),
+    f.import(dataFor("ses_right"), "replace"),
+  ]);
+  try {
+    await new Promise((resolve) => setImmediate(resolve));
+  } finally {
+    release();
+    await mutation;
+    await importing;
+  }
+  expect((await f.kv.list<{ id: string }>(KV.sessions)).map((session) => session.id)).toEqual(["ses_right"]);
+  expect(await f.kv.list(KV.observations("ses_left"))).toEqual([]);
+  expect(await f.count()).toBe(1);
+  expect(existsSync(f.path)).toBe(true);
 });
 
 it.each([null, "", "overwrite", 1, {}, ["replace"]])("rejects an invalid import strategy before changing image ownership: %j", async (strategy) => {

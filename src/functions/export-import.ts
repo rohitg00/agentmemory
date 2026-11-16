@@ -56,7 +56,7 @@ function imageReferences(row: { imageData?: string; imageRef?: string } | null):
 }
 
 async function unpinImportedImages(kv: StateKV, paths: string[]): Promise<void> {
-  for (const path of paths) {
+  await runChunked(paths, async (path) => {
     try {
       await unpinImageRef(kv, path);
     } catch (error) {
@@ -65,7 +65,7 @@ async function unpinImportedImages(kv: StateKV, paths: string[]): Promise<void> 
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }
+  });
 }
 
 async function writeImportedImageOwner(
@@ -348,7 +348,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
     async (data: {
       exportData: ExportData;
       strategy?: "merge" | "replace" | "skip";
-    }) => {
+    }) => withKeyedLock("mem:remember", async () => {
       const kv = await pinGraphState(state);
       if (
         !data?.exportData ||
@@ -470,6 +470,11 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (index >= 0) {
           return { success: false, error: `observations.${sessionId}[${index}] must be an object with a string id` };
         }
+        const seenObs = new Set<string>();
+        const duplicate = obs.findIndex((o) => seenObs.has(o.id) || !seenObs.add(o.id));
+        if (duplicate >= 0) {
+          return { success: false, error: `observations.${sessionId}[${duplicate}] has a duplicate id` };
+        }
       }
       const rowKeys: Record<string, string> = { summaries: "sessionId", profiles: "project", accessLogs: "memoryId" };
       for (const section of ["sessions", "memories", "summaries", "profiles", ...EXPORT_COLLECTIONS.map(([field]) => field)] as const) {
@@ -482,6 +487,13 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (index >= 0) {
           return { success: false, error: `${section}[${index}] must be an object with a string ${key}` };
         }
+      }
+      const seenMemories = new Set<string>();
+      const duplicateMemory = importData.memories.findIndex(
+        (m) => seenMemories.has(m.id) || !seenMemories.add(m.id),
+      );
+      if (duplicateMemory >= 0) {
+        return { success: false, error: `memories[${duplicateMemory}] has a duplicate id` };
       }
       if ((importData.accessLogs?.length ?? 0) > MAX_ACCESS_LOGS) {
         return {
@@ -507,7 +519,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       const indexObs: CompressedObservation[] = [];
       const indexMems: Memory[] = [];
       const imagePins: string[] = [];
-      const preflightError = await withKeyedLocks([...sessionKeys, "mem:remember"], async () => {
+      const preflightError = await withKeyedLocks(sessionKeys, async () => {
         const plannedObservations = new Map<string, CompressedObservation[]>();
         for (const [sessionId, observations] of Object.entries(importData.observations)) {
           const existing = strategy === "replace" ? [] : await kv.list<CompressedObservation>(KV.observations(sessionId));
@@ -524,10 +536,10 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           ...[...plannedObservations.values()].flatMap((rows) => rows.flatMap(imageReferences)),
           ...importData.memories.flatMap(imageReferences),
         ]);
-        for (const path of incomingImages) {
+        await runChunked([...incomingImages], async (path) => {
           await incrementImageRef(kv, path);
           imagePins.push(path);
-        }
+        });
 
         if (strategy === "replace") {
           const existing = replaceSessions;
@@ -877,6 +889,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         stats,
       });
       return { success: true, strategy, ...stats };
-    },
+    }),
   );
 }
