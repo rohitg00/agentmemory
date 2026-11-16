@@ -84,6 +84,7 @@
   <a href="#benchmarks">Benchmarks</a> &bull;
   <a href="#vs-competitors">vs Competitors</a> &bull;
   <a href="#works-with-every-agent">Agents</a> &bull;
+  <a href="#architecture">Architecture</a> &bull;
   <a href="#how-it-works">How It Works</a> &bull;
   <a href="#mcp-server">MCP</a> &bull;
   <a href="#real-time-viewer">Viewer</a> &bull;
@@ -305,6 +306,26 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 
 <p align="center">
   <sub>Works with <strong>any</strong> agent that speaks MCP or HTTP. One server, memories shared across all of them.</sub>
+</p>
+
+---
+
+<h2 id="architecture">Architecture</h2>
+
+One local server sits between your agents and your memory. Each lane runs locally by default; the dashed line marks what you opt into.
+
+<p align="center">
+  <img src="assets/diagrams/architecture.svg" alt="agentmemory architecture: coding agents reach one local server through hooks, MCP and REST. Capture, recall and store each run locally by default, and each optional provider is turned on by its own environment variable." width="100%" />
+</p>
+
+Every tool call goes through the write path; every new session reads back through hybrid search within a token budget.
+
+<p align="center">
+  <img src="assets/diagrams/pipeline.svg" alt="Memory pipeline: PostToolUse captures, filters, stores, compresses and indexes each tool call. Stop and SessionEnd write summaries. SessionStart builds a profile, runs hybrid search within a token budget and can inject context." width="100%" />
+</p>
+
+<p align="center">
+  <img src="assets/diagrams/stack.svg" alt="agentmemory as layers: your agents, hooks, MCP and REST, the agentmemory server, four memory tiers, three recall streams, and the file state store on your machine." width="80%" />
 </p>
 
 ---
@@ -778,15 +799,9 @@ Agent instructions and memory files remain useful for stable project guidance. A
 
 <h2 id="how-it-works"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-how.svg"><img src="assets/tags/section-how.svg" alt="How It Works" height="32" /></picture></h2>
 
-<p align="center">
-  <img src="assets/diagrams/architecture.svg" alt="agentmemory architecture: coding agents reach one local server on port 3111 through hooks, MCP and REST. Capture, recall and store each run locally by default, and each optional provider is turned on by its own environment variable." width="100%" />
-</p>
-
 ### Memory Pipeline
 
-<p align="center">
-  <img src="assets/diagrams/pipeline.svg" alt="Memory pipeline: PostToolUse captures, filters, stores, compresses and indexes each tool call. Stop and SessionEnd write summaries. SessionStart builds a profile, runs hybrid search within a token budget and can inject context." width="100%" />
-</p>
+The [architecture diagrams](#architecture) show the same flow.
 
 ```text
 PostToolUse hook fires
@@ -822,10 +837,6 @@ Modeled on how human brains process memory, including sleep consolidation.
 | **Procedural** | Workflows and decision patterns | "How to do it" |
 
 Memories decay over time (Ebbinghaus curve). Frequently accessed memories strengthen. Stale memories auto-evict. Contradictions are detected and resolved.
-
-<p align="center">
-  <img src="assets/diagrams/stack.svg" alt="agentmemory as layers: your agents, hooks, MCP and REST, the agentmemory server, four memory tiers, three recall streams, and the file state store on your machine." width="85%" />
-</p>
 
 ### What Gets Captured
 
