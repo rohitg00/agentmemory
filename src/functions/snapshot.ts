@@ -213,7 +213,7 @@ export function registerSnapshotFunction(
             string,
             Array<{ row: CompressedObservation; token: ImageRefReservation }>
           >();
-          await withImageRefBatch(kv, sdk, async (batch) => {
+          await withKeyedLock("mem:remember", () => withImageRefBatch(kv, sdk, async (batch) => {
             const archiveMemories = archive.memories ?? [];
             const memoryTokens = await batch.reserveAll(archiveMemories.map(memoryImagePaths));
             for (let i = 0; i < archiveMemories.length; i++) {
@@ -244,14 +244,12 @@ export function registerSnapshotFunction(
               }
             }
             for (const { row: memory, token } of restoreMemories) {
-              await withKeyedLock(`mem:${memory.id}`, async () => {
-                const previous = await kv.get<Memory>(KV.memories, memory.id);
-                await kv.set(KV.memories, memory.id, memory);
-                batch.written(token, memoryImagePaths(previous));
-                getSearchIndex().remove(memory.id);
-                vectorIndexRemove(memory.id);
-                memoryIds.add(memory.id);
-              });
+              const previous = await kv.get<Memory>(KV.memories, memory.id);
+              await kv.set(KV.memories, memory.id, memory);
+              batch.written(token, memoryImagePaths(previous));
+              getSearchIndex().remove(memory.id);
+              vectorIndexRemove(memory.id);
+              memoryIds.add(memory.id);
             }
             for (const [sessionId, rows] of restoreObservations) {
               await withKeyedLock(`obs:${sessionId}`, async () => {
@@ -272,7 +270,7 @@ export function registerSnapshotFunction(
             for (const log of archive.accessLogs ?? []) {
               await kv.set(KV.accessLog, log.memoryId, log);
             }
-          });
+          }));
         } catch (err) {
           restoreError = err;
         }

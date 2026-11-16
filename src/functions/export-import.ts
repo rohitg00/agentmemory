@@ -216,7 +216,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (!budget.fits(obs, session.id)) return refuse("observations");
         observations[session.id] = obs;
       }
-      if (isSelected("sessions")) {
+      if (isSelected("sessions") && !allSessions.some((session) => session.id === UNSESSIONED_OBSERVATION_SCOPE)) {
         const migrated = await collectAll<CompressedObservation>(
           kv,
           KV.observations(UNSESSIONED_OBSERVATION_SCOPE),
@@ -338,7 +338,10 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       ) {
         return { success: false, error: "exportData with string version is required" };
       }
-      const strategy = data.strategy || "merge";
+      if (data.strategy !== undefined && !["merge", "replace", "skip"].includes(data.strategy)) {
+        return { success: false, error: "strategy must be merge, replace, or skip" };
+      }
+      const strategy = data.strategy ?? "merge";
       const importData = data.exportData;
 
       const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27", "0.9.28", "0.9.29", "0.9.30", "0.9.31", "0.9.32", "0.9.33"]);
@@ -514,14 +517,14 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         sourceOmitted: 0,
       };
 
-      const replaceSessions = strategy === "replace" ? await kv.list<Session>(KV.sessions) : [];
-      const sessionKeys = [...obsBuckets, ...importData.sessions.map((session) => session.id),
-        ...importData.summaries.map((summary) => summary.sessionId), ...replaceSessions.map((session) => session.id),
-        ...(strategy === "replace" ? [UNSESSIONED_OBSERVATION_SCOPE] : [])]
-        .map((id) => `obs:${id}`);
       const indexObs: CompressedObservation[] = [];
       const indexMems: Memory[] = [];
-      const importError = await withImageRefBatch(kv, sdk, async (batch) => {
+      const importError = await withImageRefBatch(kv, sdk, (batch) => withKeyedLock("mem:remember", async () => {
+        const replaceSessions = strategy === "replace" ? await kv.list<Session>(KV.sessions) : [];
+        const sessionKeys = [...obsBuckets, ...importData.sessions.map((session) => session.id),
+          ...importData.summaries.map((summary) => summary.sessionId), ...replaceSessions.map((session) => session.id),
+          ...(strategy === "replace" ? [UNSESSIONED_OBSERVATION_SCOPE] : [])]
+          .map((id) => `obs:${id}`);
         const memoryRows: Array<{ row: Memory; token: ImageRefReservation }> = [];
         const preflightError = await withKeyedLocks(sessionKeys, async () => {
           const plannedObservations = new Map<string, CompressedObservation[]>();
@@ -567,10 +570,9 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
                 obs: await collectAll<CompressedObservation>(kv, KV.observations(session.id)),
               })))));
             }
-            const sessionlessObs = await collectAll<CompressedObservation>(
-              kv,
-              KV.observations(UNSESSIONED_OBSERVATION_SCOPE),
-            );
+            const sessionlessObs = replaceSessions.some((session) => session.id === UNSESSIONED_OBSERVATION_SCOPE)
+              ? []
+              : await collectAll<CompressedObservation>(kv, KV.observations(UNSESSIONED_OBSERVATION_SCOPE));
             deleteScan.sessionDeletes = obsBySession.map((entry) => entry.session);
             deleteScan.obsDeletes = [
               ...sessionlessObs.map((o) => ({ sessionId: UNSESSIONED_OBSERVATION_SCOPE, obsId: o.id, captureKey: o.captureKey, imagePaths: observationImagePaths(o) })),
@@ -744,31 +746,29 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (preflightError) return preflightError;
 
         await runChunked(memoryRows, async ({ row: memory, token }) => {
-          await withKeyedLock(`mem:${memory.id}`, async () => {
-            if (strategy === "skip") {
-              const existing = await kv.get<Memory>(KV.memories, memory.id);
-              if (existing) {
-                stats.skipped++;
-                return;
-              }
+          if (strategy === "skip") {
+            const existing = await kv.get<Memory>(KV.memories, memory.id);
+            if (existing) {
+              stats.skipped++;
+              return;
             }
-            // Older exports + hand-edited dumps can omit this field.
-            if (!Array.isArray(memory.sessionIds)) {
-              memory.sessionIds = [];
-            }
-            memory.origin = importOrigin(memory.origin, memory.createdAt);
-            const previous = strategy === "merge"
-              ? await kv.get<Memory>(KV.memories, memory.id)
-              : null;
-            await kv.set(KV.memories, memory.id, memory);
-            batch.written(token, memoryImagePaths(previous));
-            stats.memories++;
-            indexMems.push(memory);
-          });
+          }
+          // Older exports + hand-edited dumps can omit this field.
+          if (!Array.isArray(memory.sessionIds)) {
+            memory.sessionIds = [];
+          }
+          memory.origin = importOrigin(memory.origin, memory.createdAt);
+          const previous = strategy === "merge"
+            ? await kv.get<Memory>(KV.memories, memory.id)
+            : null;
+          await kv.set(KV.memories, memory.id, memory);
+          batch.written(token, memoryImagePaths(previous));
+          stats.memories++;
+          indexMems.push(memory);
         });
 
         return null;
-      });
+      }));
       if (importError) return importError;
 
       if (strategy === "replace" || importData.graphNodes || importData.graphEdges) {

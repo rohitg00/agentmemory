@@ -346,6 +346,11 @@ describe("Smart Search Function", () => {
     },
   );
 
+  it.each([0, -1, 1.5, "5", null])("rejects invalid limit %j before expanding records", async (limit) => {
+    await expect(sdk.trigger("mem::smart-search", { expandIds: ["obs_1"], limit }))
+      .rejects.toThrow("mem::smart-search: limit must be a positive integer");
+  });
+
   it("expand returns empty for nonexistent observation IDs", async () => {
     const result = (await sdk.trigger("mem::smart-search", {
       expandIds: ["obs_nonexistent_ses_xxx"],

@@ -99,6 +99,9 @@ export function registerSmartSearchFunction(
       source?: string;
     }) => {
 
+      if (data.limit !== undefined && (!Number.isInteger(data.limit) || data.limit < 1)) {
+        throw new Error("mem::smart-search: limit must be a positive integer");
+      }
       if (data.targetLayer !== undefined && !isSearchLayer(data.targetLayer)) {
         throw new Error("mem::smart-search: targetLayer must be one of 'all', 'memory', or 'observation'");
       }
@@ -190,9 +193,6 @@ export function registerSmartSearchFunction(
         return { mode: "compact", results: [], error: "query is required" };
       }
 
-      if (data.limit !== undefined && (!Number.isInteger(data.limit) || data.limit < 1)) {
-        throw new Error("mem::smart-search: limit must be a positive integer");
-      }
       const limit = Math.min(data.limit ?? 20, 100);
       // Lesson recall stays capped: lessons are denser than raw
       // observations so 10 covers most recall flows.

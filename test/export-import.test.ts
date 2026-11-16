@@ -432,6 +432,46 @@ describe("Export/Import Functions", () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain("Unsupported export version");
   });
+
+  it.each([null, "", "overwrite", 1, {}, ["replace"]])("rejects an invalid strategy before changing records: %j", async (strategy) => {
+    const result = await sdk.trigger("mem::import", {
+      strategy,
+      exportData: {
+        version: VERSION, exportedAt: new Date().toISOString(), sessions: [], observations: {}, summaries: [],
+        memories: [{ ...testMemory, content: "unexpected overwrite" }],
+      },
+    });
+    expect(result).toMatchObject({ success: false, error: "strategy must be merge, replace, or skip" });
+    expect(await kv.get(KV.memories, testMemory.id)).toEqual(testMemory);
+  });
+
+  it("uses the latest session set when concurrent replace imports acquire the mutation lock", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const mutation = withKeyedLock("mem:remember", async () => { entered(); await gate; });
+    await ready;
+    const replace = (id: string) => sdk.trigger("mem::import", {
+      strategy: "replace",
+      exportData: {
+        version: VERSION, exportedAt: new Date().toISOString(),
+        sessions: [{ ...testSession, id }], observations: { [id]: [{ ...testObs, id: `obs_${id}`, sessionId: id }] },
+        memories: [], summaries: [],
+      },
+    });
+    const importing = Promise.all([replace("ses_left"), replace("ses_right")]);
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+    } finally {
+      release();
+      await mutation;
+      await importing;
+    }
+    expect((await kv.list<Session>(KV.sessions)).map((session) => session.id)).toEqual(["ses_right"]);
+    expect(await kv.list(KV.observations("ses_left"))).toEqual([]);
+    expect(await kv.list(KV.observations("ses_right"))).toHaveLength(1);
+  });
 });
 
 const bloatedIds = (prefix: string, n: number) =>
@@ -1250,6 +1290,19 @@ describe("Export/import relations", () => {
 });
 
 describe("Export/import sessionless observation scope", () => {
+  it("keeps a real migrated session outside another session's export window", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    await kv.set(KV.sessions, testSession.id, testSession);
+    await kv.set(KV.sessions, "migrated", { ...testSession, id: "migrated" });
+    await kv.set(KV.observations("migrated"), "obs_real_session", { ...testObs, id: "obs_real_session", sessionId: "migrated" });
+
+    const exported = await sdk.trigger("mem::export", { maxSessions: 1, offset: 0 }) as ExportData;
+    expect(exported.sessions.map((session) => session.id)).toEqual([testSession.id]);
+    expect(exported.observations.migrated).toBeUndefined();
+  });
+
   it("exports the migrated observation bucket and restores it on import", async () => {
     const sdk = mockSdk();
     const kv = mockKV();

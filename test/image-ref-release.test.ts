@@ -30,6 +30,7 @@ import { registerSnapshotFunction } from "../src/functions/snapshot.js";
 import { getSearchIndex } from "../src/functions/search.js";
 import { IMAGES_DIR } from "../src/utils/image-store.js";
 import { KV } from "../src/state/schema.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import { VERSION } from "../src/version.js";
 import type {
   CompressedObservation,
@@ -182,6 +183,53 @@ async function seedManagedImage(name: string): Promise<string> {
 
 describe("mem::import image ref reconciliation", () => {
   beforeEach(() => getSearchIndex().clear());
+
+  it.each(["merge", "replace", "skip"] as const)("serializes %s imports with live memory mutations", async (strategy) => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const previous = { ...memRow("mem_live"), imageRef: "/img/live-old.png" };
+    const incoming = { ...previous, imageRef: "/img/live-new.png" };
+    await kv.set(KV.memories, previous.id, previous);
+    await kv.set(KV.imageRefs, previous.imageRef, 1);
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const mutation = withKeyedLock("mem:remember", async () => { entered(); await gate; });
+    await ready;
+    const importing = importResult(sdk, imageExport({ memories: [incoming] }), strategy);
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(await kv.get(KV.memories, previous.id)).toEqual(previous);
+    } finally {
+      release();
+      await mutation;
+      await importing;
+    }
+    expect(await kv.get(KV.memories, previous.id)).toMatchObject(strategy === "skip" ? previous : incoming);
+    expect(await kv.get(KV.imageRefs, previous.imageRef)).toBe(strategy === "skip" ? 1 : null);
+    expect(await kv.get(KV.imageRefs, incoming.imageRef)).toBe(strategy === "skip" ? null : 1);
+  });
+
+  it("replaces a migrated session's image owner exactly once", async () => {
+    const path = await seedManagedImage("migrated-session.png");
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerExportImportFunction(sdk as never, kv as never);
+    const session = testSession("migrated");
+    const observation = { ...obsRow("obs_migrated_session", session.id), imageData: path };
+    await kv.set(KV.sessions, session.id, session);
+    await kv.set(KV.observations(session.id), observation.id, observation);
+    await kv.set(KV.imageRefs, path, 1);
+    await kv.set(KV.imageEmbeddings, path, { dims: 3 });
+
+    expect(await importResult(sdk, imageExport({ sessions: [session], observations: { migrated: [observation] } }), "replace"))
+      .toMatchObject({ success: true });
+    expect(await kv.get(KV.imageRefs, path)).toBe(1);
+    expect(await kv.get(KV.imageEmbeddings, path)).toEqual({ dims: 3 });
+    await expect(stat(path)).resolves.toBeTruthy();
+  });
 
   it("keeps the file, embedding and count when merge moves an image from an observation to a memory", async () => {
     const path = await seedManagedImage("move.png");
@@ -338,6 +386,35 @@ describe("mem::snapshot-restore image ref reconciliation", () => {
   beforeEach(() => {
     getSearchIndex().clear();
     snapshotContent.mockClear();
+  });
+
+  it("serializes restored memory owners with live memory mutations", async () => {
+    const sdk = mockSdk();
+    const kv = mockKV();
+    registerSnapshotFunction(sdk as never, kv as never, snapshotDir);
+    const previous = { ...memRow("mem_live_restore"), imageRef: "/img/restore-old.png" };
+    const incoming = { ...previous, imageRef: "/img/restore-new.png" };
+    await kv.set(KV.memories, previous.id, previous);
+    await kv.set(KV.imageRefs, previous.imageRef, 1);
+    snapshotContent.mockReturnValueOnce(JSON.stringify({ memories: [incoming] }));
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const ready = new Promise<void>((resolve) => { entered = resolve; });
+    const mutation = withKeyedLock("mem:remember", async () => { entered(); await gate; });
+    await ready;
+    const restoring = sdk.trigger("mem::snapshot-restore", { commitHash: "abc1234" });
+    try {
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(await kv.get(KV.memories, previous.id)).toEqual(previous);
+    } finally {
+      release();
+      await mutation;
+      expect(await restoring).toMatchObject({ success: true });
+    }
+    expect(await kv.get(KV.memories, previous.id)).toMatchObject(incoming);
+    expect(await kv.get(KV.imageRefs, previous.imageRef)).toBeNull();
+    expect(await kv.get(KV.imageRefs, incoming.imageRef)).toBe(1);
   });
 
   it("keeps both files, embeddings and counts when a restore swaps two memories' image refs", async () => {
