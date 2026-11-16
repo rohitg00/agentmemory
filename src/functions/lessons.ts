@@ -192,14 +192,17 @@ export function registerLessonsFunctions(sdk: IIIClient, kv: StateKV): void {
       const fetchLimit = filtering
         ? Math.max(limit * 10, 100)
         : Math.max(limit * 5, 50);
-      const hits = idx.search(data.query, fetchLimit);
+      const hits = idx.search(data.query, fetchLimit, "all", (id) => {
+        const lesson = lessonRecords.get(id);
+        if (!lesson || lesson.deleted || lesson.confidence < minConfidence) return false;
+        return !data.project || lesson.project === data.project;
+      });
       const maxHit = hits.length > 0 ? hits[0].score : 0;
 
       const scored: Array<{ lesson: Lesson; score: number }> = [];
       for (let i = 0; i < hits.length; i++) {
         const l = lessonRecords.get(hits[i].obsId);
-        if (!l || l.deleted || l.confidence < minConfidence) continue;
-        if (data.project && l.project !== data.project) continue;
+        if (!l) continue;
 
         const relevance = maxHit > 0 ? hits[i].score / maxHit : 0;
         const daysSinceReinforced = l.lastReinforcedAt
