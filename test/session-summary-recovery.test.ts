@@ -231,6 +231,46 @@ describe("session summary recovery", () => {
     r.close();
   });
 
+  it.each([
+    ["an empty tool payload", "post_tool_use", {}],
+    ["a tool name without input or output", "post_tool_use", { tool_name: "Bash" }],
+    ["an empty tool input", "post_tool_use", { tool_name: "Read", tool_input: {} }],
+    ["an empty prompt", "prompt_submit", { prompt: "" }],
+  ])("keeps %s out of compression recovery", async (_label, hookType, data) => {
+    const r = rig();
+    vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
+    try {
+      await r.call("api::observe", { headers: {}, body: {
+        sessionId: "summary-session", eventId: "empty-source-event-0001",
+        project: "summary-project", cwd: "/fixture", hookType,
+        timestamp: new Date().toISOString(), data,
+      } });
+      await r.flush();
+      const [row] = await r.kv.list(KV.observations("summary-session"));
+      expect(getSearchIndex().has(row.id)).toBe(true);
+      expect(r.model.compress).not.toHaveBeenCalled();
+
+      await r.call("test::close-session", { sessionId: "summary-session" });
+      await r.call("mem::session-finalize", { now: Date.now() });
+      await r.flush();
+      expect(await r.kv.get(KV.summaryRepairs, "summary-session")).toBeNull();
+      expect(row.compression).toBeUndefined();
+
+      await r.observe("late-empty-source-event-0002", "Verified conclusion");
+      await r.flush();
+      await r.call("mem::session-finalize", { now: Date.now() + 600_000 });
+      await r.flush();
+      expect(r.model.compress).toHaveBeenCalledOnce();
+      expect((await r.sessions()).body.sessions[0].summary).toMatchObject({
+        title: "Verified conclusion", observationCount: 2,
+      });
+      expect(await r.kv.get(KV.summaryRepairs, "summary-session")).toBeNull();
+      expect(await r.kv.get(KV.observations("summary-session"), row.id)).toEqual(row);
+    } finally {
+      r.close();
+    }
+  });
+
   it("retains actionable source-unavailable state with slow retries", async () => {
     const r = rig();
     await r.observe("missing-source-event-0001", "Original investigation");
