@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, utimesSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
   parseSentMark,
   reconcileSent,
   retainSent,
+  spoolHasRecords,
   spoolPaths,
   spoolPolicy,
   spoolSummary,
@@ -97,11 +98,11 @@ describe("capture spool", () => {
   });
 
   it("flags a spool it cannot read instead of reporting it empty", () => {
-    expect(spoolSummary(URL, { dir: join(dir, "missing"), policy }).unreadable).toBeUndefined();
+    expect(spoolSummary(URL, { dir: join(dir, "missing"), policy }).unreadable).toBe(0);
     mkdirSync(spoolPaths(URL, dir).file, { recursive: true });
     const summary = spoolSummary(URL, { dir, policy });
     expect(summary.records).toBe(0);
-    expect(summary.unreadable).toBe(true);
+    expect(summary.unreadable).toBe(1);
   });
 
   it("does nothing when the spool is disabled", () => {
@@ -198,6 +199,134 @@ describe("capture spool", () => {
     await drainSpool(URL, async (rec) => (seen.push(rec.eventId), "delivered"), { dir, policy });
     expect(seen).toEqual(["evc_jjjjjjjjjjjj"]);
     expect(existsSync(orphan)).toBe(false);
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "keeps a claimed file it cannot read and reports it",
+    async () => {
+      appendSpool(URL, "evc_kkkkkkkkkkkk", body("locked"), "timeout", { dir, policy });
+      const paths = spoolPaths(URL, dir);
+      const blocked = join(dir, `${paths.name}.draining-99998-1.jsonl`);
+      writeFileSync(blocked, readFileSync(paths.file, "utf-8"));
+      writeFileSync(paths.file, "");
+      appendSpool(URL, "evc_llllllllllll", body("readable"), "timeout", { dir, policy });
+      const { chmodSync } = await import("node:fs");
+      const old = new Date(Date.now() - 10 * 60_000);
+      utimesSync(blocked, old, old);
+      chmodSync(blocked, 0o000);
+      try {
+        const seen: string[] = [];
+        const result = await drainSpool(URL, async (rec) => (seen.push(rec.eventId), "delivered"), { dir, policy });
+        expect(seen).toEqual(["evc_llllllllllll"]);
+        expect(result).toMatchObject({ delivered: 1, unreadable: 1 });
+        expect(existsSync(blocked)).toBe(true);
+        expect(spoolSummary(URL, { dir, policy }).stats.lastDrainUnreadable).toBe(1);
+        expect(spoolSummary(URL, { dir, policy }).unreadable).toBe(1);
+
+        const fresh = new Date();
+        utimesSync(blocked, fresh, fresh);
+        appendSpool(URL, "evc_mmmmmmmmmmmm", body("later"), "timeout", { dir, policy });
+        await drainSpool(URL, async () => "delivered", { dir, policy });
+        const summary = spoolSummary(URL, { dir, policy });
+        expect(summary.stats.lastDrainUnreadable).toBe(0);
+        expect(summary.unreadable).toBe(1);
+
+        chmodSync(blocked, 0o600);
+        utimesSync(blocked, old, old);
+        seen.length = 0;
+        await drainSpool(URL, async (rec) => (seen.push(rec.eventId), "delivered"), { dir, policy });
+        expect(seen).toEqual(["evc_kkkkkkkkkkkk"]);
+        expect(existsSync(blocked)).toBe(false);
+      } finally {
+        if (existsSync(blocked)) chmodSync(blocked, 0o600);
+      }
+    },
+  );
+});
+
+describe("capture spool retained claims", () => {
+  let dir: string;
+  const policy: SpoolPolicy = { enabled: true, maxBytes: 64 * 1024, maxAgeMs: 3600_000, maxRecordBytes: 16 * 1024 };
+
+  beforeEach(() => {
+    dir = join(mkdtempSync(join(tmpdir(), "am-spool-claims-")), "capture-spool");
+  });
+
+  function writeClaim(name: string, content: string, ageMs: number): string {
+    const paths = spoolPaths(URL, dir);
+    mkdirSync(dir, { recursive: true });
+    const claim = join(dir, `${paths.name}.draining-${name}.jsonl`);
+    writeFileSync(claim, content);
+    const at = new Date(Date.now() - ageMs);
+    utimesSync(claim, at, at);
+    return claim;
+  }
+
+  it("reports records waiting when only an eligible retained claim is left", () => {
+    expect(spoolHasRecords(URL, dir)).toBe(false);
+    const claim = writeClaim("99997-1", "", 0);
+    writeFileSync(claim, `${JSON.stringify({ v: 1, eventId: "evc_nnnnnnnnnnnn", spooledAt: new Date().toISOString(), reason: "timeout", attempts: 0, body: body("n") })}\n`);
+    expect(spoolHasRecords(URL, dir)).toBe(false);
+    const old = new Date(Date.now() - 10 * 60_000);
+    utimesSync(claim, old, old);
+    expect(spoolHasRecords(URL, dir)).toBe(true);
+  });
+
+  it("counts retained claim bytes against the spool size limit and keeps the claim", () => {
+    const claim = writeClaim("99996-1", "x".repeat(policy.maxBytes - 100), 10 * 60_000);
+    const result = appendSpool(URL, "evc_oooooooooooo", body("over"), "timeout", { dir, policy });
+    expect(result).toEqual({ spooled: false, dropped: "full" });
+    expect(existsSync(claim)).toBe(true);
+    expect(existsSync(spoolPaths(URL, dir).file)).toBe(false);
+  });
+
+  it("keeps a delivered record's backup even when the claim being drained nearly fills the spool", async () => {
+    const now = new Date().toISOString();
+    const records = Array.from({ length: 6 }, (_, i) =>
+      `${JSON.stringify({ v: 1, eventId: `evc_drn${String(i).padStart(9, "0")}`, spooledAt: now, reason: "timeout", attempts: 0, body: body(`d${i}`, { pad: "p".repeat(10 * 1024) }) })}\n`).join("");
+    writeClaim("99995-1", records, 10 * 60_000);
+    const kept: boolean[] = [];
+    const result = await drainSpool(URL, async (rec) => {
+      kept.push(retainSent(URL, rec.eventId, { hookType: "post_tool_use", sessionId: "ses_spool", marker: rec.eventId }, { bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }, { dir, policy }));
+      return "delivered";
+    }, { dir, policy });
+    expect(result.delivered).toBe(6);
+    expect(kept).toEqual([true, true, true, true, true, true]);
+  });
+
+  it("counts a claim no drain is reading against the limit for sent backups", () => {
+    writeClaim("99996-1", "x".repeat(60 * 1024), 10 * 60_000);
+    let kept = 0;
+    for (let i = 0; i < 20; i++) {
+      if (retainSent(URL, `evc_u${String(i).padStart(11, "0")}`, body(`u${i}`), { bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }, { dir, policy })) kept++;
+    }
+    const held = readdirSync(dir).reduce((n, f) => n + statSync(join(dir, f)).size, 0);
+    expect(kept).toBeLessThan(20);
+    expect(held).toBeLessThanOrEqual(policy.maxBytes + 1024);
+  });
+
+  it("keeps sent backups when evicting them cannot make room for the new record", () => {
+    writeClaim("99994-1", "x".repeat(59 * 1024), 10 * 60_000);
+    let sentBytes = 0;
+    for (let i = 0; sentBytes < 4 * 1024; i++) {
+      expect(retainSent(URL, `evc_q${String(i).padStart(11, "0")}`, body(`q${i}`), { bootId: "aaaaaaaaaaaaaaaaaaaaaaaa", durableAfterMs: 60_000 }, { dir, policy })).toBe(true);
+      sentBytes = readdirSync(dir).filter((f) => f.includes(".sent-")).reduce((n, f) => n + statSync(join(dir, f)).size, 0);
+    }
+    const result = appendSpool(URL, "evc_qqqqqqqqqqqq", body("big", { pad: "y".repeat(5 * 1024) }), "timeout", { dir, policy });
+    expect(result).toEqual({ spooled: false, dropped: "full" });
+    const after = readdirSync(dir).filter((f) => f.includes(".sent-")).reduce((n, f) => n + statSync(join(dir, f)).size, 0);
+    expect(after).toBe(sentBytes);
+  });
+
+  it("prunes expired live records when retained claims cause the overflow", () => {
+    writeClaim("99993-1", "x".repeat(60 * 1024), 10 * 60_000);
+    const old = new Date(Date.now() - 2 * policy.maxAgeMs).toISOString();
+    const expired = Array.from({ length: 3 }, (_, i) =>
+      `${JSON.stringify({ v: 1, eventId: `evc_exp${String(i).padStart(9, "0")}`, spooledAt: old, reason: "timeout", attempts: 0, body: body(`e${i}`, { pad: "z".repeat(800) }) })}\n`).join("");
+    writeFileSync(spoolPaths(URL, dir).file, expired);
+    const result = appendSpool(URL, "evc_rrrrrrrrrrrr", body("fresh", { pad: "w".repeat(1500) }), "timeout", { dir, policy });
+    expect(result).toEqual({ spooled: true });
+    expect(lines(spoolPaths(URL, dir).file).map((r) => r.eventId)).toEqual(["evc_rrrrrrrrrrrr"]);
   });
 });
 

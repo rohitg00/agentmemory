@@ -23,7 +23,7 @@ import { saveImageToDisk } from "../utils/image-store.js";
 import { withoutObservationSource } from "./observation-source.js";
 import { budgetLiveObservationSource } from "./observation-source-budget.js";
 import { observationEmbedText } from "../state/memory-utils.js";
-import { markCompressionDispatchFailed, pendingCompression } from "./compression-state.js";
+import { compressionRaw, markCompressionDispatchFailed, pendingCompression } from "./compression-state.js";
 import { requestSummaryRefresh } from "./summary-state.js";
 import { scheduleSessionFinalize } from "./session-finalize.js";
 
@@ -319,7 +319,6 @@ export function registerObserveFunction(
           }
         }
 
-        const autoCompress = isAutoCompressEnabled();
         const finalizeIdleMs = getFinalizeIdleMs();
         if (existingSession && existingSession.status !== "active") {
           const dueAt = Date.now() + finalizeIdleMs;
@@ -333,6 +332,7 @@ export function registerObserveFunction(
         const plannedIds = new Set(plannedVictims.map((o) => o.id));
         const unbudgeted = buildSyntheticCompression(raw);
         const synthetic = budgetLiveObservationSource(unbudgeted, existing.filter((o) => !plannedIds.has(o?.id)));
+        const autoCompress = isAutoCompressEnabled() && compressionRaw(synthetic) !== null;
         if (autoCompress) synthetic.compression = pendingCompression();
         try {
           await kv.set(KV.observations(payload.sessionId), obsId, synthetic);

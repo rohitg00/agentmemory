@@ -98,7 +98,7 @@ export async function queryGraphIndex(state: StateKV, data: IndexedGraphQuery): 
         if (cursor || reader.exhausted) { truncated = true; break; }
       }
     }
-    if (!await reader.finish()) return empty("Graph changed during the query. Retry to read a consistent index revision.");
+    if (!await reader.finish({ allowPartial: true })) return empty("Graph changed during the query. Retry to read a consistent index revision.");
     const pageEdges = [...edges.values()].filter(edge => ids.has(edge.sourceNodeId) && ids.has(edge.targetNodeId));
     const allNodes = !query && !data.startNodeId && !data.nodeType;
     truncated ||= reader.exhausted || !fullyScanned || nodes.length > pageNodes.length;
