@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { onStateWorkerReturn, stateWorkerStatus } from "../src/runtime/state-worker.js";
 import { IndexPersistence } from "../src/state/index-persistence.js";
 import { VectorIndex } from "../src/state/vector-index.js";
-import { rearmIndexRecovery, shouldRearmIndex, backfillFailedOutright } from "../src/runtime/recovery.js";
+import { rearmIndexRecovery, shouldRearmIndex, backfillFailedOutright, createRetryBackoff } from "../src/runtime/recovery.js";
+import { Bindings } from "../src/runtime/bindings.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -396,5 +397,139 @@ describe("boot checkpoint load with live writes", () => {
     const pending = live.takeChanges();
     expect(pending.get("obs_a")).toBe(true);
     expect(pending.get("obs_b")).toBe(false);
+  });
+});
+
+describe("engine::on-workers-changed observer", () => {
+  function workersSdk(conflicts = 0) {
+    const observed: Array<{ source: Record<string, unknown>; target: string; options?: Record<string, unknown> }> = [];
+    let remainingConflicts = conflicts;
+    const sdk = {
+      observed,
+      trigger: vi.fn(async () => ({ ok: true })),
+      registerFunction: vi.fn(),
+      observe: vi.fn((source: Record<string, unknown>, target: string, options?: Record<string, unknown>) => {
+        observed.push({ source, target, options });
+        const handle = fakeHandle("active");
+        if (source.function_id === "engine::on-workers-changed" && remainingConflicts > 0) {
+          remainingConflicts--;
+          handle.ready = () => Promise.reject(Object.assign(new Error("id held"), { code: "OBSERVER_ID_CONFLICT" }));
+        }
+        return handle;
+      }),
+    };
+    return sdk;
+  }
+  const workersChanged = (sdk: ReturnType<typeof workersSdk>) =>
+    sdk.observed.filter((entry) => entry.source.function_id === "engine::on-workers-changed");
+
+  afterEach(() => { vi.useRealTimers(); });
+
+  it("filters worker events in the engine instead of waking on every worker change", () => {
+    const sdk = workersSdk();
+    onStateWorkerReturn(sdk as never, new Bindings(sdk as never), vi.fn());
+    expect(workersChanged(sdk)).toHaveLength(1);
+    expect(workersChanged(sdk)[0]!.source.filters).toEqual({
+      "input.event": { $in: ["worker_connected", "worker_disconnected"] },
+    });
+  });
+
+  it("is owned by Bindings: reported by describe() and retried after OBSERVER_ID_CONFLICT", async () => {
+    vi.useFakeTimers();
+    const sdk = workersSdk(1);
+    const bindings = new Bindings(sdk as never);
+    onStateWorkerReturn(sdk as never, bindings, vi.fn());
+    expect(bindings.describe().observers).toBe(1);
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(workersChanged(sdk)).toHaveLength(2);
+    expect(bindings.describe()).toMatchObject({ observers: 1, failedObservers: 0 });
+  });
+
+  it("treats a conflict replacement that is already active as a recovery", async () => {
+    vi.useFakeTimers();
+    const sdk = workersSdk(1);
+    const onWorkersChanged = vi.fn();
+    onStateWorkerReturn(sdk as never, new Bindings(sdk as never), vi.fn(), { onWorkersChanged });
+    await vi.advanceTimersByTimeAsync(10_000);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(workersChanged(sdk)).toHaveLength(2);
+    expect(onWorkersChanged.mock.calls).toEqual([["observer_active"]]);
+  });
+
+  it("reports nothing after stop()", async () => {
+    const sdk = workersSdk();
+    const onWorkersChanged = vi.fn();
+    const rearm = onStateWorkerReturn(sdk as never, new Bindings(sdk as never), vi.fn(), { onWorkersChanged });
+    const handle = sdk.observe.mock.results.find((_, i) => workersChanged(sdk)[0] === sdk.observed[i])!.value as ReturnType<typeof fakeHandle>;
+    const target = workersChanged(sdk)[0]!.target;
+    const handler = sdk.registerFunction.mock.calls.find(([id]) => id === target)![1] as (payload: unknown) => Promise<unknown>;
+    rearm.stop();
+    handle.emit("pending");
+    handle.emit("active");
+    await handler({ observer_id: "o", activation_id: "late", input: { event: "worker_connected" } });
+    expect(onWorkersChanged).not.toHaveBeenCalled();
+    expect(sdk.trigger).not.toHaveBeenCalled();
+  });
+
+  it("passes connect and disconnect events to onWorkersChanged", async () => {
+    const sdk = workersSdk();
+    const onWorkersChanged = vi.fn();
+    onStateWorkerReturn(sdk as never, new Bindings(sdk as never), vi.fn(), { onWorkersChanged });
+    const target = workersChanged(sdk)[0]!.target;
+    const handler = sdk.registerFunction.mock.calls.find(([id]) => id === target)![1] as (payload: unknown) => Promise<unknown>;
+    await handler({ observer_id: "o", activation_id: "a1", input: { event: "worker_disconnected" } });
+    await handler({ observer_id: "o", activation_id: "a2", input: { event: "worker_connected" } });
+    expect(onWorkersChanged.mock.calls).toEqual([["worker_disconnected"], ["worker_connected"]]);
+  });
+});
+
+describe("createRetryBackoff", () => {
+  it("waits the initial delay, doubles after each failure up to the cap, and stays off once stopped", () => {
+    let now = 0;
+    const backoff = createRetryBackoff({ initialMs: 30_000, maxMs: 100_000, now: () => now });
+    expect(backoff.due()).toBe(false);
+    now = 30_000;
+    expect(backoff.due()).toBe(true);
+    backoff.failed();
+    now = 89_999;
+    expect(backoff.due()).toBe(false);
+    now = 90_000;
+    expect(backoff.due()).toBe(true);
+    backoff.failed();
+    now = 190_000;
+    expect(backoff.due()).toBe(true);
+    backoff.stop();
+    expect(backoff.stopped).toBe(true);
+    now = 10_000_000;
+    expect(backoff.due()).toBe(false);
+  });
+});
+
+describe("IndexPersistence pauses that a retry cannot fix", () => {
+  function store() {
+    return {
+      get: vi.fn(async () => { throw new Error("state down"); }),
+      set: vi.fn(async () => undefined),
+      delete: vi.fn(async () => undefined),
+      list: vi.fn(async () => []),
+      listKeys: vi.fn(async () => []),
+    };
+  }
+
+  it("does not report a paused recovery as a failed checkpoint save", async () => {
+    const persistence = new IndexPersistence(store() as never, new VectorIndex(), { requireRecoveryPlan: true });
+    await persistence.prepareBackfill({ vector: null, state: "unavailable", savedAt: null });
+    expect(persistence.status().vector?.lastError).toMatch(/unavailable/);
+    expect(persistence.checkpointSaveFailed()).toBe(false);
+  });
+
+  it("an unusable checkpoint pauses recovery without being retried as unavailable", async () => {
+    const persistence = new IndexPersistence(store() as never, new VectorIndex(), { requireRecoveryPlan: true });
+    await persistence.prepareBackfill({ vector: null, state: "unavailable", savedAt: null });
+    persistence.pauseForUnusableCheckpoint("wrong dimension");
+    expect(persistence.isPausedForUnavailable()).toBe(false);
+    expect(persistence.isRecoveryPaused()).toBe(true);
+    expect(persistence.resumeAfterUnavailable()).toBe(false);
   });
 });

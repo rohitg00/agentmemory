@@ -80,7 +80,11 @@ export function onStateWorkerReturn(
   sdk: IIIClient,
   bindings: Bindings,
   cb: () => void | Promise<void>,
-  opts: { pending?: () => boolean } = {},
+  opts: {
+    pending?: () => boolean;
+    /** A worker connected or disconnected, or the observer reporting those events became active again. */
+    onWorkersChanged?: (reason: "worker_connected" | "worker_disconnected" | "observer_active") => void;
+  } = {},
 ): { state: StateWorkerReturnState; probeTick: () => Promise<void>; stop: () => void } {
   const client = sdk as unknown as SdkLike;
   const state: StateWorkerReturnState = { probeReady: stateWorkerStatus.ready };
@@ -122,9 +126,30 @@ export function onStateWorkerReturn(
   };
   for (const handle of bindings.stateHandles) watchStateHandle(handle, false);
   bindings.onStateHandle?.((handle) => watchStateHandle(handle, true));
-  if (typeof client.observe === "function" && bindings.pipeline === "observe") {
+  if (typeof client.observe === "function" && typeof bindings.observeRuntime === "function") {
+    // Events are missed while the observer is not active, however short the gap.
+    // The first handle is covered by the boot check; a conflict replacement
+    // replaces one that never delivered, so it counts as a recovery even when
+    // it is already active.
+    const reportWorkersChanged = (reason: "worker_connected" | "worker_disconnected" | "observer_active") => {
+      if (!stopped) opts.onWorkersChanged?.(reason);
+    };
+    let firstRuntimeHandle = true;
+    bindings.onRuntimeHandle?.("runtime::on-workers-changed", (handle) => {
+      let wasActive = handle.state === "active";
+      if (wasActive && !firstRuntimeHandle) reportWorkersChanged("observer_active");
+      firstRuntimeHandle = false;
+      handle.onStateChange((next) => {
+        if (next === "active" && !wasActive) reportWorkersChanged("observer_active");
+        wasActive = next === "active";
+      });
+    });
     client.registerFunction?.("runtime::on-workers-changed", async (payload: unknown) => {
-      if (unwrapObserved<{ event?: string } | undefined>(payload, "input")?.event !== "worker_connected") return { handled: false };
+      const event = unwrapObserved<{ event?: string } | undefined>(payload, "input")?.event;
+      if (event !== "worker_connected" && event !== "worker_disconnected") return { handled: false };
+      if (stopped) return { handled: false };
+      reportWorkersChanged(event);
+      if (event !== "worker_connected") return { handled: true };
       try {
         await probeOnce(client, 2000);
         stateWorkerStatus.ready = true;
@@ -135,8 +160,12 @@ export function onStateWorkerReturn(
       } catch {}
       return { handled: true };
     });
-    client.observe(
-      { function_id: "engine::on-workers-changed", capture: ["input"] },
+    bindings.observeRuntime(
+      {
+        function_id: "engine::on-workers-changed",
+        filters: { "input.event": { $in: ["worker_connected", "worker_disconnected"] } },
+        capture: ["input"],
+      },
       "runtime::on-workers-changed",
       { id: "agentmemory:runtime:workers-changed" },
     );

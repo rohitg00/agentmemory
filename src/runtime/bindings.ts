@@ -35,7 +35,15 @@ interface SdkLike {
   observe?: (source: ObserveSource, target: string, options?: ObserverOptions) => ObserverHandle;
 }
 
-type BindingKind = "http" | "state" | "pipeline";
+type BindingKind = "http" | "state" | "pipeline" | "runtime";
+
+interface BoundObserver {
+  handle: ObserverHandle;
+  kind: BindingKind;
+  target: string;
+  // Pipeline work that also runs as a direct call while its observer is not active.
+  fallback: boolean;
+}
 
 const instances = new WeakMap<object, Bindings>();
 
@@ -47,11 +55,11 @@ const ID_CONFLICT_RETRY_DELAYS_MS = [10_000, 20_000, 40_000, 80_000];
 
 export class Bindings {
   private readonly sdk: SdkLike;
-  private readonly bound: Array<{ handle: ObserverHandle; kind: BindingKind; target: string }> = [];
+  private readonly bound: BoundObserver[] = [];
   private readonly reasons = new Set<string>();
   private readonly inline: boolean;
   private failedObserverCount = 0;
-  private readonly boundWatchers = new Set<(entry: { handle: ObserverHandle; kind: BindingKind }) => void>();
+  private readonly boundWatchers = new Set<(entry: BoundObserver) => void>();
 
   constructor(sdk: SdkLike) {
     this.sdk = sdk;
@@ -87,6 +95,18 @@ export class Bindings {
     return this.bound.some((entry) => entry.kind === "pipeline" && entry.target === target && entry.handle.state === "active");
   }
 
+  onRuntimeHandle(target: string, listener: (handle: ObserverHandle) => void): () => void {
+    const watch = (entry: BoundObserver) => {
+      if (entry.kind === "runtime" && entry.target === target) listener(entry.handle);
+    };
+    this.boundWatchers.add(watch);
+    return () => this.boundWatchers.delete(watch);
+  }
+
+  runtimeActive(target: string): boolean {
+    return this.bound.some((entry) => entry.kind === "runtime" && entry.target === target && entry.handle.state === "active");
+  }
+
   get modes(): BindingModes {
     return { state: this.modeOf("state"), http: this.modeOf("http") };
   }
@@ -107,13 +127,21 @@ export class Bindings {
     return parsed;
   }
 
-  private observe(kind: BindingKind, label: string, source: ObserveSource, target: string, options?: ObserverOptions, attempt = 0): ObserverHandle | null {
+  private observe(
+    kind: BindingKind,
+    label: string,
+    source: ObserveSource,
+    target: string,
+    options?: ObserverOptions,
+    extra: { fallback?: boolean; attempt?: number } = {},
+  ): ObserverHandle | null {
+    const attempt = extra.attempt ?? 0;
     if (typeof this.sdk.observe !== "function") {
       this.reasons.add("client has no observe(); bindings skipped");
       return null;
     }
     const handle = this.sdk.observe(source, target, options);
-    const entry = { handle, kind, target };
+    const entry: BoundObserver = { handle, kind, target, fallback: extra.fallback ?? false };
     this.bound.push(entry);
     for (const watch of this.boundWatchers) watch(entry);
     void handle.ready().catch((err: unknown) => {
@@ -125,7 +153,7 @@ export class Bindings {
           void handle.dispose().catch(() => {}).finally(() => {
             const index = this.bound.indexOf(entry);
             if (index >= 0) this.bound.splice(index, 1);
-            this.observe(kind, label, source, target, options, attempt + 1);
+            this.observe(kind, label, source, target, options, { ...extra, attempt: attempt + 1 });
           });
         }, delay);
         timer.unref?.();
@@ -179,9 +207,23 @@ export class Bindings {
     );
   }
 
-  observePipeline(source: ObserveSource, target: string, options?: ObserverOptions): ObserverHandle | null {
+  /**
+   * Binds a pipeline step. `fallback: true` (the default) means the caller
+   * checks `observing(target)` and calls the step directly while the observer
+   * is not active; pass `fallback: false` for work that only runs through it.
+   */
+  observePipeline(
+    source: ObserveSource,
+    target: string,
+    options?: ObserverOptions,
+    opts: { fallback?: boolean } = {},
+  ): ObserverHandle | null {
     if (this.inline) return null;
-    return this.observe("pipeline", `pipeline ${target}`, source, target, options);
+    return this.observe("pipeline", `pipeline ${target}`, source, target, options, { fallback: opts.fallback ?? true });
+  }
+
+  observeRuntime(source: ObserveSource, target: string, options?: ObserverOptions): ObserverHandle | null {
+    return this.observe("runtime", `runtime ${target}`, source, target, options);
   }
 
   observeStateChanges(filters: Record<string, unknown>, target: string, options?: ObserverOptions): ObserverHandle | null {
@@ -208,7 +250,7 @@ export class Bindings {
       const timer = setTimeout(finish, timeoutMs);
       timer.unref?.();
       const watch = ({ handle, kind }: { handle: ObserverHandle; kind: BindingKind }) => {
-        if (done || kind === "pipeline") return;
+        if (done || (kind !== "state" && kind !== "http")) return;
         unsubscribes.push(handle.onStateChange(() => { if (settled()) finish(); }));
         if (settled()) finish();
       };
@@ -223,11 +265,19 @@ export class Bindings {
     const reasons = new Set(this.reasons);
     if (modes.state === "pending" && this.handlesOf("state").length > 0) reasons.add("state::on-changed observers pending until the state worker connects");
     if (modes.http === "pending" && this.handlesOf("http").length > 0) reasons.add("http::on-request observers pending until the http worker connects");
-    if (!this.inline) {
-      const inactive = this.bound.filter((entry) => entry.kind === "pipeline" && entry.handle.state !== "active");
-      if (inactive.length > 0) {
-        reasons.add(`${inactive.length} pipeline observers are not active, so their work runs as direct calls: ${inactive.map((entry) => entry.target).join(", ")}`);
-      }
+    const inactive = this.bound.filter((entry) => entry.handle.state !== "active");
+    const targets = (entries: BoundObserver[]) => [...new Set(entries.map((entry) => entry.target))].join(", ");
+    const directCalls = inactive.filter((entry) => entry.kind === "pipeline" && entry.fallback);
+    if (!this.inline && directCalls.length > 0) {
+      reasons.add(`${directCalls.length} pipeline observers are not active, so their work runs as direct calls: ${targets(directCalls)}`);
+    }
+    const stalled = inactive.filter((entry) => entry.kind === "pipeline" && !entry.fallback);
+    if (stalled.length > 0) {
+      reasons.add(`${stalled.length} observers have no direct-call fallback and are not active, so their work does not run until they activate: ${targets(stalled)}`);
+    }
+    const runtime = inactive.filter((entry) => entry.kind === "runtime");
+    if (runtime.length > 0) {
+      reasons.add(`${runtime.length} runtime observers are not active: ${targets(runtime)}`);
     }
     for (const kind of ["state", "http"] as const) {
       if (modes[kind] !== "observe") continue;

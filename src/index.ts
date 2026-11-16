@@ -135,7 +135,7 @@ import { bootLog, bootWarn } from "./logger.js";
 import { runtimeMetadataPath } from "./runtime-paths.js";
 import { getBindings } from "./runtime/bindings.js";
 import { waitForStateWorker, onStateWorkerReturn } from "./runtime/state-worker.js";
-import { singleFlight, shouldRearmIndex, rearmIndexRecovery, backfillFailedOutright } from "./runtime/recovery.js";
+import { singleFlight, shouldRearmIndex, rearmIndexRecovery, backfillFailedOutright, createRetryBackoff } from "./runtime/recovery.js";
 import { checkDuplicateWorkers } from "./runtime/duplicates.js";
 import { registerPipelineObservers } from "./runtime/pipeline-observers.js";
 import { registerPostSessionFunctions } from "./functions/post-session.js";
@@ -489,10 +489,11 @@ async function main() {
   registerPipelineObservers(sdk);
 
   const bindings = getBindings(sdk);
+  let sweepTimer: ReturnType<typeof setInterval> | null = null;
   if (isAutoCompressEnabled()) {
     const sweepMs = compressionSweepMs();
     if (sweepMs > 0) {
-      const sweepTimer = setInterval(() => { void runCompressionSweep(); }, sweepMs);
+      sweepTimer = setInterval(() => { void runCompressionSweep(); }, sweepMs);
       sweepTimer.unref();
     }
   }
@@ -559,18 +560,22 @@ async function main() {
         );
       } else {
         console.error(
-          `[agentmemory] Refusing to start: persisted vector index has ` +
+          `[agentmemory] Not loading the persisted vector index: it has ` +
             `${mismatches.length} of ${loaded.vector.size} vectors with the ` +
             `wrong dimension. Active provider (${embeddingProvider?.name}) ` +
             `declares ${activeDim}; dimensions seen on disk: ${distinct}. ` +
             `First mismatched obsIds: ${sample}. Loading would silently corrupt ` +
-            `search (cross-dimension cosine returns 0). Choose one:\n` +
-            `  - Re-embed the existing index against the new provider, then start.\n` +
+            `search (cross-dimension cosine returns 0). The checkpoint is kept ` +
+            `and vector recovery stays paused; it is not retried. Choose one, then restart:\n` +
+            `  - Re-embed the existing index against the new provider.\n` +
             `  - Set AGENTMEMORY_DROP_STALE_INDEX=true to discard the persisted ` +
             `vectors and rebuild from live observations.\n` +
             `  - Switch the embedding provider back to the one that wrote the index.`,
         );
-        await indexPersistence.prepareBackfill(null);
+        indexPersistence.pauseForUnusableCheckpoint(
+          `persisted vector checkpoint has ${mismatches.length} of ${loaded.vector.size} vectors with the wrong dimension`,
+        );
+        checkpointBackfillSince = undefined;
         mismatchBlocked = true;
       }
     } else if (boot) {
@@ -732,23 +737,36 @@ async function main() {
     capture.start();
   })();
 
+  // An unreadable boot checkpoint is retried on the runtime tick with a
+  // doubling delay; a checkpoint that loads but cannot be used stops retries.
+  // Neither case is fixed by rebuilding the keyword index, so they do not
+  // count as a paused recovery that needs one.
+  const checkpointRetry = createRetryBackoff({ initialMs: 30_000, maxMs: 30 * 60_000 });
+  const checkpointUnusable = () => indexPersistence.isPausedForUnavailable() || checkpointRetry.stopped;
   const rearm = onStateWorkerReturn(sdk, bindings, async () => {
     try {
       await rearmIndexRecovery({
         retryCheckpoint: async () => {
-          if (!bootCheckpointUnavailable || !indexPersistence.resumeAfterUnavailable()) return false;
+          if (!bootCheckpointUnavailable || checkpointRetry.stopped || !indexPersistence.resumeAfterUnavailable()) return false;
           const retry = await restoreVectorCheckpoint(false);
+          if (retry.mismatchBlocked) {
+            checkpointRetry.stop();
+            return false;
+          }
           checkpointLoaded = retry.loaded;
           vectorBackfillSince = retry.vectorBackfillSince;
-          if (!retry.loaded || retry.loaded.state === "unavailable") return false;
+          if (!retry.loaded || retry.loaded.state === "unavailable") {
+            checkpointRetry.failed();
+            return false;
+          }
           vectorIndex?.finishLiveTracking();
           return true;
         },
         indexNeedsRearm: () => shouldRearmIndex({
           bm25Incomplete: isBm25RebuildIncomplete(),
-          persistencePaused: indexPersistence.isRecoveryPaused(),
+          persistencePaused: indexPersistence.isRecoveryPaused() && !checkpointUnusable(),
           lastRecoveryFailed: indexRecoveryFailed,
-          checkpointSaveFailed: Boolean(indexPersistence.status().vector?.lastError),
+          checkpointSaveFailed: indexPersistence.checkpointSaveFailed(),
         }),
         runIndexRecovery,
       });
@@ -760,10 +778,16 @@ async function main() {
     } catch (err) {
       bootWarn(`State-worker re-arm failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }, { pending: () => bootCheckpointUnavailable && indexPersistence.isPausedForUnavailable() });
+  }, {
+    pending: () => bootCheckpointUnavailable && indexPersistence.isPausedForUnavailable() && checkpointRetry.due(),
+    onWorkersChanged: () => { void checkDuplicateWorkers(sdk); },
+  });
+  // Worker connect/disconnect events drive the duplicate-worker check, plus one
+  // check whenever that observer becomes active again. While it is not active
+  // (pending, rejected, out of conflict retries) the tick checks instead.
   const rearmTick = setInterval(() => {
     void rearm.probeTick();
-    void checkDuplicateWorkers(sdk);
+    if (!bindings.runtimeActive("runtime::on-workers-changed")) void checkDuplicateWorkers(sdk);
   }, 30_000);
   rearmTick.unref();
   void checkDuplicateWorkers(sdk);
@@ -908,6 +932,9 @@ async function main() {
       process.exit(await runStartupCleanup(1).catch(() => 1));
     }, SHUTDOWN_HARD_EXIT_MS);
     hardExit.unref();
+    clearInterval(rearmTick);
+    if (sweepTimer) clearInterval(sweepTimer);
+    rearm.stop();
     healthMonitor.stop();
     dedupMap.stop();
     capture.stop();

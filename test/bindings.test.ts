@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { Bindings, getBindings } from "../src/runtime/bindings.js";
 import { registerObserverTarget, unwrapObserved } from "../src/runtime/observed.js";
 import { KV } from "../src/state/schema.js";
+import { registerPipelineObservers } from "../src/runtime/pipeline-observers.js";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -344,5 +345,26 @@ describe("observed payloads", () => {
     expect(await handlers.get("t::in")!({ ...activation, input: { key: "k" } })).toBe("k");
     expect(await handlers.get("t::out")!({ ...activation, output: { id: "o1" } })).toBe("o1");
     expect(await handlers.get("t::in")!({ key: "direct" })).toBe("direct");
+  });
+});
+
+describe("observers without a direct-call fallback", () => {
+  afterEach(() => { vi.unstubAllEnvs(); });
+
+  it("reports as direct calls only the steps that really fall back", () => {
+    vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
+    vi.stubEnv("GRAPH_EXTRACTION_ENABLED", "true");
+    vi.stubEnv("AGENTMEMORY_REFLECT", "true");
+    const sdk = fakeSdk("pending");
+    registerPipelineObservers(sdk as never);
+    const reasons = getBindings(sdk as never).describe().reasons;
+    const direct = reasons.find((line) => line.includes("direct calls")) ?? "";
+    for (const target of ["mem::compress", "mem::post-session-graph", "mem::post-session-reflect", "mem::post-session-consolidate"]) {
+      expect(direct).toContain(target);
+    }
+    for (const target of ["mem::post-remember-graph", "mem::record-failure", "mem::on-record-deleted", "event::graph::edge-reaction"]) {
+      expect(direct).not.toContain(target);
+      expect(reasons.some((line) => line.includes(target) && line.includes("no direct-call fallback"))).toBe(true);
+    }
   });
 });

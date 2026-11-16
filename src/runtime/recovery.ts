@@ -26,6 +26,36 @@ export async function rearmIndexRecovery(steps: RearmSteps): Promise<void> {
   if (restored || steps.indexNeedsRearm()) await steps.runIndexRecovery();
 }
 
+export interface RetryBackoff {
+  readonly stopped: boolean;
+  /** True once the current delay has passed and retries were not stopped. */
+  due(): boolean;
+  /** Records a failed attempt and doubles the delay, up to maxMs. */
+  failed(): void;
+  /** Stops retrying for the life of the process. */
+  stop(): void;
+}
+
+export function createRetryBackoff(opts: { initialMs: number; maxMs: number; now?: () => number }): RetryBackoff {
+  const now = opts.now ?? (() => Date.now());
+  let delay = opts.initialMs;
+  let nextAt = now() + delay;
+  let stopped = false;
+  return {
+    get stopped() {
+      return stopped;
+    },
+    due: () => !stopped && now() >= nextAt,
+    failed: () => {
+      delay = Math.min(delay * 2, opts.maxMs);
+      nextAt = now() + delay;
+    },
+    stop: () => {
+      stopped = true;
+    },
+  };
+}
+
 export function backfillFailedOutright(result: { added: number; failed: number }): boolean {
   return result.failed > 0 && result.added === 0;
 }

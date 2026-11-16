@@ -8,6 +8,10 @@ export interface DuplicateWorkerInfo {
 
 let last: DuplicateWorkerInfo | null = null;
 let lastKey = "";
+// Checks can overlap (worker events, the fallback tick, a state-worker
+// return). A check only publishes when no check started after it already has.
+let started = 0;
+let applied = 0;
 
 export function getDuplicateWorkers(): DuplicateWorkerInfo | null {
   return last;
@@ -16,11 +20,16 @@ export function getDuplicateWorkers(): DuplicateWorkerInfo | null {
 export function resetDuplicateWorkersForTest(): void {
   last = null;
   lastKey = "";
+  started = 0;
+  applied = 0;
 }
 
 export async function checkDuplicateWorkers(sdk: IIIClient): Promise<DuplicateWorkerInfo | null> {
+  const seq = ++started;
   try {
     const listed = await sdk.trigger({ function_id: "engine::workers::list", payload: {} });
+    if (seq < applied) return last;
+    applied = seq;
     const entries = Array.isArray(listed)
       ? listed
       : (((listed as { workers?: unknown[] })?.workers ?? []) as unknown[]);
