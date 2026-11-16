@@ -82,9 +82,9 @@ export function registerSnapshotFunction(
             observations[session.id] = obs;
           }
         }
-        const migratedObs = await kv
-          .list(KV.observations(UNSESSIONED_OBSERVATION_SCOPE))
-          .catch(() => []);
+        const migratedObs = await kv.list(
+          KV.observations(UNSESSIONED_OBSERVATION_SCOPE),
+        );
         if (migratedObs.length > 0) {
           observations[UNSESSIONED_OBSERVATION_SCOPE] = migratedObs;
         }

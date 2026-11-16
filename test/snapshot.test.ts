@@ -1,5 +1,4 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { writeFileSync } from "node:fs";
 
 const snapshotContent = vi.hoisted(() => vi.fn(() => '{"version":"0.4.0","sessions":[],"memories":[]}'));
 const gitCalls = vi.hoisted(() => vi.fn());
