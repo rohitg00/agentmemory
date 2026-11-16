@@ -12,9 +12,15 @@ export function isPayloadRejection(err: unknown): boolean {
 export class ResilientProvider implements MemoryProvider {
   private breaker = new CircuitBreaker();
   name: string;
+  declare readonly describeImage?: MemoryProvider["describeImage"];
 
   constructor(private inner: MemoryProvider) {
     this.name = `resilient(${inner.name})`;
+    const describeImage = inner.describeImage;
+    if (typeof describeImage === "function") {
+      this.describeImage = (imageData, mimeType, prompt) =>
+        this.call(() => describeImage.call(inner, imageData, mimeType, prompt));
+    }
   }
 
   private async call(fn: () => Promise<string>): Promise<string> {
