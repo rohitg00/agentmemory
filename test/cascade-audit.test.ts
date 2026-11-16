@@ -488,3 +488,106 @@ describe("delete cascade batcher resilience", () => {
     }
   });
 });
+
+describe("memory delete vs relation writers", () => {
+  const memory = (id: string) => ({ id, createdAt: "t", updatedAt: "t", type: "fact", title: "x", content: "c", concepts: [], files: [], sessionIds: [], strength: 1, version: 1, isLatest: true, confidence: 0.8, relatedIds: [] });
+
+  function gateRead(kv: ReturnType<typeof memoryKv>, key: string, nth: number) {
+    let reached!: () => void;
+    let release!: () => void;
+    const reachedP = new Promise<void>((r) => { reached = r; });
+    const releaseP = new Promise<void>((r) => { release = r; });
+    const original = kv.get.getMockImplementation()!;
+    let seen = 0;
+    kv.get.mockImplementation(async (scope: string, k: string) => {
+      if (scope === KV.memories && k === key && ++seen === nth) {
+        const value = await original(scope, k);
+        reached();
+        await releaseP;
+        return value;
+      }
+      return original(scope, k);
+    });
+    return { reached: reachedP, release };
+  }
+
+  it("a delete that lands during an edge reaction is not undone by the reaction write", async () => {
+    const { deleteMemoryUnderLock } = await import("../src/state/memory-utils.js");
+    const sdk = fakeFns();
+    const kv = memoryKv({
+      [KV.memories]: new Map([["tgt", memory("tgt")], ["src", memory("src")]]),
+      [KV.relationReactions]: new Map(),
+    });
+    registerCascadeFunctions(sdk as never, kv as never);
+    const gate = gateRead(kv, "tgt", 1);
+    const reaction = sdk.functions.get("event::graph::edge-reaction")!({
+      event_type: "state:created", scope: KV.relations, key: "rRace",
+      new_value: { type: "supersedes", sourceId: "src", targetId: "tgt", createdAt: "2026-01-01T00:00:00Z", confidence: 0.6 },
+    });
+    await gate.reached;
+    const deletion = deleteMemoryUnderLock(kv as never, KV.memories, "tgt");
+    await new Promise((r) => setTimeout(r, 20));
+    gate.release();
+    await reaction;
+    await deletion;
+    expect(kv.store[KV.memories].has("tgt")).toBe(false);
+  });
+
+  it("a delete that lands during mem::relate is not undone by the relatedIds write", async () => {
+    const { deleteMemoryUnderLock } = await import("../src/state/memory-utils.js");
+    const { registerRelationsFunction } = await import("../src/functions/relations.js");
+    const sdk = fakeFns();
+    const kv = memoryKv({
+      [KV.memories]: new Map([["m1", memory("m1")], ["m2", memory("m2")]]),
+      [KV.relations]: new Map(),
+    });
+    registerRelationsFunction(sdk as never, kv as never);
+    const gate = gateRead(kv, "m1", 2);
+    const relate = sdk.functions.get("mem::relate")!({ sourceId: "m1", targetId: "m2", type: "related" });
+    await gate.reached;
+    const deletion = deleteMemoryUnderLock(kv as never, KV.memories, "m1");
+    await new Promise((r) => setTimeout(r, 20));
+    gate.release();
+    await relate;
+    await deletion;
+    expect(kv.store[KV.memories].has("m1")).toBe(false);
+  });
+});
+
+describe("delete cascade flush backoff", () => {
+  it("backs off retries while state reads fail and resets after a successful flush", async () => {
+    vi.useFakeTimers();
+    try {
+      const sdk = fakeFns();
+      const kv = memoryKv({ [KV.memories]: new Map(), [KV.facets]: new Map() });
+      registerCascadeFunctions(sdk as never, kv as never);
+      const onDeleted = sdk.functions.get("mem::on-record-deleted")!;
+      await onDeleted({ event_type: "state:deleted", scope: KV.memories, key: "mBackoff" });
+      let down = true;
+      const attempts: number[] = [];
+      const start = Date.now();
+      kv.get.mockImplementation(async (scope: string, key: string) => {
+        if (scope === KV.memories && key === "mBackoff") {
+          attempts.push(Date.now() - start);
+          if (down) throw new Error("state worker unreachable");
+        }
+        return kv.store[scope]?.get(key) ?? null;
+      });
+      await vi.advanceTimersByTimeAsync(120_000);
+      const gaps = attempts.slice(1).map((t, i) => t - attempts[i]);
+      expect(gaps.slice(0, 6)).toEqual([1000, 2000, 4000, 8000, 16000, 30000]);
+      expect(Math.max(...gaps)).toBe(30000);
+      down = false;
+      await vi.advanceTimersByTimeAsync(30_000);
+      const settled = attempts.length;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts.length).toBe(settled);
+      const before = attempts.length;
+      await onDeleted({ event_type: "state:deleted", scope: KV.memories, key: "mBackoff" });
+      await vi.advanceTimersByTimeAsync(500);
+      expect(attempts.length).toBe(before + 2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

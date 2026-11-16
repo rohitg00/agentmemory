@@ -10,7 +10,7 @@ import {
 } from "./search.js";
 import { KV, generateId } from "../state/schema.js";
 import { StateKV, collectAll } from "../state/kv.js";
-import { isKeyedLockHeld, withKeyedLock } from "../state/keyed-mutex.js";
+import { isKeyedLockHeld, withKeyedLock, withReentrantKeyedLock } from "../state/keyed-mutex.js";
 import { safeAudit } from "./audit.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import { logger } from "../logger.js";
@@ -65,8 +65,10 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
       const lockKey =
         firstId === secondId ? `mem:${firstId}` : `mem:${firstId}:${secondId}`;
 
-      const memoryLock = <T>(id: string, fn: () => Promise<T>): Promise<T> =>
-        isKeyedLockHeld(`mem:${id}`) ? fn() : withKeyedLock(`mem:${id}`, fn);
+      const memoryLock = <T>(id: string, fn: () => Promise<T>): Promise<T> => {
+        const write = () => withReentrantKeyedLock("mem:remember", fn);
+        return isKeyedLockHeld(`mem:${id}`) ? write() : withKeyedLock(`mem:${id}`, write);
+      };
       return withKeyedLock(lockKey, async () => {
         const source = await kv.get<Memory>(KV.memories, data.sourceId);
         const target = await kv.get<Memory>(KV.memories, data.targetId);

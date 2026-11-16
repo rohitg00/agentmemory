@@ -1,7 +1,7 @@
 import type { IIIClient } from "iii-sdk";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
-import { withKeyedLock } from "../state/keyed-mutex.js";
+import { withKeyedLock, withReentrantKeyedLock } from "../state/keyed-mutex.js";
 import type { AuditEntry, Memory, MemoryRelation, RelationReactionMark, Session } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { deleteFacetsCascade } from "./facets.js";
@@ -86,15 +86,17 @@ function pruneDedupe(now: number): void {
 
 const DELETE_BATCH_MS = 500;
 const DELETE_BATCH_MAX = 200;
+const DELETE_BACKOFF_MAX_MS = 30_000;
 type PendingDelete = { id: string; kind: "memory" | "observation" | "lesson"; sessionId?: string; removeIndex?: boolean };
 const pendingDeletes = new Map<string, PendingDelete>();
 const pendingSessions = new Set<string>();
 let deleteTimer: ReturnType<typeof setTimeout> | null = null;
 let deleteFlusher: (() => Promise<void>) | null = null;
+let deleteDelayMs = DELETE_BATCH_MS;
 
 function scheduleDeleteFlush(): void {
   if (deleteTimer) return;
-  deleteTimer = setTimeout(() => { deleteTimer = null; void flushDeleteCascade().catch(() => reportFlushFailure()); }, DELETE_BATCH_MS);
+  deleteTimer = setTimeout(() => { deleteTimer = null; void flushDeleteCascade().catch(() => reportFlushFailure()); }, deleteDelayMs);
   deleteTimer.unref();
 }
 
@@ -196,6 +198,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     pendingDeletes.clear();
     pendingSessions.clear();
     if (items.length === 0 && sessions.length === 0) return;
+    let failed = false;
     try {
       const checks = await Promise.all(items.map((item) => deleteTargetGone(kv, item).then(
         (isGone) => (isGone ? "gone" : "live"),
@@ -204,6 +207,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
       const byType = new Map<string, string[]>();
       items.forEach((item, i) => {
         if (checks[i] === "retry") {
+          failed = true;
           pendingDeletes.set(`${item.kind}:${item.id}`, item);
           return;
         }
@@ -234,6 +238,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
         sessionsReconciled: reconciled,
       });
     } catch (err) {
+      failed = true;
       logger.warn("Delete cascade flush failed", {
         ids: items.length,
         sessions: sessions.length,
@@ -243,6 +248,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
       for (const sessionId of sessions) pendingSessions.add(sessionId);
       throw err;
     } finally {
+      deleteDelayMs = failed ? Math.min(deleteDelayMs * 2, DELETE_BACKOFF_MAX_MS) : DELETE_BATCH_MS;
       if (pendingDeletes.size > 0 || pendingSessions.size > 0) scheduleDeleteFlush();
     }
   });
@@ -306,7 +312,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
     const relationId = String(event.key ?? `${rel.sourceId}->${rel.targetId}:${rel.type}`);
     const markKey = `${rel.targetId}:${rel.type}`;
     const deleted = event.event_type === "state:deleted";
-    const result = await withKeyedLock(`mem:${rel.targetId}`, async () => {
+    const result = await withKeyedLock(`mem:${rel.targetId}`, () => withReentrantKeyedLock("mem:remember", async () => {
       const target = await kv.get<Memory>(KV.memories, rel.targetId);
       if (!target) {
         await recordAudit(kv, "relation_reaction", "event::graph::edge-reaction", [rel.targetId], {
@@ -402,7 +408,7 @@ export function registerCascadeFunctions(sdk: IIIClient, kv: StateKV): void {
       }
       await commitReaction(kv, rel.targetId, target, markKey, mark, true);
       return { unreacted: true as const };
-    });
+    }));
     const skip = (result as { skipped?: string }).skipped;
     if (skip !== "cycle" && skip !== "missing_target") {
       await recordAudit(kv, "relation_reaction", "event::graph::edge-reaction", [rel.targetId], {
