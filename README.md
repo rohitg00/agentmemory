@@ -671,6 +671,8 @@ The agentmemory entry is the **same MCP server block** across every host that us
 
 **Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can reach. Non-loopback addresses, including LAN IPs, require HTTPS. Alternatively, run a tunnel inside the sandbox and use its loopback address.
 
+The `localhost.` alias is pinned to `127.0.0.1` before MCP and hook requests. Use `[::1]` explicitly for a daemon bound only to IPv6 loopback.
+
 ### Programmatic access
 
 Use the [REST API](#api) from any language or the [MCP tools](#mcp-server) from an agent. REST requests use JSON and bearer authentication; see the [save and search example](#validate-a-fresh-install-and-restart-persistence).

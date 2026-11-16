@@ -66,7 +66,6 @@ describe("MCP proxy credential origins", () => {
     remote,
     "https://memory.example.invalid/prefix",
     "http://localhost:3111",
-    "http://localhost.:3111",
     "http://127.0.0.2:3111",
     "http://[::1]:3111",
   ].flatMap((url) => [false, true].map((forced) => [url, forced] as const)))(
@@ -89,6 +88,24 @@ describe("MCP proxy credential origins", () => {
       expect(calls).toEqual(expected);
     },
   );
+
+  it.each([false, true])("pins localhost. probes and requests to a literal loopback address (forced: %s)", async (forced) => {
+    vi.stubEnv("AGENTMEMORY_URL", "http://LOCALHOST.:3111/prefix");
+    vi.stubEnv("AGENTMEMORY_FORCE_PROXY", forced ? "1" : "");
+    const calls: Array<{ url: string; auth: string | null }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, auth: new Headers(init?.headers).get("authorization") });
+      return new Response("{}");
+    }));
+
+    const handle = await resolveHandle();
+    if (handle.mode !== "proxy") throw new Error("expected proxy mode");
+    await handle.call("/agentmemory/sessions");
+    expect(calls).toEqual([
+      ...(forced ? [] : [{ url: "http://127.0.0.1:3111/prefix/agentmemory/livez", auth: "Bearer synthetic-local-secret" }]),
+      { url: "http://127.0.0.1:3111/prefix/agentmemory/sessions", auth: "Bearer synthetic-local-secret" },
+    ]);
+  });
 
   it("rejects insecure reconfiguration before reusing or calling a cached handle", async () => {
     vi.stubEnv("AGENTMEMORY_SECRET", "synthetic-remote-secret");

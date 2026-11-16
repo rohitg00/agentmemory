@@ -89,7 +89,7 @@ function isLoopbackUrl(url) {
 		return false;
 	}
 	const bare = hostname.replace(/^\[|\]$/g, "");
-	return bare === "localhost" || bare === "localhost." || bare === "::1" || /^127(?:\.\d{1,3}){3}$/.test(bare);
+	return bare === "localhost" || bare === "::1" || /^127(?:\.\d{1,3}){3}$/.test(bare);
 }
 function resolveClientSecret(baseUrl, env = process.env) {
 	const fromEnv = usable(env[SECRET_KEY]);
@@ -131,8 +131,18 @@ function secretTransportAllowed(url) {
 		return false;
 	}
 }
+function pinLoopbackUrl(value) {
+	try {
+		const url = new URL(value);
+		if (url.hostname === "localhost.") {
+			url.hostname = "127.0.0.1";
+			return url.href.replace(/\/$/, "");
+		}
+	} catch {}
+	return value;
+}
 function resolveHookEndpoint(env = process.env) {
-	const url = hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL;
+	const url = pinLoopbackUrl(hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL);
 	const secret = resolveSettingSecret(url, env);
 	const blocked = !secretTransportAllowed(url);
 	return {
