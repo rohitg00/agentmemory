@@ -5,6 +5,37 @@ import { withKeyedLock } from "../state/keyed-mutex.js";
 import type { Action, Routine, RoutineStep, RoutineRun } from "../types.js";
 import { recordAudit } from "./audit.js";
 
+function validateStepDependencies(steps: RoutineStep[]): string | undefined {
+  const remaining = new Map(
+    steps.map((step) => [step.order, (step.dependsOn ?? []).length]),
+  );
+  if (remaining.size !== steps.length) return "duplicate step orders";
+
+  const dependents = new Map<number, number[]>();
+  const ready: number[] = [];
+  for (const step of steps) {
+    const { order } = step;
+    const dependsOn = step.dependsOn ?? [];
+    if (dependsOn.length === 0) ready.push(order);
+    for (const dep of dependsOn) {
+      if (!remaining.has(dep)) return `step ${order} depends on unknown order ${dep}`;
+      const waiting = dependents.get(dep);
+      if (waiting) waiting.push(order);
+      else dependents.set(dep, [order]);
+    }
+  }
+
+  for (let i = 0; i < ready.length; i++) {
+    for (const order of dependents.get(ready[i]) ?? []) {
+      const count = remaining.get(order)! - 1;
+      remaining.set(order, count);
+      if (count === 0) ready.push(order);
+    }
+  }
+
+  if (ready.length !== steps.length) return "routine step dependencies contain a cycle";
+}
+
 export function registerRoutinesFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction("mem::routine-create", 
     async (data: {
@@ -25,33 +56,22 @@ export function registerRoutinesFunction(sdk: IIIClient, kv: StateKV): void {
         }
       }
 
-      const orders = data.steps.map((s, i) => s.order ?? i);
-      const uniqueOrders = new Set(orders);
-      if (uniqueOrders.size !== orders.length) {
-        return { success: false, error: "duplicate step orders" };
-      }
-      for (const step of data.steps) {
-        if (step.dependsOn) {
-          for (const dep of step.dependsOn) {
-            if (!uniqueOrders.has(dep)) {
-              return { success: false, error: `step ${step.order ?? data.steps.indexOf(step)} depends on unknown order ${dep}` };
-            }
-          }
-        }
-      }
+      const steps = data.steps.map((s, i) => ({
+        order: s.order ?? i,
+        title: s.title,
+        description: s.description || "",
+        actionTemplate: s.actionTemplate || {},
+        dependsOn: s.dependsOn || [],
+      }));
+      const dependencyError = validateStepDependencies(steps);
+      if (dependencyError) return { success: false, error: dependencyError };
 
       const now = new Date().toISOString();
       const routine: Routine = {
         id: generateId("rtn"),
         name: data.name.trim(),
         description: (data.description || "").trim(),
-        steps: data.steps.map((s, i) => ({
-          order: s.order ?? i,
-          title: s.title,
-          description: s.description || "",
-          actionTemplate: s.actionTemplate || {},
-          dependsOn: s.dependsOn || [],
-        })),
+        steps,
         createdAt: now,
         updatedAt: now,
         frozen: data.frozen ?? true,
@@ -103,6 +123,8 @@ export function registerRoutinesFunction(sdk: IIIClient, kv: StateKV): void {
         if (!routine) {
           return { success: false, error: "routine not found" };
         }
+        const dependencyError = validateStepDependencies(routine.steps);
+        if (dependencyError) return { success: false, error: dependencyError };
 
         const now = new Date().toISOString();
         const stepOrderToActionId = new Map<number, string>();
@@ -148,7 +170,7 @@ export function registerRoutinesFunction(sdk: IIIClient, kv: StateKV): void {
           const actionId = stepOrderToActionId.get(step.order);
           if (!actionId) continue;
 
-          for (const depOrder of step.dependsOn) {
+          for (const depOrder of step.dependsOn ?? []) {
             const depActionId = stepOrderToActionId.get(depOrder);
             if (!depActionId) continue;
             const edge = {
