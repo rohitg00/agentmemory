@@ -33,6 +33,12 @@
     ],
     "kvScopes": [
       "65"
+    ],
+    "mcpResources": [
+      "6"
+    ],
+    "mcpPrompts": [
+      "3"
     ]
   },
   "engineVersion": "0.25.1"

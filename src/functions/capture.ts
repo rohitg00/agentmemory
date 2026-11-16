@@ -1,7 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import { join } from "node:path";
 import type { IIIClient } from "iii-sdk";
 import type { CompressedObservation, HookPayload } from "../types.js";
 import { KV, generateId } from "../state/schema.js";

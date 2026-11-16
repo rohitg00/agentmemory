@@ -1,35 +1,11 @@
 name: CI
 
-# `paths-ignore` keeps doc-only / website / README / CHANGELOG churn from
-# burning runner minutes. Source / config / workflow changes always run.
-# `workflow_dispatch` gives a manual re-run button for flake debugging.
+# Cheap guards run for every change; only source changes need the test matrix.
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - "README.md"
-      - "CHANGELOG.md"
-      - "AGENTS.md"
-      - "ROADMAP.md"
-      - "website/**"
-      - "docs/**"
-      - "assets/**"
-      - "deploy/**/README.md"
-      - "**/*.md"
-      - "**/*.mdx"
   pull_request:
     branches: [main]
-    paths-ignore:
-      - "README.md"
-      - "CHANGELOG.md"
-      - "AGENTS.md"
-      - "ROADMAP.md"
-      - "website/**"
-      - "docs/**"
-      - "assets/**"
-      - "deploy/**/README.md"
-      - "**/*.md"
-      - "**/*.mdx"
   workflow_dispatch:
 
 # Cancel in-flight PR runs when a force-push lands. Keep push runs to
@@ -42,7 +18,29 @@ permissions:
   contents: read
 
 jobs:
+  quality:
+    runs-on: ubuntu-latest
+    outputs:
+      run_tests: ${{ steps.changes.outputs.run_tests }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - id: changes
+        run: node scripts/ci-changes.mjs
+      - run: npm install --legacy-peer-deps --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm run skills:check
+      - run: npm run docs:check
+      - run: npm run env:check
+
   test:
+    needs: quality
+    if: needs.quality.outputs.run_tests == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       # Don't bail the whole matrix on one cell's failure — we want to
@@ -73,4 +71,4 @@ jobs:
       - run: npm run build
       - run: npm run skills:check
       - run: npx tsc --noEmit --project tsconfig.eval.json
-      - run: npm test
+      - run: npm run test:ci

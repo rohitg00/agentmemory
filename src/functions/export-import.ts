@@ -21,7 +21,6 @@ import type {
   Facet,
   Lesson,
   Insight,
-  ExportPagination,
   AccessLogExport,
 } from "../types.js";
 import { importOrigin } from "../types.js";
