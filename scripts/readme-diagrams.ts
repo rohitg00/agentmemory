@@ -62,7 +62,9 @@ function icon(name: string, x: number, y: number, size: number, kind: "logo" | "
   const paths = ic.paths.map((path) => path.stroke
     ? `<path d="${path.d}" class="${kind}s" stroke-width="${path.stroke}" stroke-linecap="round" stroke-linejoin="round"/>`
     : `<path d="${path.d}" class="${kind}"${path.evenodd ? ' fill-rule="evenodd"' : ""}/>`).join("");
-  return `<svg x="${x}" y="${y}" width="${size}" height="${size}" viewBox="${ic.vb}">${paths}</svg>`;
+  const [, , vw, vh] = ic.vb.split(" ").map(Number);
+  const w = size * Math.min(vw / vh, 1.6);
+  return `<svg x="${(x - (w - size) / 2).toFixed(1)}" y="${y}" width="${w.toFixed(1)}" height="${size}" viewBox="${ic.vb}">${paths}</svg>`;
 }
 
 const AGENT_LOGOS: Record<string, string> = {
@@ -73,6 +75,9 @@ const AGENT_LOGOS: Record<string, string> = {
   OpenCode: "opencode",
   "Gemini CLI": "gemini",
   Pi: "pi",
+  Hermes: "hermes",
+  OpenClaw: "openclaw",
+  Orca: "orca",
 };
 
 function architecture(f: DiagramFacts): string {
@@ -124,13 +129,13 @@ function architecture(f: DiagramFacts): string {
       x: 36, name: "CAPTURE", glyph: "hook", tag: "hook events", hot: true,
       top: { lines: ["Capture pipeline", "Durable inbox, offline spool", "Secrets stripped before storage", "Synthetic compression, no LLM"] },
       env: "AGENTMEMORY_LLM_PROVIDER",
-      bot: { lines: ["LLM provider", "Summaries and consolidation"], logos: ["anthropic", "openai", "gemini", "openrouter", "ollama"], note: "+ MiniMax, vLLM" },
+      bot: { lines: ["LLM provider", "Summaries and consolidation"], logos: ["anthropic", "openai", "gemini", "openrouter", "minimax", "ollama"], note: "+ vLLM" },
     },
     {
       x: 340, name: "RECALL", glyph: "search", tag: `RRF fusion, k = ${f.rrfK}`,
       top: { lines: ["Hybrid search", "BM25, always on", "Session-diversified results", `${fmt(f.tokenBudget)}-token context budget`] },
       env: "EMBEDDING_PROVIDER",
-      bot: { lines: ["Embedding provider", "Local all-MiniLM-L6-v2, or"], logos: ["huggingface", "gemini", "openai", "cohere"], note: "+ Voyage, OpenRouter" },
+      bot: { lines: ["Embedding provider", "Local all-MiniLM-L6-v2, or"], logos: ["huggingface", "gemini", "openai", "voyage", "cohere"], note: "+ OpenRouter" },
     },
     {
       x: 644, name: "STORE", glyph: "store", tag: "versioned",
