@@ -322,13 +322,13 @@ describe("standalone store snapshot", () => {
     expect(statSync(storePath).mode & 0o777).toBe(0o600);
   });
 
-  it("keeps the previous snapshot when a write fails", async () => {
+  it("keeps the previous snapshot when persistence is blocked", async () => {
     const dir = tempDir();
     const storePath = join(dir, "standalone.json");
     const kv = new InMemoryKV(storePath);
     await kv.set("s", "k", "first");
     expect(kv.persist()).toBe(true);
-    mkdirSync(`${storePath}.${process.pid}.tmp`);
+    mkdirSync(`${storePath}.lock`);
     await kv.set("s", "k", "second");
     const write = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     try {

@@ -8,6 +8,14 @@ The default store holds records in memory and periodically writes them to `state
 
 An accepted write is not necessarily on disk yet. Capture clients retain acknowledged events for the configured save interval plus a safety margin and replay them after a restart when needed. This does not establish power-loss durability for every API write. Stop AgentMemory cleanly before taking a filesystem backup, and preserve the entire data directory.
 
+## MCP local fallback
+
+The standalone MCP shim uses `~/.agentmemory/standalone.json` when it cannot reach the server. `STANDALONE_PERSIST_PATH` selects another file. This store is separate from the server's state.
+
+Fallback processes serialize persistence with a sibling `.lock` file and apply only their pending changes to the latest saved state. Restart all MCP hosts after upgrading so they use this protocol. Reads refresh from that file without dropping pending local changes. An unreadable store or a lock still held after about 250 milliseconds makes persistence fail; pending changes stay in the running process for a later retry.
+
+Locks are never removed automatically based on age. If a hard kill leaves a lock behind, stop every MCP host using that fallback file, confirm no writer remains, and remove only the sibling `.lock` file before restarting. Keep `standalone.json`. Removing a live writer's lock can cause data loss. Changes that never reached disk still require the original process to retry.
+
 ## Redis
 
 For a CLI installation, add these settings to `~/.agentmemory/.env`, then restart AgentMemory:
