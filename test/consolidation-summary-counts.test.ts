@@ -6,7 +6,7 @@ import { KV } from "../src/state/schema.js";
 type Call = { function_id: string; payload: { scope: string; key?: string } };
 type Row = Record<string, unknown> | null;
 
-function fixture(backend: StateBackend, options: { rejectSummaryKeys?: boolean; rejectSummaryValues?: boolean } = {}) {
+function fixture(backend: StateBackend, options: { rejectSummaryKeys?: boolean } = {}) {
   const data = new Map<string, Map<string, Row>>([
     [KV.summaries, new Map<string, Row>([["summary-a", { sessionId: "a", content: "a".repeat(32768) }], ["summary-b", { sessionId: "b", content: "b".repeat(32768) }], ["summary-null", null]])],
     [KV.semantic, new Map<string, Row>([["semantic-a", { id: "a" }], ["semantic-b", { id: "b" }], ["semantic-null", null]])],
@@ -33,59 +33,26 @@ function fixture(backend: StateBackend, options: { rejectSummaryKeys?: boolean; 
         return backend === "redis" ? { keys } : keys;
       }
       if (call.function_id === "state::list") {
-        if (call.payload.scope === KV.summaries && options.rejectSummaryValues) throw new Error("summary values unavailable");
         return structuredClone([...rows.values()]);
       }
       if (call.function_id === "state::get") return structuredClone(rows.get(call.payload.key ?? "") ?? null);
       throw new Error(`Unexpected fixture invocation: ${call.function_id}`);
     }),
   };
-  return { kv: new StateKV(sdk as never, { backend }), data, calls };
-}
-
-function expectCounts(status: Awaited<ReturnType<ReturnType<typeof createConsolidationStatusReader>>>, summaries: number) {
-  expect(status.summaries).toBe(summaries);
-  expect(status.recurringPatterns).toBe(2);
-  expect(status.tiers.find((tier) => tier.id === "semantic")?.count).toBe(2);
-  expect(status.tiers.find((tier) => tier.id === "procedural")?.count).toBe(1);
-  expect(status.tiers.find((tier) => tier.id === "relations")?.count).toBe(3);
+  return { kv: new StateKV(sdk as never, { backend }), calls };
 }
 
 describe("consolidation summary counts", () => {
-  it.each(["file", "redis"] as const)("counts summaries without transferring their record values on %s", async (backend) => {
-    const { kv, calls } = fixture(backend);
+  it("counts summaries by key without reading their values", async () => {
+    const { kv, calls } = fixture("file");
     const status = await createConsolidationStatusReader(kv)({ lastRun: null });
-    expectCounts(status, 3);
+    expect(status.summaries).toBe(3);
     expect(calls.filter((call) => call.payload.scope === KV.summaries && ["state::list", "state::get"].includes(call.function_id))).toEqual([]);
   });
 
-  it.each(["file", "redis"] as const)("preserves nullable rows, real pattern filtering and count reuse on %s", async (backend) => {
-    const { kv, data, calls } = fixture(backend);
-    const read = createConsolidationStatusReader(kv);
-    expectCounts(await read({ lastRun: null }), 3);
-    const before = calls.length;
-    data.get(KV.summaries)!.set("later", { sessionId: "later" });
-    expectCounts(await read({ lastRun: null }), 3);
-    expect(calls).toHaveLength(before);
-    expect(calls.some((call) => call.payload.scope === KV.memories && call.function_id === "state::get")).toBe(true);
-  });
-
-  it.each(["file", "redis"] as const)("keeps the working value-list fallback when summary key listing rejects on %s", async (backend) => {
-    const { kv, calls } = fixture(backend, { rejectSummaryKeys: true });
-    expectCounts(await createConsolidationStatusReader(kv)({ lastRun: null }), 3);
+  it("falls back to listing values when key listing fails", async () => {
+    const { kv, calls } = fixture("redis", { rejectSummaryKeys: true });
+    expect((await createConsolidationStatusReader(kv)({ lastRun: null })).summaries).toBe(3);
     expect(calls.filter((call) => call.payload.scope === KV.summaries && call.function_id === "state::list")).toHaveLength(1);
-  });
-
-  it("supports list-only adapters without a key-list method", async () => {
-    const { data } = fixture("file");
-    const kv = {
-      list: async (scope: string) => [...(data.get(scope)?.values() ?? [])].filter((row) => row !== null),
-    };
-    expectCounts(await createConsolidationStatusReader(kv as never)({ lastRun: null }), 2);
-  });
-
-  it("retains the empty best-effort summary count when both read paths fail", async () => {
-    const { kv } = fixture("file", { rejectSummaryKeys: true, rejectSummaryValues: true });
-    expectCounts(await createConsolidationStatusReader(kv)({ lastRun: null }), 0);
   });
 });

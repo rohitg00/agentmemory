@@ -482,18 +482,13 @@ export function createStatusReporter(sdk: IIIClient, kv: StateKV, deps: StatusRe
 }
 
 async function countConsolidationSummaries(kv: StateKV): Promise<number> {
-  if (typeof kv.listKeys === "function") {
-    try {
-      return (await kv.listKeys(KV.summaries)).length;
-    } catch {}
-  }
-  return (await kv.list(KV.summaries).catch(() => [])).length;
+  return typeof kv.count === "function" ? kv.count(KV.summaries) : (await kv.list(KV.summaries)).length;
 }
 
 export function createConsolidationStatusReader(kv: StateKV) {
   const counts = singleFlight(async () => {
     const [summaries, memories, semantic, procedural, relations] = await Promise.all([
-      countConsolidationSummaries(kv),
+      countConsolidationSummaries(kv).catch(() => 0),
       collectAll<import("../types.js").Memory>(kv, KV.memories).catch(() => []),
       collectAll(kv, KV.semantic).catch(() => []),
       collectAll(kv, KV.procedural).catch(() => []),
@@ -3834,12 +3829,17 @@ export function registerApiTriggers(
         runId?: string;
         actionIds?: string[];
         project?: string;
+        agentId?: string;
       }>,
     ): Promise<Response> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
+      const body = req.body ?? {};
       try {
-        const result = await sdk.trigger({ function_id: "mem::flow-compress", payload: req.body || {} });
+        const result = await sdk.trigger({
+          function_id: "mem::flow-compress",
+          payload: { runId: body.runId, actionIds: body.actionIds, project: body.project, agentId: body.agentId },
+        });
         return { status_code: 200, body: result };
       } catch {
         return {

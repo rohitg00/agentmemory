@@ -162,12 +162,15 @@ export function setAuditRecordedListener(listener: AuditListener | null): void {
   auditRecordedListener = listener;
 }
 
-export function addAuditListener(listener: AuditListener): void {
+export function addAuditListener(listener: AuditListener): () => void {
   auditListeners.add(listener);
+  return () => {
+    auditListeners.delete(listener);
+  };
 }
 
-export function removeAuditListener(listener: AuditListener): void {
-  auditListeners.delete(listener);
+function reportListenerFailure(err: unknown): void {
+  logger.warn("Audit listener failed", { error: err instanceof Error ? err.message : String(err) });
 }
 
 export async function recordAudit(
@@ -185,20 +188,21 @@ export async function recordAudit(
     operation,
     userId,
     functionId,
-    targetIds,
-    details,
+    targetIds: Object.freeze([...targetIds]) as string[],
+    details: Object.freeze({ ...details }),
     qualityScore,
   };
+  Object.freeze(entry);
   const month = auditMonthOf(entry.timestamp);
   await kv.set(KV.auditMonth(month), entry.id, entry);
   await markAuditMonth(kv, month);
-  const listeners = new Set(auditRecordedListener
-    ? [auditRecordedListener, ...auditListeners]
-    : auditListeners);
+  const listeners = auditRecordedListener ? [auditRecordedListener, ...auditListeners] : [...auditListeners];
   for (const listener of listeners) {
     try {
-      void Promise.resolve(listener(entry)).catch(() => {});
-    } catch {}
+      void Promise.resolve(listener(entry)).catch(reportListenerFailure);
+    } catch (err) {
+      reportListenerFailure(err);
+    }
   }
   return entry;
 }
