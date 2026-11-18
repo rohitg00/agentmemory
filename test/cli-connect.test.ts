@@ -65,9 +65,10 @@ describe("agentmemory connect — dispatcher", () => {
         "qwen",
         "warp",
         "zed",
+        "zcode",
       ].sort(),
     );
-    expect(ADAPTERS.length).toBe(22);
+    expect(ADAPTERS.length).toBe(23);
   });
 
   it("every adapter exposes detect() and install()", () => {
