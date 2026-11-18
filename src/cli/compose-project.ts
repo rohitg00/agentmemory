@@ -367,9 +367,12 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
   const explicitWorkerEnvironment = Object.entries(options.workerEnvironmentOverrides ?? options.workerEnvironment ?? {})
     .filter(([key, value]) => value !== undefined && AGENTMEMORY_WORKER_ENV_ALLOWLIST.has(key) && !COMPOSE_RESERVED_ENV.has(key))
     .sort(([left], [right]) => left.localeCompare(right));
+  const dataRootKey = windows ? "APPDATA" : "XDG_DATA_HOME";
+  const dataRoot = (options.workerEnvironment ?? process.env)[dataRootKey];
   lines.push(
     "    environment:",
     ...explicitWorkerEnvironment.map(([key, value]) => `      ${key}: ${yamlString(value!)}`),
+    ...(dataRoot ? [`      ${dataRootKey}: ${yamlString(dataRoot)}`] : []),
     ...(windows ? [`      NoDefaultCurrentDirectoryInExePath: ${yamlString("1")}`] : []),
     `      HOME: ${yamlString(options.homeDir)}`,
     `      PATH: ${yamlString(windows ? windowsWorkerPath(options.nodeBin, options.workerEnvironment?.PATH ?? process.env.PATH) : `${dirname(options.nodeBin)}:/usr/local/bin:/usr/bin:/bin`)}`,

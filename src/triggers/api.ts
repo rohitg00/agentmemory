@@ -696,6 +696,30 @@ export function registerApiTriggers(
     },
   });
 
+  sdk.registerFunction("api::metrics-reset",
+    async (req: HttpRequest<{ functionId?: unknown }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const raw = req.body?.functionId;
+      const functionId = raw === undefined ? undefined : asNonEmptyString(raw);
+      if (functionId === null || (functionId && functionId.length > 256)) {
+        return { status_code: 400, body: { error: "functionId must be a non-empty string" } };
+      }
+      if (!metricsStore) return { status_code: 503, body: { error: "metrics unavailable" } };
+      const reset = await metricsStore.reset(functionId);
+      return { status_code: 200, body: { success: true, reset } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::metrics-reset",
+    config: {
+      api_path: "/agentmemory/metrics/reset",
+      http_method: "POST",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
   const statusReport = createStatusReporter(sdk, kv, { metricsStore, provider });
 
   sdk.registerFunction("api::status",
@@ -738,6 +762,7 @@ export function registerApiTriggers(
         return {
           status_code: 400,
           body: {
+            status: "rejected",
             error:
               "hookType, sessionId, project, cwd, and timestamp are required strings",
           },

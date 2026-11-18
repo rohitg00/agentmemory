@@ -122,15 +122,15 @@ async function openViewer(orca: OrcaWorkerApi): Promise<Done> {
 const pendingCaptures: Array<Record<string, unknown>> = []
 let flushing = false
 
-function retryable(status: number): boolean {
-  return status === 0 || status === 408 || status === 429 || status >= 500
+function isFinal(status: number, body: unknown): boolean {
+  if (status === -1 || status === 413) return true
+  const rejection = body as { status?: unknown; retryable?: unknown } | null
+  return (status === 400 || status === 422) && rejection?.status === 'rejected' && rejection.retryable !== true
 }
 
 async function sendCapture(url: string, body: Record<string, unknown>): Promise<boolean> {
   const reply = await callServer(url, 'observe', { method: 'POST', body, timeoutMs: 5000 })
-  if (reply.status >= 200 && reply.status < 300) return true
-  if (retryable(reply.status)) return false
-  return true
+  return (reply.status >= 200 && reply.status < 300) || isFinal(reply.status, reply.body)
 }
 
 async function flushCaptures(url: string): Promise<void> {

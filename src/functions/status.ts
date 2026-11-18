@@ -3,6 +3,7 @@ import type { VectorBackfillState } from "./search.js";
 import { describeGraphCompactBoot, type GraphCompactBootStatus } from "./graph-compact-boot.js";
 import type { CaptureStatus } from "./capture.js";
 import type { GraphIndexMigrationStatus } from "../state/graph-index-migration.js";
+import { RECENT_WINDOW } from "../eval/metrics-store.js";
 
 export type StatusLevel = "ok" | "info" | "warn" | "error";
 
@@ -19,6 +20,7 @@ export interface FunctionMetricInput {
   successCount: number;
   failureCount: number;
   avgLatencyMs: number;
+  recent?: string;
 }
 
 export interface StatusFlag {
@@ -137,6 +139,17 @@ export interface StatusReport {
 }
 
 const FAILURE_RATE_THRESHOLD = 0.2;
+
+function failureWindow(m: FunctionMetricInput): { calls: number; failures: number } {
+  if (!m.recent) return { calls: m.totalCalls, failures: m.failureCount };
+  return { calls: m.recent.length, failures: m.recent.split("").filter((c) => c === "0").length };
+}
+
+function isFailing(m: FunctionMetricInput & { offWithoutLlm: boolean }): boolean {
+  if (m.offWithoutLlm) return false;
+  const { calls, failures } = failureWindow(m);
+  return calls >= FAILURE_MIN_CALLS && failures / calls >= FAILURE_RATE_THRESHOLD;
+}
 const FAILURE_MIN_CALLS = 5;
 const GRAPH_SNAPSHOT_STALE_SECONDS = 24 * 60 * 60;
 const LEVEL_RANK: Record<StatusLevel, number> = { ok: 0, info: 1, warn: 2, error: 3 };
@@ -315,18 +328,18 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
   }
 
   const noLlm = input.provider === "noop";
-  const functions = markLlmFunctions(input.functionMetrics, input.provider).map((m) => ({
-    ...m,
-    failureRate: m.totalCalls > 0 ? m.failureCount / m.totalCalls : 0,
-  }));
+  const functions = markLlmFunctions(input.functionMetrics, input.provider).map((m) => {
+    const { calls, failures } = failureWindow(m);
+    return { ...m, failureRate: calls > 0 ? failures / calls : 0 };
+  });
   for (const fn of functions) {
-    if (fn.offWithoutLlm) continue;
-    if (fn.totalCalls < FAILURE_MIN_CALLS || fn.failureRate < FAILURE_RATE_THRESHOLD) continue;
+    if (!isFailing(fn)) continue;
+    const { calls, failures } = failureWindow(fn);
     problems.push({
       level: "warn",
       code: "function-failing",
-      message: `${fn.functionId} failed ${fn.failureCount} of ${fn.totalCalls} calls (${Math.round(fn.failureRate * 100)}%).`,
-      fix: FUNCTION_FIXES[fn.functionId] ?? "Look for this function id in the server log to see the error.",
+      message: `${fn.functionId} failed ${failures} of ${fn.recent ? "the last " : ""}${calls} calls (${Math.round(fn.failureRate * 100)}%).`,
+      fix: `${FUNCTION_FIXES[fn.functionId] ?? "Look for this function id in the server log to see the error."} The check uses the last ${RECENT_WINDOW} calls; POST /agentmemory/metrics/reset clears the counters after a fix.`,
     });
   }
 
@@ -844,7 +857,7 @@ export function renderStatusHtml(
         .sort((a, b) => b.totalCalls - a.totalCalls)
         .map(
           (f) =>
-            `<tr${!f.offWithoutLlm && f.failureRate >= FAILURE_RATE_THRESHOLD && f.totalCalls >= FAILURE_MIN_CALLS ? ' class="bad"' : ""}>` +
+            `<tr${isFailing(f) ? ' class="bad"' : ""}>` +
             `<td>${escapeHtml(f.functionId)}</td><td>${f.totalCalls}</td><td>${f.offWithoutLlm ? "-" : f.failureCount}</td>` +
             `<td>${f.offWithoutLlm ? "off, no LLM provider" : `${Math.round(f.failureRate * 100)}%`}</td><td>${Math.round(f.avgLatencyMs)} ms</td></tr>`,
         )
