@@ -18,6 +18,14 @@ export async function incrementImageRef(kv: StateKV, filePath: string): Promise<
   });
 }
 
+export async function unpinImageRef(kv: StateKV, filePath: string): Promise<void> {
+  return withKeyedLock(`imgRef:${filePath}`, async () => {
+    const current = await getImageRefCount(kv, filePath);
+    if (current <= 1) await kv.delete(KV.imageRefs, filePath);
+    else await kv.set(KV.imageRefs, filePath, current - 1);
+  });
+}
+
 export async function decrementImageRef(kv: StateKV, sdk: IIIClient, filePath: string): Promise<void> {
   return withKeyedLock(`imgRef:${filePath}`, async () => {
     const current = await getImageRefCount(kv, filePath);
