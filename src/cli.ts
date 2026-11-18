@@ -19,7 +19,7 @@ import {
 } from "node:fs";
 import { join, dirname, resolve, delimiter as PATH_DELIMITER } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir, platform } from "node:os";
+import { homedir, platform, uptime } from "node:os";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 
@@ -86,7 +86,7 @@ import {
 } from "./cli/engine-config.js";
 import { SHUTDOWN_HARD_EXIT_MS, registerStartupCleanup, runStartupCleanup } from "./shutdown.js";
 import { processStatIsRunning } from "./cli/process-state.js";
-import { classifyComposeProcess, readUnixProcessExecutable, type ComposeProcessIdentity } from "./cli/compose-process.js";
+import { classifyComposeProcess, readUnixProcessExecutable, writtenBeforeBoot, type ComposeProcessIdentity } from "./cli/compose-process.js";
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
@@ -1567,11 +1567,20 @@ function printReadyHint(): void {
   process.stdout.write(`\n${c.dim("Try:")} ${c.cmd(demoCommand)}\n`);
 }
 
+function engineStateFromPreviousBoot(): boolean {
+  try {
+    return writtenBeforeBoot(statSync(engineStatePath()).mtimeMs, Date.now(), uptime());
+  } catch {
+    return false;
+  }
+}
+
 async function reconcilePersistedComposeEngine(): Promise<boolean> {
   const state = readEngineState();
   if (state?.kind !== "compose") return false;
   if (!(await isEngineRunning())) {
-    if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign") {
+    const identity = state.composePid && pidAlive(state.composePid) ? composePidIdentity(state.composePid, state) : "foreign";
+    if (identity === "match" || (identity === "unknown" && !engineStateFromPreviousBoot())) {
       p.log.error(`Worker Compose daemon ${state.composePid} is alive but REST ${state.restPort} is not ready. Inspect ${state.logFile}; use agentmemory stop to reconcile.`);
       process.exit(1);
     }

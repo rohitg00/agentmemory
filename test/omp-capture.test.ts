@@ -21,10 +21,21 @@ describe("OMP capture recovery", () => {
     expect(send).toHaveBeenCalledWith(body);
     expect(online.status().records).toBe(0);
   });
-  it.each([400, 401, 403])("does not endlessly retry a rejected capture (%i)", async status => {
-    const capture = createCapture(url, async () => ({ status, body: null }));
+  it.each([400, 422])("does not retry an agentmemory rejection (%i)", async status => {
+    const capture = createCapture(url, async () => ({ status, body: { status: "rejected", error: "invalid" } }));
     capture.enqueue(body); await capture.flush(); capture.stop();
     expect(capture.status().records).toBe(0); expect(capture.status().error).toContain("rejected");
+  });
+  it.each([401, 403, 404])("keeps a capture the server did not reject itself (%i) and replays it one request at a time", async status => {
+    const send = vi.fn(async () => ({ status, body: null }));
+    const capture = createCapture(url, send);
+    capture.enqueue(body); await capture.flush();
+    capture.enqueue({ ...body, eventId: "event-34567890" }); await capture.flush();
+    expect(capture.status().records).toBe(2);
+    send.mockClear();
+    await capture.replay(); capture.stop();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(capture.status().records).toBe(2);
   });
   it("bounds replay of slow successful requests and leaves the remaining events queued", async () => {
     for (let i = 0; i < 10; i++) appendSpool(url, `event-${i}`, { ...body, eventId: `event-${i}` }, "offline");

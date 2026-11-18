@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Claude Agent SDK fallback no longer overrides a provider key.** With `AGENTMEMORY_ALLOW_AGENT_SDK=true`, a provider key such as `OPENAI_API_KEY`, and no `AGENTMEMORY_LLM_PROVIDER`, 0.9.33 silently spawned Claude Agent SDK sessions. agentmemory now runs zero-LLM in that case and boot, `doctor`, `status` and the viewer name both choices. `AGENTMEMORY_LLM_PROVIDER=agent-sdk` selects the fallback explicitly. A key claimed by `EMBEDDING_PROVIDER` does not count (#1762).
+- **Capture keeps observations through a stop or restart.** Hooks, `agentmemory capture --drain`, the shared capture client, the DSH plugin and the Orca worker treated every 4xx as a permanent rejection, so a `404 <no route>` from the HTTP worker during a stop deleted the live observation and the whole spool. Only agentmemory's own rejection body (400 or 422 with `status: "rejected"`) and 413 are now permanent; 401, 403 and 404 keep the record for a later retry (#1808).
+- **Hooks no longer write the capture spool into the project.** The spool folder skips the legacy `<cwd>/data` adoption that the CLI uses for migration, so a project with an old `data/state_store.db` keeps its files clean. A failed rename no longer leaves `*.tmp` stats files behind (#1810).
+- **The boot drain finds the hooks' default spool.** The Worker Compose environment now passes `APPDATA` on Windows and `XDG_DATA_HOME` elsewhere, so a daemon with a custom data dir drains the folder hooks write to (#1809).
+- **A stale Compose PID no longer blocks startup after a reboot.** When the recorded PID belongs to a process whose command line cannot be read (a Windows service, for example) and `engine-state.json` predates the current boot, agentmemory clears the stale state and starts (#1805).
+- **Consolidation reinforces restated facts.** The semantic tier shows the model the known facts with their ids, accepts `ref="<id>"` for a restatement, and falls back to a token-overlap match, so re-running consolidation over the same summaries no longer stores reworded copies (#1793).
+- **Function health follows recent calls.** `status` judges failures over the last 10 calls. `POST /agentmemory/metrics/reset` (optional `functionId`) clears the counters (#1794).
+- The pi extension falls back to the previous working directory when a host omits `ctx.cwd` (#1807).
+
 ## [0.9.33] — 2026-11-09
 
 ### Upgrade notes

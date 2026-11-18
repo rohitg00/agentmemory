@@ -6,7 +6,7 @@ import type {
   Memory,
   MemoryProvider,
 } from "../types.js";
-import { KV, generateId } from "../state/schema.js";
+import { KV, generateId, jaccardSimilarity } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { collectAll } from "../state/kv.js";
 import {
@@ -50,6 +50,27 @@ function applyDecay(
 }
 
 const DECAY_STRENGTH_EPSILON = 1e-9;
+const KNOWN_FACTS_IN_PROMPT = 40;
+const SEMANTIC_DUPLICATE_SIMILARITY = 0.8;
+
+export function matchSemanticFact(existing: SemanticMemory[], fact: string, ref?: string): SemanticMemory | undefined {
+  const referenced = ref ? existing.find((s) => s.id === ref) : undefined;
+  if (referenced) return referenced;
+  const lower = fact.toLowerCase();
+  let best: SemanticMemory | undefined;
+  let bestScore = SEMANTIC_DUPLICATE_SIMILARITY;
+  for (const s of existing) {
+    if (typeof s.fact !== "string") continue;
+    const candidate = s.fact.toLowerCase();
+    if (candidate === lower) return s;
+    const score = jaccardSimilarity(candidate, lower);
+    if (score >= bestScore) {
+      best = s;
+      bestScore = score;
+    }
+  }
+  return best;
+}
 
 function strengthChanged(before: number, after: number): boolean {
   return Math.abs(after - before) > DECAY_STRENGTH_EPSILON;
@@ -105,12 +126,18 @@ export function registerConsolidationPipelineFunction(
             )
             .slice(0, 20);
 
+          const known = existingSemantic
+            .filter((s) => s && typeof s.id === "string" && typeof s.fact === "string")
+            .sort((a, b) => (b.strength ?? 0) - (a.strength ?? 0) || (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
+            .slice(0, KNOWN_FACTS_IN_PROMPT)
+            .map((s) => ({ id: s.id, fact: s.fact.slice(0, 300) }));
           const prompt = buildSemanticMergePrompt(
             recentSummaries.map((s) => ({
               title: s.title,
               narrative: s.narrative,
               concepts: s.concepts,
             })),
+            known,
           );
 
           try {
@@ -119,19 +146,19 @@ export function registerConsolidationPipelineFunction(
               prompt,
             );
 
-            const factRegex = /<fact\s+confidence="([^"]+)">([^<]+)<\/fact>/g;
+            const factRegex = /<fact\b([^>]*)>([^<]+)<\/fact>/g;
             let match;
             let newFacts = 0;
             const now = new Date().toISOString();
 
             while ((match = factRegex.exec(response)) !== null) {
-              const parsedConf = parseFloat(match[1]);
-              const confidence = Number.isNaN(parsedConf) ? 0.5 : parsedConf;
+              const attrs = match[1];
+              const parsedConf = parseFloat(/confidence="([^"]*)"/.exec(attrs)?.[1] ?? "");
+              const confidence = Number.isNaN(parsedConf) ? 0.5 : Math.min(1, Math.max(0, parsedConf));
               const fact = match[2].trim();
+              if (!fact) continue;
 
-              const existing = existingSemantic.find(
-                (s) => s.fact.toLowerCase() === fact.toLowerCase(),
-              );
+              const existing = matchSemanticFact(existingSemantic, fact, /ref="([^"]*)"/.exec(attrs)?.[1]);
               if (existing) {
                 existing.accessCount++;
                 existing.lastAccessedAt = now;
@@ -152,6 +179,7 @@ export function registerConsolidationPipelineFunction(
                   updatedAt: now,
                 };
                 await kv.set(KV.semantic, sem.id, sem);
+                existingSemantic.push(sem);
                 newFacts++;
               }
             }

@@ -47,7 +47,18 @@ describe("LLM provider opt-in", () => {
   });
 
   it("gives no opt-in hint while the agent-sdk route is active", () => {
-    expect(llmOptInHint({ AGENTMEMORY_ALLOW_AGENT_SDK: "true", ANTHROPIC_API_KEY: "k" })).toBeNull();
+    expect(llmOptInHint({ AGENTMEMORY_ALLOW_AGENT_SDK: "true" })).toBeNull();
+    expect(llmOptInHint({ AGENTMEMORY_ALLOW_AGENT_SDK: "true", AGENTMEMORY_LLM_PROVIDER: "agent-sdk", ANTHROPIC_API_KEY: "k" })).toBeNull();
+  });
+
+  it("does not let the agent-sdk fallback win over an unselected provider key", () => {
+    const env = { AGENTMEMORY_ALLOW_AGENT_SDK: "true", OPENAI_API_KEY: "sk-real-openai-key" };
+    expect(detectLlmProviderKind(env)).toBe("noop");
+    expect(llmOptInHint(env)).toContain("AGENTMEMORY_LLM_PROVIDER=openai");
+    expect(detectLlmProviderKind({ ...env, AGENTMEMORY_LLM_PROVIDER: "openai" })).toBe("llm");
+    expect(detectLlmProviderKind({ ...env, AGENTMEMORY_LLM_PROVIDER: "agent-sdk" })).toBe("llm");
+    expect(detectLlmProviderKind({ AGENTMEMORY_LLM_PROVIDER: "agent-sdk" })).toBe("noop");
+    expect(detectLlmProviderKind({ ...env, EMBEDDING_PROVIDER: "openai" })).toBe("llm");
   });
 
   it("points the hints at the env file the daemon reads", () => {

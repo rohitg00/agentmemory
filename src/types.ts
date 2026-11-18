@@ -268,6 +268,7 @@ export interface FunctionMetrics {
   failureCount: number;
   avgLatencyMs: number;
   avgQualityScore: number;
+  recent?: string;
 }
 
 export interface HealthSnapshot {

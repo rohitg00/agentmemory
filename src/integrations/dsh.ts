@@ -4,7 +4,7 @@ import { captureOutputMax, shouldCaptureTool, truncateCaptureOutput } from "../h
 import { resolveProject } from "../hooks/_project.js";
 import { stripPrivateData } from "../functions/privacy.js";
 import { deriveEventId } from "../capture/event-id.js";
-import { appendSpool, drainSpool, parseSentMark, reconcileSent, retainSent, type SendOutcome } from "../capture/spool.js";
+import { appendSpool, drainSpool, parseSentMark, reconcileSent, retainSent, sendOutcome, type SendOutcome } from "../capture/spool.js";
 
 interface Session { id: string; header?: { cwd?: string } }
 interface Event { type: string; seq: number; time?: number; data: Record<string, unknown> }
@@ -93,15 +93,15 @@ export function apply(ctx: Context, config: { url?: string; secret?: string } = 
 
   async function deliver(body: Record<string, unknown>): Promise<SendOutcome> {
     const result = await post("/observe", body);
-    if (result.status >= 200 && result.status < 300) {
+    const outcome = sendOutcome(result.status, result.body);
+    if (outcome === "delivered" || outcome === "duplicate") {
       const mark = parseSentMark(result.body);
       if (mark && typeof body.eventId === "string") {
         reconcileSent(url, mark.bootId);
         retainSent(url, body.eventId, body, mark);
       }
-      return result.status === 200 ? "duplicate" : "delivered";
     }
-    return !result.status || result.status >= 500 || [408, 429].includes(result.status) ? "retry" : "rejected";
+    return outcome;
   }
 
   function enqueue(state: State, task: () => Promise<unknown>) {

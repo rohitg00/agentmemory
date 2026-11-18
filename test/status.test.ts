@@ -97,6 +97,16 @@ describe("evaluateStatus", () => {
     expect(failing[0].fix).toMatch(/LLM provider/);
   });
 
+  it("judges failures by the recent window so a fixed provider clears the warning", () => {
+    const stale = { functionId: "mem::summarize", totalCalls: 25, successCount: 10, failureCount: 15, avgLatencyMs: 900 };
+    const recovered = evaluateStatus(inputs({ functionMetrics: [{ ...stale, recent: "0111111111" }] }));
+    expect(recovered.problems.filter((p) => p.code === "function-failing")).toHaveLength(0);
+    const failing = evaluateStatus(inputs({ functionMetrics: [{ ...stale, recent: "1111100000" }] }));
+    const [problem] = failing.problems.filter((p) => p.code === "function-failing");
+    expect(problem.message).toBe("mem::summarize failed 5 of the last 10 calls (50%).");
+    expect(problem.fix).toContain("/agentmemory/metrics/reset");
+  });
+
   it("escalates to error when the provider circuit breaker is open or health is critical", () => {
     expect(evaluateStatus(inputs({ circuitBreaker: { state: "open", failures: 5 } })).status).toBe("error");
     expect(codes(evaluateStatus(inputs({ circuitBreaker: { state: "open", failures: 5 } })))).toContain(

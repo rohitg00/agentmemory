@@ -1,4 +1,4 @@
-import { appendSpool, drainSpool, parseSentMark, reconcileSent, retainSent, spoolSummary, type SendOutcome, type SpoolRecord } from "./spool.js";
+import { appendSpool, drainSpool, parseSentMark, reconcileSent, retainSent, sendOutcome, spoolSummary, type SendOutcome, type SpoolRecord } from "./spool.js";
 import { scrubRecord, stripPrivateData } from "../functions/privacy.js";
 
 export function cleanCapture(value: unknown): unknown {
@@ -22,15 +22,15 @@ export function createCapture(url: string, post: (body: Record<string, unknown>)
 
   async function send(record: Pick<SpoolRecord, "eventId" | "body">): Promise<SendOutcome> {
     const result = await post(record.body);
-    if (result.status >= 200 && result.status < 300) {
+    const outcome = sendOutcome(result.status, result.body);
+    if (outcome === "delivered" || outcome === "duplicate") {
       const mark = parseSentMark(result.body);
       if (mark) {
         reconcileSent(url, mark.bootId);
         retainSent(url, record.eventId, record.body, mark);
       }
-      return (result.body as { status?: string })?.status === "duplicate" ? "duplicate" : "delivered";
     }
-    return result.status === 0 || result.status === 408 || result.status === 429 || result.status >= 500 ? "retry" : "rejected";
+    return outcome;
   }
   function track(work: Promise<unknown>) {
     const safe = work.catch(() => { error = "Capture spool is unavailable; check disk space and permissions."; });

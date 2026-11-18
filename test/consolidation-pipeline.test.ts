@@ -201,6 +201,33 @@ describe("Consolidation Pipeline", () => {
     expect(stored[0].confidence).toBe(0.9);
   });
 
+  it("reinforces a restated semantic fact instead of storing a reworded copy", async () => {
+    const replies = [
+      `<facts><fact confidence="0.8">Redis was chosen over Memcached for session storage because Redis persists to disk with RDB snapshots</fact></facts>`,
+      `<facts><fact confidence="0.9">Decision recorded: Redis was chosen over Memcached for session storage because Redis persists to disk with RDB snapshots</fact></facts>`,
+      "",
+      `<facts><fact confidence="0.7">Payments run through the billing queue</fact></facts>`,
+    ];
+    const provider = { name: "test", compress: vi.fn(), summarize: vi.fn(async () => replies.shift() ?? "") };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+    for (let i = 0; i < 6; i++) await kv.set("mem:summaries", `ses_${i}`, makeSummary(i));
+
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" });
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" });
+    const [first] = await kv.list<SemanticMemory>("mem:semantic");
+    replies[0] = `<facts><fact confidence="0.95" ref="${first.id}">Decision recorded in notes.md: use Redis over Memcached for sessions</fact></facts>`;
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" });
+
+    const stored = await kv.list<SemanticMemory>("mem:semantic");
+    expect(stored).toHaveLength(1);
+    expect(stored[0].accessCount).toBe(3);
+    expect(stored[0].confidence).toBe(0.95);
+    expect(provider.summarize.mock.calls[2][1]).toContain(`[${first.id}] Redis was chosen over Memcached`);
+
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "semantic" });
+    expect(await kv.list<SemanticMemory>("mem:semantic")).toHaveLength(2);
+  });
+
   it("with enough patterns, creates procedural memories from provider response", async () => {
     const provider = {
       name: "test",

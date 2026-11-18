@@ -1,4 +1,4 @@
-import { drainSpool, parseSentMark, retainSent, spoolSummary, type SendOutcome, type SpoolRecord } from "../capture/spool.js";
+import { drainSpool, parseSentMark, retainSent, sendOutcome, spoolSummary, type SpoolRecord } from "../capture/spool.js";
 import { CURL_AUTH_HEADER } from "../functions/status.js";
 
 interface CaptureCommandOptions {
@@ -12,13 +12,6 @@ function headers(secret?: string): Record<string, string> {
   const h: Record<string, string> = { "Content-Type": "application/json" };
   if (secret) h["Authorization"] = `Bearer ${secret}`;
   return h;
-}
-
-function classify(status: number): SendOutcome {
-  if (status === 200) return "duplicate";
-  if (status >= 200 && status < 300) return "delivered";
-  if (status === 408 || status === 429 || status >= 500) return "retry";
-  return "rejected";
 }
 
 async function serverCapture(base: string, secret?: string): Promise<unknown> {
@@ -49,7 +42,7 @@ export async function runCaptureCommand(options: CaptureCommandOptions): Promise
         signal: AbortSignal.timeout(10_000),
       });
       const text = await res.text().catch(() => "");
-      const outcome = classify(res.status);
+      const outcome = sendOutcome(res.status, text);
       if (outcome === "delivered" || outcome === "duplicate") {
         let mark = null;
         try {

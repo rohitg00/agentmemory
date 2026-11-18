@@ -235,12 +235,20 @@ describe("bundled DSH plugin", () => {
     expect(observations().slice(2)).toEqual(original);
   });
 
-  it.each([400, 401, 403])("does not retry permanent HTTP %s failures", async status => {
-    reply = async () => Response.json({}, { status });
+  it.each([400, 422])("does not retry an agentmemory rejection with HTTP %s", async status => {
+    reply = async () => Response.json({ status: "rejected", error: "invalid" }, { status });
     const h = harness();
     h.emit("user/message", 1, { content: "prompt" });
     await h.stop();
     expect(spoolSummary(url).records).toBe(0);
+  });
+
+  it.each([401, 403, 404])("keeps the capture for a later retry on HTTP %s", async status => {
+    reply = async () => Response.json({}, { status });
+    const h = harness();
+    h.emit("user/message", 1, { content: "prompt" });
+    await h.stop();
+    expect(spoolSummary(url).records).toBeGreaterThan(0);
   });
 
   it("bounds shutdown even when the daemon hangs with queued observations", async () => {

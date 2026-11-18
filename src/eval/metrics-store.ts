@@ -2,6 +2,8 @@ import type { FunctionMetrics } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
 
+export const RECENT_WINDOW = 10;
+
 export class MetricsStore {
   private cache = new Map<string, FunctionMetrics>();
   private qualityCallCounts = new Map<string, number>();
@@ -34,6 +36,7 @@ export class MetricsStore {
     } else {
       m.failureCount += 1;
     }
+    m.recent = `${m.recent ?? ""}${success ? "1" : "0"}`.slice(-RECENT_WINDOW);
     if (qualityScore !== undefined) {
       const prevQualityCalls = this.qualityCallCounts.get(functionId) || 0;
       m.avgQualityScore =
@@ -44,6 +47,16 @@ export class MetricsStore {
 
     this.cache.set(functionId, m);
     await this.kv.set(KV.metrics, functionId, m).catch(() => {});
+  }
+
+  async reset(functionId?: string): Promise<string[]> {
+    const ids = functionId ? [functionId] : (await this.getAll()).map((m) => m.functionId);
+    for (const id of ids) {
+      this.cache.delete(id);
+      this.qualityCallCounts.delete(id);
+    }
+    await Promise.all(ids.map((id) => this.kv.delete(KV.metrics, id)));
+    return ids;
   }
 
   async get(functionId: string): Promise<FunctionMetrics | null> {

@@ -83,7 +83,7 @@
 <text x="56" y="196" class="ink sans" font-size="17" font-weight="700" text-anchor="start">agentmemory server</text>
 <rect x="238" y="181" width="52" height="20" rx="10" class="pill"/>
 <text x="264" y="195" class="pilltx mono" font-size="11" font-weight="700" text-anchor="middle">:3111</text>
-<text x="56" y="224" class="ink sans" font-size="12.5" font-weight="400" text-anchor="start">REST · 147 endpoints  ·  MCP · 54 tools, 6 resources, 3 prompts</text>
+<text x="56" y="224" class="ink sans" font-size="12.5" font-weight="400" text-anchor="start">REST · 148 endpoints  ·  MCP · 54 tools, 6 resources, 3 prompts</text>
 <text x="56" y="248" class="muted sans" font-size="12" font-weight="400" text-anchor="start">Privacy filter on every write · per-agent scope · audit log · circuit breaker</text>
 <path d="M636 218 H660" class="line" stroke-width="1.2"/><circle cx="636" cy="218" r="2.5" class="dot"/><circle cx="660" cy="218" r="2.5" class="dot"/>
 <rect x="660" y="166" width="264" height="104" rx="10" class="card"/>

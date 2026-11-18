@@ -127,6 +127,11 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   // override, git repository basename, cwd basename) so Pi sessions share a
   // project bucket with every other agent instead of scoping on a raw path.
   const projectCache = new Map<string, string>();
+  function syncCwd(cwd: unknown): void {
+    if (typeof cwd === "string" && cwd) currentCwd = cwd;
+    currentProject = resolveProjectName(currentCwd);
+  }
+
   function resolveProjectName(dir: string): string {
     const explicit = process.env["AGENTMEMORY_PROJECT_NAME"]?.trim();
     if (explicit) return explicit;
@@ -330,8 +335,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
 
   pi.on("session_start", async (_event, ctx) => {
     sessionId = ctx.sessionManager.getSessionId();
-    currentCwd = ctx.cwd;
-    currentProject = resolveProjectName(currentCwd);
+    syncCwd(ctx.cwd);
     lastPrompt = "";
     seenEvents.clear();
     fileStash.clear();
@@ -342,8 +346,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
   });
 
   pi.on("before_agent_start", async (event, ctx) => {
-    currentCwd = ctx.cwd;
-    currentProject = resolveProjectName(currentCwd);
+    syncCwd(ctx.cwd);
     lastPrompt = "prompt" in event ? event.prompt.trim() : "";
     if (!lastPrompt) return;
     turnId = generateId("turn");
