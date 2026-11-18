@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
 import { hasCjk, segmentCjk } from "./cjk-segmenter.js";
+
+export { fingerprintId } from "./fingerprint.js";
 
 export const KV = {
   sessions: "mem:sessions",
@@ -74,11 +75,6 @@ export function generateId(prefix: string): string {
   const ts = Date.now().toString(36);
   const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 12);
   return `${prefix}_${ts}_${rand}`;
-}
-
-export function fingerprintId(prefix: string, content: string): string {
-  const hash = createHash("sha256").update(content).digest("hex");
-  return `${prefix}_${hash.slice(0, 16)}`;
 }
 
 // CJK/Japanese/Thai text carries no inter-word whitespace, so a plain

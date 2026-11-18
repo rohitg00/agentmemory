@@ -63,6 +63,15 @@ const shared = {
 
 export default defineConfig([
   {
+    name: "github-watcher",
+    entry: ["integrations/github-watcher/watcher.ts", "integrations/github-watcher/bin.ts"],
+    outDir: "integrations/github-watcher/dist",
+    ...shared,
+    dts: true,
+    clean: true,
+    sourcemap: false,
+  },
+  {
     entry: ["src/index.ts"],
     outDir: "dist",
     ...shared,
