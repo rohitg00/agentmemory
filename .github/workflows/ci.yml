@@ -71,6 +71,7 @@ jobs:
       # in one pass.
       - run: npm install --legacy-peer-deps --no-audit --no-fund
       - run: npm run build
+      - run: npm run typecheck:hooks
       - run: npm run skills:check
       - if: matrix.os == 'ubuntu-latest' && matrix.node-version == 22
         run: npm run docs:check
