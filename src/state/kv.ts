@@ -214,6 +214,14 @@ export class StateKV {
     return this.rawListKeys(scope)
   }
 
+  async count(scope: string): Promise<number> {
+    try {
+      return (await this.listKeys(scope)).length
+    } catch {
+      return (await this.list(scope)).length
+    }
+  }
+
   private async rawListKeys(scope: string): Promise<string[]> {
     const result = await this.sdk.trigger<{ scope: string }, unknown>({
       function_id: 'state::list_keys',

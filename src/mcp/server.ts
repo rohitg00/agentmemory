@@ -1396,9 +1396,13 @@ export function registerMcpEndpoints(
 
       try {
         if (uri === "agentmemory://status") {
-          const sessions = await kv.list<Session>(KV.sessions);
-          const memories = await collectAll<Memory>(kv, KV.memories);
-          const healthData = await kv.list(KV.health).catch(() => []);
+          const countScope = async (scope: string): Promise<number> =>
+            typeof kv.count === "function"
+              ? kv.count(scope)
+              : (await kv.list(scope)).length;
+          const sessionCount = await countScope(KV.sessions);
+          const memoryCount = await countScope(KV.memories);
+          const healthCount = await countScope(KV.health).catch(() => 0);
           return {
             status_code: 200,
             body: {
@@ -1407,10 +1411,10 @@ export function registerMcpEndpoints(
                   uri,
                   mimeType: "application/json",
                   text: JSON.stringify({
-                    sessionCount: sessions.length,
-                    memoryCount: memories.length,
+                    sessionCount,
+                    memoryCount,
                     healthStatus:
-                      healthData.length > 0 ? "available" : "no-data",
+                      healthCount > 0 ? "available" : "no-data",
                   }),
                 },
               ],
