@@ -92,7 +92,7 @@
     "@anthropic-ai/sdk": "^0.100.1",
     "@clack/prompts": "^1.2.0",
     "dotenv": "^18.0.3",
-    "@iii-dev/helpers": "0.25.1",
+    "@iii-dev/helpers": "0.26.0",
     "iii-sdk": "0.25.1",
     "picocolors": "^1.1.1",
     "zod": "^4.0.0",
@@ -107,7 +107,7 @@
   "devDependencies": {
     "@types/node": "^26.6.2",
     "sigstore": "4.1.1",
-    "tsdown": "^0.21.10",
+    "tsdown": "^0.23.7",
     "tsx": "^4.19.0",
     "typebox": "^1.4.3",
     "typescript": "^6.0.3",
