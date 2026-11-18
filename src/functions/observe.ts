@@ -267,8 +267,12 @@ export function registerObserveFunction(
       const promptRef = durable || typeof payload.eventId !== "string" ? obsId : payload.eventId;
 
       return withKeyedLock(`obs:${payload.sessionId}`, async () => {
-        const existing = await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
-        const stored = durable ? existing.find((o) => o?.id === obsId) : undefined;
+        const direct = durable
+          ? await kv.get<CompressedObservation>(KV.observations(payload.sessionId), obsId).catch(() => null)
+          : null;
+        const keyed = direct?.id === obsId ? direct : undefined;
+        const existing = keyed ? [] : await kv.list<CompressedObservation>(KV.observations(payload.sessionId));
+        const stored = keyed ?? (durable ? existing.find((o) => o?.id === obsId) : undefined);
         if (stored) {
           if (livePrompt) await recordLivePrompt(kv, payload.sessionId, livePrompt, promptRef);
           await restoreIndexEntries(stored);
