@@ -18,7 +18,7 @@ import {
   GRAPH_EXTRACTION_SYSTEM,
   buildGraphExtractionPrompt,
 } from "../prompts/graph-extraction.js";
-import { isGraphExtractionEnabled } from "../config.js";
+import { getGraphBatchSize, isGraphExtractionEnabled } from "../config.js";
 import { recordAudit, safeAudit } from "./audit.js";
 import { logger } from "../logger.js";
 import { scrubRecord } from "./privacy.js";
@@ -744,27 +744,45 @@ export function registerGraphFunction(
         isGraphExtractionEnabled() && !provider.name.includes("noop");
       let llmError: string | undefined;
       if (llmEnabled) {
-        const prompt = buildGraphExtractionPrompt(
-          data.observations.map((o) => ({
-            title: o.title,
-            narrative: o.narrative,
-            concepts: o.concepts,
-            files: o.files,
-            type: o.type,
-          })),
-        );
-        try {
-          const response = await provider.compress(
-            GRAPH_EXTRACTION_SYSTEM,
-            prompt,
+        // One call per batch keeps each prompt inside small context windows,
+        // and a failed batch does not discard the others.
+        const batchSize = Math.max(1, getGraphBatchSize());
+        let failedBatches = 0;
+        let batchCount = 0;
+        for (let i = 0; i < data.observations.length; i += batchSize) {
+          const batch = data.observations.slice(i, i + batchSize);
+          batchCount++;
+          const prompt = buildGraphExtractionPrompt(
+            batch.map((o) => ({
+              title: o.title,
+              narrative: o.narrative,
+              concepts: o.concepts,
+              files: o.files,
+              type: o.type,
+            })),
           );
-          const parsed = parseGraphXml(response, obsIds);
-          nodes = nodes.concat(parsed.nodes);
-          edges = edges.concat(parsed.edges);
-        } catch (err) {
-          llmError = err instanceof Error ? err.message : String(err);
-          logger.error("LLM graph extraction failed", { error: llmError });
+          try {
+            const response = await provider.compress(
+              GRAPH_EXTRACTION_SYSTEM,
+              prompt,
+            );
+            const parsed = parseGraphXml(
+              response,
+              batch.map((o) => o.id),
+            );
+            nodes = nodes.concat(parsed.nodes);
+            edges = edges.concat(parsed.edges);
+          } catch (err) {
+            failedBatches++;
+            llmError = err instanceof Error ? err.message : String(err);
+            logger.error("LLM graph extraction failed", {
+              error: llmError,
+              batch: batchCount,
+              batchSize: batch.length,
+            });
+          }
         }
+        if (failedBatches < batchCount) llmError = undefined;
       }
 
       if (nodes.length === 0 && edges.length === 0) {
