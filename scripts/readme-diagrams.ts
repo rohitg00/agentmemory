@@ -325,8 +325,8 @@ function pipeline(f: DiagramFacts): string {
   box(0, 48, ["Event", "stable event ID", "dedupe on replay"], { n: 1 });
   box(1, 48, ["Inbox", "durable capture", "spool if offline"], { n: 2 });
   box(2, 48, ["Privacy filter", "keys, tokens, URLs", "<private> tags"], { n: 3, hot: true });
-  box(3, 48, ["Observation", "raw, per session", "provenance stamp"], { n: 4 });
-  box(4, 48, ["Compress", "synthetic default", "LLM opt-in"], { n: 5 });
+  box(3, 48, ["Observation", "synthetic, stored", "provenance stamp"], { n: 4 });
+  box(4, 48, ["Compress", "retained source", "LLM opt-in"], { n: 5 });
   box(5, 48, ["Index", "BM25 always", "vectors opt-in"], { n: 6 });
 
   lane(170, "Stop · SessionEnd", "end of turn or session", "wash");

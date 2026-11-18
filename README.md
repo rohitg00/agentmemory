@@ -807,9 +807,9 @@ The [architecture diagrams](#architecture) show the same flow.
 PostToolUse hook fires
   -> Stable event ID, durable capture inbox, offline spool when unavailable
   -> Privacy filter (strip secrets, API keys)
-  -> Store raw observation
-  -> Synthetic compression by default
-     (LLM-written compression only with a provider + AGENTMEMORY_AUTO_COMPRESS=true)
+  -> Build and store a searchable synthetic observation
+  -> Optional LLM compression of retained source
+     (requires a provider + AGENTMEMORY_AUTO_COMPRESS=true; empty source is skipped)
   -> Vector embedding when an embedding provider is active
   -> Index in BM25, plus vectors when enabled
 
@@ -836,7 +836,7 @@ Modeled on how human brains process memory, including sleep consolidation.
 | **Semantic** | Extracted facts and patterns | "What I know" |
 | **Procedural** | Workflows and decision patterns | "How to do it" |
 
-Memories decay over time (Ebbinghaus curve). Frequently accessed memories strengthen. Stale memories auto-evict. Contradictions are detected and resolved.
+Memories decay over time (Ebbinghaus curve). Frequently accessed memories strengthen. Stale memories auto-evict. Auto-forget checks contradictions only between memories with the same agent scope, excluding pairs with different explicit projects; an unscoped project can still be compared with a scoped one.
 
 ### What Gets Captured
 
@@ -953,6 +953,8 @@ Three tool surfaces, smallest to largest: `AGENTMEMORY_TOOLS=core` trims visibil
 
 </details>
 
+`memory_save` accepts `concepts` and `files` as comma-separated strings or arrays of strings. Use `sourceObservationIds` (an array) to attach observation provenance and `ttlDays` (a positive number of days, including fractions) to set expiry. Invalid lists, non-positive TTLs and unrepresentable expiry dates are rejected. These fields also work through `POST /agentmemory/remember` and standalone MCP. In the standalone local fallback, expired memories are pruned during recall, smart search and export, with a deletion audit entry.
+
 <details>
 <summary>Extended tools (54 total, the default surface)</summary>
 
@@ -968,7 +970,7 @@ Three tool surfaces, smallest to largest: `AGENTMEMORY_TOOLS=core` trims visibil
 | `memory_team_feed` | Recent shared items |
 | `memory_audit` | Audit trail of operations |
 | `memory_governance_delete` | Delete with audit trail |
-| `memory_snapshot_create` | Git-versioned snapshot |
+| `memory_snapshot_create` | Git-versioned snapshot; state read failures return an error instead of saving an incomplete snapshot |
 | `memory_action_create` | Create work items with dependencies |
 | `memory_action_update` | Update action status |
 | `memory_frontier` | Unblocked actions ranked by priority |
@@ -1251,6 +1253,7 @@ EMBEDDING_PROVIDER=local
 
 # Disable scheduled auto-forget and lesson/insight decay
 # AUTO_FORGET_ENABLED=false
+# AUTO_FORGET_INTERVAL_MS=3600000 (60000–2147483647 ms; invalid values use 3600000)
 # LESSON_DECAY_ENABLED=false
 # INSIGHT_DECAY_ENABLED=false
 ```
