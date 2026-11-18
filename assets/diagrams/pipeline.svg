@@ -54,12 +54,12 @@
 <rect x="562" y="48" width="118" height="78" rx="8" class="card"/>
 <text x="574" y="70" class="ink sans" font-size="13" font-weight="700" text-anchor="start">Observation</text>
 <text x="670" y="118" class="faint mono" font-size="10" font-weight="400" text-anchor="end">04</text>
-<text x="574" y="90" class="muted sans" font-size="11" font-weight="400" text-anchor="start">raw, per session</text>
+<text x="574" y="90" class="muted sans" font-size="11" font-weight="400" text-anchor="start">synthetic, stored</text>
 <text x="574" y="106" class="muted sans" font-size="11" font-weight="400" text-anchor="start">provenance stamp</text>
 <rect x="694" y="48" width="118" height="78" rx="8" class="card"/>
 <text x="706" y="70" class="ink sans" font-size="13" font-weight="700" text-anchor="start">Compress</text>
 <text x="802" y="118" class="faint mono" font-size="10" font-weight="400" text-anchor="end">05</text>
-<text x="706" y="90" class="muted sans" font-size="11" font-weight="400" text-anchor="start">synthetic default</text>
+<text x="706" y="90" class="muted sans" font-size="11" font-weight="400" text-anchor="start">retained source</text>
 <text x="706" y="106" class="muted sans" font-size="11" font-weight="400" text-anchor="start">LLM opt-in</text>
 <rect x="826" y="48" width="118" height="78" rx="8" class="card"/>
 <text x="838" y="70" class="ink sans" font-size="13" font-weight="700" text-anchor="start">Index</text>
