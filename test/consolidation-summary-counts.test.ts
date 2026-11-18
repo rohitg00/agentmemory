@@ -1,0 +1,58 @@
+import { describe, expect, it, vi } from "vitest";
+import { createConsolidationStatusReader } from "../src/triggers/api.js";
+import { StateKV, type StateBackend } from "../src/state/kv.js";
+import { KV } from "../src/state/schema.js";
+
+type Call = { function_id: string; payload: { scope: string; key?: string } };
+type Row = Record<string, unknown> | null;
+
+function fixture(backend: StateBackend, options: { rejectSummaryKeys?: boolean } = {}) {
+  const data = new Map<string, Map<string, Row>>([
+    [KV.summaries, new Map<string, Row>([["summary-a", { sessionId: "a", content: "a".repeat(32768) }], ["summary-b", { sessionId: "b", content: "b".repeat(32768) }], ["summary-null", null]])],
+    [KV.semantic, new Map<string, Row>([["semantic-a", { id: "a" }], ["semantic-b", { id: "b" }], ["semantic-null", null]])],
+    [KV.procedural, new Map<string, Row>([["procedure-a", { id: "a" }], ["procedure-null", null]])],
+    [KV.relations, new Map<string, Row>([["relation-a", { id: "a" }], ["relation-b", { id: "b" }], ["relation-c", { id: "c" }], ["relation-null", null]])],
+    [KV.memories, new Map<string, Row>([
+      ["recurring-a", { id: "recurring-a", isLatest: true, type: "pattern", recurrence: 2 }],
+      ["recurring-b", { id: "recurring-b", isLatest: true, type: "pattern", sessionIds: ["s1", "s2"] }],
+      ["repeated-session", { id: "repeated-session", isLatest: true, type: "pattern", sessionIds: ["s1", "s1"] }],
+      ["stale", { id: "stale", isLatest: false, type: "pattern", recurrence: 5 }],
+      ["not-pattern", { id: "not-pattern", isLatest: true, type: "fact", recurrence: 5 }],
+      ["not-latest", { id: "not-latest", type: "pattern", recurrence: 5 }],
+      ["null", null],
+    ])],
+  ]);
+  const calls: Call[] = [];
+  const sdk = {
+    trigger: vi.fn(async (call: Call) => {
+      calls.push(structuredClone(call));
+      const rows = data.get(call.payload.scope) ?? new Map<string, Row>();
+      if (call.function_id === "state::list_keys") {
+        if (call.payload.scope === KV.summaries && options.rejectSummaryKeys) throw new Error("state::list_keys unavailable");
+        const keys = [...rows.keys()];
+        return backend === "redis" ? { keys } : keys;
+      }
+      if (call.function_id === "state::list") {
+        return structuredClone([...rows.values()]);
+      }
+      if (call.function_id === "state::get") return structuredClone(rows.get(call.payload.key ?? "") ?? null);
+      throw new Error(`Unexpected fixture invocation: ${call.function_id}`);
+    }),
+  };
+  return { kv: new StateKV(sdk as never, { backend }), calls };
+}
+
+describe("consolidation summary counts", () => {
+  it("counts summaries by key without reading their values", async () => {
+    const { kv, calls } = fixture("file");
+    const status = await createConsolidationStatusReader(kv)({ lastRun: null });
+    expect(status.summaries).toBe(3);
+    expect(calls.filter((call) => call.payload.scope === KV.summaries && ["state::list", "state::get"].includes(call.function_id))).toEqual([]);
+  });
+
+  it("falls back to listing values when key listing fails", async () => {
+    const { kv, calls } = fixture("redis", { rejectSummaryKeys: true });
+    expect((await createConsolidationStatusReader(kv)({ lastRun: null })).summaries).toBe(3);
+    expect(calls.filter((call) => call.payload.scope === KV.summaries && call.function_id === "state::list")).toHaveLength(1);
+  });
+});
