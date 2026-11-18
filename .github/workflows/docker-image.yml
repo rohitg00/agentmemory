@@ -73,7 +73,7 @@ jobs:
             org.opencontainers.image.licenses=Apache-2.0
 
       - name: Build for smoke test
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/Dockerfile
@@ -105,7 +105,7 @@ jobs:
           exit 1
 
       - name: Build multi-platform archive
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/Dockerfile
