@@ -6,7 +6,7 @@ import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
-import { memoryToObservation, observationEmbedText, supersededAt } from "../state/memory-utils.js";
+import { memoryToObservation, observationEmbedText, sharesMemoryScope, supersededAt } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { deleteFacetsForTargets } from "./facets.js";
 import { recordAudit } from "./audit.js";
@@ -128,14 +128,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         const lowerContent = data.content.toLowerCase();
         for (const existing of candidateMemories) {
           if (existing.isLatest === false) continue;
-          if ((existing.agentId || undefined) !== callAgentId) continue;
-          // Never supersede a memory that belongs to a different project.
-          // Both sides must have an explicit project for the guard to engage;
-          // an unscoped memory (legacy, no project field) is treated as a
-          // wildcard so pre-existing data is not stranded.
-          if (project && existing.project && existing.project !== project) {
-            continue;
-          }
+          if (!sharesMemoryScope(existing, { project, agentId: callAgentId })) continue;
           const similarity = jaccardSimilarity(
             lowerContent,
             existing.content.toLowerCase(),

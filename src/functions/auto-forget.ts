@@ -3,7 +3,7 @@ import { markCaptureEventDeleted } from "../capture/event-record.js";
 import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV, collectAll } from "../state/kv.js";
-import { deleteMemoryUnderLock, supersededAt } from "../state/memory-utils.js";
+import { deleteMemoryUnderLock, sharesMemoryScope, supersededAt } from "../state/memory-utils.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { recordAudit } from "./audit.js";
@@ -31,7 +31,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
     async (data: { dryRun?: boolean }): Promise<AutoForgetResult> => {
       const dryRun = data?.dryRun ?? false;
       const now = Date.now();
-      const { decrementImageRef, releaseImageRef } = await import("./image-refs.js");
+      const { releaseImageRef } = await import("./image-refs.js");
 
       const result: AutoForgetResult = {
         ttlExpired: [],
@@ -113,6 +113,7 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
                 : `${memIds[j]}|${memIds[i]}`;
             if (compared.has(key)) continue;
             compared.add(key);
+            if (!sharesMemoryScope(memById.get(memIds[i])!, memById.get(memIds[j])!)) continue;
 
             const setA = tokenCache.get(memIds[i])!;
             const setB = tokenCache.get(memIds[j])!;
@@ -195,9 +196,9 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
               }
               if (removed) {
                 await unindexObservationSession(kv, obs.id).catch(() => {});
-                if (removed.imageData) await decrementImageRef(kv, sdk, removed.imageData);
+                if (removed.imageData) await releaseImageRef(kv, sdk, obs.id, removed.imageData);
                 if (removed.imageRef && removed.imageRef !== removed.imageData) {
-                  await decrementImageRef(kv, sdk, removed.imageRef);
+                  await releaseImageRef(kv, sdk, obs.id, removed.imageRef);
                 }
                 await recordAudit(kv, "delete", "mem::auto-forget", [obs.id], {
                   resource: "observation",
