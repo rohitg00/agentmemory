@@ -132,6 +132,10 @@ function resolveEnvOrEmpty(name) {
 //#endregion
 //#region src/mcp/transport.ts
 let activeStdioTransports = 0;
+function isClientDisconnectError(err) {
+	const code = err?.code;
+	return code === "EPIPE" || code === "ERR_STREAM_DESTROYED";
+}
 var JsonRpcError = class extends Error {
 	constructor(code, message) {
 		super(message);
@@ -281,19 +285,33 @@ function createMessageParser(onMessage, writeErr = (msg) => process.stderr.write
 		}
 	};
 }
-function createStdioTransport(handler) {
+function createStdioTransport(handler, options = {}) {
+	const stdout = options.stdout ?? process.stdout;
+	const stderr = options.stderr ?? process.stderr;
+	const onDisconnect = options.onDisconnect ?? (() => process.exit(0));
 	let parser = null;
 	let queue = Promise.resolve();
 	let active = false;
+	let disconnected = false;
 	const writeResponse = (response) => {
+		if (disconnected) return;
 		const formatted = formatResponse(response, parser?.isFramed() ?? false);
 		if (typeof formatted === "string") {
-			process.stdout.write(formatted);
+			stdout.write(formatted);
 			return;
 		}
-		for (const chunk of formatted) process.stdout.write(chunk);
+		for (const chunk of formatted) stdout.write(chunk);
 	};
 	const onData = (chunk) => parser?.push(chunk);
+	const onStdoutError = (err) => {
+		if (!isClientDisconnectError(err)) throw err;
+		if (disconnected) return;
+		disconnected = true;
+		onDisconnect();
+	};
+	const onStderrError = (err) => {
+		if (!isClientDisconnectError(err)) throw err;
+	};
 	return {
 		start() {
 			if (active) return;
@@ -306,10 +324,14 @@ function createStdioTransport(handler) {
 					process.stderr.write(`[mcp-transport] request processing failed: ${err instanceof Error ? err.message : String(err)}\n`);
 				});
 			});
+			stdout.on("error", onStdoutError);
+			stderr.on("error", onStderrError);
 			process.stdin.on("data", onData);
 		},
 		stop() {
 			process.stdin.off("data", onData);
+			stdout.off("error", onStdoutError);
+			stderr.off("error", onStderrError);
 			if (active) {
 				active = false;
 				activeStdioTransports -= 1;
