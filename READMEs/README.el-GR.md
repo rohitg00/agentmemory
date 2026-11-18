@@ -840,6 +840,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | Επί πληρωμή | Βελτιστοποιημένο για κώδικα |
 | Cohere | `embed-english-v3.0` | Δωρεάν δοκιμή | Γενικής χρήσης |
 | OpenRouter | Οποιοδήποτε μοντέλο | Διαφέρει | Proxy πολλών μοντέλων |
+| Requesty | Οποιοδήποτε μοντέλο | Διαφέρει | Proxy πολλών μοντέλων |
 
 ---
 
@@ -1017,6 +1018,7 @@ open http://localhost:3113
 | MiniMax | `MINIMAX_API_KEY` | Συμβατό με Anthropic |
 | Gemini | `GEMINI_API_KEY` | Ενεργοποιεί επίσης τα embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Οποιοδήποτε μοντέλο |
+| Requesty | `REQUESTY_API_KEY` | Οποιοδήποτε μοντέλο |
 | OpenAI API | `OPENAI_API_KEY` | Προεπιλογή `gpt-5.6-luna`, παρακάμψτε με `OPENAI_MODEL` |
 | **Τοπικό (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) ή `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Οτιδήποτε συμβατό με το OpenAI API. Μηδενικό κόστος, τρέχει στο δικό σας hardware. Δείτε [Τοπικά μοντέλα](#local-models-ollama--lm-studio--vllm) παρακάτω. |
 | Εναλλακτική λύση συνδρομής Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Μόνο με ρητή ενεργοποίηση. Δημιουργεί συνεδρίες `@anthropic-ai/claude-agent-sdk`· παλαιότερα προκαλούσε απεριόριστη αναδρομή στο Stop-hook, οπότε δεν είναι πλέον η προεπιλογή. |

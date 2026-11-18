@@ -7300,7 +7300,7 @@
       html += hrow('Keyword index', esc(fmtNum(idx.bm25Documents) + ' documents'), 'bm25',
         (b ? esc(fmtNum(b.observations) + ' observations + ' + fmtNum(b.memories) + ' memories + ' + fmtNum(b.lessons) + ' lessons. ') : '') + esc(BM25_EXPLAINER));
       html += hrow('Vector index', hasVectors ? esc(fmtNum(idx.vectorDocuments) + ' vectors') : 'off', 'vector',
-        hasVectors ? 'Meaning-based search. Each vector is one embedded record.' : 'No embedding provider, so search is keyword only. Set EMBEDDING_PROVIDER (local runs on-device; openai, voyage, cohere, gemini or openrouter also need that provider\'s key) and restart.');
+        hasVectors ? 'Meaning-based search. Each vector is one embedded record.' : 'No embedding provider, so search is keyword only. Set EMBEDDING_PROVIDER (local runs on-device; openai, voyage, cohere, gemini, openrouter or requesty also need that provider\'s key) and restart.');
       var bfState = ri.vectorBackfillState;
       var bfNote = bfState === 'paused' ? 'Paused because the embedding provider did not return vectors. Retried on the next start.' :
         bfState === 'waiting-for-opt-in' ? 'Waiting for AGENTMEMORY_VECTOR_BACKFILL=all and a restart.' :
@@ -8351,7 +8351,7 @@
           title: 'No embedding provider',
           key: 'EMBEDDING_PROVIDER',
           desc: 'Search matches exact keywords only. With embeddings it also finds memories by meaning.',
-          enable: 'export EMBEDDING_PROVIDER=local\n# or EMBEDDING_PROVIDER=openai with OPENAI_API_KEY (also voyage, cohere, gemini, openrouter)',
+          enable: 'export EMBEDDING_PROVIDER=local\n# or EMBEDDING_PROVIDER=openai with OPENAI_API_KEY (also voyage, cohere, gemini, openrouter, requesty)',
           affects: ['Memories', 'Health']
         });
       }

@@ -845,6 +845,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | 유료 | 코드에 최적화됨 |
 | Cohere | `embed-english-v3.0` | 무료 체험 | 범용 |
 | OpenRouter | 모든 모델 | 다양함 | 멀티 모델 프록시 |
+| Requesty | 모든 모델 | 다양함 | 멀티 모델 프록시 |
 
 ---
 
@@ -1022,6 +1023,7 @@ agentmemory는 환경에서 프로바이더를 자동으로 감지합니다. 프
 | MiniMax | `MINIMAX_API_KEY` | Anthropic 호환 |
 | Gemini | `GEMINI_API_KEY` | 임베딩도 함께 활성화 |
 | OpenRouter | `OPENROUTER_API_KEY` | 모든 모델 |
+| Requesty | `REQUESTY_API_KEY` | 모든 모델 |
 | OpenAI API | `OPENAI_API_KEY` | 기본값 `gpt-5.6-luna`, `OPENAI_MODEL`로 재정의 |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) 또는 `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | OpenAI API와 호환되는 모든 것. 비용 없이 자신의 하드웨어에서 실행됩니다. 아래의 [로컬 모델](#local-models-ollama--lm-studio--vllm)을 참고하십시오. |
 | Claude 구독 폴백 | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Opt-in 전용입니다. `@anthropic-ai/claude-agent-sdk` 세션을 생성하는데, 과거 무한한 Stop-hook 재귀를 일으킨 적이 있어 더 이상 기본값이 아닙니다. |

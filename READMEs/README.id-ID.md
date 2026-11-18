@@ -847,6 +847,7 @@ Instalasi npm normal menyertakan runtime opsional `@huggingface/transformers`. P
 | Voyage AI | `voyage-code-3` | Berbayar | Dioptimalkan untuk code |
 | Cohere | `embed-english-v3.0` | Free trial | Tujuan umum |
 | OpenRouter | Model apa pun | Bervariasi | Proxy multi-model |
+| Requesty | Model apa pun | Bervariasi | Proxy multi-model |
 
 ---
 
@@ -1024,6 +1025,7 @@ agentmemory mendeteksi otomatis penyedia dari environment Anda. Penyedia membuat
 | MiniMax | `MINIMAX_API_KEY` | Kompatibel Anthropic |
 | Gemini | `GEMINI_API_KEY` | Juga mengaktifkan embedding |
 | OpenRouter | `OPENROUTER_API_KEY` | Model apa pun |
+| Requesty | `REQUESTY_API_KEY` | Model apa pun |
 | OpenAI API | `OPENAI_API_KEY` | Default `gpt-5.6-luna`, override dengan `OPENAI_MODEL` |
 | **Lokal (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) atau `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Apa pun yang kompatibel OpenAI-API. Biaya nol, berjalan di hardware Anda. Lihat [Model lokal](#local-models-ollama--lm-studio--vllm) di bawah. |
 | Fallback subscription Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Hanya opt-in. Memunculkan sesi `@anthropic-ai/claude-agent-sdk`; dulu bisa menyebabkan rekursi Stop-hook tanpa batas, sehingga tidak lagi jadi default. |

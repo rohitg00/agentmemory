@@ -846,6 +846,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | পেইড | কোডের জন্য অপ্টিমাইজড |
 | Cohere | `embed-english-v3.0` | ফ্রি ট্রায়াল | জেনারেল পারপাস |
 | OpenRouter | কোনো মডেল | ভিন্ন হয় | মাল্টি-মডেল প্রক্সি |
+| Requesty | কোনো মডেল | ভিন্ন হয় | মাল্টি-মডেল প্রক্সি |
 
 ---
 
@@ -1023,6 +1024,7 @@ agentmemory আপনার এনভায়রনমেন্ট থেকে
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-কম্প্যাটিবল |
 | Gemini | `GEMINI_API_KEY` | এমবেডিংও চালু করে |
 | OpenRouter | `OPENROUTER_API_KEY` | কোনো মডেল |
+| Requesty | `REQUESTY_API_KEY` | কোনো মডেল |
 | OpenAI API | `OPENAI_API_KEY` | ডিফল্ট `gpt-5.6-luna`, `OPENAI_MODEL` দিয়ে ওভাররাইড করুন |
 | **Local (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) বা `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<আপনার মডেল>` | OpenAI-API-কম্প্যাটিবল যা কিছু। জিরো কস্ট, আপনার হার্ডওয়্যারে চলে। নিচে [Local models](#local-models-ollama--lm-studio--vllm) দেখুন। |
 | Claude সাবস্ক্রিপশন ফলব্যাক | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | কেবল অপ্ট-ইন। `@anthropic-ai/claude-agent-sdk` সেশন স্পন করে; এটা আগে আনবাউন্ডেড Stop-হুক রিকার্শন তৈরি করত, তাই এটা আর ডিফল্ট নয়। |

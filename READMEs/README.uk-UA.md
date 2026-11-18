@@ -840,6 +840,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | Платно | Оптимізовано для коду |
 | Cohere | `embed-english-v3.0` | Безкоштовна пробна версія | Загального призначення |
 | OpenRouter | Будь-яка модель | Залежить | Проксі для декількох моделей |
+| Requesty | Будь-яка модель | Залежить | Проксі для декількох моделей |
 
 ---
 
@@ -1017,6 +1018,7 @@ agentmemory автоматично визначає постачальників
 | MiniMax | `MINIMAX_API_KEY` | Сумісний з Anthropic |
 | Gemini | `GEMINI_API_KEY` | Також увімкає ембединги |
 | OpenRouter | `OPENROUTER_API_KEY` | Будь-яка модель |
+| Requesty | `REQUESTY_API_KEY` | Будь-яка модель |
 | OpenAI API | `OPENAI_API_KEY` | За замовчуванням `gpt-5.6-luna`, перевизначте через `OPENAI_MODEL` |
 | **Локальний (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) або `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Усе, що сумісне з OpenAI API. Нульова вартість, працює на вашому обладнанні. Див. [Локальні моделі](#local-models-ollama--lm-studio--vllm) нижче. |
 | Запасний варіант через підписку Claude | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Лише за явним підключенням. Породжує сесії `@anthropic-ai/claude-agent-sdk`; раніше це спричиняло необмежену рекурсію хука Stop, тож більше не є значенням за замовчуванням. |

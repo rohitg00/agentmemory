@@ -117,6 +117,7 @@ const PROVIDER_KEY_NAMES = [
   "GEMINI_API_KEY",
   "GOOGLE_API_KEY",
   "OPENROUTER_API_KEY",
+  "REQUESTY_API_KEY",
   "MINIMAX_API_KEY",
 ] as const;
 
@@ -196,9 +197,9 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
         "Open ~/.agentmemory/.env in $EDITOR, set AGENTMEMORY_LLM_PROVIDER and that provider's key, then re-check.",
       moreInfo:
         "agentmemory sends session content to an LLM provider only after you choose one: set " +
-        "AGENTMEMORY_LLM_PROVIDER to anthropic, openai, gemini, openrouter or minimax, and set that " +
+        "AGENTMEMORY_LLM_PROVIDER to anthropic, openai, gemini, openrouter, requesty or minimax, and set that " +
         "provider's key (ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY or GOOGLE_API_KEY, " +
-        "OPENROUTER_API_KEY, MINIMAX_API_KEY). A key alone never turns LLM use on. Placeholder " +
+        "OPENROUTER_API_KEY, REQUESTY_API_KEY, MINIMAX_API_KEY). A key alone never turns LLM use on. Placeholder " +
         "values count as missing. AGENTMEMORY_ALLOW_AGENT_SDK=true needs no key. A value exported " +
         "in the environment wins over the file, but only for a daemon started from that environment.",
       check: async () => {
@@ -234,7 +235,7 @@ export function buildDiagnostics(effects: DoctorEffects): Diagnostic[] {
       id: "embedding-provider-not-chosen",
       message: "Cloud embeddings are not set up: EMBEDDING_PROVIDER does not choose a present key, or names a provider whose key is missing.",
       fixPreview:
-        "Open ~/.agentmemory/.env in $EDITOR and set EMBEDDING_PROVIDER (local, openai, voyage, cohere, gemini or openrouter).",
+        "Open ~/.agentmemory/.env in $EDITOR and set EMBEDDING_PROVIDER (local, openai, voyage, cohere, gemini, openrouter or requesty).",
       moreInfo:
         "Cloud embeddings send memory text to that provider, so agentmemory uses them only when " +
         "EMBEDDING_PROVIDER names the provider. A key alone never turns them on. " +

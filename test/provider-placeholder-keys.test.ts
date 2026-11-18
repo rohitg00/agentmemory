@@ -48,6 +48,7 @@ describe("placeholder provider keys", () => {
     ["anthropic", "ANTHROPIC_API_KEY", "todo"],
     ["gemini", "GEMINI_API_KEY", "XXXX-XXXX"],
     ["openrouter", "OPENROUTER_API_KEY", "sk-or-v1-..."],
+    ["requesty", "REQUESTY_API_KEY", "your-key-here"],
     ["anthropic", "ANTHROPIC_API_KEY", "   "],
     ["anthropic", "ANTHROPIC_API_KEY", "sk-ant-... "],
   ])("runs zero-LLM when %s is chosen but %s=%s", async (provider, key, value) => {
@@ -190,6 +191,7 @@ describe("placeholder provider keys", () => {
     ["anthropic", "ANTHROPIC_API_KEY", "sk-ant-..."],
     ["minimax", "MINIMAX_API_KEY", "changeme"],
     ["openrouter", "OPENROUTER_API_KEY", "sk-or-..."],
+    ["requesty", "REQUESTY_API_KEY", "changeme"],
     ["openai", "OPENAI_API_KEY", "sk-..."],
   ] as const)("does not build the %s provider from a placeholder %s", async (provider, key, value) => {
     process.env[key] = value;
@@ -201,12 +203,35 @@ describe("placeholder provider keys", () => {
   it.each([
     ["anthropic", "ANTHROPIC_API_KEY", "sk-ant-api03-abc123"],
     ["openai", "OPENAI_API_KEY", "xai-abc123def"],
+    ["requesty", "REQUESTY_API_KEY", "rq-real-key-123"],
   ] as const)("still uses the chosen %s provider with a real %s", async (provider, key, value) => {
     process.env["AGENTMEMORY_LLM_PROVIDER"] = provider;
     process.env[key] = value;
     const { loadConfig } = await import("../src/config.js");
 
     expect(loadConfig().provider.provider).toBe(provider);
+  });
+
+  it("sends the Requesty key to router.requesty.ai with the default model", async () => {
+    process.env["AGENTMEMORY_LLM_PROVIDER"] = "requesty";
+    process.env["REQUESTY_API_KEY"] = "rq-real-key-123";
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const { loadConfig } = await import("../src/config.js");
+    const { createProvider } = await import("../src/providers/index.js");
+
+    const config = loadConfig();
+    expect(config.provider).toMatchObject({ provider: "requesty", model: "openai/gpt-4o-mini" });
+    await createProvider(config.provider).compress("system", "user");
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe("https://router.requesty.ai/v1/chat/completions");
+    expect((init.headers as Record<string, string>)["Authorization"]).toBe("Bearer rq-real-key-123");
   });
 
   it("sends GEMINI_API_KEY without a warning when both Gemini keys are real", async () => {

@@ -5,6 +5,7 @@ import {
 } from "../src/providers/embedding/index.js";
 import { GeminiEmbeddingProvider } from "../src/providers/embedding/gemini.js";
 import { OpenAIEmbeddingProvider } from "../src/providers/embedding/openai.js";
+import { RequestyEmbeddingProvider } from "../src/providers/embedding/requesty.js";
 import type { EmbeddingProvider } from "../src/types.js";
 
 describe("createEmbeddingProvider", () => {
@@ -17,6 +18,7 @@ describe("createEmbeddingProvider", () => {
     delete process.env["VOYAGE_API_KEY"];
     delete process.env["COHERE_API_KEY"];
     delete process.env["OPENROUTER_API_KEY"];
+    delete process.env["REQUESTY_API_KEY"];
     delete process.env["EMBEDDING_PROVIDER"];
   });
 
@@ -49,6 +51,20 @@ describe("createEmbeddingProvider", () => {
     const provider = createEmbeddingProvider();
     expect(provider).toBeInstanceOf(OpenAIEmbeddingProvider);
     expect(provider!.name).toBe("openai");
+  });
+
+  it("returns RequestyEmbeddingProvider when EMBEDDING_PROVIDER=requesty", () => {
+    process.env["EMBEDDING_PROVIDER"] = "requesty";
+    process.env["REQUESTY_API_KEY"] = "test-key-789";
+    const provider = createEmbeddingProvider();
+    expect(provider).toBeInstanceOf(RequestyEmbeddingProvider);
+    expect(provider!.name).toBe("requesty");
+    expect(provider!.dimensions).toBe(1536);
+  });
+
+  it("returns no provider when only REQUESTY_API_KEY is set", () => {
+    process.env["REQUESTY_API_KEY"] = "test-key-789";
+    expect(createEmbeddingProvider()).toBeNull();
   });
 
   it("EMBEDDING_PROVIDER override takes precedence", () => {

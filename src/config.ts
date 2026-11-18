@@ -158,7 +158,7 @@ function warnIfPremiumModel(env: Record<string, string>, envName: string, model:
   );
 }
 
-export const LLM_PROVIDER_NAMES = ["anthropic", "openai", "gemini", "openrouter", "minimax"] as const;
+export const LLM_PROVIDER_NAMES = ["anthropic", "openai", "gemini", "openrouter", "requesty", "minimax"] as const;
 export type LlmProviderName = (typeof LLM_PROVIDER_NAMES)[number];
 
 export const LLM_PROVIDER_KEYS: Record<LlmProviderName, readonly string[]> = {
@@ -166,6 +166,7 @@ export const LLM_PROVIDER_KEYS: Record<LlmProviderName, readonly string[]> = {
   openai: ["OPENAI_API_KEY"],
   gemini: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
   openrouter: ["OPENROUTER_API_KEY"],
+  requesty: ["REQUESTY_API_KEY"],
   minimax: ["MINIMAX_API_KEY"],
 };
 
@@ -175,6 +176,7 @@ export const REMOTE_EMBEDDING_PROVIDER_KEYS: Record<string, readonly string[]> =
   voyage: ["VOYAGE_API_KEY"],
   cohere: ["COHERE_API_KEY"],
   openrouter: ["OPENROUTER_API_KEY"],
+  requesty: ["REQUESTY_API_KEY"],
 };
 
 function isLlmProviderName(value: string): value is LlmProviderName {
@@ -266,6 +268,11 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
         warnIfPremiumModel(env, "OPENROUTER_MODEL", model);
         return { provider: "openrouter", model, maxTokens };
       }
+      case "requesty": {
+        const model = env["REQUESTY_MODEL"] || "openai/gpt-4o-mini";
+        warnIfPremiumModel(env, "REQUESTY_MODEL", model);
+        return { provider: "requesty", model, maxTokens };
+      }
     }
   }
 
@@ -278,7 +285,7 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
         : pc.dim(
             "[agentmemory] No LLM provider chosen, so agentmemory runs zero-LLM: no LLM compression or summaries, and no session content leaves this machine for an LLM. " +
               "Search uses BM25 plus any embedding provider you set with EMBEDDING_PROVIDER (EMBEDDING_PROVIDER=local runs on-device). " +
-              "To turn on LLM summaries, set AGENTMEMORY_LLM_PROVIDER (anthropic, openai, gemini, openrouter or minimax) and that provider's key in ~/.agentmemory/.env.\n",
+              "To turn on LLM summaries, set AGENTMEMORY_LLM_PROVIDER (anthropic, openai, gemini, openrouter, requesty or minimax) and that provider's key in ~/.agentmemory/.env.\n",
           ),
     );
     return noop;
@@ -711,6 +718,7 @@ const VALID_PROVIDERS = new Set([
   "anthropic",
   "gemini",
   "openrouter",
+  "requesty",
   "agent-sdk",
   "minimax",
   "openai",

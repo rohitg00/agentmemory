@@ -846,6 +846,7 @@ EMBEDDING_PROVIDER=local
 | Voyage AI | `voyage-code-3` | 有料 | コードに最適化 |
 | Cohere | `embed-english-v3.0` | 無料トライアル | 汎用 |
 | OpenRouter | 任意のモデル | 様々 | マルチモデルプロキシ |
+| Requesty | 任意のモデル | 様々 | マルチモデルプロキシ |
 
 ---
 
@@ -1023,6 +1024,7 @@ agentmemory は環境からプロバイダーを自動検出します。プロ�
 | MiniMax | `MINIMAX_API_KEY` | Anthropic 互換 |
 | Gemini | `GEMINI_API_KEY` | 埋め込みも有効化 |
 | OpenRouter | `OPENROUTER_API_KEY` | 任意のモデル |
+| Requesty | `REQUESTY_API_KEY` | 任意のモデル |
 | OpenAI API | `OPENAI_API_KEY` | デフォルト `gpt-5.6-luna`、`OPENAI_MODEL` で上書き |
 | **ローカル(Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1`(Ollama)または `http://localhost:1234/v1`(LM Studio)+ `OPENAI_MODEL=<your model>` | OpenAI API 互換なら何でも。コストゼロ、あなたのハードウェアで動作します。下記の[ローカルモデル](#local-models-ollama--lm-studio--vllm)を参照してください。 |
 | Claude 購読フォールバック | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | オプトインのみ。`@anthropic-ai/claude-agent-sdk` のセッションを生成します。過去に無限の Stop-hook 再帰を引き起こしたため、もはやデフォルトではありません。 |

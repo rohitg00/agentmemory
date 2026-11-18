@@ -844,6 +844,7 @@ Den vanlige npm-installasjonen inkluderer den valgfrie `@huggingface/transformer
 | Voyage AI | `voyage-code-3` | Betalt | Optimalisert for kode |
 | Cohere | `embed-english-v3.0` | Gratis prøveperiode | Generell bruk |
 | OpenRouter | Hvilken som helst modell | Varierer | Flermodell-proxy |
+| Requesty | Hvilken som helst modell | Varierer | Flermodell-proxy |
 
 ---
 
@@ -1021,6 +1022,7 @@ agentmemory oppdager leverandører automatisk fra miljøet ditt. En leverandør 
 | MiniMax | `MINIMAX_API_KEY` | Anthropic-kompatibel |
 | Gemini | `GEMINI_API_KEY` | Aktiverer også embeddings |
 | OpenRouter | `OPENROUTER_API_KEY` | Hvilken som helst modell |
+| Requesty | `REQUESTY_API_KEY` | Hvilken som helst modell |
 | OpenAI API | `OPENAI_API_KEY` | Standard `gpt-5.6-luna`, overstyr med `OPENAI_MODEL` |
 | **Lokal (Ollama / LM Studio / vLLM / llama.cpp)** | `OPENAI_API_KEY=local` + `OPENAI_BASE_URL=http://localhost:11434/v1` (Ollama) eller `http://localhost:1234/v1` (LM Studio) + `OPENAI_MODEL=<your model>` | Alt som er OpenAI-API-kompatibelt. Null kostnad, kjører på egen maskinvare. Se [Lokale modeller](#local-models-ollama--lm-studio--vllm) under. |
 | Claude-abonnement-fallback | `AGENTMEMORY_ALLOW_AGENT_SDK=true` | Kun opt-in. Starter `@anthropic-ai/claude-agent-sdk`-sesjoner; dette brukte å forårsake ubegrenset Stop-hook-rekursjon, så det er ikke lenger standard. |
