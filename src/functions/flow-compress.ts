@@ -1,8 +1,24 @@
 import type { IIIClient } from "iii-sdk";
-import type { StateKV } from "../state/kv.js";
+import { collectAll, type StateKV } from "../state/kv.js";
 import { KV, generateId } from "../state/schema.js";
-import type { Action, ActionEdge, RoutineRun, MemoryProvider } from "../types.js";
-import { recordAudit } from "./audit.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
+import { sharesMemoryScope, supersededAt } from "../state/memory-utils.js";
+import type { Action, ActionEdge, Memory, RoutineRun, MemoryProvider } from "../types.js";
+import { getAgentId } from "../config.js";
+import { logger } from "../logger.js";
+import { safeAudit } from "./audit.js";
+import { indexMemory, unindexMemory } from "./search.js";
+import { memoryTitleFromContent } from "./remember.js";
+
+type FlowMemory = Memory & { metadata?: { flowCompressed?: boolean; actionCount?: number; actionIds?: string[] } };
+
+function trimmed(value: unknown, max = 512): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : undefined;
+}
+
+function flowKey(ids: string[]): string {
+  return [...new Set(ids)].sort().join("\n");
+}
 
 const FLOW_COMPRESS_SYSTEM = `You are a workflow summarizer. Given a completed action chain, produce a concise summary capturing:
 1. The overall goal and outcome
@@ -25,7 +41,19 @@ export function registerFlowCompressFunction(
   provider: MemoryProvider,
 ): void {
   sdk.registerFunction("mem::flow-compress", 
-    async (data: { runId?: string; actionIds?: string[]; project?: string }) => {
+    async (data: { runId?: string; actionIds?: string[]; project?: string; agentId?: string }) => {
+      if (data.runId !== undefined && typeof data.runId !== "string") {
+        return { success: false, error: "runId must be a string" };
+      }
+      if (
+        data.actionIds !== undefined &&
+        (!Array.isArray(data.actionIds) || data.actionIds.some((id) => typeof id !== "string"))
+      ) {
+        return { success: false, error: "actionIds must be an array of strings" };
+      }
+      const requestedProject = trimmed(data.project);
+      const agentId = trimmed(data.agentId, 128) ?? getAgentId();
+      data = { ...data, project: requestedProject };
       let actionsToCompress: Action[] = [];
 
       if (data.runId) {
@@ -81,40 +109,97 @@ export function registerFlowCompressFunction(
           prompt,
         );
         const summary = parseFlowSummary(response);
-        const ts = new Date().toISOString();
-
-        const memory = {
-          id: generateId("mem"),
-          createdAt: ts,
-          updatedAt: ts,
-          type: "workflow" as const,
-          title: summary.goal || `Workflow: ${doneActions.length} actions`,
-          content: formatSummary(summary),
-          concepts: extractConcepts(doneActions),
-          files: extractFiles(doneActions),
-          sessionIds: [],
-          strength: 1.0,
-          version: 1,
-          isLatest: true,
-          metadata: {
-            flowCompressed: true,
+        const content = formatSummary(summary);
+        if (!content) {
+          logger.warn("Flow summary had no recognized sections; nothing stored", {
             actionCount: doneActions.length,
-            actionIds: doneActions.map((a) => a.id),
-          },
-        };
+          });
+          return {
+            success: false,
+            error: "summary could not be parsed",
+            compressed: 0,
+          };
+        }
 
-        await kv.set(KV.memories, memory.id, memory);
-        await recordAudit(kv, "compress", "mem::flow-compress", [memory.id], {
+        const actionProjects = new Set(doneActions.map((a) => a.project));
+        const project = requestedProject
+          ? doneActions.every((a) => a.project === requestedProject) ? requestedProject : undefined
+          : actionProjects.size === 1 ? doneActions[0].project : undefined;
+        const actionIds = doneActions.map((a) => a.id);
+        const key = flowKey(actionIds);
+
+        const { memory, previous } = await withKeyedLock("mem:remember", async () => {
+          const ts = new Date().toISOString();
+          const scope = { project, agentId };
+          const memories = await collectAll<FlowMemory>(kv, KV.memories);
+          const previous = memories.find((m) =>
+            m.isLatest !== false &&
+            m.metadata?.flowCompressed === true &&
+            Array.isArray(m.metadata.actionIds) &&
+            flowKey(m.metadata.actionIds) === key &&
+            sharesMemoryScope(m, scope) &&
+            (m.project || undefined) === project,
+          );
+          const memory: FlowMemory = {
+            id: generateId("mem"),
+            createdAt: ts,
+            updatedAt: ts,
+            type: "workflow",
+            title: summary.goal ? memoryTitleFromContent(summary.goal) : `Workflow: ${doneActions.length} actions`,
+            content,
+            concepts: extractConcepts(doneActions),
+            files: extractFiles(doneActions),
+            sessionIds: [],
+            strength: 1.0,
+            version: previous ? (previous.version ?? 1) + 1 : 1,
+            isLatest: true,
+            ...(previous && { parentId: previous.id, supersedes: [previous.id, ...(previous.supersedes ?? [])] }),
+            ...(agentId && { agentId }),
+            ...(project && { project }),
+            metadata: {
+              flowCompressed: true,
+              actionCount: doneActions.length,
+              actionIds,
+            },
+          };
+          await kv.set(KV.memories, memory.id, memory);
+          if (previous) {
+            try {
+              await kv.set(KV.memories, previous.id, {
+                ...previous,
+                isLatest: false,
+                updatedAt: supersededAt(previous.updatedAt, ts),
+              });
+            } catch (err) {
+              await kv.delete(KV.memories, memory.id);
+              throw err;
+            }
+            unindexMemory(previous.id);
+          }
+          return { memory, previous };
+        });
+
+        await safeAudit(kv, previous ? "evolve" : "compress", "mem::flow-compress", [memory.id], {
           action: "compress_flow",
           flowCompressed: true,
           actionCount: doneActions.length,
-          project: data.project,
+          ...(previous && { oldId: previous.id, newId: memory.id }),
+          project,
         });
+        try {
+          await indexMemory(kv, memory);
+        } catch (err) {
+          logger.warn("Flow-compressed memory indexing failed", {
+            memId: memory.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
 
         return {
           success: true,
           compressed: doneActions.length,
           memoryId: memory.id,
+          ...(previous && { supersededId: previous.id }),
           summary,
         };
       } catch (err) {
@@ -166,7 +251,7 @@ function parseFlowSummary(response: string): {
 } {
   const extract = (tag: string): string => {
     const match = response.match(
-      new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`),
+      new RegExp(`<${tag}(?:\\s[^>]*)?>([\\s\\S]*?)</${tag}>`),
     );
     return match ? match[1].trim() : "";
   };
