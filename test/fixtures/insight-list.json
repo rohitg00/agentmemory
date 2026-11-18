@@ -1,0 +1,1061 @@
+{
+  "records": {
+    "late": {
+      "id": "ins_date_late",
+      "title": "Fixture late",
+      "content": "Complete historical insight late; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.8,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-04T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "late",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "id_late": {
+      "id": "ins_mjxjdhc0_a",
+      "title": "Fixture id_late",
+      "content": "Complete historical insight id_late; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.8,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "id_late",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "high_b": {
+      "id": "high-b",
+      "title": "Fixture high_b",
+      "content": "Complete historical insight high_b; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.95,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "B",
+      "legacy_extra": {
+        "keep": "high_b",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "field_early": {
+      "id": "ins_field_early",
+      "title": "Fixture field_early",
+      "content": "Complete historical insight field_early; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.8,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-01T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "field_early",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "tie_b": {
+      "id": "plain-b",
+      "title": "Fixture tie_b",
+      "content": "Complete historical insight tie_b; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.8,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "tie_b",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "deleted_a": {
+      "id": "deleted-a",
+      "title": "Fixture deleted_a",
+      "content": "Complete historical insight deleted_a; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 1,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "deleted_a",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      },
+      "deleted": true
+    },
+    "no_time": {
+      "id": "plain-z",
+      "title": "Fixture no_time",
+      "content": "Complete historical insight no_time; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.8,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "not-a-date",
+      "updatedAt": "not-a-date",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "no_time",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "tie_a": {
+      "id": "plain-a",
+      "title": "Fixture tie_a",
+      "content": "Complete historical insight tie_a; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.8,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "tie_a",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "unscoped": {
+      "id": "unscoped",
+      "title": "Fixture unscoped",
+      "content": "Complete historical insight unscoped; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.9,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "legacy_extra": {
+        "keep": "unscoped",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "id_early": {
+      "id": "ins_mjt91xc0_z",
+      "title": "Fixture id_early",
+      "content": "Complete historical insight id_early; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.8,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-05T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "id_early",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "low_a": {
+      "id": "low-a",
+      "title": "Fixture low_a",
+      "content": "Complete historical insight low_a; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.7,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "low_a",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "fallback": {
+      "id": "fallback",
+      "title": "Fixture fallback",
+      "content": "Complete historical insight fallback; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.8,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "not-a-date",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "fallback",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      },
+      "timestamp": "2026-01-01T00:00:00.000Z",
+      "startedAt": "2026-01-05T00:00:00.000Z"
+    },
+    "top_a": {
+      "id": "top-a",
+      "title": "Fixture top_a",
+      "content": "Complete historical insight top_a; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 1,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "top_a",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "zero_a": {
+      "id": "zero-a",
+      "title": "Fixture zero_a",
+      "content": "Complete historical insight zero_a; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "A",
+      "legacy_extra": {
+        "keep": "zero_a",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    },
+    "low_b": {
+      "id": "low-b",
+      "title": "Fixture low_b",
+      "content": "Complete historical insight low_b; commas, accents é and Unicode Ж remain intact.",
+      "confidence": 0.6,
+      "reinforcements": 3,
+      "sourceConceptCluster": [
+        "alpha",
+        "comma,inside",
+        "Ж"
+      ],
+      "sourceMemoryIds": [
+        "mem-one",
+        "mem-two"
+      ],
+      "sourceLessonIds": [
+        "lesson-one"
+      ],
+      "sourceCrystalIds": [
+        "crystal-one"
+      ],
+      "evidenceVersion": 1,
+      "tags": [
+        "alpha",
+        "same content preserved"
+      ],
+      "createdAt": "2026-01-02T00:00:00.000Z",
+      "updatedAt": "2026-01-09T00:00:00.000Z",
+      "lastReinforcedAt": "2026-01-08T00:00:00.000Z",
+      "lastDecayedAt": "2026-01-07T00:00:00.000Z",
+      "decayRate": 0.05,
+      "project": "B",
+      "legacy_extra": {
+        "keep": "low_b",
+        "values": [
+          0,
+          false,
+          null
+        ]
+      }
+    }
+  },
+  "pages": [
+    [
+      "late",
+      "id_late",
+      "high_b"
+    ],
+    [
+      "field_early",
+      "tie_b",
+      "deleted_a",
+      "no_time"
+    ],
+    [
+      "tie_a",
+      "unscoped",
+      "id_early",
+      "low_a"
+    ],
+    [
+      "fallback",
+      "top_a",
+      "zero_a",
+      "low_b"
+    ]
+  ],
+  "cases": [
+    {
+      "name": "small3_projectA_filters_before_selection",
+      "request": {
+        "project": "A",
+        "limit": 3
+      },
+      "expected": {
+        "file": [
+          "top_a",
+          "late",
+          "id_late"
+        ],
+        "redis": [
+          "top_a",
+          "id_early",
+          "fallback"
+        ]
+      }
+    },
+    {
+      "name": "small5_projectA_confidence_ties",
+      "request": {
+        "project": "A",
+        "limit": 5
+      },
+      "expected": {
+        "file": [
+          "top_a",
+          "late",
+          "id_late",
+          "field_early",
+          "tie_b"
+        ],
+        "redis": [
+          "top_a",
+          "id_early",
+          "fallback",
+          "field_early",
+          "tie_a"
+        ]
+      }
+    },
+    {
+      "name": "small5_global",
+      "request": {
+        "limit": 5
+      },
+      "expected": {
+        "file": [
+          "top_a",
+          "high_b",
+          "unscoped",
+          "late",
+          "id_late"
+        ],
+        "redis": [
+          "top_a",
+          "high_b",
+          "unscoped",
+          "id_early",
+          "fallback"
+        ]
+      }
+    },
+    {
+      "name": "default_global_all14",
+      "request": {},
+      "expected": {
+        "file": [
+          "top_a",
+          "high_b",
+          "unscoped",
+          "late",
+          "id_late",
+          "field_early",
+          "tie_b",
+          "no_time",
+          "tie_a",
+          "id_early",
+          "fallback",
+          "low_a",
+          "low_b",
+          "zero_a"
+        ],
+        "redis": [
+          "top_a",
+          "high_b",
+          "unscoped",
+          "id_early",
+          "fallback",
+          "field_early",
+          "tie_a",
+          "tie_b",
+          "id_late",
+          "late",
+          "no_time",
+          "low_a",
+          "low_b",
+          "zero_a"
+        ]
+      }
+    },
+    {
+      "name": "empty_project_is_unfiltered",
+      "request": {
+        "project": ""
+      },
+      "expected": {
+        "file": [
+          "top_a",
+          "high_b",
+          "unscoped",
+          "late",
+          "id_late",
+          "field_early",
+          "tie_b",
+          "no_time",
+          "tie_a",
+          "id_early",
+          "fallback",
+          "low_a",
+          "low_b",
+          "zero_a"
+        ],
+        "redis": [
+          "top_a",
+          "high_b",
+          "unscoped",
+          "id_early",
+          "fallback",
+          "field_early",
+          "tie_a",
+          "tie_b",
+          "id_late",
+          "late",
+          "no_time",
+          "low_a",
+          "low_b",
+          "zero_a"
+        ]
+      }
+    },
+    {
+      "name": "project_filter_exact_no_trim",
+      "request": {
+        "project": " A "
+      },
+      "expected": {
+        "file": [],
+        "redis": []
+      }
+    },
+    {
+      "name": "projectB",
+      "request": {
+        "project": "B"
+      },
+      "expected": {
+        "file": [
+          "high_b",
+          "low_b"
+        ],
+        "redis": [
+          "high_b",
+          "low_b"
+        ]
+      }
+    },
+    {
+      "name": "projectA_minConfidence_inclusive",
+      "request": {
+        "project": "A",
+        "minConfidence": 0.8
+      },
+      "expected": {
+        "file": [
+          "top_a",
+          "late",
+          "id_late",
+          "field_early",
+          "tie_b",
+          "no_time",
+          "tie_a",
+          "id_early",
+          "fallback"
+        ],
+        "redis": [
+          "top_a",
+          "id_early",
+          "fallback",
+          "field_early",
+          "tie_a",
+          "tie_b",
+          "id_late",
+          "late",
+          "no_time"
+        ]
+      }
+    },
+    {
+      "name": "projectA_confidence1",
+      "request": {
+        "project": "A",
+        "minConfidence": 1
+      },
+      "expected": {
+        "file": [
+          "top_a"
+        ],
+        "redis": [
+          "top_a"
+        ]
+      }
+    },
+    {
+      "name": "projectA_limit501_caps500",
+      "request": {
+        "project": "A",
+        "limit": 501
+      },
+      "expected": {
+        "file": [
+          "top_a",
+          "late",
+          "id_late",
+          "field_early",
+          "tie_b",
+          "no_time",
+          "tie_a",
+          "id_early",
+          "fallback",
+          "low_a",
+          "zero_a"
+        ],
+        "redis": [
+          "top_a",
+          "id_early",
+          "fallback",
+          "field_early",
+          "tie_a",
+          "tie_b",
+          "id_late",
+          "late",
+          "no_time",
+          "low_a",
+          "zero_a"
+        ]
+      }
+    },
+    {
+      "name": "limit_MAX_SAFE_INTEGER_caps500",
+      "request": {
+        "limit": 9007199254740991
+      },
+      "expected": {
+        "file": [
+          "top_a",
+          "high_b",
+          "unscoped",
+          "late",
+          "id_late",
+          "field_early",
+          "tie_b",
+          "no_time",
+          "tie_a",
+          "id_early",
+          "fallback",
+          "low_a",
+          "low_b",
+          "zero_a"
+        ],
+        "redis": [
+          "top_a",
+          "high_b",
+          "unscoped",
+          "id_early",
+          "fallback",
+          "field_early",
+          "tie_a",
+          "tie_b",
+          "id_late",
+          "late",
+          "no_time",
+          "low_a",
+          "low_b",
+          "zero_a"
+        ]
+      }
+    },
+    {
+      "name": "unknown_project_empty",
+      "request": {
+        "project": "missing",
+        "limit": 1
+      },
+      "expected": {
+        "file": [],
+        "redis": []
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "request": {
+        "limit": 0
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "limit must be a positive safe integer"
+      }
+    },
+    {
+      "request": {
+        "limit": -1
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "limit must be a positive safe integer"
+      }
+    },
+    {
+      "request": {
+        "limit": 1.5
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "limit must be a positive safe integer"
+      }
+    },
+    {
+      "request": {
+        "limit": "3"
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "limit must be a positive safe integer"
+      }
+    },
+    {
+      "request": {
+        "limit": null
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "limit must be a positive safe integer"
+      }
+    },
+    {
+      "request": {
+        "limit": 9007199254740992
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "limit must be a positive safe integer"
+      }
+    },
+    {
+      "request": {
+        "minConfidence": -0.1
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "minConfidence must be a finite number between 0 and 1"
+      }
+    },
+    {
+      "request": {
+        "minConfidence": 1.1
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "minConfidence must be a finite number between 0 and 1"
+      }
+    },
+    {
+      "request": {
+        "minConfidence": "0.8"
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "minConfidence must be a finite number between 0 and 1"
+      }
+    },
+    {
+      "request": {
+        "minConfidence": null
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "minConfidence must be a finite number between 0 and 1"
+      }
+    },
+    {
+      "request": {
+        "limit": 0,
+        "minConfidence": "bad"
+      },
+      "expected": {
+        "success": false,
+        "invalid": true,
+        "error": "limit must be a positive safe integer"
+      }
+    }
+  ]
+}
