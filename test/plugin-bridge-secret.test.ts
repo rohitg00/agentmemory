@@ -33,6 +33,14 @@ function authorization() {
 }
 
 describe("plugin bridge uses the daemon's local credential resolution", () => {
+  it("pins localhost. to a literal loopback address before sending the local credential", async () => {
+    store("secret", "generated-test-secret\n");
+    vi.stubEnv("AGENTMEMORY_URL", "http://LOCALHOST.:3111/prefix");
+    await createPluginBridge()("tools/list", {});
+    expect(requestedUrl()).toBe("http://127.0.0.1:3111/prefix/agentmemory/mcp/tools");
+    expect(authorization()).toBe("Bearer generated-test-secret");
+  });
+
   it("reads the generated credential without an MCP environment override", async () => {
     store("secret", "generated-test-secret\n");
     await createPluginBridge()("tools/list", {});
