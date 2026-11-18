@@ -91,7 +91,7 @@ import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
 import { setBootVerbose } from "./logger.js";
-import { getRedisUrl, getStateBackend, hydrateProcessEnvFromFile } from "./config.js";
+import { getRedisUrl, getStateBackend, hydrateProcessEnvFromFile, isEnvFileValue } from "./config.js";
 import { III_PINNED_VERSION, VERSION } from "./version.js";
 import { getAllTools, ESSENTIAL_TOOLS } from "./mcp/tools-registry.js";
 import { knownAgents } from "./cli/connect/index.js";
@@ -1257,7 +1257,12 @@ async function startIiiBin(iiiBin: string): Promise<boolean> {
     projectRoot,
     nodeBin: process.execPath,
     homeDir: homedir(),
-    ...(existsSync(envPath) ? { envFile: envPath } : {}),
+    ...(existsSync(envPath) ? {
+      envFile: envPath,
+      workerEnvironmentOverrides: Object.fromEntries(
+        Object.entries(process.env).filter(([key]) => !isEnvFileValue(key)),
+      ),
+    } : {}),
     ...(workerBinDir ? { workerBinDir } : {}),
     cwd: process.cwd(),
     stateBackend: { kind: getStateBackend() },

@@ -231,6 +231,46 @@ describe("session summary recovery", () => {
     r.close();
   });
 
+  it.each([
+    ["an empty tool payload", "post_tool_use", {}],
+    ["a tool name without input or output", "post_tool_use", { tool_name: "Bash" }],
+    ["an empty tool input", "post_tool_use", { tool_name: "Read", tool_input: {} }],
+    ["an empty prompt", "prompt_submit", { prompt: "" }],
+  ])("keeps %s out of compression recovery", async (_label, hookType, data) => {
+    const r = rig();
+    vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
+    try {
+      await r.call("api::observe", { headers: {}, body: {
+        sessionId: "summary-session", eventId: "empty-source-event-0001",
+        project: "summary-project", cwd: "/fixture", hookType,
+        timestamp: new Date().toISOString(), data,
+      } });
+      await r.flush();
+      const [row] = await r.kv.list(KV.observations("summary-session"));
+      expect(getSearchIndex().has(row.id)).toBe(true);
+      expect(r.model.compress).not.toHaveBeenCalled();
+
+      await r.call("test::close-session", { sessionId: "summary-session" });
+      await r.call("mem::session-finalize", { now: Date.now() });
+      await r.flush();
+      expect(await r.kv.get(KV.summaryRepairs, "summary-session")).toBeNull();
+      expect(row.compression).toBeUndefined();
+
+      await r.observe("late-empty-source-event-0002", "Verified conclusion");
+      await r.flush();
+      await r.call("mem::session-finalize", { now: Date.now() + 600_000 });
+      await r.flush();
+      expect(r.model.compress).toHaveBeenCalledOnce();
+      expect((await r.sessions()).body.sessions[0].summary).toMatchObject({
+        title: "Verified conclusion", observationCount: 2,
+      });
+      expect(await r.kv.get(KV.summaryRepairs, "summary-session")).toBeNull();
+      expect(await r.kv.get(KV.observations("summary-session"), row.id)).toEqual(row);
+    } finally {
+      r.close();
+    }
+  });
+
   it("retains actionable source-unavailable state with slow retries", async () => {
     const r = rig();
     await r.observe("missing-source-event-0001", "Original investigation");
@@ -456,5 +496,110 @@ describe("session summary recovery", () => {
       status: "completed", summary: { title: "Verified conclusion", observationCount: 2 },
     });
     r.close();
+  });
+});
+
+describe("automatic compression opt-in during summary recovery", () => {
+  async function failedCapture() {
+    const model = provider();
+    model.compress = vi.fn(async () => "invalid");
+    const r = rig(model);
+    vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
+    await r.observe("opt-in-event-0001", "Retained cobalt evidence");
+    await r.flush();
+    await r.call("test::close-session", { sessionId: "summary-session" });
+    const [row] = await r.kv.list(KV.observations("summary-session"));
+    expect(row.compression.status).toBe("failed");
+    expect(row.source).toBeDefined();
+    model.compress = vi.fn(async () => finalCompression);
+    vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "false");
+    r.sdk.trigger.mockClear();
+    return { r, row };
+  }
+
+  it.each(["false", undefined])("retains pending work without automatic compression when opt-in is %s", async (flag) => {
+    const { r, row } = await failedCapture();
+    try {
+      const intent = await r.kv.get(KV.summaryRepairs, "summary-session");
+      vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", flag);
+      await r.call("mem::summary-recover", { now: Date.now() + 600_000 });
+      await r.flush();
+      expect(r.model.compress).not.toHaveBeenCalled();
+      expect(r.model.summarize).not.toHaveBeenCalled();
+      expect(r.sdk.trigger.mock.calls.some(([input]) => input.function_id === "mem::compression-retry")).toBe(false);
+      expect(await r.kv.list(KV.observations("summary-session"))).toEqual([row]);
+      expect(await r.kv.get(KV.summaryRepairs, "summary-session")).toMatchObject({
+        token: intent.token, lastError: "compression_pending", attempts: 1,
+      });
+    } finally { r.close(); }
+  });
+
+  it("recovers retained work when automatic compression is enabled", async () => {
+    const { r, row } = await failedCapture();
+    try {
+      vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
+      await r.call("mem::summary-recover", { now: Date.now() + 600_000 });
+      await r.flush();
+      expect(r.model.compress).toHaveBeenCalledOnce();
+      expect(r.model.summarize).toHaveBeenCalledOnce();
+      expect(await r.kv.get(KV.observations("summary-session"), row.id)).toMatchObject({
+        id: row.id, timestamp: row.timestamp, source: row.source, compression: { status: "complete" },
+      });
+      expect(await r.kv.get(KV.summaryRepairs, "summary-session")).toBeNull();
+    } finally { r.close(); }
+  });
+
+  it("preserves disabled recovery across restart and resumes after re-enabling", async () => {
+    const { r, row } = await failedCapture();
+    r.close();
+    const restarted = rig(r.model, r.kv.restart());
+    try {
+      await restarted.call("mem::summary-recover", { now: Date.now() + 600_000 });
+      await restarted.flush();
+      expect(restarted.model.compress).not.toHaveBeenCalled();
+      expect(await restarted.kv.list(KV.observations("summary-session"))).toEqual([row]);
+      expect(await restarted.kv.get(KV.summaryRepairs, "summary-session")).not.toBeNull();
+      vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", "true");
+      await restarted.call("mem::summary-recover", { now: Date.now() + 3_600_000 });
+      await restarted.flush();
+      expect(restarted.model.compress).toHaveBeenCalledOnce();
+      expect(restarted.model.summarize).toHaveBeenCalledOnce();
+      expect(await restarted.kv.get(KV.observations("summary-session"), row.id)).toMatchObject({
+        id: row.id, timestamp: row.timestamp, source: row.source, compression: { status: "complete" },
+      });
+      expect(await restarted.kv.get(KV.sessions, "summary-session")).toMatchObject({ observationCount: 1 });
+      expect(await restarted.kv.get(KV.summaryRepairs, "summary-session")).toBeNull();
+    } finally { restarted.close(); }
+  });
+
+  it("allows an explicit manual compression retry while automatic compression is disabled", async () => {
+    const { r, row } = await failedCapture();
+    try {
+      expect(await r.call("mem::compression-retry", { sessionId: "summary-session", limit: 1 }))
+        .toMatchObject({ success: true, attempted: 1, recovered: 1, failed: 0 });
+      expect(r.model.compress).toHaveBeenCalledOnce();
+      expect(await r.kv.get(KV.observations("summary-session"), row.id)).toMatchObject({
+        id: row.id, timestamp: row.timestamp, source: row.source, compression: { status: "complete" },
+      });
+      await r.call("mem::summary-recover", { now: Date.now() + 600_000 });
+      await r.flush();
+      expect(r.model.compress).toHaveBeenCalledOnce();
+      expect(r.model.summarize).toHaveBeenCalledOnce();
+      expect(await r.kv.get(KV.summaryRepairs, "summary-session")).toBeNull();
+    } finally { r.close(); }
+  });
+
+  it("keeps new captures synthetic and still summarizes them with the configured provider", async () => {
+    const r = rig();
+    try {
+      await r.observe("synthetic-opt-in-event", "Original investigation");
+      await r.flush();
+      await r.call("test::close-session", { sessionId: "summary-session" });
+      await r.call("mem::summary-recover", { now: Date.now() + 600_000 });
+      await r.flush();
+      expect(r.model.compress).not.toHaveBeenCalled();
+      expect(r.model.summarize).toHaveBeenCalledOnce();
+      expect(await r.kv.get(KV.summaryRepairs, "summary-session")).toBeNull();
+    } finally { r.close(); }
   });
 });

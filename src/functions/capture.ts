@@ -478,10 +478,11 @@ export function registerCaptureFunctions(
         rejected: acc.rejected + r.rejected,
         expired: acc.expired + r.expired,
         corrupt: acc.corrupt + r.corrupt,
+        unreadable: acc.unreadable + r.unreadable,
         remaining: acc.remaining + r.remaining,
         ...(r.error || acc.error ? { error: r.error ?? acc.error } : {}),
       }),
-      { claimed: 0, delivered: 0, duplicates: 0, rejected: 0, expired: 0, corrupt: 0, remaining: 0 },
+      { claimed: 0, delivered: 0, duplicates: 0, rejected: 0, expired: 0, corrupt: 0, unreadable: 0, remaining: 0 },
     );
     lastBootDrain = { ...total, at: new Date().toISOString() };
     return results;

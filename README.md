@@ -69,7 +69,7 @@
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tools.svg"><img src="assets/tags/stat-tools.svg" alt="54 MCP tools" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-hooks.svg"><img src="assets/tags/stat-hooks.svg" alt="12 auto hooks" height="38" /></picture>
   <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-deps.svg"><img src="assets/tags/stat-deps.svg" alt="0 external DBs" height="38" /></picture>
-  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="4,900+ tests passing" height="38" /></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/stat-tests.svg"><img src="assets/tags/stat-tests.svg" alt="5,000+ tests passing" height="38" /></picture>
 </p>
 
 <p align="center">
@@ -84,6 +84,7 @@
   <a href="#benchmarks">Benchmarks</a> &bull;
   <a href="#vs-competitors">vs Competitors</a> &bull;
   <a href="#works-with-every-agent">Agents</a> &bull;
+  <a href="#architecture">Architecture</a> &bull;
   <a href="#how-it-works">How It Works</a> &bull;
   <a href="#mcp-server">MCP</a> &bull;
   <a href="#real-time-viewer">Viewer</a> &bull;
@@ -305,6 +306,26 @@ agentmemory works with any agent that supports hooks, MCP, or REST API. All agen
 
 <p align="center">
   <sub>Works with <strong>any</strong> agent that speaks MCP or HTTP. One server, memories shared across all of them.</sub>
+</p>
+
+---
+
+<h2 id="architecture">Architecture</h2>
+
+One local server sits between your agents and your memory. Each lane runs locally by default; the dashed line marks what you opt into.
+
+<p align="center">
+  <img src="assets/diagrams/architecture.svg" alt="agentmemory architecture: coding agents reach one local server through hooks, MCP and REST. Capture, recall and store each run locally by default, and each optional provider is turned on by its own environment variable." width="100%" />
+</p>
+
+Every tool call goes through the write path; every new session reads back through hybrid search within a token budget.
+
+<p align="center">
+  <img src="assets/diagrams/pipeline.svg" alt="Memory pipeline: PostToolUse captures, filters, stores, compresses and indexes each tool call. Stop and SessionEnd write summaries. SessionStart builds a profile, runs hybrid search within a token budget and can inject context." width="100%" />
+</p>
+
+<p align="center">
+  <img src="assets/diagrams/stack.svg" alt="agentmemory as layers: your agents, hooks, MCP and REST, the agentmemory server, four memory tiers, three recall streams, and the file state store on your machine." width="80%" />
 </p>
 
 ---
@@ -596,6 +617,17 @@ In `hermes memory setup`, select AgentMemory and enter the server URL and its se
 
 `agentmemory connect hermes` installs the provider and the bundled skills from the installed package instead. Add `--with-mcp` for the full MCP tool set. Full guide: [`integrations/hermes/`](integrations/hermes/).
 
+### Orca (plugin panel)
+
+The Orca plugin adds an agentmemory panel to Orca's sidebar: server status and memory counts, the latest memories of the focused workspace, search, quick saves, Send to agent, and links that open a memory's files and the viewer inside Orca.
+
+```bash
+npx -y @agentmemory/agentmemory@latest
+orca plugin install https://github.com/rohitg00/agentmemory/tree/main/integrations/orca
+```
+
+Capture comes from each agent's own connection, so run `agentmemory connect <agent>` for the agents you launch in Orca. For an agent you cannot connect, turn on the plugin's Capture agent tool calls setting. Full guide: [`integrations/orca/`](integrations/orca/).
+
 ### Other agents
 
 Start the memory server: `npx -y @agentmemory/agentmemory@latest`
@@ -768,6 +800,8 @@ Agent instructions and memory files remain useful for stable project guidance. A
 <h2 id="how-it-works"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-how.svg"><img src="assets/tags/section-how.svg" alt="How It Works" height="32" /></picture></h2>
 
 ### Memory Pipeline
+
+The [architecture diagrams](#architecture) show the same flow.
 
 ```text
 PostToolUse hook fires
@@ -1313,7 +1347,7 @@ curl -X POST http://localhost:3111/agentmemory/graph/compact -H "Authorization: 
 ```bash
 npm run dev               # Hot reload
 npm run build             # Production build
-npm test                  # 4,900+ tests
+npm test                  # 5,000+ tests
 npm run test:integration  # API tests (requires running services)
 ```
 

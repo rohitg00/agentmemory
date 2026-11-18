@@ -3,6 +3,7 @@ import type { Memory, GovernanceFilter, AuditEntry } from "../types.js";
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { collectAll } from "../state/kv.js";
+import { deleteMemoryUnderLock } from "../state/memory-utils.js";
 import { recordAudit, safeAudit, queryAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { deleteFacetsForTargets } from "./facets.js";
@@ -21,9 +22,7 @@ async function deleteMemoryRecord(
   kv: StateKV,
   id: string,
 ): Promise<"deleted" | "missing"> {
-  const mem = await kv.get<Memory>(KV.memories, id);
-  if (!mem) return "missing";
-  await kv.delete(KV.memories, id);
+  if (!(await deleteMemoryUnderLock(kv, KV.memories, id))) return "missing";
   await deleteAccessLog(kv, id);
   getSearchIndex().remove(id);
   vectorIndexRemove(id);

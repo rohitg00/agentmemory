@@ -645,6 +645,11 @@ const transport = createStdioTransport(async (method, params) => {
     default:
       throw new Error(`Unknown method: ${method}`);
   }
+}, {
+  onDisconnect: () => {
+    kv.persist();
+    process.exit(0);
+  },
 });
 
 installCrashHandlers({ persist: () => kv.persist() });

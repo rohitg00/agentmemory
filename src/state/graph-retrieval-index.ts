@@ -475,14 +475,17 @@ export class GraphIndexReader {
     }
     return { ids, cursor: current ? `${prefix}${current}` : null, total: root.count };
   }
-  async finish(): Promise<boolean> {
+  async finish(options: { allowPartial?: boolean } = {}): Promise<boolean> {
     if (this.options.signal?.aborted || this.reads + 2 > this.maxReads) return false;
     this.reads += 2;
     const current = await getGraphIndexStatus(this.state);
     const generation = await this.state.get<string>(KV.graphControl, "generation");
     if ((generation ?? null) !== this.generation) return false;
     this.readBytes += bytes(generation) + bytes(current);
-    if (this.readBytes > this.maxBytes) { this.exhausted = true; return false; }
+    if (this.readBytes > this.maxBytes) {
+      this.exhausted = true;
+      if (!options.allowPartial) return false;
+    }
     return Boolean(current && current.status === "ready" && !current.pending && !current.batchPending && current.buildId === this.status.buildId && current.revision === this.status.revision);
   }
 }

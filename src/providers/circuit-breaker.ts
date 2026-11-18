@@ -15,6 +15,8 @@ export class CircuitBreaker {
   private failures = 0;
   private lastFailureAt: number | null = null;
   private openedAt: number | null = null;
+  private probeStartedAt: number | null = null;
+  private probeId = 0;
 
   private readonly failureThreshold: number;
   private readonly failureWindowMs: number;
@@ -30,33 +32,53 @@ export class CircuitBreaker {
   }
 
   get isAllowed(): boolean {
-    if (this.state === "closed") return true;
-    if (this.state === "open") {
-      if (
-        this.openedAt &&
-        Date.now() - this.openedAt >= this.recoveryTimeoutMs
-      ) {
-        this.state = "half-open";
-        return true;
-      }
-      return false;
-    }
-    return true;
+    return this.admit() !== null;
   }
 
-  recordSuccess(): void {
-    if (this.state === "open") return;
+  admit(): number | null {
+    if (this.state === "closed") return 0;
+    const now = Date.now();
+    if (this.state === "open") {
+      if (!this.openedAt || now - this.openedAt < this.recoveryTimeoutMs) {
+        return null;
+      }
+      this.state = "half-open";
+    } else if (
+      this.probeStartedAt !== null &&
+      now - this.probeStartedAt < this.recoveryTimeoutMs
+    ) {
+      return null;
+    }
+    this.probeStartedAt = now;
+    this.probeId += 1;
+    return this.probeId;
+  }
+
+  private isStale(probe: number | undefined): boolean {
+    if (probe === undefined) return false;
+    return this.state === "half-open" ? probe !== this.probeId : probe !== 0;
+  }
+
+  recordSuccess(probe?: number): void {
+    if (this.state === "open" || this.isStale(probe)) return;
     this.state = "closed";
     this.failures = 0;
     this.lastFailureAt = null;
     this.openedAt = null;
+    this.probeStartedAt = null;
   }
 
-  recordFailure(): void {
+  releaseProbe(probe: number): void {
+    if (this.state === "half-open" && probe === this.probeId) this.probeStartedAt = null;
+  }
+
+  recordFailure(probe?: number): void {
+    if (this.isStale(probe)) return;
     const now = Date.now();
     if (this.state === "half-open") {
       this.state = "open";
       this.openedAt = now;
+      this.probeStartedAt = null;
       return;
     }
     if (this.lastFailureAt && now - this.lastFailureAt > this.failureWindowMs) {

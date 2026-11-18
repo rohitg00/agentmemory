@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { mkdtempSync } from "node:fs";
@@ -13,6 +13,7 @@ const testHome = mkdtempSync(join(tmpdir(), "agentmemory-test-home-"));
 
 export default defineConfig({
   test: {
+    exclude: [...configDefaults.exclude, "integrations/orca/**"],
     env: {
       HOME: testHome,
       USERPROFILE: testHome,

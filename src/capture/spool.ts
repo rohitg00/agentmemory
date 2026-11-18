@@ -62,6 +62,7 @@ export interface SpoolStats {
   lastDrainDuplicates?: number;
   lastDrainRejected?: number;
   lastDrainRemaining?: number;
+  lastDrainUnreadable?: number;
   lastDrainError?: string;
 }
 
@@ -82,10 +83,10 @@ export interface SpoolSummary {
   oldestAt: string | null;
   retained: number;
   retainedBytes: number;
+  unreadable: number;
   maxBytes: number;
   maxAgeHours: number;
   stats: SpoolStats;
-  unreadable?: boolean;
 }
 
 export type SendOutcome = "delivered" | "duplicate" | "rejected" | "retry";
@@ -97,6 +98,7 @@ export interface DrainResult {
   rejected: number;
   expired: number;
   corrupt: number;
+  unreadable: number;
   remaining: number;
   error?: string;
   skipped?: "locked" | "empty" | "disabled";
@@ -339,10 +341,10 @@ export function appendSpool(
     if (bytes > policy.maxRecordBytes) return note("too-large", bytes);
     return withLock(paths.lock, (locked) => {
       let expired = 0;
-      if (locked && fileSize(paths.file) + bytes > policy.maxBytes) expired = pruneExpiredLocked(paths, policy);
-      const over = fileSize(paths.file) + sentBytes(paths) + bytes - policy.maxBytes;
-      if (locked && over > 0) evictSent(paths, over);
-      if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) {
+      if (locked && fileSize(paths.file) + claimBytes(paths) + bytes > policy.maxBytes) expired = pruneExpiredLocked(paths, policy);
+      const over = heldBytes(paths) + bytes - policy.maxBytes;
+      if (locked && over > 0 && over <= sentBytes(paths)) evictSent(paths, over);
+      if (heldBytes(paths) + bytes > policy.maxBytes) {
         if (expired) writeStats(paths, (s) => void (s.expired += expired));
         return note("full", bytes);
       }
@@ -394,6 +396,47 @@ function listSent(paths: SpoolPaths): SentSegment[] {
 
 function sentBytes(paths: SpoolPaths): number {
   return listSent(paths).reduce((n, s) => n + s.bytes, 0);
+}
+
+interface ClaimFile {
+  file: string;
+  bytes: number;
+  mtimeMs: number;
+}
+
+function listClaims(paths: SpoolPaths): ClaimFile[] {
+  const claims: ClaimFile[] = [];
+  let entries: string[];
+  try {
+    entries = readdirSync(paths.dir);
+  } catch {
+    return claims;
+  }
+  const prefix = `${paths.name}.draining-`;
+  for (const entry of entries) {
+    if (!entry.startsWith(prefix) || !entry.endsWith(".jsonl")) continue;
+    const file = join(paths.dir, entry);
+    try {
+      const stat = statSync(file);
+      claims.push({ file, bytes: stat.size, mtimeMs: stat.mtimeMs });
+    } catch {}
+  }
+  return claims;
+}
+
+function claimBytes(paths: SpoolPaths): number {
+  return listClaims(paths).reduce((n, c) => n + c.bytes, 0);
+}
+
+const drainingClaims = new Map<string, ReadonlySet<string>>();
+
+function retainedClaimBytes(paths: SpoolPaths): number {
+  const draining = drainingClaims.get(paths.file);
+  return listClaims(paths).reduce((n, c) => (draining?.has(c.file) ? n : n + c.bytes), 0);
+}
+
+function heldBytes(paths: SpoolPaths): number {
+  return fileSize(paths.file) + sentBytes(paths) + claimBytes(paths);
 }
 
 function evictSent(paths: SpoolPaths, need: number): void {
@@ -448,7 +491,7 @@ export function retainSent(
     const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
     const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
     return withLock(paths.lock, () => {
-      if (fileSize(paths.file) + sentBytes(paths) + bytes > policy.maxBytes) return false;
+      if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return false;
       const fd = openSync(file, "a", 0o600);
       try {
         writeSync(fd, line);
@@ -496,17 +539,7 @@ export function reconcileSent(
 }
 
 function claimFiles(paths: SpoolPaths): string[] {
-  const claimed: string[] = [];
-  try {
-    const prefix = `${paths.name}.draining-`;
-    for (const entry of readdirSync(paths.dir)) {
-      if (!entry.startsWith(prefix) || !entry.endsWith(".jsonl")) continue;
-      const full = join(paths.dir, entry);
-      try {
-        if (Date.now() - statSync(full).mtimeMs > ORPHAN_CLAIM_MS) claimed.push(full);
-      } catch {}
-    }
-  } catch {}
+  const claimed = eligibleClaims(paths).map((claim) => claim.file);
   if (fileSize(paths.file) > 0) {
     const target = join(paths.dir, `${paths.name}.draining-${process.pid}-${Date.now()}.jsonl`);
     withLock(paths.lock, (locked) => {
@@ -541,8 +574,13 @@ function requeueUnlocked(paths: SpoolPaths, leftover: SpoolRecord[]): void {
   } catch {}
 }
 
+function eligibleClaims(paths: SpoolPaths, now = Date.now()): ClaimFile[] {
+  return listClaims(paths).filter((claim) => now - claim.mtimeMs > ORPHAN_CLAIM_MS);
+}
+
 export function spoolHasRecords(url: string, dir?: string): boolean {
-  return fileSize(spoolPaths(url, dir).file) > 0;
+  const paths = spoolPaths(url, dir);
+  return fileSize(paths.file) > 0 || eligibleClaims(paths).length > 0;
 }
 
 export function drainInProgress(url: string, dir?: string): boolean {
@@ -560,7 +598,7 @@ export async function drainSpool(
   options: { policy?: SpoolPolicy; dir?: string; maxRecords?: number; deadlineMs?: number } = {},
 ): Promise<DrainResult> {
   const policy = options.policy ?? spoolPolicy();
-  const result: DrainResult = { claimed: 0, delivered: 0, duplicates: 0, rejected: 0, expired: 0, corrupt: 0, remaining: 0 };
+  const result: DrainResult = { claimed: 0, delivered: 0, duplicates: 0, rejected: 0, expired: 0, corrupt: 0, unreadable: 0, remaining: 0 };
   const paths = spoolPaths(url, options.dir);
   if (!existsSync(paths.dir)) return { ...result, skipped: "empty" };
   try {
@@ -571,14 +609,19 @@ export async function drainSpool(
     const files = claimFiles(paths);
     if (files.length === 0) return { ...result, skipped: "empty" };
     const records: SpoolRecord[] = [];
+    const read: string[] = [];
     for (const file of files) {
       try {
         const parsed = parseLines(readFileSync(file, "utf-8"));
         records.push(...parsed.records);
         result.corrupt += parsed.corrupt;
-      } catch {}
+        read.push(file);
+      } catch {
+        result.unreadable++;
+      }
     }
     result.claimed = records.length;
+    drainingClaims.set(paths.file, new Set(read));
     const seen = new Set<string>();
     const now = Date.now();
     const deadline = options.deadlineMs ? now + options.deadlineMs : Number.POSITIVE_INFINITY;
@@ -618,7 +661,7 @@ export async function drainSpool(
     }
     result.remaining = leftover.length;
     withLock(paths.lock, (locked) => (locked ? requeueLocked(paths, leftover) : requeueUnlocked(paths, leftover)), 2000);
-    for (const file of files) {
+    for (const file of read) {
       try {
         unlinkSync(file);
       } catch {}
@@ -633,11 +676,13 @@ export async function drainSpool(
       s.lastDrainDuplicates = result.duplicates;
       s.lastDrainRejected = result.rejected;
       s.lastDrainRemaining = result.remaining;
+      s.lastDrainUnreadable = result.unreadable;
       if (result.error) s.lastDrainError = result.error;
       else delete s.lastDrainError;
     });
     return result;
   } finally {
+    drainingClaims.delete(paths.file);
     releaseLock(paths.drainLock);
   }
 }
@@ -648,29 +693,28 @@ export function spoolSummary(url: string, options: { policy?: SpoolPolicy; dir?:
   let records = 0;
   let bytes = 0;
   let oldestAt: string | null = null;
-  const files: string[] = [];
-  let unreadable = false;
+  let unreadable = 0;
   const noteError = (err: unknown) => {
-    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") unreadable = true;
+    if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") unreadable++;
   };
-  files.push(paths.file);
   try {
-    for (const entry of readdirSync(paths.dir)) {
-      if (entry.startsWith(`${paths.name}.draining-`) && entry.endsWith(".jsonl")) files.push(join(paths.dir, entry));
-    }
+    readdirSync(paths.dir);
   } catch (err) {
     noteError(err);
   }
+  const files = [paths.file, ...listClaims(paths).map((claim) => claim.file)];
   for (const file of files) {
+    let text: string;
     try {
-      const text = readFileSync(file, "utf-8");
-      bytes += Buffer.byteLength(text);
-      for (const rec of parseLines(text).records) {
-        records++;
-        if (!oldestAt || rec.spooledAt < oldestAt) oldestAt = rec.spooledAt;
-      }
+      text = readFileSync(file, "utf-8");
     } catch (err) {
       noteError(err);
+      continue;
+    }
+    bytes += Buffer.byteLength(text);
+    for (const rec of parseLines(text).records) {
+      records++;
+      if (!oldestAt || rec.spooledAt < oldestAt) oldestAt = rec.spooledAt;
     }
   }
   let retained = 0;
@@ -690,9 +734,9 @@ export function spoolSummary(url: string, options: { policy?: SpoolPolicy; dir?:
     oldestAt,
     retained,
     retainedBytes,
+    unreadable,
     maxBytes: policy.maxBytes,
     maxAgeHours: Math.round(policy.maxAgeMs / 3600_000),
     stats: readSpoolStats(paths),
-    ...(unreadable ? { unreadable: true } : {}),
   };
 }

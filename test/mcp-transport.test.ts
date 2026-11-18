@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
+import { PassThrough } from "node:stream";
 import {
   createMessageParser,
+  createStdioTransport,
+  isClientDisconnectError,
   formatResponse,
   processLine,
   type JsonRpcResponse,
@@ -271,5 +274,76 @@ describe("stdio framing", () => {
 
     expect(header).toBe(`Content-Length: ${Buffer.byteLength(body, "utf8")}\r\n\r\n`);
     expect(JSON.parse(body)).toEqual(response);
+  });
+});
+
+function errnoError(code: string): NodeJS.ErrnoException {
+  const err = new Error(`write ${code}`) as NodeJS.ErrnoException;
+  err.code = code;
+  return err;
+}
+
+describe("createStdioTransport — client disconnect (#1795)", () => {
+  it("treats EPIPE and ERR_STREAM_DESTROYED as client disconnects", () => {
+    expect(isClientDisconnectError(errnoError("EPIPE"))).toBe(true);
+    expect(isClientDisconnectError(errnoError("ERR_STREAM_DESTROYED"))).toBe(true);
+    expect(isClientDisconnectError(errnoError("EACCES"))).toBe(false);
+    expect(isClientDisconnectError(new Error("plain"))).toBe(false);
+    expect(isClientDisconnectError(null)).toBe(false);
+  });
+
+  it("calls onDisconnect once on stdout EPIPE instead of throwing", () => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const onDisconnect = vi.fn();
+    const transport = createStdioTransport(okHandler, { stdout, stderr, onDisconnect });
+    transport.start();
+    try {
+      expect(() => stdout.emit("error", errnoError("EPIPE"))).not.toThrow();
+      stdout.emit("error", errnoError("EPIPE"));
+      expect(onDisconnect).toHaveBeenCalledTimes(1);
+    } finally {
+      transport.stop();
+    }
+  });
+
+  it("still surfaces other stdout errors", () => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const onDisconnect = vi.fn();
+    const transport = createStdioTransport(okHandler, { stdout, stderr, onDisconnect });
+    transport.start();
+    try {
+      expect(() => stdout.emit("error", errnoError("EACCES"))).toThrow("write EACCES");
+      expect(onDisconnect).not.toHaveBeenCalled();
+    } finally {
+      transport.stop();
+    }
+  });
+
+  it("ignores stderr EPIPE without disconnecting", () => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const onDisconnect = vi.fn();
+    const transport = createStdioTransport(okHandler, { stdout, stderr, onDisconnect });
+    transport.start();
+    try {
+      expect(() => stderr.emit("error", errnoError("EPIPE"))).not.toThrow();
+      expect(onDisconnect).not.toHaveBeenCalled();
+    } finally {
+      transport.stop();
+    }
+  });
+
+  it("removes its stream listeners on stop", () => {
+    const stdout = new PassThrough();
+    const stderr = new PassThrough();
+    const transport = createStdioTransport(okHandler, { stdout, stderr, onDisconnect: vi.fn() });
+    transport.start();
+    expect(stdout.listenerCount("error")).toBe(1);
+    expect(stderr.listenerCount("error")).toBe(1);
+    transport.stop();
+    expect(stdout.listenerCount("error")).toBe(0);
+    expect(stderr.listenerCount("error")).toBe(0);
   });
 });

@@ -8,6 +8,7 @@ import type {
 import { KV } from "../state/schema.js";
 import type { StateKV } from "../state/kv.js";
 import { collectAll } from "../state/kv.js";
+import { deleteMemoryUnderLock } from "../state/memory-utils.js";
 import type { AccessLog } from "./access-tracker.js";
 import {
   emptyAccessLog,
@@ -306,7 +307,7 @@ export function registerRetentionFunctions(
           ? data.maxEvict
           : 50;
       const maxEvict = Math.min(1000, Math.max(0, maxEvictRaw));
-      const { decrementImageRef } = await import("./image-refs.js");
+      const { releaseImageRef } = await import("./image-refs.js");
 
       const allScores = await kv.list<RetentionScore>(KV.retentionScores);
       const candidates = allScores
@@ -373,10 +374,12 @@ export function registerRetentionFunctions(
             continue;
           }
 
-          if (mem.imageRef) {
-            await decrementImageRef(kv, sdk, mem.imageRef);
+          const removed = await deleteMemoryUnderLock(kv, scope, candidate.memoryId);
+          if (!removed) {
+            missingIds.push(candidate.memoryId);
+            continue;
           }
-          await kv.delete(scope, candidate.memoryId);
+          if (removed.imageRef) await releaseImageRef(kv, sdk, candidate.memoryId, removed.imageRef);
           evictedIds.push(candidate.memoryId);
           evicted++;
           if (resolvedSource === "semantic") evictedSemantic++;
@@ -385,11 +388,23 @@ export function registerRetentionFunctions(
           await deleteAccessLog(kv, candidate.memoryId);
           getSearchIndex().remove(candidate.memoryId);
           vectorIndexRemove(candidate.memoryId);
-        } catch {
+        } catch (err) {
+          logger.warn("Retention delete failed", {
+            resource: "memory",
+            id: candidate.memoryId,
+            reason: "retention_eviction",
+            error: err instanceof Error ? err.message : String(err),
+          });
           continue;
         }
       }
 
+      const orphanScoreIds: string[] = [];
+      for (const id of missingIds) {
+        if (await kv.get(KV.memories, id) || await kv.get(KV.semantic, id)) continue;
+        await kv.delete(KV.retentionScores, id);
+        orphanScoreIds.push(id);
+      }
       await deleteFacetsForTargets(kv, [...evictedIds, ...missingIds]);
 
       // Retention eviction is a structural delete path that removes
@@ -406,6 +421,13 @@ export function registerRetentionFunctions(
           evictedEpisodic,
           evictedSemantic,
           reason: "retention score below threshold",
+        });
+      }
+      if (orphanScoreIds.length > 0) {
+        await recordAudit(kv, "delete", "mem::retention-evict", orphanScoreIds, {
+          resource: "retention_score",
+          removed: orphanScoreIds.length,
+          reason: "retention score for a memory that no longer exists",
         });
       }
 
