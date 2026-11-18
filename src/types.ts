@@ -318,7 +318,9 @@ export interface MemorySlot {
 export interface EmbeddingProvider {
   name: string;
   dimensions: number;
+  indexIdentity?: string;
   embed(text: string): Promise<Float32Array>;
+  embedQuery?(text: string): Promise<Float32Array>;
   embedBatch(texts: string[]): Promise<Float32Array[]>;
   embedImage?(src: string): Promise<Float32Array>;
 }

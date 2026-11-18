@@ -72,6 +72,9 @@ export function withDimensionGuard(provider: EmbeddingProvider): EmbeddingProvid
     out.forEach((v, i) => check(v, `embedBatch[${i}]`));
     return out;
   };
+  if (provider.embedQuery) {
+    wrapped.embedQuery = async (t) => check(await provider.embedQuery!(t), "embedQuery");
+  }
   if (provider.embedImage) {
     wrapped.embedImage = async (s: string) =>
       check(await provider.embedImage!(s), "embedImage");
