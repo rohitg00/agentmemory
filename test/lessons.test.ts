@@ -224,6 +224,32 @@ describe("Lessons", () => {
 
       expect(result.success).toBe(false);
     });
+
+    it("keeps short queries whole in the lesson_recall audit row", async () => {
+      await sdk.trigger("mem::lesson-recall", { query: "database performance" });
+
+      const auditRows = (await kv.list(currentAuditScope())) as Array<{
+        operation: string;
+        details: Record<string, unknown>;
+      }>;
+      const row = auditRows.find((r) => r.operation === "lesson_recall");
+      expect(row!.details.query).toBe("database performance");
+      expect(row!.details).not.toHaveProperty("queryLength");
+    });
+
+    it("stores a bounded prefix of a prompt-sized query in the lesson_recall audit row", async () => {
+      const query = "database performance " + "context ".repeat(2000);
+
+      await sdk.trigger("mem::lesson-recall", { query });
+
+      const auditRows = (await kv.list(currentAuditScope())) as Array<{
+        operation: string;
+        details: Record<string, unknown>;
+      }>;
+      const row = auditRows.find((r) => r.operation === "lesson_recall");
+      expect(row!.details.query).toBe(query.slice(0, 500));
+      expect(row!.details.queryLength).toBe(query.length);
+    });
   });
 
   describe("mem::lesson-list", () => {

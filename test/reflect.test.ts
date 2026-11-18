@@ -640,6 +640,20 @@ describe("Reflect", () => {
       const result = (await sdk.trigger("mem::insight-search", { query: "" })) as { success: boolean };
       expect(result.success).toBe(false);
     });
+
+    it("stores a bounded prefix of a prompt-sized query in the insight_search audit row", async () => {
+      const query = "security layered protection " + "context ".repeat(2000);
+
+      await sdk.trigger("mem::insight-search", { query });
+
+      const audits = await kv.list<{
+        operation: string;
+        details: Record<string, unknown>;
+      }>(currentAuditScope());
+      const row = audits.find((a) => a.operation === "insight_search");
+      expect(row!.details.query).toBe(query.slice(0, 500));
+      expect(row!.details.queryLength).toBe(query.length);
+    });
   });
 
   describe("mem::insight-decay-sweep", () => {
