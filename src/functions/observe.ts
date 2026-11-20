@@ -197,6 +197,10 @@ export function registerObserveFunction(
           toolName,
           dedupInput,
           dedupOutput,
+          {
+            agentId: typeof d["agent_id"] === "string" && d["agent_id"] ? d["agent_id"] : undefined,
+            agentType: typeof d["agent_type"] === "string" && d["agent_type"] ? d["agent_type"] : undefined,
+          },
         );
         if (dedupMap.isDuplicate(dedupHash)) {
           recordDedupSkip();

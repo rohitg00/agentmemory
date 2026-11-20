@@ -35,14 +35,25 @@ export class DedupMap {
     this.cleanupTimer.unref();
   }
 
-  computeHash(sessionId: string, toolName: string, toolInput: unknown, toolOutput?: unknown): string {
+  computeHash(
+    sessionId: string,
+    toolName: string,
+    toolInput: unknown,
+    toolOutput?: unknown,
+    executionIdentity?: { agentId?: string; agentType?: string },
+  ): string {
     const input =
       typeof toolInput === "string"
         ? toolInput.slice(0, 500)
         : JSON.stringify(toolInput ?? "").slice(0, 500);
     const output = outputDigest(toolOutput);
     const raw = output ? `${sessionId}:${toolName}:${input}:${output}` : `${sessionId}:${toolName}:${input}`;
-    return createHash("sha256").update(raw).digest("hex");
+    const hash = createHash("sha256").update(raw);
+    if (executionIdentity?.agentId || executionIdentity?.agentType) {
+      // Identity must not share the tool input's 500-character prefix limit.
+      hash.update("\0execution-agent:").update(JSON.stringify([executionIdentity.agentId, executionIdentity.agentType]));
+    }
+    return hash.digest("hex");
   }
 
   isDuplicate(hash: string): boolean {
