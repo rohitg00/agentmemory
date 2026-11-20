@@ -22,6 +22,8 @@ export interface TimelineEvent {
   toolName?: string;
   toolInput?: unknown;
   toolOutput?: unknown;
+  executionAgentId?: string;
+  executionAgentType?: string;
 }
 
 export interface Timeline {
@@ -149,6 +151,8 @@ export function projectTimeline(observations: RawObservation[]): Timeline {
       toolName: obs.toolName,
       toolInput: obs.toolInput,
       toolOutput: obs.toolOutput,
+      ...(obs.executionAgentId ? { executionAgentId: obs.executionAgentId } : {}),
+      ...(obs.executionAgentType ? { executionAgentType: obs.executionAgentType } : {}),
     };
     event.durationMs = estimateDurationMs(event);
     events.push(event);

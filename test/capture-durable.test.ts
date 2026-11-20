@@ -192,6 +192,48 @@ describe("durable capture", () => {
     expect(other.status).toBe("accepted");
   });
 
+  it.each(["post_tool_use", "post_tool_failure"])("keeps %s from different subagents when clients send no event id", async (hookType) => {
+    const kv = mockKV();
+    const { capture, dedup } = await boot(kv);
+    const body = {
+      ...payload("identity"), hookType,
+      data: {
+        tool_name: "Bash", tool_input: { command: "echo identity" },
+        ...(hookType === "post_tool_failure" ? { error: "exit 1" } : { tool_output: "identity" }),
+      },
+    };
+    const identities = [
+      {},
+      { agent_id: "agent-a", agent_type: "Explore" },
+      { agent_id: "agent-b", agent_type: "Explore" },
+      { agent_id: "agent-a", agent_type: "Plan" },
+      { agent_type: "Explore" },
+      { agent_id: `${"a".repeat(600)}1` },
+      { agent_id: `${"a".repeat(600)}2` },
+    ];
+    try {
+      for (const identity of identities) {
+        const event = { ...body, data: { ...body.data, ...identity } };
+        expect((await capture(event)).status).toBe("accepted");
+        expect((await capture(event)).status).toBe("duplicate");
+      }
+      for (const invalid of [
+        { agent_id: 42, agent_type: {} }, { agent_id: "", agent_type: "" },
+        { agent_id: "", agent_type: "Explore" }, { agent_id: 42, agent_type: "Explore" },
+      ]) {
+        expect((await capture({ ...body, data: { ...body.data, ...invalid } })).status).toBe("duplicate");
+      }
+      expect(observations(kv)).toHaveLength(identities.length);
+      const identified = { ...body, data: { ...body.data, ...identities[1] } };
+      expect((await capture(identified, "evc_subagent000001")).status).toBe("accepted");
+      expect((await capture(identified, "evc_subagent000002")).status).toBe("accepted");
+      expect((await capture(identified, "evc_subagent000001")).status).toBe("duplicate");
+      expect(observations(kv)).toHaveLength(identities.length + 2);
+    } finally {
+      dedup.stop();
+    }
+  });
+
   it("keeps the 5-minute content dedup for clients that send no event id", async () => {
     const kv = mockKV();
     const { capture } = await boot(kv);

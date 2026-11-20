@@ -48,6 +48,8 @@ async function main() {
         cwd,
         timestamp: new Date().toISOString(),
         data: {
+          ...(typeof data.agent_id === "string" && data.agent_id ? { agent_id: data.agent_id } : {}),
+          ...(typeof data.agent_type === "string" && data.agent_type ? { agent_type: data.agent_type } : {}),
           tool_name: toolName,
           tool_input:
             typeof toolInput === "string"

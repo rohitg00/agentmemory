@@ -66,6 +66,9 @@ export interface RawObservation {
   modality?: "text" | "image" | "mixed";
   imageData?: string;
   agentId?: string;
+  // Hook execution identity is independent of the memory isolation scope above.
+  executionAgentId?: string;
+  executionAgentType?: string;
   origin?: Origin;
   eventId?: string;
   captureKey?: string;
@@ -75,6 +78,8 @@ export interface ObservationSource {
   hookType: HookType;
   originalBytes: number;
   truncated: boolean;
+  executionAgentId?: string;
+  executionAgentType?: string;
   toolName?: string;
   toolInput?: unknown;
   toolOutput?: unknown;
