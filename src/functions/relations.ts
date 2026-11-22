@@ -61,11 +61,9 @@ export function registerRelationsFunction(sdk: IIIClient, kv: StateKV): void {
       type: MemoryRelation["type"];
       confidence?: number;
     }) => {
-      const [firstId, secondId] = [data.sourceId, data.targetId].sort();
-      const lockKey =
-        firstId === secondId ? `mem:${firstId}` : `mem:${firstId}:${secondId}`;
-
-      return withKeyedLock(lockKey, async () => {
+      // Shares the lock with remember/evolve: relate rewrites whole memory
+      // records, so any other writer of the same memory must be excluded.
+      return withKeyedLock("mem:remember", async () => {
         const source = await kv.get<Memory>(KV.memories, data.sourceId);
         const target = await kv.get<Memory>(KV.memories, data.targetId);
         if (!source || !target) {
