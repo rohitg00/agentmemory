@@ -94,14 +94,23 @@ function idKey(value: unknown): string {
   return typeof id === 'string' ? id : typeof id === 'number' ? String(id) : ''
 }
 
+export function insertionOrderKey(value: unknown): { at: number; id: string } {
+  return { at: orderKey(value), id: idKey(value) }
+}
+
+export function compareInsertionOrder(
+  a: ReturnType<typeof insertionOrderKey>,
+  b: ReturnType<typeof insertionOrderKey>,
+): number {
+  if (a.at !== b.at) return a.at < b.at ? -1 : 1
+  if (a.id === b.id) return 0
+  return a.id < b.id ? -1 : 1
+}
+
 export function orderLikeInsertion<T>(values: T[]): T[] {
   return values
-    .map((value) => ({ value, at: orderKey(value), id: idKey(value) }))
-    .sort((a, b) => {
-      if (a.at !== b.at) return a.at < b.at ? -1 : 1
-      if (a.id === b.id) return 0
-      return a.id < b.id ? -1 : 1
-    })
+    .map((value) => ({ value, ...insertionOrderKey(value) }))
+    .sort(compareInsertionOrder)
     .map((entry) => entry.value)
 }
 
@@ -212,6 +221,14 @@ export class StateKV {
     scope = await resolveGraphScope(this, scope)
     await ensureGraphConsistency(this, scope)
     return this.rawListKeys(scope)
+  }
+
+  async count(scope: string): Promise<number> {
+    try {
+      return (await this.listKeys(scope)).length
+    } catch {
+      return (await this.list(scope)).length
+    }
   }
 
   private async rawListKeys(scope: string): Promise<string[]> {

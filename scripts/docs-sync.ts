@@ -3,6 +3,7 @@ import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ESSENTIAL_TOOLS, getAllTools } from "../src/mcp/tools-registry.js";
+import { renderReadmeDiagrams, type DiagramFacts } from "./readme-diagrams.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const STATE_PATH = "scripts/docs-sync.state.json";
@@ -54,6 +55,49 @@ function countFallbackTools(): number {
   const src = read("src/mcp/standalone.ts");
   const body = src.slice(src.indexOf("const IMPLEMENTED_TOOLS = new Set(["));
   return (body.slice(0, body.indexOf("]);")).match(/"memory_\w+"/g) ?? []).length;
+}
+
+function sourceNumber(path: string, pattern: RegExp, problems: string[]): number {
+  const match = read(path).match(pattern);
+  if (!match) problems.push(`${path} no longer matches ${pattern}`);
+  return match ? Number(match[1]) : 0;
+}
+
+function countInBlock(path: string, start: string, item: RegExp, problems: string[]): number {
+  const src = read(path);
+  const at = src.indexOf(start);
+  if (at < 0) {
+    problems.push(`${path} no longer contains ${start}`);
+    return 0;
+  }
+  const body = src.slice(at, src.indexOf("\n  ];", at));
+  return body.match(item)?.length ?? 0;
+}
+
+function diagramFacts(problems: string[]): DiagramFacts {
+  const restPort = sourceNumber("src/config.ts", /env\["III_REST_PORT"\] \|\| "(\d+)"/, problems);
+  return {
+    restPort,
+    viewerPort: restPort + sourceNumber("src/config.ts", /\|\| restPort \+ (\d+);/, problems),
+    restEndpoints: Number(FACTS.find((f) => f.key === "restEndpoints")!.value()),
+    mcpTools: getAllTools().length,
+    resources: countInBlock("src/mcp/server.ts", "const MCP_RESOURCES = [", /uri: "agentmemory:\/\//g, problems),
+    prompts: countInBlock("src/mcp/server.ts", "const MCP_PROMPTS = [", /^ {4}\{/gm, problems),
+    hooks: countHookTypes(),
+    rrfK: sourceNumber("src/state/hybrid-search.ts", /const RRF_K = (\d+);/, problems),
+    tokenBudget: sourceNumber("src/config.ts", /tokenBudget: safeParseInt\(env\["TOKEN_BUDGET"\], (\d+)\)/, problems),
+    maxPerSession: sourceNumber("src/state/hybrid-search.ts", /maxPerSession = (\d+)/, problems),
+  };
+}
+
+function checkDiagramNames(svgs: Record<string, string>, problems: string[]): void {
+  const source = sourceFiles().map(read).join("\n");
+  for (const [path, svg] of Object.entries(svgs)) {
+    const names = new Set(svg.replace(/<style>[\s\S]*?<\/style>/, "").match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g) ?? []);
+    for (const name of names) {
+      if (!new RegExp(`\\b${name}\\b`).test(source)) problems.push(`${path} names ${name}, which no longer appears in src/`);
+    }
+  }
 }
 
 function sourceFiles(): string[] {
@@ -351,6 +395,20 @@ function main(): void {
     }
     report.push(`${fact.label}: ${olds.join(", ")} -> ${next}`);
     nextState.facts[fact.key] = [next];
+  }
+
+  const diagramProblems: string[] = [];
+  const diagrams = renderReadmeDiagrams(diagramFacts(diagramProblems));
+  checkDiagramNames(diagrams, diagramProblems);
+  if (diagramProblems.length > 0) {
+    for (const problem of diagramProblems) console.error(`docs-sync: README diagrams: ${problem}`);
+    console.error("Update scripts/readme-diagrams.ts or the source patterns in scripts/docs-sync.ts.");
+    process.exit(1);
+  }
+  for (const [path, svg] of Object.entries(diagrams)) {
+    if (!original.has(path)) original.set(path, existsSync(join(ROOT, path)) ? read(path) : "");
+    files.set(path, svg);
+    if (original.get(path) !== svg) report.push(`diagram: ${path}`);
   }
 
   const changed = [...files].filter(([p, t]) => original.get(p) !== t).map(([p]) => p);

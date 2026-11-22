@@ -388,7 +388,13 @@ export function registerRetentionFunctions(
           await deleteAccessLog(kv, candidate.memoryId);
           getSearchIndex().remove(candidate.memoryId);
           vectorIndexRemove(candidate.memoryId);
-        } catch {
+        } catch (err) {
+          logger.warn("Retention delete failed", {
+            resource: "memory",
+            id: candidate.memoryId,
+            reason: "retention_eviction",
+            error: err instanceof Error ? err.message : String(err),
+          });
           continue;
         }
       }

@@ -6,13 +6,14 @@ import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
-import { memoryToObservation, observationEmbedText, supersededAt } from "../state/memory-utils.js";
+import { memoryToObservation, observationEmbedText, sharesMemoryScope, supersededAt } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { deleteFacetsForTargets } from "./facets.js";
 import { recordAudit } from "./audit.js";
 import { getSearchIndex, getVectorIndex, isMemoryIndexReady, scheduleIndexSave, vectorIndexAddGuarded, vectorIndexRemove, flushIndexSave } from "./search.js";
 import { getAgentId } from "../config.js";
 import { logger } from "../logger.js";
+import { TTL_TOO_LARGE, ttlExpiry } from "../mcp/remember-arguments.js";
 
 // Slicing by UTF-16 code unit can cut an astral character (emoji, some CJK
 // extensions) mid surrogate pair, leaving a lone high surrogate that renders
@@ -54,6 +55,9 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
       }
       if (data.sourceObservationIds && !Array.isArray(data.sourceObservationIds)) {
         return { success: false, error: "sourceObservationIds must be an array" };
+      }
+      if (typeof data.ttlDays === "number" && data.ttlDays > 0 && ttlExpiry(data.ttlDays) === null) {
+        return { success: false, error: TTL_TOO_LARGE };
       }
       const validTypes = new Set([
         "pattern",
@@ -128,14 +132,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         const lowerContent = data.content.toLowerCase();
         for (const existing of candidateMemories) {
           if (existing.isLatest === false) continue;
-          if ((existing.agentId || undefined) !== callAgentId) continue;
-          // Never supersede a memory that belongs to a different project.
-          // Both sides must have an explicit project for the guard to engage;
-          // an unscoped memory (legacy, no project field) is treated as a
-          // wildcard so pre-existing data is not stranded.
-          if (project && existing.project && existing.project !== project) {
-            continue;
-          }
+          if (!sharesMemoryScope(existing, { project, agentId: callAgentId })) continue;
           const similarity = jaccardSimilarity(
             lowerContent,
             existing.content.toLowerCase(),
@@ -178,9 +175,8 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
           ...(project !== undefined && { project }),
         };
 
-        if (data.ttlDays && typeof data.ttlDays === "number" && data.ttlDays > 0) {
-          memory.forgetAfter = new Date(Date.now() + data.ttlDays * 86400000).toISOString();
-        }
+        const forgetAfter = typeof data.ttlDays === "number" && data.ttlDays > 0 ? ttlExpiry(data.ttlDays) : null;
+        if (forgetAfter) memory.forgetAfter = forgetAfter;
 
         if (supersededMemory) {
           supersededMemory.isLatest = false;

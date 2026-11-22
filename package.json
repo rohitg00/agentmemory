@@ -18,6 +18,7 @@
   },
   "scripts": {
     "build": "tsdown && node scripts/copy-assets.mjs",
+    "typecheck:hooks": "tsc --noEmit --project tsconfig.hooks.json",
     "dev": "tsx src/index.ts",
     "start": "node dist/cli.mjs",
     "migrate": "node dist/functions/migrate.js",

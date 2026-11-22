@@ -33,8 +33,8 @@ export class InMemoryKV {
     return data;
   }
 
-  async delete(scope: string, key: string): Promise<void> {
-    this.store.get(scope)?.delete(key);
+  async delete(scope: string, key: string): Promise<boolean> {
+    return this.store.get(scope)?.delete(key) ?? false;
   }
 
   async list<T = unknown>(scope: string): Promise<T[]> {
