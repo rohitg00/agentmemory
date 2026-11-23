@@ -156,15 +156,35 @@ async function expandRecall(results: SmartSearchResult[], project: string, timeo
 }
 
 async function recallForPrompt(query: string, project: string, limit: number, lessonLimit: number, timeoutMs = 1500): Promise<Recall | null> {
-  const result = await callAgentMemory<SmartSearchResponse>("smart-search", {
+  // A curated memory answers "what did we decide" better than the raw
+  // observation it was distilled from, so look there first and fall back to
+  // the mixed index only when no memory matches.
+  const memory = await callAgentMemory<SmartSearchResponse>("smart-search", {
+    body: { query, limit, project, targetLayer: "memory" },
+    timeoutMs,
+  });
+  const memoryResults = (memory?.results ?? []).slice(0, limit);
+  if (memoryResults.length) {
+    // Lessons are only returned for targetLayer "all", so fetch them
+    // alongside the expansion instead of paying for a third serial round trip.
+    const [results, lessonsSearch] = await Promise.all([
+      expandRecall(memoryResults, project, timeoutMs),
+      callAgentMemory<SmartSearchResponse>("smart-search", {
+        body: { query, limit: lessonLimit, project },
+        timeoutMs,
+      }),
+    ]);
+    return { results, lessons: (lessonsSearch?.lessons ?? []).slice(0, lessonLimit) };
+  }
+  const mixed = await callAgentMemory<SmartSearchResponse>("smart-search", {
     body: { query, limit, project },
     timeoutMs,
   });
-  if (!result) return null;
-  const results = (result.results ?? []).slice(0, limit);
+  if (!memory && !mixed) return null;
+  const mixedResults = (mixed?.results ?? []).slice(0, limit);
   return {
-    results: await expandRecall(results, project, timeoutMs),
-    lessons: (result.lessons ?? []).slice(0, lessonLimit),
+    results: await expandRecall(mixedResults, project, timeoutMs),
+    lessons: (mixed?.lessons ?? []).slice(0, lessonLimit),
   };
 }
 

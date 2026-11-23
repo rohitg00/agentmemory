@@ -50,7 +50,41 @@ describe("Pi extension", () => {
     const result = await tools.get("memory_search").execute("search", { query: "deploy", limit: 3 });
     expect(result.content[0].text).toContain("Deploys wait for the acceptance suite.");
     const bodies = vi.mocked(fetch).mock.calls.map(([, options]) => JSON.parse(options!.body as string));
-    expect(bodies.at(-1)).toMatchObject({ expandIds: ["obs-1"] });
+    expect(bodies.some(body => body.expandIds?.[0] === "obs-1")).toBe(true);
+  });
+  it("asks for durable memories first and falls back to the mixed index", async () => {
+    const searches: any[] = [];
+    vi.mocked(fetch).mockImplementation(async (url, options) => {
+      if (!String(url).endsWith("smart-search")) return Response.json({ status: "healthy" });
+      const body = JSON.parse(options!.body as string);
+      searches.push(body);
+      if (body.expandIds) return Response.json({ results: [{ obsId: body.expandIds[0], observation: { title: "Unrelated", narrative: "Raw session note." } }] });
+      if (body.targetLayer === "memory") return Response.json({ results: [] });
+      return Response.json({ results: [{ obsId: "obs-9", title: "Unrelated" }], lessons: [{ content: "Prefer pnpm" }] });
+    });
+    const { handlers, ctx } = extension();
+    const result = await handlers.get("before_agent_start")!(prompt, ctx);
+    expect(searches.map(body => body.targetLayer ?? "all")).toEqual(["memory", "all", "all"]);
+    expect(searches.at(-1)).toMatchObject({ expandIds: ["obs-9"] });
+    expect(result.message.content).toContain("Raw session note.");
+    expect(result.message.content).toContain("Prefer pnpm");
+  });
+  it("keeps the memory first result when a curated memory matches", async () => {
+    const searches: any[] = [];
+    vi.mocked(fetch).mockImplementation(async (url, options) => {
+      if (!String(url).endsWith("smart-search")) return Response.json({ status: "healthy" });
+      const body = JSON.parse(options!.body as string);
+      searches.push(body);
+      if (body.expandIds) return Response.json({ results: [{ obsId: "mem-1", observation: { title: "Deploy gate", narrative: "Deploys wait for the acceptance suite." } }] });
+      if (body.targetLayer === "memory") return Response.json({ results: [{ obsId: "mem-1", title: "Deploy gate" }] });
+      return Response.json({ results: [{ obsId: "obs-9", title: "Unrelated" }] });
+    });
+    const { handlers, ctx } = extension();
+    const result = await handlers.get("before_agent_start")!(prompt, ctx);
+    expect(searches[0]).toMatchObject({ query: "same task", targetLayer: "memory" });
+    expect(searches.some(body => body.expandIds?.[0] === "mem-1")).toBe(true);
+    expect(result.message.content).toContain("Deploys wait for the acceptance suite.");
+    expect(result.message.content).not.toContain("Unrelated");
   });
   it("uses the real session id and workspace, including degraded servers", async () => {
     vi.mocked(fetch).mockImplementation(async () => Response.json({ status: "degraded" }));
