@@ -11,6 +11,19 @@ vi.mock("iii-sdk", async (importOriginal) => {
   };
 });
 
+const lockAttempts = vi.hoisted(() => ({ onAttempt: undefined as ((key: string) => void) | undefined }));
+
+vi.mock("../src/state/keyed-mutex.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/state/keyed-mutex.js")>();
+  return {
+    ...actual,
+    withReentrantKeyedLock: <T>(key: string, fn: () => Promise<T>): Promise<T> => {
+      lockAttempts.onAttempt?.(key);
+      return actual.withReentrantKeyedLock(key, fn);
+    },
+  };
+});
+
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -83,6 +96,7 @@ describe("mem::relate concurrency", () => {
   let kv: ReturnType<typeof mockKV>;
 
   beforeEach(async () => {
+    lockAttempts.onAttempt = undefined;
     sdk = mockSdk();
     kv = mockKV();
     registerRelationsFunction(sdk as never, kv as never);
@@ -136,10 +150,18 @@ describe("mem::relate concurrency", () => {
       return set(scope, key, data);
     };
 
+    // Auto-forget only asks for the lock after taking its snapshot, so
+    // releasing relate at that point guarantees the snapshot is stale.
+    let forgetLocking!: () => void;
+    const locking = new Promise<void>((resolve) => (forgetLocking = resolve));
+    lockAttempts.onAttempt = (key) => {
+      if (key === "mem:remember") forgetLocking();
+    };
+
     const relate = sdk.trigger("mem::relate", { sourceId: "mem_a", targetId: "mem_c", type: "related" });
     await paused;
     const forget = sdk.trigger("mem::auto-forget", {});
-    await Promise.race([forget, new Promise((resolve) => setTimeout(resolve, 50))]);
+    await Promise.race([forget, locking]);
     release();
     await Promise.all([relate, forget]);
 
