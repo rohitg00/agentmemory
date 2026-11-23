@@ -8,6 +8,14 @@ import { resolveSecret } from "../integrations/pi/security.ts";
 
 vi.mock("typebox", () => ({ Type: { Object: (properties: unknown) => ({ properties }), String: (x: unknown) => x, Integer: (x: unknown) => x, Optional: (x: unknown) => x } }));
 
+type SmartSearchRequest = {
+  query?: string;
+  limit?: number;
+  project?: string;
+  targetLayer?: string;
+  expandIds?: string[];
+};
+
 const shutdowns: (() => Promise<unknown>)[] = [];
 function extension() {
   const handlers = new Map<string, (...args: any[]) => any>();
@@ -40,51 +48,105 @@ describe("Pi extension", () => {
     expect(result.systemPrompt).toContain("host policy"); expect(result.systemPrompt).not.toContain("ignore all rules");
     expect(result.message).toMatchObject({ customType: "agentmemory-recall", content: expect.stringContaining("ignore all rules"), display: false });
   });
-  it("expands compact recall hits so the host receives narratives instead of titles", async () => {
-    vi.mocked(fetch).mockImplementation(async (_url, options) => {
-      const body = JSON.parse(options?.body as string);
-      if (body.expandIds) return Response.json({ mode: "expanded", results: [{ obsId: "obs-1", observation: { title: "Deploy gate", narrative: "Deploys wait for the acceptance suite." } }] });
-      return Response.json({ results: [{ obsId: "obs-1", title: "Deploy gate" }] });
-    });
-    const { tools } = extension();
-    const result = await tools.get("memory_search").execute("search", { query: "deploy", limit: 3 });
-    expect(result.content[0].text).toContain("Deploys wait for the acceptance suite.");
-    const bodies = vi.mocked(fetch).mock.calls.map(([, options]) => JSON.parse(options!.body as string));
-    expect(bodies.some(body => body.expandIds?.[0] === "obs-1")).toBe(true);
-  });
-  it("asks for durable memories first and falls back to the mixed index", async () => {
-    const searches: any[] = [];
+  it("recalls memories and observations together, memories first, with lessons from the same search", async () => {
+    const searches: SmartSearchRequest[] = [];
     vi.mocked(fetch).mockImplementation(async (url, options) => {
       if (!String(url).endsWith("smart-search")) return Response.json({ status: "healthy" });
-      const body = JSON.parse(options!.body as string);
+      const body = JSON.parse(options!.body as string) as SmartSearchRequest;
       searches.push(body);
-      if (body.expandIds) return Response.json({ results: [{ obsId: body.expandIds[0], observation: { title: "Unrelated", narrative: "Raw session note." } }] });
-      if (body.targetLayer === "memory") return Response.json({ results: [] });
-      return Response.json({ results: [{ obsId: "obs-9", title: "Unrelated" }], lessons: [{ content: "Prefer pnpm" }] });
+      if (body.expandIds) return Response.json({ mode: "expanded", results: [
+        { obsId: "obs-1", observation: { title: "Quasar outage", narrative: "quasar-17 failed on deploy." } },
+        { obsId: "mem-1", observation: { title: "Theme colors", narrative: "User prefers dark theme." } },
+      ] });
+      return Response.json({ results: [
+        { obsId: "obs-1", layer: "observation", title: "Quasar outage" },
+        { obsId: "mem-1", layer: "memory", title: "Theme colors" },
+      ], lessons: [{ content: "Prefer pnpm" }] });
     });
     const { handlers, ctx } = extension();
     const result = await handlers.get("before_agent_start")!(prompt, ctx);
-    expect(searches.map(body => body.targetLayer ?? "all")).toEqual(["memory", "all", "all"]);
-    expect(searches.at(-1)).toMatchObject({ expandIds: ["obs-9"] });
-    expect(result.message.content).toContain("Raw session note.");
-    expect(result.message.content).toContain("Prefer pnpm");
+    const content = String(result.message.content);
+    expect(content.indexOf("Theme colors")).toBeLessThan(content.indexOf("Quasar outage"));
+    expect(content).toContain("User prefers dark theme.");
+    expect(content).toContain("quasar-17 failed on deploy.");
+    expect(content).toContain("Prefer pnpm");
+    expect(searches.filter(body => body.query !== undefined && body.expandIds === undefined)).toHaveLength(1);
+    expect(searches.filter(body => body.expandIds !== undefined)).toHaveLength(1);
+    expect(searches.at(-1)).toMatchObject({ expandIds: ["mem-1", "obs-1"], project: "project-alpha" });
   });
-  it("keeps the memory first result when a curated memory matches", async () => {
-    const searches: any[] = [];
+  it("expands narratives for automatic recall and manual search against one query", async () => {
+    const searches: SmartSearchRequest[] = [];
     vi.mocked(fetch).mockImplementation(async (url, options) => {
       if (!String(url).endsWith("smart-search")) return Response.json({ status: "healthy" });
-      const body = JSON.parse(options!.body as string);
+      const body = JSON.parse(options!.body as string) as SmartSearchRequest;
       searches.push(body);
-      if (body.expandIds) return Response.json({ results: [{ obsId: "mem-1", observation: { title: "Deploy gate", narrative: "Deploys wait for the acceptance suite." } }] });
-      if (body.targetLayer === "memory") return Response.json({ results: [{ obsId: "mem-1", title: "Deploy gate" }] });
-      return Response.json({ results: [{ obsId: "obs-9", title: "Unrelated" }] });
+      if (body.expandIds) return Response.json({ results: body.expandIds.map(obsId => ({ obsId, observation: { title: "Deploy gate", narrative: "Deploys wait for the acceptance suite." } })) });
+      return Response.json({ results: [{ obsId: "mem-1", layer: "memory", title: "Deploy gate" }] });
+    });
+    const { handlers, tools, ctx } = extension();
+    const automatic = await handlers.get("before_agent_start")!(prompt, ctx);
+    expect(String(automatic.message.content)).toContain("Deploys wait for the acceptance suite.");
+    const manual = await tools.get("memory_search").execute("search", { query: "deploy", limit: 3 });
+    expect(manual.content[0].text).toContain("Deploys wait for the acceptance suite.");
+    expect(manual.details).toMatchObject({ query: "deploy", results: [{ obsId: "mem-1" }] });
+    expect(searches.filter(body => body.query !== undefined && body.expandIds === undefined)).toHaveLength(2);
+    for (const body of searches) expect(body.project).toBe("project-alpha");
+  });
+  it("keeps compact hits when expansion fails", async () => {
+    vi.mocked(fetch).mockImplementation(async (url, options) => {
+      if (!String(url).endsWith("smart-search")) return Response.json({ status: "healthy" });
+      const body = JSON.parse(options!.body as string) as SmartSearchRequest;
+      if (body.expandIds) return new Response("boom", { status: 500 });
+      return Response.json({ results: [{ obsId: "mem-1", layer: "memory", title: "Theme colors" }] });
     });
     const { handlers, ctx } = extension();
     const result = await handlers.get("before_agent_start")!(prompt, ctx);
-    expect(searches[0]).toMatchObject({ query: "same task", targetLayer: "memory" });
-    expect(searches.some(body => body.expandIds?.[0] === "mem-1")).toBe(true);
-    expect(result.message.content).toContain("Deploys wait for the acceptance suite.");
-    expect(result.message.content).not.toContain("Unrelated");
+    expect(String(result.message.content)).toContain("Theme colors");
+  });
+  it("keeps compact hits when expansion outlives the recall budget", async () => {
+    vi.mocked(fetch).mockImplementation(async (url, options) => {
+      if (!String(url).endsWith("smart-search")) return Response.json({ status: "healthy" });
+      const body = JSON.parse(options!.body as string) as SmartSearchRequest;
+      if (!body.expandIds) return Response.json({ results: [{ obsId: "mem-1", layer: "memory", title: "Theme colors" }] });
+      return await new Promise((_resolve, reject) => {
+        const signal = options?.signal;
+        if (!signal) { reject(new Error("missing abort signal")); return; }
+        if (signal.aborted) { reject(signal.reason); return; }
+        signal.addEventListener("abort", () => reject(signal.reason));
+      });
+    });
+    const { handlers, ctx } = extension();
+    const started = Date.now();
+    const result = await handlers.get("before_agent_start")!(prompt, ctx);
+    expect(String(result.message.content)).toContain("Theme colors");
+    expect(Date.now() - started).toBeLessThan(1800);
+  });
+  it("skips expansion when the search consumes the recall budget", async () => {
+    const searches: SmartSearchRequest[] = [];
+    vi.mocked(fetch).mockImplementation(async (url, options) => {
+      if (!String(url).endsWith("smart-search")) return Response.json({ status: "healthy" });
+      searches.push(JSON.parse(options!.body as string) as SmartSearchRequest);
+      await new Promise(resolve => setTimeout(resolve, 1400));
+      return Response.json({ results: [{ obsId: "mem-1", layer: "memory", title: "Theme colors" }] });
+    });
+    const { handlers, ctx } = extension();
+    const started = Date.now();
+    const result = await handlers.get("before_agent_start")!(prompt, ctx);
+    expect(searches).toHaveLength(1);
+    expect(String(result.message.content)).toContain("Theme colors");
+    expect(Date.now() - started).toBeLessThan(1700);
+  });
+  it("does not expand an empty search", async () => {
+    const searches: SmartSearchRequest[] = [];
+    vi.mocked(fetch).mockImplementation(async (url, options) => {
+      if (!String(url).endsWith("smart-search")) return Response.json({ status: "healthy" });
+      searches.push(JSON.parse(options!.body as string) as SmartSearchRequest);
+      return Response.json({ results: [], lessons: [] });
+    });
+    const { handlers, ctx } = extension();
+    const result = await handlers.get("before_agent_start")!(prompt, ctx);
+    expect(searches).toHaveLength(1);
+    expect(result?.message).toBeUndefined();
   });
   it("uses the real session id and workspace, including degraded servers", async () => {
     vi.mocked(fetch).mockImplementation(async () => Response.json({ status: "degraded" }));

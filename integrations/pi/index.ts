@@ -27,6 +27,7 @@ type SearchObservation = {
 };
 type SmartSearchResult = {
   obsId?: string;
+  layer?: string;
   title?: string;
   narrative?: string;
   type?: string;
@@ -133,6 +134,18 @@ async function callAgentMemory<T>(pathname: string, options?: Parameters<typeof 
 // injects them verbatim recalls the heading only. Expand the hits the server
 // returned so the injected block carries the full narrative.
 const RECALL_EXPAND_LIMIT = 20;
+// Below this much remaining budget an expansion cannot plausibly answer before
+// the deadline, so the compact hits are returned instead.
+const RECALL_EXPAND_MIN_MS = 250;
+
+// Ranking stays server-side; this only lifts curated memories above the raw
+// observations they were distilled from, keeping the server order in each group.
+function prioritizeMemories(results: SmartSearchResult[]): SmartSearchResult[] {
+  const memories = results.filter(result => result.layer === "memory");
+  if (!memories.length || memories.length === results.length) return results;
+  return [...memories, ...results.filter(result => result.layer !== "memory")];
+}
+
 async function expandRecall(results: SmartSearchResult[], project: string, timeoutMs: number): Promise<SmartSearchResult[]> {
   const obsIds = results
     .map(result => result.obsId)
@@ -148,7 +161,8 @@ async function expandRecall(results: SmartSearchResult[], project: string, timeo
     if (result.obsId && result.observation) observations.set(result.obsId, result.observation);
   }
   if (!observations.size) return results;
-  // Expansion is best effort: a hit the server cannot expand keeps its compact form.
+  // The server caps expansion at 20 ids and drops ids outside the requested
+  // project, so each hit falls back to its compact form.
   return results.map(result => {
     const observation = result.obsId ? observations.get(result.obsId) : undefined;
     return observation ? { ...result, observation } : result;
@@ -156,35 +170,19 @@ async function expandRecall(results: SmartSearchResult[], project: string, timeo
 }
 
 async function recallForPrompt(query: string, project: string, limit: number, lessonLimit: number, timeoutMs = 1500): Promise<Recall | null> {
-  // A curated memory answers "what did we decide" better than the raw
-  // observation it was distilled from, so look there first and fall back to
-  // the mixed index only when no memory matches.
-  const memory = await callAgentMemory<SmartSearchResponse>("smart-search", {
-    body: { query, limit, project, targetLayer: "memory" },
-    timeoutMs,
-  });
-  const memoryResults = (memory?.results ?? []).slice(0, limit);
-  if (memoryResults.length) {
-    // Lessons are only returned for targetLayer "all", so fetch them
-    // alongside the expansion instead of paying for a third serial round trip.
-    const [results, lessonsSearch] = await Promise.all([
-      expandRecall(memoryResults, project, timeoutMs),
-      callAgentMemory<SmartSearchResponse>("smart-search", {
-        body: { query, limit: lessonLimit, project },
-        timeoutMs,
-      }),
-    ]);
-    return { results, lessons: (lessonsSearch?.lessons ?? []).slice(0, lessonLimit) };
-  }
-  const mixed = await callAgentMemory<SmartSearchResponse>("smart-search", {
+  const deadline = Date.now() + timeoutMs;
+  // One mixed search keeps observations eligible and carries the lessons, so a
+  // curated memory can lead the block without hiding a matching observation.
+  const search = await callAgentMemory<SmartSearchResponse>("smart-search", {
     body: { query, limit, project },
     timeoutMs,
   });
-  if (!memory && !mixed) return null;
-  const mixedResults = (mixed?.results ?? []).slice(0, limit);
+  if (!search) return null;
+  const results = prioritizeMemories((search.results ?? []).slice(0, limit));
+  const remaining = deadline - Date.now();
   return {
-    results: await expandRecall(mixedResults, project, timeoutMs),
-    lessons: (mixed?.lessons ?? []).slice(0, lessonLimit),
+    results: results.length && remaining >= RECALL_EXPAND_MIN_MS ? await expandRecall(results, project, remaining) : results,
+    lessons: (search.lessons ?? []).slice(0, lessonLimit),
   };
 }
 
