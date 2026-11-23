@@ -339,7 +339,7 @@ Kết quả truy xuất hiện tại, định nghĩa chỉ số và các bước
 
 So sánh cập nhật về sản phẩm và phương án triển khai, kèm nguồn:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

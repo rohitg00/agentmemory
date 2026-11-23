@@ -341,7 +341,7 @@ Rezultatele actuale ale căutării, definițiile metricilor și pașii de reprod
 
 Comparație actualizată a produselor și opțiunilor de implementare, cu surse:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

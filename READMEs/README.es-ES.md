@@ -339,7 +339,7 @@ Resultados actuales de recuperación, definiciones de métricas y pasos para rep
 
 Comparación actualizada de productos y opciones de despliegue, con fuentes:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

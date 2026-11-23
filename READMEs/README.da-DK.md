@@ -339,7 +339,7 @@ Aktuelle søgeresultater, definitioner af målinger og trin til gentagelse:
 
 Opdateret sammenligning af produkter og driftsmuligheder med kilder:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

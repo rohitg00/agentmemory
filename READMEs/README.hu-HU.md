@@ -339,7 +339,7 @@ Aktuális visszakeresési eredmények, mérőszámok és reprodukálási lépés
 
 A termékek és telepítési lehetőségek frissített összehasonlítása, forrásokkal:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

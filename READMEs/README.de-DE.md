@@ -337,7 +337,7 @@ Aktuelle Retrieval-Ergebnisse, Metrikdefinitionen und Schritte zur Reproduktion:
 
 Aktueller Vergleich von Produkten und Bereitstellungsoptionen mit Quellen:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

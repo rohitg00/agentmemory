@@ -337,7 +337,7 @@ agentmemory --instance 1
 
 การเปรียบเทียบผลิตภัณฑ์และตัวเลือกการติดตั้งล่าสุดพร้อมแหล่งอ้างอิง:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

@@ -341,7 +341,7 @@ Güncel bilgi getirme sonuçları, metrik tanımları ve yeniden üretme adımla
 
 Kaynaklarıyla birlikte ürünlerin ve dağıtım seçeneklerinin güncel karşılaştırması:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

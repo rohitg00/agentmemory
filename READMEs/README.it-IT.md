@@ -339,7 +339,7 @@ Risultati attuali del recupero, definizioni delle metriche e procedura di riprod
 
 Confronto aggiornato dei prodotti e delle opzioni di distribuzione, con fonti:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 

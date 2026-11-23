@@ -339,7 +339,7 @@ agentmemory --instance 1
 
 পণ্য ও স্থাপনার বিকল্পের হালনাগাদ তুলনা এবং উৎস:
 
-[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem](../benchmark/COMPARISON.md) · 2026-10-28.
+[AgentMemory / Mem0 / Supermemory / Zep / Letta / Cognee / claude-mem / Loom](../benchmark/COMPARISON.md).
 
 ---
 
