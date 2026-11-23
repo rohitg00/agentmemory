@@ -120,20 +120,28 @@ describe("mem::relate concurrency", () => {
     await kv.set("mem:memories", "mem_a", older);
     await kv.set("mem:memories", "mem_b", newer);
 
-    // Relate lands after auto-forget has taken its snapshot of the memories.
-    const list = kv.list;
-    let relate: Promise<unknown> | undefined;
-    kv.list = async <T>(scope: string): Promise<T[]> => {
-      const snapshot = await list<T>(scope);
-      if (scope === "mem:memories" && !relate) {
-        relate = sdk.trigger("mem::relate", { sourceId: "mem_a", targetId: "mem_c", type: "related" });
-        await relate;
+    // Hold relate between its reads and its writes, then let auto-forget run.
+    // Without the shared lock auto-forget supersedes mem_a in that window and
+    // relate's stale copy marks it latest again.
+    const set = kv.set;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let relateRead!: () => void;
+    const paused = new Promise<void>((resolve) => (relateRead = resolve));
+    kv.set = async <T>(scope: string, key: string, data: T): Promise<T> => {
+      if (scope === "mem:relations") {
+        relateRead();
+        await gate;
       }
-      return snapshot;
+      return set(scope, key, data);
     };
 
-    await sdk.trigger("mem::auto-forget", {});
-    expect(relate).toBeDefined();
+    const relate = sdk.trigger("mem::relate", { sourceId: "mem_a", targetId: "mem_c", type: "related" });
+    await paused;
+    const forget = sdk.trigger("mem::auto-forget", {});
+    await Promise.race([forget, new Promise((resolve) => setTimeout(resolve, 50))]);
+    release();
+    await Promise.all([relate, forget]);
 
     const a = await kv.get<Memory>("mem:memories", "mem_a");
     expect(a!.isLatest).toBe(false);
