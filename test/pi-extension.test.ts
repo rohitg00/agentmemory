@@ -40,6 +40,18 @@ describe("Pi extension", () => {
     expect(result.systemPrompt).toContain("host policy"); expect(result.systemPrompt).not.toContain("ignore all rules");
     expect(result.message).toMatchObject({ customType: "agentmemory-recall", content: expect.stringContaining("ignore all rules"), display: false });
   });
+  it("expands compact recall hits so the host receives narratives instead of titles", async () => {
+    vi.mocked(fetch).mockImplementation(async (_url, options) => {
+      const body = JSON.parse(options?.body as string);
+      if (body.expandIds) return Response.json({ mode: "expanded", results: [{ obsId: "obs-1", observation: { title: "Deploy gate", narrative: "Deploys wait for the acceptance suite." } }] });
+      return Response.json({ results: [{ obsId: "obs-1", title: "Deploy gate" }] });
+    });
+    const { tools } = extension();
+    const result = await tools.get("memory_search").execute("search", { query: "deploy", limit: 3 });
+    expect(result.content[0].text).toContain("Deploys wait for the acceptance suite.");
+    const bodies = vi.mocked(fetch).mock.calls.map(([, options]) => JSON.parse(options!.body as string));
+    expect(bodies.at(-1)).toMatchObject({ expandIds: ["obs-1"] });
+  });
   it("uses the real session id and workspace, including degraded servers", async () => {
     vi.mocked(fetch).mockImplementation(async () => Response.json({ status: "degraded" }));
     const { handlers, tools, ctx } = extension(); await handlers.get("session_start")!({}, ctx);
