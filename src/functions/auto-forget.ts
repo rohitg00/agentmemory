@@ -4,7 +4,7 @@ import type { Memory, CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV, collectAll } from "../state/kv.js";
 import { deleteMemoryUnderLock, sharesMemoryScope, supersededAt } from "../state/memory-utils.js";
-import { withKeyedLock } from "../state/keyed-mutex.js";
+import { withKeyedLock, withReentrantKeyedLock } from "../state/keyed-mutex.js";
 import { unindexObservationSession } from "../state/obs-index.js";
 import { recordAudit } from "./audit.js";
 import { deleteAccessLog } from "./access-tracker.js";
@@ -141,9 +141,17 @@ export function registerAutoForgetFunction(sdk: IIIClient, kv: StateKV): void {
                     new Date(memB.createdAt).getTime()
                     ? memA
                     : memB;
-                older.isLatest = false;
-                older.updatedAt = supersededAt(older.updatedAt, new Date().toISOString());
-                await kv.set(KV.memories, older.id, older);
+                // Re-read under the shared lock: the snapshot from collectAll may
+                // predate a relate or evolve that rewrote this record since.
+                const superseded = await withReentrantKeyedLock("mem:remember", async () => {
+                  const current = await kv.get<Memory>(KV.memories, older.id);
+                  if (!current || current.isLatest === false) return false;
+                  current.isLatest = false;
+                  current.updatedAt = supersededAt(current.updatedAt, new Date().toISOString());
+                  await kv.set(KV.memories, older.id, current);
+                  return true;
+                });
+                if (!superseded) continue;
                 getSearchIndex().remove(older.id);
                 vectorIndexRemove(older.id);
                 await recordAudit(kv, "forget", "mem::auto-forget", [older.id], {
