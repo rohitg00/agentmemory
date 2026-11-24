@@ -60,7 +60,12 @@ export function registerMcpEndpoints(
 
   sdk.registerFunction("mcp::tools::call", 
     async (
-      req: HttpRequest<{ name: string; arguments: Record<string, unknown> }>,
+      req: HttpRequest<{
+        name: string;
+        arguments: Record<string, unknown>;
+        agentId?: string;
+        agentScope?: string;
+      }>,
     ): Promise<McpResponse> => {
       const authErr = checkAuth(req, secret);
       if (authErr) return authErr;
@@ -70,6 +75,18 @@ export function registerMcpEndpoints(
       }
 
       const { name, arguments: args = {} } = req.body;
+
+      // Identity forwarded by an MCP bridge proxy (issue #1828): the bridge
+      // process owns AGENT_ID / AGENTMEMORY_AGENT_SCOPE, not this server.
+      // Use it to attribute proxied writes and — only when the bridge runs
+      // scope=isolated — to scope proxied reads, mirroring the local lanes.
+      // Explicit per-call arguments still win over the forwarded identity.
+      const proxyAgentId =
+        typeof req.body.agentId === "string" && req.body.agentId.trim()
+          ? req.body.agentId.trim().slice(0, 128)
+          : undefined;
+      const proxyIsolated =
+        req.body.agentScope === "isolated" && proxyAgentId !== undefined;
 
       if (isSlotTool(name) && !slotsEnabled) return slotsDisabledResponse();
 
@@ -113,6 +130,8 @@ export function registerMcpEndpoints(
             const recallAgentId =
               typeof args.agentId === "string" && args.agentId.trim().length > 0
                 ? (args.agentId as string).trim()
+                : proxyIsolated
+                ? proxyAgentId
                 : undefined;
             const result = await sdk.trigger({ function_id: "mem::search", payload: {
               query: args.query,
@@ -172,7 +191,7 @@ export function registerMcpEndpoints(
             const saveAgentId =
               typeof args.agentId === "string" && args.agentId.trim().length > 0
                 ? (args.agentId as string).trim()
-                : undefined;
+                : proxyAgentId;
 
             const result = await sdk.trigger({ function_id: "mem::remember", payload: {
               content: args.content,
@@ -285,7 +304,8 @@ export function registerMcpEndpoints(
                 expandIds,
                 limit,
                 project: asNonEmptyString(args.project),
-                agentId: asNonEmptyString(args.agentId),
+                agentId:
+                  asNonEmptyString(args.agentId) ?? (proxyIsolated ? proxyAgentId : undefined),
                 sessionId: asNonEmptyString(args.sessionId),
                 source: asNonEmptyString(args.source),
                 includeLessons: typeof args.includeLessons === "boolean" ? args.includeLessons : undefined,
