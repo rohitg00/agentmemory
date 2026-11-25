@@ -393,6 +393,19 @@ export function registerReflectFunctions(
   provider: MemoryProvider,
 ): void {
   const kv = state;
+  // Runs of mem::reflect can overlap: the consolidation timer, a session that
+  // stops after the cooldown and an eviction sweep each start the pipeline on
+  // their own. A cluster another run is reflecting has no record yet, so a
+  // run with skipUnchanged leaves it to that run instead of asking again.
+  const clustersInFlight = new Map<string, number>();
+  const claimCluster = (key: string) => {
+    clustersInFlight.set(key, (clustersInFlight.get(key) ?? 0) + 1);
+  };
+  const releaseCluster = (key: string) => {
+    const holders = (clustersInFlight.get(key) ?? 1) - 1;
+    if (holders > 0) clustersInFlight.set(key, holders);
+    else clustersInFlight.delete(key);
+  };
   sdk.registerFunction("mem::reflect", 
     async (data: { maxClusters?: number; project?: string; budgetMs?: number; skipUnchanged?: boolean }) => {
       const startMs = Date.now();
@@ -444,6 +457,7 @@ export function registerReflectFunctions(
       let reinforced = 0;
       let clustersSkipped = 0;
       let clustersProcessed = 0;
+      let clustersBusy = 0;
       let clustersUnchanged = 0;
       let clustersDeferred = 0;
       let outOfTime = false;
@@ -510,14 +524,23 @@ export function registerReflectFunctions(
 
         const key = clusterKey(data?.project, conceptNames);
         const evidence = clusterEvidence(cluster);
+        // Checked and claimed with no await in between, so two runs cannot
+        // both find the cluster free.
+        if (skipUnchanged && clustersInFlight.has(key)) {
+          clustersBusy++;
+          continue;
+        }
+        claimCluster(key);
         if (skipUnchanged) {
           const last = await kv.get<ReflectedCluster>(KV.reflectClusters, key).catch(() => null);
           if (last?.evidence === evidence && Date.now() - Date.parse(last.reflectedAt) < REFLECT_RECHECK_MS) {
+            releaseCluster(key);
             clustersUnchanged++;
             continue;
           }
         }
         if (deadline !== undefined && deadline - Date.now() < slowestCallMs + REFLECT_CALL_MARGIN_MS) {
+          releaseCluster(key);
           outOfTime = true;
           clustersDeferred = conceptClusters.length - index;
           break;
@@ -634,6 +657,9 @@ export function registerReflectFunctions(
             };
             await kv.set(KV.reflectClusters, key, record).catch(() => {});
           }
+          // Released only once the record is written, so a run that finds the
+          // cluster free also finds its record.
+          releaseCluster(key);
         }
       }
 
@@ -644,6 +670,7 @@ export function registerReflectFunctions(
           clustersProcessed,
           clustersSkipped,
           clustersUnchanged,
+          clustersBusy,
           clustersDeferred,
           outOfTime,
           clusterStrategy,
@@ -660,6 +687,7 @@ export function registerReflectFunctions(
         clustersProcessed,
         clustersSkipped,
         clustersUnchanged,
+        clustersBusy,
         clustersDeferred,
         outOfTime,
         clusterStrategy,

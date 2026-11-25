@@ -806,6 +806,23 @@ describe("mem::reflect under a time budget and with skipUnchanged", () => {
     expect(provider.summarize).toHaveBeenCalledTimes(6);
   });
 
+  it("leaves a cluster another run is reflecting to that run when runs overlap", async () => {
+    let answerFirst: (value: string) => void = () => {};
+    provider.summarize.mockImplementationOnce(() => new Promise<string>((resolve) => { answerFirst = resolve; }));
+
+    const first = sdk.trigger("mem::reflect", { skipUnchanged: true });
+    await vi.waitFor(() => expect(provider.summarize).toHaveBeenCalledTimes(1));
+
+    const second = await sdk.trigger("mem::reflect", { skipUnchanged: true });
+    expect(second).toMatchObject({ success: true, clustersBusy: 1, clustersProcessed: 2, clustersUnchanged: 0 });
+
+    answerFirst(ABSTAIN);
+    expect(await first).toMatchObject({ success: true, clustersBusy: 0, clustersProcessed: 1, clustersUnchanged: 2 });
+    expect(provider.summarize).toHaveBeenCalledTimes(3);
+
+    expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ clustersProcessed: 0, clustersUnchanged: 3 });
+  });
+
   it("stops starting calls when the next one would not fit the budget, and the next run finishes", async () => {
     let now = 1_000_000;
     vi.spyOn(Date, "now").mockImplementation(() => now);
