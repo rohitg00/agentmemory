@@ -17,9 +17,12 @@ import {
 } from "../prompts/consolidation.js";
 import { recordAudit } from "./audit.js";
 import { CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, patternFrequency } from "./consolidation-status.js";
-import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
-import { resolveTimeout } from "../providers/openai.js";
+import { getConsolidationDecayDays, getReflectBudgetMs, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
+
+// Covers reflect's reads and writes around its LLM calls.
+const REFLECT_TRIGGER_HEADROOM_MS = 60_000;
+
 function applyDecay(
   items: Array<{
     strength: number;
@@ -172,16 +175,21 @@ export function registerConsolidationPipelineFunction(
 
       if (tier === "all" || tier === "reflect") {
         try {
-          // Reflect makes an LLM call bounded by its own timeout, which users
-          // raise for slow providers. Waiting less than that abandons a call
-          // that still finishes and is still billed.
+          // Reflect makes one LLM call per cluster, one after another. It
+          // stops starting calls when its budget runs short and skips clusters
+          // whose evidence has not changed, so a slow provider finishes the
+          // work over several runs. The wait covers the budget, so the
+          // pipeline never gives up on a reflect that is still running.
+          const budgetMs = getReflectBudgetMs();
           const reflectResult = await sdk.trigger({
             function_id: "mem::reflect",
             payload: {
               maxClusters: 10,
               project: data?.project,
+              budgetMs,
+              skipUnchanged: true,
             },
-            timeoutMs: Math.max(180_000, resolveTimeout() + 30_000),
+            timeoutMs: budgetMs + REFLECT_TRIGGER_HEADROOM_MS,
           });
           results.reflect = reflectResult;
         } catch (err) {

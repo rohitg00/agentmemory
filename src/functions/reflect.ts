@@ -28,6 +28,15 @@ export const REFLECT_MAX_TYPE_BYTES = 16 * 1024;
 export const REFLECT_MAX_CONCEPTS = 32;
 export const REFLECT_MAX_CONCEPT_BYTES = 128;
 export const REFLECT_MAX_RESPONSE_BYTES = 64 * 1024;
+// With skipUnchanged, reflect looks past maxClusters for clusters that changed,
+// and maxClusters bounds the LLM calls instead.
+export const REFLECT_MAX_CANDIDATE_CLUSTERS = 50;
+// An unchanged cluster is reflected again before the weekly insight decay
+// starts, so the insights it supports are still reinforced.
+export const REFLECT_RECHECK_MS = 6 * 24 * 60 * 60 * 1000;
+// Least time that must be left, beyond the slowest call so far in the run,
+// before reflect starts another LLM call under a budget.
+export const REFLECT_CALL_MARGIN_MS = 30_000;
 
 function positiveLimit(value: unknown, fallback: number, maximum: number): number | null {
   if (value === undefined) return fallback;
@@ -109,6 +118,40 @@ function parseInsight(attributes: string, content: string, cluster: ConceptClust
     sourceLessonIds: [...sourceLessonIds],
     sourceCrystalIds: [...sourceCrystalIds],
   };
+}
+
+interface ReflectedCluster {
+  id: string;
+  project: string | null;
+  concepts: string[];
+  evidence: string;
+  reflectedAt: string;
+}
+
+function clusterKey(project: string | undefined, concepts: string[]): string {
+  return fingerprintId("rcl_v1", JSON.stringify([project || null, [...concepts].sort()]));
+}
+
+function clusterEvidence(cluster: ConceptCluster): string {
+  return fingerprintId("rce_v1", JSON.stringify([
+    cluster.factIds, cluster.facts.map((f) => f.fact),
+    cluster.lessonIds, cluster.lessons.map((l) => l.content),
+    cluster.crystalIds, cluster.crystalNarratives,
+  ]));
+}
+
+class OutOfTime extends Error {}
+
+// Gives up waiting at the deadline, so reflect returns before its caller does.
+// The provider call cannot be cancelled and may still complete.
+async function withinDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  work.catch(() => {});
+  try {
+    return await Promise.race([work, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new OutOfTime()), Math.max(0, deadline - Date.now()));
+    })]);
+  } finally { clearTimeout(timer); }
 }
 
 function decodeXmlText(text: string): string {
@@ -351,9 +394,17 @@ export function registerReflectFunctions(
 ): void {
   const kv = state;
   sdk.registerFunction("mem::reflect", 
-    async (data: { maxClusters?: number; project?: string }) => {
+    async (data: { maxClusters?: number; project?: string; budgetMs?: number; skipUnchanged?: boolean }) => {
+      const startMs = Date.now();
       const maxClusters = positiveLimit(data?.maxClusters, 10, 20);
       if (maxClusters === null) return invalidOption("maxClusters must be a positive safe integer");
+      const budgetMs = data?.budgetMs;
+      if (budgetMs !== undefined && !(typeof budgetMs === "number" && Number.isSafeInteger(budgetMs) && budgetMs > 0)) {
+        return invalidOption("budgetMs must be a positive safe integer");
+      }
+      const deadline = budgetMs === undefined ? undefined : startMs + budgetMs;
+      const skipUnchanged = data?.skipUnchanged === true;
+      const clusterLimit = skipUnchanged ? REFLECT_MAX_CANDIDATE_CLUSTERS : maxClusters;
       const kv = state;
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
@@ -376,7 +427,7 @@ export function registerReflectFunctions(
       let conceptClusters = buildGraphClusters(
         graph.nodes,
         graph.edges,
-        maxClusters,
+        clusterLimit,
       );
 
       const clusterStrategy = conceptClusters.length === 0 ? "jaccard" : "graph";
@@ -385,20 +436,29 @@ export function registerReflectFunctions(
         conceptClusters = buildJaccardClusters(
           semanticMemories,
           activeLessons,
-          maxClusters,
+          clusterLimit,
         );
       }
 
       let newInsights = 0;
       let reinforced = 0;
       let clustersSkipped = 0;
+      let clustersProcessed = 0;
+      let clustersUnchanged = 0;
+      let clustersDeferred = 0;
+      let outOfTime = false;
+      let slowestCallMs = 0;
       let totalInsights = 0;
       let rejectedInsights = 0;
       let failedClusters = 0;
       const acceptedIds = new Set<string>();
 
-      for (const candidates of conceptClusters) {
+      for (const [index, candidates] of conceptClusters.entries()) {
         if (totalInsights >= maxTotal) break;
+        if (clustersProcessed >= maxClusters) {
+          clustersDeferred = conceptClusters.length - index;
+          break;
+        }
         const conceptNames = [...new Set(candidates)]
           .filter((name) => payloadByteLength(name) <= REFLECT_MAX_CONCEPT_BYTES)
           .slice(0, REFLECT_MAX_CONCEPTS);
@@ -448,9 +508,31 @@ export function registerReflectFunctions(
           crystalIds: clusterCrystals.map((c) => c.id),
         };
 
+        const key = clusterKey(data?.project, conceptNames);
+        const evidence = clusterEvidence(cluster);
+        if (skipUnchanged) {
+          const last = await kv.get<ReflectedCluster>(KV.reflectClusters, key).catch(() => null);
+          if (last?.evidence === evidence && Date.now() - Date.parse(last.reflectedAt) < REFLECT_RECHECK_MS) {
+            clustersUnchanged++;
+            continue;
+          }
+        }
+        if (deadline !== undefined && deadline - Date.now() < slowestCallMs + REFLECT_CALL_MARGIN_MS) {
+          outOfTime = true;
+          clustersDeferred = conceptClusters.length - index;
+          break;
+        }
+
+        const failedBefore = failedClusters;
+        let settled = false;
         try {
           const prompt = buildReflectPrompt(cluster);
-          const response = await provider.summarize(REFLECT_SYSTEM, prompt);
+          const callStart = Date.now();
+          const call = provider.summarize(REFLECT_SYSTEM, prompt);
+          const response = deadline === undefined ? await call : await withinDeadline(call, deadline);
+          slowestCallMs = Math.max(slowestCallMs, Date.now() - callStart);
+          settled = true;
+          clustersProcessed++;
           if (Buffer.byteLength(response, "utf8") > REFLECT_MAX_RESPONSE_BYTES) {
             failedClusters++;
             continue;
@@ -525,9 +607,25 @@ export function registerReflectFunctions(
             clusterCount++;
             totalInsights++;
           }
-        } catch {
+        } catch (err) {
+          if (err instanceof OutOfTime) {
+            outOfTime = true;
+            clustersDeferred = conceptClusters.length - index;
+            break;
+          }
+          if (!settled) clustersProcessed++;
           failedClusters++;
           continue;
+        } finally {
+          // Only a cluster the model answered cleanly is remembered, so a
+          // failed or abandoned one is tried again on the next run.
+          if (skipUnchanged && settled && failedClusters === failedBefore) {
+            const record: ReflectedCluster = {
+              id: key, project: data?.project || null, concepts: conceptNames,
+              evidence, reflectedAt: new Date(Date.now()).toISOString(),
+            };
+            await kv.set(KV.reflectClusters, key, record).catch(() => {});
+          }
         }
       }
 
@@ -535,8 +633,11 @@ export function registerReflectFunctions(
         await recordAudit(kv, "reflect", "mem::reflect", [], {
           newInsights,
           reinforced,
-          clustersProcessed: conceptClusters.length - clustersSkipped,
+          clustersProcessed,
           clustersSkipped,
+          clustersUnchanged,
+          clustersDeferred,
+          outOfTime,
           clusterStrategy,
           usedFallback,
           rejectedInsights,
@@ -548,8 +649,11 @@ export function registerReflectFunctions(
         success: failedClusters === 0,
         newInsights,
         reinforced,
-        clustersProcessed: conceptClusters.length - clustersSkipped,
+        clustersProcessed,
         clustersSkipped,
+        clustersUnchanged,
+        clustersDeferred,
+        outOfTime,
         clusterStrategy,
         /** @deprecated Use clusterStrategy to identify the clustering algorithm. */
         usedFallback,

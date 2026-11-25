@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 vi.mock("../src/logger.js", () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -729,5 +729,106 @@ describe("bounded reflection graph context", () => {
     expect(await f.sdk.trigger("mem::reflect", {})).toMatchObject({
       graph: { status: "ready", truncated: true, nodes: 2, edges: 1 },
     });
+  });
+});
+
+describe("mem::reflect under a time budget and with skipUnchanged", () => {
+  const ABSTAIN = "<insights></insights>";
+  let sdk: ReturnType<typeof mockSdk>;
+  let kv: ReturnType<typeof mockKV>;
+  let provider: { name: string; compress: ReturnType<typeof vi.fn>; summarize: ReturnType<typeof vi.fn> };
+
+  beforeEach(async () => {
+    sdk = mockSdk();
+    kv = mockKV();
+    await initializeGraphIndex(kv as never, { status: "ready" });
+    provider = { name: "test", compress: vi.fn(), summarize: vi.fn().mockResolvedValue(ABSTAIN) };
+    registerReflectFunctions(sdk as never, kv as never, provider as never);
+    for (const [a, b] of [["alpha", "beta"], ["gamma", "delta"], ["omega", "sigma"]]) {
+      await kv.set(KV.graphNodes, `node_${a}`, makeConceptNode(a));
+      await kv.set(KV.graphNodes, `node_${b}`, makeConceptNode(b));
+      await kv.set(KV.graphEdges, `edge_${a}_${b}`, makeEdge(a, b));
+      for (const n of [1, 2, 3]) {
+        await kv.set(KV.semantic, `sem_${a}${n}`, makeSemantic(`${a} ${b} evidence ${n}`, `sem_${a}${n}`));
+      }
+    }
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("moves on to clusters it has not reflected when maxClusters bounds the calls", async () => {
+    const runs = [];
+    for (let i = 0; i < 4; i++) {
+      runs.push(await sdk.trigger("mem::reflect", { maxClusters: 1, skipUnchanged: true }));
+    }
+    expect(runs.map((r) => (r as { clustersUnchanged: number }).clustersUnchanged)).toEqual([0, 1, 2, 3]);
+    expect(runs[0]).toMatchObject({ success: true, clustersProcessed: 1, clustersDeferred: 2 });
+    expect(provider.summarize).toHaveBeenCalledTimes(3);
+  });
+
+  it("reflects a cluster again when its evidence changes or six days have passed", async () => {
+    await sdk.trigger("mem::reflect", { skipUnchanged: true });
+    expect(provider.summarize).toHaveBeenCalledTimes(3);
+
+    await kv.set(KV.semantic, "sem_alpha1", makeSemantic("alpha beta evidence 1, corrected", "sem_alpha1"));
+    expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ clustersProcessed: 1, clustersUnchanged: 2 });
+
+    const now = Date.now();
+    vi.spyOn(Date, "now").mockReturnValue(now + 6 * 24 * 60 * 60 * 1000);
+    expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ clustersProcessed: 3, clustersUnchanged: 0 });
+  });
+
+  it("tries a cluster whose call failed again on the next run", async () => {
+    provider.summarize.mockRejectedValueOnce(new Error("429 Too Many Requests"));
+    expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ success: false, failedClusters: 1, clustersProcessed: 3 });
+    expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ success: true, clustersProcessed: 1, clustersUnchanged: 2 });
+  });
+
+  it("reflects every cluster each run without skipUnchanged, as manual calls do", async () => {
+    await sdk.trigger("mem::reflect", {});
+    await sdk.trigger("mem::reflect", {});
+    expect(provider.summarize).toHaveBeenCalledTimes(6);
+  });
+
+  it("stops starting calls when the next one would not fit the budget, and the next run finishes", async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    provider.summarize.mockImplementation(async () => {
+      now += 200_000;
+      return ABSTAIN;
+    });
+
+    const first = await sdk.trigger("mem::reflect", { budgetMs: 600_000, skipUnchanged: true });
+    expect(first).toMatchObject({ success: true, outOfTime: true, clustersProcessed: 2, clustersDeferred: 1 });
+
+    const second = await sdk.trigger("mem::reflect", { budgetMs: 600_000, skipUnchanged: true });
+    expect(second).toMatchObject({ success: true, outOfTime: false, clustersProcessed: 1, clustersUnchanged: 2 });
+    expect(provider.summarize).toHaveBeenCalledTimes(3);
+  });
+
+  it("returns at its deadline when a call outlives it, and tries that cluster again", async () => {
+    const start = 1_000_000;
+    let now = start;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    provider.summarize.mockImplementationOnce(() => {
+      now = start + 60_000 - 5;
+      return new Promise<string>(() => {});
+    });
+
+    const first = await sdk.trigger("mem::reflect", { budgetMs: 60_000, skipUnchanged: true });
+    expect(first).toMatchObject({ success: true, outOfTime: true, clustersProcessed: 0, clustersDeferred: 3 });
+
+    now = start + 120_000;
+    const second = await sdk.trigger("mem::reflect", { skipUnchanged: true });
+    expect(second).toMatchObject({ clustersProcessed: 3, clustersUnchanged: 0 });
+  });
+
+  it("rejects a budget that is not a positive whole number of milliseconds", async () => {
+    for (const budgetMs of [0, -1, 1.5, "600000"]) {
+      expect(await sdk.trigger("mem::reflect", { budgetMs })).toMatchObject({ success: false, invalid: true });
+    }
+    expect(provider.summarize).not.toHaveBeenCalled();
   });
 });
