@@ -525,22 +525,25 @@ export function registerReflectFunctions(
         const key = clusterKey(data?.project, conceptNames);
         const evidence = clusterEvidence(cluster);
         // Checked and claimed with no await in between, so two runs cannot
-        // both find the cluster free.
+        // both find the cluster free. Only a run under a budget claims: its
+        // call is abandoned once the budget and grace pass, so a provider
+        // that never answers cannot hold a cluster for good.
         if (skipUnchanged && clustersInFlight.has(key)) {
           clustersBusy++;
           continue;
         }
-        claimCluster(key);
+        const claimed = deadline !== undefined;
+        if (claimed) claimCluster(key);
         if (skipUnchanged) {
           const last = await kv.get<ReflectedCluster>(KV.reflectClusters, key).catch(() => null);
           if (last?.evidence === evidence && Date.now() - Date.parse(last.reflectedAt) < REFLECT_RECHECK_MS) {
-            releaseCluster(key);
+            if (claimed) releaseCluster(key);
             clustersUnchanged++;
             continue;
           }
         }
         if (deadline !== undefined && deadline - Date.now() < slowestCallMs + REFLECT_CALL_MARGIN_MS) {
-          releaseCluster(key);
+          if (claimed) releaseCluster(key);
           outOfTime = true;
           clustersDeferred = conceptClusters.length - index;
           break;
@@ -659,7 +662,7 @@ export function registerReflectFunctions(
           }
           // Released only once the record is written, so a run that finds the
           // cluster free also finds its record.
-          releaseCluster(key);
+          if (claimed) releaseCluster(key);
         }
       }
 

@@ -810,10 +810,10 @@ describe("mem::reflect under a time budget and with skipUnchanged", () => {
     let answerFirst: (value: string) => void = () => {};
     provider.summarize.mockImplementationOnce(() => new Promise<string>((resolve) => { answerFirst = resolve; }));
 
-    const first = sdk.trigger("mem::reflect", { skipUnchanged: true });
+    const first = sdk.trigger("mem::reflect", { budgetMs: 600_000, skipUnchanged: true });
     await vi.waitFor(() => expect(provider.summarize).toHaveBeenCalledTimes(1));
 
-    const second = await sdk.trigger("mem::reflect", { skipUnchanged: true });
+    const second = await sdk.trigger("mem::reflect", { budgetMs: 600_000, skipUnchanged: true });
     expect(second).toMatchObject({ success: true, clustersBusy: 1, clustersProcessed: 2, clustersUnchanged: 0 });
 
     answerFirst(ABSTAIN);
@@ -821,6 +821,20 @@ describe("mem::reflect under a time budget and with skipUnchanged", () => {
     expect(provider.summarize).toHaveBeenCalledTimes(3);
 
     expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ clustersProcessed: 0, clustersUnchanged: 3 });
+  });
+
+  it("never lets a manual call that does not answer hold a cluster from scheduled runs", async () => {
+    let answerManual: (value: string) => void = () => {};
+    provider.summarize.mockImplementationOnce(() => new Promise<string>((resolve) => { answerManual = resolve; }));
+
+    const manual = sdk.trigger("mem::reflect", {});
+    await vi.waitFor(() => expect(provider.summarize).toHaveBeenCalledTimes(1));
+
+    const scheduled = await sdk.trigger("mem::reflect", { budgetMs: 600_000, skipUnchanged: true });
+    expect(scheduled).toMatchObject({ success: true, clustersBusy: 0, clustersProcessed: 3 });
+
+    answerManual(ABSTAIN);
+    await manual;
   });
 
   it("stops starting calls when the next one would not fit the budget, and the next run finishes", async () => {
