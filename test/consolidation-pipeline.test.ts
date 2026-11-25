@@ -150,7 +150,7 @@ describe("Consolidation Pipeline", () => {
     expect(provider.summarize).not.toHaveBeenCalled();
   });
 
-  it("gives reflect its budget, turns on the skip and waits for the budget plus headroom", async () => {
+  it("gives reflect its budget, turns on the skip and waits for the budget, the call grace and headroom", async () => {
     const provider = { name: "test", compress: vi.fn(), summarize: vi.fn() };
     registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
     sdk.registerFunction("mem::reflect", async () => ({ success: true }));
@@ -164,7 +164,7 @@ describe("Consolidation Pipeline", () => {
     );
     expect(reflectCall?.[0]).toMatchObject({
       payload: { maxClusters: 10, budgetMs: 900_000, skipUnchanged: true },
-      timeoutMs: 960_000,
+      timeoutMs: 1_140_000,
     });
   });
 

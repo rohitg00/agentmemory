@@ -19,6 +19,7 @@ import { recordAudit } from "./audit.js";
 import { CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, patternFrequency } from "./consolidation-status.js";
 import { getConsolidationDecayDays, getReflectBudgetMs, isConsolidationEnabled } from "../config.js";
 import { logger } from "../logger.js";
+import { REFLECT_CALL_GRACE_MS } from "./reflect.js";
 
 // Covers reflect's reads and writes around its LLM calls.
 const REFLECT_TRIGGER_HEADROOM_MS = 60_000;
@@ -178,8 +179,9 @@ export function registerConsolidationPipelineFunction(
           // Reflect makes one LLM call per cluster, one after another. It
           // stops starting calls when its budget runs short and skips clusters
           // whose evidence has not changed, so a slow provider finishes the
-          // work over several runs. The wait covers the budget, so the
-          // pipeline never gives up on a reflect that is still running.
+          // work over several runs. The wait covers the budget and the grace
+          // a call started within it may use, so the pipeline never gives up
+          // on a reflect that is still running.
           const budgetMs = getReflectBudgetMs();
           const reflectResult = await sdk.trigger({
             function_id: "mem::reflect",
@@ -189,7 +191,7 @@ export function registerConsolidationPipelineFunction(
               budgetMs,
               skipUnchanged: true,
             },
-            timeoutMs: budgetMs + REFLECT_TRIGGER_HEADROOM_MS,
+            timeoutMs: budgetMs + REFLECT_CALL_GRACE_MS + REFLECT_TRIGGER_HEADROOM_MS,
           });
           results.reflect = reflectResult;
         } catch (err) {

@@ -644,7 +644,7 @@ export const REFLECT_BUDGET_MIN_MS = 60_000;
 
 export function getReflectBudgetMs(): number {
   const parsed = safeParseInt(getMergedEnv()["AGENTMEMORY_REFLECT_BUDGET_MS"], REFLECT_BUDGET_DEFAULT_MS);
-  if (parsed <= 0) return REFLECT_BUDGET_DEFAULT_MS;
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) return REFLECT_BUDGET_DEFAULT_MS;
   return Math.max(parsed, REFLECT_BUDGET_MIN_MS);
 }
 

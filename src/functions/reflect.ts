@@ -38,6 +38,10 @@ export const REFLECT_RECHECK_MS = 6 * 24 * 60 * 60 * 1000;
 // Least time that must be left, beyond the slowest call so far in the run,
 // before reflect starts another LLM call under a budget.
 export const REFLECT_CALL_MARGIN_MS = 30_000;
+// A call started within the budget may run this long past it. It covers the
+// 170 s cap on OpenAI-compatible, OpenRouter and MiniMax requests, so their
+// answers are never discarded. Callers wait the budget plus this grace.
+export const REFLECT_CALL_GRACE_MS = 180_000;
 
 function positiveLimit(value: unknown, fallback: number, maximum: number): number | null {
   if (value === undefined) return fallback;
@@ -138,8 +142,8 @@ function clusterEvidence(cluster: ConceptCluster): string {
 
 class OutOfTime extends Error {}
 
-// Gives up waiting at the deadline, so reflect returns before its caller does.
-// The provider call cannot be cancelled and may still complete.
+// Gives up waiting at the hard deadline, so reflect returns before its caller
+// does. The provider call cannot be cancelled and may still complete.
 async function withinDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   work.catch(() => {});
@@ -522,11 +526,14 @@ export function registerReflectFunctions(
         const failedBefore = failedClusters;
         let settled = false;
         let malformed = false;
+        let callStart: number | undefined;
         try {
           const prompt = buildReflectPrompt(cluster);
-          const callStart = Date.now();
+          callStart = Date.now();
           const call = provider.summarize(REFLECT_SYSTEM, prompt);
-          const response = deadline === undefined ? await call : await withinDeadline(call, deadline);
+          const response = deadline === undefined
+            ? await call
+            : await withinDeadline(call, deadline + REFLECT_CALL_GRACE_MS);
           slowestCallMs = Math.max(slowestCallMs, Date.now() - callStart);
           settled = true;
           clustersProcessed++;
@@ -606,6 +613,9 @@ export function registerReflectFunctions(
             totalInsights++;
           }
         } catch (err) {
+          if (callStart !== undefined && !settled) {
+            slowestCallMs = Math.max(slowestCallMs, Date.now() - callStart);
+          }
           if (err instanceof OutOfTime) {
             outOfTime = true;
             clustersDeferred = conceptClusters.length - index;

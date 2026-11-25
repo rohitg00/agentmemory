@@ -822,12 +822,38 @@ describe("mem::reflect under a time budget and with skipUnchanged", () => {
     expect(provider.summarize).toHaveBeenCalledTimes(3);
   });
 
-  it("returns at its deadline when a call outlives it, and tries that cluster again", async () => {
+  it("lets a call started within the budget finish after it", async () => {
     const start = 1_000_000;
     let now = start;
     vi.spyOn(Date, "now").mockImplementation(() => now);
     provider.summarize.mockImplementationOnce(() => {
-      now = start + 60_000 - 5;
+      now = start + 80_000;
+      return new Promise<string>((resolve) => setTimeout(() => resolve(ABSTAIN), 20));
+    });
+
+    const result = await sdk.trigger("mem::reflect", { budgetMs: 60_000, skipUnchanged: true });
+    expect(result).toMatchObject({ success: true, outOfTime: true, clustersProcessed: 1, clustersDeferred: 2 });
+  });
+
+  it("counts a failed call's time when deciding whether the next one fits", async () => {
+    let now = 1_000_000;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    provider.summarize.mockImplementationOnce(async () => {
+      now += 400_000;
+      throw new Error("upstream timeout");
+    });
+
+    const result = await sdk.trigger("mem::reflect", { budgetMs: 600_000, skipUnchanged: true });
+    expect(result).toMatchObject({ failedClusters: 1, outOfTime: true, clustersProcessed: 1, clustersDeferred: 2 });
+    expect(provider.summarize).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops waiting for a call that outlives the budget and its grace, and tries that cluster again", async () => {
+    const start = 1_000_000;
+    let now = start;
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    provider.summarize.mockImplementationOnce(() => {
+      now = start + 60_000 + 180_000 - 5;
       return new Promise<string>(() => {});
     });
 

@@ -23,8 +23,8 @@ describe("AGENTMEMORY_REFLECT_BUDGET_MS", () => {
     expect(budgetFor("1")).toBe(60_000);
   });
 
-  it("falls back to ten minutes for a missing, zero, negative or unreadable value", () => {
-    for (const value of ["", "0", "-5", "soon"]) {
+  it("falls back to ten minutes for a missing, zero, negative, unreadable or unsafe value", () => {
+    for (const value of ["", "0", "-5", "soon", "99999999999999999999"]) {
       expect(budgetFor(value)).toBe(600_000);
     }
   });
