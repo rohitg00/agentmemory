@@ -637,11 +637,15 @@ export function getConsolidationIntervalMs(): number {
 // Time the scheduled consolidation gives reflect for its LLM calls. Reflect
 // stops starting clusters when the next call no longer fits and leaves the
 // rest for the next run, so a slow provider spreads the work over runs.
+// Budgets below the floor are raised to it, so reflect can always start at
+// least one call.
 export const REFLECT_BUDGET_DEFAULT_MS = 600_000;
+export const REFLECT_BUDGET_MIN_MS = 60_000;
 
 export function getReflectBudgetMs(): number {
   const parsed = safeParseInt(getMergedEnv()["AGENTMEMORY_REFLECT_BUDGET_MS"], REFLECT_BUDGET_DEFAULT_MS);
-  return parsed > 0 ? parsed : REFLECT_BUDGET_DEFAULT_MS;
+  if (parsed <= 0) return REFLECT_BUDGET_DEFAULT_MS;
+  return Math.max(parsed, REFLECT_BUDGET_MIN_MS);
 }
 
 export const AUTO_FORGET_INTERVAL_DEFAULT_MS = 3600000;

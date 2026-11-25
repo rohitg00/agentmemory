@@ -786,6 +786,20 @@ describe("mem::reflect under a time budget and with skipUnchanged", () => {
     expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ success: true, clustersProcessed: 1, clustersUnchanged: 2 });
   });
 
+  it("reflects a cluster again when an item's confidence moves a step, and not for a small drift", async () => {
+    await sdk.trigger("mem::reflect", { skipUnchanged: true });
+    await kv.set(KV.semantic, "sem_alpha1", { ...makeSemantic("alpha beta evidence 1", "sem_alpha1"), confidence: 0.82 });
+    expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ clustersProcessed: 0, clustersUnchanged: 3 });
+    await kv.set(KV.semantic, "sem_alpha1", { ...makeSemantic("alpha beta evidence 1", "sem_alpha1"), confidence: 0.95 });
+    expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ clustersProcessed: 1, clustersUnchanged: 2 });
+  });
+
+  it("tries a cluster again when the answer held an insight that could not be read", async () => {
+    provider.summarize.mockResolvedValueOnce('<insights><insight confidence="0.8" title="No sources">Alpha needs beta.</insight></insights>');
+    expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ rejectedInsights: 1, clustersProcessed: 3 });
+    expect(await sdk.trigger("mem::reflect", { skipUnchanged: true })).toMatchObject({ clustersProcessed: 1, clustersUnchanged: 2 });
+  });
+
   it("reflects every cluster each run without skipUnchanged, as manual calls do", async () => {
     await sdk.trigger("mem::reflect", {});
     await sdk.trigger("mem::reflect", {});

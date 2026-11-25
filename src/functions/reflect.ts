@@ -15,6 +15,7 @@ import type {
   CompressedObservation,
   Memory,
   Session,
+  ReflectedCluster,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
@@ -120,22 +121,17 @@ function parseInsight(attributes: string, content: string, cluster: ConceptClust
   };
 }
 
-interface ReflectedCluster {
-  id: string;
-  project: string | null;
-  concepts: string[];
-  evidence: string;
-  reflectedAt: string;
-}
-
 function clusterKey(project: string | undefined, concepts: string[]): string {
   return fingerprintId("rcl_v1", JSON.stringify([project || null, [...concepts].sort()]));
 }
 
+// Confidence is rounded to one decimal, so a reinforced or weakened item
+// counts as a change while the slow drift of decay does not.
 function clusterEvidence(cluster: ConceptCluster): string {
+  const level = (confidence: number) => Math.round(confidence * 10);
   return fingerprintId("rce_v1", JSON.stringify([
-    cluster.factIds, cluster.facts.map((f) => f.fact),
-    cluster.lessonIds, cluster.lessons.map((l) => l.content),
+    cluster.factIds, cluster.facts.map((f) => [f.fact, level(f.confidence)]),
+    cluster.lessonIds, cluster.lessons.map((l) => [l.content, level(l.confidence)]),
     cluster.crystalIds, cluster.crystalNarratives,
   ]));
 }
@@ -525,6 +521,7 @@ export function registerReflectFunctions(
 
         const failedBefore = failedClusters;
         let settled = false;
+        let malformed = false;
         try {
           const prompt = buildReflectPrompt(cluster);
           const callStart = Date.now();
@@ -555,6 +552,7 @@ export function registerReflectFunctions(
             const parsed = parseInsight(match[1], match[2], cluster);
             if (!parsed) {
               rejectedInsights++;
+              malformed = true;
               continue;
             }
             const { confidence, title, content } = parsed;
@@ -618,8 +616,8 @@ export function registerReflectFunctions(
           continue;
         } finally {
           // Only a cluster the model answered cleanly is remembered, so a
-          // failed or abandoned one is tried again on the next run.
-          if (skipUnchanged && settled && failedClusters === failedBefore) {
+          // failed, malformed or abandoned one is tried again on the next run.
+          if (skipUnchanged && settled && !malformed && failedClusters === failedBefore) {
             const record: ReflectedCluster = {
               id: key, project: data?.project || null, concepts: conceptNames,
               evidence, reflectedAt: new Date(Date.now()).toISOString(),

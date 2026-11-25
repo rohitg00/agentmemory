@@ -234,6 +234,7 @@ describe("Worker Compose project", () => {
       AGENTMEMORY_VECTOR_BACKFILL_MAX: "100",
       CONSOLIDATION_DECAY_DAYS: "90",
       CONSOLIDATION_INTERVAL_MS: "900000",
+      AGENTMEMORY_REFLECT_BUDGET_MS: "900000",
       GRAPH_EXTRACTION_BATCH_SIZE: "5",
       AUTO_FORGET_ENABLED: "false",
       LESSON_DECAY_ENABLED: "false",
@@ -262,6 +263,7 @@ describe("Worker Compose project", () => {
     expect(config.loadFallbackConfig().providers).toEqual(["openai", "gemini"]);
     expect(config.getConsolidationDecayDays()).toBe(90);
     expect(config.getConsolidationIntervalMs()).toBe(900000);
+    expect(config.getReflectBudgetMs()).toBe(900000);
     expect(config.getIndexSaveIntervalMs()).toBe(45000);
     expect(config.getVectorBucketSize()).toBe(250);
     expect(config.getVectorBackfillMax()).toBe(100);
