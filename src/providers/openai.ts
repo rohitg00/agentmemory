@@ -144,7 +144,7 @@ export class OpenAIProvider implements MemoryProvider {
   }
 }
 
-function resolveTimeout(): number {
+export function resolveTimeout(): number {
   const openaiRaw = getEnvVar("OPENAI_TIMEOUT_MS");
   const openai = parsePositiveInt(openaiRaw);
   if (openai !== undefined) return openai;

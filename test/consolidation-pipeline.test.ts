@@ -7,10 +7,11 @@ vi.mock("../src/logger.js", () => ({
 vi.mock("../src/config.js", () => ({
   getConsolidationDecayDays: () => 30,
   isConsolidationEnabled: vi.fn(() => true),
+  getEnvVar: vi.fn(() => undefined),
 }));
 
 import { registerConsolidationPipelineFunction } from "../src/functions/consolidation-pipeline.js";
-import { isConsolidationEnabled } from "../src/config.js";
+import { getEnvVar, isConsolidationEnabled } from "../src/config.js";
 import { currentAuditScope } from "./helpers/mocks.js";
 import type { SessionSummary, Memory, SemanticMemory, ProceduralMemory } from "../src/types.js";
 
@@ -147,6 +148,38 @@ describe("Consolidation Pipeline", () => {
     expect(semantic.skipped).toBe(true);
     expect(semantic.reason).toContain("fewer than 5");
     expect(provider.summarize).not.toHaveBeenCalled();
+  });
+
+  it("waits for reflect longer than the LLM timeout it may run into", async () => {
+    const provider = { name: "test", compress: vi.fn(), summarize: vi.fn() };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+    sdk.registerFunction("mem::reflect", async () => ({ success: true }));
+    const trigger = vi.spyOn(sdk, "trigger");
+    vi.mocked(getEnvVar).mockImplementation((key: string) =>
+      key === "AGENTMEMORY_LLM_TIMEOUT_MS" ? "300000" : undefined,
+    );
+
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "reflect" });
+
+    const reflectCall = trigger.mock.calls.find(
+      ([input]) => typeof input === "object" && input.function_id === "mem::reflect",
+    );
+    expect((reflectCall?.[0] as { timeoutMs?: number }).timeoutMs).toBe(330_000);
+    vi.mocked(getEnvVar).mockImplementation(() => undefined);
+  });
+
+  it("keeps the worker's 180 s wait for reflect when the LLM timeout is shorter", async () => {
+    const provider = { name: "test", compress: vi.fn(), summarize: vi.fn() };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+    sdk.registerFunction("mem::reflect", async () => ({ success: true }));
+    const trigger = vi.spyOn(sdk, "trigger");
+
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "reflect" });
+
+    const reflectCall = trigger.mock.calls.find(
+      ([input]) => typeof input === "object" && input.function_id === "mem::reflect",
+    );
+    expect((reflectCall?.[0] as { timeoutMs?: number }).timeoutMs).toBe(180_000);
   });
 
   it("pipeline skips procedural when fewer than 2 patterns", async () => {

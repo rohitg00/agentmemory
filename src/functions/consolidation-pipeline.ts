@@ -18,6 +18,7 @@ import {
 import { recordAudit } from "./audit.js";
 import { CONSOLIDATION_LAST_RUN_KEY, PROCEDURAL_MIN_SESSIONS_PER_PATTERN, patternFrequency } from "./consolidation-status.js";
 import { getConsolidationDecayDays, isConsolidationEnabled } from "../config.js";
+import { resolveTimeout } from "../providers/openai.js";
 import { logger } from "../logger.js";
 function applyDecay(
   items: Array<{
@@ -171,10 +172,17 @@ export function registerConsolidationPipelineFunction(
 
       if (tier === "all" || tier === "reflect") {
         try {
-          const reflectResult = await sdk.trigger({ function_id: "mem::reflect", payload: {
-            maxClusters: 10,
-            project: data?.project,
-          } });
+          // Reflect makes an LLM call bounded by its own timeout, which users
+          // raise for slow providers. Waiting less than that abandons a call
+          // that still finishes and is still billed.
+          const reflectResult = await sdk.trigger({
+            function_id: "mem::reflect",
+            payload: {
+              maxClusters: 10,
+              project: data?.project,
+            },
+            timeoutMs: Math.max(180_000, resolveTimeout() + 30_000),
+          });
           results.reflect = reflectResult;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
