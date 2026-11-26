@@ -6,6 +6,39 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.34] — 2026-11-26
+
+### Upgrade notes
+
+- `MAX_OBS_PER_SESSION` no longer refuses writes once a session reaches its cap. The lowest-value observations of that session are evicted to make room, so late observations in long sessions are kept (#1174 by @sbynode-ux).
+- `POST /agentmemory/graph/import-graphify` reports `truncated`, `limits`, `droppedNodes` and `droppedEdges` when a graph is larger than `AGENTMEMORY_GRAPH_IMPORT_MAX_NODES` (default 5000) or `AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES` (default 20000) (#1757).
+- `AUTO_FORGET_INTERVAL_MS` values below 60000 or that are not numbers fall back to the hourly default instead of running the sweep every millisecond (#1744).
+- The Hermes plugin manifest declares `provides_hooks: []` and `requires_hermes: ">=0.21.6"`, so `hermes plugins doctor` passes (#1759).
+
+### Added
+
+- **Orca plugin.** `integrations/orca` adds an agentmemory panel to Orca: server status, search and the latest memories of the open project, sending a memory to an agent, opening the viewer, and optional capture of agent tool calls (#1774).
+- **README diagrams.** Architecture, pipeline and stack diagrams that `npm run docs:sync` keeps in step with the source (#1800).
+- The audit log supports more than one listener; `addAuditListener` returns its unsubscribe (#1788 by @zack-dev-cm, step 1 of #1741).
+
+### Fixed
+
+- **Search and indexes:** superseded and wiped memories leave the search index (#1704 by @DimitriChrysafis). Flow-compressed and auto-paged memories are indexed, so they are searchable (#1709 by @DimitriChrysafis, #1811). Keyword index sessions that failed to load at boot are retried in the background (#1755). Graph queries keep their bounded matches when the byte budget runs out instead of returning nothing (#1767 by @zack-dev-cm). Compact smart-search uses the indexed `memoryType` instead of reading each memory (#1761 by @reevesc88). Scoped recall skips session reads it does not need (#1723 by @reevesc88). Lesson recall applies its filters before the candidate limit (#1721 by @Mike-Animal-Counseling). `mem::insight-list` keeps only the requested top results while paging (#1783 by @zack-dev-cm).
+- **Memory safety:** every memory delete path (governance delete, evict, auto-forget, retention) holds the `mem:remember` lock (#1746). The auto-forget contradiction pass only compares memories in the same project and agent scope, and image references are released only after the memory delete succeeds (#1744). Snapshots fail when a state read fails instead of saving a partial snapshot (#1768 by @DimitriChrysafis).
+- **Capture:** the spool drain keeps files it could not read instead of deleting them (#1748). Empty observations skip compression (#1771 by @DimitriChrysafis). OpenCode sends a stable event ID, so replayed capture events are stored once (#1751 by @gezerui888). Durable capture replays do a point read before listing the session (#1773 by @zack-dev-cm).
+- **Providers:** a half-open circuit breaker lets one probe through instead of every caller (#1749). Provider wrappers keep optional vision support (#1798 by @zack-dev-cm). Summary recovery honors the compression opt-in (#1770 by @zack-dev-cm).
+- **MCP:** `memory_save` accepts `concepts` and `files` as arrays and forwards `ttlDays` and `sourceObservationIds` (#1745). The stdio transport treats a stdout `EPIPE` as a client disconnect, not a crash, so normal client shutdowns no longer write `mcp-crash.log` entries (#1797 by @m1l0rdz). The status resource and consolidation status use key counts instead of loading every record (#1789, #1772 by @zack-dev-cm).
+- PreToolUse enrichment passes the project to file-context and loads session history concurrently (#1747).
+- **CLI:** `agentmemory connect` works on native Windows (#1754). `connect` and `status` say when an agent is connected with MCP only and captures nothing on its own (#1756). `status` explains an iii engine that runs without the agentmemory worker (#1758). `agentmemory demo` waits until seeded observations are searchable (#1760). Generated Compose YAML no longer repeats env-file values, including provider keys, as explicit worker overrides (#1769 by @zack-dev-cm).
+
+### Infrastructure
+
+- CI typechecks `src/hooks` (`npm run typecheck:hooks`) and runs `docs:check` (#1785 by @zack-dev-cm, #1800). The release gate forces the dead-letter capture failure with `AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__` instead of the session cap (#1766).
+
+### Issues closed
+
+#1724, #1726, #1727, #1728, #1730, #1731, #1732, #1736, #1763, #1764, #1795. Partly addressed and still open: #1733 (#1747), #1735 (#1789, #1772), #1741 (#1788), #1762 (#1770).
+
 ## [0.9.33] — 2026-11-09
 
 ### Upgrade notes
@@ -374,6 +407,7 @@ Wave release closing several breaking regressions reported against v0.9.26, plus
 - `/agentmemory:forget` skill still calls `memory_governance_delete` which only touches `KV.memories` and never observations ([#833](https://github.com/rohitg00/agentmemory/issues/833)). Skill rewrite + new `memory_forget` MCP tool tracked separately.
 - `crypto.randomUUID()` global-only on Node <19 ([#715](https://github.com/rohitg00/agentmemory/issues/715)). Drop-in import fix tracked.
 
+[0.9.34]: https://github.com/rohitg00/agentmemory/compare/v0.9.33...v0.9.34
 [0.9.33]: https://github.com/rohitg00/agentmemory/compare/v0.9.32...v0.9.33
 [0.9.32]: https://github.com/rohitg00/agentmemory/compare/v0.9.31...v0.9.32
 [0.9.31]: https://github.com/rohitg00/agentmemory/compare/v0.9.30...v0.9.31
