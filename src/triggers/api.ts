@@ -706,13 +706,19 @@ export function registerApiTriggers(
         return { status_code: 400, body: { error: "functionId must be a non-empty string" } };
       }
       if (!metricsStore) return { status_code: 503, body: { error: "metrics unavailable" } };
-      let reset: string[];
+      let outcome: { reset: string[]; failed: string[] };
       try {
-        reset = await metricsStore.reset(functionId);
+        outcome = await metricsStore.reset(functionId);
       } catch {
-        return { status_code: 503, body: { error: "metrics could not be read; nothing was reset" } };
+        return { status_code: 503, body: { error: "metrics could not be listed; nothing was reset" } };
       }
-      await recordAudit(kv, "metrics_reset", "api::metrics-reset", reset, { scope: functionId ? "function" : "all" });
+      const { reset, failed } = outcome;
+      if (reset.length > 0 || failed.length > 0) {
+        await recordAudit(kv, "metrics_reset", "api::metrics-reset", reset, { scope: functionId ? "function" : "all", failed });
+      }
+      if (failed.length > 0) {
+        return { status_code: 503, body: { success: false, error: "some metrics could not be reset", reset, failed } };
+      }
       return { status_code: 200, body: { success: true, reset } };
     },
   );

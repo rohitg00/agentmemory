@@ -61,20 +61,23 @@ export class MetricsStore {
     await this.kv.set(KV.metrics, functionId, m).catch(() => {});
   }
 
-  async reset(functionId?: string): Promise<string[]> {
+  async reset(functionId?: string): Promise<{ reset: string[]; failed: string[] }> {
     const ids = functionId
       ? [functionId]
       : [...new Set([...(await this.kv.list<FunctionMetrics>(KV.metrics)).map((m) => m.functionId), ...this.cache.keys()])];
-    await Promise.all(
+    const settled = await Promise.allSettled(
       ids.map((id) =>
         withKeyedLock(lockKey(id), async () => {
+          await this.kv.delete(KV.metrics, id);
           this.cache.delete(id);
           this.qualityCallCounts.delete(id);
-          await this.kv.delete(KV.metrics, id);
         }),
       ),
     );
-    return ids;
+    return {
+      reset: ids.filter((_, i) => settled[i].status === "fulfilled"),
+      failed: ids.filter((_, i) => settled[i].status === "rejected"),
+    };
   }
 
   async get(functionId: string): Promise<FunctionMetrics | null> {

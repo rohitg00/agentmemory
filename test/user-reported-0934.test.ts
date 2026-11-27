@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { appendSpool, drainSpool, sendOutcome, spoolDir, spoolReadDirs, spoolSummary } from "../src/capture/spool.js";
+import { appendSpool, drainSpool, retainSentOutcome, sendOutcome, spoolDir, spoolPolicy, spoolReadDirs, spoolSummary } from "../src/capture/spool.js";
 import { runCaptureCommand } from "../src/cli/capture.js";
 import { resolveDataDir } from "../src/cli-data-dir.js";
 import { BOOT_TOLERANCE_MS, writtenBeforeBoot } from "../src/cli/compose-process.js";
@@ -62,6 +62,31 @@ describe("capture drain durability copy", () => {
     expect(spoolSummary(URL, { dir: earlier }).records).toBe(1);
 
     await run(mkdtempSync(join(tmpdir(), "am-current-")));
+    expect(spoolSummary(URL, { dir: earlier }).records).toBe(0);
+  });
+
+  it("tells a copy that can never be written from one that failed this time", () => {
+    const mark = { bootId: "boot00000001", durableAfterMs: 1000 };
+    const dir = mkdtempSync(join(tmpdir(), "am-retain-"));
+    expect(retainSentOutcome(URL, "evt-00000001", record("evt-00000001"), mark, { dir })).toBe("retained");
+    const tiny = { ...spoolPolicy(), maxRecordBytes: 16 };
+    expect(retainSentOutcome(URL, "evt-00000002", record("evt-00000002"), mark, { dir, policy: tiny })).toBe("skipped");
+    const off = { ...spoolPolicy(), enabled: false };
+    expect(retainSentOutcome(URL, "evt-00000003", record("evt-00000003"), mark, { dir, policy: off })).toBe("skipped");
+    const blocked = join(mkdtempSync(join(tmpdir(), "am-blocked-")), "file");
+    writeFileSync(blocked, "");
+    expect(retainSentOutcome(URL, "evt-00000004", record("evt-00000004"), mark, { dir: join(blocked, "spool") })).toBe("failed");
+  });
+
+  it("does not hold the queue for a record whose copy can never be written", async () => {
+    const earlier = mkdtempSync(join(tmpdir(), "am-earlier-"));
+    for (const id of ["evt-00000001", "evt-00000002"]) appendSpool(URL, id, record(id), "unreachable", { dir: earlier });
+    vi.stubGlobal("fetch", async (input: string) =>
+      new Response(JSON.stringify(input.endsWith("/observe") ? { status: "accepted", bootId: "not valid", durableAfterMs: 1000 } : {}), {
+        status: input.endsWith("/observe") ? 201 : 200,
+      }),
+    );
+    await runCaptureCommand({ base: URL, args: ["--drain", "--json"], dirs: [mkdtempSync(join(tmpdir(), "am-current-")), earlier], log: () => {} });
     expect(spoolSummary(URL, { dir: earlier }).records).toBe(0);
   });
 });
@@ -205,10 +230,10 @@ describe("function metrics", () => {
     expect(metrics?.recent).toHaveLength(RECENT_WINDOW);
     expect(metrics?.recent?.endsWith("0000011111")).toBe(true);
     await store.record("mem::compress", 10, true);
-    expect(await store.reset("mem::summarize")).toEqual(["mem::summarize"]);
+    expect(await store.reset("mem::summarize")).toEqual({ reset: ["mem::summarize"], failed: [] });
     expect(await kv.get(KV.metrics, "mem::summarize")).toBeNull();
     expect(await store.get("mem::summarize")).toBeNull();
-    expect((await store.reset()).sort()).toEqual(["mem::compress"]);
+    expect(await store.reset()).toEqual({ reset: ["mem::compress"], failed: [] });
     expect(await store.getAll()).toEqual([]);
   });
 
@@ -230,5 +255,21 @@ describe("function metrics", () => {
     };
     await expect(store.reset()).rejects.toThrow("state unavailable");
     expect((await store.getAll()).map((m) => m.functionId)).toEqual(["mem::summarize"]);
+  });
+
+  it("names the metrics a reset could not delete and keeps them", async () => {
+    const kv = mockKV();
+    const store = new MetricsStore(kv as never);
+    await store.record("mem::summarize", 10, false);
+    await store.record("mem::compress", 10, true);
+    const remove = kv.delete;
+    kv.delete = (async (scope: string, key: string) => {
+      if (key === "mem::compress") throw new Error("disk busy");
+      return remove(scope, key);
+    }) as typeof kv.delete;
+    const outcome = await store.reset();
+    expect(outcome.reset).toEqual(["mem::summarize"]);
+    expect(outcome.failed).toEqual(["mem::compress"]);
+    expect((await store.getAll()).map((m) => m.functionId)).toEqual(["mem::compress"]);
   });
 });

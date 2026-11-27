@@ -755,9 +755,9 @@ function parseSentMark(body) {
 		durableAfterMs: Math.min(Math.ceil(after), MAX_DURABLE_AFTER_MS)
 	};
 }
-function retainSent(url, eventId, body, mark, options = {}) {
+function retainSentOutcome(url, eventId, body, mark, options = {}) {
 	const policy = options.policy ?? spoolPolicy();
-	if (!policy.enabled || !BOOT_ID_RE.test(mark.bootId)) return false;
+	if (!policy.enabled || !BOOT_ID_RE.test(mark.bootId)) return "skipped";
 	const paths = spoolPaths(url, options.dir);
 	const now = options.now ?? Date.now();
 	try {
@@ -777,22 +777,25 @@ function retainSent(url, eventId, body, mark, options = {}) {
 			line = JSON.stringify(record) + "\n";
 		}
 		const bytes = Buffer.byteLength(line);
-		if (bytes > policy.maxRecordBytes) return false;
+		if (bytes > policy.maxRecordBytes) return "skipped";
 		const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
 		const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
 		return withLock(paths.lock, () => {
-			if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return false;
+			if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return "failed";
 			const fd = openSync(file, "a", 384);
 			try {
 				writeSync(fd, line);
 			} finally {
 				closeSync(fd);
 			}
-			return true;
+			return "retained";
 		});
 	} catch {
-		return false;
+		return "failed";
 	}
+}
+function retainSent(url, eventId, body, mark, options = {}) {
+	return retainSentOutcome(url, eventId, body, mark, options) === "retained";
 }
 function reconcileSent(url, bootId, options = {}) {
 	const result = {
@@ -1075,7 +1078,7 @@ async function runDrainChild() {
 			...record.body,
 			eventId: record.eventId
 		}, DRAIN_REQUEST_TIMEOUT_MS);
-		if (mark && !retainSent(REST_URL, record.eventId, record.body, mark) && spoolPolicy().enabled) return "retry";
+		if (mark && retainSentOutcome(REST_URL, record.eventId, record.body, mark) === "failed") return "retry";
 		return outcome;
 	}, {
 		dir,

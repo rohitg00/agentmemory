@@ -493,15 +493,17 @@ export function parseSentMark(body: unknown): SentMark | null {
   return { bootId, durableAfterMs: Math.min(Math.ceil(after), MAX_DURABLE_AFTER_MS) };
 }
 
-export function retainSent(
+export type RetainOutcome = "retained" | "skipped" | "failed";
+
+export function retainSentOutcome(
   url: string,
   eventId: string,
   body: Record<string, unknown>,
   mark: SentMark,
   options: { policy?: SpoolPolicy; dir?: string; now?: number } = {},
-): boolean {
+): RetainOutcome {
   const policy = options.policy ?? spoolPolicy();
-  if (!policy.enabled || !BOOT_ID_RE.test(mark.bootId)) return false;
+  if (!policy.enabled || !BOOT_ID_RE.test(mark.bootId)) return "skipped";
   const paths = spoolPaths(url, options.dir);
   const now = options.now ?? Date.now();
   try {
@@ -521,22 +523,32 @@ export function retainSent(
       line = JSON.stringify(record) + "\n";
     }
     const bytes = Buffer.byteLength(line);
-    if (bytes > policy.maxRecordBytes) return false;
+    if (bytes > policy.maxRecordBytes) return "skipped";
     const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
     const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
     return withLock(paths.lock, () => {
-      if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return false;
+      if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return "failed";
       const fd = openSync(file, "a", 0o600);
       try {
         writeSync(fd, line);
       } finally {
         closeSync(fd);
       }
-      return true;
+      return "retained";
     });
   } catch {
-    return false;
+    return "failed";
   }
+}
+
+export function retainSent(
+  url: string,
+  eventId: string,
+  body: Record<string, unknown>,
+  mark: SentMark,
+  options: { policy?: SpoolPolicy; dir?: string; now?: number } = {},
+): boolean {
+  return retainSentOutcome(url, eventId, body, mark, options) === "retained";
 }
 
 export function reconcileSent(
