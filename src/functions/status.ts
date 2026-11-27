@@ -81,6 +81,7 @@ export interface StatusInputs {
     keywordRebuildRunning?: boolean;
     pendingVectorBackfill: number;
     vectorBackfillState?: VectorBackfillState;
+    vectorBackfillReason?: string | null;
   };
   graph: GraphStatsInput | null;
   graphExtractionEnabled: boolean;
@@ -236,9 +237,9 @@ function secondsBetween(later: Date, earlierIso: string | undefined): number | n
   return Math.max(0, Math.round((later.getTime() - earlier) / 1000));
 }
 
-function describeBackfillState(state: VectorBackfillState): string {
+function describeBackfillState(state: VectorBackfillState, reason?: string | null): string {
   if (state === "waiting-for-opt-in") return "paused, waiting for opt-in";
-  if (state === "paused") return "paused, retried on the next start";
+  if (state === "paused") return reason ? `paused, retried on the next start. ${reason}` : "paused, retried on the next start";
   return state;
 }
 
@@ -249,12 +250,15 @@ function bm25RetryDetail(index: { bm25FailedSessions?: number; bm25NextRetryAt?:
   return parts.length ? ` (${parts.join(", ")})` : "";
 }
 
-function vectorBackfillFix(state: VectorBackfillState | undefined): string {
+function vectorBackfillFix(state: VectorBackfillState | undefined, reason?: string | null): string {
   if (state === "waiting-for-opt-in") {
     return "Backfill is paused. Set AGENTMEMORY_VECTOR_BACKFILL=all and restart to opt in. This calls the embedding provider and is capped per boot by AGENTMEMORY_VECTOR_BACKFILL_MAX.";
   }
   if (state === "running") {
     return "Backfill is running in the background in batches of AGENTMEMORY_VECTOR_BACKFILL_MAX with a short pause between batches. If agentmemory stops first, it continues on the next start. Check the server log for embedding provider errors if progress stops.";
+  }
+  if (state === "paused" && reason) {
+    return `Backfill is paused. ${reason} Search still works by keyword. The remaining documents are retried on the next start; check the server log if the reason repeats.`;
   }
   if (state === "paused") {
     return "Backfill stopped because the embedding provider did not return vectors. Search still works by keyword. Check the embedding provider key and the server log; the remaining documents are retried on the next start.";
@@ -382,7 +386,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       level: "info",
       code: "index-vector-backfill-pending",
       message: `${input.index.pendingVectorBackfill} documents are waiting for a vector embedding.`,
-      fix: vectorBackfillFix(input.index.vectorBackfillState),
+      fix: vectorBackfillFix(input.index.vectorBackfillState, input.index.vectorBackfillReason),
     });
   }
 
@@ -421,7 +425,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       level: "warn",
       code: "index-vector-count-shortfall",
       message: `Only ${loaded} of ${expected} vectors loaded from the last save.`,
-      fix: vectorBackfillFix(input.index.vectorBackfillState),
+      fix: vectorBackfillFix(input.index.vectorBackfillState, input.index.vectorBackfillReason),
     });
   }
 
@@ -929,7 +933,7 @@ ${row("Missing from index", escapeHtml(idx.missingObservations ?? "not checked")
 ${row("Sessions", escapeHtml(idx.sessions ?? "unknown"))}
 ${row("Keyword index rebuild", idx.bm25Incomplete ? `<span class="warn">incomplete</span>${escapeHtml(bm25RetryDetail(idx))}` : "complete")}
 ${row("Pending vector backfill", escapeHtml(idx.pendingVectorBackfill))}
-${idx.vectorBackfillState ? row("Vector backfill", escapeHtml(describeBackfillState(idx.vectorBackfillState))) : ""}
+${idx.vectorBackfillState ? row("Vector backfill", escapeHtml(describeBackfillState(idx.vectorBackfillState, idx.vectorBackfillReason))) : ""}
 ${indexPersistenceRows(report)}
 </table>
 <h2>Capture</h2><table>

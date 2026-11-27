@@ -2,7 +2,7 @@ import type { MemoryProvider } from "../types.js";
 
 const STRICTER_SUFFIX = `
 
-IMPORTANT: Your previous response was invalid. Please ensure your output strictly follows the required XML format. Every required field must be present with valid values.`;
+IMPORTANT: Your previous response was invalid. Please ensure your output strictly follows the required XML format. Every required field must be present with valid values. Inside text, write & as &amp;, < as &lt; and > as &gt;, and do not put tags inside text fields.`;
 
 type ValidationResult<T> =
   | { valid: true; data: T }

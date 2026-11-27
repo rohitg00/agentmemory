@@ -587,10 +587,14 @@ async function main() {
     const hasVector = (id: string) => Boolean(vectorIndex?.has(id));
     const countRemaining = () => bm25Index.countMissingDocuments(hasVector, vectorBackfillSince, activeIds);
     setPendingVectorBackfillCount(indexPersistence.isRecoveryPaused() || supersededReleaseFailed ? countRemaining() : pending);
+    const scanIncomplete = "The keyword index rebuild did not finish, so the list of documents that need vectors is incomplete.";
     if (supersededReleaseFailed || indexPersistence.isRecoveryPaused()) {
-      setVectorBackfillState("paused");
+      setVectorBackfillState("paused", supersededReleaseFailed
+        ? "A superseded vector revision could not be released."
+        : indexPersistence.recoveryPauseReason() ?? undefined);
     } else if (vectorBackfillSince !== undefined) {
-      setVectorBackfillState(!backlogScanComplete ? "paused" : keyword.fullBackfillPending > 0 && !optedIn ? "waiting-for-opt-in" : "idle");
+      if (!backlogScanComplete) setVectorBackfillState("paused", scanIncomplete);
+      else setVectorBackfillState(keyword.fullBackfillPending > 0 && !optedIn ? "waiting-for-opt-in" : "idle");
     }
     if (keyword.fullBackfillPending > 0) {
       bootLog(optedIn
@@ -600,11 +604,13 @@ async function main() {
     if (!supersededReleaseFailed && vectorBackfillSince !== undefined && backlogScanComplete && pending === 0) {
       if (!(await indexPersistence.completeBackfill(() => countRemaining() === 0))) {
         setPendingVectorBackfillCount(countRemaining());
-        setVectorBackfillState("paused");
+        setVectorBackfillState("paused", indexPersistence.recoveryPauseReason() ?? "The finished backfill could not be saved to the vector checkpoint.");
       }
     }
     if (keyword.vectorJobs.length > 0 && (!backlogScanComplete || !(await indexPersistence.beginBackfill()))) {
-      setVectorBackfillState("paused");
+      setVectorBackfillState("paused", !backlogScanComplete
+        ? scanIncomplete
+        : indexPersistence.recoveryPauseReason() ?? "The backfill could not be marked as started.");
       activeIds.clear();
       for (const job of keyword.vectorJobs) job.revision?.release();
     } else if (keyword.vectorJobs.length > 0) {
@@ -618,12 +624,15 @@ async function main() {
           const complete = result.complete && backlogScanComplete && await indexPersistence.completeBackfill(() => countRemaining() === 0);
           const remaining = countRemaining();
           setPendingVectorBackfillCount(remaining);
-          setVectorBackfillState(complete ? "idle" : "paused");
+          if (complete) setVectorBackfillState("idle");
+          else setVectorBackfillState("paused", indexPersistence.recoveryPauseReason() ?? (result.complete
+            ? "The finished backfill could not be saved to the vector checkpoint."
+            : "The embedding provider did not return a vector for every document in the last run."));
           if (result.added > 0) bootLog(`Vector index backfilled: ${result.added} entries`);
           if (!complete) bootWarn(`Vector recovery remains incomplete (${remaining} documents pending); it resumes on the next start.`);
         })
         .catch((err) => {
-          setVectorBackfillState("paused");
+          setVectorBackfillState("paused", `The backfill run failed: ${err instanceof Error ? err.message : String(err)}`);
           console.warn(`[agentmemory] Failed to backfill vectors:`, err);
         })
         .finally(() => {
@@ -632,7 +641,7 @@ async function main() {
         });
     }
   } catch (err) {
-    setVectorBackfillState("paused");
+    setVectorBackfillState("paused", `The keyword index rebuild failed: ${err instanceof Error ? err.message : String(err)}`);
     console.warn(`[agentmemory] Failed to rebuild the BM25 index:`, err);
   }
 

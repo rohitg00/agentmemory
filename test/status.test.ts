@@ -651,6 +651,18 @@ describe("markLlmFunctions", () => {
   });
 });
 
+describe("vector backfill pause reason", () => {
+  it("names the reason in the fix and on the status page", () => {
+    const reason = "Vector recovery did not start for this run.";
+    const report = evaluateStatus(
+      inputs({ index: { ...inputs().index, pendingVectorBackfill: 7, vectorBackfillState: "paused", vectorBackfillReason: reason } }),
+    );
+    const [pending] = report.problems.filter((p) => p.code === "index-vector-backfill-pending");
+    expect(pending.fix).toContain(`Backfill is paused. ${reason}`);
+    expect(renderStatusHtml(report, "nonce")).toContain(`paused, retried on the next start. ${reason}`);
+  });
+});
+
 describe("vector durability rows", () => {
   it("shows the pending vector log and a paused backlog in plain language", () => {
     const report = evaluateStatus(

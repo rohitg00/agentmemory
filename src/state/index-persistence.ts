@@ -385,6 +385,11 @@ export class IndexPersistence {
     return this.recoveryError !== null || !this.recoveryReady;
   }
 
+  recoveryPauseReason(): string | null {
+    if (this.recoveryError) return this.recoveryError;
+    return this.recoveryReady ? null : "Vector recovery did not start for this run.";
+  }
+
   private pauseRecovery(error: unknown): void {
     this.recoveryReady = false;
     this.recoveryError = `Vector recovery paused until restart: ${errorMessage(error)}`;

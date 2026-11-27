@@ -287,7 +287,7 @@ function buildGraphClusters(
   return clusters;
 }
 
-function buildJaccardClusters(
+export function buildJaccardClusters(
   semanticMemories: SemanticMemory[],
   lessons: Lesson[],
   maxClusters: number,
@@ -317,7 +317,8 @@ function buildJaccardClusters(
   const clusters: string[][] = [];
 
   for (const concept of conceptList) {
-    if (visited.has(concept) || clusters.length >= maxClusters) break;
+    if (clusters.length >= maxClusters) break;
+    if (visited.has(concept)) continue;
 
     const cluster = [concept];
     visited.add(concept);

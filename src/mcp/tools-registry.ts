@@ -78,7 +78,7 @@ export const CORE_TOOLS: McpToolDef[] = [
   {
     name: "memory_recall",
     description:
-      "Search stored memories and session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before.",
+      "Search stored memories and session observations for relevant context. Use when you need to recall what happened in previous sessions, find past decisions, or look up how a file was modified before. Does not return lessons: use memory_lesson_recall or memory_smart_search for those.",
     inputSchema: {
       type: "object",
       properties: {
