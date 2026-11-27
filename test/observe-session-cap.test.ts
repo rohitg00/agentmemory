@@ -285,6 +285,40 @@ describe("session observation cap evicts instead of refusing", () => {
     expect(stored?.source === undefined || stored.source.truncated === true).toBe(true);
   });
 
+  it("does not leave a pending compression marker when the re-budget removes the source", async () => {
+    const previous = process.env["AGENTMEMORY_AUTO_COMPRESS"];
+    process.env["AGENTMEMORY_AUTO_COMPRESS"] = "true";
+    try {
+      const { sdk, kv } = await setup(1);
+      await seed(kv, [{ id: "obs_big", importance: 1, ts: "2026-01-01T00:00:00.000Z" }]);
+      const big = (await kv.get<Record<string, unknown>>(SCOPE, "obs_big"))!;
+      await kv.set(SCOPE, "obs_big", {
+        ...big,
+        source: { hookType: "post_tool_use", toolOutput: "x".repeat(SESSION_SOURCE_MAX_BYTES) },
+      });
+      kv.delete = async () => {
+        throw new Error("disk busy");
+      };
+      const triggered: string[] = [];
+      const trigger = sdk.trigger;
+      sdk.trigger = (async (input: unknown, data?: unknown) => {
+        triggered.push(typeof input === "string" ? input : (input as { function_id: string }).function_id);
+        return trigger(input as never, data as never);
+      }) as typeof sdk.trigger;
+
+      const result = await observeOnce(sdk, "y".repeat(8 * 1024));
+
+      const stored = await kv.get<{ source?: unknown; compression?: unknown }>(SCOPE, result.observationId!);
+      expect(stored?.source).toBeUndefined();
+      expect(stored?.compression).toBeUndefined();
+      expect(triggered).toContain("mem::observe");
+      expect(triggered).not.toContain("mem::compress");
+    } finally {
+      if (previous === undefined) delete process.env["AGENTMEMORY_AUTO_COMPRESS"];
+      else process.env["AGENTMEMORY_AUTO_COMPRESS"] = previous;
+    }
+  });
+
   it("keeps the session observation count equal to retained rows after eviction", async () => {
     const { sdk, kv } = await setup(2);
     await seed(kv, [
