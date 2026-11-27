@@ -3775,7 +3775,9 @@ async function runConsole(): Promise<void> {
 function captureSpoolDirs(): string[] {
   if (dataDirResolution.source !== "default") return [spoolDir()];
   const { AGENTMEMORY_DATA_DIR: _adopted, ...hookEnv } = process.env;
-  return spoolReadDirs(hookEnv);
+  const dirs = spoolReadDirs(hookEnv);
+  const resolved = spoolDir();
+  return dirs.includes(resolved) || !existsSync(resolved) ? dirs : [...dirs, resolved];
 }
 
 async function runCapture(): Promise<void> {

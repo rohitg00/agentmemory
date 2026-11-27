@@ -115,10 +115,17 @@ describe("LLM keys claimed by the embedding provider", () => {
     expect(llmOptInHint(split)).toContain("Found OPENAI_API_KEY and AGENTMEMORY_ALLOW_AGENT_SDK=true");
   });
 
-  it("counts a Gemini LLM key the embedding provider does not read", () => {
+  it("treats a placeholder embedding key for a local endpoint as the key embeddings read", () => {
+    const local = { ...base, OPENAI_API_KEY: "sk-real-key-value", OPENAI_EMBEDDING_API_KEY: "local" };
+    expect(detectLlmProviderKind(local)).toBe("noop");
+    expect(llmOptInHint(local)).toContain("Found OPENAI_API_KEY and");
+  });
+
+  it("judges Gemini by the key the chat provider would use", () => {
     const env = { AGENTMEMORY_ALLOW_AGENT_SDK: "true", EMBEDDING_PROVIDER: "gemini" };
     expect(detectLlmProviderKind({ ...env, GEMINI_API_KEY: "real-key-value" })).toBe("llm");
-    expect(llmOptInHint({ ...env, GEMINI_API_KEY: "real-key-value", GOOGLE_API_KEY: "other-key-value" })).toContain("Found GOOGLE_API_KEY and");
+    expect(detectLlmProviderKind({ ...env, GEMINI_API_KEY: "real-key-value", GOOGLE_API_KEY: "other-key-value" })).toBe("llm");
+    expect(llmOptInHint({ ...env, GOOGLE_API_KEY: "other-key-value" })).toContain("Found GOOGLE_API_KEY and");
   });
 });
 
