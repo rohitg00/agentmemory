@@ -1650,7 +1650,7 @@
       audit: { term: 'Audit log', text: 'A record of every change agentmemory made to stored data: saves, deletes, imports, consolidation runs. Use it to see who changed what and when.' },
       workers: { term: 'Workers', text: 'Application workers provide memory, storage and HTTP. Engine details lists the coordinator and internal runtime services; available means a service is registered, not that an optional feature is enabled.' },
       latency: { term: 'Average latency', text: 'Average time one call of the function took to finish.' },
-      failureRate: { term: 'Failure rate', text: 'Share of calls that failed. Functions that need an LLM show as off, not failing, when no LLM provider is set.' },
+      failureRate: { term: 'Failure rate', text: 'Share of the last 10 calls that failed, or of all calls for records saved before the recent window existed. Calls and Failed are lifetime totals. Functions that need an LLM show as off, not failing, when no LLM provider is set.' },
       replay: { term: 'Replay', text: 'Plays back a past session step by step: prompts, responses and tool calls in the order they happened, with their real timing. Works for any session agentmemory recorded, from any connected agent.' },
       profile: { term: 'Project profile', text: 'What agentmemory has learned about one project: the concepts and files that come up most and the conventions it noticed.' },
       heatmap: { term: 'Activity heatmap', text: 'One square per day. The shade is how many observations the sessions that started that day recorded; darker means more. Only the sessions loaded in this viewer are counted, and the note under the grid says how many that is.' }
@@ -7437,13 +7437,16 @@
       html += '<div class="table-wrap"><table class="metric-table"><tr><th>Function</th><th style="text-align:right">Calls</th><th style="text-align:right">Failed</th><th style="text-align:right">Failure rate ' + help('failureRate') + '</th><th style="text-align:right">Avg latency ' + help('latency') + '</th></tr>';
       fns.forEach(function(f) {
         var total = f.totalCalls || 0;
-        var rate = total > 0 ? (f.failureCount || 0) / total : 0;
+        var recent = typeof f.recent === 'string' ? f.recent : '';
+        var windowCalls = recent ? recent.length : total;
+        var windowFailed = recent ? recent.split('0').length - 1 : (f.failureCount || 0);
+        var rate = windowCalls > 0 ? windowFailed / windowCalls : 0;
         var off = !!f.offWithoutLlm;
-        var bad = !off && total >= 5 && rate >= 0.2;
+        var bad = !off && windowCalls >= 5 && rate >= 0.2;
         html += '<tr><td class="metric-fn">' + esc(f.functionId) + (off ? ' <span class="badge badge-muted">off, no LLM</span>' : '') + '</td>' +
           '<td class="metric-num">' + fmtNum(total) + '</td>' +
           '<td class="metric-num" style="color:' + ((f.failureCount || 0) > 0 && !off ? 'var(--red)' : 'var(--ink-faint)') + '">' + (off ? '-' : fmtNum(f.failureCount || 0)) + '</td>' +
-          '<td class="metric-num" style="color:' + (bad ? 'var(--red)' : 'var(--ink-muted)') + '">' + (off ? 'off' : Math.round(rate * 100) + '%') + '</td>' +
+          '<td class="metric-num" style="color:' + (bad ? 'var(--red)' : 'var(--ink-muted)') + '">' + (off ? 'off' : Math.round(rate * 100) + '%' + (recent ? ' of the last ' + recent.length : '')) + '</td>' +
           '<td class="metric-num">' + Math.round(f.avgLatencyMs || 0) + ' ms</td></tr>';
       });
       return html + '</table></div></div>';

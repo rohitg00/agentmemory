@@ -721,6 +721,7 @@ export interface AuditEntry {
     | "diagnose"
     | "heal"
     | "index_persist"
+    | "metrics_reset"
     | "facet_tag"
     | "lesson_save"
     | "lesson_recall"

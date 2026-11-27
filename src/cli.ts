@@ -100,6 +100,7 @@ const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
 import { resolveDataDir } from "./cli-data-dir.js";
 import { runCaptureCommand } from "./cli/capture.js";
+import { spoolDir, spoolReadDirs } from "./capture/spool.js";
 import { runCompressionCommand } from "./cli/compression.js";
 import { runGraphIndexCommand } from "./cli/graph-index.js";
 import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
@@ -3771,11 +3772,18 @@ async function runConsole(): Promise<void> {
   ].join("\n"), "Console migration");
 }
 
+function captureSpoolDirs(): string[] {
+  if (dataDirResolution.source !== "default") return [spoolDir()];
+  const { AGENTMEMORY_DATA_DIR: _adopted, ...hookEnv } = process.env;
+  return spoolReadDirs(hookEnv);
+}
+
 async function runCapture(): Promise<void> {
   const code = await runCaptureCommand({
     base: getBaseUrl(),
     args: args.slice(1),
     secret: resolveClientSecret(getBaseUrl()),
+    dirs: captureSpoolDirs(),
   });
   process.exit(code);
 }

@@ -859,7 +859,7 @@ export function renderStatusHtml(
           (f) =>
             `<tr${isFailing(f) ? ' class="bad"' : ""}>` +
             `<td>${escapeHtml(f.functionId)}</td><td>${f.totalCalls}</td><td>${f.offWithoutLlm ? "-" : f.failureCount}</td>` +
-            `<td>${f.offWithoutLlm ? "off, no LLM provider" : `${Math.round(f.failureRate * 100)}%`}</td><td>${Math.round(f.avgLatencyMs)} ms</td></tr>`,
+            `<td>${f.offWithoutLlm ? "off, no LLM provider" : `${Math.round(f.failureRate * 100)}%${f.recent ? ` of the last ${f.recent.length}` : ""}`}</td><td>${Math.round(f.avgLatencyMs)} ms</td></tr>`,
         )
         .join("")
     : `<tr><td colspan="5">No function calls recorded yet.</td></tr>`;

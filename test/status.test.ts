@@ -105,6 +105,9 @@ describe("evaluateStatus", () => {
     const [problem] = failing.problems.filter((p) => p.code === "function-failing");
     expect(problem.message).toBe("mem::summarize failed 5 of the last 10 calls (50%).");
     expect(problem.fix).toContain("/agentmemory/metrics/reset");
+    expect(renderStatusHtml(failing, "nonce")).toContain("<td>25</td><td>15</td><td>50% of the last 10</td>");
+    const lifetime = evaluateStatus(inputs({ functionMetrics: [stale] }));
+    expect(renderStatusHtml(lifetime, "nonce")).toContain("<td>25</td><td>15</td><td>60%</td>");
   });
 
   it("escalates to error when the provider circuit breaker is open or health is critical", () => {

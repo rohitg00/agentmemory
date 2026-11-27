@@ -435,6 +435,16 @@ function spoolDir(env = process.env) {
 		adoptLegacy: false
 	}).dataDir, "capture-spool");
 }
+function spoolReadDirs(env = process.env) {
+	const current = spoolDir(env);
+	const explicit = env["AGENTMEMORY_CAPTURE_SPOOL_DIR"];
+	if (explicit && explicit.trim()) return [current];
+	const legacy = join(resolveDataDir({
+		args: [],
+		env
+	}).dataDir, "capture-spool");
+	return legacy !== current && existsSync(legacy) ? [current, legacy] : [current];
+}
 const LOOPBACK = new Set([
 	"localhost",
 	"127.0.0.1",
@@ -1046,7 +1056,7 @@ async function captureObservation(body, timeoutMs) {
 	try {
 		const { outcome, mark, status } = await post(payload, timeoutMs);
 		if (outcome !== "retry") {
-			if ((mark ? keepUntilDurable(eventId, payload, mark) : 0) > 0 || spoolHasRecords(REST_URL)) startDrainChild();
+			if ((mark ? keepUntilDurable(eventId, payload, mark) : 0) > 0 || spoolReadDirs().some((dir) => spoolHasRecords(REST_URL, dir))) startDrainChild();
 			return outcome;
 		}
 		reason = status >= 500 ? "server-error" : `http-${status}`;
@@ -1060,7 +1070,7 @@ function isDrainChild() {
 	return process.env[DRAIN_CHILD_ENV] === "1";
 }
 async function runDrainChild() {
-	await drainSpool(REST_URL, async (record) => {
+	for (const dir of spoolReadDirs()) await drainSpool(REST_URL, async (record) => {
 		const { outcome, mark } = await post({
 			...record.body,
 			eventId: record.eventId
@@ -1068,6 +1078,7 @@ async function runDrainChild() {
 		if (mark) retainSent(REST_URL, record.eventId, record.body, mark);
 		return outcome;
 	}, {
+		dir,
 		maxRecords: DRAIN_MAX_RECORDS,
 		deadlineMs: DRAIN_DEADLINE_MS
 	}).catch(() => void 0);

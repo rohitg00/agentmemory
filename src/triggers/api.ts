@@ -3,7 +3,7 @@ import { DEDUP_WINDOW_MS, getDedupSkippedCount } from "../functions/dedup.js";
 import type { HttpRequest } from "@iii-dev/helpers/http";
 import { randomBytes } from "node:crypto";
 import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary, HealthSnapshot, AuditQueryResult, AuditMigrationState, Lesson } from "../types.js";
-import { AUDIT_MIGRATION_STATE_KEY } from "../functions/audit.js";
+import { AUDIT_MIGRATION_STATE_KEY, recordAudit } from "../functions/audit.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { isSearchLayer, type SearchLayer } from "../state/search-layer.js";
@@ -707,6 +707,7 @@ export function registerApiTriggers(
       }
       if (!metricsStore) return { status_code: 503, body: { error: "metrics unavailable" } };
       const reset = await metricsStore.reset(functionId);
+      await recordAudit(kv, "metrics_reset", "api::metrics-reset", reset, { scope: functionId ? "function" : "all" });
       return { status_code: 200, body: { success: true, reset } };
     },
   );

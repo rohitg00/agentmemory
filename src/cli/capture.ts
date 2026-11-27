@@ -1,10 +1,11 @@
-import { drainSpool, parseSentMark, retainSent, sendOutcome, spoolSummary, type SpoolRecord } from "../capture/spool.js";
+import { drainSpool, parseSentMark, retainSent, sendOutcome, spoolSummary, type DrainResult, type SpoolRecord, type SpoolSummary } from "../capture/spool.js";
 import { CURL_AUTH_HEADER } from "../functions/status.js";
 
 interface CaptureCommandOptions {
   base: string;
   args: string[];
   secret?: string;
+  dirs?: string[];
   log?: (line: string) => void;
 }
 
@@ -32,9 +33,10 @@ export async function runCaptureCommand(options: CaptureCommandOptions): Promise
   const json = options.args.includes("--json");
   const drain = options.args.includes("--drain");
   const output: Record<string, unknown> = {};
+  const [dir, ...earlierDirs] = options.dirs?.length ? options.dirs : [undefined];
 
-  if (drain) {
-    output["drain"] = await drainSpool(options.base, async (record: SpoolRecord) => {
+  const drainDir = (target?: string): Promise<DrainResult> =>
+    drainSpool(options.base, async (record: SpoolRecord) => {
       const res = await fetch(`${options.base}/agentmemory/observe`, {
         method: "POST",
         headers: headers(options.secret),
@@ -48,12 +50,19 @@ export async function runCaptureCommand(options: CaptureCommandOptions): Promise
         try {
           mark = parseSentMark(JSON.parse(text));
         } catch {}
-        if (mark) retainSent(options.base, record.eventId, record.body, mark);
+        if (mark) retainSent(options.base, record.eventId, record.body, mark, { dir });
       }
       return outcome;
-    });
+    }, { dir: target });
+
+  const earlier: Array<{ drain?: DrainResult; spool: SpoolSummary }> = [];
+  if (drain) output["drain"] = await drainDir(dir);
+  for (const target of earlierDirs) {
+    const drained = drain ? await drainDir(target) : undefined;
+    earlier.push({ drain: drained, spool: spoolSummary(options.base, { dir: target }) });
   }
-  output["spool"] = spoolSummary(options.base);
+  output["spool"] = spoolSummary(options.base, { dir });
+  if (earlier.length > 0) output["earlierSpools"] = earlier;
   output["server"] = await serverCapture(options.base, options.secret);
 
   if (json) {
@@ -61,15 +70,13 @@ export async function runCaptureCommand(options: CaptureCommandOptions): Promise
     return 0;
   }
 
-  const spool = output["spool"] as ReturnType<typeof spoolSummary>;
-  if (drain) {
-    const d = output["drain"] as Awaited<ReturnType<typeof drainSpool>>;
-    log(
-      d.skipped
-        ? `Drain skipped: ${d.skipped === "locked" ? "another drain is running" : "nothing to send"}`
-        : `Drained ${d.claimed}: ${d.delivered} stored, ${d.duplicates} already stored, ${d.rejected} rejected, ${d.expired} expired, ${d.remaining} still waiting${d.error ? ` (${d.error})` : ""}`,
-    );
-  }
+  const drainLine = (d: DrainResult): string =>
+    d.skipped
+      ? `Drain skipped: ${d.skipped === "locked" ? "another drain is running" : "nothing to send"}`
+      : `Drained ${d.claimed}: ${d.delivered} stored, ${d.duplicates} already stored, ${d.rejected} rejected, ${d.expired} expired, ${d.remaining} still waiting${d.error ? ` (${d.error})` : ""}`;
+
+  const spool = output["spool"] as SpoolSummary;
+  if (drain) log(drainLine(output["drain"] as DrainResult));
   log(`Local spool: ${spool.enabled ? `${spool.records} waiting, ${spool.bytes} bytes` : "off (AGENTMEMORY_CAPTURE_SPOOL=false)"}`);
   log(`  file: ${spool.path}`);
   log(`  limits: ${spool.maxBytes} bytes, ${spool.maxAgeHours} h`);
@@ -77,6 +84,11 @@ export async function runCaptureCommand(options: CaptureCommandOptions): Promise
   if (spool.stats.lastDrainAt) log(`  last drain: ${spool.stats.lastDrainAt}`);
   if (spool.unreadable) log(`  unreadable spool files kept for retry: ${spool.unreadable}`);
   if (spool.stats.lastDropAt) log(`  last drop: ${spool.stats.lastDropAt} (${spool.stats.lastDropReason ?? "unknown"})`);
+  for (const item of earlier) {
+    log(`Earlier spool folder: ${item.spool.records} waiting, ${item.spool.bytes} bytes`);
+    log(`  file: ${item.spool.path}`);
+    if (item.drain) log(`  ${drainLine(item.drain)}`);
+  }
 
   const server = output["server"] as {
     error?: string;

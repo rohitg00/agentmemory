@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
-import { appendSpool, drainSpool, sendOutcome, spoolDir, spoolSummary } from "../src/capture/spool.js";
+import { appendSpool, drainSpool, sendOutcome, spoolDir, spoolReadDirs, spoolSummary } from "../src/capture/spool.js";
 import { resolveDataDir } from "../src/cli-data-dir.js";
 import { BOOT_TOLERANCE_MS, writtenBeforeBoot } from "../src/cli/compose-process.js";
 import { renderWorkerCompose } from "../src/cli/compose-project.js";
+import { detectLlmProviderKind, llmOptInHint } from "../src/config.js";
 import { MetricsStore, RECENT_WINDOW } from "../src/eval/metrics-store.js";
+import { isRestatement, matchSemanticFact } from "../src/functions/consolidation-pipeline.js";
+import type { SemanticMemory } from "../src/types.js";
 import { KV } from "../src/state/schema.js";
 import { mockKV } from "./helpers/mocks.js";
 
@@ -54,6 +57,76 @@ describe("capture spool folder", () => {
     } finally {
       process.chdir(cwd);
     }
+  });
+
+  it("still reads the spool an earlier version left in the legacy data folder", () => {
+    const project = realpathSync(mkdtempSync(join(tmpdir(), "am-project-")));
+    mkdirSync(join(project, "data"));
+    writeFileSync(join(project, "data", "state_store.db"), "");
+    const home = mkdtempSync(join(tmpdir(), "am-home-"));
+    const env = { HOME: home, XDG_DATA_HOME: join(home, "xdg") };
+    const cwd = process.cwd();
+    process.chdir(project);
+    try {
+      expect(spoolReadDirs(env)).toEqual([spoolDir(env)]);
+      mkdirSync(join(project, "data", "capture-spool"));
+      expect(spoolReadDirs(env)).toEqual([spoolDir(env), join(project, "data", "capture-spool")]);
+      const explicit = { ...env, AGENTMEMORY_CAPTURE_SPOOL_DIR: join(home, "spool") };
+      expect(spoolReadDirs(explicit)).toEqual([join(home, "spool")]);
+      const dataDir = { ...env, AGENTMEMORY_DATA_DIR: join(home, "store") };
+      expect(spoolReadDirs(dataDir)).toEqual([join(home, "store", "capture-spool")]);
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+});
+
+describe("LLM keys claimed by the embedding provider", () => {
+  const base = { AGENTMEMORY_ALLOW_AGENT_SDK: "true", EMBEDDING_PROVIDER: "openai" };
+
+  it("claims OPENAI_API_KEY only when embeddings read it", () => {
+    expect(detectLlmProviderKind({ ...base, OPENAI_API_KEY: "sk-real-key-value" })).toBe("llm");
+    const split = { ...base, OPENAI_API_KEY: "sk-real-key-value", OPENAI_EMBEDDING_API_KEY: "sk-embedding-key" };
+    expect(detectLlmProviderKind(split)).toBe("noop");
+    expect(llmOptInHint(split)).toContain("Found OPENAI_API_KEY and AGENTMEMORY_ALLOW_AGENT_SDK=true");
+  });
+
+  it("counts a Gemini LLM key the embedding provider does not read", () => {
+    const env = { AGENTMEMORY_ALLOW_AGENT_SDK: "true", EMBEDDING_PROVIDER: "gemini" };
+    expect(detectLlmProviderKind({ ...env, GEMINI_API_KEY: "real-key-value" })).toBe("llm");
+    expect(llmOptInHint({ ...env, GEMINI_API_KEY: "real-key-value", GOOGLE_API_KEY: "other-key-value" })).toContain("Found GOOGLE_API_KEY and");
+  });
+});
+
+describe("semantic fact matching", () => {
+  const stored = (fact: string): SemanticMemory[] => [{ id: "sem_1", fact } as SemanticMemory];
+
+  it("matches a restatement that only adds filler words", () => {
+    const fact = "Redis was chosen over Memcached for session storage because Redis persists to disk with RDB snapshots";
+    expect(matchSemanticFact(stored(fact), `Decision recorded: ${fact}`)?.id).toBe("sem_1");
+    expect(matchSemanticFact(stored(fact), fact.toUpperCase())?.id).toBe("sem_1");
+  });
+
+  it("keeps a fact that changes a number, a word or the polarity", () => {
+    expect(matchSemanticFact(stored("The production API listens on port 80"), "The production API listens on port 81")).toBeUndefined();
+    expect(
+      matchSemanticFact(
+        stored("Payments are enabled for all European customers in production this quarter"),
+        "Payments are disabled for all European customers in production this quarter",
+      ),
+    ).toBeUndefined();
+    expect(
+      matchSemanticFact(
+        stored("The nightly backup job runs on the primary database cluster in the Frankfurt region"),
+        "The nightly backup job never runs on the primary database cluster in the Frankfurt region",
+      ),
+    ).toBeUndefined();
+    expect(isRestatement("the cache beats the queue on latency", "the queue beats the cache on latency")).toBe(false);
+    expect(isRestatement("deploys are frozen", "deploys aren't frozen")).toBe(false);
+  });
+
+  it("follows an explicit ref whatever the wording", () => {
+    expect(matchSemanticFact(stored("Sessions live in Redis"), "Redis holds the sessions", "sem_1")?.id).toBe("sem_1");
   });
 });
 
@@ -106,5 +179,14 @@ describe("function metrics", () => {
     expect(await store.get("mem::summarize")).toBeNull();
     expect((await store.reset()).sort()).toEqual(["mem::compress"]);
     expect(await store.getAll()).toEqual([]);
+  });
+
+  it("does not let a call that was already recording bring back counts after a reset", async () => {
+    const kv = mockKV();
+    await kv.set(KV.metrics, "mem::summarize", { functionId: "mem::summarize", totalCalls: 50, successCount: 0, failureCount: 50, avgLatencyMs: 10, avgQualityScore: 0 });
+    const store = new MetricsStore(kv as never);
+    await Promise.all([store.record("mem::summarize", 10, false), store.reset("mem::summarize")]);
+    expect(await kv.get(KV.metrics, "mem::summarize")).toBeNull();
+    expect(await store.get("mem::summarize")).toBeNull();
   });
 });

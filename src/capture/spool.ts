@@ -164,6 +164,14 @@ export function spoolDir(env: NodeJS.ProcessEnv = process.env): string {
   return join(resolveDataDir({ args: [], env, adoptLegacy: false }).dataDir, "capture-spool");
 }
 
+export function spoolReadDirs(env: NodeJS.ProcessEnv = process.env): string[] {
+  const current = spoolDir(env);
+  const explicit = env["AGENTMEMORY_CAPTURE_SPOOL_DIR"];
+  if (explicit && explicit.trim()) return [current];
+  const legacy = join(resolveDataDir({ args: [], env }).dataDir, "capture-spool");
+  return legacy !== current && existsSync(legacy) ? [current, legacy] : [current];
+}
+
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
 
 export function spoolTargetName(url: string): string {

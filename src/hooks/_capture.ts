@@ -10,6 +10,7 @@ import {
   retainSent,
   sendOutcome,
   spoolHasRecords,
+  spoolReadDirs,
   type SendOutcome,
   type SentMark,
   type SpoolRecord,
@@ -104,7 +105,7 @@ export async function captureObservation(body: ObserveBody, timeoutMs: number): 
     const { outcome, mark, status } = await post(payload, timeoutMs);
     if (outcome !== "retry") {
       const requeued = mark ? keepUntilDurable(eventId, payload, mark) : 0;
-      if (requeued > 0 || spoolHasRecords(REST_URL)) startDrainChild();
+      if (requeued > 0 || spoolReadDirs().some((dir) => spoolHasRecords(REST_URL, dir))) startDrainChild();
       return outcome;
     }
     reason = status >= 500 ? "server-error" : `http-${status}`;
@@ -120,13 +121,15 @@ export function isDrainChild(): boolean {
 }
 
 export async function runDrainChild(): Promise<void> {
-  await drainSpool(
-    REST_URL,
-    async (record: SpoolRecord) => {
-      const { outcome, mark } = await post({ ...record.body, eventId: record.eventId }, DRAIN_REQUEST_TIMEOUT_MS);
-      if (mark) retainSent(REST_URL, record.eventId, record.body, mark);
-      return outcome;
-    },
-    { maxRecords: DRAIN_MAX_RECORDS, deadlineMs: DRAIN_DEADLINE_MS },
-  ).catch(() => undefined);
+  for (const dir of spoolReadDirs()) {
+    await drainSpool(
+      REST_URL,
+      async (record: SpoolRecord) => {
+        const { outcome, mark } = await post({ ...record.body, eventId: record.eventId }, DRAIN_REQUEST_TIMEOUT_MS);
+        if (mark) retainSent(REST_URL, record.eventId, record.body, mark);
+        return outcome;
+      },
+      { dir, maxRecords: DRAIN_MAX_RECORDS, deadlineMs: DRAIN_DEADLINE_MS },
+    ).catch(() => undefined);
+  }
 }

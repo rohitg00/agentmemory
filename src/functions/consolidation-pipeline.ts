@@ -53,6 +53,29 @@ const DECAY_STRENGTH_EPSILON = 1e-9;
 const KNOWN_FACTS_IN_PROMPT = 40;
 const SEMANTIC_DUPLICATE_SIMILARITY = 0.8;
 
+const MEANING_WORDS = new Set(["not", "no", "never", "none", "neither", "nor", "without", "cannot", "except", "unless", "only"]);
+
+function factWords(text: string): string[] {
+  return text.normalize("NFC").toLowerCase().split(/[^\p{L}\p{N}']+/u).filter(Boolean);
+}
+
+function changesMeaning(word: string): boolean {
+  return /\p{N}/u.test(word) || MEANING_WORDS.has(word) || word.endsWith("n't");
+}
+
+export function isRestatement(a: string, b: string): boolean {
+  const wordsA = factWords(a);
+  const wordsB = factWords(b);
+  const [short, long] = wordsA.length <= wordsB.length ? [wordsA, wordsB] : [wordsB, wordsA];
+  let matched = 0;
+  const added: string[] = [];
+  for (const word of long) {
+    if (matched < short.length && word === short[matched]) matched++;
+    else added.push(word);
+  }
+  return matched === short.length && !added.some(changesMeaning);
+}
+
 export function matchSemanticFact(existing: SemanticMemory[], fact: string, ref?: string): SemanticMemory | undefined {
   const referenced = ref ? existing.find((s) => s.id === ref) : undefined;
   if (referenced) return referenced;
@@ -64,7 +87,7 @@ export function matchSemanticFact(existing: SemanticMemory[], fact: string, ref?
     const candidate = s.fact.toLowerCase();
     if (candidate === lower) return s;
     const score = jaccardSimilarity(candidate, lower);
-    if (score >= bestScore) {
+    if (score >= bestScore && isRestatement(candidate, lower)) {
       best = s;
       bestScore = score;
     }

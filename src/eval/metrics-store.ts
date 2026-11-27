@@ -1,8 +1,11 @@
 import type { FunctionMetrics } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
 
 export const RECENT_WINDOW = 10;
+
+const lockKey = (functionId: string) => `metrics:${functionId}`;
 
 export class MetricsStore {
   private cache = new Map<string, FunctionMetrics>();
@@ -11,6 +14,15 @@ export class MetricsStore {
   constructor(private kv: StateKV) {}
 
   async record(
+    functionId: string,
+    latencyMs: number,
+    success: boolean,
+    qualityScore?: number,
+  ): Promise<void> {
+    return withKeyedLock(lockKey(functionId), () => this.recordLocked(functionId, latencyMs, success, qualityScore));
+  }
+
+  private async recordLocked(
     functionId: string,
     latencyMs: number,
     success: boolean,
@@ -51,11 +63,15 @@ export class MetricsStore {
 
   async reset(functionId?: string): Promise<string[]> {
     const ids = functionId ? [functionId] : (await this.getAll()).map((m) => m.functionId);
-    for (const id of ids) {
-      this.cache.delete(id);
-      this.qualityCallCounts.delete(id);
-    }
-    await Promise.all(ids.map((id) => this.kv.delete(KV.metrics, id)));
+    await Promise.all(
+      ids.map((id) =>
+        withKeyedLock(lockKey(id), async () => {
+          this.cache.delete(id);
+          this.qualityCallCounts.delete(id);
+          await this.kv.delete(KV.metrics, id);
+        }),
+      ),
+    );
     return ids;
   }
 

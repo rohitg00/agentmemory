@@ -194,12 +194,14 @@ export function envFileLabel(path: string = ENV_FILE): string {
   return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
 
-function keyedLlmProviders(env: Record<string, string | undefined>): LlmProviderName[] {
-  return LLM_PROVIDER_NAMES.filter((name) => llmProviderHasKey(env, name));
+function embeddingClaimedKeys(env: Record<string, string | undefined>): readonly string[] {
+  const embedding = (env["EMBEDDING_PROVIDER"] || "").trim().toLowerCase();
+  if (embedding === "openai" && hasRealKey(env["OPENAI_EMBEDDING_API_KEY"])) return ["OPENAI_EMBEDDING_API_KEY"];
+  return REMOTE_EMBEDDING_PROVIDER_KEYS[embedding] ?? [];
 }
 
-function presentProviderKeys(env: Record<string, string | undefined>, names: LlmProviderName[]): string[] {
-  return names.flatMap((name) => LLM_PROVIDER_KEYS[name].filter((k) => isRealProviderKey(env, k)));
+function unclaimedProviderKeys(env: Record<string, string | undefined>, name: LlmProviderName, claimed: readonly string[]): string[] {
+  return LLM_PROVIDER_KEYS[name].filter((k) => isRealProviderKey(env, k) && !claimed.includes(k));
 }
 
 type LlmChoice =
@@ -224,11 +226,11 @@ function resolveLlmChoice(env: Record<string, string | undefined>): LlmChoice {
     }
     return { kind: "provider", name: selected };
   }
-  const embedding = (env["EMBEDDING_PROVIDER"] || "").trim().toLowerCase();
-  const keyed = keyedLlmProviders(env).filter((name) => !allowed || name !== embedding);
+  const claimed = allowed ? embeddingClaimedKeys(env) : [];
+  const keyed = LLM_PROVIDER_NAMES.filter((name) => unclaimedProviderKeys(env, name, claimed).length > 0);
   if (allowed && keyed.length === 0) return { kind: "agent-sdk" };
   if (keyed.length === 0) return { kind: "noop", hint: null };
-  const keys = presentProviderKeys(env, keyed).join(", ");
+  const keys = keyed.flatMap((name) => unclaimedProviderKeys(env, name, claimed)).join(", ");
   if (allowed) {
     return {
       kind: "noop",
