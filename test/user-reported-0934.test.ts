@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, realpathSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parse } from "yaml";
 import { appendSpool, drainSpool, sendOutcome, spoolDir, spoolReadDirs, spoolSummary } from "../src/capture/spool.js";
+import { runCaptureCommand } from "../src/cli/capture.js";
 import { resolveDataDir } from "../src/cli-data-dir.js";
 import { BOOT_TOLERANCE_MS, writtenBeforeBoot } from "../src/cli/compose-process.js";
 import { renderWorkerCompose } from "../src/cli/compose-project.js";
@@ -39,6 +40,29 @@ describe("capture send classification", () => {
     const result = await drainSpool(URL, async () => sendOutcome(404, "<no route>"), { dir });
     expect(result.rejected).toBe(0);
     expect(spoolSummary(URL, { dir }).records).toBe(3);
+  });
+});
+
+describe("capture drain durability copy", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("keeps a delivered record queued when its durability copy cannot be written", async () => {
+    const earlier = mkdtempSync(join(tmpdir(), "am-earlier-"));
+    appendSpool(URL, "evt-00000001", record("evt-00000001"), "unreachable", { dir: earlier });
+    const blocked = join(mkdtempSync(join(tmpdir(), "am-blocked-")), "file");
+    writeFileSync(blocked, "");
+    vi.stubGlobal("fetch", async (input: string) =>
+      new Response(JSON.stringify(input.endsWith("/observe") ? { status: "accepted", bootId: "boot00000001", durableAfterMs: 1000 } : {}), {
+        status: input.endsWith("/observe") ? 201 : 200,
+      }),
+    );
+    const run = (dir: string) => runCaptureCommand({ base: URL, args: ["--drain", "--json"], dirs: [dir, earlier], log: () => {} });
+
+    await run(join(blocked, "spool"));
+    expect(spoolSummary(URL, { dir: earlier }).records).toBe(1);
+
+    await run(mkdtempSync(join(tmpdir(), "am-current-")));
+    expect(spoolSummary(URL, { dir: earlier }).records).toBe(0);
   });
 });
 
@@ -188,5 +212,16 @@ describe("function metrics", () => {
     await Promise.all([store.record("mem::summarize", 10, false), store.reset("mem::summarize")]);
     expect(await kv.get(KV.metrics, "mem::summarize")).toBeNull();
     expect(await store.get("mem::summarize")).toBeNull();
+  });
+
+  it("fails a full reset when the stored metrics cannot be listed", async () => {
+    const kv = mockKV();
+    const store = new MetricsStore(kv as never);
+    await store.record("mem::summarize", 10, false);
+    kv.list = async () => {
+      throw new Error("state unavailable");
+    };
+    await expect(store.reset()).rejects.toThrow("state unavailable");
+    expect((await store.getAll()).map((m) => m.functionId)).toEqual(["mem::summarize"]);
   });
 });

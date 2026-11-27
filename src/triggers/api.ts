@@ -706,7 +706,12 @@ export function registerApiTriggers(
         return { status_code: 400, body: { error: "functionId must be a non-empty string" } };
       }
       if (!metricsStore) return { status_code: 503, body: { error: "metrics unavailable" } };
-      const reset = await metricsStore.reset(functionId);
+      let reset: string[];
+      try {
+        reset = await metricsStore.reset(functionId);
+      } catch {
+        return { status_code: 503, body: { error: "metrics could not be read; nothing was reset" } };
+      }
       await recordAudit(kv, "metrics_reset", "api::metrics-reset", reset, { scope: functionId ? "function" : "all" });
       return { status_code: 200, body: { success: true, reset } };
     },

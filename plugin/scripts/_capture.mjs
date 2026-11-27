@@ -1075,7 +1075,7 @@ async function runDrainChild() {
 			...record.body,
 			eventId: record.eventId
 		}, DRAIN_REQUEST_TIMEOUT_MS);
-		if (mark) retainSent(REST_URL, record.eventId, record.body, mark);
+		if (mark && !retainSent(REST_URL, record.eventId, record.body, mark) && spoolPolicy().enabled) return "retry";
 		return outcome;
 	}, {
 		dir,

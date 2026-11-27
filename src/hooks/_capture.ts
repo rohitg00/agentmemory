@@ -10,6 +10,7 @@ import {
   retainSent,
   sendOutcome,
   spoolHasRecords,
+  spoolPolicy,
   spoolReadDirs,
   type SendOutcome,
   type SentMark,
@@ -126,7 +127,7 @@ export async function runDrainChild(): Promise<void> {
       REST_URL,
       async (record: SpoolRecord) => {
         const { outcome, mark } = await post({ ...record.body, eventId: record.eventId }, DRAIN_REQUEST_TIMEOUT_MS);
-        if (mark) retainSent(REST_URL, record.eventId, record.body, mark);
+        if (mark && !retainSent(REST_URL, record.eventId, record.body, mark) && spoolPolicy().enabled) return "retry";
         return outcome;
       },
       { dir, maxRecords: DRAIN_MAX_RECORDS, deadlineMs: DRAIN_DEADLINE_MS },

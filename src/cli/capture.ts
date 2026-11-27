@@ -1,4 +1,4 @@
-import { drainSpool, parseSentMark, retainSent, sendOutcome, spoolSummary, type DrainResult, type SpoolRecord, type SpoolSummary } from "../capture/spool.js";
+import { drainSpool, parseSentMark, retainSent, sendOutcome, spoolPolicy, spoolSummary, type DrainResult, type SpoolRecord, type SpoolSummary } from "../capture/spool.js";
 import { CURL_AUTH_HEADER } from "../functions/status.js";
 
 interface CaptureCommandOptions {
@@ -50,7 +50,7 @@ export async function runCaptureCommand(options: CaptureCommandOptions): Promise
         try {
           mark = parseSentMark(JSON.parse(text));
         } catch {}
-        if (mark) retainSent(options.base, record.eventId, record.body, mark, { dir });
+        if (mark && !retainSent(options.base, record.eventId, record.body, mark, { dir }) && spoolPolicy().enabled) return "retry";
       }
       return outcome;
     }, { dir: target });

@@ -83,6 +83,8 @@ async function setup(cap: number) {
   const { registerObserveFunction } = await import("../src/functions/observe.js");
   const sdk = mockSdk({ looseTrigger: true });
   const kv = mockKV();
+  const set = kv.set;
+  kv.set = (async (scope: string, key: string, value: unknown) => set(scope, key, structuredClone(value))) as typeof kv.set;
   registerObserveFunction(sdk as never, kv as never, undefined, cap);
   return { sdk, kv };
 }

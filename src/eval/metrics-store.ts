@@ -62,7 +62,9 @@ export class MetricsStore {
   }
 
   async reset(functionId?: string): Promise<string[]> {
-    const ids = functionId ? [functionId] : (await this.getAll()).map((m) => m.functionId);
+    const ids = functionId
+      ? [functionId]
+      : [...new Set([...(await this.kv.list<FunctionMetrics>(KV.metrics)).map((m) => m.functionId), ...this.cache.keys()])];
     await Promise.all(
       ids.map((id) =>
         withKeyedLock(lockKey(id), async () => {
