@@ -48,9 +48,9 @@ Automatic capture uses AgentMemory's privacy scrubber before sending or queueing
 
 ## Offline behavior
 
-Failed captures from network errors, timeouts, HTTP 408/429 and server errors enter the bounded local capture spool. OMP retries at session start, before prompts, every ten seconds and on `/agentmemory-status`. Event IDs prevent duplicate storage across retries. Acknowledgements are retained through the daemon's durability window to cover restarts.
+Failed captures enter the bounded local capture spool unless the daemon rejected the payload itself (HTTP 400 or 422 with `status: "rejected"`, or 413). Network errors, timeouts, authentication errors, a `404` while the daemon restarts and server errors all keep the capture. OMP retries at session start, before prompts, every ten seconds and on `/agentmemory-status`. Event IDs prevent duplicate storage across retries. Acknowledgements are retained through the daemon's durability window to cover restarts.
 
-The conversation continues when the daemon is unavailable. Explicit save/search tools report failure and are not queued. Authentication and other non-retryable client errors are reported instead of retried forever. Queue limits, disabled spooling or disk failures can still drop captures; inspect `/agentmemory-status`. Session finalization is best effort within OMP's two-second shutdown budget. Summary generation and consolidation run on the server.
+The conversation continues when the daemon is unavailable. Explicit save/search tools report failure and are not queued. A replay pass stops at the first failure, so a wrong secret costs one request per pass while the capture stays queued. Queue limits, disabled spooling or disk failures can still drop captures; inspect `/agentmemory-status`. Session finalization is best effort within OMP's two-second shutdown budget. Summary generation and consolidation run on the server.
 
 ## Configuration
 

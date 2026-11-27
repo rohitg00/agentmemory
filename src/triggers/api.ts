@@ -3,7 +3,7 @@ import { DEDUP_WINDOW_MS, getDedupSkippedCount } from "../functions/dedup.js";
 import type { HttpRequest } from "@iii-dev/helpers/http";
 import { randomBytes } from "node:crypto";
 import type { Session, CompressedObservation, HookPayload, CommitLink, SessionSummary, HealthSnapshot, AuditQueryResult, AuditMigrationState, Lesson } from "../types.js";
-import { AUDIT_MIGRATION_STATE_KEY } from "../functions/audit.js";
+import { AUDIT_MIGRATION_STATE_KEY, recordAudit } from "../functions/audit.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { KV } from "../state/schema.js";
 import { isSearchLayer, type SearchLayer } from "../state/search-layer.js";
@@ -696,6 +696,42 @@ export function registerApiTriggers(
     },
   });
 
+  sdk.registerFunction("api::metrics-reset",
+    async (req: HttpRequest<{ functionId?: unknown }>): Promise<Response> => {
+      const authErr = checkAuth(req, secret);
+      if (authErr) return authErr;
+      const raw = req.body?.functionId;
+      const functionId = raw === undefined ? undefined : asNonEmptyString(raw);
+      if (functionId === null || (functionId && functionId.length > 256)) {
+        return { status_code: 400, body: { error: "functionId must be a non-empty string" } };
+      }
+      if (!metricsStore) return { status_code: 503, body: { error: "metrics unavailable" } };
+      let outcome: { reset: string[]; failed: string[] };
+      try {
+        outcome = await metricsStore.reset(functionId);
+      } catch {
+        return { status_code: 503, body: { error: "metrics could not be listed; nothing was reset" } };
+      }
+      const { reset, failed } = outcome;
+      if (reset.length > 0 || failed.length > 0) {
+        await recordAudit(kv, "metrics_reset", "api::metrics-reset", reset, { scope: functionId ? "function" : "all", failed });
+      }
+      if (failed.length > 0) {
+        return { status_code: 503, body: { success: false, error: "some metrics could not be reset", reset, failed } };
+      }
+      return { status_code: 200, body: { success: true, reset } };
+    },
+  );
+  sdk.registerTrigger({
+    type: "http",
+    function_id: "api::metrics-reset",
+    config: {
+      api_path: "/agentmemory/metrics/reset",
+      http_method: "POST",
+      middleware_function_ids: ["middleware::api-auth"],
+    },
+  });
+
   const statusReport = createStatusReporter(sdk, kv, { metricsStore, provider });
 
   sdk.registerFunction("api::status",
@@ -738,6 +774,7 @@ export function registerApiTriggers(
         return {
           status_code: 400,
           body: {
+            status: "rejected",
             error:
               "hookType, sessionId, project, cwd, and timestamp are required strings",
           },

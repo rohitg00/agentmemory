@@ -16,6 +16,7 @@ type ResolveDataDirOptions = {
   cwd?: string;
   home?: string;
   platform?: NodeJS.Platform;
+  adoptLegacy?: boolean;
 };
 
 function argValue(args: string[], name: string): string | undefined {
@@ -115,7 +116,7 @@ export function resolveDataDir(options: ResolveDataDirOptions = {}): ResolvedDat
   const hasLegacyStore =
     existsSync(join(legacyDir, "state_store.db")) ||
     existsSync(join(legacyDir, "iii-config.yaml"));
-  if (instance === 0 && hasLegacyStore) {
+  if (options.adoptLegacy !== false && instance === 0 && hasLegacyStore) {
     return { dataDir: legacyDir, source: "default" };
   }
 

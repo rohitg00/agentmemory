@@ -336,7 +336,7 @@ export function registerObserveFunction(
         const plannedIds = new Set(plannedVictims.map((o) => o.id));
         const unbudgeted = buildSyntheticCompression(raw);
         const synthetic = budgetLiveObservationSource(unbudgeted, existing.filter((o) => !plannedIds.has(o?.id)));
-        const autoCompress = isAutoCompressEnabled() && compressionRaw(synthetic) !== null;
+        let autoCompress = isAutoCompressEnabled() && compressionRaw(synthetic) !== null;
         if (autoCompress) synthetic.compression = pendingCompression();
         try {
           await kv.set(KV.observations(payload.sessionId), obsId, synthetic);
@@ -397,6 +397,10 @@ export function registerObserveFunction(
             if (JSON.stringify(rebudgeted.source) !== JSON.stringify(synthetic.source)) {
               if (rebudgeted.source) synthetic.source = rebudgeted.source;
               else delete synthetic.source;
+              if (autoCompress && compressionRaw(synthetic) === null) {
+                delete synthetic.compression;
+                autoCompress = false;
+              }
               await kv.set(KV.observations(payload.sessionId), obsId, synthetic).catch((err) => {
                 logger.warn("Session cap source re-budget write failed", {
                   sessionId: payload.sessionId,

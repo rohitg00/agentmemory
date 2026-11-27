@@ -8,7 +8,10 @@ import {
   parseSentMark,
   reconcileSent,
   retainSent,
+  retainSentOutcome,
+  sendOutcome,
   spoolHasRecords,
+  spoolReadDirs,
   type SendOutcome,
   type SentMark,
   type SpoolRecord,
@@ -56,13 +59,7 @@ export function withEventId(
   };
 }
 
-function classify(status: number): SendOutcome {
-  if (status >= 200 && status < 300) return status === 200 ? "duplicate" : "delivered";
-  if (status === 408 || status === 429 || status >= 500) return "retry";
-  return "rejected";
-}
-
-async function post(body: Record<string, unknown>, timeoutMs: number): Promise<{ outcome: SendOutcome; mark: SentMark | null }> {
+async function post(body: Record<string, unknown>, timeoutMs: number): Promise<{ outcome: SendOutcome; mark: SentMark | null; status: number }> {
   if (transportBlocked()) throw new Error("insecure transport");
   const res = await fetch(`${REST_URL}/agentmemory/observe`, {
     method: "POST",
@@ -71,13 +68,12 @@ async function post(body: Record<string, unknown>, timeoutMs: number): Promise<{
     signal: AbortSignal.timeout(timeoutMs),
   });
   const text = await res.text().catch(() => "");
-  const outcome = classify(res.status);
-  if (outcome !== "delivered" && outcome !== "duplicate") return { outcome, mark: null };
-  try {
-    return { outcome, mark: parseSentMark(JSON.parse(text)) };
-  } catch {
-    return { outcome, mark: null };
+  const outcome = sendOutcome(res.status, text);
+  let mark: SentMark | null = null;
+  if (outcome === "delivered" || outcome === "duplicate") {
+    try { mark = parseSentMark(JSON.parse(text)); } catch {}
   }
+  return { outcome, mark, status: res.status };
 }
 
 function keepUntilDurable(eventId: string, body: Record<string, unknown>, mark: SentMark): number {
@@ -107,13 +103,13 @@ export async function captureObservation(body: ObserveBody, timeoutMs: number): 
   const payload = { ...body, eventId } as unknown as Record<string, unknown>;
   let reason: string;
   try {
-    const { outcome, mark } = await post(payload, timeoutMs);
+    const { outcome, mark, status } = await post(payload, timeoutMs);
     if (outcome !== "retry") {
       const requeued = mark ? keepUntilDurable(eventId, payload, mark) : 0;
-      if (requeued > 0 || spoolHasRecords(REST_URL)) startDrainChild();
+      if (requeued > 0 || spoolReadDirs().some((dir) => spoolHasRecords(REST_URL, dir))) startDrainChild();
       return outcome;
     }
-    reason = "server-error";
+    reason = status >= 500 ? "server-error" : `http-${status}`;
   } catch (err) {
     const name = err instanceof Error ? err.name : "";
     reason = name === "TimeoutError" || name === "AbortError" ? "timeout" : "unreachable";
@@ -126,13 +122,15 @@ export function isDrainChild(): boolean {
 }
 
 export async function runDrainChild(): Promise<void> {
-  await drainSpool(
-    REST_URL,
-    async (record: SpoolRecord) => {
-      const { outcome, mark } = await post({ ...record.body, eventId: record.eventId }, DRAIN_REQUEST_TIMEOUT_MS);
-      if (mark) retainSent(REST_URL, record.eventId, record.body, mark);
-      return outcome;
-    },
-    { maxRecords: DRAIN_MAX_RECORDS, deadlineMs: DRAIN_DEADLINE_MS },
-  ).catch(() => undefined);
+  for (const dir of spoolReadDirs()) {
+    await drainSpool(
+      REST_URL,
+      async (record: SpoolRecord) => {
+        const { outcome, mark } = await post({ ...record.body, eventId: record.eventId }, DRAIN_REQUEST_TIMEOUT_MS);
+        if (mark && retainSentOutcome(REST_URL, record.eventId, record.body, mark) === "failed") return "retry";
+        return outcome;
+      },
+      { dir, maxRecords: DRAIN_MAX_RECORDS, deadlineMs: DRAIN_DEADLINE_MS },
+    ).catch(() => undefined);
+  }
 }

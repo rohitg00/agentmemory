@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir, platform } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -272,7 +272,7 @@ function resolveDataDir(options = {}) {
 	};
 	const legacyDir = resolve(cwd, "data");
 	const hasLegacyStore = existsSync(join(legacyDir, "state_store.db")) || existsSync(join(legacyDir, "iii-config.yaml"));
-	if (instance === 0 && hasLegacyStore) return {
+	if (options.adoptLegacy !== false && instance === 0 && hasLegacyStore) return {
 		dataDir: legacyDir,
 		source: "default"
 	};
@@ -372,6 +372,22 @@ function scrubRecord(value, options = {}) {
 }
 //#endregion
 //#region src/capture/spool.ts
+function rejectionBody(body) {
+	let value = body;
+	if (typeof value === "string") try {
+		value = JSON.parse(value);
+	} catch {
+		return false;
+	}
+	if (!value || typeof value !== "object") return false;
+	const record = value;
+	return record.status === "rejected" && record.retryable !== true;
+}
+function sendOutcome(status, body) {
+	if (status >= 200 && status < 300) return status === 200 || body?.status === "duplicate" ? "duplicate" : "delivered";
+	if (status === 413) return "rejected";
+	return (status === 400 || status === 422) && rejectionBody(body) ? "rejected" : "retry";
+}
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const MIN_MAX_BYTES = 64 * 1024;
 const DEFAULT_MAX_AGE_HOURS = 168;
@@ -415,8 +431,19 @@ function spoolDir(env = process.env) {
 	if (explicit && explicit.trim()) return resolve(explicit.trim());
 	return join(resolveDataDir({
 		args: [],
+		env,
+		adoptLegacy: false
+	}).dataDir, "capture-spool");
+}
+function spoolReadDirs(env = process.env) {
+	const current = spoolDir(env);
+	const explicit = env["AGENTMEMORY_CAPTURE_SPOOL_DIR"];
+	if (explicit && explicit.trim()) return [current];
+	const legacy = join(resolveDataDir({
+		args: [],
 		env
 	}).dataDir, "capture-spool");
+	return legacy !== current && existsSync(legacy) ? [current, legacy] : [current];
 }
 const LOOPBACK = new Set([
 	"localhost",
@@ -500,13 +527,15 @@ function readSpoolStats(paths) {
 	}
 }
 function writeStats(paths, patch) {
+	const tmp = `${paths.stats}.${process.pid}.tmp`;
 	try {
 		const stats = readSpoolStats(paths);
 		patch(stats);
-		const tmp = `${paths.stats}.${process.pid}.tmp`;
 		writeFileSync(tmp, JSON.stringify(stats), { mode: 384 });
 		renameSync(tmp, paths.stats);
-	} catch {}
+	} catch {
+		rmSync(tmp, { force: true });
+	}
 }
 function fileSize(path) {
 	try {
@@ -562,7 +591,12 @@ function rewriteLocked(paths, records) {
 	} finally {
 		closeSync(fd);
 	}
-	renameSync(tmp, paths.file);
+	try {
+		renameSync(tmp, paths.file);
+	} catch (err) {
+		rmSync(tmp, { force: true });
+		throw err;
+	}
 }
 function pruneExpiredLocked(paths, policy) {
 	if (!existsSync(paths.file)) return 0;
@@ -721,9 +755,9 @@ function parseSentMark(body) {
 		durableAfterMs: Math.min(Math.ceil(after), MAX_DURABLE_AFTER_MS)
 	};
 }
-function retainSent(url, eventId, body, mark, options = {}) {
+function retainSentOutcome(url, eventId, body, mark, options = {}) {
 	const policy = options.policy ?? spoolPolicy();
-	if (!policy.enabled || !BOOT_ID_RE.test(mark.bootId)) return false;
+	if (!policy.enabled || !BOOT_ID_RE.test(mark.bootId)) return "skipped";
 	const paths = spoolPaths(url, options.dir);
 	const now = options.now ?? Date.now();
 	try {
@@ -743,22 +777,25 @@ function retainSent(url, eventId, body, mark, options = {}) {
 			line = JSON.stringify(record) + "\n";
 		}
 		const bytes = Buffer.byteLength(line);
-		if (bytes > policy.maxRecordBytes) return false;
+		if (bytes > policy.maxRecordBytes) return "skipped";
 		const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
 		const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
 		return withLock(paths.lock, () => {
-			if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return false;
+			if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return "failed";
 			const fd = openSync(file, "a", 384);
 			try {
 				writeSync(fd, line);
 			} finally {
 				closeSync(fd);
 			}
-			return true;
+			return "retained";
 		});
 	} catch {
-		return false;
+		return "failed";
 	}
+}
+function retainSent(url, eventId, body, mark, options = {}) {
+	return retainSentOutcome(url, eventId, body, mark, options) === "retained";
 }
 function reconcileSent(url, bootId, options = {}) {
 	const result = {
@@ -969,11 +1006,6 @@ function withEventId(body, host, content, options = {}) {
 		eventId: deriveEventId(body.hookType, body.sessionId, source, content ?? body.data)
 	};
 }
-function classify(status) {
-	if (status >= 200 && status < 300) return status === 200 ? "duplicate" : "delivered";
-	if (status === 408 || status === 429 || status >= 500) return "retry";
-	return "rejected";
-}
 async function post(body, timeoutMs) {
 	if (transportBlocked()) throw new Error("insecure transport");
 	const res = await fetch(`${REST_URL}/agentmemory/observe`, {
@@ -983,22 +1015,16 @@ async function post(body, timeoutMs) {
 		signal: AbortSignal.timeout(timeoutMs)
 	});
 	const text = await res.text().catch(() => "");
-	const outcome = classify(res.status);
-	if (outcome !== "delivered" && outcome !== "duplicate") return {
+	const outcome = sendOutcome(res.status, text);
+	let mark = null;
+	if (outcome === "delivered" || outcome === "duplicate") try {
+		mark = parseSentMark(JSON.parse(text));
+	} catch {}
+	return {
 		outcome,
-		mark: null
+		mark,
+		status: res.status
 	};
-	try {
-		return {
-			outcome,
-			mark: parseSentMark(JSON.parse(text))
-		};
-	} catch {
-		return {
-			outcome,
-			mark: null
-		};
-	}
 }
 function keepUntilDurable(eventId, body, mark) {
 	const { requeued } = reconcileSent(REST_URL, mark.bootId);
@@ -1031,12 +1057,12 @@ async function captureObservation(body, timeoutMs) {
 	};
 	let reason;
 	try {
-		const { outcome, mark } = await post(payload, timeoutMs);
+		const { outcome, mark, status } = await post(payload, timeoutMs);
 		if (outcome !== "retry") {
-			if ((mark ? keepUntilDurable(eventId, payload, mark) : 0) > 0 || spoolHasRecords(REST_URL)) startDrainChild();
+			if ((mark ? keepUntilDurable(eventId, payload, mark) : 0) > 0 || spoolReadDirs().some((dir) => spoolHasRecords(REST_URL, dir))) startDrainChild();
 			return outcome;
 		}
-		reason = "server-error";
+		reason = status >= 500 ? "server-error" : `http-${status}`;
 	} catch (err) {
 		const name = err instanceof Error ? err.name : "";
 		reason = name === "TimeoutError" || name === "AbortError" ? "timeout" : "unreachable";
@@ -1047,14 +1073,15 @@ function isDrainChild() {
 	return process.env[DRAIN_CHILD_ENV] === "1";
 }
 async function runDrainChild() {
-	await drainSpool(REST_URL, async (record) => {
+	for (const dir of spoolReadDirs()) await drainSpool(REST_URL, async (record) => {
 		const { outcome, mark } = await post({
 			...record.body,
 			eventId: record.eventId
 		}, DRAIN_REQUEST_TIMEOUT_MS);
-		if (mark) retainSent(REST_URL, record.eventId, record.body, mark);
+		if (mark && retainSentOutcome(REST_URL, record.eventId, record.body, mark) === "failed") return "retry";
 		return outcome;
 	}, {
+		dir,
 		maxRecords: DRAIN_MAX_RECORDS,
 		deadlineMs: DRAIN_DEADLINE_MS
 	}).catch(() => void 0);

@@ -26,6 +26,7 @@ import {
   reconcileSent,
   retainSent,
   spoolDir,
+  spoolReadDirs,
   spoolPolicy,
   spoolSummary,
   type DrainResult,
@@ -147,7 +148,7 @@ function serverSpoolTargets(restPort: number): string[] {
   const dirs = new Set<string>([spoolDir()]);
   try {
     const { AGENTMEMORY_DATA_DIR: _workerDataDir, AGENTMEMORY_CAPTURE_SPOOL_DIR: _spoolDir, ...hookEnv } = process.env;
-    dirs.add(spoolDir(hookEnv));
+    for (const dir of spoolReadDirs(hookEnv)) dirs.add(dir);
   } catch {}
   return [...dirs].map((dir) => `${url}|${dir}`);
 }

@@ -8,6 +8,7 @@ import {
   readFileSync,
   readdirSync,
   renameSync,
+  rmSync,
   statSync,
   unlinkSync,
   utimesSync,
@@ -91,6 +92,24 @@ export interface SpoolSummary {
 
 export type SendOutcome = "delivered" | "duplicate" | "rejected" | "retry";
 
+function rejectionBody(body: unknown): boolean {
+  let value = body;
+  if (typeof value === "string") {
+    try { value = JSON.parse(value); } catch { return false; }
+  }
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return record.status === "rejected" && record.retryable !== true;
+}
+
+export function sendOutcome(status: number, body: unknown): SendOutcome {
+  if (status >= 200 && status < 300) {
+    return status === 200 || (body as { status?: unknown } | null)?.status === "duplicate" ? "duplicate" : "delivered";
+  }
+  if (status === 413) return "rejected";
+  return (status === 400 || status === 422) && rejectionBody(body) ? "rejected" : "retry";
+}
+
 export interface DrainResult {
   claimed: number;
   delivered: number;
@@ -142,7 +161,15 @@ export function spoolPolicy(env: NodeJS.ProcessEnv = process.env): SpoolPolicy {
 export function spoolDir(env: NodeJS.ProcessEnv = process.env): string {
   const explicit = env["AGENTMEMORY_CAPTURE_SPOOL_DIR"];
   if (explicit && explicit.trim()) return resolve(explicit.trim());
-  return join(resolveDataDir({ args: [], env }).dataDir, "capture-spool");
+  return join(resolveDataDir({ args: [], env, adoptLegacy: false }).dataDir, "capture-spool");
+}
+
+export function spoolReadDirs(env: NodeJS.ProcessEnv = process.env): string[] {
+  const current = spoolDir(env);
+  const explicit = env["AGENTMEMORY_CAPTURE_SPOOL_DIR"];
+  if (explicit && explicit.trim()) return [current];
+  const legacy = join(resolveDataDir({ args: [], env }).dataDir, "capture-spool");
+  return legacy !== current && existsSync(legacy) ? [current, legacy] : [current];
 }
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
@@ -226,13 +253,15 @@ export function readSpoolStats(paths: SpoolPaths): SpoolStats {
 }
 
 function writeStats(paths: SpoolPaths, patch: (stats: SpoolStats) => void): void {
+  const tmp = `${paths.stats}.${process.pid}.tmp`;
   try {
     const stats = readSpoolStats(paths);
     patch(stats);
-    const tmp = `${paths.stats}.${process.pid}.tmp`;
     writeFileSync(tmp, JSON.stringify(stats), { mode: 0o600 });
     renameSync(tmp, paths.stats);
-  } catch {}
+  } catch {
+    rmSync(tmp, { force: true });
+  }
 }
 
 function fileSize(path: string): number {
@@ -285,7 +314,12 @@ function rewriteLocked(paths: SpoolPaths, records: SpoolRecord[]): void {
   } finally {
     closeSync(fd);
   }
-  renameSync(tmp, paths.file);
+  try {
+    renameSync(tmp, paths.file);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
 }
 
 function pruneExpiredLocked(paths: SpoolPaths, policy: SpoolPolicy): number {
@@ -459,15 +493,17 @@ export function parseSentMark(body: unknown): SentMark | null {
   return { bootId, durableAfterMs: Math.min(Math.ceil(after), MAX_DURABLE_AFTER_MS) };
 }
 
-export function retainSent(
+export type RetainOutcome = "retained" | "skipped" | "failed";
+
+export function retainSentOutcome(
   url: string,
   eventId: string,
   body: Record<string, unknown>,
   mark: SentMark,
   options: { policy?: SpoolPolicy; dir?: string; now?: number } = {},
-): boolean {
+): RetainOutcome {
   const policy = options.policy ?? spoolPolicy();
-  if (!policy.enabled || !BOOT_ID_RE.test(mark.bootId)) return false;
+  if (!policy.enabled || !BOOT_ID_RE.test(mark.bootId)) return "skipped";
   const paths = spoolPaths(url, options.dir);
   const now = options.now ?? Date.now();
   try {
@@ -487,22 +523,32 @@ export function retainSent(
       line = JSON.stringify(record) + "\n";
     }
     const bytes = Buffer.byteLength(line);
-    if (bytes > policy.maxRecordBytes) return false;
+    if (bytes > policy.maxRecordBytes) return "skipped";
     const dueAt = Math.ceil((now + mark.durableAfterMs) / SENT_BUCKET_MS) * SENT_BUCKET_MS;
     const file = join(paths.dir, `${paths.name}.sent-${mark.bootId}-${dueAt}.jsonl`);
     return withLock(paths.lock, () => {
-      if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return false;
+      if (fileSize(paths.file) + sentBytes(paths) + retainedClaimBytes(paths) + bytes > policy.maxBytes) return "failed";
       const fd = openSync(file, "a", 0o600);
       try {
         writeSync(fd, line);
       } finally {
         closeSync(fd);
       }
-      return true;
+      return "retained";
     });
   } catch {
-    return false;
+    return "failed";
   }
+}
+
+export function retainSent(
+  url: string,
+  eventId: string,
+  body: Record<string, unknown>,
+  mark: SentMark,
+  options: { policy?: SpoolPolicy; dir?: string; now?: number } = {},
+): boolean {
+  return retainSentOutcome(url, eventId, body, mark, options) === "retained";
 }
 
 export function reconcileSent(

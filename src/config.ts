@@ -194,22 +194,60 @@ export function envFileLabel(path: string = ENV_FILE): string {
   return path.startsWith(`${home}/`) ? `~${path.slice(home.length)}` : path;
 }
 
-export function llmOptInHint(env: Record<string, string | undefined> = getMergedEnv()): string | null {
+function embeddingClaimedKeys(env: Record<string, string | undefined>): readonly string[] {
+  const embedding = (env["EMBEDDING_PROVIDER"] || "").trim().toLowerCase();
+  if (embedding === "openai" && env["OPENAI_EMBEDDING_API_KEY"]?.trim()) return ["OPENAI_EMBEDDING_API_KEY"];
+  return REMOTE_EMBEDDING_PROVIDER_KEYS[embedding] ?? [];
+}
+
+function unclaimedChatKey(env: Record<string, string | undefined>, name: LlmProviderName, claimed: readonly string[]): string | undefined {
+  const chatKey = LLM_PROVIDER_KEYS[name].find((k) => isRealProviderKey(env, k));
+  return chatKey && !claimed.includes(chatKey) ? chatKey : undefined;
+}
+
+type LlmChoice =
+  | { kind: "provider"; name: LlmProviderName }
+  | { kind: "agent-sdk" }
+  | { kind: "noop"; hint: string | null; warn?: boolean };
+
+function resolveLlmChoice(env: Record<string, string | undefined>): LlmChoice {
   const selected = selectedLlmProviderValue(env);
+  const allowed = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
+  if (selected === "agent-sdk") {
+    return allowed
+      ? { kind: "agent-sdk" }
+      : { kind: "noop", hint: `AGENTMEMORY_LLM_PROVIDER=agent-sdk also needs AGENTMEMORY_ALLOW_AGENT_SDK=true in ${envFileLabel()}.` };
+  }
   if (selected) {
     if (!isLlmProviderName(selected)) {
-      return `AGENTMEMORY_LLM_PROVIDER=${selected} is not a known provider. Use one of: ${LLM_PROVIDER_NAMES.join(", ")}.`;
+      return { kind: "noop", hint: `AGENTMEMORY_LLM_PROVIDER=${selected} is not a known provider. Use one of: ${LLM_PROVIDER_NAMES.join(", ")}.` };
     }
     if (!llmProviderHasKey(env, selected)) {
-      return `AGENTMEMORY_LLM_PROVIDER=${selected} is set, but ${LLM_PROVIDER_KEYS[selected].join(" or ")} is not. Add the key to ${envFileLabel()}.`;
+      return { kind: "noop", hint: `AGENTMEMORY_LLM_PROVIDER=${selected} is set, but ${LLM_PROVIDER_KEYS[selected].join(" or ")} is not. Add the key to ${envFileLabel()}.` };
     }
-    return null;
+    return { kind: "provider", name: selected };
   }
-  if (env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true") return null;
-  const withKey = LLM_PROVIDER_NAMES.filter((name) => llmProviderHasKey(env, name));
-  if (withKey.length === 0) return null;
-  const keys = withKey.flatMap((name) => LLM_PROVIDER_KEYS[name].filter((k) => isRealProviderKey(env, k)));
-  return `Found ${keys.join(", ")}, but agentmemory sends nothing to an LLM provider until you choose one for it. To turn on LLM summaries and compression, add AGENTMEMORY_LLM_PROVIDER=${withKey[0]} to ${envFileLabel()}.`;
+  const claimed = allowed ? embeddingClaimedKeys(env) : [];
+  const keyed = LLM_PROVIDER_NAMES.filter((name) => unclaimedChatKey(env, name, claimed));
+  if (allowed && keyed.length === 0) return { kind: "agent-sdk" };
+  if (keyed.length === 0) return { kind: "noop", hint: null };
+  const keys = keyed.map((name) => unclaimedChatKey(env, name, claimed)).join(", ");
+  if (allowed) {
+    return {
+      kind: "noop",
+      warn: true,
+      hint: `Found ${keys} and AGENTMEMORY_ALLOW_AGENT_SDK=true, but no AGENTMEMORY_LLM_PROVIDER, so agentmemory does not guess which one to use and sends nothing to an LLM. Add AGENTMEMORY_LLM_PROVIDER=${keyed[0]} to ${envFileLabel()} to use that key, or AGENTMEMORY_LLM_PROVIDER=agent-sdk to keep the Claude Agent SDK fallback.`,
+    };
+  }
+  return {
+    kind: "noop",
+    hint: `Found ${keys}, but agentmemory sends nothing to an LLM provider until you choose one for it. To turn on LLM summaries and compression, add AGENTMEMORY_LLM_PROVIDER=${keyed[0]} to ${envFileLabel()}.`,
+  };
+}
+
+export function llmOptInHint(env: Record<string, string | undefined> = getMergedEnv()): string | null {
+  const choice = resolveLlmChoice(env);
+  return choice.kind === "noop" ? choice.hint : null;
 }
 
 export function embeddingOptInHint(env: Record<string, string | undefined> = getMergedEnv()): string | null {
@@ -230,15 +268,21 @@ export function embeddingOptInHint(env: Record<string, string | undefined> = get
 
 function detectProvider(env: Record<string, string>): ProviderConfig {
   const maxTokens = parseInt(env["MAX_TOKENS"] || "4096", 10);
-  const noop: ProviderConfig = { provider: "noop", model: "noop", maxTokens };
-  const selected = selectedLlmProviderValue(env);
-
-  if (selected) {
-    if (!isLlmProviderName(selected) || !llmProviderHasKey(env, selected)) {
-      writeProviderNoticeOnce(`[agentmemory] ${llmOptInHint(env)} Running zero-LLM.\n`);
-      return noop;
-    }
-    switch (selected) {
+  const choice = resolveLlmChoice(env);
+  if (choice.kind === "noop") {
+    writeProviderNoticeOnce(
+      choice.hint
+        ? `[agentmemory] ${choice.warn ? "WARNING: " : ""}${choice.hint} Running zero-LLM.\n`
+        : pc.dim(
+            "[agentmemory] No LLM provider chosen, so agentmemory runs zero-LLM: no LLM compression or summaries, and no session content leaves this machine for an LLM. " +
+              "Search uses BM25 plus any embedding provider you set with EMBEDDING_PROVIDER (EMBEDDING_PROVIDER=local runs on-device). " +
+              "To turn on LLM summaries, set AGENTMEMORY_LLM_PROVIDER (anthropic, openai, gemini, openrouter or minimax) and that provider's key in ~/.agentmemory/.env.\n",
+          ),
+    );
+    return { provider: "noop", model: "noop", maxTokens };
+  }
+  if (choice.kind === "provider") {
+    switch (choice.name) {
       case "openai": {
         const model = env["OPENAI_MODEL"] || "gpt-5.6-luna";
         warnIfPremiumModel(env, "OPENAI_MODEL", model);
@@ -267,21 +311,6 @@ function detectProvider(env: Record<string, string>): ProviderConfig {
         return { provider: "openrouter", model, maxTokens };
       }
     }
-  }
-
-  const allowAgentSdk = env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true";
-  if (!allowAgentSdk) {
-    const hint = llmOptInHint(env);
-    writeProviderNoticeOnce(
-      hint
-        ? `[agentmemory] ${hint}\n`
-        : pc.dim(
-            "[agentmemory] No LLM provider chosen, so agentmemory runs zero-LLM: no LLM compression or summaries, and no session content leaves this machine for an LLM. " +
-              "Search uses BM25 plus any embedding provider you set with EMBEDDING_PROVIDER (EMBEDDING_PROVIDER=local runs on-device). " +
-              "To turn on LLM summaries, set AGENTMEMORY_LLM_PROVIDER (anthropic, openai, gemini, openrouter or minimax) and that provider's key in ~/.agentmemory/.env.\n",
-          ),
-    );
-    return noop;
   }
 
   writeProviderNoticeOnce(
@@ -433,12 +462,7 @@ export function getAuditMigrateMaxBytes(): number {
 export function detectLlmProviderKind(
   env: Record<string, string | undefined> = getMergedEnv(),
 ): "llm" | "noop" {
-  const selected = selectedLlmProviderValue(env);
-  if (selected && isLlmProviderName(selected) && llmProviderHasKey(env, selected)) {
-    return "llm";
-  }
-  if (!selected && env["AGENTMEMORY_ALLOW_AGENT_SDK"] === "true") return "llm";
-  return "noop";
+  return resolveLlmChoice(env).kind === "noop" ? "noop" : "llm";
 }
 
 export function describeLlmRoute(provider: ProviderConfig): string | null {

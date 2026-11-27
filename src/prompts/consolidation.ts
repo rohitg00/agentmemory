@@ -9,10 +9,12 @@ Rules:
 - Extract only facts that appear in 2+ episodes or are highly confident
 - Confidence reflects how well-supported the fact is across episodes
 - Combine overlapping information into single concise facts
-- Skip ephemeral details (specific error messages, temporary states)`;
+- Skip ephemeral details (specific error messages, temporary states)
+- When a fact restates one of the known facts, add ref="<known fact id>" to it instead of writing a new fact: <fact confidence="0.9" ref="sem_abc">...</fact>`;
 
 export function buildSemanticMergePrompt(
   episodes: Array<{ title: string; narrative: string; concepts: string[] }>,
+  known: Array<{ id: string; fact: string }> = [],
 ): string {
   const items = episodes
     .map(
@@ -20,7 +22,10 @@ export function buildSemanticMergePrompt(
         `[Episode ${i + 1}]\nTitle: ${e.title}\nNarrative: ${e.narrative}\nConcepts: ${e.concepts.join(", ")}`,
     )
     .join("\n\n");
-  return `Consolidate these episodic memories into stable facts:\n\n${items}`;
+  const knownBlock = known.length
+    ? `\n\nKnown facts (reuse with ref instead of restating):\n${known.map((k) => `[${k.id}] ${k.fact}`).join("\n")}`
+    : "";
+  return `Consolidate these episodic memories into stable facts:\n\n${items}${knownBlock}`;
 }
 
 export const PROCEDURAL_EXTRACTION_SYSTEM = `You are a procedural memory extractor. Given repeated patterns and workflows observed across sessions, extract reusable procedures.

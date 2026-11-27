@@ -46,6 +46,13 @@ export function sameResolvedExecutable(actual: string, expected: string, windows
 
 export type ComposeProcessIdentity = "match" | "foreign" | "unknown";
 
+export const BOOT_TOLERANCE_MS = 120_000;
+
+export function writtenBeforeBoot(stateMtimeMs: number, nowMs: number, uptimeSeconds: number): boolean {
+  if (!Number.isFinite(stateMtimeMs) || !Number.isFinite(uptimeSeconds) || uptimeSeconds <= 0) return false;
+  return stateMtimeMs < nowMs - uptimeSeconds * 1000 - BOOT_TOLERANCE_MS;
+}
+
 export function classifyComposeProcess(
   inspected: { command: string; executable: string } | null,
   expected: { namespace: string; file: string; binPath: string },

@@ -63,7 +63,7 @@ describe("hooks capture when the server is unavailable", () => {
     server = undefined;
   });
 
-  async function startServer(status: number, received: Array<Record<string, unknown>>): Promise<number> {
+  async function startServer(status: number, received: Array<Record<string, unknown>>, reply?: string): Promise<number> {
     server = createServer((req, res) => {
       let body = "";
       req.on("data", (c) => (body += c));
@@ -72,7 +72,7 @@ describe("hooks capture when the server is unavailable", () => {
           received.push(JSON.parse(body));
         } catch {}
         res.writeHead(status, { "content-type": "application/json" });
-        res.end(JSON.stringify({ status: status === 201 ? "accepted" : "x" }));
+        res.end(reply ?? JSON.stringify({ status: status === 201 ? "accepted" : "x" }));
       });
     });
     await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", () => resolve()));
@@ -117,7 +117,7 @@ describe("hooks capture when the server is unavailable", () => {
     expect(recs[0]!.eventId).not.toBe(recs[1]!.eventId);
   });
 
-  it("spools on a 5xx answer but not on a 4xx rejection", async () => {
+  it("spools on a 5xx answer but not on agentmemory's own rejection", async () => {
     const dir = mkdtempSync(join(tmpdir(), "am-hook-spool-"));
     const received: Array<Record<string, unknown>> = [];
     const port = await startServer(500, received);
@@ -129,10 +129,18 @@ describe("hooks capture when the server is unavailable", () => {
     server = undefined;
 
     const dir2 = mkdtempSync(join(tmpdir(), "am-hook-spool-"));
-    const port2 = await startServer(400, []);
+    const port2 = await startServer(400, [], JSON.stringify({ status: "rejected", error: "invalid eventId" }));
     const env2 = { AGENTMEMORY_URL: `http://127.0.0.1:${port2}`, AGENTMEMORY_CAPTURE_SPOOL_DIR: dir2 };
     expect((await runHook("post-tool-use.mjs", toolPayload("four-hundred"), env2)).exitCode).toBe(0);
     expect(spoolLines(dir2, port2)).toHaveLength(0);
+  });
+
+  it("spools when the HTTP worker answers 404 because the route is not registered", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "am-hook-spool-"));
+    const port = await startServer(404, [], "<no route>");
+    const env = { AGENTMEMORY_URL: `http://127.0.0.1:${port}`, AGENTMEMORY_CAPTURE_SPOOL_DIR: dir };
+    expect((await runHook("post-tool-use.mjs", toolPayload("no-route"), env)).exitCode).toBe(0);
+    expect(spoolLines(dir, port)).toHaveLength(1);
   });
 
   it("does not spool when the spool is turned off", async () => {

@@ -268,6 +268,7 @@ export interface FunctionMetrics {
   failureCount: number;
   avgLatencyMs: number;
   avgQualityScore: number;
+  recent?: string;
 }
 
 export interface HealthSnapshot {
@@ -720,6 +721,7 @@ export interface AuditEntry {
     | "diagnose"
     | "heal"
     | "index_persist"
+    | "metrics_reset"
     | "facet_tag"
     | "lesson_save"
     | "lesson_recall"

@@ -263,7 +263,26 @@ describe("doctor v2 diagnostic catalog", () => {
     it("keeps the agent-sdk label when the only key is reserved for embeddings", async () => {
       expect(
         await statusFor(
-          { OPENAI_API_KEY: "sk-real-openai-key", OPENAI_API_KEY_FOR_LLM: "false" },
+          { OPENAI_API_KEY: "sk-real-openai-key", EMBEDDING_PROVIDER: "openai" },
+          { AGENTMEMORY_ALLOW_AGENT_SDK: "true" },
+        ),
+      ).toEqual({ ok: true, detail: "agent-sdk fallback, no API key" });
+    });
+
+    it("refuses to pick agent-sdk over an unclaimed LLM key and names both choices", async () => {
+      const result = await statusFor(
+        { OPENAI_API_KEY: "sk-real-openai-key", OPENAI_BASE_URL: "https://api.deepseek.com" },
+        { AGENTMEMORY_ALLOW_AGENT_SDK: "true" },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.detail).toContain("AGENTMEMORY_LLM_PROVIDER=openai");
+      expect(result.detail).toContain("AGENTMEMORY_LLM_PROVIDER=agent-sdk");
+    });
+
+    it("uses agent-sdk when it is selected explicitly next to another key", async () => {
+      expect(
+        await statusFor(
+          { OPENAI_API_KEY: "sk-real-openai-key", AGENTMEMORY_LLM_PROVIDER: "agent-sdk" },
           { AGENTMEMORY_ALLOW_AGENT_SDK: "true" },
         ),
       ).toEqual({ ok: true, detail: "agent-sdk fallback, no API key" });

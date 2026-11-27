@@ -19,7 +19,7 @@ import {
 } from "node:fs";
 import { join, dirname, resolve, delimiter as PATH_DELIMITER } from "node:path";
 import { fileURLToPath } from "node:url";
-import { homedir, platform } from "node:os";
+import { homedir, platform, uptime } from "node:os";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 
@@ -86,7 +86,7 @@ import {
 } from "./cli/engine-config.js";
 import { SHUTDOWN_HARD_EXIT_MS, registerStartupCleanup, runStartupCleanup } from "./shutdown.js";
 import { processStatIsRunning } from "./cli/process-state.js";
-import { classifyComposeProcess, readUnixProcessExecutable, type ComposeProcessIdentity } from "./cli/compose-process.js";
+import { classifyComposeProcess, readUnixProcessExecutable, writtenBeforeBoot, type ComposeProcessIdentity } from "./cli/compose-process.js";
 import { renderSplash } from "./cli/splash.js";
 import { isFirstRun, readPrefs, resetPrefs, writePrefs } from "./cli/preferences.js";
 import { runOnboarding } from "./cli/onboarding.js";
@@ -100,6 +100,7 @@ const ALL_TOOLS_COUNT = getAllTools().length;
 const CORE_TOOLS_COUNT = getAllTools().filter((t) => ESSENTIAL_TOOLS.has(t.name)).length;
 import { resolveDataDir } from "./cli-data-dir.js";
 import { runCaptureCommand } from "./cli/capture.js";
+import { spoolDir, spoolReadDirs } from "./capture/spool.js";
 import { runCompressionCommand } from "./cli/compression.js";
 import { runGraphIndexCommand } from "./cli/graph-index.js";
 import { bearerHeaders, resolveClientSecret } from "./secret-store.js";
@@ -1567,11 +1568,20 @@ function printReadyHint(): void {
   process.stdout.write(`\n${c.dim("Try:")} ${c.cmd(demoCommand)}\n`);
 }
 
+function engineStateFromPreviousBoot(): boolean {
+  try {
+    return writtenBeforeBoot(statSync(engineStatePath()).mtimeMs, Date.now(), uptime());
+  } catch {
+    return false;
+  }
+}
+
 async function reconcilePersistedComposeEngine(): Promise<boolean> {
   const state = readEngineState();
   if (state?.kind !== "compose") return false;
   if (!(await isEngineRunning())) {
-    if (state.composePid && pidAlive(state.composePid) && composePidIdentity(state.composePid, state) !== "foreign") {
+    const identity = state.composePid && pidAlive(state.composePid) ? composePidIdentity(state.composePid, state) : "foreign";
+    if (identity === "match" || (identity === "unknown" && !engineStateFromPreviousBoot())) {
       p.log.error(`Worker Compose daemon ${state.composePid} is alive but REST ${state.restPort} is not ready. Inspect ${state.logFile}; use agentmemory stop to reconcile.`);
       process.exit(1);
     }
@@ -3762,11 +3772,20 @@ async function runConsole(): Promise<void> {
   ].join("\n"), "Console migration");
 }
 
+function captureSpoolDirs(): string[] {
+  if (dataDirResolution.source !== "default") return [spoolDir()];
+  const { AGENTMEMORY_DATA_DIR: _adopted, ...hookEnv } = process.env;
+  const dirs = spoolReadDirs(hookEnv);
+  const resolved = spoolDir();
+  return dirs.includes(resolved) || !existsSync(resolved) ? dirs : [...dirs, resolved];
+}
+
 async function runCapture(): Promise<void> {
   const code = await runCaptureCommand({
     base: getBaseUrl(),
     args: args.slice(1),
     secret: resolveClientSecret(getBaseUrl()),
+    dirs: captureSpoolDirs(),
   });
   process.exit(code);
 }

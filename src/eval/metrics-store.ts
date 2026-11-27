@@ -1,6 +1,11 @@
 import type { FunctionMetrics } from "../types.js";
 import type { StateKV } from "../state/kv.js";
 import { KV } from "../state/schema.js";
+import { withKeyedLock } from "../state/keyed-mutex.js";
+
+export const RECENT_WINDOW = 10;
+
+const lockKey = (functionId: string) => `metrics:${functionId}`;
 
 export class MetricsStore {
   private cache = new Map<string, FunctionMetrics>();
@@ -9,6 +14,15 @@ export class MetricsStore {
   constructor(private kv: StateKV) {}
 
   async record(
+    functionId: string,
+    latencyMs: number,
+    success: boolean,
+    qualityScore?: number,
+  ): Promise<void> {
+    return withKeyedLock(lockKey(functionId), () => this.recordLocked(functionId, latencyMs, success, qualityScore));
+  }
+
+  private async recordLocked(
     functionId: string,
     latencyMs: number,
     success: boolean,
@@ -34,6 +48,7 @@ export class MetricsStore {
     } else {
       m.failureCount += 1;
     }
+    m.recent = `${m.recent ?? ""}${success ? "1" : "0"}`.slice(-RECENT_WINDOW);
     if (qualityScore !== undefined) {
       const prevQualityCalls = this.qualityCallCounts.get(functionId) || 0;
       m.avgQualityScore =
@@ -44,6 +59,25 @@ export class MetricsStore {
 
     this.cache.set(functionId, m);
     await this.kv.set(KV.metrics, functionId, m).catch(() => {});
+  }
+
+  async reset(functionId?: string): Promise<{ reset: string[]; failed: string[] }> {
+    const ids = functionId
+      ? [functionId]
+      : [...new Set([...(await this.kv.list<FunctionMetrics>(KV.metrics)).map((m) => m.functionId), ...this.cache.keys()])];
+    const settled = await Promise.allSettled(
+      ids.map((id) =>
+        withKeyedLock(lockKey(id), async () => {
+          await this.kv.delete(KV.metrics, id);
+          this.cache.delete(id);
+          this.qualityCallCounts.delete(id);
+        }),
+      ),
+    );
+    return {
+      reset: ids.filter((_, i) => settled[i].status === "fulfilled"),
+      failed: ids.filter((_, i) => settled[i].status === "rejected"),
+    };
   }
 
   async get(functionId: string): Promise<FunctionMetrics | null> {
