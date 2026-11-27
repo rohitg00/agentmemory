@@ -15,10 +15,14 @@ function elements(xml: string): XmlElement[] | null {
   return result;
 }
 
-function xmlText(content: string): string | null {
-  if (content.includes("<") || /&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[\da-fA-F]+);)/.test(content)) {
-    return null;
-  }
+const SCHEMA_TAG = /<\/?(?:observation|type|title|subtitle|narrative|importance|facts|fact|concepts|concept|files|file)\b/;
+
+function xmlText(raw: string): string | null {
+  if (SCHEMA_TAG.test(raw)) return null;
+  const content = raw
+    .replace(/&(?![A-Za-z][A-Za-z0-9]*;|#\d+;|#x[\da-fA-F]+;)/g, "&amp;")
+    .replace(/</g, "&lt;");
+  if (/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[\da-fA-F]+);)/.test(content)) return null;
   const entities: Record<string, string> = {
     amp: "&", lt: "<", gt: ">", quot: '"', apos: "'",
   };

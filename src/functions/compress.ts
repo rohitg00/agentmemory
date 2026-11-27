@@ -25,6 +25,13 @@ import { compressionRaw, needsCompression, observationRevision, pendingCompressi
 import { registerCompressionRecovery } from "./compression-recovery.js";
 
 export const COMPRESSION_TIMEOUT_MS = 60_000;
+const MAX_COMPRESSION_TIMEOUT_MS = 600_000;
+
+export function getCompressionTimeoutMs(): number {
+  const raw = process.env.AGENTMEMORY_COMPRESS_TIMEOUT_MS?.trim() ?? "";
+  const n = /^\d+$/.test(raw) ? Number(raw) : 0;
+  return n >= 1000 && n <= MAX_COMPRESSION_TIMEOUT_MS ? n : COMPRESSION_TIMEOUT_MS;
+}
 
 type CompressRequest = { observationId: string; sessionId: string; raw?: RawObservation; expectedRevision?: string; scope?: { project?: string; agentId?: string } };
 export type CompressResult = {
@@ -216,9 +223,10 @@ export function registerCompressFunction(
       if (!published) return { success: false, error: "observation_changed", skipped: true, retryable: false };
       await metricsStore?.record("mem::compress", Date.now() - startMs, true, qualityScore).catch(() => {});
       return { success: true, compressed: withoutObservationSource(compressed), qualityScore, ...(compressed.source?.truncated ? { sourceTruncated: true } : {}) };
-    } catch {
-      logger.warn("Observation retained for compression retry", { observationId, sessionId });
-      return fail("compression_failed");
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      logger.warn("Observation retained for compression retry", { observationId, sessionId, error: stripPrivateData(reason).slice(0, 300) });
+      return fail(reason === "compression_timeout" ? "compression_timeout" : "compression_failed");
     }
   }
 
@@ -266,7 +274,7 @@ export function registerCompressFunction(
     if (data.raw !== undefined && (!data.raw || typeof data.raw.hookType !== "string" || !data.raw.hookType)) {
       return Promise.resolve({ success: false, error: "invalid_raw_observation" });
     }
-    return dispatch(data, Date.now() + COMPRESSION_TIMEOUT_MS);
+    return dispatch(data, Date.now() + getCompressionTimeoutMs());
   });
   registerCompressionRecovery(sdk, kv);
 }

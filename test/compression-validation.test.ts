@@ -97,7 +97,6 @@ describe("compression output boundaries", () => {
     ["unknown field", xml.replace("</observation>", "<surprise>data</surprise></observation>")],
     ["unclosed reasoning", `<think>Reasoning ${xml}`],
     ["content after envelope", `${xml}<title>Other</title>`],
-    ["unescaped text", xml.replace("Updated configuration", "Config & settings")],
     ["unknown entity", xml.replace("Updated configuration", "&secret;")],
     ["invalid numeric entity", xml.replace("Updated configuration", "&#x110000;")],
     ["doctype", `<!DOCTYPE observation [<!ENTITY secret SYSTEM 'file:///fixture'>]>${xml}`],

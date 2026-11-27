@@ -88,7 +88,7 @@ export interface ObservationCompression {
   revision: string;
   attempts: number;
   lastAttemptAt?: string;
-  error?: "dispatch_failed" | "compression_failed" | "parse_failed" | "validation_failed" | "source_unavailable";
+  error?: "dispatch_failed" | "compression_failed" | "compression_timeout" | "parse_failed" | "validation_failed" | "source_unavailable";
 }
 
 export interface CompressedObservation {

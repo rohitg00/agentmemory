@@ -81,8 +81,13 @@ let vectorBackfillState: VectorBackfillState = "idle"
 export function getVectorBackfillState(): VectorBackfillState {
   return vectorBackfillState
 }
-export function setVectorBackfillState(state: VectorBackfillState): void {
+let vectorBackfillReason: string | null = null
+export function getVectorBackfillReason(): string | null {
+  return vectorBackfillReason
+}
+export function setVectorBackfillState(state: VectorBackfillState, reason?: string): void {
   vectorBackfillState = state
+  vectorBackfillReason = state === "paused" ? reason ?? null : null
 }
 export function getPendingVectorBackfillCount(): number {
   return pendingVectorBackfill
