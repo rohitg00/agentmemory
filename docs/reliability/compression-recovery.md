@@ -1,6 +1,6 @@
 # Recovering failed observation compression
 
-LLM compression is optional. With `AGENTMEMORY_AUTO_COMPRESS=true`, capture first stores a searchable synthetic observation with privacy-filtered source. A provider error, invalid response or interrupted worker leaves that observation available for search and records a pending or failed compression state. Capture acknowledgement means the observation was stored; it does not mean model compression succeeded.
+LLM compression is optional. With `AGENTMEMORY_AUTO_COMPRESS=true`, capture first stores a searchable synthetic observation with privacy-filtered source. If no usable source remains, capture skips model compression and does not mark the observation pending. A provider error, invalid response or interrupted worker leaves that observation available for search and records a pending or failed compression state. Capture acknowledgement means the observation was stored; it does not mean model compression succeeded.
 
 Inspect a session before retrying:
 
