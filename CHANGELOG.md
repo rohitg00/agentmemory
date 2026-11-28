@@ -37,7 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **Reflect:** without a concept graph, reflect builds every cluster instead of stopping at the first word that already joined one (#1833).
 - **Consolidation:** the semantic tier shows the model the known facts with their ids and reinforces a fact the model marks as a restatement, or one that only adds filler words, instead of storing a reworded copy. A changed number, a swapped word or an added negation stores a new fact (#1793).
 - **Status:** function health follows the last 10 calls, so a fixed provider clears the warning. The status page and the viewer name that window next to the failure rate (#1794).
-- The pi extension keeps the previous working directory when a host omits `ctx.cwd` (#1807).
+- The pi extension keeps the previous working directory when a host omits `ctx.cwd` (#1807). Pi recall injects the narrative of each hit instead of the title only, and saved memories lead the block ahead of raw observations (#1826 by @jmlheureux).
 - PreToolUse enrichment passes the project to file-context and loads session history concurrently (#1747).
 - **CLI:** `agentmemory connect` works on native Windows (#1754). `connect` and `status` say when an agent is connected with MCP only and captures nothing on its own (#1756). `status` explains an iii engine that runs without the agentmemory worker (#1758). `agentmemory demo` waits until seeded observations are searchable (#1760). Generated Compose YAML no longer repeats env-file values, including provider keys, as explicit worker overrides (#1769 by @zack-dev-cm). A stale Compose PID from before a reboot no longer blocks startup when the process identity cannot be read (#1805).
 
@@ -47,7 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Issues closed
 
-#1724, #1726, #1727, #1728, #1730, #1731, #1732, #1736, #1762, #1763, #1764, #1793, #1794, #1795, #1805, #1807, #1808, #1809, #1810, #1822, #1829, #1833. Partly addressed and still open: #1733 (#1747), #1735 (#1789, #1772), #1741 (#1788), #1820 (#1836).
+#1724, #1726, #1727, #1728, #1730, #1731, #1732, #1736, #1762, #1763, #1764, #1793, #1794, #1795, #1805, #1807, #1808, #1809, #1810, #1822, #1825, #1829, #1833. Partly addressed and still open: #1733 (#1747), #1735 (#1789, #1772), #1741 (#1788), #1820 (#1836).
 
 ## [0.9.33] — 2026-11-09
 
