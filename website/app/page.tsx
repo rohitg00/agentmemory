@@ -8,6 +8,7 @@ import { MemoryScroll } from "@/components/site/MemoryScroll";
 import { Benchmarks } from "@/components/site/Benchmarks";
 import { LocalFirst } from "@/components/site/LocalFirst";
 import { Faq } from "@/components/site/Faq";
+import { Layers } from "@/components/site/Layers";
 import { Install } from "@/components/site/Install";
 import { Footer } from "@/components/site/Footer";
 
@@ -24,6 +25,7 @@ export default function Page() {
         <Featured />
         <InfraTiles />
         <MemoryScroll />
+        <Layers />
         <Benchmarks />
         <LocalFirst />
         <Faq />
