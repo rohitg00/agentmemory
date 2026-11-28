@@ -3,6 +3,7 @@ import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 import { parse, stringify } from "yaml";
 import { MAX_STARTUP_TIMEOUT_MS } from "./readiness.js";
 import { getStateSaveIntervalMs } from "../config.js";
+import { parseOriginList } from "../auth.js";
 
 export interface EngineRuntimePorts {
   restPort: number;
@@ -258,6 +259,16 @@ export interface ComposeProjectOptions {
   windows?: boolean;
 }
 
+function corsAllowedOrigins(restPort: number, viewerPort: number, env: NodeJS.ProcessEnv): string[] {
+  return [...new Set([
+    `http://localhost:${restPort}`,
+    `http://localhost:${viewerPort}`,
+    `http://127.0.0.1:${restPort}`,
+    `http://127.0.0.1:${viewerPort}`,
+    ...parseOriginList(env["VIEWER_ALLOWED_ORIGINS"]),
+  ])];
+}
+
 export function renderWorkerCompose(options: ComposeProjectOptions): string {
   const { restPort, viewerPort, enginePort } = options.ports;
   const paths = composeProjectPaths(options.dataDir);
@@ -346,10 +357,8 @@ export function renderWorkerCompose(options: ComposeProjectOptions): string {
     "      default_timeout: 180000",
     "      cors:",
     "        allowed_origins:",
-    `          - ${yamlString(`http://localhost:${restPort}`)}`,
-    `          - ${yamlString(`http://localhost:${viewerPort}`)}`,
-    `          - ${yamlString(`http://127.0.0.1:${restPort}`)}`,
-    `          - ${yamlString(`http://127.0.0.1:${viewerPort}`)}`,
+    ...corsAllowedOrigins(restPort, viewerPort, options.workerEnvironment ?? process.env)
+      .map((origin) => `          - ${yamlString(origin)}`),
     "        allowed_methods: [GET, POST, PUT, DELETE, OPTIONS]",
   );
 

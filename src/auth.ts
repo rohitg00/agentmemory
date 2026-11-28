@@ -34,7 +34,7 @@ export type RequestHeaders = Record<string, HeaderValue> | undefined | null;
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-function readHeader(headers: RequestHeaders, name: string): string | undefined {
+export function readHeader(headers: RequestHeaders, name: string): string | undefined {
   if (!headers) return undefined;
   const target = name.toLowerCase();
   for (const [key, value] of Object.entries(headers)) {
