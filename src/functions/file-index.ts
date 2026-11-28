@@ -29,14 +29,21 @@ async function projectSessions(
     ).catch(() => {});
     return scanned;
   }
-  const recent = entries
+  const candidates = entries
     .filter((entry) => entry.id !== currentSessionId)
-    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-    .slice(0, MAX_HISTORY_SESSIONS);
-  const fetched = await Promise.all(
-    recent.map((entry) => kv.get<Session>(KV.sessions, entry.id).catch(() => null)),
-  );
-  return fetched.filter((s): s is Session => s !== null && s.project === project);
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  const sessions: Session[] = [];
+  for (let offset = 0; offset < candidates.length && sessions.length < MAX_HISTORY_SESSIONS; offset += MAX_HISTORY_SESSIONS) {
+    const fetched = await Promise.all(
+      candidates
+        .slice(offset, offset + MAX_HISTORY_SESSIONS)
+        .map((entry) => kv.get<Session>(KV.sessions, entry.id).catch(() => null)),
+    );
+    for (const session of fetched) {
+      if (session !== null && session.project === project && sessions.length < MAX_HISTORY_SESSIONS) sessions.push(session);
+    }
+  }
+  return sessions;
 }
 
 interface FileHistory {

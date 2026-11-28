@@ -233,7 +233,7 @@ describe("vector recovery across checkpoints", () => {
   });
 
   it("names provider failures and skipped documents as their own pause reasons", () => {
-    expect(vectorBacklogPauseReason({ added: 1, failed: 4, remaining: 9, complete: false }, 5)).toContain("embedding provider did not return a vector for 4 documents");
+    expect(vectorBacklogPauseReason({ added: 1, failed: 4, remaining: 9, complete: false }, 5)).toContain("4 documents did not get a vector in the last run");
     expect(vectorBacklogPauseReason({ added: 0, failed: 0, remaining: 2, complete: false }, 0)).toContain("2 documents changed");
     expect(vectorBacklogPauseReason({ added: 2, failed: 0, remaining: 0, complete: true }, 0)).toContain("vector checkpoint");
   });

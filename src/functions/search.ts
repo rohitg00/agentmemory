@@ -9,7 +9,7 @@ import { getSearchResultLayer, isSearchLayer, matchesSearchLayer, type SearchLay
 import { SearchIndex, type SearchIndexRevision } from '../state/search-index.js'
 import { VectorIndex } from '../state/vector-index.js'
 import type { EmbeddingProvider } from '../types.js'
-import { memoryToObservation, observationEmbedText } from '../state/memory-utils.js'
+import { memoryToObservation, observationEmbedText, supersededAt, supersededButLatest } from '../state/memory-utils.js'
 import { buildRecallResponse, type RecallFormat } from "./recall-response.js";
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
@@ -671,8 +671,18 @@ async function runKeywordRebuild(
     keywordRetry.memories = true
   } else {
     memoriesLoaded = true
+    const interrupted = supersededButLatest(memories)
+    const interruptedIds = new Set(interrupted.map((memory) => memory.id))
+    const repairedAt = new Date().toISOString()
+    for (const memory of interrupted) {
+      vectorIndexRemove(memory.id)
+      void kv.set(KV.memories, memory.id, { ...memory, isLatest: false, updatedAt: supersededAt(memory.updatedAt, repairedAt) }).catch(() => {})
+    }
+    if (interrupted.length > 0) {
+      logger.warn('rebuildKeywordIndex: demoted memories left current by an interrupted supersede', { count: interrupted.length })
+    }
     for (const memory of memories) {
-      if (memory.isLatest === false) continue
+      if (memory.isLatest === false || interruptedIds.has(memory.id)) continue
       if (!memory.title || !memory.content) continue
       idx.add(memoryToObservation(memory), "memory")
       consider(memory.id, memory.sessionIds?.[0] ?? 'memory', observationEmbedText({ title: memory.title, narrative: memory.content, concepts: memory.concepts }), memory.createdAt, "memory")
@@ -969,7 +979,7 @@ export async function backfillVectorBacklog(
 
 export function vectorBacklogPauseReason(result: VectorBacklogResult, deferred: number): string {
   if (result.complete) return "The finished backfill could not be saved to the vector checkpoint."
-  if (result.failed > 0) return `The embedding provider did not return a vector for ${result.failed} documents in the last run.`
+  if (result.failed > 0) return `${result.failed} documents did not get a vector in the last run: the embedding provider returned none, or the vector could not be stored. Check the server log.`
   if (deferred > 0) {
     return `This start reached its limit of ${getVectorBackfillMax()} documents (AGENTMEMORY_VECTOR_BACKFILL_MAX) and ${result.remaining} documents are left. ` +
       "Run agentmemory stop, then start it again, to embed the next batch. Starting the CLI while the daemon is running does not restart the worker."

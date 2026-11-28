@@ -159,6 +159,22 @@ describe("rebuildKeywordIndex", () => {
     setIndexPersistence(null);
   });
 
+  it("demotes a memory that an interrupted supersede left current", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite", isLatest: true });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", isLatest: true, supersedes: ["mem_prev"], version: 2 });
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const idx = getSearchIndex();
+    expect(idx.has("mem_next")).toBe(true);
+    expect(idx.has("mem_prev")).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_prev"))?.isLatest).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_next"))?.isLatest).toBe(true);
+  });
+
   it("rebuilds BM25 from stored observations and latest memories, quickly", async () => {
     const kv = mockKV();
     const total = seed(kv, 100, 30, () => "2026-09-01T00:00:00.000Z");

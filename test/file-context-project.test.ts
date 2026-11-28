@@ -164,7 +164,7 @@ describe("mem::enrich and mem::file-context project scoping", () => {
     expect(result.context).toContain("edit in alpha");
     expect(result.context).not.toContain("edit in beta");
     expect(kv.stats.sessionLists).toBe(0);
-    expect(kv.stats.observationLists).toBe(14);
+    expect(kv.stats.observationLists).toBe(15);
   });
 
   it("builds the project session index after one fallback scan", async () => {
