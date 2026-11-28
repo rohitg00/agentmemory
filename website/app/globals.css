@@ -48,8 +48,8 @@
 
   --radius: 6px;
   --radius-lg: 10px;
-  --max: clamp(1200px, 74vw, 1600px);
-  --section-y: clamp(64px, 6vw, 104px);
+  --max: clamp(1200px, 84vw, 1760px);
+  --section-y: clamp(56px, 4.5vw, 88px);
   --gutter: clamp(16px, 4vw, 40px);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -241,6 +241,28 @@ video {
   max-width: 640px;
 }
 
+@media (min-width: 1000px) {
+  .section-head {
+    max-width: none;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    column-gap: var(--s-8);
+    align-items: end;
+  }
+  .section-head .eyebrow {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .section-head h2 {
+    max-width: 20em;
+    text-wrap: balance;
+  }
+  .section-head p {
+    max-width: 38rem;
+    justify-self: end;
+    padding-bottom: 0.2em;
+  }
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -388,11 +410,8 @@ video {
 }
 
 @media (max-width: 720px) {
-  .section {
-    padding: var(--s-9) 0;
-  }
   .section-head {
-    margin-bottom: var(--s-7);
+    margin-bottom: var(--s-6);
   }
   .section-head p {
     font-size: var(--t-16);

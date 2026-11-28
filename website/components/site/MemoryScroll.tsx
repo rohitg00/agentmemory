@@ -74,7 +74,7 @@ export function MemoryScroll() {
       </div>
 
       <div ref={ref} className={s.track} data-step="0">
-        <div className={s.sticky}>
+        <div className={s.sticky} data-pin="">
           <div className={`wrap ${s.stage}`}>
             <div className={s.side}>
               <ol className={s.steps}>
@@ -152,7 +152,7 @@ export function MemoryScroll() {
                   <div className={s.group}>
                     <span className={`mono ${s.groupHead}`}>observations · mem:obs</span>
                     <span className={`mono ${s.k} ${s.waiting}`} {...win(-1, 0, 0.17, 0.2)}>
-                      waiting for the first tool call
+                      no observations yet
                     </span>
                     <ul className={s.obsList}>
                       {OBS.map((o, i) => (

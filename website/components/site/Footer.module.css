@@ -1,7 +1,7 @@
 .footer {
   border-top: 1px solid var(--line);
   background: var(--surface);
-  padding-bottom: var(--s-8);
+  padding-bottom: var(--s-7);
 }
 
 .ask {
@@ -10,8 +10,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--s-5);
-  padding-top: var(--s-7);
-  padding-bottom: var(--s-7);
+  padding-top: var(--s-6);
+  padding-bottom: var(--s-6);
   background: linear-gradient(var(--line), var(--line)) center bottom / calc(100% - 2 * var(--gutter)) 1px no-repeat;
 }
 
@@ -31,7 +31,7 @@
   display: grid;
   grid-template-columns: 1.3fr repeat(4, minmax(0, 1fr)) minmax(max-content, 1fr);
   gap: var(--s-6);
-  padding-top: var(--s-7);
+  padding-top: var(--s-6);
 }
 
 .brand {

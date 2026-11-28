@@ -45,6 +45,16 @@
   white-space: nowrap;
 }
 
+.toggle {
+  min-width: 3.4em;
+  text-align: right;
+  font: inherit;
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line-2);
+  text-underline-offset: 4px;
+}
+
 .shot {
   display: block;
   width: 100%;

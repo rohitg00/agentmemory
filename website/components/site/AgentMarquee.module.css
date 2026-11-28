@@ -27,6 +27,22 @@
   transition: text-decoration-color var(--dur-1) ease;
 }
 
+.actions {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-4);
+}
+
+.pause {
+  font-size: var(--t-12);
+  color: var(--muted);
+  transition: color var(--dur-1) ease;
+}
+
+.track[data-paused] {
+  animation-play-state: paused;
+}
+
 .viewport {
   overflow: hidden;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
@@ -96,17 +112,29 @@
   .all:hover {
     text-decoration-color: var(--ink);
   }
+  .pause:hover {
+    color: var(--ink);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .viewport {
-    overflow-x: auto;
     -webkit-mask-image: none;
     mask-image: none;
-    padding: 0 var(--gutter) var(--s-3);
+    max-width: var(--max);
+    margin: 0 auto;
+    padding: 0 calc(var(--gutter) - var(--s-5));
   }
   .track {
     animation: none;
+    width: auto;
+  }
+  .row {
+    flex-wrap: wrap;
+    row-gap: var(--s-3);
+  }
+  .pause {
+    display: none;
   }
   .row[aria-hidden] {
     display: none;

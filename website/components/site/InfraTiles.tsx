@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { CSSProperties } from "react";
 
 import { Reveal } from "./client";
@@ -12,7 +13,7 @@ const HITS = [
 
 function Results() {
   return (
-    <div className={s.panel} aria-hidden="true">
+    <div className={s.panel} role="group" aria-label="Example: keyword search for auth refresh">
       <div className={s.panelHead}>
         <span className="mono">memory_smart_search</span>
         <span className="mono">BM25 · no key</span>
@@ -39,7 +40,7 @@ const REQUESTS = [
 
 function Boundary() {
   return (
-    <div className={s.panel} aria-hidden="true">
+    <div className={s.panel} role="group" aria-label="Example: requests to the local server">
       <div className={s.panelHead}>
         <span className="mono">bind 127.0.0.1</span>
         <span className="mono">auth on</span>
@@ -100,9 +101,9 @@ export function InfraTiles() {
           <div className={s.art}>
             <Boundary />
           </div>
-          <a className="src" href="/security">
+          <Link className="src" href="/security">
             security model
-          </a>
+          </Link>
         </Reveal>
         <Reveal className={s.tile} delay={160}>
           <h3 className="mono">Survives compaction</h3>
@@ -110,9 +111,9 @@ export function InfraTiles() {
           <div className={s.art}>
             <Compaction />
           </div>
-          <a className="src" href="/how-it-works#value">
+          <Link className="src" href="/how-it-works#value">
             what your agent gets
-          </a>
+          </Link>
         </Reveal>
       </div>
     </section>
