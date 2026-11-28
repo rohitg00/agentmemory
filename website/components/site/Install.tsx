@@ -8,6 +8,42 @@ import s from "./Install.module.css";
 
 const CONNECTABLE = AGENTS.filter((a) => a.connect);
 
+const HTTP_JSON = `{
+  "mcpServers": {
+    "agentmemory": {
+      "type": "http",
+      "url": "http://localhost:3111/agentmemory/mcp",
+      "headers": { "Authorization": "Bearer <secret>" }
+    }
+  }
+}`;
+
+const REST_CURL = `curl http://localhost:3111/agentmemory/smart-search \\
+  -H "Authorization: Bearer <secret>" \\
+  -H "Content-Type: application/json" \\
+  -d '{"query": "auth refresh"}'`;
+
+const OTHER = [
+  {
+    id: "stdio",
+    tab: "MCP over stdio",
+    note: "Merge this entry into the client's mcpServers object. With no variables set, it talks to http://localhost:3111.",
+    code: MCP_JSON,
+  },
+  {
+    id: "http",
+    tab: "MCP over HTTP",
+    note: "For a client that connects to an MCP server by URL. <secret> is AGENTMEMORY_SECRET, or the value in ~/.agentmemory/secret.",
+    code: HTTP_JSON,
+  },
+  {
+    id: "rest",
+    tab: "REST",
+    note: "Anything that speaks HTTP can read and write memory. The same bearer secret applies.",
+    code: REST_CURL,
+  },
+];
+
 function breakable(text: string) {
   return text.split("/").flatMap((part, i, all) => (i < all.length - 1 ? [part, "/", <wbr key={i} />] : [part]));
 }
@@ -15,6 +51,8 @@ function breakable(text: string) {
 export function Install() {
   const [pick, setPick] = useState(CONNECTABLE[0]?.connect ?? "claude-code");
   const connect = `agentmemory connect ${pick}`;
+  const [otherId, setOtherId] = useState(OTHER[0]!.id);
+  const other = OTHER.find((o) => o.id === otherId) ?? OTHER[0]!;
   return (
     <section id="install" className="section" aria-labelledby="install-title">
       <div className="wrap">
@@ -90,18 +128,31 @@ export function Install() {
         <div className={s.mcp}>
           <div className={s.mcpHead}>
             <div>
-              <h3>Any other MCP client</h3>
-              <p>
-                Merge this entry into the client&apos;s <code>mcpServers</code> object. With no variables set, it talks to
-                http://localhost:3111.
-              </p>
+              <h3>Any other client</h3>
+              <div className={s.picker} role="tablist" aria-label="Connection type">
+                {OTHER.map((o) => (
+                  <button
+                    key={o.id}
+                    type="button"
+                    role="tab"
+                    id={`other-tab-${o.id}`}
+                    aria-selected={o.id === other.id}
+                    aria-controls="other-panel"
+                    className={s.chip}
+                    onClick={() => setOtherId(o.id)}
+                  >
+                    {o.tab}
+                  </button>
+                ))}
+              </div>
+              <p>{other.note}</p>
             </div>
-            <CopyButton text={MCP_JSON} label="Copy MCP configuration" className="btn btn-ghost">
-              <span>Copy JSON</span>
+            <CopyButton text={other.code} label={`Copy ${other.tab} example`} className="btn btn-ghost">
+              <span>Copy example</span>
             </CopyButton>
           </div>
-          <pre className={s.json}>
-            <code>{MCP_JSON}</code>
+          <pre id="other-panel" role="tabpanel" aria-labelledby={`other-tab-${other.id}`} className={s.json}>
+            <code>{other.code}</code>
           </pre>
         </div>
       </div>
