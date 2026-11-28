@@ -13,6 +13,8 @@ export interface Session {
   summary?: string;
   commitShas?: string[];
   agentId?: string;
+  graphExtractedAt?: string;
+  graphExtractedDigest?: string;
 }
 
 export interface ProjectSessionIndexEntry {
