@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { IndexPersistence } from "../src/state/index-persistence.js";
 import { VectorIndex } from "../src/state/vector-index.js";
-import { backfillVectorBacklog, getPendingVectorBackfillCount, getSearchIndex, indexRecords, isBm25RebuildIncomplete, rebuildKeywordIndex, setEmbeddingProvider, setIndexPersistence, setVectorIndex, vectorIndexRemove } from "../src/functions/search.js";
+import { backfillVectorBacklog, getPendingVectorBackfillCount, getSearchIndex, indexRecords, isBm25RebuildIncomplete, rebuildKeywordIndex, setEmbeddingProvider, setIndexPersistence, setVectorIndex, vectorBacklogPauseReason, vectorIndexRemove } from "../src/functions/search.js";
 import type { CompressedObservation } from "../src/types.js";
 import { KV } from "../src/state/schema.js";
 
@@ -197,6 +197,47 @@ describe("vector recovery across checkpoints", () => {
     expect(await backfillVectorBacklog(resumed.vectorJobs, { pauseMs: 0 })).toMatchObject({ added: 1, remaining: 0, complete: true });
     expect(second.vector.size).toBe(3);
   });
+  it("explains a capped whole-store run by its limit, not by the embedding provider, and resumes on the next boot", async () => {
+    vi.stubEnv("AGENTMEMORY_VECTOR_BACKFILL", "all");
+    vi.stubEnv("AGENTMEMORY_VECTOR_BACKFILL_MAX", "2");
+    const kv = storage(); await seed(kv, 5);
+    const first = await boot(kv);
+    const since = await first.persistence.prepareBackfill(first.loaded, true);
+    const scan = await rebuildKeywordIndex(kv as never, since);
+    expect(scan.vectorJobs).toHaveLength(2); expect(scan.fullBackfillPending).toBe(3);
+    expect(await first.persistence.beginBackfill()).toBe(true);
+    const countRemaining = () => getSearchIndex().countMissingDocuments((id) => first.vector.has(id), since);
+    const result = await backfillVectorBacklog(scan.vectorJobs, { pauseMs: 0, remainingAfter: scan.fullBackfillPending, remainingCount: countRemaining });
+    expect(result).toEqual({ added: 2, failed: 0, remaining: 3, complete: false });
+    expect(first.embedding.embedBatch).toHaveBeenCalledTimes(1);
+    expect(first.persistence.status().vector?.lastError).toBeNull();
+    expect(isBm25RebuildIncomplete()).toBe(false);
+    const reason = vectorBacklogPauseReason(result, scan.fullBackfillPending);
+    expect(reason).not.toContain("embedding provider");
+    expect(reason).toContain("AGENTMEMORY_VECTOR_BACKFILL_MAX");
+    expect(reason).toContain("3 documents");
+    expect(reason).toContain("agentmemory stop");
+    for (const job of scan.vectorJobs) job.revision?.release();
+    first.persistence.stop();
+
+    vi.stubEnv("AGENTMEMORY_VECTOR_BACKFILL_MAX", "30000");
+    const second = await boot(kv);
+    expect(second.vector.size).toBe(2);
+    const resumedSince = await second.persistence.prepareBackfill(second.loaded, true);
+    const resumed = await rebuildKeywordIndex(kv as never, resumedSince);
+    expect(resumed.vectorJobs).toHaveLength(3); expect(resumed.fullBackfillPending).toBe(0);
+    expect(await second.persistence.beginBackfill()).toBe(true);
+    expect(await backfillVectorBacklog(resumed.vectorJobs, { pauseMs: 0 })).toMatchObject({ added: 3, remaining: 0, complete: true });
+    expect(await second.persistence.completeBackfill(() => getSearchIndex().countMissingDocuments((id) => second.vector.has(id), resumedSince) === 0)).toBe(true);
+    for (const job of resumed.vectorJobs) job.revision?.release();
+  });
+
+  it("names provider failures and skipped documents as their own pause reasons", () => {
+    expect(vectorBacklogPauseReason({ added: 1, failed: 4, remaining: 9, complete: false }, 5)).toContain("embedding provider did not return a vector for 4 documents");
+    expect(vectorBacklogPauseReason({ added: 0, failed: 0, remaining: 2, complete: false }, 0)).toContain("2 documents changed");
+    expect(vectorBacklogPauseReason({ added: 2, failed: 0, remaining: 0, complete: true }, 0)).toContain("vector checkpoint");
+  });
+
   it("keeps a dimension reset as whole-store recovery even after saving an empty checkpoint", async () => {
     const kv = storage(); await seed(kv);
     const first = await boot(kv, provider(2));

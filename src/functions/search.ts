@@ -967,6 +967,16 @@ export async function backfillVectorBacklog(
   return { added, failed, remaining, complete: remaining === 0 }
 }
 
+export function vectorBacklogPauseReason(result: VectorBacklogResult, deferred: number): string {
+  if (result.complete) return "The finished backfill could not be saved to the vector checkpoint."
+  if (result.failed > 0) return `The embedding provider did not return a vector for ${result.failed} documents in the last run.`
+  if (deferred > 0) {
+    return `This start reached its limit of ${getVectorBackfillMax()} documents (AGENTMEMORY_VECTOR_BACKFILL_MAX) and ${result.remaining} documents are left. ` +
+      "Run agentmemory stop, then start it again, to embed the next batch. Starting the CLI while the daemon is running does not restart the worker."
+  }
+  return `${result.remaining} documents changed or were skipped while the run was in progress.`
+}
+
 export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {
   sdk.registerFunction(
     'mem::search',

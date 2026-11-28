@@ -62,6 +62,7 @@ import {
   setHybridRanker,
   setPendingVectorBackfillCount,
   setVectorBackfillState,
+  vectorBacklogPauseReason,
 } from "./functions/search.js";
 import { registerContextFunction } from "./functions/context.js";
 import { registerSessionIndexMaintenanceFunction } from "./functions/session-index-maintenance.js";
@@ -598,7 +599,7 @@ async function main() {
     }
     if (keyword.fullBackfillPending > 0) {
       bootLog(optedIn
-        ? `Vector backfill has ${keyword.fullBackfillPending} additional documents beyond this start's limit; restart to resume.`
+        ? `Vector backfill has ${keyword.fullBackfillPending} additional documents beyond this start's limit; run agentmemory stop, then start it again, to resume.`
         : `Vector backfill needs ${keyword.fullBackfillPending} embeddings (set AGENTMEMORY_VECTOR_BACKFILL=all to opt in). See /agentmemory/status.`);
     }
     if (!supersededReleaseFailed && vectorBackfillSince !== undefined && backlogScanComplete && pending === 0) {
@@ -624,12 +625,14 @@ async function main() {
           const complete = result.complete && backlogScanComplete && await indexPersistence.completeBackfill(() => countRemaining() === 0);
           const remaining = countRemaining();
           setPendingVectorBackfillCount(remaining);
-          if (complete) setVectorBackfillState("idle");
-          else setVectorBackfillState("paused", indexPersistence.recoveryPauseReason() ?? (result.complete
-            ? "The finished backfill could not be saved to the vector checkpoint."
-            : "The embedding provider did not return a vector for every document in the last run."));
           if (result.added > 0) bootLog(`Vector index backfilled: ${result.added} entries`);
-          if (!complete) bootWarn(`Vector recovery remains incomplete (${remaining} documents pending); it resumes on the next start.`);
+          if (complete) {
+            setVectorBackfillState("idle");
+            return;
+          }
+          const reason = indexPersistence.recoveryPauseReason() ?? vectorBacklogPauseReason({ ...result, remaining }, keyword.fullBackfillPending);
+          setVectorBackfillState("paused", reason);
+          bootWarn(`Vector recovery remains incomplete (${remaining} documents pending). ${reason}`);
         })
         .catch((err) => {
           setVectorBackfillState("paused", `The backfill run failed: ${err instanceof Error ? err.message : String(err)}`);
