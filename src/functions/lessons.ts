@@ -4,7 +4,7 @@ import { KV, fingerprintId } from "../state/schema.js";
 import type { Lesson } from "../types.js";
 import { SearchIndex } from "../state/search-index.js";
 import { lessonToObservation } from "../state/memory-utils.js";
-import { recordAudit } from "./audit.js";
+import { auditQueryDetails, recordAudit } from "./audit.js";
 import { deleteFacetsForTargets } from "./facets.js";
 
 // Dedicated BM25 index for lessons, with the full records cached
@@ -222,7 +222,7 @@ export function registerLessonsFunctions(sdk: IIIClient, kv: StateKV): void {
 
       try {
         await recordAudit(kv, "lesson_recall", "mem::lesson-recall", [], {
-          query: data.query,
+          ...auditQueryDetails(data.query),
           resultCount: scored.length,
         });
       } catch {}
