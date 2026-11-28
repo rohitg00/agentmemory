@@ -67,9 +67,22 @@ export function supersededButLatest(memories: Memory[]): Array<{ id: string; suc
     }
     return undefined;
   };
+  const supersedesItself = (start: string): boolean => {
+    const seen = new Set<string>();
+    const queue = [start];
+    while (queue.length > 0) {
+      for (const next of successors.get(queue.pop()!) ?? []) {
+        if (next.id === start) return true;
+        if (seen.has(next.id)) continue;
+        seen.add(next.id);
+        queue.push(next.id);
+      }
+    }
+    return false;
+  };
   const pairs: Array<{ id: string; successorId: string }> = [];
   for (const memory of memories) {
-    if (memory.isLatest === false) continue;
+    if (memory.isLatest === false || supersedesItself(memory.id)) continue;
     const successorId = newestCurrent(memory.id, new Set([memory.id]));
     if (successorId) pairs.push({ id: memory.id, successorId });
   }

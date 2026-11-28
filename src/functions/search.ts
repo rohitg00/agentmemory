@@ -626,15 +626,18 @@ export async function rebuildKeywordIndex(
 async function demoteInterruptedSupersedes(kv: StateKV, pairs: Array<{ id: string; successorId: string }>): Promise<void> {
   const demoted: string[] = []
   for (const { id, successorId } of pairs) {
-    await withReentrantKeyedLock("mem:remember", async () => {
+    const stillCurrent = await withReentrantKeyedLock("mem:remember", async () => {
       const [current, successor] = await Promise.all([
         kv.get<Memory>(KV.memories, id),
         kv.get<Memory>(KV.memories, successorId),
       ])
-      if (!current || current.isLatest === false || !successor || successor.isLatest === false) return
+      if (!current || current.isLatest === false) return null
+      if (!successor || successor.isLatest === false) return current
       await kv.set(KV.memories, id, { ...current, isLatest: false, updatedAt: supersededAt(current.updatedAt, new Date().toISOString()) })
       demoted.push(id)
-    }).catch(() => {})
+      return null
+    }).catch(() => null)
+    if (stillCurrent) await indexMemory(kv, stillCurrent).catch(() => {})
   }
   if (demoted.length === 0) return
   logger.warn('rebuildKeywordIndex: demoted memories left current by an interrupted supersede', { count: demoted.length })
@@ -644,7 +647,7 @@ async function demoteInterruptedSupersedes(kv: StateKV, pairs: Array<{ id: strin
 function setAsideInterruptedSupersedes(kv: StateKV, memories: Memory[]): Set<string> {
   const interrupted = supersededButLatest(memories)
   const ids = new Set(interrupted.map((pair) => pair.id))
-  for (const id of ids) vectorIndexRemove(id)
+  for (const id of ids) unindexMemory(id)
   if (interrupted.length > 0) void demoteInterruptedSupersedes(kv, interrupted)
   return ids
 }

@@ -243,7 +243,39 @@ describe("rebuildKeywordIndex", () => {
       { id: "a", successorId: "c" },
     ]);
     expect(supersededButLatest([memory("a", true), memory("b", false, ["a"])])).toEqual([]);
-    expect(supersededButLatest([memory("a", true, ["b"]), memory("b", true, ["a"])])).toHaveLength(2);
+    expect(supersededButLatest([memory("a", true, ["b"]), memory("b", true, ["a"])])).toEqual([]);
+  });
+
+  it("keeps both versions searchable when two memories supersede each other", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_a", { ...base, id: "mem_a", title: "Deploy gate", content: "Deploys wait for the smoke suite", supersedes: ["mem_b"] });
+    await kv.set("mem:memories", "mem_b", { ...base, id: "mem_b", title: "Deploy gate", content: "Deploys wait for the acceptance suite", supersedes: ["mem_a"] });
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(getSearchIndex().has("mem_a")).toBe(true);
+    expect(getSearchIndex().has("mem_b")).toBe(true);
+  });
+
+  it("indexes the older version again when its successor is gone before the repair runs", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite" });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", supersedes: ["mem_prev"], version: 2 });
+    let release!: () => void;
+    const held = withKeyedLock("mem:remember", () => new Promise<void>((resolve) => { release = resolve; }));
+
+    await rebuildKeywordIndex(kv as never);
+    expect(getSearchIndex().has("mem_prev")).toBe(false);
+    kv.store.get("mem:memories")!.delete("mem_next");
+    release();
+    await held;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect((await kv.get<Memory>("mem:memories", "mem_prev"))?.isLatest).toBe(true);
+    expect(getSearchIndex().has("mem_prev")).toBe(true);
   });
 
   it("still indexes when a stored memory has a malformed supersedes field", async () => {
