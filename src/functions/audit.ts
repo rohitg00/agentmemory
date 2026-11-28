@@ -116,6 +116,21 @@ export function auditMonthOf(timestamp: string): string {
   return iso.slice(0, 7);
 }
 
+const AUDIT_QUERY_MAX_CHARS = 500;
+
+// Recall callers can pass a whole prompt, injected context included, as the
+// query. Every audit row lands in the current month's scope, which the file
+// backend rewrites on each write and which has to fit in one engine frame, so
+// keep a prefix plus the original length instead of the full text.
+export function auditQueryDetails(query: string): { query: string; queryLength?: number } {
+  if (query.length <= AUDIT_QUERY_MAX_CHARS) return { query };
+  const head = query.slice(0, AUDIT_QUERY_MAX_CHARS);
+  return {
+    query: /[\uD800-\uDBFF]$/.test(head) ? head.slice(0, -1) : head,
+    queryLength: query.length,
+  };
+}
+
 function monthStartMs(month: string): number {
   const [year, mon] = month.split("-").map(Number);
   return Date.UTC(year, mon - 1, 1);

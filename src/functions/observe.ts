@@ -197,6 +197,10 @@ export function registerObserveFunction(
           toolName,
           dedupInput,
           dedupOutput,
+          {
+            agentId: typeof d["agent_id"] === "string" && d["agent_id"] ? d["agent_id"] : undefined,
+            agentType: typeof d["agent_type"] === "string" && d["agent_type"] ? d["agent_type"] : undefined,
+          },
         );
         if (dedupMap.isDuplicate(dedupHash)) {
           recordDedupSkip();
@@ -230,6 +234,8 @@ export function registerObserveFunction(
 
       if (typeof sanitizedRaw === "object" && sanitizedRaw !== null) {
         const d = sanitizedRaw as Record<string, unknown>;
+        if (typeof d["agent_id"] === "string" && d["agent_id"]) raw.executionAgentId = d["agent_id"];
+        if (typeof d["agent_type"] === "string" && d["agent_type"]) raw.executionAgentType = d["agent_type"];
         if (TOOL_HOOKS.has(payload.hookType)) {
           raw.toolName = d["tool_name"] as string | undefined;
           raw.toolInput = d["tool_input"];

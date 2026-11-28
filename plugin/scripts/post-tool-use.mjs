@@ -244,6 +244,10 @@ async function main() {
 	const toolName = data.tool_name ?? data.toolName;
 	if (!shouldCaptureTool(toolName)) return;
 	const toolInput = data.tool_input ?? data.toolArgs;
+	const agent = {
+		...typeof data.agent_id === "string" && data.agent_id ? { agent_id: data.agent_id } : {},
+		...typeof data.agent_type === "string" && data.agent_type ? { agent_type: data.agent_type } : {}
+	};
 	const { imageData, cleanOutput } = extractImageData(toolOutput(data));
 	const cwd = hookCwd(data) || process.cwd();
 	const toolOutputText = truncateCaptureOutput(cleanOutput, captureOutputMax());
@@ -254,12 +258,14 @@ async function main() {
 		cwd,
 		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 		data: {
+			...agent,
 			tool_name: toolName,
 			tool_input: toolInput,
 			tool_output: toolOutputText,
 			...imageData ? { image_data: imageData } : {}
 		}
 	}, data, {
+		...agent,
 		tool_name: toolName,
 		tool_input: toolInput,
 		tool_output: toolOutputText,

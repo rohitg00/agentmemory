@@ -16,7 +16,7 @@ import type {
   Memory,
   Session,
 } from "../types.js";
-import { recordAudit } from "./audit.js";
+import { auditQueryDetails, recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { checkPayloadFrameSize, payloadByteLength } from "../state/frame-guard.js";
@@ -659,7 +659,7 @@ export function registerReflectFunctions(
 
       try {
         await recordAudit(kv, "insight_search", "mem::insight-search", [], {
-          query: data.query,
+          ...auditQueryDetails(data.query),
           resultCount: scored.length,
         });
       } catch {}

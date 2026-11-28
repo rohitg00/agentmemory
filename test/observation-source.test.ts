@@ -15,7 +15,7 @@ import { registerTimelineFunction } from "../src/functions/timeline.js";
 import { registerTeamFunction } from "../src/functions/team.js";
 import { registerApiTriggers } from "../src/triggers/api.js";
 import { getSearchIndex, registerSearchFunction, setEmbeddingProvider, setVectorIndex } from "../src/functions/search.js";
-import { createObservationSource, OBSERVATION_SOURCE_MAX_BYTES } from "../src/functions/observation-source.js";
+import { createObservationSource, normalizeObservationSource, OBSERVATION_SOURCE_MAX_BYTES } from "../src/functions/observation-source.js";
 import { buildSummaryPrompt } from "../src/prompts/summary.js";
 import { budgetImportedObservationSources, SESSION_SOURCE_MAX_BYTES } from "../src/functions/observation-source-budget.js";
 import { payloadByteLength, SAFE_PAYLOAD_BYTES } from "../src/state/frame-guard.js";
@@ -92,6 +92,80 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllEnvs());
 
 describe("retained observation source", () => {
+  it.each([false, true])("preserves interleaved subagent calls through storage, export/import and replay (model compression: %s)", async (autoCompress) => {
+    vi.stubEnv("AGENT_ID", "memory-owner");
+    vi.stubEnv("AGENTMEMORY_AUTO_COMPRESS", String(autoCompress));
+    const r = rig();
+    const provider: MemoryProvider = {
+      name: "test", summarize: vi.fn(),
+      compress: vi.fn(async () => "<observation><type>command_run</type><title>Ran tests</title><facts><fact>Tests executed</fact></facts><narrative>Ran the test suite.</narrative><concepts><concept>testing</concept></concepts><files></files><importance>5</importance></observation>"),
+    };
+    registerCompressFunction(r.sdk as never, r.kv as never, provider);
+    const calls: Array<{ hook: HookType; agent?: string }> = [
+      { hook: "post_tool_use", agent: "agent-a" },
+      { hook: "post_tool_failure", agent: "agent-b" },
+      { hook: "post_tool_use" },
+      { hook: "post_tool_use", agent: "agent-a" },
+    ];
+    const saved: CompressedObservation[] = [];
+    for (const { hook, agent } of calls) {
+      saved.push(await r.observe(hook, {
+        tool_name: "Bash", tool_input: { command: "npm test" },
+        ...(hook === "post_tool_failure" ? { error: "exit 1" } : { tool_output: "ok" }),
+        ...(agent ? { agent_id: agent, agent_type: "Explore" } : {}),
+      }));
+    }
+    for (const [i, observation] of saved.entries()) {
+      expect(observation.agentId).toBe("memory-owner");
+      expect(observation.source).toMatchObject(calls[i].agent
+        ? { executionAgentId: calls[i].agent, executionAgentType: "Explore" }
+        : { hookType: calls[i].hook });
+      if (!calls[i].agent) {
+        expect(observation.source).not.toHaveProperty("executionAgentId");
+        expect(observation.source).not.toHaveProperty("executionAgentType");
+      }
+    }
+    expect(provider.compress).toHaveBeenCalledTimes(autoCompress ? calls.length : 0);
+    expect(await r.kv.get(KV.sessions, "source-session")).toMatchObject({ agentId: "memory-owner" });
+    const exported = JSON.parse(JSON.stringify(await r.call("mem::export", {}))) as ExportData;
+    const fresh = rig();
+    expect(await fresh.call("mem::import", { exportData: exported })).toMatchObject({ success: true, observations: calls.length });
+    const replay = await fresh.call("mem::replay::load", { sessionId: "source-session" });
+    for (const [i, observation] of saved.entries()) {
+      const event = replay.timeline.events.find((entry: { id: string }) => entry.id === observation.id);
+      expect(event).toMatchObject({ kind: calls[i].hook === "post_tool_failure" ? "tool_error" : "tool_result" });
+      expect(event.executionAgentId).toBe(calls[i].agent);
+      expect(event.executionAgentType).toBe(calls[i].agent ? "Explore" : undefined);
+    }
+  });
+
+  it("keeps execution identity ahead of large tool output and never truncates it into another identity", () => {
+    const source = normalizeObservationSource({
+      hookType: "post_tool_use", executionAgentId: "agent-a", executionAgentType: "Explore",
+      toolName: "Read", toolOutput: "x".repeat(40000),
+    });
+    expect(source).toMatchObject({ executionAgentId: "agent-a", executionAgentType: "Explore", truncated: true });
+    expect(payloadByteLength(source)).toBeLessThanOrEqual(OBSERVATION_SOURCE_MAX_BYTES);
+    const oversized = normalizeObservationSource({
+      hookType: "post_tool_use", executionAgentId: "a".repeat(40000), toolOutput: "ok",
+    });
+    expect(oversized).not.toHaveProperty("executionAgentId");
+    expect(oversized).toMatchObject({ toolOutput: "ok", truncated: true });
+  });
+
+  it("rejects malformed execution metadata and sanitizes it on import", () => {
+    const malformed = normalizeObservationSource({
+      hookType: "post_tool_use", executionAgentId: { id: "agent-a" }, executionAgentType: 123,
+    });
+    expect(malformed).not.toHaveProperty("executionAgentId");
+    expect(malformed).not.toHaveProperty("executionAgentType");
+    const sanitized = normalizeObservationSource({
+      hookType: "post_tool_use", executionAgentId: "agent-a", executionAgentType: "<private>secret</private>Explore",
+    });
+    expect(sanitized).toHaveProperty("executionAgentId", "agent-a");
+    expect(JSON.stringify(sanitized)).not.toContain("secret");
+  });
+
   it("preserves sanitized long prompts, tool results and responses through export/import and replay", async () => {
     const { observe, call } = rig();
     const tail = "deployment-port-19091";
