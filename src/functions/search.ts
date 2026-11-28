@@ -641,6 +641,14 @@ async function demoteInterruptedSupersedes(kv: StateKV, pairs: Array<{ id: strin
   await recordAudit(kv, "heal", "mem::rebuild-keyword-index", demoted, { reason: "interrupted_supersede" }).catch(() => {})
 }
 
+function setAsideInterruptedSupersedes(kv: StateKV, memories: Memory[]): Set<string> {
+  const interrupted = supersededButLatest(memories)
+  const ids = new Set(interrupted.map((pair) => pair.id))
+  for (const id of ids) vectorIndexRemove(id)
+  if (interrupted.length > 0) void demoteInterruptedSupersedes(kv, interrupted)
+  return ids
+}
+
 async function runKeywordRebuild(
   kv: StateKV,
   vectorBackfillSince?: string | null,
@@ -690,10 +698,7 @@ async function runKeywordRebuild(
     keywordRetry.memories = true
   } else {
     memoriesLoaded = true
-    const interrupted = supersededButLatest(memories)
-    const interruptedIds = new Set(interrupted.map((pair) => pair.id))
-    for (const id of interruptedIds) vectorIndexRemove(id)
-    if (interrupted.length > 0) void demoteInterruptedSupersedes(kv, interrupted)
+    const interruptedIds = setAsideInterruptedSupersedes(kv, memories)
     for (const memory of memories) {
       if (memory.isLatest === false || interruptedIds.has(memory.id)) continue
       if (!memory.title || !memory.content) continue
@@ -853,8 +858,10 @@ async function retryKeywordRebuild(kv: StateKV, generation: number): Promise<voi
       const memories = await collectAll<Memory>(kv, KV.memories).catch(() => null)
       if (!current()) return
       if (memories) {
+        const interruptedIds = setAsideInterruptedSupersedes(kv, memories)
         for (const memory of memories) {
-          if (memory.isLatest === false || !memory.title || !memory.content || idx.has(memory.id)) continue
+          if (memory.isLatest === false || interruptedIds.has(memory.id)) continue
+          if (!memory.title || !memory.content || idx.has(memory.id)) continue
           idx.add(memoryToObservation(memory), "memory")
           added++
         }

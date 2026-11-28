@@ -14,6 +14,8 @@ import {
   stopKeywordRebuildRetry,
 } from "../src/functions/search.js";
 import { VectorIndex } from "../src/state/vector-index.js";
+import { withKeyedLock } from "../src/state/keyed-mutex.js";
+import { supersededButLatest } from "../src/state/memory-utils.js";
 import type { CompressedObservation, EmbeddingProvider, Memory, Session } from "../src/types.js";
 
 function mockKV() {
@@ -197,6 +199,51 @@ describe("rebuildKeywordIndex", () => {
 
     expect(kv.store.get("mem:memories")?.has("mem_prev")).toBe(false);
     expect(getSearchIndex().has("mem_prev")).toBe(false);
+  });
+
+  it("waits for the remember lock before it demotes", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite", isLatest: true });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", isLatest: true, supersedes: ["mem_prev"], version: 2 });
+    let release!: () => void;
+    const held = withKeyedLock("mem:remember", () => new Promise<void>((resolve) => { release = resolve; }));
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect((await kv.get<Memory>("mem:memories", "mem_prev"))?.isLatest).toBe(true);
+
+    kv.store.get("mem:memories")!.delete("mem_prev");
+    release();
+    await held;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(kv.store.get("mem:memories")!.has("mem_prev")).toBe(false);
+  });
+
+  it("demotes every older version of a chain, in any order", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_b", { ...base, id: "mem_b", title: "Deploy gate", content: "Deploys wait for the canary suite", supersedes: ["mem_a"], version: 2 });
+    await kv.set("mem:memories", "mem_a", { ...base, id: "mem_a", title: "Deploy gate", content: "Deploys wait for the smoke suite", version: 1 });
+    await kv.set("mem:memories", "mem_c", { ...base, id: "mem_c", title: "Deploy gate", content: "Deploys wait for the acceptance suite", supersedes: ["mem_b"], version: 3 });
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const idx = getSearchIndex();
+    expect([idx.has("mem_a"), idx.has("mem_b"), idx.has("mem_c")]).toEqual([false, false, true]);
+    expect((await kv.get<Memory>("mem:memories", "mem_a"))?.isLatest).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_b"))?.isLatest).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_c"))?.isLatest).toBe(true);
+  });
+
+  it("finds a current ancestor through a version that is no longer current", () => {
+    const memory = (id: string, isLatest: boolean, supersedes?: string[]) => ({ id, isLatest, supersedes }) as Memory;
+    expect(supersededButLatest([memory("a", true), memory("b", false, ["a"]), memory("c", true, ["b"])])).toEqual([
+      { id: "a", successorId: "c" },
+    ]);
+    expect(supersededButLatest([memory("a", true), memory("b", false, ["a"])])).toEqual([]);
+    expect(supersededButLatest([memory("a", true, ["b"]), memory("b", true, ["a"])])).toHaveLength(2);
   });
 
   it("rebuilds BM25 from stored observations and latest memories, quickly", async () => {
@@ -784,6 +831,30 @@ describe("keyword rebuild background retry", () => {
     expect(getSearchIndex().has("obs_3")).toBe(true);
     expect(isMemoryIndexReady()).toBe(true);
     expect(isBm25RebuildIncomplete()).toBe(false);
+  });
+
+  it("leaves an interrupted supersede out of the index when the memories listing is retried", async () => {
+    vi.useFakeTimers();
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite", version: 1 });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", supersedes: ["mem_prev"], version: 2 });
+    let down = true;
+    const downKv = {
+      ...kv,
+      list: async <T>(scope: string): Promise<T[]> => {
+        if (down && scope === "mem:memories") throw new Error("frame too large");
+        return kv.list<T>(scope);
+      },
+    };
+
+    await rebuildKeywordIndex(downKv as never);
+    down = false;
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    expect(getSearchIndex().has("mem_next")).toBe(true);
+    expect(getSearchIndex().has("mem_prev")).toBe(false);
+    expect((await kv.get<Memory>("mem:memories", "mem_prev"))?.isLatest).toBe(false);
   });
 });
 
