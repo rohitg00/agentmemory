@@ -5,7 +5,6 @@ import { Proof } from "@/components/site/Proof";
 import { Featured } from "@/components/site/InTheWild";
 import { InfraTiles } from "@/components/site/InfraTiles";
 import { MemoryScroll } from "@/components/site/MemoryScroll";
-import { Interfaces } from "@/components/site/Interfaces";
 import { Benchmarks } from "@/components/site/Benchmarks";
 import { LocalFirst } from "@/components/site/LocalFirst";
 import { Faq } from "@/components/site/Faq";
@@ -25,7 +24,6 @@ export default function Page() {
         <Featured />
         <InfraTiles />
         <MemoryScroll />
-        <Interfaces />
         <Benchmarks />
         <LocalFirst />
         <Faq />

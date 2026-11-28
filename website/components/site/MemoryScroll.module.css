@@ -13,7 +13,8 @@
   height: calc(100vh - 60px);
   height: calc(100svh - 60px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  padding-top: clamp(20px, 5vh, 56px);
   overflow: hidden;
 }
 
@@ -21,7 +22,7 @@
   display: grid;
   grid-template-columns: minmax(0, 0.78fr) minmax(0, 2fr);
   gap: clamp(24px, 4vw, 56px);
-  align-items: center;
+  align-items: start;
 }
 
 .k {
@@ -238,8 +239,17 @@
 }
 
 .group {
+  position: relative;
   display: grid;
   gap: 8px;
+}
+
+.waiting {
+  position: absolute;
+  left: 0;
+  top: 30px;
+  font-size: var(--t-12);
+  color: var(--faint);
 }
 
 .groupHead {

@@ -1,0 +1,80 @@
+.tour {
+  margin: 0;
+  display: grid;
+  gap: var(--s-4);
+}
+
+.frame {
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow), 0 24px 64px -40px color-mix(in srgb, var(--ink) 25%, transparent);
+}
+
+.chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  min-height: 40px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sunk);
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.dots {
+  display: flex;
+  gap: 6px;
+}
+
+.dots span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line-2);
+}
+
+.address {
+  flex: 1;
+}
+
+.recording {
+  white-space: nowrap;
+}
+
+.shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1080 / 610;
+  background: var(--sunk);
+}
+
+.caption {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-5);
+}
+
+.title {
+  font-size: var(--t-16);
+  font-weight: 560;
+  letter-spacing: var(--track-head);
+  color: var(--ink);
+}
+
+.features {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--s-4);
+  font-size: var(--t-12);
+  color: var(--muted);
+}

@@ -116,7 +116,7 @@ export function MemoryScroll() {
                 <div className={s.sessionBody}>
                   <ul className={`${s.k} ${s.mon}`} {...win(-1, 0, 0.8, 0.84)}>
                     {MON.map((m, i) => (
-                      <li key={i} className={`${s.k} ${s.line}`} {...win(0.015 + i * 0.03, 0.04 + i * 0.03)}>
+                      <li key={i} className={`${s.k} ${s.line}`} {...(i === 0 ? win(-1, 0) : win(0.015 + i * 0.03, 0.04 + i * 0.03))}>
                         <span className={m.tool === "user" ? s.user : s.tool}>{m.tool === "user" ? "›" : m.tool}</span>
                         <span className={s.arg}>{m.arg}</span>
                         {m.out && <span className={s.out}>{m.out}</span>}
@@ -151,6 +151,9 @@ export function MemoryScroll() {
                 <div className={s.store}>
                   <div className={s.group}>
                     <span className={`mono ${s.groupHead}`}>observations · mem:obs</span>
+                    <span className={`mono ${s.k} ${s.waiting}`} {...win(-1, 0, 0.17, 0.2)}>
+                      waiting for the first tool call
+                    </span>
                     <ul className={s.obsList}>
                       {OBS.map((o, i) => (
                         <li key={o.id} className={`${s.k} ${s.obs}`} {...win(0.2 + i * 0.03, 0.23 + i * 0.03, 0.66, 0.74, { dim: 0.62 })}>
