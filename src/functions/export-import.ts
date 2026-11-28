@@ -45,6 +45,7 @@ import {
   getSearchIndex,
   vectorIndexRemove,
   flushIndexSave,
+  unindexMemory,
 } from "./search.js";
 import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
@@ -344,6 +345,13 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       if (!Array.isArray(importData.summaries)) {
         return { success: false, error: "summaries must be an array" };
       }
+      const memoryIds = new Set<string>();
+      for (const memory of importData.memories) {
+        const id = (memory as { id?: unknown } | null)?.id;
+        if (typeof id !== "string") continue;
+        if (memoryIds.has(id)) return { success: false, error: `Duplicate memory id in import: ${id.slice(0, 128)}` };
+        memoryIds.add(id);
+      }
       if (
         typeof importData.observations !== "object" ||
         importData.observations === null ||
@@ -641,7 +649,8 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         memory.origin = importOrigin(memory.origin, memory.createdAt);
         await kv.set(KV.memories, memory.id, memory);
         stats.memories++;
-        indexMems.push(memory);
+        if (memory.isLatest === false) unindexMemory(memory.id);
+        else indexMems.push(memory);
       });
 
       if (strategy === "replace" || importData.graphNodes || importData.graphEdges) {

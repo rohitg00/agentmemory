@@ -9,12 +9,13 @@ import { getSearchResultLayer, isSearchLayer, matchesSearchLayer, type SearchLay
 import { SearchIndex, type SearchIndexRevision } from '../state/search-index.js'
 import { VectorIndex } from '../state/vector-index.js'
 import type { EmbeddingProvider } from '../types.js'
-import { memoryToObservation, observationEmbedText } from '../state/memory-utils.js'
+import { memoryToObservation, observationEmbedText, supersededAt, supersededButLatest } from '../state/memory-utils.js'
 import { buildRecallResponse, type RecallFormat } from "./recall-response.js";
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
 import { withoutObservationSource } from "./observation-source.js";
-import { withKeyedLocks } from "../state/keyed-mutex.js";
+import { withKeyedLocks, withReentrantKeyedLock } from "../state/keyed-mutex.js";
+import { recordAudit } from "./audit.js";
 import {
   getAgentId,
   getVectorBackfillMax,
@@ -622,6 +623,35 @@ export async function rebuildKeywordIndex(
   }
 }
 
+async function demoteInterruptedSupersedes(kv: StateKV, pairs: Array<{ id: string; successorId: string }>): Promise<void> {
+  const demoted: string[] = []
+  for (const { id, successorId } of pairs) {
+    const stillCurrent = await withReentrantKeyedLock("mem:remember", async () => {
+      const [current, successor] = await Promise.all([
+        kv.get<Memory>(KV.memories, id),
+        kv.get<Memory>(KV.memories, successorId),
+      ])
+      if (!current || current.isLatest === false) return null
+      if (!successor || successor.isLatest === false) return current
+      await kv.set(KV.memories, id, { ...current, isLatest: false, updatedAt: supersededAt(current.updatedAt, new Date().toISOString()) })
+      demoted.push(id)
+      return null
+    }).catch(() => null)
+    if (stillCurrent) await indexMemory(kv, stillCurrent).catch(() => {})
+  }
+  if (demoted.length === 0) return
+  logger.warn('rebuildKeywordIndex: demoted memories left current by an interrupted supersede', { count: demoted.length })
+  await recordAudit(kv, "heal", "mem::rebuild-keyword-index", demoted, { reason: "interrupted_supersede" }).catch(() => {})
+}
+
+function setAsideInterruptedSupersedes(kv: StateKV, memories: Memory[]): Set<string> {
+  const interrupted = supersededButLatest(memories)
+  const ids = new Set(interrupted.map((pair) => pair.id))
+  for (const id of ids) unindexMemory(id)
+  if (interrupted.length > 0) void demoteInterruptedSupersedes(kv, interrupted)
+  return ids
+}
+
 async function runKeywordRebuild(
   kv: StateKV,
   vectorBackfillSince?: string | null,
@@ -671,8 +701,9 @@ async function runKeywordRebuild(
     keywordRetry.memories = true
   } else {
     memoriesLoaded = true
+    const interruptedIds = setAsideInterruptedSupersedes(kv, memories)
     for (const memory of memories) {
-      if (memory.isLatest === false) continue
+      if (memory.isLatest === false || interruptedIds.has(memory.id)) continue
       if (!memory.title || !memory.content) continue
       idx.add(memoryToObservation(memory), "memory")
       consider(memory.id, memory.sessionIds?.[0] ?? 'memory', observationEmbedText({ title: memory.title, narrative: memory.content, concepts: memory.concepts }), memory.createdAt, "memory")
@@ -830,8 +861,10 @@ async function retryKeywordRebuild(kv: StateKV, generation: number): Promise<voi
       const memories = await collectAll<Memory>(kv, KV.memories).catch(() => null)
       if (!current()) return
       if (memories) {
+        const interruptedIds = setAsideInterruptedSupersedes(kv, memories)
         for (const memory of memories) {
-          if (memory.isLatest === false || !memory.title || !memory.content || idx.has(memory.id)) continue
+          if (memory.isLatest === false || interruptedIds.has(memory.id)) continue
+          if (!memory.title || !memory.content || idx.has(memory.id)) continue
           idx.add(memoryToObservation(memory), "memory")
           added++
         }
@@ -965,6 +998,16 @@ export async function backfillVectorBacklog(
   const remaining = countRemaining()
   setPendingVectorBackfillCount(remaining)
   return { added, failed, remaining, complete: remaining === 0 }
+}
+
+export function vectorBacklogPauseReason(result: VectorBacklogResult, deferred: number): string {
+  if (result.complete) return "The finished backfill could not be saved to the vector checkpoint."
+  if (result.failed > 0) return `${result.failed} documents did not get a vector in the last run: the embedding provider returned none, or the vector could not be stored. Check the server log.`
+  if (deferred > 0) {
+    return `This start reached its limit of ${getVectorBackfillMax()} documents (AGENTMEMORY_VECTOR_BACKFILL_MAX) and ${result.remaining} documents are left. ` +
+      "Run agentmemory stop, then start it again, to embed the next batch. Starting the CLI while the daemon is running does not restart the worker."
+  }
+  return `${result.remaining} documents changed or were skipped while the run was in progress.`
 }
 
 export function registerSearchFunction(sdk: IIIClient, kv: StateKV): void {

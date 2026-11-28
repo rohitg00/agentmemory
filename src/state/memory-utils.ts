@@ -1,5 +1,6 @@
 import type { CompressedObservation, Lesson, Memory } from "../types.js";
 import type { StateKV } from "./kv.js";
+import { KV } from "./schema.js";
 import { withReentrantKeyedLock } from "./keyed-mutex.js";
 
 const MAX_DATE_MS = 8.64e15;
@@ -22,6 +23,70 @@ export function supersededAt(previous: string | undefined, now: string): string 
   const current = Date.parse(now);
   if (Number.isNaN(prior) || current > prior) return now;
   return new Date(Math.min(prior + 1, MAX_DATE_MS)).toISOString();
+}
+
+export async function writeSuccessor(
+  kv: StateKV,
+  successor: Memory,
+  previous: Memory,
+  now: string,
+): Promise<void> {
+  await kv.set(KV.memories, successor.id, successor);
+  try {
+    await kv.set(KV.memories, previous.id, {
+      ...previous,
+      isLatest: false,
+      updatedAt: supersededAt(previous.updatedAt, now),
+    });
+  } catch (error) {
+    const restored = await kv.set(KV.memories, previous.id, previous).then(
+      () => true,
+      () => false,
+    );
+    if (restored) await kv.delete(KV.memories, successor.id).catch(() => {});
+    throw error;
+  }
+}
+
+export function supersededButLatest(memories: Memory[]): Array<{ id: string; successorId: string }> {
+  const successors = new Map<string, Memory[]>();
+  for (const memory of memories) {
+    for (const id of Array.isArray(memory.supersedes) ? memory.supersedes : []) {
+      const list = successors.get(id);
+      if (list) list.push(memory);
+      else successors.set(id, [memory]);
+    }
+  }
+  const newestCurrent = (id: string, seen: Set<string>): string | undefined => {
+    for (const next of successors.get(id) ?? []) {
+      if (seen.has(next.id)) continue;
+      seen.add(next.id);
+      const deeper = newestCurrent(next.id, seen);
+      if (deeper) return deeper;
+      if (next.isLatest !== false) return next.id;
+    }
+    return undefined;
+  };
+  const supersedesItself = (start: string): boolean => {
+    const seen = new Set<string>();
+    const queue = [start];
+    while (queue.length > 0) {
+      for (const next of successors.get(queue.pop()!) ?? []) {
+        if (next.id === start) return true;
+        if (seen.has(next.id)) continue;
+        seen.add(next.id);
+        queue.push(next.id);
+      }
+    }
+    return false;
+  };
+  const pairs: Array<{ id: string; successorId: string }> = [];
+  for (const memory of memories) {
+    if (memory.isLatest === false || supersedesItself(memory.id)) continue;
+    const successorId = newestCurrent(memory.id, new Set([memory.id]));
+    if (successorId) pairs.push({ id: memory.id, successorId });
+  }
+  return pairs;
 }
 
 export function sharesMemoryScope(

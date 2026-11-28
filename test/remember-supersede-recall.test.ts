@@ -40,6 +40,57 @@ describe("mem::remember supersession and recall hygiene", () => {
     expect(idx.has(second.memory.id)).toBe(true);
   });
 
+  it("keeps the previous version current when the new version cannot be written", async () => {
+    const { sdk, kv, search } = await setup();
+    const first = (await sdk.trigger("mem::remember", {
+      content: "the deploy pipeline uses blue green rollout with health gates",
+      type: "architecture",
+    })) as { memory: { id: string } };
+    const set = kv.set;
+    kv.set = (async (scope: string, key: string, data: unknown) => {
+      if (scope === KV.memories && key !== first.memory.id) throw new Error("state write failed");
+      return set(scope, key, data);
+    }) as typeof kv.set;
+
+    await expect(
+      sdk.trigger("mem::remember", {
+        content: "the deploy pipeline uses blue green rollout with health gates always",
+        type: "architecture",
+      }),
+    ).rejects.toThrow("state write failed");
+
+    const stored = (await kv.get(KV.memories, first.memory.id)) as { isLatest: boolean };
+    expect(stored.isLatest).toBe(true);
+    expect(search.getSearchIndex().has(first.memory.id)).toBe(true);
+  });
+
+  it("removes the new version when the previous one cannot be marked superseded", async () => {
+    const { sdk, kv, search } = await setup();
+    const first = (await sdk.trigger("mem::remember", {
+      content: "the deploy pipeline uses blue green rollout with health gates",
+      type: "architecture",
+    })) as { memory: { id: string } };
+    const set = kv.set;
+    kv.set = (async (scope: string, key: string, data: unknown) => {
+      if (scope === KV.memories && (data as { isLatest?: boolean }).isLatest === false) {
+        throw new Error("state write failed");
+      }
+      return set(scope, key, data);
+    }) as typeof kv.set;
+
+    await expect(
+      sdk.trigger("mem::remember", {
+        content: "the deploy pipeline uses blue green rollout with health gates always",
+        type: "architecture",
+      }),
+    ).rejects.toThrow("state write failed");
+
+    const memories = (await kv.list(KV.memories)) as Array<{ id: string; isLatest: boolean }>;
+    expect(memories.map((m) => m.id)).toEqual([first.memory.id]);
+    expect(memories[0].isLatest).toBe(true);
+    expect(search.getSearchIndex().has(first.memory.id)).toBe(true);
+  });
+
   it("counts each superseding save as a recurrence", async () => {
     const { sdk } = await setup();
     const content = "always run the migration dry run before applying schema changes";

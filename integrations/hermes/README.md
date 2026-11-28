@@ -73,7 +73,7 @@ The names below are Hermes memory provider methods, not plugin hooks. The provid
 - `on_pre_compress` returns bounded, scoped recall without changing the transcript.
 - `on_memory_write` mirrors native add and replacement content.
 
-Capture retains up to 500 user characters and 2,000 assistant characters per turn. It does not capture individual tool executions. Automatic recall and compression context exclude project-wide lessons because those records do not carry the provider's author scope.
+Capture retains up to 500 user characters and 2,000 assistant characters per turn. It does not capture individual tool executions. Automatic recall, compression context, and the native `memory_recall` and `memory_search` tools exclude project-wide lessons because those records do not carry the provider's author scope. Lesson recall needs the MCP connection described below.
 
 Native replacement evolves a record only when Hermes supplies its full `previous_content` and the provider has the exact backend ID from its own earlier write. A profile-local ownership file, keyed by endpoint, project, and identity, preserves that mapping across restarts. If another client has already evolved the record, the server rejects the conflict. Older notifications without previous-content identity save the replacement and report that the earlier record could not be superseded. Removing a native Hermes entry does not delete AgentMemory records; use an explicit AgentMemory deletion tool with verified record IDs.
 
