@@ -42,8 +42,19 @@ export function secretTransportAllowed(url: string): boolean {
   }
 }
 
+export function pinLoopbackUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.hostname === "localhost.") {
+      url.hostname = "127.0.0.1";
+      return url.href.replace(/\/$/, "");
+    }
+  } catch {}
+  return value;
+}
+
 export function resolveHookEndpoint(env: NodeJS.ProcessEnv = process.env): HookEndpoint {
-  const url = hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL;
+  const url = pinLoopbackUrl(hookSetting("AGENTMEMORY_URL", env) || DEFAULT_URL);
   const secret = resolveSettingSecret(url, env);
   const blocked = !secretTransportAllowed(url);
   return { url, secret: blocked ? "" : secret, blocked };

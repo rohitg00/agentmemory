@@ -703,7 +703,9 @@ The agentmemory entry is the **same MCP server block** across every host that us
 | **Aider** | n/a | Use the [authenticated REST examples](#validate-a-fresh-install-and-restart-persistence) to save and search memory from scripts. |
 | **Supported agents** | Skills only | `npx skills add rohitg00/agentmemory`; choose the skills and agents to install to. |
 
-**Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can actually reach (e.g. your LAN IP).
+**Sandboxed MCP clients** (Flatpak / Snap / restrictive containers) that can't reach the host's `localhost`: also set `"AGENTMEMORY_FORCE_PROXY": "1"` in the `env` block, and point `AGENTMEMORY_URL` at a route the sandbox can reach. Non-loopback addresses, including LAN IPs, require HTTPS. Alternatively, run a tunnel inside the sandbox and use its loopback address.
+
+The `localhost.` alias is pinned to `127.0.0.1` before MCP and hook requests. Use `[::1]` explicitly for a daemon bound only to IPv6 loopback.
 
 ### Programmatic access
 

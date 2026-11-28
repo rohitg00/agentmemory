@@ -1,7 +1,7 @@
 import { pathToFileURL } from "node:url";
 import { realpathSync } from "node:fs";
 import { VERSION } from "../version.js";
-import { resolveSettingSecret } from "../hooks/_endpoint.js";
+import { pinLoopbackUrl, resolveSettingSecret } from "../hooks/_endpoint.js";
 import { callTimeoutMs, resolveEnvOrEmpty } from "./rest-proxy.js";
 import { createStdioTransport, JsonRpcError, type RequestHandler } from "./transport.js";
 
@@ -14,6 +14,7 @@ export function createPluginBridge(): RequestHandler {
   if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
     throw new Error("AGENTMEMORY_URL must be an HTTP(S) base URL without credentials, query, or fragment.");
   }
+  base.href = pinLoopbackUrl(base.href);
   const loopback = ["localhost", "localhost.", "[::1]"].includes(base.hostname)
     || /^127(?:\.\d{1,3}){3}$/.test(base.hostname);
   function resolveSecret(): string {

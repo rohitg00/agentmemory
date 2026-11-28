@@ -116,6 +116,16 @@ function resolveSettingSecret(url, env = process.env) {
 	else secretEnv["AGENTMEMORY_SECRET"] = explicit;
 	return resolveClientSecret(url, secretEnv);
 }
+function pinLoopbackUrl(value) {
+	try {
+		const url = new URL(value);
+		if (url.hostname === "localhost.") {
+			url.hostname = "127.0.0.1";
+			return url.href.replace(/\/$/, "");
+		}
+	} catch {}
+	return value;
+}
 //#endregion
 //#region src/mcp/rest-proxy.ts
 const DEFAULT_CALL_TIMEOUT_MS = 19e4;
@@ -353,6 +363,7 @@ const SETUP = "Start Agent Memory, check `agentmemory status`, and verify AGENTM
 function createPluginBridge() {
 	const base = new URL(resolveEnvOrEmpty("AGENTMEMORY_URL") || "http://localhost:3111");
 	if (!["http:", "https:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw new Error("AGENTMEMORY_URL must be an HTTP(S) base URL without credentials, query, or fragment.");
+	base.href = pinLoopbackUrl(base.href);
 	const loopback = [
 		"localhost",
 		"localhost.",

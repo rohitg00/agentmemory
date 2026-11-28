@@ -94,6 +94,18 @@ describe("embedding provider opt-in", () => {
 });
 
 describe("hook token transport", () => {
+  it.each(["http", "https"])("pins localhost. to IPv4 loopback for %s hook requests", (protocol) => {
+    const endpoint = resolveHookEndpoint({
+      AGENTMEMORY_URL: `${protocol}://LOCALHOST.:3111/prefix`,
+      AGENTMEMORY_SECRET: "synthetic-local-secret",
+    });
+    expect(endpoint).toEqual({
+      url: `${protocol}://127.0.0.1:3111/prefix`,
+      secret: "synthetic-local-secret",
+      blocked: false,
+    });
+  });
+
   it("refuses to send a secret to a remote http URL", () => {
     const endpoint = resolveHookEndpoint({ AGENTMEMORY_URL: "http://memory.example.com", AGENTMEMORY_SECRET: "s3cret" });
     expect(endpoint.blocked).toBe(true);

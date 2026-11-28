@@ -237,10 +237,13 @@ describe("stored API secret", () => {
   it("only hands the stored secret to loopback servers", () => {
     const { secret } = ensureServerSecret();
     expect(resolveClientSecret("http://localhost:3111")).toBe(secret);
+    expect(resolveClientSecret("http://localhost.:3111")).toBe("");
     expect(resolveClientSecret("http://[::1]:3111")).toBe(secret);
     expect(resolveClientSecret("https://memory.example.com")).toBe("");
     expect(isLoopbackUrl("http://127.0.0.2:3111")).toBe(true);
     expect(isLoopbackUrl("http://localhost.example.com")).toBe(false);
+    expect(isLoopbackUrl("http://localhost.:3111")).toBe(false);
+    expect(isLoopbackUrl("http://localhost..:3111")).toBe(false);
   });
 
   it("returns nothing when no secret has been generated yet", () => {
@@ -295,14 +298,14 @@ describe("stored API secret", () => {
       });
     }
 
-    it("send the stored secret without any client configuration", async () => {
+    it.each(["127.0.0.1", "localhost."])("sends the stored secret to %s without any client configuration", async (hostname) => {
       const { secret } = ensureServerSecret();
       const port = (server.address() as AddressInfo).port;
       const env: NodeJS.ProcessEnv = {
         PATH: process.env.PATH,
         HOME: home,
         USERPROFILE: home,
-        AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
+        AGENTMEMORY_URL: `http://${hostname}:${port}`,
       };
       await runHook(join(process.cwd(), "plugin", "scripts", "session-start.mjs"), env);
       expect(received.length).toBeGreaterThan(0);
