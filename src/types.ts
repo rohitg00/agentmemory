@@ -992,6 +992,14 @@ export interface Insight {
   deleted?: boolean;
 }
 
+export interface ReflectedCluster {
+  id: string;
+  project: string | null;
+  concepts: string[];
+  evidence: string;
+  reflectedAt: string;
+}
+
 export interface DiagnosticCheck {
   name: string;
   category: string;

@@ -15,6 +15,7 @@ import type {
   CompressedObservation,
   Memory,
   Session,
+  ReflectedCluster,
 } from "../types.js";
 import { recordAudit } from "./audit.js";
 import { REFLECT_SYSTEM, buildReflectPrompt } from "../prompts/reflect.js";
@@ -28,6 +29,19 @@ export const REFLECT_MAX_TYPE_BYTES = 16 * 1024;
 export const REFLECT_MAX_CONCEPTS = 32;
 export const REFLECT_MAX_CONCEPT_BYTES = 128;
 export const REFLECT_MAX_RESPONSE_BYTES = 64 * 1024;
+// With skipUnchanged, reflect looks past maxClusters for clusters that changed,
+// and maxClusters bounds the LLM calls instead.
+export const REFLECT_MAX_CANDIDATE_CLUSTERS = 50;
+// An unchanged cluster is reflected again before the weekly insight decay
+// starts, so the insights it supports are still reinforced.
+export const REFLECT_RECHECK_MS = 6 * 24 * 60 * 60 * 1000;
+// Least time that must be left, beyond the slowest call so far in the run,
+// before reflect starts another LLM call under a budget.
+export const REFLECT_CALL_MARGIN_MS = 30_000;
+// A call started within the budget may run this long past it. It covers the
+// 170 s cap on OpenAI-compatible, OpenRouter and MiniMax requests, so their
+// answers are never discarded. Callers wait the budget plus this grace.
+export const REFLECT_CALL_GRACE_MS = 180_000;
 
 function positiveLimit(value: unknown, fallback: number, maximum: number): number | null {
   if (value === undefined) return fallback;
@@ -109,6 +123,35 @@ function parseInsight(attributes: string, content: string, cluster: ConceptClust
     sourceLessonIds: [...sourceLessonIds],
     sourceCrystalIds: [...sourceCrystalIds],
   };
+}
+
+function clusterKey(project: string | undefined, concepts: string[]): string {
+  return fingerprintId("rcl_v1", JSON.stringify([project || null, [...concepts].sort()]));
+}
+
+// Confidence is rounded to one decimal, so a reinforced or weakened item
+// counts as a change while the slow drift of decay does not.
+function clusterEvidence(cluster: ConceptCluster): string {
+  const level = (confidence: number) => Math.round(confidence * 10);
+  return fingerprintId("rce_v1", JSON.stringify([
+    cluster.factIds, cluster.facts.map((f) => [f.fact, level(f.confidence)]),
+    cluster.lessonIds, cluster.lessons.map((l) => [l.content, level(l.confidence)]),
+    cluster.crystalIds, cluster.crystalNarratives,
+  ]));
+}
+
+class OutOfTime extends Error {}
+
+// Gives up waiting at the hard deadline, so reflect returns before its caller
+// does. The provider call cannot be cancelled and may still complete.
+async function withinDeadline<T>(work: Promise<T>, deadline: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  work.catch(() => {});
+  try {
+    return await Promise.race([work, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new OutOfTime()), Math.max(0, deadline - Date.now()));
+    })]);
+  } finally { clearTimeout(timer); }
 }
 
 function decodeXmlText(text: string): string {
@@ -351,10 +394,31 @@ export function registerReflectFunctions(
   provider: MemoryProvider,
 ): void {
   const kv = state;
+  // Runs of mem::reflect can overlap: the consolidation timer, a session that
+  // stops after the cooldown and an eviction sweep each start the pipeline on
+  // their own. A cluster another run is reflecting has no record yet, so a
+  // run with skipUnchanged leaves it to that run instead of asking again.
+  const clustersInFlight = new Map<string, number>();
+  const claimCluster = (key: string) => {
+    clustersInFlight.set(key, (clustersInFlight.get(key) ?? 0) + 1);
+  };
+  const releaseCluster = (key: string) => {
+    const holders = (clustersInFlight.get(key) ?? 1) - 1;
+    if (holders > 0) clustersInFlight.set(key, holders);
+    else clustersInFlight.delete(key);
+  };
   sdk.registerFunction("mem::reflect", 
-    async (data: { maxClusters?: number; project?: string }) => {
+    async (data: { maxClusters?: number; project?: string; budgetMs?: number; skipUnchanged?: boolean }) => {
+      const startMs = Date.now();
       const maxClusters = positiveLimit(data?.maxClusters, 10, 20);
       if (maxClusters === null) return invalidOption("maxClusters must be a positive safe integer");
+      const budgetMs = data?.budgetMs;
+      if (budgetMs !== undefined && !(typeof budgetMs === "number" && Number.isSafeInteger(budgetMs) && budgetMs > 0)) {
+        return invalidOption("budgetMs must be a positive safe integer");
+      }
+      const deadline = budgetMs === undefined ? undefined : startMs + budgetMs;
+      const skipUnchanged = data?.skipUnchanged === true;
+      const clusterLimit = skipUnchanged ? REFLECT_MAX_CANDIDATE_CLUSTERS : maxClusters;
       const kv = state;
       const maxInsightsPerCluster = 5;
       const maxTotal = 50;
@@ -377,7 +441,7 @@ export function registerReflectFunctions(
       let conceptClusters = buildGraphClusters(
         graph.nodes,
         graph.edges,
-        maxClusters,
+        clusterLimit,
       );
 
       const clusterStrategy = conceptClusters.length === 0 ? "jaccard" : "graph";
@@ -386,20 +450,30 @@ export function registerReflectFunctions(
         conceptClusters = buildJaccardClusters(
           semanticMemories,
           activeLessons,
-          maxClusters,
+          clusterLimit,
         );
       }
 
       let newInsights = 0;
       let reinforced = 0;
       let clustersSkipped = 0;
+      let clustersProcessed = 0;
+      let clustersBusy = 0;
+      let clustersUnchanged = 0;
+      let clustersDeferred = 0;
+      let outOfTime = false;
+      let slowestCallMs = 0;
       let totalInsights = 0;
       let rejectedInsights = 0;
       let failedClusters = 0;
       const acceptedIds = new Set<string>();
 
-      for (const candidates of conceptClusters) {
+      for (const [index, candidates] of conceptClusters.entries()) {
         if (totalInsights >= maxTotal) break;
+        if (clustersProcessed >= maxClusters) {
+          clustersDeferred = conceptClusters.length - index;
+          break;
+        }
         const conceptNames = [...new Set(candidates)]
           .filter((name) => payloadByteLength(name) <= REFLECT_MAX_CONCEPT_BYTES)
           .slice(0, REFLECT_MAX_CONCEPTS);
@@ -449,9 +523,47 @@ export function registerReflectFunctions(
           crystalIds: clusterCrystals.map((c) => c.id),
         };
 
+        const key = clusterKey(data?.project, conceptNames);
+        const evidence = clusterEvidence(cluster);
+        // Checked and claimed with no await in between, so two runs cannot
+        // both find the cluster free. Only a run under a budget claims: its
+        // call is abandoned once the budget and grace pass, so a provider
+        // that never answers cannot hold a cluster for good.
+        if (skipUnchanged && clustersInFlight.has(key)) {
+          clustersBusy++;
+          continue;
+        }
+        const claimed = deadline !== undefined;
+        if (claimed) claimCluster(key);
+        if (skipUnchanged) {
+          const last = await kv.get<ReflectedCluster>(KV.reflectClusters, key).catch(() => null);
+          if (last?.evidence === evidence && Date.now() - Date.parse(last.reflectedAt) < REFLECT_RECHECK_MS) {
+            if (claimed) releaseCluster(key);
+            clustersUnchanged++;
+            continue;
+          }
+        }
+        if (deadline !== undefined && deadline - Date.now() < slowestCallMs + REFLECT_CALL_MARGIN_MS) {
+          if (claimed) releaseCluster(key);
+          outOfTime = true;
+          clustersDeferred = conceptClusters.length - index;
+          break;
+        }
+
+        const failedBefore = failedClusters;
+        let settled = false;
+        let malformed = false;
+        let callStart: number | undefined;
         try {
           const prompt = buildReflectPrompt(cluster);
-          const response = await provider.summarize(REFLECT_SYSTEM, prompt);
+          callStart = Date.now();
+          const call = provider.summarize(REFLECT_SYSTEM, prompt);
+          const response = deadline === undefined
+            ? await call
+            : await withinDeadline(call, deadline + REFLECT_CALL_GRACE_MS);
+          slowestCallMs = Math.max(slowestCallMs, Date.now() - callStart);
+          settled = true;
+          clustersProcessed++;
           if (Buffer.byteLength(response, "utf8") > REFLECT_MAX_RESPONSE_BYTES) {
             failedClusters++;
             continue;
@@ -474,6 +586,7 @@ export function registerReflectFunctions(
             const parsed = parseInsight(match[1], match[2], cluster);
             if (!parsed) {
               rejectedInsights++;
+              malformed = true;
               continue;
             }
             const { confidence, title, content } = parsed;
@@ -526,9 +639,31 @@ export function registerReflectFunctions(
             clusterCount++;
             totalInsights++;
           }
-        } catch {
+        } catch (err) {
+          if (callStart !== undefined && !settled) {
+            slowestCallMs = Math.max(slowestCallMs, Date.now() - callStart);
+          }
+          if (err instanceof OutOfTime) {
+            outOfTime = true;
+            clustersDeferred = conceptClusters.length - index;
+            break;
+          }
+          if (!settled) clustersProcessed++;
           failedClusters++;
           continue;
+        } finally {
+          // Only a cluster the model answered cleanly is remembered, so a
+          // failed, malformed or abandoned one is tried again on the next run.
+          if (skipUnchanged && settled && !malformed && failedClusters === failedBefore) {
+            const record: ReflectedCluster = {
+              id: key, project: data?.project || null, concepts: conceptNames,
+              evidence, reflectedAt: new Date(Date.now()).toISOString(),
+            };
+            await kv.set(KV.reflectClusters, key, record).catch(() => {});
+          }
+          // Released only once the record is written, so a run that finds the
+          // cluster free also finds its record.
+          if (claimed) releaseCluster(key);
         }
       }
 
@@ -536,8 +671,12 @@ export function registerReflectFunctions(
         await recordAudit(kv, "reflect", "mem::reflect", [], {
           newInsights,
           reinforced,
-          clustersProcessed: conceptClusters.length - clustersSkipped,
+          clustersProcessed,
           clustersSkipped,
+          clustersUnchanged,
+          clustersBusy,
+          clustersDeferred,
+          outOfTime,
           clusterStrategy,
           usedFallback,
           rejectedInsights,
@@ -549,8 +688,12 @@ export function registerReflectFunctions(
         success: failedClusters === 0,
         newInsights,
         reinforced,
-        clustersProcessed: conceptClusters.length - clustersSkipped,
+        clustersProcessed,
         clustersSkipped,
+        clustersUnchanged,
+        clustersBusy,
+        clustersDeferred,
+        outOfTime,
         clusterStrategy,
         /** @deprecated Use clusterStrategy to identify the clustering algorithm. */
         usedFallback,

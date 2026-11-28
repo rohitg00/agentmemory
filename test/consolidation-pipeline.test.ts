@@ -7,10 +7,11 @@ vi.mock("../src/logger.js", () => ({
 vi.mock("../src/config.js", () => ({
   getConsolidationDecayDays: () => 30,
   isConsolidationEnabled: vi.fn(() => true),
+  getReflectBudgetMs: vi.fn(() => 600_000),
 }));
 
 import { registerConsolidationPipelineFunction } from "../src/functions/consolidation-pipeline.js";
-import { isConsolidationEnabled } from "../src/config.js";
+import { getReflectBudgetMs, isConsolidationEnabled } from "../src/config.js";
 import { currentAuditScope } from "./helpers/mocks.js";
 import type { SessionSummary, Memory, SemanticMemory, ProceduralMemory } from "../src/types.js";
 
@@ -147,6 +148,24 @@ describe("Consolidation Pipeline", () => {
     expect(semantic.skipped).toBe(true);
     expect(semantic.reason).toContain("fewer than 5");
     expect(provider.summarize).not.toHaveBeenCalled();
+  });
+
+  it("gives reflect its budget, turns on the skip and waits for the budget, the call grace and headroom", async () => {
+    const provider = { name: "test", compress: vi.fn(), summarize: vi.fn() };
+    registerConsolidationPipelineFunction(sdk as never, kv as never, provider as never);
+    sdk.registerFunction("mem::reflect", async () => ({ success: true }));
+    const trigger = vi.spyOn(sdk, "trigger");
+    vi.mocked(getReflectBudgetMs).mockReturnValueOnce(900_000);
+
+    await sdk.trigger("mem::consolidate-pipeline", { tier: "reflect" });
+
+    const reflectCall = trigger.mock.calls.find(
+      ([input]) => typeof input === "object" && input.function_id === "mem::reflect",
+    );
+    expect(reflectCall?.[0]).toMatchObject({
+      payload: { maxClusters: 10, budgetMs: 900_000, skipUnchanged: true },
+      timeoutMs: 1_140_000,
+    });
   });
 
   it("pipeline skips procedural when fewer than 2 patterns", async () => {
