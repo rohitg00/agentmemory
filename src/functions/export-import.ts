@@ -37,7 +37,7 @@ import {
   indexObservationSession,
   unindexObservationSession,
 } from "../state/obs-index.js";
-import { withKeyedLocks } from "../state/keyed-mutex.js";
+import { withKeyedLock, withKeyedLocks } from "../state/keyed-mutex.js";
 import { VERSION } from "../version.js";
 import { recordAudit } from "./audit.js";
 import {
@@ -49,6 +49,56 @@ import {
 import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
 import { budgetImportedObservationSources } from "./observation-source-budget.js";
+import { incrementImageRef, releaseImageRef, unpinImageRef } from "./image-refs.js";
+
+function imageReferences(row: { imageData?: string; imageRef?: string } | null): string[] {
+  return [...new Set([row?.imageData, row?.imageRef].filter((path): path is string => typeof path === "string" && path.length > 0))];
+}
+
+async function unpinImportedImages(kv: StateKV, paths: string[]): Promise<void> {
+  await runChunked(paths, async (path) => {
+    try {
+      await unpinImageRef(kv, path);
+    } catch (error) {
+      logger.warn("Could not release imported image pin", {
+        imageRef: path,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+}
+
+async function writeImportedImageOwner(
+  kv: StateKV,
+  sdk: IIIClient,
+  scope: string,
+  id: string,
+  row: CompressedObservation | Memory,
+  strategy: "merge" | "replace" | "skip",
+): Promise<boolean> {
+  return withKeyedLock(`import:${scope}:${id}`, async () => {
+    const previous = await kv.get<CompressedObservation | Memory>(scope, id);
+    if (strategy === "skip" && previous) return false;
+    const before = imageReferences(previous);
+    const after = imageReferences(row);
+    const added: string[] = [];
+    try {
+      for (const path of after) {
+        if (before.includes(path)) continue;
+        await incrementImageRef(kv, path);
+        added.push(path);
+      }
+      await kv.set(scope, id, row);
+    } catch (error) {
+      await unpinImportedImages(kv, added);
+      throw error;
+    }
+    for (const path of before) {
+      if (!after.includes(path)) await releaseImageRef(kv, sdk, id, path);
+    }
+    return true;
+  });
+}
 
 // Bounded-concurrency chunk size for the import delete/write loops. A
 // "replace" or "merge" of a large export (up to MAX_TOTAL_OBSERVATIONS,
@@ -298,7 +348,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
     async (data: {
       exportData: ExportData;
       strategy?: "merge" | "replace" | "skip";
-    }) => {
+    }) => withKeyedLock("mem:remember", async () => {
       const kv = await pinGraphState(state);
       if (
         !data?.exportData ||
@@ -307,7 +357,10 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
       ) {
         return { success: false, error: "exportData with string version is required" };
       }
-      const strategy = data.strategy || "merge";
+      if (data.strategy !== undefined && !["merge", "replace", "skip"].includes(data.strategy)) {
+        return { success: false, error: "strategy must be merge, replace, or skip" };
+      }
+      const strategy = data.strategy ?? "merge";
       const importData = data.exportData;
 
       const supportedVersions = new Set(["0.3.0", "0.4.0", "0.5.0", "0.6.0", "0.6.1", "0.7.0", "0.7.2", "0.7.3", "0.7.4", "0.7.5", "0.7.6", "0.7.7", "0.7.9", "0.8.0", "0.8.1", "0.8.2", "0.8.3", "0.8.4", "0.8.5", "0.8.6", "0.8.7", "0.8.8", "0.8.9", "0.8.10", "0.8.11", "0.8.12", "0.8.13", "0.9.0", "0.9.1", "0.9.2", "0.9.3", "0.9.4", "0.9.5", "0.9.6", "0.9.7", "0.9.8", "0.9.9", "0.9.10", "0.9.11", "0.9.12", "0.9.13", "0.9.14", "0.9.15", "0.9.16", "0.9.17", "0.9.18", "0.9.19", "0.9.20", "0.9.21", "0.9.22", "0.9.23", "0.9.24", "0.9.25", "0.9.26", "0.9.27", "0.9.28", "0.9.29", "0.9.30", "0.9.31", "0.9.32", "0.9.33", "0.9.34"]);
@@ -417,6 +470,11 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (index >= 0) {
           return { success: false, error: `observations.${sessionId}[${index}] must be an object with a string id` };
         }
+        const seenObs = new Set<string>();
+        const duplicate = obs.findIndex((o) => seenObs.has(o.id) || !seenObs.add(o.id));
+        if (duplicate >= 0) {
+          return { success: false, error: `observations.${sessionId}[${duplicate}] has a duplicate id` };
+        }
       }
       const rowKeys: Record<string, string> = { summaries: "sessionId", profiles: "project", accessLogs: "memoryId" };
       for (const section of ["sessions", "memories", "summaries", "profiles", ...EXPORT_COLLECTIONS.map(([field]) => field)] as const) {
@@ -429,6 +487,13 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         if (index >= 0) {
           return { success: false, error: `${section}[${index}] must be an object with a string ${key}` };
         }
+      }
+      const seenMemories = new Set<string>();
+      const duplicateMemory = importData.memories.findIndex(
+        (m) => seenMemories.has(m.id) || !seenMemories.add(m.id),
+      );
+      if (duplicateMemory >= 0) {
+        return { success: false, error: `memories[${duplicateMemory}] has a duplicate id` };
       }
       if ((importData.accessLogs?.length ?? 0) > MAX_ACCESS_LOGS) {
         return {
@@ -453,6 +518,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         .map((id) => `obs:${id}`);
       const indexObs: CompressedObservation[] = [];
       const indexMems: Memory[] = [];
+      const imagePins: string[] = [];
       const preflightError = await withKeyedLocks(sessionKeys, async () => {
         const plannedObservations = new Map<string, CompressedObservation[]>();
         for (const [sessionId, observations] of Object.entries(importData.observations)) {
@@ -465,6 +531,15 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           stats.sourceTruncated += planned.sourceTruncated;
           stats.sourceOmitted += planned.sourceOmitted;
         }
+
+        const incomingImages = new Set([
+          ...[...plannedObservations.values()].flatMap((rows) => rows.flatMap(imageReferences)),
+          ...importData.memories.flatMap(imageReferences),
+        ]);
+        await runChunked([...incomingImages], async (path) => {
+          await incrementImageRef(kv, path);
+          imagePins.push(path);
+        });
 
         if (strategy === "replace") {
           const existing = replaceSessions;
@@ -496,7 +571,7 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
           // Collect observation deletes across all sessions, then run them in
           // one bounded pass: a runChunked nested inside a runChunked callback
           // multiplies in-flight deletes to chunk-size squared.
-          const obsDeletes: Array<{ sessionId: string; obsId: string; captureKey?: string }> = [];
+          const obsDeletes: Array<{ sessionId: string; obsId: string; captureKey?: string; images: string[] }> = [];
           await runChunked(obsBySession, async ({ session, obs }) => {
             await kv.delete(KV.sessions, session.id);
             await kv.delete(KV.summaryRepairs, session.id);
@@ -506,18 +581,20 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
               session.id,
             ).catch(() => {});
             for (const o of obs) {
-              obsDeletes.push({ sessionId: session.id, obsId: o.id, captureKey: o.captureKey });
+              obsDeletes.push({ sessionId: session.id, obsId: o.id, captureKey: o.captureKey, images: imageReferences(o) });
             }
           });
           await runChunked(obsDeletes, async (d) => {
             await markCaptureEventDeleted(kv, { id: d.obsId, sessionId: d.sessionId, captureKey: d.captureKey });
             await kv.delete(KV.observations(d.sessionId), d.obsId);
+            for (const path of d.images) await releaseImageRef(kv, sdk, d.obsId, path);
             await unindexObservationSession(kv, d.obsId).catch(() => {});
             getSearchIndex().remove(d.obsId);
             vectorIndexRemove(d.obsId);
           });
           await runChunked(memories, async (m) => {
             await kv.delete(KV.memories, m.id);
+            for (const path of imageReferences(m)) await releaseImageRef(kv, sdk, m.id, path);
             getSearchIndex().remove(m.id);
             vectorIndexRemove(m.id);
           });
@@ -590,21 +667,26 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
 
         for (const [sessionId, obs] of plannedObservations) {
           await runChunked(obs, async (o) => {
-            if (strategy === "skip") {
-              const existing = await kv
-                .get<CompressedObservation>(KV.observations(sessionId), o.id)
-                .catch(() => null);
-              if (existing) {
-                stats.skipped++;
-                return;
-              }
+            if (!await writeImportedImageOwner(kv, sdk, KV.observations(sessionId), o.id, o, strategy)) {
+              stats.skipped++;
+              return;
             }
-            await kv.set(KV.observations(sessionId), o.id, o);
-            await indexObservationSession(kv, o.id, sessionId).catch(() => {});
             stats.observations++;
             indexObs.push(o);
+            await indexObservationSession(kv, o.id, sessionId).catch(() => {});
           });
         }
+
+        await runChunked(importData.memories, async (memory) => {
+          if (!Array.isArray(memory.sessionIds)) memory.sessionIds = [];
+          memory.origin = importOrigin(memory.origin, memory.createdAt);
+          if (!await writeImportedImageOwner(kv, sdk, KV.memories, memory.id, memory, strategy)) {
+            stats.skipped++;
+            return;
+          }
+          stats.memories++;
+          indexMems.push(memory);
+        });
 
         await runChunked(importData.summaries, async (summary) => {
           if (strategy === "skip") {
@@ -621,28 +703,8 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         });
 
         return null;
-      });
+      }).finally(() => unpinImportedImages(kv, imagePins));
       if (preflightError) return preflightError;
-
-      await runChunked(importData.memories, async (memory) => {
-        if (strategy === "skip") {
-          const existing = await kv
-            .get<Memory>(KV.memories, memory.id)
-            .catch(() => null);
-          if (existing) {
-            stats.skipped++;
-            return;
-          }
-        }
-        // Older exports + hand-edited dumps can omit this field.
-        if (!Array.isArray(memory.sessionIds)) {
-          memory.sessionIds = [];
-        }
-        memory.origin = importOrigin(memory.origin, memory.createdAt);
-        await kv.set(KV.memories, memory.id, memory);
-        stats.memories++;
-        indexMems.push(memory);
-      });
 
       if (strategy === "replace" || importData.graphNodes || importData.graphEdges) {
         const graph = await persistGraphRecords(kv, importData.graphNodes ?? [], importData.graphEdges ?? [], {
@@ -827,6 +889,6 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         stats,
       });
       return { success: true, strategy, ...stats };
-    },
+    }),
   );
 }

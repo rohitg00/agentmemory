@@ -37,6 +37,9 @@ export function mockKV() {
       const entries = store.get(scope);
       return entries ? (Array.from(entries.values()) as T[]) : [];
     },
+    listKeys: async (scope: string): Promise<string[]> => {
+      return Array.from(store.get(scope)?.keys() ?? []);
+    },
   };
 }
 

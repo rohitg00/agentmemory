@@ -2130,7 +2130,14 @@ export function registerApiTriggers(
       if (!req.body?.exportData) {
         return { status_code: 400, body: { error: "exportData is required" } };
       }
-      const result = await sdk.trigger({ function_id: "mem::import", payload: req.body });
+      const strategy = req.body.strategy;
+      if (strategy !== undefined && !["merge", "replace", "skip"].includes(strategy)) {
+        return { status_code: 400, body: { error: "strategy must be merge, replace, or skip" } };
+      }
+      const result = await sdk.trigger({
+        function_id: "mem::import",
+        payload: { exportData: req.body.exportData, strategy },
+      });
       return { status_code: 200, body: result };
     },
   );
