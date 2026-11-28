@@ -1,5 +1,6 @@
 import { Nav } from "@/components/site/Nav";
 import { Hero } from "@/components/site/Hero";
+import { AgentMarquee } from "@/components/site/AgentMarquee";
 import { Proof } from "@/components/site/Proof";
 import { Featured, InTheWild } from "@/components/site/InTheWild";
 import { Research } from "@/components/site/Research";
@@ -25,6 +26,7 @@ export default function Page() {
       <Nav />
       <main id="top">
         <Hero />
+        <AgentMarquee />
         <Proof />
         <Featured />
         <Interfaces />

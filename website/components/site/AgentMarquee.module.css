@@ -1,0 +1,123 @@
+.strip {
+  padding: var(--s-6) 0 var(--s-5);
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-4);
+  margin-bottom: var(--s-5);
+}
+
+.label {
+  font-size: var(--t-12);
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+.all {
+  font-size: var(--t-12);
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 4px;
+  transition: text-decoration-color var(--dur-1) ease;
+}
+
+.viewport {
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+}
+
+.track {
+  display: flex;
+  width: max-content;
+  animation: slide calc(var(--count) * 3.4s) linear infinite;
+  will-change: transform;
+}
+
+.row {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 var(--s-5);
+  white-space: nowrap;
+}
+
+.tile {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  object-fit: contain;
+  filter: grayscale(1) contrast(1.05);
+}
+
+.name {
+  font-size: var(--t-14);
+  font-weight: 520;
+  letter-spacing: -0.01em;
+  color: var(--muted);
+}
+
+@keyframes slide {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .viewport:hover .track {
+    animation-play-state: paused;
+  }
+  .all:hover {
+    text-decoration-color: var(--ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viewport {
+    overflow-x: auto;
+    -webkit-mask-image: none;
+    mask-image: none;
+    padding: 0 var(--gutter) var(--s-3);
+  }
+  .track {
+    animation: none;
+  }
+  .row[aria-hidden] {
+    display: none;
+  }
+}
+
+@media (max-width: 520px) {
+  .all {
+    display: none;
+  }
+  .item {
+    padding: 0 var(--s-4);
+  }
+}
