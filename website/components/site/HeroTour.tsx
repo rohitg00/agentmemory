@@ -7,6 +7,7 @@ import s from "./HeroTour.module.css";
 export function HeroTour() {
   const ref = useRef<HTMLVideoElement | null>(null);
   const [ready, setReady] = useState(false);
+  const [still, setStill] = useState(false);
   const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
@@ -14,6 +15,7 @@ export function HeroTour() {
     if (!video) return;
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
     const apply = () => {
+      setStill(query.matches);
       if (query.matches) video.pause();
       else void video.play().catch(() => {});
     };
@@ -48,7 +50,7 @@ export function HeroTour() {
           </div>
           <span className={s.address}>localhost:3113</span>
           <span className={s.recording}>Recorded tour</span>
-          {ready && (
+          {ready && !still && (
             <button type="button" className={s.toggle} onClick={toggle}>
               {playing ? "Pause" : "Play"}
             </button>
@@ -65,7 +67,7 @@ export function HeroTour() {
           muted
           loop
           playsInline
-          controls={!ready}
+          controls={!ready || still}
           preload="metadata"
         />
       </div>
