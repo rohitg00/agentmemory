@@ -68,7 +68,9 @@ export async function Hero() {
               </span>
             </a>
           </div>
-
+        </div>
+        <div className={s.visual}>
+          <HeroTour />
           <dl className={s.facts}>
             <div>
               <dt className="mono">MCP tools</dt>
@@ -89,9 +91,6 @@ export async function Hero() {
               </dd>
             </div>
           </dl>
-        </div>
-        <div className={s.visual}>
-          <HeroTour />
         </div>
       </div>
     </section>

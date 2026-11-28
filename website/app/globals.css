@@ -48,7 +48,8 @@
 
   --radius: 6px;
   --radius-lg: 10px;
-  --max: 1200px;
+  --max: clamp(1200px, 74vw, 1600px);
+  --section-y: clamp(64px, 6vw, 104px);
   --gutter: clamp(16px, 4vw, 40px);
 
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -109,6 +110,7 @@
 }
 
 html {
+  font-size: clamp(100%, 0.5rem + 0.5vw, 118.75%);
   -webkit-text-size-adjust: 100%;
   scroll-padding-top: 72px;
 }
@@ -214,7 +216,7 @@ video {
 }
 
 .section {
-  padding: var(--s-10) 0;
+  padding: var(--section-y) 0;
   border-top: 1px solid var(--line);
   position: relative;
 }
@@ -222,8 +224,8 @@ video {
 .section-head {
   display: grid;
   gap: var(--s-4);
-  max-width: 760px;
-  margin-bottom: var(--s-8);
+  max-width: 48rem;
+  margin-bottom: var(--s-7);
 }
 
 .section-head h2 {

@@ -1,5 +1,5 @@
 .hero {
-  padding: clamp(48px, 8vw, 112px) 0 var(--s-9);
+  padding: clamp(40px, 5vw, 80px) 0 var(--s-8);
   position: relative;
 }
 
@@ -7,7 +7,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
   gap: clamp(32px, 5vw, 72px);
-  align-items: center;
+  align-items: start;
 }
 
 .copy {
@@ -236,7 +236,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--s-6);
-  margin: var(--s-2) 0 0;
+  margin: var(--s-5) 0 0;
   padding-top: var(--s-5);
   border-top: 1px solid var(--line);
   animation: rise 900ms var(--ease-out) 240ms both;
@@ -260,6 +260,7 @@
 }
 
 .visual {
+  padding-top: calc(30px + var(--s-5));
   animation: fade 1100ms var(--ease-out) 120ms both;
 }
 
@@ -288,6 +289,9 @@
 @media (max-width: 1000px) {
   .grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .visual {
+    padding-top: 0;
   }
 }
 
