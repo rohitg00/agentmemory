@@ -14,7 +14,8 @@ import { buildRecallResponse, type RecallFormat } from "./recall-response.js";
 import { recordAccessBatch } from './access-tracker.js'
 import { logger } from "../logger.js";
 import { withoutObservationSource } from "./observation-source.js";
-import { withKeyedLocks } from "../state/keyed-mutex.js";
+import { withKeyedLocks, withReentrantKeyedLock } from "../state/keyed-mutex.js";
+import { recordAudit } from "./audit.js";
 import {
   getAgentId,
   getVectorBackfillMax,
@@ -622,6 +623,24 @@ export async function rebuildKeywordIndex(
   }
 }
 
+async function demoteInterruptedSupersedes(kv: StateKV, pairs: Array<{ id: string; successorId: string }>): Promise<void> {
+  const demoted: string[] = []
+  for (const { id, successorId } of pairs) {
+    await withReentrantKeyedLock("mem:remember", async () => {
+      const [current, successor] = await Promise.all([
+        kv.get<Memory>(KV.memories, id),
+        kv.get<Memory>(KV.memories, successorId),
+      ])
+      if (!current || current.isLatest === false || !successor || successor.isLatest === false) return
+      await kv.set(KV.memories, id, { ...current, isLatest: false, updatedAt: supersededAt(current.updatedAt, new Date().toISOString()) })
+      demoted.push(id)
+    }).catch(() => {})
+  }
+  if (demoted.length === 0) return
+  logger.warn('rebuildKeywordIndex: demoted memories left current by an interrupted supersede', { count: demoted.length })
+  await recordAudit(kv, "heal", "mem::rebuild-keyword-index", demoted, { reason: "interrupted_supersede" }).catch(() => {})
+}
+
 async function runKeywordRebuild(
   kv: StateKV,
   vectorBackfillSince?: string | null,
@@ -672,15 +691,9 @@ async function runKeywordRebuild(
   } else {
     memoriesLoaded = true
     const interrupted = supersededButLatest(memories)
-    const interruptedIds = new Set(interrupted.map((memory) => memory.id))
-    const repairedAt = new Date().toISOString()
-    for (const memory of interrupted) {
-      vectorIndexRemove(memory.id)
-      void kv.set(KV.memories, memory.id, { ...memory, isLatest: false, updatedAt: supersededAt(memory.updatedAt, repairedAt) }).catch(() => {})
-    }
-    if (interrupted.length > 0) {
-      logger.warn('rebuildKeywordIndex: demoted memories left current by an interrupted supersede', { count: interrupted.length })
-    }
+    const interruptedIds = new Set(interrupted.map((pair) => pair.id))
+    for (const id of interruptedIds) vectorIndexRemove(id)
+    if (interrupted.length > 0) void demoteInterruptedSupersedes(kv, interrupted)
     for (const memory of memories) {
       if (memory.isLatest === false || interruptedIds.has(memory.id)) continue
       if (!memory.title || !memory.content) continue

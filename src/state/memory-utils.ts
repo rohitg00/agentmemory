@@ -48,13 +48,15 @@ export async function writeSuccessor(
   }
 }
 
-export function supersededButLatest(memories: Memory[]): Memory[] {
-  const superseded = new Set<string>();
+export function supersededButLatest(memories: Memory[]): Array<{ id: string; successorId: string }> {
+  const successors = new Map<string, string>();
   for (const memory of memories) {
     if (memory.isLatest === false) continue;
-    for (const id of memory.supersedes ?? []) superseded.add(id);
+    for (const id of memory.supersedes ?? []) successors.set(id, memory.id);
   }
-  return memories.filter((memory) => memory.isLatest !== false && superseded.has(memory.id));
+  return memories
+    .filter((memory) => memory.isLatest !== false && successors.has(memory.id))
+    .map((memory) => ({ id: memory.id, successorId: successors.get(memory.id)! }));
 }
 
 export function sharesMemoryScope(

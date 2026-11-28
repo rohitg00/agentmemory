@@ -173,6 +173,30 @@ describe("rebuildKeywordIndex", () => {
     expect(idx.has("mem_prev")).toBe(false);
     expect((await kv.get<Memory>("mem:memories", "mem_prev"))?.isLatest).toBe(false);
     expect((await kv.get<Memory>("mem:memories", "mem_next"))?.isLatest).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const audits = [...kv.store.entries()]
+      .filter(([scope]) => scope.startsWith("mem:audit"))
+      .flatMap(([, rows]) => [...rows.values()] as Array<{ operation?: string; targetIds?: string[] }>)
+      .filter((row) => row.operation === "heal");
+    expect(audits.map((row) => row.targetIds)).toEqual([["mem_prev"]]);
+  });
+
+  it("does not bring back a memory that was forgotten while the rebuild ran", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z" };
+    await kv.set("mem:memories", "mem_prev", { ...base, id: "mem_prev", title: "Deploy gate", content: "Deploys wait for the smoke suite", isLatest: true });
+    await kv.set("mem:memories", "mem_next", { ...base, id: "mem_next", title: "Deploy gate", content: "Deploys wait for the acceptance suite", isLatest: true, supersedes: ["mem_prev"], version: 2 });
+    const get = kv.get;
+    kv.get = (async (scope: string, key: string) => {
+      if (scope === "mem:memories" && key === "mem_prev") kv.store.get(scope)?.delete(key);
+      return get(scope, key);
+    }) as typeof kv.get;
+
+    await rebuildKeywordIndex(kv as never);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(kv.store.get("mem:memories")?.has("mem_prev")).toBe(false);
+    expect(getSearchIndex().has("mem_prev")).toBe(false);
   });
 
   it("rebuilds BM25 from stored observations and latest memories, quickly", async () => {
