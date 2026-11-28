@@ -45,6 +45,7 @@ import {
   getSearchIndex,
   vectorIndexRemove,
   flushIndexSave,
+  unindexMemory,
 } from "./search.js";
 import { resetLessonIndex } from "./lessons.js";
 import { logger } from "../logger.js";
@@ -641,7 +642,8 @@ export function registerExportImportFunction(sdk: IIIClient, state: StateKV): vo
         memory.origin = importOrigin(memory.origin, memory.createdAt);
         await kv.set(KV.memories, memory.id, memory);
         stats.memories++;
-        indexMems.push(memory);
+        if (memory.isLatest === false) unindexMemory(memory.id);
+        else indexMems.push(memory);
       });
 
       if (strategy === "replace" || importData.graphNodes || importData.graphEdges) {
