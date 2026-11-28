@@ -277,13 +277,13 @@ video {
 }
 
 .reveal {
-  transition: opacity 700ms var(--ease-out), transform 700ms var(--ease-out);
+  transition: opacity var(--dur-3) var(--ease-out), transform var(--dur-3) var(--ease-out);
   transition-delay: var(--d, 0ms);
 }
 
 .js .reveal {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(8px);
 }
 
 .reveal.is-in {
