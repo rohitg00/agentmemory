@@ -194,7 +194,7 @@ These are off by default because they spend tokens. Enable them only if the user
 
 ## Tool surface
 
-The MCP server exposes 54 tools by default (`--tools all`). Use `--tools core` (or `AGENTMEMORY_TOOLS=core`) for a lean 8-tool set on hosts with tight tool limits. The 8 core tools cover save, recall, consolidate, smart search, sessions, diagnose, lesson save, and reflect.
+The MCP server exposes 54 tools by default (`--tools all`). Use `--tools core` (or `AGENTMEMORY_TOOLS=core`) for a lean 9-tool set on hosts with tight tool limits. The 9 core tools cover save, recall, consolidate, smart search, sessions, diagnose, lesson save, lesson recall, and reflect.
 
 ## Lifecycle commands
 

@@ -850,7 +850,7 @@ EMBEDDING_PROVIDER=local
 
 ### 54 Tools
 
-เครื่องมือมีสาม surface เรียงจากเล็กไปใหญ่: `AGENTMEMORY_TOOLS=core` ลดการมองเห็นเหลือ 8 เครื่องมือหลัก (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); ชุด base ด้านล่างคือ 14 เครื่องมือพื้นฐานของ registry; ค่า default (`AGENTMEMORY_TOOLS=all`) เปิดทั้ง 54 ตัว
+เครื่องมือมีสาม surface เรียงจากเล็กไปใหญ่: `AGENTMEMORY_TOOLS=core` ลดการมองเห็นเหลือ 9 เครื่องมือหลัก (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); ชุด base ด้านล่างคือ 14 เครื่องมือพื้นฐานของ registry; ค่า default (`AGENTMEMORY_TOOLS=all`) เปิดทั้ง 54 ตัว
 
 <details>
 <summary>Base tools (14)</summary>

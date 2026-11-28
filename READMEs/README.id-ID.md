@@ -858,7 +858,7 @@ Instalasi npm normal menyertakan runtime opsional `@huggingface/transformers`. P
 
 ### 54 Tool
 
-Tiga permukaan tool, dari terkecil ke terbesar: `AGENTMEMORY_TOOLS=core` memangkas visibilitas menjadi 8 tool esensial (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); set dasar di bawah adalah 14 tool fundamental milik registry; default (`AGENTMEMORY_TOOLS=all`) menampilkan semua 54.
+Tiga permukaan tool, dari terkecil ke terbesar: `AGENTMEMORY_TOOLS=core` memangkas visibilitas menjadi 9 tool esensial (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); set dasar di bawah adalah 14 tool fundamental milik registry; default (`AGENTMEMORY_TOOLS=all`) menampilkan semua 54.
 
 <details>
 <summary>Tool dasar (14)</summary>

@@ -852,7 +852,7 @@ EMBEDDING_PROVIDER=local
 
 ### 54 כלים
 
-שלושה שטחי כלים, מהקטן לגדול: `AGENTMEMORY_TOOLS=core` מגביל את הנראות ל-8 כלים חיוניים (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); הסט הבסיסי שלהלן הוא 14 הכלים הבסיסיים של הרשימה (registry); ברירת המחדל (`AGENTMEMORY_TOOLS=all`) חושפת את כל 54.
+שלושה שטחי כלים, מהקטן לגדול: `AGENTMEMORY_TOOLS=core` מגביל את הנראות ל-9 כלים חיוניים (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); הסט הבסיסי שלהלן הוא 14 הכלים הבסיסיים של הרשימה (registry); ברירת המחדל (`AGENTMEMORY_TOOLS=all`) חושפת את כל 54.
 
 <details>
 <summary>כלי בסיס (14)</summary>

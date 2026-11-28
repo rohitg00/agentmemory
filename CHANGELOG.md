@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `AUTO_FORGET_INTERVAL_MS` values below 60000 or that are not numbers fall back to the hourly default instead of running the sweep every millisecond (#1744).
 - The Hermes plugin manifest declares `provides_hooks: []` and `requires_hermes: ">=0.21.6"`, so `hermes plugins doctor` passes (#1759).
 - With `AGENTMEMORY_ALLOW_AGENT_SDK=true`, a provider key such as `OPENAI_API_KEY` and no `AGENTMEMORY_LLM_PROVIDER`, agentmemory now runs zero-LLM instead of starting Claude Agent SDK sessions. Set `AGENTMEMORY_LLM_PROVIDER` to the provider whose key you want to use, or to `agent-sdk` to keep the fallback. Boot, `doctor`, `status` and the viewer name both choices. A key that `EMBEDDING_PROVIDER` reads does not count as a provider key here, so when that is the only key the fallback still starts Agent SDK sessions (#1762).
+- The core tool set (`AGENTMEMORY_TOOLS=core`) lists 9 tools instead of 8: `memory_lesson_recall` joins `memory_lesson_save`, so a core-mode client can read the lessons it saves (#1837).
 
 ### Added
 

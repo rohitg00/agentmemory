@@ -845,7 +845,7 @@ Instalarea npm normală include runtime-ul opțional `@huggingface/transformers`
 
 ### 54 de instrumente
 
-Trei suprafețe de instrumente, de la cea mai mică la cea mai mare: `AGENTMEMORY_TOOLS=core` reduce vizibilitatea la 8 instrumente esențiale (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); setul de bază de mai jos reprezintă cele 14 instrumente fundamentale ale registrului; implicit (`AGENTMEMORY_TOOLS=all`) sunt expuse toate cele 54.
+Trei suprafețe de instrumente, de la cea mai mică la cea mai mare: `AGENTMEMORY_TOOLS=core` reduce vizibilitatea la 9 instrumente esențiale (`memory_save`, `memory_recall`, `memory_consolidate`, `memory_smart_search`, `memory_sessions`, `memory_diagnose`, `memory_lesson_save`, `memory_reflect`); setul de bază de mai jos reprezintă cele 14 instrumente fundamentale ale registrului; implicit (`AGENTMEMORY_TOOLS=all`) sunt expuse toate cele 54.
 
 <details>
 <summary>Instrumente de bază (14)</summary>
