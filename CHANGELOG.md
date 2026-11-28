@@ -6,6 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.34] — 2026-11-28
+
+### Upgrade notes
+
+- `MAX_OBS_PER_SESSION` no longer refuses writes once a session reaches its cap. The lowest-value observations of that session are evicted to make room, so late observations in long sessions are kept (#1174 by @sbynode-ux).
+- `POST /agentmemory/graph/import-graphify` reports `truncated`, `limits`, `droppedNodes` and `droppedEdges` when a graph is larger than `AGENTMEMORY_GRAPH_IMPORT_MAX_NODES` (default 5000) or `AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES` (default 20000) (#1757).
+- `AUTO_FORGET_INTERVAL_MS` values below 60000 or that are not numbers fall back to the hourly default instead of running the sweep every millisecond (#1744).
+- The Hermes plugin manifest declares `provides_hooks: []` and `requires_hermes: ">=0.21.6"`, so `hermes plugins doctor` passes (#1759).
+- With `AGENTMEMORY_ALLOW_AGENT_SDK=true`, a provider key such as `OPENAI_API_KEY` and no `AGENTMEMORY_LLM_PROVIDER`, agentmemory now runs zero-LLM instead of starting Claude Agent SDK sessions. Set `AGENTMEMORY_LLM_PROVIDER` to the provider whose key you want to use, or to `agent-sdk` to keep the fallback. Boot, `doctor`, `status` and the viewer name both choices (#1762).
+
+### Added
+
+- **Orca plugin.** `integrations/orca` adds an agentmemory panel to Orca: server status, search and the latest memories of the open project, sending a memory to an agent, opening the viewer, and optional capture of agent tool calls (#1774).
+- **README diagrams.** Architecture, pipeline and stack diagrams that `npm run docs:sync` keeps in step with the source (#1800).
+- The audit log supports more than one listener; `addAuditListener` returns its unsubscribe (#1788 by @zack-dev-cm, step 1 of #1741).
+- `POST /agentmemory/metrics/reset` (optional `functionId`) clears the function counters and records a `metrics_reset` audit entry (#1794).
+- `AGENTMEMORY_COMPRESS_TIMEOUT_MS` sets the time budget for one `mem::compress` run, 1000 to 600000, default 60000. Raise it for slow or local models (#1822).
+- `/agentmemory/status` returns `index.vectorBackfillReason` when the vector backfill is paused, and the status page shows it (#1820).
+
+### Fixed
+
+- **Search and indexes:** superseded and wiped memories leave the search index (#1704 by @DimitriChrysafis). Flow-compressed and auto-paged memories are indexed, so they are searchable (#1709 by @DimitriChrysafis, #1811). Keyword index sessions that failed to load at boot are retried in the background (#1755). Graph queries keep their bounded matches when the byte budget runs out instead of returning nothing (#1767 by @zack-dev-cm). Compact smart-search uses the indexed `memoryType` instead of reading each memory (#1761 by @reevesc88). Scoped recall skips session reads it does not need (#1723 by @reevesc88). Lesson recall applies its filters before the candidate limit (#1721 by @Mike-Animal-Counseling). `mem::insight-list` keeps only the requested top results while paging (#1783 by @zack-dev-cm).
+- **Memory safety:** the governance delete, evict, auto-forget and retention delete paths hold the `mem:remember` lock (#1746). The auto-forget contradiction pass only compares memories in the same project and agent scope, and image references are released only after the memory delete succeeds (#1744). Snapshots fail when a state read fails instead of saving a partial snapshot (#1768 by @DimitriChrysafis).
+- **Capture:** the spool drain keeps files it could not read instead of deleting them (#1748). Empty observations skip compression (#1771 by @DimitriChrysafis). OpenCode sends a stable event ID, so replayed capture events are stored once (#1751 by @gezerui888). Durable capture replays do a point read before listing the session (#1773 by @zack-dev-cm). A `404` from the HTTP worker during a stop or restart no longer deletes the live observation and the spool: only agentmemory's own rejection and 413 are permanent, and 401, 403 and 404 keep the record for a later retry (#1808). Hooks no longer write the spool into a project that has a legacy `data/` folder, and the spool an earlier version left there is still read (#1810). A daemon with a custom data directory drains the folder the hooks write to (#1809). A drain replay keeps a record queued when its durability copy could not be written. Capture clears the pending compression marker when the session cap removes the observation source (#1812).
+- **Providers:** a half-open circuit breaker lets one probe through instead of every caller (#1749). Provider wrappers keep optional vision support (#1798 by @zack-dev-cm). Summary recovery honors the compression opt-in (#1770 by @zack-dev-cm). The Claude Agent SDK fallback no longer overrides a configured provider key; a key that `EMBEDDING_PROVIDER` reads does not count (#1762).
+- **MCP:** `memory_save` accepts `concepts` and `files` as arrays and forwards `ttlDays` and `sourceObservationIds` (#1745). The stdio transport treats a stdout `EPIPE` as a client disconnect, not a crash, so normal client shutdowns no longer write `mcp-crash.log` entries (#1797 by @m1l0rdz). The status resource and consolidation status use key counts instead of loading every record (#1789, #1772 by @zack-dev-cm). The `memory_recall` description says that it does not return lessons and names `memory_lesson_recall` and `memory_smart_search` (#1829).
+- **Compression:** a raw `&` or `<` that the model did not escape, as in `2>&1`, `git status && npm test` or `Vec<Row>`, no longer makes `parse_failed` permanent. The retry prompt names the escaping rule, the real error is logged, and a timeout is stored as `compression_timeout` (#1822).
+- **Reflect:** without a concept graph, reflect builds every cluster instead of stopping at the first word that already joined one (#1833).
+- **Consolidation:** the semantic tier shows the model the known facts with their ids and reinforces a fact the model marks as a restatement, or one that only adds filler words, instead of storing a reworded copy. A changed number, a swapped word or an added negation stores a new fact (#1793).
+- **Status:** function health follows the last 10 calls, so a fixed provider clears the warning. The status page and the viewer name that window next to the failure rate (#1794).
+- The pi extension keeps the previous working directory when a host omits `ctx.cwd` (#1807).
+- PreToolUse enrichment passes the project to file-context and loads session history concurrently (#1747).
+- **CLI:** `agentmemory connect` works on native Windows (#1754). `connect` and `status` say when an agent is connected with MCP only and captures nothing on its own (#1756). `status` explains an iii engine that runs without the agentmemory worker (#1758). `agentmemory demo` waits until seeded observations are searchable (#1760). Generated Compose YAML no longer repeats env-file values, including provider keys, as explicit worker overrides (#1769 by @zack-dev-cm). A stale Compose PID from before a reboot no longer blocks startup when the process identity cannot be read (#1805).
+
+### Infrastructure
+
+- CI typechecks `src/hooks` (`npm run typecheck:hooks`) and runs `docs:check` (#1785 by @zack-dev-cm, #1800). The release gate forces the dead-letter capture failure with `AGENTMEMORY_RELEASE_GATE_FAIL_OBSERVE__` instead of the session cap (#1766).
+
+### Issues closed
+
+#1724, #1726, #1727, #1728, #1730, #1731, #1732, #1736, #1762, #1763, #1764, #1793, #1794, #1795, #1805, #1807, #1808, #1809, #1810, #1822, #1829, #1833. Partly addressed and still open: #1733 (#1747), #1735 (#1789, #1772), #1741 (#1788), #1820 (#1836).
+
 ## [0.9.33] — 2026-11-09
 
 ### Upgrade notes
@@ -374,6 +416,7 @@ Wave release closing several breaking regressions reported against v0.9.26, plus
 - `/agentmemory:forget` skill still calls `memory_governance_delete` which only touches `KV.memories` and never observations ([#833](https://github.com/rohitg00/agentmemory/issues/833)). Skill rewrite + new `memory_forget` MCP tool tracked separately.
 - `crypto.randomUUID()` global-only on Node <19 ([#715](https://github.com/rohitg00/agentmemory/issues/715)). Drop-in import fix tracked.
 
+[0.9.34]: https://github.com/rohitg00/agentmemory/compare/v0.9.33...v0.9.34
 [0.9.33]: https://github.com/rohitg00/agentmemory/compare/v0.9.32...v0.9.33
 [0.9.32]: https://github.com/rohitg00/agentmemory/compare/v0.9.31...v0.9.32
 [0.9.31]: https://github.com/rohitg00/agentmemory/compare/v0.9.30...v0.9.31

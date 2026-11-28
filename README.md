@@ -353,14 +353,16 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
-### What's new in 0.9.33
+### What's new in 0.9.34
 
-- **Large stores keep working:** state reads page, so scopes above 64 MiB no longer fail, on iii 0.25.1.
-- **Better recall:** saved memories are no longer capped at three per search, and evicted memories leave the indexes.
-- **Hooks reach the model:** PreToolUse context arrives in the hook envelope, scoped to the current project.
-- **Steadier providers:** placeholder keys count as unset, and the circuit breaker resets on success.
+- **Search sees every memory:** flow-compressed memories are indexed, superseded ones leave the index, and failed index sessions retry.
+- **Safer deletes:** every delete path holds the remember lock, and auto-forget stays within one project and agent.
+- **Long sessions keep capturing:** the session cap evicts the lowest-value observations instead of refusing writes.
+- **Capture survives a restart:** a stop or restart no longer drops queued observations, and the Agent SDK fallback never overrides a provider key you set.
+- **Compression accepts real code:** shell and generic syntax such as `2>&1` and `Vec<Row>` no longer fails to parse.
+- **Orca plugin and native Windows connect:** a memory panel for Orca, and `agentmemory connect` on Windows.
 
-[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.33).
+[Release notes and contributor credits](https://github.com/rohitg00/agentmemory/releases/tag/v0.9.34).
 
 <h2 id="benchmarks"><picture><source media="(prefers-color-scheme: dark)" srcset="assets/tags/light/section-benchmarks.svg"><img src="assets/tags/section-benchmarks.svg" alt="Benchmarks" height="32" /></picture></h2>
 
