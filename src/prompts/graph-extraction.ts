@@ -16,6 +16,11 @@ Rules:
 - Weight relationships by how strong/direct the connection is
 - If no entities found, output empty tags`;
 
+// Bounds per observation so a batch prompt has a predictable size. Long
+// narratives come from uncompressed captures; the head carries the signal.
+export const GRAPH_PROMPT_MAX_NARRATIVE_CHARS = 1500;
+export const GRAPH_PROMPT_MAX_LIST_ITEMS = 20;
+
 export function buildGraphExtractionPrompt(
   observations: Array<{
     title: string;
@@ -28,7 +33,7 @@ export function buildGraphExtractionPrompt(
   const items = observations
     .map(
       (o, i) =>
-        `[${i + 1}] Type: ${o.type}\nTitle: ${o.title}\nNarrative: ${o.narrative}\nConcepts: ${(o.concepts ?? []).join(", ")}\nFiles: ${(o.files ?? []).join(", ")}`,
+        `[${i + 1}] Type: ${o.type}\nTitle: ${o.title}\nNarrative: ${(o.narrative ?? "").slice(0, GRAPH_PROMPT_MAX_NARRATIVE_CHARS)}\nConcepts: ${(o.concepts ?? []).slice(0, GRAPH_PROMPT_MAX_LIST_ITEMS).join(", ")}\nFiles: ${(o.files ?? []).slice(0, GRAPH_PROMPT_MAX_LIST_ITEMS).join(", ")}`,
     )
     .join("\n\n");
   // Some local models default to a hidden reasoning pass that consumes
