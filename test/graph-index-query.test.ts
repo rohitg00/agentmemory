@@ -57,7 +57,7 @@ describe("bounded graph query surfaces", () => {
     await kv.set(KV.graphNodes, "a", node("a", "before"));
     let changed = false;
     intercept(async (id, payload) => {
-      if (!changed && id === "state::get" && payload.scope === KV.graphRetrievalData && payload.key.includes(":record:node:")) {
+      if (!changed && id === "state::get" && payload.scope.startsWith(KV.graphRetrievalData) && payload.key.includes(":record:node:")) {
         changed = true;
         await kv.set(KV.graphNodes, "a", node("a", "after"));
       }
@@ -75,7 +75,7 @@ describe("bounded graph query surfaces", () => {
     const result = await queryGraphIndex(kv, { startNodeId: "root", maxDepth: 1 });
     expect(result.nodes.map(row => row.id).sort()).toEqual(["a", "b", "root"]);
     expect(result.edges.some(row => row.id === "rb")).toBe(true);
-    expect(calls.filter(call => call.scope === KV.graphRetrievalData).length).toBeLessThanOrEqual(2048);
+    expect(calls.filter(call => call.scope.startsWith(KV.graphRetrievalData)).length).toBeLessThanOrEqual(2048);
   });
 
   it("bounds impossible offsets without starting a scope listing", async () => {
@@ -83,7 +83,7 @@ describe("bounded graph query surfaces", () => {
     for (let i = 0; i < 1100; i++) await kv.set(KV.graphNodes, `n${i}`, node(`n${i}`));
     calls.length = 0;
     expect(await queryGraphIndex(kv, { offset: Number.MAX_SAFE_INTEGER })).toMatchObject({ nodes: [], truncated: true });
-    expect(calls.filter(call => call.scope === KV.graphRetrievalData).length).toBeLessThanOrEqual(2048);
+    expect(calls.filter(call => call.scope.startsWith(KV.graphRetrievalData)).length).toBeLessThanOrEqual(2048);
     expect(calls.some(call => call.id === "state::list")).toBe(false);
   });
 

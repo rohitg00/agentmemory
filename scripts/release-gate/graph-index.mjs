@@ -272,19 +272,23 @@ async function command(p, args, code = 0, extraEnv = {}) {
   return JSON.parse(result.output);
 }
 const state = (p, id, payload) => p.client.trigger({ function_id: id, payload });
+const indexScope = (key, generation) => {
+  const shard = `${scopes.index}:shard:${(parseInt(key.slice(-2), 16) % 64).toString(16).padStart(2, "0")}`;
+  return generation ? `${shard}:generation:${generation}` : shard;
+};
 async function assertEdgeKey(p, source, target, type, expectedIds) {
   const control = await rest(p, "/graph/index");
   assert(control.ready);
-  const scope = control.generation ? `${scopes.index}:generation:${control.generation}` : scopes.index;
   const posting = createHash("sha256").update(JSON.stringify(`edgeKey\0${JSON.stringify([source, target, type])}`)).digest("hex");
   const key = `${control.buildId}:root:${posting}`;
-  const root = await state(p, "state::get", { scope, key });
+  const root = await state(p, "state::get", { scope: indexScope(key, control.generation), key });
   assert.equal(root?.count, expectedIds.length);
   const ids = [];
   let next = root.head;
   while (next !== null) {
     assert(ids.length < expectedIds.length, "Exact edge posting contains extra or cyclic entries");
-    const entry = await state(p, "state::get", { scope, key: `${control.buildId}:entry:${posting}:${next}` });
+    const entryKey = `${control.buildId}:entry:${posting}:${next}`;
+    const entry = await state(p, "state::get", { scope: indexScope(entryKey, control.generation), key: entryKey });
     assert(entry, "Missing exact edge posting entry");
     ids.push(entry.id); next = entry.next;
   }
@@ -383,10 +387,15 @@ try {
     const job = persisted(primary, scopes.migration).current;
     const control = persisted(primary, scopes.control).current;
     const page = persisted(primary, scopes.manifest)[`${accepted.jobId}:nodes:0`];
-    const data = persisted(primary, scopes.index);
+    const shards = new Map();
+    const record = (key) => {
+      const scope = indexScope(key);
+      if (!shards.has(scope)) shards.set(scope, persisted(primary, scope));
+      return shards.get(scope)[key];
+    };
     return job?.processed === checkpointProcessed && control?.buildId === accepted.buildId && control.nodes === checkpointProcessed &&
       !control.pending && !control.batchPending && page?.ids?.length === checkpointProcessed && page.ids.every((id) =>
-        data[`${accepted.buildId}:record:node:${createHash("sha256").update(JSON.stringify(id)).digest("hex")}`]?.row?.id === id);
+        record(`${accepted.buildId}:record:node:${createHash("sha256").update(JSON.stringify(id)).digest("hex")}`)?.row?.id === id);
   });
   assert.equal(primary.traceSummary.get(primary.phase).canonicalLists.length, 0);
   assert.equal(primary.traceSummary.get(primary.phase).snapshotOperations, 0);

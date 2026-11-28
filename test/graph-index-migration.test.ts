@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { StateKV } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
 import { resetGraphGeneration } from "../src/state/graph-generation.js";
@@ -283,6 +286,45 @@ describe("explicit graph index migration", () => {
     await restarted.start({ allowLegacyScan: true }); await restarted.waitForIdle();
     expect(await restarted.status()).toMatchObject({ ready: true, nodes: 1 });
     expect((await restarted.status()).jobId).not.toBe(original);
+  });
+
+  it("rebuilds a single-scope index only on an explicit migration and reports its file size", async () => {
+    const { controller, kv, rows } = setup();
+    rows.set(KV.graphNodes, new Map([["a", node("a")]]));
+    await controller.start({ allowLegacyScan: true }); await controller.waitForIdle();
+    const sharded = await controller.status();
+    expect(sharded).toMatchObject({ ready: true, nodes: 1 });
+    rows.get(KV.graphRetrievalControl)!.set("current", { ...(await getGraphIndexStatus(kv))!, schema: 2 });
+
+    const dataDir = mkdtempSync(join(tmpdir(), "graph-index-size-"));
+    const previous = process.env["AGENTMEMORY_DATA_DIR"];
+    process.env["AGENTMEMORY_DATA_DIR"] = dataDir;
+    try {
+      expect(await controller.status()).not.toHaveProperty("singleScopeBytes");
+      mkdirSync(join(dataDir, "state_store.db"));
+      writeFileSync(join(dataDir, "state_store.db", "mem%3Agraph%3Aretrieval-data.bin"), Buffer.alloc(4096));
+      expect(await controller.status()).toMatchObject({ ready: true, singleScopeBytes: 4096 });
+
+      await controller.resumeOnBoot(); await controller.waitForIdle();
+      await controller.start(); await controller.waitForIdle();
+      await expect(controller.start({ resume: true })).resolves.toMatchObject({ jobId: sharded.jobId, buildId: sharded.buildId });
+      expect(await getGraphIndexStatus(kv)).toMatchObject({ schema: 2, buildId: sharded.buildId });
+
+      await controller.start({ allowLegacyScan: true }); await controller.waitForIdle();
+      const rebuilt = await controller.status();
+      expect(rebuilt).toMatchObject({ ready: true, nodes: 1 });
+      expect(rebuilt).not.toHaveProperty("singleScopeBytes");
+      expect(rebuilt.buildId).not.toBe(sharded.buildId);
+      expect(await getGraphIndexStatus(kv)).toMatchObject({ schema: 3, status: "ready" });
+      expect((await (await createGraphIndexReader(kv))!.posting("nodes")).ids).toEqual(["a"]);
+
+      await controller.start({ allowLegacyScan: true }); await controller.waitForIdle();
+      expect((await controller.status()).buildId).toBe(rebuilt.buildId);
+    } finally {
+      if (previous === undefined) delete process.env["AGENTMEMORY_DATA_DIR"];
+      else process.env["AGENTMEMORY_DATA_DIR"] = previous;
+      rmSync(dataDir, { recursive: true, force: true });
+    }
   });
 
   it("does no discovery when durable intent cannot be written", async () => {

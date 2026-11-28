@@ -40,6 +40,22 @@ Oversized source fields remain in canonical storage. Bounded projections record 
 
 Indexes add storage and write overhead. A replacement build isolates previous derived records by build ID; it does not reclaim their disk space. Repeated rebuilds and graph generations can therefore accumulate retained data. Bounded records and reads do not imply bounded total storage.
 
+## Index data scopes and the 1 GiB save limit
+
+The file-backed state worker saves each scope as one file and cannot save a scope larger than 1 GiB. A scope past that size stays in memory, but its file stops changing, and the worker retries the failed save on every save interval.
+
+Indexes built by 0.9.34 or later store their data in 64 shard scopes named `mem:graph:retrieval-data:shard:00` to `mem:graph:retrieval-data:shard:3f`, so one save rewrites only the shards that changed. Indexes built by earlier releases keep all data in the single `mem:graph:retrieval-data` scope and continue to work there. One reported graph of about 68,000 nodes and 133,000 edges filled that scope.
+
+`GET /agentmemory/status` and the viewer Health page report `graph-index-scope-limit` when the single data file passes 512 MiB, and report it as an error near 1 GiB. The `agentmemory status` command does not show this warning. `agentmemory graph-index status --json` shows the file size as `singleScopeBytes`. The check needs the file backend and a readable data directory. To move an older index to shard scopes, run this during a maintenance window:
+
+```sh
+agentmemory graph-index migrate --allow-legacy-scan --json
+```
+
+For an index built by an earlier release this starts a new build even when the index is ready. Graph retrieval is unavailable until the build finishes. `graph-index resume` and startup continue an existing build in its original layout and do not convert it.
+
+The rebuild does not remove the old data file. After the new index is ready, stop AgentMemory and delete `mem%3Agraph%3Aretrieval-data.bin` from the `state_store.db` directory to reclaim its disk space and memory. After a graph reset the file name also ends with `%3Ageneration%3A` and the generation ID. Do not delete files whose names contain `%3Ashard%3A`. An older AgentMemory release rejects a shard-layout index and asks for a new migration.
+
 The CLI honors `AGENTMEMORY_URL`, local `--port` and `--instance` selection, and the existing credential resolution. Named instances sharing a home directory share its saved API credential by default. To use separate credentials, set a different `AGENTMEMORY_SECRET` for each instance and its clients, or use separate home directories. Equivalent authenticated endpoints are `GET /agentmemory/graph/index`, `POST /agentmemory/graph/index/migrate`, and `POST /agentmemory/graph/index/resume`. Mutation bodies accept only the boolean `allowLegacyScan` flag. Repeated start requests join the running job. Use one AgentMemory graph worker per state store; the writer lock coordinates operations within that worker.
 
 The local packaged gate runs the installed CLI against the pinned native engine. It checks separate data directories for named instances sharing a home with explicit separate credentials, and generated credentials across separate homes:

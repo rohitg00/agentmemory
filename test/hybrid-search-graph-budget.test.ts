@@ -67,7 +67,7 @@ describe("optional graph retrieval budget", () => {
     release([]);
     await vi.advanceTimersByTimeAsync(0);
     expect(kv.list).not.toHaveBeenCalled();
-    expect(reads).not.toContain(KV.graphRetrievalData);
+    expect(reads.some((scope: string) => scope.startsWith(KV.graphRetrievalData))).toBe(false);
     expect(vi.getTimerCount()).toBe(0);
   });
 

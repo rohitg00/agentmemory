@@ -43,9 +43,17 @@ const recordKey = (buildId: string, kind: GraphIndexRecordKind, id: string) => `
 const rootKey = (buildId: string, posting: string) => `${buildId}:root:${posting}`;
 const entryKey = (buildId: string, posting: string, id: string) => `${buildId}:entry:${posting}:${id}`;
 const countKey = (kind: GraphIndexRecordKind) => kind === "node" ? "nodes" : kind === "edge" ? "edges" : "historyEdges";
+export const GRAPH_INDEX_DATA_SHARDS = 64;
+// The file-backed state worker cannot save one scope past 1 GiB, so schema 3 spreads index data over fixed shards.
+function dataScope(control: Pick<GraphRetrievalIndexControl, "schema">, key: string): string {
+  if (control.schema === 2) return KV.graphRetrievalData;
+  const suffix = /[a-f0-9]{2}$/.exec(key);
+  if (!suffix) throw new GraphIndexError("Invalid graph retrieval data key");
+  return KV.graphRetrievalDataShard(parseInt(suffix[0], 16) % GRAPH_INDEX_DATA_SHARDS);
+}
 
 function validateControl(value: GraphRetrievalIndexControl): void {
-  if (bytes(value) > MAX_CONTROL_BYTES || value.schema !== 2 || typeof value.buildId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.buildId) ||
+  if (bytes(value) > MAX_CONTROL_BYTES || (value.schema !== 2 && value.schema !== 3) || typeof value.buildId !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.buildId) ||
       !["building", "ready", "paused"].includes(value.status) ||
       ![value.revision, value.nodes, value.edges, value.historyEdges, value.incompleteRecords, value.otherTypes].every(finiteCount) ||
       !value.nodesByType || !value.edgesByType ||
@@ -66,7 +74,7 @@ export async function getGraphIndexStatus(state: StateKV): Promise<GraphRetrieva
 export async function initializeGraphIndex(state: StateKV, options: { status: "building" | "ready"; buildId?: string }): Promise<GraphRetrievalIndexControl> {
   const kv = await pinGraphState(state);
   return lock(kv, async () => {
-    const value: GraphRetrievalIndexControl = { schema: 2, buildId: options.buildId ?? randomUUID(), status: options.status,
+    const value: GraphRetrievalIndexControl = { schema: 3, buildId: options.buildId ?? randomUUID(), status: options.status,
       revision: 0, nodes: 0, edges: 0, historyEdges: 0, incompleteRecords: 0, nodesByType: {}, edgesByType: {}, otherTypes: 0, updatedAt: new Date().toISOString() };
     validateControl(value);
     const previous = await kv.get<GraphRetrievalIndexControl>(KV.graphRetrievalControl, CONTROL_KEY);
@@ -172,7 +180,7 @@ function validateRecord(value: GraphRetrievalIndexRecord): void {
 
 async function planRecord(kv: StateKV, control: GraphRetrievalIndexControl, kind: GraphIndexRecordKind, id: string, input: unknown): Promise<IndexJournal> {
   const writes = new Map<string, unknown>();
-  const read = async <T>(key: string): Promise<T | null> => writes.has(key) ? writes.get(key) as T | null : kv.get<T>(KV.graphRetrievalData, key);
+  const read = async <T>(key: string): Promise<T | null> => writes.has(key) ? writes.get(key) as T | null : kv.get<T>(dataScope(control, key), key);
   const put = (key: string, value: unknown) => { if (bytes(value) > GRAPH_INDEX_MAX_RECORD_BYTES) throw new GraphIndexError("Graph retrieval index write exceeds record budget"); writes.set(key, value); };
   const key = recordKey(control.buildId, kind, id);
   const before = await read<GraphRetrievalIndexRecord>(key);
@@ -251,8 +259,8 @@ async function applyJournal(kv: StateKV, control: GraphRetrievalIndexControl, jo
     }
   }
   for (const write of journal.writes) {
-    if (write.value === null) await kv.delete(KV.graphRetrievalData, write.key);
-    else await kv.set(KV.graphRetrievalData, write.key, write.value);
+    if (write.value === null) await kv.delete(dataScope(control, write.key), write.key);
+    else await kv.set(dataScope(control, write.key), write.key, write.value);
   }
   await kv.set(KV.graphRetrievalControl, CONTROL_KEY, journal.next);
 }
@@ -429,7 +437,7 @@ export class GraphIndexReader {
     else this.active++;
     try {
       if (this.options.signal?.aborted || this.exhausted) { this.exhausted = true; return null; }
-      const value = await this.state.get<T>(scope, key);
+      const value = await this.state.get<T>(scope === KV.graphRetrievalData ? dataScope(this.status, key) : scope, key);
       const size = bytes(value);
       this.readBytes += size;
       if (this.readBytes > this.maxBytes || this.options.signal?.aborted) { this.exhausted = true; return null; }

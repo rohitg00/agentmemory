@@ -12,6 +12,9 @@ const GRAPH_SCOPES = new Set<string>([
   KV.graphNameIndex, KV.graphEdgeKey, KV.graphNodeDegree, KV.graphMembership,
   KV.graphRetrievalControl, KV.graphRetrievalData, KV.graphIndexMigration, KV.graphIndexManifest,
 ]);
+const DATA_SHARD_SUFFIX = /^:shard:[0-9a-f]{2}$/;
+const isGraphScope = (scope: string): boolean => GRAPH_SCOPES.has(scope) ||
+  (scope.startsWith(KV.graphRetrievalData) && DATA_SHARD_SUFFIX.test(scope.slice(KV.graphRetrievalData.length)));
 const pinned = new AsyncLocalStorage<{ kv: StateKV; generation: string | null }>();
 const views = new WeakMap<StateKV, { target: StateKV; id: string | null }>();
 type GraphChange = "reset" | "snapshot" | "nodes" | "edges";
@@ -67,12 +70,12 @@ async function generation(kv: StateKV): Promise<string | null> {
 }
 
 function physicalScope(scope: string, id: string | null): string {
-  return id !== null && GRAPH_SCOPES.has(scope) ? `${scope}:generation:${id}` : scope;
+  return id !== null && isGraphScope(scope) ? `${scope}:generation:${id}` : scope;
 }
 
 /** Used by StateKV so every graph consumer respects reset, including fallback reads. */
 export async function resolveGraphScope(kv: StateKV, scope: string): Promise<string> {
-  if (!GRAPH_SCOPES.has(scope)) return scope;
+  if (!isGraphScope(scope)) return scope;
   const context = pinned.getStore();
   const id = context?.kv === kv ? context.generation : await generation(kv);
   return physicalScope(scope, id);
