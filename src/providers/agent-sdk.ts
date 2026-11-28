@@ -18,6 +18,8 @@ type ClaudeAgentSdkModule = typeof import('@anthropic-ai/claude-agent-sdk')
 export class AgentSDKProvider implements MemoryProvider {
   name = 'agent-sdk'
 
+  constructor(private readonly model?: string) {}
+
   // Memoize the dynamic import so concurrent callers share one resolution
   // instead of racing to resolve the specifier independently. Keeps the
   // SDK out of the cold-start path for users on other providers.
@@ -65,8 +67,21 @@ export class AgentSDKProvider implements MemoryProvider {
           prompt: userPrompt,
           options: {
             systemPrompt,
+            ...(this.model ? { model: this.model } : {}),
             maxTurns: 1,
             allowedTools: [],
+            // A summary needs a bare model call. Without isolation the child
+            // loads the host's settings, plugins and their hooks, MCP servers,
+            // skills and built-in tool schemas (tens of thousands of prompt
+            // tokens per call) and writes a transcript under ~/.claude/projects.
+            // settingSources: [] already keeps user, project and plugin MCP
+            // servers out. strictMcpConfig is left off on purpose: the CLI
+            // refuses to start with it when an organization's managed-mcp.json
+            // is present, and that file's servers load regardless.
+            settingSources: [],
+            tools: [],
+            skills: [],
+            persistSession: false,
           },
         })
 
