@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { StateKV, applyUpdateOps, type StateBackend } from "../src/state/kv.js";
 import { KV } from "../src/state/schema.js";
 import { pinGraphState, resetGraphGeneration, setGraphGenerationListener } from "../src/state/graph-generation.js";
-import { GRAPH_INDEX_DATA_SHARDS, createGraphIndexReader, finishGraphIndexBuild, getGraphIndexStatus, graphIndexDataShard, initializeGraphIndex, reconcileGraphIndexRecord, recoverGraphIndex } from "../src/state/graph-retrieval-index.js";
+import { GRAPH_INDEX_DATA_SHARDS, createGraphIndexReader, finishGraphIndexBuild, getGraphIndexStatus, initializeGraphIndex, reconcileGraphIndexRecord, recoverGraphIndex } from "../src/state/graph-retrieval-index.js";
 import { withKeyedLock } from "../src/state/keyed-mutex.js";
 import type { GraphNode } from "../src/types.js";
 
@@ -214,7 +214,7 @@ describe("bounded graph retrieval index", () => {
     if (kind === "nodes") await kv.set(KV.graphNodes, "a", node("a"));
     else await kv.set(kind === "edges" ? KV.graphEdges : KV.graphEdgeHistory, edge.id, edge);
     const posting = createHash("sha256").update(JSON.stringify(`${kind}\0`)).digest("hex");
-    const key = `${graphIndexDataShard(parseInt(posting.slice(-2), 16) % GRAPH_INDEX_DATA_SHARDS)}\0${control.buildId}:root:${posting}`;
+    const key = `${KV.graphRetrievalDataShard(parseInt(posting.slice(-2), 16) % GRAPH_INDEX_DATA_SHARDS)}\0${control.buildId}:root:${posting}`;
     const root = data.get(key) as { head: string; count: number };
     expect(root.count).toBe(1);
     data.delete(key);
@@ -374,7 +374,7 @@ describe("bounded graph retrieval index", () => {
     expect(await initializeGraphIndex(kv, { status: "ready" })).toMatchObject({ schema: 3 });
     for (let i = 0; i < 24; i++) await kv.set(KV.graphNodes, `n${i}`, node(`n${i}`, `name ${i}`));
     const scopes = () => new Set([...data.keys()].map((key) => key.split("\0")[0]).filter((scope) => scope.startsWith(KV.graphRetrievalData)));
-    const shards = new Set(Array.from({ length: GRAPH_INDEX_DATA_SHARDS }, (_, index) => graphIndexDataShard(index)));
+    const shards = new Set(Array.from({ length: GRAPH_INDEX_DATA_SHARDS }, (_, index) => KV.graphRetrievalDataShard(index)));
     expect(scopes().size).toBeGreaterThan(8);
     for (const scope of scopes()) expect(shards.has(scope)).toBe(true);
     const reader = (await createGraphIndexReader(kv))!;

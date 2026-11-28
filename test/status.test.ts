@@ -305,7 +305,8 @@ describe("evaluateStatus", () => {
     const stuck = evaluateStatus(inputs({ graphIndex: { ...ready, singleScopeBytes: 1_073_666_728 } }));
     expect(codes(stuck)).toEqual(["graph-index-scope-limit"]);
     expect(stuck.status).toBe("error");
-    expect(stuck.problems[0].message).toContain("lost on restart");
+    expect(stuck.problems[0].message).toContain("at or near the 1 GiB limit");
+    expect(stuck.problems[0].message).not.toContain("lost");
     expect(stuck.problems[0].fix).toContain("graph-index migrate --allow-legacy-scan");
     const building = evaluateStatus(inputs({ graphIndex: { state: "building", ready: false, coverage: "unknown", action: "wait", singleScopeBytes: 1_070_683_736 } }));
     expect(codes(building)).toEqual(["graph-index-not-ready", "graph-index-scope-limit"]);

@@ -44,13 +44,12 @@ const rootKey = (buildId: string, posting: string) => `${buildId}:root:${posting
 const entryKey = (buildId: string, posting: string, id: string) => `${buildId}:entry:${posting}:${id}`;
 const countKey = (kind: GraphIndexRecordKind) => kind === "node" ? "nodes" : kind === "edge" ? "edges" : "historyEdges";
 export const GRAPH_INDEX_DATA_SHARDS = 64;
-export const graphIndexDataShard = (index: number): string => `${KV.graphRetrievalData}:shard:${index.toString(16).padStart(2, "0")}`;
 // The file-backed state worker cannot save one scope past 1 GiB, so schema 3 spreads index data over fixed shards.
 function dataScope(control: Pick<GraphRetrievalIndexControl, "schema">, key: string): string {
   if (control.schema === 2) return KV.graphRetrievalData;
   const suffix = /[a-f0-9]{2}$/.exec(key);
   if (!suffix) throw new GraphIndexError("Invalid graph retrieval data key");
-  return graphIndexDataShard(parseInt(suffix[0], 16) % GRAPH_INDEX_DATA_SHARDS);
+  return KV.graphRetrievalDataShard(parseInt(suffix[0], 16) % GRAPH_INDEX_DATA_SHARDS);
 }
 
 function validateControl(value: GraphRetrievalIndexControl): void {

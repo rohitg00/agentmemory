@@ -46,7 +46,7 @@ The file-backed state worker saves each scope as one file and cannot save a scop
 
 Indexes built by 0.9.34 or later store their data in 64 shard scopes named `mem:graph:retrieval-data:shard:00` to `mem:graph:retrieval-data:shard:3f`, so one save rewrites only the shards that changed. Indexes built by earlier releases keep all data in the single `mem:graph:retrieval-data` scope and continue to work there. One reported graph of about 68,000 nodes and 133,000 edges filled that scope.
 
-`agentmemory status` reports `graph-index-scope-limit` when the single data file passes 512 MiB, and reports it as an error near 1 GiB. `agentmemory graph-index status --json` shows the file size as `singleScopeBytes`. The check needs the file backend and a readable data directory. To move an older index to shard scopes, run this during a maintenance window:
+`GET /agentmemory/status` and the viewer Health page report `graph-index-scope-limit` when the single data file passes 512 MiB, and report it as an error near 1 GiB. The `agentmemory status` command does not show this warning. `agentmemory graph-index status --json` shows the file size as `singleScopeBytes`. The check needs the file backend and a readable data directory. To move an older index to shard scopes, run this during a maintenance window:
 
 ```sh
 agentmemory graph-index migrate --allow-legacy-scan --json

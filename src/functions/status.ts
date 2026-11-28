@@ -482,7 +482,7 @@ export function evaluateStatus(input: StatusInputs): StatusReport {
       level: atLimit ? "error" : "warn",
       code: "graph-index-scope-limit",
       message: atLimit
-        ? `The graph index data file is ${size}. The state worker cannot save one scope past 1 GiB, so newer graph index changes are lost on restart and each failed save rewrites the whole scope.`
+        ? `The graph index data file is ${size}, at or near the 1 GiB limit for one scope. The state worker cannot save a scope past that limit, and graph index changes that are not saved do not survive a restart.`
         : `The graph index data file is ${size} and grows with the graph. The state worker cannot save one scope past 1 GiB.`,
       fix: "Run agentmemory graph-index migrate --allow-legacy-scan during maintenance. It rebuilds the index across smaller scopes.",
     });

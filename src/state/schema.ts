@@ -26,6 +26,7 @@ export const KV = {
   graphMembership: "mem:graph:membership",
   graphRetrievalControl: "mem:graph:retrieval-control",
   graphRetrievalData: "mem:graph:retrieval-data",
+  graphRetrievalDataShard: (index: number) => `mem:graph:retrieval-data:shard:${index.toString(16).padStart(2, "0")}`,
   graphIndexMigration: "mem:graph:index-migration",
   graphIndexManifest: "mem:graph:index-manifest",
   semantic: "mem:semantic",
