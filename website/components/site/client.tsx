@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import Link from "next/link";
 
 export function CopyButton({
   text,
@@ -72,7 +73,7 @@ export function Reveal({
           }
         }
       },
-      { rootMargin: "0px 0px -12% 0px" },
+      { rootMargin: "0px 0px -4% 0px" },
     );
     io.observe(el);
     return () => io.disconnect();
@@ -158,11 +159,29 @@ export function useScrollProgress<T extends HTMLElement>(steps = 0) {
     }
     let frame = 0;
     let visible = false;
+    const pin = el.querySelector<HTMLElement>("[data-pin]");
+    let pinTop = 0;
+    let pinHeight = window.innerHeight;
+    const measure = () => {
+      if (!pin) return;
+      const nav = 60;
+      const stage = pin.firstElementChild as HTMLElement | null;
+      if (stage) {
+        stage.style.zoom = "";
+        const style = getComputedStyle(pin);
+        const room = window.innerHeight - nav - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+        if (stage.offsetHeight > room) stage.style.zoom = Math.max(0.7, room / stage.offsetHeight).toFixed(3);
+      }
+      pinHeight = pin.offsetHeight;
+      pinTop = Math.max(nav, Math.round((window.innerHeight + nav - pinHeight) / 2));
+      el.style.setProperty("--pin-h", `${pinHeight}px`);
+      el.style.setProperty("--pin-top", `${pinTop}px`);
+    };
     const update = () => {
       frame = 0;
       const rect = el.getBoundingClientRect();
-      const span = rect.height - window.innerHeight;
-      const p = span > 0 ? clamp(-rect.top / span) : 1;
+      const span = rect.height - pinHeight;
+      const p = span > 0 ? clamp((pinTop - rect.top) / span) : 1;
       paint(p);
       if (steps > 0) {
         const step = String(Math.min(steps - 1, Math.floor(p * steps)));
@@ -177,15 +196,44 @@ export function useScrollProgress<T extends HTMLElement>(steps = 0) {
       if (visible) onScroll();
     });
     io.observe(el);
+    const ro = new ResizeObserver(() => {
+      measure();
+      onScroll();
+    });
+    if (pin) ro.observe(pin);
+    const onResize = () => {
+      measure();
+      onScroll();
+    };
     window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
+    window.addEventListener("resize", onResize);
+    measure();
     update();
     return () => {
       io.disconnect();
+      ro.disconnect();
       window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
+      window.removeEventListener("resize", onResize);
       if (frame) cancelAnimationFrame(frame);
     };
   }, [steps]);
   return ref;
+}
+
+export function HomeLink({ children, className, label }: { children: ReactNode; className?: string; label: string }) {
+  return (
+    <Link
+      href="/"
+      className={className}
+      aria-label={label}
+      onClick={(event) => {
+        if (window.location.pathname !== "/" || event.metaKey || event.ctrlKey || event.shiftKey) return;
+        event.preventDefault();
+        if (window.location.hash) window.history.replaceState(null, "", "/");
+        window.scrollTo({ top: 0 });
+      }}
+    >
+      {children}
+    </Link>
+  );
 }

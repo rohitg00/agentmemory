@@ -144,7 +144,8 @@
   transform: scale(0.96);
 }
 
-.chip[aria-checked="true"] {
+.chip[aria-checked="true"],
+.chip[aria-selected="true"] {
   background: var(--ink);
   border-color: var(--ink);
   color: var(--bg);
@@ -241,4 +242,8 @@
   .swap {
     animation: none;
   }
+}
+
+.mcpHead .picker {
+  margin-top: 10px;
 }

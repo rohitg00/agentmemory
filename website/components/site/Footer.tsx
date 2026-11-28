@@ -17,8 +17,8 @@ const COLUMNS = [
   {
     head: "Product",
     links: [
-      { label: "Use cases", href: "/#use-cases" },
-      { label: "How it works", href: "/#how" },
+      { label: "Use cases", href: "/use-cases" },
+      { label: "How it works", href: "/how-it-works" },
       { label: "Benchmarks", href: "/benchmarks" },
       { label: "Install", href: "/#install" },
       { label: "Changelog", href: "/changelog" },

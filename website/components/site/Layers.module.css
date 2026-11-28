@@ -1,0 +1,127 @@
+.band {
+  --band-bg: #070707;
+  --band-ink: #fafafa;
+  --band-muted: #9a9a9a;
+  --band-line: #222222;
+  background: var(--band-bg);
+  color: var(--band-ink);
+  padding: var(--section-y) 0;
+}
+
+.head {
+  display: grid;
+  gap: var(--s-4);
+  margin-bottom: var(--s-6);
+}
+
+.eyebrow {
+  font-size: var(--t-12);
+  letter-spacing: var(--track-mono);
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.head h2 {
+  font-size: var(--t-49);
+  letter-spacing: var(--track-display);
+  line-height: 1.08;
+  max-width: 20em;
+  text-wrap: balance;
+  color: var(--band-ink);
+}
+
+.grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--band-line);
+}
+
+.cell {
+  display: grid;
+  justify-items: start;
+  gap: var(--s-2);
+  padding: var(--s-5) var(--s-6) 0;
+  border-left: 1px solid var(--band-line);
+}
+
+.cell:first-child {
+  border-left: 0;
+  padding-left: 0;
+}
+
+.cell:last-child {
+  padding-right: 0;
+}
+
+.figure {
+  width: min(100%, 21rem);
+  aspect-ratio: 1;
+  justify-self: center;
+  color: var(--accent);
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent) 45%, transparent));
+}
+
+.text {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: var(--s-3);
+  row-gap: var(--s-2);
+  align-items: baseline;
+}
+
+.num {
+  font-size: var(--t-12);
+  color: var(--band-muted);
+}
+
+.text h3 {
+  color: var(--band-ink);
+  font-size: var(--t-20);
+  letter-spacing: -0.01em;
+}
+
+.text p,
+.tag {
+  grid-column: 2;
+}
+
+.text p {
+  font-size: var(--t-14);
+  line-height: 1.55;
+  color: var(--band-muted);
+  max-width: 30rem;
+}
+
+.tag {
+  justify-self: start;
+  margin-top: var(--s-1);
+  padding: 2px 8px;
+  border: 1px solid var(--band-line);
+  border-radius: 999px;
+  font-size: var(--t-12);
+  color: var(--band-ink);
+}
+
+@media (max-width: 860px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cell,
+  .cell:first-child,
+  .cell:last-child {
+    grid-template-columns: 9rem minmax(0, 1fr);
+    align-items: center;
+    padding: var(--s-5) 0;
+    border-left: 0;
+    border-top: 1px solid var(--band-line);
+  }
+  .cell:first-child {
+    border-top: 0;
+  }
+  .figure {
+    width: 100%;
+  }
+}

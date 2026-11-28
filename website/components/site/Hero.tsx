@@ -1,7 +1,7 @@
 import { AGENT_INSTALL_PROMPT, INSTALL_CMD, REPO_URL, src } from "@/lib/site";
 import { compact, getLiveProjectMeta } from "@/lib/meta";
 import { CopyButton } from "./client";
-import { MemoryField } from "./MemoryField";
+import { HeroTour } from "./HeroTour";
 import { HeroTitle } from "./HeroTitle";
 import s from "./Hero.module.css";
 
@@ -68,7 +68,9 @@ export async function Hero() {
               </span>
             </a>
           </div>
-
+        </div>
+        <div className={s.visual}>
+          <HeroTour />
           <dl className={s.facts}>
             <div>
               <dt className="mono">MCP tools</dt>
@@ -89,9 +91,6 @@ export async function Hero() {
               </dd>
             </div>
           </dl>
-        </div>
-        <div className={s.visual}>
-          <MemoryField />
         </div>
       </div>
     </section>

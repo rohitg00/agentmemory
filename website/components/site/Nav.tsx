@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { NAV, REPO_URL } from "@/lib/site";
 import { compact, getLiveProjectMeta } from "@/lib/meta";
-import { ThemeToggle } from "./client";
+import { HomeLink, ThemeToggle } from "./client";
 import { Logo } from "./Logo";
 import s from "./Nav.module.css";
 
@@ -10,10 +10,10 @@ export async function Nav() {
   return (
     <header className={s.bar}>
       <div className={`wrap ${s.inner}`}>
-        <Link href="/" className={s.brand} aria-label="agentmemory home">
+        <HomeLink className={s.brand} label="agentmemory home">
           <Logo />
           <span>agentmemory</span>
-        </Link>
+        </HomeLink>
         <nav className={s.links} aria-label="Primary">
           {NAV.map((n) => (
             <Link key={n.href} href={n.href}>

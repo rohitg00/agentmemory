@@ -29,7 +29,8 @@ export const FEATURED_LOGOS: Record<string, { src: string; wide?: boolean }> = {
 
 export const VIEWER = {
   features: ["Memories", "Session replay", "Lessons", "Knowledge graph", "Health"],
-  img: "/demo.gif",
+  video: "/demo.mp4",
+  poster: "/demo-poster.jpg",
   width: 1080,
   height: 610,
   alt: "Recorded tour of the AgentMemory viewer with sample project data",

@@ -9,7 +9,7 @@
 
 .tile {
   display: grid;
-  grid-template-rows: auto auto 1fr auto auto;
+  grid-template-rows: auto auto 1fr auto;
   gap: var(--s-3);
   padding: var(--s-7) var(--s-5);
   border-left: 1px dashed var(--line-2);
@@ -50,121 +50,130 @@
   padding: var(--s-4) 0;
 }
 
-.gauge {
-  width: 100%;
-  max-width: 300px;
-}
-
-.track {
-  fill: none;
-  stroke: var(--line-2);
-  stroke-width: 2;
-}
-
-.tick {
-  stroke: var(--line-2);
-  stroke-width: 1.2;
-}
-
-.fill {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-dasharray: 1;
-}
-
 :global(.js) .fill {
   stroke-dashoffset: 1;
-}
-
-.readout {
-  font-family: var(--font-mono), monospace;
-  font-size: 30px;
-  fill: var(--ink);
-  letter-spacing: -0.02em;
-}
-
-.scale {
-  font-family: var(--font-mono), monospace;
-  font-size: 14px;
-  fill: var(--muted);
-}
-
-.call {
-  justify-self: start;
-  display: inline-flex;
-  align-items: center;
-  max-width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--surface);
-  font-size: var(--t-12);
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.caret {
-  display: inline-block;
-  width: 7px;
-  height: 14px;
-  margin-left: 4px;
-  background: var(--ink);
-  animation: blink 1s steps(1) 3;
-}
-
-.iso {
-  width: 100%;
-  max-width: 300px;
-}
-
-.ghost {
-  fill: none;
-  stroke: var(--line-2);
-  stroke-width: 1;
-  stroke-dasharray: 4 4;
-}
-
-.drop {
-  stroke: var(--line-2);
-  stroke-dasharray: 2 4;
-}
-
-.faceT {
-  fill: var(--accent);
-  stroke: var(--ink);
-  stroke-width: 1.2;
-}
-
-.faceL {
-  fill: var(--ink);
-  stroke: var(--ink);
-}
-
-.faceR {
-  fill: var(--ink-2);
-  stroke: var(--ink);
-}
-
-.float {
-  transform: translateY(-6px);
 }
 
 :global(.is-in) .float {
   animation: float 900ms var(--ease-out) 300ms both;
 }
 
-.isoLabel {
-  font-family: var(--font-mono), monospace;
-  font-size: 14px;
-  fill: var(--muted);
+.panel {
+  width: 100%;
+  max-width: 27rem;
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.panelHead {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-3);
+  font-size: var(--t-12);
+  color: var(--muted);
+}
+
+.query {
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: var(--t-12);
+}
+
+.hits,
+.reqs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+
+.hit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 2px;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-12);
+}
+
+.hit:first-child,
+.req:first-child {
+  border-top: 0;
+}
+
+.hitTitle {
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hitLayer,
+.reqNote {
+  color: var(--muted);
+}
+
+.hitScore {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.hit:first-child .hitScore {
+  color: var(--accent-ink);
+}
+
+.req {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 8px 2px;
+  border-top: 1px solid var(--line);
+  font-size: var(--t-12);
+}
+
+.reqLine {
+  grid-column: 1 / -1;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reqOk,
+.reqNo {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.reqOk {
+  color: var(--accent-ink);
+}
+
+.reqNo {
+  color: var(--ink);
+}
+
+:global(.js) .hit,
+:global(.js) .req {
+  opacity: 0;
+}
+
+:global(.is-in) .hit,
+:global(.is-in) .req {
+  animation: show 300ms var(--ease-out) var(--rd, 0ms) both;
 }
 
 .ctx {
   width: 100%;
-  max-width: 300px;
+  max-width: 27rem;
   border: 1px solid var(--ink-2);
   border-radius: var(--radius);
   background: var(--surface);
@@ -234,10 +243,6 @@
   opacity: 0;
 }
 
-:global(.is-in) .fill {
-  animation: sweep 1200ms var(--ease-out) 300ms both;
-}
-
 :global(.is-in) .ctxRow {
   animation: rowIn 300ms var(--ease-out) var(--rd, 0ms) both, squash 520ms var(--ease-in-out) 1700ms forwards;
 }
@@ -256,12 +261,6 @@
 
 :global(.is-in) .ctxMem {
   animation: nudge 520ms var(--ease-out) 2100ms both;
-}
-
-@keyframes sweep {
-  to {
-    stroke-dashoffset: 0;
-  }
 }
 
 @keyframes rowIn {
@@ -311,23 +310,6 @@
   }
 }
 
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-@keyframes float {
-  from {
-    transform: translateY(22px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(-6px);
-    opacity: 1;
-  }
-}
-
 @media (max-width: 900px) {
   .row {
     grid-template-columns: minmax(0, 1fr);
@@ -345,10 +327,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .fill,
-  :global(.js) .fill {
-    stroke-dashoffset: 0;
-  }
   .ctxRow {
     opacity: 0;
   }
@@ -358,14 +336,17 @@
   :global(.js) .ctxTag {
     opacity: 1;
   }
-  :global(.is-in) .fill,
   :global(.is-in) .ctxRow,
   :global(.is-in) .ctxFull,
   :global(.is-in) .ctxSummary,
   :global(.is-in) .ctxTag,
   :global(.is-in) .ctxMem,
-  .caret,
-  .float {
+  :global(.is-in) .hit,
+  :global(.is-in) .req {
     animation: none;
+  }
+  :global(.js) .hit,
+  :global(.js) .req {
+    opacity: 1;
   }
 }

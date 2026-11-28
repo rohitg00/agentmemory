@@ -4,16 +4,17 @@
 
 .track {
   position: relative;
-  height: 520vh;
+  height: calc(420vh + var(--pin-h, 100vh));
 }
 
 .sticky {
   position: sticky;
-  top: 60px;
-  height: calc(100vh - 60px);
-  height: calc(100svh - 60px);
+  top: var(--pin-top, 60px);
+  max-height: calc(100vh - 60px);
+  max-height: calc(100svh - 60px);
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+  padding: var(--s-2) 0 var(--s-5);
   overflow: hidden;
 }
 
@@ -21,7 +22,7 @@
   display: grid;
   grid-template-columns: minmax(0, 0.78fr) minmax(0, 2fr);
   gap: clamp(24px, 4vw, 56px);
-  align-items: center;
+  align-items: start;
 }
 
 .k {
@@ -125,7 +126,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.12fr);
   gap: var(--s-4);
-  align-items: start;
+  align-items: stretch;
 }
 
 .pane {
@@ -238,8 +239,17 @@
 }
 
 .group {
+  position: relative;
   display: grid;
   gap: 8px;
+}
+
+.waiting {
+  position: absolute;
+  left: 0;
+  top: 30px;
+  font-size: var(--t-12);
+  color: var(--faint);
 }
 
 .groupHead {
@@ -433,10 +443,6 @@
     transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out),
       visibility 0s linear var(--dur-2);
   }
-  .sticky {
-    align-items: flex-start;
-    padding-top: var(--s-3);
-  }
   .sessionBody,
   .store {
     padding: 10px;
@@ -470,7 +476,7 @@
   .sticky {
     position: relative;
     top: 0;
-    height: auto;
+    max-height: none;
     padding: var(--s-6) 0 var(--s-9);
   }
   .steps {
@@ -509,7 +515,7 @@
 :global(html:not(.js)) .sticky {
   position: relative;
   top: 0;
-  height: auto;
+  max-height: none;
   padding: var(--s-6) 0 var(--s-9);
 }
 

@@ -1,12 +1,49 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import type { KeyboardEvent } from "react";
 import { AGENTS, AGENT_INSTALL_PROMPT, INSTALL_CMD } from "@/lib/site";
 import { MCP_JSON } from "@/lib/rest";
 import { CopyButton } from "./client";
 import s from "./Install.module.css";
 
 const CONNECTABLE = AGENTS.filter((a) => a.connect);
+
+const HTTP_JSON = `{
+  "mcpServers": {
+    "agentmemory": {
+      "type": "http",
+      "url": "http://localhost:3111/agentmemory/mcp",
+      "headers": { "Authorization": "Bearer <secret>" }
+    }
+  }
+}`;
+
+const REST_CURL = `curl http://localhost:3111/agentmemory/smart-search \\
+  -H "Authorization: Bearer <secret>" \\
+  -H "Content-Type: application/json" \\
+  -d '{"query": "auth refresh"}'`;
+
+const OTHER = [
+  {
+    id: "stdio",
+    tab: "MCP over stdio",
+    note: "Merge this entry into the client's mcpServers object. With no variables set, it talks to http://localhost:3111.",
+    code: MCP_JSON,
+  },
+  {
+    id: "http",
+    tab: "MCP over HTTP",
+    note: "For a client that connects to an MCP server by URL. <secret> is AGENTMEMORY_SECRET, or the value in ~/.agentmemory/secret.",
+    code: HTTP_JSON,
+  },
+  {
+    id: "rest",
+    tab: "REST",
+    note: "Anything that speaks HTTP can read and write memory. <secret> is AGENTMEMORY_SECRET, or the value in ~/.agentmemory/secret.",
+    code: REST_CURL,
+  },
+];
 
 function breakable(text: string) {
   return text.split("/").flatMap((part, i, all) => (i < all.length - 1 ? [part, "/", <wbr key={i} />] : [part]));
@@ -15,6 +52,21 @@ function breakable(text: string) {
 export function Install() {
   const [pick, setPick] = useState(CONNECTABLE[0]?.connect ?? "claude-code");
   const connect = `agentmemory connect ${pick}`;
+  const [otherId, setOtherId] = useState(OTHER[0]!.id);
+  const other = OTHER.find((o) => o.id === otherId) ?? OTHER[0]!;
+  const tabs = useRef<(HTMLButtonElement | null)[]>([]);
+  const onTabKey = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    const last = OTHER.length - 1;
+    let next = index;
+    if (event.key === "ArrowRight") next = index === last ? 0 : index + 1;
+    else if (event.key === "ArrowLeft") next = index === 0 ? last : index - 1;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = last;
+    else return;
+    event.preventDefault();
+    setOtherId(OTHER[next]!.id);
+    tabs.current[next]?.focus();
+  };
   return (
     <section id="install" className="section" aria-labelledby="install-title">
       <div className="wrap">
@@ -90,18 +142,36 @@ export function Install() {
         <div className={s.mcp}>
           <div className={s.mcpHead}>
             <div>
-              <h3>Any other MCP client</h3>
-              <p>
-                Merge this entry into the client&apos;s <code>mcpServers</code> object. With no variables set, it talks to
-                http://localhost:3111.
-              </p>
+              <h3>Any other client</h3>
+              <div className={s.picker} role="tablist" aria-label="Connection type">
+                {OTHER.map((o, i) => (
+                  <button
+                    key={o.id}
+                    ref={(node) => {
+                      tabs.current[i] = node;
+                    }}
+                    type="button"
+                    role="tab"
+                    id={`other-tab-${o.id}`}
+                    aria-selected={o.id === other.id}
+                    aria-controls="other-panel"
+                    tabIndex={o.id === other.id ? 0 : -1}
+                    onKeyDown={(event) => onTabKey(event, i)}
+                    className={s.chip}
+                    onClick={() => setOtherId(o.id)}
+                  >
+                    {o.tab}
+                  </button>
+                ))}
+              </div>
+              <p>{other.note}</p>
             </div>
-            <CopyButton text={MCP_JSON} label="Copy MCP configuration" className="btn btn-ghost">
-              <span>Copy JSON</span>
+            <CopyButton text={other.code} label={`Copy ${other.tab} example`} className="btn btn-ghost">
+              <span>Copy example</span>
             </CopyButton>
           </div>
-          <pre className={s.json}>
-            <code>{MCP_JSON}</code>
+          <pre id="other-panel" role="tabpanel" tabIndex={0} aria-labelledby={`other-tab-${other.id}`} className={s.json}>
+            <code>{other.code}</code>
           </pre>
         </div>
       </div>
