@@ -244,6 +244,8 @@ async function main() {
 		cwd,
 		timestamp: (/* @__PURE__ */ new Date()).toISOString(),
 		data: {
+			...typeof data.agent_id === "string" && data.agent_id ? { agent_id: data.agent_id } : {},
+			...typeof data.agent_type === "string" && data.agent_type ? { agent_type: data.agent_type } : {},
 			tool_name: toolName,
 			tool_input: typeof toolInput === "string" ? truncateText(toolInput, 4e3) : truncateJson(toolInput ?? "", 4e3),
 			error: typeof error === "string" ? truncateText(error, 4e3) : truncateJson(error ?? "", 4e3)

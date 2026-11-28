@@ -71,6 +71,7 @@ describe("hook event ids for distinct events under one prompt", () => {
     env = {
       PATH: process.env["PATH"] ?? "",
       HOME: home,
+      USERPROFILE: home,
       AGENTMEMORY_URL: `http://127.0.0.1:${port}`,
       AGENTMEMORY_CAPTURE_SPOOL_DIR: join(home, "spool"),
     };
@@ -96,6 +97,27 @@ describe("hook event ids for distinct events under one prompt", () => {
     const a = await send("subagent-stop.mjs", subagentStop("a1c4e7f0b2d5a8c13", "Done"));
     const b = await send("subagent-stop.mjs", subagentStop("b9d2f5a8c1e4b7d06", "Done"));
     expect(a.eventId).not.toBe(b.eventId);
+  });
+
+  it.each(["post-tool-use.mjs", "post-tool-failure.mjs"])("%s preserves the executing subagent without inventing one for other calls", async (script) => {
+    const payload = {
+      ...turn, tool_use_id: "toolu_subagent", tool_name: "Bash",
+      tool_input: { command: "npm test" }, tool_response: "ok", error: "exit 1",
+    };
+    const captured = await send(script, { ...payload, agent_id: "agent-a", agent_type: "Explore" });
+    expect(captured.data).toMatchObject({ agent_id: "agent-a", agent_type: "Explore" });
+    expect((await send(script, { ...payload, agent_id: "agent-a", agent_type: "Explore" })).eventId)
+      .toBe(captured.eventId);
+    const { tool_use_id: _tool, prompt_id: _prompt, ...withoutHostId } = payload;
+    const fallback = { ...withoutHostId, timestamp: "2026-11-19T00:00:00Z" };
+    const a = await send(script, { ...fallback, agent_id: "agent-a" });
+    const b = await send(script, { ...fallback, agent_id: "agent-b" });
+    expect(a.eventId).not.toBe(b.eventId);
+    for (const extra of [{}, { agent_id: 42, agent_type: { name: "Explore" } }, { agent_id: "", agent_type: "" }]) {
+      const legacy = await send(script, { ...payload, ...extra });
+      expect(legacy.data).not.toHaveProperty("agent_id");
+      expect(legacy.data).not.toHaveProperty("agent_type");
+    }
   });
 
   it("gives two subagents that start in the same prompt different ids", async () => {

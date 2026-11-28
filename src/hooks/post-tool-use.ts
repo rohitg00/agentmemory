@@ -38,6 +38,10 @@ async function main() {
   if (!shouldCaptureTool(toolName)) return;
 
   const toolInput = data.tool_input ?? data.toolArgs;
+  const agent = {
+    ...(typeof data.agent_id === "string" && data.agent_id ? { agent_id: data.agent_id } : {}),
+    ...(typeof data.agent_type === "string" && data.agent_type ? { agent_type: data.agent_type } : {}),
+  };
 
   const { imageData, cleanOutput } = extractImageData(toolOutput(data));
   const cwd = hookCwd(data) || process.cwd();
@@ -52,6 +56,7 @@ async function main() {
       cwd,
       timestamp: new Date().toISOString(),
       data: {
+        ...agent,
         tool_name: toolName,
         tool_input: toolInput,
         tool_output: toolOutputText,
@@ -59,7 +64,7 @@ async function main() {
       },
     },
     data,
-    { tool_name: toolName, tool_input: toolInput, tool_output: toolOutputText, image_data: imageData },
+    { ...agent, tool_name: toolName, tool_input: toolInput, tool_output: toolOutputText, image_data: imageData },
   );
   void captureObservation(body, OBSERVE_TIMEOUT_MS);
   setTimeout(() => process.exit(0), EXIT_CAP_MS).unref();

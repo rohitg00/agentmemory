@@ -41,7 +41,11 @@ export function createObservationSource(
     assistantResponse: raw.assistantResponse,
   };
   if (Object.values(fields).every((value) => value === undefined)) fields.payload = raw.raw;
-  const retained = sanitize(fields) as Record<string, unknown>;
+  const retained = sanitize({
+    ...(typeof raw.executionAgentId === "string" && raw.executionAgentId ? { executionAgentId: raw.executionAgentId } : {}),
+    ...(typeof raw.executionAgentType === "string" && raw.executionAgentType ? { executionAgentType: raw.executionAgentType } : {}),
+    ...fields,
+  }) as Record<string, unknown>;
   const hookType = prefixWithinBytes(stripPrivateData(raw.hookType), 128) as HookType;
   const dropped = raw.assistantResponseBytes === undefined
     ? 0
@@ -58,6 +62,8 @@ export function createObservationSource(
       Object.assign(bounded, { [key]: value });
       continue;
     }
+    // A prefix would falsely attribute the event to a different identity.
+    if (key === "executionAgentId" || key === "executionAgentType") continue;
     const budget = maxBytes - bytes({ ...bounded, [key]: "" }) + 2;
     if (budget >= 2) {
       const text = typeof value === "string" ? value : JSON.stringify(value);
@@ -75,6 +81,8 @@ export function normalizeObservationSource(value: unknown, maxBytes = OBSERVATIO
   return createObservationSource({
     id: "", sessionId: "", timestamp: "",
     hookType: source.hookType as HookType,
+    executionAgentId: typeof source.executionAgentId === "string" ? source.executionAgentId : undefined,
+    executionAgentType: typeof source.executionAgentType === "string" ? source.executionAgentType : undefined,
     toolName: typeof source.toolName === "string" ? source.toolName : undefined,
     toolInput: source.toolInput,
     toolOutput: source.toolOutput,
@@ -101,6 +109,8 @@ export function rawFromObservationSource(observation: CompressedObservation): Ra
     sessionId: observation.sessionId,
     timestamp: observation.timestamp,
     hookType: source.hookType,
+    executionAgentId: source.executionAgentId,
+    executionAgentType: source.executionAgentType,
     toolName: source.toolName,
     toolInput: source.toolInput,
     toolOutput: source.toolOutput,
