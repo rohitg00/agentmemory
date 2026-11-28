@@ -356,7 +356,7 @@ Latest release notes: [CHANGELOG.md](CHANGELOG.md).
 ### What's new in 0.9.34
 
 - **Search sees every memory:** flow-compressed memories are indexed, superseded ones leave the index, and failed index sessions retry.
-- **Safer deletes:** every delete path holds the remember lock, and auto-forget stays within one project and agent.
+- **Safer deletes:** governance delete, evict, auto-forget and retention deletes hold the remember lock, and auto-forget stays within one project and agent.
 - **Long sessions keep capturing:** the session cap evicts the lowest-value observations instead of refusing writes.
 - **Capture survives a restart:** a stop or restart no longer drops queued observations, and the Agent SDK fallback never overrides a provider key you set.
 - **Compression accepts real code:** shell and generic syntax such as `2>&1` and `Vec<Row>` no longer fails to parse.

@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - `POST /agentmemory/graph/import-graphify` reports `truncated`, `limits`, `droppedNodes` and `droppedEdges` when a graph is larger than `AGENTMEMORY_GRAPH_IMPORT_MAX_NODES` (default 5000) or `AGENTMEMORY_GRAPH_IMPORT_MAX_EDGES` (default 20000) (#1757).
 - `AUTO_FORGET_INTERVAL_MS` values below 60000 or that are not numbers fall back to the hourly default instead of running the sweep every millisecond (#1744).
 - The Hermes plugin manifest declares `provides_hooks: []` and `requires_hermes: ">=0.21.6"`, so `hermes plugins doctor` passes (#1759).
-- With `AGENTMEMORY_ALLOW_AGENT_SDK=true`, a provider key such as `OPENAI_API_KEY` and no `AGENTMEMORY_LLM_PROVIDER`, agentmemory now runs zero-LLM instead of starting Claude Agent SDK sessions. Set `AGENTMEMORY_LLM_PROVIDER` to the provider whose key you want to use, or to `agent-sdk` to keep the fallback. Boot, `doctor`, `status` and the viewer name both choices (#1762).
+- With `AGENTMEMORY_ALLOW_AGENT_SDK=true`, a provider key such as `OPENAI_API_KEY` and no `AGENTMEMORY_LLM_PROVIDER`, agentmemory now runs zero-LLM instead of starting Claude Agent SDK sessions. Set `AGENTMEMORY_LLM_PROVIDER` to the provider whose key you want to use, or to `agent-sdk` to keep the fallback. Boot, `doctor`, `status` and the viewer name both choices. A key that `EMBEDDING_PROVIDER` reads does not count as a provider key here, so when that is the only key the fallback still starts Agent SDK sessions (#1762).
 
 ### Added
 
