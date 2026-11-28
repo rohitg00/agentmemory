@@ -414,8 +414,17 @@ async function main() {
     const binary = join(i.runtime, "bin/iii"); const launchPid = join(i.dir, "launched-compose.pid");
     writeFileSync(binary, `#!${process.execPath}\nconst {writeFileSync}=require('node:fs');\nif(process.argv.includes('--version')) { console.log('iii ${installed.dependencies["iii-sdk"]}'); process.exit(0); }\nwriteFileSync(${JSON.stringify(launchPid)},String(process.pid));\nsetInterval(()=>{},1000);\n`); chmodSync(binary, 0o755);
     Object.assign(d, await expectFailure(i, [], { AGENTMEMORY_ENGINE_READY_TIMEOUT_MS: "300" }, { message: "The engine process started but the REST API never responded." }));
-    const pid = Number(readFileSync(launchPid, "utf8")); i.ownedPids.add(pid); await poll("owned Compose engine timeout cleanup", () => !alive(pid), 5_000);
+    const composePid = Number(i.cli.text.match(/Compose daemon started \(pid (\d+)\)/)?.[1]);
+    assert(Number.isSafeInteger(composePid) && composePid > 0, `No owned Compose daemon was started: ${i.cli.text}`);
+    i.ownedPids.add(composePid);
+    // The 300ms readiness budget can expire before the daemon launches iii on
+    // a busy runner. That is still a valid timeout; always check the daemon,
+    // and check its engine child too when the fixture reached its entrypoint.
+    const pid = existsSync(launchPid) ? Number(readFileSync(launchPid, "utf8")) : null;
+    if (pid !== null) { assert(Number.isSafeInteger(pid) && pid > 0); i.ownedPids.add(pid); }
+    await poll("owned Compose engine timeout cleanup", () => !alive(composePid) && (pid === null || !alive(pid)), 5_000);
     assert(!existsSync(join(i.runtime, "engine-state.json")));
+    d.engineEntrypointReached = pid !== null;
     d.transport = "version-compatible iii fixture accepting compose but never opening the engine port; actual installed CLI";
   });
   await scenario("cancel-owned-startup", async (i, d) => {

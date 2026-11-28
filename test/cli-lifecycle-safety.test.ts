@@ -153,7 +153,8 @@ describe("native removal shutdown", () => {
     expect(existsSync(result.enginePidfile)).toBe(true);
     expect(existsSync(result.engineState)).toBe(true);
     expect(existsSync(result.privateBin)).toBe(true);
-  });
+    // Starting the isolated CLI can exceed the default budget on busy runners.
+  }, 30_000);
 
   it("refuses an instance-scoped global uninstall before deleting shared assets", () => {
     const { result, privateBin } = runInstanceRemove();

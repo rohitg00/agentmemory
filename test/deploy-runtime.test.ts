@@ -18,6 +18,17 @@ function fixture() {
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("deployment entrypoint", () => {
+  it("forwards every local model setting through Docker and runtime Compose", () => {
+    const keys = ["MODEL", "DIMENSIONS", "POOLING", "DTYPE", "QUERY_PREFIX", "DOCUMENT_PREFIX", "CACHE_DIR", "BATCH_SIZE"];
+    for (const file of ["docker-compose.yml", "deploy/coolify/docker-compose.yml", "deploy/runtime/worker-compose.yaml"]) {
+      const config = parse(readFileSync(file, "utf8"));
+      const env = file.endsWith("worker-compose.yaml") ? config.containers.agentmemory.environment : config.services.agentmemory.environment;
+      for (const key of keys) {
+        const name = `LOCAL_EMBEDDING_${key}`;
+        expect(env[name]).toBe(`\${${name}:-}`);
+      }
+    }
+  });
   it.each(["2000", "500"])("generates file and Redis configurations with save interval %s", (interval) => {
     const root = fixture();
     const program = entrypoint.split("node <<'NODE'\n")[1].split("\nNODE")[0]

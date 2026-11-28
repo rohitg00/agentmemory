@@ -135,5 +135,6 @@ describe("Pi package archive", () => {
       expect(readFileSync(join(root, "LICENSE"), "utf8")).toBe(readFileSync("LICENSE", "utf8"));
       expect(JSON.parse(readFileSync("package.json", "utf8")).files).toContain("integrations/pi/");
     } finally { rmSync(dir, { recursive: true, force: true }); }
-  });
+    // This checks archive contents, not npm/tar wall-clock performance.
+  }, 30_000);
 });
