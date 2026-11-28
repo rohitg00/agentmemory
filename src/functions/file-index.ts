@@ -2,11 +2,42 @@ import type { IIIClient } from "iii-sdk";
 import type { CompressedObservation, Session } from "../types.js";
 import { KV } from "../state/schema.js";
 import { StateKV } from "../state/kv.js";
+import { ensureProjectSessionIndex, getProjectSessionIndex } from "../state/session-index.js";
 import { recordAudit } from "./audit.js";
 import { recordAccessBatch } from "./access-tracker.js";
 import { logger } from "../logger.js";
 
 const SESSION_LOAD_CONCURRENCY = 4;
+const MAX_HISTORY_SESSIONS = 15;
+
+async function projectSessions(
+  kv: StateKV,
+  project: string,
+  currentSessionId: string,
+): Promise<Session[]> {
+  const entries = await getProjectSessionIndex(kv, project);
+  if (entries === null) {
+    const scanned = (await kv.list<Session>(KV.sessions)).filter((s) => s.project === project);
+    await ensureProjectSessionIndex(
+      kv,
+      project,
+      scanned.map((s) => ({
+        id: s.id,
+        startedAt: s.startedAt,
+        ...(s.agentId ? { agentId: s.agentId } : {}),
+      })),
+    ).catch(() => {});
+    return scanned;
+  }
+  const recent = entries
+    .filter((entry) => entry.id !== currentSessionId)
+    .sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+    .slice(0, MAX_HISTORY_SESSIONS);
+  const fetched = await Promise.all(
+    recent.map((entry) => kv.get<Session>(KV.sessions, entry.id).catch(() => null)),
+  );
+  return fetched.filter((s): s is Session => s !== null && s.project === project);
+}
 
 interface FileHistory {
   file: string;
@@ -46,19 +77,16 @@ export function registerFileIndexFunction(sdk: IIIClient, kv: StateKV): void {
       }
       const results: FileHistory[] = [];
 
-      const sessions = await kv.list<Session>(KV.sessions);
-      let otherSessions = sessionId
-        ? sessions.filter((s) => s.id !== sessionId)
-        : sessions;
-      if (normalizedProject) {
-        otherSessions = otherSessions.filter((s) => s.project === normalizedProject);
-      }
-      otherSessions = otherSessions
+      const sessions = normalizedProject
+        ? await projectSessions(kv, normalizedProject, sessionId)
+        : await kv.list<Session>(KV.sessions);
+      const otherSessions = sessions
+        .filter((s) => s.id !== sessionId)
         .sort(
           (a, b) =>
             new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
         )
-        .slice(0, 15);
+        .slice(0, MAX_HISTORY_SESSIONS);
 
       const obsCache = new Map<string, CompressedObservation[]>();
       let next = 0;

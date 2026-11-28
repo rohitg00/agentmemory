@@ -15,7 +15,7 @@ import { registerFileIndexFunction } from "../src/functions/file-index.js";
 
 function mockKV(listDelayMs = 0) {
   const store = new Map<string, Map<string, unknown>>();
-  const stats = { inFlight: 0, maxInFlight: 0, observationLists: 0 };
+  const stats = { inFlight: 0, maxInFlight: 0, observationLists: 0, sessionLists: 0 };
   return {
     stats,
     get: async <T>(scope: string, key: string): Promise<T | null> =>
@@ -30,6 +30,7 @@ function mockKV(listDelayMs = 0) {
     },
     list: async <T>(scope: string): Promise<T[]> => {
       const isObservations = scope.startsWith("mem:obs:");
+      if (scope === "mem:sessions") stats.sessionLists++;
       if (isObservations) {
         stats.observationLists++;
         stats.inFlight++;
@@ -139,5 +140,48 @@ describe("mem::enrich and mem::file-context project scoping", () => {
     expect(kv.stats.observationLists).toBe(15);
     expect(kv.stats.maxInFlight).toBeGreaterThan(1);
     expect(kv.stats.maxInFlight).toBeLessThanOrEqual(4);
+  });
+
+  it("reads the project session index instead of listing every session", async () => {
+    const kv = mockKV();
+    registerFileIndexFunction(sdk as never, kv as never);
+    const entries = [];
+    for (let i = 0; i < 20; i++) {
+      const startedAt = new Date(Date.UTC(2026, 9, 1) + i * 3600_000).toISOString();
+      await seedSession(kv, `ses_${i}`, "alpha", startedAt);
+      entries.push({ id: `ses_${i}`, startedAt });
+    }
+    await seedSession(kv, "ses_beta", "beta", "2026-11-02T00:00:00.000Z");
+    await seedSession(kv, "ses_moved", "beta", "2026-11-03T00:00:00.000Z");
+    entries.push({ id: "ses_moved", startedAt: "2026-11-03T00:00:00.000Z" });
+    await kv.set("mem:idx:project-sessions", "alpha", entries);
+
+    const result = (await sdk.trigger({
+      function_id: "mem::file-context",
+      payload: { sessionId: "ses_19", files: ["src/handler.ts"], project: "alpha" },
+    })) as { context: string };
+
+    expect(result.context).toContain("edit in alpha");
+    expect(result.context).not.toContain("edit in beta");
+    expect(kv.stats.sessionLists).toBe(0);
+    expect(kv.stats.observationLists).toBe(14);
+  });
+
+  it("builds the project session index after one fallback scan", async () => {
+    const kv = mockKV();
+    registerFileIndexFunction(sdk as never, kv as never);
+    await seedSession(kv, "ses_alpha", "alpha", "2026-11-01T00:00:00.000Z");
+    await seedSession(kv, "ses_beta", "beta", "2026-11-02T00:00:00.000Z");
+    const payload = { sessionId: "ses_now", files: ["src/handler.ts"], project: "alpha" };
+
+    const first = (await sdk.trigger({ function_id: "mem::file-context", payload })) as { context: string };
+    const second = (await sdk.trigger({ function_id: "mem::file-context", payload })) as { context: string };
+
+    expect(first.context).toContain("edit in alpha");
+    expect(second.context).toBe(first.context);
+    expect(kv.stats.sessionLists).toBe(1);
+    expect(await kv.get("mem:idx:project-sessions", "alpha")).toEqual([
+      { id: "ses_alpha", startedAt: "2026-11-01T00:00:00.000Z" },
+    ]);
   });
 });

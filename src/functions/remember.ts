@@ -6,7 +6,7 @@ import { StateKV, collectAll } from "../state/kv.js";
 import { withKeyedLock } from "../state/keyed-mutex.js";
 import { removeSessionFromProjectIndex } from "../state/session-index.js";
 import { unindexObservationSession } from "../state/obs-index.js";
-import { memoryToObservation, observationEmbedText, sharesMemoryScope, supersededAt } from "../state/memory-utils.js";
+import { memoryToObservation, observationEmbedText, sharesMemoryScope, writeSuccessor } from "../state/memory-utils.js";
 import { deleteAccessLog } from "./access-tracker.js";
 import { deleteFacetsForTargets } from "./facets.js";
 import { recordAudit } from "./audit.js";
@@ -179,9 +179,7 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
         if (forgetAfter) memory.forgetAfter = forgetAfter;
 
         if (supersededMemory) {
-          supersededMemory.isLatest = false;
-          supersededMemory.updatedAt = supersededAt(supersededMemory.updatedAt, now);
-          await kv.set(KV.memories, supersededMemory.id, supersededMemory);
+          await writeSuccessor(kv, memory, supersededMemory, now);
           // The superseded version stays in KV (the viewer's version
           // chain reads it there) but leaves both search indexes:
           // recall returning an outdated fact as if current is worse
@@ -190,8 +188,9 @@ export function registerRememberFunction(sdk: IIIClient, kv: StateKV): void {
             getSearchIndex().remove(supersededMemory.id);
           } catch {}
           vectorIndexRemove(supersededMemory.id);
+        } else {
+          await kv.set(KV.memories, memory.id, memory);
         }
-        await kv.set(KV.memories, memory.id, memory);
 
         try {
           getSearchIndex().add(memoryToObservation(memory), "memory");
