@@ -246,6 +246,18 @@ describe("rebuildKeywordIndex", () => {
     expect(supersededButLatest([memory("a", true, ["b"]), memory("b", true, ["a"])])).toHaveLength(2);
   });
 
+  it("still indexes when a stored memory has a malformed supersedes field", async () => {
+    const kv = mockKV();
+    const base = { type: "fact", concepts: [], files: [], sessionIds: [], strength: 5, version: 1, createdAt: "2026-09-01T00:00:00.000Z", updatedAt: "2026-09-01T00:00:00.000Z", isLatest: true };
+    await kv.set("mem:memories", "mem_bad", { ...base, id: "mem_bad", title: "Restored note", content: "Restored from an old export", supersedes: { id: "mem_gone" } });
+    await kv.set("mem:memories", "mem_ok", { ...base, id: "mem_ok", title: "Deploy gate", content: "Deploys wait for the smoke suite" });
+
+    await rebuildKeywordIndex(kv as never);
+
+    expect(getSearchIndex().has("mem_bad")).toBe(true);
+    expect(getSearchIndex().has("mem_ok")).toBe(true);
+  });
+
   it("rebuilds BM25 from stored observations and latest memories, quickly", async () => {
     const kv = mockKV();
     const total = seed(kv, 100, 30, () => "2026-09-01T00:00:00.000Z");

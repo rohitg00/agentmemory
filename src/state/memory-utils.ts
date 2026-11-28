@@ -51,7 +51,7 @@ export async function writeSuccessor(
 export function supersededButLatest(memories: Memory[]): Array<{ id: string; successorId: string }> {
   const successors = new Map<string, Memory[]>();
   for (const memory of memories) {
-    for (const id of memory.supersedes ?? []) {
+    for (const id of Array.isArray(memory.supersedes) ? memory.supersedes : []) {
       const list = successors.get(id);
       if (list) list.push(memory);
       else successors.set(id, [memory]);
