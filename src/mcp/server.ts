@@ -458,6 +458,7 @@ export function registerMcpEndpoints(
                       text: "Claude bridge not enabled. Set CLAUDE_MEMORY_BRIDGE=true",
                     },
                   ],
+                  isError: true,
                 },
               };
             }
@@ -501,6 +502,7 @@ export function registerMcpEndpoints(
                       text: "Knowledge graph not enabled. Set GRAPH_EXTRACTION_ENABLED=true",
                     },
                   ],
+                  isError: true,
                 },
               };
             }
@@ -529,6 +531,7 @@ export function registerMcpEndpoints(
                       text: "Consolidation not enabled. Set CONSOLIDATION_ENABLED=true",
                     },
                   ],
+                  isError: true,
                 },
               };
             }
@@ -567,6 +570,7 @@ export function registerMcpEndpoints(
                       text: "Team memory not enabled. Set TEAM_ID and USER_ID",
                     },
                   ],
+                  isError: true,
                 },
               };
             }
@@ -595,6 +599,7 @@ export function registerMcpEndpoints(
                       text: "Team memory not enabled. Set TEAM_ID and USER_ID",
                     },
                   ],
+                  isError: true,
                 },
               };
             }
@@ -683,6 +688,7 @@ export function registerMcpEndpoints(
                       text: "Snapshots not enabled. Set SNAPSHOT_ENABLED=true",
                     },
                   ],
+                  isError: true,
                 },
               };
             }

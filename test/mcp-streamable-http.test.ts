@@ -24,7 +24,7 @@ const TEMPLATE_URIS = [
 type Response = { status_code: number; headers?: Record<string, string>; body: any };
 type Headers = Record<string, string | undefined>;
 
-function setup(secret?: string) {
+function setup(secret?: string, engineDown = false) {
   const functions = new Map<string, Function>();
   const triggers: Array<{ function_id: string; config: { api_path: string; http_method: string } }> = [];
   const calls: Array<{ function_id: string; payload: Record<string, unknown> }> = [];
@@ -37,6 +37,7 @@ function setup(secret?: string) {
     },
     trigger: async (input: { function_id: string; payload: Record<string, unknown> }) => {
       calls.push(input);
+      if (engineDown) throw new Error("function not registered");
       return { action: "created" };
     },
   };
@@ -271,6 +272,14 @@ describe("streamable HTTP MCP endpoint: 2026-07-28 stateless requests", () => {
     const res = await endpoint(modernRequest("tools/call", { name: slotTool.name, arguments: {} }));
     expect(res.body.result.isError).toBe(true);
     expect(res.body.result.content[0].text).toContain("AGENTMEMORY_SLOTS=true");
+  });
+
+  it("reports a feature that is switched off by an environment flag as a tool error", async () => {
+    const { endpoint } = setup(undefined, true);
+    const res = await endpoint(modernRequest("tools/call", { name: "memory_consolidate", arguments: {} }));
+    expect(res.status_code).toBe(200);
+    expect(res.body.result.isError).toBe(true);
+    expect(res.body.result.content[0].text).toContain("CONSOLIDATION_ENABLED=true");
   });
 
   it("returns a protocol error for an unknown tool and for bad call params", async () => {
